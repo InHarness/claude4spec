@@ -1,0 +1,3 @@
+# m11-paczka-trzy-biny — non-blocking review findings
+
+- **rev-0001** `src/server/mcp/mcp-config.ts:33` — MCP_CONFIG_SERVER_KEY = 'c4s-reader' duplicates the literal of EXTERNAL_MCP_SERVER_NAME (src/server/mcp/surface.ts:84), and its own doc comment says they are 'the same name'. The two can drift apart silently (the previous mismatch, 'c4s-spec-reader' vs 'c4s-reader', is exactly that drift). Either derive one from the other (e.g. move the constant into a light module both import, since pulling surface.ts into mcp-config.ts would drag the whole MCP runtime in), or add a one-line test asserting MCP_CONFIG_SERVER_KEY === EXTERNAL_MCP_SERVER_NAME.

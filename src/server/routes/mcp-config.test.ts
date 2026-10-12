@@ -69,4 +69,28 @@ describe('GET /_meta/mcp-config', () => {
     await request(app).get('/_meta/mcp-config').expect(200);
     expect(fs.readdirSync(dir).sort()).toEqual(before);
   });
+
+  it('[entity:mcp-config-response] the payload is { variants: [{ id, label, snippet }] } — three entries, every field a string, each snippet an instance of wpis-serwera-c4s-reader', async () => {
+    const { app } = setup(4555);
+    const res = await request(app).get('/_meta/mcp-config').expect(200);
+    const body = res.body as Record<string, unknown>;
+    expect(Object.keys(body)).toEqual(['variants']);
+    const variants = body.variants as Array<Record<string, unknown>>;
+    expect(Array.isArray(variants)).toBe(true);
+    expect(variants).toHaveLength(3);
+    for (const v of variants) {
+      expect(Object.keys(v).sort()).toEqual(['id', 'label', 'snippet']);
+      expect(typeof v.id).toBe('string');
+      expect(typeof v.label).toBe('string');
+      expect((v.label as string).length).toBeGreaterThan(0);
+      expect(typeof v.snippet).toBe('string');
+      // Instance of the snippet: a `mcpServers.c4s-reader` entry addressed from
+      // the workspace publicUrl and the project id.
+      const entry = (JSON.parse(v.snippet as string) as { mcpServers: Record<string, unknown> }).mcpServers;
+      expect(Object.keys(entry)).toEqual(['c4s-reader']);
+      expect(v.snippet).toContain('http://localhost:4555/api/');
+    }
+    expect(variants.map((v) => v.id)).toEqual(['http-project', 'http-workspace', 'stdio']);
+    expect(variants[0]!.snippet).toContain('http://localhost:4555/api/projects/p1/mcp');
+  });
 });

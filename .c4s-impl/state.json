@@ -1104,14 +1104,34 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "pending",
+   "status": "verified",
    "blockedBy": null,
-   "startCommit": null,
-   "baseCommit": null,
-   "portions": [],
+   "startCommit": "5cc595c873a2eb5c0cdb74d43c3f579db5e6c9dd",
+   "baseCommit": "5cc595c873a2eb5c0cdb74d43c3f579db5e6c9dd",
+   "portions": [
+    {
+     "name": "m11-paczka-trzy-biny/p1-domain-l4",
+     "layers": [
+      "Domain",
+      "L4"
+     ],
+     "slugs": [
+      "section:m11pkg00",
+      "section:wtv48f3x",
+      "wpis-serwera-c4s-reader",
+      "mcp-config-response",
+      "ac-bin-c4s-jest-dostepny-po-instalacji-pa"
+     ],
+     "status": "implemented",
+     "rounds": 1,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 1
    },
    "jobs": []
   },

@@ -1,0 +1,51 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "unit", "id": "m11-paczka-trzy-biny" },
+  "release": "2.1.14",
+  "rows": [
+    {
+      "slug": "wpis-serwera-c4s-reader",
+      "type": "code-snippet",
+      "level": 1,
+      "status": "covered",
+      "evidence": "trace.md line present; src/server/mcp/mcp-config.ts renderMcpConfigVariants emits three {mcpServers:{'c4s-reader':…}} entries (MCP_CONFIG_SERVER_KEY='c4s-reader'), http {type,url} x2, stdio {command:'npx', args:['-y','-p','@inharness-ai/claude4spec','c4s-mcp','--url',projectUrl]} — matches snippet structure at 2.1.14. Test src/server/mcp/mcp-config.test.ts '[entity:wpis-serwera-c4s-reader]': expect(Object.keys(parsed.mcpServers)).toEqual(['c4s-reader']); expect(args.slice(0,5)).toEqual(['-y','-p','@inharness-ai/claude4spec','c4s-mcp','--url'])"
+    },
+    {
+      "slug": "mcp-config-response",
+      "type": "dto",
+      "level": 1,
+      "status": "covered",
+      "evidence": "trace.md line present; src/shared/mcp-config.ts McpConfigResponse{variants: McpConfigVariant[]}, McpConfigVariant{id,label,snippet: string} matches DTO fields at 2.1.14; served by src/server/routes/mcp-config.ts. Test src/server/routes/mcp-config.test.ts '[entity:mcp-config-response]': expect(Object.keys(body)).toEqual(['variants']); expect(Object.keys(v).sort()).toEqual(['id','label','snippet']); typeof checks; snippet mcpServers keys toEqual(['c4s-reader'])"
+    },
+    {
+      "slug": "ac-bin-c4s-jest-dostepny-po-instalacji-pa",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/packaging/bins.test.ts two tests '[ac:ac-bin-c4s-jest-dostepny-po-instalacji-pa]': expect(PKG.name).toBe('@inharness-ai/claude4spec'); expect(PKG.bin.claude4spec).toBe('dist/bin/claude4spec.js'); expect(PKG.bin.c4s).toBe('dist/bin/c4s.js') (package.json:36-40 agrees); and tsx src/bin/c4s.ts --version → expect(out.trim()).toBe(`c4s ${PKG.version}`) (src/bin/c4s.ts:331-333 writes `c4s ${readPackageVersion()}`)"
+    },
+    {
+      "slug": "section:m11pkg00",
+      "level": 2,
+      "status": "covered",
+      "evidence": "package.json bin = {claude4spec, c4s, c4s-mcp}; tests/integration/packaging/bins.test.ts '[section:m11pkg00]' x2: expect(Object.keys(PKG.bin).sort()).toEqual(['c4s','c4s-mcp','claude4spec']); expect([command,...args.slice(0,4)]).toEqual(['npx','-y','-p',PKG.name,'c4s-mcp']); removed form scan over src/ + README: expect(offenders).toEqual([]) — repo grep for /npx\\s+-y\\s+@inharness-ai\\/claude4spec/ finds only the test's own doc comment (tests/, not scanned)"
+    },
+    {
+      "slug": "section:wtv48f3x",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/mcp/mcp-config.ts stdio args ['-y','-p','@inharness-ai/claude4spec','c4s-mcp','--url',…]; src/server/mcp/mcp-config.test.ts '[section:wtv48f3x]': expect(`${command} ${args.slice(0,4).join(' ')}`).toBe('npx -y -p @inharness-ai/claude4spec c4s-mcp'); snippet not.toMatch(/\"-y\",\\s*\"@inharness-ai\\/claude4spec\"/)"
+    },
+    {
+      "slug": "goal:m11-paczka-trzy-biny",
+      "level": 2,
+      "status": "covered",
+      "evidence": "three bins in package.json:36-40 (claude4spec, c4s, c4s-mcp); stdio variant of the server-emitted MCP config entry uses `npx -y -p @inharness-ai/claude4spec c4s-mcp` (src/server/mcp/mcp-config.ts); removed form `npx -y @inharness-ai/claude4spec c4s` absent from src/, README, .claude skills (repo grep: no hits outside tests/integration/packaging/bins.test.ts comment and .c4s-impl)"
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck (static verification; tests run only in env-runner)",
+    "exitCode": 0,
+    "summary": "all workspace typechecks passed (tsc --noEmit, last: @inharness-ai/c4s-plugin-skill-author typecheck). Tests touching the changed key read: only mcp-config.test.ts (updated to 'c4s-reader') and routes/mcp-config.test.ts parse the snippet key; bootstrap.mcp-json.test.ts uses 'c4s-spec-reader' only as an unrelated pre-existing .mcp.json fixture; no client/golden test asserts the old key."
+  }
+}
