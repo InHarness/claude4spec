@@ -355,7 +355,7 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "in-progress",
+   "status": "verified",
    "blockedBy": null,
    "startCommit": "b0a3e168337b6e370c0d03b176ef8cdda3042c9f",
    "baseCommit": "b0a3e168337b6e370c0d03b176ef8cdda3042c9f",
@@ -388,17 +388,11 @@
       "ac-w-trybie-named-new-gdy-tree-po-stage-je",
       "ac-w-trybie-new-commitforrelease-tworzy-n"
      ],
-     "status": "pending",
-     "rounds": 3,
+     "status": "implemented",
+     "rounds": 4,
      "partial": 0,
-     "uncovered": [
-      "ac-gdy-pagesdir-le-y-w-worktree-git-get-a"
-     ],
-     "only": [
-      {
-       "slug": "ac-gdy-pagesdir-le-y-w-worktree-git-get-a"
-      }
-     ]
+     "uncovered": [],
+     "only": []
     }
    ],
    "rounds": {
@@ -503,7 +497,7 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "in-progress",
+   "status": "verified",
    "blockedBy": null,
    "startCommit": "b0a3e168337b6e370c0d03b176ef8cdda3042c9f",
    "baseCommit": "b0a3e168337b6e370c0d03b176ef8cdda3042c9f",
@@ -526,37 +520,11 @@
       "ac-update-page-z-content-i-textedits-pod",
       "ac-zapis-strony-wprowadzajacy-nowy-naglo"
      ],
-     "status": "pending",
-     "rounds": 1,
+     "status": "implemented",
+     "rounds": 2,
      "partial": 0,
-     "uncovered": [
-      "ac-hash-zwrocony-przez-update-page-przec",
-      "ac-trasy-patch-i-put-pod-sciezka-strony",
-      "ac-put-api-pages-path-przyjmuje-opcjona",
-      "ac-put-api-pages-rootid-bez-pola-expecte",
-      "ac-powiadomienie-file-changed-o-zapisie",
-      "ac-zapis-z-tiptap-zachowuje-frontmatter-i-x"
-     ],
-     "only": [
-      {
-       "slug": "ac-hash-zwrocony-przez-update-page-przec"
-      },
-      {
-       "slug": "ac-trasy-patch-i-put-pod-sciezka-strony"
-      },
-      {
-       "slug": "ac-put-api-pages-path-przyjmuje-opcjona"
-      },
-      {
-       "slug": "ac-put-api-pages-rootid-bez-pola-expecte"
-      },
-      {
-       "slug": "ac-powiadomienie-file-changed-o-zapisie"
-      },
-      {
-       "slug": "ac-zapis-z-tiptap-zachowuje-frontmatter-i-x"
-      }
-     ]
+     "uncovered": [],
+     "only": []
     }
    ],
    "rounds": {
@@ -1335,7 +1303,7 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "in-progress",
+   "status": "verified",
    "blockedBy": null,
    "startCommit": "b0a3e168337b6e370c0d03b176ef8cdda3042c9f",
    "baseCommit": "b0a3e168337b6e370c0d03b176ef8cdda3042c9f",
@@ -1363,17 +1331,11 @@
       "ac-brief-nie-jest-page-rootem-zyje-w-bri",
       "ac-wersjonowanie-briefu-reuse-uje-tabele"
      ],
-     "status": "pending",
-     "rounds": 1,
+     "status": "implemented",
+     "rounds": 2,
      "partial": 0,
-     "uncovered": [
-      "ac-rownoczesne-update-brief-z-wielu-watk"
-     ],
-     "only": [
-      {
-       "slug": "ac-rownoczesne-update-brief-z-wielu-watk"
-      }
-     ]
+     "uncovered": [],
+     "only": []
     }
    ],
    "rounds": {
@@ -2007,7 +1969,7 @@
     }
    ],
    "wave": 2,
-   "status": "in-progress",
+   "status": "verified",
    "blockedBy": null,
    "startCommit": "b0a3e168337b6e370c0d03b176ef8cdda3042c9f",
    "baseCommit": "b0a3e168337b6e370c0d03b176ef8cdda3042c9f",
@@ -2028,29 +1990,11 @@
       "ac-rest-patch-api-releases-nameorid-z-bod",
       "ac-wynik-gitsync-inny-niz-status-error-c"
      ],
-     "status": "pending",
-     "rounds": 1,
+     "status": "implemented",
+     "rounds": 2,
      "partial": 0,
-     "uncovered": [
-      "ac-przy-w-czonym-config-git-syncpushonpush",
-      "ac-releaseservice-createrelease-name-des",
-      "ac-wariant-error-gitcommitresult-gitpushres",
-      "ac-wiersz-release-push-powsta-y-z-first-p"
-     ],
-     "only": [
-      {
-       "slug": "ac-przy-w-czonym-config-git-syncpushonpush"
-      },
-      {
-       "slug": "ac-releaseservice-createrelease-name-des"
-      },
-      {
-       "slug": "ac-wariant-error-gitcommitresult-gitpushres"
-      },
-      {
-       "slug": "ac-wiersz-release-push-powsta-y-z-first-p"
-      }
-     ]
+     "uncovered": [],
+     "only": []
     }
    ],
    "rounds": {
