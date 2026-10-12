@@ -167,7 +167,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "u1-host-entity-invalidation/p1-l5-l5",
@@ -180,21 +180,15 @@
           "status": "implemented",
           "rounds": 2,
           "partial": 0,
-          "only": [
-            {
-              "slug": "ac-zmiana-encji-zapisana-z-zewnatrz-agen"
-            }
-          ],
-          "uncovered": [
-            "ac-zmiana-encji-zapisana-z-zewnatrz-agen"
-          ]
+          "only": [],
+          "uncovered": []
         }
       ],
       "startCommit": "481eb04d2829b423937ad88e1a7da90972154762",
       "baseCommit": "6df4566938606568e170b62dcd87dcb1058fa48c",
       "rounds": {
         "review": 0,
-        "unit": 1
+        "unit": 2
       },
       "jobs": [],
       "lastUncovered": 0
@@ -799,6 +793,6 @@
   ],
   "entityParts": [],
   "errors": 0,
-  "systemVerified": false,
+  "systemVerified": true,
   "baselineGreen": true
 }

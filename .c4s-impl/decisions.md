@@ -22,3 +22,14 @@
 - u5 reopen (system round 1): design-system sidebarTab.order — the test asserted the spec sketch's 6, the code has had 60 (host scale) since before 2.1.19 and the window only drops emptyState; test now asserts DESIGN_SYSTEM_DISPLAY_ORDER, drift recorded as dev-1911 (non-blocking); the file's other assertions passed in the env run.
 - 2026-10-12 u7 reopen r1: DEBT headers in frontend-kit/EntityBreadcrumbBar.tsx and ButtonGroup.tsx wrapped 'Recorded, not fixed here' across a comment line (' * ' prefix broke the test regex); rewrapped so the phrase sits on one line — header text unchanged.
 - u1 reopen (system r1): useFileWatcher.entityDetail.test.ts failed because fake timers place React Query's notifyManager setTimeout(0) at now+1 when scheduled during a tick (batcher flush), so a 0 ms settle never delivered the refetched data; production code was correct (refetch ran, calls.detail=2) — test now advances past it via flushQueryNotifications(), assertions unchanged.
+- Reopen (system round 1). All three were test-only fixes; no production code changed after 9862a74e.
+  - u1: React Query notifications under fake timers.
+  - u5: sidebar order stays 60 (dev-1911, sent).
+  - u7: DEBT header rewrap.
+  - Each was re-verified statically and re-reviewed with no findings.
+- Round 2 @ 23ff8eef (same test container, fetch+checkout, lockfile unchanged): `npm test` 5588/5588, 462/462 files green.
+- e2e was not repeated. The diff 9862a74e..23ff8eef touches only test files and comments, so the round-1 e2e result holds: 208 passed / 3 failed / 19 skipped.
+  - The failures are the known `data: empty` seed preconditions (artifact-threads-panel, entity-version-history, plan-footer, envelope-entity-pages x2), the same as on main in the 2.1.15→2.1.16 loop.
+  - Plus `frontend-mockups-envelope` "/design-system is offered once": an order-dependent flake. Run alone, the file passed 3/3.
+- Static system verifier: 17/17 covered. Deviations dev-1904..dev-1907 and dev-1911 are all sent. stubs.json is empty.
+- terminate() holds.
