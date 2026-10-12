@@ -1,0 +1,25 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "unit", "id": "m02-drzewo-vs-listing" },
+  "release": "2.1.14",
+  "rows": [
+    {
+      "slug": "ac-plik-html-lezacy-w-korzeniu-stron-jes",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:2365 — `expect(tree).toContainEqual({ type: 'file', name: 'mock.html', path: 'mock.html', fileType: 'html' })` + `expect(paths).not.toContain('mock.html')` on c.listPages({ rootId: 'pages' }) (list_pages core, entity reference-tools-list-pages) + get_page → PAGE_NOT_FOUND. Code: PagesService.listTree (src/server/services/pages.ts:85) yields html entries; list_pages walks the markdown-only listing (src/server/discovery/page-source.ts:100; MarkdownFileStore.listMarkdownFiles filters by servesPath → format 'markdown', markdown-file-store.ts:82-85). typecheck green."
+    },
+    {
+      "slug": "goal:m02-drzewo-vs-listing",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Tree vs listing split holds: listTree (pages.ts:85, fileType from kind file map) carries .md/.mdx + raw .html; listMarkdownFiles/listMarkdownFilesReadonly (markdown-file-store.ts:82,93) use collectMarkdown (isMarkdownPath) + servesPath → markdown only; search walks listMarkdownFiles (markdown-file-store.ts:154); content readers (section-indexer, sections, frontmatter/link/todos indexers, references, release, page-source, plan, project-context) all call listMarkdownFiles; M30 static route serves by (rootId, path) and scans nothing (static.route.test.ts). No .html scan through the listing remains; the ASSUMPTION:dev-0004 note replaced by spec refs (m02multidir, e16qvg1n, m30l13rt). Section tests: src/server/services/pages.mdx.test.ts:69 `[section:e16qvg1n] [section:m02multidir] [section:l13model0]` (tree has sub/mock.html as 'html'; store/facade/readonly listing === ['a.md','b.mdx','sub/page.md']; search('needle') → ['sub/page.md']) and :103 `[section:m30l13rt]` (html entries of each root's tree absent from that root's listing)."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "all workspaces tsc --noEmit clean (0 'error TS'); tests not run per build rules (env-runner only); tests touching the diff read through (pages.mdx.test.ts, discovery.test.ts, static.route.test.ts) — none broken by the comment-only code change"
+  }
+}

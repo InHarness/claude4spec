@@ -635,14 +635,29 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "pending",
+   "status": "verified",
    "blockedBy": null,
-   "startCommit": null,
-   "baseCommit": null,
-   "portions": [],
+   "startCommit": "9dccb7b451b10bcad1374eada6ba36a1e805235f",
+   "baseCommit": "9dccb7b451b10bcad1374eada6ba36a1e805235f",
+   "portions": [
+    {
+     "name": "m02-drzewo-vs-listing/p1-l13-l13",
+     "layers": [
+      "L13"
+     ],
+     "slugs": [
+      "ac-plik-html-lezacy-w-korzeniu-stron-jes"
+     ],
+     "status": "implemented",
+     "rounds": 1,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 1
    },
    "jobs": []
   },
