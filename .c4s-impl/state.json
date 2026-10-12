@@ -1,5 +1,5 @@
 {
-  "iteration": 4,
+  "iteration": 6,
   "conventions": [
     {
       "label": "L5 (UI) — implementor M50 — App Shell",
@@ -302,7 +302,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "u3-database-tables/p1-l5-l12",
@@ -316,18 +316,20 @@
             "database-table-history",
             "database-table-list"
           ],
-          "status": "pending",
-          "rounds": 0,
-          "partial": 0
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "20656fa7f2e18f9de1b76ef05875eaf7ed1290b3",
+      "baseCommit": "20656fa7f2e18f9de1b76ef05875eaf7ed1290b3",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0
     },
     {
       "id": "u4-mcp-tools",

@@ -19,8 +19,9 @@
  *
  * The host injects NO props into the screen: it is driven by URL params
  * (`listSearchSchema`: `q`, `tag`), read via `useSearch({ strict: false })` and
- * written via `navigate({ search })`. Loading and empty states come from the kit
- * (`LoadingState` / `EmptyState`), never custom markup. The CREATE button is
+ * written via `navigate({ search })`. Loading, empty and no-results states come
+ * from the kit (`LoadingState` / `EmptyState`), never custom markup; the list has
+ * no error state. The CREATE button is
  * composed from `ActionButton` (the host ships none) and opens the kit-`Dialog`
  * create modal — distinct from the plugin-rendered slash-create popover.
  *
@@ -56,6 +57,16 @@ import { DatabaseTableIcon } from './icon.js';
 import { DatabaseTableListRow } from './list-row.js';
 import { DatabaseTableCreateDialog } from './create-dialog.js';
 import { DatabaseTableDetail, DatabaseTableHistory } from './detail-panel.js';
+
+/**
+ * The list screen's states (`database-table-list`): `loading` (a six-line
+ * `LoadingState`), `empty` and `no-results` (the kit's `EmptyState` with the
+ * texts below). There is NO error state: a failed list fetch is not drawn.
+ */
+export const DATABASE_TABLE_LIST_EMPTY_TITLE = 'No database tables yet.';
+export const DATABASE_TABLE_LIST_EMPTY_HINT = 'Create your first one to get started.';
+export const DATABASE_TABLE_LIST_NO_RESULTS_TITLE = 'No matching database tables.';
+export const DATABASE_TABLE_LIST_NO_RESULTS_HINT = 'Try clearing the search or tag filter.';
 
 const Pane: FC<{ children: ReactNode }> = ({ children }) => (
   <main style={{ flex: 1, minWidth: 0, height: '100%', overflow: 'auto', background: 'var(--c-bg)' }}>
@@ -180,10 +191,13 @@ function DatabaseTableListRoute(): JSX.Element {
       >
         {isLoading ? (
           <LoadingState lines={6} />
+        ) : data.length === 0 ? (
+          // State `empty` — the project has no table at all. The kit's one
+          // `EmptyState` (no variant); the type tells the two cases apart by text.
+          <EmptyState title={DATABASE_TABLE_LIST_EMPTY_TITLE} hint={DATABASE_TABLE_LIST_EMPTY_HINT} />
         ) : filtered.length === 0 ? (
-          // One empty state for "no entities" and "no filter results" alike —
-          // the M19 list-page pattern (2.1.16): `EmptyState` with the type's text.
-          <EmptyState title="No database tables." />
+          // State `no-results` — tables exist, none matches the search / tag filter.
+          <EmptyState title={DATABASE_TABLE_LIST_NO_RESULTS_TITLE} hint={DATABASE_TABLE_LIST_NO_RESULTS_HINT} />
         ) : (
           <div role="list" style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
             {filtered.map((item) => (

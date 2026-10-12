@@ -1,0 +1,3 @@
+database-table-list → plugins/c4s-plugin-database-tables/src/entity/database-table/frontend/routes.tsx (DatabaseTableListRoute; test plugins/c4s-plugin-database-tables/test/frontend/database-table-views.render.test.ts)
+database-table-detail → plugins/c4s-plugin-database-tables/src/entity/database-table/frontend/detail-panel.tsx (DatabaseTableDetail; route in routes.tsx; test plugins/c4s-plugin-database-tables/test/frontend/database-table-views.render.test.ts)
+database-table-history → plugins/c4s-plugin-database-tables/src/entity/database-table/frontend/detail-panel.tsx (DatabaseTableHistory; route in routes.tsx; test plugins/c4s-plugin-database-tables/test/frontend/database-table-views.render.test.ts)

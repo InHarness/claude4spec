@@ -1,0 +1,1 @@
+- rev-0001 (non-blocking) `plugins/c4s-plugin-database-tables/src/entity/database-table/frontend/routes.tsx:64` — the doc comment says "a failed list fetch is not drawn", but `data = []` makes a failed fetch fall into the empty state ("No database tables yet."). That matches "no error state", but the comment should say plainly that a failed fetch falls through to the empty state.
