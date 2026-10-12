@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { useQueries } from '@tanstack/react-query';
-import { Trash, CheckSquare } from 'lucide-react';
+import { CheckSquare } from 'lucide-react';
 import {
   Badge,
   EnumBadgePicker,
@@ -12,26 +12,20 @@ import {
 import { clientPluginHost, useReferences, useTags } from '@c4s/plugin-runtime';
 import { useEntityDraftEditor } from '../../../frontend-kit/useEntityDraftEditor.js';
 import { useRegistryVersion } from '../../../frontend-kit/useRegistryVersion.js';
-import { confirmDestructive, toast } from '../../../frontend-kit/host-events.js';
 import { slugify as tagSlug, AC_TITLE_MAX_LENGTH, AC_TYPE } from '../../../identity.js';
 import type { Ac, AcKind, AcStatus, AcVerifyRef } from '../../../types.js';
-import { useAc, useDeleteAc, useUpdateAc } from './hooks.js';
+import { useAc, useUpdateAc } from './hooks.js';
 import { verifyGroupItems, verifyGroupTypes } from './verify-groups.js';
-
-/** `kind` and `status` are the catalog's colored-badge-with-dropdown, not bespoke widgets. */
-const AC_KIND_OPTIONS = [
-  { value: 'requirement', label: 'requirement', color: 'var(--c-accent)' },
-  { value: 'edge-case', label: 'edge-case', color: 'var(--c-yellow-ink)' },
-];
-
-const AC_STATUS_OPTIONS = [
-  { value: 'active', label: 'active', color: 'var(--c-accent)' },
-  { value: 'deprecated', label: 'deprecated', color: 'var(--c-red, #c45a3b)' },
-];
+import { AC_KIND_OPTIONS, AC_STATUS_OPTIONS } from './enum-options.js';
 
 interface Props {
   slug: string;
-  onDeleted: () => void;
+  /**
+   * Part of the `detailPanel` props contract, not used here: 2.1.16 moves
+   * Delete to the detail ROUTE's toolbar (next to the breadcrumb and the view
+   * switcher), which navigates to the list itself.
+   */
+  onDeleted?: () => void;
   onRenamed: (newSlug: string) => void;
   onOpenEntity?: (type: string, slug: string) => void;
   onOpenPage?: (rootId: string, path: string) => void;
@@ -64,18 +58,23 @@ function toDraft(ac: Ac): Draft {
   };
 }
 
+/**
+ * 2.1.16 — the page has no Edit button and no deprecated banner: every field
+ * edits in place and autosaves; a deprecated criterion shows a struck-through
+ * title. `kind` / `status` are `EnumBadgePicker`s, `verifies` is a
+ * `GroupedRelationPicker` (one group per registered type), tags a `collapsed`
+ * `TagPicker`. Delete lives on the route (`routes.tsx`), not here.
+ */
 export function AcDetail({
   slug,
-  onDeleted,
   onRenamed,
   onOpenEntity,
   onOpenPage,
 }: Props) {
   const { data: ac, isLoading, error } = useAc(slug);
   const update = useUpdateAc();
-  const remove = useDeleteAc();
   const { data: allTags = [] } = useTags();
-  const { data: refs = [] } = useReferences('ac', ac?.slug ?? null);
+  const { data: refs = [] } = useReferences(AC_TYPE, ac?.slug ?? null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -104,23 +103,6 @@ export function AcDetail({
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
   }, [draft?.title]);
-
-  async function handleDelete() {
-    if (!ac) return;
-    const ok = await confirmDestructive('ac-delete', {
-      title: 'Delete AC?',
-      body: `Delete this acceptance criterion? Prefer marking it as deprecated to keep history.`,
-      confirmLabel: 'Delete',
-    });
-    if (!ok) return;
-    try {
-      await remove.mutateAsync(ac.slug);
-      onDeleted();
-      toast.success('AC deleted');
-    } catch (err) {
-      toast.error((err as Error).message);
-    }
-  }
 
   function toggleTag(tagSlug: string) {
     if (!draft) return;
@@ -171,8 +153,6 @@ export function AcDetail({
     <div className="flex-1 overflow-auto nice-scroll">
       <FieldGrid maxWidth={740}>
         <div className="flex items-center gap-2 mb-1 text-[11px]" style={{ color: 'var(--c-subtle)' }}>
-          <span className="font-mono">{ac.slug}</span>
-          <span>·</span>
           <span>
             updated{' '}
             {new Date(ac.updatedAt.replace(' ', 'T') + 'Z').toLocaleString(undefined, {
@@ -186,15 +166,6 @@ export function AcDetail({
           {!update.isPending && dirty && (
             <span style={{ color: 'var(--c-accent-ink, var(--c-accent))' }}>edited</span>
           )}
-          <span className="flex-1" />
-          <button
-            onClick={handleDelete}
-            className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px]"
-            style={{ color: 'var(--c-red, #c45a3b)' }}
-            title="Delete"
-          >
-            <Trash size={11} /> Delete
-          </button>
         </div>
 
         <div className="flex items-start gap-2 mt-2 mb-1">
@@ -214,7 +185,12 @@ export function AcDetail({
             }}
             placeholder="Observable behavior asserted by this AC…"
             spellCheck={false}
+            aria-label="Title"
           />
+        </div>
+        {/* Slug: read-only, a badge under the title. */}
+        <div className="mb-3 ml-[30px]" data-testid="ac-slug">
+          <Badge label={ac.slug} small mono dot={false} />
         </div>
         {/* The detail page is where the criterion is NOT abbreviated — the chip
             and the row cut to 40 characters, this shows all 500 and grows to
@@ -336,8 +312,12 @@ function VerifiesPanel({
   // frontends may not have registered yet, and a picker that renders once
   // against a short list shows a subset of the types with nothing to say so —
   // indistinguishable from a project that genuinely has little to verify.
+  //
+  // 2.1.16 — ONE group per type in the registry, `ac` included: `verifies`
+  // may point at an entity of any registered type, and a picker that silently
+  // drops one type would make that target unreachable from here.
   useRegistryVersion();
-  const modules = clientPluginHost.listEntities().filter((m) => m.type !== AC_TYPE);
+  const modules = clientPluginHost.listEntities();
   const moduleByType = new Map(modules.map((m) => [m.type as string, m]));
 
   const selected: Record<string, string[]> = {};

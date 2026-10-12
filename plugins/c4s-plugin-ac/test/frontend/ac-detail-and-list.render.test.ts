@@ -1,0 +1,512 @@
+// @vitest-environment happy-dom
+/**
+ * 2.1.16 — the `ac` envelope's own detail and list screens (M13 detail
+ * pattern, M19 list pattern, L12 Host UI Kit).
+ *
+ *  - `ac-detail` (`/acs/:slug`): the route renders breadcrumb + view switcher +
+ *    Delete, no Edit button, no deprecated banner; `kind` and `status` are
+ *    `EnumBadgePicker`s; `verifies` is a `GroupedRelationPicker` with one group
+ *    per registered type, dead targets as a `broken` `Badge`; tags a
+ *    `collapsed` `TagPicker`.
+ *  - `ac-list` (`/acs`): `EntityListHeader` with `status` and `kind` filters
+ *    side by side, states `loading` and `empty` (one `EmptyState`, no reset).
+ *  - create / edit windows: Kind (and Status in edit) through `EnumBadgePicker`.
+ *  - chip / card: their own deleted-entity branch.
+ *
+ * The kit components are the host's real ones (`src/client/host-ui-kit/**`);
+ * only the data hooks, the router and the live plugin host are stood in for.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, createElement, type FC, type ReactNode } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { Ac } from '../../src/types.js';
+
+const state = vi.hoisted(() => ({
+  ac: null as unknown,
+  acs: [] as unknown[],
+  acsLoading: false,
+  params: { slug: 'ac-sample' } as Record<string, string>,
+  search: {} as Record<string, string>,
+  navigate: [] as unknown[],
+  updates: [] as Array<{ slug: string; input: Record<string, unknown> }>,
+  modules: [] as Array<Record<string, unknown>>,
+  enumPickers: [] as Array<{ options: Array<{ value: string }>; value: string }>,
+  relationPickers: [] as Array<{ groups: Array<{ key: string; label: string }> }>,
+  tagPickers: [] as Array<{ variant?: string }>,
+  badges: [] as Array<{ label: unknown; variant?: string }>,
+  headers: [] as Array<{ filters?: unknown; count?: number; title: string }>,
+  emptyStates: [] as Array<{ title: string; hint?: unknown; action?: unknown }>,
+  loadingStates: 0,
+  confirms: [] as Array<{ kind: string; title: string; body: string }>,
+}));
+
+vi.mock('@tanstack/react-router', () => ({
+  // The fragment hands back its route options, so the test can read path + component.
+  createRoute: (opts: unknown) => opts,
+  useParams: () => state.params,
+  useSearch: () => state.search,
+  useNavigate: () => (opts: unknown) => {
+    state.navigate.push(opts);
+  },
+}));
+
+vi.mock('@c4s/plugin-runtime', () => ({
+  clientPluginHost: {
+    listEntities: () => state.modules,
+    getAvailable: (type: string) => state.modules.find((m) => m.type === type) ?? null,
+    getEntity: (type: string) => state.modules.find((m) => m.type === type) ?? null,
+    onRegistryChanged: () => () => undefined,
+    registryVersion: () => 1,
+  },
+  useTags: () => ({ data: [] }),
+  useReferences: () => ({ data: [] }),
+  startSeededThread: () => undefined,
+  EditorBridgeProvider: ({ children }: { children: ReactNode }) => children,
+  queryClient: null,
+}));
+
+vi.mock('@c4s/plugin-runtime/ui', async () => {
+  const { createElement: h } = await import('react');
+  const [enumMod, grpMod, tagMod, badgeMod, rowMod, gridMod, btnMod, barMod, segMod, hdrMod, layoutMod, emptyMod, loadMod, listRowMod, tagBarMod, popMod] =
+    await Promise.all([
+      import('../../../../src/client/host-ui-kit/pickers/EnumBadgePicker.js'),
+      import('../../../../src/client/host-ui-kit/pickers/GroupedRelationPicker.js'),
+      import('../../../../src/client/host-ui-kit/detail/TagPicker.js'),
+      import('../../../../src/client/host-ui-kit/actions/Badge.js'),
+      import('../../../../src/client/host-ui-kit/core/FieldRow.js'),
+      import('../../../../src/client/host-ui-kit/core/FieldGrid.js'),
+      import('../../../../src/client/host-ui-kit/actions/ActionButton.js'),
+      import('../../../../src/client/host-ui-kit/actions/ActionBar.js'),
+      import('../../../../src/client/host-ui-kit/detail/SegmentedControlTabs.js'),
+      import('../../../../src/client/host-ui-kit/core/EntityListHeader.js'),
+      import('../../../../src/client/host-ui-kit/list/EntityListLayout.js'),
+      import('../../../../src/client/host-ui-kit/list/EmptyState.js'),
+      import('../../../../src/client/host-ui-kit/actions/LoadingState.js'),
+      import('../../../../src/client/host-ui-kit/list/EntityListRow.js'),
+      import('../../../../src/client/host-ui-kit/list/TagFilterBar.js'),
+      import('../../../../src/client/host-ui-kit/overlay-feedback/Popover.js'),
+    ]);
+  const spy =
+    <P,>(Real: FC<P>, sink: (p: P) => void): FC<P> =>
+    (p: P) => {
+      sink(p);
+      return h(Real as FC<P>, p as never);
+    };
+  const Passthrough = ({ children }: { children?: ReactNode }) => h('div', null, children);
+  return {
+    EnumBadgePicker: spy(enumMod.EnumBadgePicker, (p) => state.enumPickers.push(p as never)),
+    GroupedRelationPicker: spy(grpMod.GroupedRelationPicker, (p) => state.relationPickers.push(p as never)),
+    TagPicker: spy(tagMod.TagPicker, (p) => state.tagPickers.push(p as never)),
+    Badge: spy(badgeMod.Badge, (p) => state.badges.push(p as never)),
+    FieldRow: rowMod.FieldRow,
+    FieldGrid: gridMod.FieldGrid,
+    ActionButton: btnMod.ActionButton,
+    ActionBar: barMod.ActionBar,
+    SegmentedControlTabs: segMod.SegmentedControlTabs,
+    EntityListHeader: spy(hdrMod.EntityListHeader, (p) => state.headers.push(p as never)),
+    EntityListLayout: layoutMod.EntityListLayout,
+    EmptyState: spy(emptyMod.EmptyState, (p) => state.emptyStates.push(p as never)),
+    LoadingState: spy(loadMod.LoadingState, () => {
+      state.loadingStates += 1;
+    }),
+    EntityListRow: listRowMod.EntityListRow,
+    TagFilterBar: tagBarMod.TagFilterBar,
+    Popover: popMod.Popover,
+    // Not rendered by these cases.
+    EntityVersionHistoryView: () => null,
+    Dialog: Passthrough,
+    FormShell: Passthrough,
+    FormField: Passthrough,
+  };
+});
+
+vi.mock('../../src/entity/ac/frontend/hooks.js', () => ({
+  keys: {
+    all: ['acs'],
+    list: (q: unknown) => ['acs', 'list', q],
+    detail: (slug: string) => ['ac', slug],
+  },
+  useAc: () => ({ data: state.ac ?? undefined, isLoading: false, error: null }),
+  useAcs: (q: { status?: string } = {}) => ({
+    data: state.acsLoading ? undefined : state.acs,
+    isLoading: state.acsLoading,
+    q,
+  }),
+  useUpdateAc: () => ({
+    isPending: false,
+    mutateAsync: async ({ slug, input }: { slug: string; input: Record<string, unknown> }) => {
+      state.updates.push({ slug, input });
+      return { ...(state.ac as object), ...input };
+    },
+  }),
+  useDeleteAc: () => ({ isPending: false, mutateAsync: async () => ({ deleted: true }) }),
+  useCreateAc: () => ({ isPending: false, mutateAsync: async () => state.ac }),
+}));
+
+import { acRoutes } from '../../src/entity/ac/frontend/routes.js';
+import { AcDetail } from '../../src/entity/ac/frontend/detail-panel.js';
+import { AcsList, AC_LIST_EMPTY_TITLE } from '../../src/entity/ac/frontend/list-page.js';
+import { AcEditForm } from '../../src/entity/ac/frontend/edit-popover.js';
+import { acFrontendModule } from '../../src/entity/ac/frontend/module.js';
+import { deleteAcBody } from '../../src/entity/ac/frontend/delete-confirm.js';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const FRONTEND_SRC = join(import.meta.dirname, '../../src/entity/ac/frontend');
+const create = readFileSync(join(FRONTEND_SRC, 'create-dialog.tsx'), 'utf-8');
+const slash = readFileSync(join(FRONTEND_SRC, 'slash-create.tsx'), 'utf-8');
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+function sampleAc(over: Partial<Ac> = {}): Ac {
+  return {
+    slug: 'ac-sample',
+    title: 'The endpoint answers 204 on success.',
+    kind: 'requirement',
+    status: 'active',
+    verifies: [],
+    tags: ['m07'],
+    createdAt: '2026-10-10 10:00:00',
+    updatedAt: '2026-10-10 10:00:00',
+    ...over,
+  } as Ac;
+}
+
+function mod(type: string, label: string, slugs: string[] = []) {
+  return {
+    type,
+    label,
+    labelPlural: `${label}s`,
+    pathPrefix: `/${type}s`,
+    listByTags: async () => slugs.map((slug) => ({ slug })),
+  };
+}
+
+let container: HTMLDivElement;
+let root: Root;
+let qc: QueryClient;
+
+beforeEach(() => {
+  state.ac = sampleAc();
+  state.acs = [];
+  state.acsLoading = false;
+  state.params = { slug: 'ac-sample' };
+  state.search = {};
+  state.navigate = [];
+  state.updates = [];
+  state.modules = [mod('ac', 'Acceptance Criterion'), mod('endpoint', 'Endpoint'), mod('dto', 'DTO')];
+  state.enumPickers = [];
+  state.relationPickers = [];
+  state.tagPickers = [];
+  state.badges = [];
+  state.headers = [];
+  state.emptyStates = [];
+  state.loadingStates = 0;
+  state.confirms = [];
+  container = document.createElement('div');
+  document.body.appendChild(container);
+  root = createRoot(container);
+  qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+});
+
+afterEach(() => {
+  act(() => root.unmount());
+  container.remove();
+  document.body.innerHTML = '';
+});
+
+async function render(node: ReactNode) {
+  await act(async () => {
+    root.render(createElement(QueryClientProvider, { client: qc }, node));
+  });
+  // Let `useQueries` resolve its candidate lists.
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 20));
+  });
+}
+
+function routeTable() {
+  const routes = acRoutes({ rootRoute: {} } as never) as unknown as Array<{
+    path: string;
+    component: FC;
+  }>;
+  return new Map(routes.map((r) => [r.path, r]));
+}
+
+function buttonByText(text: string, scope: ParentNode = document): HTMLButtonElement | undefined {
+  return Array.from(scope.querySelectorAll('button')).find(
+    (b) => b.textContent?.trim() === text,
+  ) as HTMLButtonElement | undefined;
+}
+
+const lastPicker = (values: string[]) =>
+  [...state.enumPickers]
+    .reverse()
+    .find((p) => JSON.stringify(p.options.map((o) => o.value)) === JSON.stringify(values));
+
+describe('[entity:ac-detail] /acs/:slug', () => {
+  it('[entity:ac-detail] is registered under /acs/$slug and renders breadcrumb, view switcher, Delete — no Edit, no deprecated banner', async () => {
+    const routes = routeTable();
+    // url `/acs/:slug` — TanStack spells the path param `$slug`.
+    const detail = routes.get('/acs/$slug');
+    expect(detail).toBeDefined();
+    expect(routes.has('/acs/$slug/history')).toBe(true);
+
+    state.ac = sampleAc({ status: 'deprecated' });
+    await render(createElement(detail!.component));
+
+    const text = container.textContent ?? '';
+    // Breadcrumb: list label + the criterion.
+    expect(text).toContain('Acceptance Criterions');
+    expect(text).toContain('The endpoint answers 204 on success.');
+    // View switcher (details / history).
+    expect(container.querySelector('[role=tablist]')).not.toBeNull();
+    // Delete on the route's toolbar; no Edit button anywhere.
+    expect(buttonByText('Delete', container)).toBeDefined();
+    expect(buttonByText('Edit', container)).toBeUndefined();
+    // No deprecated banner — a deprecated criterion is a struck-through title.
+    expect(text).not.toMatch(/This AC is deprecated/);
+    const title = container.querySelector('textarea[aria-label="Title"]') as HTMLTextAreaElement;
+    expect(title.value).toBe('The endpoint answers 204 on success.');
+    expect(title.style.textDecoration).toBe('line-through');
+    // Slug: a read-only badge under the title.
+    expect(container.querySelector('[data-testid="ac-slug"]')?.textContent).toContain('ac-sample');
+    // Tags: `TagPicker` in the `collapsed` variant.
+    expect(state.tagPickers.at(-1)?.variant).toBe('collapsed');
+    // Find references, empty.
+    expect(text).toContain('Not referenced by any page.');
+    // `verifies` has no drag handle / manual order.
+    expect(container.querySelector('[draggable="true"]')).toBeNull();
+  });
+
+  it('[entity:ac-detail] Delete asks through the host confirmation window (ac-delete), then goes to the list', async () => {
+    const onConfirm = (e: Event) => {
+      const d = (e as CustomEvent).detail as { kind: string; title: string; body: string; onConfirm: () => void };
+      state.confirms.push(d);
+      d.onConfirm();
+    };
+    window.addEventListener('c4s:confirm-open', onConfirm);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ references: [], total: 2 }), { status: 200 }));
+    try {
+      await render(createElement(routeTable().get('/acs/$slug')!.component));
+      await act(async () => {
+        buttonByText('Delete', container)!.click();
+        await new Promise((r) => setTimeout(r, 20));
+      });
+      expect(state.confirms).toHaveLength(1);
+      expect(state.confirms[0]!.kind).toBe('ac-delete');
+      expect(state.confirms[0]!.body).toBe(deleteAcBody('ac-sample', 2));
+      expect(state.navigate.at(-1)).toMatchObject({ to: '/acs' });
+    } finally {
+      window.removeEventListener('c4s:confirm-open', onConfirm);
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('[entity:ac-detail] the ac-delete sentence drops the reference clause at zero', () => {
+    expect(deleteAcBody('ac-x', 0)).toBe(
+      'Delete AC `ac-x`? This cannot be undone. Consider marking it as `deprecated` instead — this preserves history and references.',
+    );
+    expect(deleteAcBody('ac-x', 3)).toContain('3 page(s) reference this AC and will become broken.');
+  });
+});
+
+describe('[ac:ac-pole-kind-na-stronie-detalu-ac-zmieni] kind on the AC detail page', () => {
+  it('[ac:ac-pole-kind-na-stronie-detalu-ac-zmieni] Kind is an EnumBadgePicker (requirement / edge-case) and a pick is saved', async () => {
+    await render(
+      createElement(AcDetail, { slug: 'ac-sample', onRenamed: () => undefined }),
+    );
+    const picker = lastPicker(['requirement', 'edge-case']);
+    expect(picker, 'EnumBadgePicker over the kind enum').toBeDefined();
+    expect(picker!.value).toBe('requirement');
+    // No radio buttons — the old control is gone.
+    expect(container.querySelector('input[type=radio]')).toBeNull();
+
+    await act(async () => {
+      buttonByText('requirement', container)!.click();
+    });
+    await act(async () => {
+      buttonByText('edge-case', container)!.click();
+    });
+    expect(lastPicker(['requirement', 'edge-case'])!.value).toBe('edge-case');
+    // Autosave (debounced) carries the new kind.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 700));
+    });
+    expect(state.updates.at(-1)?.input.kind).toBe('edge-case');
+  });
+});
+
+describe('[ac:ac-pole-status-na-stronie-detalu-ac-zmie] status on the AC detail page', () => {
+  it('[ac:ac-pole-status-na-stronie-detalu-ac-zmie] Status is an EnumBadgePicker (active / deprecated) and a pick is saved', async () => {
+    await render(
+      createElement(AcDetail, { slug: 'ac-sample', onRenamed: () => undefined }),
+    );
+    const picker = lastPicker(['active', 'deprecated']);
+    expect(picker, 'EnumBadgePicker over the status enum').toBeDefined();
+    expect(picker!.value).toBe('active');
+
+    await act(async () => {
+      buttonByText('active', container)!.click();
+    });
+    await act(async () => {
+      buttonByText('deprecated', container)!.click();
+    });
+    expect(lastPicker(['active', 'deprecated'])!.value).toBe('deprecated');
+    // Deprecated → struck-through title, no banner.
+    const title = container.querySelector('textarea[aria-label="Title"]') as HTMLTextAreaElement;
+    expect(title.style.textDecoration).toBe('line-through');
+    expect(container.textContent).not.toMatch(/This AC is deprecated/);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 700));
+    });
+    expect(state.updates.at(-1)?.input.status).toBe('deprecated');
+  });
+});
+
+describe('[ac:ac-panel-verifies-na-stronie-detalu-ac-g] verifies panel on the AC detail page', () => {
+  it('[ac:ac-panel-verifies-na-stronie-detalu-ac-g] one group per registered type, targets grouped by their type', async () => {
+    state.modules = [
+      mod('ac', 'Acceptance Criterion'),
+      mod('endpoint', 'Endpoint', ['get-users']),
+      mod('dto', 'DTO', ['user-dto']),
+      mod('ui-view', 'UI View'),
+    ];
+    state.ac = sampleAc({
+      verifies: [
+        { type: 'endpoint', slug: 'get-users' },
+        { type: 'dto', slug: 'user-dto' },
+      ],
+    });
+    await render(
+      createElement(AcDetail, {
+        slug: 'ac-sample',
+        onRenamed: () => undefined,
+        onOpenEntity: () => undefined,
+      }),
+    );
+
+    const props = state.relationPickers.at(-1)!;
+    // One group per type in the registry — `ac` included — in registry order.
+    expect(props.groups.map((g) => g.key)).toEqual(['ac', 'endpoint', 'dto', 'ui-view']);
+    expect(props.groups.map((g) => g.label)).toEqual(['Acceptance Criterion', 'Endpoint', 'DTO', 'UI View']);
+    // Each target sits in its own type's group.
+    expect((props as unknown as { selected: Record<string, string[]> }).selected).toEqual({
+      endpoint: ['get-users'],
+      dto: ['user-dto'],
+    });
+    const text = container.textContent ?? '';
+    for (const label of ['Acceptance Criterion', 'Endpoint', 'DTO', 'UI View']) expect(text).toContain(label);
+    // Valid targets get the ↗ open button, not a broken badge.
+    expect(buttonByText('↗', container)).toBeDefined();
+    expect(state.badges.filter((b) => b.variant === 'broken')).toHaveLength(0);
+  });
+
+  it('[entity:ac-detail] a dead verifies target renders as a broken Badge', async () => {
+    state.ac = sampleAc({ verifies: [{ type: 'endpoint', slug: 'gone-endpoint' }] });
+    await render(createElement(AcDetail, { slug: 'ac-sample', onRenamed: () => undefined }));
+    const broken = state.badges.filter((b) => b.variant === 'broken');
+    expect(broken.length).toBeGreaterThan(0);
+    expect(broken.at(-1)!.label).toBe('missing');
+  });
+});
+
+describe('[entity:ac-list] /acs', () => {
+  it('[entity:ac-list] is registered under /acs and renders the header with status and kind filters side by side', async () => {
+    const list = routeTable().get('/acs');
+    expect(list).toBeDefined();
+    state.acs = [sampleAc(), sampleAc({ slug: 'ac-two', title: 'Second criterion.', kind: 'edge-case' })];
+    await render(createElement(list!.component));
+
+    const header = state.headers.at(-1)!;
+    expect(header.title).toBe('Acceptance Criteria');
+    // Count = length of the fetched list.
+    expect(header.count).toBe(2);
+    // Both filters in the header's `filters` slot, next to each other.
+    const filters = container.querySelector('[data-testid="ac-list-filters"]')!;
+    const tablists = filters.querySelectorAll('[role=tablist]');
+    expect(tablists).toHaveLength(2);
+    expect(tablists[0]!.textContent).toContain('Active');
+    expect(tablists[0]!.textContent).toContain('Deprecated');
+    expect(tablists[1]!.textContent).toContain('Requirement');
+    expect(tablists[1]!.textContent).toContain('Edge case');
+    // "New …" action.
+    expect(buttonByText('New AC', container)).toBeDefined();
+    // Rows.
+    expect(container.textContent).toContain('Second criterion.');
+    // No pagination.
+    expect(container.textContent).not.toMatch(/Page \d+ of/);
+  });
+
+  it('[entity:ac-list] state loading — a LoadingState stands in for the rows', async () => {
+    state.acsLoading = true;
+    await render(createElement(routeTable().get('/acs')!.component));
+    expect(state.loadingStates).toBeGreaterThan(0);
+    expect(state.emptyStates).toHaveLength(0);
+  });
+
+  it('[entity:ac-list] state empty — one EmptyState with the type text and no filter reset', async () => {
+    state.acs = [];
+    await render(
+      createElement(AcsList, {
+        search: 'nothing-matches',
+        tagFilter: [],
+        onSearchChange: () => undefined,
+        onTagToggle: () => undefined,
+        onSelect: () => undefined,
+      }),
+    );
+    expect(state.emptyStates.length).toBeGreaterThan(0);
+    const empty = state.emptyStates.at(-1)!;
+    expect(empty.title).toBe(AC_LIST_EMPTY_TITLE);
+    expect(empty.action).toBeUndefined();
+    expect(container.textContent).toContain(AC_LIST_EMPTY_TITLE);
+    expect(container.textContent).not.toMatch(/clear filters|reset/i);
+  });
+});
+
+describe('[entity:ac-detail] create and edit windows', () => {
+  it('[entity:ac-detail] ac-edit: Kind and Status are EnumBadgePickers, Remove opens ac-delete', async () => {
+    await render(createElement(AcEditForm, { entity: sampleAc(), onClose: () => undefined }));
+    expect(lastPicker(['requirement', 'edge-case'])?.value).toBe('requirement');
+    expect(lastPicker(['active', 'deprecated'])?.value).toBe('active');
+    expect(container.querySelector('input[type=radio]')).toBeNull();
+    expect(buttonByText('Remove', container)).toBeDefined();
+  });
+
+  it('[entity:ac-detail] the create dialog and the /ac popover pick Kind through EnumBadgePicker, not radios', () => {
+    for (const src of [create, slash]) {
+      expect(src).toMatch(/<EnumBadgePicker\s+options=\{AC_KIND_OPTIONS\}/);
+      expect(src).not.toMatch(/type="radio"/);
+    }
+  });
+});
+
+describe('[entity:ac-detail] chip and card — own deleted-entity branch', () => {
+  it('[entity:ac-detail] chip: a clickable "⚠ {slug}" button; card: a non-clickable broken frame', async () => {
+    const Chip = acFrontendModule.renderChip as unknown as FC<{ slug: string; entity: null; onOpen: () => void }>;
+    const Card = acFrontendModule.renderCard as unknown as FC<{ slug: string; entity: null; onOpen: () => void }>;
+    const opened: string[] = [];
+    await render(
+      createElement('div', null,
+        createElement(Chip, { slug: 'ac-gone', entity: null, onOpen: () => opened.push('chip') }),
+        createElement(Card, { slug: 'ac-gone', entity: null, onOpen: () => opened.push('card') }),
+      ),
+    );
+    const chip = buttonByText('⚠ ac-gone', container);
+    expect(chip).toBeDefined();
+    await act(async () => chip!.click());
+    expect(opened).toEqual(['chip']);
+    expect(container.textContent).toContain('⚠ broken: ac "ac-gone"');
+    // The card's broken frame is not a button.
+    const frames = Array.from(container.querySelectorAll('button')).filter((b) =>
+      b.textContent?.includes('broken: ac'),
+    );
+    expect(frames).toHaveLength(0);
+    // `Badge variant='broken'` is not used in the chip slot.
+    expect(state.badges.filter((b) => b.variant === 'broken')).toHaveLength(0);
+  });
+});

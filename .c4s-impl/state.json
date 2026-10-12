@@ -1,5 +1,5 @@
 {
-  "iteration": 31,
+  "iteration": 37,
   "conventions": [
     {
       "label": "L12 (Host UI Kit) — implementor M34",
@@ -86,7 +86,7 @@
         "u6-plugin-dto-detail-and-list",
         "u7-plugin-ui-view-detail-and-list"
       ],
-      "startCommit": null
+      "startCommit": "86850f0d952ca61f63c29e1205e5a67f62767e3d"
     },
     {
       "n": 5,
@@ -541,16 +541,38 @@
         }
       ],
       "wave": 4,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "u5-plugin-ac-detail-and-list/p1-l11-l12",
+          "layers": [
+            "L11",
+            "L12"
+          ],
+          "slugs": [
+            "ac-detail",
+            "ac-list",
+            "ac-panel-verifies-na-stronie-detalu-ac-g",
+            "ac-pole-kind-na-stronie-detalu-ac-zmieni",
+            "ac-pole-status-na-stronie-detalu-ac-zmie"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "86850f0d952ca61f63c29e1205e5a67f62767e3d",
+      "baseCommit": "86850f0d952ca61f63c29e1205e5a67f62767e3d",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "u6-plugin-dto-detail-and-list",

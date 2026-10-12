@@ -17,6 +17,7 @@ import { createElement, useEffect, useRef, useState } from 'react';
 import { CheckSquare } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { clientPluginHost } from '@c4s/plugin-runtime';
+import { EnumBadgePicker } from '@c4s/plugin-runtime/ui';
 import {
   SlashPopoverShell,
   insertEmbed,
@@ -31,6 +32,7 @@ import { toast } from '../../../frontend-kit/host-events.js';
 import { AC_POPOVER_KIND, AC_TITLE_MAX_LENGTH, AC_TYPE } from '../../../identity.js';
 import type { AcKind } from '../../../types.js';
 import { keys as acKeys, useCreateAc } from './hooks.js';
+import { AC_KIND_OPTIONS } from './enum-options.js';
 
 /**
  * The tagging convention (see `acSystemPrompt.narrativeBlock`) applied to the
@@ -150,16 +152,12 @@ function AcSlashCreateForm({
 
       <div className="mt-2 flex items-center gap-3">
         <FieldLabel>Kind</FieldLabel>
-        {(['requirement', 'edge-case'] as const).map((k) => (
-          <label
-            key={k}
-            className="text-[12px] flex items-center gap-1"
-            style={{ color: 'var(--c-muted)' }}
-          >
-            <input type="radio" checked={kind === k} onChange={() => setKind(k)} />
-            {k}
-          </label>
-        ))}
+        {/* 2.1.16 — `EnumBadgePicker`, the same control as on the detail page. */}
+        <EnumBadgePicker
+          options={AC_KIND_OPTIONS}
+          value={kind}
+          onChange={(v) => setKind(v as AcKind)}
+        />
       </div>
 
       <div className="mt-2">
