@@ -7,3 +7,6 @@
   - src/server/services/release-file-roots.test.ts `[section:m17reldisk]` bundle manifest test — TypeError in sanitizeConfigForBundle (`claudeUsePreset` of undefined): test fixture config lacks the agent block (m17-plik-release-roots).
 - test:e2e: running.
 → reopen m28-bramki-git, m22-skille, m17-plik-release-roots (only the failing slug each).
+- test:e2e: 230 tests, 208 passed, 3 failed, 19 skipped; 5 files red:
+  - "environment has no endpoint/plan — seed one first" (empty seed): artifact-threads-panel, entity-version-history, plan-footer, envelope-entity-pages ×2 — the same precondition set as the 2.1.12 and 2.1.13 runs (proven identical on main then).
+  - ac-envelope › "/ac is offered once and opens its own popover": slash menu 0 rows — same shape as last run's /uiview flake (passed 3/3 solo). The branch does not touch the slash menu / envelope boot. Solo re-runs ordered in run 2.
