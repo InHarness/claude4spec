@@ -48,5 +48,10 @@
     ],
     "packet": ".c4s-impl/packets/u3-m19-list-pattern-and-missing-rows/"
   },
-  "only": []
+  "only": [
+    {
+      "slug": "ac-slug-usunietej-encji-w-element-list-n"
+    }
+  ],
+  "verifierFinding": ".c4s-impl/runs/system-r1.md"
 }

@@ -16,3 +16,4 @@
 ## System verification
 
 - Static system verifier: 27/27 rows covered (15 ac incl. 2 deprecated, 9 ui-view, stubs, dev-0001 sent, regression/trace). Full suite pending in env-runner `impl-2-1-15-to-2-1-16`.
+- system round 1: u3 reopened — ElementList.render.test.ts failed to collect (registry mock lacked registerEntity via boot-plugins graph); fixed by mocking runtime/boot-plugins. Fix commit sits on top (not squashed into u3's unit commit, later units follow it).

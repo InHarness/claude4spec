@@ -56,6 +56,14 @@ vi.mock('../../../core/plugin-host/host.js', () => ({
 }));
 vi.mock('../../../entities/openEntity.js', () => ({ openEntityHandler: () => undefined }));
 vi.mock('../../../tiptap/EditorContext.js', () => ({ useEditorBridge: () => null }));
+// ElementList → shared → ChipResolver → state/brokenRefs → runtime/boot-plugins,
+// whose real graph (mountFrontend → … → entities/diagram/plugin) calls
+// `registerEntity` at module load against the registry mock above. Cut the
+// graph here, exporting exactly what brokenRefs imports from it.
+vi.mock('../../../runtime/boot-plugins.js', () => ({
+  frontendPluginsBooted: Promise.resolve(),
+  pluginBootPending: () => false,
+}));
 
 const { ElementListRender } = await import('./ElementList.js');
 

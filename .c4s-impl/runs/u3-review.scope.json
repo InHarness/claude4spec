@@ -40,5 +40,6 @@
     "jobs": []
   },
   "stateDir": ".c4s-impl/",
-  "diff": "git diff 23621f4c0f5d271cd6313c1593ad8ad66e7d3e9c..HEAD -- ':!.c4s-impl'"
+  "diff": "git show df9940b8 -- ':!.c4s-impl'",
+  "previousReview": ".c4s-impl/review/u3-m19-list-pattern-and-missing-rows.json"
 }
