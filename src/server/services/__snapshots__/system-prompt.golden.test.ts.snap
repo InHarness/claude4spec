@@ -40,7 +40,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -408,7 +408,7 @@ Always communicate with the user in Deutsch, regardless of the language they wri
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -525,7 +525,7 @@ Always communicate with the user in Deutsch, regardless of the language they wri
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -642,7 +642,7 @@ Always communicate with the user in Deutsch, regardless of the language they wri
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -790,7 +790,7 @@ Always communicate with the user in Deutsch, regardless of the language they wri
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -898,7 +898,7 @@ Always communicate with the user in Deutsch, regardless of the language they wri
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -1000,7 +1000,7 @@ brief-tools is scoped automatically to this brief — there is no path parameter
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -1223,7 +1223,7 @@ Always communicate with the user in Deutsch, regardless of the language they wri
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -1333,7 +1333,7 @@ Always communicate with the user in Deutsch, regardless of the language they wri
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -1450,7 +1450,7 @@ Always communicate with the user in Deutsch, regardless of the language they wri
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -1498,7 +1498,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -1706,7 +1706,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -1915,7 +1915,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -2130,7 +2130,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -2340,7 +2340,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -2551,7 +2551,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -2754,7 +2754,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -3086,7 +3086,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -3284,7 +3284,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -3487,7 +3487,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -3701,7 +3701,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -3913,7 +3913,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -4118,7 +4118,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -4528,7 +4528,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -4742,7 +4742,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -4956,7 +4956,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -5170,7 +5170,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -5384,7 +5384,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -5598,7 +5598,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -5812,7 +5812,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -6026,7 +6026,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -6232,7 +6232,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -6446,7 +6446,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -6660,7 +6660,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -6858,7 +6858,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -7068,7 +7068,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -7433,7 +7433,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -7787,7 +7787,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -8015,7 +8015,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
@@ -8238,7 +8238,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 
 <project_writing_skill slug="layered-vertical-slices" title="Layered &quot;vertical&quot; slices">
 This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.
-Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.
+Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.
 
 You do not know its conventions yet, and this block does not summarise them.
   1. Before your first tool call in this thread, call load_skill_file("layered-vertical-slices") and read it.
