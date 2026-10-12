@@ -1,5 +1,5 @@
 {
-  "iteration": 49,
+  "iteration": 59,
   "conventions": [
     {
       "label": "L12 (Host UI Kit) — implementor M34",
@@ -93,7 +93,7 @@
       "units": [
         "u8-plugin-endpoint-detail-history-list"
       ],
-      "startCommit": null
+      "startCommit": "6366c24de6347de0499eff0378b3b75f57879114"
     }
   ],
   "units": [
@@ -839,16 +839,40 @@
         }
       ],
       "wave": 5,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "u8-plugin-endpoint-detail-history-list/p1-l5-l12",
+          "layers": [
+            "L5",
+            "L11",
+            "L12"
+          ],
+          "slugs": [
+            "endpoint-detail",
+            "endpoint-history",
+            "endpoint-list",
+            "ac-lista-endpointow-bez-zadnej-encji-i-l",
+            "ac-wiersz-listy-endpointow-pokazuje-meto",
+            "ac-wiersz-listy-endpointow-pokazuje-path"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "99978acb23ee3bce12b92cc2709973bd0254c9cb",
+      "baseCommit": "6366c24de6347de0499eff0378b3b75f57879114",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     }
   ],
   "entityTypes": [

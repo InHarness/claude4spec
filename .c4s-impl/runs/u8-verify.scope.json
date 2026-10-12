@@ -1,0 +1,63 @@
+{
+  "unit": {
+    "id": "u8-plugin-endpoint-detail-history-list",
+    "goal": "Typ `endpoint` ma własną trasę detalu według wzorca M13: nagłówek z metodą w `EnumBadgePicker` i ze ścieżką, opis w `DocEditor` i pole „Find references”. Historia to `EntityVersionHistoryView` na trasie `/$slug/history`, z pustym stanem dla encji bez wersji lub usuniętej. Wiersz listy ma chip metody, ścieżkę jako treść główną, summary w drugiej linii i slug na końcu. Brak encji i brak wyników filtra dają ten sam stan pusty. Znikają: `emptyState` zakładki, przycisk Edit, legenda diffu JSON, tombstone w historii oraz wspólny komponent `TagCreatePopover` (tworzenie tagu przejmuje `TagPicker` w wariancie `collapsed`).",
+    "recipe": {
+      "pages": [
+        {
+          "key": "plugins/modules/c4s-plugin-api-contracts/endpoint.md",
+          "change": "all",
+          "context": {
+            "offset": 1,
+            "limit": 1,
+            "anchors": [
+              "aaihelh6"
+            ]
+          }
+        },
+        {
+          "key": "plugins/modules/c4s-plugin-api-contracts/endpoint.md",
+          "context": {
+            "offset": 16,
+            "limit": 1,
+            "anchors": [
+              "69i6wnvo"
+            ]
+          }
+        },
+        {
+          "key": "plugins/modules/c4s-plugin-api-contracts/endpoint.md",
+          "context": {
+            "offset": 19,
+            "limit": 1,
+            "anchors": [
+              "dhh869qt"
+            ]
+          }
+        }
+      ],
+      "entities": [
+        {
+          "type": "ui-view",
+          "slugs": [
+            "endpoint-detail",
+            "endpoint-history",
+            "endpoint-list"
+          ]
+        },
+        {
+          "type": "ac",
+          "slugs": [
+            "ac-lista-endpointow-bez-zadnej-encji-i-l",
+            "ac-wiersz-listy-endpointow-pokazuje-meto",
+            "ac-wiersz-listy-endpointow-pokazuje-path"
+          ]
+        }
+      ]
+    },
+    "jobs": []
+  },
+  "stateDir": ".c4s-impl/",
+  "scope": "unit",
+  "only": []
+}

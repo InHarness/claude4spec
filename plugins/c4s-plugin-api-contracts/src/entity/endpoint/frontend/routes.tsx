@@ -13,20 +13,21 @@
 
 import type { FC } from 'react';
 import { createRoute, useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import { EntityVersionHistoryView } from '@c4s/plugin-runtime/ui';
+import { Trash } from 'lucide-react';
+import { ActionButton, EntityVersionHistoryView } from '@c4s/plugin-runtime/ui';
 import type { RouteTreeFragment } from '@c4s/plugin-runtime';
 import { ENDPOINT_PATH_PREFIX, ENDPOINT_TYPE } from '../../../identity.js';
 import { EntityBreadcrumbBar } from '../../../frontend-kit/EntityBreadcrumbBar.js';
 import { toDetail, toList, toPage, type Navigate } from '../../../frontend-kit/navigation.js';
 import { Pane, RouteBody } from '../../../frontend-kit/route-shell.js';
-import { useEndpoint } from './hooks.js';
+import { useDeleteEndpoint, useEndpoint } from './hooks.js';
+import { confirmAndDeleteEndpoint } from './delete-confirm.js';
 import { EndpointsList } from './list-page.js';
 import { EndpointDetail } from './detail-panel.js';
 
-
 type ListSearch = { q?: string; tag?: string };
 
-function EndpointsIndexRoute() {
+export function EndpointsIndexRoute() {
   const navigate = useNavigate() as Navigate;
   const search = useSearch({ strict: false }) as ListSearch;
   return (
@@ -52,10 +53,25 @@ function EndpointsIndexRoute() {
   );
 }
 
-function EndpointDetailRoute() {
+/**
+ * 2.1.16 (M13 detail pattern, `endpoint-detail`) — the ROUTE renders the
+ * breadcrumb (ending with the endpoint's method and path), the view switcher
+ * and Delete; there is no Edit button (fields edit in place and save
+ * themselves). Delete asks through the host's confirmation window
+ * (`endpoint-delete`), then goes to the list.
+ */
+export function EndpointDetailRoute() {
   const navigate = useNavigate() as Navigate;
   const { slug } = useParams({ strict: false }) as { slug: string };
   const { data: endpoint } = useEndpoint(slug);
+  const remove = useDeleteEndpoint();
+
+  async function handleDelete() {
+    if (!endpoint) return;
+    if (await confirmAndDeleteEndpoint(endpoint, (s) => remove.mutateAsync(s))) {
+      toList(navigate, ENDPOINT_PATH_PREFIX);
+    }
+  }
 
   return (
     // RouteBody, not Pane: the detail panel renders a DocEditor for the
@@ -68,6 +84,17 @@ function EndpointDetailRoute() {
         path={endpoint?.path}
         view="details"
         hasHistory
+        actions={
+          endpoint ? (
+            <ActionButton
+              variant="ghost"
+              icon={<Trash size={12} />}
+              label="Delete"
+              onClick={() => void handleDelete()}
+              disabled={remove.isPending}
+            />
+          ) : undefined
+        }
       />
       <EndpointDetail
         // Resets the draft when navigating straight between two endpoints.
@@ -81,7 +108,12 @@ function EndpointDetailRoute() {
   );
 }
 
-function EndpointHistoryRoute() {
+/**
+ * 2.1.16 (`endpoint-history`) — a sibling route of the detail, not a panel in
+ * it: the kit's `EntityVersionHistoryView` gets only the type and the slug. Its
+ * empty state (no versions yet, or a deleted entity) is the kit's own.
+ */
+export function EndpointHistoryRoute() {
   const { slug } = useParams({ strict: false }) as { slug: string };
   const { data: endpoint } = useEndpoint(slug);
   return (
