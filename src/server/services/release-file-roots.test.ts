@@ -101,6 +101,7 @@ describe('release metadata file roots (2.1.14)', () => {
         { id: 'docs', name: 'Docs', dir: 'documentation', builtin: false, linkTargets: [] },
       ],
       entities: [],
+      agent: { claudeUsePreset: false, disableDirectFilesystemAccess: false },
     } as unknown as NormalizedConfig;
     const snapshot = {
       release,
