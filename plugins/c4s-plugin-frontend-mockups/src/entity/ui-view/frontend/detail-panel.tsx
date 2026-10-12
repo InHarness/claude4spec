@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, Monitor, Plus, Trash } from 'lucide-react';
+import { AlertTriangle, Monitor, Plus } from 'lucide-react';
 import { DocEditor } from '@c4s/plugin-runtime/ui';
 import { TagPicker } from '@c4s/plugin-runtime/ui';
 import { FieldGrid } from '@c4s/plugin-runtime/ui';
@@ -8,17 +8,10 @@ import { ActionButton } from '@c4s/plugin-runtime/ui';
 import { Badge } from '@c4s/plugin-runtime/ui';
 import { GroupedRelationPicker } from '@c4s/plugin-runtime/ui';
 import { useEntityDraftEditor } from '../../../frontend-kit/useEntityDraftEditor.js';
-import {
-  useDeleteUiView,
-  useUiView,
-  useUiViews,
-  useUpdateUiView,
-} from './hooks.js';
+import { useUiView, useUpdateUiView } from './hooks.js';
 import { useDesignSystems } from '../../design-system/frontend/hooks.js';
 import { useTags } from '@c4s/plugin-runtime';
 import { useReferences } from '@c4s/plugin-runtime';
-import { confirmDestructive, toast } from '../../../frontend-kit/host-events.js';
-import { deleteUiViewBody } from './delete-confirm.js';
 import { slugify } from '../../../identity.js';
 import { computeWarnings } from '../lint.js';
 import type {
@@ -30,7 +23,12 @@ import type {
 
 interface Props {
   slug: string;
-  onDeleted: () => void;
+  /**
+   * Part of the `detailPanel` props contract, not used here: 2.1.16 (M13 detail
+   * pattern) moves Delete to the detail ROUTE's toolbar (`routes.tsx`), so the
+   * panel never deletes.
+   */
+  onDeleted?: () => void;
   onRenamed: (newSlug: string) => void;
   onOpenEntity?: (type: EntityType, slug: string) => void;
   onOpenPage?: (rootId: string, path: string) => void;
@@ -60,6 +58,9 @@ const SUGGESTED_TYPES = [
   'date',
   'timestamp',
 ];
+
+/** name | in | type | req | default | description | ⚠ | × */
+const PARAM_GRID_COLUMNS = '1.4fr 0.8fr 1fr 60px 0.8fr 2fr 24px 24px';
 
 const PATH_PARAM_RE = /:([a-zA-Z_][a-zA-Z0-9_]*)/g;
 
@@ -96,16 +97,13 @@ function paramHasIssue(p: UiViewParam, idx: number, all: UiViewParam[], url: str
 
 export function UiViewDetail({
   slug,
-  onDeleted,
   onRenamed,
   onOpenEntity,
   onOpenPage,
 }: Props) {
   const { data: view, isLoading, error } = useUiView(slug);
   const update = useUpdateUiView();
-  const remove = useDeleteUiView();
   const { data: allTags = [] } = useTags();
-  const { data: allViews = [] } = useUiViews();
   const { data: designSystems = [] } = useDesignSystems();
   const { data: refs = [] } = useReferences('ui-view', view?.slug ?? null);
 
@@ -139,37 +137,6 @@ export function UiViewDetail({
         update.mutateAsync({ slug: entity.slug, input: { description: description || null } }),
     },
   });
-
-  async function handleDelete() {
-    if (!view) return;
-    /**
-     * 0.2.78 — the wording comes from `deleteUiViewBody`, shared with the chip
-     * and the card.
-     *
-     * It was inline here, and the sentence it built was subtly wrong: the
-     * reference warning REPLACED "This cannot be undone" instead of following
-     * it, so the more dangerous case — a view several pages cite — was the one
-     * that dropped the irreversibility notice. Now that three surfaces can
-     * delete, the sentence lives in one place and says both things in both
-     * cases.
-     *
-     * The count still comes from the panel's own `refs`, which it already holds
-     * and displays; only the phrasing is shared.
-     */
-    const ok = await confirmDestructive('ui-view-delete', {
-      title: 'Delete UI view?',
-      body: deleteUiViewBody(view.title, refs.length),
-      confirmLabel: 'Delete',
-    });
-    if (!ok) return;
-    try {
-      await remove.mutateAsync(view.slug);
-      onDeleted();
-      toast.success(`View ${view.title} deleted`);
-    } catch (err) {
-      toast.error((err as Error).message);
-    }
-  }
 
   function toggleTag(tagSlug: string) {
     if (!draft) return;
@@ -253,15 +220,6 @@ export function UiViewDetail({
           {!update.isPending && dirty && (
             <span style={{ color: 'var(--c-accent-ink, var(--c-accent))' }}>edited</span>
           )}
-          <span className="flex-1" />
-          <button
-            onClick={handleDelete}
-            className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px]"
-            style={{ color: 'var(--c-red, #c45a3b)' }}
-            title="Delete"
-          >
-            <Trash size={11} /> Delete
-          </button>
         </div>
 
         <div className="flex items-center gap-2 mt-2 mb-1">
@@ -344,50 +302,58 @@ export function UiViewDetail({
         </div>
 
         <div className="mt-6">
+        {/* 2.1.16 (`ui-view-detail`) — the parameters are a grid in the
+            `FieldRow` "Parameters": name | in | type | req | default |
+            description | ⚠ | ×, sorted by `in` (path → query → hash). The
+            warning names the path params the URL carries and `params` does not
+            declare; `+ Add parameter` appends a row; with no parameters the grid
+            says "No parameters defined yet.". */}
         <FieldRow label="Parameters" align="start">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="flex-1" />
-            <ActionButton label="add parameter" icon={<Plus size={11} />} variant="secondary" onClick={addParam} />
-          </div>
-          {missingFromParams.length > 0 && (
-            <div
-              className="mb-2 text-[11.5px] flex items-center gap-1.5"
-              style={{ color: 'var(--c-yellow-ink, #c4a24f)' }}
-            >
-              <AlertTriangle size={11} />
-              URL has path param{missingFromParams.length === 1 ? '' : 's'}{' '}
-              {missingFromParams.map((n) => `:${n}`).join(', ')} not declared in params[].
-            </div>
-          )}
-          {draft.params.length === 0 && (
-            <div className="text-[12.5px]" style={{ color: 'var(--c-subtle)' }}>
-              No parameters defined yet.
-            </div>
-          )}
-          {draft.params.length > 0 && (
-            <div
-              className="rounded-md overflow-x-auto"
-              style={{ background: 'var(--c-panel)', border: '1px solid var(--c-hair)' }}
-            >
-              <div style={{ minWidth: 760 }}>
+          <div
+            className="rounded-md overflow-x-auto"
+            style={{ background: 'var(--c-panel)', border: '1px solid var(--c-hair)' }}
+            data-testid="ui-view-params-grid"
+          >
+            <div style={{ minWidth: 760 }}>
+              <div
+                className="grid gap-2 px-3 py-1.5 text-[10.5px] uppercase font-mono tracking-wider"
+                style={{
+                  gridTemplateColumns: PARAM_GRID_COLUMNS,
+                  color: 'var(--c-subtle)',
+                  borderBottom: '1px solid var(--c-hair)',
+                }}
+                role="row"
+              >
+                <span role="columnheader">name</span>
+                <span role="columnheader">in</span>
+                <span role="columnheader">type</span>
+                <span role="columnheader">req</span>
+                <span role="columnheader">default</span>
+                <span role="columnheader">description</span>
+                <span role="columnheader" title="warning">⚠</span>
+                <span role="columnheader" title="remove">×</span>
+              </div>
+              {missingFromParams.length > 0 && (
                 <div
-                  className="grid gap-2 px-3 py-1.5 text-[10.5px] uppercase font-mono tracking-wider"
+                  className="px-3 py-1.5 text-[11.5px] flex items-center gap-1.5"
                   style={{
-                    gridTemplateColumns: '1.4fr 0.8fr 1fr 60px 0.8fr 2fr 24px 24px',
-                    color: 'var(--c-subtle)',
+                    color: 'var(--c-yellow-ink, #c4a24f)',
                     borderBottom: '1px solid var(--c-hair)',
                   }}
+                  role="alert"
+                  data-testid="ui-view-missing-path-params"
                 >
-                  <span>name</span>
-                  <span>in</span>
-                  <span>type</span>
-                  <span>req</span>
-                  <span>default</span>
-                  <span>description</span>
-                  <span />
-                  <span />
+                  <AlertTriangle size={11} />
+                  URL has path param{missingFromParams.length === 1 ? '' : 's'}{' '}
+                  {missingFromParams.map((n) => `:${n}`).join(', ')} not declared in params.
                 </div>
-                {sortedParams.map(({ p, idx }) => {
+              )}
+              {draft.params.length === 0 ? (
+                <div className="px-3 py-2 text-[12.5px]" style={{ color: 'var(--c-subtle)' }}>
+                  No parameters defined yet.
+                </div>
+              ) : (
+                sortedParams.map(({ p, idx }) => {
                   const issue = paramHasIssue(p, idx, draft.params, draft.url);
                   return (
                     <ParamRow
@@ -398,10 +364,18 @@ export function UiViewDetail({
                       onRemove={() => removeParam(idx)}
                     />
                   );
-                })}
+                })
+              )}
+              <div className="px-3 py-1.5">
+                <ActionButton
+                  label="Add parameter"
+                  icon={<Plus size={11} />}
+                  variant="secondary"
+                  onClick={addParam}
+                />
               </div>
             </div>
-          )}
+          </div>
         </FieldRow>
         </div>
 
@@ -448,8 +422,6 @@ export function UiViewDetail({
           )}
         </FieldRow>
         </div>
-        {/* allViews datalist suppress unused */}
-        {allViews.length === 0 && null}
       </FieldGrid>
     </div>
   );
@@ -470,7 +442,7 @@ function ParamRow({
     <div
       className="grid gap-2 px-3 py-1.5 items-center"
       style={{
-        gridTemplateColumns: '1.4fr 0.8fr 1fr 60px 0.8fr 2fr 24px 24px',
+        gridTemplateColumns: PARAM_GRID_COLUMNS,
         borderBottom: '1px solid var(--c-hair)',
       }}
     >

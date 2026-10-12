@@ -62,12 +62,22 @@ async function countReferences(slug: string): Promise<number> {
 /**
  * Ask, then delete. Answers whether the view is gone.
  *
+ * 2.1.16 (M13 detail pattern) — the callers are the detail ROUTE's toolbar
+ * Delete and the chip/card Shift+Alt+click.
+ * `remove` lets the route pass its delete mutation (so the shared query cache is
+ * invalidated); without it the API is called directly. The toast is the page's
+ * "View deleted".
+ *
  * `false` covers both "the user said no" and "the delete failed" on purpose: the
  * only thing every caller needs to branch on is whether the entity it was
  * rendering still exists. The failure is reported to the user here so no caller
  * has to remember to.
  */
-export async function confirmAndDeleteUiView(slug: string, title: string): Promise<boolean> {
+export async function confirmAndDeleteUiView(
+  slug: string,
+  title: string,
+  remove: (slug: string) => Promise<unknown> = (s) => uiViewsApi.remove(s),
+): Promise<boolean> {
   const refCount = await countReferences(slug);
   const ok = await confirmDestructive('ui-view-delete', {
     title: 'Delete UI view?',
@@ -76,8 +86,8 @@ export async function confirmAndDeleteUiView(slug: string, title: string): Promi
   });
   if (!ok) return false;
   try {
-    await uiViewsApi.remove(slug);
-    toast.success(`View ${title} deleted`);
+    await remove(slug);
+    toast.success('View deleted');
     return true;
   } catch (err) {
     toast.error((err as Error).message);

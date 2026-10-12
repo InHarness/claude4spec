@@ -1,0 +1,57 @@
+{
+  "unit": {
+    "id": "u7-plugin-ui-view-detail-and-list",
+    "goal": "Typ `ui-view` ma własną trasę detalu według wzorca M13. Przełącznik trzech zakładek opakowuje `SegmentedControlTabs` z katalogu i nie jest już długiem. Parametry to siatka `FieldRow` z flagą parametrów ścieżki brakujących w `params`. Doszło pole „Find references”. Lista pokazuje liczbę parametrów w wierszu oraz stany loading i empty. Chip i karta mają gałąź encji usuniętej, w której gesty z Alt są wyłączone. Znikają: `emptyState` w manifeście, przycisk Edit i użycie `TagCreatePopover`.",
+    "recipe": {
+      "pages": [
+        {
+          "key": "plugins/modules/c4s-plugin-frontend-mockups/ui-view/ui-view.md",
+          "change": "all",
+          "context": {
+            "offset": 1,
+            "limit": 2,
+            "anchors": [
+              "uvcel000",
+              "uvdep000"
+            ]
+          }
+        },
+        {
+          "key": "plugins/modules/c4s-plugin-frontend-mockups/ui-view/ui-view.md",
+          "context": {
+            "offset": 23,
+            "limit": 1,
+            "anchors": [
+              "uvrender"
+            ]
+          }
+        },
+        {
+          "key": "plugins/modules/c4s-plugin-frontend-mockups/ui-view/L5-ui.md",
+          "change": "all"
+        }
+      ],
+      "entities": [
+        {
+          "type": "ui-view",
+          "slugs": [
+            "ui-view-detail",
+            "ui-view-list"
+          ]
+        }
+      ]
+    },
+    "jobs": []
+  },
+  "stateDir": ".c4s-impl/",
+  "portion": {
+    "name": "u7-plugin-ui-view-detail-and-list/p1-l5-l12",
+    "layers": [
+      "L5",
+      "L11",
+      "L12"
+    ],
+    "packet": ".c4s-impl/packets/u7-plugin-ui-view-detail-and-list/"
+  },
+  "only": []
+}

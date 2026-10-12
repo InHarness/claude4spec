@@ -1,5 +1,5 @@
 {
-  "iteration": 43,
+  "iteration": 49,
   "conventions": [
     {
       "label": "L12 (Host UI Kit) — implementor M34",
@@ -725,16 +725,36 @@
         }
       ],
       "wave": 4,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "u7-plugin-ui-view-detail-and-list/p1-l5-l12",
+          "layers": [
+            "L5",
+            "L11",
+            "L12"
+          ],
+          "slugs": [
+            "ui-view-detail",
+            "ui-view-list"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "a8829e322f94fcaf9dbeaca68748d845c9e4240e",
+      "baseCommit": "a8829e322f94fcaf9dbeaca68748d845c9e4240e",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "u8-plugin-endpoint-detail-history-list",
