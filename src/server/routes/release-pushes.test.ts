@@ -237,8 +237,8 @@ describe('POST /api/release-pushes — gitSync of the git push hook (M25 + M28)'
     // Every push attempt is in the audit log as a success.
     const log = await request(app).get('/api/release-pushes').query({ releaseName: 'v1' });
     expect(log.status).toBe(200);
-    expect(log.body).toHaveLength(3);
-    expect(log.body.every((p: ReleasePushResponse) => p.status === 'success')).toBe(true);
+    expect(log.body.items).toHaveLength(3);
+    expect(log.body.items.every((p: ReleasePushResponse) => p.status === 'success')).toBe(true);
   });
 
   it('[ac:ac-gitservice-push-branch-pushuje-branch] pushOnPush pushes the branch carrying the release commit (git branch --contains resolveReleaseCommit), falling back to current HEAD when the commit is not found — not blindly HEAD', async () => {
