@@ -1,0 +1,5 @@
+{
+  "role": "reviewer",
+  "scope": { "kind": "unit", "id": "m10-zapis-planu", "base": "b940057" },
+  "findings": []
+}

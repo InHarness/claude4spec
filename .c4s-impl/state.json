@@ -210,7 +210,7 @@
     "m10-zapis-planu",
     "m28-gitsync-konsumenci"
    ],
-   "startCommit": null
+   "startCommit": "b940057f44c3a36a7ea3da95f5393e4a9d378ce8"
   }
  ],
  "units": [
@@ -1752,14 +1752,31 @@
     }
    ],
    "wave": 2,
-   "status": "pending",
+   "status": "verified",
    "blockedBy": null,
-   "startCommit": null,
-   "baseCommit": null,
-   "portions": [],
+   "startCommit": "b940057f44c3a36a7ea3da95f5393e4a9d378ce8",
+   "baseCommit": "b940057f44c3a36a7ea3da95f5393e4a9d378ce8",
+   "portions": [
+    {
+     "name": "m10-zapis-planu/p1-domain-l7",
+     "layers": [
+      "Domain",
+      "L7"
+     ],
+     "slugs": [
+      "section:jo0r7uh9",
+      "section:m10ws000"
+     ],
+     "status": "implemented",
+     "rounds": 1,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 1
    },
    "jobs": []
   },

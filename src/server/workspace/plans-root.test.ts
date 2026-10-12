@@ -1,9 +1,15 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { FileWatchRuntime, type WatchSubscriber } from '../fs/watcher.js';
-import { ReactionBinder } from '../fs/reactions.js';
+import type Database from 'better-sqlite3';
+import { createTestDb } from '../../../tests/helpers/test-db.js';
+import { FileWatchRuntime, type ScopedWatchRegistrar, type WatchSubscriber } from '../fs/watcher.js';
+import { ReactionBinder, validateKindRequirements } from '../fs/reactions.js';
+import { FileVersionService } from '../services/file-version.js';
+import { PagesFrontmatterIndexer } from '../services/pages-frontmatter-indexer.js';
+import { ChatService } from '../services/chat.js';
+import { PlanService } from '../services/plan.js';
 import { RootRegistry } from '../roots/registry.js';
 import { KIND_DECLARATIONS, PLAN_HEADER } from '../../shared/root-kinds.js';
 import { ANCHOR_LINE_RE } from '../../shared/anchor-pattern.js';
@@ -24,9 +30,11 @@ import { bindRegistryReactions, mountRegistryRoots } from './root-registry-runti
 
 const tmpDirs: string[] = [];
 const runtimes: FileWatchRuntime[] = [];
+const dbs: Database.Database[] = [];
 
 afterEach(async () => {
   for (const r of runtimes.splice(0)) await r.close();
+  for (const d of dbs.splice(0)) d.close();
   for (const d of tmpDirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
 });
 
@@ -174,5 +182,204 @@ describe('M10 — the `plans` root kind (2.1.8)', () => {
       expect.objectContaining({ kind: 'file:changed', rootId: 'plans', path: 'edit.md', origin: 'external' }),
     );
     expect(events.filter((e) => e.kind === 'plans:changed' || e.kind === 'plan:updated')).toEqual([]);
+  });
+});
+
+/**
+ * 2.1.14 — M10 jo0r7uh9 (Przebieg wywołania, steps 4–5) and m10ws000 (L7): the
+ * plan service writes the file through the M42 primitive with the phase chain
+ * switched off, then records the version itself with the caller's
+ * `changeSummary`, then broadcasts `plan:updated` with the version just
+ * recorded. `m10-plan-updated` requires nothing and runs in its own phase
+ * `notification`, with no `after: [capture]`.
+ *
+ * The rig is the registry built and bound the way the context build does it,
+ * every reaction the `plans` kind selects bound on the source — but each
+ * handler a SPY on its own WS, so any in-band chain run would show — plus a
+ * `PlanService` over the root's mount (store, writer, record store, serializer)
+ * exactly as `buildProjectContext` wires it.
+ */
+async function planServiceOnBoundPlansRoot() {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-plans-seq-'));
+  tmpDirs.push(cwd);
+  const db = createTestDb();
+  dbs.push(db);
+  db.prepare(`INSERT INTO chat_thread (id) VALUES (?)`).run('t1');
+  const runtime = new FileWatchRuntime({ fsEvents: false });
+  runtimes.push(runtime);
+  const w = runtime.scoped('context:p1#1');
+  const registry = new RootRegistry(USER_ROOTS);
+  const mounted = await mountRegistryRoots({ cwd, registry, userRoots: USER_ROOTS, w });
+  const mount = mounted.artifactMounts.get('plan')!;
+  const source = mounted.sourceByRootId.get(mount.rootId)!;
+
+  // Every chain handler records that it ran; the chain's own WS (base
+  // `file:changed`, `m10-plan-updated`'s handler) is kept apart from the service's.
+  const chainRuns: string[] = [];
+  const chainEvents: WsEvent[] = [];
+  const spy = (name: string): WatchSubscriber => ({
+    onChange: () => void chainRuns.push(name),
+    onUnlink: () => void chainRuns.push(name),
+  });
+  const ctx: CoreReactionContext = {
+    ws: { broadcast: (e: WsEvent) => void chainEvents.push(e) } as unknown as CoreReactionContext['ws'],
+    frontmatterIndexer: spy('m02-frontmatter-indexer'),
+    anchorInjectionFor: () => spy('m06-anchor-injection'),
+    sectionIndexer: spy('m06-section-indexer'),
+    todosIndexer: NOOP,
+    linkIndexer: NOOP,
+    versionCapture: spy('m17-capture'),
+    entityIndexer: NOOP,
+    releaseIndexer: NOOP,
+    sidebarReducer: NOOP,
+  };
+  const binder = new ReactionBinder(w, ctx);
+  bindRegistryReactions(registry, mounted.sourceByRootId, binder);
+
+  // The sequence log: what the file held when the version was recorded, the
+  // version recorded, and the service's broadcasts.
+  const order: string[] = [];
+  const serviceEvents: WsEvent[] = [];
+  const versions = new FileVersionService(db, mount.serializer);
+  const realRecord = versions.recordVersion.bind(versions);
+  let marker = '';
+  vi.spyOn(versions, 'recordVersion').mockImplementation(async (...args: Parameters<FileVersionService['recordVersion']>) => {
+    const onDisk = fs.readFileSync(path.join(mount.store.root, args[0]), 'utf-8');
+    order.push(`version:file-has-${onDisk.includes(marker) ? marker : 'OLD'}`);
+    const row = await realRecord(...args);
+    order.push(`version:recorded:${row?.version}`);
+    return row;
+  });
+  const serviceWs = {
+    broadcast: (e: WsEvent) => {
+      serviceEvents.push(e);
+      order.push(`broadcast:${e.kind}:${'version' in e ? String(e.version) : ''}`);
+    },
+  } as unknown as CoreReactionContext['ws'];
+  const indexer = new PagesFrontmatterIndexer(
+    new Map([[mount.rootId, mount.store]]),
+    { broadcast: () => {} } as unknown as CoreReactionContext['ws'],
+  );
+  const service = new PlanService({
+    plansPages: mount.store,
+    plansWatcher: mount.writer,
+    plansRecords: mount.store.records,
+    plansSerializer: mount.serializer,
+    pageVersions: versions,
+    chatService: new ChatService(db),
+    frontmatterIndexer: indexer,
+    ws: serviceWs,
+  });
+  return {
+    source,
+    binder,
+    mount,
+    service,
+    versions,
+    order,
+    serviceEvents,
+    chainRuns,
+    chainEvents,
+    setMarker: (m: string) => {
+      marker = m;
+      order.length = 0;
+      serviceEvents.length = 0;
+    },
+  };
+}
+
+describe('M10 — the plan write sequence: file → version → broadcast (2.1.14)', () => {
+  it('[section:jo0r7uh9] persist writes the file with the chain off, the service then records ONE version with the caller\'s changeSummary, and broadcasts plan:updated with the version just recorded — in that order', async () => {
+    const r = await planServiceOnBoundPlansRoot();
+
+    // Create through `update` (no plan pinned yet): version 1, summary from the caller.
+    r.setMarker('MARK1');
+    const first = await r.service.update({
+      threadId: 't1',
+      title: 'Rollout',
+      content: '## Step\n\nMARK1\n',
+      changeSummary: 'first draft',
+      changedBy: 'agent',
+    });
+    expect(r.order).toEqual(['version:file-has-MARK1', 'version:recorded:1', 'broadcast:plan:updated:1']);
+    expect(first.version).toBe(1);
+
+    // Update of an existing plan: version 2.
+    r.setMarker('MARK2');
+    const second = await r.service.update({
+      threadId: 't1',
+      content: '## Step\n\nMARK2\n',
+      expectedHash: first.hash,
+      changeSummary: 'second pass',
+      changedBy: 'agent',
+    });
+    expect(r.order).toEqual(['version:file-has-MARK2', 'version:recorded:2', 'broadcast:plan:updated:2']);
+    expect(second.version).toBe(2);
+    expect(r.serviceEvents).toEqual([
+      { kind: 'plan:updated', planPath: first.plan.path, threadId: 't1', version: 2, changedBy: 'agent' },
+    ]);
+
+    // The editor's Save — the same tail: file → version → broadcast.
+    r.setMarker('MARK3');
+    await r.service.updateContent({
+      path: first.plan.path,
+      content: second.plan.content.replace('MARK2', 'MARK3'),
+      expectedHash: second.hash,
+      changeSummary: 'edited by hand',
+      changedBy: 'user',
+    });
+    expect(r.order).toEqual(['version:file-has-MARK3', 'version:recorded:3', 'broadcast:plan:updated:3']);
+
+    // ONE row per call, each carrying the caller's summary — the service's own rows, nothing from a capture phase.
+    const rows = r.versions.listVersions(first.plan.path, r.mount.rootId);
+    expect(rows.map((v) => [v.version, v.changeSummary])).toEqual([
+      [3, 'edited by hand'],
+      [2, 'second pass'],
+      [1, 'first draft'],
+    ]);
+  });
+
+  it('[section:m10ws000] m10-plan-updated requires nothing and runs in its own phase `notification` with no `after`; the plan\'s own write runs no phase chain, so the definition is not fired in-band', async () => {
+    // Requirements: none — a kind selecting it without `m17-capture` passes the build check.
+    expect(() =>
+      validateKindRequirements({ ...KIND_DECLARATIONS.plans, reactions: ['m10-plan-updated'] }),
+    ).not.toThrow();
+
+    // Order: own phase `notification`, independent — no `after: [capture]`.
+    const subscriptions: Array<{ id?: string; phase?: string; after?: readonly string[] }> = [];
+    const registrar = {
+      subscribe: (_src: string, _sub: WatchSubscriber, opts: { id?: string; phase?: string; after?: readonly string[] }) =>
+        void subscriptions.push(opts),
+    } as unknown as ScopedWatchRegistrar;
+    const ctx = { ws: { broadcast: () => {} } } as unknown as CoreReactionContext;
+    new ReactionBinder(registrar, ctx).bindReaction('m10-plan-updated', 'artifacts:plan', 'plans', { rootId: 'plans' });
+    expect(subscriptions).toHaveLength(1);
+    expect(subscriptions[0]).toMatchObject({ id: 'm10-plan-updated', phase: 'notification', after: [] });
+
+    // Still bound to the `plans` root — but the service's own write fires neither it nor any other phase.
+    const r = await planServiceOnBoundPlansRoot();
+    expect(r.binder.isBound('m10-plan-updated', r.source)).toBe(true);
+    expect(r.binder.isBound('m17-capture', r.source)).toBe(true);
+    r.setMarker('MARK1');
+    const first = await r.service.update({
+      threadId: 't1',
+      title: 'Chain off',
+      content: '## Step\n\nMARK1\n',
+      changeSummary: 'first',
+      changedBy: 'agent',
+    });
+    r.setMarker('MARK2');
+    await r.service.update({
+      threadId: 't1',
+      content: '## Step\n\nMARK2\n',
+      expectedHash: first.hash,
+      changeSummary: 'second',
+      changedBy: 'agent',
+    });
+    expect(r.chainRuns).toEqual([]);
+    expect(r.chainEvents).toEqual([]);
+    // The broadcast is the service's, after its own recordVersion — exactly one per call.
+    expect(r.serviceEvents.filter((e) => e.kind === 'plan:updated')).toHaveLength(1);
+    expect(r.order.at(-1)).toBe('broadcast:plan:updated:2');
   });
 });
