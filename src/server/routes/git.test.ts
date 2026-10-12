@@ -184,6 +184,38 @@ describe('POST /api/git/fetch + GET /api/git/status (2.1.10)', () => {
     });
   });
 
+  it('[entity:git-status-response] 2.1.14: on detached HEAD GET /api/git/status reports branch null (every field present, typed) — and with branch null the release push and a `current`-mode release commit do not run (null), the pull commit is skipped, `named` still commits', async () => {
+    const head = (await git(['rev-parse', 'HEAD'], work)).trim();
+    await git(['checkout', head], work);
+    writeConfigJson(work, { enabled: true, syncPushOnPush: true });
+    const svc = new GitService(work, [work]);
+
+    const res = await request(appFor(svc)).get('/api/git/status');
+    expect(res.status).toBe(200);
+    expect(Object.keys(res.body).sort()).toEqual(
+      ['ahead', 'behind', 'branch', 'detected', 'isDirty', 'lastFetchedAt', 'remoteUrl', 'rootPath'].sort(),
+    );
+    expect(res.body.detected).toBe(true);
+    expect(typeof res.body.rootPath).toBe('string');
+    expect(typeof res.body.remoteUrl).toBe('string');
+    expect(res.body.branch).toBeNull();
+    expect(typeof res.body.isDirty).toBe('boolean');
+    expect(res.body.ahead).toBeNull();
+    expect(res.body.behind).toBeNull();
+    expect(res.body.lastFetchedAt === null || typeof res.body.lastFetchedAt === 'string').toBe(true);
+
+    fs.writeFileSync(path.join(work, 'page.md'), '# page v2\n');
+    expect(await svc.pushOnPush('main')).toBeNull();
+    expect(await svc.commitOnRelease({ name: 'v1', description: 'd' })).toBeNull();
+    expect(await svc.commitPull({ name: 'v1' })).toEqual({ status: 'skipped' });
+
+    await git(['branch', 'release-target', 'main'], work);
+    writeConfigJson(work, { enabled: true, commitTarget: { mode: 'named', branch: 'release-target' } });
+    const named = await svc.commitOnRelease({ name: 'v1', description: 'd' });
+    expect(named?.status).toBe('committed');
+    expect(named?.branch).toBe('release-target');
+  });
+
   it('[ac:ac-po-post-api-git-fetch-z-wynikiem-fetc-2] after a fetched POST /api/git/fetch the server emits git:status-changed to the project room', async () => {
     const gateway = { broadcast: vi.fn() };
     const ws = new ProjectWsEmitter(gateway as unknown as WsGateway, 'proj-1');

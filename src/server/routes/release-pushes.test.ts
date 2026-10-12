@@ -52,6 +52,15 @@ let other: string; // another clone that pushes first
 let db: Database.Database;
 let app: express.Express;
 let releaseId: number;
+let releasesFake: ReleaseService;
+let remoteAuthFake: RemoteAuthService;
+
+/** An app over the same fakes, whose release resolves to `releaseFilePath` (the marker file). */
+function appWithReleaseFile(releaseFilePath: string | null): express.Express {
+  const releases = { ...releasesFake, getReleaseFilePath: () => releaseFilePath } as unknown as ReleaseService;
+  const service = new ReleasePushService(db, releases, remoteAuthFake, new GitService(dir, [dir]), dir);
+  return express().use(express.json()).use('/api/release-pushes', releasePushesRouter(service)).use(errorHandler);
+}
 
 beforeEach(async () => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-release-push-'));
@@ -125,6 +134,8 @@ beforeEach(async () => {
     }),
   } as unknown as RemoteAuthService;
 
+  releasesFake = releases;
+  remoteAuthFake = remoteAuth;
   const gitService = new GitService(dir, [dir]);
   const service = new ReleasePushService(db, releases, remoteAuth, gitService, dir);
   app = express().use(express.json()).use('/api/release-pushes', releasePushesRouter(service)).use(errorHandler);
@@ -193,6 +204,69 @@ describe('POST /api/release-pushes — gitSync of the git push hook (M25 + M28)'
     expect(res.body.gitSync?.status).toBe('error');
     expect(res.body.gitSync?.recovery?.operation).toBe('push');
     expect(res.body.gitSync?.recovery?.kind).toBeUndefined();
+  });
+
+  it('[ac:ac-push-bez-upstream-przy-bledzie-sie] push() without upstream / on a network error / on non-fast-forward → gitSync { status: error, message }, while the release push itself stays recorded as success', async () => {
+    const expectGitErrorButPushSucceeded = async (): Promise<void> => {
+      const res = await request(app).post('/api/release-pushes').send({ releaseName: 'v1' });
+      expect(res.status).toBe(201);
+      expect(res.body.status).toBe('success');
+      expect(res.body.remoteReleaseId).toBe('99999999-aaaa-bbbb-cccc-dddddddddddd');
+      expect(res.body.gitSync?.status).toBe('error');
+      expect(typeof res.body.gitSync?.message).toBe('string');
+      expect(res.body.gitSync?.message).not.toBe('');
+    };
+
+    // (a) the current branch has no upstream (pin the push config against ambient global settings).
+    await git(['config', 'push.autoSetupRemote', 'false'], dir);
+    await git(['config', 'push.default', 'simple'], dir);
+    await git(['checkout', '-b', 'no-upstream'], dir);
+    await commitFile(dir, 'mine.md', 'mine', 'my change');
+    await expectGitErrorButPushSucceeded();
+    await git(['checkout', 'main'], dir);
+
+    // (b) non-fast-forward: the remote has commits the local branch lacks.
+    await remoteMovesAhead();
+    await commitFile(dir, 'mine-2.md', 'mine', 'my other change');
+    await expectGitErrorButPushSucceeded();
+
+    // (c) network error: the remote is gone.
+    fs.rmSync(bare, { recursive: true, force: true });
+    await expectGitErrorButPushSucceeded();
+
+    // Every push attempt is in the audit log as a success.
+    const log = await request(app).get('/api/release-pushes').query({ releaseName: 'v1' });
+    expect(log.status).toBe(200);
+    expect(log.body).toHaveLength(3);
+    expect(log.body.every((p: ReleasePushResponse) => p.status === 'success')).toBe(true);
+  });
+
+  it('[ac:ac-gitservice-push-branch-pushuje-branch] pushOnPush pushes the branch carrying the release commit (git branch --contains resolveReleaseCommit), falling back to current HEAD when the commit is not found — not blindly HEAD', async () => {
+    // The release marker file is committed on `release-target` only; HEAD stays on main.
+    await git(['checkout', '-b', 'release-target'], dir);
+    await commitFile(dir, 'v1.json', '{"name":"v1"}', 'v1\n\nfirst');
+    const markerSha = (await git(['rev-parse', 'HEAD'], dir)).trim();
+    await git(['checkout', 'main'], dir);
+    // Local main moves ahead of its upstream too — a blind HEAD push would publish it.
+    await commitFile(dir, 'local-main.md', 'main', 'main change');
+    // As after a commit-target release with switchAfterRelease off: the release file stays on disk.
+    fs.writeFileSync(path.join(dir, 'v1.json'), '{"name":"v1"}');
+    const remoteMainBefore = (await git(['rev-parse', 'main'], bare)).trim();
+
+    const res = await request(appWithReleaseFile(path.join(dir, 'v1.json'))).post('/api/release-pushes').send({ releaseName: 'v1' });
+    expect(res.status).toBe(201);
+    expect(res.body.gitSync).toMatchObject({ status: 'pushed', branch: 'release-target' });
+    expect((await git(['rev-parse', 'release-target'], bare)).trim()).toBe(markerSha);
+    // Current HEAD's branch was not what got pushed.
+    expect((await git(['rev-parse', 'main'], bare)).trim()).toBe(remoteMainBefore);
+
+    // Fallback: the release file was never committed (no marker commit) → the current branch (HEAD) is pushed.
+    fs.writeFileSync(path.join(dir, 'never-committed.json'), '{}');
+    const fallback = await request(appWithReleaseFile(path.join(dir, 'never-committed.json')))
+      .post('/api/release-pushes')
+      .send({ releaseName: 'v1' });
+    expect(fallback.body.gitSync).toMatchObject({ status: 'pushed', branch: 'main' });
+    expect((await git(['rev-parse', 'main'], bare)).trim()).toBe((await git(['rev-parse', 'main'], dir)).trim());
   });
 
   it('[entity:release-push-response] a push the remote accepts returns gitSync.status "pushed" without recovery', async () => {

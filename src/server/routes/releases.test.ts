@@ -199,12 +199,69 @@ describe('POST /api/releases — commit-on-release (M28)', () => {
     expect(res.status).toBe(201);
     expect(res.body.gitSync.status).toBe('committed');
 
-    // ASSUMPTION:dev-0013 — the message is `{name}\n\n{description}` (no `Release ` prefix).
+    // 2.1.14 (M28 aqys9dje): the message is `{name}\n\n{description}` — no `Release ` prefix.
     expect(git('log', '-1', '--format=%B').trim()).toBe('v1\n\nfirst cut');
     const tracked = git('ls-tree', '-r', '--name-only', 'HEAD').split('\n');
     expect(tracked).toContain('pages/a.md');
     expect(tracked).toContain('.claude4spec/entities/tags.json');
     expect(tracked).toContain('.claude4spec/config.json');
+  });
+
+  /** Rewrite the project's `git` config block (read per call — hot-reload). */
+  function setGitConfig(gitCfg: Record<string, unknown>): void {
+    fs.writeFileSync(
+      path.join(cwd, '.claude4spec', 'config.json'),
+      JSON.stringify({
+        $schemaVersion: 4,
+        name: 'p',
+        roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }],
+        git: gitCfg,
+      }),
+    );
+  }
+
+  const branchExists = (name: string): boolean => {
+    try {
+      git('rev-parse', '--verify', `refs/heads/${name}`);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  it('[ac:ac-gdy-docelowy-branch-tryb-named-zniknal] named target branch gone between configuration and release → gitSync status error with recovery.kind branch-missing, the branch is not created, the release stays created', async () => {
+    git('branch', 'release-target');
+    setGitConfig({ enabled: true, commitTarget: { mode: 'named', branch: 'release-target' } });
+    git('branch', '-D', 'release-target'); // removed after it was configured
+
+    const res = await request(app).post('/api/releases').send({ name: 'v1', description: 'first cut' });
+    expect(res.status).toBe(201);
+    expect(res.body.name).toBe('v1');
+    expect(res.body.gitSync.status).toBe('error');
+    expect(res.body.gitSync.recovery.operation).toBe('commit-on-release');
+    expect(res.body.gitSync.recovery.kind).toBe('branch-missing');
+    expect(res.body.gitSync.recovery.intentPrompt).toBeTruthy();
+    expect(branchExists('release-target')).toBe(false);
+
+    const persisted = await request(app).get('/api/releases/v1');
+    expect(persisted.status).toBe(200);
+    expect(persisted.body.name).toBe('v1');
+  });
+
+  it('[ac:ac-gdy-explicit-committarget-base-tryb-new] explicit commitTarget.base (mode new) gone before the release → gitSync status error with recovery.kind base-missing, the release itself succeeds', async () => {
+    git('branch', 'base-branch');
+    setGitConfig({ enabled: true, commitTarget: { mode: 'new', template: 'release/{release_slug}', base: 'base-branch' } });
+    git('branch', '-D', 'base-branch');
+
+    const res = await request(app).post('/api/releases').send({ name: 'v1', description: 'first cut' });
+    expect(res.status).toBe(201);
+    expect(res.body.name).toBe('v1');
+    expect(res.body.gitSync.status).toBe('error');
+    expect(res.body.gitSync.recovery.kind).toBe('base-missing');
+    expect(branchExists('release/v1')).toBe(false);
+
+    const persisted = await request(app).get('/api/releases/v1');
+    expect(persisted.status).toBe(200);
   });
 });
 

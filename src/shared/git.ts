@@ -19,7 +19,12 @@ export interface GitRepoInfo {
   rootPath: string | null;
   /** URL of remote `origin`; `null` when no origin or not detected. */
   remoteUrl: string | null;
-  /** Current branch; `null` when not detected or detached HEAD. */
+  /**
+   * Current branch; `null` when not detected, on detached HEAD or an unborn
+   * branch (fresh repo, 0 commits). 2.1.14: with `null` the release push and a
+   * `current`-mode release commit do not run (`gitSync: null`), the pull commit
+   * answers `skipped`; `named`/`new` release commits run on detached HEAD too.
+   */
   branch: string | null;
   /** `true` when `git status --porcelain` is non-empty. */
   isDirty: boolean;

@@ -355,14 +355,52 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "pending",
+   "status": "verified",
    "blockedBy": null,
-   "startCommit": null,
-   "baseCommit": null,
-   "portions": [],
+   "startCommit": "0780fbf8e0ece605b1d86cc1e536600b4f0541f3",
+   "baseCommit": "cae54f9eefaf540bc40bbc15b79748eb47ec1142",
+   "portions": [
+    {
+     "name": "m28-bramki-git/p1-domain-l4",
+     "layers": [
+      "Domain",
+      "L4"
+     ],
+     "slugs": [
+      "git-status-response",
+      "ac-commit-release-u-ma-komunikat-name-pu",
+      "ac-przy-committarget-named-bez-branch-al",
+      "ac-przy-config-git-enabled-false-commitp",
+      "ac-przy-detached-head-pushonpush-zwraca",
+      "ac-w-swiezym-repo-bez-commitow-commitonr",
+      "ac-w-swiezym-repo-bez-commitow-commitonr-2",
+      "ac-w-trybie-committarget-named-przy-deta",
+      "ac-commitforrelease-przed-git-add-kan",
+      "ac-commitforrelease-staguje-tez-releasesdir",
+      "ac-gdy-docelowy-branch-tryb-named-zniknal",
+      "ac-gdy-explicit-committarget-base-tryb-new",
+      "ac-gdy-git-add-niczego-nie-wniosl-commi",
+      "ac-gdy-wyrenderowana-nazwa-nowego-brancha",
+      "ac-gitservice-commitpull-latest-commituje",
+      "ac-gitservice-push-branch-pushuje-branch",
+      "ac-push-bez-upstream-przy-bledzie-sie",
+      "ac-w-trybie-config-git-committarget-mode-n",
+      "ac-w-trybie-named-new-gdy-tree-po-stage-je",
+      "ac-w-trybie-new-commitforrelease-tworzy-n"
+     ],
+     "status": "implemented",
+     "rounds": 2,
+     "partial": 0,
+     "uncovered": [
+      "ac-gdy-docelowy-branch-tryb-named-zniknal",
+      "ac-gdy-git-add-niczego-nie-wniosl-commi"
+     ],
+     "only": []
+    }
+   ],
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 2
    },
    "jobs": []
   },
