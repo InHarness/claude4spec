@@ -776,14 +776,32 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "pending",
+   "status": "verified",
    "blockedBy": null,
-   "startCommit": null,
-   "baseCommit": null,
-   "portions": [],
+   "startCommit": "b5f2071dfc22e35d92d3e19ac1f3baa263189aff",
+   "baseCommit": "b5f2071dfc22e35d92d3e19ac1f3baa263189aff",
+   "portions": [
+    {
+     "name": "m06-zakres-kotwic/p1-l7-l13",
+     "layers": [
+      "L7",
+      "L13"
+     ],
+     "slugs": [
+      "ac-na-korzeniu-rodzaju-ktory-wybral-m06",
+      "ac-naglowek-dopisany-do-planu-nie-dostaj",
+      "ac-naglowek-dopisany-do-planu-nie-dostaj-2"
+     ],
+     "status": "implemented",
+     "rounds": 1,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 1
    },
    "jobs": []
   },

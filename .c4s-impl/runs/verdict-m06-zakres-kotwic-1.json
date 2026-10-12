@@ -1,0 +1,12 @@
+{
+  "role": "verifier",
+  "scope": {"kind": "unit", "id": "m06-zakres-kotwic"},
+  "release": "2.1.14",
+  "rows": [
+    {"slug": "ac-na-korzeniu-rodzaju-ktory-wybral-m06", "type": "ac", "level": 2, "status": "covered", "evidence": "src/server/services/section-indexer-integrity.test.ts:173 — expect(anchorHeadingLevels('pages')).toEqual({ min: 1, max: 6 }); after mintAnchors: expect(lines[at - 1]).toMatch(/^<!-- anchor: [a-z0-9]{8} -->$/) for '##### Fine print', levels [[1,'aaaaaa11'],[5,<anchor>],[6,<anchor>]], section_index heading_level 5. Code: section-indexer.ts:178-182 mintInto filters by ALL_HEADING_LEVELS; root-kinds.ts anchorHeadingLevels reads kindSelects(kind,'m06-section-indexer')."},
+    {"slug": "ac-naglowek-dopisany-do-planu-nie-dostaj", "type": "ac", "level": 2, "status": "covered", "evidence": "src/server/workspace/plans-root.test.ts:128 — disk write-back: expect(onDisk[onDisk.indexOf('##### Fine print') - 1]).not.toMatch(ANCHOR_LINE_RE) with '## Step' anchored (pass ran); service path: injectAnchorsFor('plan', …) → [[1,null],[2,<anchor>],[5,null]]. Code: anchor-injection.ts:85,115 both pass artifactAnchorLevels(kind) = {2,4} for plans (no m06-section-indexer)."},
+    {"slug": "ac-naglowek-dopisany-do-planu-nie-dostaj-2", "type": "ac", "level": 2, "status": "covered", "evidence": "src/server/workspace/plans-root.test.ts:150 — disk: expect(onDisk.slice(0, 5)).toEqual(['---','type: plan','title: Rollout','---','# Rollout']) and levelsAndAnchors(...)[0] toEqual [1,null]; service: expect(viaService.split('\\n')[0]).toBe('# Rollout')."},
+    {"slug": "goal:m06-zakres-kotwic", "level": 2, "status": "covered", "evidence": "src/shared/root-kinds.ts:491-516 (HeadingLevelRange, ALL_HEADING_LEVELS 1–6, INJECTION_ONLY_HEADING_LEVELS 2–4, anchorHeadingLevels by kindSelects 'm06-section-indexer', not kind name); src/server/services/anchor-injection.ts:58-91,115 (service write path injectAnchorsFor used by plan.ts:747,1079 and disk write-back subscriber share artifactAnchorLevels); src/server/services/section-indexer.ts:178-182 (indexer kinds: all six levels). Removed hard MIN_LEVEL/MAX_LEVEL constants (ASSUMPTION:dev-0014)."}
+  ],
+  "suite": {"command": "npm run typecheck", "exitCode": 0, "summary": "tsc --noEmit across root and workspace plugins: no errors. Tests not run (build rule: env-runner only); changed signature injectArtifactAnchors keeps its default range, no other caller or golden fixture affected."}
+}

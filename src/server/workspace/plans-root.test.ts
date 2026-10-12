@@ -8,7 +8,9 @@ import { RootRegistry } from '../roots/registry.js';
 import { KIND_DECLARATIONS, PLAN_HEADER } from '../../shared/root-kinds.js';
 import { ANCHOR_LINE_RE } from '../../shared/anchor-pattern.js';
 import type { Root, WsEvent } from '../../shared/types.js';
-import { artifactAnchorInjectionSubscriber } from '../services/anchor-injection.js';
+import { artifactAnchorInjectionSubscriber, injectAnchorsFor } from '../services/anchor-injection.js';
+import { parseSections } from '../../shared/section-parser.js';
+import { anchorHeadingLevels } from '../../shared/root-kinds.js';
 import { registerCoreReactions, type CoreReactionContext } from './core-reactions.js';
 import { bindRegistryReactions, mountRegistryRoots } from './root-registry-runtime.js';
 
@@ -109,6 +111,58 @@ describe('M10 — the `plans` root kind (2.1.8)', () => {
     // The frontmatter block is untouched and the anchor is written exactly once.
     expect(lines.slice(0, 4)).toEqual(['---', 'type: plan', 'title: Rollout', '---']);
     expect(lines.filter((l) => ANCHOR_LINE_RE.test(l))).toHaveLength(1);
+  });
+
+  /**
+   * M06 `v9zrytp8` (2.1.14): the plans kind selects injection without the
+   * section indexer, so its range is `##`–`####` — on BOTH triggers: the
+   * write-back of a file written on disk, and the service's own write path
+   * (`PlanService.update` / plan creation run `injectAnchorsFor('plan', …)`).
+   */
+  function levelsAndAnchors(body: string): Array<[number, string | null]> {
+    return parseSections(body, { frontmatter: false }).sections.map((s) => [s.level, s.anchor]);
+  }
+  const PLAN_BODY = ['# Rollout', '', '## Step', '', '##### Fine print', '', 'x', ''];
+
+  it('[ac:ac-naglowek-dopisany-do-planu-nie-dostaj] a `#####` heading added to a plan gets no anchor — written on disk, and written through the plan service', async () => {
+    expect(anchorHeadingLevels('plans')).toEqual({ min: 2, max: 4 });
+    const { cwd, w, plans, source } = await boundPlansRoot();
+
+    // Trigger two: the write-back of a plan file written on disk.
+    const file = path.join(cwd, plans.dir, 'deep.md');
+    fs.writeFileSync(file, ['---', 'type: plan', 'title: Rollout', '---', ...PLAN_BODY].join('\n'));
+    await w.flush(source, 'deep.md');
+    const onDisk = fs.readFileSync(file, 'utf-8').split('\n');
+    expect(onDisk[onDisk.indexOf('##### Fine print') - 1]).not.toMatch(ANCHOR_LINE_RE);
+    expect(onDisk[onDisk.indexOf('## Step') - 1]).toMatch(ANCHOR_LINE_RE); // the pass did run
+    expect(levelsAndAnchors(onDisk.slice(4).join('\n')).find(([l]) => l === 5)).toEqual([5, null]);
+
+    // Trigger one: the service's own write path — the same range.
+    const viaService = injectAnchorsFor('plan', PLAN_BODY.join('\n'));
+    expect(levelsAndAnchors(viaService)).toEqual([
+      [1, null],
+      [2, expect.stringMatching(/^[a-z0-9]{8}$/)],
+      [5, null],
+    ]);
+  });
+
+  it('[ac:ac-naglowek-dopisany-do-planu-nie-dostaj-2] a `#` heading added to a plan gets no anchor — written on disk, and written through the plan service', async () => {
+    const { cwd, w, plans, source } = await boundPlansRoot();
+
+    // Trigger two: the write-back of a plan file written on disk.
+    const file = path.join(cwd, plans.dir, 'title.md');
+    fs.writeFileSync(file, ['---', 'type: plan', 'title: Rollout', '---', ...PLAN_BODY].join('\n'));
+    await w.flush(source, 'title.md');
+    const onDisk = fs.readFileSync(file, 'utf-8').split('\n');
+    // The `#` stays the first content after the frontmatter — no anchor line between.
+    expect(onDisk.slice(0, 5)).toEqual(['---', 'type: plan', 'title: Rollout', '---', '# Rollout']);
+    expect(onDisk[onDisk.indexOf('## Step') - 1]).toMatch(ANCHOR_LINE_RE); // the pass did run
+    expect(levelsAndAnchors(onDisk.slice(4).join('\n'))[0]).toEqual([1, null]);
+
+    // Trigger one: the service's own write path — the same range.
+    const viaService = injectAnchorsFor('plan', PLAN_BODY.join('\n'));
+    expect(viaService.split('\n')[0]).toBe('# Rollout');
+    expect(levelsAndAnchors(viaService)[0]).toEqual([1, null]);
   });
 
   it('an outside edit of a plan file is announced by the base `file:changed`; `m10-plan-updated` is not fired by the watcher', async () => {

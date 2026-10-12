@@ -7,6 +7,7 @@ import { createTestDb } from '../../../tests/helpers/test-db.js';
 import { PagesService } from './pages.js';
 import { SectionIndexerService } from './section-indexer.js';
 import { parseSections } from '../../shared/section-parser.js';
+import { anchorHeadingLevels, kindSelects } from '../../shared/root-kinds.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 
 /**
@@ -167,6 +168,32 @@ describe('section index integrity', () => {
     expect(anchored.map((s) => s.anchor)).toEqual(['aaaaaa11', expect.stringMatching(/^[a-z0-9]{8}$/)]);
     await indexer.indexPage('pages', 'doc.md');
     expect(indexed()).toEqual(['Top', 'New']);
+  });
+
+  it('[ac:ac-na-korzeniu-rodzaju-ktory-wybral-m06] on a root of a kind that selected m06-section-indexer, anchor injection gives a `#####` heading without an anchor an anchor', async () => {
+    // The `pages` kind selects the indexer — its range is all six levels.
+    expect(kindSelects('pages', 'm06-section-indexer')).toBe(true);
+    expect(anchorHeadingLevels('pages')).toEqual({ min: 1, max: 6 });
+    const body = ['<!-- anchor: aaaaaa11 -->', '# Top', '', '##### Fine print', 'text', '', '###### Finer', ''].join('\n');
+    await pages.write('deep.md', { body });
+
+    expect(await indexer.mintAnchors('pages', 'pages:pages', 'deep.md', () => {})).toBe(true);
+    const after = (await pages.read('deep.md')).body;
+    const lines = after.split('\n');
+    const at = lines.indexOf('##### Fine print');
+    expect(lines[at - 1]).toMatch(/^<!-- anchor: [a-z0-9]{8} -->$/);
+    const sections = parseSections(after, { frontmatter: false }).sections;
+    expect(sections.map((s) => [s.level, s.anchor])).toEqual([
+      [1, 'aaaaaa11'],
+      [5, expect.stringMatching(/^[a-z0-9]{8}$/)],
+      [6, expect.stringMatching(/^[a-z0-9]{8}$/)],
+    ]);
+    // …and the indexer then addresses the `#####` section by that anchor.
+    await indexer.indexPage('pages', 'deep.md');
+    const row = db.prepare('SELECT heading_level FROM section_index WHERE anchor = ?').get(sections[1]!.anchor) as
+      | { heading_level: number }
+      | undefined;
+    expect(row?.heading_level).toBe(5);
   });
 
   it('full rebuild with suppress runs m06-anchor-injection before indexing each file (s2r014vw)', async () => {

@@ -13,6 +13,7 @@ import {
   parseSections,
   type ParsedSection,
 } from '../../shared/section-parser.js';
+import { ALL_HEADING_LEVELS } from '../../shared/root-kinds.js';
 import type { MarkdownFileStore } from './markdown-file-store.js';
 import type { WatchSubscriber, WatchScope, WatchOrigin } from '../fs/watcher.js';
 import { reactionRootId, pageSource } from '../fs/sources.js';
@@ -174,7 +175,11 @@ export class SectionIndexerService implements WatchSubscriber {
     // project modifies no file on its account.
     const sections = parseSections(body, { frontmatter: false }).sections;
     const taken = new Set(sections.map((sec) => sec.anchor).filter((a): a is string => a !== null));
-    const missing = sections.filter((sec) => sec.anchor === null);
+    // M06 `v9zrytp8` (2.1.14): this write-back serves only roots of kinds that
+    // select `m06-section-indexer`, whose range (`anchorHeadingLevels`) is all
+    // six levels — the indexer indexes each, so a `#####` gets an anchor too.
+    const levels = ALL_HEADING_LEVELS;
+    const missing = sections.filter((sec) => sec.anchor === null && sec.level >= levels.min && sec.level <= levels.max);
     if (missing.length === 0) return null;
     const minted = missing.map(() => {
       const a = this.freshAnchor(taken);
