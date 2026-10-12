@@ -87,6 +87,18 @@ async function settle(ms = 0) {
   });
 }
 
+/**
+ * React Query flushes observer notifications through `setTimeout(cb, 0)`
+ * (notifyManager). A timer scheduled while fake timers are ticking — the
+ * batcher's flush starting the refetch — is placed at `now + 1`, so a 0 ms
+ * advance never reaches it: advance past it so the refetched data reaches the
+ * mounted detail.
+ */
+async function flushQueryNotifications() {
+  await settle(1);
+  await settle(1);
+}
+
 async function mount() {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, staleTime: Infinity } },
@@ -129,7 +141,7 @@ describe('host entity invalidation — open detail follows an external change', 
     await settle(499);
     expect(calls.detail).toBe(1);
     await settle(1);
-    await settle();
+    await flushQueryNotifications();
 
     expect(calls.detail).toBe(2);
     expect(host.textContent).toBe('After');
@@ -147,7 +159,7 @@ describe('host entity invalidation — open detail follows an external change', 
     stored = { slug: 'get-users', title: 'Edited on disk' };
     act(() => socket().emit({ kind: 'entity:indexed', type: 'endpoint', slug: 'get-users' }));
     await settle(500);
-    await settle();
+    await flushQueryNotifications();
 
     expect(calls.detail).toBe(2);
     expect(host.textContent).toBe('Edited on disk');
@@ -158,7 +170,7 @@ describe('host entity invalidation — open detail follows an external change', 
     await mount();
     act(() => socket().emit({ kind: 'entity:changed', entityType: 'endpoint', slug: 'post-users', action: 'update' }));
     await settle(500);
-    await settle();
+    await flushQueryNotifications();
     expect(calls.detail).toBe(1);
     expect(calls.list).toBe(2);
   });

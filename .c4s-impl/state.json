@@ -177,8 +177,8 @@
           "slugs": [
             "ac-zmiana-encji-zapisana-z-zewnatrz-agen"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "only": [
             {
