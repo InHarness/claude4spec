@@ -95,6 +95,9 @@ export type CliErrorCode =
   // the path segment), so it never travelled the `INVALID_ARGUMENT` path the
   // core would have used. Exits 4 with the other "you asked for something the
   // contract does not offer" codes.
+  // 2.1.14 (M11 L14 `m11dcmds`) — neither an M11 code nor one mapped from the
+  // core: it comes from the M02 page router and is passed on untranslated, for
+  // an unknown root and a system root (`plans`) alike, the roots in `hint`.
   | 'ROOT_NOT_FOUND'
   // 0.2.65 M31 — `c4s list-workspaces` (mode `registry-read`) could not read
   // `~/.claude4spec/workspaces.json` at all: invalid JSON, a shape that is not a

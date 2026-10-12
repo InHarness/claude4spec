@@ -65,8 +65,10 @@ export function releasesRouter(
       );
       ws?.broadcast({ kind: 'release:created', releaseId: release.id, name: release.name });
       // M28: best-effort git commit AFTER the release is persisted. Non-fatal —
-      // gitSync rides this synchronous response (null when off / no repo) and a
-      // failure surfaces as a warning toast, never blocking release creation.
+      // gitSync rides this synchronous response and never blocks release
+      // creation. 2.1.14 (M17 hybasevj): `null` when the `commitOnRelease` gate
+      // did not let it through (git off, no repo, detached/unborn HEAD in
+      // `current` mode); the UI reacts only to `status: 'error'`.
       const gitSync = gitService ? await gitService.commitOnRelease(release) : null;
       res.status(201).json({ ...release, gitSync });
     } catch (err) {
@@ -93,7 +95,10 @@ export function releasesRouter(
       // 0.1.124: async — assignUnreleased may run a best-effort `commitPull`
       // BEFORE assigning the SQLite release_id cache (commit-then-assign, see
       // ReleaseService.updateRelease's doc comment); gitSync rides this
-      // response the same way it does on `POST /api/releases`.
+      // response. 2.1.14 (M17 mbjdcls0): unlike `POST /api/releases`, it is
+      // `null` ONLY when no pull ran (`assignUnreleased` not `true`, or no
+      // GitService wired) — git off / no repo / detached HEAD answer
+      // `commitPull`'s `{ status: 'skipped' }`.
       const release = await releases.updateRelease({
         releaseName: releaseNameParam(req.params.name),
         name: body.name,

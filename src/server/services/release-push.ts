@@ -165,8 +165,11 @@ export class ReleasePushService {
         errorMessage: null,
       });
       // M28: best-effort git push AFTER the remote push succeeded. Non-fatal —
-      // a git failure surfaces as gitSync.status='error' (warning toast) and
-      // never alters the recorded push status. Attached to this synchronous
+      // a git failure surfaces as gitSync.status='error' (the UI's
+      // `git-sync-recover` window) and never alters the recorded push status.
+      // 2.1.14 (M25 wosnh845 step 6): `pushOnPush` answers `null` when its gate
+      // does not let it through (git off, push-sync off, no repo, detached HEAD
+      // — also with an explicit branch). Attached to this synchronous
       // response only; not persisted (getById() carries gitSync: null).
       //
       // 0.1.125: resolve the branch actually carrying this release's marker

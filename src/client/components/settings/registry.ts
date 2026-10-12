@@ -189,6 +189,15 @@ export function assembleSettings(contributions: SettingsContribution[]): Assembl
     }));
 }
 
+/**
+ * The elements of a card that render under the current draft — an element
+ * without a `visible` predicate always renders. The one filter the card frame
+ * applies, exported so the catalog is checkable without a browser.
+ */
+export function visibleElements(elements: readonly SettingsElementDecl[], ctx: ElementContext): SettingsElementDecl[] {
+  return elements.filter((e) => !e.visible || e.visible(ctx));
+}
+
 /** Every config key an element writes — `configKey` and `keys` together. */
 export function elementKeys(e: SettingsElementDecl): ConfigKeyPath[] {
   return [...(e.configKey ? [e.configKey] : []), ...(e.keys ?? [])];

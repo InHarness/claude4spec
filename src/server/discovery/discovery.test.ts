@@ -273,8 +273,8 @@ describe('discovery core', () => {
      * The hash is of the FILE, not of the payload that fit. A hash of the returned
      * prefix would look identical and arm a guard that can never pass.
      *
-     * ASSUMPTION:dev-0008 — the criterion's `{ content, truncationHint }` wording
-     * predates the 2.1.6 envelope; only its hash clause is asserted here.
+     * 2.1.14 — the criterion no longer pins a response contract; it is the hash
+     * clause alone, which is exactly what is asserted here.
      */
     it('[ac:ac-get-page-zwraca-hash-liczony-z-pelneg] a truncated page still carries the hash of the whole file', async () => {
       const body = `# H\n\n${'x'.repeat(DEFAULT_BUDGET_CHARS + 1000)}\n`;
@@ -283,7 +283,13 @@ describe('discovery core', () => {
       const page = await c.getPage({ rootId: 'pages', path: 'big.md' });
       expect(page.truncated).toBe(true);
       expect(page.results[0]!.body!.length).toBeLessThan(body.length);
-      expect(page.hash).toBe(createHash('sha256').update(body, 'utf-8').digest('hex'));
+      const sha = (text: string) => createHash('sha256').update(text, 'utf-8').digest('hex');
+      // The hash of the file on disk — what a write's `expectedHash` is compared against…
+      expect(page.hash).toBe(sha(await fs.readFile(path.join(cwd, 'pages', 'big.md'), 'utf-8')));
+      expect(page.hash).toBe(sha(body));
+      // …never of the part that fit in the budget.
+      expect(page.hash).not.toBe(sha(page.results[0]!.body!));
+      expect(page.hash).not.toBe(sha(`# H\n${page.results[0]!.body!}`));
     });
 
     /**
@@ -431,14 +437,51 @@ describe('discovery core', () => {
       expect(whole.results[1]).not.toHaveProperty('anchor');
     });
 
-    it('get_page takes no line window — a stale `range` is REFUSED, never ignored', async () => {
+    it('[ac:ac-get-page-wywolane-z-parametrem-range] get_page with a stale `range` ends in INVALID_ARGUMENT, not in the whole page', async () => {
       await writePage('pages', 'a.md', '<!-- anchor: aaaa0001 -->\n# A\n\none\ntwo\n');
       const c = core([pagesRoot()]);
+      // The same page without `range` answers — so the refusal is about the
+      // parameter, and the page it would otherwise have returned is real.
+      const whole = await c.getPage({ rootId: 'pages', path: 'a.md' });
+      expect(whole.results).toHaveLength(1);
       // Ignoring it would hand the whole page to a caller who believes it narrowed.
-      await expect(c.getPage({ rootId: 'pages', path: 'a.md', range: { start: 4, end: 4 } })).rejects.toMatchObject({
-        code: 'INVALID_ARGUMENT',
-        message: expect.stringContaining('no line window'),
-      });
+      // Every spelling a stale caller might send — the old object, a CLI string —
+      // reaches the same refusal.
+      for (const range of [{ start: 4, end: 4 }, '1:20']) {
+        let answer: unknown = undefined;
+        let refusal: unknown = undefined;
+        try {
+          answer = await c.getPage({ rootId: 'pages', path: 'a.md', range });
+        } catch (err) {
+          refusal = err;
+        }
+        expect(answer).toBeUndefined();
+        expect(refusal).toMatchObject({ code: 'INVALID_ARGUMENT', message: expect.stringContaining('no line window') });
+      }
+    });
+
+    it('[ac:ac-message-odmowy-get-page-z-parametrem] the refusal message of get_page with `range` points to get_page_outline, then to get_sections', async () => {
+      await writePage('pages', 'a.md', '<!-- anchor: aaaa0001 -->\n# A\n\none\ntwo\n');
+      const c = core([pagesRoot()]);
+      const refusal = (await c
+        .getPage({ rootId: 'pages', path: 'a.md', range: { start: 1, end: 2 } })
+        .then(
+          () => {
+            throw new Error('get_page with range did not refuse');
+          },
+          (err: unknown) => err,
+        )) as { code: string; message: string; hint: string };
+      expect(refusal.code).toBe('INVALID_ARGUMENT');
+      // The repair path is IN the message — outline first, sections second.
+      const outlineAt = refusal.message.indexOf('get_page_outline');
+      const sectionsAt = refusal.message.indexOf('get_sections');
+      expect(outlineAt).toBeGreaterThan(-1);
+      expect(sectionsAt).toBeGreaterThan(outlineAt);
+      // The hint spells the same order as calls on this very page.
+      expect(refusal.hint).toContain('get_page_outline({ rootId: "pages", path: "a.md" })');
+      expect(refusal.hint.indexOf('get_sections')).toBeGreaterThan(refusal.hint.indexOf('get_page_outline'));
+      // It never proposes the line window it just refused.
+      expect(refusal.message).not.toMatch(/range: \{|--range/);
     });
 
     it('a missing page is PAGE_NOT_FOUND', async () => {

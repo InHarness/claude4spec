@@ -45,9 +45,10 @@ export interface ReleasePushResponse {
   /** ISO 8601. */
   pushedAt: string;
   /**
-   * M28 Git Sync — outcome of the best-effort `git push` triggered when
-   * `config.git.syncPushOnPush` is on and a repo was detected; `null` when
-   * push-sync is off or no repo. Present ONLY on the synchronous
+   * M28 Git Sync — outcome of the best-effort `gitService.pushOnPush(branch?)`.
+   * 2.1.14: `null` when its gate did not let it through — git off, push-sync
+   * off, no repo, or detached HEAD (also with an explicit branch); the UI
+   * reacts only to `status: 'error'`. Present ONLY on the synchronous
    * `POST /api/release-pushes` response — `GET /api/release-pushes/:id`
    * (audit replay) always returns `null` (this result is not persisted).
    *

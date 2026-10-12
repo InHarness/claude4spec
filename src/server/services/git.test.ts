@@ -1279,3 +1279,375 @@ describe('GitService — 0.1.118 read-only methods', () => {
     });
   });
 });
+
+/**
+ * 2.1.14 (M28 eu1rffp6 / aqys9dje / yn1oesly / sw1u84nn / rslvdfbr) — the gated
+ * entries (`commitOnRelease`, `pushOnPush`) vs the executions (`commit`, `push`):
+ * only an entry answers `null` (gate not met); `skipped` comes from an execution
+ * or from `commitPull`. `named`/`new` never read HEAD, so they commit on detached
+ * HEAD and end in a target error (not `null`) in a repository with no commits.
+ * One message for every mode: `{name}\n\n{description}`, no `Release ` prefix.
+ */
+describe('GitService — gated entry vs execution (2.1.14)', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-git-214-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  async function seed(repo: string): Promise<void> {
+    await initRepo(repo);
+    fs.writeFileSync(path.join(repo, 'seed.txt'), 'seed');
+    await git(['add', '.'], repo);
+    await git(['commit', '-m', 'seed'], repo);
+  }
+
+  async function sha(ref: string, repo = dir): Promise<string> {
+    return (await git(['rev-parse', ref], repo)).trim();
+  }
+
+  async function branchExists(name: string, repo = dir): Promise<boolean> {
+    return pexec('git', ['rev-parse', '--verify', `refs/heads/${name}`], { cwd: repo })
+      .then(() => true)
+      .catch(() => false);
+  }
+
+  async function detachHead(repo = dir): Promise<string> {
+    const head = await sha('HEAD', repo);
+    await git(['checkout', head], repo);
+    return head;
+  }
+
+  it.each([
+    ['current', {}],
+    ['named', { mode: 'named', branch: 'release-target' }],
+    ['new', { mode: 'new', template: 'release/{release_slug}', base: 'main' }],
+  ])(
+    '[ac:ac-commit-release-u-ma-komunikat-name-pu] mode %s: the release commit message is `{name}` + blank line + `{description}`, without a `Release ` prefix',
+    async (_mode, commitTarget) => {
+      await seed(dir);
+      await git(['branch', 'release-target'], dir);
+      writeConfigJson(dir, { enabled: true, commitTarget });
+      fs.writeFileSync(path.join(dir, 'spec.md'), '# delta');
+
+      const svc = new GitService(dir, [dir]);
+      const result = await svc.commitOnRelease({ name: 'v1', description: 'first cut' });
+      expect(result?.status).toBe('committed');
+
+      const ref = result?.branch ?? 'HEAD';
+      const message = (await git(['log', '-1', '--format=%B', ref], dir)).trim();
+      expect(message).toBe('v1\n\nfirst cut');
+      expect(message.startsWith('Release ')).toBe(false);
+    },
+  );
+
+  it('[ac:ac-przy-committarget-named-bez-branch-al] named without `branch` (or new without `template`) on detached HEAD → commitOnRelease returns { status: skipped, message: detached HEAD }', async () => {
+    await seed(dir);
+    await detachHead();
+    fs.writeFileSync(path.join(dir, 'spec.md'), '# delta');
+    const svc = new GitService(dir, [dir]);
+
+    writeConfigJson(dir, { enabled: true, commitTarget: { mode: 'named', branch: null } });
+    expect(await svc.commitOnRelease({ name: 'v1', description: 'd' })).toEqual({
+      status: 'skipped',
+      message: 'detached HEAD',
+    });
+
+    writeConfigJson(dir, { enabled: true, commitTarget: { mode: 'new', template: null, base: 'main' } });
+    expect(await svc.commitOnRelease({ name: 'v1', description: 'd' })).toEqual({
+      status: 'skipped',
+      message: 'detached HEAD',
+    });
+  });
+
+  it('[ac:ac-przy-config-git-enabled-false-commitp] with config.git.enabled=false commitPull returns { status: skipped }, not null', async () => {
+    await seed(dir);
+    writeConfigJson(dir, { enabled: false });
+    fs.writeFileSync(path.join(dir, 'spec.md'), '# would be committed if the gate let it');
+    const headBefore = await sha('HEAD');
+
+    const result = await new GitService(dir, [dir]).commitPull({ name: 'v2' });
+    expect(result).not.toBeNull();
+    expect(result).toEqual({ status: 'skipped' });
+    expect(await sha('HEAD')).toBe(headBefore);
+  });
+
+  it('[ac:ac-przy-detached-head-pushonpush-zwraca] on detached HEAD pushOnPush returns null even with an explicit branch — nothing is pushed', async () => {
+    const bareDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-git-bare-'));
+    await pexec('git', ['init', '--bare', '-b', 'main', bareDir], {});
+    try {
+      await seed(dir);
+      await git(['remote', 'add', 'origin', bareDir], dir);
+      await git(['push', '-u', 'origin', 'main'], dir);
+      await git(['branch', 'other'], dir);
+      await detachHead();
+      writeConfigJson(dir, { enabled: true, syncPushOnPush: true });
+
+      const svc = new GitService(dir, [dir]);
+      expect(await svc.pushOnPush('other')).toBeNull();
+      expect(await svc.pushOnPush()).toBeNull();
+      const remoteBranches = (await pexec('git', ['branch', '--format=%(refname:short)'], { cwd: bareDir })).stdout;
+      expect(remoteBranches).not.toContain('other');
+    } finally {
+      fs.rmSync(bareDir, { recursive: true, force: true });
+    }
+  });
+
+  it('[ac:ac-w-swiezym-repo-bez-commitow-commitonr] in a fresh repository with no commits commitOnRelease in mode `named` returns status error with recovery.kind branch-missing', async () => {
+    await initRepo(dir); // no commits: HEAD is unborn
+    writeConfigJson(dir, { enabled: true, commitTarget: { mode: 'named', branch: 'main' } });
+    fs.writeFileSync(path.join(dir, 'spec.md'), '# first');
+
+    const result = await new GitService(dir, [dir]).commitOnRelease({ name: 'v1', description: 'd' });
+    expect(result).not.toBeNull();
+    expect(result?.status).toBe('error');
+    expect(result?.recovery?.kind).toBe('branch-missing');
+    expect(await branchExists('main')).toBe(false);
+  });
+
+  it('[ac:ac-w-swiezym-repo-bez-commitow-commitonr-2] in a fresh repository with no commits commitOnRelease in mode `new` returns status error with recovery.kind base-missing', async () => {
+    await initRepo(dir);
+    writeConfigJson(dir, { enabled: true, commitTarget: { mode: 'new', template: 'release/{release_slug}', base: null } });
+    fs.writeFileSync(path.join(dir, 'spec.md'), '# first');
+
+    const result = await new GitService(dir, [dir]).commitOnRelease({ name: 'v1', description: 'd' });
+    expect(result).not.toBeNull();
+    expect(result?.status).toBe('error');
+    expect(result?.recovery?.kind).toBe('base-missing');
+    expect(await branchExists('release/v1')).toBe(false);
+  });
+
+  it('[ac:ac-w-trybie-committarget-named-przy-deta] in mode `named` on detached HEAD commitOnRelease commits onto the tip of the target branch', async () => {
+    await seed(dir);
+    await git(['branch', 'release-target'], dir);
+    const tipBefore = await sha('release-target');
+    const head = await detachHead();
+    writeConfigJson(dir, { enabled: true, commitTarget: { mode: 'named', branch: 'release-target' } });
+    fs.writeFileSync(path.join(dir, 'spec.md'), '# delta');
+
+    const result = await new GitService(dir, [dir]).commitOnRelease({ name: 'v1', description: 'd' });
+    expect(result?.status).toBe('committed');
+    expect(result?.branch).toBe('release-target');
+    expect(await sha('release-target~1')).toBe(tipBefore);
+    expect((await git(['ls-tree', '-r', '--name-only', 'release-target'], dir)).split('\n')).toContain('spec.md');
+    // HEAD stays detached where it was.
+    expect(await sha('HEAD')).toBe(head);
+    expect((await git(['rev-parse', '--abbrev-ref', 'HEAD'], dir)).trim()).toBe('HEAD');
+  });
+
+  it('[ac:ac-commitforrelease-przed-git-add-kan] commitOnRelease canonicalizes staging targets (realpath per root): a cwd/root reached through a symlink commits without "outside repository"; a root resolving outside the repo is skipped, not fatal', async () => {
+    const linkParent = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-git-link-'));
+    const extDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-git-ext-'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await seed(dir);
+      fs.writeFileSync(path.join(extDir, 'e.md'), '# external');
+      fs.symlinkSync(extDir, path.join(dir, 'ext'));
+      writeConfigJson(dir, { enabled: true }, [
+        { id: 'pages', name: 'Pages', dir: 'pages', builtin: true },
+        { id: 'ext', name: 'External', dir: 'ext', builtin: false },
+      ]);
+      fs.mkdirSync(path.join(dir, 'pages'));
+      fs.writeFileSync(path.join(dir, 'pages', 'a.md'), '# a');
+      // The project is opened through a symlink to the repository.
+      const link = path.join(linkParent, 'project');
+      fs.symlinkSync(dir, link);
+
+      const svc = new GitService(link, [path.join(link, 'pages'), path.join(link, 'ext')]);
+      const result = await svc.commitOnRelease({ name: 'v1', description: 'd' });
+      expect(result?.status).toBe('committed');
+      expect(result?.message ?? '').not.toMatch(/outside repository/);
+
+      const tracked = (await git(['ls-tree', '-r', '--name-only', 'HEAD'], dir)).split('\n');
+      expect(tracked).toContain('pages/a.md');
+      expect(tracked).toContain('.claude4spec/config.json');
+      expect(tracked.some((t) => t.startsWith('ext'))).toBe(false);
+      expect(warn.mock.calls.some((c) => String(c[0]).includes('outside the repository'))).toBe(true);
+    } finally {
+      warn.mockRestore();
+      fs.rmSync(linkParent, { recursive: true, force: true });
+      fs.rmSync(extDir, { recursive: true, force: true });
+    }
+  });
+
+  it('[ac:ac-commitforrelease-staguje-tez-releasesdir] commitOnRelease stages the releases root <slug>.json next to the other registry roots and config.json — the file lands in the commit as its anchor', async () => {
+    await seed(dir);
+    writeConfigJson(dir, { enabled: true }, [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }]);
+    fs.mkdirSync(path.join(dir, 'pages'));
+    fs.writeFileSync(path.join(dir, 'pages', 'a.md'), '# a');
+    const releaseFile = path.join(dir, '.claude4spec', 'releases', 'v1.json');
+    fs.mkdirSync(path.dirname(releaseFile), { recursive: true });
+    fs.writeFileSync(releaseFile, '{"name":"v1"}');
+
+    const svc = new GitService(dir, [path.join(dir, 'pages')]);
+    const result = await svc.commitOnRelease({ name: 'v1', description: 'd' });
+    expect(result?.status).toBe('committed');
+
+    const tracked = (await git(['ls-tree', '-r', '--name-only', 'HEAD'], dir)).split('\n');
+    expect(tracked).toContain('.claude4spec/releases/v1.json');
+    expect(tracked).toContain('pages/a.md');
+    expect(tracked).toContain('.claude4spec/config.json');
+    // The release commit is the anchor resolved from the file's history.
+    expect(await svc.resolveReleaseCommit(releaseFile)).toBe(await sha('HEAD'));
+  });
+
+  it('[ac:ac-gdy-git-add-niczego-nie-wniosl-commi] when `git add` brings nothing, commitOnRelease returns exactly { status: nothing-to-commit } — no message, no recovery', async () => {
+    await initRepo(dir);
+    writeConfigJson(dir, { enabled: true });
+    fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
+    await git(['add', '.'], dir);
+    await git(['commit', '-m', 'seed'], dir); // config.json included: nothing left to stage
+    const headBefore = await sha('HEAD');
+
+    const result = await new GitService(dir, [dir]).commitOnRelease({ name: 'v1', description: 'd' });
+    expect(result).toEqual({ status: 'nothing-to-commit' });
+    expect(await sha('HEAD')).toBe(headBefore);
+  });
+
+  it('[ac:ac-gdy-wyrenderowana-nazwa-nowego-brancha] mode `new`: a rendered name colliding with existing branches gets the next free numeric suffix (-2, -3, …) — a fresh branch', async () => {
+    await seed(dir);
+    await git(['branch', 'release/v1'], dir);
+    await git(['branch', 'release/v1-2'], dir);
+    const takenTip = await sha('release/v1');
+    writeConfigJson(dir, { enabled: true, commitTarget: { mode: 'new', template: 'release/{release_slug}', base: 'main' } });
+    fs.writeFileSync(path.join(dir, 'spec.md'), '# delta');
+
+    const result = await new GitService(dir, [dir]).commitOnRelease({ name: 'v1', description: 'd' });
+    expect(result?.status).toBe('committed');
+    expect(result?.branch).toBe('release/v1-3');
+    expect(await branchExists('release/v1-3')).toBe(true);
+    // The colliding branches are left as they were.
+    expect(await sha('release/v1')).toBe(takenTip);
+    expect(await sha('release/v1-2')).toBe(takenTip);
+  });
+
+  it('[ac:ac-gitservice-commitpull-latest-commituje] commitPull commits with "Pull to {latest.name}", the same staging scope as the release commit, no new marker file; gate = enabled + repo + named HEAD; clean tree → nothing-to-commit; never throws', async () => {
+    await seed(dir);
+    writeConfigJson(dir, { enabled: true }, [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }]);
+    fs.mkdirSync(path.join(dir, 'pages'));
+    fs.writeFileSync(path.join(dir, 'pages', 'a.md'), '# a');
+    const releaseFile = path.join(dir, '.claude4spec', 'releases', 'v1.json');
+    fs.mkdirSync(path.dirname(releaseFile), { recursive: true });
+    fs.writeFileSync(releaseFile, '{"name":"v1"}');
+    const svc = new GitService(dir, [path.join(dir, 'pages')]);
+    expect((await svc.commitOnRelease({ name: 'v1', description: 'd' }))?.status).toBe('committed');
+    const releaseCommit = await sha('HEAD');
+
+    // Unreleased work in two registry roots + a file outside every root.
+    fs.writeFileSync(path.join(dir, 'pages', 'b.md'), '# b');
+    fs.mkdirSync(path.join(dir, '.claude4spec', 'entities'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.claude4spec', 'entities', 'tags.json'), '[]');
+    fs.writeFileSync(path.join(dir, 'outside.txt'), 'x');
+
+    const result = await svc.commitPull({ name: 'v1' });
+    expect(result.status).toBe('committed');
+    expect((await git(['log', '-1', '--format=%B'], dir)).trim()).toBe('Pull to v1');
+    const added = (await git(['show', '--diff-filter=A', '--name-only', '--format=', 'HEAD'], dir))
+      .split('\n')
+      .filter(Boolean);
+    expect(added).toContain('pages/b.md');
+    expect(added).toContain('.claude4spec/entities/tags.json');
+    expect(added).not.toContain('outside.txt');
+    // No new marker file: the release still anchors at its own commit.
+    expect(added.some((p) => p.startsWith('.claude4spec/releases/'))).toBe(false);
+    expect(await svc.resolveReleaseCommit(releaseFile)).toBe(releaseCommit);
+
+    // Clean working tree (within the staging scope) → nothing-to-commit.
+    expect(await svc.commitPull({ name: 'v1' })).toEqual({ status: 'nothing-to-commit' });
+
+    // Gate: detached HEAD → skipped; master off → skipped; never a throw.
+    fs.writeFileSync(path.join(dir, 'pages', 'c.md'), '# c');
+    await detachHead();
+    expect(await svc.commitPull({ name: 'v1' })).toEqual({ status: 'skipped' });
+    await git(['checkout', 'main'], dir);
+    writeConfigJson(dir, { enabled: false }, [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }]);
+    await expect(svc.commitPull({ name: 'v1' })).resolves.toEqual({ status: 'skipped' });
+  });
+
+  it('[ac:ac-w-trybie-config-git-committarget-mode-n] mode `named`: commitOnRelease commits the spec deltas onto the existing branch tip via a temp index (commit-tree -p <tip> + update-ref) — working tree, HEAD and the real index untouched', async () => {
+    await seed(dir);
+    await git(['branch', 'release-target'], dir);
+    writeConfigJson(dir, { enabled: true, commitTarget: { mode: 'named', branch: 'release-target' } });
+    fs.writeFileSync(path.join(dir, 'spec.md'), '# delta');
+    const tipBefore = await sha('release-target');
+    const headBefore = await sha('HEAD');
+    const indexBefore = await git(['ls-files', '--stage'], dir);
+    const porcelainBefore = await git(['status', '--porcelain'], dir);
+
+    const result = await new GitService(dir, [dir]).commitOnRelease({ name: 'v1', description: 'd' });
+    expect(result?.status).toBe('committed');
+    expect(result?.branch).toBe('release-target');
+
+    // The branch fast-forwarded by exactly one commit whose parent is the old tip.
+    expect(await sha('release-target~1')).toBe(tipBefore);
+    expect((await git(['ls-tree', '-r', '--name-only', 'release-target'], dir)).split('\n')).toContain('spec.md');
+    // HEAD, the real index and the working tree are as they were.
+    expect(await sha('HEAD')).toBe(headBefore);
+    expect((await git(['rev-parse', '--abbrev-ref', 'HEAD'], dir)).trim()).toBe('main');
+    expect(await git(['ls-files', '--stage'], dir)).toBe(indexBefore);
+    expect(await git(['status', '--porcelain'], dir)).toBe(porcelainBefore);
+    expect(fs.readFileSync(path.join(dir, 'spec.md'), 'utf8')).toBe('# delta');
+  });
+
+  it('[ac:ac-w-trybie-named-new-gdy-tree-po-stage-je] mode named/new: when the staged tree equals the target tip tree, commitOnRelease returns nothing-to-commit — no empty commit, no new branch', async () => {
+    await initRepo(dir);
+    writeConfigJson(dir, { enabled: true, commitTarget: { mode: 'named', branch: 'release-target' } });
+    fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
+    await git(['add', '.'], dir);
+    await git(['commit', '-m', 'seed'], dir);
+    await git(['branch', 'release-target'], dir);
+    const tip = await sha('release-target');
+    const svc = new GitService(dir, [dir]);
+
+    expect(await svc.commitOnRelease({ name: 'v1', description: 'd' })).toEqual({ status: 'nothing-to-commit' });
+    expect(await sha('release-target')).toBe(tip);
+
+    // Same for `new`: rewrite config.json identically to what is committed, then switch the mode in a commit.
+    writeConfigJson(dir, { enabled: true, commitTarget: { mode: 'new', template: 'release/{release_slug}', base: 'main' } });
+    await git(['commit', '-am', 'mode new'], dir);
+    const mainTip = await sha('main');
+    expect(await svc.commitOnRelease({ name: 'v1', description: 'd' })).toEqual({ status: 'nothing-to-commit' });
+    expect(await branchExists('release/v1')).toBe(false);
+    expect(await sha('main')).toBe(mainTip);
+  });
+
+  it('[ac:ac-w-trybie-new-commitforrelease-tworzy-n] mode `new`: commitOnRelease creates the release branch from the base tip (explicit base, or the private default-branch resolution when base is null) via commit-tree -p <base-tip> + update-ref, named from the rendered template', async () => {
+    await seed(dir);
+    const mainTip = await sha('main');
+    // HEAD elsewhere, with its own commit — the new branch must not grow from it.
+    await git(['checkout', '-b', 'work'], dir);
+    fs.writeFileSync(path.join(dir, 'work-only.txt'), 'w');
+    await git(['add', '.'], dir);
+    await git(['commit', '-m', 'work'], dir);
+    const workTip = await sha('work');
+    fs.writeFileSync(path.join(dir, 'spec.md'), '# delta');
+    const svc = new GitService(dir, [dir]);
+
+    writeConfigJson(dir, { enabled: true, commitTarget: { mode: 'new', template: 'release/{release_slug}', base: 'main' } });
+    const explicit = await svc.commitOnRelease({ name: 'v1', description: 'd' });
+    expect(explicit?.status).toBe('committed');
+    expect(explicit?.branch).toBe('release/v1');
+    expect(await sha('release/v1~1')).toBe(mainTip);
+    expect((await git(['ls-tree', '-r', '--name-only', 'release/v1'], dir)).split('\n')).toContain('spec.md');
+
+    // base: null → the default branch is resolved privately (local `main` here).
+    writeConfigJson(dir, { enabled: true, commitTarget: { mode: 'new', template: 'auto/{release_slug}', base: null } });
+    const auto = await svc.commitOnRelease({ name: 'v2', description: 'd' });
+    expect(auto?.status).toBe('committed');
+    expect(auto?.branch).toBe('auto/v2');
+    expect(await sha('auto/v2~1')).toBe(mainTip);
+
+    // HEAD never moved.
+    expect((await git(['rev-parse', '--abbrev-ref', 'HEAD'], dir)).trim()).toBe('work');
+    expect(await sha('work')).toBe(workTip);
+    // resolveDefaultBranch is private — outside the public GitService surface (checked by the type checker).
+    const callsPrivate = (): unknown =>
+      // @ts-expect-error resolveDefaultBranch is a private method of GitService
+      svc.resolveDefaultBranch(dir);
+    expect(typeof callsPrivate).toBe('function');
+  });
+});

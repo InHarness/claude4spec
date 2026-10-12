@@ -369,9 +369,9 @@ describe('update_brief textEdits + brief version tools', () => {
       content: 'x',
       textEdits: [{ find: 'alpha', replaceWith: 'A' }],
     });
-    expect(both.body.code).toBe('INVALID_ARGUMENT');
+    expect(both.body.code).toBe('VALIDATION');
     const neither = await call('update_brief', { path: 'b.md', expectedHash: HASH });
-    expect(neither.body.code).toBe('INVALID_ARGUMENT');
+    expect(neither.body.code).toBe('VALIDATION');
     expect(written).toEqual([]);
   });
 
@@ -407,7 +407,7 @@ describe('update_brief textEdits + brief version tools', () => {
       textEdits: [{ find: 'alpha', replaceWith: 'A' }],
     });
     expect(res.isError).toBe(true);
-    expect(res.body.code).toBe('INVALID_ARGUMENT');
+    expect(res.body.code).toBe('VALIDATION');
     // The message has to say WHY: the caller believed it had scoped the
     // substitutions to one section, and a `find` is never scoped.
     expect(JSON.stringify(res.body)).toMatch(/whole body/i);
@@ -591,7 +591,7 @@ describe('update_brief — entity shape and insert_after_section addressing', ()
   /** The body part of what was written (the frontmatter block stripped). */
   const bodyOf = (file: string) => file.replace(/^---\n[\s\S]*?\n---\n/, '');
 
-  it('[entity:brief-tools-update-brief] update_brief is on brief-tools with action/content/anchor/heading/expectedHash/path', async () => {
+  it('[entity:brief-tools-update-brief] update_brief on brief-tools: the entity\'s description and parameters (action, content, textEdits, anchor, heading, expectedHash, changeSummary — no `path` on the thread mount, required on the threadless one), write hints; exactly one input shape, both or neither VALIDATION before the file is touched; `{ newHash }` for an action, `{ newHash, replacements }` for textEdits', async () => {
     const explicit = await connect(BODY, 'explicit');
     const thread = await connect(BODY, 'thread');
     const tool = async (client: Client) => (await client.listTools()).tools.find((t) => t.name === 'update_brief')!;
@@ -600,37 +600,68 @@ describe('update_brief — entity shape and insert_after_section addressing', ()
     const int = await tool(thread.client);
     expect(ext).toBeDefined();
     expect(int).toBeDefined();
-    const entityParams = ['action', 'content', 'anchor', 'heading', 'expectedHash', 'path'];
-    /**
-     * ASSUMPTION:dev-0011 — the rendering carries the entity's six parameters
-     * (in the `internal` channel `path` is the thread's brief, closed over, so it
-     * is absent from the schema) plus the differential `textEdits` and
-     * `changeSummary`; `action`/`content` are optional because `textEdits` is
-     * the alternative shape. See the deviation.
-     */
-    expect(Object.keys(ext.inputSchema.properties!).sort()).toEqual(
-      [...entityParams, 'textEdits', 'changeSummary'].sort(),
-    );
-    expect(Object.keys(int.inputSchema.properties!).sort()).toEqual(
-      [...entityParams.filter((p) => p !== 'path'), 'textEdits', 'changeSummary'].sort(),
-    );
-    expect((ext.inputSchema.properties!.action as { enum?: string[] }).enum).toEqual([
-      'replace',
-      'append',
-      'insert_after_section',
-    ]);
-    expect(ext.inputSchema.required ?? []).toEqual(expect.arrayContaining(['expectedHash', 'path']));
+    const entityParams = ['action', 'content', 'textEdits', 'anchor', 'heading', 'expectedHash', 'changeSummary'];
+    // Thread mount: exactly the entity's parameters — no `path` (M21 thread isolation).
+    expect(Object.keys(int.inputSchema.properties!).sort()).toEqual([...entityParams].sort());
     expect(int.inputSchema.required ?? []).toEqual(['expectedHash']);
-    // `path` is addressed relative to the `briefs` root, not to a config key.
+    // Threadless mount (external `mcp`): plus a REQUIRED `path`.
+    expect(Object.keys(ext.inputSchema.properties!).sort()).toEqual([...entityParams, 'path'].sort());
+    expect([...(ext.inputSchema.required ?? [])].sort()).toEqual(['expectedHash', 'path']);
     expect((ext.inputSchema.properties!.path as { description?: string }).description).toContain(
       'relative to the briefs root (.claude4spec/briefs)',
     );
+    const p = int.inputSchema.properties as Record<string, { type?: string; enum?: string[]; description?: string }>;
+    expect(p.action!.enum).toEqual(['replace', 'append', 'insert_after_section']);
+    expect(p.content!.type).toBe('string');
+    expect(p.textEdits!.type).toBe('array');
+    expect(p.action!.description).toBe(
+      'ACTION SHAPE: what to do with `content` — swap the addressed range, add at the end, or insert after an addressed section. Required together with `content`; forbidden with `textEdits`.',
+    );
+    expect(p.content!.description).toBe(
+      'ACTION SHAPE: full text this edit contributes — write the range out. Required together with `action`; forbidden with `textEdits`.',
+    );
+    expect(p.textEdits!.description).toBe(
+      'DIFFERENTIAL SHAPE: `[{ find, replaceWith, expectedMatches? }]` applied to the whole brief. `find` is literal, byte for byte; `expectedMatches` omitted means exactly one hit, a number means exactly that many, `"all"` means every occurrence. Mutually exclusive with `action` and `content`.',
+    );
+    expect(p.anchor!.description).toBe('Section anchor to address for `insert_after_section`. Unknown anchor degrades to append-at-end with a warning.');
+    expect(p.heading!.description).toBe('Heading text to address for `insert_after_section`, as an alternative to `anchor`.');
+    expect(p.expectedHash!.description).toBe('sha256 of the brief as you last read it. Missing → VALIDATION; mismatch → BRIEF_CONFLICT carrying the current hash.');
+    expect(p.changeSummary!.description).toBe('One-line description of what this edit changes, recorded with the version.');
+    // The entity's description, verbatim, on the thread mount.
+    expect(int.description).toBe(
+      'Edit the brief of this thread — there is no `path` parameter and no way to reach another brief. TWO INPUT SHAPES, EXACTLY ONE PER CALL (both, or neither, is invalid):\n- by action — `action` + `content`: `replace` swaps the addressed range, `append` adds at the end, `insert_after_section` places new content after a section you address by `anchor` or by `heading`. You pass the full text of the range in `content`.\n- differential — `textEdits`: literal substitutions over the whole brief, without resending the untouched text. Use it for a few sentences anywhere; use `action` + `content` to write or genuinely rewrite a range.\n\n`find` matches BYTE FOR BYTE — no regex, no whitespace normalisation. `expectedMatches` OMITTED MEANS EXACTLY ONE match; pass a number, or `"all"` for every occurrence. All patterns are counted on the brief as it was BEFORE the write, so substitutions do not cascade.\n\n`expectedHash` is MANDATORY. Pass the hash you got from `get_brief`; omitting it is a validation error, not silent permission to overwrite. The brief is edited in parallel by this thread, by a human in the UI and by an implementer agent in the terminal, so last-write-wins would lose someone\'s work without a trace.\n\nAn `anchor` that no longer resolves does not fail the call — the content is appended at the end and the answer says so. A heading inside a code block is never a target, and a `heading` matching several headings lands after the first of them, with a warning in the answer.\n\nFrontmatter is not editable here; only `implemented` is mutable at all, and it has its own route.',
+    );
+    expect(ext.description).toContain('`path`');
     expect(ext.description).toContain('expectedHash');
-    expect(ext.description).toContain('IMMUTABLE_FIELD');
+    // Hints: a write, not idempotent; the others unset.
+    for (const t of [int, ext]) {
+      expect(t.annotations?.readOnlyHint).toBe(false);
+      expect(t.annotations?.idempotentHint).toBe(false);
+      expect(t.annotations?.destructiveHint).toBeUndefined();
+      expect(t.annotations?.openWorldHint).toBeUndefined();
+    }
 
-    // The answer is `{ newHash }` — never the brief.
-    const res = await explicit.update({ action: 'replace', content: '# New\n' });
+    // Logic — the input shape is settled before the file is touched.
+    const both = await thread.update({ action: 'append', content: 'x', textEdits: [{ find: 'first target', replaceWith: 'X' }] });
+    expect(both.body.code).toBe('VALIDATION');
+    const neither = await thread.update({});
+    expect(neither.body.code).toBe('VALIDATION');
+    const half = await thread.update({ action: 'append' });
+    expect(half.body.code).toBe('VALIDATION');
+    expect(thread.written).toEqual([]);
+
+    // The answer is `{ newHash }` for an action — never the brief…
+    const res = await thread.update({ action: 'replace', content: '# New\n' });
     expect(res.body).toEqual({ newHash: '8'.repeat(64) });
+    // …and `{ newHash, replacements }` for textEdits, with an optional changeSummary.
+    const diff = await thread.update({
+      textEdits: [{ find: 'other body', replaceWith: 'OTHER' }],
+      changeSummary: 'rename the other body',
+    });
+    expect(diff.isError).toBe(false);
+    expect(diff.body).toEqual({ newHash: '8'.repeat(64), replacements: 1 });
+    expect(bodyOf(thread.written[1]!)).toContain('OTHER');
+    expect(bodyOf(thread.written[1]!)).not.toContain('other body');
   });
 
   it('[ac:ac-insert-after-section-z-heading-pasuja] a heading that matches only a line inside a code block appends the content at the END', async () => {
@@ -852,10 +883,11 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
 
   // ── mcp-tool entity ──────────────────────────────────────────────────────
 
-  it('[entity:brief-tools-get-brief] get_brief on brief-tools: `range` (object, optional) with the entity\'s description, readOnlyHint only, the entity\'s description (path sentence aside — dev-0001); `path` required on the threadless mount — and the logic: thread-resolved address, content + frontmatter + hash, unknown path and a window past the file refused with the operation\'s codes', async () => {
+  it('[entity:brief-tools-get-brief] get_brief on brief-tools: `range` (object, optional) with the entity\'s description, readOnlyHint only, the entity\'s description verbatim; no `path` on the thread mount (M21 thread isolation), `path` required on the threadless mount — and the logic: thread-resolved address, content + frontmatter + hash, unknown path and a window past the file refused with the operation\'s codes', async () => {
     const int = await toolOf(internal, 'get_brief');
     const ext = await toolOf(external, 'get_brief');
-    // ASSUMPTION:dev-0001 — the thread mount has no `path` (closed over from chat_thread.brief_path).
+    // The thread mount has no `path` at all: M21 declares thread isolation (01ytpznn).
+    expect(artifactAddressingShape('brief', 'internal')).toBe('absent');
     expect(props(int)).toEqual(['range']);
     expect(int.inputSchema.required ?? []).toEqual([]);
     expect(props(ext)).toEqual(['path', 'range']);
@@ -871,15 +903,14 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
       expect(tool.annotations?.idempotentHint).toBeUndefined();
       expect(tool.annotations?.openWorldHint).toBeUndefined();
     }
-    for (const sentence of [
-      "Read the brief this thread is anchored in — content, frontmatter and hash.",
-      "This is the ONLY way to the brief's content: the system prompt carries the brief's path and frontmatter, never its body and never its hash.",
-      'For a long brief, or when a response comes back truncated, read it in windows with `range`.',
-      'The returned `hash` is what arms `expectedHash` on the next `update_brief`, so this read is the entry point of every write.',
-      'Call it before editing, and again after a system reminder says the file changed underneath you.',
-    ]) {
-      expect(int.description).toContain(sentence);
-    }
+    expect(int.description).toBe(
+      "Read the brief this thread is anchored in — content, frontmatter and hash. This is the ONLY way to the brief's content: the system prompt carries the brief's path and frontmatter, never its body and never its hash. There is no `path` parameter: the tool is scoped to the brief of this thread and cannot reach another one. For a long brief, or when a response comes back truncated, read it in windows with `range`. The returned `hash` is what arms `expectedHash` on the next `update_brief`, so this read is the entry point of every write. Call it before editing, and again after a system reminder says the file changed underneath you.",
+    );
+    // A `path` sent to the thread mount is not a way out of the thread's brief.
+    const other = await service.createBrief({ fromReleaseName: 'v1', toReleaseName: 'v2', content: '# Other\n\nother brief\n', suffix: 'other' });
+    const pinned = await call(internal, 'get_brief', { path: other.briefPath });
+    expect(pinned.body.path).toBe(briefPath);
+    expect(pinned.body.content).not.toContain('other brief');
 
     // No `path` is not an error: the thread's brief is resolved.
     const read = await call(internal, 'get_brief', {});
@@ -905,6 +936,77 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     expect(past.body.error).toContain(`has ${lines} lines`);
     // A malformed window (end before start) is refused the same way.
     expect((await call(internal, 'get_brief', { range: { start: 5, end: 2 } })).body.code).toBe('INVALID_ARGUMENT');
+  });
+
+  it('[entity:brief-tools-list-brief-versions] list_brief_versions on brief-tools: the entity\'s description verbatim, readOnlyHint only, no `path` on the thread mount (the row\'s limit/offset window only), `path` required on the threadless mount — and the logic: metadata only, never content; an unknown path is BRIEF_NOT_FOUND', async () => {
+    const int = await toolOf(internal, 'list_brief_versions');
+    const ext = await toolOf(external, 'list_brief_versions');
+    expect(int.description).toBe(
+      'List the version history of the brief — metadata only, never content. Use it to see what changed and when before pulling a specific snapshot with `get_brief_version`. There is no `path` parameter: the tool addresses the brief of this thread only.',
+    );
+    expect(props(int)).not.toContain('path');
+    expect(props(int)).toEqual(['limit', 'offset']);
+    expect(int.inputSchema.required ?? []).toEqual([]);
+    expect(props(ext)).toEqual(['limit', 'offset', 'path']);
+    expect(ext.inputSchema.required).toEqual(['path']);
+    for (const tool of [int, ext]) {
+      expect(tool.annotations?.readOnlyHint).toBe(true);
+      expect(tool.annotations?.destructiveHint).toBeUndefined();
+      expect(tool.annotations?.idempotentHint).toBeUndefined();
+      expect(tool.annotations?.openWorldHint).toBeUndefined();
+    }
+
+    const first = await call(internal, 'get_brief', {});
+    await call(internal, 'update_brief', { action: 'append', content: 'second edit', expectedHash: first.body.hash });
+    // A `path` sent to the thread mount does not leave the thread's brief.
+    const other = await service.createBrief({ fromReleaseName: 'v1', toReleaseName: 'v2', content: '# Other\n', suffix: 'other' });
+    const history = await call(internal, 'list_brief_versions', { path: other.briefPath });
+    expect(history.isError).toBe(false);
+    expect(history.body.total).toBe(2);
+    expect(history.body.versions.map((v: { version: number }) => v.version)).toEqual([1, 2]);
+    // Metadata only — no snapshot content.
+    expect(JSON.stringify(history.body)).not.toContain('alpha body');
+    expect(JSON.stringify(history.body)).not.toContain('second edit');
+    const unknown = await call(external, 'list_brief_versions', { path: 'nope.md' });
+    expect(unknown.isError).toBe(true);
+    expect(unknown.body.code).toBe('BRIEF_NOT_FOUND');
+  });
+
+  it('[entity:brief-tools-get-brief-version] get_brief_version on brief-tools: the entity\'s description verbatim, readOnlyHint only, `version` (number, required) with the entity\'s description and no `path` on the thread mount, `path` required on the threadless mount — and the logic: a pure read of one snapshot that leaves the live file untouched; an unknown path is BRIEF_NOT_FOUND, a version off the history a validation error with the available range', async () => {
+    const int = await toolOf(internal, 'get_brief_version');
+    const ext = await toolOf(external, 'get_brief_version');
+    expect(int.description).toBe(
+      'Read one historical snapshot of the brief, addressed by version number from `list_brief_versions`. Use it to see what the brief said before an edit — it does not restore anything and does not touch the live file. There is no `path` parameter: the tool addresses the brief of this thread only.',
+    );
+    expect(props(int)).toEqual(['version']);
+    expect(int.inputSchema.required).toEqual(['version']);
+    const version = (int.inputSchema.properties as Record<string, { type?: string; description?: string }>).version!;
+    expect(['number', 'integer']).toContain(version.type);
+    expect(version.description).toBe('Version number, from list_brief_versions.');
+    expect(props(ext)).toEqual(['path', 'version']);
+    expect([...(ext.inputSchema.required ?? [])].sort()).toEqual(['path', 'version']);
+    for (const tool of [int, ext]) {
+      expect(tool.annotations?.readOnlyHint).toBe(true);
+      expect(tool.annotations?.destructiveHint).toBeUndefined();
+      expect(tool.annotations?.idempotentHint).toBeUndefined();
+      expect(tool.annotations?.openWorldHint).toBeUndefined();
+    }
+
+    const first = await call(internal, 'get_brief', {});
+    await call(internal, 'update_brief', { action: 'replace', content: '# Rewritten\n', expectedHash: first.body.hash });
+    const live = await fileBytes(briefPath);
+    const v1 = await call(internal, 'get_brief_version', { version: 1 });
+    expect(v1.isError).toBe(false);
+    expect(v1.body.version).toBe(1);
+    expect(JSON.stringify(v1.body)).toContain('alpha body');
+    // Not a restore: the live file is untouched, and no version was added.
+    expect(await fileBytes(briefPath)).toBe(live);
+    expect((await call(internal, 'list_brief_versions', {})).body.total).toBe(2);
+    const off = await call(internal, 'get_brief_version', { version: 9 });
+    expect(off.isError).toBe(true);
+    expect(off.body.code).toBe('INVALID_ARGUMENT');
+    expect(off.body.hint).toContain('1..2');
+    expect((await call(external, 'get_brief_version', { path: 'nope.md', version: 1 })).body.code).toBe('BRIEF_NOT_FOUND');
   });
 
   // ── criteria ─────────────────────────────────────────────────────────────
@@ -1009,6 +1111,61 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     expect(stale.body.code).toBe('BRIEF_CONFLICT');
   });
 
+  it('[ac:ac-rownoczesne-update-brief-z-wielu-watk] concurrent update_brief from several editorial threads resolves first-write-wins on expectedHash — the loser gets tool_result.error BRIEF_CONFLICT and recovers through get_brief plus a retry', async () => {
+    const { threadId: tA } = service.createThreadForBrief({ path: briefPath, name: 'editorial A' });
+    const { threadId: tB } = service.createThreadForBrief({ path: briefPath, name: 'editorial B' });
+    const a = await connect({ threadId: tA, briefPath, briefService: service });
+    const b = await connect({ threadId: tB, briefPath, briefService: service });
+
+    // Both threads read the same state, so both hold the same hash.
+    const readA = await call(a, 'get_brief', {});
+    const readB = await call(b, 'get_brief', {});
+    expect(readA.body.hash).toBe(readB.body.hash);
+    const versionsBefore = (await call(a, 'list_brief_versions', {})).body.total as number;
+
+    // First write wins.
+    const won = await call(a, 'update_brief', { action: 'append', content: 'thread A wrote first', expectedHash: readA.body.hash });
+    expect(won.isError).toBe(false);
+    // The second, armed with the same (now stale) hash, is refused — a tool error, not a silent overwrite.
+    const lost = await call(b, 'update_brief', { action: 'append', content: 'thread B wrote second', expectedHash: readB.body.hash });
+    expect(lost.isError).toBe(true);
+    expect(lost.body.code).toBe('BRIEF_CONFLICT');
+    expect(lost.body.currentHash).toBe(won.body.newHash);
+    let bytes = await fileBytes(briefPath);
+    expect(bytes).toContain('thread A wrote first');
+    expect(bytes).not.toContain('thread B wrote second');
+
+    // The loser recovers: get_brief returns the winner's state and hash, the retry lands on top of it.
+    const reread = await call(b, 'get_brief', {});
+    expect(reread.body.hash).toBe(won.body.newHash);
+    expect(reread.body.content).toContain('thread A wrote first');
+    const retried = await call(b, 'update_brief', { action: 'append', content: 'thread B wrote second', expectedHash: reread.body.hash });
+    expect(retried.isError).toBe(false);
+    bytes = await fileBytes(briefPath);
+    expect(bytes).toContain('thread A wrote first');
+    expect(bytes).toContain('thread B wrote second');
+    expect((await call(a, 'list_brief_versions', {})).body.total).toBe(versionsBefore + 2);
+
+    // Truly simultaneous calls with the same hash: exactly one write lands, the other is BRIEF_CONFLICT.
+    const hash = (await call(a, 'get_brief', {})).body.hash as string;
+    const results = await Promise.all([
+      call(a, 'update_brief', { action: 'append', content: 'race from A', expectedHash: hash }),
+      call(b, 'update_brief', { action: 'append', content: 'race from B', expectedHash: hash }),
+    ]);
+    const winners = results.filter((r) => !r.isError);
+    const losers = results.filter((r) => r.isError);
+    expect(winners).toHaveLength(1);
+    expect(losers).toHaveLength(1);
+    expect(losers[0]!.body.code).toBe('BRIEF_CONFLICT');
+    expect(losers[0]!.body.currentHash).toBe(winners[0]!.body.newHash);
+    bytes = await fileBytes(briefPath);
+    const aLanded = bytes.includes('race from A');
+    const bLanded = bytes.includes('race from B');
+    expect(aLanded !== bLanded).toBe(true);
+    expect(sha256(bytes)).toBe(winners[0]!.body.newHash);
+    expect((await call(a, 'list_brief_versions', {})).body.total).toBe(versionsBefore + 3);
+  });
+
   it('[ac:ac-wpis-rejestru-kontekstow-dla-brief-ni] a brief thread has no filesystem built-ins — denied as tool groups of the turn, which the context registry does not declare — and the brief content arrives through get_brief, in the tool result', async () => {
     // The registry row declares no deny groups of its own: only the built-in axis.
     const row = CONTEXT_TYPE_REGISTRY.brief as unknown as Record<string, unknown>;
@@ -1057,9 +1214,12 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     expect(Object.keys(op.inputSchema).sort()).toEqual(['path', 'range']);
     // The row no longer declares an internal default from the thread.
     expect(JSON.stringify(op.inputSchema.path!.description ?? '')).not.toMatch(/default|thread/i);
-    // explicit-addressing: every external channel requires `path`.
+    // explicit-addressing: every external channel requires `path`; the internal
+    // rendering carries none (M21 thread isolation, 2.1.14).
     for (const channel of ['cli', 'mcp', 'rest'] as const) expect(artifactAddressingShape('brief', channel)).toBe('required');
+    expect(artifactAddressingShape('brief', 'internal')).toBe('absent');
     expect((await toolOf(external, 'get_brief')).inputSchema.required).toEqual(['path']);
+    expect(props(await toolOf(internal, 'get_brief'))).not.toContain('path');
     // cli rendering: `c4s get-brief` names this operation, server-delegating.
     expect(getBriefCommand).toMatchObject({ operation: 'get_brief', executionMode: 'server-delegating' });
     expect(getBriefCommand.errorCodes).toEqual(expect.arrayContaining(['BRIEF_NOT_FOUND', 'INVALID_ARGUMENT']));
@@ -1095,20 +1255,47 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     expect(service.listBriefs({ implemented: false }).map((b) => b.path)).toEqual(['v1-to-v2-big.md']);
   });
 
-  it('[entity:katalog-operacji-m21#update_brief] the row: direct in all four channels, file+db+ui-notify, not idempotent (append), literal content, `path` + anchor/heading, mandatory expectedHash guard; BRIEF_NOT_FOUND, BRIEF_CONFLICT, IMMUTABLE_FIELD, VALIDATION', async () => {
+  it('[entity:katalog-operacji-m21#update_brief] the row: direct in all four channels, file+db+ui-notify, conditional idempotence (append and textEdits are not), content described both ways — exactly one shape per call, both or neither VALIDATION —, `path` (absent internally) + anchor/heading, mandatory expectedHash guard; BRIEF_NOT_FOUND, BRIEF_CONFLICT, IMMUTABLE_FIELD, VALIDATION', async () => {
     const op = CATALOG.require('update_brief');
     expect(op.scope).toBe('project');
     expect(op.mediation).toBe('direct');
     for (const channel of ['internal', 'cli', 'mcp', 'rest'] as const) expect(op.channels[channel].kind, channel).toBe('direct');
     expect([...op.sideEffects].sort()).toEqual(['db', 'file', 'ui-notify']);
     expect(op.idempotent).toBe(false);
-    // ASSUMPTION:dev-0011 — the differential shape is kept beside the literal one.
+    // `obydwa`: the literal action shape and the differential `textEdits`, one per call.
     expect(op.contentInput).toBe('literal+diff');
+    // ASSUMPTION:m21-dev-0001 — the row's four codes, plus the diff engine's.
     expect(op.errorCodes).toEqual(expect.arrayContaining(['BRIEF_NOT_FOUND', 'BRIEF_CONFLICT', 'IMMUTABLE_FIELD', 'VALIDATION']));
     expect(op.errorCodes).not.toContain('NOT_FOUND');
-    expect(Object.keys(op.inputSchema)).toEqual(expect.arrayContaining(['path', 'action', 'content', 'anchor', 'heading', 'expectedHash']));
+    expect(Object.keys(op.inputSchema).sort()).toEqual(
+      ['action', 'anchor', 'changeSummary', 'content', 'expectedHash', 'heading', 'path', 'textEdits'],
+    );
     expect(op.inputSchema.expectedHash!.isOptional()).toBe(false);
+    expect(op.inputSchema.changeSummary!.isOptional()).toBe(true);
     expect((await toolOf(external, 'update_brief')).inputSchema.required).toEqual(expect.arrayContaining(['path', 'expectedHash']));
+    // `path` is absent from the internal rendering (isolation), required externally.
+    expect(props(await toolOf(internal, 'update_brief'))).not.toContain('path');
+
+    // Exactly one input shape: both, neither, or half the action shape → VALIDATION, and the file is not touched.
+    const untouched = await fileBytes(briefPath);
+    const { hash: h0 } = await service.getBrief(briefPath, { full: true });
+    const both = await call(internal, 'update_brief', { action: 'append', content: 'x', textEdits: [{ find: 'alpha body', replaceWith: 'A' }], expectedHash: h0 });
+    expect(both.body.code).toBe('VALIDATION');
+    expect((await call(internal, 'update_brief', { expectedHash: h0 })).body.code).toBe('VALIDATION');
+    expect((await call(internal, 'update_brief', { content: 'x', expectedHash: h0 })).body.code).toBe('VALIDATION');
+    expect(await fileBytes(briefPath)).toBe(untouched);
+    expect(service.listVersions(briefPath)).toHaveLength(1);
+    // The differential shape answers `{ newHash, replacements }`; changeSummary is optional and recorded.
+    const diff = await call(internal, 'update_brief', {
+      textEdits: [{ find: 'beta body', replaceWith: 'BETA BODY' }],
+      changeSummary: 'shout beta',
+      expectedHash: h0,
+    });
+    expect(diff.isError).toBe(false);
+    expect(Object.keys(diff.body).sort()).toEqual(['newHash', 'replacements']);
+    expect(diff.body.replacements).toBe(1);
+    expect(await fileBytes(briefPath)).toContain('BETA BODY');
+    expect(diff.body.newHash).toBe(sha256(await fileBytes(briefPath)));
 
     const unknown = await call(external, 'update_brief', { path: 'nope.md', action: 'append', content: 'x', expectedHash: 'h' });
     expect(unknown.body.code).toBe('BRIEF_NOT_FOUND');

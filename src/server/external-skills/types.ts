@@ -14,11 +14,18 @@ export interface ExternalSkillContext {
   /** 2.1.0: `ProjectRecord.id` — the registry id, injected as `--project <id>`. */
   id: string;
   /**
-   * `WorkspaceRecord.name`. NOT passed to `c4s` when `--server` is used (the
-   * server implies its workspace); kept for display and troubleshooting text.
+   * `WorkspaceRecord.name`. `(workspace, id)` is the full identity of the
+   * rendered set, but 2.1.14 (M22 `m22dserv`): it reaches neither the `c4s`
+   * calls nor anywhere else in the skill text — with `--server` the server
+   * implies its workspace.
    */
   workspace: string;
-  /** 2.1.0: effective `publicUrl` of the workspace — injected as `--server <publicUrl>`. */
+  /**
+   * Effective `publicUrl` of the workspace — injected as `--server '<publicUrl>'`.
+   * 2.1.14 (M22 `m22dserv`): carried WITHOUT trailing slashes, trimmed when the
+   * context is built (`buildExternalSkillContext`), so an address with and
+   * without `/` renders the same skill.
+   */
   publicUrl: string;
 }
 

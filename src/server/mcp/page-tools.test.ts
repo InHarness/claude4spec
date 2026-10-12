@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -10,6 +11,8 @@ import { RecordStore } from '../fs/record-store.js';
 import { markdownAdapter, type MarkdownRecord } from '../fs/record-adapters.js';
 import { createTestDb } from '../../../tests/helpers/test-db.js';
 import { createPageToolsServer } from './page-tools.js';
+import { CATALOG } from '../operations/catalog.js';
+import { registerCoreOperations } from '../operations/core-operations.js';
 import { PagesService } from '../services/pages.js';
 import { SectionsService } from '../services/sections.js';
 import type { SelfWriteMarker, WriteActor } from '../fs/sources.js';
@@ -306,25 +309,155 @@ describe('page-tools', () => {
     expect(await fs.readFile(path.join(pages.root, 'dup.md'), 'utf-8')).toBe('original');
   });
 
-  it('[entity:page-tools-update-page] update_page is on page-tools with its parameter set and an always-on anchor guard', async () => {
+  it('[entity:page-tools-update-page] update_page is on page-tools with its parameter set (`body` + `frontmatter` literal, `textEdits` differential), its hints, an always-on anchor guard, and a literal write that creates or replaces', async () => {
     const { tools } = await client.listTools();
     const tool = tools.find((t) => t.name === 'update_page')!;
     expect(tool).toBeDefined();
     const props = tool.inputSchema.properties!;
-    /**
-     * ASSUMPTION:dev-0002 — the literal mode's field is `body` (+ `frontmatter`)
-     * on every channel; the entity names it `content`. See the deviation.
-     */
+    // 2.1.14 — the literal mode's field is `body` (+ optional `frontmatter`); the old `content` is gone.
     expect(Object.keys(props).sort()).toEqual(
       ['body', 'dropAnchors', 'expectedHash', 'frontmatter', 'path', 'rootId', 'textEdits'].sort(),
     );
+    expect(props).not.toHaveProperty('content');
+    expect((props.body as { type?: string }).type).toBe('string');
+    expect((props.frontmatter as { type?: string }).type).toBe('object');
+    expect((props.textEdits as { type?: string }).type).toBe('array');
+    expect((props.dropAnchors as { type?: string }).type).toBe('array');
     expect(tool.inputSchema.required ?? []).toEqual(expect.arrayContaining(['rootId', 'path', 'expectedHash']));
-    expect(tool.inputSchema.required ?? []).not.toContain('textEdits');
-    expect(tool.inputSchema.required ?? []).not.toContain('body');
+    for (const optional of ['body', 'frontmatter', 'textEdits', 'dropAnchors']) {
+      expect(tool.inputSchema.required ?? []).not.toContain(optional);
+    }
+    expect((props.body as { description?: string }).description).toContain('a page that does not exist yet is created');
+    expect((props.frontmatter as { description?: string }).description).toContain("replaces the page's frontmatter wholesale");
+    expect((props.textEdits as { description?: string }).description).toContain('Mutually exclusive with `body`');
+    expect(tool.description).toContain('this is the create-or-replace primitive');
+    // The entity's hints: readOnly 0, destructive 1, idempotent 0, openWorld 0.
+    expect(tool.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    });
     // 2.1.8 — no root-dependent exemption from the guard is advertised any more.
     expect(tool.description).toContain('ANCHOR LOSS, IN BOTH MODES');
     expect(tool.description).not.toMatch(/guard does not run/i);
     expect((props.dropAnchors as { description?: string }).description).toContain('runs on every page root');
+
+    // logic — the literal mode is create-or-replace: a page missing from a known root is CREATED, never NOT_FOUND.
+    const created = await call('update_page', {
+      rootId: 'pages',
+      path: 'fresh/new.md',
+      body: '# New\n\nfirst\n',
+      frontmatter: { title: 'New', order: 1 },
+      expectedHash: 'a'.repeat(64),
+    });
+    expect(created.isError).toBe(false);
+    expect(Object.keys(created.body).sort()).toEqual(['changedAnchors', 'hash', 'version']);
+    const createdOnDisk = await fs.readFile(path.join(pages.root, 'fresh/new.md'), 'utf-8');
+    expect(createdOnDisk).toContain('first');
+    expect(created.body.hash).toBe(createHash('sha256').update(createdOnDisk, 'utf-8').digest('hex'));
+
+    // …and replaces: `frontmatter` replaces the old one WHOLESALE — `order` does not survive a write that omits it.
+    const replaced = await call('update_page', {
+      rootId: 'pages',
+      path: 'fresh/new.md',
+      body: '# New\n\nsecond\n',
+      frontmatter: { title: 'Renamed' },
+      expectedHash: created.body.hash,
+    });
+    expect(replaced.isError).toBe(false);
+    const read = await pages.read('fresh/new.md');
+    expect(read.frontmatter).toEqual({ title: 'Renamed' });
+    expect(read.body).toContain('second');
+    expect(read.body).not.toContain('first');
+
+    // The removed `content` name describes nothing any more: INVALID_ARGUMENT, and no page is created.
+    const legacy = await call('update_page', {
+      rootId: 'pages',
+      path: 'legacy.md',
+      content: '# Legacy\n',
+      expectedHash: 'a'.repeat(64),
+    });
+    expect(legacy.isError).toBe(true);
+    expect(legacy.body.code).toBe('INVALID_ARGUMENT');
+    expect(await pages.exists('legacy.md')).toBe(false);
+  });
+
+  it('[entity:katalog-operacji-m02#update_page] the row: project, direct in all four channels, file+db+ui-notify, `(rootId, relPath)`, `body` (+ `frontmatter`) or `textEdits` disjointly, mandatory expectedHash guard, the rules it can show (echo-free, destructive-declared, replacements-returned, diff-field-names) and its error codes; a literal write to a page missing from a known root creates it — no NOT_FOUND', async () => {
+    registerCoreOperations();
+    const op = CATALOG.require('update_page');
+    // nazwa — `update_page` — zapis strony (utwórz albo zastąp)
+    expect(op.summary).toMatch(/create or replace/i);
+    expect(op.scope).toBe('project');
+    expect(op.mediation).toBe('direct');
+    for (const channel of ['internal', 'cli', 'mcp', 'rest'] as const) {
+      expect(op.channels[channel].kind, channel).toBe('direct');
+    }
+    expect([...op.sideEffects].sort()).toEqual(['db', 'file', 'ui-notify']);
+    // opis treści — `obydwa`: `body` (z opcjonalnym `frontmatter`) albo `textEdits`, rozłącznie.
+    expect(op.contentInput).toBe('literal+diff');
+    // adresowanie — `(rootId, relPath)`; guard — `wymagany`.
+    expect(Object.keys(op.inputSchema).sort()).toEqual(
+      ['body', 'dropAnchors', 'expectedHash', 'frontmatter', 'path', 'rootId', 'textEdits'].sort(),
+    );
+    expect(op.inputSchema).not.toHaveProperty('content');
+    const isOptional = (key: string): boolean =>
+      (op.inputSchema[key] as unknown as { isOptional(): boolean }).isOptional();
+    for (const required of ['rootId', 'path', 'expectedHash']) expect(isOptional(required), required).toBe(false);
+    for (const optional of ['body', 'frontmatter', 'textEdits', 'dropAnchors']) expect(isOptional(optional), optional).toBe(true);
+    // kody błędów — the ones this operation raises.
+    expect(op.errorCodes).toEqual(
+      expect.arrayContaining(['PAGE_CONFLICT', 'INVALID_ARGUMENT', 'FIND_NOT_FOUND', 'MATCH_COUNT_MISMATCH', 'ANCHOR_LOSS']),
+    );
+    // ASSUMPTION:dev-0101 — an unknown root is ROOT_NOT_FOUND on every channel, where the row says NOT_FOUND.
+    expect(op.errorCodes).toContain('ROOT_NOT_FOUND');
+    // ASSUMPTION:m02u-dev-0001 — ROOT_NOT_WRITABLE has no producer anywhere in the page write path, so it is not declared.
+    expect(op.errorCodes).not.toContain('ROOT_NOT_WRITABLE');
+
+    // The MCP rendering: same addressing, same field names (`diff-field-names`), `destructive-declared`.
+    const { tools } = await client.listTools();
+    const tool = tools.find((t) => t.name === 'update_page')!;
+    expect(tool.inputSchema.required ?? []).toEqual(expect.arrayContaining(['rootId', 'path', 'expectedHash']));
+    const editProps = (tool.inputSchema.properties!.textEdits as { items: { properties: Record<string, unknown> } }).items
+      .properties;
+    expect(Object.keys(editProps).sort()).toEqual(['expectedMatches', 'find', 'replaceWith']);
+    expect(tool.annotations?.destructiveHint).toBe(true);
+
+    // Behaviour. A literal write to a page missing from a known root is CREATED — no NOT_FOUND.
+    const created = await call('update_page', {
+      rootId: 'pages',
+      path: 'row.md',
+      body: '# Row\n\nalpha beta\n',
+      expectedHash: 'a'.repeat(64),
+    });
+    expect(created.isError).toBe(false);
+    expect(await pages.exists('row.md')).toBe(true);
+    // `echo-free`: the answer is metadata only, no page.
+    expect(Object.keys(created.body).sort()).toEqual(['changedAnchors', 'hash', 'version']);
+
+    // `replacements-returned`: the differential mode reports how many substitutions landed.
+    const diff = await call('update_page', {
+      rootId: 'pages',
+      path: 'row.md',
+      textEdits: [{ find: 'a', replaceWith: 'A', expectedMatches: 'all' }],
+      expectedHash: created.body.hash,
+    });
+    expect(diff.isError).toBe(false);
+    expect(diff.body.replacements).toBe(3);
+
+    // `body` and `textEdits` together, or neither → INVALID_ARGUMENT; a stale hash → PAGE_CONFLICT.
+    const both = await call('update_page', {
+      rootId: 'pages',
+      path: 'row.md',
+      body: 'x',
+      textEdits: [{ find: 'A', replaceWith: 'a', expectedMatches: 'all' }],
+      expectedHash: diff.body.hash,
+    });
+    expect(both.body.code).toBe('INVALID_ARGUMENT');
+    const neither = await call('update_page', { rootId: 'pages', path: 'row.md', expectedHash: diff.body.hash });
+    expect(neither.body.code).toBe('INVALID_ARGUMENT');
+    const stale = await call('update_page', { rootId: 'pages', path: 'row.md', body: 'y', expectedHash: created.body.hash });
+    expect(stale.body.code).toBe('PAGE_CONFLICT');
   });
 
   it('0.2.100 — update_sections declares the sixth action and a heading field, update_page declares neither', async () => {
@@ -342,7 +475,7 @@ describe('page-tools', () => {
      */
     const updatePage = tools.find((t) => t.name === 'update_page')!;
     expect(Object.keys(updatePage.inputSchema.properties!)).not.toContain('heading');
-    expect(updatePage.description).toContain('`update_sections` carries a `rename` action');
+    expect(updatePage.description).toContain("To change a heading's TEXT use its `rename` action");
   });
 
   it('update_sections on an unindexed anchor is SECTION_NOT_FOUND, not a crash', async () => {

@@ -176,6 +176,34 @@ function generatedAtIso(value: unknown): string {
 export class BriefService {
   constructor(private deps: BriefServiceDeps) {}
 
+  /** Per-brief-path write queue (see {@link withLock}). */
+  private locks = new Map<string, Promise<unknown>>();
+
+  /**
+   * Serializes the read-compare-write cycle of one brief, as `PlanService`
+   * does for plans. Without it two `update_brief` calls from two editorial
+   * threads armed with the same `expectedHash` could both pass the comparison
+   * across the awaits before either wrote, and the later write would silently
+   * erase the earlier one — the opposite of first-write-wins. Inside the queue
+   * the second caller re-reads the file the first one wrote and is answered
+   * `BRIEF_CONFLICT`. In-process only, which is all one server needs.
+   */
+  private withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const prior = this.locks.get(key) ?? Promise.resolve();
+    const run = prior.then(
+      () => undefined,
+      () => undefined,
+    ).then(fn);
+    this.locks.set(
+      key,
+      run.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return run;
+  }
+
   /**
    * 2.1.8 — the id of the root this service writes: the `briefs` system root,
    * whose store the context took from the registry BY KIND. It keys the
@@ -577,7 +605,11 @@ export class BriefService {
     return detail;
   }
 
-  async updateContent(opts: BriefUpdateContentOpts): Promise<{ newHash: string }> {
+  updateContent(opts: BriefUpdateContentOpts): Promise<{ newHash: string }> {
+    return this.withLock(opts.path, () => this.updateContentLocked(opts));
+  }
+
+  private async updateContentLocked(opts: BriefUpdateContentOpts): Promise<{ newHash: string }> {
     // `full`: the conflict payload hands the client the other writer's bytes to
     // diff against, so a window here would be a window in the dialog.
     const current = await this.getBrief(opts.path, { full: true });
@@ -632,7 +664,12 @@ export class BriefService {
     return { newHash: hashContent(opts.content) };
   }
 
-  async updateFrontmatter(opts: BriefUpdateFrontmatterOpts): Promise<Brief> {
+  updateFrontmatter(opts: BriefUpdateFrontmatterOpts): Promise<Brief> {
+    // Same queue as `updateContent`: both rewrite the whole file from a read.
+    return this.withLock(opts.path, () => this.updateFrontmatterLocked(opts));
+  }
+
+  private async updateFrontmatterLocked(opts: BriefUpdateFrontmatterOpts): Promise<Brief> {
     // `full` — the writer's read (see `getBrief`): the file is re-stringified out
     // of `current.body`, so a body cut to the response budget would DELETE the
     // tail of a long brief on `mark_brief_implemented`.

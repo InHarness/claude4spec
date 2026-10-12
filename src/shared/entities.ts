@@ -320,9 +320,12 @@ export interface ReleaseDetail extends Release {
 
 /**
  * M28: body of `POST /api/releases` and the MCP `release_create` result.
- * `ReleaseDetail` plus the best-effort `git commit` outcome — `null` when
- * git is off or no repo was detected. Not persisted (no column on the
- * `release` table); present only on the synchronous create response.
+ * `ReleaseDetail` plus the best-effort `git commit` outcome (dto `release`,
+ * field `gitSync`). 2.1.14 (M17 hybasevj): `null` when the `commitOnRelease`
+ * gate did not let it through — git off, no repo, or detached/unborn HEAD in
+ * commitTarget `current`; `skipped` when the commit ran with nothing to do.
+ * Not persisted (no column on the `release` table); present only on the
+ * synchronous create response. The UI reacts only to `status: 'error'`.
  */
 export interface CreateReleaseResponse extends ReleaseDetail {
   gitSync?: GitSyncField<GitCommitStatus>;
@@ -332,8 +335,10 @@ export interface CreateReleaseResponse extends ReleaseDetail {
  * 0.1.124: body of `PATCH /api/releases/:name`. `ReleaseDetail` plus the
  * best-effort `git commit` outcome of `commitPull()` — populated ONLY when
  * the request set `assignUnreleased: true` (the only update path that
- * triggers a git commit); a plain rename/description edit returns
- * `gitSync: null`, same as when git is off or no repo was detected.
+ * triggers a git commit). 2.1.14 (M17 mbjdcls0): `null` ONLY when no pull ran
+ * (a plain rename/description edit, or no GitService wired); git off, no repo
+ * and detached HEAD answer `commitPull`'s `{ status: 'skipped' }` — unlike
+ * `CreateReleaseResponse`, where those cases are `null`.
  */
 export interface UpdateReleaseResponse extends ReleaseDetail {
   gitSync?: GitSyncField<GitCommitStatus>;

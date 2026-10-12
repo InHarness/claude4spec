@@ -7,9 +7,23 @@ description: Read claude4spec specification entities (endpoints, DTOs, tables, A
 ---
 `;
 
-// ASSUMPTION:dev-0007 — carries the 2.1.8 sentences of the spec page; older wording differences stay.
+/**
+ * 2.1.14 (M22 `m22dread`, page `c4s-spec-reader.md`) — the body, emitted 1:1
+ * from the spec page with `<publicUrl>` / `<id>` substituted (`ctx.workspace`
+ * never reaches the text). Sections in page order: preamble (`coz7bila`),
+ * Server required (`sws0pnrn`) and Stale address (`h4vfz91m`) — the shared
+ * blocks of `m22dserv` — then Resolving a tag (`t8xj5140`), Expanding a whole
+ * page (`foj9tbk4`), Navigating (`dw3xlkgn`), Discovery (`wy9a0mdr`), Asking
+ * the spec agent (`a28ukbcn`) and Errors (`zvd7wn4t`).
+ *
+ * ASSUMPTION:m22-dev-0001 — one line departs from the page: the
+ * `c4s resolve --format json` comment names the shape the command really
+ * prints (`{ format, text, resolved }`, see resolve.test.ts), not the page's
+ * `{ content, resolved }` — `content` is the request body's field, and a skill
+ * that names a key the output lacks sends the agent looking for it.
+ */
 export function specReaderBody(ctx: ExternalSkillContext): string {
-  // 2.1.0: `--server <publicUrl> --project <id>` in every command.
+  // `--server '<publicUrl>' --project '<id>'` in every command (m22dserv).
   const identity = skillIdentity(ctx);
   return `# c4s-spec-reader
 
@@ -46,13 +60,7 @@ c4s resolve some-page.md ${identity}                # writes markdown with tags 
 c4s resolve some-page.md --format json ${identity}   # writes { format, text, resolved: [...] } — the original text plus what each tag resolved to
 \`\`\`
 
-This is a RENDER convenience, and the only surface that still offers it. It
-takes a path to a markdown file **you already have** — a page in the repo you
-are working in, for instance. It is not how you read the specification's own
-pages, and there is no MCP equivalent: expanding a tag pastes the entity's
-payload over the reference, and the reference is the more useful half. To read a
-spec page, ask for it with \`get-page\` (tags stay unexpanded) and follow the embeds you care about by slug
-(\`c4s single_element --type <t> --slug <s>\`).
+This is a RENDER convenience, and the only surface that still offers it. It takes a path to a markdown file **you already have** — a page in the repo you are working in, for instance. It is not how you read the specification's own pages, and there is no MCP equivalent: expanding a tag pastes the entity's payload over the reference, and the reference is the more useful half. To read a spec page, ask for it with \`get-page\` (tags stay unexpanded) and follow the embeds you care about by slug (\`c4s single_element --type <t> --slug <s>\`).
 
 ## Navigating pages and sections
 
@@ -116,7 +124,7 @@ budget, sort order, and what an error suggests you do next; the command is a
 transport over it. The mapping, when you need to read the operation's contract:
 
 | CLI command | Operation |
-|---|---|
+|-------------|-----------|
 | \`c4s catalog\` | \`overview\` |
 | \`c4s describe\` | \`describe_types\` |
 | \`c4s list-tags\` | \`list_tags\` |

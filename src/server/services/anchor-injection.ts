@@ -2,7 +2,12 @@ import { customAlphabet } from 'nanoid';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import { insertAnchorLines, parseSections } from '../../shared/section-parser.js';
 import { ARTIFACT_ROOT_KIND, type ArtifactKind } from './artifact-registry.js';
-import { kindSelects } from '../../shared/root-kinds.js';
+import {
+  anchorHeadingLevels,
+  INJECTION_ONLY_HEADING_LEVELS,
+  kindSelects,
+  type HeadingLevelRange,
+} from '../../shared/root-kinds.js';
 import type { MarkdownFileStore } from './markdown-file-store.js';
 import type { WatchSubscriber } from '../fs/watcher.js';
 
@@ -27,14 +32,6 @@ import type { WatchSubscriber } from '../fs/watcher.js';
 const nanoid8 = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
 
 /**
- * Plans anchor `##`–`####`: `#` is the plan title, deeper levels are detail.
- * ASSUMPTION:dev-0014 — the range M10 names; M06 says plans get anchors "by the
- * same definition as a page", which anchors every level.
- */
-const MIN_LEVEL = 2;
-const MAX_LEVEL = 4;
-
-/**
  * Mint an anchor free WITHIN THIS FILE. The uniqueness scope of an artifact
  * anchor is the file it lives in — never `section_index`, which indexes page
  * roots and which artifacts are deliberately absent from.
@@ -51,13 +48,19 @@ function mintFileAnchor(taken: Set<string>): string {
 }
 
 /**
- * Put an anchor comment above every `##`–`####` heading of `body` that has none.
- * `body` carries no frontmatter. Returns the body unchanged when nothing was
- * missing.
+ * Put an anchor comment above every heading of `body` within `levels` that has
+ * none. `levels` is the kind's range (M06 `v9zrytp8`, 2.1.14) —
+ * {@link anchorHeadingLevels}; the default is the range of a kind with injection
+ * alone (`##`–`####`), the only kind of root this injection serves: a `#`,
+ * `#####` or `######` heading stays without an anchor. `body` carries no
+ * frontmatter. Returns the body unchanged when nothing was missing.
  */
-export function injectArtifactAnchors(body: string): string {
+export function injectArtifactAnchors(
+  body: string,
+  levels: HeadingLevelRange = INJECTION_ONLY_HEADING_LEVELS,
+): string {
   const sections = parseSections(body, { frontmatter: false }).sections;
-  const missing = sections.filter((s) => s.anchor === null && s.level >= MIN_LEVEL && s.level <= MAX_LEVEL);
+  const missing = sections.filter((s) => s.anchor === null && s.level >= levels.min && s.level <= levels.max);
   if (missing.length === 0) return body;
   // Seeded with every anchor-shaped value in the file, code included: an
   // injected value must never duplicate anything a reader could mistake for it.
@@ -79,7 +82,12 @@ export function injectsAnchors(kind: ArtifactKind): boolean {
  * selects `m06-anchor-injection`, the body untouched for every other kind.
  */
 export function injectAnchorsFor(kind: ArtifactKind, body: string): string {
-  return injectsAnchors(kind) ? injectArtifactAnchors(body) : body;
+  return injectsAnchors(kind) ? injectArtifactAnchors(body, artifactAnchorLevels(kind)) : body;
+}
+
+/** The heading levels this artifact kind's root kind anchors (M06 `v9zrytp8`). */
+export function artifactAnchorLevels(kind: ArtifactKind): HeadingLevelRange {
+  return anchorHeadingLevels(ARTIFACT_ROOT_KIND[kind]);
 }
 
 /**
@@ -103,7 +111,8 @@ export function artifactAnchorInjectionSubscriber(
       } catch {
         return; // already gone — skip idempotently
       }
-      const injected = injectArtifactAnchors(page.body);
+      // The same level range as the service's own write path (trigger one).
+      const injected = injectArtifactAnchors(page.body, artifactAnchorLevels(kind));
       if (injected === page.body) return;
       suppress(source, relPath);
       await mount.store.write(relPath, { frontmatter: page.frontmatter, body: injected });

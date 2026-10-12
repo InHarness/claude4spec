@@ -9,7 +9,11 @@ export interface McpConfigVariant {
   id: string;
   /** Pill label, ready to display. */
   label: string;
-  /** Ready-to-copy config entry, port and project id already injected. */
+  /**
+   * Ready-to-copy config entry — an instance of the spec's code snippet
+   * `wpis-serwera-c4s-reader`, the workspace `publicUrl` and the project `id`
+   * already injected from the workspace registry.
+   */
   snippet: string;
 }
 

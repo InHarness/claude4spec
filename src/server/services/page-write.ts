@@ -152,9 +152,14 @@ export interface CreatePageInput {
  */
 export interface UpdatePageInput {
   path: string;
-  /** LITERAL mode. The complete markdown body, frontmatter excluded. */
+  /**
+   * LITERAL mode (2.1.14: the entity's name for it; the old `content` is gone).
+   * The complete markdown — the body alone with `frontmatter` beside it, or the
+   * whole file, frontmatter block included, with `frontmatter` omitted. A page
+   * missing from the root is created: the literal mode is create-or-replace.
+   */
   body?: string;
-  /** LITERAL mode only — replaces the frontmatter wholesale. */
+  /** LITERAL mode only — replaces the frontmatter wholesale; omitted → none (unless `body` carries it). */
   frontmatter?: Record<string, unknown>;
   /**
    * DIFFERENTIAL mode. Substitutions are matched against the WHOLE FILE,
@@ -164,13 +169,13 @@ export interface UpdatePageInput {
    */
   textEdits?: TextEdit[];
   /**
-   * DIFFERENTIAL mode only — the anchors this call is allowed to destroy.
+   * BOTH modes — the anchors this call is allowed to destroy.
    *
    * Inherited from `update_sections`, deliberately: a `find` that swallows an
    * `<!-- anchor: … -->` comment breaks every citation of it just as thoroughly
-   * as a `replace` over the same lines, so the same guard has to cover it. The
-   * literal `body` mode has no such guard and never had one — it rewrites the
-   * page wholesale, where "which anchors did you mean to keep" has no answer.
+   * as a `replace` over the same lines, so the same guard has to cover it. Since
+   * 2.1.6 the literal `body` mode carries it too, with the whole page as its
+   * touched scope: every entry must be an anchor the page has now.
    */
   dropAnchors?: string[];
   expectedHash?: string;

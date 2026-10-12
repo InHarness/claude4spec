@@ -54,10 +54,17 @@ export function addressingParamShape(channel: ChannelName, ownerDeclaresIsolatio
  * Only an owning module may add its kind here (M10 plans, M21 briefs, M23
  * patches); M36 never does — its matrix supplies the address, not the shape.
  */
-// ASSUMPTION:dev-0001 — `brief-tools` (internal) still renders no `path` although
-// M21 makes no isolation declaration; it is not wired to this rule in 2.1.13 and
-// left as shipped, pending the specification's answer.
 export const OWNER_THREAD_ISOLATION: Readonly<Partial<Record<ArtifactKind, string>>> = {
+  /**
+   * 2.1.14 — M21 `01ytpznn`: "wątek `context_type='brief'` widzi wyłącznie brief,
+   * do którego jest przypięty". The internal brief tools (`brief-tools`' thread
+   * mount) carry NO `path`: the address is closed over from
+   * `chat_thread.brief_path`, and the absence of the parameter is what isolates —
+   * an optional one would be a default, and a default does not isolate. The
+   * declaration covers `get_brief`, `update_brief`, `mark_brief_implemented` and
+   * both version operations; external channels keep `path` required.
+   */
+  brief: 'M21 01ytpznn — a brief thread sees only the brief it is pinned to',
   /**
    * 2.1.13 — M10 `m10mcp00`: "agent w wątku widzi wyłącznie plan przypięty do
    * swojego wątku", and pinning is the user's act alone. With an optional

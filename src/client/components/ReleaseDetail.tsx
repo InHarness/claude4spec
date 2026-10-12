@@ -18,7 +18,7 @@ import { ReleaseSelect } from './release/ReleaseSelect.js';
 import { ReleasePushesList } from './release/ReleasePushesList.js';
 import { UnreleasedBanner } from './release/UnreleasedBanner.js';
 import { CreateBriefDialog } from './CreateBriefDialog.js';
-import { confirmDestructive, showGitErrorModal, toast } from '../ui/events.js';
+import { confirmDestructive, surfaceGitSync, toast } from '../ui/events.js';
 import { MAX_RELEASE_DESCRIPTION_LENGTH, releaseDescriptionLength } from '../../shared/entities.js';
 // Side-effect import: registers the M25 "Push to remote" action in the registry.
 import './release/push-to-remote-action.js';
@@ -147,11 +147,9 @@ export function ReleaseDetail({ name }: Props) {
     try {
       const updated = await updateRelease.mutateAsync({ releaseName: release.name, assignUnreleased: true });
       // M28: git commit-sync is best-effort — never blocks the pull itself.
-      // 0.1.124: surfaced via GitErrorRecoveryModal (with a "Fix it with
-      // Agent" action) rather than a toast.
-      if (updated.gitSync?.status === 'error' && updated.gitSync.recovery) {
-        showGitErrorModal(updated.gitSync.recovery);
-      }
+      // 2.1.14: only `status: 'error'` reacts (the `git-sync-recover` window);
+      // `committed` / `nothing-to-commit` / `skipped` / `null` give no signal.
+      surfaceGitSync(updated.gitSync);
     } catch (err) {
       alert((err as Error).message);
     }

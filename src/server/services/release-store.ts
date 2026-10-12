@@ -33,8 +33,10 @@ export interface ReleaseFileData {
   description: string;
   createdAt: string;
   createdBy: string;
-  // ASSUMPTION:dev-0005 — the release metadata file carries `roots` as root ids
-  // (the `pages`-kind roots), not `{id,name,dir}` objects.
+  // 2.1.14 (M17 m17reldisk): the ids (`rootId`) of the `pages`-kind roots at the
+  // moment of the release — bare ids, no `name`/`dir`. Deliberately poorer than
+  // the bundle's `manifest.roots` (`{id,name,dir}`): committed release files are
+  // immutable git diff anchors, so this shape is frozen with them.
   roots: string[];
 }
 

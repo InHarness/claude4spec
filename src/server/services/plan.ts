@@ -816,7 +816,15 @@ export class PlanService {
     return this.persistRaw({ ...args, fullContent });
   }
 
-  /** {@link persist}, for a caller that already holds the full file bytes. */
+  /**
+   * {@link persist}, for a caller that already holds the full file bytes.
+   *
+   * 2.1.14 (M10 jo0r7uh9 step 4, m10ws000): the file goes through the primitive
+   * with the phase chain switched off ({@link writeBytes}), then the service
+   * itself calls `recordVersion` with the caller's `changeSummary` — ONE row per
+   * call. Every caller broadcasts `plan:updated` only after this returns, with
+   * the version just recorded (step 5): file → version → broadcast.
+   */
   private async persistRaw(args: {
     planPath: string;
     fullContent: string;

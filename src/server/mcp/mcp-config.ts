@@ -14,20 +14,26 @@ export function mcpMountPath(projectId: string): string {
  * The entry this replaced launched a process that opened the db `readonly: true`
  * and could not write a byte, whatever any model asked of it. The mount's
  * default profile is `chat`, which admits writes — so generating a URL with no
- * profile would have silently converted every user's existing `c4s-spec-reader`
+ * profile would have silently converted every user's existing reader entry
  * into a full write surface, in a config claude4spec hands them, with no undo.
  *
  * A user who wants a writing connection can edit the URL or open a second
- * entry; the generated default keeps the guarantee the server name
- * `c4s-spec-reader` still advertises.
+ * entry; the generated default keeps the read-only guarantee the server name
+ * `c4s-reader` advertises.
  */
 export const GENERATED_MCP_PROFILE = 'ask';
 
-/** Server name kept for continuity with existing client configs — see `mcp/surface.ts`. */
-const SERVER_NAME = 'c4s-spec-reader';
+/**
+ * The entry's key in the client's `mcpServers` map — the name the spec's
+ * snippet `wpis-serwera-c4s-reader` (M12 "Warianty wpisu") gives it, and the
+ * same name the composed server reports (`EXTERNAL_MCP_SERVER_NAME` in
+ * `mcp/surface.ts`). 2.1.14 aligned it: until then the generated entry was keyed
+ * `c4s-spec-reader`, the external SKILL's name, not the server's.
+ */
+export const MCP_CONFIG_SERVER_KEY = 'c4s-reader';
 
 function entry(server: Record<string, unknown>): string {
-  return JSON.stringify({ mcpServers: { [SERVER_NAME]: server } }, null, 2) + '\n';
+  return JSON.stringify({ mcpServers: { [MCP_CONFIG_SERVER_KEY]: server } }, null, 2) + '\n';
 }
 
 /**
@@ -47,7 +53,10 @@ function entry(server: Record<string, unknown>): string {
  *   - `http-workspace` — the workspace-bound mount, project named by `?project=`
  *     (the registry id — `findProject` in `routes/mcp.ts` matches it first).
  *   - `stdio` — the `c4s-mcp` bridge, for clients that cannot speak HTTP. It
- *     relays to the project-bound mount; it never starts a server.
+ *     relays to the project-bound mount; it never starts a server. 2.1.14
+ *     (M11 m11pkg00): `c4s-mcp` is not the package's default bin, so a
+ *     no-install launch names the package with `-p` —
+ *     `npx -y -p @inharness-ai/claude4spec c4s-mcp`.
  *
  * 2.1.0 — every snippet joins the workspace's effective `publicUrl` with the
  * project `id`, BOTH taken from the registry, never from request headers (a

@@ -40,8 +40,18 @@ export const acSystemPrompt: SystemPromptContribution = {
    * What stays is the granulation rule — one observable statement, which is a
    * decision about how many criteria to write, not a field — and the tag
    * convention, which no schema can carry because it varies per project.
+   *
+   * 2.1.14 (c4s-plugin-ac `fsu38c8q`, L2 `eoi2kf2k`) — the WHEN of `verifies`,
+   * which the schema cannot carry either: the field is filled only when the
+   * criterion's subject is one entity; a criterion about behaviour described in
+   * a module's prose leaves it empty, and that is a valid state, not a gap — its
+   * title is the contract and its tags place it. The page's narrative is Polish
+   * and spells out the LVS tag tokens (`mNN`, `lNN`); rendered here in English
+   * and without the tokens, for the 0.2.50 reason above (ASSUMPTION:pkg-dev-0001).
    */
   narrativeBlock:
     'Acceptance criteria state ONE observable thing each: if a criterion needs an "and" to be true, it is two criteria. ' +
+    'Fill `verifies` only when the criterion\'s subject is a specific entity (an endpoint, a DTO, a UI view, a table, an MCP tool): reference integrity is then checked and orphans are reported. ' +
+    'A criterion about behaviour described in a module\'s prose leaves `verifies` empty: its title is then the contract, and its tags place it (the module, and the layer when there is one). ' +
     'The tag vocabulary is a project convention, not a property of the type: follow the active writing style, and reuse the tags already on neighbouring criteria rather than inventing a scheme.',
 };

@@ -161,15 +161,21 @@ export function registerCoreReactions(): void {
     factory: (ctx) => ctx.versionCapture,
   });
 
-  // M10 (m10ws000) — selected by the `plans` kind. Acceptance: markdown with the
-  // plan contract; requires `m17-capture` on the same kind (the payload carries
-  // the `file_version` number). Trigger `primitive`: the watcher never fires it —
-  // an outside edit is announced by the base `file:changed`.
+  // M10 (m10ws000, 2.1.14) — selected by the `plans` kind. Acceptance: markdown
+  // with the plan contract; requirements: none — the version number in the
+  // payload comes from the `recordVersion` `PlanService` calls itself (M10
+  // jo0r7uh9), not from the `capture` phase. Order: independent, own phase
+  // `notification`; no `after: [capture]` — `notification` runs before
+  // `capture`, and a dependency on a later phase is a DAG validation error
+  // (M40 v90cvq22). The plan write goes with the chain switched off (M42
+  // 544jcpq5), so neither the watcher nor an in-band chain fires this
+  // definition for the service's own write: it carries the acceptance contract
+  // and the event shape; the service broadcasts `plan:updated` itself, after its
+  // own `recordVersion`. An outside edit is announced by the base `file:changed`.
   defineReaction<CoreReactionContext>({
     id: 'm10-plan-updated',
     phase: 'notification',
     accepts: ['markdown'],
-    requires: ['m17-capture'],
     factory: (ctx) => planUpdatedNotifier(ctx.ws),
   });
 

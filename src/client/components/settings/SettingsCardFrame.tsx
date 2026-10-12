@@ -17,6 +17,7 @@ import {
   type CardDraft,
   type ConfigKeyPath,
   type ElementContext,
+  visibleElements,
 } from './registry.js';
 
 /**
@@ -94,14 +95,14 @@ export function SettingsCardFrame({ card, config }: { card: AssembledCard; confi
   );
 
   const ctx: ElementContext = { config, draft };
-  const visibleElements = card.elements.filter((e) => !e.visible || e.visible(ctx));
+  const shown = visibleElements(card.elements, ctx);
   const fileBacked = card.elements.some((e) => elementKeys(e).length > 0);
 
   // Live (UI:) validation of the generated elements, over what is on screen now.
   // Only an EDITED key can hold [Save]: an untouched one is not sent, and a config
   // already broken elsewhere must stay repairable here exactly as it is on the
   // server — every cross-field check is symmetric, so the edited side reports too.
-  const generatedErrors = visibleElements.flatMap((e) => {
+  const generatedErrors = shown.flatMap((e) => {
     if (!e.validate || !e.configKey || !draft.isDirty(e.configKey)) return [];
     const r = e.validate(draft.get(e.configKey), ctx);
     return r?.error ? [r.error] : [];
@@ -150,7 +151,7 @@ export function SettingsCardFrame({ card, config }: { card: AssembledCard; confi
   return (
     <SettingsCard id={card.decl.anchor} title={card.decl.title} description={card.decl.description} tone={card.decl.tone}>
       <div className="flex flex-col gap-4">
-        {visibleElements.map((e) => {
+        {shown.map((e) => {
           if (e.kind === 'custom') {
             const Custom = e.component;
             return Custom ? <Custom key={e.id} decl={e} {...ctx} /> : null;

@@ -199,12 +199,335 @@ describe('POST /api/releases — commit-on-release (M28)', () => {
     expect(res.status).toBe(201);
     expect(res.body.gitSync.status).toBe('committed');
 
-    // ASSUMPTION:dev-0013 — the message is `{name}\n\n{description}` (no `Release ` prefix).
+    // 2.1.14 (M28 aqys9dje): the message is `{name}\n\n{description}` — no `Release ` prefix.
     expect(git('log', '-1', '--format=%B').trim()).toBe('v1\n\nfirst cut');
     const tracked = git('ls-tree', '-r', '--name-only', 'HEAD').split('\n');
     expect(tracked).toContain('pages/a.md');
     expect(tracked).toContain('.claude4spec/entities/tags.json');
     expect(tracked).toContain('.claude4spec/config.json');
+  });
+
+  /** Rewrite the project's `git` config block (read per call — hot-reload). */
+  function setGitConfig(gitCfg: Record<string, unknown>): void {
+    fs.writeFileSync(
+      path.join(cwd, '.claude4spec', 'config.json'),
+      JSON.stringify({
+        $schemaVersion: 4,
+        name: 'p',
+        roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }],
+        git: gitCfg,
+      }),
+    );
+  }
+
+  const branchExists = (name: string): boolean => {
+    try {
+      git('rev-parse', '--verify', `refs/heads/${name}`);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  it('[ac:ac-gdy-docelowy-branch-tryb-named-zniknal] named target branch gone between configuration and release → gitSync status error with recovery.kind branch-missing, the branch is not created, the release stays created', async () => {
+    git('branch', 'release-target');
+    setGitConfig({ enabled: true, commitTarget: { mode: 'named', branch: 'release-target' } });
+    git('branch', '-D', 'release-target'); // removed after it was configured
+
+    const res = await request(app).post('/api/releases').send({ name: 'v1', description: 'first cut' });
+    expect(res.status).toBe(201);
+    expect(res.body.name).toBe('v1');
+    expect(res.body.gitSync.status).toBe('error');
+    expect(res.body.gitSync.recovery.operation).toBe('commit-on-release');
+    expect(res.body.gitSync.recovery.kind).toBe('branch-missing');
+    expect(res.body.gitSync.recovery.intentPrompt).toBeTruthy();
+    expect(branchExists('release-target')).toBe(false);
+
+    const persisted = await request(app).get('/api/releases/v1');
+    expect(persisted.status).toBe(200);
+    expect(persisted.body.name).toBe('v1');
+  });
+
+  it('[ac:ac-gdy-explicit-committarget-base-tryb-new] explicit commitTarget.base (mode new) gone before the release → gitSync status error with recovery.kind base-missing, the release itself succeeds', async () => {
+    git('branch', 'base-branch');
+    setGitConfig({ enabled: true, commitTarget: { mode: 'new', template: 'release/{release_slug}', base: 'base-branch' } });
+    git('branch', '-D', 'base-branch');
+
+    const res = await request(app).post('/api/releases').send({ name: 'v1', description: 'first cut' });
+    expect(res.status).toBe(201);
+    expect(res.body.name).toBe('v1');
+    expect(res.body.gitSync.status).toBe('error');
+    expect(res.body.gitSync.recovery.kind).toBe('base-missing');
+    expect(branchExists('release/v1')).toBe(false);
+
+    const persisted = await request(app).get('/api/releases/v1');
+    expect(persisted.status).toBe(200);
+  });
+
+  const commitSubjects = (): string[] => git('log', '--all', '--format=%s').split('\n').filter(Boolean);
+
+  it('[ac:ac-commitforrelease-i-push-honoruja-master] [entity:release] with git.enabled=false commitOnRelease does not run — createRelease answers gitSync: null and makes no commit; no commit-on-release sub-toggle can switch it on', async () => {
+    // A legacy sub-toggle left `true` is not a switch: `enabled` is the only gate.
+    setGitConfig({ enabled: false, syncCommitOnRelease: true });
+    fs.writeFileSync(path.join(cwd, 'pages', 'b.md'), '# b'); // work a commit would pick up
+
+    const res = await request(app).post('/api/releases').send({ name: 'v1', description: 'first cut' });
+
+    expect(res.status).toBe(201);
+    expectReleasePayload(res.body);
+    expect(res.body.name).toBe('v1');
+    expect(res.body).toHaveProperty('gitSync', null);
+    expect(commitSubjects()).toEqual(['seed']); // SQLite-only: the repository is untouched
+    expect(git('status', '--porcelain')).toContain('pages/');
+  });
+
+  it('[ac:ac-przy-detached-head-lub-unborn-branch-d] detached HEAD in commitTarget `current` → createRelease answers gitSync: null and makes no commit', async () => {
+    setGitConfig({ enabled: true, commitTarget: { mode: 'current' } });
+    git('checkout', '--detach');
+    const head = git('rev-parse', 'HEAD').trim();
+
+    const res = await request(app).post('/api/releases').send({ name: 'v1', description: 'first cut' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.name).toBe('v1');
+    expect(res.body).toHaveProperty('gitSync', null);
+    expect(git('rev-parse', 'HEAD').trim()).toBe(head);
+    expect(commitSubjects()).toEqual(['seed']);
+  });
+
+  it('[ac:ac-przy-detached-head-lub-unborn-branch-d] unborn branch (fresh repo, 0 commits) in commitTarget `current` → the first release answers gitSync: null and creates no initial commit', async () => {
+    const fresh = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-rel-unborn-'));
+    const gitFresh = (...args: string[]): string => execFileSync('git', args, { cwd: fresh, encoding: 'utf8' });
+    const freshDb = new Database(':memory:');
+    try {
+      gitFresh('init', '-b', 'main');
+      gitFresh('config', 'user.email', 'test@example.com');
+      gitFresh('config', 'user.name', 'Test');
+      fs.mkdirSync(path.join(fresh, '.claude4spec'), { recursive: true });
+      fs.writeFileSync(
+        path.join(fresh, '.claude4spec', 'config.json'),
+        JSON.stringify({
+          $schemaVersion: 4,
+          name: 'p',
+          roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }],
+          git: { enabled: true, commitTarget: { mode: 'current' } },
+        }),
+      );
+      fs.mkdirSync(path.join(fresh, 'pages'), { recursive: true });
+      fs.writeFileSync(path.join(fresh, 'pages', 'a.md'), '# a');
+      runMigrations(freshDb);
+      const freshReleases = new ReleaseService(
+        freshDb,
+        fakeHost,
+        fakeVersions,
+        fakeFileVersions,
+        fakeFileSerializer,
+        fakeRawReader,
+        fakeTagsService,
+        fakePagesService,
+      );
+      const freshApp = express()
+        .use(express.json())
+        .use('/api/releases', releasesRouter(freshReleases, undefined, new GitService(fresh, [path.join(fresh, 'pages')])))
+        .use(errorHandler);
+
+      const res = await request(freshApp).post('/api/releases').send({ name: 'v1', description: 'first cut' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.name).toBe('v1');
+      expect(res.body).toHaveProperty('gitSync', null);
+      // Still unborn: no initial commit was made by git sync.
+      expect(() => gitFresh('rev-parse', '--verify', '--quiet', 'HEAD')).toThrow();
+      expect(gitFresh('rev-list', '--all', '--count').trim()).toBe('0');
+    } finally {
+      freshDb.close();
+      fs.rmSync(fresh, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * Dto `release` (M17) on the live payload — every required field with its type,
+ * and the additive `gitSync` (an object or `null`). ASSUMPTION:m28k-dev-0001 —
+ * the wire names stay camelCase (`createdBy`, `createdAt`, `countBreakdown`)
+ * where the dto writes `created_by`, `created_at`, `count_breakdown`.
+ */
+function expectReleasePayload(body: Record<string, unknown>): void {
+  expect(typeof body.id).toBe('number');
+  expect(typeof body.name).toBe('string');
+  expect(typeof body.description).toBe('string');
+  expect(typeof body.createdBy).toBe('string');
+  expect(body.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  expect(body.countBreakdown).toEqual(
+    expect.objectContaining({ entities: expect.any(Object), pages: expect.any(Number), total: expect.any(Number) }),
+  );
+  expect('gitSync' in body).toBe(true);
+  expect(body.gitSync === null || typeof body.gitSync === 'object').toBe(true);
+}
+
+/**
+ * 2.1.14 (M17 mbjdcls0, M28 aqys9dje) — `PATCH /api/releases/:name` with
+ * `{ name?, description?, assignUnreleased? }`. Its `gitSync` is `null` ONLY
+ * when no pull ran; git off / no repo answer `commitPull`'s `skipped`
+ * (unlike `POST /api/releases`, where those cases are `null`); git on commits
+ * the working tree (`Pull to <name>`).
+ */
+describe('PATCH /api/releases/:name — gitSync of the pull commit (M17 + M28)', () => {
+  let db: Database.Database;
+  let cwd: string;
+  let app: express.Express;
+  const git = (...args: string[]): string => execFileSync('git', args, { cwd, encoding: 'utf8' });
+
+  function writeProjectConfig(gitCfg: Record<string, unknown>): void {
+    fs.mkdirSync(path.join(cwd, '.claude4spec'), { recursive: true });
+    fs.writeFileSync(
+      path.join(cwd, '.claude4spec', 'config.json'),
+      JSON.stringify({
+        $schemaVersion: 4,
+        name: 'p',
+        roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }],
+        git: gitCfg,
+      }),
+    );
+  }
+
+  /** Release service + router over `cwd`, both wired with a real GitService (as project-context wires them). */
+  function mount(): void {
+    const releases = new ReleaseService(
+      db,
+      fakeHost,
+      fakeVersions,
+      fakeFileVersions,
+      fakeFileSerializer,
+      fakeRawReader,
+      fakeTagsService,
+      fakePagesService,
+    );
+    const gitService = new GitService(cwd, [path.join(cwd, 'pages')]);
+    releases.setGitService(gitService);
+    app = express().use(express.json()).use('/api/releases', releasesRouter(releases, undefined, gitService)).use(errorHandler);
+  }
+
+  function initRepo(): void {
+    git('init', '-b', 'main');
+    git('config', 'user.email', 'test@example.com');
+    git('config', 'user.name', 'Test');
+    fs.writeFileSync(path.join(cwd, 'seed.txt'), 'seed');
+    git('add', 'seed.txt');
+    git('commit', '-m', 'seed');
+  }
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    runMigrations(db);
+    cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-rel-patch-'));
+    fs.mkdirSync(path.join(cwd, 'pages'), { recursive: true });
+    fs.writeFileSync(path.join(cwd, 'pages', 'a.md'), '# a');
+  });
+
+  afterEach(() => {
+    db.close();
+    fs.rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it('[ac:ac-rest-patch-api-releases-nameorid-z-bod] [entity:release] git on: assignUnreleased commits the working tree (commitPull) and gitSync carries the commit; a PATCH with no pull answers gitSync: null', async () => {
+    initRepo();
+    writeProjectConfig({ enabled: true });
+    mount();
+    await request(app).post('/api/releases').send({ name: 'v1', description: 'first cut' }).expect(201);
+    fs.writeFileSync(path.join(cwd, 'pages', 'b.md'), '# b'); // unreleased work in the working tree
+
+    const pull = await request(app).patch('/api/releases/v1').send({ description: 'first cut, pulled', assignUnreleased: true });
+
+    expect(pull.status).toBe(200);
+    expectReleasePayload(pull.body);
+    expect(pull.body.description).toBe('first cut, pulled');
+    expect(pull.body.gitSync).toMatchObject({ status: 'committed' });
+    expect(git('log', '-1', '--format=%s').trim()).toBe('Pull to v1');
+    expect(git('ls-tree', '-r', '--name-only', 'HEAD').split('\n')).toContain('pages/b.md');
+
+    // No pull requested → no pull ran → null.
+    const rename = await request(app).patch('/api/releases/v1').send({ name: 'v1.0' });
+    expect(rename.status).toBe(200);
+    expect(rename.body.name).toBe('v1.0');
+    expect(rename.body).toHaveProperty('gitSync', null);
+  });
+
+  it('[ac:ac-rest-patch-api-releases-nameorid-z-bod] git off: assignUnreleased answers gitSync { status: "skipped" } (not null) and commits nothing', async () => {
+    initRepo();
+    writeProjectConfig({ enabled: false });
+    mount();
+    const created = await request(app).post('/api/releases').send({ name: 'v1', description: 'first cut' });
+    expect(created.body).toHaveProperty('gitSync', null); // the create gate: null
+
+    const pull = await request(app).patch('/api/releases/v1').send({ assignUnreleased: true });
+
+    expect(pull.status).toBe(200);
+    expect(pull.body.gitSync).toEqual({ status: 'skipped' });
+    expect(git('log', '--all', '--format=%s').split('\n').filter(Boolean)).toEqual(['seed']);
+  });
+
+  it('[ac:ac-rest-patch-api-releases-nameorid-z-bod] no repository: assignUnreleased answers gitSync { status: "skipped" } (not null)', async () => {
+    writeProjectConfig({ enabled: true }); // git on, but `cwd` is no git worktree
+    mount();
+    await request(app).post('/api/releases').send({ name: 'v1', description: 'first cut' }).expect(201);
+
+    const pull = await request(app).patch('/api/releases/v1').send({ assignUnreleased: true });
+
+    expect(pull.status).toBe(200);
+    expect(pull.body.gitSync).toEqual({ status: 'skipped' });
+  });
+
+  it('[ac:ac-wariant-error-gitcommitresult-gitpushres] a failed git commit answers gitSync { status: error, message } plus the additive recovery { operation, reason, gitStderr, intentPrompt } — operation commit-on-release on createRelease, pull on updateRelease', async () => {
+    initRepo();
+    writeProjectConfig({ enabled: true });
+    // A pre-commit hook that refuses every commit — a plain git failure (no `kind`).
+    // A local core.hooksPath wins over any ambient global one.
+    const hooks = path.join(cwd, 'test-hooks');
+    fs.mkdirSync(hooks);
+    fs.writeFileSync(path.join(hooks, 'pre-commit'), '#!/bin/sh\necho "pre-commit refused the commit" >&2\nexit 1\n', { mode: 0o755 });
+    git('config', 'core.hooksPath', hooks);
+    mount();
+
+    const expectRecovery = (gitSync: Record<string, unknown>, operation: string): void => {
+      // What an old consumer reads is intact: status + message …
+      expect(gitSync.status).toBe('error');
+      expect(typeof gitSync.message).toBe('string');
+      // … and the recovery payload rides alongside, composed by the backend.
+      const recovery = gitSync.recovery as Record<string, unknown>;
+      expect(recovery.operation).toBe(operation);
+      expect(typeof recovery.reason).toBe('string');
+      expect(recovery.reason).not.toBe('');
+      expect(recovery.gitStderr).toContain('pre-commit refused the commit');
+      expect(typeof recovery.intentPrompt).toBe('string');
+      expect(recovery.intentPrompt).toContain('pre-commit refused the commit');
+      expect(recovery.kind).toBeUndefined();
+    };
+
+    const created = await request(app).post('/api/releases').send({ name: 'v1', description: 'first cut' });
+    expect(created.status).toBe(201); // the release itself is created
+    expectRecovery(created.body.gitSync, 'commit-on-release');
+
+    fs.writeFileSync(path.join(cwd, 'pages', 'b.md'), '# b');
+    const pull = await request(app).patch('/api/releases/v1').send({ assignUnreleased: true });
+    expect(pull.status).toBe(200);
+    expectRecovery(pull.body.gitSync, 'pull');
+    expect(git('log', '--all', '--format=%s').split('\n').filter(Boolean)).toEqual(['seed']);
+  });
+
+  it('[ac:ac-rest-patch-api-releases-nameorid-z-bod] errors: 409 RELEASE_FROZEN on a release that is not the latest, 409 RELEASE_NAME_CONFLICT on a rename collision', async () => {
+    writeProjectConfig({ enabled: false });
+    mount();
+    await request(app).post('/api/releases').send({ name: 'v1', description: 'first' }).expect(201);
+    await request(app).post('/api/releases').send({ name: 'v2', description: 'second' }).expect(201);
+
+    const frozen = await request(app).patch('/api/releases/v1').send({ assignUnreleased: true });
+    expect(frozen.status).toBe(409);
+    expect(frozen.body.error.code).toBe('RELEASE_FROZEN');
+
+    const conflict = await request(app).patch('/api/releases/v2').send({ name: 'v1' });
+    expect(conflict.status).toBe(409);
+    expect(conflict.body.error.code).toBe('RELEASE_NAME_CONFLICT');
   });
 });
 

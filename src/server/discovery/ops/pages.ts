@@ -87,11 +87,14 @@ export async function getPage(
       `get_page({ rootId: "${root.id}", path: "<relative path>" }) — use list_pages({ rootId: "${root.id}" }) to see them`,
     );
   }
-  // 2.1.8 — refused here, once, for every channel (MCP, REST, in-process).
-  // ASSUMPTION:dev-0006 — a stale `range` is refused, never silently ignored.
+  // 2.1.8 — refused here, once, for every channel (MCP, CLI via REST, in-process).
+  // A stale `range` is refused, never silently ignored (M39 L2 `984v8437`).
+  // 2.1.14 — the `message` itself carries the repair path (get_page_outline,
+  // then get_sections), not only the hint: every INVALID_ARGUMENT names the way
+  // out (M39 taxonomy `7dad4wt0`), and some channels surface the message alone.
   if (input.range !== undefined) {
     throw invalidArgument(
-      'get_page has no line window (range was removed in 2.1.8)',
+      'get_page has no line window (range was removed in 2.1.8): read the page structure with get_page_outline, then fetch the sections you need with get_sections',
       `get_page_outline({ rootId: "${root.id}", path: "${input.path}" }), then get_sections({ anchors: [...] })`,
     );
   }

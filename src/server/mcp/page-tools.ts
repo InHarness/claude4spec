@@ -188,38 +188,59 @@ export function createPageToolsServer(
     },
   );
 
+  /**
+   * 2.1.14 — the description is the entity's (`page-tools-update-page`), verbatim,
+   * followed by two paragraphs the entity carries in `logic` and `returns`
+   * rather than in its description: the anchor guard of both modes and the
+   * shape of the answer. A literal write is create-or-replace — a page missing
+   * from a known root is created, never refused with NOT_FOUND (M02 `gj2vdsjm`).
+   */
   const updatePageTool = mcpTool(
     'update_page',
     [
-      'Write a page. Creates it if absent, so this is the create-or-replace primitive; `update_sections` is the section-scoped variant.',
-      'TWO MODES, EXACTLY ONE PER CALL. Literal: `body` (the complete markdown, plus optional `frontmatter`). Differential: `textEdits`, a list of literal find/replaceWith substitutions. Sending both, or neither, is INVALID_ARGUMENT — a write with no description of its new content is a mistake, not an empty write.',
-      '`expectedHash` is REQUIRED in BOTH modes.',
-      'DIFFERENTIAL SCOPE IS THE WHOLE FILE — frontmatter and the preamble above the first heading included. It is the only punctual write that reaches text no anchor addresses, or any text at all on a root with no section index.',
-      'The batch is a SET, not a sequence: every `find` is matched against the file as it stands BEFORE the call, so substitutions never cascade and order never matters. Matches may not overlap or contain one another (INVALID_ARGUMENT).',
-      'NOT IDEMPOTENT in differential mode. Repeating a successful call with a refreshed expectedHash answers FIND_NOT_FOUND, because the text you looked for is gone — treat it like `delete`, not like `replace`. Literal `body` mode stays idempotent.',
-      'Changing a heading\'s TEXT is no longer a reason to come here: `update_sections` carries a `rename` action that rewrites the heading line and keeps the anchor, whereas a `find` swallowing the anchor comment destroys it and needs `dropAnchors`.',
-      'ANCHOR LOSS, IN BOTH MODES: if the write removes an `<!-- anchor: … -->` comment that something cites, it is refused with ANCHOR_LOSS (400) naming each anchor and who cites it. Name those anchors in `dropAnchors` to go ahead. In differential mode the touched scope is the matched fragments, so every entry must lie inside one; in literal `body` mode it is the whole page, so every entry must be an anchor this page has now (otherwise INVALID_ARGUMENT). To rewrite a page wholesale, assemble the body from get_page: preamble, then per item its anchor line, heading line and body — an anchor you leave out is a loss. The guard runs on every page root.',
-      'Returns { hash, version, changedAnchors }, plus `replacements` in differential mode and `droppedAnchors` when the write removed any anchor. The page is NOT returned. The write-back phase injects `<!-- anchor: … -->` comments for headings you introduced, so the bytes on disk are NOT the bytes you sent: if you need them — e.g. to write the whole page again without stripping those anchors — re-read it with `get_page`. Treat a literal write as having changed the text you hold whenever your body adds headings or omits existing anchor comments — re-read before the next whole-page write or a `find` that spans a heading line. `changedAnchors` lists sections that changed relative to the page BEFORE this write, not relative to what you sent: an empty list does NOT mean the file equals your body.',
+      'Write a specification page, addressed by `(rootId, path)`. A literal write creates the page when it does not exist yet — this is the create-or-replace primitive. Describe the new content in ONE of two ways, never both: literally via `body` (the complete markdown, optionally with a `frontmatter` object beside it), or differentially via `textEdits` (literal find/replace substitutions applied to the current file). Giving both, or neither, is an error.',
+      '',
+      "WHICH SCOPE TO USE. For a punctual change inside a page with a section index, prefer `update_sections` with the target section's anchor — a shorter `find` and fewer accidental matches. To change a heading's TEXT use its `rename` action, which keeps the anchor; a `find` swallowing the anchor comment destroys it and needs `dropAnchors`. Reach for `textEdits` here when the target crosses sections, lies outside any section (frontmatter, the preamble before the first heading), or the page has no section index. Reach for `body` when rewriting the page wholesale.",
+      '',
+      'DIFFERENTIAL MODE. `find` matches BYTE FOR BYTE — no whitespace normalisation, no regular expressions; whitespace copied inexactly is the single most common reason a `find` misses. `expectedMatches` OMITTED MEANS EXACTLY ONE match — that default is invisible in the schema, so read it here: pass a number to require exactly that many, or `"all"` to replace every occurrence without declaring how many. All `find` patterns are counted against the content BEFORE the write, so the list declares a SET of substitutions, not a sequence: two matches may not overlap, and one may not sit inside another edit\'s range.',
+      '',
+      '`expectedHash` is REQUIRED in both modes. Renaming one thing across N pages is N calls, each with its own hash — there is no cross-page batch, because the hash guards one file.',
+      '',
+      'ANCHOR LOSS, IN BOTH MODES: if the write removes an `<!-- anchor: … -->` comment that something cites, it is refused with ANCHOR_LOSS (400) naming each anchor and who cites it. Name those anchors in `dropAnchors` to go ahead. In differential mode the touched scope is the matched fragments, so every entry must lie inside one; in literal `body` mode it is the whole page, so every entry must be an anchor this page has now (otherwise INVALID_ARGUMENT). To rewrite a page wholesale, assemble the body from get_page: preamble, then per item its anchor line, heading line and body — an anchor you leave out is a loss. The guard runs on every page root. Literal `body` mode is idempotent by content; differential mode is NOT — repeating a successful call with a refreshed expectedHash answers FIND_NOT_FOUND.',
+      '',
+      'Returns { hash, version, changedAnchors }, plus `replacements` in differential mode and `droppedAnchors` when the write removed any anchor. The page is NOT returned. The write-back phase injects `<!-- anchor: … -->` comments for headings you introduced, so the bytes on disk are NOT the bytes you sent: if you need them — e.g. to write the whole page again without stripping those anchors — re-read it with `get_page`. The returned `hash` is taken AFTER that injection, so it arms your next `expectedHash` as is. `changedAnchors` lists sections that changed relative to the page BEFORE this write, not relative to what you sent: an empty list does NOT mean the file equals your body.',
     ].join('\n'),
     {
       rootId: rootIdParam,
       path: pathParam,
-      // ASSUMPTION:dev-0002 — the literal mode's field is `body` (+ `frontmatter`) on every channel; the entity names it `content`.
+      // 2.1.14 — `body` (+ `frontmatter`) is the entity's own name for the literal mode; the old `content` is gone.
       body: z
         .string()
         .optional()
         .describe(
-          'LITERAL MODE: the complete markdown — the body, with the frontmatter sent beside it in `frontmatter`, or ' +
-            'the whole file assembled from get_page (`frontmatter.raw`, preamble, then per item its anchor line, ' +
-            'heading line and body) with `frontmatter` omitted. Mutually exclusive with textEdits.',
+          'LITERAL mode: the complete markdown — either the body alone, with the frontmatter sent beside it in ' +
+            '`frontmatter`, or the whole file assembled from get_page (`frontmatter.raw`, preamble, then per item its ' +
+            'anchor line, heading line and body) with `frontmatter` omitted. Everything not present here is gone after ' +
+            'the write; a page that does not exist yet is created. Mutually exclusive with `textEdits` — giving both, ' +
+            'or neither, is INVALID_ARGUMENT.',
         ),
       frontmatter: z
         .record(z.string(), z.unknown())
         .optional()
-        .describe('LITERAL MODE only — replaces the frontmatter wholesale; omit to write a page without any.'),
+        .describe(
+          "LITERAL mode only: replaces the page's frontmatter wholesale. Omit it to write a page without frontmatter, " +
+            'or when `body` already carries the whole file, frontmatter block included.',
+        ),
       textEdits: textEditsParam
         .optional()
-        .describe('DIFFERENTIAL MODE: substitutions applied to the whole file. Mutually exclusive with body.'),
+        .describe(
+          'DIFFERENTIAL mode: `[{ find, replaceWith, expectedMatches? }]`, matched against the FULL file content ' +
+            'INCLUDING frontmatter. `find` is literal, byte for byte. `expectedMatches` omitted means EXACTLY ONE match; ' +
+            'a number means exactly that many; `"all"` means every occurrence. Zero matches → FIND_NOT_FOUND, whose ' +
+            'envelope tells you how many times the pattern would have matched after whitespace normalisation. A count ' +
+            'other than declared → MATCH_COUNT_MISMATCH, carrying the real count and each hit as section anchor + line ' +
+            'number. Mutually exclusive with `body`.',
+        ),
       dropAnchors: z
         .array(z.string())
         .optional()
@@ -258,6 +279,9 @@ export function createPageToolsServer(
         return fail(err);
       }
     },
+    // The entity's hints: a write (not read-only) that can destroy content, not idempotent
+    // as an operation (the differential mode is not), touching only this project's root.
+    { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   );
 
   const deletePageTool = mcpTool(

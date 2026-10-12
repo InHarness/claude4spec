@@ -35,26 +35,32 @@ import type { ExternalSkillContext } from './types.js';
  * release-contract test, which holds this repo's own copies to the same
  * invariant.
  */
+// 2.1.14 (M22 `m22dserv`, page section `sws0pnrn`): one of the three blocks
+// shared by all three renderers, emitted verbatim.
+// ASSUMPTION:m22-dev-0002 — the brief-implementer and refactor renderers carry
+// these shared blocks (and never the workspace) although their own exact-text
+// pages at 2.1.14 still show per-skill paragraphs and `<workspace>`.
 export const SERVER_REQUIRED_BLOCK = `## Server required — for every step
 
 Every \`c4s\` command in this skill talks to a running \`npx @inharness-ai/claude4spec\` server. There is no filesystem-scoped subset: since 0.2.13 the CLI opens no database and reads no specification file, so reading a brief, listing entities and running an agent turn all fail the same way when the server is down.
 
-**\`SERVER_NOT_RUNNING\` (exit 8) from any command — stop.** Ask the user to start the server, and wait. Do not start one yourself (a CLI-spawned server is an unsupervised second process on the user's machine), and do not work around the failure by reading or writing the spec repo's files by hand — that is the thing this skill exists to prevent, and the reason it is CLI-only.
+\`SERVER_NOT_RUNNING\` **(exit 8) from any command — stop.** Ask the user to start the server, and wait. Do not start one yourself (a CLI-spawned server is an unsupervised second process on the user's machine), and do not work around the failure by reading or writing the spec repo's files by hand — that is the thing this skill exists to prevent, and the reason it is CLI-only.
 
 Two neighbouring codes mean something else, and starting a server will not fix either: \`SERVER_NOT_RECOGNIZED\` (something is listening, but it is not claude4spec) and \`PROJECT_NOT_IN_WORKSPACE\` (the server is fine, but it does not serve this skill's project — see "Stale address" below). Report those as they are.`;
 
 /**
  * 2.1.0 (M22) — the address every generated skill bakes into EVERY `c4s`
- * command: `--server <publicUrl> --project <id>`. Quoted so a command copied
- * verbatim stays one argv word per value. `--workspace` is not passed — the
- * server implies its workspace.
+ * command. 2.1.14 (`m22dserv`): one of the three blocks shared by all three
+ * renderers — `--server '<publicUrl>' --project '<id>'`, values in apostrophes
+ * so a command copied verbatim stays one argv word per value. `--workspace` is
+ * not passed — the server implies its workspace.
  */
 export function skillIdentity(ctx: ExternalSkillContext): string {
   return `--server '${ctx.publicUrl}' --project '${ctx.id}'`;
 }
 
 /**
- * 2.1.0 (M22) — identical hint in all three skills: PROJECT_NOT_IN_WORKSPACE
+ * 2.1.0 (M22; 2.1.14 `m22dserv`, page section `h4vfz91m`) — identical hint in all three skills: PROJECT_NOT_IN_WORKSPACE
  * means the baked-in address is stale (the server at `publicUrl` does not serve
  * project `id`); the only repair is regenerating the skill.
  */

@@ -450,3 +450,129 @@ describe('M42 — the move sequence', () => {
     );
   });
 });
+
+describe('M42 — a write without the chain (2.1.14)', () => {
+  /** One subscriber per phase that could leave a trace in the answer or on disk. */
+  function recordPhases(runtime: FileWatchRuntime, dir: string, store: RecordStore<MarkdownRecord>): string[] {
+    const ran: string[] = [];
+    runtime.subscribe(
+      SOURCE,
+      {
+        onChange: async (_s, _src, relPath) => {
+          ran.push('write-back');
+          const raw = fs.readFileSync(path.join(dir, relPath), 'utf-8');
+          if (raw.includes('injected')) return;
+          await store.write(relPath, { raw: `${raw}injected\n` });
+        },
+        onUnlink: () => {},
+      },
+      { id: 'wb', phase: 'write-back', scope: CTX },
+    );
+    runtime.subscribe(
+      SOURCE,
+      {
+        onChange: () => {
+          ran.push('projection');
+          throw new Error('projection down');
+        },
+        onUnlink: () => {},
+      },
+      { id: 'proj', phase: 'projection', scope: CTX },
+    );
+    runtime.subscribe(
+      SOURCE,
+      { onChange: () => void ran.push('capture'), onUnlink: () => {} },
+      { id: 'cap', phase: 'capture', scope: CTX },
+    );
+    return ran;
+  }
+
+  it('[section:544jcpq5] chain: false runs no phase in-band and answers with nothing a chain would have produced', async () => {
+    const { store, runtime, dir } = harness();
+    const ran = recordPhases(runtime, dir, store);
+
+    const res = await store.write('a.md', { body: '# A\n' }, { chain: false });
+
+    // No phase ran: no write-back, no projection, no capture.
+    expect(ran).toEqual([]);
+    // The answer is the committed bytes: no injected line, no stale projection.
+    expect(res.content).toBe('# A\n');
+    expect(res.content).not.toContain('injected');
+    expect(res.staleProjections).toEqual([]);
+    expect(res.hash).toBe(markdownAdapter.hash('# A\n'));
+    expect(fs.readFileSync(path.join(dir, 'a.md'), 'utf-8')).toBe('# A\n');
+
+    // Contrast — the default still runs the chain and answers its settled state.
+    const chained = await store.write('b.md', { body: '# B\n' });
+    expect(ran).toEqual(expect.arrayContaining(['write-back', 'projection', 'capture']));
+    expect(chained.content).toContain('injected');
+    expect(chained.staleProjections).toEqual(['proj']);
+  });
+
+  it('[section:544jcpq5] chain: false keeps steps 1–4 — conflict check, atomic commit and suppression hold the same', async () => {
+    const { store, runtime, dir } = harness();
+    const seen: string[] = [];
+    runtime.subscribe(
+      SOURCE,
+      { onChange: (_s, _src, p) => void seen.push(p), onUnlink: () => {} },
+      { id: 'cap', phase: 'capture', scope: CTX },
+    );
+    const first = await store.write('a.md', { body: 'one\n' }, { chain: false });
+
+    // 1 — a stale expectedHash is refused cleanly, nothing written.
+    await expect(store.write('a.md', { body: 'two\n' }, { expectedHash: 'stale', chain: false })).rejects.toThrow(
+      RecordConflictError,
+    );
+    expect(store.readRaw('a.md')).toBe('one\n');
+
+    // 3 — the matching hash commits through temp→rename: no temp file left behind.
+    const second = await store.write('a.md', { body: 'two\n' }, { expectedHash: first.hash, chain: false });
+    expect(second.content).toBe('two\n');
+    expect(fs.existsSync(path.join(dir, '.a.md.tmp'))).toBe(false);
+
+    // 4 — the token is still up: the provider's echo of our own write runs nothing.
+    await runtime.flush(CTX, SOURCE, 'a.md');
+    expect(seen).toEqual([]);
+  });
+
+  it('[section:79m2bhz3] the chain runs after every commit, an unchanged one included, unless the caller switched it off', async () => {
+    const { store, runtime } = harness();
+    const captured: string[] = [];
+    runtime.subscribe(
+      SOURCE,
+      { onChange: (_s, _src, p) => void captured.push(p), onUnlink: () => {} },
+      { id: 'cap', phase: 'capture', scope: CTX },
+    );
+
+    await store.write('a.md', { body: 'same\n' });
+    // Not a byte changed — the primitive does not compare, the chain still runs.
+    await store.write('a.md', { body: 'same\n' });
+    expect(captured).toEqual(['a.md', 'a.md']);
+
+    // Switched off: the commit happens, the chain does not — changed bytes or not.
+    await store.write('a.md', { body: 'same\n' }, { chain: false });
+    await store.write('a.md', { body: 'different\n' }, { chain: false });
+    expect(captured).toEqual(['a.md', 'a.md']);
+    expect(store.readRaw('a.md')).toBe('different\n');
+  });
+
+  it('[section:79m2bhz3] the suppress token goes up immediately before the commit — a write refused at the conflict check leaves none', async () => {
+    const { store, runtime, dir } = harness();
+    const seen: string[] = [];
+    runtime.subscribe(
+      SOURCE,
+      { onChange: (_s, _src, p) => void seen.push(p), onUnlink: () => {} },
+      { id: 'cap', phase: 'capture', scope: CTX },
+    );
+    // A file put there by someone else — no token of ours on it.
+    fs.writeFileSync(path.join(dir, 'a.md'), 'theirs\n');
+
+    // Refused in step 1, before step 3: had the token been issued earlier it
+    // would now swallow the event about the OTHER writer's change.
+    await expect(store.write('a.md', { body: 'mine\n' }, { expectedHash: 'stale', chain: false })).rejects.toThrow(
+      RecordConflictError,
+    );
+    await runtime.flush(CTX, SOURCE, 'a.md');
+    expect(seen).toEqual(['a.md']);
+  });
+});

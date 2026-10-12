@@ -70,10 +70,14 @@ export class MarkdownFileStore {
   }
 
   /**
-   * The markdown entries (`*.md` / `*.mdx`) under the root — what indexers,
-   * capture and search read. ASSUMPTION:dev-0004 — the raw `.html` entry of the
-   * `pages` map is not listed here (no content reader may read it); the root's
-   * tree (`PagesService.listTree`) is what covers it.
+   * The markdown entries (`*.md` / `*.mdx`) under the root — the listing every
+   * reader of page content walks: section indexer and anchor injection (M06),
+   * M08, M14, M19, the initial `file_version` sync (M17), the frontmatter
+   * indexer and page search. 2.1.14 (M02 `m02multidir`, `e16qvg1n`): it lists
+   * markdown entries ONLY — no content reader may read the raw `.html` entry
+   * (track `none`); that entry is shown by the root's tree
+   * (`PagesService.listTree`, `fileType` from the kind's file map), which is also
+   * what the M30 preview reads (`m30l13rt`).
    */
   async listMarkdownFiles(): Promise<string[]> {
     await this.ensureRoot();

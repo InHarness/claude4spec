@@ -18,6 +18,9 @@ import {
 } from './page-write.js';
 import { DomainError } from './tags.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
+import express from 'express';
+import request from 'supertest';
+import { pagesRouter } from '../routes/pages.js';
 
 /**
  * 0.2.15 — `expectedHash` is REQUIRED, including on the create-through-update
@@ -1877,9 +1880,9 @@ describe('update_sections — the anchor-loss guard', () => {
    * that produced it, before anything reaches disk.
    */
   /**
-   * 0.2.75 records this as a KNOWN edge case rather than a shipped fix, so the
-   * test states the criterion outright: whatever the write returns as `hash`
-   * must be usable as the very next `expectedHash`.
+   * 2.1.14 — the criterion is stated outright: whatever a write returns as
+   * `hash` is taken AFTER the indexer injected its anchors, so it is usable as
+   * the very next `expectedHash`.
    *
    * The trap it guards is a write that introduces a NEW heading. The indexer
    * mints that heading's anchor and the write-back phase injects the comment
@@ -1889,30 +1892,44 @@ describe('update_sections — the anchor-loss guard', () => {
    */
   describe('[ac:ac-zapis-strony-wprowadzajacy-nowy-naglo] the hash a write returns is armed for the next one', () => {
     /**
-     * A `writer` whose `flush` drives the same two phases production does —
-     * projection (mint) then write-back (inject) — because that ordering is the
-     * whole question. `commit` re-reads the file after `flush` returns, so a rig
-     * that indexes afterwards would report a stale hash no matter what the write
-     * path does, and prove nothing about either.
+     * The two reactions production binds — `m06-anchor-injection` (write-back)
+     * and `m06-section-indexer` (projection) — subscribed on the rig's chain, so
+     * the primitive runs them IN-BAND, inside the write, exactly as it does in a
+     * project. That ordering is the whole question: a rig that injected after the
+     * write returned would prove nothing about which bytes the hash was taken of.
+     * `suppress` is a no-op because the rig has no file events to swallow.
      */
     beforeEach(() => {
-      target.writer = {
-        markOrigin: () => {},
-        suppress: () => {},
-        flush: async (relPath: string) => {
-          indexer ??= new SectionIndexerService(
-            db,
-            new Map([['pages', { pages }]]),
-            { broadcast: () => {} } as never,
-            host,
-          );
-          injection ??= indexer.anchorInjectionSubscriber(() => {});
-          await indexer.indexPage('pages', relPath);
-          await injection.onChange('context:test', 'pages:pages', relPath, 'external');
-          await indexer.indexPage('pages', relPath);
+      indexer ??= new SectionIndexerService(db, new Map([['pages', { pages }]]), { broadcast: () => {} } as never, host);
+      const idx = indexer;
+      const scoped = runtimeFor(pages).scoped(RIG_SCOPE);
+      scoped.subscribe(
+        'pages:pages',
+        {
+          onChange: async (_scope, source, relPath) => {
+            await idx.mintAnchors('pages', source, relPath, () => {});
+          },
+          onUnlink: () => {},
         },
-      };
+        { id: 'rig-anchor-injection', phase: 'write-back' },
+      );
+      scoped.subscribe(
+        'pages:pages',
+        {
+          onChange: async (_scope, _source, relPath) => {
+            await idx.indexPage('pages', relPath);
+          },
+          onUnlink: () => {},
+        },
+        { id: 'rig-section-indexer', phase: 'projection' },
+      );
     });
+
+    /** The anchor comment the chain injected above `heading`, read off disk. */
+    async function injectedAnchorAbove(heading: string): Promise<string | undefined> {
+      const raw = await fs.readFile(path.join(pages.root, 'doc.md'), 'utf-8');
+      return new RegExp(`<!-- anchor: (\\S+) -->\\n#+ ${heading}\\n`).exec(raw)?.[1];
+    }
 
     it('survives update_sections introducing a heading with no anchor', async () => {
       await index('doc.md', nested);
@@ -1924,6 +1941,10 @@ describe('update_sections — the anchor-loss guard', () => {
         },
         'agent',
       );
+      // The premise: the write-back DID change the file under the caller's text…
+      expect(await injectedAnchorAbove('Fresh heading')).toBeDefined();
+      // …and the hash describes the file AFTER it.
+      expect(first.hash).toBe(await hashOfPage('doc.md'));
 
       const second = await updateSections(
         deps(),
@@ -1935,6 +1956,7 @@ describe('update_sections — the anchor-loss guard', () => {
       ).catch((e: unknown) => e);
 
       expect(second).not.toBeInstanceOf(Error);
+      expect((await pages.read('doc.md')).body).toContain('ONE MORE LINE');
     });
 
     it('survives update_page introducing a heading with no anchor', async () => {
@@ -1944,6 +1966,10 @@ describe('update_sections — the anchor-loss guard', () => {
         { path: 'doc.md', body: `${nested}\n## Brand new\n\nNEW BODY\n`, expectedHash: await hashOfPage('doc.md') },
         'agent',
       );
+      // The premise: the body sent carried no anchor for `Brand new`, the chain injected one…
+      expect(await injectedAnchorAbove('Brand new')).toBeDefined();
+      // …and the returned hash is the hash of the settled file, injection included.
+      expect(first.hash).toBe(await hashOfPage('doc.md'));
 
       const second = await updatePage(
         target,
@@ -1952,6 +1978,51 @@ describe('update_sections — the anchor-loss guard', () => {
       ).catch((e: unknown) => e);
 
       expect(second).not.toBeInstanceOf(Error);
+      expect((second as { hash: string }).hash).toBe(await hashOfPage('doc.md'));
+      expect((await pages.read('doc.md')).body).toContain('TRAILING');
+    });
+
+    it('[ac:ac-hash-zwrocony-przez-update-page-przec] the hash update_page returns passes as the next expectedHash on the same page with no PAGE_CONFLICT — also when the write introduced a heading and the chain injected its anchor (over PUT /api/pages/:rootId/*)', async () => {
+      await index('doc.md', nested);
+      // The REST rendering of update_page's literal mode, on this rig's root.
+      const app = express();
+      app.use(express.json());
+      app.use(
+        '/api/pages/:rootId',
+        pagesRouter(
+          (id) => (id === 'pages' ? { root: { id: 'pages', name: 'Pages', dir: 'pages', builtin: true }, pages, writer: null, versions: null } : undefined),
+          null,
+          {} as DiscoveryCore,
+          () => ['pages'],
+        ),
+      );
+      const put = (body: string, expectedHash: string) =>
+        request(app).put('/api/pages/pages/doc.md').send({ body, expectedHash });
+
+      // 1. A write that introduces a heading with no anchor: the chain injects one.
+      const first = await put(`${nested}\n## Introduced\n\nINTRODUCED BODY\n`, await hashOfPage('doc.md'));
+      expect(first.status).toBe(200);
+      expect(await injectedAnchorAbove('Introduced')).toBeDefined();
+      expect(first.body.hash).toBe(await hashOfPage('doc.md'));
+
+      // 2. Its hash, passed straight back, is accepted — no PAGE_CONFLICT.
+      const second = await put((await pages.read('doc.md')).body + '\nSECOND\n', first.body.hash);
+      expect(second.status).toBe(200);
+      expect(second.body.error).toBeUndefined();
+      expect(second.body.hash).toBe(await hashOfPage('doc.md'));
+
+      // 3. And a plain write (no new heading) chains the same way.
+      const third = await put((await pages.read('doc.md')).body + '\nTHIRD\n', second.body.hash);
+      expect(third.status).toBe(200);
+      expect(third.body.hash).toBe(await hashOfPage('doc.md'));
+      const body = (await pages.read('doc.md')).body;
+      expect(body).toContain('SECOND');
+      expect(body).toContain('THIRD');
+
+      // The control: a hash from BEFORE the last write is what conflicts.
+      const stale = await put(body + '\nSTALE\n', second.body.hash);
+      expect(stale.status).toBe(409);
+      expect(stale.body.error.code).toBe('PAGE_CONFLICT');
     });
   });
 
@@ -2823,7 +2894,7 @@ describe('differential writes — textEdits', () => {
   const withoutSection = (body: string, anchor: string, heading: string): string =>
     body.replace(`<!-- anchor: ${anchor} -->\n`, '').replace(new RegExp(`^#+ ${heading}\n`, 'm'), '');
 
-  it('literal mode: refuses with ANCHOR_LOSS when the new body loses a CITED anchor', async () => {
+  it('[ac:ac-update-page-w-trybie-content-na-rooci] literal (`body`) mode on a page root: refuses with ANCHOR_LOSS when the new body loses a CITED anchor', async () => {
     await index('doc.md', nested);
     const childOne = anchorOf('Child one');
     await citeWithTag(childOne);

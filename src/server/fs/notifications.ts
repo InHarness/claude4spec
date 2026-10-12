@@ -50,13 +50,16 @@ export function fileChangedNotifier(ws: WsEmitter): {
  * reaction names the author and provenance of a write, which an event from the
  * observed directory does not know.
  *
- * ASSUMPTION:dev-0010 — the `plan:updated { planPath, threadId, version,
- * changedBy }` broadcast itself is made by `PlanService` at the end of its own
- * write chain, after its own capture: the service writes with `chain: false`
- * (its `file_version` row carries a `change_summary` the capture phase cannot
- * receive), and M40's `notification` phase runs before `capture`, so a bound
- * handler could not see the version. An in-band chain run by any other writer of
- * a plan file still refreshes the list (`plans:changed`).
+ * 2.1.14 (M10 m10ws000, jo0r7uh9) — the `plan:updated { planPath, threadId,
+ * version, changedBy }` broadcast itself is made by `PlanService` as the last
+ * step of its own sequence: file (written with the chain switched off, M42
+ * 544jcpq5) → its own `recordVersion` with the caller's `changeSummary` (which
+ * the capture phase cannot receive — the event knows no change summary) →
+ * broadcast with the version just recorded. The definition therefore carries
+ * the acceptance contract and the event shape only, and requires nothing; the
+ * service's own write never fires it in-band. Should an in-band chain run on a
+ * plan file anyway (a writer other than the service), this handler only
+ * refreshes the list (`plans:changed`) — it never claims a version.
  */
 export function planUpdatedNotifier(ws: WsEmitter): WatchSubscriber {
   const emit = (relPath: string, origin: WatchOrigin): void => {

@@ -488,6 +488,33 @@ export function kindSelects(kind: RootKind, reactionId: string): boolean {
   return KIND_DECLARATIONS[kind].reactions.includes(reactionId);
 }
 
+/** An inclusive range of markdown heading levels (`#` = 1 … `######` = 6). */
+export interface HeadingLevelRange {
+  readonly min: 1 | 2 | 3 | 4 | 5 | 6;
+  readonly max: 1 | 2 | 3 | 4 | 5 | 6;
+}
+
+/** Every heading level: a kind with the section indexer indexes each of them. */
+export const ALL_HEADING_LEVELS: HeadingLevelRange = { min: 1, max: 6 };
+
+/**
+ * `##`–`####`: a kind with injection alone anchors only what an edit-batch
+ * element addresses inside the file — never the file title (`#`) nor the detail
+ * inside a section (`#####`, `######`).
+ */
+export const INJECTION_ONLY_HEADING_LEVELS: HeadingLevelRange = { min: 2, max: 4 };
+
+/**
+ * M06 `v9zrytp8` (2.1.14) — which heading levels `m06-anchor-injection` anchors
+ * on the roots of a kind. Read from whether the kind selects
+ * `m06-section-indexer`, never from the kind's name: an anchor is minted where
+ * someone resolves it. Shared by both triggers of the reaction (the service's
+ * own write path and the write-back of a file written on disk).
+ */
+export function anchorHeadingLevels(kind: RootKind): HeadingLevelRange {
+  return kindSelects(kind, 'm06-section-indexer') ? ALL_HEADING_LEVELS : INJECTION_ONLY_HEADING_LEVELS;
+}
+
 /**
  * Minimal glob → RegExp over a slash-separated relative path: `**\/` (zero or
  * more leading segments), `**`, `*` and `?` (within one segment), `{a,b}`

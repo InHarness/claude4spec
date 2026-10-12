@@ -416,11 +416,14 @@ export class GitService {
   }
 
   /**
-   * Stage every registry root dir + `config.json` and commit with a
-   * `name`/`description`-derived message. Assumes a repo is detected
-   * (callers gate via `commitOnRelease`). Returns `'skipped'` on detached
-   * HEAD, `'nothing-to-commit'` when nothing is staged, `'error'` on any git
-   * failure.
+   * The release commit EXECUTION — reads no config switch of the gate
+   * (`enabled`); `commitOnRelease()` is the gated entry that calls it (tests
+   * call it directly). Stages every registry root dir + `config.json` and
+   * commits with `{name}\n\n{description}`. Never throws. `'skipped'` only from
+   * the real-index path on detached HEAD (reachable through the config
+   * fallback: `named` without `branch` / `new` without `template`) or when the
+   * staging targets all lie outside the repository; `'nothing-to-commit'` when
+   * nothing is staged; `'error'` (with `recovery`) on any git failure.
    *
    * 0.1.125: dispatches on `config.git.commitTarget.mode`:
    *   - `'current'` (default, absent): unchanged — stage + commit on the
@@ -458,7 +461,9 @@ export class GitService {
     opts: { name: string; description: string },
     status: GitRepoInfo,
   ): Promise<GitCommitResult> {
-    // ASSUMPTION:dev-0013 — no `Release ` prefix (pre-window message format kept).
+    // 2.1.14 (M28 aqys9dje): ONE message for every mode, computed once here —
+    // `{name}\n\n{description}`, no `Release ` prefix; a bare `{name}` for an
+    // empty description (defensive — createRelease refuses an empty one).
     const message = opts.description ? `${opts.name}\n\n${opts.description}` : opts.name;
     const config = readConfig(this.cwd);
     const commitTarget: NormalizedGitCommitTargetConfig = config.git.commitTarget;
@@ -808,7 +813,8 @@ export class GitService {
   }
 
   /**
-   * Push a branch to its remote. Assumes a repo is detected.
+   * The push EXECUTION — reads no config switch (`pushOnPush()` is the gated
+   * entry). Push a branch to its remote. Assumes a repo is detected.
    * `'nothing-to-push'` when git reports "Everything up-to-date", `'skipped'`
    * on detached HEAD, `'error'` on a missing upstream or any other failure.
    *
@@ -891,9 +897,10 @@ export class GitService {
   }
 
   /**
-   * Gated commit hook. `null` when the git master switch is off, no repo is
-   * detected, or the detected repo has no branch (detached HEAD); otherwise
-   * the `commit()` result. `enabled` is checked FIRST so a disabled project
+   * Gated commit ENTRY (2.1.14 M28 aqys9dje). `null` — never `'skipped'` —
+   * when the gate is not met: the git master switch is off, no repo is
+   * detected, or (mode `current` only) HEAD is detached/unborn; otherwise the
+   * `commit()` result, passed by createRelease verbatim as `gitSync`. `enabled` is checked FIRST so a disabled project
    * never pays for the `detect()` subprocess round-trip. Reads config
    * per-call (hot-reload).
    *
@@ -920,9 +927,11 @@ export class GitService {
   }
 
   /**
-   * Gated push hook. `null` when the git master switch is off, push-sync is
-   * off, no repo is detected, or the detected repo has no branch (detached
-   * HEAD); otherwise the `push()` result. Reads config per-call (hot-reload).
+   * Gated push ENTRY (2.1.14 M28 sw1u84nn). `null` — never `'skipped'` — when
+   * the git master switch is off, push-sync is off, no repo is detected, or
+   * HEAD has no branch (detached/unborn) — a named HEAD is required even when
+   * the caller passes an explicit `branch`; otherwise the `push()` result.
+   * Reads config per-call (hot-reload).
    *
    * 0.1.125: optional `branch` — forwarded to `push()` so the caller (e.g.
    * `ReleasePushService`, which resolves the branch actually carrying the

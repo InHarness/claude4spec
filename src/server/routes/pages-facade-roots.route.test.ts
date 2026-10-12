@@ -1,9 +1,11 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import express from 'express';
+import { createServer, type Server } from 'node:http';
+import { WebSocket } from 'ws';
 import request from 'supertest';
 import matter from 'gray-matter';
 import { FileWatchRuntime } from '../fs/watcher.js';
@@ -11,7 +13,11 @@ import { RootRegistry } from '../roots/registry.js';
 import { KIND_DECLARATIONS, type RootKind, type SidebarDeclaration } from '../../shared/root-kinds.js';
 import type { Root } from '../../shared/types.js';
 import type { DiscoveryCore } from '../discovery/types.js';
-import { registerCoreReactions } from '../workspace/core-reactions.js';
+import { registerCoreReactions, type CoreReactionContext } from '../workspace/core-reactions.js';
+import { ReactionBinder } from '../fs/reactions.js';
+import { WsGateway } from '../ws/gateway.js';
+import { ProjectWsEmitter } from '../ws/project-emitter.js';
+import type { WsEvent } from '../../shared/types.js';
 import { mountRegistryRoots, type MountedRegistry } from '../workspace/root-registry-runtime.js';
 import { pagesRouter, type PageRootRuntime } from './pages.js';
 import { SkillRegistry, SkillResolver } from '../services/skill-registry.js';
@@ -52,6 +58,8 @@ interface Rig {
   mounted: MountedRegistry;
   registry: RootRegistry;
   abs: (rootId: string, rel: string) => string;
+  runtime: FileWatchRuntime;
+  w: ReturnType<FileWatchRuntime['scoped']>;
 }
 
 async function rig(): Promise<Rig> {
@@ -72,7 +80,7 @@ async function rig(): Promise<Rig> {
   app.use(express.json());
   app.use('/api/pages/:rootId', pagesRouter(resolveRoot, null, {} as DiscoveryCore, () => [...rootById.keys()]));
   const abs = (rootId: string, rel: string): string => path.join(cwd, registry.get(rootId)!.dir, rel);
-  return { cwd, app, mounted, registry, abs };
+  return { cwd, app, mounted, registry, abs, runtime, w };
 }
 
 function put(file: string, content: string): void {
@@ -194,6 +202,47 @@ describe('2.1.9 — /api/pages/:rootId addresses only roots with a facade (M02 l
     const refused = await request(app).put('/api/pages/plans/p.md').send({ body: 'hijack', expectedHash: sha(plan) });
     expectRootNotFound(refused, 'plans');
     expect(fs.readFileSync(abs('plans', 'p.md'), 'utf8')).toBe(plan);
+  });
+
+  it('[entity:put-api-pages] 2.1.14 — the route renders update_page\'s literal mode: `body` + optional `frontmatter` replacing the old one wholesale, create-or-replace on a known root, the old `content` field refused', async () => {
+    const { app, abs } = await rig();
+
+    // Create-or-replace: no page under (rootId, relPath) is not an error — the route creates it.
+    expect(fs.existsSync(abs('adr', 'new/fresh.md'))).toBe(false);
+    const created = await request(app)
+      .put('/api/pages/adr/new/fresh.md')
+      .send({ body: '# Fresh\n\nfirst\n', frontmatter: { title: 'Fresh', order: 3 }, expectedHash: 'a'.repeat(64) });
+    expect(created.status).toBe(200);
+    const createdOnDisk = fs.readFileSync(abs('adr', 'new/fresh.md'), 'utf8');
+    expect(matter(createdOnDisk).data).toEqual({ title: 'Fresh', order: 3 });
+    expect(createdOnDisk).toContain('first');
+    expect(created.body.hash).toBe(sha(createdOnDisk));
+
+    // `frontmatter` replaces the page's frontmatter WHOLESALE — a key it omits is gone.
+    const replaced = await request(app)
+      .put('/api/pages/adr/new/fresh.md')
+      .send({ body: '# Fresh\n\nsecond\n', frontmatter: { title: 'Renamed' }, expectedHash: created.body.hash });
+    expect(replaced.status).toBe(200);
+    const replacedOnDisk = fs.readFileSync(abs('adr', 'new/fresh.md'), 'utf8');
+    expect(matter(replacedOnDisk).data).toEqual({ title: 'Renamed' });
+    expect(replacedOnDisk).toContain('second');
+    expect(replacedOnDisk).not.toContain('first');
+    expect(replaced.body.hash).toBe(sha(replacedOnDisk));
+
+    // No `frontmatter` → a page without one.
+    const bare = await request(app)
+      .put('/api/pages/adr/new/fresh.md')
+      .send({ body: '# Fresh\n\nthird\n', expectedHash: replaced.body.hash });
+    expect(bare.status).toBe(200);
+    expect(matter(fs.readFileSync(abs('adr', 'new/fresh.md'), 'utf8')).data).toEqual({});
+
+    // The removed `content` name describes nothing: 400 INVALID_ARGUMENT, nothing created.
+    const legacy = await request(app)
+      .put('/api/pages/adr/legacy.md')
+      .send({ content: '# Legacy\n', expectedHash: 'a'.repeat(64) });
+    expect(legacy.status).toBe(400);
+    expect(legacy.body.error.code).toBe('INVALID_ARGUMENT');
+    expect(fs.existsSync(abs('adr', 'legacy.md'))).toBe(false);
   });
 
   it('[entity:delete-api-pages] DELETE /api/pages/:rootId/* → 200 { ok, deleted: true } and the file is gone on a root with a facade; 404 ROOT_NOT_FOUND on a root without one, file kept', async () => {
@@ -456,5 +505,239 @@ describe('2.1.9 — a write through the `skills` root facade is visible to the v
       });
     expect(edited.status).toBe(200);
     expect(registry.listSelectable().find((s) => s.slug === 'house-style')?.description).toBe('How we write, revised.');
+  });
+});
+
+/**
+ * 2.1.14 system-run reopen — criteria unchanged in the window whose `verifies`
+ * points at `put-api-pages`, given tests of their own over the real route.
+ */
+describe('2.1.14 — PUT /api/pages/:rootId/* criteria (M02 m02octconc, the literal write)', () => {
+  /** The DTO `update-page-response`: the fields its definition names, nothing else. */
+  const UPDATE_PAGE_RESPONSE_FIELDS = ['hash', 'version', 'changedAnchors', 'replacements'];
+  function expectUpdatePageResponse(body: Record<string, unknown>): void {
+    expect(body.hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(typeof body.version).toBe('number');
+    expect(Array.isArray(body.changedAnchors)).toBe(true);
+    for (const key of Object.keys(body)) expect(UPDATE_PAGE_RESPONSE_FIELDS).toContain(key);
+    // The response never carries the page.
+    expect(body).not.toHaveProperty('content');
+    expect(body).not.toHaveProperty('body');
+  }
+
+  it('[ac:ac-trasy-patch-i-put-pod-sciezka-strony] PATCH and PUT on the page path call the same core function and answer the same response shape; only the way the new content is described differs', async () => {
+    const { app, abs } = await rig();
+    const v0 = '# A\n\none\n';
+    put(abs('pages', 'a.md'), v0);
+
+    // PUT describes the new content as a whole `body`…
+    const viaPut = await request(app).put('/api/pages/pages/a.md').send({ body: '# A\n\ntwo\n', expectedHash: sha(v0) });
+    expect(viaPut.status).toBe(200);
+    expectUpdatePageResponse(viaPut.body);
+    expect(viaPut.body).not.toHaveProperty('replacements');
+    expect(viaPut.body.hash).toBe(sha(fs.readFileSync(abs('pages', 'a.md'), 'utf8')));
+
+    // …PATCH as `textEdits` over the same file, guarded by the hash PUT returned.
+    const viaPatch = await request(app)
+      .patch('/api/pages/pages/a.md')
+      .send({ textEdits: [{ find: 'two', replaceWith: 'three' }], expectedHash: viaPut.body.hash });
+    expect(viaPatch.status).toBe(200);
+    expectUpdatePageResponse(viaPatch.body);
+    expect(viaPatch.body.replacements).toBe(1);
+    const afterPatch = fs.readFileSync(abs('pages', 'a.md'), 'utf8');
+    expect(afterPatch).toContain('three');
+    expect(viaPatch.body.hash).toBe(sha(afterPatch));
+    // The same required fields, the same types — one DTO for both renderings.
+    const required = (b: Record<string, unknown>) => Object.keys(b).filter((k) => k !== 'replacements').sort();
+    expect(required(viaPatch.body)).toEqual(required(viaPut.body));
+
+    // Each route reads only its own content description: PUT does not take
+    // `textEdits`, PATCH does not take `body` — both reach the core as
+    // "neither mode" and the core refuses with the same INVALID_ARGUMENT.
+    const putWithEdits = await request(app)
+      .put('/api/pages/pages/a.md')
+      .send({ textEdits: [{ find: 'three', replaceWith: 'four' }], expectedHash: viaPatch.body.hash });
+    const patchWithBody = await request(app)
+      .patch('/api/pages/pages/a.md')
+      .send({ body: '# A\n\nfour\n', expectedHash: viaPatch.body.hash });
+    for (const refused of [putWithEdits, patchWithBody]) {
+      expect(refused.status).toBe(400);
+      expect(refused.body.error.code).toBe('INVALID_ARGUMENT');
+      expect(refused.body.error.message).toBe('one of body or textEdits is required');
+    }
+    expect(fs.readFileSync(abs('pages', 'a.md'), 'utf8')).toBe(afterPatch);
+
+    // Both handlers delegate to the ONE core function `updatePage`, with the same actor.
+    const src = fs.readFileSync(path.join(import.meta.dirname, 'pages.ts'), 'utf8');
+    const putAt = src.indexOf("router.put('/*'");
+    const patchAt = src.indexOf("router.patch('/*'");
+    const deleteAt = src.indexOf("router.delete('/*'");
+    expect(putAt).toBeGreaterThan(-1);
+    expect(patchAt).toBeGreaterThan(putAt);
+    expect(deleteAt).toBeGreaterThan(patchAt);
+    for (const handler of [src.slice(putAt, patchAt), src.slice(patchAt, deleteAt)]) {
+      expect(handler).toContain('await updatePage(');
+      expect(handler).toContain("'user',");
+    }
+  });
+
+  it('[ac:ac-put-api-pages-path-przyjmuje-opcjona] PUT with an expectedHash that does not match the file refuses the write with 409 PAGE_CONFLICT carrying currentHash and currentContent', async () => {
+    const { app, abs } = await rig();
+    const onDisk = '---\ntitle: Live\n---\n# Live\n\nsomebody else wrote this\n';
+    put(abs('pages', 'c.md'), onDisk);
+    const stale = sha('# Live\n\nthe copy the caller read\n');
+
+    const res = await request(app).put('/api/pages/pages/c.md').send({ body: '# Live\n\nmine\n', expectedHash: stale });
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('PAGE_CONFLICT');
+    expect(res.body.currentHash).toBe(sha(onDisk));
+    expect(res.body.currentContent).toBe(onDisk);
+    // Refused before the write: the file is byte-identical.
+    expect(fs.readFileSync(abs('pages', 'c.md'), 'utf8')).toBe(onDisk);
+
+    // The currentHash the refusal carried arms the retry.
+    const retry = await request(app)
+      .put('/api/pages/pages/c.md')
+      .send({ body: '# Live\n\nmine\n', expectedHash: res.body.currentHash });
+    expect(retry.status).toBe(200);
+  });
+
+  it('[ac:ac-put-api-pages-rootid-bez-pola-expecte] PUT without an `expectedHash` field is refused with INVALID_ARGUMENT — an unguarded write is not a backwards-compatible variant', async () => {
+    const { app, abs } = await rig();
+    const before = '# Guarded\n\nkept\n';
+    put(abs('pages', 'g.md'), before);
+
+    const existing = await request(app).put('/api/pages/pages/g.md').send({ body: '# Guarded\n\noverwritten\n' });
+    expect(existing.status).toBe(400);
+    expect(existing.body.error.code).toBe('INVALID_ARGUMENT');
+    expect(existing.body.error.message).toBe('expectedHash is required');
+    expect(fs.readFileSync(abs('pages', 'g.md'), 'utf8')).toBe(before);
+
+    // An empty string is no guard either, and a missing page is not an exemption.
+    const empty = await request(app).put('/api/pages/pages/g.md').send({ body: '# Guarded\n\nx\n', expectedHash: '' });
+    expect(empty.status).toBe(400);
+    expect(empty.body.error.code).toBe('INVALID_ARGUMENT');
+    const absent = await request(app).put('/api/pages/pages/new.md').send({ body: '# New\n' });
+    expect(absent.status).toBe(400);
+    expect(absent.body.error.code).toBe('INVALID_ARGUMENT');
+    expect(fs.existsSync(abs('pages', 'new.md'))).toBe(false);
+    expect(fs.readFileSync(abs('pages', 'g.md'), 'utf8')).toBe(before);
+  });
+
+  it('[ac:ac-zapis-z-tiptap-zachowuje-frontmatter-i-x] a save from the tiptap editor keeps the frontmatter and the XML tags', async () => {
+    const { app, abs } = await rig();
+    const tags = [
+      '<inline_mention type="dto" slug="user"/>',
+      '<single_element type="endpoint" slug="put-api-pages" caption="The write"/>',
+      '<element_list type="dto" slugs="a,b"/>',
+      '<tagged_list type="ac" tags="m02,core" filter="or"/>',
+      '<section_ref anchor="abcd1234"/>',
+      '<todo comment="later"/>',
+    ];
+    const original =
+      '---\ntitle: Pages\norder: 2\ntags:\n  - m02\n  - core\n---\n' +
+      `# Pages\n\nSee ${tags[0]} here.\n\n${tags[1]}\n\n${tags[2]}\n\n${tags[3]}\n\nRead ${tags[4]} and fix ${tags[5]} this.\n\nDRAFT\n`;
+    put(abs('pages', 'm.md'), original);
+
+    // What the editor holds: the page-detail read (frontmatter apart, body below it)…
+    const detail = await request(app).get('/api/pages/pages/m.md');
+    expect(detail.status).toBe(200);
+    const editorBody = matter(detail.body.content as string).content;
+    // …and what its save sends (`api.write`: { body, frontmatter, expectedHash }),
+    // the body edited by the user, the tags in it untouched.
+    const saved = await request(app)
+      .put('/api/pages/pages/m.md')
+      .send({ body: editorBody.replace('DRAFT', 'FINAL'), frontmatter: detail.body.frontmatter, expectedHash: detail.body.hash });
+    expect(saved.status).toBe(200);
+
+    const onDisk = fs.readFileSync(abs('pages', 'm.md'), 'utf8');
+    expect(onDisk).toContain('FINAL');
+    expect(onDisk).not.toContain('DRAFT');
+    // The frontmatter survives the save — every key and value.
+    expect(matter(onDisk).data).toEqual({ title: 'Pages', order: 2, tags: ['m02', 'core'] });
+    // Every XML tag is on disk byte for byte.
+    for (const tag of tags) expect(onDisk).toContain(tag);
+    expect(saved.body.hash).toBe(sha(onDisk));
+
+    // A second autosave on the ack's hash keeps them too.
+    const again = await request(app)
+      .put('/api/pages/pages/m.md')
+      .send({ body: matter(onDisk).content, frontmatter: matter(onDisk).data, expectedHash: saved.body.hash });
+    expect(again.status).toBe(200);
+    const twice = fs.readFileSync(abs('pages', 'm.md'), 'utf8');
+    expect(matter(twice).data).toEqual({ title: 'Pages', order: 2, tags: ['m02', 'core'] });
+    for (const tag of tags) expect(twice).toContain(tag);
+  });
+
+  describe('file:changed over a live WS gateway', () => {
+    let server: Server | null = null;
+    let gateway: WsGateway | null = null;
+    const sockets: WebSocket[] = [];
+
+    afterEach(async () => {
+      for (const s of sockets.splice(0)) s.close();
+      await gateway?.close();
+      gateway = null;
+      await new Promise<void>((r) => (server ? server.close(() => r()) : r()));
+      server = null;
+    });
+
+    /** A client in `project`'s room, recording every event after `hello`. */
+    async function client(project: string): Promise<WsEvent[]> {
+      const port = (server!.address() as { port: number }).port;
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?project=${project}`);
+      sockets.push(ws);
+      const seen: WsEvent[] = [];
+      await new Promise<void>((resolve, reject) => {
+        ws.on('message', (data) => {
+          const event = JSON.parse(String(data)) as WsEvent;
+          if (event.kind === 'hello') resolve();
+          else seen.push(event);
+        });
+        ws.on('error', reject);
+      });
+      return seen;
+    }
+
+    async function until(cond: () => boolean, ms = 2000): Promise<void> {
+      const end = Date.now() + ms;
+      while (!cond() && Date.now() < end) await new Promise((r) => setTimeout(r, 10));
+    }
+
+    it('[ac:ac-powiadomienie-file-changed-o-zapisie] the file:changed notice of the app\'s own write reaches the other clients in the project room, although the file event was suppressed', async () => {
+      server = createServer();
+      gateway = new WsGateway(server, () => true);
+      await new Promise<void>((r) => server!.listen(0, '127.0.0.1', () => r()));
+
+      const { app, abs, mounted, runtime, w } = await rig();
+      const source = mounted.sourceByRootId.get('pages')!;
+      // The base reaction, bound the way `bindRegistryReactions` binds it, on
+      // the emitter of project `p1` — its room on the live gateway.
+      const ctx = { ws: new ProjectWsEmitter(gateway, 'p1') } as unknown as CoreReactionContext;
+      new ReactionBinder(w, ctx).bindReaction('m02-file-changed', source, 'pages', { rootId: 'pages' });
+
+      const first = await client('p1');
+      const second = await client('p1');
+      const elsewhere = await client('p2');
+      const suppress = vi.spyOn(runtime, 'suppress');
+
+      const before = '# W\n\none\n';
+      put(abs('pages', 'w.md'), before);
+      const res = await request(app).put('/api/pages/pages/w.md').send({ body: '# W\n\ntwo\n', expectedHash: sha(before) });
+      expect(res.status).toBe(200);
+
+      // The write swallowed its own file event…
+      expect(suppress).toHaveBeenCalledWith(expect.any(String), source, 'w.md', 'primitive');
+
+      // …and still every client in the room hears of it, once, as the server's own change.
+      const fileChanged = (seen: WsEvent[]) => seen.filter((e) => e.kind === 'file:changed');
+      await until(() => fileChanged(first).length > 0 && fileChanged(second).length > 0);
+      await new Promise((r) => setTimeout(r, 50));
+      const expected = { kind: 'file:changed', event: 'change', path: 'w.md', rootId: 'pages', origin: 'server' };
+      expect(fileChanged(first)).toEqual([expected]);
+      expect(fileChanged(second)).toEqual([expected]);
+      // The room is the project's: another project's client hears nothing.
+      expect(fileChanged(elsewhere)).toEqual([]);
+    });
   });
 });
