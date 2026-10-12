@@ -1,1 +1,0 @@
-{"role":"reviewer","scope":{"kind":"unit","id":"u7-plugin-ui-view-detail-and-list","base":"a8829e322f94fcaf9dbeaca68748d845c9e4240e"},"findings":[{"id":"rev-0001","blocking":false,"file":"plugins/c4s-plugin-frontend-mockups/src/entity/ui-view/frontend/module.tsx","line":56,"portion":"u7-plugin-ui-view-detail-and-list/p1-l5-l12","reason":"see review md"}]}
