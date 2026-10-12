@@ -1,6 +1,12 @@
 /**
  * The breadcrumb bar that sits ABOVE the detail panel, in the route wrapper.
  *
+ * DEBT (2.1.19, Host UI Kit slice of `c4s-plugin-mcp-tools`): a package-local
+ * breadcrumb bar written from scratch on `SegmentedControlTabs`. It fails the
+ * locality rule — the detail breadcrumb bar is common to every entity type, and
+ * each of four packages keeps its own copy. Its catalog replacement is
+ * `DetailPanelShell`. Recorded, not fixed here.
+ *
  * This is where the established generation of entity screens puts navigation:
  * `ac`, `dto`, `endpoint`, `ui-view` and `design-system` all render
  * `<EntityBreadcrumbBar/>` in their route component and leave the panel itself as

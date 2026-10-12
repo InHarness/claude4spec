@@ -1,3 +1,6 @@
 database-table-list → plugins/c4s-plugin-database-tables/src/entity/database-table/frontend/routes.tsx (DatabaseTableListRoute; test plugins/c4s-plugin-database-tables/test/frontend/database-table-views.render.test.ts)
 database-table-detail → plugins/c4s-plugin-database-tables/src/entity/database-table/frontend/detail-panel.tsx (DatabaseTableDetail; route in routes.tsx; test plugins/c4s-plugin-database-tables/test/frontend/database-table-views.render.test.ts)
 database-table-history → plugins/c4s-plugin-database-tables/src/entity/database-table/frontend/detail-panel.tsx (DatabaseTableHistory; route in routes.tsx; test plugins/c4s-plugin-database-tables/test/frontend/database-table-views.render.test.ts)
+mcp-tool-list → plugins/c4s-plugin-mcp-tools/src/entity/mcp-tool/frontend/routes.tsx (McpToolListRoute; test plugins/c4s-plugin-mcp-tools/test/frontend/mcp-tool-views.render.test.ts)
+mcp-tool-detail → plugins/c4s-plugin-mcp-tools/src/entity/mcp-tool/frontend/detail-panel.tsx (McpToolDetail; route + EntityBreadcrumbBar in routes.tsx; test plugins/c4s-plugin-mcp-tools/test/frontend/mcp-tool-views.render.test.ts)
+mcp-tool-history → plugins/c4s-plugin-mcp-tools/src/entity/mcp-tool/frontend/routes.tsx (McpToolHistoryRoute; test plugins/c4s-plugin-mcp-tools/test/frontend/mcp-tool-views.render.test.ts)

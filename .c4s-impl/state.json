@@ -1,5 +1,5 @@
 {
-  "iteration": 6,
+  "iteration": 8,
   "conventions": [
     {
       "label": "L5 (UI) — implementor M50 — App Shell",
@@ -384,7 +384,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "u4-mcp-tools/p1-l5-l12",
@@ -398,18 +398,20 @@
             "mcp-tool-history",
             "mcp-tool-list"
           ],
-          "status": "pending",
-          "rounds": 0,
-          "partial": 0
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "d996f93f6783d69fc26ce284a8d49356e84de990",
+      "baseCommit": "d996f93f6783d69fc26ce284a8d49356e84de990",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0
     },
     {
       "id": "u5-frontend-mockups",
