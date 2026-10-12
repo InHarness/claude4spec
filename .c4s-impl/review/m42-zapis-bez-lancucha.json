@@ -1,0 +1,5 @@
+{
+  "role": "reviewer",
+  "scope": { "kind": "unit", "id": "m42-zapis-bez-lancucha", "base": "3e9a2bc" },
+  "findings": []
+}

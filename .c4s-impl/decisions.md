@@ -34,3 +34,10 @@ Implementation-only decisions (no user-observable effect) and set-up choices.
 
 - `katalog-operacji-m02` (spreadsheet) — one part: `built`, items: every operation row, key: `nazwa`. Why: each row is an operation registered in the core operation catalog (channels, addressing, rules, error codes) — system structure.
 - `katalog-operacji-m21` (spreadsheet) — same classification, for the brief operations.
+
+## Loop (orchestrator)
+
+- Gate 'next window exists' (2-1-14-to-2-1-15-workflow.md pending): durable user rule — one brief per PR; finish this window, PR + merge, the next brief runs as its own loop after the merge. Not a stop.
+- The split runs of all wave-1 units were run up front, in parallel (split mode reads only and writes no state, so the result is the one a sequential run would derive); each unit's portions are recorded in state.json when the unit starts. Build/verify/review runs stay strictly sequential.
+
+- m42-zapis-bez-lancucha/p1-domain-l7: `RecordStore.write` already accepted `chain: false` (skips step 5, steps 1–4 unchanged, token retired via `releaseSuppress`, answer = committed bytes with `staleProjections: []`), so no behaviour change was needed; the docblocks now state the 2.1.14 contract (chain called after commit only unless switched off) and tests `[section:544jcpq5]` / `[section:79m2bhz3]` in src/server/fs/record-store.test.ts prove it. `move`/`remove` keep running their chain unconditionally — the section speaks of the write sequence only.

@@ -202,7 +202,7 @@
     "m05-always-excluded",
     "pkg-lvs-ac"
    ],
-   "startCommit": null
+   "startCommit": "3e9a2bc5c400687c6d2e8b4c055f54f63eecacc6"
   },
   {
    "n": 2,
@@ -252,14 +252,31 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "pending",
+   "status": "verified",
    "blockedBy": null,
-   "startCommit": null,
-   "baseCommit": null,
-   "portions": [],
+   "startCommit": "3e9a2bc5c400687c6d2e8b4c055f54f63eecacc6",
+   "baseCommit": "3e9a2bc5c400687c6d2e8b4c055f54f63eecacc6",
+   "portions": [
+    {
+     "name": "m42-zapis-bez-lancucha/p1-domain-l7",
+     "layers": [
+      "Domain",
+      "L7"
+     ],
+     "slugs": [
+      "section:544jcpq5",
+      "section:79m2bhz3"
+     ],
+     "status": "implemented",
+     "rounds": 1,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 1
    },
    "jobs": []
   },

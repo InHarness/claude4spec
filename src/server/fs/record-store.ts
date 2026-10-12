@@ -22,7 +22,10 @@ import type { ChainResult, ScopedWatchRegistrar, WatchActor, WatchEventKind, Wat
  *   2. Serialization through the format adapter. The only format-aware step.
  *   3. Atomic `temp → rename`. THE COMMIT POINT. Nothing past here is undone.
  *   4. Suppression token, issued immediately before step 3 and not earlier.
- *   5. The phase chain, run synchronously (`runChain`).
+ *   5. The phase chain, run synchronously (`runChain`) — unless the caller
+ *      switched it off (`chain: false`, 2.1.14). Then steps 1–4 run unchanged
+ *      (conflict, atomicity and suppression hold the same), no phase runs
+ *      in-band, and the answer carries nothing a chain would have produced.
  *   6. The answer, read off the state AFTER the `write-back` phase.
  *
  * Steps 1–2 can fail CLEANLY: nothing is written. From step 3 on there is no
@@ -114,13 +117,21 @@ export interface RecordWriteOptions {
   /** Defaults to `'server'` — this primitive is only ever driven by the app. */
   origin?: WatchOrigin;
   /**
-   * Run the phase chain in-band. Default true.
+   * Run the phase chain in-band (step 5). Default true.
    *
-   * `false` is for a source whose owner still authors its own version row —
-   * M36's artifacts, whose `recordVersion` carries a `change_summary` the
-   * `capture` phase has no way to receive. Such a caller still gets the commit,
-   * the path serialization and the suppression; it simply keeps the bookkeeping
-   * it already owns instead of having it done twice.
+   * 2.1.14 — the chain is called unconditionally after the commit ONLY while
+   * the caller has not switched it off. `false` skips step 5 entirely: steps
+   * 1–4 run unchanged (conflict check, serialization, atomic commit, the
+   * suppression token), no phase runs in-band, and the answer of step 6 is the
+   * committed bytes with no stale projections — nothing a chain would have
+   * produced. Whatever the write needs from the phases, the caller does itself
+   * and answers for itself.
+   *
+   * It exists for a write whose version row carries data absent from the
+   * event — a plan's change summary (M10), M36's artifacts' `change_summary` —
+   * which the `capture` phase has no way to receive. Such a caller still gets
+   * the commit, the path serialization and the suppression; it simply keeps the
+   * bookkeeping it already owns instead of having it done twice.
    *
    * It costs nothing there: briefs and patches register no `write-back`, and
    * `PlanService` injects its anchors synchronously before writing, so the
@@ -315,6 +326,9 @@ export class RecordStore<T> {
     return await this.withPathLock(relPath, async () => {
       const exists = this.readRaw(relPath) !== null;
       this.commit(relPath, record, opts.expectedHash, 'primitive');
+      // 5 — unless the caller switched it off. Off: no phase runs, the token is
+      // still retired by its issuer after the guard window, exactly as after a
+      // chain.
       const chain =
         opts.chain === false
           ? (this.opts.registrar.releaseSuppress(this.opts.source, relPath), { staleProjections: [] })
