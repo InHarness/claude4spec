@@ -355,7 +355,7 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "in-progress",
+   "status": "verified",
    "blockedBy": null,
    "startCommit": "b5ef8d5daa47624b41c491cb828362920b4fdbbb",
    "baseCommit": "b5ef8d5daa47624b41c491cb828362920b4fdbbb",
@@ -388,17 +388,11 @@
       "ac-w-trybie-named-new-gdy-tree-po-stage-je",
       "ac-w-trybie-new-commitforrelease-tworzy-n"
      ],
-     "status": "pending",
-     "rounds": 2,
+     "status": "implemented",
+     "rounds": 3,
      "partial": 0,
-     "uncovered": [
-      "ac-push-bez-upstream-przy-bledzie-sie"
-     ],
-     "only": [
-      {
-       "slug": "ac-push-bez-upstream-przy-bledzie-sie"
-      }
-     ]
+     "uncovered": [],
+     "only": []
     }
    ],
    "rounds": {
@@ -1179,7 +1173,7 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "in-progress",
+   "status": "verified",
    "blockedBy": null,
    "startCommit": "b5ef8d5daa47624b41c491cb828362920b4fdbbb",
    "baseCommit": "b5ef8d5daa47624b41c491cb828362920b4fdbbb",
@@ -1192,17 +1186,11 @@
      "slugs": [
       "section:m17reldisk"
      ],
-     "status": "pending",
-     "rounds": 1,
+     "status": "implemented",
+     "rounds": 2,
      "partial": 0,
-     "uncovered": [
-      "section:m17reldisk"
-     ],
-     "only": [
-      {
-       "slug": "section:m17reldisk"
-      }
-     ]
+     "uncovered": [],
+     "only": []
     }
    ],
    "rounds": {
@@ -1404,7 +1392,7 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "in-progress",
+   "status": "verified",
    "blockedBy": null,
    "startCommit": "b5ef8d5daa47624b41c491cb828362920b4fdbbb",
    "baseCommit": "b5ef8d5daa47624b41c491cb828362920b4fdbbb",
@@ -1428,17 +1416,11 @@
       "wy9a0mdr",
       "a28ukbcn"
      ],
-     "status": "pending",
-     "rounds": 1,
+     "status": "implemented",
+     "rounds": 2,
      "partial": 0,
-     "uncovered": [
-      "foj9tbk4"
-     ],
-     "only": [
-      {
-       "slug": "foj9tbk4"
-      }
-     ]
+     "uncovered": [],
+     "only": []
     }
    ],
    "rounds": {
