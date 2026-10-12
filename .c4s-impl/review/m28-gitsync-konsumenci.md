@@ -1,0 +1,3 @@
+# m28-gitsync-konsumenci — non-blocking review findings
+
+- **rev-0001** `src/shared/entities.ts:326` — The new CreateReleaseResponse docblock says `skipped` means 'the commit ran with nothing to do'. That is wrong: in GitService.commit/stageAndCommit an empty stage gives `nothing-to-commit`. `skipped` past the gate only happens when every staging target lies outside the repo, or on a detached HEAD reached through the named/new config fallback. The comment misstates the contract in the file that defines the type. Suggested wording: '`skipped` only when the staging targets lie outside the repository (or detached HEAD via the named/new fallback); `nothing-to-commit` when nothing was staged'.

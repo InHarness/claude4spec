@@ -119,6 +119,21 @@ export function showGitErrorModal(recovery: GitErrorRecovery): void {
   void openModal('git-sync-recover', { recovery });
 }
 
+/**
+ * 2.1.14 (M28 rhj0h9rl / fxcropku, M17 hybasevj / mbjdcls0, M25 wosnh845):
+ * the one reaction of the release and push pages to the `gitSync` field of
+ * `createRelease`, `updateRelease({ assignUnreleased })` and the release push.
+ * Only `status: 'error'` gives a signal — it opens the `git-sync-recover`
+ * window. Every other result (`committed`, `nothing-to-commit`, `pushed`,
+ * `nothing-to-push`, `skipped`) and `gitSync: null` give NO signal in the UI:
+ * no toast, no window.
+ */
+export function surfaceGitSync(
+  gitSync: { status: string; recovery?: GitErrorRecovery } | null | undefined,
+): void {
+  if (gitSync?.status === 'error' && gitSync.recovery) showGitErrorModal(gitSync.recovery);
+}
+
 // ---------- Popovers ----------
 
 export type PopoverPosition = { x: number; y: number };

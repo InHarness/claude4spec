@@ -1972,14 +1972,37 @@
     }
    ],
    "wave": 2,
-   "status": "pending",
+   "status": "verified",
    "blockedBy": null,
-   "startCommit": null,
-   "baseCommit": null,
-   "portions": [],
+   "startCommit": "e79cc8558462ec271484b9c68c90b3f100bec1f9",
+   "baseCommit": "e79cc8558462ec271484b9c68c90b3f100bec1f9",
+   "portions": [
+    {
+     "name": "m28-gitsync-konsumenci/p1-l2-l5",
+     "layers": [
+      "L2",
+      "L4",
+      "L5"
+     ],
+     "slugs": [
+      "release",
+      "release-push-response",
+      "ac-commitforrelease-i-push-honoruja-master",
+      "ac-przy-detached-head-lub-unborn-branch-d",
+      "ac-przy-config-git-syncpushonpush-false",
+      "ac-rest-patch-api-releases-nameorid-z-bod",
+      "ac-wynik-gitsync-inny-niz-status-error-c"
+     ],
+     "status": "implemented",
+     "rounds": 1,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 1
    },
    "jobs": []
   }

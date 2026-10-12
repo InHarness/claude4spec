@@ -173,9 +173,12 @@ export interface GitPushResult {
 /**
  * 0.1.124: shared shape for the `gitSync` field riding the synchronous
  * create/update-release and push responses — `CreateReleaseResponse`,
- * `UpdateReleaseResponse`, `ReleasePushResponse`. `null` when git is off, no
- * repo was detected, or (update) the request didn't trigger a git operation
- * at all (e.g. a rename with no `assignUnreleased`).
+ * `UpdateReleaseResponse`, `ReleasePushResponse`. 2.1.14: on create and push
+ * `null` means the gated entry (`commitOnRelease` / `pushOnPush`) did not let
+ * the operation through (git off, push-sync off, no repo, detached HEAD); on
+ * update `null` means no pull ran at all (e.g. a rename with no
+ * `assignUnreleased`) — git off / no repo there answer `skipped`. The release
+ * and push pages react only to `status: 'error'` (`surfaceGitSync`).
  *
  * 0.1.125: `branch`/`switched` added — see `GitCommitResult`/`GitPushResult`.
  */

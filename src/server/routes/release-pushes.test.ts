@@ -278,7 +278,65 @@ describe('POST /api/release-pushes — gitSync of the git push hook (M25 + M28)'
     expect(res.body.gitSync).toMatchObject({ status: 'pushed', branch: 'main' });
     expect(res.body.gitSync?.recovery).toBeUndefined();
   });
+
+  /** Rewrite the project's `git` config block (read per call — hot-reload). */
+  function setGitConfig(gitCfg: Record<string, unknown>): void {
+    fs.writeFileSync(
+      path.join(dir, '.claude4spec', 'config.json'),
+      JSON.stringify({
+        $schemaVersion: 4,
+        name: 'test',
+        remoteProjectId: '11111111-2222-3333-4444-555555555555',
+        roots: [{ id: 'pages', name: 'Pages', dir: '.', builtin: true }],
+        git: gitCfg,
+      }),
+    );
+  }
+
+  it('[ac:ac-przy-config-git-syncpushonpush-false] [entity:release-push-response] with config.git.syncPushOnPush=false the release push answers gitSync: null and nothing is git-pushed', async () => {
+    setGitConfig({ enabled: true, syncPushOnPush: false });
+    await commitFile(dir, 'mine.md', 'mine', 'my change');
+    const remoteMainBefore = (await git(['rev-parse', 'main'], bare)).trim();
+
+    const res = await request(app).post('/api/release-pushes').send({ releaseName: 'v1' });
+
+    expect(res.status).toBe(201);
+    expectReleasePushPayload(res.body);
+    expect(res.body.status).toBe('success'); // the remote push itself happened
+    expect(res.body).toHaveProperty('gitSync', null);
+    expect((await git(['rev-parse', 'main'], bare)).trim()).toBe(remoteMainBefore);
+  });
+
+  it('[entity:release-push-response] detached HEAD fails the pushOnPush gate even with an explicit target branch — gitSync: null, nothing is git-pushed', async () => {
+    await git(['checkout', '-b', 'release-target'], dir);
+    await commitFile(dir, 'release.md', 'release', 'release marker');
+    await git(['checkout', '--detach'], dir);
+    const markerFile = path.join(dir, 'release.md');
+
+    const res = await request(appWithReleaseFile(markerFile)).post('/api/release-pushes').send({ releaseName: 'v1' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe('success');
+    expect(res.body).toHaveProperty('gitSync', null);
+    await expect(git(['rev-parse', '--verify', 'refs/heads/release-target'], bare)).rejects.toThrow();
+  });
 });
+
+/** Dto `release-push-response` on the live payload — every required field with its type, `gitSync` an object or `null`. */
+function expectReleasePushPayload(body: Record<string, unknown>): void {
+  expect(typeof body.id).toBe('number');
+  expect(typeof body.releaseId).toBe('number');
+  expect(body.release).toEqual({ id: expect.any(Number), name: expect.any(String) });
+  expect(body.contentSha256).toMatch(/^[0-9a-f]{64}$/);
+  expect(typeof body.contentSizeBytes).toBe('number');
+  expect(typeof body.deduplicated).toBe('boolean');
+  expect(typeof body.pushedByAccountId).toBe('string');
+  expect(typeof body.bundleSchemaVersion).toBe('number');
+  expect(['success', 'error']).toContain(body.status);
+  expect(typeof body.pushedAt).toBe('string');
+  expect('gitSync' in body).toBe(true);
+  expect(body.gitSync === null || typeof body.gitSync === 'object').toBe(true);
+}
 
 /**
  * 2.1.11 — the push and its audit log address the release by name. The numeric

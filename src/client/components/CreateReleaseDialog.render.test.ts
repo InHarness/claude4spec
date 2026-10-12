@@ -185,4 +185,43 @@ describe('create-release dialog — gitSync outcome of commitOnRelease (M28 2.1.
     expect(toasts).toEqual([]);
     expect(modals).toEqual([]);
   });
+
+  const nonError: Array<[string, CreateReleaseResponse['gitSync']]> = [
+    ['committed', { status: 'committed', branch: 'main', switched: false }],
+    ['nothing-to-commit', { status: 'nothing-to-commit' }],
+    ['skipped', { status: 'skipped', message: 'pages are outside the repository' }],
+    ['null', null],
+  ];
+
+  it.each(nonError)(
+    '[ac:ac-wynik-gitsync-inny-niz-status-error-c] release page: a gitSync of %s on createRelease gives no toast and no window',
+    async (_label, gitSync) => {
+      createResponse = releaseWith(gitSync);
+      await createRelease();
+
+      expect(requests).toContainEqual({ path: '/api/releases', method: 'POST' });
+      expect(closed).toBe(1);
+      expect(nav.calls).toEqual([{ to: '/releases/$name', params: { name: 'v2.1.14' } }]);
+      expect(toasts).toEqual([]);
+      expect(modals).toEqual([]);
+    },
+  );
+
+  it('[ac:ac-wynik-gitsync-inny-niz-status-error-c] release page: only status "error" reacts — it opens git-sync-recover, never a toast', async () => {
+    createResponse = releaseWith({
+      status: 'error',
+      message: 'git commit failed',
+      recovery: {
+        operation: 'commit-on-release',
+        reason: 'index.lock exists',
+        gitStderr: 'fatal: Unable to create index.lock',
+        intentPrompt: 'Resolve the git error.',
+      },
+    });
+    await createRelease();
+
+    expect(toasts).toEqual([]);
+    expect(modals).toHaveLength(1);
+    expect(modals[0]!.kind).toBe('git-sync-recover');
+  });
 });

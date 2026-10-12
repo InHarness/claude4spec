@@ -112,7 +112,9 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
         );
         deps.ws.broadcast({ kind: 'release:created', releaseId: release.id, name: release.name });
         // M28: agent-surface parity — same best-effort git commit as the HTTP
-        // surface, with the outcome returned in `gitSync` (null when off/no repo).
+        // surface, with the outcome returned in `gitSync` (`null` when the
+        // `commitOnRelease` gate did not let it through — git off, no repo,
+        // detached/unborn HEAD in `current` mode).
         const gitSync = await deps.gitService.commitOnRelease(release);
         return ok({ ...release, gitSync });
       } catch (err) {

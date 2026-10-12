@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useCreateRelease } from '../hooks/useReleases.js';
 import { ApiError } from '../lib/api-core.js';
-import { showGitErrorModal } from '../ui/events.js';
+import { surfaceGitSync } from '../ui/events.js';
 import { MAX_RELEASE_DESCRIPTION_LENGTH, releaseDescriptionLength } from '../../shared/entities.js';
 
 interface Props {
@@ -40,11 +40,9 @@ export function CreateReleaseDialog({ onClose }: Props) {
         description: description.trim(),
       });
       // M28: git commit-sync is best-effort — a failure never blocks creation.
-      // 0.1.124: surfaced via GitErrorRecoveryModal (with a "Fix it with
-      // Agent" action) rather than a toast.
-      if (release.gitSync?.status === 'error' && release.gitSync.recovery) {
-        showGitErrorModal(release.gitSync.recovery);
-      }
+      // 2.1.14: only `status: 'error'` reacts (the `git-sync-recover` window);
+      // every other result, `null` included, gives no signal.
+      surfaceGitSync(release.gitSync);
       onClose();
       navigate({ to: '/releases/$name', params: { name: release.name } });
     } catch (err) {

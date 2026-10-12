@@ -1,0 +1,67 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "unit", "id": "m28-gitsync-konsumenci" },
+  "release": "2.1.14",
+  "rows": [
+    {
+      "slug": "release",
+      "type": "dto",
+      "level": 1,
+      "status": "covered",
+      "evidence": "trace.md:70 → src/shared/entities.ts CreateReleaseResponse/UpdateReleaseResponse gitSync?: GitSyncField<GitCommitStatus>; src/server/routes/releases.test.ts expectReleasePayload (id number, name/description/createdBy string, createdAt ISO ms, countBreakdown object, 'gitSync' in body, null|object) used in '[ac:ac-commitforrelease-i-push-honoruja-master] [entity:release]' (POST) and '[ac:ac-rest-patch-api-releases-nameorid-z-bod] [entity:release]' (PATCH). snake_case vs camelCase field names recorded as non-blocking drift m28k-dev-0001 (sent), predating the window."
+    },
+    {
+      "slug": "release-push-response",
+      "type": "dto",
+      "level": 1,
+      "status": "covered",
+      "evidence": "trace.md:71 → src/shared/release-push.ts ReleasePushResponse.gitSync GitSyncField<GitPushStatus>; src/server/routes/release-pushes.test.ts expectReleasePushPayload asserts every required field (id, releaseId, release {id,name}, contentSha256 /^[0-9a-f]{64}$/, contentSizeBytes, deduplicated, pushedByAccountId, bundleSchemaVersion, status success|error, pushedAt) + gitSync null|object; null on gate failure asserted in two [entity:release-push-response] tests (syncPushOnPush=false; detached HEAD with explicit branch). Code: GitService.pushOnPush src/server/services/git.ts:941-946."
+    },
+    {
+      "slug": "ac-commitforrelease-i-push-honoruja-master",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/routes/releases.test.ts '[ac:ac-commitforrelease-i-push-honoruja-master] [entity:release] with git.enabled=false …': setGitConfig({enabled:false, syncCommitOnRelease:true}); expect(res.body).toHaveProperty('gitSync', null); expect(commitSubjects()).toEqual(['seed']). Code: commitOnRelease returns null when !config.git.enabled (git.ts:920-921), routes/releases.ts passes it as gitSync."
+    },
+    {
+      "slug": "ac-przy-detached-head-lub-unborn-branch-d",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/routes/releases.test.ts two '[ac:ac-przy-detached-head-lub-unborn-branch-d]' tests: detached HEAD in commitTarget current → toHaveProperty('gitSync', null), HEAD unchanged, commitSubjects ['seed']; unborn fresh repo → gitSync null, rev-parse HEAD throws, rev-list --all --count '0'. Code: git.ts:924-925 `if (mode === 'current' && !status.branch) return null`."
+    },
+    {
+      "slug": "ac-przy-config-git-syncpushonpush-false",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/routes/release-pushes.test.ts '[ac:ac-przy-config-git-syncpushonpush-false] [entity:release-push-response] …': setGitConfig({enabled:true, syncPushOnPush:false}); expect(res.status).toBe(201); expect(res.body).toHaveProperty('gitSync', null); bare main rev unchanged. Code: git.ts:942 `if (!config.git.enabled || !config.git.syncPushOnPush) return null`; release-push.ts:183-184."
+    },
+    {
+      "slug": "ac-rest-patch-api-releases-nameorid-z-bod",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/routes/releases.test.ts describe 'PATCH /api/releases/:name — gitSync of the pull commit': git on assignUnreleased → gitSync {status:'committed'}, last commit 'Pull to v1', HEAD tree contains pages/b.md; rename-only PATCH → toHaveProperty('gitSync', null); git off → toEqual({status:'skipped'}) + no commit; no repo → toEqual({status:'skipped'}); 409 RELEASE_FROZEN and 409 RELEASE_NAME_CONFLICT. Code: release.ts:775-779 (gitSync null unless assignUnreleased && gitService; else commitPull result), git.ts:799-803 (skipped on off/no repo/detached)."
+    },
+    {
+      "slug": "ac-wynik-gitsync-inny-niz-status-error-c",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/client/components/CreateReleaseDialog.render.test.ts it.each committed/nothing-to-commit/skipped/null → expect(toasts).toEqual([]); expect(modals).toEqual([]); error → one modal 'git-sync-recover'. src/client/components/ReleaseDetail.gitsync.render.test.ts: pull (committed/nothing-to-commit/skipped/null) → no toast, no modal; push (pushed/nothing-to-push/skipped/null) → only the remote-push toast 'Pushed as release #3', modals []; error → git-sync-recover with recovery. Code: surfaceGitSync src/client/ui/events.ts:131-135, used by CreateReleaseDialog.tsx:45, ReleaseDetail.tsx:152, push-to-remote-action.tsx:55."
+    },
+    {
+      "slug": "goal:m28-gitsync-konsumenci",
+      "level": 2,
+      "status": "covered",
+      "evidence": "create: routes/releases.ts:68-72 + mcp/release-tools/index.ts:118 commitOnRelease (null on gate fail, git.ts:919-927); pull: release.ts:775-779 commitPull (skipped on git off/no repo/detached HEAD, git.ts:799-803; null only when no pull ran); push: release-push.ts:183 pushOnPush (null on gate fail incl. explicit branch, git.ts:941-946). UI reacts only to status 'error' via surfaceGitSync (events.ts:131-135) at all three call sites; no non-error gitSync toast exists anywhere in src/client (grep gitSync)."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck (tests are env-runner only in this build; read tests touching changed code: releases.test.ts, release-pushes.test.ts, CreateReleaseDialog.render.test.ts, ReleaseDetail.gitsync.render.test.ts, GitSyncRecover.render.test.ts — none broken by the diff; no vi.mock of ui/events affected)",
+    "exitCode": 0,
+    "summary": "tsc --noEmit passed for root and all workspace packages (last: @inharness-ai/c4s-plugin-skill-author typecheck)."
+  }
+}
