@@ -1,0 +1,24 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "unit", "id": "m17-plik-release-roots" },
+  "release": "2.1.14",
+  "rows": [
+    {
+      "slug": "section:m17reldisk",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/release-file-roots.test.ts:68 '[section:m17reldisk] createRelease writes roots as the bare ids...' asserts expect(file.roots).toEqual(['pages', 'docs']) + typeof each === 'string' + keys exactly [createdAt,createdBy,description,name,roots,slug]; :79 updateRelease rename rewrites file with roots ['pages','docs']; :89 bundle manifest.roots toEqual [{id,name,dir}...]. Code: release-store.ts:51 toReleaseFileData returns roots: string[] (pagesKindRootIds), called from release.ts:629 (create), release.ts:768 (update), project-context.ts:1922 (backfill); release-bundle.ts buildBundleArchive maps config.roots to {id,name,dir}. Read through: passes; typecheck green."
+    },
+    {
+      "slug": "goal:m17-plik-release-roots",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Release metadata file roots = bare rootIds: src/server/services/release-store.ts:30-41 (ReleaseFileData.roots: string[]), :51-63 toReleaseFileData; all writers (release.ts:629, :768, project-context.ts:1922) pass pagesKindRootIds; reader release-indexer.ts:122 and migration 049 treat roots as id array. Richer {id,name,dir} only in bundle manifest: release-bundle.ts buildBundleArchive pageRoots. No removal named by the goal beyond the object shape, which no writer produces."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck (tests not run locally per ## This build; existing tests touching release files read: release-diff-git.test.ts:204/215 already write roots: ['pages'])",
+    "exitCode": 0,
+    "summary": "tsc --noEmit across root and all workspace plugins: no errors (last: @inharness-ai/c4s-plugin-skill-author@2.1.9 typecheck ok)"
+  }
+}

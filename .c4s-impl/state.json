@@ -1176,14 +1176,29 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "pending",
+   "status": "verified",
    "blockedBy": null,
-   "startCommit": null,
-   "baseCommit": null,
-   "portions": [],
+   "startCommit": "366305411e660f38569449337fbb262b80d53a45",
+   "baseCommit": "366305411e660f38569449337fbb262b80d53a45",
+   "portions": [
+    {
+     "name": "m17-plik-release-roots/p1-l2-l2",
+     "layers": [
+      "L2"
+     ],
+     "slugs": [
+      "section:m17reldisk"
+     ],
+     "status": "implemented",
+     "rounds": 1,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 1
    },
    "jobs": []
   },
