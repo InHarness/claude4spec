@@ -1,5 +1,5 @@
 {
-  "iteration": 65,
+  "iteration": 66,
   "conventions": [
     {
       "label": "L12 (Host UI Kit) — implementor M34",
@@ -904,6 +904,6 @@
   ],
   "entityParts": [],
   "errors": 0,
-  "systemVerified": false,
+  "systemVerified": true,
   "baselineGreen": true
 }

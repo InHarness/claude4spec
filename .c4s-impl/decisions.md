@@ -17,3 +17,10 @@
 
 - Static system verifier: 27/27 rows covered (15 ac incl. 2 deprecated, 9 ui-view, stubs, dev-0001 sent, regression/trace). Full suite pending in env-runner `impl-2-1-15-to-2-1-16`.
 - system round 1: u3 reopened — ElementList.render.test.ts failed to collect (registry mock lacked registerEntity via boot-plugins graph); fixed by mocking runtime/boot-plugins. Fix commit sits on top (not squashed into u3's unit commit, later units follow it).
+
+## System verification (env-runner `impl-2-1-15-to-2-1-16`)
+
+- Round 1 @ d8fdc3e6: `npm test` 5518/5518 tests, but `ElementList.render.test.ts` failed to collect → u3 reopened and fixed (8e7c3904).
+- Round 2 @ df9940b8 (code identical to 8e7c3904): `npm test` 5521/5521, 1630/1630 suites green (npm ci from lockfile, uid 1000).
+- `npm run test:e2e` (round 1): 207 passed, 19 skipped, 4 failed — same counts as on main for 2.1.14→2.1.15: seed preconditions of the empty env (artifact-threads-panel, plan-footer, entity-version-history, envelope-entity-pages x2 "no endpoint — seed one first"), editor-l8 "new user root" caret flake (pre-existing), and `frontend-mockups-envelope` `/uiview` palette (first-load flake: the file re-run alone 3x → 6/6 each).
+- Static system verifier: 27/27 covered. terminate() holds.
