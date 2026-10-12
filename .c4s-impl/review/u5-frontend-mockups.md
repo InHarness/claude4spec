@@ -1,0 +1,1 @@
+- rev-0001 (non-blocking) `plugins/c4s-plugin-frontend-mockups/src/frontend-kit/EntityListRow.tsx:12` — the new DEBT header says `CountBadge` should be replaced by the catalog `Badge`. The old paragraph below it still says `CountBadge` "stays app-side" with "no need to promote". The two contradict each other; keep one position.

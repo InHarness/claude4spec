@@ -1,5 +1,5 @@
 {
-  "iteration": 8,
+  "iteration": 10,
   "conventions": [
     {
       "label": "L5 (UI) — implementor M50 — App Shell",
@@ -517,7 +517,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "u5-frontend-mockups/p1-l5-l12",
@@ -530,18 +530,20 @@
             "design-system-detail",
             "design-system-list"
           ],
-          "status": "pending",
-          "rounds": 0,
-          "partial": 0
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "e7bb17906d29acd4030050aa1dca9c0806d544d5",
+      "baseCommit": "e7bb17906d29acd4030050aa1dca9c0806d544d5",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0
     },
     {
       "id": "u6-ac-plugin",

@@ -1,0 +1,15 @@
+{
+  "id": "dev-1905",
+  "kind": "drift",
+  "blocking": false,
+  "address": "u5-frontend-mockups/yn1fk80a",
+  "slugs": [
+    "design-system-list"
+  ],
+  "text": "The ui-view Host UI Kit slice (yn1fk80a, at 2.1.19) records ListPageHeader and ListScrollArea as DEBT because 'one copy serves the ui-view and design-system lists', and CountBadge as DEBT because it 'shows the parameter count' in the ui-view list row. In the code the ui-view list (since 2.1.16, ui-view-list) already composes the catalog directly — EntityListHeader, EntityListLayout, LoadingState, EmptyState, Badge — and uses none of the three; only the design-system list still renders through ListPageHeader, ListScrollArea and CountBadge. The code was not regressed to match the debt wording: the three files now carry the DEBT header naming their catalog replacement, and the design-system list keeps using them (its slice, mq3b803z, records ListPageHeader and ListScrollArea as its debt). Assumed: the ui-view debt list should drop ListPageHeader, ListScrollArea and CountBadge (or say they are design-system-only), and the design-system slice should name CountBadge as its debt.",
+  "assumption": "ASSUMPTION:dev-1905 — ListPageHeader / ListScrollArea / CountBadge are debt of the design-system list only; the ui-view list keeps consuming the catalog directly",
+  "unit": "u5-frontend-mockups",
+  "portion": "u5-frontend-mockups/p1-l5-l12",
+  "sent": true,
+  "patchPath": "2-1-18-to-2-1-19-u5-frontend-mockups-yn1fk80a-list-kit-debt-belongs-to-design-system-only-ui-view.md"
+}

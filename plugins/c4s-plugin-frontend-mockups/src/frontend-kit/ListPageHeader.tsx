@@ -13,6 +13,13 @@ interface Props {
 }
 
 /**
+ * DEBT (2.1.19, Host UI Kit slices of `ui-view` and `design-system`): fails the
+ * locality rule — the same copy 1:1 stands in the `frontend-kit/` of three
+ * plugin packages (condition 1), and the list page header is common to every
+ * entity type (condition 2). Its catalog replacement is `EntityListHeader`
+ * used directly. Recorded, not fixed here; the `design-system` list still
+ * renders through it.
+ *
  * M13 list-page header. Delegates to the Host UI Kit's `EntityListHeader`
  * (M34/L12, `stable`, contributed by M19), supplying the create button via the
  * action slot — so the host's own list views consume the shared catalog
