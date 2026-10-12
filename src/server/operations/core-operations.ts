@@ -949,7 +949,7 @@ export function registerCoreOperations(): void {
   CATALOG.register(
     pageWrite(
       'update_page',
-      'Write a page: EITHER in full (`body` plus optional `frontmatter`) OR differentially (`textEdits` — literal find/replaceWith substitutions over the whole file, frontmatter included). Exactly one of the two per call; both or neither is INVALID_ARGUMENT. Create-or-replace in the literal mode, which is how the editor saves a new page. The differential mode is NOT idempotent — replaying it answers FIND_NOT_FOUND — and inherits M06\'s ANCHOR_LOSS guard, overridable with `dropAnchors`.',
+      'Write a page — create or replace: EITHER in full (`body` plus optional `frontmatter`, which replaces the page\'s frontmatter wholesale) OR differentially (`textEdits` — literal find/replaceWith substitutions over the whole file, frontmatter included). Exactly one of the two per call; both or neither is INVALID_ARGUMENT. The literal mode creates a page missing from a known root rather than answering NOT_FOUND (M02 `gj2vdsjm`) — which is how the editor saves a new page. The differential mode is NOT idempotent — replaying it answers FIND_NOT_FOUND. Both modes carry M06\'s ANCHOR_LOSS guard, overridable with `dropAnchors`; the returned `hash` is taken after the in-band anchor injection.',
       {
         rootId: z.string(),
         path: z.string(),
@@ -960,6 +960,9 @@ export function registerCoreOperations(): void {
         ...expectedHash,
       },
       true,
+      // ASSUMPTION:dev-0101 — an unknown root is ROOT_NOT_FOUND (the row: NOT_FOUND).
+      // ASSUMPTION:m02u-dev-0001 — the row's ROOT_NOT_WRITABLE has no producer in the page write path.
+      // No NOT_FOUND for a missing page: the literal mode creates it (M02 `gj2vdsjm`, 2.1.14).
       ['PAGE_CONFLICT', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'FIND_NOT_FOUND', 'MATCH_COUNT_MISMATCH', 'ANCHOR_LOSS'],
       'literal+diff',
     ),

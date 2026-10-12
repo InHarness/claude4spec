@@ -1,0 +1,17 @@
+{
+  "id": "m02u-dev-0002",
+  "kind": "drift",
+  "blocking": false,
+  "address": "m02-update-page-body/L4",
+  "slugs": [
+    "put-api-pages",
+    "ac-update-page-w-trybie-content-na-rooci",
+    "ac-update-page-w-trybie-content-ktorego"
+  ],
+  "text": "Both literal-mode anchor criteria (`ac-update-page-w-trybie-content-na-rooci`: a lost cited anchor is refused with ANCHOR_LOSS; `ac-update-page-w-trybie-content-ktorego`: it passes once named in dropAnchors) list `put-api-pages` in `verifies`, and at 2.1.14 the endpoint says it renders update_page's literal mode. In code the REST PUT — the editor's auto-save — has been report-only since 2.1.6: it passes no referent lookup to the core, so it never answers ANCHOR_LOSS (it reports `droppedAnchors`), and its body DTO has no `dropAnchors` field. The MCP rendering (page-tools update_page) and the core operation do refuse. Making the editor save refuse would change what a user sees when deleting a cited heading in the editor (a 400 the client has no recovery UI for), so it was not done silently. Assumed: PUT stays report-only and the two criteria are proven on the operation and its MCP rendering. Suggestion: either say in put-api-pages (or M02 m02octconc) that the editor save is report-only for the anchor guard, or specify the editor's handling of ANCHOR_LOSS (and a dropAnchors field on the PUT body) so the route can carry the full guard.",
+  "assumption": "ASSUMPTION:m02u-dev-0002 — kept report-only (and without `dropAnchors`) although the literal-mode ANCHOR_LOSS criteria also name this route.",
+  "unit": "m02-update-page-body",
+  "portion": "m02-update-page-body/p1-l3-l4",
+  "sent": true,
+  "patchPath": "2-1-13-to-2-1-14-workflow-m02-update-page-body-l4-both-literal-mode-anchor-criteria-ac-update-page-w-trybi.md"
+}

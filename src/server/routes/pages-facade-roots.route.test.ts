@@ -196,6 +196,47 @@ describe('2.1.9 — /api/pages/:rootId addresses only roots with a facade (M02 l
     expect(fs.readFileSync(abs('plans', 'p.md'), 'utf8')).toBe(plan);
   });
 
+  it('[entity:put-api-pages] 2.1.14 — the route renders update_page\'s literal mode: `body` + optional `frontmatter` replacing the old one wholesale, create-or-replace on a known root, the old `content` field refused', async () => {
+    const { app, abs } = await rig();
+
+    // Create-or-replace: no page under (rootId, relPath) is not an error — the route creates it.
+    expect(fs.existsSync(abs('adr', 'new/fresh.md'))).toBe(false);
+    const created = await request(app)
+      .put('/api/pages/adr/new/fresh.md')
+      .send({ body: '# Fresh\n\nfirst\n', frontmatter: { title: 'Fresh', order: 3 }, expectedHash: 'a'.repeat(64) });
+    expect(created.status).toBe(200);
+    const createdOnDisk = fs.readFileSync(abs('adr', 'new/fresh.md'), 'utf8');
+    expect(matter(createdOnDisk).data).toEqual({ title: 'Fresh', order: 3 });
+    expect(createdOnDisk).toContain('first');
+    expect(created.body.hash).toBe(sha(createdOnDisk));
+
+    // `frontmatter` replaces the page's frontmatter WHOLESALE — a key it omits is gone.
+    const replaced = await request(app)
+      .put('/api/pages/adr/new/fresh.md')
+      .send({ body: '# Fresh\n\nsecond\n', frontmatter: { title: 'Renamed' }, expectedHash: created.body.hash });
+    expect(replaced.status).toBe(200);
+    const replacedOnDisk = fs.readFileSync(abs('adr', 'new/fresh.md'), 'utf8');
+    expect(matter(replacedOnDisk).data).toEqual({ title: 'Renamed' });
+    expect(replacedOnDisk).toContain('second');
+    expect(replacedOnDisk).not.toContain('first');
+    expect(replaced.body.hash).toBe(sha(replacedOnDisk));
+
+    // No `frontmatter` → a page without one.
+    const bare = await request(app)
+      .put('/api/pages/adr/new/fresh.md')
+      .send({ body: '# Fresh\n\nthird\n', expectedHash: replaced.body.hash });
+    expect(bare.status).toBe(200);
+    expect(matter(fs.readFileSync(abs('adr', 'new/fresh.md'), 'utf8')).data).toEqual({});
+
+    // The removed `content` name describes nothing: 400 INVALID_ARGUMENT, nothing created.
+    const legacy = await request(app)
+      .put('/api/pages/adr/legacy.md')
+      .send({ content: '# Legacy\n', expectedHash: 'a'.repeat(64) });
+    expect(legacy.status).toBe(400);
+    expect(legacy.body.error.code).toBe('INVALID_ARGUMENT');
+    expect(fs.existsSync(abs('adr', 'legacy.md'))).toBe(false);
+  });
+
   it('[entity:delete-api-pages] DELETE /api/pages/:rootId/* → 200 { ok, deleted: true } and the file is gone on a root with a facade; 404 ROOT_NOT_FOUND on a root without one, file kept', async () => {
     const { app, abs } = await rig();
     put(abs('adr', 'gone.md'), '# Gone\n');

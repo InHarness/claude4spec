@@ -406,6 +406,13 @@ export function pagesRouter(
       if (!rt) return;
       const relPath = (req.params as Record<string, string>)[0];
       if (!relPath) return res.status(400).json({ error: 'missing path' });
+      /**
+       * 2.1.14 — the route renders `update_page`'s literal mode: `body` plus an
+       * optional `frontmatter` that replaces the page's frontmatter wholesale.
+       * Create-or-replace: a page missing under `(rootId, relPath)` is created,
+       * not refused. A request without `body` (the old `content` included)
+       * reaches the core as "neither mode" and is INVALID_ARGUMENT.
+       */
       const body = (req.body ?? {}) as {
         body?: string;
         frontmatter?: Record<string, unknown>;
@@ -426,6 +433,8 @@ export function pagesRouter(
            * 2.1.6 — the editor's save stays report-only: no referent lookup, so
            * it cannot answer ANCHOR_LOSS, but it does report `droppedAnchors`
            * (2.1.8: on every page root — each one has a section index).
+           * ASSUMPTION:m02u-dev-0002 — kept report-only (and without `dropAnchors`)
+           * although the literal-mode ANCHOR_LOSS criteria also name this route.
            */
           {},
         ),

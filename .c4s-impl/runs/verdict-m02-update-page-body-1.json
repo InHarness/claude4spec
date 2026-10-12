@@ -1,0 +1,34 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "unit", "id": "m02-update-page-body" },
+  "release": "2.1.14",
+  "rows": [
+    { "slug": "page-tools-update-page", "type": "mcp-tool", "level": 1, "status": "covered",
+      "evidence": "trace.md line present; src/server/mcp/page-tools.ts:198-285 — params rootId/path/body(string,opt)/frontmatter(object,opt)/textEdits(opt)/dropAnchors(opt)/expectedHash(req), no `content`; body/frontmatter/textEdits descriptions verbatim from the entity at 2.1.14; description = entity text + guard/returns paragraphs; hints {readOnly:false,destructive:true,idempotent:false,openWorld:false} (:284). Test src/server/mcp/page-tools.test.ts:312 asserts keys, `not.toHaveProperty('content')`, types, required set, hints `toMatchObject({readOnlyHint:false,destructiveHint:true,idempotentHint:false,openWorldHint:false})`, create on missing page (`created.isError` false, hash = sha of disk), wholesale frontmatter (`read.frontmatter toEqual {title:'Renamed'}`), legacy `content` → INVALID_ARGUMENT, nothing created. dropAnchors description keeps the pre-window 2.1.8 last sentence ('guard runs on every page root') instead of the entity's 'no section index' sentence — outside this window's change." },
+    { "slug": "put-api-pages", "type": "endpoint", "level": 1, "status": "covered",
+      "evidence": "src/server/routes/pages.ts:403-445 PUT '/*' passes body.body + optional frontmatter to updatePage (create-or-replace via assertUnchanged returning on absent file, page-write.ts:855-856). Test src/server/routes/pages-facade-roots.route.test.ts:199 asserts 200 creating adr/new/fresh.md, `matter(...).data toEqual {title:'Fresh',order:3}`, hash = sha(disk), wholesale replace `toEqual {title:'Renamed'}`, no frontmatter → `{}`, `{content}` → 400 INVALID_ARGUMENT and file absent. Anchor guard kept report-only per non-blocking deviation m02u-dev-0002." },
+    { "slug": "katalog-operacji-m02#update_page", "type": "spreadsheet", "level": 1, "status": "covered",
+      "evidence": "src/server/operations/core-operations.ts:949-967 summary 'create or replace', inputSchema body/frontmatter/textEdits/dropAnchors/expectedHash/rootId/path, idempotent true (warunkowa), contentInput 'literal+diff', errorCodes PAGE_CONFLICT, ROOT_NOT_FOUND (dev-0101 for row's NOT_FOUND), INVALID_ARGUMENT, FIND_NOT_FOUND, MATCH_COUNT_MISMATCH, ANCHOR_LOSS; ROOT_NOT_WRITABLE omitted per non-blocking deviation m02u-dev-0001. Test src/server/mcp/page-tools.test.ts:386 asserts scope/mediation/4 channels direct/sideEffects/contentInput/schema keys + optionality/errorCodes, MCP addressing + textEdits item keys + destructiveHint, create-without-NOT_FOUND, echo-free keys, replacements=3, both/neither INVALID_ARGUMENT, stale PAGE_CONFLICT." },
+    { "slug": "ac-content-i-textedits-w-update-page-sa", "type": "ac", "level": 2, "status": "covered",
+      "evidence": "src/server/services/page-write.test.ts:2713 — both/neither `code toBe('INVALID_ARGUMENT')`, missing hash in literal and differential `message toMatch(/expectedHash/)`, file unchanged, single mode with hash passes (`replacements toBe(2)`); core page-write.ts:651-680." },
+    { "slug": "ac-textedits-gubiacy-anchor-majacy-refer", "type": "ac", "level": 2, "status": "covered",
+      "evidence": "src/server/services/page-write.test.ts:2785 — `expect(err.code).toBe('ANCHOR_LOSS')`, details name anchor + citing page, file untouched; literal-mode same guard at :2851." },
+    { "slug": "ac-update-page-bez-content-i-bez-textedi", "type": "ac", "level": 2, "status": "covered",
+      "evidence": "src/server/services/page-write.test.ts:2578 — `updatePage(target,{path,expectedHash})` → `expect(err.code).toBe('INVALID_ARGUMENT')`, body unchanged; page-write.ts:659-664." },
+    { "slug": "ac-update-page-w-trybie-content-ktorego", "type": "ac", "level": 2, "status": "covered",
+      "evidence": "src/server/services/page-write.test.ts:2871 — literal body losing cited anchor with `dropAnchors:[childOne]` → `res.droppedAnchors toEqual [childOne]`, anchor and heading gone from disk, hash = disk. PUT half not carried (report-only) per non-blocking deviation m02u-dev-0002." },
+    { "slug": "ac-update-page-w-trybie-content-na-rooci", "type": "ac", "level": 2, "status": "covered",
+      "evidence": "src/server/services/page-write.test.ts:2851 — literal `body` on root 'pages' losing a cited anchor → `expect(err.code).toBe('ANCHOR_LOSS')`, details, body unchanged; page-write.ts:696-713. PUT half per deviation m02u-dev-0002." },
+    { "slug": "ac-update-page-z-content-i-textedits-pod", "type": "ac", "level": 2, "status": "covered",
+      "evidence": "src/server/services/page-write.test.ts:2567 — body + textEdits → `expect(err.code).toBe('INVALID_ARGUMENT')`, `message toMatch(/mutually exclusive/)`; page-write.ts:651-657." },
+    { "slug": "ac-zapis-strony-wprowadzajacy-nowy-naglo", "type": "ac", "level": 2, "status": "covered",
+      "evidence": "src/server/services/page-write.test.ts:1890-1981 — rig subscribes write-back (mintAnchors) + projection (indexPage) on the primitive's chain (in-band); asserts `injectedAnchorAbove(...)` defined, `first.hash toBe(await hashOfPage('doc.md'))`, second write armed with it `not.toBeInstanceOf(Error)` for both update_sections and update_page." },
+    { "slug": "goal:m02-update-page-body", "level": 2, "status": "covered",
+      "evidence": "body param name + optional wholesale frontmatter: page-write.ts:153-163, page-tools.ts:212-243, pages.ts:469-482; create-or-replace: page-write.ts:855-856 (absent file passes the hash guard), bodyOnDisk '' for missing; REST renders literal mode: pages.ts:403-445; hash post-injection: commit re-reads settled file, test page-write.test.ts:1890; removals: no `content` field on MCP/REST/core (tests page-tools.test.ts:376-383, pages-facade-roots.route.test.ts:442-448), no NOT_FOUND refusal for missing page in literal mode." }
+  ],
+  "suite": {
+    "command": "npm run typecheck (tests not run per build rules; static review of touched tests incl. system-prompt golden snapshot — no update_page description/annotation captured)",
+    "exitCode": 0,
+    "summary": "> @inharness-ai/c4s-plugin-skill-author@2.1.9 typecheck\n> tsc --noEmit\nEXIT 0"
+  }
+}

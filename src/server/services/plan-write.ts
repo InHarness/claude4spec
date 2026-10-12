@@ -19,7 +19,7 @@ import type { TextEdit } from './text-edits.js';
  * (`update_page` / `update_sections`), so an agent learns one way to describe an
  * edit rather than two:
  *
- *   - `content`   — the whole plan, literally (`update_page({ content })`)
+ *   - `content`   — the whole plan, literally (the page analogue is `update_page({ body })`)
  *   - `textEdits` — literal substitutions over the whole plan (`update_page({ textEdits })`)
  *   - `edits[]`   — a transactional section batch (`update_sections({ edits })`)
  *

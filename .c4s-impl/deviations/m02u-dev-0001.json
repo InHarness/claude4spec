@@ -1,0 +1,15 @@
+{
+  "id": "m02u-dev-0001",
+  "kind": "drift",
+  "blocking": false,
+  "address": "m02-update-page-body/L3",
+  "slugs": [
+    "katalog-operacji-m02#update_page"
+  ],
+  "text": "The `kody błędów` cell of the `update_page` row (and of create_page, delete_page and move_page alike) lists `ROOT_NOT_WRITABLE`, but nothing in the page write path raises it: no root kind is read-only for update_page, and the code base has no producer of that code at all. The window did not touch this cell. Assumed: the operation keeps declaring only the codes it can raise (PAGE_CONFLICT, ROOT_NOT_FOUND per dev-0101, INVALID_ARGUMENT, FIND_NOT_FOUND, MATCH_COUNT_MISMATCH, ANCHOR_LOSS, plus VALIDATION); ROOT_NOT_WRITABLE is not declared. Suggestion: either drop ROOT_NOT_WRITABLE from the four rows of katalog-operacji-m02, or state in M02 / L13 which root is not writable through these operations and when the code fires.",
+  "assumption": "ASSUMPTION:m02u-dev-0001 — the row's ROOT_NOT_WRITABLE has no producer in the page write path.",
+  "unit": "m02-update-page-body",
+  "portion": "m02-update-page-body/p1-l3-l4",
+  "sent": true,
+  "patchPath": "2-1-13-to-2-1-14-workflow-m02-update-page-body-l3-the-kody-b-edow-cell-of-the-update-page-row-and-of-creat.md"
+}
