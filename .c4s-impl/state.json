@@ -524,7 +524,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "u5-frontend-mockups/p1-l5-l12",
@@ -540,21 +540,15 @@
           "status": "implemented",
           "rounds": 2,
           "partial": 0,
-          "only": [
-            {
-              "slug": "design-system-detail"
-            }
-          ],
-          "uncovered": [
-            "design-system-detail"
-          ]
+          "only": [],
+          "uncovered": []
         }
       ],
       "startCommit": "481eb04d2829b423937ad88e1a7da90972154762",
       "baseCommit": "e7bb17906d29acd4030050aa1dca9c0806d544d5",
       "rounds": {
         "review": 0,
-        "unit": 1
+        "unit": 2
       },
       "jobs": [],
       "lastUncovered": 0
