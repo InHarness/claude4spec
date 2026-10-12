@@ -1,5 +1,5 @@
 {
-  "iteration": 14,
+  "iteration": 15,
   "conventions": [
     {
       "label": "L5 (UI) — implementor M50 — App Shell",
@@ -167,7 +167,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "u1-host-entity-invalidation/p1-l5-l5",
@@ -177,13 +177,20 @@
           "slugs": [
             "ac-zmiana-encji-zapisana-z-zewnatrz-agen"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "only": []
+          "only": [
+            {
+              "slug": "ac-zmiana-encji-zapisana-z-zewnatrz-agen"
+            }
+          ],
+          "uncovered": [
+            "ac-zmiana-encji-zapisana-z-zewnatrz-agen"
+          ]
         }
       ],
-      "startCommit": "6df4566938606568e170b62dcd87dcb1058fa48c",
+      "startCommit": "481eb04d2829b423937ad88e1a7da90972154762",
       "baseCommit": "6df4566938606568e170b62dcd87dcb1058fa48c",
       "rounds": {
         "review": 0,
@@ -517,7 +524,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "u5-frontend-mockups/p1-l5-l12",
@@ -530,13 +537,20 @@
             "design-system-detail",
             "design-system-list"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "only": []
+          "only": [
+            {
+              "slug": "design-system-detail"
+            }
+          ],
+          "uncovered": [
+            "design-system-detail"
+          ]
         }
       ],
-      "startCommit": "e7bb17906d29acd4030050aa1dca9c0806d544d5",
+      "startCommit": "481eb04d2829b423937ad88e1a7da90972154762",
       "baseCommit": "e7bb17906d29acd4030050aa1dca9c0806d544d5",
       "rounds": {
         "review": 0,
@@ -738,7 +752,7 @@
         }
       ],
       "wave": 2,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "u7-api-contracts/p1-l5-l12",
@@ -751,13 +765,24 @@
             "dto-detail",
             "ac-pole-detalu-endpointu-edytowane-lokal"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "only": []
+          "only": [
+            {
+              "slug": "section:9hz21ysc"
+            },
+            {
+              "slug": "section:dhh869qt"
+            }
+          ],
+          "uncovered": [
+            "section:9hz21ysc",
+            "section:dhh869qt"
+          ]
         }
       ],
-      "startCommit": "dacab4e0a617409821112981df7da7eea7f96977",
+      "startCommit": "481eb04d2829b423937ad88e1a7da90972154762",
       "baseCommit": "dacab4e0a617409821112981df7da7eea7f96977",
       "rounds": {
         "review": 0,
