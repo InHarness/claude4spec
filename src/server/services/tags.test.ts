@@ -56,3 +56,25 @@ describe('TagsService counts', () => {
     expect(remaining).toEqual(['billing']);
   });
 });
+
+describe('TagsService — tag materialized by an entity save', () => {
+  it('[entity:dto-detail] a new tag name on an entity save creates the tag without a colour; an explicit create keeps the palette pick', () => {
+    const db = new Database(':memory:');
+    runMigrations(db);
+    const tags = new TagsService(db);
+    tags.setHost(fakeHost(['dto']));
+
+    // The DTO detail page adds a new name to the entity's draft; the tag comes
+    // into being only when the entity is saved (`assignTags` → `ensure`).
+    expect(tags.getBySlug('auth-layer')).toBeNull();
+    const assigned = tags.assignTags('dto', 'user-response', ['Auth Layer']);
+    expect(assigned).toEqual(['auth-layer']);
+    const created = tags.getBySlug('auth-layer');
+    expect(created?.name).toBe('Auth Layer');
+    expect(created?.color).toBeNull();
+
+    // A tag created explicitly (tag management) still gets a palette colour.
+    const explicit = tags.create({ name: 'Billing' });
+    expect(explicit.color).toMatch(/\S/);
+  });
+});

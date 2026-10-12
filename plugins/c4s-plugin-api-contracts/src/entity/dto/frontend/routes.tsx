@@ -5,19 +5,21 @@
 
 import type { FC } from 'react';
 import { createRoute, useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import { EntityVersionHistoryView } from '@c4s/plugin-runtime/ui';
+import { Trash } from 'lucide-react';
+import { ActionButton, EntityVersionHistoryView } from '@c4s/plugin-runtime/ui';
 import type { RouteTreeFragment } from '@c4s/plugin-runtime';
 import { DTO_PATH_PREFIX, DTO_TYPE, ENDPOINT_PATH_PREFIX } from '../../../identity.js';
 import { EntityBreadcrumbBar } from '../../../frontend-kit/EntityBreadcrumbBar.js';
 import { toDetail, toList, toPage, type Navigate } from '../../../frontend-kit/navigation.js';
 import { Pane, RouteBody } from '../../../frontend-kit/route-shell.js';
-import { useDto } from './hooks.js';
+import { useDeleteDto, useDto } from './hooks.js';
+import { confirmAndDeleteDto } from './delete-confirm.js';
 import { DtosList } from './list-page.js';
 import { DtoDetail } from './detail-panel.js';
 
 type ListSearch = { q?: string; tag?: string };
 
-function DtosIndexRoute() {
+export function DtosIndexRoute() {
   const navigate = useNavigate() as Navigate;
   const search = useSearch({ strict: false }) as ListSearch;
   return (
@@ -40,16 +42,47 @@ function DtosIndexRoute() {
   );
 }
 
-function DtoDetailRoute() {
+/**
+ * 2.1.16 (M13 detail pattern) — the ROUTE renders the breadcrumb, the view
+ * switcher and Delete; there is no Edit button (fields edit in place). Delete
+ * asks through the host's confirmation window (`dto-delete`), then goes to the
+ * list.
+ */
+export function DtoDetailRoute() {
   const navigate = useNavigate() as Navigate;
   const { slug } = useParams({ strict: false }) as { slug: string };
   const { data: dto } = useDto(slug);
+  const remove = useDeleteDto();
+
+  async function handleDelete() {
+    if (!dto) return;
+    if (await confirmAndDeleteDto(dto, (s) => remove.mutateAsync(s))) {
+      toList(navigate, DTO_PATH_PREFIX);
+    }
+  }
 
   return (
     // RouteBody, not Pane — see the endpoint side: the description's DocEditor
     // needs the editor bridge, and a missing one is silent.
     <RouteBody navigate={navigate}>
-      <EntityBreadcrumbBar type={DTO_TYPE} slug={slug} name={dto?.title} view="details" hasHistory />
+      <EntityBreadcrumbBar
+        type={DTO_TYPE}
+        slug={slug}
+        name={dto?.title}
+        view="details"
+        hasHistory
+        actions={
+          dto ? (
+            <ActionButton
+              variant="ghost"
+              icon={<Trash size={12} />}
+              label="Delete"
+              onClick={() => void handleDelete()}
+              disabled={remove.isPending}
+            />
+          ) : undefined
+        }
+      />
       <DtoDetail
         key={slug}
         slug={slug}

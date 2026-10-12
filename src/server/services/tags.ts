@@ -93,7 +93,7 @@ export class TagsService {
     const slug = tagSlug(input.name);
     if (!slug) throw new Error('tag name produces empty slug');
     assertSlugAvailable(slug);
-    return this.insert(slug, input);
+    return this.insert(slug, input, input.color ?? this.pickColor(slug));
   }
 
   /**
@@ -106,11 +106,15 @@ export class TagsService {
    * written before it, which is the exact failure the same release fixed for a
    * root id named `search`. The refusal belongs on the path where a human is
    * choosing a name, and nowhere else.
+   *
+   * `color` is decided by the caller: an explicit tag create (`create`) keeps
+   * the palette pick, a tag materialized by an entity save (`ensure`) gets none
+   * (2.1.16, e.g. `dto-detail`: "a new name is added to the entity's draft, the
+   * tag is created when the entity is saved, and gets no colour").
    */
-  private insert(slug: string, input: TagCreateInput): Tag {
+  private insert(slug: string, input: TagCreateInput, color: string | null): Tag {
     const existing = this.db.prepare(`SELECT 1 FROM tag WHERE slug = ?`).get(slug);
     if (existing) throw new DomainError('SLUG_CONFLICT', `tag slug '${slug}' already exists`);
-    const color = input.color ?? this.pickColor(slug);
     this.db
       .prepare(
         `INSERT INTO tag (slug, name, color, description) VALUES (?, ?, ?, ?)`
@@ -141,7 +145,8 @@ export class TagsService {
     if (!slug) throw new Error('tag name produces empty slug');
     const existing = this.getBySlug(slug);
     if (existing) return existing;
-    return this.insert(slug, { name });
+    // Materialized by an entity save — no colour (see `insert`).
+    return this.insert(slug, { name }, null);
   }
 
   update(slug: string, input: TagUpdateInput): Tag {
