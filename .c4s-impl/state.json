@@ -1,5 +1,5 @@
 {
-  "iteration": 0,
+  "iteration": 2,
   "conventions": [
     {
       "label": "L5 (UI) — implementor M50 — App Shell",
@@ -79,7 +79,7 @@
         "u5-frontend-mockups",
         "u6-ac-plugin"
       ],
-      "startCommit": null
+      "startCommit": "6df4566938606568e170b62dcd87dcb1058fa48c"
     },
     {
       "n": 2,
@@ -167,15 +167,30 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u1-host-entity-invalidation/p1-l5-l5",
+          "layers": [
+            "L5"
+          ],
+          "slugs": [
+            "ac-zmiana-encji-zapisana-z-zewnatrz-agen"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "only": []
+        }
+      ],
+      "startCommit": "6df4566938606568e170b62dcd87dcb1058fa48c",
+      "baseCommit": "6df4566938606568e170b62dcd87dcb1058fa48c",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0
     },
     {
       "id": "u2-host-list-empty-state",
@@ -210,7 +225,20 @@
       "dependsOn": [],
       "wave": 1,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "u2-host-list-empty-state/p1-l12-l12",
+          "layers": [
+            "L12"
+          ],
+          "slugs": [
+            "m19l12sc"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -273,7 +301,24 @@
       "dependsOn": [],
       "wave": 1,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "u3-database-tables/p1-l5-l12",
+          "layers": [
+            "L5",
+            "L11",
+            "L12"
+          ],
+          "slugs": [
+            "database-table-detail",
+            "database-table-history",
+            "database-table-list"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -336,7 +381,24 @@
       "dependsOn": [],
       "wave": 1,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "u4-mcp-tools/p1-l5-l12",
+          "layers": [
+            "L5",
+            "L11",
+            "L12"
+          ],
+          "slugs": [
+            "mcp-tool-detail",
+            "mcp-tool-history",
+            "mcp-tool-list"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -450,7 +512,23 @@
       "dependsOn": [],
       "wave": 1,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "u5-frontend-mockups/p1-l5-l12",
+          "layers": [
+            "L5",
+            "L11",
+            "L12"
+          ],
+          "slugs": [
+            "design-system-detail",
+            "design-system-list"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -503,7 +581,22 @@
       "dependsOn": [],
       "wave": 1,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "u6-ac-plugin/p1-l11-l12",
+          "layers": [
+            "L11",
+            "L12"
+          ],
+          "slugs": [
+            "section:fsu38c8q",
+            "section:yrzqclyz"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
