@@ -1,5 +1,0 @@
-{
-  "role": "reviewer",
-  "scope": { "kind": "unit", "id": "m11-cli-root-not-found", "base": "24f081c" },
-  "findings": []
-}

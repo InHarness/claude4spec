@@ -1,1 +1,0 @@
-{"role":"implementer","unit":"m39-get-page-range","packetBytes":78992,"portions":[{"name":"m39-get-page-range/p1-l2-l14","layers":["L2","L3","L14"],"slugs":["c4s-reader-get-page","reference-tools-get-page","ac-get-page-wywolane-z-parametrem-range","ac-message-odmowy-get-page-z-parametrem","ac-get-page-zwraca-hash-liczony-z-pelneg"]}],"deviations":[]}

@@ -1,5 +1,0 @@
-{
-  "role": "reviewer",
-  "scope": { "kind": "unit", "id": "m05-always-excluded", "base": "0bb8935" },
-  "findings": []
-}

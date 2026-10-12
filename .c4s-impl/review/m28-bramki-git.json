@@ -1,5 +1,0 @@
-{
-  "role": "reviewer",
-  "scope": { "kind": "unit", "id": "m28-bramki-git", "base": "cae54f9" },
-  "findings": []
-}
