@@ -10,9 +10,11 @@ import { attr, csv, EntityChip } from './shared.js';
 
 /**
  * `<element_list type slugs/>` — one `renderRow` per slug, in the fixed order
- * of `slugs`. A slug with no entity is skipped (the consistency check reports
- * it); a type without a row slot (hidden types) cannot be listed. Inline: one
- * chip per slug.
+ * of `slugs`. A slug with no entity (deleted) renders no row at all — it is
+ * skipped, never degraded to a chip, and `renderRow` only ever receives a
+ * resolved entity, so the slot has no `null` branch (M19 `m19broken`, 2.1.16;
+ * the consistency check reports the slug). A type without a row slot (hidden
+ * types) cannot be listed. Inline: one chip per slug.
  */
 export function ElementListRender({ attrs, variant }: TagRenderProps) {
   useRegistryVersion();
@@ -72,7 +74,8 @@ function Row({ type, slug, onOpen }: { type: string; slug: string; onOpen?: () =
       </li>
     );
   }
-  // A slug with no entity is skipped in the render; check_consistency reports it.
+  // A slug with no entity yields no row — not a broken chip, not a `null` entity
+  // handed to `renderRow`; check_consistency reports it.
   if (!data) return null;
   // Non-null by the guard in ElementListRender, which never renders a Row for a
   // type without one.

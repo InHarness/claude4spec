@@ -1,0 +1,44 @@
+{
+  "unit": {
+    "id": "u3-m19-list-pattern-and-missing-rows",
+    "goal": "`EntityListHeader` ma jawny kontrakt propsów. Strona listy encji ma jeden wiążący wzorzec: ten sam stan pusty dla braku encji i dla braku wyników filtra, bez stanu błędu i bez paginacji. `element_list` pomija wiersz sluga usuniętej encji zamiast degradować go do chipa.",
+    "recipe": {
+      "pages": [
+        {
+          "key": "pages/modules/m19-references.md",
+          "change": "all",
+          "context": {
+            "offset": 1,
+            "limit": 2,
+            "anchors": [
+              "m19cel00",
+              "m19dep00"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m19-references.md",
+          "context": {
+            "offset": 9,
+            "limit": 2,
+            "anchors": [
+              "m19broken",
+              "n3e8p5db"
+            ]
+          }
+        }
+      ],
+      "entities": [
+        {
+          "type": "ac",
+          "slugs": [
+            "ac-slug-usunietej-encji-w-element-list-n"
+          ]
+        }
+      ]
+    },
+    "jobs": []
+  },
+  "stateDir": ".c4s-impl/",
+  "diff": "git diff 23621f4c0f5d271cd6313c1593ad8ad66e7d3e9c..HEAD -- ':!.c4s-impl'"
+}

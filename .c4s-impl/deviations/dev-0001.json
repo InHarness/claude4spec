@@ -1,0 +1,15 @@
+{
+  "id": "dev-0001",
+  "kind": "clarification",
+  "blocking": false,
+  "address": "u3-m19-list-pattern-and-missing-rows/m19l12sc",
+  "slugs": [
+    "m19l12sc"
+  ],
+  "text": "M19 m19l12sc (2.1.16) names the list-page pattern as `EntityListHeader` with search → `TagFilterBar` in the header's `filters` slot. The kit's `TagFilterBar` is a full-width, self-bordered strip (own `px-8` padding, bottom border, 'Filter by tag:' label, chips wrapping) — it does not fit an inline flex slot between the 280px search box and the actions. Plugin list pages (database-tables, mcp-tools) stack it as a sibling row below the header inside `EntityListLayout.header`. Assumed: keep that stacking; the pattern's intent (filter between search and the list, all from /ui) holds. Needs: either a compact `TagFilterBar` variant for the slot, or the pattern text saying `TagFilterBar` sits under the header in `EntityListLayout.header`.",
+  "assumption": "ASSUMPTION:dev-0001 — M19 names `filters` as TagFilterBar's slot.",
+  "unit": "u3-m19-list-pattern-and-missing-rows",
+  "portion": "u3-m19-list-pattern-and-missing-rows/p1-l11-l12",
+  "sent": true,
+  "patchPath": "2-1-15-to-2-1-16-u3-m19-list-pattern-and-missing-rows-m19l12sc-tagfilterbar-does-not-fit-entityli.md"
+}

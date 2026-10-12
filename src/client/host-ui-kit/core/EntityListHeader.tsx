@@ -9,6 +9,13 @@ import { withStability } from '../stability.js';
  * hand-rebuilding one per plugin.
  *
  * Pure-presentational: every value and handler is a prop. No host access.
+ *
+ * Prop contract (`stable`, part of `hostApiVersion`; M19 `m19l12sc`, 2.1.16),
+ * with no default values: `title` is required; `icon`, `count` ("N results"),
+ * `search` + `onSearchChange` + `searchPlaceholder`, `filters` and `actions`
+ * are optional. Omitting `search` hides the search box. Slot order, left to
+ * right: icon, title, count, search, `filters` (between search and actions),
+ * `actions` (trailing edge, e.g. a create button).
  */
 export interface EntityListHeaderProps {
   /** Leading icon (e.g. a lucide icon component). */
@@ -51,7 +58,6 @@ function EntityListHeaderImpl({
         </span>
       )}
       <span className="flex-1" />
-      {filters}
       {search != null && (
         <div
           className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5"
@@ -67,6 +73,7 @@ function EntityListHeaderImpl({
           />
         </div>
       )}
+      {filters}
       {actions}
     </div>
   );

@@ -1,5 +1,5 @@
 {
-  "iteration": 10,
+  "iteration": 16,
   "conventions": [
     {
       "label": "L12 (Host UI Kit) — implementor M34",
@@ -77,7 +77,7 @@
         "u3-m19-list-pattern-and-missing-rows",
         "u4-m50-shell-sidebar-and-entity-routes"
       ],
-      "startCommit": null
+      "startCommit": "23621f4c0f5d271cd6313c1593ad8ad66e7d3e9c"
     },
     {
       "n": 4,
@@ -343,16 +343,36 @@
         }
       ],
       "wave": 3,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "u3-m19-list-pattern-and-missing-rows/p1-l11-l12",
+          "layers": [
+            "L11",
+            "L12"
+          ],
+          "slugs": [
+            "ac-slug-usunietej-encji-w-element-list-n",
+            "m19broken",
+            "m19l12sc"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "23621f4c0f5d271cd6313c1593ad8ad66e7d3e9c",
+      "baseCommit": "23621f4c0f5d271cd6313c1593ad8ad66e7d3e9c",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "u4-m50-shell-sidebar-and-entity-routes",

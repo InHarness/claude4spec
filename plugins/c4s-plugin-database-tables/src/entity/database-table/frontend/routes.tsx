@@ -163,7 +163,8 @@ function DatabaseTableListRoute(): JSX.Element {
             />
             {/* A sibling row below the header, not the header's `filters` slot —
                 `TagFilterBar` is a full self-bordered strip (host's own list
-                pages stack it the same way), not a compact inline control. */}
+                pages stack it the same way), not a compact inline control.
+                ASSUMPTION:dev-0001 — M19 names `filters` as TagFilterBar's slot. */}
             {tagUniverse.length > 0 && (
               <TagFilterBar
                 tags={tagUniverse}
@@ -180,11 +181,9 @@ function DatabaseTableListRoute(): JSX.Element {
         {isLoading ? (
           <LoadingState lines={6} />
         ) : filtered.length === 0 ? (
-          data.length === 0 ? (
-            <EmptyState title="No database tables yet." hint="Create your first one to get started." />
-          ) : (
-            <EmptyState title="No matching database tables." hint="Try clearing the search or tag filter." />
-          )
+          // One empty state for "no entities" and "no filter results" alike —
+          // the M19 list-page pattern (2.1.16): `EmptyState` with the type's text.
+          <EmptyState title="No database tables." />
         ) : (
           <div role="list" style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
             {filtered.map((item) => (
