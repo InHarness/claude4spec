@@ -208,6 +208,14 @@ export const layeredVerticalSlicesStyle: WritingStyleContribution = {
    * on disk. A renamed key is a broken cross-reference in the prose, so the
    * shape of this map is part of the contribution, not an implementation
    * detail of it. `parts/*` are deliberately not keys — see `compose`.
+   *
+   * 2.1.15 (M15 `n0fj7m42`): chat work on an existing spec is `read` → `plan` |
+   * `apply`; there is no `workflows/daily.md`. ASSUMPTION:dev-0001 — the package
+   * requirements (`x4imgq6m`) still name `daily.md` as the home of several
+   * obligations; they live in its successors instead: the change-locating step
+   * (protocol 1) and the translation step in `plan.md`, the drift check
+   * (`Dom 1`–`Dom 6`, rule 3/3a symptoms) and the closed review-report set in
+   * `apply.md`, the `Domain` rules block split between the two.
    */
   files: {
     'workflows/bootstrap.md': compose(workflowBootstrap),

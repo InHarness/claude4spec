@@ -365,6 +365,107 @@ describe('c4s-plugin-layered-vertical-slices — the writing style it contribute
   });
 
   /**
+   * 2.1.15 (M15 `n0fj7m42`) — the reference style's package and its route table.
+   * Chat work on an existing spec is split into read → plan → apply; a brief thread
+   * additionally offers the workflow-brief variant; the one daily workflow is gone.
+   * The routing is the style's own (`SKILL.md`), so the shipped core is the observable.
+   */
+  describe('[section:n0fj7m42] the reference style branches into read, plan and apply', () => {
+    const route = (() => {
+      const c = style.content;
+      return c.slice(c.indexOf('## Route'));
+    })();
+    /** The table row whose first cell is `cell`. */
+    const row = (cell: string) => {
+      const line = route.split('\n').find((l) => l.startsWith(`| ${cell} |`));
+      expect(line, `row ${cell}`).toBeDefined();
+      return line!;
+    };
+
+    it('[section:n0fj7m42] carries bootstrap, read, plan, apply, brief, brief-workflow and patch under workflows/', () => {
+      const workflows = Object.keys(style.files ?? {})
+        .filter((k) => k.startsWith('workflows/'))
+        .sort();
+      expect(workflows).toEqual([
+        'workflows/apply.md',
+        'workflows/bootstrap.md',
+        'workflows/brief-workflow.md',
+        'workflows/brief.md',
+        'workflows/patch.md',
+        'workflows/plan.md',
+        'workflows/read.md',
+      ]);
+    });
+
+    it('[section:n0fj7m42] SKILL.md routes a brief thread to brief.md, and to brief-workflow.md when the user asks for a workflow brief', () => {
+      const brief = row('`type="brief"`');
+      expect(brief).toContain('`workflows/brief-workflow.md` when the user asks for a workflow brief');
+      expect(brief).toContain('otherwise `workflows/brief.md`');
+    });
+
+    it('[section:n0fj7m42] SKILL.md routes a patch thread to patch.md and a chat without <index> to bootstrap.md', () => {
+      expect(row('`type="patch"`')).toContain('`workflows/patch.md`');
+      expect(row('no `<index>` yet')).toContain('`workflows/bootstrap.md`');
+    });
+
+    it('[section:n0fj7m42] SKILL.md routes a chat with <index> to read.md first, then plan.md or apply.md', () => {
+      const chat = row('anything else');
+      const read = chat.indexOf('`workflows/read.md` first');
+      const plan = chat.indexOf('`workflows/plan.md`');
+      const apply = chat.indexOf('`workflows/apply.md`');
+      expect(read).toBeGreaterThan(-1);
+      expect(plan).toBeGreaterThan(read);
+      expect(apply).toBeGreaterThan(read);
+      expect(chat).toMatch(/Then `workflows\/plan\.md` when .+ or `workflows\/apply\.md` when/);
+    });
+
+    it('[section:n0fj7m42] workflows/daily.md is gone: no package key, and no shipped text routes to it', () => {
+      expect(Object.keys(style.files ?? {})).not.toContain('workflows/daily.md');
+      const shipped: Array<[string, string]> = [['SKILL.md', style.content], ...Object.entries(style.files ?? {})];
+      for (const [where, text] of shipped) {
+        expect({ where, daily: text.includes('daily.md') }).toEqual({ where, daily: false });
+      }
+    });
+
+    /**
+     * ASSUMPTION:dev-0001 — the package requirements (`x4imgq6m`) still assign
+     * obligations to `workflows/daily.md`. They are carried into its successors, not
+     * dropped: the change-locating step and the translation step into `plan.md`, the
+     * drift check and the review-report shape into `apply.md`, the `Domain` rules
+     * block split between the two (a thread loads each once).
+     */
+    it('[section:n0fj7m42] what daily.md carried lands in its successors — plan and apply (ASSUMPTION:dev-0001)', () => {
+      const plan = style.files?.['workflows/plan.md'] ?? '';
+      const apply = style.files?.['workflows/apply.md'] ?? '';
+      // Locating the change refers to the cross-cutting reading protocol.
+      expect(plan).toContain('run the purpose sweep (protocol 1 at the end of this file)');
+      expect(plan).toContain('## Cross-cutting reading protocol 1');
+      // Translation: a cross-module relation is ONE edge record, tagged by the requiring module;
+      // a change to a module asks first whether a layer asks for it.
+      expect(plan).toContain("one per direction, tagged with the requiring module's own tag");
+      expect(plan).toContain('does any layer of this project ask for it?');
+      // Drift check: an L\d+ with no layer section; an edge without its dependent's tag; Dom 1–Dom 6.
+      const drift = apply.slice(apply.indexOf('## Step 3 — Drift check'), apply.indexOf('## Step 4'));
+      expect(drift).toContain('an `L\\d+` mentioned in a module file with no section for that layer');
+      expect(drift).toContain("a record whose `tags` lack the requiring module's own tag");
+      for (const n of [1, 2, 3, 4, 5, 6]) expect(drift).toContain(`**Dom ${n} — `);
+      // Rule 1's symptoms speak of the module and layer tables only — no relation diagram.
+      expect(drift).toMatch(/Rule 1 — .+a row in the module table with no file/);
+      expect(drift).not.toMatch(/diagram/i);
+      // The review report: a closed, disjoint set with the empty return in it.
+      expect(apply).toMatch(/exactly one of five shapes; the set is closed and the shapes are mutually exclusive/);
+      expect(apply).toContain('**an empty return**');
+      // The `Domain` rules block: residual test + three questions + four shapes in plan,
+      // form + mechanical catalogue + item 7 against the layer table in apply.
+      expect(plan).toContain('**What belongs here — the residual test, settled against this project\'s layer table.**');
+      expect(plan).toContain('**three questions, in this order**');
+      expect(plan).toContain('The substance takes four shapes in practice');
+      expect(apply).toContain("## The module's `Domain` section — form");
+      expect(apply).toContain('**Item 7 is settled against the layer table rather than against the text**');
+    });
+  });
+
+  /**
    * `contributes.writingStyles[]` is sugar for `contributes.skills[]` with
    * `scope: 'writing-style'` — the host lowers it, so declaring a scope here would
    * be the shape of the OTHER slot.

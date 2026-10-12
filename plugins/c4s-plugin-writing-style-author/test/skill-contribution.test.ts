@@ -213,3 +213,20 @@ describe('c4s-plugin-writing-style-author — two routes (2.1.15)', () => {
     expect(c).toContain('a style written on Route A will not reach any project that attaches this one');
   });
 });
+
+/**
+ * 2.1.15 (M15 `n0fj7m42`) — a user does not wait for another envelope: they make
+ * their own style through `writing-style-author`, as a package of this project or
+ * as a project exposed to the other projects of the workspace. The skill's listing
+ * description is where that availability is told, so it names both routes.
+ */
+describe('c4s-plugin-writing-style-author — availability names both routes (2.1.15)', () => {
+  it("[section:n0fj7m42] the description of how a user makes their own style names both routes — this project's package, and a project exposed to the workspace", () => {
+    const d = skill.description;
+    expect(d).toContain("a style for this project is a package in the project's skills root");
+    expect(d).toContain("a style for the other projects of the workspace is this project's own pages");
+    expect(d).toContain('exposed by the author in the #skills settings tab');
+    // The two routes are told as alternatives, not as one root.
+    expect(d.indexOf('a style for this project')).toBeLessThan(d.indexOf('a style for the other projects of the workspace'));
+  });
+});
