@@ -2390,13 +2390,18 @@ describe('runAgentTurn — writing-style-author scaffolds through update_skill_f
     }
   });
 
-  it('[ac:ac-poproszenie-w-chacie-o-utworzenie-nowego] asked in chat for a new style, the model opens writing-style-author (a chat listing row) and writes .claude4spec/skills/<slugify(title)>/SKILL.md with scope writing-style through update_skill_file', async () => {
+  it('[ac:ac-poproszenie-w-chacie-o-utworzenie-nowego] asked in chat for a new style for THIS project, the model opens writing-style-author (a chat listing row) and writes .claude4spec/skills/<slugify(title)>/SKILL.md with scope writing-style through update_skill_file', async () => {
     const r = await scaffoldRig();
     try {
       const { slugify } = await import('../../shared/slug.js');
       const matter = (await import('gray-matter')).default;
       // The skill: listed in chat only, and its instruction is this very write.
       expect(r.skill.contextTypes).toEqual(['chat']);
+      // 2.1.15: this is Route A — the style for this project — and it is the one
+      // that writes the package with update_skill_file.
+      const routeA = /\*\*Route A — a style for this project\.\*\*([^\n]*)/.exec(r.skill.content)?.[1] ?? '';
+      expect(routeA).toContain("package in this project's skills root");
+      expect(routeA).toContain('`update_skill_file`');
       expect(r.skill.content).toContain('update_skill_file');
       expect(r.skill.content).toContain('.claude4spec/skills/<slug>/');
       expect(r.skill.content).toContain('scope: writing-style');
@@ -2418,7 +2423,7 @@ describe('runAgentTurn — writing-style-author scaffolds through update_skill_f
     }
   });
 
-  it('[ac:ac-skill-writing-style-author-otwarty-w] writing-style-author opened in an `ask` turn writes no style package — the turn has no update_skill_file, and the skill says to stop there', async () => {
+  it('[ac:ac-skill-writing-style-author-otwarty-w] writing-style-author opened in an `ask` turn writes no style — neither a package nor pages: the turn has no update_skill_file, and the skill says to write nothing on either route there', async () => {
     const r = await scaffoldRig();
     try {
       const { mounted, prompt } = await r.turn('ask');
@@ -2427,7 +2432,13 @@ describe('runAgentTurn — writing-style-author scaffolds through update_skill_f
       expect(prompt).not.toContain('update_skill_file');
       // The read channel stays: the skill can be opened, it just has nothing to write with.
       expect(mounted).toContain('skill-tools');
-      expect(r.skill.content).toMatch(/If it is not among your tools — a `brief` or `ask` thread — do not scaffold/);
+      // The skill's own instruction for a brief/ask thread: no package AND no pages.
+      const where = /\*\*Where you can write\.\*\*([^\n]*)/.exec(r.skill.content)?.[1] ?? '';
+      expect(where).toContain('In a `brief` or `ask` thread');
+      expect(where).toContain('`update_skill_file` (server `spec-skill-tools`) not being among your tools');
+      expect(where).toContain('write no style on either route below: no package, no pages');
+      expect(where).toContain('no `create_page`, no `update_sections`');
+      expect(where).toContain('writing a style needs a `chat` or `patch` thread, and stop');
       expect(r.fs.existsSync(path.join(r.cwd, '.claude4spec/skills'))
         ? r.fs.readdirSync(path.join(r.cwd, '.claude4spec/skills')).filter((n) => !n.startsWith('.'))
         : []).toEqual([]);

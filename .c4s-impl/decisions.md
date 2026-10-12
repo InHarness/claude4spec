@@ -32,3 +32,10 @@ Implementation-only decisions (no user-observable effect) and set-up choices.
 
 - Gate 'next window exists' (2-1-15-to-2-1-16.md pending): durable user rule — one brief per PR; finish this window, PR + merge, the next brief runs as its own loop after the merge. Not a stop.
 - Split runs of the wave-1 units run up front in parallel (split mode reads only and writes no state); build/verify/review runs stay strictly sequential.
+
+## u2-writing-style-author-two-routes / p1-l11-l11
+
+- The skill recognises a `brief`/`ask` thread by `update_skill_file` missing from its tools (true for both; `ask` may still carry page-tools under forced plan mode), and then writes on neither route — no `create_page`/`update_sections` either. One signal for both routes keeps the instruction a rule, not a per-context list.
+- Route B names the base root as "the built-in pages root, usually `rootId: \"pages\"`" and the entry as `skill.entry` (default `index.md`, `DEFAULT_SKILL_ENTRY`) — the skill reads config, it never writes it.
+- Criteria are proven over the skill text as shipped (`plugins/c4s-plugin-writing-style-author/test/skill-contribution.test.ts`, describe "two routes (2.1.15)"); the two pre-existing `[ac:]` tests in `src/server/routes/agent-turn.test.ts` were updated to the new titles/text.
+- The removed claim ("the style author's scaffold does not pass the direct-file-access block") had no counterpart in code: `c4s-plugin-skill-author`'s SKILL.md and description never carried it. Nothing to remove.
