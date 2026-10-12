@@ -1,0 +1,1771 @@
+{
+ "iteration": 0,
+ "systemVerified": false,
+ "errors": 0,
+ "conventions": [
+  {
+   "label": "L3 (Spec Operations) — rola i schemat slice'a",
+   "key": "pages/layers/L3-spec-operations.md",
+   "offset": 0,
+   "anchor": "zr4rjlir"
+  },
+  {
+   "label": "L3 (Spec Operations) — rola i schemat slice'a",
+   "key": "pages/layers/L3-spec-operations.md",
+   "offset": 1,
+   "anchor": "kehuh3fj"
+  },
+  {
+   "label": "L3 (Spec Operations) — rola i schemat slice'a",
+   "key": "pages/layers/L3-spec-operations.md",
+   "offset": 2,
+   "anchor": "l3slice0"
+  },
+  {
+   "label": "L3 (Spec Operations) — rola i schemat slice'a",
+   "key": "pages/layers/L3-spec-operations.md",
+   "offset": 3
+  },
+  {
+   "label": "L3 (Spec Operations) — rola i schemat slice'a",
+   "key": "pages/layers/L3-spec-operations.md",
+   "offset": 4
+  },
+  {
+   "label": "L3 (Spec Operations) — rola i schemat slice'a",
+   "key": "pages/layers/L3-spec-operations.md",
+   "offset": 5
+  },
+  {
+   "label": "L3 (Spec Operations) — rola i schemat slice'a",
+   "key": "pages/layers/L3-spec-operations.md",
+   "offset": 6
+  },
+  {
+   "label": "L3 (Spec Operations) — rola i schemat slice'a",
+   "key": "pages/layers/L3-spec-operations.md",
+   "offset": 7
+  },
+  {
+   "label": "L3 (Spec Operations) — rola i schemat slice'a",
+   "key": "pages/layers/L3-spec-operations.md",
+   "offset": 8
+  },
+  {
+   "label": "L3 (Spec Operations) — rola i schemat slice'a",
+   "key": "pages/layers/L3-spec-operations.md",
+   "offset": 9,
+   "anchor": "vdf5esgb"
+  },
+  {
+   "label": "L4 (API)",
+   "key": "pages/layers/L4-api.md",
+   "offset": 0,
+   "anchor": "lepbk8sv"
+  },
+  {
+   "label": "L4 (API)",
+   "key": "pages/layers/L4-api.md",
+   "offset": 1,
+   "anchor": "4ekrg55r"
+  },
+  {
+   "label": "L4 (API)",
+   "key": "pages/layers/L4-api.md",
+   "offset": 2,
+   "anchor": "pondhd6o"
+  },
+  {
+   "label": "L5 (UI)",
+   "key": "pages/layers/L5-ui.md",
+   "offset": 0,
+   "anchor": "ew1yz9k3"
+  },
+  {
+   "label": "L5 (UI)",
+   "key": "pages/layers/L5-ui.md",
+   "offset": 1,
+   "anchor": "42ewy1oy"
+  },
+  {
+   "label": "L5 (UI)",
+   "key": "pages/layers/L5-ui.md",
+   "offset": 2,
+   "anchor": "tehej2wz"
+  },
+  {
+   "label": "L7 (File Change Reactions)",
+   "key": "pages/layers/L7-file-change-reactions.md",
+   "offset": 0,
+   "anchor": "gt9eelm9"
+  },
+  {
+   "label": "L7 (File Change Reactions)",
+   "key": "pages/layers/L7-file-change-reactions.md",
+   "offset": 1,
+   "anchor": "c872jd2a"
+  },
+  {
+   "label": "L7 (File Change Reactions)",
+   "key": "pages/layers/L7-file-change-reactions.md",
+   "offset": 2,
+   "anchor": "6qppsun2"
+  },
+  {
+   "label": "L7 (File Change Reactions)",
+   "key": "pages/layers/L7-file-change-reactions.md",
+   "offset": 3,
+   "anchor": "3nzulmvf"
+  },
+  {
+   "label": "L13 (Korzenie i rodzaje korzeni)",
+   "key": "pages/layers/L13-page-roots.md",
+   "offset": 0,
+   "anchor": "l13top001"
+  },
+  {
+   "label": "L13 (Korzenie i rodzaje korzeni)",
+   "key": "pages/layers/L13-page-roots.md",
+   "offset": 1,
+   "anchor": "l13role01"
+  },
+  {
+   "label": "L13 (Korzenie i rodzaje korzeni)",
+   "key": "pages/layers/L13-page-roots.md",
+   "offset": 2,
+   "anchor": "l13slice0"
+  },
+  {
+   "label": "L14 (CLI Commands)",
+   "key": "pages/layers/L14-cli-commands.md",
+   "offset": 0,
+   "anchor": "1hlvn21h"
+  },
+  {
+   "label": "L14 (CLI Commands)",
+   "key": "pages/layers/L14-cli-commands.md",
+   "offset": 1,
+   "anchor": "flt0hm9r"
+  },
+  {
+   "label": "L17 (Project Settings)",
+   "key": "pages/layers/L17-project-settings.md",
+   "offset": 0,
+   "anchor": "aa2thduz"
+  },
+  {
+   "label": "L17 (Project Settings)",
+   "key": "pages/layers/L17-project-settings.md",
+   "offset": 1,
+   "anchor": "mj2r93no"
+  },
+  {
+   "label": "L17 (Project Settings)",
+   "key": "pages/layers/L17-project-settings.md",
+   "offset": 2,
+   "anchor": "ata1r5sz"
+  },
+  {
+   "label": "Tabela zadań użytkownika (moduły), dla weryfikatora systemu",
+   "key": "pages/SKILL.md",
+   "offset": 12,
+   "anchor": "45yst8co"
+  },
+  {
+   "label": "Tabela zadań użytkownika (moduły), dla weryfikatora systemu",
+   "key": "pages/SKILL.md",
+   "offset": 13,
+   "anchor": "oq23nb0j"
+  },
+  {
+   "label": "Tabela zadań użytkownika (moduły), dla weryfikatora systemu",
+   "key": "pages/SKILL.md",
+   "offset": 14,
+   "anchor": "zpn3gaip"
+  }
+ ],
+ "waves": [
+  {
+   "n": 1,
+   "units": [
+    "m42-zapis-bez-lancucha",
+    "m28-bramki-git",
+    "m02-update-page-body",
+    "m02-drzewo-vs-listing",
+    "m06-zakres-kotwic",
+    "m39-get-page-range",
+    "m11-cli-root-not-found",
+    "m11-paczka-trzy-biny",
+    "m17-plik-release-roots",
+    "m21-brief-tools",
+    "m22-skille",
+    "m05-always-excluded",
+    "pkg-lvs-ac"
+   ],
+   "startCommit": null
+  },
+  {
+   "n": 2,
+   "units": [
+    "m10-zapis-planu",
+    "m28-gitsync-konsumenci"
+   ],
+   "startCommit": null
+  }
+ ],
+ "units": [
+  {
+   "id": "m42-zapis-bez-lancucha",
+   "goal": "Prymityw zapisu rekordu przyjmuje od wołającego opcję wyłączenia łańcucha faz in-band. Kroki konfliktu, serializacji, atomowej podmiany i tokenu tłumienia biegną jak dotąd, ale żadna faza nie rusza, a odpowiedź po zapisie nie niesie niczego, co dałby łańcuch. Bezwarunkowe wołanie łańcucha po commicie znika.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m42-record-store.md",
+      "change": "all"
+     },
+     {
+      "key": "pages/modules/m42-record-store.md",
+      "context": {
+       "offset": 1,
+       "limit": 4,
+       "anchors": [
+        "b7i91tvp",
+        "hu317m75",
+        "wsrnp3ab",
+        "544jcpq5"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m42-record-store.md",
+      "context": {
+       "offset": 10,
+       "limit": 2,
+       "anchors": [
+        "0uzd1sug",
+        "79m2bhz3"
+       ]
+      }
+     }
+    ],
+    "entities": []
+   },
+   "dependsOn": [],
+   "wave": 1,
+   "status": "pending",
+   "blockedBy": null,
+   "startCommit": null,
+   "baseCommit": null,
+   "portions": [],
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  },
+  {
+   "id": "m28-bramki-git",
+   "goal": "Serwis gita rozdziela commit release'u i push na wejście z bramką oraz wykonanie bez bramki. Niespełniona bramka wejścia daje brak wyniku zamiast „pominięto”. Commit pull'a przy niespełnionej bramce zwraca „pominięto”. Tryby celu `named` i `new` commitują także przy odłączonym HEAD, a w świeżym repo kończą się błędem celu z odpowiednim rodzajem naprawy. Komunikat commita release'u to nazwa, pusta linia i opis. Usunięte są: dawna nazwa metody commitu release'u, prefiks `Release ` w komunikacie i publiczna metoda wyznaczania gałęzi domyślnej, która staje się prywatna.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m28-git-sync.md",
+      "change": {
+       "offset": 0,
+       "limit": 6,
+       "anchors": [
+        "dj6r1sam",
+        "eu1rffp6",
+        "aqys9dje",
+        "yn1oesly",
+        "sw1u84nn",
+        "rslvdfbr"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m28-git-sync.md",
+      "context": {
+       "offset": 1,
+       "limit": 10,
+       "anchors": [
+        "incf3qhp",
+        "dj6r1sam",
+        "snn15dck",
+        "eu1rffp6",
+        "mm4bidri",
+        "aqys9dje",
+        "2qwi21mw",
+        "yn1oesly",
+        "sw1u84nn",
+        "rslvdfbr"
+       ]
+      }
+     }
+    ],
+    "entities": [
+     {
+      "type": "dto",
+      "slugs": [
+       "git-status-response"
+      ]
+     },
+     {
+      "type": "ac",
+      "slugs": [
+       "ac-commit-release-u-ma-komunikat-name-pu",
+       "ac-przy-committarget-named-bez-branch-al",
+       "ac-przy-config-git-enabled-false-commitp",
+       "ac-przy-detached-head-pushonpush-zwraca",
+       "ac-w-swiezym-repo-bez-commitow-commitonr",
+       "ac-w-swiezym-repo-bez-commitow-commitonr-2",
+       "ac-w-trybie-committarget-named-przy-deta",
+       "ac-commitforrelease-przed-git-add-kan",
+       "ac-commitforrelease-staguje-tez-releasesdir",
+       "ac-gdy-docelowy-branch-tryb-named-zniknal",
+       "ac-gdy-explicit-committarget-base-tryb-new",
+       "ac-gdy-git-add-niczego-nie-wniosl-commi",
+       "ac-gdy-wyrenderowana-nazwa-nowego-brancha",
+       "ac-gitservice-commitpull-latest-commituje",
+       "ac-gitservice-push-branch-pushuje-branch",
+       "ac-push-bez-upstream-przy-bledzie-sie",
+       "ac-w-trybie-config-git-committarget-mode-n",
+       "ac-w-trybie-named-new-gdy-tree-po-stage-je",
+       "ac-w-trybie-new-commitforrelease-tworzy-n"
+      ]
+     }
+    ]
+   },
+   "dependsOn": [],
+   "wave": 1,
+   "status": "pending",
+   "blockedBy": null,
+   "startCommit": null,
+   "baseCommit": null,
+   "portions": [],
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  },
+  {
+   "id": "m02-update-page-body",
+   "goal": "Dosłowny tryb zapisu strony przyjmuje treść pod nową nazwą parametru, a do tego opcjonalny frontmatter, który zastępuje dotychczasowy w całości. Zapis działa jako „utwórz albo zastąp”: brakująca strona w znanym korzeniu powstaje, zamiast kończyć się błędem. Trasa REST zapisu strony renderuje ten tryb. Hash zwracany przez zapis jest liczony po wstrzyknięciu kotwic, więc kolejny zapis z tym hashem przechodzi. Usunięte są: dawna nazwa parametru treści i odmowa nieistniejącej strony w trybie dosłownym.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m02-pages.md",
+      "change": {
+       "offset": 0,
+       "limit": 1,
+       "anchors": [
+        "gj2vdsjm"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m02-pages.md",
+      "context": {
+       "offset": 1,
+       "limit": 3,
+       "anchors": [
+        "487vmesk",
+        "lzt9r2fu",
+        "6o9jy3sm"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m02-pages.md",
+      "context": {
+       "offset": 5,
+       "limit": 3,
+       "anchors": [
+        "jc82k6v6",
+        "7orm2v10",
+        "gj2vdsjm"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m02-pages.md",
+      "context": {
+       "offset": 12,
+       "limit": 1,
+       "anchors": [
+        "m02octconc"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m02-pages.md",
+      "context": {
+       "offset": 32,
+       "limit": 2,
+       "anchors": [
+        "o01s9mwl",
+        "jmh3f1fl"
+       ]
+      }
+     }
+    ],
+    "entities": [
+     {
+      "type": "mcp-tool",
+      "slugs": [
+       "page-tools-update-page"
+      ]
+     },
+     {
+      "type": "endpoint",
+      "slugs": [
+       "put-api-pages"
+      ]
+     },
+     {
+      "type": "spreadsheet",
+      "slugs": [
+       "katalog-operacji-m02"
+      ]
+     },
+     {
+      "type": "ac",
+      "slugs": [
+       "ac-content-i-textedits-w-update-page-sa",
+       "ac-textedits-gubiacy-anchor-majacy-refer",
+       "ac-update-page-bez-content-i-bez-textedi",
+       "ac-update-page-w-trybie-content-ktorego",
+       "ac-update-page-w-trybie-content-na-rooci",
+       "ac-update-page-z-content-i-textedits-pod",
+       "ac-zapis-strony-wprowadzajacy-nowy-naglo"
+      ]
+     }
+    ]
+   },
+   "dependsOn": [],
+   "wave": 1,
+   "status": "pending",
+   "blockedBy": null,
+   "startCommit": null,
+   "baseCommit": null,
+   "portions": [],
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  },
+  {
+   "id": "m02-drzewo-vs-listing",
+   "goal": "Rozdzielone zostają drzewo korzenia i listing stron. Drzewo podaje wpisy markdown i surowe `.html` z typem pliku i z niego korzysta skan drzewa stron oraz podgląd statycznego HTML. Listing zwraca wyłącznie wpisy markdown i chodzą po nim wszyscy czytelnicy treści: indeksery, kotwice, linki, referencje, synchronizacja wersji i wyszukiwanie. Usunięty jest skan `.html` przez listing markdown.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m02-pages.md",
+      "change": {
+       "offset": 1,
+       "limit": 1,
+       "anchors": [
+        "e16qvg1n"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m02-pages.md",
+      "change": {
+       "offset": 3,
+       "limit": 2,
+       "anchors": [
+        "l13model0",
+        "m02multidir"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m02-pages.md",
+      "context": {
+       "offset": 1,
+       "limit": 2,
+       "anchors": [
+        "487vmesk",
+        "lzt9r2fu"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m02-pages.md",
+      "context": {
+       "offset": 8,
+       "limit": 1,
+       "anchors": [
+        "e16qvg1n"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m02-pages.md",
+      "context": {
+       "offset": 42,
+       "limit": 4,
+       "anchors": [
+        "m02l13001",
+        "fjkog8wx",
+        "l13model0",
+        "m02multidir"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m30-static-html.md",
+      "change": "all"
+     },
+     {
+      "key": "pages/modules/m30-static-html.md",
+      "context": {
+       "offset": 1,
+       "limit": 4,
+       "anchors": [
+        "z7k52855",
+        "zqehkg0f",
+        "iqp1idox",
+        "1he8gddx"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m30-static-html.md",
+      "context": {
+       "offset": 12,
+       "limit": 1,
+       "anchors": [
+        "m30l13rt"
+       ]
+      }
+     }
+    ],
+    "entities": [
+     {
+      "type": "ac",
+      "slugs": [
+       "ac-plik-html-lezacy-w-korzeniu-stron-jes"
+      ]
+     }
+    ]
+   },
+   "dependsOn": [],
+   "wave": 1,
+   "status": "pending",
+   "blockedBy": null,
+   "startCommit": null,
+   "baseCommit": null,
+   "portions": [],
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  },
+  {
+   "id": "m06-zakres-kotwic",
+   "goal": "Zakres poziomów nagłówków, którym injekcja kotwic nadaje kotwicę, zależy od tego, czy rodzaj korzenia wybrał indekser sekcji. Rodzaj z indekserem (korzenie stron) dostaje kotwice na wszystkich sześciu poziomach. Rodzaj z samą injekcją (plany) dostaje je tylko na poziomach 2–4. Ten sam zakres obowiązuje na ścieżce zapisu serwisu i przy write-backu z dysku.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m06-sections.md",
+      "change": {
+       "offset": 2,
+       "limit": 2,
+       "anchors": [
+        "o8crf4hk",
+        "v9zrytp8"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m06-sections.md",
+      "context": {
+       "offset": 1,
+       "limit": 3,
+       "anchors": [
+        "1aq60bj4",
+        "ko9x8zqw",
+        "pb7v6bmz"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m06-sections.md",
+      "context": {
+       "offset": 13,
+       "limit": 1,
+       "anchors": [
+        "wwnud9yz"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m06-sections.md",
+      "context": {
+       "offset": 23,
+       "limit": 1,
+       "anchors": [
+        "anchnmsp"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m06-sections.md",
+      "context": {
+       "offset": 52,
+       "limit": 2,
+       "anchors": [
+        "o8crf4hk",
+        "v9zrytp8"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m10-plans.md",
+      "change": {
+       "offset": 2,
+       "limit": 1,
+       "anchors": [
+        "m10anchu"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m10-plans.md",
+      "context": {
+       "offset": 1,
+       "limit": 2,
+       "anchors": [
+        "m10cel00",
+        "m10dep00"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m10-plans.md",
+      "context": {
+       "offset": 17,
+       "limit": 1,
+       "anchors": [
+        "m10anchu"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m10-plans.md",
+      "context": {
+       "offset": 33,
+       "limit": 2,
+       "anchors": [
+        "vgopt1vq",
+        "q1txzrf0"
+       ]
+      }
+     }
+    ],
+    "entities": [
+     {
+      "type": "ac",
+      "slugs": [
+       "ac-na-korzeniu-rodzaju-ktory-wybral-m06",
+       "ac-naglowek-dopisany-do-planu-nie-dostaj",
+       "ac-naglowek-dopisany-do-planu-nie-dostaj-2"
+      ]
+     }
+    ]
+   },
+   "dependsOn": [],
+   "wave": 1,
+   "status": "pending",
+   "blockedBy": null,
+   "startCommit": null,
+   "baseCommit": null,
+   "portions": [],
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  },
+  {
+   "id": "m39-get-page-range",
+   "goal": "Odczyt całej strony w rdzeniu odmawia pozostawionego parametru okna linii błędem nieprawidłowego argumentu. Komunikat odmowy kieruje do konspektu strony, a potem do odczytu sekcji. Renderowania operacji (MCP i CLI) nie odrzucają już po drodze nieznanych kluczy, więc taki parametr dociera do rdzenia i zostaje odrzucony.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m39-discovery-core/L2-domain.md",
+      "change": {
+       "offset": 1,
+       "limit": 1,
+       "anchors": [
+        "984v8437"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m39-discovery-core/L2-domain.md",
+      "context": {
+       "offset": 43,
+       "limit": 6,
+       "anchors": [
+        "llrqdo0o",
+        "b61e5lbd",
+        "s8c7lww7",
+        "984v8437",
+        "avzm9pa5",
+        "0a5ziojd"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m39-discovery-core/L2-domain.md",
+      "context": {
+       "offset": 82,
+       "limit": 1,
+       "anchors": [
+        "7dad4wt0"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m39-discovery-core/m39-discovery-core.md",
+      "context": {
+       "offset": 1,
+       "limit": 2,
+       "anchors": [
+        "xmxv4lpo",
+        "yx7z9ivl"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m39-discovery-core/m39-discovery-core.md",
+      "context": {
+       "offset": 4,
+       "limit": 1,
+       "anchors": [
+        "p7wvdl8f"
+       ]
+      }
+     }
+    ],
+    "entities": [
+     {
+      "type": "mcp-tool",
+      "slugs": [
+       "c4s-reader-get-page",
+       "reference-tools-get-page"
+      ]
+     },
+     {
+      "type": "ac",
+      "slugs": [
+       "ac-get-page-wywolane-z-parametrem-range",
+       "ac-message-odmowy-get-page-z-parametrem",
+       "ac-get-page-zwraca-hash-liczony-z-pelneg"
+      ]
+     }
+    ]
+   },
+   "dependsOn": [],
+   "wave": 1,
+   "status": "pending",
+   "blockedBy": null,
+   "startCommit": null,
+   "baseCommit": null,
+   "portions": [],
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  },
+  {
+   "id": "m11-cli-root-not-found",
+   "goal": "Komenda CLI odczytu strony odmawia flagi okna linii lokalnie, przed wywołaniem serwera, i podpowiada konspekt, a potem sekcje. Nieznany identyfikator korzenia w komendzie stronowej, także identyfikator korzenia systemowego, kończy się nowym kodem „korzeń nie znaleziony” z listą korzeni stron w podpowiedzi. CLI przekazuje ten kod z routera stron bez tłumaczenia. Usunięty jest dawny przypadek, w którym nieznany korzeń bez ścieżki był zwykłym błędem argumentu.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m11-c4s/L14-cli-commands.md",
+      "change": "all"
+     },
+     {
+      "key": "pages/modules/m11-c4s/L14-cli-commands.md",
+      "context": {
+       "offset": 0,
+       "limit": 2,
+       "anchors": [
+        "ihakwlks",
+        "m11dcmds"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m11-c4s/m11-c4s.md",
+      "context": {
+       "offset": 1,
+       "limit": 2,
+       "anchors": [
+        "m11cel00",
+        "m11dep00"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m02-pages.md",
+      "context": {
+       "offset": 25,
+       "limit": 1,
+       "anchors": [
+        "l4rootseg"
+       ]
+      }
+     }
+    ],
+    "entities": [
+     {
+      "type": "ac",
+      "slugs": [
+       "ac-c4s-get-page-root-id-id-path-p",
+       "ac-nieznany-root-id-podany-bez-towarzys",
+       "ac-list-pages-z-rootid-plans-konczy-sie"
+      ]
+     }
+    ]
+   },
+   "dependsOn": [],
+   "wave": 1,
+   "status": "pending",
+   "blockedBy": null,
+   "startCommit": null,
+   "baseCommit": null,
+   "portions": [],
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  },
+  {
+   "id": "m11-paczka-trzy-biny",
+   "goal": "Paczka `@inharness-ai/claude4spec` niesie trzy biny: serwer, CLI i most MCP stdio↔HTTP. Każda forma bez instalacji wywołuje bin przez `npx -y -p <paczka> <bin>`, także wariant stdio we wpisie konfiguracji połączenia MCP, który wydaje serwer. Usunięta jest forma `npx -y <paczka> c4s`.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m11-c4s/L2-domain.md",
+      "change": "all"
+     },
+     {
+      "key": "pages/modules/m11-c4s/L2-domain.md",
+      "context": {
+       "offset": 10,
+       "limit": 1,
+       "anchors": [
+        "m11pkg00"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m11-c4s/m11-c4s.md",
+      "context": {
+       "offset": 1,
+       "limit": 2,
+       "anchors": [
+        "m11cel00",
+        "m11dep00"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m12-external-mcp.md",
+      "change": {
+       "offset": 1,
+       "limit": 1,
+       "anchors": [
+        "wtv48f3x"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m12-external-mcp.md",
+      "context": {
+       "offset": 1,
+       "limit": 2,
+       "anchors": [
+        "m12cel00",
+        "m12dep00"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m12-external-mcp.md",
+      "context": {
+       "offset": 7,
+       "limit": 7,
+       "anchors": [
+        "3j9mx7a9",
+        "m12regst",
+        "wtv48f3x",
+        "ynffjhnh",
+        "vd3eq6t0",
+        "8ylp9q31",
+        "mqupx1tx"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m12-external-mcp.md",
+      "context": {
+       "offset": 20,
+       "limit": 1,
+       "anchors": [
+        "658f4tqj"
+       ]
+      }
+     }
+    ],
+    "entities": [
+     {
+      "type": "code-snippet",
+      "slugs": [
+       "wpis-serwera-c4s-reader"
+      ]
+     },
+     {
+      "type": "dto",
+      "slugs": [
+       "mcp-config-response"
+      ]
+     },
+     {
+      "type": "ac",
+      "slugs": [
+       "ac-bin-c4s-jest-dostepny-po-instalacji-pa"
+      ]
+     }
+    ]
+   },
+   "dependsOn": [],
+   "wave": 1,
+   "status": "pending",
+   "blockedBy": null,
+   "startCommit": null,
+   "baseCommit": null,
+   "portions": [],
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  },
+  {
+   "id": "m17-plik-release-roots",
+   "goal": "Lekki plik metadanych release'u zapisuje korzenie jako listę samych identyfikatorów korzeni rodzaju stron, a nie obiekty z nazwą i katalogiem. Bogatszy kształt zostaje tylko w manifeście bundla.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+      "change": {
+       "offset": 1,
+       "limit": 1,
+       "anchors": [
+        "m17reldisk"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+      "context": {
+       "offset": 7,
+       "limit": 2,
+       "anchors": [
+        "m17reldisk",
+        "m17reldiff"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/bundle-archive-format.md",
+      "context": {
+       "offset": 3,
+       "limit": 1,
+       "anchors": [
+        "m17bndmf1"
+       ]
+      }
+     }
+    ],
+    "entities": []
+   },
+   "dependsOn": [],
+   "wave": 1,
+   "status": "pending",
+   "blockedBy": null,
+   "startCommit": null,
+   "baseCommit": null,
+   "portions": [],
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  },
+  {
+   "id": "m21-brief-tools",
+   "goal": "Narzędzia briefu w wątku briefu tracą parametr ścieżki, bo zakres wątku niesie sam brak parametru. Kanały cli, mcp i rest nadal wymagają ścieżki. Edycja briefu przyjmuje dokładnie jeden z dwóch kształtów: akcję z treścią albo listę dosłownych podmian. Oba naraz albo żaden to błąd walidacji przed dotknięciem pliku. Przy podmianach odpowiedź niesie liczbę zastąpień, a podsumowanie zmiany jest opcjonalne. Usunięty jest parametr ścieżki w kanale wewnętrznym.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m21-briefs.md",
+      "change": {
+       "offset": 0,
+       "limit": 1,
+       "anchors": [
+        "m21srvct"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m21-briefs.md",
+      "change": {
+       "offset": 2,
+       "limit": 1,
+       "anchors": [
+        "01ytpznn"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m21-briefs.md",
+      "context": {
+       "offset": 1,
+       "limit": 2,
+       "anchors": [
+        "m21cel001",
+        "m21zal001"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m21-briefs.md",
+      "context": {
+       "offset": 5,
+       "limit": 1,
+       "anchors": [
+        "a5ur9rmr"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m21-briefs.md",
+      "context": {
+       "offset": 8,
+       "limit": 1,
+       "anchors": [
+        "m21srvct"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m21-briefs.md",
+      "context": {
+       "offset": 15,
+       "limit": 1,
+       "anchors": [
+        "01ytpznn"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m21-briefs.md",
+      "context": {
+       "offset": 24,
+       "limit": 1,
+       "anchors": [
+        "i0w83n73"
+       ]
+      }
+     }
+    ],
+    "entities": [
+     {
+      "type": "mcp-tool",
+      "slugs": [
+       "brief-tools-get-brief",
+       "brief-tools-update-brief",
+       "brief-tools-list-brief-versions",
+       "brief-tools-get-brief-version"
+      ]
+     },
+     {
+      "type": "spreadsheet",
+      "slugs": [
+       "katalog-operacji-m21"
+      ]
+     },
+     {
+      "type": "ac",
+      "slugs": [
+       "ac-brief-nie-jest-page-rootem-zyje-w-bri",
+       "ac-wersjonowanie-briefu-reuse-uje-tabele"
+      ]
+     }
+    ]
+   },
+   "dependsOn": [],
+   "wave": 1,
+   "status": "pending",
+   "blockedBy": null,
+   "startCommit": null,
+   "baseCommit": null,
+   "portions": [],
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  },
+  {
+   "id": "m22-skille",
+   "goal": "Trzy renderery skilli zewnętrznych mają wspólne bloki: „wymagany serwer”, „nieaktualny adres” i ciąg tożsamości w apostrofach doklejany do każdej komendy. Workspace nie trafia do treści skilla, a adres publiczny traci końcowe ukośniki przy budowie kontekstu. Treść skilla czytnika specyfikacji zostaje przepisana: nowy wstęp, stop przy niedziałającym serwerze, ścieżka regeneracji przy nieaktualnym adresie, tabela komend CLI względem operacji odczytu, rozwijanie pliku jako wygoda, sekcja błędów. Usunięte są: kontynuacja wątku i alias pytania do agenta z treści skilla.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m22-external-skills/m22-external-skills.md",
+      "change": "all"
+     },
+     {
+      "key": "pages/modules/m22-external-skills/m22-external-skills.md",
+      "context": {
+       "offset": 1,
+       "limit": 7,
+       "anchors": [
+        "m22cel00",
+        "m22dep00",
+        "m22dom00",
+        "m22dserv",
+        "m22dread",
+        "m22dimpl",
+        "2a8tgd5w"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m22-external-skills/c4s-spec-reader.md",
+      "change": "all"
+     },
+     {
+      "key": "pages/modules/m22-external-skills/c4s-brief-implementer.md",
+      "context": {
+       "offset": 0,
+       "limit": 10
+      }
+     },
+     {
+      "key": "pages/modules/m22-external-skills/c4s-refactor.md",
+      "context": {
+       "offset": 0,
+       "limit": 9
+      }
+     }
+    ],
+    "entities": []
+   },
+   "dependsOn": [],
+   "wave": 1,
+   "status": "pending",
+   "blockedBy": null,
+   "startCommit": null,
+   "baseCommit": null,
+   "portions": [],
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  },
+  {
+   "id": "m05-always-excluded",
+   "goal": "Na karcie Agent w ustawieniach lista zawsze wykluczonych katalogów jest widoczna przy każdej wartości flagi blokady bezpośredniego dostępu do plików, bo zbiór wykluczeń obowiązuje zawsze. Przy włączonej fladze znikają tylko edytowalne pola dozwolonych i niedozwolonych ścieżek. Kryteria karty katalogów zostają jako regresja ekranu ustawień.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m05-chat-agent/m05-chat-agent.md",
+      "change": "all"
+     },
+     {
+      "key": "pages/modules/m05-chat-agent/m05-chat-agent.md",
+      "context": {
+       "offset": 1,
+       "limit": 2,
+       "anchors": [
+        "iv1lmc33",
+        "t3fsdybv"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m05-chat-agent/m05-chat-agent.md",
+      "context": {
+       "offset": 21,
+       "limit": 1,
+       "anchors": [
+        "2q0prdli"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m05-chat-agent/m05-chat-agent.md",
+      "context": {
+       "offset": 27,
+       "limit": 5,
+       "anchors": [
+        "l8kbpbza",
+        "6xegs5ac",
+        "m26agsec",
+        "5xehv8t2",
+        "8lk6hpxp"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m05-chat-agent/agent-posture.md",
+      "change": "all"
+     },
+     {
+      "key": "pages/modules/m05-chat-agent/agent-posture.md",
+      "context": {
+       "offset": 1,
+       "limit": 2,
+       "anchors": [
+        "nn4361ab",
+        "25mntsy2"
+       ]
+      }
+     }
+    ],
+    "entities": [
+     {
+      "type": "ac",
+      "slugs": [
+       "ac-element-always-excluded-na-karcie-age",
+       "ac-ekran-m26-directories-blokuje-przycisk",
+       "ac-lista-elementu-roots-na-karcie-direct"
+      ]
+     }
+    ]
+   },
+   "dependsOn": [],
+   "wave": 1,
+   "status": "pending",
+   "blockedBy": null,
+   "startCommit": null,
+   "baseCommit": null,
+   "portions": [],
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  },
+  {
+   "id": "pkg-lvs-ac",
+   "goal": "Plik `workflows/brief-workflow.md` stylu `layered-vertical-slices` zyskuje trzy elementy. Krok mapy wciąga każde kryterium i każdą encję utworzone albo zmienione w oknie. Checklista końcowa wymaga, by każdy taki slug stał w przepisie dokładnie jednej jednostki. Reguła przypisuje slug bez tagu modułu i bez `verifies` do jednostki czytającej jego przedmiot, a w braku takiej do ostatniej fali. Blok narracyjny modułu kryteriów w prompcie agenta mówi teraz, że `verifies` wypełnia się tylko, gdy przedmiotem kryterium jest encja. Kryterium zachowania opisanego prozą zostawia je puste.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "plugins/modules/c4s-plugin-layered-vertical-slices.md",
+      "change": "all"
+     },
+     {
+      "key": "plugins/modules/c4s-plugin-layered-vertical-slices.md",
+      "context": {
+       "offset": 0,
+       "limit": 3,
+       "anchors": [
+        "y3yimbqb",
+        "iqtrwb0k",
+        "1pbsl68f"
+       ]
+      }
+     },
+     {
+      "key": "plugins/modules/c4s-plugin-layered-vertical-slices.md",
+      "context": {
+       "offset": 6,
+       "limit": 1,
+       "anchors": [
+        "x4imgq6m"
+       ]
+      }
+     },
+     {
+      "key": "plugins/modules/c4s-plugin-ac.md",
+      "change": {
+       "offset": 0,
+       "limit": 2,
+       "anchors": [
+        "fsu38c8q",
+        "eoi2kf2k"
+       ]
+      }
+     },
+     {
+      "key": "plugins/modules/c4s-plugin-ac.md",
+      "context": {
+       "offset": 1,
+       "limit": 2,
+       "anchors": [
+        "plugac01",
+        "fsu38c8q"
+       ]
+      }
+     },
+     {
+      "key": "plugins/modules/c4s-plugin-ac.md",
+      "context": {
+       "offset": 5,
+       "limit": 2,
+       "anchors": [
+        "5f8l7spw",
+        "205ctsev"
+       ]
+      }
+     },
+     {
+      "key": "plugins/modules/c4s-plugin-ac.md",
+      "context": {
+       "offset": 8,
+       "limit": 1,
+       "anchors": [
+        "3tr1sjuw"
+       ]
+      }
+     },
+     {
+      "key": "plugins/modules/c4s-plugin-ac.md",
+      "context": {
+       "offset": 10,
+       "limit": 1,
+       "anchors": [
+        "eoi2kf2k"
+       ]
+      }
+     }
+    ],
+    "entities": [
+     {
+      "type": "ac",
+      "slugs": [
+       "ac-load-skill-file-layered-vertical-slic-18",
+       "ac-load-skill-file-layered-vertical-slic-19",
+       "ac-gdy-kryterium-albo-encji-z-okna-nie-p"
+      ]
+     }
+    ]
+   },
+   "dependsOn": [],
+   "wave": 1,
+   "status": "pending",
+   "blockedBy": null,
+   "startCommit": null,
+   "baseCommit": null,
+   "portions": [],
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  },
+  {
+   "id": "m10-zapis-planu",
+   "goal": "Serwis planów zapisuje plik prymitywem z wyłączonym łańcuchem faz. Potem sam zapisuje wersję z podsumowaniem zmiany od wołającego i na końcu rozgłasza zmianę planu z numerem właśnie zapisanej wersji, w kolejności plik → wersja → rozgłoszenie. Reakcja planów nie ma wymagań wobec innych reakcji i biegnie we własnej fazie powiadomienia. Usunięte są: capture zapisu planu w łańcuchu i zależność rozgłoszenia od fazy capture.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m10-plans.md",
+      "change": {
+       "offset": 1,
+       "limit": 1,
+       "anchors": [
+        "jo0r7uh9"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m10-plans.md",
+      "change": {
+       "offset": 3,
+       "limit": 1,
+       "anchors": [
+        "m10ws000"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m10-plans.md",
+      "context": {
+       "offset": 1,
+       "limit": 3,
+       "anchors": [
+        "m10cel00",
+        "m10dep00",
+        "m10dom00"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m10-plans.md",
+      "context": {
+       "offset": 8,
+       "limit": 2,
+       "anchors": [
+        "m10dserv",
+        "ww4lujgo"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m10-plans.md",
+      "context": {
+       "offset": 15,
+       "limit": 1,
+       "anchors": [
+        "jo0r7uh9"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m10-plans.md",
+      "context": {
+       "offset": 28,
+       "limit": 2,
+       "anchors": [
+        "m10ws000",
+        "m10wstid"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m42-record-store.md",
+      "context": {
+       "offset": 4,
+       "limit": 1,
+       "anchors": [
+        "544jcpq5"
+       ]
+      }
+     }
+    ],
+    "entities": []
+   },
+   "dependsOn": [
+    {
+     "unit": "m42-zapis-bez-lancucha",
+     "why": "zapis planu wymaga opcji wyłączenia łańcucha w prymitywie zapisu."
+    }
+   ],
+   "wave": 2,
+   "status": "pending",
+   "blockedBy": null,
+   "startCommit": null,
+   "baseCommit": null,
+   "portions": [],
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  },
+  {
+   "id": "m28-gitsync-konsumenci",
+   "goal": "Utworzenie release'u, przypisanie niezreleasowanych zmian i push na remote zwracają wynik synchronizacji gita według nowych bramek. Commit release'u i push dają brak wyniku, gdy bramka nie przepuściła. Commit pull'a daje „pominięto” przy wyłączonym gicie, braku repo lub odłączonym HEAD. Brak wyniku oznacza tam tylko, że pull się nie odbył. Strony release'u i pusha reagują wyłącznie na błąd, otwierając okno naprawy synchronizacji. Usunięte są toasty dla wszystkich wyników innych niż błąd.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m28-git-sync.md",
+      "change": {
+       "offset": 8,
+       "limit": 1,
+       "anchors": [
+        "rhj0h9rl"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m28-git-sync.md",
+      "change": {
+       "offset": 11,
+       "limit": 1,
+       "anchors": [
+        "fxcropku"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m28-git-sync.md",
+      "context": {
+       "offset": 24,
+       "limit": 1,
+       "anchors": [
+        "rhj0h9rl"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m28-git-sync.md",
+      "context": {
+       "offset": 26,
+       "limit": 2,
+       "anchors": [
+        "8i5qf0xx",
+        "u5vl07ch"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m28-git-sync.md",
+      "context": {
+       "offset": 33,
+       "limit": 2,
+       "anchors": [
+        "4cp5vqa6",
+        "fxcropku"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+      "change": {
+       "offset": 0,
+       "limit": 1,
+       "anchors": [
+        "hybasevj"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+      "change": {
+       "offset": 2,
+       "limit": 1,
+       "anchors": [
+        "mbjdcls0"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+      "context": {
+       "offset": 1,
+       "limit": 1,
+       "anchors": [
+        "m17api001"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+      "context": {
+       "offset": 5,
+       "limit": 1,
+       "anchors": [
+        "hybasevj"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+      "context": {
+       "offset": 9,
+       "limit": 1,
+       "anchors": [
+        "mbjdcls0"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+      "context": {
+       "offset": 1,
+       "limit": 3,
+       "anchors": [
+        "xkpt256d",
+        "m17zal001",
+        "y7fdm1jc"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m25-release-push/m25-release-push.md",
+      "change": "all"
+     },
+     {
+      "key": "pages/modules/m25-release-push/m25-release-push.md",
+      "context": {
+       "offset": 1,
+       "limit": 1,
+       "anchors": [
+        "fl8fm071"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m25-release-push/m25-release-push.md",
+      "context": {
+       "offset": 4,
+       "limit": 1,
+       "anchors": [
+        "y63ffv9h"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m25-release-push/m25-release-push.md",
+      "context": {
+       "offset": 7,
+       "limit": 2,
+       "anchors": [
+        "ik6al1p3",
+        "wosnh845"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m25-release-push/m25-release-push.md",
+      "context": {
+       "offset": 11,
+       "limit": 1,
+       "anchors": [
+        "49dzhz9l"
+       ]
+      }
+     }
+    ],
+    "entities": [
+     {
+      "type": "dto",
+      "slugs": [
+       "release",
+       "release-push-response"
+      ]
+     },
+     {
+      "type": "ac",
+      "slugs": [
+       "ac-commitforrelease-i-push-honoruja-master",
+       "ac-przy-detached-head-lub-unborn-branch-d",
+       "ac-przy-config-git-syncpushonpush-false",
+       "ac-rest-patch-api-releases-nameorid-z-bod",
+       "ac-wynik-gitsync-inny-niz-status-error-c"
+      ]
+     }
+    ]
+   },
+   "dependsOn": [
+    {
+     "unit": "m28-bramki-git",
+     "why": "konsumenci przekazują wynik nowych wejść z bramką i ich typy wyniku."
+    }
+   ],
+   "wave": 2,
+   "status": "pending",
+   "blockedBy": null,
+   "startCommit": null,
+   "baseCommit": null,
+   "portions": [],
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  }
+ ],
+ "entityTypes": [
+  {
+   "type": "ac",
+   "role": "criteria",
+   "checks": "verifies",
+   "links": [
+    "verifies"
+   ],
+   "observedIn": "unit",
+   "inactive": "status = deprecated",
+   "version": 3
+  },
+  {
+   "type": "mcp-tool",
+   "role": "built",
+   "inCode": "the tool registered on its MCP server (`server` field → src/server/mcp/<server>.ts, e.g. plan-tools.ts, brief-tools.ts) with the entity's `name`, `params` (name, type, required — per channel, as the operation catalog derives them), `description`, annotations (readOnly/destructive/idempotent/openWorld hints) and `logic`",
+   "verify": "a vitest test in src/server/mcp/<server>.test.ts (or surface.test.ts) named with [entity:<slug>] asserting the registered tool's name, input schema (params, required) and hints, and the behaviour its `logic` states",
+   "links": [],
+   "version": 1
+  },
+  {
+   "type": "dto",
+   "role": "built",
+   "inCode": "the TypeScript type (src/shared/** or the route module) of the payload the route that carries the DTO returns or accepts — field names, types and required/optional exactly as the DTO's `fields`",
+   "verify": "a vitest/supertest test next to the carrying route (src/server/routes/<route>.test.ts) named with [entity:<slug>] asserting the live payload has every required field with its type and no removed field",
+   "links": [],
+   "version": 2
+  },
+  {
+   "type": "endpoint",
+   "role": "built",
+   "inCode": "the Express route (method + path) mounted under /api/projects/<id>/… in src/server/routes/<area>.ts, accepting the request DTO and answering the response/error DTOs at the linked status codes",
+   "verify": "a supertest test in src/server/routes/<area>*.test.ts named with [entity:<slug>] asserting method, path, the request body shape and the response/error payload shape and status per linkedDtos",
+   "links": [
+    "linkedDtos"
+   ],
+   "version": 3
+  },
+  {
+   "type": "code-snippet",
+   "role": "built",
+   "inCode": "the text the system generates that the snippet shows (for `wpis-serwera-c4s-reader`: the stdio MCP connection config entry the server emits from src/server/routes/mcp-config.ts and its helpers)",
+   "verify": "a vitest test next to the generator (e.g. src/server/routes/mcp-config.test.ts) named with [entity:<slug>] asserting the generated entry has the snippet's structure (command, args, keys) — values like ports/ids may differ",
+   "links": [],
+   "version": 1
+  },
+  {
+   "type": "spreadsheet",
+   "role": "per-entity",
+   "version": 3
+  }
+ ],
+ "entityParts": [
+  {
+   "slug": "katalog-operacji-m02",
+   "type": "spreadsheet",
+   "why": "Katalog operacji modułu stron: każdy wiersz to operacja rejestrowana w katalogu operacji rdzenia (kanały, adresowanie, reguły, kody błędów) — struktura systemu, nie dokumentacja.",
+   "parts": [
+    {
+     "role": "built",
+     "items": "every operation row (rows 2..n under the header row)",
+     "key": "nazwa (the operation name in backticks, e.g. `create_page`)",
+     "inCode": "the page operation descriptors in the core operation catalog (src/server/operations/core-operations.ts and profiles.ts) plus the channel renderings (MCP page-tools, CLI commands, REST routes in src/server/routes/pages.ts) the cells declare",
+     "verify": "a vitest test in src/server/operations/catalog.test.ts (or the module's *-tools.test.ts) named with [entity:katalog-operacji-m02#<operation>] asserting the row's channel cells (internal/cli/mcp/rest), addressing (params per channel), rules and error codes against the registered operation"
+    }
+   ]
+  },
+  {
+   "slug": "katalog-operacji-m21",
+   "type": "spreadsheet",
+   "why": "Katalog operacji modułu briefów: każdy wiersz to operacja rejestrowana w katalogu operacji rdzenia (kanały, adresowanie, reguły, kody błędów) — struktura systemu, nie dokumentacja.",
+   "parts": [
+    {
+     "role": "built",
+     "items": "every operation row (rows 2..n under the header row)",
+     "key": "nazwa (the operation name in backticks, e.g. `get_plan`)",
+     "inCode": "the brief operation descriptors in the core operation catalog (src/server/operations/core-operations.ts and profiles.ts) plus the channel renderings (MCP brief-tools, CLI commands, REST routes) the cells declare",
+     "verify": "a vitest test in src/server/operations/catalog.test.ts (or the module's *-tools.test.ts) named with [entity:katalog-operacji-m21#<operation>] asserting the row's channel cells (internal/cli/mcp/rest), addressing (params per channel), rules and error codes against the registered operation"
+    }
+   ]
+  }
+ ]
+}
