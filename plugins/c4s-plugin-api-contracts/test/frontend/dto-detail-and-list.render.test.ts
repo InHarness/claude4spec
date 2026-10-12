@@ -113,9 +113,28 @@ vi.mock('@c4s/plugin-runtime/ui', async () => {
   };
 });
 
-vi.mock('../../src/entity/dto/frontend/monaco-json-editor.js', () => ({
-  MonacoJsonEditor: () => null,
-}));
+// The example value editor: a plain textarea stands in for Monaco, carrying
+// its `readOnly` flag and `onChange` so the read / edit modes are observable.
+vi.mock('../../src/entity/dto/frontend/monaco-json-editor.js', async () => {
+  const { createElement: h } = await import('react');
+  return {
+    MonacoJsonEditor: ({
+      value,
+      onChange,
+      readOnly = false,
+    }: {
+      value: string;
+      onChange: (next: string) => void;
+      readOnly?: boolean;
+    }) =>
+      h('textarea', {
+        'data-testid': 'example-json',
+        value,
+        readOnly,
+        onChange: (e: { target: { value: string } }) => onChange(e.target.value),
+      }),
+  };
+});
 
 vi.mock('../../src/entity/dto/frontend/hooks.js', () => ({
   useDto: () => ({ data: state.dto ?? undefined, isLoading: false, error: null }),
@@ -144,7 +163,9 @@ import { dtoRoutes } from '../../src/entity/dto/frontend/routes.js';
 import { DtosList, DTO_LIST_EMPTY_TITLE } from '../../src/entity/dto/frontend/list-page.js';
 import { dtoFrontendModule } from '../../src/entity/dto/frontend/module.js';
 import { deleteDtoBody } from '../../src/entity/dto/frontend/delete-confirm.js';
-import { readFileSync } from 'node:fs';
+import { DtoDetail } from '../../src/entity/dto/frontend/detail-panel.js';
+import { checkSlotShapes } from '../../../../src/client/core/plugin-host/slot-rules.js';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const FRONTEND_SRC = join(import.meta.dirname, '../../src/entity/dto/frontend');
@@ -393,5 +414,269 @@ describe('[entity:dto-list] /dtos', () => {
     expect(empty.action).toBeUndefined();
     expect(container.textContent).toContain(DTO_LIST_EMPTY_TITLE);
     expect(container.textContent).not.toMatch(/clear filters|reset|Create your first DTO/i);
+  });
+});
+
+// ─── 2.1.19 ───────────────────────────────────────────────────────────────
+
+function exampleRows(): HTMLElement[] {
+  return Array.from(container.querySelectorAll('[draggable="true"]')) as HTMLElement[];
+}
+
+function jsonEditor(): HTMLTextAreaElement | null {
+  return container.querySelector('textarea[data-testid="example-json"]');
+}
+
+async function typeJson(value: string) {
+  await act(async () => {
+    const el = jsonEditor()!;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(el, value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
+async function click(el: Element) {
+  await act(async () => {
+    (el as HTMLElement).click();
+  });
+}
+
+async function settleAutosave() {
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 700));
+  });
+}
+
+/** Expand the example row whose header shows `name`. */
+async function expandExample(name: string) {
+  const label = Array.from(container.querySelectorAll('span')).find((s) => s.textContent === name);
+  expect(label, `example row ${name}`).toBeDefined();
+  await click(label!);
+}
+
+describe('[entity:dto-detail] examples — value read-only by default, edit / Cancel / Save (2.1.19)', () => {
+  it('[entity:dto-detail] an example value is read-only by default; the edit button switches it to editing with Cancel and Save', async () => {
+    state.dto = sampleDto({
+      examples: [{ name: 'minimal', summary: 'Smallest payload', value: { id: 'u1', email: 'a@b.c' } }],
+    });
+    await render(createElement(routeTable().get('/dtos/$slug')!.component));
+    await expandExample('minimal');
+
+    // Read mode: the editor is read-only, one edit button, no Cancel / Save.
+    expect(jsonEditor()!.readOnly).toBe(true);
+    expect(JSON.parse(jsonEditor()!.value)).toEqual({ id: 'u1', email: 'a@b.c' });
+    expect(buttonByText('Edit value', container)).toBeDefined();
+    expect(buttonByText('Cancel', container)).toBeUndefined();
+    expect(buttonByText('Save', container)).toBeUndefined();
+
+    // Edit mode: writable, with Cancel and Save.
+    await click(buttonByText('Edit value', container)!);
+    expect(jsonEditor()!.readOnly).toBe(false);
+    expect(buttonByText('Cancel', container)).toBeDefined();
+    expect(buttonByText('Save', container)).toBeDefined();
+
+    // Cancel drops the edit and goes back to read mode with the stored value.
+    await typeJson('{"id":"changed"}');
+    await click(buttonByText('Cancel', container)!);
+    expect(jsonEditor()!.readOnly).toBe(true);
+    expect(JSON.parse(jsonEditor()!.value)).toEqual({ id: 'u1', email: 'a@b.c' });
+    await settleAutosave();
+    expect(state.updates).toHaveLength(0);
+  });
+
+  it('[entity:dto-detail] Save validates JSON: invalid JSON stays in edit mode with "invalid JSON: …"; valid JSON is saved and the value returns to read mode', async () => {
+    state.dto = sampleDto({
+      examples: [{ name: 'minimal', value: { id: 'u1', email: 'a@b.c' } }],
+    });
+    await render(createElement(routeTable().get('/dtos/$slug')!.component));
+    await expandExample('minimal');
+    await click(buttonByText('Edit value', container)!);
+
+    // Invalid JSON — Save is clickable (no save block), and the run stays in edit.
+    await typeJson('{ "id": ');
+    const save = buttonByText('Save', container)!;
+    expect(save.disabled).toBe(false);
+    await click(save);
+    expect(jsonEditor()!.readOnly).toBe(false);
+    expect(container.textContent).toContain('invalid JSON: ');
+    await settleAutosave();
+    expect(state.updates).toHaveLength(0);
+
+    // Valid JSON — saved into `examples[]`, back to read mode, message gone.
+    await typeJson('{"id":"u2","email":"x@y.z"}');
+    await click(buttonByText('Save', container)!);
+    expect(jsonEditor()!.readOnly).toBe(true);
+    expect(container.textContent).not.toContain('invalid JSON');
+    expect(JSON.parse(jsonEditor()!.value)).toEqual({ id: 'u2', email: 'x@y.z' });
+    await settleAutosave();
+    expect(state.updates.at(-1)?.input.examples).toEqual([
+      { name: 'minimal', value: { id: 'u2', email: 'x@y.z' } },
+    ]);
+  });
+
+  it('[entity:dto-detail] the field-compatibility warning is a soft banner shown only in read mode', async () => {
+    state.dto = sampleDto({
+      examples: [{ name: 'minimal', value: { id: 'u1', email: null } }],
+    });
+    await render(createElement(routeTable().get('/dtos/$slug')!.component));
+    await expandExample('minimal');
+
+    const banner = "Example doesn't match field `email`: expected string, got null";
+    expect(container.textContent).toContain(banner);
+
+    // Editing hides the warnings.
+    await click(buttonByText('Edit value', container)!);
+    expect(container.textContent).not.toContain("Example doesn't match field");
+
+    // Soft: a value that still mismatches saves anyway, and the banner is back in read mode.
+    await typeJson('{"id":"u1","email":null,"extra":1}');
+    await click(buttonByText('Save', container)!);
+    expect(jsonEditor()!.readOnly).toBe(true);
+    expect(container.textContent).toContain(banner);
+    await settleAutosave();
+    expect(state.updates.at(-1)?.input.examples).toEqual([
+      { name: 'minimal', value: { id: 'u1', email: null, extra: 1 } },
+    ]);
+  });
+
+  it('[entity:dto-detail] the whole row is dragged to reorder; the handle in the row header is only visual', async () => {
+    state.dto = sampleDto({
+      examples: [
+        { name: 'first', value: { id: '1' } },
+        { name: 'second', value: { id: '2' } },
+      ],
+    });
+    await render(createElement(routeTable().get('/dtos/$slug')!.component));
+
+    const rows = exampleRows();
+    expect(rows).toHaveLength(2);
+    // The draggable element is the whole row: name, summary and the row actions.
+    expect(rows[0]!.textContent).toContain('first');
+    expect(rows[0]!.querySelector('button[title="Duplicate"]')).not.toBeNull();
+    expect(rows[0]!.querySelector('button[title="Delete"]')).not.toBeNull();
+    // Nothing inside the row (the grip included) is a drag source of its own.
+    for (const row of rows) expect(row.querySelectorAll('[draggable]')).toHaveLength(0);
+
+    await act(async () => {
+      rows[1]!.dispatchEvent(new Event('dragstart', { bubbles: true }));
+    });
+    await act(async () => {
+      rows[0]!.dispatchEvent(new Event('drop', { bubbles: true }));
+    });
+    expect(exampleRows().map((r) => r.querySelector('span.font-mono')?.textContent)).toEqual(['second', 'first']);
+    await settleAutosave();
+    expect((state.updates.at(-1)?.input.examples as Array<{ name: string }>).map((e) => e.name)).toEqual([
+      'second',
+      'first',
+    ]);
+  });
+});
+
+// ─── 2.1.19 — L11 manifest slot and L12 slice of the dto type ─────────────
+
+function sourceFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name);
+    if (statSync(p).isDirectory()) out.push(...sourceFiles(p));
+    else if (/\.tsx?$/.test(name)) out.push(p);
+  }
+  return out;
+}
+
+function consumedCatalog(files: string[]): Set<string> {
+  const consumed = new Set<string>();
+  for (const p of files) {
+    const src = readFileSync(p, 'utf-8');
+    for (const m of src.matchAll(/import\s*\{([^}]*)\}\s*from\s*'@c4s\/plugin-runtime\/ui'/g)) {
+      for (const name of m[1]!.split(',')) {
+        const n = name.trim();
+        if (!n || n.startsWith('type ')) continue;
+        consumed.add(n);
+      }
+    }
+  }
+  return consumed;
+}
+
+const PKG_SRC = join(import.meta.dirname, '../../src');
+const KIT_SRC = join(PKG_SRC, 'frontend-kit');
+
+describe('[section:xvm9aann] dto manifest detailPanel slot — checked for shape, not rendered by the host', () => {
+  it('[section:xvm9aann] the manifest declares detailPanel: DtoDetail next to routes, and the host slot check accepts it', () => {
+    expect(dtoFrontendModule.detailPanel).toBe(DtoDetail);
+    expect(typeof dtoFrontendModule.routes).toBe('function');
+    expect(checkSlotShapes(dtoFrontendModule)).toBeNull();
+    expect(checkSlotShapes({ ...dtoFrontendModule, detailPanel: {} as never })).toMatch(
+      /'detailPanel' is declared but is not a React component/,
+    );
+  });
+
+  it('[section:xvm9aann] the /dtos/$slug route renders DtoDetail itself', async () => {
+    expect(readFileSync(join(FRONTEND_SRC, 'routes.tsx'), 'utf-8')).toMatch(/<DtoDetail\b/);
+    await render(createElement(routeTable().get('/dtos/$slug')!.component));
+    const inputs = Array.from(container.querySelectorAll('input')) as HTMLInputElement[];
+    expect(inputs.some((i) => i.value === 'UserResponse')).toBe(true);
+  });
+});
+
+describe('[section:9hz21ysc] dto Host UI Kit slice', () => {
+  it('[section:9hz21ysc] the dto screens consume exactly the catalog components the slice lists — DocEditor among them; Pagination, DetailPanelShell, EntityDetailToolbar, SegmentedControlTabs, InlineEditField and Popover not', () => {
+    const consumed = consumedCatalog([...sourceFiles(FRONTEND_SRC), ...sourceFiles(KIT_SRC)]);
+    expect([...consumed].sort()).toEqual(
+      [
+        'EntityListLayout',
+        'EntityListHeader',
+        'EntityListRow',
+        'TagFilterBar',
+        'LoadingState',
+        'EmptyState',
+        'Badge',
+        'FieldGrid',
+        'FieldRow',
+        'TagPicker',
+        'DocEditor',
+        'EntityVersionHistoryView',
+        'Dialog',
+        'FormShell',
+        'FormField',
+        'ActionButton',
+      ].sort(),
+    );
+    for (const dropped of ['Pagination', 'DetailPanelShell', 'EntityDetailToolbar', 'SegmentedControlTabs', 'InlineEditField', 'Popover']) {
+      expect(consumed.has(dropped), dropped).toBe(false);
+    }
+  });
+
+  it('[section:9hz21ysc] each host-local frontend-kit duplicate is recorded as DEBT naming its catalog replacement', () => {
+    const debt: Array<[file: string, exports: string[], replacement: string]> = [
+      ['EntityBreadcrumbBar.tsx', ['EntityBreadcrumbBar'], 'DetailPanelShell'],
+      ['EntityViewSwitcher.tsx', ['EntityViewSwitcher'], 'SegmentedControlTabs'],
+      ['SegmentedControl.tsx', ['SegmentedControl'], 'SegmentedControlTabs'],
+      ['ButtonGroup.tsx', ['ButtonGroup', 'SegmentButton'], 'SegmentedControlTabs'],
+      ['atoms.tsx', ['MethodChip', 'TagChip'], 'Badge'],
+      ['popover-form.tsx', ['FieldLabel', 'TextInput', 'SelectInput', 'InlineError', 'PopoverFooter'], 'FormField'],
+    ];
+    for (const [file, exports, replacement] of debt) {
+      const src = readFileSync(join(KIT_SRC, file), 'utf-8');
+      for (const name of exports) {
+        expect(src, `${file} exports ${name}`).toMatch(new RegExp(`export (function|const) ${name}\\b`));
+      }
+      const header = src.match(/DEBT \(2\.1\.19[^]*?Recorded, not fixed here/)?.[0];
+      expect(header, `${file} DEBT header`).toBeDefined();
+      expect(header!).toContain(`\`${replacement}\``);
+    }
+    // Recorded, not fixed: the dto detail route still renders through the local bar.
+    expect(readFileSync(join(FRONTEND_SRC, 'routes.tsx'), 'utf-8')).toMatch(/<EntityBreadcrumbBar\b/);
+  });
+
+  it('[section:9hz21ysc] ListPageHeader / ListScrollArea are not carried by this package — the dto list composes their replacements directly (ASSUMPTION:dev-1907)', () => {
+    const kit = readdirSync(KIT_SRC);
+    expect(kit).not.toContain('ListPageHeader.tsx');
+    expect(kit).not.toContain('ListScrollArea.tsx');
+    const list = readFileSync(join(FRONTEND_SRC, 'list-page.tsx'), 'utf-8');
+    for (const name of ['EntityListHeader', 'EntityListLayout', 'LoadingState', 'EmptyState']) {
+      expect(list).toMatch(new RegExp(`<${name}\\b`));
+    }
   });
 });

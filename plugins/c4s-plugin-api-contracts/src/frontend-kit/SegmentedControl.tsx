@@ -1,3 +1,9 @@
+/**
+ * DEBT (2.1.19, Host UI Kit slice of `c4s-plugin-api-contracts`, endpoint + dto): a
+ * generic segmented switch, tied to no entity type (fails condition 2); the
+ * package's `EntityViewSwitcher` stands on it. Its catalog replacement is
+ * `SegmentedControlTabs`. Recorded, not fixed here.
+ */
 import { ButtonGroup, SegmentButton } from './ButtonGroup.js';
 
 export interface SegmentOption<T extends string> {

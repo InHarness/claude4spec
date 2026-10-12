@@ -1,0 +1,1 @@
+{"role":"reviewer","scope":{"kind":"unit","id":"u7-api-contracts","base":"dacab4e0a617409821112981df7da7eea7f96977"},"findings":[{"id":"rev-0001","file":"plugins/c4s-plugin-api-contracts/src/frontend-kit/useEntityDraftEditor.ts","line":135,"blocking":false,"reason":"stale doc comments after latest-draft save change","portion":"u7-api-contracts/p1-l5-l12"}],"deviations":[]}

@@ -1,5 +1,5 @@
 {
-  "iteration": 12,
+  "iteration": 14,
   "conventions": [
     {
       "label": "L5 (UI) — implementor M50 — App Shell",
@@ -86,7 +86,7 @@
       "units": [
         "u7-api-contracts"
       ],
-      "startCommit": null
+      "startCommit": "dacab4e0a617409821112981df7da7eea7f96977"
     }
   ],
   "units": [
@@ -738,15 +738,33 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u7-api-contracts/p1-l5-l12",
+          "layers": [
+            "L5",
+            "L11",
+            "L12"
+          ],
+          "slugs": [
+            "dto-detail",
+            "ac-pole-detalu-endpointu-edytowane-lokal"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "only": []
+        }
+      ],
+      "startCommit": "dacab4e0a617409821112981df7da7eea7f96977",
+      "baseCommit": "dacab4e0a617409821112981df7da7eea7f96977",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0
     }
   ],
   "entityTypes": [

@@ -1,3 +1,10 @@
+/**
+ * DEBT (2.1.19, Host UI Kit slice of `c4s-plugin-api-contracts`, endpoint + dto): `ButtonGroup`
+ * and `SegmentButton` are the older switch implementation only `SegmentedControl`
+ * uses — generic segmented-switch parts tied to no entity type (fail condition
+ * 2). Their catalog replacement is `SegmentedControlTabs`. Recorded, not fixed
+ * here.
+ */
 export function ButtonGroup({ children }: { children: React.ReactNode }) {
   return (
     <div

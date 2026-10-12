@@ -1,4 +1,11 @@
 /**
+ * DEBT (2.1.19, Host UI Kit slice of `c4s-plugin-api-contracts`, endpoint + dto): `FieldLabel`,
+ * `TextInput`, `SelectInput`, `InlineError`, `PopoverFooter` fail the locality
+ * rule — the same copy 1:1 stands in the `frontend-kit/` of five plugin
+ * packages (condition 1), and popover form fields are common to every entity
+ * type (condition 2). Their catalog replacement is `FormField`.
+ * Recorded, not fixed here.
+ *
  * The popover FORM primitives, copied from the host's `ui/Popover.tsx`.
  *
  * Only the field/footer helpers travel: the host file also owns the popover

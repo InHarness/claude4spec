@@ -1,0 +1,16 @@
+{
+  "id": "dev-1907",
+  "kind": "drift",
+  "blocking": false,
+  "address": "u7-api-contracts/9hz21ysc",
+  "slugs": [
+    "section:9hz21ysc",
+    "section:dhh869qt"
+  ],
+  "text": "The c4s-plugin-api-contracts Host UI Kit slices of dto (9hz21ysc) and endpoint (dhh869qt), at 2.1.19, list ListPageHeader and ListScrollArea as DEBT of this package ('one copy serves the endpoint and dto lists'). The package's frontend-kit/ carries neither file: both lists (entity/{endpoint,dto}/frontend/list-page.tsx) already compose their catalog replacements — EntityListHeader, EntityListLayout, LoadingState, EmptyState — directly. The package instead has frontend-kit/ListPageLayout.tsx (a bare flex frame around EntityListLayout) that the slices do not mention. No local copies were added (the change only records debt); ListPageLayout is kept as it is. Same finding as dev-1906 for c4s-plugin-ac. Assumed: the api-contracts slices should drop ListPageHeader and ListScrollArea from their debt list (and say whether ListPageLayout is debt or a legitimate local).",
+  "assumption": "ASSUMPTION:dev-1907 — ListPageHeader / ListScrollArea are not debt of c4s-plugin-api-contracts; its endpoint and dto lists consume their catalog replacements directly",
+  "unit": "u7-api-contracts",
+  "portion": "u7-api-contracts/p1-l5-l12",
+  "sent": true,
+  "patchPath": "2-1-18-to-2-1-19-u7-api-contracts-9hz21ysc-dto-endpoint-lists-have-no-listpageheader-listscrollar.md"
+}

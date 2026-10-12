@@ -24,7 +24,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement, type FC, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Endpoint } from '../../src/types.js';
 
@@ -195,6 +195,8 @@ import {
 import { endpointFrontendModule } from '../../src/entity/endpoint/frontend/module.js';
 import { deleteEndpointBody } from '../../src/entity/endpoint/frontend/delete-confirm.js';
 import { ApiError } from '../../../../src/client/lib/api-core.js';
+import { EndpointDetail } from '../../src/entity/endpoint/frontend/detail-panel.js';
+import { checkSlotShapes } from '../../../../src/client/core/plugin-host/slot-rules.js';
 
 const REPO = join(import.meta.dirname, '../../../..');
 const FRONTEND_SRC = join(import.meta.dirname, '../../src/entity/endpoint/frontend');
@@ -598,3 +600,164 @@ function emptyMarkup(): string {
   while (el.parentElement && el.parentElement.textContent === el.textContent) el = el.parentElement;
   return el.outerHTML;
 }
+
+// ─── 2.1.19 ───────────────────────────────────────────────────────────────
+
+async function typeInto(el: HTMLInputElement, value: string) {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
+function inputByPlaceholder(placeholder: string): HTMLInputElement {
+  const el = Array.from(container.querySelectorAll('input')).find((i) => i.placeholder === placeholder);
+  if (!el) throw new Error(`no input with placeholder ${placeholder}`);
+  return el as HTMLInputElement;
+}
+
+describe('endpoint-detail criteria (2.1.19)', () => {
+  it('[ac:ac-pole-detalu-endpointu-edytowane-lokal] a field edited locally keeps the value the user typed when the endpoint changes from outside', async () => {
+    const Detail = routeTable().get('/endpoints/$slug')!.component;
+    await render(createElement(Detail));
+    expect(inputByPlaceholder('Short summary…').value).toBe('List users');
+
+    // The user edits the summary; the debounced save (500 ms) has not run yet.
+    await typeInto(inputByPlaceholder('Short summary…'), 'Lists every active user');
+
+    // Meanwhile the endpoint changes from outside (another client / the agent):
+    // the host's live update refetches it and the detail re-renders with it.
+    state.endpoint = sampleEndpoint({ path: '/api/people', updatedAt: '2026-10-10 11:00:00' });
+    await render(createElement(Detail));
+
+    // The locally edited field keeps what the user typed …
+    expect(inputByPlaceholder('Short summary…').value).toBe('Lists every active user');
+    // … while the field the user did not touch takes the external value.
+    expect(inputByPlaceholder('/api/...').value).toBe('/api/people');
+
+    // The save that follows keeps the user's value and does not write the old
+    // server path back over the external change.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 700));
+    });
+    expect(state.updates).toHaveLength(1);
+    expect(state.updates[0]!.input).toMatchObject({
+      method: 'GET',
+      path: '/api/people',
+      summary: 'Lists every active user',
+    });
+    expect(inputByPlaceholder('Short summary…').value).toBe('Lists every active user');
+  });
+});
+
+// ─── 2.1.19 — L11 manifest slot and L12 slice of the endpoint type ────────
+
+function sourceFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name);
+    if (statSync(p).isDirectory()) out.push(...sourceFiles(p));
+    else if (/\.tsx?$/.test(name)) out.push(p);
+  }
+  return out;
+}
+
+function consumedCatalog(files: string[]): Set<string> {
+  const consumed = new Set<string>();
+  for (const p of files) {
+    const src = readFileSync(p, 'utf-8');
+    for (const m of src.matchAll(/import\s*\{([^}]*)\}\s*from\s*'@c4s\/plugin-runtime\/ui'/g)) {
+      for (const name of m[1]!.split(',')) {
+        const n = name.trim();
+        if (!n || n.startsWith('type ')) continue;
+        consumed.add(n);
+      }
+    }
+  }
+  return consumed;
+}
+
+const KIT_SRC = join(import.meta.dirname, '../../src/frontend-kit');
+
+describe('[section:vc5pzsc0] endpoint manifest detailPanel slot — checked for shape, not rendered by the host', () => {
+  it('[section:vc5pzsc0] the manifest declares detailPanel: EndpointDetail next to routes, and the host slot check accepts it', () => {
+    expect(endpointFrontendModule.detailPanel).toBe(EndpointDetail);
+    expect(typeof endpointFrontendModule.routes).toBe('function');
+    expect(checkSlotShapes(endpointFrontendModule)).toBeNull();
+    expect(checkSlotShapes({ ...endpointFrontendModule, detailPanel: {} as never })).toMatch(
+      /'detailPanel' is declared but is not a React component/,
+    );
+  });
+
+  it('[section:vc5pzsc0] the /endpoints/$slug route renders EndpointDetail itself', async () => {
+    expect(readFileSync(join(FRONTEND_SRC, 'routes.tsx'), 'utf-8')).toMatch(/<EndpointDetail\b/);
+    await render(createElement(routeTable().get('/endpoints/$slug')!.component));
+    expect(inputByPlaceholder('/api/...').value).toBe('/api/users');
+  });
+});
+
+describe('[section:dhh869qt] endpoint Host UI Kit slice', () => {
+  it('[section:dhh869qt] the endpoint screens consume exactly the catalog components the slice lists — DocEditor among them; Pagination, DetailPanelShell, EntityDetailToolbar, SegmentedControlTabs, InlineEditField and Popover not', () => {
+    const consumed = consumedCatalog([...sourceFiles(FRONTEND_SRC), ...sourceFiles(KIT_SRC)]);
+    expect([...consumed].sort()).toEqual(
+      [
+        'EntityListLayout',
+        'EntityListHeader',
+        'EntityListRow',
+        'TagFilterBar',
+        'LoadingState',
+        'EmptyState',
+        'Badge',
+        'FieldGrid',
+        'FieldRow',
+        'EnumBadgePicker',
+        'GroupedRelationPicker',
+        'TagPicker',
+        'DocEditor',
+        'EntityVersionHistoryView',
+        'Dialog',
+        'FormShell',
+        'FormField',
+        'ActionButton',
+      ].sort(),
+    );
+    for (const dropped of ['Pagination', 'DetailPanelShell', 'EntityDetailToolbar', 'SegmentedControlTabs', 'InlineEditField', 'Popover']) {
+      expect(consumed.has(dropped), dropped).toBe(false);
+    }
+  });
+
+  it('[section:dhh869qt] each host-local frontend-kit duplicate is recorded as DEBT naming its catalog replacement', () => {
+    const debt: Array<[file: string, exports: string[], replacement: string]> = [
+      ['EntityBreadcrumbBar.tsx', ['EntityBreadcrumbBar'], 'DetailPanelShell'],
+      ['EntityViewSwitcher.tsx', ['EntityViewSwitcher'], 'SegmentedControlTabs'],
+      ['SegmentedControl.tsx', ['SegmentedControl'], 'SegmentedControlTabs'],
+      ['ButtonGroup.tsx', ['ButtonGroup', 'SegmentButton'], 'SegmentedControlTabs'],
+      ['atoms.tsx', ['MethodChip', 'TagChip'], 'Badge'],
+      ['popover-form.tsx', ['FieldLabel', 'TextInput', 'SelectInput', 'InlineError', 'PopoverFooter'], 'FormField'],
+    ];
+    for (const [file, exports, replacement] of debt) {
+      const src = readFileSync(join(KIT_SRC, file), 'utf-8');
+      for (const name of exports) {
+        expect(src, `${file} exports ${name}`).toMatch(new RegExp(`export (function|const) ${name}\\b`));
+      }
+      const header = src.match(/DEBT \(2\.1\.19[^]*?Recorded, not fixed here/)?.[0];
+      expect(header, `${file} DEBT header`).toBeDefined();
+      expect(header!).toContain(`\`${replacement}\``);
+    }
+    // Recorded, not fixed: the endpoint routes still use the local bar, and the
+    // list row and the breadcrumb still draw the method through MethodChip.
+    expect(readFileSync(join(FRONTEND_SRC, 'routes.tsx'), 'utf-8')).toMatch(/<EntityBreadcrumbBar\b/);
+    expect(readFileSync(join(FRONTEND_SRC, 'list-page.tsx'), 'utf-8')).toMatch(/<MethodChip\b/);
+    expect(readFileSync(join(KIT_SRC, 'EntityBreadcrumbBar.tsx'), 'utf-8')).toMatch(/<MethodChip\b/);
+  });
+
+  it('[section:dhh869qt] ListPageHeader / ListScrollArea are not carried by this package — the endpoint list composes their replacements directly (ASSUMPTION:dev-1907)', () => {
+    const kit = readdirSync(KIT_SRC);
+    expect(kit).not.toContain('ListPageHeader.tsx');
+    expect(kit).not.toContain('ListScrollArea.tsx');
+    const list = readFileSync(join(FRONTEND_SRC, 'list-page.tsx'), 'utf-8');
+    for (const name of ['EntityListHeader', 'EntityListLayout', 'LoadingState', 'EmptyState']) {
+      expect(list).toMatch(new RegExp(`<${name}\\b`));
+    }
+  });
+});
