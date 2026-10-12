@@ -1,5 +1,5 @@
 {
-  "iteration": 5,
+  "iteration": 10,
   "conventions": [
     {
       "label": "L12 (Host UI Kit) — implementor M34",
@@ -69,7 +69,7 @@
       "units": [
         "u2-m13-plugin-routes-and-slots"
       ],
-      "startCommit": null
+      "startCommit": "309eebebbe91adeec539a629a14e5b97a3e7ded4"
     },
     {
       "n": 3,
@@ -262,16 +262,37 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "u2-m13-plugin-routes-and-slots/p1-l2-l12",
+          "layers": [
+            "L2",
+            "L5",
+            "L11",
+            "L12"
+          ],
+          "slugs": [
+            "ac-entitydetailpage-nasluchuje-entity-ch",
+            "ac-slot-detailpanel-otrzymuje-od-hosta-mi"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "309eebebbe91adeec539a629a14e5b97a3e7ded4",
+      "baseCommit": "309eebebbe91adeec539a629a14e5b97a3e7ded4",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "u3-m19-list-pattern-and-missing-rows",

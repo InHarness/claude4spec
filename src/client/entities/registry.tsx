@@ -35,6 +35,11 @@ export interface EntityCardProps<T> extends EntityChipProps<T> {
   onCaptionChange?: (caption: string | null) => void;
 }
 
+/**
+ * `detailPanel` props — four REQUIRED fields (2.1.16). The host never renders the
+ * slot and calls none of the callbacks; the plugin's detail route passes them to
+ * its own panel. `onBack` is unused.
+ */
 export interface EntityDetailProps {
   slug: string;
   onDeleted: () => void;

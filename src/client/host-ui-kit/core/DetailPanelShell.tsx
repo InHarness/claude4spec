@@ -21,7 +21,7 @@ export interface DetailBreadcrumb {
 export interface DetailPanelShellProps {
   /** Breadcrumb hops, left → right. The last is the current entity. */
   breadcrumb: DetailBreadcrumb[];
-  /** Trailing toolbar slot (e.g. a view switcher, Edit/Delete buttons). */
+  /** Trailing toolbar slot (e.g. a view switcher, a Delete button). No dedicated Edit/Delete slots. */
   actions?: ReactNode;
   /** Detail body (field grid, description, related entities, …). */
   children: ReactNode;
