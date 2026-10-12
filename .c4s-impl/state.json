@@ -1505,14 +1505,34 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "pending",
+   "status": "verified",
    "blockedBy": null,
-   "startCommit": null,
-   "baseCommit": null,
-   "portions": [],
+   "startCommit": "49576f60f5301a3e05b0ffb39fc5f01761cd6012",
+   "baseCommit": "0bb89352526c8fa43da85dd3a5cc96eecbd002b2",
+   "portions": [
+    {
+     "name": "m05-always-excluded/p1-l5-l17",
+     "layers": [
+      "L5",
+      "L17"
+     ],
+     "slugs": [
+      "ac-element-always-excluded-na-karcie-age",
+      "ac-ekran-m26-directories-blokuje-przycisk",
+      "ac-lista-elementu-roots-na-karcie-direct"
+     ],
+     "status": "implemented",
+     "rounds": 2,
+     "partial": 0,
+     "uncovered": [
+      "ac-element-always-excluded-na-karcie-age"
+     ],
+     "only": []
+    }
+   ],
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 2
    },
    "jobs": []
   },

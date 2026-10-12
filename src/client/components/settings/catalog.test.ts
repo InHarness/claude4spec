@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { assembleSettings, parseLines, type CardDraft, type ConfigKeyPath, type ElementContext } from './registry.js';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  assembleSettings,
+  parseLines,
+  visibleElements,
+  type CardDraft,
+  type ConfigKeyPath,
+  type ElementContext,
+} from './registry.js';
+import { KIND_DECLARATIONS, SYSTEM_ROOTS } from '../../../shared/root-kinds.js';
 import { SUPPORTED_LANGUAGES } from '../../../shared/languages.js';
 import type { ConfigResponse } from '../../lib/api.js';
 import { STATIC_SETTINGS_CONTRIBUTIONS } from './SettingsPage.js';
@@ -105,6 +116,75 @@ describe('/settings card catalog (0.2.113 §1.6)', () => {
     expect(keys).toEqual(['roots']);
     for (const legacy of ['plansDir', 'briefsDir', 'patchesDir', 'entitiesDir', 'releasesDir']) {
       expect(page.flatMap((c) => c.elements).some((e) => e.configKey?.[0] === legacy)).toBe(false);
+    }
+  });
+
+  /** The base root only — what a fresh project's `config.roots` holds. */
+  const USER_ROOTS = [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }];
+  const configWithRoots = { agent: {}, roots: USER_ROOTS, configHash: 'h' } as unknown as ConfigResponse;
+  /** A read-only draft over `config` plus one value of `agent.disableDirectFilesystemAccess`. */
+  const draftOver = (config: ConfigResponse, block: boolean | undefined): CardDraft =>
+    ({
+      get: (key: ConfigKeyPath) =>
+        key.join('.') === 'agent.disableDirectFilesystemAccess'
+          ? block
+          : (config as unknown as Record<string, unknown>)[key[0]!],
+      set: () => {},
+      error: () => null,
+      setLiveError: () => {},
+      isDirty: () => false,
+      saving: false,
+      setBusy: () => {},
+    }) as CardDraft;
+  const renderElement = (cardAnchor: string, id: string, ctx: ElementContext): string => {
+    const decl = byAnchor.get(cardAnchor)!.elements.find((e) => e.id === id)!;
+    const qc = new QueryClient();
+    return renderToStaticMarkup(
+      createElement(QueryClientProvider, { client: qc }, createElement(decl.component!, { ...ctx, decl })),
+    );
+  };
+
+  /**
+   * 2.1.14 (M05 L17 `m26agsec` / `8lk6hpxp`): "Always excluded" is visible at
+   * every value of the flag — the deny-set applies always — while only the
+   * editable path fields hide when the box is checked.
+   */
+  it('[ac:ac-element-always-excluded-na-karcie-age] with Block direct file access checked (the default) the Agent card shows Always excluded, while Allowed paths and Disallowed paths are hidden', () => {
+    const agent = byAnchor.get('agent')!.elements;
+    for (const block of [undefined, true] as const) {
+      const ctx: ElementContext = { config: configWithRoots, draft: draftOver(configWithRoots, block) };
+      const shown = visibleElements(agent, ctx).map((e) => e.id);
+      expect(shown, `block=${String(block)}`).toContain('always-excluded');
+      expect(shown, `block=${String(block)}`).not.toContain('allowed-paths');
+      expect(shown, `block=${String(block)}`).not.toContain('disallowed-paths');
+      // It renders its content, not an empty shell: the dir of every registry root
+      // whose kind has `agentDirectFs = false` (L13), and the note. A root the
+      // agent may edit directly (e.g. `skills`, or the user's `pages`) is not listed.
+      const html = renderElement('agent', 'always-excluded', ctx);
+      expect(html).toContain('data-testid="always-excluded"');
+      const denied = SYSTEM_ROOTS.filter((r) => !KIND_DECLARATIONS[r.kind].flags.agentDirectFs);
+      expect(denied.length).toBeGreaterThan(0);
+      for (const root of denied) expect(html).toContain(`>${root.dir}</li>`);
+      for (const root of SYSTEM_ROOTS.filter((r) => KIND_DECLARATIONS[r.kind].flags.agentDirectFs)) {
+        expect(html).not.toContain(`>${root.dir}</li>`);
+      }
+      for (const root of USER_ROOTS) expect(html).not.toContain(`>${root.dir}</li>`);
+      expect(html).toContain('This cannot be turned off.');
+    }
+    // Unchecked: it stays, now above Disallowed paths.
+    const unchecked: ElementContext = { config: configWithRoots, draft: draftOver(configWithRoots, false) };
+    const shown = visibleElements(agent, unchecked).map((e) => e.id);
+    expect(shown).toContain('always-excluded');
+    expect(shown.indexOf('always-excluded')).toBe(shown.indexOf('disallowed-paths') - 1);
+  });
+
+  it('[ac:ac-lista-elementu-roots-na-karcie-direct] the Roots list on the Directories card lists the user roots and never a system root', () => {
+    const ctx: ElementContext = { config: configWithRoots, draft: draftOver(configWithRoots, undefined) };
+    const html = renderElement('directories', 'roots', ctx);
+    expect(html).toContain('data-root-id="pages"');
+    for (const root of SYSTEM_ROOTS) {
+      expect(html).not.toContain(`data-root-id="${root.id}"`);
+      expect(html).not.toContain(root.dir);
     }
   });
 

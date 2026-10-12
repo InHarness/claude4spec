@@ -135,6 +135,10 @@ export const AGENT_SETTINGS: SettingsContribution = {
       owner: 'agent-chat',
       label: 'Always excluded',
       component: AlwaysExcluded,
+      // 2.1.14 (M05 `8lk6hpxp`): no `visible` — shown at every value of "Block
+      // direct file access". The deny-set applies always (adapter + ALWAYS
+      // DISALLOWED line of <agent_path_scope>); hiding a rule that still acts
+      // would mislead. Only the editable path fields hide with the flag.
     },
     {
       id: 'disallowed-paths',

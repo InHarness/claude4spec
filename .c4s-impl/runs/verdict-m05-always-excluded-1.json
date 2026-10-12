@@ -1,0 +1,39 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "unit", "id": "m05-always-excluded" },
+  "release": "2.1.14",
+  "rows": [
+    {
+      "slug": "ac-element-always-excluded-na-karcie-age",
+      "type": "ac",
+      "level": 2,
+      "status": "test-fails",
+      "evidence": "src/client/components/settings/catalog.test.ts:163 `for (const root of SYSTEM_ROOTS) expect(html).toContain(root.dir);` fails on the code as written. SYSTEM_ROOTS includes the `skills` root (src/shared/root-kinds.ts:298-308: source 'code', flags.agentDirectFs: true, dir `.claude4spec/skills`). AlwaysExcluded renders agentDeniedDirs(config.roots) (src/client/chat/settings/agentSettings.tsx:219), which filters to agentDirectFs=false (root-kinds.ts:354), so `.claude4spec/skills` is never in the HTML. That is correct per spec 8lk6hpxp ('korzeni z agentDirectFs = nie'). The test's expectation is wrong; it should iterate SYSTEM_ROOTS.filter(r => !agentDirectFs) or agentDeniedDirs(USER_ROOTS). The visibility assertions (lines 157-160, 166-169: always-excluded shown for block undefined/true/false, allowed/disallowed hidden when checked, always-excluded directly above disallowed-paths when unchecked) match the criterion and pass against the code."
+    },
+    {
+      "slug": "ac-ekran-m26-directories-blokuje-przycisk",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/client/components/settings/catalog.test.ts:112 `expect(elements.map((e) => e.id)).toEqual(['roots'])`, `expect(keys).toEqual(['roots'])`, no element with configKey plansDir/briefsDir/patchesDir/entitiesDir/releasesDir. Directories card = src/client/components/project/projectSettings.ts:79-88 (single 'roots' element). Window change only added verifies: settings-page. Typecheck green."
+    },
+    {
+      "slug": "ac-lista-elementu-roots-na-karcie-direct",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/client/components/settings/catalog.test.ts:173 renders RootsElement over roots=[pages]: `expect(html).toContain('data-root-id=\"pages\"')`, for every SYSTEM_ROOTS `not.toContain(data-root-id=\"<id>\")` and `not.toContain(root.dir)`. RootsElement (src/client/components/project/RootsElement.tsx:56-57) lists only draft roots (config.roots) and emits data-root-id per row; no `.claude4spec/` text is rendered (only in comments). Hooks (useQueryClient/useMutation) are satisfied by the QueryClientProvider wrapper. The e2e test with the same slug (tests/e2e/settings-directories.test.ts:87) needs a live app; not run (app: none)."
+    },
+    {
+      "slug": "goal:m05-always-excluded",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/client/chat/settings/agentSettings.tsx:131-142: 'always-excluded' has no `visible` predicate, so it renders at every flag value. 'allowed-paths' (:127) and 'disallowed-paths' (:157) keep `visible: (ctx) => !blockDirectFs(ctx)`. SettingsCardFrame applies the shared visibleElements() filter (src/client/components/settings/registry.ts:197, SettingsCardFrame.tsx:98). Directories-card criteria stay as regression tests (catalog.test.ts:112, :173)."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck (tests not run locally per build rules; env-runner only)",
+    "exitCode": 0,
+    "summary": "typecheck exit 0, 0 `error TS` across all workspaces. Static read: catalog.test.ts '[ac:ac-element-always-excluded-na-karcie-age]' fails at line 163 (skills system root has agentDirectFs=true and is correctly absent from the Always excluded list)."
+  }
+}
