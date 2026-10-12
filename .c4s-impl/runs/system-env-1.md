@@ -31,3 +31,4 @@
 
 - run 4 npm test: 447 files, 5432/5432 passed; exit 1 only from one vitest "EnvironmentTeardownError: Closing rpc while onUserConsoleLog was pending" attributed to tests/integration/api/project-context-m31-edge-cases.test.ts (file untouched by the branch).
 - run 5 npm test, same HEAD: 447 files, 5432/5432 passed, exit 0 — the teardown error was a flake.
+- System verifier round 2: 127/127 covered (96 criteria, 21 built rows, 9 deviations sent, regression) — terminate holds.
