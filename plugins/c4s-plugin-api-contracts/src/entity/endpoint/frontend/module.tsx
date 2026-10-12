@@ -12,8 +12,14 @@ import type {
 } from '@c4s/plugin-runtime';
 import { EndpointDetail } from './detail-panel.js';
 import { endpointRoutes } from './routes.js';
+import { ENDPOINT_NO_SUMMARY } from './list-page.js';
 
-function EndpointRow({ entity, active, onOpen }: EntityRowProps<Endpoint>) {
+/**
+ * 2.1.16 (endpoint.md › Renderowanie, row in `element_list` / `tagged_list`):
+ * method chip, `path` as the main content, `summary` or "— no summary —" on
+ * the second line, the slug at the end of the row.
+ */
+export function EndpointRow({ entity, active, onOpen }: EntityRowProps<Endpoint>) {
   return (
     <button
       onClick={onOpen}
@@ -34,11 +40,12 @@ function EndpointRow({ entity, active, onOpen }: EntityRowProps<Endpoint>) {
         >
           {entity.path}
         </span>
-        {entity.summary && (
-          <span className="block text-[11.5px] truncate" style={{ color: 'var(--c-subtle)' }}>
-            {entity.summary}
-          </span>
-        )}
+        <span className="block text-[11.5px] truncate" style={{ color: 'var(--c-subtle)' }}>
+          {entity.summary || ENDPOINT_NO_SUMMARY}
+        </span>
+      </span>
+      <span className="shrink-0 font-mono text-[10.5px]" style={{ color: 'var(--c-subtle)' }}>
+        {entity.slug}
       </span>
     </button>
   );

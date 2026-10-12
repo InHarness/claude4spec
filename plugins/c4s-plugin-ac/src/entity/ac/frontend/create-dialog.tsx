@@ -15,10 +15,11 @@
  */
 
 import { useState, type FormEvent } from 'react';
-import { Dialog, FormShell, FormField, ActionButton } from '@c4s/plugin-runtime/ui';
+import { Dialog, FormShell, FormField, ActionButton, EnumBadgePicker } from '@c4s/plugin-runtime/ui';
 import { AC_TITLE_MAX_LENGTH } from '../../../identity.js';
 import type { AcKind } from '../../../types.js';
 import { useCreateAc } from './hooks.js';
+import { AC_KIND_OPTIONS } from './enum-options.js';
 
 interface Props {
   onClose: () => void;
@@ -125,19 +126,13 @@ export function AcCreateDialog({ onClose, onCreated, defaultTags }: Props) {
           />
         </FormField>
 
+        {/* 2.1.16 — `EnumBadgePicker`, the same control as on the detail page. */}
         <FormField label="Kind">
-          <div className="flex items-center gap-3">
-            {(['requirement', 'edge-case'] as const).map((k) => (
-              <label
-                key={k}
-                className="text-[12px] flex items-center gap-1"
-                style={{ color: 'var(--c-muted)' }}
-              >
-                <input type="radio" checked={kind === k} onChange={() => setKind(k)} />
-                {k}
-              </label>
-            ))}
-          </div>
+          <EnumBadgePicker
+            options={AC_KIND_OPTIONS}
+            value={kind}
+            onChange={(v) => setKind(v as AcKind)}
+          />
         </FormField>
 
         <FormField label="Tags (comma separated)">

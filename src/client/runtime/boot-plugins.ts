@@ -178,3 +178,34 @@ export async function reloadFrontendPlugins(): Promise<void> {
   await loadManifestPlugins(manifest, activeRouter, true);
   await registerProjectPluginCommands();
 }
+
+/**
+ * 2.1.16 (M50 `8h2a734u`) — re-read the project's plugin activation in THIS tab,
+ * without a page reload and without a server restart.
+ *
+ * Called after a save on Settings → Entities (the `entity-types` element's
+ * `afterSave`). It re-seeds the host's activation from `GET /api/_meta/entities`,
+ * refetches the frontend manifest and imports what is new. (A Trust plugins
+ * answer does not use it: it swaps the overlay layer — commands, settings,
+ * shadowing — so the server's `project:disposed` reloads the page instead.) No cache-bust: an entry this tab already imported resolves to the
+ * module it has, so only the newly advertised frontends load. `mountFrontend`
+ * then re-pins the routes, so a re-activated type gets its tab AND its route.
+ *
+ * Deliberately NOT wired to any WS event: a change saved in another browser tab
+ * or a hand edit of `config.json` leaves this tab's ELEMENTS as they are until
+ * the page is reloaded (M50 `6z6uzzhv`).
+ */
+export async function refreshPluginActivation(router: AppRouter | null = activeRouter): Promise<void> {
+  clientPluginHost.applyActivation(await metaApi.entities());
+  if (!router) return;
+  activeRouter = router;
+  let manifest: FrontendManifestResponse;
+  try {
+    manifest = await pluginsApi.frontendManifest();
+  } catch (err) {
+    console.warn('[plugin-host] activation refresh — manifest refetch failed', err);
+    mountFrontend(router, clientPluginHost.listEntities());
+    return;
+  }
+  await loadManifestPlugins(manifest, router);
+}

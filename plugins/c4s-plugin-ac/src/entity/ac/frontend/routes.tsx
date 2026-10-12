@@ -16,19 +16,21 @@
 import type { FC } from 'react';
 import { createRoute, useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import type { RouteTreeFragment } from '@c4s/plugin-runtime';
-import { EntityVersionHistoryView } from '@c4s/plugin-runtime/ui';
+import { Trash } from 'lucide-react';
+import { ActionButton, EntityVersionHistoryView } from '@c4s/plugin-runtime/ui';
 import { AC_PATH_PREFIX, AC_TYPE } from '../../../identity.js';
 import { EntityBreadcrumbBar } from '../../../frontend-kit/EntityBreadcrumbBar.js';
 import { EntityNotFound } from '../../../frontend-kit/EntityNotFound.js';
 import { toDetail, toEntity, toList, toPage, type Navigate } from '../../../frontend-kit/navigation.js';
 import { Pane, RouteBody } from '../../../frontend-kit/route-shell.js';
-import { useAc } from './hooks.js';
+import { useAc, useDeleteAc } from './hooks.js';
+import { confirmAndDeleteAc } from './delete-confirm.js';
 import { AcsList } from './list-page.js';
 import { AcDetail } from './detail-panel.js';
 
 type ListSearch = { q?: string; tag?: string };
 
-function AcsIndexRoute() {
+export function AcsIndexRoute() {
   const search = useSearch({ strict: false }) as ListSearch;
   const navigate = useNavigate() as Navigate;
   return (
@@ -57,15 +59,44 @@ function AcsIndexRoute() {
 /**
  * `RouteBody`, not `Pane`: the detail panel renders a `DocEditor`, and the chips
  * inside it resolve the host's editor bridge from React context.
+ *
+ * 2.1.16 (M13 detail pattern) — the ROUTE renders the breadcrumb, the view
+ * switcher and Delete; there is no Edit button (fields edit in place). Delete
+ * asks through the host's confirmation window (`ac-delete`), then goes to the
+ * list.
  */
-function AcDetailRoute() {
+export function AcDetailRoute() {
   const { slug } = useParams({ strict: false }) as { slug: string };
   const navigate = useNavigate() as Navigate;
   const { data: ac } = useAc(slug);
+  const remove = useDeleteAc();
+
+  async function handleDelete() {
+    if (!ac) return;
+    if (await confirmAndDeleteAc(ac.slug, (s) => remove.mutateAsync(s))) {
+      toList(navigate, AC_PATH_PREFIX);
+    }
+  }
 
   return (
     <RouteBody navigate={navigate}>
-      <EntityBreadcrumbBar type={AC_TYPE} slug={slug} name={ac?.title} view="details" />
+      <EntityBreadcrumbBar
+        type={AC_TYPE}
+        slug={slug}
+        name={ac?.title}
+        view="details"
+        actions={
+          ac ? (
+            <ActionButton
+              variant="ghost"
+              icon={<Trash size={12} />}
+              label="Delete"
+              onClick={() => void handleDelete()}
+              disabled={remove.isPending}
+            />
+          ) : undefined
+        }
+      />
       <AcDetail
         key={slug}
         slug={slug}

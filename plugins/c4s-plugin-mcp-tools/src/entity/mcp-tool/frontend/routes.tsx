@@ -220,17 +220,9 @@ function McpToolListRoute(): JSX.Element {
         {isLoading ? (
           <LoadingState lines={6} />
         ) : filtered.length === 0 ? (
-          data.length === 0 ? (
-            <EmptyState
-              title="No MCP tools described yet."
-              hint="Describe the first tool of a server to get started."
-            />
-          ) : (
-            <EmptyState
-              title="No matching MCP tools."
-              hint="Try clearing the search or tag filter."
-            />
-          )
+          // One empty state for "no entities" and "no filter results" alike —
+          // the M19 list-page pattern (2.1.16): `EmptyState` with the type's text.
+          <EmptyState title="No MCP tools described yet." />
         ) : grouped ? (
           <div role="list" style={{ padding: 8 }}>
             <GroupedEntityList groups={groups} renderRow={renderRow} />

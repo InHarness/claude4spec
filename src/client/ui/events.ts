@@ -3,7 +3,6 @@ import type {
   EndpointCreateInput,
   EntityType,
   HttpMethod,
-  TagCreateInput,
 } from '../../shared/entities.js';
 import type { GitErrorRecovery } from '../../shared/git.js';
 import type { PageRefSyntax } from '../tiptap/extensions/PageRefNode.js';
@@ -189,7 +188,6 @@ export type NoProps = Record<never, never>;
 
 export type PopoverMap = {
   'new-page': { props: NoProps; result: NewPageResult };
-  'create-tag': { props: { contextLabel?: string }; result: TagCreateInput };
   mention: { props: NoProps; result: MentionResult };
   element: { props: NoProps; result: ElementResult };
   list: { props: NoProps; result: ListResult };

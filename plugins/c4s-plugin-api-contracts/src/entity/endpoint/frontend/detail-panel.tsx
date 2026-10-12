@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Trash } from 'lucide-react';
 import { METHOD_STYLE } from '../../../frontend-kit/atoms.js';
 import { DocEditor } from '@c4s/plugin-runtime/ui';
 import { TagPicker } from '@c4s/plugin-runtime/ui';
@@ -8,18 +7,10 @@ import { GroupedRelationPicker } from '@c4s/plugin-runtime/ui';
 import { FieldGrid } from '@c4s/plugin-runtime/ui';
 import { FieldRow } from '@c4s/plugin-runtime/ui';
 import { useEntityDraftEditor } from '../../../frontend-kit/useEntityDraftEditor.js';
-import {
-  useEndpoint,
-  useDeleteEndpoint,
-  useLinkDto,
-  useUnlinkDto,
-  useUpdateEndpoint,
-} from './hooks.js';
-import {  } from './hooks.js';
+import { useEndpoint, useLinkDto, useUnlinkDto, useUpdateEndpoint } from './hooks.js';
 import { useDtos } from '../../dto/frontend/hooks.js';
 import { useTags } from '@c4s/plugin-runtime';
 import { useReferences } from '@c4s/plugin-runtime';
-import { confirmDestructive, toast } from '../../../frontend-kit/host-events.js';
 import { tagSlug } from '../../../slugify.js';
 import type { Endpoint, EndpointDtoRelation, EntityType, HttpMethod } from '../../../types.js';
 
@@ -28,7 +19,12 @@ const RELATIONS: EndpointDtoRelation[] = ['request', 'response', 'error'];
 
 interface Props {
   slug: string;
-  onDeleted: () => void;
+  /**
+   * Part of the `detailPanel` props contract, not used here: 2.1.16 (M13 detail
+   * pattern) moves Delete to the detail ROUTE's toolbar (`routes.tsx`), so the
+   * panel never deletes.
+   */
+  onDeleted?: () => void;
   onRenamed: (newSlug: string) => void;
   onOpenEntity?: (type: EntityType, slug: string) => void;
   onOpenPage?: (rootId: string, path: string) => void;
@@ -54,14 +50,12 @@ function toDraft(e: Endpoint): Draft {
 
 export function EndpointDetail({
   slug,
-  onDeleted,
   onRenamed,
   onOpenEntity,
   onOpenPage,
 }: Props) {
   const { data: endpoint, isLoading, error } = useEndpoint(slug);
   const update = useUpdateEndpoint();
-  const remove = useDeleteEndpoint();
   const linkDto = useLinkDto();
   const unlinkDto = useUnlinkDto();
   const { data: allTags = [] } = useTags();
@@ -90,23 +84,6 @@ export function EndpointDetail({
         update.mutateAsync({ slug: entity.slug, input: { description: description || null } }),
     },
   });
-
-  async function handleDelete() {
-    if (!endpoint) return;
-    const ok = await confirmDestructive('endpoint-delete', {
-      title: 'Delete endpoint?',
-      body: `Delete ${endpoint.title}? All references to this endpoint will become broken.`,
-      confirmLabel: 'Delete',
-    });
-    if (!ok) return;
-    try {
-      await remove.mutateAsync(endpoint.slug);
-      onDeleted();
-      toast.success(`Endpoint ${endpoint.title} deleted`);
-    } catch (err) {
-      toast.error((err as Error).message);
-    }
-  }
 
   function toggleTag(tagSlug: string) {
     if (!draft) return;
@@ -156,15 +133,6 @@ export function EndpointDetail({
           {!update.isPending && dirty && (
             <span style={{ color: 'var(--c-accent-ink, var(--c-accent))' }}>edited</span>
           )}
-          <span className="flex-1" />
-          <button
-            onClick={handleDelete}
-            className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px]"
-            style={{ color: 'var(--c-red, #c45a3b)' }}
-            title="Delete"
-          >
-            <Trash size={11} /> Delete
-          </button>
         </div>
 
         <div className="flex items-center gap-2 mt-2 mb-1">

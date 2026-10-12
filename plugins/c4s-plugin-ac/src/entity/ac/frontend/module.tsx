@@ -18,6 +18,7 @@ import { useAc } from './hooks.js';
 import { acsApi } from './api.js';
 import { AcDetail } from './detail-panel.js';
 import { acRoutes } from './routes.js';
+import { acEditGesture } from './edit-popover.js';
 import { acData, acSlugPattern } from '../schema.js';
 
 function AcRow({ entity, active, onOpen }: EntityRowProps<Ac>) {
@@ -66,6 +67,13 @@ function AcRow({ entity, active, onOpen }: EntityRowProps<Ac>) {
   );
 }
 
+/**
+ * 2.1.16 — a deleted entity reaches the slot as `entity: null` and gets this
+ * type's OWN branch: the chip is a clickable "⚠ {slug}" button (`onOpen`), the
+ * card a red dashed, non-clickable "⚠ broken: ac \"{slug}\"" frame. A
+ * `broken` `Badge` is NOT used here — only for dead `verifies` targets on the
+ * detail page. Alt+click on a live chip or card opens `ac-edit`.
+ */
 function AcChip({ slug, entity, onOpen }: EntityChipProps<Ac>) {
   if (!entity) {
     return (
@@ -86,7 +94,10 @@ function AcChip({ slug, entity, onOpen }: EntityChipProps<Ac>) {
   const deprecated = entity.status === 'deprecated';
   return (
     <button
-      onClick={onOpen}
+      onClick={(e) => {
+        if (acEditGesture(entity, e)) return;
+        onOpen?.();
+      }}
       className="inline-flex items-center gap-1 align-middle rounded px-1.5 py-[1px] transition"
       style={{
         border: '1px solid var(--c-hair)',
@@ -130,7 +141,10 @@ function AcCard({ slug, entity, onOpen }: EntityCardProps<Ac>) {
   const deprecated = entity.status === 'deprecated';
   return (
     <button
-      onClick={onOpen}
+      onClick={(e) => {
+        if (acEditGesture(entity, e)) return;
+        onOpen?.();
+      }}
       className="w-full text-left rounded-md p-3 transition"
       style={{
         background: 'var(--c-card)',

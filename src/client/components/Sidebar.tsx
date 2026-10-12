@@ -109,16 +109,6 @@ export function Sidebar({
   // `builtin: true`, whatever its identifier.
   const baseRootId = roots.find((r) => r.builtin)?.id ?? null;
   const { data: searchHits = [], isFetching: searchFetching } = usePagesSearch(query, baseRootId);
-  // Iterate active plugins in declared order; render only those with a sidebarTab.
-  // Subscribed to the registry: plugin frontends register after the first paint
-  // (non-blocking boot), and nothing else guarantees this component re-renders
-  // then — until 0.2.110 an incidental root re-render on every router change hid
-  // that the tabs never asked for one.
-  useRegistryVersion();
-  const entityTabs = clientPluginHost
-    .listEntities()
-    .filter((m) => m.sidebarTab !== undefined)
-    .sort((a, b) => (a.sidebarTab!.order ?? 999) - (b.sidebarTab!.order ?? 999));
 
   return (
     <aside
@@ -229,28 +219,7 @@ export function Sidebar({
           )}
         </div>
 
-        <SectionHeader label="Elements" />
-        <div className="px-1.5 pb-3 space-y-0.5">
-          {entityTabs.length > 0 ? (
-            entityTabs.map((m) => (
-              <NavLinkRow
-                key={m.type}
-                icon={m.sidebarTab!.icon}
-                label={m.sidebarTab!.label}
-                count={entityCounts[m.type] ?? 0}
-                active={pathname.startsWith(m.pathPrefix)}
-                to={m.pathPrefix}
-              />
-            ))
-          ) : (
-            <div
-              className="text-[11.5px] px-3 py-2 italic"
-              style={{ color: 'var(--c-subtle)' }}
-            >
-              No entity types configured.
-            </div>
-          )}
-        </div>
+        <SidebarElements entityCounts={entityCounts} pathname={pathname} />
       </div>
 
       <OthersTrigger
@@ -259,6 +228,65 @@ export function Sidebar({
         brokenLinkCount={brokenLinkCount}
       />
     </aside>
+  );
+}
+
+/**
+ * ELEMENTS — the middle section of the sidebar: one tab per ACTIVE entity type
+ * that declares a `sidebarTab`, in `sidebarTab.order`.
+ *
+ * Subscribed to the registry: plugin frontends register after the first paint
+ * (non-blocking boot), and nothing else guarantees this component re-renders
+ * then — until 0.2.110 an incidental root re-render on every router change hid
+ * that the tabs never asked for one. The same signal carries activation: a save
+ * on Settings → Entities re-applies it in this tab (`refreshPluginActivation`),
+ * so the tabs follow without a reload or a server restart. A Trust plugins
+ * answer rebuilds the context in-process too, but reloads the project's tabs
+ * (the overlay layer changed, not only activation). Nothing else re-applies it
+ * — a change made in another browser tab or by hand in `config.json` shows
+ * after a page reload (M50 `8h2a734u`).
+ *
+ * 2.1.16: with no active type (`config.entities = []`) the section shows the
+ * host's "No entity types configured." message — never a type's
+ * `sidebarTab.emptyState`.
+ */
+export function SidebarElements({
+  entityCounts,
+  pathname,
+}: {
+  entityCounts: Record<string, number>;
+  pathname: string;
+}) {
+  useRegistryVersion();
+  const entityTabs = clientPluginHost
+    .listEntities()
+    .filter((m) => m.sidebarTab !== undefined)
+    .sort((a, b) => (a.sidebarTab!.order ?? 999) - (b.sidebarTab!.order ?? 999));
+  return (
+    <>
+      <SectionHeader label="Elements" />
+      <div className="px-1.5 pb-3 space-y-0.5">
+        {entityTabs.length > 0 ? (
+          entityTabs.map((m) => (
+            <NavLinkRow
+              key={m.type}
+              icon={m.sidebarTab!.icon}
+              label={m.sidebarTab!.label}
+              count={entityCounts[m.type] ?? 0}
+              active={pathname.startsWith(m.pathPrefix)}
+              to={m.pathPrefix}
+            />
+          ))
+        ) : (
+          <div
+            className="text-[11.5px] px-3 py-2 italic"
+            style={{ color: 'var(--c-subtle)' }}
+          >
+            No entity types configured.
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 

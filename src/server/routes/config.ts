@@ -20,7 +20,7 @@ import {
 } from '../settings/field-registry.js';
 import { indexStatusRouter } from './index-status.js';
 import type { ProjectionStatusRegistry } from '../services/projection-status.js';
-import type { Root } from '../../shared/types.js';
+import type { ContextInvalidation, Root } from '../../shared/types.js';
 import { C4S_VERSION } from '../services/release-bundle.js';
 import type { SkillRegistry } from '../services/skill-registry.js';
 import type { PluginSettingsSection } from '../../shared/plugin-host/manifest.js';
@@ -56,8 +56,12 @@ export interface ConfigRouterDeps {
    * gave it the `context-rebuild` effect class (see `settings/registry.ts`),
    * plugin `executive` fields included. (`pagesDir` was named here until config
    * v4 replaced the scalar with `roots[]`.)
+   *
+   * 2.1.16 (M50 `8h2a734u`): a save whose only rebuilding field is `entities`
+   * passes `{ reason: 'activation-changed' }` — the saving tab re-applies
+   * activation itself, so the context's `project:disposed` must not reload it.
    */
-  onContextConfigChanged?: () => void;
+  onContextConfigChanged?: (opts?: ContextInvalidation) => void;
   /**
    * 0.1.56: fired after a PATCH persists `onboardingCompleted: true` (Continue
    * or Skip), with the effective post-write pages-root dir. Wires the deferred,
@@ -336,8 +340,14 @@ export function configRouter(deps: ConfigRouterDeps): Router {
       }
       // M31 + 0.2.113: a save of any `context-rebuild` field — core or a plugin's
       // `executive` one — invalidates the context; the next request rebuilds it.
-      const rebuild = present.some((d) => d.effect === 'context-rebuild');
-      if (rebuild) deps.onContextConfigChanged?.();
+      const rebuilding = present.filter((d) => d.effect === 'context-rebuild');
+      if (rebuilding.length > 0) {
+        // 2.1.16 (M50 `8h2a734u`): an activation-only save (Settings → Entities)
+        // rebuilds the context WITHOUT the M31 page reload — the ELEMENTS tabs
+        // follow in place. Any other rebuilding field keeps the reload contract.
+        const activationOnly = rebuilding.every((d) => d.key === 'entities');
+        deps.onContextConfigChanged?.(activationOnly ? { reason: 'activation-changed' } : undefined);
+      }
       res.json({
         ...configResponse(updated, cwd, skillRegistry),
         ...(warnings.length > 0 ? { warnings } : {}),

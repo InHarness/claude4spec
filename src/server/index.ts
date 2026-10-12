@@ -378,7 +378,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       pagesDirOverride: isInitial ? opts.pagesDir : undefined,
       clone,
       onTurnFinished: () => cache.reapIdle(),
-      onContextConfigChanged: () => cache.invalidate(project.id),
+      onContextConfigChanged: (opts) => cache.invalidate(project.id, opts),
       // 2.1.9 (M52 `1v62dbhb`): a provider's context, on request, from this cache
       // — the `project-exposed` source of a consumer holds no handle of its own.
       providerContext: async (providerId) => {

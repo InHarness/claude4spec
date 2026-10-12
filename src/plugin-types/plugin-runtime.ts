@@ -561,6 +561,11 @@ export interface EntityRowProps<T = unknown> {
   active?: boolean;
   onOpen?: () => void;
 }
+/**
+ * Props of the `detailPanel` slot — all four fields REQUIRED (2.1.16). Declared,
+ * never rendered by the host: the plugin's own detail route passes them to its
+ * panel, and the host calls none of the callbacks. `onBack` is unused.
+ */
 export interface EntityDetailProps {
   slug: string;
   onDeleted: () => void;
@@ -573,6 +578,7 @@ export interface SidebarTabSlot {
   icon: LucideIcon;
   label: string;
   order: number;
+  /** Declared and NOT rendered — the sidebar reads only `icon`, `label`, `order`. */
   emptyState?: ComponentType<unknown>;
 }
 export interface SlashCommand {

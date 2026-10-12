@@ -13,11 +13,17 @@ interface Props {
   name?: string;
   view: 'details' | 'history';
   hasHistory?: boolean;
+  /**
+   * View-specific controls, rendered to the left of the view switcher. An
+   * opaque node: the route that owns the view decides what it does — the `dto`
+   * detail route passes its Delete button here (2.1.16, M13 detail pattern).
+   */
+  actions?: React.ReactNode;
 }
 
 const crumbLinkClass = 'inline-flex items-center gap-1.5 rounded px-1 -mx-1 transition';
 
-export function EntityBreadcrumbBar({ type, slug, method, path, name, view, hasHistory }: Props) {
+export function EntityBreadcrumbBar({ type, slug, method, path, name, view, hasHistory, actions }: Props) {
   const navigate = useNavigate();
   // Always a METHOD call. `getAvailable` reads `this.modules`, so pulling it
   // into a local — the obvious way to write a cast once — silently unbinds the
@@ -54,6 +60,7 @@ export function EntityBreadcrumbBar({ type, slug, method, path, name, view, hasH
         </span>
       </div>
       <span className="flex-1" />
+      {actions}
       {hasHistory && <EntityViewSwitcher type={type} slug={slug} view={view} />}
     </div>
   );

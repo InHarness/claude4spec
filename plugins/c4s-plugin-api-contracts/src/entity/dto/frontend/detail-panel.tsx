@@ -1,23 +1,25 @@
-import { Plus, Trash } from 'lucide-react';
-import { Braces } from 'lucide-react';
-import { MethodChip } from '../../../frontend-kit/atoms.js';
+import { Braces, Plus } from 'lucide-react';
 import { DocEditor } from '@c4s/plugin-runtime/ui';
 import { TagPicker } from '@c4s/plugin-runtime/ui';
 import { FieldGrid } from '@c4s/plugin-runtime/ui';
 import { FieldRow } from '@c4s/plugin-runtime/ui';
 import { ActionButton } from '@c4s/plugin-runtime/ui';
 import { useEntityDraftEditor } from '../../../frontend-kit/useEntityDraftEditor.js';
-import { useDto, useDeleteDto, useUpdateDto } from './hooks.js';
+import { useDto, useUpdateDto } from './hooks.js';
 import { useTags } from '@c4s/plugin-runtime';
 import { useReferences } from '@c4s/plugin-runtime';
-import { confirmDestructive, toast } from '../../../frontend-kit/host-events.js';
 import { tagSlug } from '../../../slugify.js';
 import type { Dto, DtoExample, DtoField, EntityType } from '../../../types.js';
 import { ExamplesPanel } from './examples-panel.js';
 
 interface Props {
   slug: string;
-  onDeleted: () => void;
+  /**
+   * Part of the `detailPanel` props contract, not used here: 2.1.16 (M13 detail
+   * pattern) moves Delete to the detail ROUTE's toolbar (`routes.tsx`), so the
+   * panel never deletes.
+   */
+  onDeleted?: () => void;
   onRenamed: (newSlug: string) => void;
   onOpenEntity?: (type: EntityType, slug: string) => void;
   onOpenPage?: (rootId: string, path: string) => void;
@@ -43,14 +45,12 @@ function toDraft(d: Dto): Draft {
 
 export function DtoDetail({
   slug,
-  onDeleted,
   onRenamed,
   onOpenEntity,
   onOpenPage,
 }: Props) {
   const { data: dto, isLoading, error } = useDto(slug);
   const update = useUpdateDto();
-  const remove = useDeleteDto();
   const { data: allTags = [] } = useTags();
   const { data: refs = [] } = useReferences('dto', dto?.slug ?? null);
 
@@ -76,23 +76,6 @@ export function DtoDetail({
         update.mutateAsync({ slug: entity.slug, input: { description: description || null } }),
     },
   });
-
-  async function handleDelete() {
-    if (!dto) return;
-    const ok = await confirmDestructive('dto-delete', {
-      title: 'Delete DTO?',
-      body: `Delete DTO ${dto.title}? All references to this DTO will become broken.`,
-      confirmLabel: 'Delete',
-    });
-    if (!ok) return;
-    try {
-      await remove.mutateAsync(dto.slug);
-      onDeleted();
-      toast.success(`DTO ${dto.title} deleted`);
-    } catch (err) {
-      toast.error((err as Error).message);
-    }
-  }
 
   function toggleTag(tagSlug: string) {
     if (!draft) return;
@@ -158,15 +141,6 @@ export function DtoDetail({
           {!update.isPending && dirty && (
             <span style={{ color: 'var(--c-accent-ink, var(--c-accent))' }}>edited</span>
           )}
-          <span className="flex-1" />
-          <button
-            onClick={handleDelete}
-            className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px]"
-            style={{ color: 'var(--c-red, #c45a3b)' }}
-            title="Delete"
-          >
-            <Trash size={11} /> Delete
-          </button>
         </div>
 
         <div className="flex items-center gap-2 mt-2 mb-1">

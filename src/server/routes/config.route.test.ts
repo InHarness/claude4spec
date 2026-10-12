@@ -640,6 +640,20 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
     expect(rebuilds).toBe(1);
   });
 
+  it('[ac:ac-multi-select-entities-w-m26-sekcja-ent] PATCH { entities: [] } is written as an empty whitelist and invalidates the ProjectContext — no process restart', async () => {
+    writeFile({ $schemaVersion: 4, name: 'demo', entities: ['endpoint', 'dto'], onboardingCompleted: true });
+    const res = await request(app()).patch('/config').send({ entities: [] });
+    expect(res.status).toBe(200);
+    expect(res.body.entities).toEqual([]);
+    // The whole file was rewritten in one piece: valid JSON, the other keys kept,
+    // and no temp file left beside it.
+    expect(onDisk()).toMatchObject({ name: 'demo', entities: [] });
+    expect(fs.readdirSync(path.dirname(configPath(dir))).filter((f) => f.startsWith('config.json') && f !== 'config.json')).toEqual([]);
+    // `entities` is a context-rebuild field: the context is invalidated, rebuilt
+    // on the next request (the sidebar half lives in SidebarElements.render.test.ts).
+    expect(rebuilds).toBe(1);
+  });
+
   it('[ac:ac-skip-nie-wysyla-roots-dir-builtin-roo] the [Skip] body leaves the base root at its bootstrap dir and identifier, with no rename recorded', async () => {
     loadOrCreateConfig(dir, {});
     await request(app()).patch('/config').send({ onboardingCompleted: true }).expect(200);

@@ -19,17 +19,19 @@
 
 import type { FC } from 'react';
 import { createRoute, useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import { Trash } from 'lucide-react';
 import type { RouteTreeFragment } from '@c4s/plugin-runtime';
 import { UI_VIEW_PATH_PREFIX, UI_VIEW_TYPE } from '../../../identity.js';
 import { EntityBreadcrumbBar } from '../../../frontend-kit/EntityBreadcrumbBar.js';
 import { EntityNotFound } from '../../../frontend-kit/EntityNotFound.js';
 import { toDetail, toEntity, toList, toPage, type Navigate } from '../../../frontend-kit/navigation.js';
 import { Pane, RouteBody } from '../../../frontend-kit/route-shell.js';
-import { useUiView } from './hooks.js';
+import { useDeleteUiView, useUiView } from './hooks.js';
+import { confirmAndDeleteUiView } from './delete-confirm.js';
 import { UiViewsList } from './list-page.js';
 import { UiViewDetail } from './detail-panel.js';
 import { UiViewOpenExternal, UiViewPreview, type PreviewVariant } from './preview-page.js';
-import { EntityVersionHistoryView } from '@c4s/plugin-runtime/ui';
+import { ActionButton, EntityVersionHistoryView } from '@c4s/plugin-runtime/ui';
 import type { EntityView } from '../../../frontend-kit/EntityViewSwitcher.js';
 
 /** Three, unlike the default pair — `preview` is this type's own. */
@@ -47,7 +49,7 @@ type ListSearch = { q?: string; tag?: string };
  */
 type PreviewSearch = { state?: string; mode?: string };
 
-function UiViewsIndexRoute() {
+export function UiViewsIndexRoute() {
   const search = useSearch({ strict: false }) as ListSearch;
   const navigate = useNavigate() as Navigate;
   return (
@@ -73,10 +75,26 @@ function UiViewsIndexRoute() {
   );
 }
 
-function UiViewDetailRoute() {
+/**
+ * 2.1.16 (M13 detail pattern, `ui-view-detail`) — the ROUTE renders the
+ * breadcrumb, the three-tab switcher (a thin wrapper over the catalog's
+ * `SegmentedControlTabs`) and Delete; there is no Edit button (fields edit in
+ * place and save themselves). Delete asks through the host's confirmation
+ * window (`ui-view-delete`, with the page reference count), then goes to the
+ * list.
+ */
+export function UiViewDetailRoute() {
   const { slug } = useParams({ strict: false }) as { slug: string };
   const navigate = useNavigate() as Navigate;
   const { data: uiView } = useUiView(slug);
+  const remove = useDeleteUiView();
+
+  async function handleDelete() {
+    if (!uiView) return;
+    if (await confirmAndDeleteUiView(uiView.slug, uiView.title, (s) => remove.mutateAsync(s))) {
+      toList(navigate, UI_VIEW_PATH_PREFIX);
+    }
+  }
 
   return (
     // RouteBody, not Pane: the detail panel renders a DocEditor for the
@@ -88,12 +106,22 @@ function UiViewDetailRoute() {
         name={uiView?.title}
         view="details"
         views={UI_VIEW_VIEWS}
+        actions={
+          uiView ? (
+            <ActionButton
+              variant="ghost"
+              icon={<Trash size={12} />}
+              label="Delete"
+              onClick={() => void handleDelete()}
+              disabled={remove.isPending}
+            />
+          ) : undefined
+        }
       />
       <UiViewDetail
         // Resets the draft when navigating straight between two views.
         key={slug}
         slug={slug}
-        onDeleted={() => toList(navigate, UI_VIEW_PATH_PREFIX)}
         onRenamed={(newSlug) => toDetail(navigate, UI_VIEW_PATH_PREFIX, newSlug, { replace: true })}
         onOpenEntity={(type, s) => toEntity(navigate, type, s)}
         onOpenPage={(rootId, path) => toPage(navigate, rootId, path)}

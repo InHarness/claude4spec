@@ -1,16 +1,39 @@
 import { useMemo, useState } from 'react';
-import { CheckSquare, ScanSearch } from 'lucide-react';
+import { CheckSquare, Plus, ScanSearch } from 'lucide-react';
 import { useAcs } from './hooks.js';
 import { AcCreateDialog } from './create-dialog.js';
 import { toast } from '../../../frontend-kit/host-events.js';
-import { ActionBar, EntityListRow, TagFilterBar } from '@c4s/plugin-runtime/ui';
+import {
+  ActionBar,
+  ActionButton,
+  EmptyState,
+  EntityListHeader,
+  EntityListLayout,
+  EntityListRow,
+  LoadingState,
+  SegmentedControlTabs,
+  TagFilterBar,
+} from '@c4s/plugin-runtime/ui';
 import { startSeededThread } from '@c4s/plugin-runtime';
 import type { AcKind, AcStatus } from '../../../types.js';
 import { ListPageLayout } from '../../../frontend-kit/ListPageLayout.js';
-import { ListPageHeader } from '../../../frontend-kit/ListPageHeader.js';
-import { ListScrollArea } from '../../../frontend-kit/ListScrollArea.js';
 import { useEntityListQuery } from '../../../frontend-kit/useEntityListQuery.js';
 import { AC_LABEL_PLURAL } from '../../../identity.js';
+
+const STATUS_TABS = [
+  { id: 'active', label: 'Active' },
+  { id: 'deprecated', label: 'Deprecated' },
+  { id: 'all', label: 'All' },
+];
+
+const KIND_TABS = [
+  { id: 'all', label: 'All kinds' },
+  { id: 'requirement', label: 'Requirement' },
+  { id: 'edge-case', label: 'Edge case' },
+];
+
+/** The type's own empty text — one `EmptyState` for "none" and "none matching" alike. */
+export const AC_LIST_EMPTY_TITLE = 'No acceptance criteria.';
 
 /**
  * Seed prompt for the "Analyze consistency" action (brief 0.1.45 §2). Tells the
@@ -57,127 +80,101 @@ export function AcsList({ search, tagFilter, onSearchChange, onTagToggle, onSele
     setDialogOpen(true);
   }
 
-  return (
-    <ListPageLayout>
-      <ListPageHeader
+  /**
+   * 2.1.16 (`ac-list`) — `EntityListHeader` (icon, title, count = length of the
+   * fetched list, search, "New AC") with the `status` and `kind` filters side
+   * by side in its `filters` slot; the whole screen is an `EntityListLayout`.
+   * Two alternative states: `loading` (`LoadingState`) and `empty` (one
+   * `EmptyState` with the type's text, no filter reset — the tag filter clears
+   * in its own bar). No pagination, no error state.
+   */
+  const header = (
+    <>
+      <EntityListHeader
         icon={CheckSquare}
         title={AC_LABEL_PLURAL}
         count={acs.length}
         search={search}
         onSearchChange={onSearchChange}
         searchPlaceholder="Search title, slug…"
-        createLabel="New AC"
-        onCreate={handleCreate}
-      />
-
-      <div
-        className="px-8 py-2 flex items-center gap-2 flex-wrap text-[11.5px]"
-        style={{ borderBottom: '1px solid var(--c-hair)', color: 'var(--c-muted)' }}
-      >
-        <span
-          className="text-[10.5px] uppercase font-mono tracking-wider"
-          style={{ color: 'var(--c-subtle)' }}
-        >
-          status:
-        </span>
-        {(['active', 'deprecated', 'all'] as const).map((s) => (
-          <button
-            key={s}
-            onClick={() => setStatusFilter(s)}
-            className="rounded-full px-2 py-0.5 text-[10.5px] uppercase font-mono tracking-wider"
-            style={{
-              background: statusFilter === s ? 'var(--c-accent-soft)' : 'transparent',
-              color: statusFilter === s ? 'var(--c-accent-ink, var(--c-accent))' : 'var(--c-muted)',
-              border: '1px solid var(--c-hair)',
-            }}
-          >
-            {s}
-          </button>
-        ))}
-
-        <span
-          className="ml-4 text-[10.5px] uppercase font-mono tracking-wider"
-          style={{ color: 'var(--c-subtle)' }}
-        >
-          kind:
-        </span>
-        {(['all', 'requirement', 'edge-case'] as const).map((k) => (
-          <button
-            key={k}
-            onClick={() => setKindFilter(k)}
-            className="rounded-full px-2 py-0.5 text-[10.5px] uppercase font-mono tracking-wider"
-            style={{
-              background: kindFilter === k ? 'var(--c-accent-soft)' : 'transparent',
-              color: kindFilter === k ? 'var(--c-accent-ink, var(--c-accent))' : 'var(--c-muted)',
-              border: '1px solid var(--c-hair)',
-            }}
-          >
-            {k}
-          </button>
-        ))}
-      </div>
-
-      <TagFilterBar {...tagBar} />
-      <ListScrollArea
-        loading={isLoading}
-        empty={acs.length === 0}
-        emptyTitle="No AC match your filters."
-        emptyHint={
-          <>
-            Create with <span className="font-mono">/ac</span> in the editor or chat.
-          </>
+        filters={
+          <div className="flex items-center gap-2" data-testid="ac-list-filters">
+            <SegmentedControlTabs
+              tabs={STATUS_TABS}
+              active={statusFilter}
+              onChange={(id) => setStatusFilter(id as AcStatus | 'all')}
+            />
+            <SegmentedControlTabs
+              tabs={KIND_TABS}
+              active={kindFilter}
+              onChange={(id) => setKindFilter(id as AcKind | 'all')}
+            />
+          </div>
         }
-        createLabel="Create your first AC"
-        onCreate={handleCreate}
-      >
-        {acs.map((a) => {
-          const deprecated = a.status === 'deprecated';
-          return (
-            <EntityListRow
-              key={a.slug}
-              leading={
-                <CheckSquare size={16} style={{ color: 'var(--c-accent)', marginTop: 2 }} />
-              }
-              onClick={() => onSelect(a.slug)}
-              tags={a.tags}
-              tagLookup={tagLookup}
-              align="start"
-              style={{ opacity: deprecated ? 0.65 : 1 }}
-            >
-              {/*
-                `title`, which since 0.2.51 is the criterion itself — this row
-                showed `text` before, and the two are now one field.
+        actions={
+          <ActionButton
+            variant="primary"
+            icon={<Plus size={13} />}
+            label="New AC"
+            onClick={handleCreate}
+          />
+        }
+      />
+      <TagFilterBar {...tagBar} />
+    </>
+  );
 
-                NOT the 40-character rule the chip and the sidebar row apply.
-                Those two are references to a criterion appearing somewhere else;
-                this page IS the criteria, and cutting each to a few words would
-                leave nothing to browse. It keeps the one-line clamp it always
-                had, so the column stays scannable without deciding for the
-                reader where the sentence stops being interesting.
-              */}
-              <div
-                className="text-[13.5px] line-clamp-1"
-                style={{
-                  color: 'var(--c-ink)',
-                  fontWeight: 500,
-                  textDecoration: deprecated ? 'line-through' : undefined,
-                }}
-                title={a.title}
+  return (
+    <ListPageLayout>
+      <EntityListLayout header={header}>
+        {isLoading ? (
+          <LoadingState lines={5} height={40} />
+        ) : acs.length === 0 ? (
+          <EmptyState title={AC_LIST_EMPTY_TITLE} />
+        ) : (
+          acs.map((a) => {
+            const deprecated = a.status === 'deprecated';
+            return (
+              <EntityListRow
+                key={a.slug}
+                leading={
+                  <CheckSquare size={16} style={{ color: 'var(--c-accent)', marginTop: 2 }} />
+                }
+                onClick={() => onSelect(a.slug)}
+                tags={a.tags}
+                tagLookup={tagLookup}
+                align="start"
+                style={{ opacity: deprecated ? 0.65 : 1 }}
               >
-                {a.title}
-              </div>
-              <div
-                className="mt-1 flex items-center gap-2 text-[10.5px] font-mono uppercase tracking-wider"
-                style={{ color: 'var(--c-subtle)' }}
-              >
-                <span>{a.kind}</span>
-                {deprecated && <span>· deprecated</span>}
-                {a.verifies.length > 0 && <span>· verifies {a.verifies.length}</span>}
-              </div>
-            </EntityListRow>
-          );
-        })}
-      </ListScrollArea>
+                {/*
+                  `title`, which since 0.2.51 is the criterion itself. One-line
+                  clamp: this page IS the criteria, so it is not cut to the
+                  chip's 40 characters.
+                */}
+                <div
+                  className="text-[13.5px] line-clamp-1"
+                  style={{
+                    color: 'var(--c-ink)',
+                    fontWeight: 500,
+                    textDecoration: deprecated ? 'line-through' : undefined,
+                  }}
+                  title={a.title}
+                >
+                  {a.title}
+                </div>
+                <div
+                  className="mt-1 flex items-center gap-2 text-[10.5px] font-mono uppercase tracking-wider"
+                  style={{ color: 'var(--c-subtle)' }}
+                >
+                  <span>{a.kind}</span>
+                  {deprecated && <span>· deprecated</span>}
+                  {a.verifies.length > 0 && <span>· verifies {a.verifies.length}</span>}
+                </div>
+              </EntityListRow>
+            );
+          })
+        )}
+      </EntityListLayout>
 
       {dialogOpen && (
         <AcCreateDialog

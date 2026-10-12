@@ -31,7 +31,10 @@ export interface SidebarTabSlot {
   label: string;
   /** Sort order — Pages = 1, Tags = 999, plugins live in between. */
   order: number;
-  /** Slot rendered when no entities of this type exist. */
+  /**
+   * 2.1.16 — declared and NOT rendered. The sidebar reads only `icon`, `label`
+   * and `order`; a type's list page carries its own empty text (open question 59).
+   */
   emptyState?: ComponentType<unknown>;
 }
 
@@ -88,6 +91,11 @@ export interface FrontendModule extends EntityModuleManifest {
    * OPTIONAL, and bound to {@link routes}: a type declares BOTH or NEITHER.
    * Neither = a hidden entity. `EntityDetailProps` is a contract only for a
    * type that declares this slot at all.
+   *
+   * 2.1.16 — the host checks only the slot's SHAPE and never renders it: the
+   * detail route is mounted by `routes`, and that route hands the four
+   * `EntityDetailProps` fields to the plugin's own panel. The host calls none of
+   * the callbacks.
    */
   detailPanel?: ComponentType<EntityDetailProps>;
 

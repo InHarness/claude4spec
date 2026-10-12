@@ -42,8 +42,7 @@ interface Props {
    *
    * An opaque node on purpose: this is vendored kit, so it must not learn what
    * any one view's action DOES — the envelope it is copied INTO decides that.
-   * No `ac` route passes one today; the slot is kept rather than trimmed so the
-   * copy stays diffable against the other envelopes' copies of the same file.
+   * The `ac` detail route passes its Delete button here (2.1.16).
    */
   actions?: React.ReactNode;
 }

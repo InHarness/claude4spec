@@ -6,6 +6,11 @@ import type { EntityType } from '../types.js';
 /**
  * HOST-LOCAL, and the gap it names is ROUTING — not the control.
  *
+ * 2.1.16: a thin wrapper over the catalog's `SegmentedControlTabs`, with no copy
+ * of its anatomy — so the switcher is NOT debt against the one-implementation
+ * rule (M34); it renders `ui-view`'s three detail tabs (details / preview /
+ * history) and `design-system`'s two.
+ *
  * The segmented control itself now comes from the Host UI Kit
  * (`SegmentedControlTabs`, L12). Until 0.2.32 this file drove a hand-written
  * `SegmentedControl` + `ButtonGroup` pair living beside it, which was a copy of

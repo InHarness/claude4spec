@@ -516,7 +516,12 @@ describe('POST /api/git/sync (2.1.10)', () => {
       expect(build).toContain("router.use('/git', gitRouter(gitService, { onHeadChanged: onContextConfigChanged }));");
       expect(build).toContain('headChangeOriginMarker(w, () => headChangeMounts)');
       const index = fs.readFileSync(path.join(import.meta.dirname, '../index.ts'), 'utf8');
-      expect(index).toContain('onContextConfigChanged: () => cache.invalidate(project.id)');
+      // 2.1.16: the hook forwards an optional invalidation reason to the cache…
+      expect(index).toContain('onContextConfigChanged: (opts) => cache.invalidate(project.id, opts)');
+      // …and the git HEAD-change path calls it with none, so it still reloads (M31).
+      const git = fs.readFileSync(path.join(import.meta.dirname, 'git.ts'), 'utf8');
+      expect(git).toContain('onHeadChanged?: () => void;');
+      expect(git.match(/opts\.onHeadChanged\?\.\(([^)]*)\)/g)).toEqual(['opts.onHeadChanged?.()', 'opts.onHeadChanged?.()']);
     });
   });
 });
