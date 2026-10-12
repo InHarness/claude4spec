@@ -1111,6 +1111,61 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     expect(stale.body.code).toBe('BRIEF_CONFLICT');
   });
 
+  it('[ac:ac-rownoczesne-update-brief-z-wielu-watk] concurrent update_brief from several editorial threads resolves first-write-wins on expectedHash — the loser gets tool_result.error BRIEF_CONFLICT and recovers through get_brief plus a retry', async () => {
+    const { threadId: tA } = service.createThreadForBrief({ path: briefPath, name: 'editorial A' });
+    const { threadId: tB } = service.createThreadForBrief({ path: briefPath, name: 'editorial B' });
+    const a = await connect({ threadId: tA, briefPath, briefService: service });
+    const b = await connect({ threadId: tB, briefPath, briefService: service });
+
+    // Both threads read the same state, so both hold the same hash.
+    const readA = await call(a, 'get_brief', {});
+    const readB = await call(b, 'get_brief', {});
+    expect(readA.body.hash).toBe(readB.body.hash);
+    const versionsBefore = (await call(a, 'list_brief_versions', {})).body.total as number;
+
+    // First write wins.
+    const won = await call(a, 'update_brief', { action: 'append', content: 'thread A wrote first', expectedHash: readA.body.hash });
+    expect(won.isError).toBe(false);
+    // The second, armed with the same (now stale) hash, is refused — a tool error, not a silent overwrite.
+    const lost = await call(b, 'update_brief', { action: 'append', content: 'thread B wrote second', expectedHash: readB.body.hash });
+    expect(lost.isError).toBe(true);
+    expect(lost.body.code).toBe('BRIEF_CONFLICT');
+    expect(lost.body.currentHash).toBe(won.body.newHash);
+    let bytes = await fileBytes(briefPath);
+    expect(bytes).toContain('thread A wrote first');
+    expect(bytes).not.toContain('thread B wrote second');
+
+    // The loser recovers: get_brief returns the winner's state and hash, the retry lands on top of it.
+    const reread = await call(b, 'get_brief', {});
+    expect(reread.body.hash).toBe(won.body.newHash);
+    expect(reread.body.content).toContain('thread A wrote first');
+    const retried = await call(b, 'update_brief', { action: 'append', content: 'thread B wrote second', expectedHash: reread.body.hash });
+    expect(retried.isError).toBe(false);
+    bytes = await fileBytes(briefPath);
+    expect(bytes).toContain('thread A wrote first');
+    expect(bytes).toContain('thread B wrote second');
+    expect((await call(a, 'list_brief_versions', {})).body.total).toBe(versionsBefore + 2);
+
+    // Truly simultaneous calls with the same hash: exactly one write lands, the other is BRIEF_CONFLICT.
+    const hash = (await call(a, 'get_brief', {})).body.hash as string;
+    const results = await Promise.all([
+      call(a, 'update_brief', { action: 'append', content: 'race from A', expectedHash: hash }),
+      call(b, 'update_brief', { action: 'append', content: 'race from B', expectedHash: hash }),
+    ]);
+    const winners = results.filter((r) => !r.isError);
+    const losers = results.filter((r) => r.isError);
+    expect(winners).toHaveLength(1);
+    expect(losers).toHaveLength(1);
+    expect(losers[0]!.body.code).toBe('BRIEF_CONFLICT');
+    expect(losers[0]!.body.currentHash).toBe(winners[0]!.body.newHash);
+    bytes = await fileBytes(briefPath);
+    const aLanded = bytes.includes('race from A');
+    const bLanded = bytes.includes('race from B');
+    expect(aLanded !== bLanded).toBe(true);
+    expect(sha256(bytes)).toBe(winners[0]!.body.newHash);
+    expect((await call(a, 'list_brief_versions', {})).body.total).toBe(versionsBefore + 3);
+  });
+
   it('[ac:ac-wpis-rejestru-kontekstow-dla-brief-ni] a brief thread has no filesystem built-ins — denied as tool groups of the turn, which the context registry does not declare — and the brief content arrives through get_brief, in the tool result', async () => {
     // The registry row declares no deny groups of its own: only the built-in axis.
     const row = CONTEXT_TYPE_REGISTRY.brief as unknown as Record<string, unknown>;
