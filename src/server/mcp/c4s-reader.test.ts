@@ -1,9 +1,19 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CapturedMcpServer } from '../plugin-runtime/index.js';
 import { createC4sReaderServer } from './c4s-reader.js';
 import { GET_PAGE_OUTLINE_RETURN } from './tool-contract-text.js';
+import { getPage } from '../discovery/ops/pages.js';
+import { PageSource } from '../discovery/page-source.js';
+import { RootSet } from '../discovery/roots.js';
+import type { DiscoveryCore } from '../discovery/types.js';
+import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
+import type Database from 'better-sqlite3';
+import type { Root } from '../../shared/types.js';
 
 /**
  * 2.1.8 — the contract of the `c4s-reader` page tools, as the tool list
@@ -94,5 +104,86 @@ describe('c4s-reader — the page tools as declared (2.1.8)', () => {
     // An anchorless hit means a match outside every section — never "a root without an index".
     expect(tool.description).toContain('only when the match falls outside every section');
     expect(tool.description).not.toMatch(/root without (a|an) (section )?index/i);
+  });
+});
+
+/**
+ * 2.1.14 — the input of `get_page` is a LOOSE object: a key outside `rootId` and
+ * `path` is not stripped by the SDK on the way in, so a stale `range` reaches the
+ * core, which refuses it. The core here is the real page read over a real file;
+ * only the parts `get_page` never touches (reader, db) are absent.
+ */
+describe('c4s-reader — get_page forwards a stale range to the core (2.1.14)', () => {
+  let projectDir: string;
+  let client: Client;
+
+  beforeEach(async () => {
+    projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-reader-get-page-'));
+    fs.mkdirSync(path.join(projectDir, 'pages'), { recursive: true });
+    fs.writeFileSync(path.join(projectDir, 'pages', 'a.md'), '<!-- anchor: aaaa0001 -->\n# A\n\none\ntwo\n');
+    const root: Root = { id: 'pages', name: 'Pages', dir: 'pages', builtin: true };
+    const pages = new PageSource(projectDir, [root]);
+    const roots = new RootSet([root]);
+    const discovery = {
+      getPage: (input: Parameters<DiscoveryCore['getPage']>[0]) => getPage(pages, roots, input),
+    } as unknown as DiscoveryCore;
+    const captured = createC4sReaderServer({
+      reader: {} as RawEntityReader,
+      discovery,
+      db: {} as Database.Database,
+      projectDir,
+      packageVersion: 'test',
+    });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    client = new Client({ name: 'test-client', version: '0.0.0' });
+    await captured.server.connect(serverTransport);
+    await client.connect(clientTransport);
+  });
+
+  afterEach(async () => {
+    await client.close();
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  });
+
+  async function call(args: Record<string, unknown>) {
+    const res = await client.callTool({ name: 'get_page', arguments: args });
+    const text = (res.content as Array<{ type: string; text?: string }>)[0]?.text ?? '{}';
+    return { isError: res.isError === true, body: JSON.parse(text) as Record<string, any> };
+  }
+
+  it('[entity:c4s-reader-get-page] [ac:ac-get-page-wywolane-z-parametrem-range] get_page with `range` ends in INVALID_ARGUMENT, not in the whole page', async () => {
+    // Without `range` the same call answers with the page…
+    const plain = await call({ rootId: 'pages', path: 'a.md' });
+    expect(plain.isError).toBe(false);
+    expect(plain.body.results).toHaveLength(1);
+    expect(plain.body.hash).toMatch(/^[0-9a-f]{64}$/);
+
+    // …with it — in the old object form or as a CLI-style string — it is refused.
+    for (const range of [{ start: 1, end: 2 }, '1:20']) {
+      const { isError, body } = await call({ rootId: 'pages', path: 'a.md', range });
+      expect(isError).toBe(true);
+      expect(body.code).toBe('INVALID_ARGUMENT');
+      expect(body).not.toHaveProperty('results');
+      expect(body).not.toHaveProperty('hash');
+    }
+  });
+
+  it('[entity:c4s-reader-get-page] [ac:ac-message-odmowy-get-page-z-parametrem] the refusal message points to get_page_outline, then to get_sections', async () => {
+    const { isError, body } = await call({ rootId: 'pages', path: 'a.md', range: { start: 1, end: 2 } });
+    expect(isError).toBe(true);
+    const message = String(body.error);
+    expect(message).toContain('no line window');
+    expect(message.indexOf('get_page_outline')).toBeGreaterThan(-1);
+    expect(message.indexOf('get_sections')).toBeGreaterThan(message.indexOf('get_page_outline'));
+    // The hint names the same two calls, on this very page, in the same order.
+    expect(body.hint).toContain('get_page_outline({ rootId: "pages", path: "a.md" })');
+    expect(String(body.hint).indexOf('get_sections')).toBeGreaterThan(String(body.hint).indexOf('get_page_outline'));
+  });
+
+  it('[entity:c4s-reader-get-page] a call without rootId is refused with the list of page roots, never resolved to a default root', async () => {
+    const { isError, body } = await call({ path: 'a.md' });
+    expect(isError).toBe(true);
+    expect(body.code).toBe('INVALID_ARGUMENT');
+    expect(body.hint).toContain('pages');
   });
 });

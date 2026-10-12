@@ -61,6 +61,10 @@ import { RootRegistry } from '../../../server/roots/registry.js';
 import { pagesRouter, type PageRootRuntime } from '../../../server/routes/pages.js';
 import { PagesService } from '../../../server/services/pages.js';
 import type { DiscoveryCore } from '../../../server/discovery/types.js';
+import { getPage as coreGetPage } from '../../../server/discovery/ops/pages.js';
+import { PageSource } from '../../../server/discovery/page-source.js';
+import { RootSet } from '../../../server/discovery/roots.js';
+import type { Root } from '../../../shared/types.js';
 
 /** The shape `healthCheck` demands of `GET /api/projects/:id/config`. */
 const CONFIG = {
@@ -517,13 +521,6 @@ describe('discovery commands on the CLI', () => {
   });
 
   describe('the guards the transport owns — refused before any request', () => {
-    it('get-page --range is refused before any request — 2.1.8 removed the line window', async () => {
-      await expect(
-        runGetPage(args('get-page', '--root-id', 'pages', '--path', 'budget.md', '--range', '1:20')),
-      ).rejects.toMatchObject({ code: 'INVALID_ARGS' });
-      expect(seen).toEqual([]);
-    });
-
     it('page commands require --root-id and do not fall back to the built-in root', async () => {
       await expect(runListPages(args('list-pages'))).rejects.toMatchObject({ code: 'INVALID_ARGS' });
       await expect(runGetPage(args('get-page', '--path', 'budget.md'))).rejects.toMatchObject({
@@ -686,6 +683,70 @@ describe('discovery commands on the CLI', () => {
       // The page root itself still answers — the refusal is about the id, not the path.
       await runGetPage(args('get-page', '--root-id', 'pages', '--path', 'a.md', '--compact'));
       expect(JSON.parse(stdout)).toMatchObject({ rootId: 'pages', path: 'a.md' });
+    });
+  });
+
+  /**
+   * 2.1.14 — `--range` is not this rendering's to refuse. It travels as `?range=`
+   * through the real page router into the real core read, which answers
+   * `INVALID_ARGUMENT` with the repair path. Before, the CLI refused it locally
+   * with its own `INVALID_ARGS` — a second refusal with a different code, and a
+   * rendering pre-empting the core (M39 L2 `984v8437`).
+   */
+  describe('get-page --range reaches the core', () => {
+    beforeEach(() => {
+      fs.mkdirSync(path.join(projectDir, 'pages'), { recursive: true });
+      fs.writeFileSync(path.join(projectDir, 'pages', 'a.md'), '<!-- anchor: aaaa0001 -->\n# A\n\none\ntwo\n');
+      const root: Root = { id: 'pages', name: 'Pages', dir: 'pages', builtin: true };
+      const pages = new PageSource(projectDir, [root]);
+      const roots = new RootSet([root]);
+      const core = {
+        getPage: (input: Parameters<DiscoveryCore['getPage']>[0]) => coreGetPage(pages, roots, input),
+      } as unknown as DiscoveryCore;
+      const runtimes = new Map<string, PageRootRuntime>([
+        ['pages', { root, pages: new PagesService(projectDir, 'pages', 'pages'), writer: null }],
+      ]);
+      const app = express();
+      app.use(
+        '/api/projects/:projectId/pages/:rootId',
+        pagesRouter((id) => runtimes.get(id), null, core, () => [...runtimes.keys()]),
+      );
+      passThrough = app;
+    });
+
+    const refusalOf = async (...flags: string[]): Promise<CliError> => {
+      try {
+        await runGetPage(args('get-page', '--root-id', 'pages', '--path', 'a.md', ...flags));
+      } catch (e) {
+        return e as CliError;
+      }
+      throw new Error(`c4s get-page ${flags.join(' ')} did not refuse`);
+    };
+
+    it('[ac:ac-get-page-wywolane-z-parametrem-range] c4s get-page --range ends in the core\'s INVALID_ARGUMENT, not in the whole page', async () => {
+      // Without --range the same command prints the page…
+      await runGetPage(args('get-page', '--root-id', 'pages', '--path', 'a.md', '--compact'));
+      expect(JSON.parse(stdout)).toMatchObject({ rootId: 'pages', path: 'a.md', results: [{ anchor: 'aaaa0001' }] });
+      stdout = '';
+      seen = [];
+
+      // …with it, the flag is forwarded — not dropped, not refused by the CLI.
+      const refusal = await refusalOf('--range', '1:20');
+      expect(seen).toHaveLength(1);
+      expect(called()).toContain('range=1%3A20');
+      expect(refusal).toBeInstanceOf(CliError);
+      expect(refusal.code).toBe('INVALID_ARGUMENT');
+      expect(refusal.message).toContain('no line window');
+      // Nothing of the page was printed.
+      expect(stdout).toBe('');
+    });
+
+    it('[ac:ac-message-odmowy-get-page-z-parametrem] the refusal of c4s get-page --range points to get_page_outline, then to get_sections', async () => {
+      const refusal = await refusalOf('--range', '1:20');
+      const outlineAt = refusal.message.indexOf('get_page_outline');
+      expect(outlineAt).toBeGreaterThan(-1);
+      expect(refusal.message.indexOf('get_sections')).toBeGreaterThan(outlineAt);
+      expect(refusal.hint).toContain('get_page_outline');
     });
   });
 

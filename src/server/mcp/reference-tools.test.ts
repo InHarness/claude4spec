@@ -466,10 +466,16 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
       expect(body.hash).toMatch(/^[0-9a-f]{64}$/);
     });
 
-    it('get_page REFUSES a stale `range` — the SDK must not strip it before the core sees it', async () => {
+    it('[entity:reference-tools-get-page] [ac:ac-get-page-wywolane-z-parametrem-range] [ac:ac-message-odmowy-get-page-z-parametrem] get_page does not strip a stale `range` — the core refuses it, pointing to get_page_outline, then get_sections', async () => {
       await pagesService.write('page.md', { body: '<!-- anchor: aaaaaa11 -->\n# Alpha\n\none\ntwo\n' });
       const client = await connectClient(deps());
 
+      // Without `range` the same call answers with the page…
+      const plain = await call(client, 'get_page', { rootId: 'pages', path: 'page.md' });
+      expect(plain.isError).toBe(false);
+      expect(plain.body.results).toHaveLength(1);
+
+      // …with it, the key reaches the core (the SDK must not strip it) and is refused.
       const { isError, body } = await call(client, 'get_page', {
         rootId: 'pages',
         path: 'page.md',
@@ -478,7 +484,11 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
 
       expect(isError).toBe(true);
       expect(body.code).toBe('INVALID_ARGUMENT');
+      expect(body).not.toHaveProperty('results');
       expect(body.error).toContain('no line window');
+      // The message carries the repair path: outline first, then sections.
+      expect(body.error.indexOf('get_page_outline')).toBeGreaterThan(-1);
+      expect(body.error.indexOf('get_sections')).toBeGreaterThan(body.error.indexOf('get_page_outline'));
       expect(body.hint).toContain('get_page_outline');
     });
 

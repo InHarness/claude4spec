@@ -887,14 +887,35 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "pending",
+   "status": "verified",
    "blockedBy": null,
-   "startCommit": null,
-   "baseCommit": null,
-   "portions": [],
+   "startCommit": "d6c516d34a2707a9735a8c32b9feb93e005beacb",
+   "baseCommit": "d6c516d34a2707a9735a8c32b9feb93e005beacb",
+   "portions": [
+    {
+     "name": "m39-get-page-range/p1-l2-l14",
+     "layers": [
+      "L2",
+      "L3",
+      "L14"
+     ],
+     "slugs": [
+      "c4s-reader-get-page",
+      "reference-tools-get-page",
+      "ac-get-page-wywolane-z-parametrem-range",
+      "ac-message-odmowy-get-page-z-parametrem",
+      "ac-get-page-zwraca-hash-liczony-z-pelneg"
+     ],
+     "status": "implemented",
+     "rounds": 1,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 1
    },
    "jobs": []
   },
