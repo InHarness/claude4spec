@@ -45,3 +45,11 @@ Implementation-only decisions (no user-observable effect) and set-up choices.
 - (a)–(c) of `n0fj7m42` were already in code before this window (read/plan/apply/brief-workflow split, SKILL.md route table, no `daily.md`); the portion adds the `[section:n0fj7m42]` tests over the shipped package (`plugins/c4s-plugin-layered-vertical-slices/test/skill-contribution.test.ts`).
 - (d) "how a user makes their own style" has its code counterpart in `writing-style-author`'s listing description (built by u2); proven by a `[section:n0fj7m42]` test in `plugins/c4s-plugin-writing-style-author/test/skill-contribution.test.ts`.
 - dev-0001: the `daily.md` obligations of `x4imgq6m` are carried by plan.md (protocol referral, translation: one edge tagged by the requiring module, residual question first) and apply.md (drift check incl. Dom 1–6, rule 3/3a symptoms, rule 1 without diagram; closed review-report set). The `Domain` rules block is split plan (residual test, three questions, four shapes) / apply (form, catalogue, item 7) rather than copied whole into both, since one thread loads both and the package forbids a part spliced into two of read/plan/apply. Only text edit: plan.md's cross-module bucket now states the requiring module's tag outright.
+
+## System verification (env-runner `impl-2-1-15-wf`, HEAD a62f3ced)
+
+- `npm test`: 447/447 files, 5448/5448 tests green (npm ci from lockfile as uid 1000).
+- `npm run test:e2e`: 207 passed, 19 skipped, 4 failed + 3 suites failing in setup — all outside this window's diff (skill text, prompt template, their tests):
+  - seed preconditions of the empty-seed env: artifact-threads-panel ("no plan"), plan-footer ("no plan with a non-empty body"), entity-version-history + envelope-entity-pages x2 ("no endpoint — seed one first"), frontend-mockups-envelope `/design-system` (seed whitelist omits design-system);
+  - editor-l8-contexts "new user root gets the full page context" — the known non-validated-root caret flake, pre-existing on main.
+- Static system verifier: 20/20 rows covered. terminate() holds; `c4s mark-brief-implemented` runs after the merge.
