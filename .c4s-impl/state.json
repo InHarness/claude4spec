@@ -1,5 +1,5 @@
 {
-  "iteration": 16,
+  "iteration": 31,
   "conventions": [
     {
       "label": "L12 (Host UI Kit) — implementor M34",
@@ -428,16 +428,36 @@
         }
       ],
       "wave": 3,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "u4-m50-shell-sidebar-and-entity-routes/p1-l2-l5",
+          "layers": [
+            "L2",
+            "L5"
+          ],
+          "slugs": [
+            "ac-multi-select-entities-w-m26-sekcja-ent",
+            "ac-po-zapisie-aktywnych-typow-w-ustawien",
+            "ac-zmiana-aktywnych-typow-zapisana-w-inn"
+          ],
+          "status": "implemented",
+          "rounds": 3,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "24a69f4652a96d80ede3652fc55c353564c2efab",
+      "baseCommit": "48f6f38e1642b6c12266e03fa449b3959d2f416b",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 3
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "u5-plugin-ac-detail-and-list",

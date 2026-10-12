@@ -14,6 +14,7 @@ import type { PluginHost } from './types.js';
 import type { PluginLoadRecord } from './loader.js';
 import type { WorkspaceRegistry } from '../../workspace/registry.js';
 import type { WorkspaceRecord } from '../../workspace/types.js';
+import type { ContextInvalidation } from '../../../shared/types.js';
 
 /** One shadowed type with both layers' origins (cross-layer collision). */
 export interface ShadowedReportEntry {
@@ -44,8 +45,14 @@ export interface PluginHostRouterDeps {
   overlayRecords: PluginLoadRecord[];
   localPluginsPresent: boolean;
   trust: boolean | undefined;
-  /** M31 cache-invalidation hook — fired after a trust change to rebuild the context. */
-  onContextConfigChanged?: () => void;
+  /**
+   * M31 cache-invalidation hook — fired after a trust change to rebuild the context.
+   * Called WITHOUT a reason: a trust flip loads or unloads the whole overlay
+   * layer (plugin commands, plugin settings, the frontend manifest, cross-layer
+   * shadowing), not just activation, so every tab of the project keeps the M31
+   * full reload. The goal there is "no server restart", which the rebuild gives.
+   */
+  onContextConfigChanged?: (opts?: ContextInvalidation) => void;
 }
 
 export function pluginHostRouter(deps: PluginHostRouterDeps): Router {
@@ -109,6 +116,7 @@ export function pluginHostRouter(deps: PluginHostRouterDeps): Router {
         .json({ error: { code: 'VALIDATION', message: 'trust must be a boolean' } });
     }
     registry.setProjectTrust(workspace, projectId, value);
+    // Not `activation-changed`: the overlay layer itself changed — reload the tabs.
     onContextConfigChanged?.();
     res.json({ trust: value });
   });

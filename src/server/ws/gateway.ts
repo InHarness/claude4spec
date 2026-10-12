@@ -1,7 +1,7 @@
 import type { IncomingMessage, Server as HttpServer } from 'node:http';
 import type { GuardVerdict } from '../http/host-origin-guard.js';
 import { WebSocketServer, type WebSocket } from 'ws';
-import type { WsEvent } from '../../shared/types.js';
+import type { ProjectDisposedReason, WsEvent } from '../../shared/types.js';
 
 /**
  * Does this workspace know the project? Injected rather than imported: the
@@ -161,11 +161,15 @@ export class WsGateway {
   /**
    * M31 dispose: notify the room its project context is gone, then close all
    * sockets. The SPA reacts to `project:disposed` (e.g. full reload).
+   *
+   * 2.1.16 (M50 `8h2a734u`): a `reason` rides on the event — the SPA keeps the
+   * page for `activation-changed` instead of reloading.
    */
-  closeRoom(projectId: string): void {
+  closeRoom(projectId: string, reason?: ProjectDisposedReason): void {
     const room = this.rooms.get(projectId);
     if (!room) return;
-    const payload = JSON.stringify({ kind: 'project:disposed' satisfies WsEvent['kind'] });
+    const event: WsEvent = reason ? { kind: 'project:disposed', reason } : { kind: 'project:disposed' };
+    const payload = JSON.stringify(event);
     for (const ws of room) {
       if (ws.readyState === ws.OPEN) ws.send(payload);
       ws.close();

@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { metaApi } from '../../lib/api.js';
-import { mountFrontend } from '../../tiptap/mountFrontend.js';
+import { refreshPluginActivation } from '../../runtime/boot-plugins.js';
 import { clientPluginHost } from './host.js';
 import { PluginPoolElement } from './PluginPoolElement.js';
 import type { PluginSettingField } from '../../../shared/plugin-host/manifest.js';
@@ -61,12 +61,13 @@ export const PLUGIN_HOST_SETTINGS: SettingsContribution = {
       /**
        * Activation decides routes as well as the sidebar: re-apply it live and
        * rebuild the plugin routes, or a re-activated type would get its tab back
-       * while its route stays absent until a reload.
+       * while its route stays absent until a reload. 2.1.16 (M50 `8h2a734u`):
+       * the ELEMENTS tabs follow in this tab, with no page reload and no server
+       * restart — `[]` leaves the "No entity types configured." message.
        */
       afterSave: async ({ router, queryClient }) => {
         try {
-          clientPluginHost.applyActivation(await metaApi.entities());
-          mountFrontend(router, clientPluginHost.listEntities());
+          await refreshPluginActivation(router);
           await queryClient.invalidateQueries();
         } catch {
           window.location.reload();

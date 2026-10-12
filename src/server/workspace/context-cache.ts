@@ -1,3 +1,4 @@
+import type { ContextInvalidation } from '../../shared/types.js';
 import type { ProjectContext } from './project-context.js';
 import type { ProjectRecord } from './types.js';
 
@@ -31,7 +32,8 @@ export class ProjectBuildFailedError extends Error {
  */
 export class ProjectContextCache {
   private entries = new Map<string, CacheEntry>();
-  private retired = new Set<ProjectContext>();
+  /** Retired contexts awaiting idle, each with the invalidation that retired it. */
+  private retired = new Map<ProjectContext, ContextInvalidation | undefined>();
   private readonly maxLive: number;
 
   constructor(
@@ -90,12 +92,15 @@ export class ProjectContextCache {
   /**
    * Drop the entry (failed entries clear immediately; a ready context is
    * parked in `retired` and disposed once idle). The next request rebuilds.
+   *
+   * 2.1.16 (M50 `8h2a734u`): `opts.reason` is handed to that context's
+   * `dispose`, so its room hears WHY (`activation-changed` keeps the SPA page).
    */
-  invalidate(projectId: string): void {
+  invalidate(projectId: string, opts?: ContextInvalidation): void {
     const entry = this.entries.get(projectId);
     this.entries.delete(projectId);
     if (entry?.state === 'ready') {
-      this.retired.add(entry.ctx);
+      this.retired.set(entry.ctx, opts);
     }
     this.reapIdle();
   }
@@ -139,10 +144,10 @@ export class ProjectContextCache {
    * invalidate and from every turn's `finally` (onTurnFinished).
    */
   reapIdle(): void {
-    for (const ctx of this.retired) {
+    for (const [ctx, opts] of this.retired) {
       if (!ctx.hasInFlightTurn()) {
         this.retired.delete(ctx);
-        ctx.dispose().catch((err) => {
+        ctx.dispose(opts).catch((err) => {
           console.warn(`[context-cache] dispose of retired ${ctx.projectId} failed:`, err);
         });
       }
@@ -181,7 +186,7 @@ export class ProjectContextCache {
 
   /** Process shutdown: dispose everything (live + retired), ignoring in-flight guards. */
   async disposeAll(): Promise<void> {
-    const ctxs: ProjectContext[] = [...this.retired];
+    const ctxs: ProjectContext[] = [...this.retired.keys()];
     for (const entry of this.entries.values()) {
       if (entry.state === 'ready') ctxs.push(entry.ctx);
     }

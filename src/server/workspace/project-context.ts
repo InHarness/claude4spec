@@ -3,7 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { builtinRoot, migrateConfigToV4, normalizeSkillConfig, readConfig, validateRootDirs } from '../config.js';
 import { recoverPendingRootRename, rootIdChain, readRootRenames } from '../root-renames.js';
-import type { Root } from '../../shared/types.js';
+import type { ContextInvalidation, Root } from '../../shared/types.js';
 import { resolveAgentTurnScope } from '../services/agent-execution-scope.js';
 import type { PageRootRuntime } from '../routes/pages.js';
 import type { SectionIndexRoot } from '../services/section-indexer.js';
@@ -212,8 +212,11 @@ export interface ProjectContextDeps {
   pagesDirOverride?: string;
   /** M31: pinged when an agent turn finishes — context-cache idle-retry hook. */
   onTurnFinished?: () => void;
-  /** M31: PATCH /config touched a context-defining field → cache.invalidate(projectId). */
-  onContextConfigChanged?: () => void;
+  /**
+   * M31: PATCH /config touched a context-defining field → cache.invalidate(projectId).
+   * 2.1.16: `opts.reason` travels to this context's `project:disposed`.
+   */
+  onContextConfigChanged?: (opts?: ContextInvalidation) => void;
   /**
    * 2.1.9 (M52 `1v62dbhb`): the layer's implementor hands out ANOTHER project's
    * context on request (the M31 cache — lazily built, its lifetime and eviction
@@ -273,7 +276,8 @@ export interface ProjectContext {
    * project is not exposed (any more). Writes nothing.
    */
   readExposedSkill: () => Promise<ExposedSkillPackage>;
-  dispose: () => Promise<void>;
+  /** 2.1.16: `opts.reason` (from the invalidation) rides on the room's `project:disposed`. */
+  dispose: (opts?: ContextInvalidation) => Promise<void>;
 }
 
 /**
@@ -314,8 +318,8 @@ async function buildInner(
 ): Promise<ProjectContext> {
   const { registry, workspace, projectId, cwd, gateway, mode } = deps;
   const router = Router();
-  const onContextConfigChanged = (): void => {
-    deps.onContextConfigChanged?.();
+  const onContextConfigChanged = (opts?: ContextInvalidation): void => {
+    deps.onContextConfigChanged?.(opts);
   };
   // M31: every former WsGateway consumer now broadcasts into this project's
   // room only — the emitter is signature-compatible (`broadcast(event)`).
@@ -1987,7 +1991,7 @@ async function buildInner(
     readExposedSkill,
     // M31 dispose sequence: turn registries → this scope's mounts → MCP
     // factories → room → db handle.
-    dispose: async () => {
+    dispose: async (opts?: ContextInvalidation) => {
       /**
        * The turn registries are context-lifetime state keyed by `threadId`, and
        * until now nothing released them: dispose closed the db and left every
@@ -2024,7 +2028,7 @@ async function buildInner(
       // M33 phase 2: drop references to dynamically imported project-local
       // modules (next rebuild re-imports), alongside the MCP factory release.
       overlayResult?.dispose();
-      gateway.closeRoom(projectId);
+      gateway.closeRoom(projectId, opts?.reason);
       db.close();
     },
   };

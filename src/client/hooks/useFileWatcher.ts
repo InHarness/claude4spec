@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { WsEvent } from '../../shared/types.js';
 import { createInvalidationBatcher } from '../lib/wsBatcher.js';
 import { handleGitStatusChanged } from '../lib/git-ws.js';
+import { handleProjectDisposed } from '../lib/project-disposed.js';
 import { PROJECT_ID } from '../lib/api-core.js';
 import { useFileEventsStore } from '../state/fileEvents.js';
 import { isHtmlPreviewPath, useHtmlViewerStore } from '../state/htmlViewer.js';
@@ -203,7 +204,12 @@ export function useFileWatcher() {
             // ANOTHER tab) and the room is about to close. Every cached query
             // now points at a stale/about-to-be-torn-down context — reload
             // rather than let this tab keep reading/writing stale state.
-            window.location.reload();
+            // 2.1.16: except an activation change (`reason`) — see
+            // `handleProjectDisposed`.
+            handleProjectDisposed(data, {
+              reload: () => window.location.reload(),
+              invalidateAll: () => void qc.invalidateQueries(),
+            });
           }
         } catch {
           /* ignore */

@@ -112,6 +112,17 @@ export interface PageSearchHit {
 /** What a CRUD write did to its subject — the `action` of `entity:changed` / `tag:changed`. */
 export type WsChangeAction = 'create' | 'update' | 'delete';
 
+/**
+ * 2.1.16 (M50 `8h2a734u`) — why a project's context was disposed, when the SPA
+ * must NOT treat it as the M31 "reload the page" signal.
+ */
+export type ProjectDisposedReason = 'activation-changed';
+
+/** Options an invalidation carries down to the disposed context's `project:disposed`. */
+export interface ContextInvalidation {
+  reason?: ProjectDisposedReason;
+}
+
 export type WsEvent =
   | { kind: 'file:changed'; event: 'add' | 'change' | 'unlink'; path: string; rootId: string; origin: 'server' | 'external' }
   /**
@@ -209,7 +220,12 @@ export type WsEvent =
   | { kind: 'plans:changed'; path?: string }
   | { kind: 'hello'; ts: number }
   // M31: sent to a room right before its sockets close (context invalidated/evicted/removed).
-  | { kind: 'project:disposed' }
+  // 2.1.16 (M50 `8h2a734u`): `reason: 'activation-changed'` — the context was
+  // rebuilt because a Settings → Entities save changed which entity types are
+  // active (a Trust plugins answer sends no reason). The SPA keeps the page:
+  // the acting tab re-applies activation itself, other tabs keep theirs until a
+  // reload. Without a reason the SPA reloads (the M31 contract).
+  | { kind: 'project:disposed'; reason?: ProjectDisposedReason }
   // M33 phase 3: a plugin in the effective pool was installed/removed/edited on
   // disk and hot-reloaded (no process restart). The client invalidates the
   // plugin's React Query keys, refetches the frontend-manifest + import-map, and
