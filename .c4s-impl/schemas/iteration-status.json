@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "iteration-status",
+  "description": "Output of an implementer run in build mode, and the exit contract of one driver iteration. The orchestrator reads `status`; everything else is a record.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "role",
+    "status",
+    "release"
+  ],
+  "properties": {
+    "role": {
+      "enum": [
+        "implementer",
+        "driver"
+      ]
+    },
+    "status": {
+      "enum": [
+        "progressed",
+        "waiting",
+        "gate",
+        "done",
+        "error"
+      ],
+      "description": "progressed: continue; waiting: nothing runnable, a human must answer a deviation; gate: a human must review; done: terminate() true; error: toolchain or harness failure, retry with a cap"
+    },
+    "release": {
+      "type": "string"
+    },
+    "unit": {
+      "type": "string"
+    },
+    "portion": {
+      "type": "string"
+    },
+    "claimed": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "slugs the implementer believes covered; informational only \u2014 the verifier does not read it"
+    },
+    "deviations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "deviation ids written this run"
+    },
+    "stubsOpened": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "stubsClosed": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "stoppedEarly": {
+      "type": "boolean",
+      "description": "true when the run stopped before finishing its portion (run limit): the portion stays in-progress and the next iteration runs the implementer on it again"
+    },
+    "gate": {
+      "type": "string",
+      "description": "reason written to the gate file, when status is gate"
+    },
+    "error": {
+      "type": "string"
+    }
+  }
+}

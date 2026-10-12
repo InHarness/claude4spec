@@ -1,0 +1,674 @@
+{
+  "iteration": 0,
+  "conventions": [
+    {
+      "label": "L5 (UI) — implementor M50 — App Shell",
+      "key": "pages/modules/m50-app-shell.md",
+      "offset": 3,
+      "anchor": "pqxnmscd"
+    },
+    {
+      "label": "L11 (Plugin Runtime Surface) — implementor M33 — Plugin Loader",
+      "key": "pages/modules/m33-plugin-loader/L11-plugin-runtime-surface.md",
+      "offset": 1,
+      "anchor": "m33l5man"
+    },
+    {
+      "label": "L12 (Host UI Kit) — implementor M34 — Host UI Kit",
+      "key": "pages/modules/m34-host-ui-kit/L12-host-ui-kit.md",
+      "offset": 5,
+      "anchor": "o6etg68k"
+    },
+    {
+      "label": "L12 (Host UI Kit) — implementor M34 — Host UI Kit",
+      "key": "pages/modules/m34-host-ui-kit/L12-host-ui-kit.md",
+      "offset": 6,
+      "anchor": "hpw2opbb"
+    },
+    {
+      "label": "L12 (Host UI Kit) — implementor M34 — Host UI Kit",
+      "key": "pages/modules/m34-host-ui-kit/L12-host-ui-kit.md",
+      "offset": 7,
+      "anchor": "88don9rv"
+    },
+    {
+      "label": "L12 (Host UI Kit) — implementor M34 — Host UI Kit",
+      "key": "pages/modules/m34-host-ui-kit/L12-host-ui-kit.md",
+      "offset": 8,
+      "anchor": "w75z1nev"
+    },
+    {
+      "label": "L12 (Host UI Kit) — implementor M34 — Host UI Kit",
+      "key": "pages/modules/m34-host-ui-kit/L12-host-ui-kit.md",
+      "offset": 9,
+      "anchor": "l0i0c5wm"
+    },
+    {
+      "label": "L12 (Host UI Kit) — implementor M34 — Host UI Kit",
+      "key": "pages/modules/m34-host-ui-kit/L12-host-ui-kit.md",
+      "offset": 10,
+      "anchor": "asq4yxmp"
+    },
+    {
+      "label": "L12 (Host UI Kit) — implementor M34 — Host UI Kit",
+      "key": "pages/modules/m34-host-ui-kit/L12-host-ui-kit.md",
+      "offset": 11,
+      "anchor": "d97023iq"
+    },
+    {
+      "label": "System verifier: user jobs (module scope column) — modules",
+      "key": "pages/SKILL.md",
+      "offset": 13,
+      "anchor": "oq23nb0j"
+    },
+    {
+      "label": "System verifier: user jobs (module scope column) — plugin modules",
+      "key": "pages/SKILL.md",
+      "offset": 14,
+      "anchor": "zpn3gaip"
+    }
+  ],
+  "waves": [
+    {
+      "n": 1,
+      "units": [
+        "u1-host-entity-invalidation",
+        "u2-host-list-empty-state",
+        "u3-database-tables",
+        "u4-mcp-tools",
+        "u5-frontend-mockups",
+        "u6-ac-plugin"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 2,
+      "units": [
+        "u7-api-contracts"
+      ],
+      "startCommit": null
+    }
+  ],
+  "units": [
+    {
+      "id": "u1-host-entity-invalidation",
+      "goal": "Inwalidacja cache list i detali encji po zdarzeniach WebSocket należy teraz do hosta. Jego globalny obserwator po zmianie lub zaindeksowaniu encji unieważnia klucz listy typu, klucz detalu (typ, slug) i klucz zbiorczy encji, więc otwarta lista i otwarty detal typu, którego klucze trzymają się konwencji hosta, odświeżają się po zmianie z zewnątrz bez przeładowania strony; historia wersji nie jest odświeżana. Powłoka zachowuje tylko mechanizm grupowania zdarzeń i mapowania edytora oraz panelu bocznego. Usunięte: mapowanie deklarowane po stronie powłoki przez widok detalu encji.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m13cel00",
+                "m13dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 14,
+              "limit": 4,
+              "anchors": [
+                "z5jthgfh",
+                "za3zsw0w",
+                "xr8fs8dc",
+                "tkz01r0y"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 23,
+              "limit": 1,
+              "anchors": [
+                "m13ui000"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m50-app-shell.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "2gxohenh",
+                "bdmt5qsw"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m50-app-shell.md",
+            "context": {
+              "offset": 15,
+              "limit": 4,
+              "anchors": [
+                "87ddzjs0",
+                "l5szust1",
+                "l5rqryct",
+                "wsmq8cpb"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-zmiana-encji-zapisana-z-zewnatrz-agen"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u2-host-list-empty-state",
+      "goal": "Pusty stan listy encji z katalogu hosta obsługuje dwa przypadki jednym komponentem: brak encji i brak wyników filtra, a typ może je rozróżnić tekstem. Nic nie jest usuwane.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m19-references.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m19cel00",
+                "m19dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m19-references.md",
+            "context": {
+              "offset": 36,
+              "limit": 1,
+              "anchors": [
+                "m19l12sc"
+              ]
+            }
+          }
+        ],
+        "entities": []
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u3-database-tables",
+      "goal": "Pakiet tabel bazy danych nie deklaruje już tekstu pustego stanu w zakładce panelu bocznego. Lista ma stany ładowania, pustej listy i braku wyników, ale nie ma stanu błędu. Detal ma szkielet ładowania i stan nieistniejącej tabeli, a historia po udanym przywróceniu wraca do szczegółów. Spis konsumowanych komponentów katalogu hosta i komponentów lokalnych oznaczonych jako dług odpowiada stanowi w `2.1.19`. Dwa rozjazdy ze wzorcem hosta zostają jako zapisany dług i nie są w tej jednostce naprawiane: klucze zapytań pakietu leżą poza konwencją hosta, więc po zmianie z zewnątrz nic się nie odświeża, a usuwanie idzie przez własne okno pakietu, nie przez potwierdzenie hosta. Usunięte: pole pustego stanu zakładki w manifeście.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "plugins/modules/c4s-plugin-database-tables.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 4,
+              "anchors": [
+                "91vq520g",
+                "ityp8g1r",
+                "iqydvmh5",
+                "ovajlwnd"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-database-tables.md",
+            "context": {
+              "offset": 8,
+              "limit": 1,
+              "anchors": [
+                "vnufk8nt"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-database-tables.md",
+            "context": {
+              "offset": 11,
+              "limit": 1,
+              "anchors": [
+                "uyu88bdw"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ui-view",
+            "slugs": [
+              "database-table-detail",
+              "database-table-history",
+              "database-table-list"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u4-mcp-tools",
+      "goal": "Pakiet narzędzi MCP nie deklaruje już tekstu pustego stanu w zakładce panelu bocznego. Lista grupuje narzędzia komponentem katalogu i pokazuje pasek filtra tagów tylko wtedy, gdy narzędzia mają tagi. Lista ma stany ładowania, pustej listy i braku wyników, bez stanu błędu. Detal ma breadcrumb z przełącznikiem szczegóły/historia, usuwanie z paska meta przez potwierdzenie hosta oraz stany nieistniejącego narzędzia i błędu ładowania. Historia po udanym przywróceniu wraca do szczegółów. Własny pasek breadcrumbu jest zapisany jako dług z zamiennikiem z katalogu. Klucze zapytań pakietu pozostają poza konwencją hosta: to zapisany dług, więc po zmianie z zewnątrz nic się nie odświeża. Usunięte: pole pustego stanu zakładki w manifeście.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "plugins/modules/c4s-plugin-mcp-tools.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 4,
+              "anchors": [
+                "dfge6nlg",
+                "atmxa1s8",
+                "r46i90hu",
+                "dktzfo4k"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-mcp-tools.md",
+            "context": {
+              "offset": 14,
+              "limit": 1,
+              "anchors": [
+                "4lgygw9q"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-mcp-tools.md",
+            "context": {
+              "offset": 16,
+              "limit": 1,
+              "anchors": [
+                "h054mgoe"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ui-view",
+            "slugs": [
+              "mcp-tool-detail",
+              "mcp-tool-history",
+              "mcp-tool-list"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u5-frontend-mockups",
+      "goal": "Typy design system i UI view nie deklarują już pustego stanu zakładki, bo pusty stan listy rysuje komponent hosta. Detal design systemu ma breadcrumb i przełącznik zakładek, a usuwanie z paska meta przez potwierdzenie hosta z liczbą stron referujących. Detal ma też stan błędu ładowania, który obejmuje również brak encji. Lista design systemów ma stan ładowania i jeden pusty stan. Spis konsumowanych komponentów katalogu i długu obu typów odpowiada stanowi w `2.1.19`; przełącznik widoków detalu UI view jest teraz długiem. Usunięte: pole pustego stanu zakładki w manifestach obu typów.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "plugins/modules/c4s-plugin-frontend-mockups/design-system.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "dscel000",
+                "dsdep000"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-frontend-mockups/design-system.md",
+            "context": {
+              "offset": 17,
+              "limit": 1,
+              "anchors": [
+                "dsl5000"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-frontend-mockups/design-system.md",
+            "context": {
+              "offset": 25,
+              "limit": 1,
+              "anchors": [
+                "dsmanifest"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-frontend-mockups/design-system.md",
+            "context": {
+              "offset": 28,
+              "limit": 1,
+              "anchors": [
+                "mq3b803z"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-frontend-mockups/ui-view/L5-ui.md",
+            "change": "all",
+            "context": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "nomsleky"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-frontend-mockups/ui-view/ui-view.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "uvcel000",
+                "uvdep000"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-frontend-mockups/ui-view/ui-view.md",
+            "context": {
+              "offset": 23,
+              "limit": 2,
+              "anchors": [
+                "uvrender",
+                "cv8b7alf"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-frontend-mockups/ui-view/ui-view.md",
+            "context": {
+              "offset": 27,
+              "limit": 1,
+              "anchors": [
+                "yn1fk80a"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ui-view",
+            "slugs": [
+              "design-system-detail",
+              "design-system-list"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u6-ac-plugin",
+      "goal": "W pakiecie kryteriów akceptacji slot panelu detalu jest tylko sprawdzany co do kształtu, a host go nie renderuje. Spis konsumowanych komponentów katalogu jest przycięty, a lokalne duplikaty komponentów hosta są zapisane jako dług z zamiennikami. Zachowanie widoków się nie zmienia, nic nie jest usuwane z systemu.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "plugins/modules/c4s-plugin-ac.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "plugac01",
+                "fsu38c8q"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-ac.md",
+            "context": {
+              "offset": 5,
+              "limit": 2,
+              "anchors": [
+                "5f8l7spw",
+                "205ctsev"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-ac.md",
+            "context": {
+              "offset": 24,
+              "limit": 1,
+              "anchors": [
+                "yrzqclyz"
+              ]
+            }
+          }
+        ],
+        "entities": []
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u7-api-contracts",
+      "goal": "W typach DTO i endpoint slot panelu detalu jest tylko sprawdzany co do kształtu. Spis konsumowanych komponentów katalogu zyskuje edytor dokumentu, a lokalne duplikaty są zapisane jako dług.\n- Detal DTO: wartość przykładu jest domyślnie tylko do odczytu, a edycję włącza się przyciskiem z anulowaniem i zapisem. Zapis waliduje JSON i przy błędzie zostaje w edycji z komunikatem. Ostrzeżenia o zgodności z polami widać tylko w trybie odczytu, a przeciąganie przenosi cały wiersz.\n- Detal endpointu zachowuje wartość pola edytowanego lokalnie, gdy host odświeży go po zmianie z zewnątrz.\n- Usunięte: blokada zapisu przy nieudanym parsowaniu przykładu.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "plugins/modules/c4s-plugin-api-contracts/dto.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "n4ivxve8",
+                "m7zixber"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-api-contracts/dto.md",
+            "context": {
+              "offset": 6,
+              "limit": 2,
+              "anchors": [
+                "dtofld01",
+                "dtoexmp1"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-api-contracts/dto.md",
+            "context": {
+              "offset": 10,
+              "limit": 1,
+              "anchors": [
+                "eh079aui"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-api-contracts/dto.md",
+            "context": {
+              "offset": 19,
+              "limit": 1,
+              "anchors": [
+                "xvm9aann"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-api-contracts/dto.md",
+            "context": {
+              "offset": 21,
+              "limit": 1,
+              "anchors": [
+                "9hz21ysc"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-api-contracts/endpoint.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "aaihelh6",
+                "feah45mf"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-api-contracts/endpoint.md",
+            "context": {
+              "offset": 8,
+              "limit": 1,
+              "anchors": [
+                "tx6mmt1y"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-api-contracts/endpoint.md",
+            "context": {
+              "offset": 17,
+              "limit": 1,
+              "anchors": [
+                "vc5pzsc0"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-api-contracts/endpoint.md",
+            "context": {
+              "offset": 19,
+              "limit": 1,
+              "anchors": [
+                "dhh869qt"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ui-view",
+            "slugs": [
+              "dto-detail"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-pole-detalu-endpointu-edytowane-lokal"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u1-host-entity-invalidation",
+          "why": "kryterium zachowania lokalnej edycji da się sprawdzić dopiero wtedy, gdy host odświeża detal endpointu po zmianie z zewnątrz."
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    }
+  ],
+  "entityTypes": [
+    {
+      "type": "ac",
+      "role": "criteria",
+      "checks": "verifies",
+      "links": [
+        "verifies"
+      ],
+      "observedIn": "unit",
+      "inactive": "status = deprecated",
+      "version": 3
+    },
+    {
+      "type": "ui-view",
+      "role": "built",
+      "inCode": "a React route/screen in the owning plugin's frontend (plugins/c4s-plugin-*/src/frontend/...) mounted through the manifest's `frontend.routes` (detail `/$slug`, list, `/$slug/history`) or list slots, rendering each alternative state the view lists in `states` (loading, empty, …) composed from Host UI Kit components",
+      "verify": "a vitest test in plugins/<plugin>/test/frontend/ named with [entity:<slug>] asserting the route is registered under the view's `url` with its path params, and that the default screen and every entry of `states` render (jsdom / static render)",
+      "links": [],
+      "version": 4
+    }
+  ],
+  "entityParts": [],
+  "errors": 0,
+  "systemVerified": false,
+  "baselineGreen": true
+}
