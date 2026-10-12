@@ -355,10 +355,10 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "verified",
+   "status": "in-progress",
    "blockedBy": null,
-   "startCommit": "0780fbf8e0ece605b1d86cc1e536600b4f0541f3",
-   "baseCommit": "cae54f9eefaf540bc40bbc15b79748eb47ec1142",
+   "startCommit": "b5ef8d5daa47624b41c491cb828362920b4fdbbb",
+   "baseCommit": "b5ef8d5daa47624b41c491cb828362920b4fdbbb",
    "portions": [
     {
      "name": "m28-bramki-git/p1-domain-l4",
@@ -388,14 +388,17 @@
       "ac-w-trybie-named-new-gdy-tree-po-stage-je",
       "ac-w-trybie-new-commitforrelease-tworzy-n"
      ],
-     "status": "implemented",
+     "status": "pending",
      "rounds": 2,
      "partial": 0,
      "uncovered": [
-      "ac-gdy-docelowy-branch-tryb-named-zniknal",
-      "ac-gdy-git-add-niczego-nie-wniosl-commi"
+      "ac-push-bez-upstream-przy-bledzie-sie"
      ],
-     "only": []
+     "only": [
+      {
+       "slug": "ac-push-bez-upstream-przy-bledzie-sie"
+      }
+     ]
     }
    ],
    "rounds": {
@@ -1176,10 +1179,10 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "verified",
+   "status": "in-progress",
    "blockedBy": null,
-   "startCommit": "366305411e660f38569449337fbb262b80d53a45",
-   "baseCommit": "366305411e660f38569449337fbb262b80d53a45",
+   "startCommit": "b5ef8d5daa47624b41c491cb828362920b4fdbbb",
+   "baseCommit": "b5ef8d5daa47624b41c491cb828362920b4fdbbb",
    "portions": [
     {
      "name": "m17-plik-release-roots/p1-l2-l2",
@@ -1189,11 +1192,17 @@
      "slugs": [
       "section:m17reldisk"
      ],
-     "status": "implemented",
+     "status": "pending",
      "rounds": 1,
      "partial": 0,
-     "uncovered": [],
-     "only": []
+     "uncovered": [
+      "section:m17reldisk"
+     ],
+     "only": [
+      {
+       "slug": "section:m17reldisk"
+      }
+     ]
     }
    ],
    "rounds": {
@@ -1395,10 +1404,10 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "verified",
+   "status": "in-progress",
    "blockedBy": null,
-   "startCommit": "01d8d8fa73eba254d43b712577cf418e7ec2692e",
-   "baseCommit": "01d8d8fa73eba254d43b712577cf418e7ec2692e",
+   "startCommit": "b5ef8d5daa47624b41c491cb828362920b4fdbbb",
+   "baseCommit": "b5ef8d5daa47624b41c491cb828362920b4fdbbb",
    "portions": [
     {
      "name": "m22-skille/p1-l2-l2",
@@ -1419,11 +1428,17 @@
       "wy9a0mdr",
       "a28ukbcn"
      ],
-     "status": "implemented",
+     "status": "pending",
      "rounds": 1,
      "partial": 0,
-     "uncovered": [],
-     "only": []
+     "uncovered": [
+      "foj9tbk4"
+     ],
+     "only": [
+      {
+       "slug": "foj9tbk4"
+      }
+     ]
     }
    ],
    "rounds": {
