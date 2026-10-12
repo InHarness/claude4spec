@@ -1,0 +1,742 @@
+{
+  "iteration": 0,
+  "conventions": [
+    {
+      "label": "L12 (Host UI Kit) — implementor M34",
+      "key": "pages/layers/L12-host-ui-kit.md",
+      "offset": 0,
+      "anchor": "l12top001"
+    },
+    {
+      "label": "L12 (Host UI Kit) — implementor M34",
+      "key": "pages/layers/L12-host-ui-kit.md",
+      "offset": 1,
+      "anchor": "l12role01"
+    },
+    {
+      "label": "L12 (Host UI Kit) — implementor M34",
+      "key": "pages/layers/L12-host-ui-kit.md",
+      "offset": 2,
+      "anchor": "l12slice0"
+    },
+    {
+      "label": "Mapa warstw",
+      "key": "pages/SKILL.md",
+      "offset": 11,
+      "anchor": "rjuyutgc"
+    },
+    {
+      "label": "System verifier: mapa modułów i ich celów",
+      "key": "pages/SKILL.md",
+      "offset": 1,
+      "anchor": "jmr9aiv9"
+    },
+    {
+      "label": "System verifier: mapa modułów i ich celów",
+      "key": "pages/SKILL.md",
+      "offset": 2,
+      "anchor": "7fwp1xvt"
+    },
+    {
+      "label": "System verifier: mapa modułów i ich celów",
+      "key": "pages/SKILL.md",
+      "offset": 12,
+      "anchor": "45yst8co"
+    },
+    {
+      "label": "System verifier: mapa modułów i ich celów",
+      "key": "pages/SKILL.md",
+      "offset": 13,
+      "anchor": "oq23nb0j"
+    },
+    {
+      "label": "System verifier: mapa modułów i ich celów",
+      "key": "pages/SKILL.md",
+      "offset": 14,
+      "anchor": "zpn3gaip"
+    }
+  ],
+  "waves": [
+    {
+      "n": 1,
+      "units": [
+        "u1-m34-catalog-contracts"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 2,
+      "units": [
+        "u2-m13-plugin-routes-and-slots"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 3,
+      "units": [
+        "u3-m19-list-pattern-and-missing-rows",
+        "u4-m50-shell-sidebar-and-entity-routes"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 4,
+      "units": [
+        "u5-plugin-ac-detail-and-list",
+        "u6-plugin-dto-detail-and-list",
+        "u7-plugin-ui-view-detail-and-list"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 5,
+      "units": [
+        "u8-plugin-endpoint-detail-history-list"
+      ],
+      "startCommit": null
+    }
+  ],
+  "units": [
+    {
+      "id": "u1-m34-catalog-contracts",
+      "goal": "Katalog Host UI Kit ma kontrakty propsów komponentów `experimental` zgodne z kodem: listowe, akcje i stany, formularzowe, overlay, pickery i panel detalu. Dochodzi wariant `broken` w `Badge`, a `TagPicker` w wariancie `collapsed` dostaje tworzenie tagu inline. `EntityVersionHistoryView` dostaje zakładki Diff i Snapshot, grupowanie wersji po release, komunikat błędu restore i pusty stan po usunięciu encji. Znika tombstone usuniętej encji. Katalog wiąże się wyłącznie z wersją Host API, nie z wersją wydania aplikacji.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m34-host-ui-kit/L12-host-ui-kit.md",
+            "change": "all",
+            "context": {
+              "offset": 0,
+              "limit": 5,
+              "anchors": [
+                "2l9kgnfo",
+                "l5ppoanat",
+                "rxqin83v",
+                "wbs9m5zj",
+                "l5pactbar"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m34-host-ui-kit/m34-host-ui-kit.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m34purp01",
+                "m34deps01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m34-host-ui-kit/m34-host-ui-kit.md",
+            "context": {
+              "offset": 9,
+              "limit": 1,
+              "anchors": [
+                "hntah0r7"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-badge-z-variant-broken-renderuje-wari",
+              "ac-entityversionhistoryview-otwarty-dla",
+              "ac-entityversionhistoryview-pokazuje-w-z"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "blockedBy": null,
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u2-m13-plugin-routes-and-slots",
+      "goal": "Host M13 nie ma już generycznego `EntityDetailPage`: wszystkie trasy typu (lista, `/$slug`, `/$slug/history`) montuje plugin przez `frontend.routes`, a host tylko scala drzewo tras. Slot `detailPanel` jest walidowany co do kształtu, ale nigdy nie renderowany, a `EntityDetailProps` ma cztery wymagane pola. `sidebarTab.emptyState` jest opcjonalny i nierenderowany. Sloty `renderChip` i `renderCard` dostają rozwiązaną encję lub `null` oraz `onOpen`, karta dostaje `caption`, a `renderRow` dostaje zawsze encję. Znikają: toolbar hosta z przyciskiem Edit, hostowe wywołania `onDeleted`/`onRenamed` i fallbackowy detal. Dwa kryteria tego kontraktu przechodzą w stan deprecated.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m13-entity-framework/L2-domain.md",
+            "change": {
+              "offset": 0,
+              "limit": 2,
+              "anchors": [
+                "z7l89jhf",
+                "chipprops"
+              ]
+            },
+            "context": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "m13dom00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/L2-domain.md",
+            "context": {
+              "offset": 8,
+              "limit": 1,
+              "anchors": [
+                "mbladez6"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m13cel00",
+                "m13dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 25,
+              "limit": 1,
+              "anchors": [
+                "m13l11sc"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m13-requires-m19"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-entitydetailpage-nasluchuje-entity-ch",
+              "ac-slot-detailpanel-otrzymuje-od-hosta-mi"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u1-m34-catalog-contracts",
+          "why": "wzorzec trasy detalu i gałąź `null` chipa składają się z komponentów katalogu (`DetailPanelShell` bez slotu Edit, `Badge` w wariancie `broken`, `EnumBadgePicker`, `TagPicker` w wariancie `collapsed`, `EntityVersionHistoryView`)"
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "blockedBy": null,
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u3-m19-list-pattern-and-missing-rows",
+      "goal": "`EntityListHeader` ma jawny kontrakt propsów. Strona listy encji ma jeden wiążący wzorzec: ten sam stan pusty dla braku encji i dla braku wyników filtra, bez stanu błędu i bez paginacji. `element_list` pomija wiersz sluga usuniętej encji zamiast degradować go do chipa.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m19-references.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m19cel00",
+                "m19dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m19-references.md",
+            "context": {
+              "offset": 9,
+              "limit": 2,
+              "anchors": [
+                "m19broken",
+                "n3e8p5db"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-slug-usunietej-encji-w-element-list-n"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u1-m34-catalog-contracts",
+          "why": "wzorzec składa się z kontraktów listowych katalogu (`EntityListLayout`, `EntityListRow`, `TagFilterBar` z akcją clear, `EmptyState`, `LoadingState`)"
+        },
+        {
+          "unit": "u2-m13-plugin-routes-and-slots",
+          "why": "pominięcie wiersza opiera się na kontrakcie, w którym `renderRow` dostaje zawsze encję"
+        }
+      ],
+      "wave": 3,
+      "status": "pending",
+      "blockedBy": null,
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u4-m50-shell-sidebar-and-entity-routes",
+      "goal": "Przy pustym `config.entities` sekcja ELEMENTS sidebara pokazuje komunikat o braku skonfigurowanych typów, a nie `emptyState` slotu. Taby odświeżają się bez restartu serwera po zapisie Ustawień → Entities i po zaufaniu pluginom. Zmiana z innej karty albo ręczna edycja konfiguracji wymaga przeładowania strony. Trasa encji jest trasą pluginu. Hostowy not-found obsługuje tylko URL-e niepasujące do żadnej trasy, a propozycja „utwórz encję” znika.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m13-entity-framework/L2-domain.md",
+            "change": {
+              "offset": 2,
+              "limit": 1,
+              "anchors": [
+                "m13actv0"
+              ]
+            },
+            "context": {
+              "offset": 11,
+              "limit": 1,
+              "anchors": [
+                "m13plset"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m50-app-shell.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "2gxohenh",
+                "bdmt5qsw",
+                "pqxnmscd"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-multi-select-entities-w-m26-sekcja-ent",
+              "ac-po-zapisie-aktywnych-typow-w-ustawien",
+              "ac-zmiana-aktywnych-typow-zapisana-w-inn"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u2-m13-plugin-routes-and-slots",
+          "why": "trasa encji to trasa pluginu z `frontend.routes`, a `sidebarTab.emptyState` nie jest renderowany"
+        }
+      ],
+      "wave": 3,
+      "status": "pending",
+      "blockedBy": null,
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u5-plugin-ac-detail-and-list",
+      "goal": "Typ `ac` ma własną trasę detalu według wzorca M13. Kind i Status zmienia się przez `EnumBadgePicker` w detalu oraz w oknach tworzenia i edycji. Panel `verifies` to `GroupedRelationPicker` z grupą na każdy typ z rejestru, a martwe cele pokazuje jako `Badge` w wariancie `broken`. Tagi obsługuje `TagPicker` w wariancie `collapsed`. Lista ma nagłówek, filtr kind obok filtra status oraz stany loading i empty. Chip i karta mają własną gałąź encji usuniętej. Znikają: `emptyState` zakładki, przycisk Edit, baner deprecated, ręczna kolejność `verifies` i użycie `TagCreatePopover`.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "plugins/modules/c4s-plugin-ac.md",
+            "change": "all",
+            "context": {
+              "offset": 0,
+              "limit": 2,
+              "anchors": [
+                "jzm08qnd",
+                "plugac01"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-ac.md",
+            "context": {
+              "offset": 5,
+              "limit": 2,
+              "anchors": [
+                "5f8l7spw",
+                "205ctsev"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-ac.md",
+            "context": {
+              "offset": 10,
+              "limit": 1,
+              "anchors": [
+                "eoi2kf2k"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-ac.md",
+            "context": {
+              "offset": 24,
+              "limit": 1,
+              "anchors": [
+                "yrzqclyz"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ui-view",
+            "slugs": [
+              "ac-detail",
+              "ac-list"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-panel-verifies-na-stronie-detalu-ac-g",
+              "ac-pole-kind-na-stronie-detalu-ac-zmieni",
+              "ac-pole-status-na-stronie-detalu-ac-zmie"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u1-m34-catalog-contracts",
+          "why": "`EnumBadgePicker`, `GroupedRelationPicker`, `TagPicker` w wariancie `collapsed`, `Badge` w wariancie `broken`"
+        },
+        {
+          "unit": "u2-m13-plugin-routes-and-slots",
+          "why": "kontrakt slotów i brak hostowego detalu"
+        },
+        {
+          "unit": "u3-m19-list-pattern-and-missing-rows",
+          "why": "wzorzec strony listy"
+        }
+      ],
+      "wave": 4,
+      "status": "pending",
+      "blockedBy": null,
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u6-plugin-dto-detail-and-list",
+      "goal": "Typ `dto` ma własną trasę detalu według wzorca M13: pola edytowane w miejscu, nowy tag tworzony przy zapisie encji i bez koloru. Lista ma nagłówek oraz stany loading i empty. Chip i karta mają własną gałąź encji usuniętej, a wiersza brakującej encji nie ma. Znikają: `emptyState` zakładki, przycisk Edit i użycie `TagCreatePopover`.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "plugins/modules/c4s-plugin-api-contracts/dto.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "n4ivxve8",
+                "m7zixber"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-api-contracts/dto.md",
+            "context": {
+              "offset": 18,
+              "limit": 1,
+              "anchors": [
+                "frjal7h6"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-api-contracts/dto.md",
+            "context": {
+              "offset": 21,
+              "limit": 1,
+              "anchors": [
+                "9hz21ysc"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ui-view",
+            "slugs": [
+              "dto-detail",
+              "dto-list"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u1-m34-catalog-contracts",
+          "why": "komponenty listy i detalu"
+        },
+        {
+          "unit": "u2-m13-plugin-routes-and-slots",
+          "why": "kontrakt slotów i brak hostowego detalu"
+        },
+        {
+          "unit": "u3-m19-list-pattern-and-missing-rows",
+          "why": "wzorzec strony listy"
+        }
+      ],
+      "wave": 4,
+      "status": "pending",
+      "blockedBy": null,
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u7-plugin-ui-view-detail-and-list",
+      "goal": "Typ `ui-view` ma własną trasę detalu według wzorca M13. Przełącznik trzech zakładek opakowuje `SegmentedControlTabs` z katalogu i nie jest już długiem. Parametry to siatka `FieldRow` z flagą parametrów ścieżki brakujących w `params`. Doszło pole „Find references”. Lista pokazuje liczbę parametrów w wierszu oraz stany loading i empty. Chip i karta mają gałąź encji usuniętej, w której gesty z Alt są wyłączone. Znikają: `emptyState` w manifeście, przycisk Edit i użycie `TagCreatePopover`.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "plugins/modules/c4s-plugin-frontend-mockups/ui-view/ui-view.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "uvcel000",
+                "uvdep000"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-frontend-mockups/ui-view/ui-view.md",
+            "context": {
+              "offset": 23,
+              "limit": 1,
+              "anchors": [
+                "uvrender"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-frontend-mockups/ui-view/L5-ui.md",
+            "change": "all"
+          }
+        ],
+        "entities": [
+          {
+            "type": "ui-view",
+            "slugs": [
+              "ui-view-detail",
+              "ui-view-list"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u1-m34-catalog-contracts",
+          "why": "`SegmentedControlTabs`, `FieldRow`, komponenty listy"
+        },
+        {
+          "unit": "u2-m13-plugin-routes-and-slots",
+          "why": "kontrakt slotów i brak hostowego detalu"
+        },
+        {
+          "unit": "u3-m19-list-pattern-and-missing-rows",
+          "why": "wzorzec strony listy"
+        }
+      ],
+      "wave": 4,
+      "status": "pending",
+      "blockedBy": null,
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u8-plugin-endpoint-detail-history-list",
+      "goal": "Typ `endpoint` ma własną trasę detalu według wzorca M13: nagłówek z metodą w `EnumBadgePicker` i ze ścieżką, opis w `DocEditor` i pole „Find references”. Historia to `EntityVersionHistoryView` na trasie `/$slug/history`, z pustym stanem dla encji bez wersji lub usuniętej. Wiersz listy ma chip metody, ścieżkę jako treść główną, summary w drugiej linii i slug na końcu. Brak encji i brak wyników filtra dają ten sam stan pusty. Znikają: `emptyState` zakładki, przycisk Edit, legenda diffu JSON, tombstone w historii oraz wspólny komponent `TagCreatePopover` (tworzenie tagu przejmuje `TagPicker` w wariancie `collapsed`).",
+      "recipe": {
+        "pages": [
+          {
+            "key": "plugins/modules/c4s-plugin-api-contracts/endpoint.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "aaihelh6"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-api-contracts/endpoint.md",
+            "context": {
+              "offset": 16,
+              "limit": 1,
+              "anchors": [
+                "69i6wnvo"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-api-contracts/endpoint.md",
+            "context": {
+              "offset": 19,
+              "limit": 1,
+              "anchors": [
+                "dhh869qt"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ui-view",
+            "slugs": [
+              "endpoint-detail",
+              "endpoint-history",
+              "endpoint-list"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-lista-endpointow-bez-zadnej-encji-i-l",
+              "ac-wiersz-listy-endpointow-pokazuje-meto",
+              "ac-wiersz-listy-endpointow-pokazuje-path"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u1-m34-catalog-contracts",
+          "why": "`EntityVersionHistoryView`, `Badge`, komponenty listy"
+        },
+        {
+          "unit": "u2-m13-plugin-routes-and-slots",
+          "why": "kontrakt slotów i brak hostowego detalu"
+        },
+        {
+          "unit": "u3-m19-list-pattern-and-missing-rows",
+          "why": "wzorzec strony listy"
+        },
+        {
+          "unit": "u5-plugin-ac-detail-and-list",
+          "why": "musi przestać używać `TagCreatePopover`, zanim ta jednostka go usunie"
+        },
+        {
+          "unit": "u6-plugin-dto-detail-and-list",
+          "why": "musi przestać używać `TagCreatePopover`, zanim ta jednostka go usunie"
+        },
+        {
+          "unit": "u7-plugin-ui-view-detail-and-list",
+          "why": "musi przestać używać `TagCreatePopover`, zanim ta jednostka go usunie"
+        }
+      ],
+      "wave": 5,
+      "status": "pending",
+      "blockedBy": null,
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    }
+  ],
+  "entityTypes": [
+    {
+      "type": "ac",
+      "role": "criteria",
+      "checks": "verifies",
+      "links": [
+        "verifies"
+      ],
+      "observedIn": "unit",
+      "inactive": "status = deprecated",
+      "version": 3
+    },
+    {
+      "type": "ui-view",
+      "role": "built",
+      "inCode": "a React route/screen in the owning plugin's frontend (plugins/c4s-plugin-*/src/frontend/...) mounted through the manifest's `frontend.routes` (detail `/$slug`, list, `/$slug/history`) or list slots, rendering each alternative state the view lists in `states` (loading, empty, …) composed from Host UI Kit components",
+      "verify": "a vitest test in plugins/<plugin>/test/frontend/ named with [entity:<slug>] asserting the route is registered under the view's `url` with its path params, and that the default screen and every entry of `states` render (jsdom / static render)",
+      "links": [],
+      "version": 4
+    },
+    {
+      "type": "module-dependency",
+      "role": "context",
+      "links": [],
+      "version": 1
+    }
+  ],
+  "entityParts": [],
+  "errors": 0,
+  "systemVerified": false
+}
