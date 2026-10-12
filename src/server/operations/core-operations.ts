@@ -1481,11 +1481,15 @@ export function registerCoreOperations(): void {
      * (`brief-tools`' thread mount), not a contract of the operation. Every
      * external rendering requires `path` (the `brief` profile, `profiles.ts`).
      *
+     * 2.1.14 — M21 declares thread isolation (`01ytpznn`,
+     * `OWNER_THREAD_ISOLATION.brief`): the `internal` rendering of every
+     * addressed brief operation carries NO `path` — absent, not optional.
+     *
      * Codes: `BRIEF_NOT_FOUND` for an unknown path, `INVALID_ARGUMENT` for a
      * window starting past the end of the file (stating its size) or malformed.
      */
     inputSchema: {
-      path: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Required on every external channel.'),
+      path: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Required on every external channel; absent from the internal rendering (isolation).'),
       range: z
         .object({ start: z.number().int().positive(), end: z.number().int().positive() })
         .optional()
@@ -1507,7 +1511,7 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'brief',
     inputSchema: {
-      path: z.string().optional(),
+      path: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Required on every external channel; absent from the internal rendering (isolation).'),
       action: z.enum(['replace', 'append', 'insert_after_section']).optional(),
       content: z.string().optional(),
       anchor: z.string().optional(),
@@ -1523,11 +1527,14 @@ export function registerCoreOperations(): void {
      * 0.2.86 — the codes the renderings actually raise. 2.1.13 — the row's four
      * (`BRIEF_NOT_FOUND`, `BRIEF_CONFLICT`, `IMMUTABLE_FIELD`, `VALIDATION`):
      * the service now answers an unknown path with `BRIEF_NOT_FOUND` itself
-     * instead of the generic `NOT_FOUND` the CLI used to rename.
+     * instead of the generic `NOT_FOUND` the CLI used to rename. 2.1.14 — a
+     * malformed input shape (both `action`/`content` and `textEdits`, neither,
+     * or half of the action shape) is the row's `VALIDATION`.
      *
-     * ASSUMPTION:dev-0011 — plus the codes of the differential `textEdits` shape
-     * the rendering keeps beside the row's literal one (`INVALID_ARGUMENT`,
-     * `MISSING_TARGET`, `FIND_NOT_FOUND`, `MATCH_COUNT_MISMATCH`).
+     * ASSUMPTION:m21-dev-0001 — plus the codes the M43 differential engine and
+     * `insert_after_section` raise, which the row's code cell does not list
+     * (`INVALID_ARGUMENT` for overlapping matches, `FIND_NOT_FOUND`,
+     * `MATCH_COUNT_MISMATCH`, `MISSING_TARGET`).
      */
     errorCodes: [
       'BRIEF_NOT_FOUND',
@@ -1543,6 +1550,7 @@ export function registerCoreOperations(): void {
     /**
      * 0.2.86 — the differential mode the 0.2.37 row deferred: `textEdits`, same
      * engine and field names as `update_page` / `update_sections` / `update_plan`.
+     * 2.1.14 — the row's `opis treści` is `obydwa`: exactly one shape per call.
      */
     contentInput: 'literal+diff',
     idempotent: false,
@@ -1593,7 +1601,7 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'brief',
     inputSchema: {
-      path: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Required on an external connection.'),
+      path: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Required on an external connection; absent from the internal rendering (isolation).'),
       ...paging,
     },
     // 2.1.13 — the row's one code: an unknown path is BRIEF_NOT_FOUND, never an
@@ -1618,7 +1626,7 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'brief',
     inputSchema: {
-      path: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Required on an external connection.'),
+      path: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Required on an external connection; absent from the internal rendering (isolation).'),
       version: z.number().int().positive(),
     },
     // 2.1.13 — BRIEF_NOT_FOUND for an unknown path (the row's code).

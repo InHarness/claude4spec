@@ -134,10 +134,12 @@ describe('M36 binding matrix supplies the address, M43 shapes the parameter (2.1
       }
     }
     // The shape follows the OWNER's declaration, not the matrix's anchor /
-    // attach mode: brief and patch (anchor, no declaration) keep the optional
-    // default, plan (attach) is absent only because M10 declares isolation.
-    expect(Object.keys(OWNER_THREAD_ISOLATION)).toEqual(['plan']);
-    expect(artifactAddressingShape('brief', 'internal')).toBe('optional');
+    // attach mode: patch (anchor, no declaration) keeps the optional default;
+    // brief (anchor) and plan (attach) are absent only because their owners —
+    // M21 (2.1.14) and M10 — declare isolation.
+    expect(Object.keys(OWNER_THREAD_ISOLATION).sort()).toEqual(['brief', 'plan']);
+    expect(artifactAddressingShape('brief', 'internal')).toBe('absent');
+    expect(artifactAddressingShape('brief', 'internal', {})).toBe('optional');
     expect(artifactAddressingShape('patch', 'internal')).toBe('optional');
     expect(artifactAddressingShape('plan', 'internal')).toBe('absent');
     expect(artifactAddressingShape('plan', 'internal', {})).toBe('optional');

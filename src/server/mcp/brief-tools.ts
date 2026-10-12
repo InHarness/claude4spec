@@ -10,7 +10,10 @@
  * `thread` — the original. `briefPath` is captured from
  * `chat_thread.brief_path` at thread creation and closed over here; the tools
  * take no brief argument. Mounted by `routes/chat.ts` only for threads with
- * `context_type='brief'`.
+ * `context_type='brief'`. 2.1.14 — that absence is now M21's declared thread
+ * isolation (`01ytpznn`, `OWNER_THREAD_ISOLATION.brief`): the parameter's shape
+ * per channel comes from M43's `explicit-addressing` rule (`addressing.ts`),
+ * not from a decision taken here.
  *
  * `explicit` — 0.2.13, for the external MCP surface. A connection has no
  * thread, so there is no ambient brief to close over, and the tools take a
@@ -28,6 +31,7 @@ import { toolFailure, toolSuccess } from '../operations/envelope.js';
 import { DomainError } from '../services/tags.js';
 import { applyTextEdits, type MatchPosition, type PositionResolver, type TextEdit } from '../services/text-edits.js';
 import { bodyPositionResolver } from '../services/section-text.js';
+import { addressingParam, artifactAddressingShape } from '../operations/addressing.js';
 
 export interface BriefToolsContext {
   threadId: string;
@@ -92,18 +96,41 @@ const BRIEF_RANGE_ARG = {
 };
 
 /**
- * 2.1.13 — `get_brief`'s description on the thread mount: the
- * `brief-tools-get-brief` entity's, verbatim, except for its `path` sentence.
- *
- * ASSUMPTION:dev-0001 — the entity says "`path` is optional here: omit it and
- * the brief of the current thread is resolved for you". The thread mount carries
- * no `path` at all (the brief is closed over from `chat_thread.brief_path`, and
- * `<brief_tools_usage>` tells the agent so), so the sentence is replaced by the
- * one that is true of this schema; M21 makes no isolation declaration, and the
- * question whether it should is dev-0001.
+ * 2.1.14 — the thread-mount descriptions are the `brief-tools-*` entities',
+ * verbatim. Each says there is no `path`: M21 declares thread isolation
+ * (`01ytpznn`), so the internal schema carries no address at all.
  */
 const THREAD_GET_BRIEF_DESCRIPTION =
-  "Read the brief this thread is anchored in — content, frontmatter and hash. This is the ONLY way to the brief's content: the system prompt carries the brief's path and frontmatter, never its body and never its hash. The brief of the current thread is resolved for you; there is no `path` to pass. For a long brief, or when a response comes back truncated, read it in windows with `range`. The returned `hash` is what arms `expectedHash` on the next `update_brief`, so this read is the entry point of every write. Call it before editing, and again after a system reminder says the file changed underneath you.";
+  "Read the brief this thread is anchored in — content, frontmatter and hash. This is the ONLY way to the brief's content: the system prompt carries the brief's path and frontmatter, never its body and never its hash. There is no `path` parameter: the tool is scoped to the brief of this thread and cannot reach another one. For a long brief, or when a response comes back truncated, read it in windows with `range`. The returned `hash` is what arms `expectedHash` on the next `update_brief`, so this read is the entry point of every write. Call it before editing, and again after a system reminder says the file changed underneath you.";
+
+/**
+ * `update_brief`'s description minus its first sentence, which is the only part
+ * that differs between the mounts (where the brief's address comes from).
+ */
+const UPDATE_BRIEF_DESCRIPTION_BODY =
+  'TWO INPUT SHAPES, EXACTLY ONE PER CALL (both, or neither, is invalid):\n- by action — `action` + `content`: `replace` swaps the addressed range, `append` adds at the end, `insert_after_section` places new content after a section you address by `anchor` or by `heading`. You pass the full text of the range in `content`.\n- differential — `textEdits`: literal substitutions over the whole brief, without resending the untouched text. Use it for a few sentences anywhere; use `action` + `content` to write or genuinely rewrite a range.\n\n`find` matches BYTE FOR BYTE — no regex, no whitespace normalisation. `expectedMatches` OMITTED MEANS EXACTLY ONE match; pass a number, or `"all"` for every occurrence. All patterns are counted on the brief as it was BEFORE the write, so substitutions do not cascade.\n\n`expectedHash` is MANDATORY. Pass the hash you got from `get_brief`; omitting it is a validation error, not silent permission to overwrite. The brief is edited in parallel by this thread, by a human in the UI and by an implementer agent in the terminal, so last-write-wins would lose someone\'s work without a trace.\n\nAn `anchor` that no longer resolves does not fail the call — the content is appended at the end and the answer says so. A heading inside a code block is never a target, and a `heading` matching several headings lands after the first of them, with a warning in the answer.\n\nFrontmatter is not editable here; only `implemented` is mutable at all, and it has its own route.';
+
+/** `brief-tools-update-brief`'s description, verbatim (thread mount). */
+const THREAD_UPDATE_BRIEF_DESCRIPTION =
+  'Edit the brief of this thread — there is no `path` parameter and no way to reach another brief. ' + UPDATE_BRIEF_DESCRIPTION_BODY;
+
+/** The same write on the threadless mount, where the caller names the brief. */
+const EXPLICIT_UPDATE_BRIEF_DESCRIPTION =
+  'Edit the brief named by `path` — required: this connection has no thread, so there is no default brief. ' + UPDATE_BRIEF_DESCRIPTION_BODY;
+
+/** `brief-tools-list-brief-versions`' description, verbatim (thread mount). */
+const THREAD_LIST_BRIEF_VERSIONS_DESCRIPTION =
+  'List the version history of the brief — metadata only, never content. Use it to see what changed and when before pulling a specific snapshot with `get_brief_version`. There is no `path` parameter: the tool addresses the brief of this thread only.';
+
+const EXPLICIT_LIST_BRIEF_VERSIONS_DESCRIPTION =
+  'List the version history of the brief named by `path` — metadata only, never content, oldest first (offset 0 is version 1). Use it to see what changed and when before pulling a specific snapshot with `get_brief_version`. An unknown path is BRIEF_NOT_FOUND, never an empty list.';
+
+/** `brief-tools-get-brief-version`'s description, verbatim (thread mount). */
+const THREAD_GET_BRIEF_VERSION_DESCRIPTION =
+  'Read one historical snapshot of the brief, addressed by version number from `list_brief_versions`. Use it to see what the brief said before an edit — it does not restore anything and does not touch the live file. There is no `path` parameter: the tool addresses the brief of this thread only.';
+
+const EXPLICIT_GET_BRIEF_VERSION_DESCRIPTION =
+  'Read one historical snapshot of the brief named by `path`, addressed by version number from `list_brief_versions`. Use it to see what the brief said before an edit — it does not restore anything and does not touch the live file.';
 
 /** The same read on the threadless mount, where the caller names the brief. */
 const EXPLICIT_GET_BRIEF_DESCRIPTION =
@@ -122,6 +149,18 @@ export function buildBriefToolsServer(
    * `resolveBrief` reads the call's own argument instead.
    */
   const ambientBriefPath = explicit ? null : ctx.briefPath;
+  /**
+   * 2.1.14 — the brief's addressing parameter, shaped by M43's
+   * `explicit-addressing` rule and NOT decided here. The threadless mount is an
+   * external channel (`mcp`): `path` is required. The thread mount is
+   * `internal`, where M21 declares thread isolation
+   * (`OWNER_THREAD_ISOLATION.brief`): `path` is ABSENT, not optional.
+   */
+  const pathParam = addressingParam(
+    'path',
+    artifactAddressingShape('brief', explicit ? 'mcp' : 'internal'),
+    EXPLICIT_BRIEF_ARG.path,
+  );
 
   /**
    * The shared envelope — see `operations/envelope.ts`. The local pair this
@@ -169,7 +208,7 @@ export function buildBriefToolsServer(
   const getBrief = mcpTool(
     'get_brief',
     explicit ? EXPLICIT_GET_BRIEF_DESCRIPTION : THREAD_GET_BRIEF_DESCRIPTION,
-    explicit ? { ...EXPLICIT_BRIEF_ARG, ...BRIEF_RANGE_ARG } : { ...BRIEF_RANGE_ARG },
+    { ...pathParam, ...BRIEF_RANGE_ARG },
     async (args) => {
       try {
         const range = args.range as { start: number; end: number } | undefined;
@@ -211,51 +250,46 @@ export function buildBriefToolsServer(
     .min(1);
 
   /**
-   * ASSUMPTION:dev-0011 — beside the entity's parameters (`action`, `content`,
-   * `anchor`, `heading`, `expectedHash`, `path`) the rendering keeps the
-   * differential `textEdits` shape and `changeSummary`, so `action`/`content` are
-   * optional; `path` is closed over in thread mode and required externally.
+   * 2.1.14 — `brief-tools-update-brief`: the entity's parameters (`action`,
+   * `content`, `textEdits`, `anchor`, `heading`, `expectedHash`,
+   * `changeSummary`) with its descriptions, and `path` only where the rule puts
+   * it (the threadless mount). Exactly one input shape per call — `action` +
+   * `content`, or `textEdits` — refused as `VALIDATION` before the file is read.
    */
   const updateBrief = mcpTool(
     'update_brief',
-    [
-      'Edit the brief markdown body through EXACTLY ONE of two input shapes:',
-      '(A) `action` + `content`:',
-      '- replace: full rewrite (provide complete markdown in `content`).',
-      '- append: append fragment at end of body.',
-      '- insert_after_section: insert fragment after a section (its whole subtree) identified by `anchor`',
-      '  (preferred — the id in an `<!-- anchor: ... -->` line above a heading) or `heading` (text match).',
-      'A heading inside a code block is never a target, and a `heading` matching several headings lands after the first of them, with a warning in the answer.',
-      'No target → the fragment is appended at the END, with a warning.',
-      '(B) `textEdits`: literal find/replaceWith substitutions counted over the WHOLE body',
-      '(frontmatter excluded). All finds are evaluated against the body BEFORE the write;',
-      'overlapping matches are INVALID_ARGUMENT. The response carries `replacements`.',
-      'Both shapes, or neither, → INVALID_ARGUMENT.',
-      'You CANNOT modify frontmatter (type, from_release, to_release, roots,',
-      'generated_at, implemented). `roots` is the brief scope (the',
-      "page roots this brief covers; absent = whole-release) — pass it to release_diff",
-      'as `roots` to keep the diff scoped to this brief. `implemented` is owned by the',
-      'implementer-agent in the target repo and toggled via filesystem edit, not via this MCP.',
-      'Any frontmatter mutation attempt → IMMUTABLE_FIELD.',
-      'REQUIRED `expectedHash` (sha256 from get_brief) — read the brief, then pass the hash',
-      'you read back here. Mismatch → BRIEF_CONFLICT (re-read brief before retrying);',
-      'omitting it → VALIDATION. There is no unguarded write.',
-      'Returns { newHash, replacements?, warning? } — never the content you sent.',
-      'Each mutation captures a row in file_version with changed_by="agent".',
-    ].join(' '),
+    explicit ? EXPLICIT_UPDATE_BRIEF_DESCRIPTION : THREAD_UPDATE_BRIEF_DESCRIPTION,
     {
-      ...(explicit ? EXPLICIT_BRIEF_ARG : {}),
-      action: AGENT_ACTIONS.optional().describe('Shape (A). Mutually exclusive with textEdits.'),
-      content: z.string().optional().describe('Shape (A): the fragment or full body for `action`.'),
-      anchor: z.string().optional(),
-      heading: z.string().optional(),
+      ...pathParam,
+      action: AGENT_ACTIONS.optional().describe(
+        'ACTION SHAPE: what to do with `content` — swap the addressed range, add at the end, or insert after an addressed section. Required together with `content`; forbidden with `textEdits`.',
+      ),
+      content: z
+        .string()
+        .optional()
+        .describe(
+          'ACTION SHAPE: full text this edit contributes — write the range out. Required together with `action`; forbidden with `textEdits`.',
+        ),
       textEdits: textEditsParam
         .optional()
-        .describe('Shape (B): literal substitutions over the whole body. Mutually exclusive with action/content.'),
+        .describe(
+          'DIFFERENTIAL SHAPE: `[{ find, replaceWith, expectedMatches? }]` applied to the whole brief. `find` is literal, byte for byte; `expectedMatches` omitted means exactly one hit, a number means exactly that many, `"all"` means every occurrence. Mutually exclusive with `action` and `content`.',
+        ),
+      anchor: z
+        .string()
+        .optional()
+        .describe('Section anchor to address for `insert_after_section`. Unknown anchor degrades to append-at-end with a warning.'),
+      heading: z
+        .string()
+        .optional()
+        .describe('Heading text to address for `insert_after_section`, as an alternative to `anchor`.'),
       expectedHash: z
         .string()
-        .describe('sha256 of the brief as you last read it (the `hash` from get_brief). Required.'),
-      changeSummary: z.string().optional(),
+        .describe('sha256 of the brief as you last read it. Missing → VALIDATION; mismatch → BRIEF_CONFLICT carrying the current hash.'),
+      changeSummary: z
+        .string()
+        .optional()
+        .describe('One-line description of what this edit changes, recorded with the version.'),
     },
     async (args) => {
       try {
@@ -282,8 +316,23 @@ export function buildBriefToolsServer(
             'call get_brief and send its `hash` as `expectedHash`',
           );
         }
+        /*
+         * 2.1.14 — the input shape is settled on entry, before the file is read:
+         * EXACTLY ONE of `action` + `content` (literal) or `textEdits`
+         * (differential). Both, neither, or half of the action shape is
+         * `VALIDATION` — the row's code for a malformed call (M21 `01ytpznn`).
+         */
         const hasTextEdits = args.textEdits !== undefined;
         const hasAction = args.action !== undefined || args.content !== undefined;
+        if (hasTextEdits === hasAction) {
+          throw new DomainError(
+            'VALIDATION',
+            hasTextEdits
+              ? 'pass either `textEdits` or `action` + `content`, not both'
+              : 'nothing to write: pass `textEdits`, or `action` + `content`',
+            'textEdits for a punctual change; action/content for a rewrite, append or section insert',
+          );
+        }
         /*
          * `anchor`/`heading` address `insert_after_section`'s insertion point and
          * nothing else. Sent with `textEdits` they used to be dropped in silence,
@@ -293,18 +342,16 @@ export function buildBriefToolsServer(
          */
         if (hasTextEdits && (args.anchor !== undefined || args.heading !== undefined)) {
           throw new DomainError(
-            'INVALID_ARGUMENT',
+            'VALIDATION',
             '`anchor`/`heading` do not scope `textEdits`: every `find` is matched over the whole body',
             'drop them, or make the `find` itself unambiguous',
           );
         }
-        if (hasTextEdits === hasAction) {
+        if (hasAction && (args.action === undefined || typeof args.content !== 'string')) {
           throw new DomainError(
-            'INVALID_ARGUMENT',
-            hasTextEdits
-              ? 'pass either `textEdits` or `action` + `content`, not both'
-              : 'nothing to write: pass `textEdits`, or `action` + `content`',
-            'textEdits for a punctual change; action/content for a rewrite, append or section insert',
+            'VALIDATION',
+            '`action` and `content` go together',
+            'pass both — or use `textEdits` for literal substitutions',
           );
         }
         const current = await briefService.getBrief(briefPath, { full: true });
@@ -333,13 +380,10 @@ export function buildBriefToolsServer(
           newBody = applied.text;
           replacements = applied.replacements;
         } else {
-          if (args.action === undefined || typeof args.content !== 'string') {
-            throw new DomainError('INVALID_ARGUMENT', '`action` and `content` go together');
-          }
           const composed = composeBriefBody(
             current.body,
             args.action as 'replace' | 'append' | 'insert_after_section',
-            args.content,
+            args.content as string,
             typeof args.anchor === 'string' ? args.anchor : undefined,
             typeof args.heading === 'string' ? args.heading : undefined,
           );
@@ -372,18 +416,18 @@ export function buildBriefToolsServer(
         return fail(err);
       }
     },
+    // The entity's hints: a write (`readOnlyHint: 0`), not idempotent
+    // (`idempotentHint: 0` — `append`, `insert_after_section`, `textEdits`).
+    { readOnlyHint: false, idempotentHint: false },
   );
 
   const listBriefVersions = mcpTool(
     'list_brief_versions',
-    [
-      explicit
-        ? 'List the versions of the brief named by `path` (metadata only, no content), oldest first — offset 0 is version 1.'
-        : "List the versions of this thread's brief (metadata only, no content), oldest first — offset 0 is version 1.",
-      'Use before get_brief_version.',
-    ].join(' '),
+    explicit ? EXPLICIT_LIST_BRIEF_VERSIONS_DESCRIPTION : THREAD_LIST_BRIEF_VERSIONS_DESCRIPTION,
     {
-      ...(explicit ? EXPLICIT_BRIEF_ARG : {}),
+      ...pathParam,
+      // The row's history window (`limit` / `offset`, `katalog-operacji-m21`
+      // row 6) — the catalog's paging, rendered in every channel.
       limit: z.number().int().positive().optional(),
       offset: z.number().int().nonnegative().optional(),
     },
@@ -400,14 +444,15 @@ export function buildBriefToolsServer(
         return fail(err);
       }
     },
+    { readOnlyHint: true },
   );
 
   const getBriefVersion = mcpTool(
     'get_brief_version',
-    'Get one version snapshot of the brief with its full content. Use to inspect a historical state or to diff locally.',
+    explicit ? EXPLICIT_GET_BRIEF_VERSION_DESCRIPTION : THREAD_GET_BRIEF_VERSION_DESCRIPTION,
     {
-      ...(explicit ? EXPLICIT_BRIEF_ARG : {}),
-      version: z.number().int().positive(),
+      ...pathParam,
+      version: z.number().int().positive().describe('Version number, from list_brief_versions.'),
     },
     async (args) => {
       try {
@@ -423,6 +468,7 @@ export function buildBriefToolsServer(
         return fail(err);
       }
     },
+    { readOnlyHint: true },
   );
 
   return createMcpServer({

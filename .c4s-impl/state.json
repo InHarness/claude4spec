@@ -1306,14 +1306,44 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "pending",
+   "status": "verified",
    "blockedBy": null,
-   "startCommit": null,
-   "baseCommit": null,
-   "portions": [],
+   "startCommit": "41d4bb876716e156935c3217826a8b98bf94ce4b",
+   "baseCommit": "41d4bb876716e156935c3217826a8b98bf94ce4b",
+   "portions": [
+    {
+     "name": "m21-brief-tools/p1-l2-l14",
+     "layers": [
+      "L2",
+      "L3",
+      "L4",
+      "L14"
+     ],
+     "slugs": [
+      "brief-tools-get-brief",
+      "brief-tools-update-brief",
+      "brief-tools-list-brief-versions",
+      "brief-tools-get-brief-version",
+      "katalog-operacji-m21#get_brief",
+      "katalog-operacji-m21#list_briefs",
+      "katalog-operacji-m21#update_brief",
+      "katalog-operacji-m21#mark_brief_implemented",
+      "katalog-operacji-m21#list_brief_versions",
+      "katalog-operacji-m21#get_brief_version",
+      "katalog-operacji-m21#create_brief",
+      "ac-brief-nie-jest-page-rootem-zyje-w-bri",
+      "ac-wersjonowanie-briefu-reuse-uje-tabele"
+     ],
+     "status": "implemented",
+     "rounds": 1,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 1
    },
    "jobs": []
   },
