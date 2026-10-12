@@ -752,7 +752,7 @@
         }
       ],
       "wave": 2,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "u7-api-contracts/p1-l5-l12",
@@ -768,25 +768,15 @@
           "status": "implemented",
           "rounds": 2,
           "partial": 0,
-          "only": [
-            {
-              "slug": "section:9hz21ysc"
-            },
-            {
-              "slug": "section:dhh869qt"
-            }
-          ],
-          "uncovered": [
-            "section:9hz21ysc",
-            "section:dhh869qt"
-          ]
+          "only": [],
+          "uncovered": []
         }
       ],
       "startCommit": "481eb04d2829b423937ad88e1a7da90972154762",
       "baseCommit": "dacab4e0a617409821112981df7da7eea7f96977",
       "rounds": {
         "review": 0,
-        "unit": 1
+        "unit": 2
       },
       "jobs": [],
       "lastUncovered": 0
