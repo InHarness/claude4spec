@@ -4,7 +4,13 @@ import { clientPluginHost } from '@c4s/plugin-runtime';
 
 
 /**
- * HOST-LOCAL, and the gap it names is ROUTING — not the control.
+ * DEBT (2.1.19, Host UI Kit slice of `c4s-plugin-ac`): a thin wrapper over the
+ * catalog's `SegmentedControlTabs` that fails the locality rule — the same copy
+ * stands in the `frontend-kit/` of two plugin packages (condition 1), and the
+ * detail view switcher is common to every entity type (condition 2). Its
+ * catalog replacement is `SegmentedControlTabs`. Recorded, not fixed here.
+ *
+ * The gap it names is ROUTING — not the control.
  *
  * The segmented control itself now comes from the Host UI Kit
  * (`SegmentedControlTabs`, L12). Until 0.2.32 this file drove a hand-written

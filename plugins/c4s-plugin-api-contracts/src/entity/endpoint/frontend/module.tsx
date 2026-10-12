@@ -160,6 +160,9 @@ export const endpointFrontendModule: FrontendModule = {
   renderRow: EndpointRow as FrontendModule['renderRow'],
   renderChip: EndpointChip as FrontendModule['renderChip'],
   renderCard: EndpointCard as FrontendModule['renderCard'],
+  // 2.1.19 (open question 59): the slot is checked for its SHAPE only — the host
+  // never renders it. The `/endpoints/$slug` route in `routes.tsx` renders `EndpointDetail`
+  // itself and hands it the props.
   detailPanel: EndpointDetail,
   useGetBySlug: (slug) => useEndpoint(slug) as ReturnType<FrontendModule['useGetBySlug']>,
   listByTags: ({ tags, filter }) => endpointsApi.list({ tags, tagFilter: filter }),

@@ -1,6 +1,12 @@
 /**
  * The host's `EntityBreadcrumbBar`, vendored.
  *
+ * DEBT (2.1.19, Host UI Kit slices of `ui-view` and `design-system`): fails the
+ * locality rule — this one copy carries branches for both types (condition 1),
+ * and the detail breadcrumb bar is common to every entity type, each of four
+ * packages keeping its own (condition 2). Its catalog replacement is
+ * `DetailPanelShell`. Recorded, not fixed here.
+ *
  * A plugin cannot import from the host's `src/`, and `FrontendModule` has no
  * slot for a per-type crumb — no `icon`, no `renderBreadcrumb` — so the type
  * cannot supply one through the manifest either. Every extracted package

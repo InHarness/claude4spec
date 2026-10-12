@@ -150,8 +150,9 @@ import { AcsList, AC_LIST_EMPTY_TITLE } from '../../src/entity/ac/frontend/list-
 import { AcEditForm } from '../../src/entity/ac/frontend/edit-popover.js';
 import { acFrontendModule } from '../../src/entity/ac/frontend/module.js';
 import { deleteAcBody } from '../../src/entity/ac/frontend/delete-confirm.js';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { checkSlotShapes } from '../../../../src/client/core/plugin-host/slot-rules.js';
 
 const FRONTEND_SRC = join(import.meta.dirname, '../../src/entity/ac/frontend');
 const create = readFileSync(join(FRONTEND_SRC, 'create-dialog.tsx'), 'utf-8');
@@ -508,5 +509,128 @@ describe('[entity:ac-detail] chip and card — own deleted-entity branch', () =>
     expect(frames).toHaveLength(0);
     // `Badge variant='broken'` is not used in the chip slot.
     expect(state.badges.filter((b) => b.variant === 'broken')).toHaveLength(0);
+  });
+});
+
+/** Every `.ts`/`.tsx` file under `dir`, recursively — tests excluded. */
+function sourceFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name);
+    if (statSync(p).isDirectory()) out.push(...sourceFiles(p));
+    else if (/\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name)) out.push(p);
+  }
+  return out;
+}
+
+const PKG_SRC = join(import.meta.dirname, '../../src');
+const KIT_SRC = join(PKG_SRC, 'frontend-kit');
+const HOST_CLIENT_SRC = join(import.meta.dirname, '../../../../src/client');
+
+describe('[section:fsu38c8q] manifest detailPanel slot — checked for shape, not rendered by the host', () => {
+  it('[section:fsu38c8q] the manifest declares detailPanel: AcDetail together with routes, and the host slot check accepts it', () => {
+    expect(acFrontendModule.detailPanel).toBe(AcDetail);
+    expect(typeof acFrontendModule.routes).toBe('function');
+    // The host checks the slot's shape (and the routes/detailPanel pair) — nothing more.
+    expect(checkSlotShapes(acFrontendModule)).toBeNull();
+    // A detailPanel that is not a component is what the shape check refuses.
+    expect(
+      checkSlotShapes({ ...acFrontendModule, detailPanel: {} as never }),
+    ).toMatch(/'detailPanel' is declared but is not a React component/);
+  });
+
+  it('[section:fsu38c8q] the host never renders the slot — no host client file mounts a module\'s detailPanel', () => {
+    const readers = sourceFiles(HOST_CLIENT_SRC)
+      .filter((p) => /\.detailPanel\b/.test(readFileSync(p, 'utf-8')))
+      .map((p) => relative(HOST_CLIENT_SRC, p).split('\\').join('/'))
+      .sort();
+    // Only the shape check and the legacy-def copy read the slot.
+    expect(readers).toEqual(['core/plugin-host/legacy-adapter.ts', 'core/plugin-host/slot-rules.ts']);
+    for (const p of sourceFiles(HOST_CLIENT_SRC)) {
+      const src = readFileSync(p, 'utf-8');
+      expect(src, p).not.toMatch(/<\s*[\w.]*detailPanel\b/i);
+      expect(src, p).not.toMatch(/createElement\(\s*[\w.]*detailPanel\b/);
+    }
+  });
+
+  it('[section:fsu38c8q] view behaviour is unchanged — the /acs/$slug route renders AcDetail itself', async () => {
+    const routesSrc = readFileSync(join(FRONTEND_SRC, 'routes.tsx'), 'utf-8');
+    expect(routesSrc).toMatch(/<AcDetail\b/);
+    await render(createElement(routeTable().get('/acs/$slug')!.component));
+    // The panel's own title editor is on the route's screen.
+    const title = container.querySelector('textarea[aria-label="Title"]') as HTMLTextAreaElement | null;
+    expect(title?.value).toBe('The endpoint answers 204 on success.');
+  });
+});
+
+describe('[section:yrzqclyz] Host UI Kit slice', () => {
+  it('[section:yrzqclyz] the package consumes exactly the catalog components the slice lists — DetailPanelShell, InlineEditField, Pagination, EntityDetailToolbar and Popover are not among them', () => {
+    const consumed = new Set<string>();
+    for (const p of sourceFiles(PKG_SRC)) {
+      const src = readFileSync(p, 'utf-8');
+      for (const m of src.matchAll(/import\s*\{([^}]*)\}\s*from\s*'@c4s\/plugin-runtime\/ui'/g)) {
+        for (const name of m[1]!.split(',')) {
+          const n = name.trim();
+          if (!n || n.startsWith('type ')) continue;
+          consumed.add(n);
+        }
+      }
+    }
+    expect([...consumed].sort()).toEqual(
+      [
+        'EntityListLayout',
+        'EntityListHeader',
+        'EntityListRow',
+        'TagFilterBar',
+        'LoadingState',
+        'EmptyState',
+        'Badge',
+        'ActionBar',
+        'SegmentedControlTabs',
+        'FieldGrid',
+        'FieldRow',
+        'EnumBadgePicker',
+        'GroupedRelationPicker',
+        'TagPicker',
+        'EntityVersionHistoryView',
+        'Dialog',
+        'FormShell',
+        'FormField',
+        'ActionButton',
+      ].sort(),
+    );
+    for (const dropped of ['DetailPanelShell', 'InlineEditField', 'Pagination', 'EntityDetailToolbar', 'Popover']) {
+      expect(consumed.has(dropped), dropped).toBe(false);
+    }
+  });
+
+  it('[section:yrzqclyz] each host-local frontend-kit duplicate is recorded as DEBT naming its catalog replacement', () => {
+    const debt: Array<[file: string, exports: string[], replacement: string]> = [
+      ['EntityBreadcrumbBar.tsx', ['EntityBreadcrumbBar'], 'DetailPanelShell'],
+      ['EntityViewSwitcher.tsx', ['EntityViewSwitcher'], 'SegmentedControlTabs'],
+      ['EntityNotFound.tsx', ['EntityNotFound'], 'EmptyState'],
+      ['popover-form.tsx', ['FieldLabel', 'TextInput', 'SelectInput', 'InlineError', 'PopoverFooter'], 'FormField'],
+    ];
+    for (const [file, exports, replacement] of debt) {
+      const src = readFileSync(join(KIT_SRC, file), 'utf-8');
+      for (const name of exports) {
+        expect(src, `${file} exports ${name}`).toMatch(new RegExp(`export (function|const) ${name}\\b`));
+      }
+      const header = src.match(/DEBT \(2\.1\.19[^]*?Recorded, not fixed here/)?.[0];
+      expect(header, `${file} DEBT header`).toBeDefined();
+      expect(header!).toContain(`\`${replacement}\``);
+    }
+    // Recorded, not fixed: the detail route still renders through the local bar.
+    expect(readFileSync(join(FRONTEND_SRC, 'routes.tsx'), 'utf-8')).toMatch(/<EntityBreadcrumbBar\b/);
+  });
+
+  it('[section:yrzqclyz] ListPageHeader / ListScrollArea are not carried by this package — the list composes their replacements directly (ASSUMPTION:dev-1906)', () => {
+    const kit = readdirSync(KIT_SRC);
+    expect(kit).not.toContain('ListPageHeader.tsx');
+    expect(kit).not.toContain('ListScrollArea.tsx');
+    const list = readFileSync(join(FRONTEND_SRC, 'list-page.tsx'), 'utf-8');
+    for (const name of ['EntityListHeader', 'EntityListLayout', 'LoadingState', 'EmptyState']) {
+      expect(list).toMatch(new RegExp(`<${name}\\b`));
+    }
   });
 });

@@ -10,6 +10,11 @@ import { ListScrollArea } from '../../../frontend-kit/ListScrollArea.js';
 import { EntityListRow, CountBadge } from '../../../frontend-kit/EntityListRow.js';
 import { useEntityListQuery } from '../../../frontend-kit/useEntityListQuery.js';
 
+/** The one empty state — no design systems at all, or none matching the search / tag filter. */
+export const DESIGN_SYSTEM_LIST_EMPTY_TITLE =
+  'No design systems yet. Create one with /design-system in the editor.';
+export const DESIGN_SYSTEM_LIST_CREATE_LABEL = 'Create your first design system';
+
 interface Props {
   search: string;
   tagFilter: string[];
@@ -18,6 +23,18 @@ interface Props {
   onSelect: (slug: string) => void;
 }
 
+/**
+ * 2.1.19 (`design-system-list`, `/design-systems`) — header (title, count,
+ * server-side search, "New Design System") over the kit `TagFilterBar`, rows
+ * through the kit `EntityListRow` (title + groups/tokens count + description).
+ * Two alternative states: `loading` — a five-line `LoadingState` skeleton in
+ * place of the rows — and `empty` — ONE `EmptyState` for "none in the project"
+ * and "none matching" alike, with the create action. No error state.
+ *
+ * The header and the loading/empty composition still go through the package's
+ * `ListPageHeader` / `ListScrollArea` — recorded DEBT (2.1.19 Host UI Kit
+ * slice), not fixed here.
+ */
 export function DesignSystemsList({
   search,
   tagFilter,
@@ -56,8 +73,8 @@ export function DesignSystemsList({
       <ListScrollArea
         loading={isLoading}
         empty={systems.length === 0}
-        emptyTitle="No design systems yet. Create one with /design-system in the editor."
-        createLabel="Create your first design system"
+        emptyTitle={DESIGN_SYSTEM_LIST_EMPTY_TITLE}
+        createLabel={DESIGN_SYSTEM_LIST_CREATE_LABEL}
         onCreate={handleCreate}
       >
         {sorted.map((ds) => {

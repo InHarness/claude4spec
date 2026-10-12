@@ -81,6 +81,11 @@ export interface PaginationProps {
 }
 export declare const Pagination: ComponentType<PaginationProps>;
 
+/**
+ * One empty state for both empty-list cases — no entities, and no results for
+ * the current filter. There is no variant and no error state: the type tells
+ * the cases apart by the text it passes.
+ */
 export interface EmptyStateProps {
   title: string;
   hint?: ReactNode;

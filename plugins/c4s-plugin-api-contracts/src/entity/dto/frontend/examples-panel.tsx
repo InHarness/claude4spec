@@ -4,7 +4,7 @@ import type { DtoExample, DtoField } from '../../../types.js';
 import { confirmDestructive } from '../../../frontend-kit/host-events.js';
 import { FieldRow } from '@c4s/plugin-runtime/ui';
 import { MonacoJsonEditor } from './monaco-json-editor.js';
-import { buildExampleTemplate, validateExampleAgainstFields } from './example-validation.js';
+import { buildExampleTemplate, exampleWarningText, validateExampleAgainstFields } from './example-validation.js';
 
 interface Props {
   examples: DtoExample[];
@@ -341,7 +341,7 @@ export function ExamplesPanel({ examples, fields, onChange }: Props) {
                             className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded"
                             style={{ color: 'var(--c-muted)' }}
                           >
-                            <Pencil size={10} /> edit
+                            <Pencil size={10} /> Edit value
                           </button>
                         )}
                         {st.editing && (
@@ -357,14 +357,14 @@ export function ExamplesPanel({ examples, fields, onChange }: Props) {
                               className="text-[11px] px-1.5 py-0.5 rounded"
                               style={{ color: 'var(--c-subtle)' }}
                             >
-                              cancel
+                              Cancel
                             </button>
                             <button
                               onClick={() => commitJsonEdit(i)}
                               className="text-[11px] px-2 py-0.5 rounded"
                               style={{ background: 'var(--c-accent)', color: 'var(--c-paper, #fff)' }}
                             >
-                              save
+                              Save
                             </button>
                           </>
                         )}
@@ -389,11 +389,8 @@ export function ExamplesPanel({ examples, fields, onChange }: Props) {
                             border: '1px solid var(--c-warn-border, #e7d9b3)',
                           }}
                         >
-                          Example doesn't match fields:
                           {warnings.map((w) => (
-                            <div key={w.field}>
-                              <span className="font-mono">{w.field}</span>: expected {w.expected}, got {w.got}
-                            </div>
+                            <div key={w.field}>{exampleWarningText(w)}</div>
                           ))}
                         </div>
                       )}

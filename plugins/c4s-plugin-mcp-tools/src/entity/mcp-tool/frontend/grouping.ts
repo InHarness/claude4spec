@@ -35,6 +35,9 @@ export interface ServerGroup {
  * makes a tag/field disagreement unrepresentable — there is now only one value.
  *
  * Group order is alphabetical by server, with the blank bucket last.
+ *
+ * ASSUMPTION:dev-1904 — default grouping by the `server` field, not by a `srv-*`
+ * tag (the spec at 2.1.19 still words it as the tag).
  */
 export function groupByServer(tools: McpTool[]): ServerGroup[] {
   const byServer = new Map<string, McpTool[]>();

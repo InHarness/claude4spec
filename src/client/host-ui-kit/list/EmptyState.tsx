@@ -6,6 +6,12 @@ import { withStability } from '../stability.js';
  * rows: a title, an optional hint, and an optional action slot. Mirrors the
  * host's empty block in `ListScrollArea`.
  *
+ * One component for both empty-list cases (M19 `m19l12sc`, 2.1.19): a list with
+ * no entities at all and a list whose search / tag filter matched nothing. The
+ * component has no `variant` and no error state — the entity type tells the two
+ * cases apart by the text it passes (`title`, `hint`, `action`), e.g.
+ * "No endpoints yet" vs "No endpoints match the filter".
+ *
  * Pure-presentational. Experimental: props may change without a major bump.
  */
 export interface EmptyStateProps {

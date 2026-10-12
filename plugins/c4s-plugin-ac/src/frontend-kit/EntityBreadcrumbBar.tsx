@@ -1,6 +1,12 @@
 /**
  * The host's `EntityBreadcrumbBar`, vendored.
  *
+ * DEBT (2.1.19, Host UI Kit slice of `c4s-plugin-ac`): fails the locality rule
+ * — the detail breadcrumb bar is common to every entity type (condition 2), and
+ * each of four plugin packages keeps its own version. Its catalog replacement
+ * is `DetailPanelShell`. Recorded, not fixed here; the `/acs/$slug` and
+ * `/acs/$slug/history` routes still render through it.
+ *
  * A plugin cannot import from the host's `src/`, and `FrontendModule` has no
  * slot for a per-type crumb — no `icon`, no `renderBreadcrumb` — so the type
  * cannot supply one through the manifest either. Every extracted package

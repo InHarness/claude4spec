@@ -1,6 +1,13 @@
 /**
  * The host's `EntityNotFound`, vendored.
  *
+ * DEBT (2.1.19, Host UI Kit slices of `ui-view` and `design-system`): fails the
+ * locality rule — the same copy stands in the `frontend-kit/` of two plugin
+ * packages (condition 1), and the missing-entity message is common to every
+ * entity type (condition 2). Its catalog replacement is `EmptyState`. Recorded,
+ * not fixed here. It is only the ROUTER's not-found fallback: a slug the API
+ * answers 404 for reaches the detail panel's `load-failed` state instead.
+ *
  * The `ui-view` and `design-system` detail routes both declared it as their
  * `notFoundComponent` before the move, and dropping it would have been a silent
  * UX regression rather than a refactor: the route would fall through to the

@@ -1,5 +1,12 @@
 /**
- * HOST-LOCAL — the composition, not the pieces.
+ * DEBT (2.1.19, Host UI Kit slices of `ui-view` and `design-system`): fails the
+ * locality rule — the same copy 1:1 stands in the `frontend-kit/` of three
+ * plugin packages (condition 1), and a list area with loading and empty states
+ * is common to every entity type (condition 2). Its catalog replacement is
+ * `EntityListLayout` + `LoadingState` + `EmptyState` composed in the list panel.
+ * Recorded, not fixed here; the `design-system` list still renders through it.
+ *
+ * The composition, not the pieces.
  *
  * Every visual piece here comes from the catalog: `EntityListLayout`,
  * `LoadingState`, `EmptyState`. What stays local is the three-way choice between

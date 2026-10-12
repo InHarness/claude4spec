@@ -6,6 +6,14 @@ export interface ExampleFieldWarning {
   got: string;
 }
 
+/**
+ * One line of the soft field-compatibility banner (dto-detail):
+ * "Example doesn't match field `email`: expected string, got null".
+ */
+export function exampleWarningText(w: ExampleFieldWarning): string {
+  return `Example doesn't match field \`${w.field}\`: expected ${w.expected}, got ${w.got}`;
+}
+
 export function validateExampleAgainstFields(
   value: unknown,
   fields: DtoField[],
@@ -24,7 +32,6 @@ export function validateExampleAgainstFields(
     }
     if (!present) continue;
     const v = obj[f.name];
-    if (v === null) continue;
     const expected = baseType(f.type);
     const got = describe(v);
     if (expected && got !== expected && expected !== 'any') {

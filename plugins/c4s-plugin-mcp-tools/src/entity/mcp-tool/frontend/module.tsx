@@ -58,12 +58,9 @@ export const mcpToolFrontendModule: FrontendModule = {
   listByTags: ({ tags, filter }) => listByTags(tags, filter),
   routes: mcpToolRoutes,
   /**
-   * NO `emptyState` here, and that is not a dropped requirement. The brief gives
-   * the string "No MCP tools described yet." as a `sidebarTab.emptyState`, but
-   * the slot is typed `ComponentType<unknown>` and the host's `Sidebar` never
-   * reads it - a component supplied here would be dead code that no user ever
-   * sees. The string is not lost: it is the list screen's `EmptyState` title in
-   * `routes.tsx`, which is the surface a reader with no tools actually lands on.
+   * NO `emptyState` here (2.1.19: omitted on purpose — the host does not render
+   * the field). "No MCP tools described yet." is the list screen's `empty` state
+   * in `routes.tsx`, which is the surface a reader with no tools actually lands on.
    */
   sidebarTab: {
     icon: McpToolIcon as unknown as NonNullable<FrontendModule['sidebarTab']>['icon'],

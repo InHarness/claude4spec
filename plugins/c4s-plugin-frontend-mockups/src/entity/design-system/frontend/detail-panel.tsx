@@ -101,6 +101,35 @@ function aliasChain(name: string, groups: TokenGroup[]): string {
   return parts.join(' → ');
 }
 
+/** Title of the host confirmation window `design-system-delete`. */
+export const DESIGN_SYSTEM_DELETE_TITLE = 'Delete design system?';
+
+/**
+ * 2.1.19 (`design-system-detail`, `dsl5000`) — the window's body gives the number
+ * of PAGES that reference the design system. `useReferences` answers one hit per
+ * tag occurrence, so two mentions on one page are one page, not two.
+ */
+export function referencingPageCount(refs: ReadonlyArray<{ rootId?: string; pagePath?: string }>): number {
+  return new Set(refs.map((r) => `${r.rootId ?? ''}\u0000${r.pagePath ?? ''}`)).size;
+}
+
+/** Body of `design-system-delete`; the page-count sentence disappears at zero. */
+export function deleteDesignSystemBody(title: string, pageCount: number): string {
+  if (pageCount <= 0) {
+    return `Delete design system "${title}"? UI views pointing at it will show a broken chip. This cannot be undone.`;
+  }
+  const subject = pageCount === 1 ? '1 page references' : `${pageCount} pages reference`;
+  return `Delete design system "${title}"? ${subject} it and will become broken. UI views pointing at it will show a broken chip.`;
+}
+
+/**
+ * 2.1.19 (`design-system-detail`) — the Details tab body. The breadcrumb and the
+ * Details / History switcher stand in the ROUTE, above this panel; Delete sits in
+ * the meta strip and confirms through the host window `design-system-delete`.
+ * Alternative state `load-failed`: the design system could not be fetched —
+ * including a slug the API answers 404 for — and the panel says
+ * "Failed to load: …"; there is no separate not-found screen.
+ */
 export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }: Props) {
   const { data: ds, isLoading, error } = useDesignSystem(slug);
   const update = useUpdateDesignSystem();
@@ -156,11 +185,12 @@ export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }:
 
   async function handleDelete() {
     if (!ds) return;
-    const refCount = refs.length;
-    const body = refCount
-      ? `Delete design system "${ds.title}"? ${refCount} page${refCount === 1 ? '' : 's'} reference it and will become broken. UI views pointing at it will show a broken chip.`
-      : `Delete design system "${ds.title}"? UI views pointing at it will show a broken chip. This cannot be undone.`;
-    const ok = await confirmDestructive('design-system-delete', { title: 'Delete design system?', body, confirmLabel: 'Delete' });
+    const body = deleteDesignSystemBody(ds.title, referencingPageCount(refs));
+    const ok = await confirmDestructive('design-system-delete', {
+      title: DESIGN_SYSTEM_DELETE_TITLE,
+      body,
+      confirmLabel: 'Delete',
+    });
     if (!ok) return;
     try {
       await remove.mutateAsync(ds.slug);

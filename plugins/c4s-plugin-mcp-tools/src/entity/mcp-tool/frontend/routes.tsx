@@ -70,6 +70,16 @@ import { Pane, RouteBody } from '../../../frontend-kit/route-shell.js';
 import { groupByServer } from './grouping.js';
 
 /**
+ * The list screen's states (`mcp-tool-list`): `loading` (a six-line
+ * `LoadingState`), `empty` and `no-results` (the kit's `EmptyState` with the
+ * texts below). There is NO error state: a failed list fetch is not drawn.
+ */
+export const MCP_TOOL_LIST_EMPTY_TITLE = 'No MCP tools described yet.';
+export const MCP_TOOL_LIST_EMPTY_HINT = 'Describe the first tool of a server to get started.';
+export const MCP_TOOL_LIST_NO_RESULTS_TITLE = 'No matching MCP tools.';
+export const MCP_TOOL_LIST_NO_RESULTS_HINT = 'Try clearing the search or tag filter.';
+
+/**
  * The icon slots are typed `LucideIcon` on the host side; the header prop wants
  * the same shape the sidebar tab gets, so the one cast lives here rather than at
  * each call site.
@@ -219,10 +229,13 @@ function McpToolListRoute(): JSX.Element {
       >
         {isLoading ? (
           <LoadingState lines={6} />
+        ) : data.length === 0 ? (
+          // State `empty` — the project describes no tool at all. The kit's one
+          // `EmptyState` (no variant); the type tells the two cases apart by text.
+          <EmptyState title={MCP_TOOL_LIST_EMPTY_TITLE} hint={MCP_TOOL_LIST_EMPTY_HINT} />
         ) : filtered.length === 0 ? (
-          // One empty state for "no entities" and "no filter results" alike —
-          // the M19 list-page pattern (2.1.16): `EmptyState` with the type's text.
-          <EmptyState title="No MCP tools described yet." />
+          // State `no-results` — tools exist, none matches the search / tag filter.
+          <EmptyState title={MCP_TOOL_LIST_NO_RESULTS_TITLE} hint={MCP_TOOL_LIST_NO_RESULTS_HINT} />
         ) : grouped ? (
           <div role="list" style={{ padding: 8 }}>
             <GroupedEntityList groups={groups} renderRow={renderRow} />

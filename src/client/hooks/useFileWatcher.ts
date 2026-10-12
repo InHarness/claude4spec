@@ -10,7 +10,7 @@ import { useFileEventsStore } from '../state/fileEvents.js';
 import { isHtmlPreviewPath, useHtmlViewerStore } from '../state/htmlViewer.js';
 import { artifactVersionsKey } from './useArtifactVersions.js';
 import { reloadFrontendPlugins } from '../runtime/boot-plugins.js';
-import { clientPluginHost } from '../core/plugin-host/host.js';
+import { entityChangeKeys, tagChangeKeys } from '../lib/entity-invalidation.js';
 
 /**
  * M33 phase 3: window event dispatched once a plugin reload has re-pinned the
@@ -19,25 +19,6 @@ import { clientPluginHost } from '../core/plugin-host/host.js';
  * non-blocking boot. Kept for any non-editor consumer.
  */
 export const PLUGINS_RELOADED_EVENT = 'c4s:plugins-reloaded';
-
-/**
- * An entity type → its React Query list key (plural).
- *
- * 0.2.11: derived from the type's own `pathPrefix` (last segment), the same rule
- * the release bundle uses for file names, instead of a five-entry map. The map
- * omitted `design-system` and `diagram` and every plugin type, so a change to
- * one of those invalidated only the generic `entities` key and left its own list
- * showing stale rows until something else evicted it.
- *
- * Falls back to `entities` when the type is unknown to the client host — which
- * includes the window before plugin boot settles, where answering with a
- * specific key would be a guess.
- */
-function entityListKey(type: string): string {
-  const prefix = clientPluginHost.getAvailable(type)?.pathPrefix;
-  const base = prefix?.split('/').filter(Boolean).pop();
-  return base ?? 'entities';
-}
 
 export function useFileWatcher() {
   const qc = useQueryClient();
@@ -100,26 +81,20 @@ export function useFileWatcher() {
             // recomputed, or the context rebuilt) — one key, the whole array.
             batcher.queue(['sidebar-accordions']);
           } else if (data.kind === 'entity:changed') {
-            batcher.queue([entityListKey(data.entityType)]);
-            batcher.queue([data.entityType, data.slug]);
-            batcher.queue(['entities']);
+            // 2.1.19 (M13 m13ui000): the host's own list/detail map — see
+            // `entity-invalidation.ts`. Version history is not on it.
+            for (const key of entityChangeKeys(data.entityType, data.slug)) batcher.queue(key);
           } else if (data.kind === 'entity:indexed') {
             // M29: a file-watch reindex (external edit / git pull). Invalidate
             // the same React Query keys as a write-API change — idempotent.
-            batcher.queue([entityListKey(data.type)]);
-            batcher.queue([data.type, data.slug]);
-            batcher.queue(['entities']);
+            for (const key of entityChangeKeys(data.type, data.slug)) batcher.queue(key);
           } else if (data.kind === 'tag:changed') {
             // 0.2.11: every active type, not three hardcoded ones. A tag
             // change alters the tag chips on every entity list, but this
             // invalidated only endpoints/dtos/database-tables -- so ui-view,
             // ac, design-system, diagram and all plugin lists kept rendering
             // the old tags.
-            batcher.queue(['tags']);
-            for (const m of clientPluginHost.listEntities()) {
-              batcher.queue([entityListKey(m.type)]);
-            }
-            batcher.queue(['entities']);
+            for (const key of tagChangeKeys()) batcher.queue(key);
           } else if (data.kind === 'section:indexed') {
             batcher.queue(['sections']);
           } else if (data.kind === 'todos:changed') {

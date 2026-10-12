@@ -1,3 +1,12 @@
+/**
+ * DEBT (2.1.19, Host UI Kit slice of `c4s-plugin-api-contracts`, endpoint + dto): the
+ * detail breadcrumb bar fails the locality rule — one copy serves the endpoint
+ * and dto details (condition 1), and the detail breadcrumb bar is common to
+ * every entity type, each of four plugin packages keeping its own version
+ * (condition 2). Its catalog replacement is `DetailPanelShell`.
+ * Recorded, not fixed here; the `/endpoints/$slug` and `/dtos/$slug` routes
+ * still render through it.
+ */
 import { useNavigate } from '@tanstack/react-router';
 import { Braces, ChevronRight, Database, Monitor } from 'lucide-react';
 import { MethodChip } from './atoms.js';

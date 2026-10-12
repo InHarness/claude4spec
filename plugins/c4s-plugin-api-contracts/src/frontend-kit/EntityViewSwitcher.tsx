@@ -1,3 +1,10 @@
+/**
+ * DEBT (2.1.19, Host UI Kit slice of `c4s-plugin-api-contracts`, endpoint + dto): the
+ * detail view switcher fails the locality rule — one copy serves the endpoint
+ * and dto detail views (condition 1), and the view switcher is common to every
+ * entity type (condition 2). Its catalog replacement is `SegmentedControlTabs`.
+ * Recorded, not fixed here.
+ */
 import { useNavigate } from '@tanstack/react-router';
 import { FileText, History } from 'lucide-react';
 import { SegmentedControl } from './SegmentedControl.js';

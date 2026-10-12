@@ -164,6 +164,9 @@ export const dtoFrontendModule: FrontendModule = {
   renderRow: DtoRow as FrontendModule['renderRow'],
   renderChip: DtoChip as FrontendModule['renderChip'],
   renderCard: DtoCard as FrontendModule['renderCard'],
+  // 2.1.19 (open question 59): the slot is checked for its SHAPE only — the host
+  // never renders it. The `/dtos/$slug` route in `routes.tsx` renders `DtoDetail`
+  // itself and hands it the props.
   detailPanel: DtoDetail,
   useGetBySlug: (slug) => useDto(slug) as ReturnType<FrontendModule['useGetBySlug']>,
   listByTags: ({ tags, filter }) => dtosApi.list({ tags, tagFilter: filter }),

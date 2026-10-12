@@ -80,7 +80,8 @@ export function useEntityDraftEditor<E, D extends object>({ entity, toDraft, sav
     const { draft: current, entity: live } = latestRef.current;
     const queued = pendingRef.current;
     pendingRef.current = null;
-    if (queued && live) void runSave(queued, live);
+    // The latest draft, for the same reason as the debounce timer below.
+    if (queued && live) void runSave(current ?? queued, live);
     if (current && live) for (const key of fieldKeys) void runFieldSave(key, current, live);
   }
   const flushRef = useRef(flushAll);
@@ -200,7 +201,15 @@ export function useEntityDraftEditor<E, D extends object>({ entity, toDraft, sav
     const live = entity;
     saveTimer.current = window.setTimeout(() => {
       saveTimer.current = null;
-      if (live) void runSave(next, live);
+      // Save the LATEST draft, not the one captured when the edit happened: a
+      // refetch in between (an external change, a live-update event) merged
+      // the server's values into every field the user did not touch. The
+      // captured `next` still holds the old server values of those fields and
+      // would write them back over the external change.
+      const latest = latestRef.current;
+      const current = latest.draft ?? next;
+      const entityNow = latest.entity ?? live;
+      if (entityNow) void runSave(current, entityNow);
     }, 500);
   }
 
