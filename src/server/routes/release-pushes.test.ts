@@ -307,6 +307,108 @@ describe('POST /api/release-pushes — gitSync of the git push hook (M25 + M28)'
     expect((await git(['rev-parse', 'main'], bare)).trim()).toBe(remoteMainBefore);
   });
 
+  it('[ac:ac-przy-w-czonym-config-git-syncpushonpush] with config.git.syncPushOnPush on and a detected repo, a successful release push git-pushes the current branch to its upstream; a failed remote push git-pushes nothing', async () => {
+    await commitFile(dir, 'mine.md', 'mine', 'my change');
+    const localHead = (await git(['rev-parse', 'main'], dir)).trim();
+    expect((await git(['rev-parse', 'main'], bare)).trim()).not.toBe(localHead);
+
+    const res = await request(app).post('/api/release-pushes').send({ releaseName: 'v1' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe('success');
+    expect(res.body.gitSync).toMatchObject({ status: 'pushed', branch: 'main' });
+    // The upstream (origin/main in the bare remote) now carries the local branch tip.
+    expect((await git(['rev-parse', 'main'], bare)).trim()).toBe(localHead);
+
+    // A remote push that fails does not trigger the git push.
+    await commitFile(dir, 'mine-2.md', 'mine', 'my other change');
+    const remoteBefore = (await git(['rev-parse', 'main'], bare)).trim();
+    const failingRemote = {
+      ...remoteAuthFake,
+      pushBundle: async () => {
+        throw new Error('peer unreachable');
+      },
+    } as unknown as RemoteAuthService;
+    const failingApp = express()
+      .use(express.json())
+      .use('/api/release-pushes', releasePushesRouter(new ReleasePushService(db, releasesFake, failingRemote, new GitService(dir, [dir]), dir)))
+      .use(errorHandler);
+    const failed = await request(failingApp).post('/api/release-pushes').send({ releaseName: 'v1' });
+    expect(failed.status).toBe(502);
+    expect((await git(['rev-parse', 'main'], bare)).trim()).toBe(remoteBefore);
+  });
+
+  it('[ac:ac-wariant-error-gitcommitresult-gitpushres] a failed git push answers gitSync { status: error, message } plus the additive recovery { operation: push, reason, gitStderr, intentPrompt } on the release-push response', async () => {
+    fs.rmSync(bare, { recursive: true, force: true }); // the push fails: origin is gone
+    await commitFile(dir, 'mine.md', 'mine', 'my change');
+
+    const res = await request(app).post('/api/release-pushes').send({ releaseName: 'v1' });
+
+    expect(res.status).toBe(201);
+    // What an old consumer reads is intact: status + message …
+    expect(res.body.status).toBe('success');
+    expect(res.body.gitSync.status).toBe('error');
+    expect(typeof res.body.gitSync.message).toBe('string');
+    // … and the recovery payload rides alongside, composed by the backend.
+    const recovery = res.body.gitSync.recovery;
+    expect(recovery.operation).toBe('push');
+    expect(typeof recovery.reason).toBe('string');
+    expect(recovery.reason).not.toBe('');
+    expect(typeof recovery.gitStderr).toBe('string');
+    expect(recovery.gitStderr).not.toBe('');
+    expect(typeof recovery.intentPrompt).toBe('string');
+    expect(recovery.intentPrompt).toContain(recovery.gitStderr);
+  });
+
+  it('[ac:ac-wiersz-release-push-powsta-y-z-first-p] a first-push error row (config.remoteProjectId null) stores remote_project_id IS NULL — not \'\'; a subsequent-push error row stores the known remoteProjectId; the DTO leaves remoteProjectId undefined', async () => {
+    const failingRemote = {
+      ...remoteAuthFake,
+      pushBundle: async () => {
+        throw new Error('POST /v1/projects failed');
+      },
+    } as unknown as RemoteAuthService;
+    const failingApp = express()
+      .use(express.json())
+      .use('/api/release-pushes', releasePushesRouter(new ReleasePushService(db, releasesFake, failingRemote, new GitService(dir, [dir]), dir)))
+      .use(errorHandler);
+    const writeRemoteProjectId = (remoteProjectId: string | null): void => {
+      fs.writeFileSync(
+        path.join(dir, '.claude4spec', 'config.json'),
+        JSON.stringify({
+          $schemaVersion: 4,
+          name: 'test',
+          remoteProjectId,
+          roots: [{ id: 'pages', name: 'Pages', dir: '.', builtin: true }],
+          git: { enabled: true, syncPushOnPush: true },
+        }),
+      );
+    };
+    const rows = () =>
+      db.prepare('SELECT remote_project_id, status FROM release_push ORDER BY id').all() as Array<{
+        remote_project_id: string | null;
+        status: string;
+      }>;
+
+    // First push: the peer never returned project.id, config.remoteProjectId is still null.
+    writeRemoteProjectId(null);
+    expect((await request(failingApp).post('/api/release-pushes').send({ releaseName: 'v1' })).status).toBe(502);
+    expect(rows()).toEqual([{ remote_project_id: null, status: 'error' }]);
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM release_push WHERE remote_project_id = ''`).get()).toEqual({ n: 0 });
+
+    // Subsequent push: the known config.remoteProjectId is persisted on the error row.
+    writeRemoteProjectId('11111111-2222-3333-4444-555555555555');
+    expect((await request(failingApp).post('/api/release-pushes').send({ releaseName: 'v1' })).status).toBe(502);
+    expect(rows()[1]).toEqual({ remote_project_id: '11111111-2222-3333-4444-555555555555', status: 'error' });
+
+    // The DTO: remoteProjectId optional — undefined (absent) on the first-push error row.
+    const log = await request(app).get('/api/release-pushes').query({ releaseName: 'v1' });
+    const items = log.body.items as ReleasePushResponse[];
+    const firstPushError = items.find((p) => p.status === 'error' && p.remoteProjectId === undefined);
+    expect(firstPushError).toBeDefined();
+    expect('remoteProjectId' in (firstPushError as object)).toBe(false);
+    expect(items.some((p) => p.status === 'error' && p.remoteProjectId === '11111111-2222-3333-4444-555555555555')).toBe(true);
+  });
+
   it('[entity:release-push-response] detached HEAD fails the pushOnPush gate even with an explicit target branch — gitSync: null, nothing is git-pushed', async () => {
     await git(['checkout', '-b', 'release-target'], dir);
     await commitFile(dir, 'release.md', 'release', 'release marker');

@@ -184,6 +184,41 @@ describe('POST /api/git/fetch + GET /api/git/status (2.1.10)', () => {
     });
   });
 
+  it('[ac:ac-gdy-pagesdir-le-y-w-worktree-git-get-a] pagesDir inside a git worktree → GET /api/git/status detected:true with remoteUrl, branch, rootPath and isDirty; outside one → detected:false', async () => {
+    const app = appFor(new GitService(work, [work]));
+    const toplevel = (await git(['rev-parse', '--show-toplevel'], work)).trim();
+
+    // The working tree carries an untracked `.claude4spec/config.json` → dirty.
+    const dirty = await request(app).get('/api/git/status');
+    expect(dirty.status).toBe(200);
+    expect(dirty.body.detected).toBe(true);
+    expect(dirty.body.remoteUrl).toBe(bare);
+    expect(dirty.body.branch).toBe('main');
+    expect(fs.realpathSync(dirty.body.rootPath)).toBe(fs.realpathSync(toplevel));
+    expect(dirty.body.isDirty).toBe(true);
+
+    // Commit everything → the same probe reports a clean tree.
+    await git(['add', '-A'], work);
+    await git(['commit', '-m', 'all'], work);
+    const clean = await request(app).get('/api/git/status');
+    expect(clean.body.detected).toBe(true);
+    expect(clean.body.isDirty).toBe(false);
+
+    // A pagesDir outside any worktree → detected:false.
+    const plain = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-git-plain-'));
+    try {
+      writeConfigJson(plain, { enabled: true });
+      const outside = await request(appFor(new GitService(plain, [plain]))).get('/api/git/status');
+      expect(outside.status).toBe(200);
+      expect(outside.body.detected).toBe(false);
+      expect(outside.body.rootPath).toBeNull();
+      expect(outside.body.remoteUrl).toBeNull();
+      expect(outside.body.branch).toBeNull();
+    } finally {
+      fs.rmSync(plain, { recursive: true, force: true });
+    }
+  });
+
   it('[entity:git-status-response] 2.1.14: on detached HEAD GET /api/git/status reports branch null (every field present, typed) — and with branch null the release push and a `current`-mode release commit do not run (null), the pull commit is skipped, `named` still commits', async () => {
     const head = (await git(['rev-parse', 'HEAD'], work)).trim();
     await git(['checkout', head], work);

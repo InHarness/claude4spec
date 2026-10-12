@@ -478,6 +478,43 @@ describe('PATCH /api/releases/:name — gitSync of the pull commit (M17 + M28)',
     expect(pull.body.gitSync).toEqual({ status: 'skipped' });
   });
 
+  it('[ac:ac-wariant-error-gitcommitresult-gitpushres] a failed git commit answers gitSync { status: error, message } plus the additive recovery { operation, reason, gitStderr, intentPrompt } — operation commit-on-release on createRelease, pull on updateRelease', async () => {
+    initRepo();
+    writeProjectConfig({ enabled: true });
+    // A pre-commit hook that refuses every commit — a plain git failure (no `kind`).
+    // A local core.hooksPath wins over any ambient global one.
+    const hooks = path.join(cwd, 'test-hooks');
+    fs.mkdirSync(hooks);
+    fs.writeFileSync(path.join(hooks, 'pre-commit'), '#!/bin/sh\necho "pre-commit refused the commit" >&2\nexit 1\n', { mode: 0o755 });
+    git('config', 'core.hooksPath', hooks);
+    mount();
+
+    const expectRecovery = (gitSync: Record<string, unknown>, operation: string): void => {
+      // What an old consumer reads is intact: status + message …
+      expect(gitSync.status).toBe('error');
+      expect(typeof gitSync.message).toBe('string');
+      // … and the recovery payload rides alongside, composed by the backend.
+      const recovery = gitSync.recovery as Record<string, unknown>;
+      expect(recovery.operation).toBe(operation);
+      expect(typeof recovery.reason).toBe('string');
+      expect(recovery.reason).not.toBe('');
+      expect(recovery.gitStderr).toContain('pre-commit refused the commit');
+      expect(typeof recovery.intentPrompt).toBe('string');
+      expect(recovery.intentPrompt).toContain('pre-commit refused the commit');
+      expect(recovery.kind).toBeUndefined();
+    };
+
+    const created = await request(app).post('/api/releases').send({ name: 'v1', description: 'first cut' });
+    expect(created.status).toBe(201); // the release itself is created
+    expectRecovery(created.body.gitSync, 'commit-on-release');
+
+    fs.writeFileSync(path.join(cwd, 'pages', 'b.md'), '# b');
+    const pull = await request(app).patch('/api/releases/v1').send({ assignUnreleased: true });
+    expect(pull.status).toBe(200);
+    expectRecovery(pull.body.gitSync, 'pull');
+    expect(git('log', '--all', '--format=%s').split('\n').filter(Boolean)).toEqual(['seed']);
+  });
+
   it('[ac:ac-rest-patch-api-releases-nameorid-z-bod] errors: 409 RELEASE_FROZEN on a release that is not the latest, 409 RELEASE_NAME_CONFLICT on a rename collision', async () => {
     writeProjectConfig({ enabled: false });
     mount();
