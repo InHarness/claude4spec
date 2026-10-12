@@ -10,6 +10,7 @@ import { useVersions, useVersionDetail, useRestoreVersion } from '../../hooks/us
 import { useReleases } from '../../hooks/useReleases.js';
 import { lineDiffHunks } from '../../runtime/line-diff.js';
 import type { EntityType } from '../../../shared/entities.js';
+import type { ApiError } from '../../lib/api-core.js';
 
 /**
  * `EntityVersionHistoryView` (Panel detalu, `experimental`, `binding: 'connected'`)
@@ -96,7 +97,15 @@ function EntityVersionHistoryViewImpl({
   onRestored,
 }: EntityVersionHistoryViewProps) {
   const entityType = type as EntityType;
-  const { data: versions = [], isLoading } = useVersions(entityType, slug);
+  const { data: versionsData, isLoading, isError, error } = useVersions(entityType, slug);
+  const versions = versionsData ?? [];
+  /**
+   * 2.1.16 — ONLY a 404 means "the entity is gone". Any other error keeps what
+   * the query already has: TanStack Query keeps cached `data` and sets `isError`
+   * when a background refetch (restore, WS invalidation) fails, and a transient
+   * failure must not replace a populated timeline with the empty state.
+   */
+  const entityGone = isError && (error as Partial<ApiError> | null)?.status === 404;
   const releaseNameById = useReleases();
   const restoreVersion = useRestoreVersion();
 
@@ -150,7 +159,25 @@ function EntityVersionHistoryViewImpl({
   };
 
   if (isLoading) return <LoadingState lines={4} height={32} />;
-  if (versions.length === 0) {
+  /**
+   * 2.1.16 — a deleted entity shows the EMPTY history state, never a tombstone.
+   * Its versions endpoint answers 404 (the entity no longer exists), so the
+   * list query errors out with status 404; that is the same "nothing to show"
+   * as an entity with no captured versions, not a separate deleted-entity view.
+   */
+  if (isError && !entityGone && versions.length === 0) {
+    // A real load failure with nothing cached is an error, not an empty history.
+    return (
+      <div
+        role="alert"
+        className="mx-5 mt-3 rounded-md px-3 py-2 text-[12px]"
+        style={{ background: 'var(--c-red-soft)', color: 'var(--c-red)' }}
+      >
+        Could not load version history: {(error as Error | null)?.message ?? 'unknown error'}
+      </div>
+    );
+  }
+  if (entityGone || versions.length === 0) {
     return (
       <>
         {emptyState ?? (

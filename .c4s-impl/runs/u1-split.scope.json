@@ -1,0 +1,60 @@
+{
+  "unit": {
+    "id": "u1-m34-catalog-contracts",
+    "goal": "Katalog Host UI Kit ma kontrakty propsów komponentów `experimental` zgodne z kodem: listowe, akcje i stany, formularzowe, overlay, pickery i panel detalu. Dochodzi wariant `broken` w `Badge`, a `TagPicker` w wariancie `collapsed` dostaje tworzenie tagu inline. `EntityVersionHistoryView` dostaje zakładki Diff i Snapshot, grupowanie wersji po release, komunikat błędu restore i pusty stan po usunięciu encji. Znika tombstone usuniętej encji. Katalog wiąże się wyłącznie z wersją Host API, nie z wersją wydania aplikacji.",
+    "recipe": {
+      "pages": [
+        {
+          "key": "pages/modules/m34-host-ui-kit/L12-host-ui-kit.md",
+          "change": "all",
+          "context": {
+            "offset": 0,
+            "limit": 5,
+            "anchors": [
+              "2l9kgnfo",
+              "l5ppoanat",
+              "rxqin83v",
+              "wbs9m5zj",
+              "l5pactbar"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m34-host-ui-kit/m34-host-ui-kit.md",
+          "change": "all",
+          "context": {
+            "offset": 1,
+            "limit": 2,
+            "anchors": [
+              "m34purp01",
+              "m34deps01"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m34-host-ui-kit/m34-host-ui-kit.md",
+          "context": {
+            "offset": 9,
+            "limit": 1,
+            "anchors": [
+              "hntah0r7"
+            ]
+          }
+        }
+      ],
+      "entities": [
+        {
+          "type": "ac",
+          "slugs": [
+            "ac-badge-z-variant-broken-renderuje-wari",
+            "ac-entityversionhistoryview-otwarty-dla",
+            "ac-entityversionhistoryview-pokazuje-w-z"
+          ]
+        }
+      ]
+    },
+    "jobs": []
+  },
+  "stateDir": ".c4s-impl/",
+  "mode": "split"
+}

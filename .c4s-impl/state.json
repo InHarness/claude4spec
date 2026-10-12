@@ -1,5 +1,5 @@
 {
-  "iteration": 0,
+  "iteration": 5,
   "conventions": [
     {
       "label": "L12 (Host UI Kit) — implementor M34",
@@ -62,7 +62,7 @@
       "units": [
         "u1-m34-catalog-contracts"
       ],
-      "startCommit": null
+      "startCommit": "38e0a0c495fb4bee8c44802b883dc3d60e5260c5"
     },
     {
       "n": 2,
@@ -153,16 +153,35 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "u1-m34-catalog-contracts/p1-l12",
+          "layers": [
+            "L12"
+          ],
+          "slugs": [
+            "ac-badge-z-variant-broken-renderuje-wari",
+            "ac-entityversionhistoryview-otwarty-dla",
+            "ac-entityversionhistoryview-pokazuje-w-z"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "fa2a264e6fd4ed74c6ae9fd6c129b82f5ec9d929",
+      "baseCommit": "38e0a0c495fb4bee8c44802b883dc3d60e5260c5",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "u2-m13-plugin-routes-and-slots",
@@ -738,5 +757,6 @@
   ],
   "entityParts": [],
   "errors": 0,
-  "systemVerified": false
+  "systemVerified": false,
+  "baselineGreen": true
 }
