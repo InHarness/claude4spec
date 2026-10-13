@@ -18,11 +18,16 @@ import path from 'node:path';
  *     path inside the project becomes a project-relative one, the bare
  *     directory becomes `.`.
  *
- * ASSUMPTION:dev-0601 — the specification states both as a rule of the turn
- * (the `<interaction_context type="ask">` body tells the agent); enforcing them
- * here, deterministically, is this implementation's backstop. "Left a plan" =
- * a plan created or changed during the turn; "the project directory" is the
- * peer's `cwd`, under its given and its real spelling.
+ * 2.1.17 (M05 `za3t91al`): both are a guarantee of the operation, not only a
+ * rule of the turn — the endpoint closes the `answer` whether or not the agent
+ * kept the rule, in the specified order: (1) the plan line, then (2) the
+ * project directory scrubbed. "Left a plan" = a plan created or changed during
+ * the turn (content hash before vs after); "the project directory" is the
+ * peer's `cwd`, under its given and its real spelling. Absolute paths OUTSIDE
+ * the project pass through untouched — including a path that merely contains
+ * the project directory's spelling in its middle, or a sibling such as
+ * `<dir>-old`. Only the HTTP answer is processed; the persisted `chat_message`
+ * keeps what the agent wrote.
  *
  * Pure apart from one `realpathSync` (a symlinked project dir is scrubbed under
  * both spellings).
@@ -93,7 +98,11 @@ function projectDirSpellings(projectDir: string): string[] {
 export function scrubProjectDir(answer: string, projectDir: string): string {
   let out = answer;
   for (const dir of projectDirSpellings(projectDir)) {
-    const d = escapeRegExp(dir);
+    // The directory must START a path: not preceded by a path character, so an
+    // outside path that only contains this spelling (`/mnt/backup/<dir>/x`, or
+    // `/private<dir>` when `<dir>` is the unresolved `/var/…` spelling) is not
+    // rewritten.
+    const d = `(?<![\\w.~\\-/\\\\])${escapeRegExp(dir)}`;
     // `<dir>/rest` → `rest` (a separator followed by more path).
     out = out.replace(new RegExp(`${d}[\\\\/]+(?=[^\\s\`'")\\]])`, 'g'), '');
     // What is left is the bare directory (optionally with a trailing separator)
@@ -114,14 +123,24 @@ export interface FinalizeAskAnswerInput {
   plansLeft: string[];
 }
 
-export function finalizeAskAnswer(input: FinalizeAskAnswerInput): string {
-  const answer = scrubProjectDir(input.answer, input.projectDir);
-  const plansRootDir = input.plansRootDir;
-  if (!plansRootDir) return answer;
-  const missing = input.plansLeft
-    .map((p) => projectRelativePlanPath(input.projectDir, plansRootDir, p))
+/**
+ * Step 1 — the plan line: for every plan the turn left whose project-relative
+ * path the answer does not contain, one closing line exactly ``Plan: `<path>` ``.
+ * A plan the answer already names gets no second line.
+ */
+export function appendPlanLines(answer: string, projectDir: string, plansRootDir: string, plansLeft: string[]): string {
+  const missing = plansLeft
+    .map((p) => projectRelativePlanPath(projectDir, plansRootDir, p))
     .filter((rel) => !answer.includes(rel));
   if (missing.length === 0) return answer;
   const lines = missing.map((rel) => `Plan: \`${rel}\``).join('\n');
   return answer.trim().length > 0 ? `${answer.replace(/\s+$/, '')}\n\n${lines}` : lines;
+}
+
+export function finalizeAskAnswer(input: FinalizeAskAnswerInput): string {
+  // Step 1, then step 2 — the order M05 `za3t91al` states.
+  const withPlans = input.plansRootDir
+    ? appendPlanLines(input.answer, input.projectDir, input.plansRootDir, input.plansLeft)
+    : input.answer;
+  return scrubProjectDir(withPlans, input.projectDir);
 }

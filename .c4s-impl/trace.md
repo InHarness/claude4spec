@@ -1,1 +1,2 @@
 page-detail → src/shared/types.ts (PageDetail) + src/server/services/markdown-file-store.ts (readDetail, pageLabel, splitMarkdown); test src/server/routes/pages-facade-roots.route.test.ts [entity:page-detail]
+c4s-tools-ask → src/server/mcp/c4s-tools.ts (ask tool, returns the peer's { threadId, answer } verbatim) + src/server/services/ask-answer.ts / src/server/routes/threads.ts (the answer's form closed by the peer's POST /api/threads/:id/ask); test src/server/mcp/c4s-tools.test.ts [entity:c4s-tools-ask]

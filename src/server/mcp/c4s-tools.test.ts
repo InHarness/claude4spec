@@ -12,12 +12,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  */
 const hoisted = vi.hoisted(() => ({
   calls: [] as Array<Record<string, unknown>>,
+  /** The peer's answer the next `runAgent` returns; `'pong'` when unset. */
+  nextAnswer: undefined as string | undefined,
 }));
 
 vi.mock('../../core/agent/run-agent.js', () => ({
   runAgent: vi.fn(async (params: Record<string, unknown>) => {
     hoisted.calls.push(params);
-    return { threadId: 'peer-thread', answer: 'pong' };
+    const answer = hoisted.nextAnswer ?? 'pong';
+    hoisted.nextAnswer = undefined;
+    return { threadId: 'peer-thread', answer };
   }),
   AgentError: class AgentError extends Error {
     code: string;
@@ -218,6 +222,30 @@ describe('c4s-tools · ask — contract (2.1.9)', () => {
     expect(res.isError).toBeFalsy();
     const content = res.content as Array<{ type: string; text: string }>;
     expect(JSON.parse(content[0].text)).toEqual({ threadId: 'peer-thread', answer: 'pong' });
+  });
+
+  /**
+   * 2.1.17 — `returns`: when the peer's turn left a plan, `answer` names its
+   * project-relative path (in the text or in a closing ``Plan: `<path>` `` line)
+   * and never the peer's directory. The peer's endpoint closes that form
+   * (`routes/threads.test.ts`); this tool hands the peer's `{ threadId, answer }`
+   * back as is — it neither drops the plan line nor rewrites the answer.
+   */
+  it('[entity:c4s-tools-ask] returns the peer\'s { threadId, answer } verbatim, closing Plan line included', async () => {
+    const peerAnswer = 'I left a plan for the author.\n\nPlan: `.claude4spec/plans/rename-the-endpoint.md`';
+    hoisted.nextAnswer = peerAnswer;
+    const client = await connectClient('ws-5555');
+
+    const res = await client.callTool({ name: 'ask', arguments: { message: 'Please rename it.', project: 'app-spec' } });
+
+    expect(res.isError).toBeFalsy();
+    const content = res.content as Array<{ type: string; text: string }>;
+    const body = JSON.parse(content[0].text) as { threadId: string; answer: string };
+    expect(Object.keys(body).sort()).toEqual(['answer', 'threadId']);
+    expect(body).toEqual({ threadId: 'peer-thread', answer: peerAnswer });
+    expect(body.answer.split('\n').at(-1)).toBe('Plan: `.claude4spec/plans/rename-the-endpoint.md`');
+    // Locked context: the peer turn is an `ask` turn with the final-only output.
+    expect(hoisted.calls[0]).toMatchObject({ contextType: 'ask', output: 'final' });
   });
 
   /**

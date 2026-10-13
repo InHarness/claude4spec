@@ -1,0 +1,3 @@
+# Review — ask-answer-postprocessing
+
+- **rev-0001** `src/server/services/ask-answer.ts:105` — The new lookbehind `(?<![\w.~\-/\\])` also rejects a project directory preceded by `/`, so a `file://<dir>/pages/a.md` URL (or `file:///<dir>` on Windows-style spellings) in the answer now keeps the absolute project directory, which the 'answer never carries the project directory' guarantee forbids. A narrower guard (for example, also accepting the dir after a `file://` scheme, or rejecting only a preceding path segment rather than any `/`) would close this gap. No test covers it. This is an edge case, so it is non-blocking.

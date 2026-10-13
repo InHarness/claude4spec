@@ -1,5 +1,5 @@
 {
-  "iteration": 12,
+  "iteration": 16,
   "conventions": [
     {
       "label": "L4 (API)",
@@ -423,16 +423,38 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "ask-answer-postprocessing/p1-l3-l4",
+          "layers": [
+            "L3",
+            "L4"
+          ],
+          "slugs": [
+            "c4s-tools-ask",
+            "ac-answer-tury-ask-nie-zawiera-sciezki-b",
+            "ac-gdy-answer-tury-ask-nie-wymienia-plan",
+            "ac-sciezka-bezwzgledna-spoza-katalogu-pr"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "3e0beb9ee79a709da16c4b658f54f6782e6223f8",
+      "baseCommit": "3e0beb9ee79a709da16c4b658f54f6782e6223f8",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0,
+      "only": []
     },
     {
       "id": "m33-plugin-testing-harness",
