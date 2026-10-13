@@ -415,3 +415,133 @@ describe('GET /api/plugins/:name/:asset', () => {
     }
   });
 });
+
+/**
+ * Run a served runtime shim against a given `__c4s_shared` table and return its
+ * exports. The shim is plain ESM of the form `const __m = globalThis.__c4s_shared[…]`
+ * + `export const X = __m["X"]` / `export default …`; its exports are rebound to an
+ * object so the test can compare them by identity with the host namespace.
+ */
+function evalShim(source: string, shared: Record<string, unknown>): Record<string, unknown> {
+  const body = source
+    .replace(/^export default /m, '__out.default = ')
+    .replace(/^export const ([A-Za-z_$][\w$]*) = /gm, '__out.$1 = ');
+  expect(body).not.toMatch(/^\s*(export|import)\b/m);
+  const out: Record<string, unknown> = {};
+  new Function('globalThis', '__out', body)({ __c4s_shared: shared }, out);
+  return out;
+}
+
+async function servedShim(app: express.Express, importMap: Record<string, string>, specifier: string): Promise<string> {
+  const url = importMap[specifier];
+  expect(url, specifier).toMatch(/^\/api\/plugins\/runtime\/.+\.js$/);
+  const res = await request(app).get(url!).expect(200);
+  expect(res.headers['content-type']).toMatch(/javascript/);
+  return res.text;
+}
+
+describe('import map peers and overlay trust gate (criteria carried over to 2.1.20)', () => {
+  it('[ac:ac-frontend-pluginu-nie-bandluje-wlasnej-ko] @tanstack/react-router resolves through the import map to the host\'s one router instance, so a plugin RouteTreeFragment (frontend.routes) builds on the host router library', async () => {
+    const app = makeApp({});
+    const { importMap } = await manifest(app);
+    const source = await servedShim(app, importMap, '@tanstack/react-router');
+    // The shim re-exports the host singleton; it carries no router code of its own.
+    expect(source).toContain('globalThis.__c4s_shared["@tanstack/react-router"]');
+    expect(source).toContain('export const createRoute = __m["createRoute"];');
+
+    // Evaluated against the host's published namespace, every routing export the
+    // plugin's fragment uses IS the host's object — one library instance, one tree.
+    const hostRouter = (await import('@tanstack/react-router')) as Record<string, unknown>;
+    const pluginView = evalShim(source, { '@tanstack/react-router': hostRouter });
+    for (const name of ['createRoute', 'createRootRoute', 'createRouter', 'useRouter', 'Outlet', 'Link']) {
+      expect(pluginView[name], name).toBe(hostRouter[name]);
+    }
+    // And a RouteTreeFragment built with the plugin's import is a route of the host
+    // router library, hung off the host's root route.
+    const createRoute = pluginView.createRoute as (o: object) => { options: { getParentRoute: () => unknown } };
+    const hostRoot = (hostRouter.createRootRoute as (o?: object) => unknown)();
+    const fragment = (ctx: { rootRoute: unknown }) => [createRoute({ getParentRoute: () => ctx.rootRoute, path: '/glossary' })];
+    const [child] = fragment({ rootRoute: hostRoot });
+    expect(child).toBeInstanceOf(hostRouter.Route as new (...a: never[]) => unknown);
+    expect(child!.options.getParentRoute()).toBe(hostRoot);
+  });
+
+  it('[ac:ac-frontend-pluginu-zbudowany-automatycznym] react/jsx-runtime and react/jsx-dev-runtime are their own import-map peers (not covered by "react") resolving jsx/jsxs/jsxDEV to the host React', async () => {
+    const app = makeApp({});
+    const { importMap } = await manifest(app);
+    // Separate entries — a bare subpath is not resolved by the `react` entry.
+    expect(importMap['react/jsx-runtime']).toBe('/api/plugins/runtime/react-jsx-runtime.js');
+    expect(importMap['react/jsx-dev-runtime']).toBe('/api/plugins/runtime/react-jsx-dev-runtime.js');
+    expect(importMap['react/jsx-runtime']).not.toBe(importMap.react);
+    expect(importMap['react/jsx-dev-runtime']).not.toBe(importMap.react);
+
+    const jsxSource = await servedShim(app, importMap, 'react/jsx-runtime');
+    const devSource = await servedShim(app, importMap, 'react/jsx-dev-runtime');
+    expect(jsxSource).toContain('globalThis.__c4s_shared["react/jsx-runtime"]');
+    expect(devSource).toContain('globalThis.__c4s_shared["react/jsx-dev-runtime"]');
+    expect(devSource).toContain('export const jsxDEV = __m["jsxDEV"];');
+
+    // Bound to the host's own namespaces: the plugin's jsx/jsxs/jsxDEV are the host's.
+    const hostJsx = (await import('react/jsx-runtime')) as Record<string, unknown>;
+    const hostDev = (await import('react/jsx-dev-runtime')) as Record<string, unknown>;
+    const viaJsx = evalShim(jsxSource, { 'react/jsx-runtime': hostJsx });
+    const viaDev = evalShim(devSource, { 'react/jsx-dev-runtime': hostDev });
+    expect(viaJsx.jsx).toBe(hostJsx.jsx);
+    expect(viaJsx.jsxs).toBe(hostJsx.jsxs);
+    expect(viaJsx.Fragment).toBe(hostJsx.Fragment);
+    expect(viaDev.jsxDEV).toBe(hostDev.jsxDEV);
+    // Without the host singleton the module refuses to load instead of falling back to a copy.
+    expect(() => evalShim(jsxSource, {})).toThrow(/missing shared singleton "react\/jsx-runtime"/);
+  });
+
+  it('[ac:ac-lucide-react-jest-externalized-peer-w] lucide-react is an externalized peer of the manifest\'s import map, its icons re-exported from the host copy', async () => {
+    const app = makeApp({});
+    const { importMap } = await manifest(app);
+    expect(importMap['lucide-react']).toBe('/api/plugins/runtime/lucide-react.js');
+    const source = await servedShim(app, importMap, 'lucide-react');
+    expect(source).toContain('globalThis.__c4s_shared["lucide-react"]');
+    expect(source).toContain('export const Search = __m["Search"];');
+    const hostLucide = (await import('lucide-react')) as Record<string, unknown>;
+    const viaPeer = evalShim(source, { 'lucide-react': hostLucide });
+    expect(viaPeer.Search).toBe(hostLucide.Search);
+    expect(viaPeer.Trash2).toBe(hostLucide.Trash2);
+  });
+
+  it('[ac:ac-serwowanie-frontendu-nakladki-project-lo] a project-local overlay frontend (<cwd>/.claude4spec/plugins/<name>/dist/frontend.js) stays behind trustProjectPlugins: without trust it is neither served nor in the manifest', async () => {
+    overlayPlugin('local-glossary', '1.2.0', {
+      'dist/frontend.js': 'export const FROM = "overlay";',
+      'dist/frontend.css': '.overlay{}',
+    });
+    let trusted = false;
+    const deps: PluginRoutesDeps = {
+      pluginRegistry: new PluginRegistryImpl(),
+      pluginRecords: [],
+      workspacePackages: [],
+      envelopes: [],
+      resolveWorkspaceRoot: () => null,
+      frontendServing: { cwd, isTrusted: () => trusted, overlayLoaded: async () => new Set(['local-glossary']) },
+    };
+    const app = express();
+    app.use('/api', pluginsRouter(deps));
+
+    // No consent for (workspace × project): not announced, and every asset refused.
+    expect((await manifest(app)).plugins).toEqual([]);
+    for (const asset of ['frontend.js', 'frontend.css']) {
+      const res = await request(app).get(`/api/plugins/local-glossary/${asset}`);
+      expect(res.status, asset).toBe(404);
+      expect(res.body.error.code).toBe('PLUGIN_FRONTEND_NOT_FOUND');
+    }
+
+    // The gate is read live per request: consent given → announced and served.
+    trusted = true;
+    expect((await manifest(app)).plugins).toEqual([
+      {
+        name: 'local-glossary',
+        version: '1.2.0',
+        entry: '/api/plugins/local-glossary/frontend.js',
+        css: '/api/plugins/local-glossary/frontend.css',
+      },
+    ]);
+    expect((await request(app).get('/api/plugins/local-glossary/frontend.js').expect(200)).text).toBe('export const FROM = "overlay";');
+  });
+});

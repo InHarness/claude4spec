@@ -1,5 +1,5 @@
 {
-  "iteration": 12,
+  "iteration": 13,
   "conventions": [
     {
       "label": "L11 (Plugin Runtime Surface) — implementor M33",
@@ -910,8 +910,8 @@
             "ac-komponenty-pluginu-ze-zbundlowana-wla",
             "ac-build-frontendu-pluginu-wygenerowaneg"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [
             "ac-frontend-pluginu-nie-bandluje-wlasnej-ko",
@@ -919,20 +919,7 @@
             "ac-frontend-pluginu-zbudowany-automatycznym",
             "ac-lucide-react-jest-externalized-peer-w"
           ],
-          "only": [
-            {
-              "slug": "ac-frontend-pluginu-nie-bandluje-wlasnej-ko"
-            },
-            {
-              "slug": "ac-serwowanie-frontendu-nakladki-project-lo"
-            },
-            {
-              "slug": "ac-frontend-pluginu-zbudowany-automatycznym"
-            },
-            {
-              "slug": "ac-lucide-react-jest-externalized-peer-w"
-            }
-          ]
+          "only": []
         }
       ],
       "startCommit": "82deeabad3c8f1be503b07dfc61fbcd83e379a73",
