@@ -1449,13 +1449,22 @@ export function registerCoreOperations(): void {
    * Paging is the row's: `limit` / `offset`, with `total` counted AFTER the
    * `implemented` filter and before the window (`c4s list-briefs`; REST pages on
    * `?limit` / `?offset` the same way).
+   *
+   * 2.1.18 (M21 `01ytpznn`, M44 `3f5ej79s`) — the `internal` cell stays `direct`
+   * and now HAS a rendering: `list_briefs` on `transagent-tools`, mounted only on
+   * a top-level `chat` thread, never in a `brief` thread (`brief-tools` keeps its
+   * four tools). The class moves `brief` → `read` for that reason: the gate
+   * matches by name and `chat` admits no `brief` class, so a `brief`-class row
+   * would withhold the rendering from the only thread it exists for (and plan
+   * mode would list a read as mutating). The operation reads and never mutates
+   * — `sideEffects: ['none']` — which is what `read` means.
    */
   CATALOG.register({
     name: 'list_briefs',
     summary: 'Briefs of the project on the release axis (newest cycle first, unknown releases last), optionally narrowed to implemented or pending.',
     scope: 'project',
     mediation: 'direct',
-    opClass: 'brief',
+    opClass: 'read',
     inputSchema: {
       implemented: z
         .boolean()

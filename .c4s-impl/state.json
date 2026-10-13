@@ -1,5 +1,5 @@
 {
-  "iteration": 3,
+  "iteration": 4,
   "conventions": [
     {
       "label": "L15 (Context Types) — implementor `M44`",
@@ -708,16 +708,35 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "m21-list-briefs/p1-l3-l15",
+          "layers": [
+            "L3",
+            "L15"
+          ],
+          "slugs": [
+            "ac-list-briefs-wywolane-w-watku-chat-top",
+            "ac-wywolanie-list-briefs-w-watku-context"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "407df4158ba75e56166c6906ba3db4a06e9a1ec0",
+      "baseCommit": "407df4158ba75e56166c6906ba3db4a06e9a1ec0",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "only": []
     },
     {
       "id": "m46-bubble-series",

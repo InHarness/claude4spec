@@ -2087,7 +2087,7 @@ describe('runAgentTurn — the profile gate covers the inline servers too', () =
 describe('runAgentTurn — transagent-tools only on a top-level chat thread (2.1.18)', () => {
   async function turnFor(
     contextType: string,
-    opts: { patchPath?: string | null; parentThreadId?: string | null } = {},
+    opts: { patchPath?: string | null; parentThreadId?: string | null; briefPath?: string | null } = {},
   ): Promise<{ mounted: string[]; servers: Record<string, unknown>; prompt: string }> {
     hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
     const { deps } = makeDeps();
@@ -2101,9 +2101,11 @@ describe('runAgentTurn — transagent-tools only on a top-level chat thread (2.1
       contextType: string;
       patchPath: string | null;
       parentThreadId: string | null;
+      briefPath: string | null;
     };
     thread.contextType = contextType;
     thread.patchPath = opts.patchPath ?? null;
+    thread.briefPath = opts.briefPath ?? null;
     thread.parentThreadId = opts.parentThreadId ?? null;
     await runAgentTurn(deps, input);
     const servers = (hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>;
@@ -2189,6 +2191,45 @@ describe('runAgentTurn — transagent-tools only on a top-level chat thread (2.1
 
     const patch = await turnFor('patch', { patchPath: 'p.md' });
     expect(patch.prompt).not.toMatch(/<mcp name="[^"]*">[^<]*\blist_plans\b/);
+  });
+
+  it('[section:iatop5pj] a top-level chat thread has list_briefs on transagent-tools — not withheld by the profile gate; a child chat thread and a patch thread do not', async () => {
+    // 2.1.18 (M21 `01ytpznn`, M44 `3f5ej79s`, M05 `iatop5pj`) — the orchestrator's brief list.
+    const top = await turnFor('chat', { parentThreadId: null });
+    expect(top.prompt).toMatch(/<mcp name="transagent-tools">[^<]*\blist_briefs\b[^<]*<\/mcp>/);
+
+    const child = await turnFor('chat', { parentThreadId: 'parent-1' });
+    expect(child.prompt).not.toMatch(/<mcp name="[^"]*">[^<]*\blist_briefs\b/);
+
+    const patch = await turnFor('patch', { patchPath: 'p.md' });
+    expect(patch.prompt).not.toMatch(/<mcp name="[^"]*">[^<]*\blist_briefs\b/);
+  });
+
+  it('[ac:ac-wywolanie-list-briefs-w-watku-context] in a context_type=\'brief\' thread list_briefs is not registered with the runtime, so a call to it ends in a tool error; brief-tools keeps its four tools', async () => {
+    // The orchestrator's side: list_briefs rides transagent-tools on a top-level chat thread.
+    const top = await turnFor('chat', { parentThreadId: null });
+    expect(top.prompt).toMatch(/<mcp name="transagent-tools">[^<]*\blist_briefs\b[^<]*<\/mcp>/);
+
+    // The brief thread: no transagent-tools, no mounted server lists list_briefs,
+    // and it is not in the allowed tools — the agent runtime has nothing to dispatch
+    // the call to and answers it with its own "tool not available" tool_result error
+    // (M44 `3f5ej79s`: servers outside the whitelist are not registered in the runtime).
+    // ASSUMPTION:dev-0006 — the error text is the agent runtime's answer to a call on an
+    // unregistered tool; the app guarantees the non-registration, not the wording.
+    const { servers, prompt } = await turnFor('brief', { briefPath: 'b.md' });
+    expect(Object.keys(servers)).not.toContain('transagent-tools');
+    expect(prompt).not.toMatch(/<mcp name="transagent-tools"/);
+    expect(prompt).not.toMatch(/<mcp name="[^"]*">[^<]*\blist_briefs\b/);
+    expect(JSON.stringify(hoisted.lastExecute?.allowedTools ?? [])).not.toContain('list_briefs');
+    // brief-tools itself stays at the four thread operations (M21 `01ytpznn`).
+    const briefTools = prompt.match(/<mcp name="brief-tools">([^<]*)<\/mcp>/);
+    expect(briefTools).not.toBeNull();
+    expect(briefTools![1]!.split(',').map((t) => t.trim()).sort()).toEqual([
+      'get_brief',
+      'get_brief_version',
+      'list_brief_versions',
+      'update_brief',
+    ]);
   });
 });
 

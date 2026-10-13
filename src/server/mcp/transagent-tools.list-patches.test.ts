@@ -48,11 +48,12 @@ function serviceOver(patches: Record<string, Record<string, unknown>>, briefs: s
 const dispatcher = { run: async () => ({ threadId: 'c', summary: '' }) } as unknown as TransagentDispatcher;
 
 function listTool(service: PatchService) {
-  // The turn handler passes both sets; `list_plans` is asserted in its own file.
+  // The turn handler passes all three sets; `list_briefs` / `list_plans` are asserted in their own files.
   const server = buildTransagentToolsServer({
     parentThreadId: 'parent_1',
     dispatcher,
     patches: service,
+    briefs: { listBriefs: () => [] },
     plans: { listPlans: () => [] },
     projectId: 'p1',
   });

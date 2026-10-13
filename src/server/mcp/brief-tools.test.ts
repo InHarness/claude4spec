@@ -741,16 +741,20 @@ describe('brief-tools — one tool per internal brief operation', () => {
    * of brief-tools for a recorded reason (the `brief` profile does not expose it),
    * and `list_briefs`' internal cell is a declaration without a rendering, so
    * written in M21 `01ytpznn`. The criterion counts renderings, not cells.
+   *
+   * 2.1.18 (M21 `01ytpznn`) — `list_briefs` IS rendered in `internal` now, but on
+   * `transagent-tools` in a top-level `chat` thread, never in a brief thread (and
+   * its class is `read`, so the operations are picked by name, not by class).
    */
   const DECLARED_NOT_RENDERED_INTERNALLY = ['list_briefs', 'mark_brief_implemented'];
 
   it('[ac:ac-kazda-operacja-briefu-renderowana-w-k] every brief operation rendered in `internal` in a brief thread is a brief-tools tool, and their count equals the tools mounted on a brief thread', async () => {
     registerCoreOperations();
     const internalDirectBriefOps = CATALOG.listForChannel('internal')
-      .filter((op) => op.opClass === 'brief' && op.name.includes('brief'))
+      .filter((op) => op.name.includes('brief'))
       .map((op) => op.name)
       .sort();
-    // The two declared-but-unrendered cells are exactly the recorded ones…
+    // The two cells not rendered in a brief thread are exactly the recorded ones…
     for (const name of DECLARED_NOT_RENDERED_INTERNALLY) expect(internalDirectBriefOps, name).toContain(name);
     // …and `create_brief` is not internal at all (n/a, with its reason).
     expect(internalDirectBriefOps).not.toContain('create_brief');
@@ -1235,17 +1239,18 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     expect(Object.keys(ok.body).sort()).toEqual(['body', 'content', 'frontmatter', 'hash', 'path']);
   });
 
-  it('[entity:katalog-operacji-m21#list_briefs] the row: project, direct in all four channels (internal declared without a brief-tools rendering), no effects, idempotent, filter `implemented` + paging `limit`/`offset` with total counted after the filter; VALIDATION', async () => {
+  it('[entity:katalog-operacji-m21#list_briefs] the row: project, direct in all four channels (internal rendered on transagent-tools, never by brief-tools), no effects, idempotent, filter `implemented` + paging `limit`/`offset` with total counted after the filter; VALIDATION', async () => {
     const op = CATALOG.require('list_briefs');
     expect(op.scope).toBe('project');
     expect(op.mediation).toBe('direct');
-    expect(op.opClass).toBe('brief');
+    // 2.1.18 — a read: the class `chat` admits, where its rendering lives.
+    expect(op.opClass).toBe('read');
     for (const channel of ['internal', 'cli', 'mcp', 'rest'] as const) expect(op.channels[channel].kind, channel).toBe('direct');
     expect(op.sideEffects).toEqual(['none']);
     expect(op.idempotent).toBe(true);
     expect([...op.errorCodes]).toEqual(['VALIDATION']);
     expect(Object.keys(op.inputSchema).sort()).toEqual(['implemented', 'limit', 'offset']);
-    // No brief-tools tool renders it (M21 01ytpznn: a declaration without a rendering).
+    // No brief-tools tool renders it (M21 01ytpznn: its internal rendering is transagent-tools').
     expect(await mountedNames(internal)).not.toContain('list_briefs');
     expect(await mountedNames(external)).not.toContain('list_briefs');
     expect(listBriefsCommand).toMatchObject({ operation: 'list_briefs', executionMode: 'server-delegating' });

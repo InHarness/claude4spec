@@ -24,6 +24,13 @@
  * set of plans the orchestrator picks a `planPath` for a banka from. `plan-tools`
  * still carries no list on a thread — the agent editing a plan sees only its own.
  *
+ * 2.1.18 (M21 `01ytpznn`, M44 `3f5ej79s`, M05 `iatop5pj`) — and `list_briefs`,
+ * owned by M21: the orchestrator turns a brief's name into its path (the
+ * `brief` filter of `list_patches`) and orients itself in the set. It is not a
+ * banka address — a brief banka always founds a new brief. `brief-tools` stays
+ * at its four tools, and a `brief` thread has no `transagent-tools`, so the
+ * brief thread's isolation is untouched.
+ *
  * Read-only cross-spec counterpart: `c4s-tools` (consults a DIFFERENT spec).
  */
 
@@ -32,6 +39,7 @@ import { z } from 'zod';
 import { toolError, toolFailure, toolSuccess } from '../operations/envelope.js';
 import { DEFAULT_LIMITS, paginate } from '../discovery/pagination.js';
 import { toIso } from '../services/artifact-content.js';
+import type { BriefService } from '../services/brief.js';
 import type { PatchService } from '../services/patch.js';
 import type { PlanService } from '../services/plan.js';
 import type { TransagentDispatcher } from '../services/transagent-dispatcher.js';
@@ -51,16 +59,21 @@ export interface TransagentToolsContext {
    */
   patches?: Pick<PatchService, 'listPatches'>;
   /**
+   * 2.1.18 — the brief set behind `list_briefs`. Optional only for rigs that
+   * exercise `runTransagent` alone; the turn handler always passes it.
+   */
+  briefs?: Pick<BriefService, 'listBriefs'>;
+  /**
    * 2.1.18 — the plan set behind `list_plans`. Optional only for rigs that
    * exercise `runTransagent` alone; the turn handler always passes it.
    */
   plans?: Pick<PlanService, 'listPlans'>;
-  /** The project `list_patches` / `list_plans` answer for — the response-size ring's key. */
+  /** The project `list_patches` / `list_briefs` / `list_plans` answer for — the response-size ring's key. */
   projectId?: string | null;
 }
 
 /** Tool names this server can carry, in registration order. */
-export const TRANSAGENT_TOOL_NAMES = ['runTransagent', 'list_patches', 'list_plans'] as const;
+export const TRANSAGENT_TOOL_NAMES = ['runTransagent', 'list_patches', 'list_briefs', 'list_plans'] as const;
 
 export function buildTransagentToolsServer(ctx: TransagentToolsContext): CapturedMcpServer {
   const runTransagent = mcpTool(
@@ -171,6 +184,7 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
 
   const tools: McpToolDefinition[] = [runTransagent];
   if (ctx.patches) tools.push(buildListPatchesTool(ctx.patches, ctx.projectId ?? null));
+  if (ctx.briefs) tools.push(buildListBriefsTool(ctx.briefs, ctx.projectId ?? null));
   if (ctx.plans) tools.push(buildListPlansTool(ctx.plans, ctx.projectId ?? null));
 
   return createMcpServer({
@@ -243,6 +257,75 @@ function buildListPatchesTool(patches: Pick<PatchService, 'listPatches'>, projec
             ...(page.truncated ? { truncated: true } : {}),
           },
           { operation: 'list_patches', channel: 'internal', project: projectId },
+        );
+      } catch (err) {
+        return toolFailure(err);
+      }
+    },
+    { readOnlyHint: true },
+  );
+}
+
+/**
+ * 2.1.18 (M21 `01ytpznn`, M44 `3f5ej79s`) — `list_briefs`, the `internal`
+ * rendering of the catalog row `list_briefs` (`internal: direct`), mounted only
+ * where `transagent-tools` is: a top-level `chat` thread. Its input is the row's
+ * (`implemented?`, `limit?`, `offset?`). The ORDER is the operation's own, the
+ * release axis of `briefService.listBriefs` (M21 `0kz2u8g7`: newest cycle first,
+ * unknown releases in the tail), computed before the `implemented` filter's
+ * survivors are windowed; the WINDOW follows M39's implicit matrix (`total`
+ * counted after the filter and before the slice, `hasMore`). `echo-free`: rows
+ * carry the address, the window and the flag, never the brief's content.
+ *
+ * ASSUMPTION:dev-0007 — the default page size (50) is ours (M39 names none for
+ * this list), and so is the row shape; the catalog class is `read`, not `brief`.
+ */
+function buildListBriefsTool(briefs: Pick<BriefService, 'listBriefs'>, projectId: string | null) {
+  return mcpTool(
+    'list_briefs',
+    [
+      'List the briefs of this specification — use it to turn a brief\'s name into its `path`',
+      '(the `brief` filter of `list_patches`) and to orient yourself in the set. It is not an address',
+      "for a banka: runTransagent({ contextType: 'brief' }) always founds a new brief.",
+      'Ordered on the release axis: newest cycle first, a brief open to the current state directly',
+      'above the briefs of the release it starts from, briefs of unknown releases last.',
+      'Filter with `implemented` (`false` = not yet implemented).',
+      'Each row: { path, title, fromRelease, toRelease, implemented, generatedAt } — no brief content.',
+      'Paged: `limit` / `offset`, answered with `total` (counted after the filter) and `hasMore`.',
+    ].join('\n'),
+    {
+      implemented: z.boolean().optional().describe('Narrow to implemented (true) or pending (false). Omit for all.'),
+      limit: z.number().int().positive().optional(),
+      offset: z.number().int().nonnegative().optional(),
+    },
+    async (args) => {
+      try {
+        const rows = briefs
+          .listBriefs(typeof args.implemented === 'boolean' ? { implemented: args.implemented } : {})
+          .map((b) => ({
+            path: b.path,
+            title: b.title,
+            fromRelease: b.fromRelease,
+            toRelease: b.toRelease,
+            implemented: b.implemented,
+            generatedAt: b.generatedAt === '' ? null : b.generatedAt,
+          }));
+        const page = paginate(
+          rows,
+          {
+            limit: typeof args.limit === 'number' ? args.limit : undefined,
+            offset: typeof args.offset === 'number' ? args.offset : undefined,
+          },
+          DEFAULT_LIMITS.listBriefs,
+        );
+        return toolSuccess(
+          {
+            briefs: page.items,
+            total: page.total,
+            hasMore: page.hasMore,
+            ...(page.truncated ? { truncated: true } : {}),
+          },
+          { operation: 'list_briefs', channel: 'internal', project: projectId },
         );
       } catch (err) {
         return toolFailure(err);

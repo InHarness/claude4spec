@@ -154,11 +154,11 @@ export function bindingAddress(kind: ArtifactKind, thread: ThreadArtifactPointer
  */
 export const ARTIFACT_READ_FAMILY: Readonly<Record<ArtifactKind, ArtifactReadFamily>> = {
   brief: {
-    list: 'c4s list-briefs (cli) + GET /api/artifacts/brief (rest), filtered by frontmatter.implemented',
+    list: 'list_briefs (internal — transagent-tools, top-level chat only; release axis, M39 window) + c4s list-briefs (cli) + GET /api/artifacts/brief (rest), filtered by frontmatter.implemented',
     getWithWindow: 'get_brief({ path?, range? }) — line window, always allowed (an artifact has no section index)',
     search:
       'n/a — no search operation exists for briefs in any channel; a named GAP, not a decision. ' +
-      'search_briefs and list_briefs coverage on the agent channels (internal/mcp) are an open <todo> for a separate plan.',
+      'search_briefs and the mcp coverage of list_briefs are an open <todo> for a separate plan.',
     responseBudget: 'truncated: true per item + truncationHint pointing unconditionally at range',
   },
   patch: {

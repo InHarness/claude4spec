@@ -1,0 +1,15 @@
+{
+  "id": "dev-0007",
+  "kind": "clarification",
+  "blocking": false,
+  "address": "m21-list-briefs/01ytpznn",
+  "slugs": [
+    "ac-list-briefs-wywolane-w-watku-chat-top"
+  ],
+  "text": "At 2.1.18 M21 `01ytpznn` renders `list_briefs` in `transagent-tools` (top-level chat only) and keeps the catalog row's `internal` cell `direct`; the `mcp-tool` entity `transagent-tools-list-briefs` is still a Faza B todo, so its params/returns are not specified. Built as the row says: params `implemented?`, `limit?`, `offset?` (the row's input), the release-axis order of `BriefService.listBriefs` (M21 `0kz2u8g7`), `total` after the filter and before the window. Decided here: (1) rows are `{ path, title, fromRelease, toRelease, implemented, generatedAt }`, no content; (2) the default page size is `DEFAULT_LIMITS.listBriefs = 50` (M39 asks for a finite default but names no number); (3) the code-side operation class of `list_briefs` moves from `brief` to `read`: the profile gate matches tools by name and the `chat` profile admits no `brief` class, so a `brief`-class row would withhold the rendering from the only thread it exists for (and plan mode would list a pure read as mutating). The row has `sideEffects: none`, so `read` is its true class; no spec column carries the class. Suggest completing Faza B with the `mcp-tool` entity `transagent-tools-list-briefs` carrying these params/returns.",
+  "assumption": "ASSUMPTION:dev-0007 — the default page size (50) is ours (M39 names none for this list), and so is the row shape; the catalog class is `read`, not `brief`.",
+  "unit": "m21-list-briefs",
+  "portion": "m21-list-briefs/p1-l3-l15",
+  "sent": true,
+  "patchPath": "2-1-17-to-2-1-18-m21-list-briefs-01ytpznn-at-2-1-18-m21-01ytpznn-renders-list-briefs-in-transagen.md"
+}

@@ -57,6 +57,7 @@ function listTool(service: PlanService) {
     parentThreadId: 'parent_1',
     dispatcher,
     patches: { listPatches: () => [] },
+    briefs: { listBriefs: () => [] },
     plans: service,
     projectId: 'p1',
   });
@@ -77,7 +78,7 @@ async function list(service: PlanService, args: Record<string, unknown> = {}) {
 const paths = (body: Record<string, any>) => (body.plans as Array<{ path: string }>).map((p) => p.path);
 
 describe('transagent-tools · list_plans (2.1.18)', () => {
-  it('[section:m10mcp00] is registered on transagent-tools beside runTransagent and list_patches, read-only, with optional applied / limit / offset only', () => {
+  it('[section:m10mcp00] is registered on transagent-tools beside runTransagent, list_patches and list_briefs, read-only, with optional applied / limit / offset only', () => {
     const { server, tool } = listTool(serviceOver({}));
     expect(server.tools.map((t) => t.name)).toEqual([...TRANSAGENT_TOOL_NAMES]);
     expect(TRANSAGENT_TOOL_NAMES).toContain('list_plans');
