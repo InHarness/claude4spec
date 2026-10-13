@@ -626,6 +626,18 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       '`registerExtensionReferenceType` — neither field changed host behaviour and no ' +
       'external plugin is published. No bump, no `migrations[]` descriptor.',
   },
+  {
+    release: '2.1.12',
+    slot: '@c4s/plugin-runtime: openPopover / openModal / confirmDestructive / toast',
+    kind: 'slot-added',
+    summary:
+      'The browser leg gains the four shell window facades (M50): the very functions ' +
+      'the host\'s own modules open windows and toasts with, so a plugin operates a ' +
+      '`kind` instead of dispatching host events. `kind` is an open string — plugin ' +
+      'kinds enter dynamically and are not checked against the host\'s kind maps. ' +
+      'New names beside the existing ones, so no existing call changes: additive ' +
+      'within the current baseline, no bump.',
+  },
 ];
 
 /**

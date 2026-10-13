@@ -250,3 +250,31 @@ describe('[section:m33l11sc] the published type surface — subpaths and legs', 
     expect(compileWithLeg(BROWSER_AMBIENT, source)).toEqual([]);
   }, 120_000);
 });
+
+describe('[section:tbeatf5z] the shell window facades as a plugin author compiles them', () => {
+  it('[section:tbeatf5z] plugin frontend code calls openPopover, openModal, confirmDestructive and toast with its own kinds; the backend leg has none of them', () => {
+    const source = [
+      "import { openPopover, openModal, confirmDestructive, toast, type ConfirmDestructiveOptions } from '@c4s/plugin-runtime';",
+      "const options: ConfirmDestructiveOptions = { title: 'Delete gadget?', body: 'Gone.', confirmLabel: 'Delete', cancelLabel: 'Keep', danger: true, requireText: 'gadget', action: async () => true };",
+      "export async function run(): Promise<void> {",
+      "  const picked: { id: string } | null = await openPopover<{ id: string }>('acme-gadget-create', { x: 1, y: 2, preset: 'wide' });",
+      "  const answer: string | null = await openModal<string>('acme-gadget-wizard', { step: 1 }, { dismissible: false });",
+      "  const ok: boolean = await confirmDestructive('acme-gadget-delete', options);",
+      "  toast.success('Saved', { label: 'Undo', onClick: () => undefined });",
+      "  toast.error('Failed');",
+      "  toast.warning('Careful', { durationMs: 900 });",
+      "  void picked; void answer; void ok;",
+      "}",
+    ].join('\n');
+    // Any string is a kind: no host kind map narrows it.
+    expect(compileWithLeg(BROWSER_AMBIENT, source)).toEqual([]);
+    // Typed, not `any`: confirm without its title/body, or a toast with a kind-like variant, fails.
+    expect(compileWithLeg(BROWSER_AMBIENT, "import { confirmDestructive } from '@c4s/plugin-runtime';\nvoid confirmDestructive('acme-gadget-delete', { body: 'x' });").length).toBe(1);
+    expect(compileWithLeg(BROWSER_AMBIENT, "import { toast } from '@c4s/plugin-runtime';\ntoast.info('x');").length).toBe(1);
+    // Browser values only: in plugin backend code each is unusable as a value.
+    const backend = compileWithLeg(BACKEND_AMBIENT, source);
+    for (const name of ['openPopover', 'openModal', 'confirmDestructive', 'toast']) {
+      expect(backend.some((e) => e.includes(`'${name}'`)), name).toBe(true);
+    }
+  }, 120_000);
+});

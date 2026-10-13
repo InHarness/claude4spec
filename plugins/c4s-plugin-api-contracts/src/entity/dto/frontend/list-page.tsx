@@ -11,7 +11,7 @@ import {
   TagFilterBar,
 } from '@c4s/plugin-runtime/ui';
 import { useDtos } from './hooks.js';
-import { toast } from '../../../frontend-kit/host-events.js';
+import { toast } from '@c4s/plugin-runtime';
 import { DtoCreateDialog } from './create-dialog.js';
 import { ListPageLayout } from '../../../frontend-kit/ListPageLayout.js';
 import { useEntityListQuery } from '../../../frontend-kit/useEntityListQuery.js';

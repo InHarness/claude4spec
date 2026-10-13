@@ -3,7 +3,7 @@ import { Check, Copy, Maximize2 } from 'lucide-react';
 import type { EntityCardProps } from '@c4s/plugin-runtime';
 import { DEFAULT_LANGUAGE } from '../../../identity.js';
 import { fetchCodeSnippet, useEntityChanged, type CodeSnippet } from './hooks.js';
-import { openModal } from '../../../frontend-kit/host-events.js';
+import { openModal } from '@c4s/plugin-runtime';
 import { CodeSnippetView } from './view.js';
 import { openEditPopover } from './popover.js';
 

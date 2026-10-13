@@ -448,6 +448,9 @@ export interface ToastAction {
 /**
  * Exported beside the catalog (no registry entry; tier `experimental`, outside
  * `hostApiVersion`). The `/ui` declarative doctrine's one imperative exception.
+ * A thin layer over the shell's `toast` facade: the toast goes onto the host
+ * bus and appears in the host's one toast stack — a plugin mounts no
+ * `ToastViewport` for it. No `info` kind, no duration.
  */
 export declare function useToast(): {
   success(message: string, action?: ToastAction): void;

@@ -140,4 +140,25 @@ describe('L11 names of the consumer modules, per leg', () => {
     expect(published).toMatch(/export declare const TOOL_RESULT_CEILING_TOKENS: number;/);
     expect(published).toMatch(/export declare class DomainError extends Error/);
   });
+
+  it('[section:tbeatf5z] M50 carries openPopover, openModal, confirmDestructive and toast on the browser leg, with kind an open string', async () => {
+    await assertCarried('M50', 'tbeatf5z', {
+      browser: ['openPopover', 'openModal', 'confirmDestructive', 'toast'],
+      types: ['ToastAction', 'ToastOptions', 'ConfirmDestructiveOptions'],
+    });
+    // Signatures of the host helpers, `kind` typed as any string.
+    expect(published).toMatch(/export declare function openPopover<R = unknown>\(\s*kind: string,\s*input: \{ x: number; y: number; \[prop: string\]: unknown \},\s*\): Promise<R \| null>;/);
+    expect(published).toMatch(/export declare function openModal<R = unknown>\(\s*kind: string,\s*props: Record<string, unknown>,\s*options\?: \{ dismissible\?: boolean \},\s*\): Promise<R \| null>;/);
+    expect(published).toMatch(/export declare function confirmDestructive\(\s*kind: string,\s*options: ConfirmDestructiveOptions,\s*\): Promise<boolean>;/);
+    const toast = /export declare const toast: \{([\s\S]*?)\n\};/.exec(published)?.[1] ?? '';
+    for (const variant of ['success', 'error', 'warning']) {
+      expect(toast).toContain(`${variant}(message: string, action?: ToastAction | ToastOptions): void;`);
+    }
+    // A toast has no kind; `info` is not plugin surface.
+    expect(toast).not.toMatch(/kind|info\(/);
+    // The `c4s:*` window events are not plugin surface: nothing published names them.
+    expect(published).not.toMatch(/'c4s:(?:popover-open|modal-open|confirm-open|toast)'/);
+    // Additive within the current baseline: no version bump.
+    expect(HOST_API_VERSION).toBe('2.1.0');
+  });
 });

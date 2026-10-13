@@ -18,7 +18,7 @@ import {
   useSlashSubmit,
   type EmbedEditor,
 } from '../../../frontend-kit/slash-create.js';
-import { toast } from '../../../frontend-kit/host-events.js';
+import { toast } from '@c4s/plugin-runtime';
 import { DTO_POPOVER_KIND, DTO_TYPE } from '../../../identity.js';
 import { dtosApi } from './api.js';
 

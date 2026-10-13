@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { METHOD_STYLE, MethodChip } from '../../../frontend-kit/atoms.js';
 import { Dialog, FormShell, FormField, ActionButton } from '@c4s/plugin-runtime/ui';
 import { useCreateEndpoint } from './hooks.js';
-import { toast } from '../../../frontend-kit/host-events.js';
+import { toast } from '@c4s/plugin-runtime';
 import type { HttpMethod } from '../../../types.js';
 
 interface Props {

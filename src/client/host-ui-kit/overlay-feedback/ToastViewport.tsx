@@ -1,7 +1,18 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle, Info, X, type LucideIcon } from 'lucide-react';
 import { withStability } from '../stability.js';
-import { TOAST_EVENT, type ToastAction, type ToastKind, type ToastRequest } from './toast-store.js';
+
+/**
+ * `info` is renderable but absent from `useToast()`: the hook publishes the
+ * three kinds of the shell `toast` facade's plugin contract, while the host's
+ * own `toast.info()` still needs a kind the one viewport can render.
+ */
+export type ToastKind = 'success' | 'error' | 'warning' | 'info';
+
+export interface ToastAction {
+  label: string;
+  onClick(): void;
+}
 
 /**
  * Auto-dismiss delays, by kind — part of the toast's anatomy, so they live with
@@ -39,9 +50,9 @@ export interface ToastViewportItem {
 
 export interface ToastViewportProps {
   /**
-   * The stack to render. Supplied, the viewport is strictly props-in: the
-   * caller owns the queue, the timers and dismissal. Omitted, the viewport
-   * manages its own stack from `useToast()` requests — the plugin-facing path.
+   * The stack to render — the viewport is CONTROLLED: the caller owns the
+   * queue, the timers and dismissal. Behaviour without `toasts` is not part of
+   * the contract (today: nothing is rendered).
    */
   toasts?: ToastViewportItem[];
   onDismiss?(id: number | string): void;
@@ -51,24 +62,22 @@ export interface ToastViewportProps {
 }
 
 /**
- * `ToastViewport` (Overlay/feedback, `experimental`) — the ONLY toast anatomy in
+ * `ToastViewport` (group `feedback`, `experimental`) — the ONLY toast anatomy in
  * C4S (M34/L12 one-implementation rule): a 320px panel with a kind-coloured left
  * border, lucide icon, optional action and an always-visible dismiss, stacking
  * upward from the bottom-right over `--z-toast`.
  *
- * The host's `ToastHost` IS this viewport: it keeps only the queue and the
- * timers and hands the stack in through `toasts`, rather than running a parallel
- * viewport of its own. Plugins mount it bare and drive it with `useToast()`, in
- * which case it manages that stack itself — same renderer either way.
+ * A CONTROLLED stack component: it renders the `toasts` it is given and reports
+ * a close through `onDismiss`. The host's `ToastHost` renders it this way and
+ * holds the host's one toast stack (queue, timers, the `c4s:toast` bus);
+ * `useToast()` sends onto that bus, so no second stack exists (2.1.20,
+ * `l0i0c5wm` / `wbs9m5zj`).
  */
 function ToastViewportImpl({ toasts, onDismiss, onPause, onResume }: ToastViewportProps) {
-  const propsIn = toasts !== undefined;
-  const selfManaged = useSelfManagedToasts(!propsIn);
-
-  const stack = toasts ?? selfManaged.toasts;
-  const dismiss = propsIn ? onDismiss : selfManaged.dismiss;
-  const pause = propsIn ? onPause : selfManaged.pause;
-  const resume = propsIn ? onResume : selfManaged.resume;
+  const stack = toasts ?? [];
+  const dismiss = onDismiss;
+  const pause = onPause;
+  const resume = onResume;
 
   if (stack.length === 0) return null;
 
@@ -141,83 +150,6 @@ function ToastViewportImpl({ toasts, onDismiss, onPause, onResume }: ToastViewpo
       })}
     </div>
   );
-}
-
-/** A pending dismissal. `handle` is null while hover has paused the timer. */
-interface PendingTimer {
-  handle: number | null;
-  expiresAt: number;
-  remaining: number;
-}
-
-/**
- * The plugin-facing stack: listens for `useToast()` requests and owns the
- * dismissal timers. Only active when the consumer passed no `toasts` — a host
- * facade owning its own queue must not also get this listener, or every toast
- * would be rendered twice.
- */
-function useSelfManagedToasts(enabled: boolean) {
-  const [toasts, setToasts] = useState<ToastViewportItem[]>([]);
-  const idRef = useRef(1);
-  // Timers live in a ref, not state: pausing on hover must not re-render the stack.
-  const timers = useRef(new Map<number | string, PendingTimer>());
-
-  const dismiss = useCallback((id: number | string) => {
-    const entry = timers.current.get(id);
-    if (entry?.handle != null) window.clearTimeout(entry.handle);
-    timers.current.delete(id);
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
-
-  const pause = useCallback((id: number | string) => {
-    const entry = timers.current.get(id);
-    if (!entry || entry.handle == null) return;
-    window.clearTimeout(entry.handle);
-    timers.current.set(id, {
-      handle: null,
-      expiresAt: entry.expiresAt,
-      remaining: Math.max(0, entry.expiresAt - Date.now()),
-    });
-  }, []);
-
-  const resume = useCallback(
-    (id: number | string) => {
-      const entry = timers.current.get(id);
-      if (!entry || entry.handle != null) return;
-      const handle = window.setTimeout(() => dismiss(id), entry.remaining);
-      timers.current.set(id, {
-        handle,
-        expiresAt: Date.now() + entry.remaining,
-        remaining: entry.remaining,
-      });
-    },
-    [dismiss],
-  );
-
-  useEffect(() => {
-    if (!enabled) return;
-    const handler = (e: Event) => {
-      const { kind, message, action } = (e as CustomEvent<ToastRequest>).detail;
-      const id = idRef.current++;
-      const duration = TOAST_DURATION_MS[kind];
-      const handle = window.setTimeout(() => dismiss(id), duration);
-      timers.current.set(id, { handle, expiresAt: Date.now() + duration, remaining: duration });
-      setToasts((prev) => [...prev, { id, kind, message, action }]);
-    };
-    window.addEventListener(TOAST_EVENT, handler as EventListener);
-    return () => window.removeEventListener(TOAST_EVENT, handler as EventListener);
-  }, [enabled, dismiss]);
-
-  // Clear every pending timer on unmount so none fires into a dead tree.
-  useEffect(() => {
-    const map = timers.current;
-    return () => {
-      for (const { handle } of map.values()) if (handle != null) window.clearTimeout(handle);
-      map.clear();
-    };
-  }, []);
-
-  return { toasts, dismiss, pause, resume };
 }
 
 export const ToastViewport = withStability(ToastViewportImpl, 'experimental');

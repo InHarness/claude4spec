@@ -1,11 +1,12 @@
-import { confirmDestructive, toast } from '../../../frontend-kit/host-events.js';
+import { confirmDestructive, toast } from '@c4s/plugin-runtime';
 
 /**
  * 2.1.16 — the `dto-delete` window, asked from the detail ROUTE's toolbar (M13
  * detail pattern: the route renders breadcrumb, view switcher and Delete; the
  * panel carries no Delete of its own).
  *
- * The confirmation goes through the host's confirm layer (`c4s:confirm-open`).
+ * The confirmation goes through the shell's `confirmDestructive` facade of
+ * `@c4s/plugin-runtime` — the plugin emits no host event of its own.
  */
 export function deleteDtoBody(title: string): string {
   return `Delete DTO ${title}? All references to this DTO will become broken.`;

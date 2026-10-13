@@ -17,7 +17,7 @@
  */
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { toast } from './host-events.js';
+import { toast } from '@c4s/plugin-runtime';
 
 export const PLUGIN_COMMAND_EVENT = 'c4s:plugin-command';
 

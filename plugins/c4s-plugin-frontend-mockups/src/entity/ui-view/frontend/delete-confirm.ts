@@ -1,5 +1,5 @@
 import { uiViewsApi } from './api.js';
-import { confirmDestructive, toast } from '../../../frontend-kit/host-events.js';
+import { confirmDestructive, toast } from '@c4s/plugin-runtime';
 import { apiFetch, handle } from '../../../frontend-kit/api-core.js';
 
 /**

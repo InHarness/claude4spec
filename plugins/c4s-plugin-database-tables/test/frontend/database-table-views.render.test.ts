@@ -54,17 +54,26 @@ vi.mock('@tanstack/react-router', () => ({
   },
 }));
 
-vi.mock('@c4s/plugin-runtime', () => ({
-  editorBridge: { openEntity: () => undefined },
-  useTags: () => ({ data: state.tags }),
-  useEntityTags: () => ({ data: [] }),
-  useAssignTags: () => ({ mutate: () => undefined, isPending: false, error: null }),
-  useRemoveEntityTag: () => ({ mutate: () => undefined, isPending: false, error: null }),
-  useReferences: () => ({ data: [], isLoading: false }),
-  confirmDestructive: () => {
-    state.confirms += 1;
-  },
-}));
+vi.mock('@c4s/plugin-runtime', async () => {
+  // 2.1.20 (M50 `tbeatf5z`): the plugin opens windows and toasts through the
+  // shell facades of `@c4s/plugin-runtime` — the host's own functions, so the
+  // real ones stand in here and the window they open is observed on the host side.
+  const host = await import('../../../../src/client/ui/events.js');
+  return {
+    openPopover: host.openPopover,
+    openModal: host.openModal,
+    toast: host.toast,
+    editorBridge: { openEntity: () => undefined },
+    useTags: () => ({ data: state.tags }),
+    useEntityTags: () => ({ data: [] }),
+    useAssignTags: () => ({ mutate: () => undefined, isPending: false, error: null }),
+    useRemoveEntityTag: () => ({ mutate: () => undefined, isPending: false, error: null }),
+    useReferences: () => ({ data: [], isLoading: false }),
+    confirmDestructive: () => {
+      state.confirms += 1;
+    },
+  };
+});
 
 vi.mock('@c4s/plugin-runtime/ui', async () => {
   const { createElement: h } = await import('react');

@@ -1,0 +1,33 @@
+{
+  "role": "implementer",
+  "unit": "window-facades",
+  "packetBytes": 216236,
+  "portions": [
+    {
+      "name": "window-facades/p1-l2-l11",
+      "layers": ["L2", "L5", "L11"],
+      "slugs": [
+        "ac-plugin-otwiera-okno-potwierdzenia-prz",
+        "section:tbeatf5z",
+        "section:wkkqzeum",
+        "section:l5pregst",
+        "section:l5pextnd",
+        "section:77rzi036",
+        "section:m33load01",
+        "section:m33rt001"
+      ]
+    },
+    {
+      "name": "window-facades/p2-l12-l12",
+      "layers": ["L12"],
+      "slugs": [
+        "ac-toast-wywolany-przez-usetoast-z-c4s-p",
+        "ac-toastviewport-usetoast-grupa-overlay",
+        "section:m34l12sc",
+        "section:wbs9m5zj",
+        "section:l0i0c5wm"
+      ]
+    }
+  ],
+  "deviations": []
+}

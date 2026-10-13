@@ -214,6 +214,12 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
     // additive facade/client-host names
     expect(recorded(/^mcpTool\(…, annotations\?\)$/)).toBe(true);
     expect(recorded(/onRegistryChanged/) && recorded(/registryVersion/)).toBe(true);
+    // the shell's four window facades on the browser leg (M50 `tbeatf5z`)
+    const facades = HOST_API_UNVERSIONED_CHANGES.find((c) =>
+      ['openPopover', 'openModal', 'confirmDestructive', 'toast'].every((n) => c.slot.includes(n)),
+    );
+    expect(facades?.kind).toBe('slot-added');
+    expect(facades?.slot).toMatch(/^@c4s\/plugin-runtime:/);
   });
 
   it('[section:m33load01] the composition of UI_KIT_STABLE_COMPONENTS is exactly what the registries record', () => {

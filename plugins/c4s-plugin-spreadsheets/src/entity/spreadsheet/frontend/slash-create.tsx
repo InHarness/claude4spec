@@ -21,7 +21,7 @@ import {
   runInsert,
   useSlashSubmit,
 } from '../../../frontend-kit/slash-create.js';
-import { toast } from '../../../frontend-kit/host-events.js';
+import { toast } from '@c4s/plugin-runtime';
 import { apiFetch } from '../../../frontend-kit/api-core.js';
 import { SPREADSHEET_POPOVER_KIND, SPREADSHEET_TYPE } from '../../../identity.js';
 

@@ -61,6 +61,11 @@ const PUBLISHED_PLUGIN_RUNTIME_NAMES = [
   // `c4s-plugin-ac`, whose list screen is specified to seed a thread.
   'startSeededThread',
   'lineDiffHunks',
+  // 2.1.20 (M50 `tbeatf5z`) — the shell's four window facades.
+  'openPopover',
+  'openModal',
+  'confirmDestructive',
+  'toast',
 ] as const;
 
 /**

@@ -6,7 +6,7 @@ import {
   DEFAULT_LANGUAGE,
   LANGUAGE_ALIASES,
 } from '../../../identity.js';
-import { toast } from '../../../frontend-kit/host-events.js';
+import { toast } from '@c4s/plugin-runtime';
 import {
   SlashPopoverShell,
   reportNotEmbedded,

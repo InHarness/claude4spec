@@ -4,7 +4,16 @@
  * Both are `false` here, and the report names the entity so the user can embed
  * it by hand. (The kit is vendored per plugin; this copy stands for all six.)
  */
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+
+// 2.1.20 (M50 `tbeatf5z`): the kit toasts through the `toast` facade of
+// `@c4s/plugin-runtime` (browser leg) — the host's own function, which puts the
+// toast on the host bus. The runner's alias resolves the bare specifier to the
+// backend leg, so the browser value is supplied here.
+vi.mock('@c4s/plugin-runtime', async () => {
+  const host = await import('../../../../src/client/ui/events.js');
+  return { toast: host.toast };
+});
 import {
   NOT_EMBEDDED_TOAST_MS,
   insertEmbed,

@@ -133,6 +133,13 @@ export const PLUGIN_RUNTIME_EXPORT_NAMES = [
   'startSeededThread',
   // M13/L11: a pure function, deliberately not a singleton.
   'lineDiffHunks',
+  // 2.1.20 (M50 `tbeatf5z`): the shell's four window facades — the host's own
+  // functions, so a plugin opens windows and toasts by `kind`, never by
+  // dispatching a host event.
+  'openPopover',
+  'openModal',
+  'confirmDestructive',
+  'toast',
   'HOST_API_VERSION',
 ] as const;
 

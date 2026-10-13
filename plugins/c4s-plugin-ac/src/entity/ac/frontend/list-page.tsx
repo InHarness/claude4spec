@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { CheckSquare, Plus, ScanSearch } from 'lucide-react';
 import { useAcs } from './hooks.js';
 import { AcCreateDialog } from './create-dialog.js';
-import { toast } from '../../../frontend-kit/host-events.js';
+import { toast } from '@c4s/plugin-runtime';
 import {
   ActionBar,
   ActionButton,

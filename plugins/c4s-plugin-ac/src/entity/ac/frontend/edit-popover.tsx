@@ -17,7 +17,7 @@ import { useTags } from '@c4s/plugin-runtime';
 import { EnumBadgePicker } from '@c4s/plugin-runtime/ui';
 import { SlashPopoverShell, useSlashSubmit, type CaretCoords } from '../../../frontend-kit/slash-create.js';
 import { FieldLabel, InlineError, PopoverFooter, TextInput } from '../../../frontend-kit/popover-form.js';
-import { toast } from '../../../frontend-kit/host-events.js';
+import { toast } from '@c4s/plugin-runtime';
 import { AC_TITLE_MAX_LENGTH } from '../../../identity.js';
 import type { Ac, AcKind, AcStatus } from '../../../types.js';
 import { acsApi } from './api.js';

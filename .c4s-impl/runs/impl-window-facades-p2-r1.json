@@ -1,0 +1,18 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.20",
+  "unit": "window-facades",
+  "portion": "window-facades/p2-l12-l12",
+  "claimed": [
+    "ac-toast-wywolany-przez-usetoast-z-c4s-p",
+    "ac-toastviewport-usetoast-grupa-overlay",
+    "section:m34l12sc",
+    "section:wbs9m5zj",
+    "section:l0i0c5wm"
+  ],
+  "deviations": [],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

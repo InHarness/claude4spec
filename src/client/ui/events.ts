@@ -35,16 +35,37 @@ export interface ToastRequest extends ToastOptions {
 
 const TOAST_EVENT = 'c4s:toast';
 
-function fireToast(variant: ToastVariant, message: string, options?: ToastOptions): void {
+/**
+ * 2.1.20 (M50 `l5pregst`) — the second argument is `action?` as the facade
+ * names it (`toast.success(msg, action?)`), or the options object carrying that
+ * action beside a per-call `durationMs`. An action is told apart by its
+ * `onClick`.
+ */
+export type ToastArg = ToastAction | ToastOptions;
+
+function toastOptions(arg: ToastArg | undefined): ToastOptions | undefined {
+  if (!arg) return undefined;
+  if (typeof (arg as ToastAction).onClick === 'function') return { action: arg as ToastAction };
+  return arg as ToastOptions;
+}
+
+function fireToast(variant: ToastVariant, message: string, arg?: ToastArg): void {
+  const options = toastOptions(arg);
   const detail: ToastRequest = { variant, message, ...options };
   window.dispatchEvent(new CustomEvent<ToastRequest>(TOAST_EVENT, { detail }));
 }
 
+/**
+ * The shell's toast facade over the host toast bus (`c4s:toast`, listened to
+ * by `<ToastHost/>`). 2.1.20 (M50 `tbeatf5z`): the same object is exposed to
+ * plugins on the browser leg of `@c4s/plugin-runtime` — `success`, `error` and
+ * `warning` are its plugin contract; `info` stays host-only.
+ */
 export const toast = {
-  success: (message: string, options?: ToastOptions) => fireToast('success', message, options),
-  error: (message: string, options?: ToastOptions) => fireToast('error', message, options),
-  warning: (message: string, options?: ToastOptions) => fireToast('warning', message, options),
-  info: (message: string, options?: ToastOptions) => fireToast('info', message, options),
+  success: (message: string, action?: ToastArg) => fireToast('success', message, action),
+  error: (message: string, action?: ToastArg) => fireToast('error', message, action),
+  warning: (message: string, action?: ToastArg) => fireToast('warning', message, action),
+  info: (message: string, action?: ToastArg) => fireToast('info', message, action),
 };
 
 // ---------- Confirm modal ----------

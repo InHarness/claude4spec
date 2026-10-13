@@ -15,9 +15,6 @@
  *
  * React-free and dependency-free, so both the server and the client may read it.
  * A test holds the two barrels (and the shim's export list) equal to it.
- *
- * Not listed yet: the four shell window facades (`openPopover`, `openModal`,
- * `confirmDestructive`, `toast`) of M50 — their browser-leg export is not built.
  */
 
 /** Which end of the process a runtime value is served on. */
@@ -95,6 +92,11 @@ export const PLUGIN_RUNTIME_LEGS: readonly PluginRuntimeLegRow[] = [
     names: ['startSeededThread'],
     leg: 'browser',
     contract: { module: 'M05', anchor: 'm05l11sc' },
+  },
+  {
+    names: ['openPopover', 'openModal', 'confirmDestructive', 'toast'],
+    leg: 'browser',
+    contract: { module: 'M50', anchor: 'tbeatf5z' },
   },
 ];
 

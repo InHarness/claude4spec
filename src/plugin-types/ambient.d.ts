@@ -60,6 +60,10 @@ declare module '@c4s/plugin-runtime' {
     releasesService,
     useReleases,
     startSeededThread,
+    openPopover,
+    openModal,
+    confirmDestructive,
+    toast,
   } from '@inharness-ai/claude4spec/plugin-runtime';
 }
 

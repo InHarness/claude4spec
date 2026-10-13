@@ -1,0 +1,21 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.20",
+  "unit": "window-facades",
+  "portion": "window-facades/p1-l2-l11",
+  "claimed": [
+    "ac-plugin-otwiera-okno-potwierdzenia-prz",
+    "section:tbeatf5z",
+    "section:wkkqzeum",
+    "section:l5pregst",
+    "section:l5pextnd",
+    "section:77rzi036",
+    "section:m33load01",
+    "section:m33rt001"
+  ],
+  "deviations": [],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

@@ -60,7 +60,15 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@c4s/plugin-runtime', async () => {
   const { createElement: h, Fragment } = await import('react');
+  // 2.1.20 (M50 `tbeatf5z`): the plugin opens windows and toasts through the
+  // shell facades of `@c4s/plugin-runtime` — the host's own functions, so the
+  // real ones stand in here and the confirm window they open is observed below.
+  const host = await import('../../../../src/client/ui/events.js');
   return {
+    openPopover: host.openPopover,
+    openModal: host.openModal,
+    confirmDestructive: host.confirmDestructive,
+    toast: host.toast,
     clientPluginHost: { getEntity: () => undefined, getAvailable: () => undefined },
     editorBridge: { openEntity: () => undefined },
     EditorBridgeProvider: ({ children }: { children: ReactNode }) => h(Fragment, null, children),

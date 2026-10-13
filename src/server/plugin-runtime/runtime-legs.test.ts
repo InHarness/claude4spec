@@ -45,6 +45,11 @@ describe('[section:m33rt001] the leg inventory of @c4s/plugin-runtime', () => {
     expect(pluginRuntimeLegOf('registerFrontendModule')).toBe('browser');
     expect(pluginRuntimeLegOf('editorBridge')).toBe('browser');
     expect(pluginRuntimeLegOf('startSeededThread')).toBe('browser');
+    // 2.1.20 — the shell's window facades (M50 `tbeatf5z`), browser only.
+    for (const name of ['openPopover', 'openModal', 'confirmDestructive', 'toast']) {
+      expect(pluginRuntimeLegOf(name), name).toBe('browser');
+    }
+    expect(PLUGIN_RUNTIME_LEGS.find((r) => r.names.includes('toast'))?.contract).toEqual({ module: 'M50', anchor: 'tbeatf5z' });
     expect(pluginRuntimeLegOf('HOST_API_VERSION')).toBe('both');
   });
 

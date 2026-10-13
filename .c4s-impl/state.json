@@ -1,5 +1,5 @@
 {
-  "iteration": 6,
+  "iteration": 8,
   "conventions": [
     {
       "label": "L11 (Plugin Runtime Surface) — implementor M33",
@@ -37,7 +37,7 @@
         "window-facades",
         "envelope-frontends"
       ],
-      "startCommit": null
+      "startCommit": "89fc5a27145bc7c621b0d89e5a5e57ed313b45b6"
     },
     {
       "n": 4,
@@ -1103,15 +1103,58 @@
         }
       ],
       "wave": 3,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "window-facades/p1-l2-l11",
+          "layers": [
+            "L2",
+            "L5",
+            "L11"
+          ],
+          "slugs": [
+            "ac-plugin-otwiera-okno-potwierdzenia-prz",
+            "section:tbeatf5z",
+            "section:wkkqzeum",
+            "section:l5pregst",
+            "section:l5pextnd",
+            "section:77rzi036",
+            "section:m33load01",
+            "section:m33rt001"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        },
+        {
+          "name": "window-facades/p2-l12-l12",
+          "layers": [
+            "L12"
+          ],
+          "slugs": [
+            "ac-toast-wywolany-przez-usetoast-z-c4s-p",
+            "ac-toastviewport-usetoast-grupa-overlay",
+            "section:m34l12sc",
+            "section:wbs9m5zj",
+            "section:l0i0c5wm"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "89fc5a27145bc7c621b0d89e5a5e57ed313b45b6",
+      "baseCommit": "89fc5a27145bc7c621b0d89e5a5e57ed313b45b6",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0
     },
     {
       "id": "envelope-frontends",

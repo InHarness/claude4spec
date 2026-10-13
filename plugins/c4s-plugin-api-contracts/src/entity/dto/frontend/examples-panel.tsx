@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ChevronDown, Copy, GripVertical, Pencil, Plus, Trash, X } from 'lucide-react';
 import type { DtoExample, DtoField } from '../../../types.js';
-import { confirmDestructive } from '../../../frontend-kit/host-events.js';
+import { confirmDestructive } from '@c4s/plugin-runtime';
 import { FieldRow } from '@c4s/plugin-runtime/ui';
 import { MonacoJsonEditor } from './monaco-json-editor.js';
 import { buildExampleTemplate, exampleWarningText, validateExampleAgainstFields } from './example-validation.js';

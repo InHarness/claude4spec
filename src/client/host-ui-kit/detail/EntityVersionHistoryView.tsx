@@ -194,9 +194,9 @@ function EntityVersionHistoryViewImpl({
     <div className="flex flex-col h-full min-h-0">
       <EntityDetailToolbar title={`${type} · ${slug}`} />
       {restoreVersion.isError && (
-        // Surfaced inline rather than through `useToast`: a toast needs a
-        // `ToastViewport` the embedding app may not have mounted, and a restore
-        // that silently does nothing is the worst possible failure here.
+        // Surfaced inline rather than through `useToast`: a toast is transient
+        // and lands in the host stack away from this view, and a restore that
+        // silently does nothing is the worst possible failure here.
         <div
           role="alert"
           className="mx-5 mt-3 rounded-md px-3 py-2 text-[12px]"
