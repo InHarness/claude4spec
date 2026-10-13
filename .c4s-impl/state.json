@@ -406,7 +406,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "ui-kit-catalog/p1-l12-l12",
@@ -426,9 +426,7 @@
           "status": "implemented",
           "rounds": 2,
           "partial": 0,
-          "uncovered": [
-            "regression"
-          ],
+          "uncovered": [],
           "only": []
         }
       ],
@@ -1105,7 +1103,7 @@
         }
       ],
       "wave": 3,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "window-facades/p1-l2-l11",
@@ -1127,9 +1125,7 @@
           "status": "implemented",
           "rounds": 2,
           "partial": 0,
-          "uncovered": [
-            "regression"
-          ],
+          "uncovered": [],
           "only": []
         },
         {
@@ -1549,7 +1545,7 @@
         }
       ],
       "wave": 3,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "envelope-frontends/p1-l2-l5",
@@ -1594,9 +1590,7 @@
           "status": "implemented",
           "rounds": 2,
           "partial": 0,
-          "uncovered": [
-            "regression"
-          ],
+          "uncovered": [],
           "only": []
         },
         {
@@ -1623,9 +1617,7 @@
           "status": "implemented",
           "rounds": 2,
           "partial": 0,
-          "uncovered": [
-            "regression"
-          ],
+          "uncovered": [],
           "only": []
         }
       ],
@@ -1984,7 +1976,7 @@
       "lastUncovered": 0
     }
   ],
-  "systemVerified": false,
+  "systemVerified": true,
   "errors": 0,
   "entityTypes": [
     {
