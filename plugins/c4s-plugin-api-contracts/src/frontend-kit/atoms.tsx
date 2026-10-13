@@ -1,9 +1,11 @@
 /**
- * DEBT (2.1.19, Host UI Kit slice of `c4s-plugin-api-contracts`, endpoint + dto): `MethodChip`
- * stands both in the list row and in the endpoint breadcrumb bar (fails
- * condition 1; condition 2 holds — its shape follows the endpoint's `method`);
- * `TagChip` — a tag chip is common to every entity type (fails condition 2).
- * Their catalog replacement is `Badge`. Recorded, not fixed here.
+ * DEBT (2.1.19, Host UI Kit slice of `c4s-plugin-api-contracts`, endpoint + dto): `TagChip`
+ * — a tag chip is common to every entity type (fails condition 2). Its catalog
+ * replacement is `Badge`. Recorded, not fixed here.
+ *
+ * `MethodChip` is no longer a debt entry (struck in 2.1.20): it binds the
+ * method → colour/label mapping to the catalog's `Badge` and draws nothing of
+ * its own.
  */
 import type { HttpMethod } from '../types.js';
 import type { Tag } from '@c4s/plugin-runtime/ui';

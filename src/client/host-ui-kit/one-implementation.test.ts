@@ -22,60 +22,12 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const KIT_DIR = join(CLIENT_DIR, 'host-ui-kit');
 
 /**
- * Anatomy the catalog owns, as it appears in source. Each entry is a component
- * whose markup may exist in exactly one place: its catalog file.
+ * 2.1.20 (M34 `hntah0r7`): the anatomy scan itself — host code AND every
+ * envelope's sources, exceptions read from the consumers' `Host-local
+ * components` declarations — lives in
+ * `tests/integration/architecture/ui-kit-gate.ts` (+ `.test.ts`). This file
+ * keeps the facade and stacking-tier checks of the rule.
  */
-const ANATOMY = [
-  { component: 'Popover', pattern: /var\(--z-popover\)/ },
-  { component: 'ToastViewport', pattern: /var\(--z-toast\)/ },
-  // A modal twin is a full-viewport scrim with a centred panel, however its
-  // stacking happens to be spelled. Matching only `Dialog`'s own `zIndex: 1200`
-  // would let every twin hide behind a different z-index — and in fact all five
-  // pending ones below use Tailwind's `z-50`, so a narrower pattern reported a
-  // clean catalog while they sat in plain sight. `items-center justify-center`
-  // is what separates a dialog from a fullscreen viewer (`flex flex-col`).
-  {
-    component: 'Dialog',
-    pattern: /zIndex:\s*1[23]00|fixed inset-0[^"]*items-center justify-center/,
-  },
-] as const;
-
-/** Reason shared by every twin whose migration is tracked by the analysis brief. */
-const PENDING = 'Pending migration to Dialog — see analysis brief 0-1-144-to-next.md.';
-
-/**
- * Host slices that still render their own scrim, with the reason each one does
- * not currently pass through `Dialog`. These are declared, not tolerated
- * silently — the point of the rule is that an undeclared twin is a violation.
- * Emptying this list is the goal; adding to it needs a justification here.
- *
- * Two kinds of entry, and the difference matters: the first two are standing
- * exceptions — anatomy `Dialog` genuinely cannot express. The rest are twins
- * awaiting migration, tracked by a brief; that group is expected to shrink to
- * nothing, and nothing new belongs in it.
- *
- * `TrustPluginsModal` used to sit here ("must NOT be dismissible, but Dialog
- * always closes on Escape/scrim") — 0.2.1 gave `Dialog` a `dismissible` prop,
- * so the reason expired and the gate is now a facade like the rest.
- */
-const DECLARED_EXCEPTIONS: Record<string, string> = {
-  'ui/modals/ToolJsonView.tsx':
-    'Raw-JSON viewer at 1100px — wider than any of Dialog\'s size tiers.',
-  'components/DiagramFullscreen.tsx':
-    'Host-local per the diagram slice: a fullscreen pan+zoom canvas, not a sized Dialog panel.',
-
-  // Pending migration — 480px scrim+panel twins that `Dialog` (with the `width`
-  // prop added in this release) covers as-is. Each also lacks the Escape
-  // handling, Tab trap and focus restore `Dialog` owns. Routed as an analysis
-  // brief rather than folded into this release, whose scope is the three
-  // imperative facades.
-  'components/CreateBriefDialog.tsx': PENDING,
-  'components/CreateReleaseDialog.tsx': PENDING,
-  'ui/modals/ProjectCreate.tsx': PENDING,
-  'components/briefs/BriefScopeModal.tsx': PENDING,
-  // 0.2.110: `components/ReleaseDetail.tsx` left this list — its restore
-  // confirm is the `release-restore` kind through `confirmDestructive`.
-};
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -93,16 +45,6 @@ function walk(dir: string, out: string[] = []): string[] {
 const HOST_FILES = walk(CLIENT_DIR).filter((f) => !f.startsWith(KIT_DIR));
 
 describe('M34/L12 — one implementation rule', () => {
-  for (const { component, pattern } of ANATOMY) {
-    it(`[ac:ac-dla-komponentu-obecnego-w-katalogu-l12-n] no host-internal twin of ${component}`, () => {
-      const offenders = HOST_FILES.filter((f) => pattern.test(readFileSync(f, 'utf8'))).map((f) =>
-        relative(CLIENT_DIR, f),
-      );
-      const undeclared = offenders.filter((f) => !(f in DECLARED_EXCEPTIONS));
-      expect(undeclared).toEqual([]);
-    });
-  }
-
   it('[ac:ac-hostowe-fasady-confirmmodal-popoverhost] the three imperative primitives render catalog components', () => {
     const facades = {
       'ui/Popover.tsx': /host-ui-kit\/overlay-feedback\/Popover\.js/,
@@ -199,7 +141,7 @@ describe('M34/L12 — one implementation rule', () => {
   });
 
   it('[ac:ac-dla-komponentu-obecnego-w-katalogu-l12-n] no host overlay stacks below the --z-popover tier', () => {
-    // The `ANATOMY` scan above recognises a Popover twin by `var(--z-popover)`
+    // The anatomy scan (`tests/integration/architecture/ui-kit-gate.ts`) recognises a Popover twin by `var(--z-popover)`
     // — so a twin that spells its stacking as a bare number is invisible to it.
     // That is exactly how the sidebar OTHERS flyout hid: `position: 'fixed'`
     // with `zIndex: 60`, which painted it *under* `ActionBar` (900) and made
@@ -221,11 +163,5 @@ describe('M34/L12 — one implementation rule', () => {
       }
     }
     expect(offenders).toEqual([]);
-  });
-
-  it('every declared exception still exists (the list cannot rot)', () => {
-    for (const file of Object.keys(DECLARED_EXCEPTIONS)) {
-      expect(() => statSync(join(CLIENT_DIR, file))).not.toThrow();
-    }
   });
 });

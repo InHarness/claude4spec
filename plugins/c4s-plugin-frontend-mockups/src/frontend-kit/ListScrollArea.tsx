@@ -1,10 +1,8 @@
 /**
- * DEBT (2.1.19, Host UI Kit slices of `ui-view` and `design-system`): fails the
- * locality rule — the same copy 1:1 stands in the `frontend-kit/` of three
- * plugin packages (condition 1), and a list area with loading and empty states
- * is common to every entity type (condition 2). Its catalog replacement is
- * `EntityListLayout` + `LoadingState` + `EmptyState` composed in the list panel.
- * Recorded, not fixed here; the `design-system` list still renders through it.
+ * Not host-local (2.1.20, Host UI Kit slices of `ui-view` and `design-system`):
+ * a local composition of catalog components only — `EntityListLayout`,
+ * `LoadingState`, `EmptyState`, and an `ActionButton` for the create action —
+ * with no anatomy of its own. The 2.1.19 debt entry for it was struck.
  *
  * The composition, not the pieces.
  *
@@ -17,9 +15,7 @@
  */
 
 import { Plus } from 'lucide-react';
-import { EntityListLayout } from '@c4s/plugin-runtime/ui';
-import { LoadingState } from '@c4s/plugin-runtime/ui';
-import { EmptyState } from '@c4s/plugin-runtime/ui';
+import { ActionButton, EmptyState, EntityListLayout, LoadingState } from '@c4s/plugin-runtime/ui';
 
 interface Props {
   loading: boolean;
@@ -27,7 +23,7 @@ interface Props {
   emptyTitle: string;
   emptyHint?: React.ReactNode;
   createLabel: string;
-  onCreate: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  onCreate: () => void;
   children: React.ReactNode;
 }
 
@@ -48,13 +44,12 @@ export function ListScrollArea({
           title={emptyTitle}
           hint={emptyHint}
           action={
-            <button
+            <ActionButton
+              variant="primary"
+              icon={<Plus size={13} />}
+              label={createLabel}
               onClick={onCreate}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12.5px] font-medium mt-2"
-              style={{ background: 'var(--c-accent)', color: '#fff' }}
-            >
-              <Plus size={13} /> {createLabel}
-            </button>
+            />
           }
         />
       )}

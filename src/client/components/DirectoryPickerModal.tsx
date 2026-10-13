@@ -4,6 +4,12 @@ import { apiFetch } from '../lib/api-core.js';
 import { Dialog } from '../host-ui-kit/overlay/Dialog.js';
 
 /**
+ * HOST-INTERNAL COMPONENT (2.1.20, Host UI Kit slice of M31, owner M31): one
+ * implementation, unpublished to plugins, duplicating no catalog anatomy — the
+ * window shell is the catalog's `Dialog`. Consumers in the host: the
+ * `directory-browse` window (M26) and the `project-create` window (M31). It is
+ * not a catalog entry, so it lives outside `host-ui-kit/`.
+ *
  * 0.1.97: the server-side directory browser, extracted from `AddProjectDialog`
  * so every dir input can reuse it. `GET /api/workspace/fs` lists ONLY
  * subdirectories under `path` (files skipped); absent `path` starts at the

@@ -1,0 +1,87 @@
+{
+  "role": "verifier",
+  "scope": {
+    "kind": "unit",
+    "id": "ui-kit-gate"
+  },
+  "release": "2.1.20",
+  "rows": [
+    {
+      "slug": "section:hntah0r7",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/architecture/ui-kit-gate.test.ts:63-141 — `expect(violations()).toEqual([])`, `expect(violations([])).toEqual(findings)`, `expect(debtMarkedFiles().sort()).toEqual(filesOfKind('debt'))`; scan over src/client (catalog dir, M05 chat/ToolJsonView, M20 tiptap excluded) + plugins/*/src via tests/integration/architecture/ui-kit-gate.ts:96-145; exceptions only from host-local-declarations.ts. Static re-run of the detectors: 38 findings, all on declared files; 33 DEBT-marked files == declared debt files; HOST-INTERNAL only DirectoryPickerModal.tsx. BriefScopeModal standalone removed (src/client/components/briefs/BriefScopeModal.tsx), LVS overlay.tsx:22,55 uses catalog Dialog (dev-2007/dev-2008 assumptions applied)."
+    },
+    {
+      "slug": "section:v05js8rl",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/architecture/ui-kit-gate.test.ts:144-164 — `expect(entries('v05js8rl')).toEqual([debt(['CreateReleaseDialog'], ['Dialog'])])`; violationsWithout('v05js8rl') = [{CreateReleaseDialog.tsx, anatomy:Dialog}]; DEBT header src/client/components/CreateReleaseDialog.tsx:1-7 names M17 and `Dialog`; PageDiffCard.tsx:4 DiffView."
+    },
+    {
+      "slug": "section:q856s1vm",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/architecture/ui-kit-gate.test.ts:166-197 — three DŁUG entries CreateBriefDialog→Dialog, SegmentedControl→SegmentedControlTabs, FileVersionHistory→VersionHistory+DiffView; DEBT headers with M21 in CreateBriefDialog.tsx:1-6, SegmentedControl.tsx:1-6, FileVersionHistory.tsx:1-6; BriefsList/BriefDetail render <SegmentedControl>, BriefDetail.tsx:207 <FileVersionHistory>."
+    },
+    {
+      "slug": "section:j6b1z37u",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/architecture/ui-kit-gate.test.ts:199-231 — ProjectCreate DŁUG→Dialog (ProjectCreate.tsx:1-6 DEBT M31), DirectoryPickerModal host-internal (DirectoryPickerModal.tsx:7 `HOST-INTERNAL COMPONENT (2.1.20, Host UI Kit slice of M31`), not in registry/index/plugin-runtime ui, no findings, consumers ProjectCreate.tsx + settings/controls.tsx."
+    },
+    {
+      "slug": "section:yrzqclyz",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/architecture/ui-kit-gate.test.ts:259-291 + plugins/c4s-plugin-ac/test/frontend/ac-detail-and-list.render.test.ts:617-651 — entries EntityBreadcrumbBar, EntityNotFound, popover form, ListPageLayout, RoutePane (no replacement, 'candidate of the catalog trajectory'); ListPageHeader/ListScrollArea/EntityViewSwitcher struck, EntityViewSwitcher.tsx:2 imports SegmentedControlTabs, no DEBT, no own markup."
+    },
+    {
+      "slug": "section:9hz21ysc",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/architecture/ui-kit-gate.test.ts:293-337 + plugins/c4s-plugin-api-contracts/test/frontend/dto-detail-and-list.render.test.ts:661-692 — 8 DŁUG entries incl. reworded EntityViewSwitcher on local SegmentedControl (EntityViewSwitcher.tsx:12, DEBT 2.1.20), ListPageLayout/RoutePane new; ListPageHeader/ListScrollArea/MethodChip struck, atoms.tsx DEBT text names only TagChip, MethodChip renders <Badge>."
+    },
+    {
+      "slug": "section:dhh869qt",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/architecture/ui-kit-gate.test.ts:293-341 + plugins/c4s-plugin-api-contracts/test/frontend/endpoint-detail-history-list.render.test.ts:739-777 — same entries as dto for endpoint; MethodChip struck (`expect(atoms.slice(0, atoms.indexOf('Recorded, not fixed here'))).not.toContain('`MethodChip`')`)."
+    },
+    {
+      "slug": "section:mq3b803z",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/architecture/ui-kit-gate.test.ts:359-388 — local token components + screen roots, DŁUG EntityBreadcrumbBar/EntityNotFound/popover form/ListPageLayout/RoutePane; ListPageHeader/ListScrollArea are catalog-only compositions (ActionButton replaces raw <button>, ownsMarkup false, no DEBT); design-system list-page.tsx comment no longer DEBT."
+    },
+    {
+      "slug": "section:yn1fk80a",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/architecture/ui-kit-gate.test.ts:390-414 — ui-view DŁUG entries incl. CountBadge (EntityListRow.tsx); EntityViewSwitcher (frontend-mockups) composition of <SegmentedControlTabs> only, no DEBT header, not declared; ListPageLayout/RoutePane DEBT headers."
+    },
+    {
+      "slug": "section:h054mgoe",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/architecture/ui-kit-gate.test.ts:416-429 — `expect(entries('h054mgoe')).toEqual([debt(['EntityBreadcrumbBar'], ['DetailPanelShell']), debt(['RoutePane'])])`; mcp-tools findings exactly EntityBreadcrumbBar.tsx + route-shell.tsx (route-shell.tsx:1-8 DEBT 2.1.20)."
+    },
+    {
+      "slug": "section:lg0e57j1",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/architecture/ui-kit-gate.test.ts:431-455 — SpreadsheetFullscreen local + popover form DŁUG→FormField; no file under plugins/c4s-plugin-spreadsheets/src imports @c4s/plugin-runtime/ui (grep empty); popover-form.tsx DEBT header names the package, 5 exports present."
+    },
+    {
+      "slug": "goal:ui-kit-gate",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/architecture/ui-kit-gate.ts (automatic gate (a) over host code + every envelope's sources) reads exceptions only from tests/integration/architecture/host-local-declarations.ts (DŁUG + host-internal + local entries, keyed by section anchor) and holds DEBT/HOST-INTERNAL headers in code equal to them; new debts CreateReleaseDialog, CreateBriefDialog, ProjectCreate, ListPageLayout, RoutePane declared; DirectoryPickerModal host-internal; ListPageHeader, ListScrollArea, EntityViewSwitcher (ac/mockups), MethodChip struck. Old DECLARED_EXCEPTIONS list removed from src/client/host-ui-kit/one-implementation.test.ts."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "tsc --noEmit clean across root and all plugin workspaces (0 'error TS'); tests not run per ## This build — readable tests touching the diff (plugin render tests of ac/api-contracts/frontend-mockups/database-tables/mcp-tools, hidden-type-expand, e2e module-dependency overlay testid, one-implementation.test.ts) checked statically, none broken"
+  }
+}

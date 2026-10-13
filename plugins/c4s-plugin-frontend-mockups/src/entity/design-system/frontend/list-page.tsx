@@ -31,9 +31,9 @@ interface Props {
  * place of the rows — and `empty` — ONE `EmptyState` for "none in the project"
  * and "none matching" alike, with the create action. No error state.
  *
- * The header and the loading/empty composition still go through the package's
- * `ListPageHeader` / `ListScrollArea` — recorded DEBT (2.1.19 Host UI Kit
- * slice), not fixed here.
+ * The header and the loading/empty composition go through the package's
+ * `ListPageHeader` / `ListScrollArea` — local compositions of catalog
+ * components only, not host-local (2.1.20).
  */
 export function DesignSystemsList({
   search,

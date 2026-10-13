@@ -1,3 +1,9 @@
+/**
+ * DEBT (2.1.20, Host UI Kit slice of M31): the `project-create` window draws
+ * its own scrim and panel. It fails locality condition 2 — a window shell does
+ * not follow from anything project-specific and repeats with every form window.
+ * Its catalog replacement is `Dialog`. Recorded, not fixed here.
+ */
 import { useState } from 'react';
 import { FolderPlus, Plus, X } from 'lucide-react';
 import { toast } from '../events.js';

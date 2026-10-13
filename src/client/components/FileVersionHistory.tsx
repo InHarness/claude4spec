@@ -1,3 +1,9 @@
+/**
+ * DEBT (2.1.20, Host UI Kit slice of M21): the brief's version history is this
+ * host `FileVersionHistory` from outside the catalog. It fails locality
+ * condition 2 — it is universal across entity types. Its catalog replacements
+ * are `VersionHistory` and `DiffView`. Recorded, not fixed here.
+ */
 import { Clock } from 'lucide-react';
 import { useArtifactVersions } from '../hooks/useArtifactVersions.js';
 import type { ArtifactKind } from '../hooks/useArtifactThreads.js';

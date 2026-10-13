@@ -4,16 +4,12 @@ import { clientPluginHost } from '@c4s/plugin-runtime';
 import type { EntityType } from '../types.js';
 
 /**
- * DEBT (2.1.19, Host UI Kit slices of `ui-view` and `design-system`): a thin
- * wrapper over the catalog's `SegmentedControlTabs` that fails the locality
- * rule — the same copy stands in the `frontend-kit/` of two plugin packages
- * (condition 1), and the detail view switcher is common to every entity type
- * (condition 2). Its catalog replacement is `SegmentedControlTabs`. Recorded,
- * not fixed here.
+ * Not host-local (2.1.20, Host UI Kit slices of `ui-view` and `design-system`):
+ * a thin wrapper composed only of the catalog's `SegmentedControlTabs`, with no
+ * anatomy of its own — the 2.1.19 debt entry for it was struck.
  *
- * It holds no copy of the control's anatomy; it renders `ui-view`'s three detail
- * tabs (details / preview / history) and `design-system`'s two. (2.1.16 called it
- * NOT debt for that reason; 2.1.19 records the wrapper itself as debt.)
+ * It renders `ui-view`'s three detail tabs (details / preview / history) and
+ * `design-system`'s two.
  *
  * The segmented control itself now comes from the Host UI Kit
  * (`SegmentedControlTabs`, L12). Until 0.2.32 this file drove a hand-written

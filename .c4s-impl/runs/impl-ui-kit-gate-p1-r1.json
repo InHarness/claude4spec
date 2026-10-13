@@ -1,0 +1,12 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.20",
+  "unit": "ui-kit-gate",
+  "portion": "ui-kit-gate/p1-l12-l12",
+  "claimed": ["hntah0r7", "v05js8rl", "q856s1vm", "j6b1z37u", "yrzqclyz", "9hz21ysc", "dhh869qt", "mq3b803z", "yn1fk80a", "h054mgoe", "lg0e57j1"],
+  "deviations": ["dev-2007", "dev-2008"],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

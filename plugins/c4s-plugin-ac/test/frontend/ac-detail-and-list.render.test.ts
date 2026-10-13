@@ -615,26 +615,36 @@ describe('[section:yrzqclyz] Host UI Kit slice', () => {
   });
 
   it('[section:yrzqclyz] each host-local frontend-kit duplicate is recorded as DEBT naming its catalog replacement', () => {
-    const debt: Array<[file: string, exports: string[], replacement: string]> = [
+    const debt: Array<[file: string, exports: string[], replacement: string | null]> = [
       ['EntityBreadcrumbBar.tsx', ['EntityBreadcrumbBar'], 'DetailPanelShell'],
-      ['EntityViewSwitcher.tsx', ['EntityViewSwitcher'], 'SegmentedControlTabs'],
       ['EntityNotFound.tsx', ['EntityNotFound'], 'EmptyState'],
       ['popover-form.tsx', ['FieldLabel', 'TextInput', 'SelectInput', 'InlineError', 'PopoverFooter'], 'FormField'],
+      ['ListPageLayout.tsx', ['ListPageLayout'], null],
+      // `RoutePane` — the package's copy of the host's route pane, exported as `Pane`.
+      ['route-shell.tsx', ['Pane'], null],
     ];
     for (const [file, exports, replacement] of debt) {
       const src = readFileSync(join(KIT_SRC, file), 'utf-8');
       for (const name of exports) {
         expect(src, `${file} exports ${name}`).toMatch(new RegExp(`export (function|const) ${name}\\b`));
       }
-      const header = src.match(/DEBT \(2\.1\.19[^]*?Recorded, not fixed here/)?.[0];
+      const header = src.match(/DEBT \(2\.1\.(?:19|20)[^]*?Recorded, not fixed here/)?.[0];
       expect(header, `${file} DEBT header`).toBeDefined();
-      expect(header!).toContain(`\`${replacement}\``);
+      // 2.1.20: `ListPageLayout` and `RoutePane` have no catalog replacement — trajectory candidates.
+      if (replacement === null) expect(header!).toContain('candidate of the catalog trajectory');
+      else expect(header!).toContain(`\`${replacement}\``);
     }
     // Recorded, not fixed: the detail route still renders through the local bar.
     expect(readFileSync(join(FRONTEND_SRC, 'routes.tsx'), 'utf-8')).toMatch(/<EntityBreadcrumbBar\b/);
   });
 
-  it('[section:yrzqclyz] ListPageHeader / ListScrollArea are not carried by this package — the list composes their replacements directly (ASSUMPTION:dev-1906)', () => {
+  it('[section:yrzqclyz] EntityViewSwitcher is struck from the debts — a composition of SegmentedControlTabs only, with no DEBT header', () => {
+    const src = readFileSync(join(KIT_SRC, 'EntityViewSwitcher.tsx'), 'utf-8');
+    expect(src).not.toMatch(/DEBT \(/);
+    expect(src).toMatch(/<SegmentedControlTabs\b/);
+  });
+
+  it('[section:yrzqclyz] ListPageHeader / ListScrollArea (struck from the slice in 2.1.20) are not carried by this package — the list composes their replacements directly', () => {
     const kit = readdirSync(KIT_SRC);
     expect(kit).not.toContain('ListPageHeader.tsx');
     expect(kit).not.toContain('ListScrollArea.tsx');

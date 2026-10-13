@@ -1,3 +1,9 @@
+/**
+ * DEBT (2.1.20, Host UI Kit slice of M21): the `brief-generate` window draws
+ * its own scrim and panel. It fails locality condition 2 — it is universal
+ * across entity types. Its catalog replacement is `Dialog`.
+ * Recorded, not fixed here.
+ */
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { FileText, X } from 'lucide-react';

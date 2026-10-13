@@ -1,5 +1,5 @@
 {
-  "iteration": 11,
+  "iteration": 12,
   "conventions": [
     {
       "label": "L11 (Plugin Runtime Surface) — implementor M33",
@@ -44,7 +44,7 @@
       "units": [
         "ui-kit-gate"
       ],
-      "startCommit": null
+      "startCommit": "747a85fe68057c4f971b95657427c4ff073368d7"
     }
   ],
   "units": [
@@ -1939,15 +1939,41 @@
         }
       ],
       "wave": 4,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "ui-kit-gate/p1-l12-l12",
+          "layers": [
+            "L12"
+          ],
+          "slugs": [
+            "hntah0r7",
+            "v05js8rl",
+            "q856s1vm",
+            "j6b1z37u",
+            "yrzqclyz",
+            "9hz21ysc",
+            "dhh869qt",
+            "mq3b803z",
+            "yn1fk80a",
+            "h054mgoe",
+            "lg0e57j1"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "747a85fe68057c4f971b95657427c4ff073368d7",
+      "baseCommit": "747a85fe68057c4f971b95657427c4ff073368d7",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0
     }
   ],
   "systemVerified": false,

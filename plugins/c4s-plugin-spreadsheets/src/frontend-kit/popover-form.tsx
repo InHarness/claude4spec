@@ -1,6 +1,13 @@
 /**
  * The popover FORM primitives, copied from the host's `ui/Popover.tsx`.
  *
+ * DEBT (2.1.20, Host UI Kit slice of `c4s-plugin-spreadsheets`): `FieldLabel`,
+ * `TextInput`, `SelectInput`, `InlineError`, `PopoverFooter` fail the locality
+ * rule — the same copy 1:1 stands in the `frontend-kit/` of five plugin
+ * packages (condition 1), and popover form fields are common to every entity
+ * type (condition 2). Their catalog replacement is `FormField`.
+ * Recorded, not fixed here.
+ *
  * Only the field/footer helpers travel: the host file also owns the popover
  * HOST (the singleton that renders whichever popover the event bus requested)
  * and imports the host's popover registry, neither of which a plugin can or
