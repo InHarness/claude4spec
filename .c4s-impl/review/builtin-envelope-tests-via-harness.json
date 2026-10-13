@@ -1,9 +1,0 @@
-{
-  "role": "reviewer",
-  "scope": {
-    "kind": "unit",
-    "id": "builtin-envelope-tests-via-harness",
-    "base": "09b965f0497f1b4f0000d5993252ebf9ffaa5458"
-  },
-  "findings": []
-}

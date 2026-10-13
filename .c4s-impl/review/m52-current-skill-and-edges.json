@@ -1,9 +1,0 @@
-{
-  "role": "reviewer",
-  "scope": {
-    "kind": "unit",
-    "id": "m52-current-skill-and-edges",
-    "base": "1f578561657f989cb439a615c1304c3cc6c5222f"
-  },
-  "findings": []
-}

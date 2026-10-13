@@ -1,9 +1,0 @@
-{
-  "role": "reviewer",
-  "scope": {
-    "kind": "unit",
-    "id": "m37-version-gate-and-reader-contract",
-    "base": "b9bea464"
-  },
-  "findings": []
-}

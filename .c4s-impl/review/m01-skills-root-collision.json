@@ -1,9 +1,0 @@
-{
-  "role": "reviewer",
-  "scope": {
-    "kind": "unit",
-    "id": "m01-skills-root-collision",
-    "base": "c9485f1aa5f69e908652df333d14d2e13941f9db"
-  },
-  "findings": []
-}

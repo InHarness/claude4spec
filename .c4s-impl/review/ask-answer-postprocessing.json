@@ -1,9 +1,0 @@
-{
-  "role": "reviewer",
-  "scope": {
-    "kind": "unit",
-    "id": "ask-answer-postprocessing",
-    "base": "75ee2621"
-  },
-  "findings": []
-}
