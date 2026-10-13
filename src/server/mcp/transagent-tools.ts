@@ -7,6 +7,12 @@
  * returns ONLY a `summary` to the parent LLM's context — keeping the parent's
  * context budget free of the child's full transcript.
  *
+ * 2.1.18 (M46 `9w7zk9as`): one banka in flight at a time, not one per parent
+ * turn — further calls in the same turn go through once the previous one has
+ * returned (the dispatcher serializes them). A series of bubbles is composed by
+ * the orchestrator from the lists below and this blocking call; there is no
+ * `run_series` tool.
+ *
  * Per-request instance (like `plan-tools` / `brief-tools`): `parentThreadId` and
  * the `dispatcher` are captured from the parent turn. Mounted ONLY for a
  * `context_type='chat'` thread with `parent_thread_id IS NULL` (2.1.18: `patch`
@@ -106,7 +112,14 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
       'recently.',
       '    `payload` and `planMode` are IGNORED on that path — the binding (planPath, patchPath, the',
       '    brief window), plan mode and locked session config come from the referenced banka.',
-      'At most one child runs per turn (this tool_use blocks until the child finishes).',
+      'Only one banka is in flight at a time, because the call blocks until the child finishes;',
+      'further calls in the same turn are allowed once the previous one has returned. A series —',
+      'for example every unapplied patch of one brief — is that loop on your side, not a separate',
+      'tool: fix the queue once with a list tool (list_patches / list_plans, paged to',
+      '`hasMore: false`), make one call per item, each with the artifact address in `payload`',
+      '(patchPath / planPath), and re-list after each return to report what was done — the call',
+      'returns only { threadId, summary }. A banka that ends `isError` does not end your turn; you',
+      'decide whether the series goes on.',
       '`planMode: true` opens a freshly spawned child in plan mode (read-only builtins) — a top-level',
       'field, NOT a payload key. It is NOT inherited: omit it and the child runs unrestricted even if',
       'YOU are in plan mode.',

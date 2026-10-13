@@ -1789,15 +1789,17 @@ export function registerCoreOperations(): void {
    * spend the parent's context on text the parent never asked to read, which is
    * the entire reason the child is a separate turn.
    *
-   * The concurrency guard is STATEFUL, not hash-based: at most ONE child per
-   * turn, because the tool call blocks until the child finishes, and a second
-   * turn on a live thread is refused with `STREAM_IN_PROGRESS` rather than
+   * The concurrency guard is STATEFUL, not hash-based: at most ONE child in
+   * flight at a time, because the tool call blocks until the child finishes
+   * (2.1.18: further calls in the same turn go through once the previous one has
+   * returned — a series is the caller's loop, not an operation), and a second
+   * turn on a live session is refused with `STREAM_IN_PROGRESS` rather than
    * queued. Batch spawn is unsupported.
    */
   CATALOG.register({
     name: 'run_turn',
     summary:
-      'Delegate a unit of work to a hidden CHILD turn of this specification, in a chosen contextType. Returns { threadId, summary } — a concise summary, never the transcript. At most one child per turn; the call blocks until the child finishes.',
+      'Delegate a unit of work to a hidden CHILD turn of this specification, in a chosen contextType. Returns { threadId, summary } — a concise summary, never the transcript. At most one child in flight at a time; the call blocks until the child finishes, and further calls in the same turn are allowed once the previous one has returned.',
     scope: 'project',
     mediation: 'direct',
     opClass: 'turn',
@@ -1853,10 +1855,14 @@ export function registerCoreOperations(): void {
    * 0.2.111: NOT idempotent — every call founds a new child thread of the caller and
    * runs a turn in it, a continuation included. A call with `threadId` addresses the
    * banka whose session and binding the new row takes over (the referenced row is not
-   * modified); without it the binding comes from `contextType`, with artifact addresses
-   * defaulted from the parent thread. No guard token: session exclusivity is enforced
-   * by the dispatcher's refusals (`STREAM_IN_PROGRESS`, `RESUME_CONFIG_LOCKED`). Single-target: one child per call, one call per parent turn
-   * (the call blocks). The rules the spec lists for this row — echo-free (only
+   * modified); without it the binding comes from `contextType` and the artifact address
+   * from `payload` (2.1.18): `patch` requires `patchPath`, `chat` takes an optional
+   * `planPath` (without it the banka founds a new plan), `brief` always founds a new
+   * brief. No guard token: session exclusivity is enforced by the dispatcher's refusals
+   * (`STREAM_IN_PROGRESS`, `RESUME_CONFIG_LOCKED`). Single-target: one child per call and
+   * at most one child in flight at a time; further calls in the same parent turn are
+   * allowed once the previous one has returned (2.1.18 — the dispatcher serializes
+   * them; a batch spawn would be a promise the depth guard cannot keep). The rules the spec lists for this row — echo-free (only
    * `summary` returns), error-code-once (a child failure surfaces once, as the parent's
    * `tool_result.isError`), explicit-addressing (a continuation names its `threadId`,
    * never "the last child") — have no catalog field; they are upheld by the dispatcher.
@@ -1864,7 +1870,7 @@ export function registerCoreOperations(): void {
   CATALOG.register({
     name: 'spawn_child_turn',
     summary:
-      'Found a new hidden child thread of this specification on every call and run one turn in it: sets parent_thread_id and spawned_by_tool_use_id; a spawn binds the per-contextType artifact and plan_mode, a continuation (threadId) copies the referenced banka\'s binding, plan_mode, config snapshot and session and resumes it. Returns only { threadId } of the new row and a summary.',
+      'Found a new hidden child thread of this specification on every call and run one turn in it: sets parent_thread_id and spawned_by_tool_use_id; a spawn binds the per-contextType artifact addressed by payload (patchPath required for patch, planPath optional for chat, a new brief for brief) and plan_mode, a continuation (threadId) copies the referenced banka\'s binding, plan_mode, config snapshot and session and resumes it. At most one child in flight at a time; sequential calls in one parent turn are allowed. Returns only { threadId } of the new row and a summary.',
     scope: 'project',
     mediation: 'agent-mediated',
     opClass: 'turn',

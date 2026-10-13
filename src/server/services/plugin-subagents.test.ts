@@ -333,12 +333,20 @@ describe('resolvePluginSubagents — the turn must still START', () => {
     expect(() => validateSubagents(out)).not.toThrow();
   });
 
-  it('Agent / Skill / runTransagent are subtracted and the turn still starts', () => {
+  it('[ac:ac-wklad-pluginowy-enumerujacy-agent-ski] Agent / Skill / runTransagent are subtracted and the turn still starts', () => {
     const { out } = resolve([
       contrib({ tools: ['Agent', 'Skill', TRANSAGENT_TOOL_FULL_NAME, 'Read'] }),
     ]);
     expect(out[0]!.tools).toEqual(['Read']);
     expect(() => validateSubagents(out)).not.toThrow();
+    // "lub" — each of the three, enumerated alone, is subtracted on its own and the turn
+    // still starts. runTransagent is mounted only in top-level `chat`, never in a subagent.
+    for (const banned of ['Agent', 'Skill', TRANSAGENT_TOOL_FULL_NAME]) {
+      const single = resolve([contrib({ tools: [banned, 'Read'] })]).out;
+      expect(single).toHaveLength(1);
+      expect(single[0]!.tools).toEqual(['Read']);
+      expect(() => validateSubagents(single)).not.toThrow();
+    }
   });
 
   it('[ac:ac-plugin-proponujacy-maxturns-powyzej-s] maxTurns above the ceiling is clamped to 120, never an error', () => {

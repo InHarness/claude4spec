@@ -1,5 +1,5 @@
 {
-  "iteration": 4,
+  "iteration": 6,
   "conventions": [
     {
       "label": "L15 (Context Types) — implementor `M44`",
@@ -60,7 +60,7 @@
       "units": [
         "m46-bubble-series"
       ],
-      "startCommit": null
+      "startCommit": "9c68cf27517a471b889cf82da764cdf25a0c9117"
     }
   ],
   "units": [
@@ -844,16 +844,38 @@
         }
       ],
       "wave": 3,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "m46-bubble-series/p1-l3-l15",
+          "layers": [
+            "L3",
+            "L15"
+          ],
+          "slugs": [
+            "transagent-tools-runtransagent",
+            "katalog-operacji-m46#spawn_child_turn",
+            "ac-maksymalnie-jedna-banka-transagenta-j"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [
+            "ac-wklad-pluginowy-enumerujacy-agent-ski"
+          ],
+          "only": []
+        }
+      ],
+      "startCommit": "17322d40c525fd11e7c4cd0a4b1f98d6d2497409",
+      "baseCommit": "9c68cf27517a471b889cf82da764cdf25a0c9117",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "only": []
     }
   ],
   "entityTypes": [
