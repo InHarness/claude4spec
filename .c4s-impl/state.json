@@ -1,5 +1,5 @@
 {
-  "iteration": 13,
+  "iteration": 14,
   "conventions": [
     {
       "label": "L11 (Plugin Runtime Surface) — implementor M33",
@@ -423,17 +423,13 @@
             "ac-groupedentitylist-rysuje-tekst-pomocn",
             "ac-usehosttokens-zwraca-nowe-wartosci-ko"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [
             "regression"
           ],
-          "only": [
-            {
-              "finding": "env-runner r1: src/client/host-ui-kit/tokens.render.test.ts fails at load — TypeError: The URL must be of scheme file (line 27, fileURLToPath(new URL(\"../styles/theme.css\", import.meta.url)) under the happy-dom environment); 0 tests of the file run (ac-most-tokenow-c4s-plugin-runtime-ui-eksp, ac-usehosttokens-zwraca-nowe-wartosci-ko, ac-groupedentitylist-rysuje-tekst-pomocn)"
-            }
-          ]
+          "only": []
         }
       ],
       "startCommit": "208873e31c7ab745783bb1876218da816658b6dc",
@@ -890,7 +886,7 @@
         }
       ],
       "wave": 2,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "frontend-serving/p1-l4-l11",
@@ -919,12 +915,7 @@
           "status": "implemented",
           "rounds": 2,
           "partial": 0,
-          "uncovered": [
-            "ac-frontend-pluginu-nie-bandluje-wlasnej-ko",
-            "ac-serwowanie-frontendu-nakladki-project-lo",
-            "ac-frontend-pluginu-zbudowany-automatycznym",
-            "ac-lucide-react-jest-externalized-peer-w"
-          ],
+          "uncovered": [],
           "only": []
         }
       ],

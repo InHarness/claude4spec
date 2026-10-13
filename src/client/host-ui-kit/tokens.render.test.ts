@@ -9,6 +9,7 @@
  * asserted here is what the host actually paints.
  */
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { act, createElement, type FunctionComponent } from 'react';
@@ -23,10 +24,11 @@ const StringGroupedList = GroupedEntityList as unknown as FunctionComponent<Grou
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const THEME_CSS = readFileSync(
-  fileURLToPath(new URL('../styles/theme.css', import.meta.url)),
-  'utf8',
-).replace(/\/\*[\s\S]*?\*\//g, '');
+// Resolved with node:path from the module's own file path — under happy-dom the
+// global `URL` is the window's, so `new URL(rel, import.meta.url)` is not a
+// `file:` URL that `fileURLToPath` accepts (same pattern as useToast.render.test.ts).
+const HERE = dirname(fileURLToPath(import.meta.url));
+const THEME_CSS = readFileSync(resolve(HERE, '../styles/theme.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
 
 /** The top-level `:root { … }` / `.dark { … }` blocks of theme.css — where the bridge tokens live. */
 function themeBlocks(selector: ':root' | '.dark'): string[] {

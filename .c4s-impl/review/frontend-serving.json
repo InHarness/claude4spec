@@ -3,7 +3,7 @@
   "scope": {
     "kind": "unit",
     "id": "frontend-serving",
-    "base": "5f10e972"
+    "base": "1437fe34"
   },
   "findings": [
     {
@@ -11,16 +11,17 @@
       "file": "src/server/index.ts",
       "line": 501,
       "blocking": false,
-      "reason": "overlayLoaded calls cache.get(initialProject) on EVERY manifest and EVERY asset request (one per plugin .js/.css/.map). cache.get is not a read: if the primary project's context is not live (never opened, evicted, failed) a GET for a static asset kicks off a full ProjectContext build (DB, migrations, plugin mounts) and may evict another idle project; it also bumps the primary's LRU timestamp on every page load of any project, so it effectively never gets evicted. A ProjectBuildFailedError is swallowed into an empty set with no log, so overlay frontends silently vanish. Consider reading overlay records via cache.getLive() for asset requests (the manifest already fixed which source was announced), or at least logging the swallowed error.",
+      "reason": "(carried over from the previous round, code unchanged at 208873e3, not answered in decisions.md) overlayLoaded calls cache.get(initialProject) on EVERY manifest and EVERY asset request (one per plugin .js/.css/.map). cache.get is not a read: if the primary project's context is not live (never opened, evicted, failed) a GET for a static asset kicks off a full ProjectContext build (DB, migrations, plugin mounts) and may evict another idle project; it also bumps the primary's LRU timestamp on every page load of any project, so it effectively never gets evicted. A ProjectBuildFailedError is swallowed into an empty set with no log, so overlay frontends silently vanish. Consider reading overlay records via cache.getLive() for asset requests (the manifest already fixed which source was announced), or at least logging the swallowed error.",
       "portion": "frontend-serving/p1-l4-l11"
     },
     {
       "id": "rev-0002",
       "file": "src/server/core/plugin-host/frontend-assets.ts",
-      "line": 159,
+      "line": 160,
       "blocking": false,
-      "reason": "toSource silently drops a source whose resolved entry is not a .js file (e.g. exports['./frontend'] → './dist/frontend.mjs') or is not built: a plugin whose backend is `loaded` then disappears from the manifest with no diagnostic anywhere (no console warning, nothing in /api/_meta/plugins). The rule itself matches the allowlist, but the silent omission makes a common packaging mistake hard to diagnose; a one-time warn would match how index.ts reports an envelope whose frontend will not be served.",
+      "reason": "(carried over from the previous round, code unchanged at 208873e3, not answered in decisions.md) toSource silently drops a source whose resolved entry is not a .js file (e.g. exports['./frontend'] → './dist/frontend.mjs') or is not built: a plugin whose backend is `loaded` then disappears from the manifest with no diagnostic anywhere (no console warning, nothing in /api/_meta/plugins). The rule itself matches the allowlist, but the silent omission makes a common packaging mistake hard to diagnose; a one-time warn would match how index.ts reports an envelope whose frontend will not be served.",
       "portion": "frontend-serving/p1-l4-l11"
     }
-  ]
+  ],
+  "deviations": []
 }
