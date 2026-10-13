@@ -1562,6 +1562,9 @@ export async function runAgentTurn(
         ? buildTransagentToolsServer({
             parentThreadId: thread.id,
             dispatcher: transagentDispatcher,
+            // 2.1.18 (M23/M44) — the orchestrator's `list_patches` rides this server.
+            patches: deps.patchService,
+            projectId: deps.projectId ?? null,
           })
         : null;
 

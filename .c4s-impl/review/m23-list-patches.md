@@ -1,0 +1,4 @@
+# Review — m23-list-patches (non-blocking)
+
+- **rev-0001** `src/server/services/interaction-rules.ts:100` — PATCH rules give conflicting instructions for an already-applied patch: line 100 'do NOT force a write — that is the only acceptable outcome without an edit' vs. the next bullet's mark_patch_applied (which writes frontmatter), and the closing section's 'LAST step after findings are in the specification'. A model may follow line 100 and skip the flag. Reword: the no-write outcome still ends with mark_patch_applied(true) when already folded in; without it when the patch contradicts the spec. Update the golden snapshot.
+- **rev-0002** `src/server/mcp/transagent-tools.ts:179` — Bare empty line without ' *' in the JSDoc before the 'ASSUMPTION:dev-0003' paragraph; same at src/client/components/PatchDetail.tsx:24 before 'ASSUMPTION:dev-0004'.

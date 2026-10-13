@@ -32,6 +32,8 @@ export const DEFAULT_LIMITS = {
   searchEntities: 50,
   findReferences: 100,
   resolveIdentity: 20,
+  /** 2.1.18 (M23) — `list_patches` in `transagent-tools`: the orchestrator's queue source. */
+  listPatches: 50,
 } as const;
 
 /** The ceiling a caller may ask for, whatever it passes. */

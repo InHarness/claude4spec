@@ -2120,7 +2120,8 @@ describe('runAgentTurn — transagent-tools only on a top-level chat thread (2.1
     const top = await turnFor('chat', { parentThreadId: null });
     expect(top.mounted).toContain('transagent-tools');
     // `<tooling>` is derived from the post-gate mount's own tool lists.
-    expect(top.prompt).toContain('<mcp name="transagent-tools">runTransagent</mcp>');
+    // 2.1.18 — the server also carries the orchestrator's `list_patches`.
+    expect(top.prompt).toMatch(/<mcp name="transagent-tools">[^<]*\brunTransagent\b[^<]*<\/mcp>/);
 
     // The condition is part of the criterion: the same `chat` row with a parent is stripped.
     const child = await turnFor('chat', { parentThreadId: 'parent-1' });
@@ -2157,6 +2158,24 @@ describe('runAgentTurn — transagent-tools only on a top-level chat thread (2.1
     // No mounted server lists the tool either — `<tooling>` mirrors every mounted tool list.
     expect(prompt).not.toMatch(/<mcp name="[^"]*">[^<]*\brunTransagent\b/);
     expect(JSON.stringify(hoisted.lastExecute?.allowedTools ?? [])).not.toContain('runTransagent');
+  });
+
+  it('[ac:ac-wywolanie-list-patches-w-watku-contex] in a context_type=\'patch\' thread list_patches is not registered with the runtime, so a call to it ends in a tool error; a top-level chat thread has it on transagent-tools', async () => {
+    // The orchestrator's side: list_patches rides transagent-tools on a top-level chat thread.
+    const top = await turnFor('chat', { parentThreadId: null });
+    expect(top.prompt).toMatch(/<mcp name="transagent-tools">[^<]*\blist_patches\b[^<]*<\/mcp>/);
+
+    // The patch thread: no server carrying it is handed to the runtime, and no
+    // mounted server lists it — the agent runtime answers a call with its own
+    // "tool not available" tool_result error (M44 `3f5ej79s`).
+    // ASSUMPTION:dev-0002 — the error text is the agent runtime's answer to a call on an
+    // unregistered tool; the app guarantees the non-registration, not the wording.
+    const { servers, prompt } = await turnFor('patch', { patchPath: 'p.md' });
+    expect(Object.keys(servers)).not.toContain('transagent-tools');
+    expect(prompt).not.toMatch(/<mcp name="[^"]*">[^<]*\blist_patches\b/);
+    expect(JSON.stringify(hoisted.lastExecute?.allowedTools ?? [])).not.toContain('list_patches');
+    // patch-tools itself carries only the thread's own two operations.
+    expect(prompt).toContain('<mcp name="patch-tools">get_patch, mark_patch_applied</mcp>');
   });
 });
 

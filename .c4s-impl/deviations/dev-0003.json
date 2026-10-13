@@ -1,0 +1,13 @@
+{
+  "id": "dev-0003",
+  "kind": "clarification",
+  "blocking": false,
+  "address": "m23-list-patches/m23mcp01",
+  "slugs": [],
+  "text": "At 2.1.18 the `list_patches` row of `katalog-operacji-m23` still has `internal: n/a` (\"wątek patch jest z konstrukcji jednopatchowy…\"), while the same section (`m23mcp01`), M44 `3f5ej79s` and M05 `iatop5pj` say `list_patches` is rendered in `transagent-tools` for the top-level chat thread (with a Faza B todo to flip the cell to `direct` and add an `mcp-tool` entity `transagent-tools-list-patches`). Built as the prose says: `list_patches` is a tool on `transagent-tools` (src/server/mcp/transagent-tools.ts), and — since the row is not otherwise declared in code — no `list_patches` catalog row was added (an `internal: n/a` row would contradict the rendering; host-owned undeclared tools pass the profile gate). The window/limit default is `DEFAULT_LIMITS.listPatches = 50` (M39 asks for a finite per-operation default but names no number for this list). Suggest completing Faza B: the catalog cell `internal → direct` and the `mcp-tool` entity with its params (`brief?`, `applied?`, `limit?`, `offset?`) and returns (`{ patches: [{ path, title, brief, patchKind, applied, createdAt }], total, hasMore }`).",
+  "assumption": "ASSUMPTION:dev-0003 — the rendering in transagent-tools wins over the not-yet-flipped `internal: n/a` cell; default page size 50.",
+  "unit": "m23-list-patches",
+  "portion": "m23-list-patches/p1-l2-l15",
+  "sent": true,
+  "patchPath": "2-1-17-to-2-1-18-m23-list-patches-m23mcp01-at-2-1-18-the-list-patches-row-of-katalog-operacji-m23.md"
+}

@@ -234,6 +234,8 @@ describe('transagent-tools · runTransagent — contract (2.1.18)', () => {
 
   it('[entity:transagent-tools-runtransagent] registers runTransagent on transagent-tools with its five params, mounted only by the chat row of the registry', async () => {
     const { server, tool: t } = tool();
+    // A rig without the patch set mounts runTransagent alone; the turn handler
+    // also passes `patches`, adding `list_patches` (asserted in its own file).
     expect(server.tools.map((x) => x.name)).toEqual(['runTransagent']);
     expect(t).toBeDefined();
 

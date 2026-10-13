@@ -196,6 +196,26 @@ describe('patch-tools (thread-bound)', () => {
     expect(broadcast).toHaveBeenCalledWith({ kind: 'patches:changed', path: 'p.md' });
   });
 
+  /**
+   * 2.1.18 (M23 `m23pctx1`, `m23edg01`) — a patch thread that finds its patch
+   * already folded in says so and FLAGS it. The behaviour has two halves the
+   * app owns: the rules served to every `patch` thread order the flag on that
+   * outcome, and the thread's own `mark_patch_applied` call (no `path` — the
+   * thread's patch) leaves the patch at `applied: true`.
+   */
+  it('[ac:ac-watek-patch-ktory-stwierdza-ze-patch] after a patch-thread turn that finds the patch already applied, the patch has applied: true', async () => {
+    const rules = CONTEXT_TYPE_REGISTRY.patch.interactionRules ?? '';
+    expect(rules).toMatch(/already folded into the specification[^\n]*do NOT force a write/);
+    expect(rules).toMatch(/ALREADY folded in, you also mark: call mark_patch_applied with applied: true/);
+
+    expect((await service.getPatch('p.md')).frontmatter.applied).toBe(false);
+    // The turn's closing call, as the rules direct it: the thread's own patch.
+    const res = await call('mark_patch_applied', { applied: true });
+    expect(res.isError).toBe(false);
+    expect((await service.getPatch('p.md')).frontmatter.applied).toBe(true);
+    expect((await call('get_patch', {})).body.frontmatter.applied).toBe(true);
+  });
+
   it('mark_patch_applied with applied: false is refused, pointing at the UI', async () => {
     const res = await call('mark_patch_applied', { applied: false });
     expect(res.isError).toBe(true);

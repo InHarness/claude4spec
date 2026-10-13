@@ -1,5 +1,5 @@
 {
-  "iteration": 1,
+  "iteration": 2,
   "conventions": [
     {
       "label": "L15 (Context Types) — implementor `M44`",
@@ -53,7 +53,7 @@
         "m10-list-plans",
         "m21-list-briefs"
       ],
-      "startCommit": null
+      "startCommit": "3013673f65cfa8d1ad802ba0b838c68e68f7b680"
     },
     {
       "n": 3,
@@ -434,16 +434,42 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "m23-list-patches/p1-l2-l15",
+          "layers": [
+            "L2",
+            "L3",
+            "L5",
+            "L15"
+          ],
+          "slugs": [
+            "patch-page",
+            "ac-list-patches-z-applied-false-zwraca-w",
+            "ac-list-patches-z-filtrem-brief-zwraca-w",
+            "ac-list-patches-zwraca-patche-w-porzadku",
+            "ac-patch-legacy-ze-status-completed-i-be",
+            "ac-watek-patch-ktory-stwierdza-ze-patch",
+            "ac-wywolanie-list-patches-w-watku-contex"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "3013673f65cfa8d1ad802ba0b838c68e68f7b680",
+      "baseCommit": "3013673f65cfa8d1ad802ba0b838c68e68f7b680",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "only": []
     },
     {
       "id": "m10-list-plans",

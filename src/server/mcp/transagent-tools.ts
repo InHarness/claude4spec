@@ -13,12 +13,21 @@
  * lost it — the registry's declared `transagentTools` column) and never inside a
  * child banka (recursion depth 1) — both guards live in agent-turn.ts.
  *
+ * 2.1.18 (M44 `3f5ej79s`, M23 `m23mcp01`) — the same server also carries the
+ * orchestrator's list of the patch set, `list_patches` (owned by M23, grouped
+ * here only because the top-level chat thread is its sole consumer: it builds a
+ * series queue from it and re-checks the `applied` flag after every banka). The
+ * patch thread, closed on one `patch_path`, never sees it — it has no
+ * `transagent-tools` at all.
+ *
  * Read-only cross-spec counterpart: `c4s-tools` (consults a DIFFERENT spec).
  */
 
-import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
+import { createMcpServer, mcpTool, type CapturedMcpServer, type McpToolDefinition } from '../plugin-runtime/index.js';
 import { z } from 'zod';
-import { toolError } from '../operations/envelope.js';
+import { toolError, toolFailure, toolSuccess } from '../operations/envelope.js';
+import { DEFAULT_LIMITS, paginate } from '../discovery/pagination.js';
+import type { PatchService } from '../services/patch.js';
 import type { TransagentDispatcher } from '../services/transagent-dispatcher.js';
 import { DomainError } from '../services/tags.js';
 import { AgentTurnError } from '../../shared/agent-turn.js';
@@ -30,7 +39,17 @@ export const TRANSAGENT_TOOL_FULL_NAME = 'mcp__transagent-tools__runTransagent';
 export interface TransagentToolsContext {
   parentThreadId: string;
   dispatcher: TransagentDispatcher;
+  /**
+   * 2.1.18 — the patch set behind `list_patches`. Optional only for rigs that
+   * exercise `runTransagent` alone; the turn handler always passes it.
+   */
+  patches?: Pick<PatchService, 'listPatches'>;
+  /** The project `list_patches` answers for — the response-size ring's key. */
+  projectId?: string | null;
 }
+
+/** Tool names this server can carry, in registration order. */
+export const TRANSAGENT_TOOL_NAMES = ['runTransagent', 'list_patches'] as const;
 
 export function buildTransagentToolsServer(ctx: TransagentToolsContext): CapturedMcpServer {
   const runTransagent = mcpTool(
@@ -139,10 +158,86 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
     },
   );
 
+  const tools: McpToolDefinition[] = [runTransagent];
+  if (ctx.patches) tools.push(buildListPatchesTool(ctx.patches, ctx.projectId ?? null));
+
   return createMcpServer({
     name: 'transagent-tools',
-    tools: [runTransagent],
+    tools,
   });
+}
+
+/**
+ * 2.1.18 (M23 `m23brsv01` / `m23mcp01`) — `list_patches`, the patch set as the
+ * orchestrator reads it. Filters `brief` and `applied` (a patch without the
+ * `applied` key — a legacy `status: completed` one included — counts as
+ * `false`); the ORDER is `patchService.listPatches`' own (`created_at`
+ * ascending, tie by `path`, undated last); the WINDOW follows M39's implicit
+ * matrix (`limit` / `offset` with a finite default, `total` before the slice,
+ * `hasMore`). `echo-free`: rows carry the address and the flag, no content.
+
+ *
+ * ASSUMPTION:dev-0003 — rendered here although the catalog row's `internal` cell
+ * still reads `n/a` at 2.1.18 (Faza B pending); no catalog row is declared, and
+ * the default page size (50) is ours — M39 names none for this list.
+ */
+function buildListPatchesTool(patches: Pick<PatchService, 'listPatches'>, projectId: string | null) {
+  return mcpTool(
+    'list_patches',
+    [
+      'List the patches of this specification — the set a patch series is planned from.',
+      'Ordered by `created_at` ascending (ties by `path`; a patch without `created_at` comes last).',
+      'Filter with `brief` (a brief path relative to the briefs root — only that brief\'s patches)',
+      'and `applied` (`false` = not yet applied; a patch with no `applied` field counts as false).',
+      'Each row: { path, title, brief, patchKind, applied, createdAt }; `path` is what',
+      "runTransagent({ contextType: 'patch', payload: { patchPath } }) takes. Paged: `limit` / `offset`,",
+      'answered with `total` and `hasMore`. Re-list with `applied: false` after each banka — a patch the',
+      'banka found already applied is flagged by it and drops out of that list.',
+    ].join('\n'),
+    {
+      brief: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Omit for every brief.'),
+      applied: z.boolean().optional().describe('Narrow to applied (true) or not yet applied (false). Omit for all.'),
+      limit: z.number().int().positive().optional(),
+      offset: z.number().int().nonnegative().optional(),
+    },
+    async (args) => {
+      try {
+        const rows = patches
+          .listPatches({
+            ...(typeof args.brief === 'string' ? { brief: args.brief } : {}),
+            ...(typeof args.applied === 'boolean' ? { applied: args.applied } : {}),
+          })
+          .map((p) => ({
+            path: p.path,
+            title: p.title,
+            brief: p.briefPath,
+            patchKind: p.patchKind,
+            applied: p.applied,
+            createdAt: p.createdAt === '' ? null : p.createdAt,
+          }));
+        const page = paginate(
+          rows,
+          {
+            limit: typeof args.limit === 'number' ? args.limit : undefined,
+            offset: typeof args.offset === 'number' ? args.offset : undefined,
+          },
+          DEFAULT_LIMITS.listPatches,
+        );
+        return toolSuccess(
+          {
+            patches: page.items,
+            total: page.total,
+            hasMore: page.hasMore,
+            ...(page.truncated ? { truncated: true } : {}),
+          },
+          { operation: 'list_patches', channel: 'internal', project: projectId },
+        );
+      } catch (err) {
+        return toolFailure(err);
+      }
+    },
+    { readOnlyHint: true },
+  );
 }
 
 /**
