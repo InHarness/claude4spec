@@ -38,6 +38,10 @@ import { moduleDependencySystemPrompt } from './system-prompt.js';
  * exists on disk anywhere — the type could not be created at all before this
  * release — so there is no earlier shape to migrate from.
  */
+// 2.1.20 (M13 z7l89jhf) — the type's frontend is NOT part of this contribution:
+// the host rejects a `frontend` key here. `moduleDependencyFrontendModule` (./frontend/module.tsx) enters
+// through the package's browser entry (`src/frontend.tsx`, `exports['./frontend']`)
+// via `registerFrontendModule`.
 export const moduleDependencyEntity: EntityContribution = {
   type: MODULE_DEPENDENCY_TYPE,
   data: moduleDependencyData,

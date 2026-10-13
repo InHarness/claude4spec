@@ -12,7 +12,9 @@ interface OpenTarget {
  *
  * A normal type navigates to its detail route through the editor bridge. A
  * hidden type has no such route — it declares neither `routes` nor
- * `detailPanel` — so it opens its own read-only fullscreen overlay instead.
+ * `detailPanel` — so the HOST opens its `<type>-expand` window instead, whose
+ * content is the type's `renderOverlay` slot (M13 chipprops, 2.1.20); the chip
+ * or card opens nothing itself, it only calls the `onOpen` built here.
  * That is the ONLY sanctioned exception to "a click calls
  * `editorBridge.openEntity`", and 0.2.16 moved the test for it from a declared flag
  * to the slots themselves, so the exception cannot be claimed by a type that

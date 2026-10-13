@@ -211,6 +211,12 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
     expect(recorded(/PluginSkillContribution\.contextTypes/)).toBe(true);
     expect(recorded(/onUnregister/)).toBe(true);
     expect(recorded(/stateSlice/) && recorded(/emptyState/)).toBe(true);
+    // 2.1.20 — the withdrawal of the type contribution's frontend slot is recorded
+    // in the same retirement entry as the other two frontend fields.
+    const retirement = HOST_API_UNVERSIONED_CHANGES.find((c) => /EntityContribution\.frontend/.test(c.slot));
+    expect(retirement?.kind).toBe('slot-removed');
+    expect(retirement?.slot).toMatch(/stateSlice/);
+    expect(retirement?.slot).toMatch(/emptyState/);
     // additive facade/client-host names
     expect(recorded(/^mcpTool\(…, annotations\?\)$/)).toBe(true);
     expect(recorded(/onRegistryChanged/) && recorded(/registryVersion/)).toBe(true);

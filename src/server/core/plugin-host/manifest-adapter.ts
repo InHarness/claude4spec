@@ -369,9 +369,9 @@ function assertNoSerializerSlot(type: string, module: Record<string, unknown>): 
 /**
  * 0.2.90 — the closed key set of the type envelope.
  *
- * The payload-timeline slots (`payloadVersion`, `payloadUpgrades`) and the
- * render slots (`frontend.*`) are different slots of THIS manifest; there is no
- * second registry to spill into, so a key outside the set is a manifest error,
+ * The payload-timeline slots (`payloadVersion`, `payloadUpgrades`) are slots of
+ * THIS manifest; there is no second registry to spill into (render slots are
+ * not here at all since 2.1.20 — they ride the plugin's browser entry), so a key outside the set is a manifest error,
  * not a no-op. Runs AFTER the removed-slot checks so a 1.x slot still gets its
  * successor named instead of a bare "unknown key". Top level only: `backend.*`
  * keeps tolerating the dropped 2.0.0 `crud` slot (see `synthesizeMount`).
@@ -390,8 +390,26 @@ const ENVELOPE_KEYS: ReadonlySet<string> = new Set([
   'dependsOn',
   'systemPrompt',
   'backend',
-  'frontend',
 ]);
+
+/**
+ * 2.1.20 (M13 `z7l89jhf`, M33 `m33load01`) — the `frontend` slot is no longer
+ * part of the type contribution. The host never read it: a type's frontend
+ * enters the client registry only through the plugin's own browser entry,
+ * which calls `registerFrontendModule` from `@c4s/plugin-runtime` when the host
+ * imports it from the frontend manifest. Rejected rather than ignored, with
+ * that successor named: a package still shipping the key believes its render
+ * slots travel with the type, and silence would leave its chips unregistered.
+ */
+function assertNoFrontendSlot(type: string, record: Record<string, unknown>): void {
+  if (record.frontend !== undefined) {
+    throw new PluginManifestError(
+      `entity "${type}" — the \`frontend\` slot was withdrawn from the type contribution; ` +
+        "register the type's frontend module from the plugin's browser entry " +
+        '(`registerFrontendModule` from `@c4s/plugin-runtime`, `exports["./frontend"]`)',
+    );
+  }
+}
 
 function assertNoUnknownKeys(type: string, record: Record<string, unknown>): void {
   const unknown = Object.keys(record).filter((k) => !ENVELOPE_KEYS.has(k) && record[k] !== undefined);
@@ -429,6 +447,7 @@ function assertContribution(c: EntityContribution): void {
     }
   }
   assertSerializationContribution(c.type, c as unknown as Record<string, unknown>, c.payloadVersion);
+  assertNoFrontendSlot(c.type, record);
   assertNoUnknownKeys(c.type, record);
   if (c.systemPrompt == null) {
     throw new PluginManifestError(`entity "${c.type}" — systemPrompt is required`);

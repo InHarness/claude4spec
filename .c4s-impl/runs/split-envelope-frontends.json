@@ -1,0 +1,71 @@
+{
+  "role": "implementer",
+  "unit": "envelope-frontends",
+  "packetBytes": 430383,
+  "portions": [
+    {
+      "name": "envelope-frontends/p1-l2-l5",
+      "layers": [
+        "L2",
+        "L5"
+      ],
+      "slugs": [
+        "ac-modul-frontendu-bez-slotu-listbytags",
+        "ac-modul-frontendu-bez-slotu-usegetbyslu",
+        "ac-modul-frontendu-typu-ukrytego-bez-rou",
+        "ac-encja-ukryta-typ-bez-frontend-sidebar",
+        "section:z7l89jhf",
+        "section:m13plenv",
+        "section:m33load01",
+        "section:dgml5000",
+        "section:c8sqlv76",
+        "section:s7ao66dy",
+        "section:gplp0apf"
+      ]
+    },
+    {
+      "name": "envelope-frontends/p2-l11-l11",
+      "layers": [
+        "L11"
+      ],
+      "slugs": [
+        "section:fsu38c8q",
+        "section:xvm9aann",
+        "section:vc5pzsc0",
+        "section:ityp8g1r",
+        "section:dsmanifest",
+        "section:cv8b7alf",
+        "section:atmxa1s8",
+        "section:04i1idm7"
+      ],
+      "criteriaGroup": "package-envelopes"
+    },
+    {
+      "name": "envelope-frontends/p3-l11-l12",
+      "layers": [
+        "L11",
+        "L12"
+      ],
+      "slugs": [
+        "ac-encja-ukryta-bez-sidebartab-i-trasy-d",
+        "section:dgmhead0",
+        "section:dgmenv11",
+        "section:dgmmanifest",
+        "section:dgmrefnode",
+        "section:rgczgux0",
+        "section:dgmfull000",
+        "section:rb4fixcw",
+        "section:n6zlyrol",
+        "section:2i5ypc7q",
+        "section:k7v3qm2d",
+        "section:fbgmkqw7",
+        "section:31if7sjf"
+      ],
+      "criteriaGroup": "hidden-types"
+    }
+  ],
+  "deviations": [
+    "non-blocking clarification: the change read of L2-domain section `z7l89jhf` (offset 0, limit 1) is cut by the c4s release-diff response budget even read alone (~37.7 KB of change text kept); the p1 packet carries that cut change read plus the full section at 2.1.20 (`--from initial`, offset 1, limit 1, 40 KB), so the after-state is complete but the tail of the <before_change> markup is not.",
+    "non-blocking note: L11 alone (~221 KB with convention m33l11sc) exceeds packetKB 200; all 5 criteria have empty `verifies`, so L11 was cut between envelope pages (never inside a section): package envelopes (p2) vs hidden types diagram/code-snippet/spreadsheet/spec-operation together with L12 (p3)."
+  ]
+}

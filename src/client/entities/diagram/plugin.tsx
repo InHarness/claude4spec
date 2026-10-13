@@ -1,8 +1,11 @@
 import { Share2 } from 'lucide-react';
+import type { ComponentType } from 'react';
 import type { Diagram } from '../../../shared/entities.js';
+import { diagramData, diagramSlugPattern } from '../../../shared/entities/diagram/schema.js';
 import { useDiagram } from '../../hooks/useDiagrams.js';
-import { registerEntity, type EntityChipProps } from '../registry.js';
-import { registerEditorExtension } from '../../tiptap/registry.js';
+import type { EntityCardProps, EntityChipProps } from '../registry.js';
+import { clientPluginHost } from '../../core/plugin-host/host.js';
+import type { FrontendModule } from '../../core/plugin-host/types.js';
 import { DiagramCard, DiagramOverlay } from './DiagramCard.js';
 
 /**
@@ -76,27 +79,57 @@ function DiagramChip({ slug, entity, onOpen }: EntityChipProps<Diagram>) {
  * That is not a demotion, it is the shape being stated. Diagram never had a
  * sidebar tab or a `/diagrams/$slug` route — `editorBridge.openEntity('diagram', …)`
  * pointed at a route that does not exist, so the row and the detail panel were
- * unreachable surfaces satisfying a slot check. The chip opens the fullscreen
- * overlay instead of navigating.
+ * unreachable surfaces satisfying a slot check.
  *
  * 0.2.16 — hidden-ness is no longer declared with a flag. Omitting `routes` and
  * `detailPanel` IS the declaration; `renderOverlay` is what the host requires in
  * exchange.
  *
- * `element_list` / `tagged_list` with `type="diagram"` are unsupported by that
- * same contract; the list views say so inline rather than rendering blanks.
+ * 2.1.20 (c4s-plugin-diagram L11, M13 `z7l89jhf` / `chipprops`) — the type's
+ * frontend is a module of shape `FrontendModule`, separate from the type's
+ * contribution (the server's `diagramBackendModule` carries no frontend). Its
+ * slots, as the diagram page lists them:
+ *
+ *   - `renderCard`   — `DiagramCard`: SVG (lazy mermaid) + `<figcaption>`; its
+ *                      `Maximize2` button calls the host's `onOpen` and nothing else;
+ *   - `renderChip`   — `DiagramChip`: a pill with `title`; a click is routed by the
+ *                      HOST to the `diagram-expand` window — the chip opens nothing
+ *                      itself (its handler IS the host's `onOpen`);
+ *   - `renderOverlay`— `DiagramOverlay`: the content of `diagram-expand` (required —
+ *                      the type is hidden), rendered in `DiagramFullscreen`;
+ *   - `editorExtensions` — `[diagramAuthoringExtension]`: `/diagram` + the
+ *                      create/edit popover, no node of its own;
+ *   - the four required slots are all there (`listByTags` answers empty — a
+ *     hidden type is not listed);
+ *   - NOT supplied: `sidebarTab`, `routes`, `detailPanel`, `renderRow` — so
+ *     `element_list` / `tagged_list` with `type="diagram"` are unsupported by
+ *     contract; the list views say so inline rather than rendering blanks.
+ *
+ * `diagram` is built into the host bundle, so it does NOT call the plugin
+ * runtime's `registerFrontendModule`: it enters the client registry through the
+ * host's own door (`clientPluginHost.registerFrontendModule`), which is not part
+ * of the plugin contract. The editor extension is pinned by `mountFrontend`,
+ * like every module's.
  */
-registerEntity<Diagram>({
+export const diagramFrontendModule: FrontendModule = {
   type: 'diagram',
+  data: diagramData,
+  slugPattern: diagramSlugPattern,
+  payloadVersion: 2,
   label: 'Diagram',
   labelPlural: 'Diagrams',
-  renderChip: DiagramChip,
-  renderCard: DiagramCard,
+  // Mirrors the server module (`diagramBackendModule`): after design-system (60).
+  displayOrder: 70,
+  pathPrefix: '/diagrams',
+
+  renderChip: DiagramChip as ComponentType<EntityChipProps<unknown>>,
+  renderCard: DiagramCard as ComponentType<EntityCardProps<unknown>>,
   renderOverlay: DiagramOverlay,
   useGetBySlug: (slug) => useDiagram(slug),
-});
+  // A hidden type is not listed: tag-driven lists have nothing to render for it.
+  listByTags: async () => [],
 
-registerEditorExtension({
-  ...diagramAuthoringExtension,
-  availableIn: [...diagramAuthoringExtension.availableIn],
-});
+  editorExtensions: [{ ...diagramAuthoringExtension, availableIn: [...diagramAuthoringExtension.availableIn] }],
+};
+
+clientPluginHost.registerFrontendModule(diagramFrontendModule);

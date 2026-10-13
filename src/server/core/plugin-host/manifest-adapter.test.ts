@@ -93,7 +93,7 @@ describe('lowerEntityContribution', () => {
     );
   });
 
-  it('accepts the full known envelope — timeline slots next to render slots', () => {
+  it('accepts the full known envelope — timeline slots and the backend block', () => {
     expect(() =>
       lowerEntityContribution(
         base({
@@ -101,11 +101,31 @@ describe('lowerEntityContribution', () => {
           payloadUpgrades: [(p: unknown) => p],
           slugConflict: 'suffix',
           dependsOn: [],
-          frontend: { renderChip: () => null },
           backend: { service: () => ({}) },
         }),
       ),
     ).not.toThrow();
+  });
+
+  /**
+   * 2.1.20 — the type contribution has no frontend slot any more: a type's
+   * frontend enters only through the plugin's browser entry
+   * (`registerFrontendModule`). A contribution still carrying `frontend` is
+   * refused at registration with that successor named — not ignored, and not
+   * reported as a bare unknown key.
+   */
+  it('[section:z7l89jhf] rejects a type contribution carrying the withdrawn `frontend` slot, naming the browser entry as its successor', () => {
+    const withFrontend = base({ frontend: { renderChip: () => null } } as never);
+    expect(() => lowerEntityContribution(withFrontend)).toThrow(PluginManifestError);
+    expect(() => lowerEntityContribution(withFrontend)).toThrow(
+      /`frontend` slot was withdrawn from the type contribution/,
+    );
+    expect(() => lowerEntityContribution(withFrontend)).toThrow(/registerFrontendModule/);
+    // Even an empty block is refused — the key itself is no longer part of the shape.
+    expect(() => lowerEntityContribution(base({ frontend: {} } as never))).toThrow(/withdrawn/);
+    // The same contribution without the key lowers, and the lowered module carries no frontend.
+    const lowered = lowerEntityContribution(base());
+    expect('frontend' in (lowered as unknown as Record<string, unknown>)).toBe(false);
   });
 });
 

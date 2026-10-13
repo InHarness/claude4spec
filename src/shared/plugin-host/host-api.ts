@@ -616,14 +616,17 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
   },
   {
     release: '2.1.12',
-    slot: 'FrontendModule.stateSlice / sidebarTab.emptyState',
+    slot: 'FrontendModule.stateSlice / EntityContribution.frontend / sidebarTab.emptyState',
     kind: 'slot-removed',
     summary:
-      'Two frontend fields that had no effect in the host: no host store ever took a ' +
-      'registered state slice, and the sidebar reads only the tab\'s icon, label and ' +
+      'Three frontend fields of an entity type that had no effect in the host: no host ' +
+      'store ever took a registered state slice; the type contribution\'s `frontend` key ' +
+      'was never read — a type\'s frontend enters only through the plugin\'s own browser ' +
+      'entry (`registerFrontendModule`), and a contribution still carrying the key is now ' +
+      'rejected at registration; and the sidebar reads only the tab\'s icon, label and ' +
       'order. Formally a narrowing of the surface; absorbed into the current baseline ' +
       'under the same precedent as the `injection` removal and the withdrawal of ' +
-      '`registerExtensionReferenceType` — neither field changed host behaviour and no ' +
+      '`registerExtensionReferenceType` — none of the fields changed host behaviour and no ' +
       'external plugin is published. No bump, no `migrations[]` descriptor.',
   },
   {

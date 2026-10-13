@@ -10,14 +10,21 @@
  * passed one and failed the other was the drift that comment was guarding
  * against; this file removes the possibility instead.
  *
- * The rules enforce CONSISTENCY, not COMPLETENESS. A type is free to skip its
- * list row, its detail page and its sidebar entry — what it may not do is
- * declare half of a pair.
+ * Four slots are REQUIRED of every module (M13 `z7l89jhf`, 2.1.20):
+ * `renderChip`, `renderCard`, `useGetBySlug` and `listByTags`. Beyond them the
+ * rules enforce CONSISTENCY, not COMPLETENESS. A type is free to skip its list
+ * row, its detail page and its sidebar entry — what it may not do is declare
+ * half of a pair, be hidden without `renderOverlay`, or declare `renderOverlay`
+ * beside a detail route.
  */
 
 import type { FrontendModule } from './types.js';
 
-/** Every module renders as a chip and as a card — that is what "embeddable" means. */
+/**
+ * Every module renders as a chip and as a card — that is what "embeddable"
+ * means — and every module answers the host-resolver (`useGetBySlug`) and the
+ * dynamic tag lists (`listByTags`).
+ */
 const REQUIRED_COMPONENT_SLOTS = ['renderChip', 'renderCard'] as const;
 const REQUIRED_FUNCTION_SLOTS = ['useGetBySlug', 'listByTags'] as const;
 

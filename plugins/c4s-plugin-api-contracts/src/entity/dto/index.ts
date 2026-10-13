@@ -15,6 +15,10 @@ import { dtoData, dtoSlugPattern } from './schema.js';
  * capable of blocking a save the UI let the author compose. The examples block
  * stays; refusing the write does not.
  */
+// 2.1.20 (M13 z7l89jhf) — the type's frontend is NOT part of this contribution:
+// the host rejects a `frontend` key here. `dtoFrontendModule` (./frontend/module.tsx) enters
+// through the package's browser entry (`src/frontend.tsx`, `exports['./frontend']`)
+// via `registerFrontendModule`.
 export const dtoEntity: EntityContribution = {
   type: DTO_TYPE,
   data: dtoData,

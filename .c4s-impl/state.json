@@ -1,5 +1,5 @@
 {
-  "iteration": 8,
+  "iteration": 11,
   "conventions": [
     {
       "label": "L11 (Plugin Runtime Surface) — implementor M33",
@@ -1545,15 +1545,90 @@
         }
       ],
       "wave": 3,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "envelope-frontends/p1-l2-l5",
+          "layers": [
+            "L2",
+            "L5"
+          ],
+          "slugs": [
+            "ac-modul-frontendu-bez-slotu-listbytags",
+            "ac-modul-frontendu-bez-slotu-usegetbyslu",
+            "ac-modul-frontendu-typu-ukrytego-bez-rou",
+            "ac-encja-ukryta-typ-bez-frontend-sidebar",
+            "section:z7l89jhf",
+            "section:m13plenv",
+            "section:m33load01",
+            "section:dgml5000",
+            "section:c8sqlv76",
+            "section:s7ao66dy",
+            "section:gplp0apf"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        },
+        {
+          "name": "envelope-frontends/p2-l11-l11",
+          "layers": [
+            "L11"
+          ],
+          "slugs": [
+            "section:fsu38c8q",
+            "section:xvm9aann",
+            "section:vc5pzsc0",
+            "section:ityp8g1r",
+            "section:dsmanifest",
+            "section:cv8b7alf",
+            "section:atmxa1s8",
+            "section:04i1idm7"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        },
+        {
+          "name": "envelope-frontends/p3-l11-l12",
+          "layers": [
+            "L11",
+            "L12"
+          ],
+          "slugs": [
+            "ac-encja-ukryta-bez-sidebartab-i-trasy-d",
+            "section:dgmhead0",
+            "section:dgmenv11",
+            "section:dgmmanifest",
+            "section:dgmrefnode",
+            "section:rgczgux0",
+            "section:dgmfull000",
+            "section:rb4fixcw",
+            "section:n6zlyrol",
+            "section:2i5ypc7q",
+            "section:k7v3qm2d",
+            "section:fbgmkqw7",
+            "section:31if7sjf"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "5340ed189f3f2d0cf02019c971d1de3be25baae3",
+      "baseCommit": "5340ed189f3f2d0cf02019c971d1de3be25baae3",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0
     },
     {
       "id": "ui-kit-gate",

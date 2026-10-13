@@ -9,10 +9,11 @@
  * state slice (`stateSlice`) and `sidebarTab.emptyState` are gone from the
  * contract.
  *
- * Phase 0: only render* + detailPanel + useGetBySlug are required because the
- * legacy adapter populates them by wrapping the existing registerEntity()
- * calls. Routes / sidebarTab / editorExtensions are filled in Phase 3 per
- * entity.
+ * Required slots (M13 `z7l89jhf`): `renderChip`, `renderCard`, `useGetBySlug`
+ * and `listByTags` — a module missing any of them is rejected at registration
+ * (`slot-rules.ts`). Everything else is optional but bound by three consistency
+ * rules: `routes` and `detailPanel` both or neither; a hidden type (neither)
+ * declares `renderOverlay`; a type with a detail route does not.
  */
 
 import type { ComponentType } from 'react';
@@ -108,14 +109,18 @@ export interface FrontendModule extends EntityModuleManifest {
    */
   renderOverlay?: ComponentType<{ slug: string; caption?: string; onClose: () => void }>;
 
-  /** TanStack Query hook for resolving an entity by slug. */
+  /**
+   * REQUIRED — TanStack Query hook resolving an entity by slug. Called by the
+   * host-resolver (chip, card, reference lists, the release-diff entity card),
+   * never by a render slot.
+   */
   useGetBySlug: (
     slug: string | null
   ) => { data: unknown | null | undefined; isLoading: boolean };
 
   /**
-   * Async list of entities filtered by tags. Used by TaggedListView /
-   * TaggedListMixedView NodeViews to avoid per-type API switches.
+   * REQUIRED — async list of entity slugs of this type filtered by tags. Used by
+   * TaggedListView / TaggedListMixedView NodeViews to avoid per-type API switches.
    */
   listByTags: (args: { tags: string[]; filter: 'and' | 'or' }) => Promise<Array<{ slug: string }>>;
 

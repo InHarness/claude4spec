@@ -1,0 +1,236 @@
+{
+  "role": "verifier",
+  "scope": {
+    "kind": "unit",
+    "id": "envelope-frontends"
+  },
+  "release": "2.1.20",
+  "rows": [
+    {
+      "slug": "ac-modul-frontendu-bez-slotu-listbytags",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/client/core/plugin-host/host.test.ts:106 — expect(...registerFrontendModule(mod)).toThrow(/'listByTags' must be a function/); getAvailable(...) toBeNull (visible and hidden module); rule in src/client/core/plugin-host/slot-rules.ts REQUIRED_FUNCTION_SLOTS",
+      "type": "ac"
+    },
+    {
+      "slug": "ac-modul-frontendu-bez-slotu-usegetbyslu",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/client/core/plugin-host/host.test.ts:122 — toThrow(/'useGetBySlug' must be a function/); getAvailable(...) toBeNull (visible and hidden module); slot-rules.ts REQUIRED_FUNCTION_SLOTS",
+      "type": "ac"
+    },
+    {
+      "slug": "ac-modul-frontendu-typu-ukrytego-bez-rou",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/client/core/plugin-host/host.test.ts:91 — hidden module without renderOverlay: toThrow(/hidden entity.*must supply 'renderOverlay'/), getAvailable toBeNull; same module with overlay registers; slot-rules.ts hidden && typeof renderOverlay !== 'function'",
+      "type": "ac"
+    },
+    {
+      "slug": "ac-encja-ukryta-typ-bez-frontend-sidebar",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/client/core/plugin-host/host.test.ts:137 — pluginRuntime.registerFrontendModule === host registerFrontendModule; hidden module w/o sidebarTab/routes/detailPanel registers; each of renderChip/renderCard/useGetBySlug/listByTags missing → toThrow(/'<slot>' must be/); routes-only / panel-only → toThrow at registration",
+      "type": "ac"
+    },
+    {
+      "slug": "ac-encja-ukryta-bez-sidebartab-i-trasy-d",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/hidden-type-envelopes.test.ts:449 — diagram & spreadsheet: expectHiddenModule (renderCard, renderChip, renderOverlay, renderRow undefined), expectHostRoutedExpand (openEntityHandler dispatches kind '<type>-expand' {slug}, bridge.openEntity not called, chip onClick === host onOpen), listPickerEntityTypes('list') excludes them; ElementList/TaggedList `if (!def.renderRow) return <NotListable`",
+      "type": "ac"
+    },
+    {
+      "slug": "section:z7l89jhf",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/core/plugin-host/manifest-adapter.test.ts:117 — lowerEntityContribution(base({frontend:{...}})) toThrow(PluginManifestError, /`frontend` slot was withdrawn/, /registerFrontendModule/); even frontend:{} refused; impl manifest-adapter.ts assertNoFrontendSlot + 'frontend' removed from ENVELOPE_KEYS; manifest.ts EntityContribution has no frontend field; required-slots/consistency half covered by src/client/core/plugin-host/host.test.ts:91-172"
+    },
+    {
+      "slug": "section:m13plenv",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/core/plugin-host/capabilities.test.ts:137 — registry.registerPlugin(manifest with entity.frontend) toThrow(/`frontend` slot was withdrawn/), getAvailable('widget') null, listPluginRecords() length 0; clean manifest registers"
+    },
+    {
+      "slug": "section:m33load01",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/shared/plugin-host/host-api.test.ts:199 — HOST_API_UNVERSIONED_CHANGES entry matching /EntityContribution\\.frontend/ has kind 'slot-removed' and also names stateSlice and emptyState (one retirement entry for the three frontend fields); host-api.ts:619"
+    },
+    {
+      "slug": "section:dgml5000",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/hidden-type-expand.test.ts:115 — assertExpandConvention('diagram', DiagramOverlay): openEntityHandler → MODAL {kind:'diagram-expand', props:{slug:'one'}}, bridge.openEntity not called, chip onClick === onOpen / undefined without"
+    },
+    {
+      "slug": "section:c8sqlv76",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/hidden-type-expand.test.ts:123 — code-snippet expand convention + card 'Open fullscreen' button only with host onOpen (card.tsx no longer imports openModal)"
+    },
+    {
+      "slug": "section:s7ao66dy",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/hidden-type-expand.test.ts:144 — assertExpandConvention('spreadsheet', SpreadsheetFullscreen)"
+    },
+    {
+      "slug": "section:gplp0apf",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/hidden-type-expand.test.ts:148 — module-dependency renderRow is a function, hidden, renderOverlay === ModuleDependencyOverlay, click → 'module-dependency-expand'"
+    },
+    {
+      "slug": "section:fsu38c8q",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/package-envelope-frontends.test.ts:205 — acEntity has no frontend/render keys and no lucide-react/react import; browser entry registers acFrontendModule (host slot rules pass), routes ['/acs','/acs/$slug','/acs/$slug/history'], sidebarTab 'Acceptance Criteria', row+detailPanel, no renderOverlay. editorExtensions/order not asserted per ASSUMPTION:dev-2004"
+    },
+    {
+      "slug": "section:xvm9aann",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/package-envelope-frontends.test.ts:211 — dto: no frontend in contribution; dtoFrontendModule registered by entry; routes /dtos,/dtos/$slug,/dtos/$slug/history; tab 'DTOs' (dev-2004)"
+    },
+    {
+      "slug": "section:vc5pzsc0",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/package-envelope-frontends.test.ts:221 — endpoint: no frontend; backend.routes + mcpServer stay; endpointFrontendModule registered; routes /endpoints…; tab 'Endpoints' (dev-2004)"
+    },
+    {
+      "slug": "section:ityp8g1r",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/package-envelope-frontends.test.ts:234 — database-table: no frontend; visible module registered by entry with list/$slug/history routes, tab 'Database Tables', editorExtensions undefined, exactly one contributes.commands entry for database-table"
+    },
+    {
+      "slug": "section:dsmanifest",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/package-envelope-frontends.test.ts:257 — design-system: no frontend; designSystemFrontendModule registered by envelope entry; routes start /design-systems,/design-systems/$slug; tab 'Design Systems' (dev-2004)"
+    },
+    {
+      "slug": "section:cv8b7alf",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/package-envelope-frontends.test.ts:273 — ui-view: no frontend; uiViewFrontendModule registered; routes /ui-views,$slug,$slug/preview,$slug/history; tab 'UI Views' (dev-2004)"
+    },
+    {
+      "slug": "section:atmxa1s8",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/package-envelope-frontends.test.ts:288 — mcp-tool: no frontend, no lucide-react import, backend undefined; module registered; routes /mcp-tools…; tab 'MCP Tools' without emptyState; editorExtensions undefined"
+    },
+    {
+      "slug": "section:04i1idm7",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/package-envelope-frontends.test.ts:300 — module-dependency: no frontend; entry registers HIDDEN module (no sidebarTab/routes/detailPanel), renderRow + renderOverlay functions, editorExtensions undefined"
+    },
+    {
+      "slug": "section:dgmhead0",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/hidden-type-envelopes.test.ts:250 — expectHiddenModule('diagram', DiagramOverlay) + expectHostRoutedExpand('diagram')"
+    },
+    {
+      "slug": "section:dgmenv11",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/hidden-type-envelopes.test.ts:255 — diagram hidden, renderRow undefined; listPickerEntityTypes('element') contains diagram, ('list') does not; click routed to 'diagram-expand'"
+    },
+    {
+      "slug": "section:dgmmanifest",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/hidden-type-envelopes.test.ts:228,241 — getAvailable('diagram') === diagramFrontendModule (FrontendModule, four required slots, renderOverlay DiagramOverlay, editorExtensions [diagram_authoring '/diagram', no node]); server plugin.ts has no frontend/render slots; client plugin.tsx does not import @c4s/plugin-runtime and calls clientPluginHost.registerFrontendModule(diagramFrontendModule) (src/client/entities/diagram/plugin.tsx)"
+    },
+    {
+      "slug": "section:dgmrefnode",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/hidden-type-envelopes.test.ts:262 — chip markup has no SVG; DiagramCard expand button (aria-label 'Expand diagram one') present only with onOpen; exactly one <DiagramFullscreen in DiagramCard.tsx (inside DiagramOverlay)"
+    },
+    {
+      "slug": "section:rgczgux0",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/hidden-type-envelopes.test.ts:280 — renderOverlay renders role=dialog 'Diagram fullscreen', position fixed, no edit affordance"
+    },
+    {
+      "slug": "section:dgmfull000",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/hidden-type-envelopes.test.ts:298 — DiagramOverlay calls useDiagram('one') + useDiagramSource('one'), renderDiagram called once, zIndex '1300', caption shown, Escape → onClose once"
+    },
+    {
+      "slug": "section:rb4fixcw",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/hidden-type-envelopes.test.ts:346 — code-snippet hidden module (CodeSnippetFullscreen overlay), not in list pickers, click routed to 'code-snippet-expand'"
+    },
+    {
+      "slug": "section:n6zlyrol",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/hidden-type-envelopes.test.ts:330 — code-snippet contribution has no frontend keys; exports['./frontend']; browser entry registers exactly codeSnippetFrontendModule; overlay CodeSnippetFullscreen; '/code-snippet' trigger only in contributes.commands (ASSUMPTION:dev-2005)"
+    },
+    {
+      "slug": "section:2i5ypc7q",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/hidden-type-envelopes.test.ts:359 — CodeSnippetFullscreen({slug,onClose}) fetches ['one'], fixed dialog shows filename + code; fullscreen.tsx has no `entity` prop any more; Escape → onClose"
+    },
+    {
+      "slug": "section:k7v3qm2d",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/hidden-type-envelopes.test.ts:389 — spreadsheet hidden (no renderRow/sidebarTab/routes), element-picker yes, list-picker no, click → 'spreadsheet-expand'"
+    },
+    {
+      "slug": "section:fbgmkqw7",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/hidden-type-envelopes.test.ts:396 — spreadsheet contribution without frontend keys; entry registers exactly spreadsheetFrontendModule; overlay SpreadsheetFullscreen; no editorExtensions"
+    },
+    {
+      "slug": "section:31if7sjf",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/entities/hidden-type-envelopes.test.ts:413 — chip/card/row/overlay module without sidebarTab/routes/editorExtensions accepted and listed in list picker; FrontendModule has no 'stateSlice' key (type-level + types.ts source). Module itself lives in the spec repo's project-local plugin (ASSUMPTION:dev-2006)"
+    },
+    {
+      "slug": "goal:envelope-frontends",
+      "level": 2,
+      "status": "covered",
+      "evidence": "All 10 package types register a FrontendModule from src/frontend.tsx via registerFrontendModule (plugins/*/src/frontend.tsx), contributions carry no `frontend` (manifest.ts field removed, manifest-adapter.ts assertNoFrontendSlot rejects it); diagram registers via clientPluginHost.registerFrontendModule (src/client/entities/diagram/plugin.tsx), legacy registerEntity no longer called; slot-rules.ts requires renderChip/renderCard/useGetBySlug/listByTags and renderOverlay for hidden types; diagram/code-snippet/spreadsheet/module-dependency supply renderOverlay; stateSlice absent from FrontendModule; code-snippet card no longer calls openModal itself (card.tsx), all hidden chips/cards only call host onOpen → openEntityOverlay (src/client/ui/events.ts:387). spec-operation lives outside the repo (dev-2006)."
+    },
+    {
+      "slug": "deviation:dev-2004",
+      "level": 3,
+      "status": "covered",
+      "evidence": "non-blocking, sent; code matches assumption — five visible package modules keep no module editorExtensions and current sidebar orders; tests do not assert them"
+    },
+    {
+      "slug": "deviation:dev-2005",
+      "level": 3,
+      "status": "covered",
+      "evidence": "non-blocking, sent; code matches assumption — code-snippet module has no editorExtensions; trigger in contributes.commands (asserted hidden-type-envelopes.test.ts:330)"
+    },
+    {
+      "slug": "deviation:dev-2006",
+      "level": 3,
+      "status": "covered",
+      "evidence": "non-blocking, sent; code matches assumption — host contract for spec-operation slot table asserted at hidden-type-envelopes.test.ts:413; module outside repo"
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "tsc --noEmit for root + all plugin workspaces passed (EXIT 0). Static review: no remaining `frontend` key in any EntityContribution/fixture/snapshot; no test asserts the removed card openModal fallback or diagram legacy registerEntity path; tests mocking host.js already cut the diagram import graph."
+  }
+}

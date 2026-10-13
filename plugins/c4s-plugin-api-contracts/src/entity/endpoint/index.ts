@@ -14,6 +14,10 @@ import { endpointData, endpointSlugPattern } from './schema.js';
 /**
  * The `endpoint` contribution — the side of the pair that owns the junction.
  */
+// 2.1.20 (M13 z7l89jhf) — the type's frontend is NOT part of this contribution:
+// the host rejects a `frontend` key here. `endpointFrontendModule` (./frontend/module.tsx) enters
+// through the package's browser entry (`src/frontend.tsx`, `exports['./frontend']`)
+// via `registerFrontendModule`.
 export const endpointEntity: EntityContribution = {
   type: ENDPOINT_TYPE,
   data: endpointData,

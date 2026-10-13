@@ -324,8 +324,10 @@ export const SpreadsheetChip: FC<{ slug: string; entity: unknown; onOpen?: () =>
 };
 
 /**
- * 0.2.15 — `renderOverlay`: the read-only fullscreen surface a chip or card
- * opens, mounted by the host's `EntityOverlayHost`.
+ * 0.2.15 — `renderOverlay`: the read-only fullscreen surface, i.e. the CONTENT
+ * of the host's `spreadsheet-expand` window. 2.1.20 (M13 chipprops) — the host
+ * opens that window (`openModal('spreadsheet-expand', { slug })` → `ModalHost`)
+ * when the chip or the card is clicked; neither opens it itself.
  *
  * The same grid, given the whole viewport and its own scroll box. Escape closes,
  * as does a click on the scrim — matching `DiagramFullscreen`, the host's other
