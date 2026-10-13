@@ -31,7 +31,7 @@ const BODY = [
   '',
   '## Section',
   '',
-  'Text with **bold**, *italic*, ~~strike~~, `code` and a [link](https://example.com).',
+  'Text with **bold**, *italic*, ~~strike~~ and `code`.',
   '',
   '- first',
   '- second',
@@ -94,8 +94,9 @@ describe('the page editor renders a page with its formatting (M02)', () => {
       [1, 'Title'],
       [2, 'Section'],
     ]);
-    // Inline formatting as marks.
-    for (const mark of ['bold', 'italic', 'strike', 'code', 'link']) expect(marks).toContain(mark);
+    // Inline formatting as marks — the marks the page editor registers
+    // (StarterKit: bold, italic, strike, code; it has no Link extension).
+    for (const mark of ['bold', 'italic', 'strike', 'code']) expect(marks).toContain(mark);
     // Block formatting as nodes.
     for (const type of [
       'bulletList',
