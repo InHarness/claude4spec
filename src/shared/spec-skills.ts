@@ -30,7 +30,11 @@ export interface ExposedProjectRow {
  * `rest` rendering of `fork_writing_style` (sheet `katalog-operacji-m52`, row 3).
  */
 export interface ForkWritingStyleRequest {
-  /** Slug of the active writing style to copy; the local package gets the same slug. */
+  /**
+   * Slug of the writing style from a plugin to copy; the local package gets the
+   * same slug. It need not equal `config.writingStyle` — the operation does not
+   * compare it with the active style (2.1.17).
+   */
   slug: string;
 }
 

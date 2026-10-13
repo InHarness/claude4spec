@@ -1,9 +1,13 @@
 /**
  * `fork_writing_style` — the owner function of the M52 style fork (2.1.9, sheet
- * `katalog-operacji-m52` row 3, lifecycle step 4 of M52 `gx7f584v`).
+ * `katalog-operacji-m52` row 3, lifecycle step 4 of M52 `gx7f584v`; 2.1.17).
  *
- * Copies the package of a writing style that comes from a PLUGIN into a package
- * of the same slug in the project's `skills` root: `SKILL.md` (the contribution's
+ * Copies the package of a writing style that comes from a PLUGIN — any such
+ * style, named by its slug, not only the active one — into a package of the
+ * same slug in the project's `skills` root. The slug is never compared with
+ * `config.writingStyle`: copying an inactive style switches nothing in the
+ * project, and that the card copies the active style is the card's business
+ * (it sends only that slug). The copy is `SKILL.md` (the contribution's
  * metadata as the frontmatter, its body as the content) and every package file.
  * The copy's origin is recorded ONLY by the `forkedFrom` field of its `SKILL.md`
  * frontmatter; `config.writingStyle` is not touched — the local package outranks
@@ -48,10 +52,10 @@ export interface ForkWritingStyleDeps {
 }
 
 /**
- * The `forkedFrom` value: where the copy came from — the source and the slug,
- * plus the version of the plugin's style at the moment of the copy.
- *
- * ASSUMPTION:dev-1201 — the specification names the field, not its value.
+ * The `forkedFrom` value (M52 `gx7f584v`, 2.1.17): `plugin:<slug>@<version>` —
+ * the source the style was copied from, its slug, and its `version` in the plugin
+ * at the moment of the copy. No plugin package name: a registry entry does not
+ * know which envelope brought it.
  */
 export function forkedFromValue(meta: SkillMetadata): string {
   return `plugin:${meta.slug}@${meta.version}`;
@@ -63,7 +67,7 @@ function invalid(message: string, hint?: string): DomainError {
 
 function assertSlug(slug: unknown): asserts slug is string {
   if (typeof slug !== 'string' || slug.length === 0) {
-    throw invalid('slug is required', 'pass the slug of the active writing style');
+    throw invalid('slug is required', 'pass the slug of a writing style that comes from a plugin');
   }
   if (slug.includes('/') || slug.includes('\\') || slug.startsWith('.') || slug.includes('\0')) {
     throw invalid(`slug '${slug}' is not a package directory name`);
@@ -73,12 +77,12 @@ function assertSlug(slug: unknown): asserts slug is string {
 /**
  * `SKILL.md` of the copy: the contribution's metadata as frontmatter + its body.
  *
- * `version` is the header's compatibility marker, and the disk sources skip a
- * package above {@link SUPPORTED_SKILL_VERSION} — a check the `plugin` source does
- * not make, so a plugin style may carry a higher one (the reference style does).
- * Copied as is, the package would be invalid and the plugin would keep winning.
- * ASSUMPTION:dev-1204 — the copy is written at most at the supported version;
- * `forkedFrom` keeps the plugin's own.
+ * The copy's `version` is the smaller of the plugin style's version and
+ * {@link SUPPORTED_SKILL_VERSION} (M52 `gx7f584v`, 2.1.17); `forkedFrom` keeps the
+ * plugin's own. The `project-rooted` source skips a package above the supported
+ * version and the `plugin` source does not check it (the reference style carries
+ * a higher one), so a literal copy would be an invalid package and the plugin
+ * style would keep winning its slug.
  */
 export function forkedSkillMd(meta: SkillMetadata, body: string): string {
   const data = {
@@ -114,9 +118,7 @@ export async function forkWritingStyle(
     );
   }
 
-  // ASSUMPTION:dev-1203 — the request names "the slug of the active style", but
-  // the row has no error code for another style; a plugin style that is not the
-  // active one is copied as well, and the card only ever sends the active slug.
+  // Any writing style from a plugin — no comparison with `config.writingStyle`.
   const winner = deps.registry.winnerOf(slug);
   if (!winner || winner.scope !== 'writing-style') {
     throw new DomainError('SKILL_NOT_FOUND', `no writing style "${slug}" in the skill registry`);

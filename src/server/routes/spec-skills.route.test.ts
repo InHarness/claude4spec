@@ -140,6 +140,7 @@ describe('GET /api/spec-skills/exposed-projects (M52 L4, 2.1.9)', () => {
  */
 describe('POST /api/spec-skills/style-forks (M52 L4, 2.1.9)', () => {
   const PLUGIN_STYLE = 'layered-vertical-slices';
+  const INACTIVE_PLUGIN_STYLE = 'plain-notes';
 
   async function forkRig() {
     const { FileWatchRuntime } = await import('../fs/watcher.js');
@@ -170,6 +171,17 @@ describe('POST /api/spec-skills/style-forks (M52 L4, 2.1.9)', () => {
     const plugins = new PluginRegistryImpl();
     await loadBuiltinEnvelopes(plugins);
     for (const skill of plugins.listSkills()) registry.addPluginSkill(skill);
+    // 2.1.17 — a second writing style from a plugin, NOT the active one
+    // (`config.writingStyle` is the reference style).
+    registry.addPluginStyle({
+      slug: INACTIVE_PLUGIN_STYLE,
+      title: 'Plain Notes',
+      description: 'A plugin style no project setting points at.',
+      version: 1,
+      language: 'en',
+      content: '# Plain Notes\n\nWrite plainly.\n',
+      files: { 'templates/note.md': '# Note\n' },
+    });
 
     const app = express()
       .use(
@@ -182,10 +194,14 @@ describe('POST /api/spec-skills/style-forks (M52 L4, 2.1.9)', () => {
       .use('/api', express.json(), configRouter({ cwd, skillRegistry: registry }));
     const skillsDir = path.join(cwd, '.claude4spec', 'skills');
     const configBytes = () => fs.readFileSync(path.join(cwd, '.claude4spec', 'config.json'), 'utf8');
-    return { cwd, app, registry, skillsDir, configBytes, close: () => runtime.close() };
+    const frontmatterOf = async (slug: string) => {
+      const matter = (await import('gray-matter')).default;
+      return matter(fs.readFileSync(path.join(skillsDir, slug, 'SKILL.md'), 'utf8'), {}).data as Record<string, unknown>;
+    };
+    return { cwd, app, registry, skillsDir, configBytes, frontmatterOf, close: () => runtime.close() };
   }
 
-  it('[entity:post-api-spec-skills-style-forks] POST answers 201 with the copy\'s address and writes the plugin style\'s package into the skills root; refuses a taken slug (409 SKILL_ALREADY_EXISTS), an unknown style (404 SKILL_NOT_FOUND) and a style that does not come from a plugin (400 INVALID_ARGUMENT)', async () => {
+  it('[entity:post-api-spec-skills-style-forks] POST answers 201 with the copy\'s address and writes the plugin style\'s package into the skills root — for any plugin style, the slug is not compared with config.writingStyle; refuses a taken slug (409 SKILL_ALREADY_EXISTS), an unknown style (404 SKILL_NOT_FOUND) and a style that does not come from a plugin (400 INVALID_ARGUMENT)', async () => {
     const r = await forkRig();
     try {
       const plugin = r.registry.resolve(PLUGIN_STYLE);
@@ -220,6 +236,11 @@ describe('POST /api/spec-skills/style-forks (M52 L4, 2.1.9)', () => {
       expect(notPlugin.body.error.code).toBe('INVALID_ARGUMENT');
       expect(fs.existsSync(path.join(r.skillsDir, 'team-voice'))).toBe(false);
 
+      // A plugin style other than the active one is copied too (2.1.17).
+      const other = await request(r.app).post('/api/spec-skills/style-forks').send({ slug: INACTIVE_PLUGIN_STYLE });
+      expect(other.status).toBe(201);
+      expect(other.body).toEqual({ slug: INACTIVE_PLUGIN_STYLE, path: `${INACTIVE_PLUGIN_STYLE}/SKILL.md` });
+
       // POST only.
       expect((await request(r.app).get('/api/spec-skills/style-forks')).status).toBe(404);
     } finally {
@@ -227,7 +248,7 @@ describe('POST /api/spec-skills/style-forks (M52 L4, 2.1.9)', () => {
     }
   });
 
-  it('[entity:fork-writing-style-request] the body carries `slug`, the style to copy — the local package gets that very slug; a body without it is a 400', async () => {
+  it('[entity:fork-writing-style-request] the body carries `slug`, the plugin style to copy — not necessarily config.writingStyle; the local package gets that very slug; a body without it is a 400', async () => {
     const r = await forkRig();
     try {
       const missing = await request(r.app).post('/api/spec-skills/style-forks').send({});
@@ -237,6 +258,12 @@ describe('POST /api/spec-skills/style-forks (M52 L4, 2.1.9)', () => {
       expect(res.status).toBe(201);
       expect(res.body.slug).toBe(PLUGIN_STYLE);
       expect(fs.existsSync(path.join(r.skillsDir, PLUGIN_STYLE, 'SKILL.md'))).toBe(true);
+      // `slug` need not equal config.writingStyle.
+      expect(readConfig(r.cwd).writingStyle).not.toBe(INACTIVE_PLUGIN_STYLE);
+      const other = await request(r.app).post('/api/spec-skills/style-forks').send({ slug: INACTIVE_PLUGIN_STYLE });
+      expect(other.status).toBe(201);
+      expect(other.body.slug).toBe(INACTIVE_PLUGIN_STYLE);
+      expect(fs.existsSync(path.join(r.skillsDir, INACTIVE_PLUGIN_STYLE, 'SKILL.md'))).toBe(true);
     } finally {
       await r.close();
     }
@@ -257,7 +284,7 @@ describe('POST /api/spec-skills/style-forks (M52 L4, 2.1.9)', () => {
     }
   });
 
-  it('[entity:katalog-operacji-m52#fork_writing_style] the catalog row: project scope, human-mediated, file + ui-notify effects, not idempotent, rest only, the three error codes — and the guard is observable: an existing package of the slug is refused, never overwritten', async () => {
+  it('[entity:katalog-operacji-m52#fork_writing_style] the catalog row: project scope, human-mediated, file + ui-notify effects, not idempotent, rest only, the three error codes, addressed by the slug of any plugin style — and the guard is observable: an existing package of the slug is refused, never overwritten', async () => {
     const op = CATALOG.require('fork_writing_style');
     expect(op.scope).toBe('project');
     expect(op.mediation).toBe('human-mediated');
@@ -265,6 +292,9 @@ describe('POST /api/spec-skills/style-forks (M52 L4, 2.1.9)', () => {
     expect(op.idempotent).toBe(false);
     expect([...op.errorCodes].sort()).toEqual(['INVALID_ARGUMENT', 'SKILL_ALREADY_EXISTS', 'SKILL_NOT_FOUND']);
     expect(Object.keys(op.inputSchema)).toEqual(['slug']);
+    // Addressing: the slug of a plugin writing style — any, not only the active one.
+    expect(op.summary).toContain('not only the active one');
+    expect(op.summary).toContain('not compared with `config.writingStyle`');
     expect(op.channels.rest.kind).toBe('direct');
     for (const ch of ['internal', 'cli', 'mcp'] as const) {
       const cell = op.channels[ch];
@@ -309,6 +339,80 @@ describe('POST /api/spec-skills/style-forks (M52 L4, 2.1.9)', () => {
       // A header the skills root reads (the disk sources skip a version above the supported one).
       const { SUPPORTED_SKILL_VERSION } = await import('../services/skill-registry.js');
       expect(data.version).toBeLessThanOrEqual(SUPPORTED_SKILL_VERSION);
+    } finally {
+      await r.close();
+    }
+  });
+
+  it('[ac:m52-style-fork-accepts-inactive-plugin-style] forking a plugin writing style whose slug differs from config.writingStyle creates a local package of that slug, and switches nothing', async () => {
+    const r = await forkRig();
+    try {
+      const before = r.configBytes();
+      expect(readConfig(r.cwd).writingStyle).toBe(PLUGIN_STYLE);
+      expect(r.registry.winnerOf(INACTIVE_PLUGIN_STYLE)?.source).toBe('plugin');
+
+      const res = await request(r.app).post('/api/spec-skills/style-forks').send({ slug: INACTIVE_PLUGIN_STYLE });
+      expect(res.status).toBe(201);
+      expect(res.body).toEqual({ slug: INACTIVE_PLUGIN_STYLE, path: `${INACTIVE_PLUGIN_STYLE}/SKILL.md` });
+      // The local package of that very slug: SKILL.md and the style's files.
+      expect(fs.existsSync(path.join(r.skillsDir, INACTIVE_PLUGIN_STYLE, 'SKILL.md'))).toBe(true);
+      expect(fs.readFileSync(path.join(r.skillsDir, INACTIVE_PLUGIN_STYLE, 'templates', 'note.md'), 'utf8')).toBe('# Note\n');
+      // A valid package: the registry now resolves the slug to the local copy.
+      expect(r.registry.winnerOf(INACTIVE_PLUGIN_STYLE)?.source).toBe('project-rooted');
+      // Nothing switched: the config is byte-identical, the active style is still the other one.
+      expect(r.configBytes()).toBe(before);
+      expect((await request(r.app).get('/api/writing-styles')).body.active).toBe(PLUGIN_STYLE);
+      // No package of the active style was made.
+      expect(fs.existsSync(path.join(r.skillsDir, PLUGIN_STYLE))).toBe(false);
+    } finally {
+      await r.close();
+    }
+  });
+
+  it('[ac:m52-style-fork-clamps-unsupported-version] after forking a plugin style whose version is above the supported one, load_skill_file for its slug serves the copy from the project-rooted source', async () => {
+    const { SUPPORTED_SKILL_VERSION } = await import('../services/skill-registry.js');
+    const { loadSkillFile } = await import('../services/skill-operations.js');
+    const r = await forkRig();
+    try {
+      // The reference style carries a version the disk sources would skip.
+      const pluginVersion = r.registry.winnerOf(PLUGIN_STYLE)!.version;
+      expect(pluginVersion).toBeGreaterThan(SUPPORTED_SKILL_VERSION);
+      expect(loadSkillFile(r.registry, PLUGIN_STYLE).source).toBe('plugin');
+
+      const res = await request(r.app).post('/api/spec-skills/style-forks').send({ slug: PLUGIN_STYLE });
+      expect(res.status).toBe(201);
+
+      // The copy's own version is the smaller of the two — the supported one here.
+      const data = await r.frontmatterOf(PLUGIN_STYLE);
+      expect(data.version).toBe(Math.min(pluginVersion, SUPPORTED_SKILL_VERSION));
+      expect(data.version).toBe(SUPPORTED_SKILL_VERSION);
+      // load_skill_file now serves the copy, from `project-rooted`, not an invalid package.
+      const served = loadSkillFile(r.registry, PLUGIN_STYLE);
+      expect(served.source).toBe('project-rooted');
+      expect(served.invalid).toBeUndefined();
+
+      // A style already at a supported version keeps its own.
+      const other = await request(r.app).post('/api/spec-skills/style-forks').send({ slug: INACTIVE_PLUGIN_STYLE });
+      expect(other.status).toBe(201);
+      expect((await r.frontmatterOf(INACTIVE_PLUGIN_STYLE)).version).toBe(1);
+    } finally {
+      await r.close();
+    }
+  });
+
+  it('[ac:m52-style-fork-records-forked-from] after a fork the copy\'s SKILL.md frontmatter carries forkedFrom = plugin:<slug>@<version>, <version> being the plugin style\'s version at the moment of the fork', async () => {
+    const r = await forkRig();
+    try {
+      const pluginVersion = r.registry.winnerOf(PLUGIN_STYLE)!.version;
+      expect((await request(r.app).post('/api/spec-skills/style-forks').send({ slug: PLUGIN_STYLE })).status).toBe(201);
+      const data = await r.frontmatterOf(PLUGIN_STYLE);
+      expect(data.forkedFrom).toBe(`plugin:${PLUGIN_STYLE}@${pluginVersion}`);
+      // The plugin's version, not the copy's clamped one.
+      expect(data.forkedFrom).toBe(`plugin:${PLUGIN_STYLE}@2`);
+      expect(data.version).not.toBe(pluginVersion);
+
+      expect((await request(r.app).post('/api/spec-skills/style-forks').send({ slug: INACTIVE_PLUGIN_STYLE })).status).toBe(201);
+      expect((await r.frontmatterOf(INACTIVE_PLUGIN_STYLE)).forkedFrom).toBe(`plugin:${INACTIVE_PLUGIN_STYLE}@1`);
     } finally {
       await r.close();
     }

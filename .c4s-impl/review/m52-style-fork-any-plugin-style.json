@@ -1,0 +1,9 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "m52-style-fork-any-plugin-style",
+    "base": "2fa59ded5f47ce1d1c6b3840a9f595b0a9d7396e"
+  },
+  "findings": []
+}

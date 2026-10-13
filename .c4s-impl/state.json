@@ -1,5 +1,5 @@
 {
-  "iteration": 36,
+  "iteration": 40,
   "conventions": [
     {
       "label": "L4 (API)",
@@ -1082,16 +1082,42 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "m52-style-fork-any-plugin-style/p1-l4-l16",
+          "layers": [
+            "L4",
+            "L16"
+          ],
+          "slugs": [
+            "post-api-spec-skills-style-forks",
+            "fork-writing-style-request",
+            "katalog-operacji-m52#update_skill_file",
+            "katalog-operacji-m52#fork_writing_style",
+            "katalog-operacji-m52#list_exposed_projects",
+            "m52-style-fork-accepts-inactive-plugin-style",
+            "m52-style-fork-clamps-unsupported-version",
+            "m52-style-fork-records-forked-from"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "2fa59ded5f47ce1d1c6b3840a9f595b0a9d7396e",
+      "baseCommit": "2fa59ded5f47ce1d1c6b3840a9f595b0a9d7396e",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0,
+      "only": []
     },
     {
       "id": "m52-current-skill-and-edges",

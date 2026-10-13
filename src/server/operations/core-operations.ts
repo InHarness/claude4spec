@@ -546,15 +546,18 @@ export function registerCoreOperations(): void {
 
   /**
    * 2.1.9 — `fork_writing_style`, sheet `katalog-operacji-m52` row 3: a local copy
-   * of the active writing style when it comes from a plugin. Human-mediated — an
+   * of a writing style that comes from a plugin (2.1.17: any such style, not only
+   * the active one). Human-mediated — an
    * action of the `#skills` settings card ("Fork writing style locally"), so it is
    * rendered on `rest` alone (`POST /api/spec-skills/style-forks`).
    *
    * The sheet's columns without a field here, honoured by the implementation
-   * (`services/style-fork.ts`): addressing by the style's slug; content
-   * description `n/d` (nothing is sent — the package is copied); guard `n/d` — an
-   * existing package of that slug is a refusal (`SKILL_ALREADY_EXISTS`), never an
-   * overwrite; single-target (the active style is one); rules `echo-free` (the
+   * (`services/style-fork.ts`): addressing by the slug of a writing style from a
+   * plugin — any, not only the active one; the operation never checks it against
+   * `config.writingStyle`; content description `n/d` (nothing is sent — the
+   * package is copied); guard `n/d` — an existing package of that slug is a
+   * refusal (`SKILL_ALREADY_EXISTS`), never an overwrite; single-target (one
+   * style per call); rules `echo-free` (the
    * answer is the copy's address, never its content), `error-code-once`.
    * `INVALID_ARGUMENT` also covers a style that does not come from a plugin.
    * `config.writingStyle` is never changed.
@@ -562,12 +565,16 @@ export function registerCoreOperations(): void {
   CATALOG.register({
     name: 'fork_writing_style',
     summary:
-      'Copy the package of the active writing style, when it comes from a plugin, into a package of the same slug in the project\'s `skills` root; the copy records its origin in the `forkedFrom` field of its SKILL.md frontmatter and `config.writingStyle` stays unchanged. An existing package of that slug is refused, never overwritten. Answers { slug, path }.',
+      'Copy the package of a writing style that comes from a plugin — any such style, named by its slug, not only the active one — into a package of the same slug in the project\'s `skills` root. The slug is not compared with `config.writingStyle`, which stays unchanged. The copy records its origin as `forkedFrom: plugin:<slug>@<version>` in its SKILL.md frontmatter, and its own `version` is capped at the highest one the skill registry supports. An existing package of that slug is refused, never overwritten. Answers { slug, path }.',
     scope: 'project',
     mediation: 'human-mediated',
     opClass: 'write',
     inputSchema: {
-      slug: z.string().describe('Slug of the active writing style to copy; the local package gets the same slug.'),
+      slug: z
+        .string()
+        .describe(
+          'Slug of the writing style from a plugin to copy; the local package gets the same slug. It need not equal `config.writingStyle` — the operation does not compare it with the active style.',
+        ),
     },
     errorCodes: ['SKILL_NOT_FOUND', 'SKILL_ALREADY_EXISTS', 'INVALID_ARGUMENT'],
     sideEffects: ['file', 'ui-notify'],
