@@ -3,17 +3,8 @@
   "scope": {
     "kind": "unit",
     "id": "m02-frontmatter-tolerant-read",
-    "base": "75ee2621"
+    "base": "ece673b5"
   },
-  "findings": [
-    {
-      "id": "rev-0001",
-      "file": "src/client/tiptap/pageEditor.formatting.test.ts",
-      "line": 98,
-      "blocking": true,
-      "portion": "m02-frontmatter-tolerant-read/p1-l4-l5",
-      "reason": "The test expects a 'link' mark, but the page editor has no Link extension. Tiptap v2 StarterKit does not include Link, @tiptap/extension-link is not a dependency (it is missing from package.json and from node_modules/@tiptap), and registrations.ts registers no link mark. PageRefNode's link_open rewrite also skips absolute hrefs (`/^[a-z]+:/i`), so `[link](https://example.com)` loses its <a> when ProseMirror parses it and stays plain text 'link'. `expect(marks).toContain('link')` will therefore fail in the env-runner suite. Fix it one of two ways: drop 'link' from the asserted marks (and the `[link](…)` from BODY, or assert that it stays readable text), or use a relative .md link that PageRefNode turns into a pageRef node, which needs an index in qc. Do not claim a mark the editor does not have."
-    }
-  ],
+  "findings": [],
   "deviations": []
 }
