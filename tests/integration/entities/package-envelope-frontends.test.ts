@@ -32,6 +32,7 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -94,7 +95,11 @@ import { uiViewFrontendModule } from '../../../plugins/c4s-plugin-frontend-mocku
 import { mcpToolFrontendModule } from '../../../plugins/c4s-plugin-mcp-tools/src/entity/mcp-tool/frontend/module.js';
 import { moduleDependencyFrontendModule } from '../../../plugins/c4s-plugin-layered-vertical-slices/src/entity/module-dependency/frontend/module.js';
 
-const root = (rel: string) => fileURLToPath(new URL(`../../../${rel}`, import.meta.url));
+// Resolved with node:path from the module's own file path — under happy-dom the
+// global `URL` is the window's, so `new URL(rel, import.meta.url)` is not a
+// `file:` URL that `fileURLToPath` accepts (same pattern as tokens.render.test.ts).
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+const root = (rel: string) => resolve(REPO_ROOT, rel);
 
 /** Modules each package's browser entry registered, keyed by package dir. */
 const byEntry = new Map<string, Array<Record<string, unknown>>>();

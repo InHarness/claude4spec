@@ -28,6 +28,7 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { act, createElement, type ReactElement } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -118,7 +119,11 @@ import { spreadsheetFrontendModule } from '../../../plugins/c4s-plugin-spreadshe
 import { SpreadsheetFullscreen } from '../../../plugins/c4s-plugin-spreadsheets/src/entity/spreadsheet/frontend/node-view.js';
 import { manifest as spreadsheetsManifest } from '../../../plugins/c4s-plugin-spreadsheets/src/manifest.js';
 
-const root = (rel: string) => fileURLToPath(new URL(`../../../${rel}`, import.meta.url));
+// Resolved with node:path from the module's own file path — under happy-dom the
+// global `URL` is the window's, so `new URL(rel, import.meta.url)` is not a
+// `file:` URL that `fileURLToPath` accepts (same pattern as tokens.render.test.ts).
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+const root = (rel: string) => resolve(REPO_ROOT, rel);
 
 /** Source with comments stripped — assertions about code, not prose. */
 function codeOf(rel: string): string {

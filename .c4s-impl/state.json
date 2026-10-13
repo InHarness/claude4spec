@@ -1,5 +1,5 @@
 {
-  "iteration": 14,
+  "iteration": 15,
   "conventions": [
     {
       "label": "L11 (Plugin Runtime Surface) — implementor M33",
@@ -1124,17 +1124,13 @@
             "section:m33load01",
             "section:m33rt001"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [
             "regression"
           ],
-          "only": [
-            {
-              "finding": "env-runner r1: tests/integration/architecture/builtin-envelope-import-rule.test.ts \"moving a built-in envelope to its own repo changes no import in its tests — none reaches the host repo test path, and no test outside the pending list leaves the package\" — expected [] but got [\"plugins/c4s-plugin-api-contracts/test/frontend/slash-create-kit.test.ts\"] (that test file was changed by this unit and now imports outside its package)"
-            }
-          ]
+          "only": []
         },
         {
           "name": "window-facades/p2-l12-l12",
@@ -1595,17 +1591,13 @@
             "section:atmxa1s8",
             "section:04i1idm7"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [
             "regression"
           ],
-          "only": [
-            {
-              "finding": "env-runner r1: tests/integration/entities/package-envelope-frontends.test.ts — all 8 [section:*] tests fail with ENOENT: no such file or directory, open \"/work/c4s/tests/integration/entities/undefined\" (a file path resolves to undefined in the test)"
-            }
-          ]
+          "only": []
         },
         {
           "name": "envelope-frontends/p3-l11-l12",
@@ -1628,17 +1620,13 @@
             "section:fbgmkqw7",
             "section:31if7sjf"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [
             "regression"
           ],
-          "only": [
-            {
-              "finding": "env-runner r1: tests/integration/entities/hidden-type-envelopes.test.ts — 6 tests ([section:dgmmanifest], [section:dgmrefnode], [section:n6zlyrol], [section:2i5ypc7q], [section:31if7sjf], [ac:ac-encja-ukryta-bez-sidebartab-i-trasy-d]) fail with ENOENT: open \"/work/c4s/tests/integration/entities/undefined\""
-            }
-          ]
+          "only": []
         }
       ],
       "startCommit": "208873e31c7ab745783bb1876218da816658b6dc",
