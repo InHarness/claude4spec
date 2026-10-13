@@ -154,11 +154,11 @@ export function bindingAddress(kind: ArtifactKind, thread: ThreadArtifactPointer
  */
 export const ARTIFACT_READ_FAMILY: Readonly<Record<ArtifactKind, ArtifactReadFamily>> = {
   brief: {
-    list: 'c4s list-briefs (cli) + GET /api/artifacts/brief (rest), filtered by frontmatter.implemented',
+    list: 'list_briefs (internal — transagent-tools, top-level chat only; release axis, M39 window) + c4s list-briefs (cli) + GET /api/artifacts/brief (rest), filtered by frontmatter.implemented',
     getWithWindow: 'get_brief({ path?, range? }) — line window, always allowed (an artifact has no section index)',
     search:
       'n/a — no search operation exists for briefs in any channel; a named GAP, not a decision. ' +
-      'search_briefs and list_briefs coverage on the agent channels (internal/mcp) are an open <todo> for a separate plan.',
+      'search_briefs and the mcp coverage of list_briefs are an open <todo> for a separate plan.',
     responseBudget: 'truncated: true per item + truncationHint pointing unconditionally at range',
   },
   patch: {
@@ -169,7 +169,7 @@ export const ARTIFACT_READ_FAMILY: Readonly<Record<ArtifactKind, ArtifactReadFam
     responseBudget: 'truncated: true per item + truncationHint pointing unconditionally at range',
   },
   plan: {
-    list: 'list_plans (mcp) + GET /api/artifacts/plan (rest), filtered by frontmatter.applied',
+    list: 'list_plans (internal — transagent-tools, top-level chat only; created_at asc, tie path, M39 window) + list_plans (mcp) + GET /api/artifacts/plan (rest), filtered by frontmatter.applied',
     getWithWindow:
       "get_plan({ range? }) (internal — the thread's pinned plan, no path: M10 thread isolation) + get_plan({ path, range? }) (mcp) + GET /api/artifacts/plan/<path> (rest) — the same range window",
     search: 'n/a — no search operation exists for plans in any channel; same gap as brief.',

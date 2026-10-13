@@ -21,6 +21,10 @@ type ViewTab = 'artifact' | 'threads';
  * threads) collapsed into tabs. A patch has no version history endpoint, so
  * there is no `history` tab. The settings popover toggles the only mutable
  * frontmatter field, `applied`.
+
+ *
+ * ASSUMPTION:dev-0004 — the view's "version history" panel predates this
+ * window's delta and stays unbuilt.
  */
 export function PatchDetail({ patchPath }: Props) {
   const { data: patch, isLoading } = usePatch(patchPath);
@@ -121,11 +125,20 @@ export function PatchDetail({ patchPath }: Props) {
               onClick={() => void setApplied.mutateAsync(!applied)}
               className="w-full text-left text-[12px] px-2 py-1 rounded btn-ghost flex items-center gap-2"
               style={{ color: 'var(--c-ink)' }}
-              title="Toggle the 'applied' declaration. Nothing verifies it against the spec. The patch thread's agent sets it when it finishes; only this toggle can unset it."
+              title="Toggle the 'applied' declaration. Nothing verifies it against the spec. The patch thread's agent can only set it; only this toggle can unset it."
             >
               {applied ? <Circle size={12} /> : <Check size={12} />}
               {applied ? 'Mark as pending' : 'Mark as applied'}
             </button>
+            {/* 2.1.18 (patch-page, M23 `m23mcp01`) — who else writes the flag. */}
+            <p
+              data-testid="patch-applied-agent-note"
+              className="mt-1.5 px-2 text-[11px] leading-snug"
+              style={{ color: 'var(--c-muted)' }}
+            >
+              You set both values here. The patch thread's agent can only mark it applied
+              (mark_patch_applied) — unsetting it stays with you.
+            </p>
             <div className="mt-3 pt-2" style={{ borderTop: '1px solid var(--c-hair)' }}>
               <div
                 className="text-[10.5px] uppercase tracking-wide mb-1"
@@ -164,7 +177,7 @@ export function PatchDetail({ patchPath }: Props) {
                   opacity: createThread.isPending ? 0.6 : 1,
                 }}
               >
-                {createThread.isPending ? 'Starting…' : 'Run in new thread'}
+                {createThread.isPending ? 'Starting…' : 'Change spec according to patch'}
               </button>
             </footer>
           </div>

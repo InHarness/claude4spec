@@ -457,8 +457,18 @@ export class PlanService {
    * (the wire `ArtifactListItem` doesn't carry them at all), so both used to
    * run on every list call — 2N wasted queries for N plans on every page load
    * / search keystroke. Pass `true` for a caller that actually needs them.
+   *
+   * 2.1.18 (M10 `ww4lujgo` / `m10mcp00`) — `order` picks one of the two orders
+   * this function serves. `'updated'` (default) is the `/plans` page's: the most
+   * recently changed plan first (`ac-planservice-listplans-search-limit`), so the
+   * page and its REST stay as they were. `'created'` is the `list_plans`
+   * operation's: `created_at` ascending — immutable in the plan's frontmatter
+   * (`q1txzrf0`), so a window over it is stable — tie by `path`, see
+   * {@link comparePlanCreationOrder}.
    */
-  listPlans(opts: { search?: string; applied?: boolean; includeThreadInfo?: boolean } = {}): PlanListItem[] {
+  listPlans(
+    opts: { search?: string; applied?: boolean; includeThreadInfo?: boolean; order?: 'updated' | 'created' } = {},
+  ): PlanListItem[] {
     const records = this.deps.frontmatterIndexer.findByFrontmatterType('plan', { rootId: this.rootId });
     const search = opts.search?.trim().toLowerCase();
     const out: PlanListItem[] = [];
@@ -482,6 +492,7 @@ export class PlanService {
         hash: lastVersion ? hashContent(lastVersion.data.content) : '',
       });
     }
+    if (opts.order === 'created') return out.sort(comparePlanCreationOrder);
     out.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     return out;
   }
@@ -1076,6 +1087,31 @@ export class PlanService {
     }
     return candidate;
   }
+}
+
+/**
+ * 2.1.18 (M10 `m10mcp00`) — the `list_plans` order: `created_at` ascending,
+ * ties by `path`; a plan with a missing or unparseable `created_at` (a
+ * hand-dropped file) sorts after every dated plan, by `path`. Exported so the
+ * order has one definition.
+ */
+export function comparePlanCreationOrder(
+  a: { path: string; frontmatter: { created_at?: unknown } },
+  b: { path: string; frontmatter: { created_at?: unknown } },
+): number {
+  const ta = creationTime(a.frontmatter.created_at);
+  const tb = creationTime(b.frontmatter.created_at);
+  const aDated = !Number.isNaN(ta);
+  const bDated = !Number.isNaN(tb);
+  if (aDated !== bDated) return aDated ? -1 : 1;
+  if (aDated && bDated && ta !== tb) return ta - tb;
+  return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
+}
+
+/** `created_at` as epoch ms — gray-matter hands an unquoted timestamp over as a `Date`. */
+function creationTime(v: unknown): number {
+  const iso = toIso(v);
+  return iso === '' ? Number.NaN : Date.parse(iso);
 }
 
 /**

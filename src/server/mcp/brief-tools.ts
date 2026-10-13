@@ -3,7 +3,8 @@
  *
  * Four tools (get_brief, update_brief, list_brief_versions, get_brief_version)
  * — no `create_brief`/`list_briefs`/`brief_generate` (UI/user surface, not
- * agent loop).
+ * agent loop). 2.1.18: the one agent list of briefs is `list_briefs` on
+ * `transagent-tools` (top-level `chat` only) — never a position of this server.
  *
  * ## Two ways the brief gets addressed
  *

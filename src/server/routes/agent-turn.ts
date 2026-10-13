@@ -1562,6 +1562,13 @@ export async function runAgentTurn(
         ? buildTransagentToolsServer({
             parentThreadId: thread.id,
             dispatcher: transagentDispatcher,
+            // 2.1.18 (M23/M44) — the orchestrator's `list_patches` rides this server.
+            patches: deps.patchService,
+            // 2.1.18 (M21/M44) — M21's `list_briefs`, on the release axis; never on a `brief` thread.
+            briefs: deps.briefService,
+            // 2.1.18 (M10/M44) — and M10's `list_plans`, the plan set a banka's `planPath` comes from.
+            plans: deps.planService,
+            projectId: deps.projectId ?? null,
           })
         : null;
 

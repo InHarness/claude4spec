@@ -248,7 +248,13 @@ export class PatchService {
         hash: lastVersion ? hashContent(lastVersion.data.content) : '',
       });
     }
-    return out;
+    /*
+     * 2.1.18 (M23 `m23brsv01`) — the order is the domain's, so every channel
+     * (REST, `list_patches` in `transagent-tools`) pages over the same stable
+     * sequence: `created_at` ascending, ties broken by `path`; a patch without a
+     * (parseable) `created_at` — a hand-dropped file — goes last, by `path`.
+     */
+    return out.sort(comparePatchListOrder);
   }
 
   // ─── Mutations ──────────────────────────────────────────────────────────
@@ -412,6 +418,24 @@ export class PatchService {
     }
     return best;
   }
+}
+
+/**
+ * 2.1.18 (M23) — `listPatches`' stable order: `created_at` ascending, tie by
+ * `path`; a missing or unparseable `created_at` sorts after every dated patch,
+ * by `path`. Exported so the order has one definition.
+ */
+export function comparePatchListOrder(
+  a: { path: string; createdAt: string },
+  b: { path: string; createdAt: string },
+): number {
+  const ta = a.createdAt === '' ? Number.NaN : Date.parse(a.createdAt);
+  const tb = b.createdAt === '' ? Number.NaN : Date.parse(b.createdAt);
+  const aDated = !Number.isNaN(ta);
+  const bDated = !Number.isNaN(tb);
+  if (aDated !== bDated) return aDated ? -1 : 1;
+  if (aDated && bDated && ta !== tb) return ta - tb;
+  return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
 }
 
 function stem(p: string): string {

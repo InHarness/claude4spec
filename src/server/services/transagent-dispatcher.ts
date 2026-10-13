@@ -1,7 +1,7 @@
 /**
  * 0.1.69 Transagents ("bańki") — TransagentDispatcher.
  *
- * A chat/patch thread delegates a unit of work to a hidden CHILD thread of the
+ * A top-level chat thread delegates a unit of work to a hidden CHILD thread of the
  * same spec via the `runTransagent` MCP tool. The dispatcher:
  *   1. founds a NEW child thread on every call — `parent_thread_id` = the current
  *      thread, `spawned_by_tool_use_id` = this tool_use's id. A spawn takes
@@ -14,6 +14,16 @@
  *   3. runs a full child turn through the shared `runAgentTurn`,
  *   4. emits `transagent_completed` and returns only `{ threadId, summary }` to
  *      the parent LLM's context (the child's full transcript stays hidden).
+ *
+ * 2.1.18 (M46 `9w7zk9as`, `katalog-operacji-m46` krotność): at most ONE banka is
+ * in flight at a time, but a parent turn may call again once the previous call
+ * has returned — that is how a series of bubbles is composed (list → one
+ * blocking call per queue item → re-list), with no `run_series` operation.
+ * One dispatcher serves one parent turn, so `run()` is serialized per instance:
+ * a call that arrives while another is still running founds nothing until the
+ * previous one has returned. The blocking tool call makes that the normal case;
+ * the serialization keeps the invariant even if the SDK ever dispatched two
+ * `tool_use(runTransagent)` blocks of one assistant message concurrently.
  *
  * Built per chat request in `agent-turn.ts` with the parent's `model` /
  * `architectureConfig` (so the child inherits credentials + model) and a
@@ -107,6 +117,12 @@ export interface TransagentDispatcherOpts {
 }
 
 export class TransagentDispatcher {
+  /**
+   * 2.1.18 (M46): tail of this parent turn's banka chain — settles when the
+   * banka in flight (if any) has returned. Never rejects.
+   */
+  private inFlight: Promise<void> = Promise.resolve();
+
   constructor(
     private deps: AgentTurnDeps,
     private opts: TransagentDispatcherOpts,
@@ -151,7 +167,32 @@ export class TransagentDispatcher {
     };
   }
 
+  /**
+   * 2.1.18 (M46): one banka in flight at a time, any number of them in a row.
+   * The call waits for the previous banka of this parent turn to return before
+   * it takes its tool_use id or founds anything, so two bubbles never run side
+   * by side, while sequential calls in the same turn (a series) all go through.
+   * A previous banka's failure does not stop the next call — whether a series
+   * goes on after an `isError` is the parent's decision.
+   *
+   * ASSUMPTION:dev-0008 — a call arriving while a banka is in flight waits for it
+   * rather than being refused; the spec only says it cannot happen by construction.
+   */
   async run(input: TransagentRunInput): Promise<TransagentRunResult> {
+    const previous = this.inFlight;
+    let release!: () => void;
+    this.inFlight = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      await previous;
+      return await this.runOne(input);
+    } finally {
+      release();
+    }
+  }
+
+  private async runOne(input: TransagentRunInput): Promise<TransagentRunResult> {
     const { parentThreadId, contextType, message } = input;
     const payload = input.payload ?? {};
 

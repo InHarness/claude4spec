@@ -17,6 +17,11 @@
  * | `brief` | brief entries + read entries; brief operations require an EXPLICIT brief-addressing parameter |
  * | `patch` | the same set as `chat` |
  *
+ * (2.1.18, M44 `3f5ej79s`: inside the app `patch` differs from `chat` by one
+ * SERVER — it has no `transagent-tools`. That is a turn-mount column below
+ * (`transagentTools`), not an operation class: the `mcp` channel exposes no
+ * bubble-spawning operation in any profile, so this table is unaffected.)
+ *
  * `patch` matching `chat` is deliberate and worth stating: the patch thread's
  * semantics used to be carried by a prompt block, which this channel does not
  * have. The caller reconstructs it on its side by READING the patch with a read
@@ -36,7 +41,7 @@ import type { OperationClass, OperationDeclaration } from './catalog.js';
 /**
  * Which built-in MCP servers a profile mounts.
  *
- * Four of the six members are DERIVED from `operationClasses` below — they are
+ * Three of the six members are DERIVED from `operationClasses` below — they are
  * the coarse, server-level shadow of the real per-operation gate, kept because
  * the turn dispatcher still assembles servers rather than tools. `pluginServers`
  * is declared rather than derived: it selects between the full entity/reference
@@ -44,7 +49,8 @@ import type { OperationClass, OperationDeclaration } from './catalog.js';
  * server composition, not about an operation class. `specSkillTools` (2.1.9) is
  * declared for the same kind of reason: whether a type may write the project's
  * skill packages is a row of the context-type registry, not a consequence of it
- * admitting writes.
+ * admitting writes. `transagentTools` (2.1.18) is declared for the same reason:
+ * `patch` admits the `turn` class and still does not mount it.
  */
 /**
  * What `pluginServers: 'release-only'` actually names.
@@ -67,6 +73,15 @@ export interface McpServerSet {
   planTools: boolean;
   briefTools: boolean;
   c4sTools: boolean;
+  /**
+   * 2.1.18 (M44 `3f5ej79s`, M23 `jbcb06l2`) — `transagent-tools` (`runTransagent`).
+   * DECLARED per profile, never derived from the `turn` class: only `chat` names
+   * it. `patch` admits every class `chat` does (its `mcp`-channel rendering
+   * degenerates to `chat`) and still does not get it — a patch thread neither
+   * orchestrates nor lists — and a new context type does not inherit it even by
+   * declaring "the full `chat` set". The per-thread half of the rule
+   * (`parent_thread_id IS NULL`) is applied by the turn builder on top.
+   */
   transagentTools: boolean;
   /**
    * 2.1.9 (M52 `hdkx97wq`, M44 `3f5ej79s`) — `spec-skill-tools`, the write channel
@@ -116,6 +131,12 @@ export interface ProfileDefinition {
    * write the project — M11 `6exnmup9`) do not.
    */
   readonly specSkillTools: boolean;
+  /**
+   * 2.1.18 (M44 `3f5ej79s`) — whether the turn mounts `transagent-tools`. Declared,
+   * not derived from the `turn` class (see `McpServerSet.transagentTools`): `chat`
+   * only. Orchestration belongs to the top-level `chat` thread alone.
+   */
+  readonly transagentTools: boolean;
 }
 
 const ALL_CLASSES: readonly OperationClass[] = ['read', 'write', 'brief', 'plan', 'turn', 'peer'];
@@ -135,6 +156,7 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
     builtinTools: 'project-setting',
     backgroundTasks: 'allowed',
     specSkillTools: true,
+    transagentTools: true,
   },
   brief: {
     operationClasses: new Set<OperationClass>(['read', 'brief']),
@@ -144,6 +166,7 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
     builtinTools: 'none',
     backgroundTasks: 'allowed',
     specSkillTools: false,
+    transagentTools: false,
   },
   patch: {
     operationClasses: new Set(CHAT_CLASSES),
@@ -153,6 +176,7 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
     builtinTools: 'project-setting',
     backgroundTasks: 'allowed',
     specSkillTools: true,
+    transagentTools: false,
   },
   ask: {
     // A consulted peer reads and may leave a plan. It cannot mutate the spec, and
@@ -165,6 +189,7 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
     builtinTools: 'project-setting',
     backgroundTasks: 'disabled',
     specSkillTools: false,
+    transagentTools: false,
   },
 };
 
@@ -190,7 +215,8 @@ export function mcpServerSetForProfile(profile: ChatContextType): McpServerSet {
     planTools: operationClasses.has('plan'),
     briefTools: operationClasses.has('brief'),
     c4sTools: operationClasses.has('peer'),
-    transagentTools: operationClasses.has('turn'),
+    // Declared, not derived — see `McpServerSet.transagentTools`.
+    transagentTools: PROFILES[profile].transagentTools,
     // Declared, not derived — see `McpServerSet.specSkillTools`.
     specSkillTools: PROFILES[profile].specSkillTools,
   };
