@@ -406,7 +406,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "ui-kit-catalog/p1-l12-l12",
@@ -423,14 +423,20 @@
             "ac-groupedentitylist-rysuje-tekst-pomocn",
             "ac-usehosttokens-zwraca-nowe-wartosci-ko"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "regression"
+          ],
+          "only": [
+            {
+              "finding": "env-runner r1: src/client/host-ui-kit/tokens.render.test.ts fails at load — TypeError: The URL must be of scheme file (line 27, fileURLToPath(new URL(\"../styles/theme.css\", import.meta.url)) under the happy-dom environment); 0 tests of the file run (ac-most-tokenow-c4s-plugin-runtime-ui-eksp, ac-usehosttokens-zwraca-nowe-wartosci-ko, ac-groupedentitylist-rysuje-tekst-pomocn)"
+            }
+          ]
         }
       ],
-      "startCommit": "f97f2556d860bd0e8d2b5358a810b81a61dd84c2",
+      "startCommit": "208873e31c7ab745783bb1876218da816658b6dc",
       "baseCommit": "f97f2556d860bd0e8d2b5358a810b81a61dd84c2",
       "rounds": {
         "review": 0,
@@ -1108,7 +1114,7 @@
         }
       ],
       "wave": 3,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "window-facades/p1-l2-l11",
@@ -1127,11 +1133,17 @@
             "section:m33load01",
             "section:m33rt001"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "regression"
+          ],
+          "only": [
+            {
+              "finding": "env-runner r1: tests/integration/architecture/builtin-envelope-import-rule.test.ts \"moving a built-in envelope to its own repo changes no import in its tests — none reaches the host repo test path, and no test outside the pending list leaves the package\" — expected [] but got [\"plugins/c4s-plugin-api-contracts/test/frontend/slash-create-kit.test.ts\"] (that test file was changed by this unit and now imports outside its package)"
+            }
+          ]
         },
         {
           "name": "window-facades/p2-l12-l12",
@@ -1152,7 +1164,7 @@
           "only": []
         }
       ],
-      "startCommit": "89fc5a27145bc7c621b0d89e5a5e57ed313b45b6",
+      "startCommit": "208873e31c7ab745783bb1876218da816658b6dc",
       "baseCommit": "89fc5a27145bc7c621b0d89e5a5e57ed313b45b6",
       "rounds": {
         "review": 0,
@@ -1550,7 +1562,7 @@
         }
       ],
       "wave": 3,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "envelope-frontends/p1-l2-l5",
@@ -1592,11 +1604,17 @@
             "section:atmxa1s8",
             "section:04i1idm7"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "regression"
+          ],
+          "only": [
+            {
+              "finding": "env-runner r1: tests/integration/entities/package-envelope-frontends.test.ts — all 8 [section:*] tests fail with ENOENT: no such file or directory, open \"/work/c4s/tests/integration/entities/undefined\" (a file path resolves to undefined in the test)"
+            }
+          ]
         },
         {
           "name": "envelope-frontends/p3-l11-l12",
@@ -1619,14 +1637,20 @@
             "section:fbgmkqw7",
             "section:31if7sjf"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "regression"
+          ],
+          "only": [
+            {
+              "finding": "env-runner r1: tests/integration/entities/hidden-type-envelopes.test.ts — 6 tests ([section:dgmmanifest], [section:dgmrefnode], [section:n6zlyrol], [section:2i5ypc7q], [section:31if7sjf], [ac:ac-encja-ukryta-bez-sidebartab-i-trasy-d]) fail with ENOENT: open \"/work/c4s/tests/integration/entities/undefined\""
+            }
+          ]
         }
       ],
-      "startCommit": "5340ed189f3f2d0cf02019c971d1de3be25baae3",
+      "startCommit": "208873e31c7ab745783bb1876218da816658b6dc",
       "baseCommit": "5340ed189f3f2d0cf02019c971d1de3be25baae3",
       "rounds": {
         "review": 0,
