@@ -261,7 +261,7 @@ describe('M37 — contributes.skills (0.2.19)', () => {
    * skill's identity, so a typo in it must not take an envelope's entities and
    * subagents down with it.
    */
-  it('skips a contribution whose contextTypes names a turn that does not exist, warning and loading the rest', () => {
+  it('[ac:ac-wpis-contributes-skills-z-wartoscia-c] skips a contribution whose contextTypes names a turn that does not exist, warning and loading the rest', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const registry = new PluginRegistryImpl();
     try {

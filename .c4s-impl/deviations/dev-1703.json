@@ -1,0 +1,15 @@
+{
+  "id": "dev-1703",
+  "kind": "drift",
+  "blocking": false,
+  "address": "m33-loader-criteria-regression/m33edge0",
+  "slugs": [
+    "ac-cli-mcp-m11-m12-startuja-bez-serwera"
+  ],
+  "text": "`ac-cli-mcp-m11-m12-startuja-bez-serwera` says the CLI/MCP (M11/M12) start WITHOUT a server and the plugin loader still runs in them as a bootstrap step, so their readers get the same filled registry. The code no longer has that shape (since app 0.2.13, M39): every `c4s` discovery command (`catalog`, `describe`, …) is `server-delegating` over `/api/projects/<id>/_meta/*`, and `c4s-mcp` is a stdio↔HTTP relay that never starts a server and never loads plugins; with no server they report the server as unreachable. There is no second loader. The criterion's observable — `c4s catalog`/`describe` see plugin types identically to the server — holds by construction (one loader, the server's). Assumed: that observable is what the criterion protects; the test pins it (CLI prints the server's type set verbatim; the CLI discovery commands and the MCP bridge import no loader). No production code changed — reintroducing an in-process loader would restore the second execution locus M39 removed. Needed in the spec: rewrite the criterion to the delegating model (e.g. 'CLI/MCP have no loader of their own; they read the server host's registry, so catalog/describe see plugin types identically to the server') or retire it.",
+  "assumption": "ASSUMPTION:dev-1703 — the criterion is read as 'catalog/describe see plugin types identically to the server'; CLI/MCP delegate to the server host and carry no loader.",
+  "unit": "m33-loader-criteria-regression",
+  "portion": "m33-loader-criteria-regression/p1-l11-l11",
+  "sent": true,
+  "patchPath": "2-1-16-to-2-1-17-m33-loader-criteria-regression-m33edge0-cli-mcp-no-longer-run-their-own-plugin-l.md"
+}

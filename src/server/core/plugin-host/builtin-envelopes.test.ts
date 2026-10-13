@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { discoverBuiltinEnvelopes, hostPackageRoot, servableEnvelopes } from './builtin-envelopes.js';
-import { loadBuiltinEnvelopes } from './loader.js';
+import { loadBuiltinEnvelopes, loadWorkspacePlugins } from './loader.js';
 import { PluginRegistryImpl } from './registry.js';
 import type { EntityContribution, PluginManifest } from '../../../shared/plugin-host/manifest.js';
 
@@ -230,6 +230,40 @@ describe('loadBuiltinEnvelopes', () => {
     expect(result.records[0]!.status).toBe('failed');
     expect(result.records[0]!.code).toBe('PLUGIN_IMPORT_FAILED');
     expect(result.records[0]!.reason).toContain('kaboom');
+  });
+
+  it('[ac:ac-koperta-wbudowana-z-plugins-src-wno] an envelope type already in the base follows the base collision rule — silent last-wins; envelopes are discovered FIRST, so an external package shadows them', async () => {
+    writeEnvelope('c4s-plugin-api-contracts', { entry: '' });
+    const registry = new PluginRegistryImpl();
+    // A preinstalled module of the same type, registered before discovery
+    // (the `registerAllPlugins` step).
+    const preinstalled = { ...entity('endpoint'), label: 'preinstalled' };
+    registry.registerPlugin({ name: '@c4s/builtin-like', version: '1.0.0', hostApiVersion: '^2.0.0', contributes: { entities: [preinstalled] } });
+
+    const envelopeLoad = await loadBuiltinEnvelopes(
+      registry,
+      async () => ({ manifest: manifest({ contributes: { entities: [{ ...entity('endpoint'), label: 'envelope' }] } }) }),
+      root,
+    );
+    // Same semantics as the rest of the base: no error, the later registration wins.
+    expect(envelopeLoad.records[0]).toMatchObject({ status: 'loaded' });
+    expect(registry.getAvailable('endpoint')?.label).toBe('envelope');
+
+    // An external (workspace / npm) package loads AFTER the envelopes and so
+    // shadows the envelope's type, again without an error.
+    const external = await loadWorkspacePlugins(registry, ['@acme/endpoint'], async () => ({
+      manifest: manifest({ name: '@acme/endpoint', contributes: { entities: [{ ...entity('endpoint'), label: 'external' }] } }),
+    }));
+    expect(external.records[0]).toMatchObject({ status: 'loaded' });
+    expect(registry.getAvailable('endpoint')?.label).toBe('external');
+    expect(registry.listAvailable().filter((m) => m.type === 'endpoint')).toHaveLength(1);
+
+    // Discovery order at the real bootstrap: envelopes before workspace packages.
+    const bootstrap = fs.readFileSync(path.resolve(import.meta.dirname, '../../index.ts'), 'utf8');
+    const envelopesAt = bootstrap.indexOf('await loadBuiltinEnvelopes(pluginRegistry)');
+    const workspaceAt = bootstrap.indexOf('await loadWorkspacePlugins(pluginRegistry');
+    expect(envelopesAt).toBeGreaterThan(-1);
+    expect(workspaceAt).toBeGreaterThan(envelopesAt);
   });
 
   it('is a no-op with no records when there are no envelopes', async () => {

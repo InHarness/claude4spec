@@ -98,15 +98,23 @@ describe('loadWorkspacePlugins', () => {
     expect(registry.getAvailable('glossary')).toBeNull();
   });
 
-  it('skips a plugin whose engines.node is unsatisfied', async () => {
-    const registry = new PluginRegistryImpl();
-    const importer = fakeImporter({
-      'pkg-e': { manifest: manifest({ engines: { node: '>=99.0.0' } }) },
-    });
+  it('[ac:ac-pakiet-z-niespelnionym-engines-jest-po] skips a plugin whose engines.node is unsatisfied — with a PLUGIN_ENGINE_UNSATISFIED warning, no crash', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const registry = new PluginRegistryImpl();
+      const importer = fakeImporter({
+        'pkg-e': { manifest: manifest({ engines: { node: '>=99.0.0' } }) },
+      });
 
-    const { records } = await loadWorkspacePlugins(registry, ['pkg-e'], importer);
+      // No crash: the loader resolves (it never throws) with a record.
+      const { records } = await loadWorkspacePlugins(registry, ['pkg-e'], importer);
 
-    expect(records[0]).toMatchObject({ status: 'skipped', code: 'PLUGIN_ENGINE_UNSATISFIED' });
+      expect(records[0]).toMatchObject({ status: 'skipped', code: 'PLUGIN_ENGINE_UNSATISFIED' });
+      expect(registry.getAvailable('glossary')).toBeNull();
+      expect(warn.mock.calls.flat().join(' ')).toMatch(/PLUGIN_ENGINE_UNSATISFIED pkg-e/);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('records an import failure without crashing', async () => {
@@ -127,16 +135,59 @@ describe('loadWorkspacePlugins', () => {
     expect(records[0]).toMatchObject({ status: 'failed', code: 'PLUGIN_INVALID_MANIFEST' });
   });
 
-  it('isolates failures per package — one bad plugin does not stop the others', async () => {
-    const registry = new PluginRegistryImpl();
-    const importer = fakeImporter({
-      good: { manifest: manifest({ name: 'good' }) },
-      bad: { nope: true },
-    });
+  it('[ac:ac-import-pakietu-ktory-rzucil-zepsut] isolates failures per package — a throwing import and a missing PluginManifest export are skipped with a warning, the others load', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const registry = new PluginRegistryImpl();
+      // `broken` is not in the map → its import() rejects (a broken build);
+      // `bad` imports fine but exports no PluginManifest.
+      const importer = fakeImporter({
+        good: { manifest: manifest({ name: 'good' }) },
+        bad: { nope: true },
+      });
 
-    const { records } = await loadWorkspacePlugins(registry, ['bad', 'good'], importer);
+      const { records } = await loadWorkspacePlugins(registry, ['broken', 'bad', 'good'], importer);
 
-    expect(records.map((r) => r.status)).toEqual(['failed', 'loaded']);
-    expect(registry.getAvailable('glossary')).not.toBeNull();
+      expect(records.map((r) => [r.package, r.status, r.code])).toEqual([
+        ['broken', 'failed', 'PLUGIN_IMPORT_FAILED'],
+        ['bad', 'failed', 'PLUGIN_INVALID_MANIFEST'],
+        ['good', 'loaded', undefined],
+      ]);
+      expect(registry.getAvailable('glossary')).not.toBeNull();
+      const warned = warn.mock.calls.flat().join('\n');
+      expect(warned).toMatch(/PLUGIN_IMPORT_FAILED broken/);
+      expect(warned).toMatch(/PLUGIN_INVALID_MANIFEST bad/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('[ac:ac-dwa-pakiety-bazy-workspace-npm-wnoszac] two base packages contributing the same entity type — silent last-wins, both load, no error', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const registry = new PluginRegistryImpl();
+      const first = entity('glossary');
+      const second = { ...entity('glossary'), label: 'Glossary (second)' };
+      const importer = fakeImporter({
+        'pkg-first': { manifest: manifest({ name: 'first', contributes: { entities: [first] } }) },
+        'pkg-second': { manifest: manifest({ name: 'second', contributes: { entities: [second] } }) },
+      });
+
+      const { records } = await loadWorkspacePlugins(registry, ['pkg-first', 'pkg-second'], importer);
+
+      // Not a hard error: both packages load and both report the type.
+      expect(records.map((r) => [r.package, r.status])).toEqual([
+        ['pkg-first', 'loaded'],
+        ['pkg-second', 'loaded'],
+      ]);
+      // Last-wins: the slot keyed by type holds the module registered last.
+      expect(registry.getAvailable('glossary')?.label).toBe('Glossary (second)');
+      expect(registry.listAvailable().filter((m) => m.type === 'glossary')).toHaveLength(1);
+      // Silent: nothing is reported about the collision (the runtime resolver
+      // may log its own install notice under the test runner — not this).
+      expect(warn.mock.calls.flat().join(' ')).not.toMatch(/glossary|conflict|collision|PLUGIN_TYPE/i);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

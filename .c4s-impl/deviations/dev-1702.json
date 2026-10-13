@@ -1,0 +1,33 @@
+{
+  "id": "dev-1702",
+  "kind": "incorrect",
+  "blocking": false,
+  "address": "m33-loader-criteria-regression/m33edge0",
+  "slugs": [
+    "ac-chip-wolajacy-useeditor-wylacznie-w-h",
+    "ac-cli-mcp-m11-m12-startuja-bez-serwera",
+    "ac-config-entities-aktywuje-typ-ktorego",
+    "ac-dwa-pakiety-bazy-workspace-npm-wnoszac",
+    "ac-dwa-pluginy-w-nakladce-project-local-wno",
+    "ac-dwa-pluginy-wnoszace-subagenta-o-tej",
+    "ac-frontend-pluginu-wola-route-project-scop",
+    "ac-import-pakietu-ktory-rzucil-zepsut",
+    "ac-koperta-wbudowana-z-plugins-src-wno",
+    "ac-loader-emituje-sygnal-gotowosci-pluginow",
+    "ac-pakiet-plugin-bazy-z-exports-deklaruja-2",
+    "ac-pakiet-z-niespelnionym-engines-jest-po",
+    "ac-pakiet-z-niezgodnym-majorem-hostapivers",
+    "ac-plugin-bandlujacy-wlasna-kopie-reacta-ti",
+    "ac-plugin-deklarujacy-maxturns-rowne-suf",
+    "ac-plugin-project-local-wnoszacy-type-obe",
+    "ac-plugin-proponujacy-maxturns-powyzej-s",
+    "ac-repo-project-local-niezaufane-trustpro",
+    "ac-wklad-subagentowy-pomijajacy-maxturns",
+    "ac-wklad-subagentowy-z-model-spoza-zamkn",
+    "ac-wpis-contributes-skills-z-wartoscia-c"
+  ],
+  "text": "In 2.1.17 the M33 page's 'Przypadki brzegowe' section (m33edge0) switched from <tagged_list type=\"ac\" tags=\"m33\"/> to tags=\"m33-edge\", and the 'Kryteria akceptacji' section (m33ac001) lists tags=\"m33\". But at 2.1.17 none of the 21 edge-case criteria this unit names carries the tag `m33-edge` — all still carry only `m33` (one also `m13-edge`), and their before == after in the window. So at the release the edge-case section renders empty and the edge cases still appear in the acceptance-criteria list: the regrouping the unit's goal describes did not happen in the entities. Assumed: the 21 criteria (kind edge-case, named by the recipe) are the intended content of m33edge0; they are verified as-is and no code depends on their tags. Needed in the spec: add `m33-edge` to these criteria (and drop `m33` if the AC section should not repeat them).",
+  "unit": "m33-loader-criteria-regression",
+  "sent": true,
+  "patchPath": "2-1-16-to-2-1-17-m33-loader-criteria-regression-m33edge0-edge-case-section-lists-tag-m33-edge-but.md"
+}

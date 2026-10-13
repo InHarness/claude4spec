@@ -166,6 +166,43 @@ describe('discovery commands on the CLI', () => {
       expect(called()).toBe('/tags/list?withCounts=true&minCount=2');
     });
 
+    /**
+     * ASSUMPTION:dev-1703 — since 0.2.13 the CLI and `c4s-mcp` never start
+     * without a server: they delegate to the server host, so there is no second
+     * loader to bootstrap. What the criterion protects — catalog/describe see the
+     * plugin types exactly as the server does — holds by construction, and is
+     * what this test pins.
+     */
+    it('[ac:ac-cli-mcp-m11-m12-startuja-bez-serwera] catalog/describe see plugin-contributed types identically to the server — the server host is the only loader', async () => {
+      const serverOverview = {
+        types: { endpoint: { count: 3 }, glossary: { count: 1 } },
+        roots: [],
+        tagCount: 0,
+        claude4spec: '0.0.0',
+      };
+      reply = serverOverview;
+      await runCatalog(args('catalog'));
+      expect(called()).toBe('/_meta/overview');
+      // The plugin type `glossary` is printed exactly as the server host reported it.
+      expect(printed()).toEqual(serverOverview);
+
+      seen = [];
+      stdout = '';
+      const serverTypes = { types: [{ type: 'glossary', schema: { title: { type: 'string', required: true } } }] };
+      reply = serverTypes;
+      await runDescribe(args('describe', '--type', 'glossary'));
+      expect(called()).toBe('/_meta/types?type=glossary');
+      expect(printed()).toEqual(serverTypes);
+
+      // Neither the CLI's discovery commands nor the MCP bridge carry a plugin
+      // loader of their own that could disagree with the server's registry.
+      const srcDir = path.resolve(import.meta.dirname, '../../..');
+      for (const rel of ['bin/c4s/commands/catalog.ts', 'bin/c4s/commands/describe.ts', 'bin/c4s-mcp.ts']) {
+        const src = fs.readFileSync(path.join(srcDir, rel), 'utf8');
+        expect(src).not.toMatch(/plugin-host\/loader|loadWorkspacePlugins|loadBuiltinEnvelopes|registerAllPlugins/);
+      }
+    });
+
     it('the entity operations carry every flag they accept', async () => {
       reply = { items: [], total: 0, hasMore: false };
       await runListEntities(

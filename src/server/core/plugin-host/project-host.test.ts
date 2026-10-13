@@ -1,7 +1,10 @@
 import { FIXTURE_DATA, FIXTURE_SLUG_PATTERN } from '../../../../tests/helpers/fixture-module.js';
 import Database from 'better-sqlite3';
 import { describe, expect, it, vi } from 'vitest';
+import express from 'express';
+import request from 'supertest';
 import { PluginRegistryImpl } from './registry.js';
+import { pluginHostRouter } from './cross-cutting.js';
 import type { BackendModule, MountContext, ProjectPluginOverlay } from './types.js';
 
 /** Minimal BackendModule for pool/activation assertions. */
@@ -116,12 +119,65 @@ describe('consolidate — overlay', () => {
     expect(other.partition().active).toEqual(['dto']);
   });
 
-  it('a whitelist entry in neither layer is unknown', () => {
-    const host = baseRegistry('endpoint').consolidate(
-      { entities: ['endpoint', 'ghost'] },
-      overlayOf([mod('glossary')]),
-    );
+  it('[ac:ac-config-entities-aktywuje-typ-ktorego] a whitelist entry no package loaded is unknown at activation — not a load error', () => {
+    const registry = baseRegistry('endpoint');
+    let host!: ReturnType<PluginRegistryImpl['consolidate']>;
+    // Activation never throws over a type nobody contributed.
+    expect(() => {
+      host = registry.consolidate({ entities: ['endpoint', 'ghost'] }, overlayOf([mod('glossary')]));
+    }).not.toThrow();
     expect(host.partition().unknown).toEqual(['ghost']);
+    expect(host.partition().active).toEqual(['endpoint']);
+    expect(host.isActive('ghost')).toBe(false);
+    expect(host.getAvailable('ghost')).toBeNull();
+    // Load and activate are disjoint axes: the loaded pool is untouched by the
+    // whitelist, and the ghost leaves no trace in it.
+    expect(registry.listAvailable().map((m) => m.type)).toEqual(['endpoint']);
+  });
+
+  it('[ac:ac-plugin-project-local-wnoszacy-type-obe] a project-local type present in the base shadows it — reported by the per-project /_meta/plugins with both origins, not an error', async () => {
+    const baseEndpoint = mod('endpoint', 1);
+    const overlayEndpoint = mod('endpoint', 2);
+    const registry = new PluginRegistryImpl();
+    registry.registerEntityModule(baseEndpoint);
+    let host!: ReturnType<PluginRegistryImpl['consolidate']>;
+    expect(() => {
+      host = registry.consolidate({}, overlayOf([overlayEndpoint]));
+    }).not.toThrow();
+    // Project-local wins the effective pool.
+    expect(host.getAvailable('endpoint')).toBe(overlayEndpoint);
+    expect(host.partition().active).toEqual(['endpoint']);
+
+    const app = express().use(
+      pluginHostRouter({
+        host,
+        registry: {} as never,
+        workspace: {} as never,
+        projectId: 'p1',
+        basePackages: [
+          { package: '@acme/c4s-plugin-api', status: 'loaded', layer: 'base', contributedTypes: ['endpoint'] },
+        ],
+        overlayRecords: [
+          {
+            package: 'endpoint-pkg',
+            status: 'loaded',
+            layer: 'overlay',
+            trust: 'trusted',
+            contributedTypes: ['endpoint'],
+            origin: '.claude4spec/plugins/endpoint-pkg',
+          },
+        ],
+        localPluginsPresent: true,
+        trust: true,
+      }),
+    );
+    const res = await request(app).get('/_meta/plugins');
+    expect(res.status).toBe(200);
+    expect(res.body.shadowed).toEqual([
+      { type: 'endpoint', overlayOrigin: '.claude4spec/plugins/endpoint-pkg', baseOrigin: '@acme/c4s-plugin-api' },
+    ]);
+    // Both packages stay loaded — shadowing is a report, not a rejection.
+    expect((res.body.packages as Array<{ status: string }>).map((p) => p.status)).toEqual(['loaded', 'loaded']);
   });
 });
 

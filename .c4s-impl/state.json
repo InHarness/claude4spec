@@ -1,5 +1,5 @@
 {
-  "iteration": 20,
+  "iteration": 24,
   "conventions": [
     {
       "label": "L4 (API)",
@@ -630,16 +630,54 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "m33-loader-criteria-regression/p1-l11-l11",
+          "layers": [
+            "L11"
+          ],
+          "slugs": [
+            "ac-chip-wolajacy-useeditor-wylacznie-w-h",
+            "ac-cli-mcp-m11-m12-startuja-bez-serwera",
+            "ac-config-entities-aktywuje-typ-ktorego",
+            "ac-dwa-pakiety-bazy-workspace-npm-wnoszac",
+            "ac-dwa-pluginy-w-nakladce-project-local-wno",
+            "ac-dwa-pluginy-wnoszace-subagenta-o-tej",
+            "ac-frontend-pluginu-wola-route-project-scop",
+            "ac-import-pakietu-ktory-rzucil-zepsut",
+            "ac-koperta-wbudowana-z-plugins-src-wno",
+            "ac-loader-emituje-sygnal-gotowosci-pluginow",
+            "ac-pakiet-plugin-bazy-z-exports-deklaruja-2",
+            "ac-pakiet-z-niespelnionym-engines-jest-po",
+            "ac-pakiet-z-niezgodnym-majorem-hostapivers",
+            "ac-plugin-bandlujacy-wlasna-kopie-reacta-ti",
+            "ac-plugin-deklarujacy-maxturns-rowne-suf",
+            "ac-plugin-project-local-wnoszacy-type-obe",
+            "ac-plugin-proponujacy-maxturns-powyzej-s",
+            "ac-repo-project-local-niezaufane-trustpro",
+            "ac-wklad-subagentowy-pomijajacy-maxturns",
+            "ac-wklad-subagentowy-z-model-spoza-zamkn",
+            "ac-wpis-contributes-skills-z-wartoscia-c"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "64d6e577247652a94a6084e7d96e1f8f2ea3a95c",
+      "baseCommit": "64d6e577247652a94a6084e7d96e1f8f2ea3a95c",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0,
+      "only": []
     },
     {
       "id": "m37-version-gate-and-reader-contract",

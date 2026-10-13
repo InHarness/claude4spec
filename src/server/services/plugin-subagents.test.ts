@@ -224,14 +224,21 @@ describe('resolvePluginSubagents — names', () => {
     }
   });
 
-  it('keeps the first by discovery order on a duplicate name', () => {
-    const { out, messages } = resolve([
-      contrib({ name: 'dup', promptBody: 'FIRST' }),
-      contrib({ name: 'dup', promptBody: 'SECOND' }),
-    ]);
+  it('[ac:ac-dwa-pluginy-wnoszace-subagenta-o-tej] keeps the first by discovery order on a duplicate name, and the turn still starts', () => {
+    let result!: ReturnType<typeof resolve>;
+    expect(() => {
+      result = resolve([
+        contrib({ name: 'dup', promptBody: 'FIRST' }),
+        contrib({ name: 'dup', promptBody: 'SECOND' }),
+      ]);
+    }).not.toThrow();
+    const { out, messages } = result;
     expect(out).toHaveLength(1);
     expect(out[0]!.prompt).toContain('FIRST');
+    expect(out[0]!.prompt).not.toContain('SECOND');
     expect(messages.some((m) => /contributed more than once/.test(m))).toBe(true);
+    // Deduplicated BEFORE dispatch: the library's pre-run gate accepts the set.
+    expect(() => validateSubagents(out)).not.toThrow();
   });
 
   it('skips a malformed contribution without taking its siblings down', () => {
@@ -334,16 +341,25 @@ describe('resolvePluginSubagents — the turn must still START', () => {
     expect(() => validateSubagents(out)).not.toThrow();
   });
 
-  it('maxTurns above the ceiling is clamped, never an error', () => {
-    expect(resolve([contrib({ maxTurns: 999 })]).out[0]!.maxTurns).toBe(MAX_SUBAGENT_TURNS);
+  it('[ac:ac-plugin-proponujacy-maxturns-powyzej-s] maxTurns above the ceiling is clamped to 120, never an error', () => {
+    expect(MAX_SUBAGENT_TURNS).toBe(120);
+    let out!: ReturnType<typeof resolvePluginSubagents>;
+    expect(() => {
+      out = resolve([contrib({ maxTurns: 999 })]).out;
+    }).not.toThrow();
+    expect(out).toHaveLength(1);
+    expect(out[0]!.maxTurns).toBe(120);
+    expect(() => validateSubagents(out)).not.toThrow();
+    expect(resolve([contrib({ maxTurns: 121 })]).out[0]!.maxTurns).toBe(120);
     expect(resolve([contrib({ maxTurns: 5 })]).out[0]!.maxTurns).toBe(5);
   });
 
   /** The ceiling is a clamp, not a rejection band: the boundary value is a legal budget. */
-  it('maxTurns EQUAL to the ceiling passes through untouched', () => {
-    expect(resolve([contrib({ maxTurns: MAX_SUBAGENT_TURNS })]).out[0]!.maxTurns).toBe(
-      MAX_SUBAGENT_TURNS,
-    );
+  it('[ac:ac-plugin-deklarujacy-maxturns-rowne-suf] maxTurns EQUAL to the ceiling passes through untouched', () => {
+    expect(MAX_SUBAGENT_TURNS).toBe(120);
+    const { out, messages } = resolve([contrib({ maxTurns: 120 })]);
+    expect(out[0]!.maxTurns).toBe(120);
+    expect(messages).toEqual([]);
   });
 
   /**
@@ -351,9 +367,10 @@ describe('resolvePluginSubagents — the turn must still START', () => {
    * this asserts the silence as hard as it asserts the number. A warning here would train
    * plugin authors to write a value they have no basis for.
    */
-  it('a contribution omitting maxTurns takes the host default, silently', () => {
+  it('[ac:ac-wklad-subagentowy-pomijajacy-maxturns] a contribution omitting maxTurns takes the host default, silently', () => {
     const { out, messages } = resolve([contrib()]);
-    expect(out[0]!.maxTurns).toBe(DEFAULT_SUBAGENT_TURNS);
+    expect(DEFAULT_SUBAGENT_TURNS).toBe(40);
+    expect(out[0]!.maxTurns).toBe(40);
     expect(messages).toEqual([]);
   });
 
@@ -374,7 +391,7 @@ describe('resolvePluginSubagents — the turn must still START', () => {
 });
 
 describe('resolvePluginSubagents — fan-out validation', () => {
-  it('rejects the whole entry when model is outside the closed enum', () => {
+  it('[ac:ac-wklad-subagentowy-z-model-spoza-zamkn] rejects the whole entry when model is outside the closed enum, before the turn starts', () => {
     const { out, messages } = resolve([
       contrib({ name: 'bad', model: 'opus' as unknown as 'sonnet' }),
       contrib({ name: 'sibling' }),
@@ -382,6 +399,10 @@ describe('resolvePluginSubagents — fan-out validation', () => {
     // The sibling from the same package still registers — rejection is per entry.
     expect(out.map((s) => s.name)).toEqual(['sibling']);
     expect(messages.some((m) => /outside the allowed set/.test(m))).toBe(true);
+    // Rejected at fan-out: what reaches the SDK passes its pre-dispatch gate,
+    // so the turn starts instead of failing mid-run on an unknown model.
+    expect(out.some((s) => (s as { model?: unknown }).model === 'opus')).toBe(false);
+    expect(() => validateSubagents(out)).not.toThrow();
   });
 
   it('accepts the two allowed models and passes effort through', () => {
