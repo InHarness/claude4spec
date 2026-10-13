@@ -1,5 +1,5 @@
 {
-  "iteration": 44,
+  "iteration": 45,
   "conventions": [
     {
       "label": "L4 (API)",
@@ -142,7 +142,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "verified",
+      "status": "in-progress",
       "blockedBy": null,
       "portions": [
         {
@@ -156,14 +156,20 @@
             "ac-odczyt-strony-z-nieparsowalnym-frontmatterem",
             "ac-zapis-z-edytora-zachowuje-nieparsowalny-frontmatter"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "ac-klik-na-strone-otwiera-ja-w-tiptap-z-pel"
+          ],
+          "only": [
+            {
+              "slug": "ac-klik-na-strone-otwiera-ja-w-tiptap-z-pel"
+            }
+          ]
         }
       ],
-      "startCommit": "b525ac588e2f79df40c3afccf03f321423738a14",
+      "startCommit": "44da1558489399a1053547ba949b80c66060e6fd",
       "baseCommit": "b525ac588e2f79df40c3afccf03f321423738a14",
       "rounds": {
         "review": 0,
@@ -423,7 +429,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "verified",
+      "status": "in-progress",
       "blockedBy": null,
       "portions": [
         {
@@ -438,14 +444,20 @@
             "ac-gdy-answer-tury-ask-nie-wymienia-plan",
             "ac-sciezka-bezwzgledna-spoza-katalogu-pr"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "ac-wywolanie-narzedzia-mcp-ask-bez-proje"
+          ],
+          "only": [
+            {
+              "slug": "ac-wywolanie-narzedzia-mcp-ask-bez-proje"
+            }
+          ]
         }
       ],
-      "startCommit": "3e0beb9ee79a709da16c4b658f54f6782e6223f8",
+      "startCommit": "44da1558489399a1053547ba949b80c66060e6fd",
       "baseCommit": "3e0beb9ee79a709da16c4b658f54f6782e6223f8",
       "rounds": {
         "review": 0,
@@ -751,7 +763,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "verified",
+      "status": "in-progress",
       "blockedBy": null,
       "portions": [
         {
@@ -765,14 +777,36 @@
             "c4s-reader-load-skill-file",
             "skill-tools-load-skill-file"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "ac-blok-available-skills-jest-emitowany",
+            "ac-odmowa-skill-file-not-found-wylicza-w",
+            "ac-podpliki-pakietu-skilla-spoza-templat",
+            "ac-reguly-wedlug-ktorych-spec-review-oce",
+            "ac-w-watku-context-type-brief-serwer-ski"
+          ],
+          "only": [
+            {
+              "slug": "ac-blok-available-skills-jest-emitowany"
+            },
+            {
+              "slug": "ac-odmowa-skill-file-not-found-wylicza-w"
+            },
+            {
+              "slug": "ac-podpliki-pakietu-skilla-spoza-templat"
+            },
+            {
+              "slug": "ac-reguly-wedlug-ktorych-spec-review-oce"
+            },
+            {
+              "slug": "ac-w-watku-context-type-brief-serwer-ski"
+            }
+          ]
         }
       ],
-      "startCommit": "9ef572c92403844d11d81ade36032aaf004906f2",
+      "startCommit": "44da1558489399a1053547ba949b80c66060e6fd",
       "baseCommit": "9ef572c92403844d11d81ade36032aaf004906f2",
       "rounds": {
         "review": 0,

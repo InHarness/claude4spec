@@ -70,3 +70,7 @@
 - `szablon-current-skill`: the shadowed variant's last sentence now reads "It becomes readable through load_skill_file once this package wins its slug; renaming the package to a slug no other source resolves always achieves that." (`buildCurrentSkill` in `blocks/m52-spec-skills.ts`). The read variant is unchanged.
 - Cross-scope collision (a `writing-style` package vs. another source's `contextual` entry) is decided by the registry's `pickWinner` (contextual pool first); the edge test covers it alongside the `plugin`-in-`contextual` case.
 - `m52-invalid-frontmatter-package-editable` was already covered by the dependency unit `m02-frontmatter-tolerant-read` (route + `usePage` tests); this portion only adds the H1 label assertion (page-detail) and a second read→save round proving "every save".
+
+## System verification
+
+- Static system verifier round 1 @ 44da1558: 7 criteria uncovered — not named by any recipe, but their `verifies` points at an entity the window updated (skill-tools-load-skill-file, page-detail, c4s-tools-ask). Reopened: m37-version-gate-and-reader-contract (5), m02-frontmatter-tolerant-read (1), ask-answer-postprocessing (1). Two already have unmarked tests (marker only). Env-runner full suite ordered in parallel on 44da1558.
