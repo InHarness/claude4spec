@@ -41,7 +41,12 @@ describe('c4s-plugin-layered-vertical-slices — the reviewer it contributes', (
    * check list, and only as the projection the skill module derives from the
    * same `parts/*` the workflow is composed from.
    */
-  it('fetches the rules instead of carrying them, and carries the checks only as the shared projection', () => {
+  it('[ac:ac-reguly-wedlug-ktorych-spec-review-oce] fetches the rules instead of carrying them, and carries the checks only as the shared projection', () => {
+    // The rules come from SKILL.md and its workflows as load_skill_file hands them over…
+    expect(sub.name).toBe('spec-review');
+    expect(sub.tools).toContain('mcp__skill-tools__load_skill_file');
+    expect(sub.promptBody).toContain('load_skill_file("layered-vertical-slices", "workflows/plan.md")');
+    expect(sub.promptBody).toContain('load_skill_file("layered-vertical-slices", "workflows/apply.md")');
     expect(sub.promptBody).toContain('load_skill_file');
     expect(sub.promptBody).toContain('workflows/plan.md');
     expect(sub.promptBody).toContain('workflows/apply.md');

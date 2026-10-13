@@ -124,6 +124,49 @@ describe('<available_skills> — M37 frame (2.1.9)', () => {
       }
     });
 
+    it('[ac:ac-blok-available-skills-jest-emitowany] <available_skills> is emitted in every one of the four context types, with the description of each skill attached to that type and the channel rule forbidding Skill() and Read', () => {
+      const registry = SkillRegistry.load([], { rescanTtlMs: 0 });
+      // One skill for every type, one narrowed to `brief` — the attached set differs per type.
+      registry.addPluginSkill({
+        slug: 'everywhere',
+        title: 'Everywhere',
+        description: 'attached to all four',
+        version: 1,
+        language: 'en',
+        scope: 'contextual',
+        content: 'body',
+      });
+      registry.addPluginSkill({
+        slug: 'brief-only',
+        title: 'Brief only',
+        description: 'attached to brief threads',
+        version: 1,
+        language: 'en',
+        scope: 'contextual',
+        contextTypes: ['brief'],
+        content: 'body',
+      });
+      const resolver = new SkillResolver(registry, tmp);
+
+      expect([...KNOWN_CONTEXT_TYPES].sort()).toEqual(['ask', 'brief', 'chat', 'patch']);
+      for (const contextType of KNOWN_CONTEXT_TYPES) {
+        const { listing } = resolver.resolveForContext(contextType);
+        const out = block(build({ contextType, brief: null, availableSkills: listing }));
+        expect(out, contextType).not.toBe('');
+        // The description of every skill attached to this context type…
+        for (const entry of listing) {
+          expect(out, contextType).toContain(`<skill slug="${entry.slug}" description="${entry.description}"`);
+        }
+        expect(out, contextType).toContain('description="attached to all four"');
+        if (contextType === 'brief') expect(out).toContain('description="attached to brief threads"');
+        else expect(out, contextType).not.toContain('brief-only');
+        // …and the channel rule: never Skill(), never Read.
+        expect(out, contextType).toContain(
+          'Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.',
+        );
+      }
+    });
+
     it('[ac:ac-skill-w-claude-skills-ze-scope-contex] a scope: contextual skill in ~/.claude/skills is no <available_skills> row in any context type', () => {
       writeSkill(globalRoot, 'dropped-global', 'contextual');
       const registry = SkillRegistry.load(

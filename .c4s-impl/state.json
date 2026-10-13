@@ -1,5 +1,5 @@
 {
-  "iteration": 53,
+  "iteration": 54,
   "conventions": [
     {
       "label": "L4 (API)",
@@ -769,8 +769,8 @@
             "c4s-reader-load-skill-file",
             "skill-tools-load-skill-file"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [
             "ac-blok-available-skills-jest-emitowany",
@@ -779,23 +779,7 @@
             "ac-reguly-wedlug-ktorych-spec-review-oce",
             "ac-w-watku-context-type-brief-serwer-ski"
           ],
-          "only": [
-            {
-              "slug": "ac-blok-available-skills-jest-emitowany"
-            },
-            {
-              "slug": "ac-odmowa-skill-file-not-found-wylicza-w"
-            },
-            {
-              "slug": "ac-podpliki-pakietu-skilla-spoza-templat"
-            },
-            {
-              "slug": "ac-reguly-wedlug-ktorych-spec-review-oce"
-            },
-            {
-              "slug": "ac-w-watku-context-type-brief-serwer-ski"
-            }
-          ]
+          "only": []
         }
       ],
       "startCommit": "b9bea464e106c2dc0d24e96f6d0ac1ee5fd8412d",

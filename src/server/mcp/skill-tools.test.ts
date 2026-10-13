@@ -139,6 +139,34 @@ describe('skill-tools — load_skill_file', () => {
       expect(body).toEqual({ slug: 'house-style', path: 'workflows/brief.md', content: 'brief methodology' });
     });
 
+    it('[ac:ac-podpliki-pakietu-skilla-spoza-templat] a workflows/*.md subfile is readable through load_skill_file(slug, file) alone — an MCP call, no FS built-in, no disk path in or out', async () => {
+      const root = writeSkill('house-style');
+      const dir = path.join(root.dir, 'house-style');
+      fs.mkdirSync(path.join(dir, 'workflows'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'workflows', 'brief.md'), 'brief methodology');
+      fs.writeFileSync(path.join(dir, 'workflows', 'patch.md'), 'patch methodology');
+      await mount(SkillRegistry.load([root]));
+
+      // The input carries an ADDRESS (slug, file) — the schema has no path-like field.
+      const { tools } = await client.listTools();
+      expect(Object.keys((tools[0]!.inputSchema.properties ?? {}) as Record<string, unknown>).sort()).toEqual([
+        'file',
+        'slug',
+      ]);
+
+      for (const [file, content] of [
+        ['workflows/brief.md', 'brief methodology'],
+        ['workflows/patch.md', 'patch methodology'],
+      ] as const) {
+        // The only thing the caller does is an MCP tool call — the client holds no Read/Glob/Grep.
+        const { isError, body } = await call({ slug: 'house-style', file });
+        expect(isError, file).toBe(false);
+        expect(body).toEqual({ slug: 'house-style', path: file, content });
+        // The answer names no disk location either.
+        expect(JSON.stringify(body)).not.toContain(tmp);
+      }
+    });
+
     it('never puts a disk path in the payload — the address is (slug, file)', async () => {
       const root = writeSkill('house-style');
       await mount(SkillRegistry.load([root]));
@@ -182,7 +210,7 @@ describe('skill-tools — load_skill_file', () => {
       expect(body.hint).toContain('house-rules');
     });
 
-    it('SKILL_FILE_NOT_FOUND enumerates the package\'s available paths', async () => {
+    it('[ac:ac-odmowa-skill-file-not-found-wylicza-w] SKILL_FILE_NOT_FOUND enumerates the package\'s available paths', async () => {
       // Alongside the manifest, this refusal is the only channel through which the
       // layout of a package can be discovered.
       const root = writeSkill('house-style');
