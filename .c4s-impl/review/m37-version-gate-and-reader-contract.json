@@ -3,7 +3,7 @@
   "scope": {
     "kind": "unit",
     "id": "m37-version-gate-and-reader-contract",
-    "base": "9ef572c92403844d11d81ade36032aaf004906f2"
+    "base": "b9bea464"
   },
   "findings": []
 }
