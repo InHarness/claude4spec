@@ -8,3 +8,7 @@ section:mn59j0le → src/shared/plugin-host/runtime-legs.ts (M18 row), src/plugi
 section:m20l11sc → src/shared/plugin-host/runtime-legs.ts (M20 row), src/plugin-types/plugin-runtime.ts, src/plugin-types/ambient.d.ts
 section:gz7q92lz → src/shared/plugin-host/runtime-legs.ts (M39 row), src/server/plugin-runtime/index.ts, src/plugin-types/ambient-backend.d.ts
 section:m34l12sc → src/client/host-ui-kit/registry.ts (UI_KIT_CATALOG, STABLE_UI_KIT_COMPONENTS), src/client/host-ui-kit/index.ts (/ui browser surface), src/server/plugin-runtime/ui.ts (backend /ui leg: UI_KIT_STABLE_COMPONENTS); test src/client/host-ui-kit/registry.test.ts
+get-api-plugins-frontend-manifest → src/server/routes/plugins.ts (GET /plugins/frontend-manifest), src/server/core/plugin-host/frontend-manifest.ts (buildFrontendManifest); test src/server/routes/plugins.frontend.test.ts
+get-api-plugins-name-asset → src/server/routes/plugins.ts (GET /plugins/:name/:asset), src/server/core/plugin-host/frontend-assets.ts (resolvePluginAsset, effectiveFrontendSources); test src/server/routes/plugins.frontend.test.ts
+frontend-manifest-response → src/shared/plugin-host/frontend-manifest.ts (FrontendManifestResponse, PluginFrontendEntry); test src/server/routes/plugins.frontend.test.ts
+plugin-frontend-asset-error → src/shared/plugin-host/frontend-manifest.ts (PluginFrontendAssetError, PLUGIN_FRONTEND_NOT_FOUND); test src/server/routes/plugins.frontend.test.ts

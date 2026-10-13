@@ -1,35 +1,52 @@
 /**
  * M33 — frontend plugin loading contract ("Option B": import map + native ESM).
  *
- * The client fetches {@link FrontendManifestResponse} at boot, injects an
- * import map (so plugin `import "react"` resolves to the host's singleton),
- * injects each plugin's CSS, then `await import(entry)` per active plugin.
+ * The server injects the import map into the page (so a plugin's `import "react"`
+ * resolves to the host's singleton) and filters the manifest: it announces only
+ * plugins whose backend is `loaded` after the host-API / engines gate. The client
+ * fetches {@link FrontendManifestResponse} at boot, injects each plugin's CSS,
+ * then `await import(entry)` per announced plugin. It compares no versions.
  *
  * Shared so the server builder and the client boot loader agree on the shape.
  */
 
-/** One active plugin's frontend payload. */
+/** One announced plugin's frontend payload. */
 export interface PluginFrontendEntry {
-  /** npm package name. */
+  /** Plugin name (overlay: folder name; npm package / envelope: `package.json` name). */
   name: string;
-  /** plugin semver. */
+  /** Package version — the cache-bust key of the entry URL, NOT the plugin's Host API version. */
   version: string;
-  /** ESM URL of the plugin's frontend entry, served as native ESM. */
+  /** Absolute URL of the plugin's frontend entry, served as native ESM by `GET /api/plugins/:name/:asset`. */
   entry: string;
-  /** Optional precompiled CSS URL for this plugin. */
+  /** URL of the precompiled `frontend.css` next to the entry, when the plugin ships one. */
   css?: string;
 }
 
-/** Response of `GET /api/plugins/frontend-manifest`. */
+/** Response of `GET /api/plugins/frontend-manifest` (`frontend-manifest-response`). */
 export interface FrontendManifestResponse {
-  /** Host semver the client compares against (major-mismatch omits a plugin). */
+  /** The HOST's Host API version. The client does not compare it: the gate runs on the server. */
   hostApiVersion: string;
-  /** Bare specifier → ESM URL. Externalizes shared peers to host bundle URLs. */
+  /**
+   * Informational copy of the import map the server injects into the page: the
+   * host's peer shims and both runtime specifiers, no plugin entries. The client
+   * does not read it.
+   */
   importMap: Record<string, string>;
-  /** Active plugins to load. Empty (no plugin packages shipped yet). */
+  /** Announced plugins. Empty ⇒ the host renders on its own. */
   plugins: PluginFrontendEntry[];
-  /** Optional host-level precompiled CSS URLs to inject (order preserved). */
-  css?: string[];
+}
+
+/** Error code of every refusal of `GET /api/plugins/:name/:asset`. */
+export const PLUGIN_FRONTEND_NOT_FOUND = 'PLUGIN_FRONTEND_NOT_FOUND';
+
+/**
+ * 404 body of `GET /api/plugins/:name/:asset` (`plugin-frontend-asset-error`). One
+ * code for every cause — disallowed extension, a path separator or `..` in the
+ * file name, an untrusted overlay, a missing file — so a client cannot tell a
+ * missing file from a refused one.
+ */
+export interface PluginFrontendAssetError {
+  error: { code: string; message: string };
 }
 
 /**

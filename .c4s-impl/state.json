@@ -1,5 +1,5 @@
 {
-  "iteration": 5,
+  "iteration": 6,
   "conventions": [
     {
       "label": "L11 (Plugin Runtime Surface) — implementor M33",
@@ -884,15 +884,47 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "frontend-serving/p1-l4-l11",
+          "layers": [
+            "L4",
+            "L11"
+          ],
+          "slugs": [
+            "get-api-plugins-frontend-manifest",
+            "get-api-plugins-name-asset",
+            "frontend-manifest-response",
+            "plugin-frontend-asset-error",
+            "ac-endpoint-manifestu-frontendu-option-b",
+            "ac-frontend-bundle-esm-dist-frontend-js",
+            "ac-frontend-pluginu-ktorego-backend-ma-s",
+            "ac-pakiet-npm-bez-wejscia-backendowego-n",
+            "ac-przy-kolizji-nazwy-pluginu-manifest-f",
+            "ac-przy-kolizji-nazwy-pluginu-manifest-f-2",
+            "ac-route-api-plugins-name-frontend-js-cs",
+            "ac-route-assetow-pluginu-serwuje-jako-we",
+            "ac-zadanie-route-u-assetow-pluginu-o-pli",
+            "ac-plugin-bandlujacy-wlasna-kopie-reacta-ti",
+            "ac-komponenty-pluginu-ze-zbundlowana-wla",
+            "ac-build-frontendu-pluginu-wygenerowaneg"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "5f10e97258c18fd1d3a793674340f91be0cd520a",
+      "baseCommit": "5f10e97258c18fd1d3a793674340f91be0cd520a",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0
     },
     {
       "id": "window-facades",

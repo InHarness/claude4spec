@@ -33,6 +33,7 @@ import { pluginsRouter } from './routes/plugins.js';
 import { errorHandler } from './routes/errors.js';
 import { buildImportMap } from './core/plugin-host/runtime-shims.js';
 import { discoverBuiltinEnvelopes, servableEnvelopes } from './core/plugin-host/builtin-envelopes.js';
+import { loadedRecordKeys } from './core/plugin-host/frontend-assets.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -439,6 +440,14 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
         const reloaded = [];
         for (const pkg of affected) {
           const rec = await reloadPlugin(pluginRegistry, pkg);
+          // 2.1.20: keep the base records current — the frontend manifest
+          // announces only packages whose backend is `loaded`. A failed reload
+          // retains the old version, so only a `loaded` outcome replaces it.
+          if (rec.status === 'loaded') {
+            const i = pluginLoad.records.findIndex((r) => r.package === pkg);
+            if (i >= 0) pluginLoad.records[i] = { ...pluginLoad.records[i], ...rec };
+            else pluginLoad.records.push(rec);
+          }
           reloaded.push({ name: rec.manifestName ?? pkg, version: rec.manifestVersion ?? '' });
         }
         // Snapshot the rooms BEFORE invalidating: invalidateAll() empties the
@@ -482,7 +491,20 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       pluginRegistry,
       pluginRecords: pluginLoad.records,
       frontendServing: initialProject
-        ? { cwd, isTrusted: () => registry.getProjectTrust(workspace, initialProject.id) === true }
+        ? {
+            cwd,
+            isTrusted: () => registry.getProjectTrust(workspace, initialProject.id) === true,
+            // 2.1.20: overlay frontends are announced only for folders whose
+            // backend is `loaded` in the primary project's context.
+            overlayLoaded: async () => {
+              try {
+                const ctx = await cache.get(initialProject);
+                return loadedRecordKeys(ctx.overlayRecords ?? []);
+              } catch {
+                return new Set<string>();
+              }
+            },
+          }
         : undefined,
       // M33 phase 3: workspace/npm plugin frontends are served ungated for every
       // project — the same resolved package list `loadWorkspacePlugins` consumed.

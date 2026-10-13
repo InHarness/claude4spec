@@ -11,10 +11,11 @@
  *      `clientPluginHost` via `@c4s/plugin-runtime`,
  *   4. calls `mountFrontend` to pin editor extensions + XML embeds.
  *
- * A per-plugin host-API gate (mirror of the backend skip) is added once
- * `PluginFrontendEntry` carries a version. No plugin packages ship yet, so
- * the manifest's `plugins` is empty and every step is a no-op — but the full
- * path is exercised end-to-end.
+ * 2.1.20: the client compares no versions. The manifest is filtered on the
+ * server — it announces only plugins whose backend is `loaded` after the
+ * host-API / engines gate — and its `importMap` is an informational copy the
+ * client does not read (the server injected the real one). Each entry is
+ * imported from its absolute `plugins[].entry` URL.
  */
 
 import { metaApi, pluginsApi } from '../lib/api.js';
@@ -57,7 +58,6 @@ async function loadManifestPlugins(
   router: AppRouter,
   bust = false,
 ): Promise<void> {
-  for (const href of manifest.css ?? []) injectCssOnce(href);
   for (const plugin of manifest.plugins) {
     if (plugin.css) injectCssOnce(plugin.css);
     const suffix = bust ? `?v=${encodeURIComponent(plugin.version)}` : '';

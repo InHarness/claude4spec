@@ -246,6 +246,13 @@ export interface ProjectContext {
   db: Db;
   pluginHost: ProjectPluginHost;
   /**
+   * 2.1.20 (M33 L11) — this context's project-local overlay load records (empty
+   * when untrusted or absent). The process-global frontend manifest reads the
+   * primary project's records to announce only overlay plugins whose backend is
+   * `loaded`. Optional so hand-built test contexts need not supply it.
+   */
+  overlayRecords?: readonly PluginLoadRecord[];
+  /**
    * 2.1.17 (M33 L11) — the entity write door this context hands every plugin's
    * `MountContext.crud`: the generic CRUD verbs plus their rename fan-out and
    * `entity:changed` broadcast. Exposed so the plugin test harness gives a test
@@ -2008,6 +2015,7 @@ async function buildInner(
     router,
     db,
     pluginHost,
+    overlayRecords,
     crud: crudFacade,
     serialization: serializationEngine,
     ws,
