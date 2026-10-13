@@ -255,8 +255,8 @@ export function Sidebar({
  * after a page reload (M50 `8h2a734u`).
  *
  * 2.1.16: with no active type (`config.entities = []`) the section shows the
- * host's "No entity types configured." message — never a type's
- * `sidebarTab.emptyState`.
+ * host's "No entity types configured." message. (2.1.20: `sidebarTab` carries
+ * only `icon`, `label` and `order` — `emptyState` left the contract.)
  */
 export function SidebarElements({
   entityCounts,

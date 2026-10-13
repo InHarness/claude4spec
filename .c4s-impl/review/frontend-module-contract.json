@@ -1,0 +1,22 @@
+{
+  "role": "reviewer",
+  "scope": { "kind": "unit", "id": "frontend-module-contract", "base": "28fd7de7" },
+  "findings": [
+    {
+      "id": "rev-0001",
+      "file": "src/client/components/SidebarElements.render.test.ts",
+      "line": 7,
+      "blocking": false,
+      "reason": "The file header still describes the type's `sidebarTab.emptyState` as a declared slot ('never a type's sidebarTab.emptyState'), but this diff removed the field from the contract. The diff updated the test body at line 176 but not this header. At line 101, `...{ emptyState: TypeEmptyState }` is an extra trick: the literal is already cast `as unknown as FrontendModule`, so no excess-property check needs bypassing. Update the header and use a plain property.",
+      "portion": "frontend-module-contract/p1-l2-l11"
+    },
+    {
+      "id": "rev-0002",
+      "file": "plugins/c4s-plugin-mcp-tools/src/entity/mcp-tool/frontend/module.tsx",
+      "line": 32,
+      "blocking": false,
+      "reason": "Doc comments in shipped plugins still explain why a module has 'NO `stateSlice`' (also plugins/c4s-plugin-layered-vertical-slices/src/entity/module-dependency/frontend/module.tsx:34). That slot no longer exists after this unit, so the comments describe an option that is gone. Drop the stateSlice clause.",
+      "portion": "frontend-module-contract/p1-l2-l11"
+    }
+  ]
+}

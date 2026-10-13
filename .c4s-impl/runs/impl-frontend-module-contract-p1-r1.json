@@ -1,0 +1,18 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.20",
+  "unit": "frontend-module-contract",
+  "portion": "frontend-module-contract/p1-l2-l11",
+  "claimed": [
+    "ac-adnotacje-podane-przez-plugin-w-fasad",
+    "ac-modul-frontendu-ktorego-renderchip-ni",
+    "ac-modul-frontendu-typu-z-trasa-detalu-r",
+    "ac-renderchip-ktory-rzuca-przy-entity-nu",
+    "ac-strone-detalu-typu-z-trasa-renderuje"
+  ],
+  "deviations": [],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

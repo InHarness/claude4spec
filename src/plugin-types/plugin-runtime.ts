@@ -337,11 +337,24 @@ export type McpTool = unknown;
  */
 export type ZodRawShape = Record<string, unknown>;
 export declare function createMcpServer(def: { name: string; tools: McpTool[] }): McpServerFactory;
+/**
+ * Optional annotations of one tool (2.1.20). The host advertises them beside
+ * that tool in the external `tools/list`. Part of the C4S facade — the plugin
+ * passes them through this signature, never through a vendor type.
+ */
+export interface McpToolAnnotations {
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+  title?: string;
+}
 export declare function mcpTool(
   name: string,
   description: string,
   zodShape: ZodRawShape,
   handler: (input: unknown) => unknown,
+  annotations?: McpToolAnnotations,
 ): McpTool;
 
 /**
@@ -578,8 +591,6 @@ export interface SidebarTabSlot {
   icon: LucideIcon;
   label: string;
   order: number;
-  /** Declared and NOT rendered — the sidebar reads only `icon`, `label`, `order`. */
-  emptyState?: ComponentType<unknown>;
 }
 export interface SlashCommand {
   id: string;
@@ -628,8 +639,9 @@ export interface FrontendModule extends EntityModuleManifest {
    */
   detailPanel?: ComponentType<EntityDetailProps>;
   /**
-   * The read-only fullscreen surface a hidden type's chip and card open, since
-   * there is no detail route to navigate to.
+   * Content of the host's `<type>-expand` window, which a click on a hidden
+   * type's chip or card opens (the host opens it; the chip opens nothing
+   * itself), since there is no detail route to navigate to.
    *
    * Required exactly when the type is hidden, and rejected otherwise: a type
    * with a detail route must send its clicks to `editorBridge.openEntity`, and an

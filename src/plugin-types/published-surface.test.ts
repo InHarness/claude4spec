@@ -170,6 +170,14 @@ describe('MCP builder facade', () => {
     }
   });
 
+  it('declares the optional, C4S-owned annotations parameter of mcpTool (2.1.20)', () => {
+    expect(facadeCode).toMatch(/export declare function mcpTool\([\s\S]*?annotations\?: McpToolAnnotations,?\s*\): McpTool;/);
+    const annotationsDecl = /export interface McpToolAnnotations \{([^}]*)\}/s.exec(facadeCode)?.[1] ?? '';
+    for (const field of ['readOnlyHint?: boolean', 'destructiveHint?: boolean', 'idempotentHint?: boolean', 'openWorldHint?: boolean', 'title?: string']) {
+      expect(annotationsDecl).toContain(field);
+    }
+  });
+
   it('does NOT leak vendor MCP types into the published surface', () => {
     expect(facadeCode).not.toContain('McpServerConfig');
     expect(facadeCode).not.toContain('McpServerInstance');

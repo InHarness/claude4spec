@@ -36,9 +36,9 @@ function hiddenModule(type: string): FrontendModule {
   return { ...mod, renderOverlay: Noop } as unknown as FrontendModule;
 }
 
-// M34/L11: registerFrontendModule validates slot shapes and smoke-tests
-// renderChip at LOAD time, so a broken plugin fails registration instead of
-// crashing the first page that happens to render its chip.
+// M34/L11: registerFrontendModule validates slot shapes at REGISTRATION, so a
+// malformed module fails registration instead of crashing the first page that
+// happens to render it. (2.1.20: the render smoke test moved to mountFrontend.)
 //
 // 0.2.16 turned that check from COMPLETENESS into CONSISTENCY: the mandatory
 // minimum is `renderChip` + `renderCard`, and what the host refuses is half a
@@ -94,14 +94,23 @@ describe('registerFrontendModule — load-time slot validation', () => {
     ).toThrow(/hidden entity.*must supply 'renderOverlay'/);
   });
 
-  it('rejects renderOverlay on a type that HAS a detail route — the click exception is not its to claim', () => {
+  it('[ac:ac-modul-frontendu-typu-z-trasa-detalu-r] a module of a type with a detail route (routes + detailPanel) that declares renderOverlay is rejected at registration', () => {
     const mod = {
       ...baseModule('m34-overlay-and-route'),
       renderOverlay: Noop,
     } as unknown as FrontendModule;
+    expect(mod.routes).toBeTypeOf('function');
+    expect(mod.detailPanel).toBeTypeOf('function');
     expect(() => clientPluginHost.registerFrontendModule(mod)).toThrow(
       /declares 'renderOverlay' while having a detail route/,
     );
+    // Rejected means not in the registry — neither available nor active.
+    expect(clientPluginHost.getAvailable('m34-overlay-and-route')).toBeNull();
+    expect(clientPluginHost.getEntity('m34-overlay-and-route')).toBeNull();
+    // The same module without the overlay registers: the overlay alone is the fault.
+    const withoutOverlay = { ...mod, renderOverlay: undefined } as FrontendModule;
+    expect(() => clientPluginHost.registerFrontendModule(withoutOverlay)).not.toThrow();
+    expect(clientPluginHost.getAvailable('m34-overlay-and-route')).not.toBeNull();
   });
 
   // Optional is not unchecked. A namespace import or a typo'd re-export lands a
@@ -138,14 +147,17 @@ describe('registerFrontendModule — load-time slot validation', () => {
     expect(() => clientPluginHost.registerFrontendModule(mod)).toThrow(/useGetBySlug.*must be a function/);
   });
 
-  it('rejects a module whose renderChip throws synchronously', () => {
+  // 2.1.20 — registration runs no smoke test: it registers and mounts nothing.
+  // A chip that throws is the `mountFrontend` step's business, where it degrades
+  // to the host's `rejected-slot` broken chip and the module stays mounted
+  // (`tiptap/mountFrontend.smoke.test.ts`).
+  it('registers a module whose renderChip throws — the smoke test belongs to mountFrontend, not registration', () => {
     const mod = baseModule('m34-broken-chip');
     (mod as unknown as { renderChip: FrontendModule['renderChip'] }).renderChip = (() => {
       throw new Error('boom');
     }) as unknown as FrontendModule['renderChip'];
-    expect(() => clientPluginHost.registerFrontendModule(mod)).toThrow(
-      /renderChip threw during load-time smoke test: boom/,
-    );
+    expect(() => clientPluginHost.registerFrontendModule(mod)).not.toThrow();
+    expect(clientPluginHost.getAvailable('m34-broken-chip')).toBe(mod);
   });
 
   it('does not register a module that fails validation', () => {

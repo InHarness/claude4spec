@@ -1,0 +1,19 @@
+{
+  "role": "implementer",
+  "unit": "frontend-module-contract",
+  "packetBytes": 149465,
+  "portions": [
+    {
+      "name": "frontend-module-contract/p1-l2-l11",
+      "layers": ["L2", "L5", "L11"],
+      "slugs": [
+        "ac-adnotacje-podane-przez-plugin-w-fasad",
+        "ac-modul-frontendu-ktorego-renderchip-ni",
+        "ac-modul-frontendu-typu-z-trasa-detalu-r",
+        "ac-renderchip-ktory-rzuca-przy-entity-nu",
+        "ac-strone-detalu-typu-z-trasa-renderuje"
+      ]
+    }
+  ],
+  "deviations": []
+}

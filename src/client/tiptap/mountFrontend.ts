@@ -9,8 +9,14 @@
  *     allowlist so `<type .../>` parses as a native embed in prose (not for
  *     hidden types — 0.2.88);
  *   - (Phase 3) collects each module's `routes` fragment and mounts them into the
- *     host's single TanStack Router, deduped by path against the base routes; and
- *   - (Phase 3) acknowledges each module's `stateSlice` (typed but unconsumed).
+ *     host's single TanStack Router, deduped by path against the base routes —
+ *     the component of that fragment renders the type's detail page; the host
+ *     never renders `detailPanel` (2.1.20); and
+ *   - runs the slot smoke test (`chipSmokeTest`) — HERE, at mount, not at
+ *     registration: `registerFrontendModule` registers and mounts nothing.
+ *
+ * 2.1.20 — there is no store argument and no state-slice step: the plugin state
+ * slice (`frontend.stateSlice`) left the contract.
  *
  * Editor wiring must run BEFORE the first editor is created (Tiptap freezes its
  * schema at `create`). A module whose slots fail the structural check is skipped
@@ -21,7 +27,7 @@
  */
 
 import { registerEditorExtension, ALL_EDITOR_CONTEXTS } from './registry.js';
-import type { FrontendModule, StateSliceContribution } from '../core/plugin-host/types.js';
+import type { FrontendModule } from '../core/plugin-host/types.js';
 import { validateFrontendModule, type SmokeSlot } from '../runtime/validate-slots.js';
 import { rejectedSlotFallback } from '../runtime/RejectedSlotFallback.js';
 import {
@@ -35,20 +41,6 @@ import type { AnyRoute } from '@tanstack/react-router';
 /** The original `path` a route was created with (used for dedup). */
 function routePath(route: { path?: string; fullPath?: string }): string | undefined {
   return route.path ?? route.fullPath;
-}
-
-/**
- * Phase 3 — typed but UNCONSUMED state-slice registration point. There is no host
- * store mechanism yet (see the `stateSlice` patch); this only records the slice
- * so a later consumer can drain it, and warns on a duplicate key.
- */
-const stateSlices = new Map<string, StateSliceContribution>();
-function registerStateSlice(slice: StateSliceContribution): void {
-  if (stateSlices.has(slice.key)) {
-    console.warn(`[plugin-host] duplicate stateSlice key "${slice.key}" — keeping the first`);
-    return;
-  }
-  stateSlices.set(slice.key, slice);
 }
 
 export function mountFrontend(router: AppRouter, modules: FrontendModule[]): void {
@@ -129,9 +121,6 @@ export function mountFrontend(router: AppRouter, modules: FrontendModule[]): voi
         pluginRoutes.push(route);
       }
     }
-
-    // Phase 3 — acknowledge the optional state slice (no consumer yet).
-    if (m.stateSlice) registerStateSlice(m.stateSlice);
   }
 
   // Rebuild the router's route tree as BASE ∪ collected plugin routes.

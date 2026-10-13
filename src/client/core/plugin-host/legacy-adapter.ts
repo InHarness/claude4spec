@@ -6,7 +6,7 @@
  * Phase 0: when registerEntity() is called, we synthesize a FrontendModule
  * manifest from the EntityDef plus per-type defaults (table, displayOrder)
  * and push it into clientPluginHost. The other slots (sidebarTab, routes,
- * editorExtensions, stateSlice) stay empty — existing wiring still drives
+ * editorExtensions) stay empty — existing wiring still drives
  * Sidebar.tsx and router.tsx directly.
  */
 
