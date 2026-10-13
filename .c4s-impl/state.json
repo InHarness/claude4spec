@@ -1,5 +1,5 @@
 {
-  "iteration": 45,
+  "iteration": 46,
   "conventions": [
     {
       "label": "L4 (API)",
@@ -156,17 +156,13 @@
             "ac-odczyt-strony-z-nieparsowalnym-frontmatterem",
             "ac-zapis-z-edytora-zachowuje-nieparsowalny-frontmatter"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [
             "ac-klik-na-strone-otwiera-ja-w-tiptap-z-pel"
           ],
-          "only": [
-            {
-              "slug": "ac-klik-na-strone-otwiera-ja-w-tiptap-z-pel"
-            }
-          ]
+          "only": []
         }
       ],
       "startCommit": "44da1558489399a1053547ba949b80c66060e6fd",
