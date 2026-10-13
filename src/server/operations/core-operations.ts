@@ -1829,7 +1829,7 @@ export function registerCoreOperations(): void {
        * thread. It never commissions a top-level turn from inside its own turn.
        */
       internal: via('spawn_child_turn', 'the built-in agent reaches a turn run only by founding a child thread; it never commissions a top-level turn from inside its own turn'),
-      mcp: via('runTransagent', 'same server, mounted for context_type ∈ {chat, patch} and stripped inside a child turn (recursion depth 1)'),
+      mcp: via('runTransagent', 'same server, mounted only for a top-level context_type=chat thread (parent_thread_id IS NULL) — never for patch, brief or ask, and stripped inside a child turn (recursion depth 1)'),
       cli: na('no CLI surface — a child turn is spawned from within a turn'),
       rest: na('no REST surface — the parent turn is the only caller'),
     },

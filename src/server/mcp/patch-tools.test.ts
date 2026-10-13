@@ -18,6 +18,7 @@ import { artifactSource, boundWriter } from '../fs/sources.js';
 import { systemRootId } from '../../shared/root-kinds.js';
 import { CATALOG } from '../operations/catalog.js';
 import { registerCoreOperations } from '../operations/core-operations.js';
+import { CONTEXT_TYPE_REGISTRY } from '../services/chat-context.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 
 /**
@@ -114,6 +115,33 @@ describe('patch-tools (thread-bound)', () => {
       .map((op) => op.name)
       .sort();
     expect(internalDirect).toEqual([...PATCH_THREAD_TOOL_NAMES].sort());
+  });
+
+  /**
+   * 2.1.18 (M23 `jbcb06l2`, M44 `3f5ej79s`) — the criterion counts the patch
+   * operations RENDERED in a `patch` thread: `internal: direct` rows whose
+   * rendering is this server. A patch thread mounts patch-tools and no other
+   * patch-operation surface (2.1.18 took `transagent-tools` off it), so the two
+   * `mcp-tool` entities with `server: patch-tools` are the whole set.
+   */
+  it('[ac:ac-kazda-operacja-patcha-z-wartoscia-dir] every patch operation with internal = direct rendered in a patch thread has an mcp-tool entity on patch-tools, and their count equals the tools mounted on a patch thread', async () => {
+    registerCoreOperations();
+    const PATCH_TOOL_ENTITIES = ['patch-tools-get-patch', 'patch-tools-mark-patch-applied'];
+    const internalDirect = CATALOG.list()
+      .filter((op) => op.name.endsWith('_patch') || op.name.includes('_patch_'))
+      .filter((op) => op.channels.internal.kind === 'direct')
+      .map((op) => op.name)
+      .sort();
+
+    // What the patch thread actually mounts on its patch-tools server.
+    const mounted = (await client.listTools()).tools.map((t) => t.name).sort();
+    expect(mounted).toEqual(internalDirect);
+    // One entity per mounted tool — slug `patch-tools-<tool name>`.
+    expect(PATCH_TOOL_ENTITIES.length).toBe(mounted.length);
+    expect(PATCH_TOOL_ENTITIES.map((slug) => slug.replace(/^patch-tools-/, '').replace(/-/g, '_')).sort()).toEqual(mounted);
+
+    // The patch thread has no second surface rendering patch operations: no transagent-tools.
+    expect(CONTEXT_TYPE_REGISTRY.patch.mcp.transagentTools).toBe(false);
   });
 
   it('get_patch without path returns the thread\'s patch: path, frontmatter, content, hash', async () => {

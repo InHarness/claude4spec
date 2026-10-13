@@ -2052,9 +2052,9 @@ describe('runAgentTurn — the profile gate covers the inline servers too', () =
     }
   });
 
-  it('2.1.4: a patch thread mounts patch-tools (get_patch, mark_patch_applied) on top of chat\'s set', async () => {
+  it('2.1.4: a patch thread mounts patch-tools (get_patch, mark_patch_applied) on top of chat\'s set — 2.1.18: minus transagent-tools', async () => {
     expect(await mountedFor('patch', 'p.md')).toEqual(
-      ['c4s-tools', 'patch-tools', 'plan-tools', 'skill-tools', 'transagent-tools', 'workspace-tools'].sort(),
+      ['c4s-tools', 'patch-tools', 'plan-tools', 'skill-tools', 'workspace-tools'].sort(),
     );
     expect(String(hoisted.lastExecute?.systemPrompt)).toContain(
       '<mcp name="patch-tools">get_patch, mark_patch_applied</mcp>',
@@ -2073,6 +2073,90 @@ describe('runAgentTurn — the profile gate covers the inline servers too', () =
     const mounted = await mountedFor('ask');
     expect(mounted).not.toContain('c4s-tools');
     expect(mounted).not.toContain('transagent-tools');
+  });
+});
+
+/**
+ * 2.1.18 (M44 `3f5ej79s`, M05 `iatop5pj`, M23 `jbcb06l2`) — `transagent-tools` is
+ * mounted ONLY on a top-level `chat` thread (`parent_thread_id IS NULL`). The
+ * `patch` thread lost it (and with it `runTransagent`) while keeping `c4s-tools`,
+ * `spec-skill-tools` and `patch-tools`. The retired criterion
+ * `ac-watki-context-type-chat-patch-maja-za` ("chat and patch both have
+ * transagent-tools") is asserted nowhere.
+ */
+describe('runAgentTurn — transagent-tools only on a top-level chat thread (2.1.18)', () => {
+  async function turnFor(
+    contextType: string,
+    opts: { patchPath?: string | null; parentThreadId?: string | null } = {},
+  ): Promise<{ mounted: string[]; servers: Record<string, unknown>; prompt: string }> {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    (deps as unknown as { listWorkspaceProjects: () => unknown }).listWorkspaceProjects = () => ({ projects: [] });
+    (deps as unknown as { specSkillTools: SpecSkillTools }).specSkillTools = new SpecSkillTools(
+      { skillsRoot: () => undefined },
+      'p1',
+    );
+    const input = makeInput();
+    const thread = input.thread as unknown as {
+      contextType: string;
+      patchPath: string | null;
+      parentThreadId: string | null;
+    };
+    thread.contextType = contextType;
+    thread.patchPath = opts.patchPath ?? null;
+    thread.parentThreadId = opts.parentThreadId ?? null;
+    await runAgentTurn(deps, input);
+    const servers = (hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>;
+    return { mounted: Object.keys(servers).sort(), servers, prompt: String(hoisted.lastExecute?.systemPrompt) };
+  }
+
+  it('[ac:ac-watek-context-type-chat-ma-zamontowan] a context_type=\'chat\' thread has c4s-tools mounted', async () => {
+    const { mounted, prompt } = await turnFor('chat');
+    expect(mounted).toContain('c4s-tools');
+    expect(prompt).toMatch(/<mcp name="c4s-tools"/);
+  });
+
+  it('[ac:ac-watek-context-type-chat-z-parent-thre] a context_type=\'chat\' thread with parent_thread_id IS NULL has transagent-tools mounted (runTransagent resolvable); a child chat thread does not', async () => {
+    const top = await turnFor('chat', { parentThreadId: null });
+    expect(top.mounted).toContain('transagent-tools');
+    // `<tooling>` is derived from the post-gate mount's own tool lists.
+    expect(top.prompt).toContain('<mcp name="transagent-tools">runTransagent</mcp>');
+
+    // The condition is part of the criterion: the same `chat` row with a parent is stripped.
+    const child = await turnFor('chat', { parentThreadId: 'parent-1' });
+    expect(child.mounted).not.toContain('transagent-tools');
+    expect(child.prompt).not.toMatch(/<mcp name="transagent-tools"/);
+  });
+
+  it('[ac:ac-watek-context-type-patch-ma-zamontowa-2] a context_type=\'patch\' thread has c4s-tools mounted', async () => {
+    const { mounted, prompt } = await turnFor('patch', { patchPath: 'p.md' });
+    expect(mounted).toContain('c4s-tools');
+    expect(prompt).toMatch(/<mcp name="c4s-tools"/);
+  });
+
+  it('[ac:ac-watek-context-type-patch-nie-ma-zamon] a context_type=\'patch\' thread has no transagent-tools mounted — and keeps c4s-tools, spec-skill-tools and patch-tools', async () => {
+    const { mounted, prompt } = await turnFor('patch', { patchPath: 'p.md' });
+    expect(mounted).not.toContain('transagent-tools');
+    expect(prompt).not.toMatch(/<mcp name="transagent-tools"/);
+    // Only the orchestration server is subtracted.
+    for (const kept of ['c4s-tools', 'spec-skill-tools', 'patch-tools']) {
+      expect(mounted, kept).toContain(kept);
+    }
+  });
+
+  it('[ac:ac-wywolanie-runtransagent-w-watku-conte] in a context_type=\'patch\' thread runTransagent is not registered with the runtime, so a call to it ends in a tool error (no handler to reach)', async () => {
+    const { servers, prompt } = await turnFor('patch', { patchPath: 'p.md' });
+    // The server is not registered in the runtime: `mcp__transagent-tools__runTransagent`
+    // names a server absent from the map handed to `adapter.execute`, so the agent
+    // runtime has nothing to dispatch the call to and answers it with its own
+    // "tool not available" tool_result error (M44 `3f5ej79s`: servers outside the
+    // whitelist are not registered in the runtime).
+    // ASSUMPTION:dev-0001 — the error text is the agent runtime's own answer to a call
+    // on an unregistered tool; the app guarantees the non-registration, not the wording.
+    expect(Object.keys(servers)).not.toContain('transagent-tools');
+    // No mounted server lists the tool either — `<tooling>` mirrors every mounted tool list.
+    expect(prompt).not.toMatch(/<mcp name="[^"]*">[^<]*\brunTransagent\b/);
+    expect(JSON.stringify(hoisted.lastExecute?.allowedTools ?? [])).not.toContain('runTransagent');
   });
 });
 

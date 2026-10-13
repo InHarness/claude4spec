@@ -8,9 +8,10 @@
  * context budget free of the child's full transcript.
  *
  * Per-request instance (like `plan-tools` / `brief-tools`): `parentThreadId` and
- * the `dispatcher` are captured from the parent turn. Mounted ONLY for
- * `context_type ∈ {chat, patch}` and never inside a child banka (recursion depth
- * 1) — both guards live in agent-turn.ts.
+ * the `dispatcher` are captured from the parent turn. Mounted ONLY for a
+ * `context_type='chat'` thread with `parent_thread_id IS NULL` (2.1.18: `patch`
+ * lost it — the registry's declared `transagentTools` column) and never inside a
+ * child banka (recursion depth 1) — both guards live in agent-turn.ts.
  *
  * Read-only cross-spec counterpart: `c4s-tools` (consults a DIFFERENT spec).
  */

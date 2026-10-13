@@ -744,7 +744,7 @@ describe('brief-tools — one tool per internal brief operation', () => {
    */
   const DECLARED_NOT_RENDERED_INTERNALLY = ['list_briefs', 'mark_brief_implemented'];
 
-  it('[ac:ac-kazda-operacja-briefu-renderowana-w-k] every brief operation rendered in `internal` is a brief-tools tool, and their count equals the tools mounted on a brief thread', async () => {
+  it('[ac:ac-kazda-operacja-briefu-renderowana-w-k] every brief operation rendered in `internal` in a brief thread is a brief-tools tool, and their count equals the tools mounted on a brief thread', async () => {
     registerCoreOperations();
     const internalDirectBriefOps = CATALOG.listForChannel('internal')
       .filter((op) => op.opClass === 'brief' && op.name.includes('brief'))
@@ -779,6 +779,9 @@ describe('brief-tools — one tool per internal brief operation', () => {
     for (const ct of ['chat', 'patch', 'ask'] as const) {
       expect(CONTEXT_TYPE_REGISTRY[ct].mcp.briefTools, ct).toBe(false);
     }
+    // 2.1.18 (M21 `m21ctxreg`): a brief thread has no transagent-tools, so no second
+    // surface renders a brief operation there.
+    expect(CONTEXT_TYPE_REGISTRY.brief.mcp.transagentTools).toBe(false);
   });
 });
 
