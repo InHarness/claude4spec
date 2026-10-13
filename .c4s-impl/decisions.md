@@ -15,3 +15,9 @@
 
 - The tolerant read (`splitMarkdown` → `frontmatterRaw`), the editor's literal save (`pageWritePayload`) and the route already existed (2.1.9, dev-0801, M52 criteria). This portion adds what the window's `page-detail` DTO names and the code lacked: the required `title` field (label chain `frontmatter.title` → first H1 → `path`, M02 `xlx33i1v`), so a broken header labels from the H1.
 - The write-back after a save (`m06-anchor-injection`: `SectionIndexerService.mintAnchors` on page roots, `artifactAnchorInjectionSubscriber` on plans) re-wrote `{ frontmatter: page.frontmatter, body }` — for a broken header that is `{}` plus the body, which dropped the block on any `pages` root as soon as a heading lacked an anchor. Both now write `frontmatterRaw + body` literally when the read carried `frontmatterRaw`, so the editor's save keeps the block byte for byte through the whole chain, not only at the route.
+
+## m02-tree-create-button/p1-l4-l5
+
+- The `+` at the PAGES header already created in the base root (App's `handleNewPage`, 0.2.101). The flow moved into one hook, `src/client/hooks/useNewPageAction` (`src/client/hooks/useNewPage.ts`), used by the Sidebar's `+` directly and by App for the `c4s:new-page` event, so the criterion is testable through the real button: `src/client/components/Sidebar.tree-create.render.test.ts`. Sidebar's `onNewPage` prop removed.
+- Row menu: the code already had Rename only (no New page / New folder / Delete existed), but `.html` rows still had the `…` trigger and menu, and the menu opened only from `…`, not on right click. Now: `.md`/`.mdx` rows open the Rename-only menu on right click and from `…`; `.html` rows and folders have neither. The stale `ASSUMPTION:dev-0802` comment on `TreeAccordion` was replaced.
+- No server change: `POST /api/pages/:rootId` already creates parent folders with the page (folder appears with its first page).

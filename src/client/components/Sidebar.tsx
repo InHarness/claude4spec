@@ -30,6 +30,7 @@ import { accordionCollapseToken, subtreeOf } from '../lib/sidebar-accordions.js'
 import { useMovePage } from '../hooks/usePage.js';
 import { api } from '../lib/api.js';
 import { useRoots } from '../hooks/useConfig.js';
+import { useNewPageAction } from '../hooks/useNewPage.js';
 import { usePersistedState, projectKey } from '../state/persisted.js';
 import { UserSection } from './UserSection.js';
 import { GitStatusBadge } from './GitStatusBadge.js';
@@ -48,7 +49,6 @@ interface SidebarProps {
    * during the transition — no longer read for rendering.
    */
   tree?: PageNode[];
-  onNewPage: () => void;
   /** 0.1.96: pages-root file count (legacy; per-root counts render on each accordion). */
   pageCount?: number;
   /** Per-plugin-type counts, keyed by `module.type`. */
@@ -73,7 +73,6 @@ export function Sidebar({
   cwdPath,
   projectName,
   headerLoading,
-  onNewPage,
   entityCounts,
   todoCount,
   todoCountByPath,
@@ -109,6 +108,10 @@ export function Sidebar({
   // `builtin: true`, whatever its identifier.
   const baseRootId = roots.find((r) => r.builtin)?.id ?? null;
   const { data: searchHits = [], isFetching: searchFetching } = usePagesSearch(query, baseRootId);
+  // 2.1.17 (M02 `66se825m`): the only place a page is created from — always in
+  // the base root, whatever accordions are open (see `useNewPageAction`).
+  const newPage = useNewPageAction();
+  const newPageRef = useRef<HTMLButtonElement>(null);
 
   return (
     <aside
@@ -149,10 +152,15 @@ export function Sidebar({
           label="Pages"
           right={
             <button
-              onClick={onNewPage}
+              ref={newPageRef}
+              onClick={() => {
+                const rect = newPageRef.current?.getBoundingClientRect();
+                void newPage({ x: (rect?.left ?? 0) + 8, y: (rect?.bottom ?? 0) + 6 });
+              }}
               className="rounded p-0.5"
               style={{ color: 'var(--c-muted)' }}
               title="New page"
+              aria-label="New page"
             >
               <Plus size={12} />
             </button>
@@ -489,8 +497,8 @@ function SearchResults({
  * of root `rootId` cut out of that root's tree (`['pages', rootId]`, shared by
  * every accordion of the root). Files outside every accordion subtree of the
  * root have no node. Its open state is keyed `(rootId, key)`.
- * ASSUMPTION:dev-0802 — the file-row menu stays Rename-only; no New page / New
- * folder entries exist in the tree yet to be scoped to the accordion's subtree.
+ * 2.1.17: no row creates or deletes an entry — a page is created only by the
+ * `+` at the PAGES header, in the base root, never in the accordion's subtree.
  */
 function TreeAccordion({
   accordion,
@@ -627,6 +635,12 @@ function PagesTree({
 /**
  * 0.2.78 — one file row, and the only place a page can be renamed from.
  *
+ * 2.1.17 (M02 `66se825m`): the context menu (right click, or the row's `…`
+ * trigger) has ONE item, Rename, and only on `.md` / `.mdx` rows. An `.html`
+ * row is a read-only preview and has no menu at all; folders are not files and
+ * have none either (`PagesTree` renders them without one). Nothing in a row
+ * creates or deletes an entry.
+ *
  * ## Why "Rename" is one menu item and not two
  *
  * The field takes a PATH relative to the root, not a bare filename, so typing
@@ -756,8 +770,22 @@ function PageRow({
     );
   }
 
+  // `.html` files are read-only previews: no menu, no trigger, no right click.
+  const hasMenu = node.fileType !== 'html';
+
   return (
-    <div className="group relative flex items-center">
+    <div
+      className="group relative flex items-center"
+      data-page-row={node.path}
+      onContextMenu={
+        hasMenu
+          ? (e) => {
+              e.preventDefault();
+              setMenuOpen(true);
+            }
+          : undefined
+      }
+    >
       <Link
         to="/space/$rootId/$"
         params={{ rootId, _splat: node.path }}
@@ -787,43 +815,47 @@ function PageRow({
           </span>
         )}
       </Link>
-      <button
-        ref={triggerRef}
-        onClick={(e) => {
-          e.preventDefault();
-          setMenuOpen((v) => !v);
-        }}
-        className="absolute right-1 opacity-0 group-hover:opacity-100 focus:opacity-100 rounded p-0.5"
-        style={{ color: 'var(--c-muted)', opacity: menuOpen ? 1 : undefined }}
-        title={`Actions for ${node.name}`}
-        aria-label={`Actions for ${node.name}`}
-      >
-        <MoreHorizontal size={12} />
-      </button>
-      {/*
-       * The published `Popover`, not a twin of it — same rule as the OTHERS
-       * flyout below: the primitive owns the z-tier, the viewport clamp and the
-       * mousedown/Escape dismissal, and naming any of that here is the anatomy
-       * the one-implementation scan looks for.
-       */}
-      <Popover
-        open={menuOpen}
-        onClose={() => setMenuOpen(false)}
-        anchorRef={triggerRef}
-        placement="right"
-        width={180}
-      >
-        <button
-          onClick={startRename}
-          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-[13px] text-left transition"
-          style={{ color: 'var(--c-ink)' }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--c-panel)')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-        >
-          <Pencil size={13} />
-          <span>Rename…</span>
-        </button>
-      </Popover>
+      {hasMenu && (
+        <>
+          <button
+            ref={triggerRef}
+            onClick={(e) => {
+              e.preventDefault();
+              setMenuOpen((v) => !v);
+            }}
+            className="absolute right-1 opacity-0 group-hover:opacity-100 focus:opacity-100 rounded p-0.5"
+            style={{ color: 'var(--c-muted)', opacity: menuOpen ? 1 : undefined }}
+            title={`Actions for ${node.name}`}
+            aria-label={`Actions for ${node.name}`}
+          >
+            <MoreHorizontal size={12} />
+          </button>
+          {/*
+           * The published `Popover`, not a twin of it — same rule as the OTHERS
+           * flyout below: the primitive owns the z-tier, the viewport clamp and the
+           * mousedown/Escape dismissal, and naming any of that here is the anatomy
+           * the one-implementation scan looks for.
+           */}
+          <Popover
+            open={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            anchorRef={triggerRef}
+            placement="right"
+            width={180}
+          >
+            <button
+              onClick={startRename}
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-[13px] text-left transition"
+              style={{ color: 'var(--c-ink)' }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--c-panel)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            >
+              <Pencil size={13} />
+              <span>Rename…</span>
+            </button>
+          </Popover>
+        </>
+      )}
     </div>
   );
 }

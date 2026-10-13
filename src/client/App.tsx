@@ -8,7 +8,7 @@ import { ResizeHandle } from './components/ResizeHandle.js';
 import { Sidebar } from './components/Sidebar.js';
 import { useFileWatcher } from './hooks/useFileWatcher.js';
 import { usePages } from './hooks/usePages.js';
-import { useCreatePage } from './hooks/usePage.js';
+import { useNewPageAction } from './hooks/useNewPage.js';
 import { useEntityCounts } from './hooks/useEntityCounts.js';
 import { useTodosCounts } from './hooks/useTodos.js';
 import { usePageLinksCounts } from './hooks/usePageLinks.js';
@@ -18,12 +18,10 @@ import { useRegistryVersion } from './core/plugin-host/useRegistryVersion.js';
 import { IndexStaleBanner } from './components/IndexStaleBanner.js';
 import { ToastHost } from './ui/ToastHost.js';
 import { TrustPluginsGate } from './components/TrustPluginsModal.js';
-import { openPopover, toast } from './ui/events.js';
 import { usePersistedWidth, useTheme } from './state/tweaks.js';
 import { useChatStore } from './state/chat.js';
 import { useBaseRootId, useConfig } from './hooks/useConfig.js';
 import { countFiles } from '../shared/page-files.js';
-import { deriveTitle } from './lib/newPage.js';
 
 export function RootLayout() {
   const navigate = useNavigate();
@@ -158,7 +156,6 @@ function MainShell({ projectName }: { projectName: string | null }) {
   useTheme();
   const [sidebarW, setSidebarW] = usePersistedWidth('sidebar', 300);
   const rootRef = useRef<HTMLDivElement>(null);
-  const navigate = useNavigate();
 
   useFileWatcher();
 
@@ -170,7 +167,6 @@ function MainShell({ projectName }: { projectName: string | null }) {
   const { data: entityCounts } = useEntityCounts();
   const { data: todoCounts } = useTodosCounts();
   const { data: pageLinkCounts } = usePageLinksCounts();
-  const createPage = useCreatePage();
 
   const { cwd: cwdPath, loading: cwdLoading } = useCwdLabel();
   const headerLoading = projectName === null || cwdLoading;
@@ -186,24 +182,12 @@ function MainShell({ projectName }: { projectName: string | null }) {
     [setSidebarW]
   );
 
+  // 2.1.17: the same action as the sidebar's `+` — always into the base root.
+  const newPage = useNewPageAction();
   const handleNewPage = useCallback(async () => {
     const rect = rootRef.current?.getBoundingClientRect();
-    const result = await openPopover('new-page', { x: (rect?.left ?? 0) + 40, y: (rect?.top ?? 0) + 80 });
-    if (!result) return;
-    try {
-      // The global "new page" action targets the base page root.
-      if (!baseRootId) return;
-      await createPage.mutateAsync({
-        rootId: baseRootId,
-        path: result.path,
-        content: `# ${deriveTitle(result.path)}\n\n`,
-      });
-      navigate({ to: '/space/$rootId/$', params: { rootId: baseRootId, _splat: result.path } });
-      toast.success(`Page ${result.path} created`);
-    } catch (err) {
-      toast.error((err as Error).message);
-    }
-  }, [createPage, navigate, baseRootId]);
+    await newPage({ x: (rect?.left ?? 0) + 40, y: (rect?.top ?? 0) + 80 });
+  }, [newPage]);
 
   useEffect(() => {
     const onNewPage = () => {
@@ -246,7 +230,6 @@ function MainShell({ projectName }: { projectName: string | null }) {
           projectName={projectName}
           headerLoading={headerLoading}
           tree={tree}
-          onNewPage={handleNewPage}
           pageCount={pageCount}
           entityCounts={entityCounts ?? {}}
           todoCount={todoCounts?.total ?? 0}
