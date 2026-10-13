@@ -1,0 +1,167 @@
+{
+ "role": "verifier",
+ "scope": {
+  "kind": "unit",
+  "id": "frontend-serving"
+ },
+ "release": "2.1.20",
+ "rows": [
+  {
+   "slug": "get-api-plugins-frontend-manifest",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/routes/plugins.ts:118 GET /plugins/frontend-manifest (mounted at /api) → buildFrontendManifest (src/server/core/plugin-host/frontend-manifest.ts:42); src/server/routes/plugins.frontend.test.ts:114 asserts status 200, application/json, keys ['hostApiVersion','importMap','plugins'] per linkedDtos frontend-manifest-response/200",
+   "type": "endpoint"
+  },
+  {
+   "slug": "get-api-plugins-name-asset",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/routes/plugins.ts:149 GET /plugins/:name/:asset → resolvePluginAsset (frontend-assets.ts:283), 404 PluginFrontendAssetError at :160; src/server/routes/plugins.frontend.test.ts:301 asserts 200 + text/javascript|text/css|application/json, X-Content-Type-Options nosniff, no Cache-Control, scoped name as one encoded segment",
+   "type": "endpoint"
+  },
+  {
+   "slug": "frontend-manifest-response",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/shared/plugin-host/frontend-manifest.ts:26 FrontendManifestResponse {hostApiVersion: string; importMap: Record<string,string>; plugins: PluginFrontendEntry[]}, PluginFrontendEntry {name, version, entry, css?} at :14; src/server/routes/plugins.frontend.test.ts:121 asserts types, no top-level css, entry keys ⊆ name/version/entry/css",
+   "type": "dto"
+  },
+  {
+   "slug": "plugin-frontend-asset-error",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/shared/plugin-host/frontend-manifest.ts:48 PluginFrontendAssetError { error: { code: string; message: string } }, PLUGIN_FRONTEND_NOT_FOUND :40; src/server/routes/plugins.frontend.test.ts:392 asserts Object.keys(body)==['error'], code PLUGIN_FRONTEND_NOT_FOUND, typeof message 'string' for extension/separator/../untrusted/missing/unknown",
+   "type": "dto"
+  },
+  {
+   "slug": "ac-endpoint-manifestu-frontendu-option-b",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/plugins.frontend.test.ts:149 trusted → base-pkg + local-pkg with entry+css URLs; untrusted → ['base-pkg']; expect(trusted.importMap).toEqual(buildImportMap()) and keys == SHARED_PEER_SPECIFIERS incl. @c4s/plugin-runtime(/ui); no plugin-name keys, every value /^\\/api\\/plugins\\/runtime\\//; code routes/plugins.ts:100 currentPool + frontend-assets.ts:245",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-frontend-bundle-esm-dist-frontend-js",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/plugins.frontend.test.ts:179 package without exports → entry /api/plugins/no-exports/frontend.js identical with untrusted, trusted and workspace-only apps; served 200 with overlay untrusted; code frontend-assets.ts:169 packageFrontendEntry fallback 'dist/frontend.js', npm source ungated :253",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-frontend-pluginu-ktorego-backend-ma-s",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/plugins.frontend.test.ts:202 records incompatible/failed/skipped + overlay without loaded record → names == ['local-ok','ok']; code frontend-assets.ts:247 admit() only when loaded.has(recordKey)",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-pakiet-npm-bez-wejscia-backendowego-n",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/plugins.frontend.test.ts:224 real loadWorkspacePlugins: frontend-only package status 'failed' (loader.ts:191 PLUGIN_IMPORT_FAILED), manifest plugins == ['full']",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-przy-kolizji-nazwy-pluginu-manifest-f",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/plugins.frontend.test.ts:250 npm 'glossary' 1.0.0 vs overlay 9.9.9 → plugins == [{name:'glossary',version:'9.9.9',...}] and served text 'export const FROM = \"overlay\";'; code frontend-assets.ts:256 overlay admitted last, replaces by name",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-przy-kolizji-nazwy-pluginu-manifest-f-2",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/plugins.frontend.test.ts:264 envelope with package name '@acme/tables' vs npm '@acme/tables' → manifest version 2.0.0, served 'export const FROM = \"npm\";'; code frontend-assets.ts:250-255 envelopes then npm",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-route-api-plugins-name-frontend-js-cs",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/plugins.frontend.test.ts:329 overlay, npm and envelope each serve frontend.js, chunk-1.js, frontend.css, frontend.js.map (application/json); untrusted overlay 404; code frontend-assets.ts:137 ASSET_CONTENT_TYPE .js/.css/.map, resolveWithinDir :269",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-route-assetow-pluginu-serwuje-jako-we",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/plugins.frontend.test.ts:358 exports['./frontend']={import:'./out/client.js'} → entry /api/plugins/declares/client.js serving 'export const FROM = \"exports\";'; /frontend.js → 404 PLUGIN_FRONTEND_NOT_FOUND; code frontend-assets.ts:169 + overlay-loader resolveExportsEntry",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-zadanie-route-u-assetow-pluginu-o-pli",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/plugins.frontend.test.ts:375 meta.json, index.html, source.ts, secret.env → status 404, body.error.code 'PLUGIN_FRONTEND_NOT_FOUND'; frontend.js 200; code routes/plugins.ts:158 assetContentType null → 404",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-plugin-bandlujacy-wlasna-kopie-reacta-ti",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/plugins.frontend.test.ts:281 bundle with inlined React/Tiptap is announced (names == ['bundles-react']) and served verbatim; tests/integration/architecture/plugin-externalized-peers.test.ts:85 expect(gateManifest(manifest)).toBeNull() — load gate checks only host API/engines; no bundle detection left in src (grep)",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-komponenty-pluginu-ze-zbundlowana-wla",
+   "level": 2,
+   "status": "covered",
+   "evidence": "tests/integration/architecture/plugin-externalized-peers.test.ts:124 second React copy loaded via createRequire cache swap; ExternalizedChip renders '<span>host</span>', expect(() => renderToStaticMarkup(hostReact.createElement(BundledChip))).toThrow()",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-build-frontendu-pluginu-wygenerowaneg",
+   "level": 2,
+   "status": "covered",
+   "evidence": "tests/integration/architecture/plugin-externalized-peers.test.ts:61 per envelope with exports['./frontend'] (starter layout, ASSUMPTION:dev-2003 — starter repo is external): react/react-dom (+@tiptap/core when a peer) in peerDependencies, not in dependencies, and rollup external(id) true incl. react/jsx-runtime, react-dom/client, @c4s/plugin-runtime; all 8 envelopes declare react, react-dom, @tiptap/core-using ones have @tiptap/ prefix external (e.g. plugins/c4s-plugin-ac/vite.config.ts:78)",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-frontend-pluginu-nie-bandluje-wlasnej-ko",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/plugins.frontend.test.ts:444 served @tanstack/react-router shim contains 'globalThis.__c4s_shared[\"@tanstack/react-router\"]'; evaluated against host namespace: createRoute/createRootRoute/createRouter/useRouter/Outlet/Link toBe host's; fragment route toBeInstanceOf(hostRouter.Route) and getParentRoute() toBe hostRoot (verified Route export + instanceof in installed @tanstack/react-router); shim from runtime-shims.ts:62",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-frontend-pluginu-zbudowany-automatycznym",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/plugins.frontend.test.ts:469 importMap['react/jsx-runtime']=='/api/plugins/runtime/react-jsx-runtime.js', ['react/jsx-dev-runtime'] separate and != importMap.react; jsx/jsxs/Fragment/jsxDEV toBe host's; evalShim(jsxSource, {}) toThrow(/missing shared singleton \"react\\/jsx-runtime\"/) (runtime-shims.ts:67); SHARED_PEER_SPECIFIERS frontend-manifest.ts:67-68",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-lucide-react-jest-externalized-peer-w",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/plugins.frontend.test.ts:497 importMap['lucide-react']=='/api/plugins/runtime/lucide-react.js', shim re-exports from __c4s_shared, viaPeer.Search/Trash2 toBe host lucide exports; SHARED_PEER_SPECIFIERS frontend-manifest.ts:82, PEER_SLUG runtime-shims.ts:34",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-serwowanie-frontendu-nakladki-project-lo",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/plugins.frontend.test.ts:510 overlay local-glossary with isTrusted false → manifest plugins == [] and frontend.js/frontend.css 404 PLUGIN_FRONTEND_NOT_FOUND; flip trusted=true (read per request) → announced {entry:'/api/plugins/local-glossary/frontend.js', css:...} and served; read per ASSUMPTION:dev-2009 (fixed frontend.js route retired → asset route); code routes/plugins.ts:102-113, frontend-assets.ts:256",
+   "type": "ac"
+  },
+  {
+   "slug": "goal:frontend-serving",
+   "level": 2,
+   "status": "covered",
+   "evidence": "server-side filter + 3-source precedence: src/server/core/plugin-host/frontend-assets.ts:245; import map injected without plugin entries: src/server/index.ts:147-151 (buildImportMap only); client imports plugins[].entry, no version compare, refresh after activation save: src/client/runtime/boot-plugins.ts:56-73,198 (called from src/client/core/plugin-host/pluginSettings.ts:70); asset route .js/.css/.map with exports['./frontend'] fallback: routes/plugins.ts:149, frontend-assets.ts:169; template peers external: envelopes' vite.config.ts (dev-2003); removals: no fixed frontend.js/frontend.css routes, no top-level css[] (FrontendManifestResponse), no client hostApiVersion compare, no bundled React/Tiptap detection (grep src clean)"
+  },
+  {
+   "slug": "deviation:dev-2009",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-2009.json — incorrect, non-blocking, sent:true; ASSUMPTION:dev-2009 applied and tested at src/server/routes/plugins.frontend.test.ts:510"
+  }
+ ],
+ "suite": {
+  "command": "npm run typecheck",
+  "exitCode": 0,
+  "summary": "tsc --noEmit across root and plugin workspaces: 0 'error TS'; tests not run locally per ## This build (env-runner only); tests touching the diff read — no broken assertion found"
+ }
+}
