@@ -1,6 +1,6 @@
 import type { WritingStyleItem } from '../../lib/api.js';
 import { StyleOption } from '../StyleOption.js';
-import { WRITING_STYLE_SOURCE_BADGE } from '../../../shared/writing-styles.js';
+import { writingStyleSourceBadge } from '../../../shared/writing-styles.js';
 
 const NONE_KEY = '__none__';
 
@@ -41,7 +41,8 @@ export function WritingStyleList({
             title={s.title}
             description={s.description}
             selected={selection === s.slug}
-            badge={WRITING_STYLE_SOURCE_BADGE[s.source] ?? s.source}
+            // M16 `os387tmx`: every card carries its source badge from the M15 map (`ssh0om79`).
+            badge={writingStyleSourceBadge(s.source)}
             onClick={() => onSelect(s.slug)}
             radioName="writing-style"
             radioValue={s.slug}

@@ -108,7 +108,8 @@ export class MarkdownFileStore {
    */
   async readDetail(relPath: string): Promise<PageDetail> {
     const raw = await this.readRaw(relPath);
-    return { rootId: this.rootId, ...parseRead(relPath, raw), content: raw };
+    const read = parseRead(relPath, raw);
+    return { rootId: this.rootId, ...read, title: pageLabel(relPath, read.frontmatter, read.body), content: raw };
   }
 
   /**
@@ -229,6 +230,19 @@ export function splitMarkdown(raw: string): {
     if (block === undefined) return { frontmatter: {}, body: raw };
     return { frontmatter: {}, body: raw.slice(block.length), frontmatterRaw: block };
   }
+}
+
+/**
+ * 2.1.17 — the page's label (M02 `xlx33i1v`): `frontmatter.title` → the first
+ * H1 of the body → `path`. A header whose YAML does not parse reads as `{}`, so
+ * the chain skips its first link and the label comes from the H1 below the block.
+ */
+export function pageLabel(relPath: string, frontmatter: Record<string, unknown>, body: string): string {
+  const fmTitle = frontmatter['title'];
+  if (typeof fmTitle === 'string' && fmTitle.trim()) return fmTitle.trim();
+  const h1 = /^#[ \t]+(.+?)[ \t]*$/m.exec(body)?.[1]?.trim();
+  if (h1) return h1;
+  return relPath;
 }
 
 /** `read()`'s split of bytes already read — shared with `readDetail` so both answer from ONE read. */

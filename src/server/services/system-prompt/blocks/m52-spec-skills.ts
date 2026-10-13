@@ -40,25 +40,30 @@ export const M52_AVAILABLE_SKILLS_LINES: AvailableSkillsLineContribution = {
 };
 
 /**
- * `<current_skill>` (template `szablon-current-skill`, `9zio901p`): the open file
- * of a `skills`-kind root — identity only, never content, then one line saying how
- * (and whether) it can be read. Two variants:
+ * `<current_skill>` (template `szablon-current-skill`, `9zio901p`, 2.1.17): the
+ * open file of a PACKAGE of a `skills`-kind root — a file in a first-level
+ * subdirectory — identity only, never content, then one line saying how (and
+ * whether) it can be read. The variant is chosen by the winner of the package
+ * slug's precedence chain (M37 `aw9kcadc`), not by the package's validity:
  *
- *  - the package `load_skill_file` returns for this slug (valid, or invalid with
- *    no other source resolving the slug — the response then marks it invalid);
- *  - SHADOWED: another source resolves the slug, so `load_skill_file` returns that
- *    winner, not this file — and the agent has no route to the file at all
- *    (`rkbsi6ky` edge case 13).
+ *  - the read variant — the slug resolves to no source other than this
+ *    `project-rooted` package (it is the winner, or it is invalid and no source
+ *    resolves the slug — the response then marks it invalid);
+ *  - SHADOWED: the slug resolves to another source — an invalid package, or a
+ *    valid one outranked in the chain (a `plugin` entry in `contextual`) — so
+ *    `load_skill_file` returns that winner, not this file, and the agent has no
+ *    route to the file at all (`rkbsi6ky` edge case 13).
  *
- * No open file of this kind → no block. An open page does not stand in for it:
- * `<current_page>` covers roots of kind `pages` only (M02 `cg80qj0e`).
+ * No open package file → no block: a loose file at the root's top level has no
+ * slug and no `load_skill_file` route (`rkbsi6ky` case 9). An open page does not
+ * stand in for it: `<current_page>` covers roots of kind `pages` only (M02 `cg80qj0e`).
  */
 export function buildCurrentSkill(skill: CurrentSkillRef): string {
   const tag = selfClose('current_skill', attrs({ slug: skill.slug, file: skill.file }));
   if (skill.shadowedBy) {
     return [
       tag,
-      `The user has this skill file open, but it is shadowed: the slug resolves to the skill "${skill.shadowedBy.slug}" from source "${skill.shadowedBy.source}", and load_skill_file returns that skill, not this file. You have no way to read this file — not with load_skill_file, not with page tools, not with built-in file tools. It becomes readable through load_skill_file only once its package is renamed to a slug no other source resolves.`,
+      `The user has this skill file open, but it is shadowed: the slug resolves to the skill "${skill.shadowedBy.slug}" from source "${skill.shadowedBy.source}", and load_skill_file returns that skill, not this file. You have no way to read this file — not with load_skill_file, not with page tools, not with built-in file tools. It becomes readable through load_skill_file once this package wins its slug; renaming the package to a slug no other source resolves always achieves that.`,
     ].join('\n');
   }
   return [

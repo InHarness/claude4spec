@@ -10,14 +10,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createTestApp, type TestApp } from '../../../tests/helpers/test-app.js';
+import { createPluginTestApp, type PluginTestApp } from '@inharness-ai/claude4spec/plugin-testing';
+import { manifest } from '../src/manifest.js';
 import { buildOverview, cellLookup, densify, metaOf, toSparseCells } from '../src/entity/spreadsheet/overview.js';
 import type { RawEntity } from '../src/host-kit/host-types.js';
 
 describe('the server the host registers', () => {
-  let t: TestApp;
+  let t: PluginTestApp;
   beforeEach(async () => {
-    t = await createTestApp();
+    t = await createPluginTestApp([manifest]);
   });
   afterEach(() => t.cleanup());
 

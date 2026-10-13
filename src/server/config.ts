@@ -1158,6 +1158,26 @@ export function loadOrCreateConfig(cwd: string, cli: ConfigCliArgs): LoadResult 
   return { config: effective, created: false, path: file };
 }
 
+/**
+ * 2.1.17 (M01 `3zqke46q`): the gate every loader migration passes BEFORE it
+ * writes `config.json`. The rewritten file must load — type validation (which
+ * refuses a reserved system-root id, D4 rule 6) AND the namespace-overlap rule
+ * over its `roots[]` (D4 rule 3). A project from before a system root existed
+ * (`skills`, 2.1.9) whose `roots[]` collides with it — by `id`, or by a `dir`
+ * at or under `.claude4spec/skills` — does not start, and the loader migrates
+ * nothing: no rewrite of the colliding entry, no format bump, the file stays
+ * byte for byte as the user left it. The repair is the user's (edit `dir`, or
+ * rename the space so the transition is recorded).
+ */
+function assertMigratable(raw: Record<string, unknown>): void {
+  const loaded = validate(raw);
+  const roots = loaded.roots ?? legacyRootsFromRaw(raw);
+  if (roots) {
+    const { errors } = validateRootDirs(roots);
+    if (errors.length > 0) throw new Error(errors[0]);
+  }
+}
+
 export interface MigrateV3Result {
   config: NormalizedConfig;
   /** True iff this call rewrote config.json on disk. */
@@ -1207,6 +1227,8 @@ export function migrateConfigToV3(cwd: string): MigrateV3Result {
   // Bring the file to at least v3; the pagesDir→roots (v4) bump is owned by
   // migrateConfigToV4, called right after this at activation.
   if (typeof raw.$schemaVersion !== 'number' || raw.$schemaVersion < 3) raw.$schemaVersion = 3;
+  // 2.1.17: a file that cannot load is refused untouched — never half-migrated.
+  assertMigratable(raw);
   atomicWrite(file, JSON.stringify(raw, null, 2) + '\n');
   return { config: readConfig(cwd), migrated: true, carried };
 }
@@ -1297,7 +1319,7 @@ export function migrateConfigToV4(cwd: string): { config: NormalizedConfig; migr
   // `id`, a duplicate root `id`, …) fails to load either way — but it must fail
   // with the user's file untouched, not half-rewritten. In a git-tracked spec
   // repo a partial rewrite is a dirty tree the next auto-commit would sweep up.
-  validate(raw);
+  assertMigratable(raw);
   atomicWrite(file, JSON.stringify(raw, null, 2) + '\n');
   return { config: readConfig(cwd), migrated: true };
 }

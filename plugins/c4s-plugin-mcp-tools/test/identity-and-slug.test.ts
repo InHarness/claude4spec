@@ -6,7 +6,8 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
-import { createTestApp, type TestApp } from '../../../tests/helpers/test-app.js';
+import { createPluginTestApp, type PluginTestApp } from '@inharness-ai/claude4spec/plugin-testing';
+import { manifest } from '../src/manifest.js';
 
 const base = {
   name: 'read_page',
@@ -15,9 +16,9 @@ const base = {
 };
 
 describe('mcp-tool — slug and title', () => {
-  let t: TestApp;
+  let t: PluginTestApp;
   beforeEach(async () => {
-    t = await createTestApp();
+    t = await createPluginTestApp([manifest]);
   });
   afterEach(() => t.cleanup());
 
@@ -96,15 +97,15 @@ describe('mcp-tool — slug and title', () => {
  * go through HTTP, which is where an author's write actually lands.
  */
 describe('mcp-tool — the limits that must be loud', () => {
-  let t: TestApp;
+  let t: PluginTestApp;
   beforeEach(async () => {
-    t = await createTestApp();
+    t = await createPluginTestApp([manifest]);
   });
   afterEach(() => t.cleanup());
 
   it('refuses a create with no description rather than storing a blank contract', async () => {
     const { description: _omitted, ...withoutDescription } = base;
-    const res = await request(t.app).post('/api/mcp-tools').send(withoutDescription);
+    const res = await request(t.app).post(`${t.baseUrl}/mcp-tools`).send(withoutDescription);
     expect(res.status).toBe(400);
     expect(JSON.stringify(res.body)).toMatch(/description/i);
   });
@@ -117,12 +118,12 @@ describe('mcp-tool — the limits that must be loud', () => {
    */
   it('refuses over-long logic instead of truncating it', async () => {
     const tooLong = await request(t.app)
-      .post('/api/mcp-tools')
+      .post(`${t.baseUrl}/mcp-tools`)
       .send({ ...base, logic: 'x'.repeat(1001) });
     expect(tooLong.status).toBe(400);
 
     const ok = await request(t.app)
-      .post('/api/mcp-tools')
+      .post(`${t.baseUrl}/mcp-tools`)
       .send({ ...base, logic: 'x'.repeat(1000) });
     expect(ok.status).toBe(201);
     const row = t.db

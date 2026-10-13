@@ -139,6 +139,34 @@ describe('skill-tools — load_skill_file', () => {
       expect(body).toEqual({ slug: 'house-style', path: 'workflows/brief.md', content: 'brief methodology' });
     });
 
+    it('[ac:ac-podpliki-pakietu-skilla-spoza-templat] a workflows/*.md subfile is readable through load_skill_file(slug, file) alone — an MCP call, no FS built-in, no disk path in or out', async () => {
+      const root = writeSkill('house-style');
+      const dir = path.join(root.dir, 'house-style');
+      fs.mkdirSync(path.join(dir, 'workflows'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'workflows', 'brief.md'), 'brief methodology');
+      fs.writeFileSync(path.join(dir, 'workflows', 'patch.md'), 'patch methodology');
+      await mount(SkillRegistry.load([root]));
+
+      // The input carries an ADDRESS (slug, file) — the schema has no path-like field.
+      const { tools } = await client.listTools();
+      expect(Object.keys((tools[0]!.inputSchema.properties ?? {}) as Record<string, unknown>).sort()).toEqual([
+        'file',
+        'slug',
+      ]);
+
+      for (const [file, content] of [
+        ['workflows/brief.md', 'brief methodology'],
+        ['workflows/patch.md', 'patch methodology'],
+      ] as const) {
+        // The only thing the caller does is an MCP tool call — the client holds no Read/Glob/Grep.
+        const { isError, body } = await call({ slug: 'house-style', file });
+        expect(isError, file).toBe(false);
+        expect(body).toEqual({ slug: 'house-style', path: file, content });
+        // The answer names no disk location either.
+        expect(JSON.stringify(body)).not.toContain(tmp);
+      }
+    });
+
     it('never puts a disk path in the payload — the address is (slug, file)', async () => {
       const root = writeSkill('house-style');
       await mount(SkillRegistry.load([root]));
@@ -182,7 +210,7 @@ describe('skill-tools — load_skill_file', () => {
       expect(body.hint).toContain('house-rules');
     });
 
-    it('SKILL_FILE_NOT_FOUND enumerates the package\'s available paths', async () => {
+    it('[ac:ac-odmowa-skill-file-not-found-wylicza-w] SKILL_FILE_NOT_FOUND enumerates the package\'s available paths', async () => {
       // Alongside the manifest, this refusal is the only channel through which the
       // layout of a package can be discovered.
       const root = writeSkill('house-style');
@@ -346,7 +374,14 @@ describe('skill-tools — load_skill_file', () => {
     const schema = tool.inputSchema as { properties: Record<string, { description?: string }>; required?: string[] };
     expect(Object.keys(schema.properties)).toEqual(['contextType']);
     expect(schema.required ?? []).toEqual([]);
-    expect(schema.properties.contextType!.description).toContain(SKILL_TOOL_TEXT.external.contextType);
+    expect(schema.properties.contextType!.description).toBe(
+      "Context type whose skill set to list — one of `chat`, `brief`, `patch`, `ask`. Omit to list the whole registry instead of one context's set.",
+    );
+    // 2.1.17 — a plain string, deliberately not an enum: SDK-side schema validation
+    // would refuse an unknown value in its own error shape before the core sees it.
+    const contextTypeSchema = schema.properties.contextType as { type?: string; enum?: unknown };
+    expect(contextTypeSchema.type).toBe('string');
+    expect(contextTypeSchema.enum).toBeUndefined();
 
     const res = await client.callTool({ name: 'list_skills', arguments: {} });
     const body = JSON.parse((res.content as Array<{ text: string }>)[0]!.text);
@@ -360,6 +395,14 @@ describe('skill-tools — load_skill_file', () => {
       ],
       writingStyle: { slug: 'house-style', title: 'house-style' },
     });
+
+    // The only refusal: a value outside the enumeration reaches the core and comes
+    // back as the core's INVALID_ARGUMENT naming the legal values — not an SDK error.
+    const refused = await client.callTool({ name: 'list_skills', arguments: { contextType: 'breif' } });
+    expect(refused.isError).toBe(true);
+    const refusal = JSON.parse((refused.content as Array<{ text: string }>)[0]!.text);
+    expect(refusal.code).toBe('INVALID_ARGUMENT');
+    for (const legal of ['chat', 'brief', 'patch', 'ask']) expect(refusal.error).toContain(legal);
   });
 
   it('reads the LIVE registry, so a skill edited mid-thread takes effect on the next call', async () => {

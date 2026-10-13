@@ -115,7 +115,13 @@ export function artifactAnchorInjectionSubscriber(
       const injected = injectArtifactAnchors(page.body, artifactAnchorLevels(kind));
       if (injected === page.body) return;
       suppress(source, relPath);
-      await mount.store.write(relPath, { frontmatter: page.frontmatter, body: injected });
+      // 2.1.17 — a header whose YAML does not parse goes back literally (M02 `xlx33i1v`).
+      await mount.store.write(
+        relPath,
+        page.frontmatterRaw !== undefined
+          ? { body: page.frontmatterRaw + injected }
+          : { frontmatter: page.frontmatter, body: injected },
+      );
     },
     onUnlink: () => {},
   };

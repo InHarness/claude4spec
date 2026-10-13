@@ -154,7 +154,15 @@ export class SectionIndexerService implements WatchSubscriber {
     const minted = this.mintInto(page.body);
     if (!minted) return false;
     suppress(source, relPath);
-    await root.pages.write(relPath, { frontmatter: page.frontmatter, body: minted });
+    // 2.1.17 — a header whose YAML does not parse reads as `{}` with the literal
+    // block aside (`frontmatterRaw`); write it back in front of the body, byte for
+    // byte, instead of dropping it (M02 `xlx33i1v`).
+    await root.pages.write(
+      relPath,
+      page.frontmatterRaw !== undefined
+        ? { body: page.frontmatterRaw + minted }
+        : { frontmatter: page.frontmatter, body: minted },
+    );
     return true;
   }
 

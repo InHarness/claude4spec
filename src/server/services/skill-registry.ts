@@ -694,7 +694,14 @@ class PluginSkillSource implements SkillSourceRegistration {
     return this.meta.has(slug);
   }
 
-  /** First push wins; returns whether the push was taken. */
+  /**
+   * First push wins; returns whether the push was taken.
+   *
+   * No `version` check here, deliberately (M37 2.1.17): "version above supported →
+   * skip" belongs to the sources reading a `SKILL.md` header from disk (`user`,
+   * `project-rooted`). A contribution arrives with its package, whose compatibility
+   * with the host the loader's `hostApiVersion` gate already decided.
+   */
   push(c: PluginSkillContribution): boolean {
     if (this.meta.has(c.slug)) return false;
     this.meta.set(c.slug, {

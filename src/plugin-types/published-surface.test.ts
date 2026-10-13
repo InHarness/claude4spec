@@ -24,6 +24,11 @@ import {
   PLUGIN_RUNTIME_BACKEND_VALUE_NAMES,
 } from '../shared/plugin-host/frontend-manifest.js';
 import * as backendBarrel from '../server/plugin-runtime/index.js';
+import {
+  HOST_API_MINOR_RELEASES,
+  HOST_API_UNVERSIONED_CHANGES,
+  migrationsBetween,
+} from '../shared/plugin-host/host-api.js';
 
 /**
  * The names the published `@inharness-ai/claude4spec/plugin-runtime` surface
@@ -202,5 +207,61 @@ describe('zod facade', () => {
     const schema = (backendBarrel as { z: typeof z }).z.object({ title: z.string() });
     expect(() => z.toJSONSchema(schema)).not.toThrow();
     expect(z.toJSONSchema(schema)).toMatchObject({ type: 'object' });
+  });
+});
+
+/**
+ * 2.1.17 (M33 L11 `m33l11sc`) — the plugin test harness `…/plugin-testing` sits
+ * OUTSIDE the versioned Host API surface, on the same rule as the `experimental`
+ * UI-kit components: its shape is a matter of the package release (npm semver),
+ * so neither adding it nor changing it moves `HOST_API_VERSION`.
+ */
+describe('plugin test harness subpath — outside hostApiVersion', () => {
+  const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../../package.json', import.meta.url)), 'utf8')) as {
+    exports: Record<string, unknown>;
+  };
+  /** Every record the Host API keeps of its versioned surface, as one searchable text. */
+  const versionedRecords = JSON.stringify([
+    migrationsBetween(0, Number.MAX_SAFE_INTEGER),
+    HOST_API_MINOR_RELEASES,
+    HOST_API_UNVERSIONED_CHANGES,
+  ]);
+  const publishedSurface = ['./plugin-runtime.ts', './ui.ts', './ambient.d.ts'].map((f) =>
+    readFileSync(fileURLToPath(new URL(f, import.meta.url)), 'utf8'),
+  );
+
+  it('[ac:ac-dodanie-subpathu-plugin-testing-do-pu] adding the …/plugin-testing subpath to the published package does not change hostApiVersion', () => {
+    // The subpath is published…
+    expect(pkg.exports['./plugin-testing']).toBeDefined();
+    // …and the Host API version is the baseline the published runtime surface pins
+    // (the first assertion of this file), not a bump.
+    expect(HOST_API_VERSION).toBe('2.1.0');
+    // No record of the versioned surface — major migrations, minor releases,
+    // in-baseline changes — carries the harness: its addition was not a Host API change.
+    expect(versionedRecords).not.toMatch(/plugin-testing|createPluginTestApp/);
+    // The versioned value surface does not carry it either.
+    expect(PLUGIN_RUNTIME_EXPORT_NAMES).not.toContain('createPluginTestApp' as never);
+    expect(PLUGIN_RUNTIME_BACKEND_VALUE_NAMES).not.toContain('createPluginTestApp' as never);
+    expect(backendBarrel).not.toHaveProperty('createPluginTestApp');
+  });
+
+  it('[ac:ac-lamiaca-zmiana-sygnatury-createplugin] a breaking change to the createPluginTestApp signature does not bump the hostApiVersion major', () => {
+    // The surface `hostApiVersion` versions is `…/plugin-runtime` (+ `/ui`), and
+    // its published declarations never reference the harness — so no signature
+    // of the harness, breaking or not, is part of what the major guards.
+    for (const source of publishedSurface) {
+      expect(source).not.toMatch(/plugin-testing|createPluginTestApp|PluginTestApp/);
+    }
+    // The harness module neither defines nor re-exports the version constant the
+    // loader gates on: reshaping it cannot move `HOST_API_VERSION`.
+    const harness = readFileSync(fileURLToPath(new URL('../server/plugin-testing/index.ts', import.meta.url)), 'utf8');
+    const harnessTypes = readFileSync(fileURLToPath(new URL('./plugin-testing.ts', import.meta.url)), 'utf8');
+    for (const source of [harness, harnessTypes]) {
+      expect(source).not.toMatch(/HOST_API_VERSION\s*=|export\s*\{[^}]*HOST_API_VERSION/);
+    }
+    // A plugin built against the current major keeps passing the gate whatever the
+    // harness looks like: no major boundary has been crossed past 2.
+    expect(HOST_API_VERSION.split('.')[0]).toBe('2');
+    expect(migrationsBetween(2, Number.MAX_SAFE_INTEGER)).toEqual([]);
   });
 });

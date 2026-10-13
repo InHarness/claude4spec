@@ -2016,6 +2016,24 @@ describe('runAgentTurn — the profile gate covers the inline servers too', () =
     }
   });
 
+  it('[ac:ac-w-watku-context-type-brief-serwer-ski] a brief thread mounts skill-tools and advertises load_skill_file while its FS built-ins are denied — the one route to a style\'s workflows/brief.md', async () => {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    // Even a project that ALLOWS direct FS access gets no built-ins in a brief thread.
+    hoisted.agent = { disableDirectFilesystemAccess: false };
+    const { deps } = makeDeps();
+    const input = makeInput();
+    (input.thread as unknown as { contextType: string; briefPath: string }).contextType = 'brief';
+    (input.thread as unknown as { contextType: string; briefPath: string }).briefPath = 'b.md';
+
+    await runAgentTurn(deps, input);
+
+    // No built-ins: Read/Glob/Grep (file-read) are off in this frame…
+    expect(hoisted.lastExecute?.disallowedToolGroups as string[]).toContain('file-read');
+    // …and skill-tools is mounted all the same, its tool named in the inventory.
+    expect(Object.keys((hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>)).toContain('skill-tools');
+    expect(String(hoisted.lastExecute?.systemPrompt)).toContain('<mcp name="skill-tools">load_skill_file</mcp>');
+  });
+
   it('[ac:ac-w-turze-wewnetrznej-list-skills-nie-j] [ac:ac-w-turze-wewnetrznej-load-skill-file-j] 0.2.99: the turn gets load_skill_file and never list_skills, in every context type', async () => {
     // Mounting is per-server: a `list_skills` on the turn's skill-tools would reach
     // all four types at once, and the turn already has `<available_skills>`.

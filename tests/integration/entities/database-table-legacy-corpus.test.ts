@@ -16,22 +16,29 @@
  *
  * The expected side of every comparison is read STRAIGHT OFF THE FILES, never
  * derived from the thing under test.
+ *
+ * WHY THIS LIVES IN THE HOST REPO (2.1.17, M33 `ywud56l6`). It drives the
+ * HOST's indexer, timestamp backfill and soft-FK checker over the envelope's
+ * type, through the host repo's own test helper — host internals no plugin
+ * reaches. A built-in envelope's tests reach a running host only through the
+ * published harness (`@inharness-ai/claude4spec/plugin-testing`), so this
+ * suite was moved out of `plugins/<name>/test/` into the host's suite.
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createTestApp, type TestApp } from '../../../tests/helpers/test-app.js';
+import { createTestApp, type TestApp } from '../../helpers/test-app.js';
 import { EntityIndexerService } from '../../../src/server/services/entity-indexer.js';
 import { backfillEntityTimestamps } from '../../../src/server/workspace/entity-timestamp-backfill.js';
 import { danglingScalarRefs } from '../../../src/server/db/projection-write.js';
 
-/** Measured on the raw corpus — see `fk-normalization.test.ts`, which drives them to 0. */
+/** Measured on the raw corpus — see the envelope's `test/fk-normalization.test.ts`, which drives them to 0. */
 const EXPECTED_DANGLING: Record<string, number> = { 'app-spec': 9, 'zbieram-kaucje': 15 };
 
 const CORPORA = ['app-spec', 'zbieram-kaucje'] as const;
 const fixtureDir = (corpus: string) =>
-  path.join(import.meta.dirname, 'fixtures', 'corpus', corpus);
+  path.join(import.meta.dirname, '../../../plugins/c4s-plugin-database-tables/test/fixtures/corpus', corpus);
 
 interface Expected {
   title: string;
@@ -90,8 +97,8 @@ describe.each(CORPORA)('the %s corpus, adopted in place', (corpus) => {
         r.slug,
         {
           title: r.title,
-          columns: (JSON.parse(r.columns) as unknown[]).length,
-          indexes: (JSON.parse(r.indexes) as unknown[]).length,
+          columns: (JSON.parse(r.columns!) as unknown[]).length,
+          indexes: (JSON.parse(r.indexes!) as unknown[]).length,
         },
       ]),
     );
@@ -274,7 +281,7 @@ describe.each(CORPORA)('%s — soft foreign keys', (corpus) => {
       .flatMap((n) => warningsFor(n.replace(/\.json$/, '')));
 
   it('reports exactly the references the corpus really has broken', () => {
-    expect(allWarnings()).toHaveLength(EXPECTED_DANGLING[corpus]);
+    expect(allWarnings()).toHaveLength(EXPECTED_DANGLING[corpus]!);
   });
 
   it('names the path and the missing target, not just the entity', () => {

@@ -245,6 +245,13 @@ export interface ProjectContext {
   router: Router;
   db: Db;
   pluginHost: ProjectPluginHost;
+  /**
+   * 2.1.17 (M33 L11) — the entity write door this context hands every plugin's
+   * `MountContext.crud`: the generic CRUD verbs plus their rename fan-out and
+   * `entity:changed` broadcast. Exposed so the plugin test harness gives a test
+   * author the SAME door the plugin under test writes through, not a copy.
+   */
+  crud: CrudFacade;
   /** M13 dispatch bound to this context's host. */
   serialization: SerializationEngine;
   /** Per-project room emitter (all services broadcast through it). */
@@ -276,6 +283,14 @@ export interface ProjectContext {
    * project is not exposed (any more). Writes nothing.
    */
   readExposedSkill: () => Promise<ExposedSkillPackage>;
+  /**
+   * 2.1.17 (M33 L11) — resolves once the context's fire-and-forget boot work
+   * (sidebar rebuild, section/todos/link indexers' initial passes, file-version
+   * and frontmatter baselines) has finished, successfully or not. Never rejects.
+   * The server does not wait on it; the plugin test harness does, so its
+   * `cleanup()` never removes a directory a boot pass is still reading.
+   */
+  bootSettled: Promise<void>;
   /** 2.1.16: `opts.reason` (from the invalidation) rides on the room's `project:disposed`. */
   dispose: (opts?: ContextInvalidation) => Promise<void>;
 }
@@ -456,7 +471,9 @@ async function buildInner(
   }
   const skillResolver = new SkillResolver(skillRegistry, cwd);
 
-  const db: Db = openDb(workspace, projectId);
+  // 2.1.17: under THIS registry's home, so the slot below and the handle agree
+  // (the plugin test harness builds contexts over a throwaway registry home).
+  const db: Db = openDb(workspace, projectId, registry.baseDir);
   cleanup.push(() => db.close());
   const dbSlotDir = registry.slotDir(workspace, projectId);
   // 2.1.0 slot continuity: the slot records the directory it serves. A
@@ -1641,9 +1658,19 @@ async function buildInner(
   // block the project: until it lands, a reducer root is served the `accordion`
   // fallback; a result differing from the predecessor context's array emits
   // `sidebar:accordions-changed`.
-  void sidebarAccordions.rebuildAll().catch((err) => {
+  /**
+   * 2.1.17 (M33 L11) — the context's fire-and-forget boot work (the sidebar
+   * rebuild, the section/todos/link indexers' initial passes, the file-version and
+   * frontmatter baselines). Nothing here awaits it — serving does not wait on
+   * these — but it is collected so `bootSettled` can say when it is over: the
+   * plugin test harness waits on it before it hands a project out and before it
+   * removes the project's directory, so no boot pass runs (and logs) against a
+   * directory that is gone.
+   */
+  const bootWork: Promise<unknown>[] = [];
+  bootWork.push(sidebarAccordions.rebuildAll().catch((err) => {
     console.warn('[m02] sidebar accordions initial build failed:', (err as Error).message);
-  });
+  }));
 
   // M33 phase 3: overlay mount + reload, AFTER the root-registry build hook
   // (M31 build order: the L13 implementor's mounts and bindings, then M33).
@@ -1702,7 +1729,7 @@ async function buildInner(
   const indexedRows = (db.handle.prepare('SELECT COUNT(*) AS n FROM section_index').get() as { n: number }).n;
   if (indexedRows === 0) projectionStatus.markStale(PROJECTION_IDS.sections);
   const sectionsBootPass = projectionStatus.beginRebuild();
-  sectionIndexer
+  bootWork.push(sectionIndexer
     .indexAll((source, relPath) => w.suppress(source, relPath))
     /**
      * `finishRebuild`, not `markFresh` — the boot rebuild is slow and mounts are
@@ -1721,10 +1748,10 @@ async function buildInner(
      * marking is global.
      */
     projectionStatus.markStale(PROJECTION_IDS.sections);
-  });
+  }));
 
   const todosBootPass = projectionStatus.beginRebuild();
-  todosIndexer
+  bootWork.push(todosIndexer
     .indexAll()
     .then(() => projectionStatus.finishRebuild(PROJECTION_IDS.todos, todosBootPass))
     .catch((err) => {
@@ -1733,16 +1760,16 @@ async function buildInner(
       // `TodoHit` are navigation targets, not write addresses, so the cost of
       // staleness here is a wrong count or a wrong jump — a view, never content.
       projectionStatus.markStale(PROJECTION_IDS.todos);
-    });
+    }));
 
   const pageLinksBootPass = projectionStatus.beginRebuild();
-  pagesLinkIndexer
+  bootWork.push(pagesLinkIndexer
     .indexAll()
     .then(() => projectionStatus.finishRebuild(PROJECTION_IDS.pageLinks, pageLinksBootPass))
     .catch((err) => {
       console.error('[pages-link-indexer] initial indexAll failed:', err);
       projectionStatus.markStale(PROJECTION_IDS.pageLinks);
-    });
+    }));
 
   // M17: initial sync of file_version. For each markdown file with no captured
   // version — or whose latest captured version is a `delete` tombstone while the
@@ -1750,7 +1777,7 @@ async function buildInner(
   // covers delete+recreate that happened while the server wasn't watching
   // (server down, `git checkout` between restarts): without this, the phantom
   // `delete` stays the latest row and release diffs show the page as removed.
-  (async () => {
+  bootWork.push((async () => {
     // 2.1.9: the facades of the roots whose kind captures `file_version` and is
     // not an artifact kind (those have their own baseline pass just below).
     const artifactRootIds = new Set([...artifactMounts.values()].map((m) => m.rootId));
@@ -1767,10 +1794,10 @@ async function buildInner(
         console.warn(`[file-version] initial sync failed for root '${rt.root.id}':`, (err as Error).message);
       }
     }
-  })();
+  })());
 
   // Initial sync of the plans/briefs/patches system roots (`m17-capture` baseline) + the frontmatter indexer.
-  (async () => {
+  bootWork.push((async () => {
     for (const m of artifactMounts.values()) {
       try {
         const files = await m.store.listMarkdownFiles();
@@ -1793,7 +1820,7 @@ async function buildInner(
       // into the file, so there is nothing here to address a bad write with.
       projectionStatus.markStale(PROJECTION_IDS.frontmatter);
     }
-  })();
+  })());
 
   // M29: entity store boot. (1) one-time DB→text export for pre-M29 projects
   // whose entities live only in SQLite; (2) rebuild the derived index from the
@@ -1981,6 +2008,7 @@ async function buildInner(
     router,
     db,
     pluginHost,
+    crud: crudFacade,
     serialization: serializationEngine,
     ws,
     activeAdapters,
@@ -1989,6 +2017,7 @@ async function buildInner(
     hasInFlightTurn: () => activeAdapters.size > 0,
     mcpSurfaceDeps,
     readExposedSkill,
+    bootSettled: Promise.allSettled(bootWork).then(() => undefined),
     // M31 dispose sequence: turn registries → this scope's mounts → MCP
     // factories → room → db handle.
     dispose: async (opts?: ContextInvalidation) => {

@@ -40,4 +40,25 @@ describe('chipSmokeTest', () => {
     const result = chipSmokeTest(moduleWith({ renderCard: throwingSlot as never, renderRow: throwingSlot as never }));
     expect(result.rejected).toEqual([]);
   });
+
+  it('[ac:ac-chip-wolajacy-useeditor-wylacznie-w-h] a chip calling useEditor() only inside its click handler passes — the check is behavioural, not a scan for hook names', () => {
+    // Stands in for the editor hook: called outside an editor context it throws.
+    const useEditor = (): never => {
+      throw new Error('useEditor() called without an editor context');
+    };
+    const handlerOnlyChip = ({ slug }: { slug: string }) =>
+      createElement('button', { type: 'button', onClick: () => useEditor() }, slug);
+    // The chip's own source names the hook — a name scan would reject it.
+    expect(String(handlerOnlyChip)).toContain('useEditor');
+    expect(chipSmokeTest(moduleWith({ renderChip: handlerOnlyChip as never }))).toEqual({ rejected: [] });
+
+    // Contrast: the same call made during render IS rejected.
+    const renderTimeChip = () => {
+      useEditor();
+      return null;
+    };
+    expect(chipSmokeTest(moduleWith({ renderChip: renderTimeChip as never })).rejected).toEqual([
+      { slot: 'renderChip', reason: expect.stringContaining('without an editor context') },
+    ]);
+  });
 });

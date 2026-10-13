@@ -105,6 +105,21 @@ describe('M52 contribution sheet — wklad-do-edytora-m52', () => {
       origin: 'project-rooted',
     });
     expect(items.find((i) => i.id === 'house-style')).toMatchObject({ hint: 'house-style', origin: 'plugin' });
+    // 2.1.17: label `/<slug>`, description from the listing, no skill title — even if a row carried one.
+    for (const item of items.filter((i) => i.id !== SKILLS_NARROW_ENTRY_ID)) {
+      expect(item.label).toBe(`/${item.id}`);
+      expect(item).not.toHaveProperty('title');
+    }
+    useFakeListing({
+      ...LISTING,
+      listing: [{ slug: 'titled', description: 'Listing description', origin: 'user', title: 'A Skill Title' } as SkillListing['listing'][number]],
+    });
+    const titled = sourceRows(await createSlashSession('chat-input').items(''))
+      .map((r) => r.source!.item as SpecSkillItem)
+      .find((i) => i.id === 'titled')!;
+    expect(titled).toMatchObject({ label: '/titled', description: 'Listing description', hint: 'titled' });
+    expect(JSON.stringify(titled)).not.toContain('A Skill Title');
+    useFakeListing();
     // Collision: `section` is the built-in `/section`'s trigger — the built-in stays, the skill row does not.
     expect(items.map((i) => i.id)).not.toContain('section');
     expect(rows.filter((r) => r.command?.id === 'section')).toHaveLength(1);

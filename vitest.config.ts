@@ -29,6 +29,12 @@ export default defineConfig({
    */
   resolve: {
     alias: {
+      // 2.1.17 (M33 `ywud56l6`, `m33l11sc`) — the published plugin test harness.
+      // A built-in envelope's tests import it by its PUBLISHED specifier, the one an
+      // external plugin resolves through the package `exports`; here it resolves to
+      // the source, not to `dist/`, so the harness and the envelopes it loads share
+      // one host module graph (the same reason as the runtime alias below).
+      '@inharness-ai/claude4spec/plugin-testing': here('./src/server/plugin-testing/index.ts'),
       '@c4s/plugin-runtime/ui': here('./src/server/plugin-runtime/ui.ts'),
       '@c4s/plugin-runtime': here('./src/server/plugin-runtime/index.ts'),
     },

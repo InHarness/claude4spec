@@ -27,7 +27,7 @@ const HITS_LINE = `A find_references or check_consistency hit in the root "skill
 
 const CURRENT_SKILL_PROSE = `The user has this skill file open. Read it with load_skill_file(slug, file) — also when the package is not valid yet and no other source resolves this slug: the response then marks it invalid and says why. Page tools do not reach this root.`;
 const shadowedProse = (slug: string, source: string): string =>
-  `The user has this skill file open, but it is shadowed: the slug resolves to the skill "${slug}" from source "${source}", and load_skill_file returns that skill, not this file. You have no way to read this file — not with load_skill_file, not with page tools, not with built-in file tools. It becomes readable through load_skill_file only once its package is renamed to a slug no other source resolves.`;
+  `The user has this skill file open, but it is shadowed: the slug resolves to the skill "${slug}" from source "${source}", and load_skill_file returns that skill, not this file. You have no way to read this file — not with load_skill_file, not with page tools, not with built-in file tools. It becomes readable through load_skill_file once this package wins its slug; renaming the package to a slug no other source resolves always achieves that.`;
 
 const SPEC_SKILL_TOOLS = { name: 'spec-skill-tools', tools: ['update_skill_file'] };
 
@@ -199,7 +199,7 @@ describe('<available_skills> — M52 lines (2.1.9)', () => {
   });
 });
 
-describe('<current_skill> — M52 (2.1.9)', () => {
+describe('<current_skill> — M52 (2.1.9, 2.1.17)', () => {
   it('[entity:szablon-current-skill] renders both template variants: the self-closing tag with slug and file, then the read line (or the shadowed line)', () => {
     const open = build({ contextType: 'chat', currentSkill: { slug: 'reviewer', file: 'workflows/brief.md' } });
     expect(open).toContain(`<current_skill slug="reviewer" file="workflows/brief.md"/>\n${CURRENT_SKILL_PROSE}`);
@@ -210,6 +210,10 @@ describe('<current_skill> — M52 (2.1.9)', () => {
     });
     expect(shadowed).toContain(`<current_skill slug="mockups" file="SKILL.md"/>\n${shadowedProse('mockups', 'plugin')}`);
     expect(shadowed).not.toContain(CURRENT_SKILL_PROSE);
+    // 2.1.17: the shadowed line names the way out as winning the slug, renaming being the sure route.
+    expect(shadowed).toContain('It becomes readable through load_skill_file once this package wins its slug;');
+    expect(shadowed).toContain('renaming the package to a slug no other source resolves always achieves that.');
+    expect(shadowed).not.toContain('only once its package is renamed');
   });
 
   it('[ac:9zio901p] <current_skill> is present iff the turn has an open file of a skills-kind root; an open page does not stand in for it', () => {
@@ -266,6 +270,92 @@ describe('<current_skill> — M52 (2.1.9)', () => {
     expect(out).not.toContain(CURRENT_SKILL_PROSE);
     // No content of the open file reaches the prompt.
     expect(out).not.toContain('# broken');
+  });
+});
+
+describe('<current_skill> — M52 edge cases (2.1.17)', () => {
+  it('[ac:m52-edge-loose-file-no-current-skill] an open loose file at the top level of the skills root, outside every package, gives no <current_skill> block (and no <current_page> either)', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { skillsDir, registry } = project();
+    put(path.join(skillsDir, 'notes.md'), '# Loose notes\n');
+    put(path.join(skillsDir, 'reviewer', 'SKILL.md'), '---\ntitle: Reviewer\ndescription: Reviews.\nversion: 1\nlanguage: en\nscope: contextual\n---\n# Reviewer\n');
+
+    // The loose file belongs to no package: no reference, so nothing for the block to render.
+    const loose = currentSkillOf('notes.md', (s) => registry.winnerOf(s));
+    expect(loose).toBeNull();
+    // A leading slash or a trailing-slash-only path is not a package file either.
+    expect(currentSkillOf('/notes.md', (s) => registry.winnerOf(s))).toBeNull();
+    expect(currentSkillOf('reviewer/', (s) => registry.winnerOf(s))).toBeNull();
+    // A file of a package next to it does get one.
+    expect(currentSkillOf('reviewer/SKILL.md', (s) => registry.winnerOf(s))).toEqual({ slug: 'reviewer', file: 'SKILL.md' });
+
+    // The turn as agent-turn builds it for that open file: root of kind skills, currentSkill = null.
+    const out = build({
+      contextType: 'chat',
+      currentPagePath: 'notes.md',
+      currentPageRootId: 'skills',
+      currentPageRootKind: 'skills',
+      currentPageBody: '# Loose notes\n',
+      currentSkill: loose,
+    });
+    expect(out).not.toContain('<current_skill');
+    expect(out).not.toContain('<current_page ');
+    expect(out).not.toContain('notes.md');
+  });
+
+  it('[ac:m52-edge-valid-outranked-package-shadowed] a file open from a VALID project-rooted package whose slug a plugin contextual skill wins gets the shadowed variant of <current_skill>', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { skillsDir, registry } = project();
+    // Valid: title, description, version, language, contextual scope.
+    put(
+      path.join(skillsDir, 'mockups', 'SKILL.md'),
+      '---\ntitle: Mockups\ndescription: Our own mockups guide.\nversion: 1\nlanguage: en\nscope: contextual\n---\n# own body\n',
+    );
+    // Alone, the valid package wins its slug: the read variant.
+    expect(registry.winnerOf('mockups')?.source).toBe('project-rooted');
+    const own = currentSkillOf('mockups/SKILL.md', (s) => registry.winnerOf(s));
+    expect(own).toEqual({ slug: 'mockups', file: 'SKILL.md' });
+    expect(build({ contextType: 'chat', currentSkill: own })).toContain(CURRENT_SKILL_PROSE);
+
+    // A plugin's contextual skill under the same slug outranks it in the contextual chain.
+    registry.addPluginSkill({
+      slug: 'mockups',
+      title: 'Mockups',
+      description: 'Plugin mockups.',
+      version: 1,
+      language: 'en',
+      scope: 'contextual',
+      content: '# plugin body\n',
+    });
+    expect(registry.winnerOf('mockups')?.source).toBe('plugin');
+    const ref = currentSkillOf('mockups/workflows/brief.md', (s) => registry.winnerOf(s));
+    expect(ref).toEqual({ slug: 'mockups', file: 'workflows/brief.md', shadowedBy: { slug: 'mockups', source: 'plugin' } });
+
+    const out = build({ contextType: 'chat', currentSkill: ref });
+    expect(out).toContain(`<current_skill slug="mockups" file="workflows/brief.md"/>\n${shadowedProse('mockups', 'plugin')}`);
+    expect(out).not.toContain(CURRENT_SKILL_PROSE);
+    expect(out).not.toContain('# own body');
+
+    // Across scopes too: a valid writing-style package loses its slug to another source's contextual entry.
+    put(
+      path.join(skillsDir, 'house-style', 'SKILL.md'),
+      '---\ntitle: House\ndescription: Our style.\nversion: 1\nlanguage: en\nscope: writing-style\n---\n# style\n',
+    );
+    expect(currentSkillOf('house-style/SKILL.md', (s) => registry.winnerOf(s))).toEqual({ slug: 'house-style', file: 'SKILL.md' });
+    registry.addPluginSkill({
+      slug: 'house-style',
+      title: 'House',
+      description: 'Plugin house rules.',
+      version: 1,
+      language: 'en',
+      scope: 'contextual',
+      content: '# plugin house\n',
+    });
+    expect(currentSkillOf('house-style/SKILL.md', (s) => registry.winnerOf(s))).toEqual({
+      slug: 'house-style',
+      file: 'SKILL.md',
+      shadowedBy: { slug: 'house-style', source: 'plugin' },
+    });
   });
 });
 

@@ -10,12 +10,19 @@
  * The fixture is copied verbatim from
  * `app-spec/.claude4spec/entities/spreadsheet/pliki-external.json`, so the shape
  * under test is the corpus rather than an idea of it.
+ *
+ * WHY THIS LIVES IN THE HOST REPO (2.1.17, M33 `ywud56l6`). It drives the
+ * HOST's indexer, timestamp backfill and soft-FK checker over the envelope's
+ * type, through the host repo's own test helper — host internals no plugin
+ * reaches. A built-in envelope's tests reach a running host only through the
+ * published harness (`@inharness-ai/claude4spec/plugin-testing`), so this
+ * suite was moved out of `plugins/<name>/test/` into the host's suite.
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createTestApp, type TestApp } from '../../../tests/helpers/test-app.js';
+import { createTestApp, type TestApp } from '../../helpers/test-app.js';
 import { EntityIndexerService } from '../../../src/server/services/entity-indexer.js';
 
 const V1_FILE = {

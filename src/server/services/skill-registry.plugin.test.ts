@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { SkillRegistry, type SkillRoot } from './skill-registry.js';
+import { SkillRegistry, SUPPORTED_SKILL_VERSION, type SkillRoot } from './skill-registry.js';
 import type { WritingStyleContribution } from '../../shared/plugin-host/manifest.js';
 
 function style(over: Partial<WritingStyleContribution> = {}): WritingStyleContribution {
@@ -98,6 +98,36 @@ describe('SkillRegistry — plugin writing styles (M15 phase 2)', () => {
     const meta = registry.listSelectable().find((s) => s.slug === 'terse');
     expect(meta?.title).toBe('First');
     expect(meta?.version).toBe(1);
+  });
+
+  /**
+   * 2.1.17 (M37 r23brl2y) — "version above supported → warn + skip" is enforced only
+   * by sources reading a `SKILL.md` header from disk. A `plugin` entry arrives with
+   * its package, whose compatibility the loader's `hostApiVersion` gate decides, so
+   * the same out-of-range `version` that skips a disk entry is admitted here.
+   */
+  it('[section:r23brl2y] a plugin entry with version above SUPPORTED_SKILL_VERSION is admitted, while the same version on disk (user) is skipped', () => {
+    const future = SUPPORTED_SKILL_VERSION + 1;
+    const userRoot = path.join(tmp, 'user');
+    const dir = path.join(userRoot, 'disk-future');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'SKILL.md'),
+      `---\ntitle: Disk Future\ndescription: from disk\nversion: ${future}\nlanguage: en\nscope: writing-style\n---\nbody\n`,
+    );
+    const registry = SkillRegistry.load([{ dir: userRoot, source: 'user' }]);
+    registry.addPluginStyle(style({ slug: 'plugin-future', version: future }));
+    registry.addPluginSkill({ ...style({ slug: 'plugin-future-ctx', version: future }), scope: 'contextual' });
+
+    const slugs = registry.list().map((m) => m.slug);
+    expect(slugs).toContain('plugin-future');
+    expect(slugs).toContain('plugin-future-ctx');
+    expect(registry.list().find((m) => m.slug === 'plugin-future')?.version).toBe(future);
+    expect(registry.has('plugin-future')).toBe(true);
+    expect(registry.resolve('plugin-future').content).toBe('# Terse\nBe brief.');
+    // The disk source keeps its gate.
+    expect(slugs).not.toContain('disk-future');
+    expect(registry.has('disk-future')).toBe(false);
   });
 
   it('isSelectable recognises a plugin style', () => {

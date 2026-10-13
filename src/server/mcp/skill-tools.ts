@@ -80,7 +80,16 @@ export const SKILL_TOOL_TEXT = {
     slug: 'Skill slug from the registry — the value returned by `list_skills`.',
     listSkills:
       'List the skills available for a context type in this project, together with the active writing style. Call this before `load_skill_file` — it is how you learn which slugs exist. The active writing style is BINDING on any content you write into this specification: open it with `load_skill_file` and follow it rather than your own conventions. Pass `contextType` to ask what a given kind of turn would see — a briefing or planning methodology typically lives in a subfile of the active style, so ask for the context you are about to work in. Omit it to get the whole registry. Reading a skill is not gated by context type: anything listed for any context can be opened.',
-    contextType: "Context type whose skill set to list. Omit to list the whole registry instead of one context's set.",
+    /**
+     * 2.1.17 — the legal values are spelled in the description, from the context-type
+     * registry (cited, not copied), because the parameter is a plain `string`: see
+     * the `list_skills` registration below. A getter, not a literal, so the module
+     * does not read `KNOWN_CONTEXT_TYPES` while the import graph is still resolving.
+     */
+    get contextType(): string {
+      const legal = KNOWN_CONTEXT_TYPES.map((t) => `\`${t}\``).join(', ');
+      return `Context type whose skill set to list — one of ${legal}. Omit to list the whole registry instead of one context's set.`;
+    },
   },
   file: 'Package-relative POSIX path of a subfile to read, taken from the manifest (e.g. workflows/brief.md). Omit to open the skill itself.',
 } as const;
@@ -140,7 +149,7 @@ export function buildSkillToolsServer(
           contextType: z
             .string()
             .optional()
-            .describe(`${SKILL_TOOL_TEXT.external.contextType} One of: ${KNOWN_CONTEXT_TYPES.join(', ')}.`),
+            .describe(SKILL_TOOL_TEXT.external.contextType),
         },
         async (args) => {
           try {

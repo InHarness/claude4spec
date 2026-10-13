@@ -45,13 +45,15 @@ export interface WritingStylesResponse {
 }
 
 /**
- * The badge a style option carries in the selector (M15 L17 `m6ukdbsc`): one
- * DISTINCT label per source value, not two — a style of this project's skills
- * root must not read as "yours" the way a `.claude/skills` one does, nor an
- * attached project's as "plugin".
- *
- * ASSUMPTION:dev-1202 — the specification asks for a distinct badge per value but
- * names no wording; the two new labels are ours.
+ * The ONE source → badge label map (M15 L2 `ssh0om79`), shared by both style
+ * selection surfaces: the `Writing style` select of the settings page (M15 L17
+ * `m6ukdbsc`) and the onboarding style cards (M16 `os387tmx`). The map is
+ * complete — every `source` the registry emits has its own label, no two values
+ * share one — and the labels are literal UI strings. Both `user` registrations
+ * (the project's and the global `.claude/skills` root) share the value `user`,
+ * hence the label `yours`. A new registry source needs a new row here: typing
+ * the map over {@link SkillSource} makes a missing row a compile error, and no
+ * surface invents a label of its own.
  */
 export const WRITING_STYLE_SOURCE_BADGE: Readonly<Record<SkillSource, string>> = {
   user: 'yours',
@@ -60,7 +62,12 @@ export const WRITING_STYLE_SOURCE_BADGE: Readonly<Record<SkillSource, string>> =
   'project-exposed': 'attached project',
 };
 
+/** The badge label of a style's source — read from {@link WRITING_STYLE_SOURCE_BADGE} only. */
+export function writingStyleSourceBadge(source: SkillSource): string {
+  return WRITING_STYLE_SOURCE_BADGE[source];
+}
+
 /** The selector option's label: the style's title plus its source badge. */
 export function writingStyleOptionLabel(style: Pick<WritingStyleSummary, 'title' | 'source'>): string {
-  return `${style.title} — ${WRITING_STYLE_SOURCE_BADGE[style.source] ?? style.source}`;
+  return `${style.title} — ${writingStyleSourceBadge(style.source)}`;
 }

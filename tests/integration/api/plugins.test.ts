@@ -1,10 +1,12 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 import { PluginRegistryImpl } from '../../../src/server/core/plugin-host/registry.js';
 import { registerAllPlugins } from '../../../src/server/core/plugin-host/register-builtins.js';
 import { pluginsRouter } from '../../../src/server/routes/plugins.js';
-import { HOST_API_VERSION } from '../../../src/shared/plugin-host/manifest.js';
+import { HOST_API_VERSION, type PluginManifest } from '../../../src/shared/plugin-host/manifest.js';
+import { loadWorkspacePlugins } from '../../../src/server/core/plugin-host/loader.js';
+import { FIXTURE_DATA, FIXTURE_SLUG_PATTERN } from '../../helpers/fixture-module.js';
 
 function makeApp(records: Parameters<typeof pluginsRouter>[0]['pluginRecords'] = []) {
   const pluginRegistry = new PluginRegistryImpl();
@@ -65,4 +67,61 @@ describe('M33 plugins router', () => {
 
     expect(res.body.packages.some((p: { package: string }) => p.package === 'pkg-x')).toBe(true);
   });
+
+  it('[ac:ac-pakiet-z-niezgodnym-majorem-hostapivers] a package with an incompatible hostApiVersion major is skipped with PLUGIN_HOST_API_MISMATCH; the host and the other plugins load; the state shows in /api/_meta/plugins', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const pluginRegistry = new PluginRegistryImpl();
+      registerAllPlugins(pluginRegistry);
+      const modules: Record<string, PluginManifest> = {
+        'pkg-old-major': glossaryManifest('@acme/old', '^1.0.0', 'old-glossary'),
+        'pkg-good': glossaryManifest('@acme/good', `^${HOST_API_VERSION}`, 'good-glossary'),
+      };
+      const { records } = await loadWorkspacePlugins(pluginRegistry, Object.keys(modules), async (spec) => ({
+        manifest: modules[spec],
+      }));
+
+      expect(records[0]).toMatchObject({ package: 'pkg-old-major', code: 'PLUGIN_HOST_API_MISMATCH' });
+      expect(['skipped', 'incompatible']).toContain(records[0]!.status);
+      expect(warn.mock.calls.flat().join(' ')).toMatch(/PLUGIN_HOST_API_MISMATCH pkg-old-major/);
+      // The other plugin and the host's own types load normally.
+      expect(records[1]).toMatchObject({ package: 'pkg-good', status: 'loaded' });
+      expect(pluginRegistry.getAvailable('good-glossary')).not.toBeNull();
+      expect(pluginRegistry.getAvailable('old-glossary')).toBeNull();
+      expect(pluginRegistry.getAvailable('diagram')).not.toBeNull();
+
+      const app = express();
+      app.use('/api', pluginsRouter({ pluginRegistry, pluginRecords: records }));
+      const res = await request(app).get('/api/_meta/plugins').expect(200);
+      const byPkg = new Map((res.body.packages as Array<{ package: string; status: string; code?: string }>).map((p) => [p.package, p]));
+      expect(byPkg.get('pkg-old-major')).toMatchObject({ code: 'PLUGIN_HOST_API_MISMATCH' });
+      expect(byPkg.get('pkg-good')).toMatchObject({ status: 'loaded' });
+      expect(byPkg.get('@c4s/builtin')).toMatchObject({ status: 'loaded' });
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });
+
+function glossaryManifest(name: string, hostApiVersion: string, type: string): PluginManifest {
+  return {
+    name,
+    version: '1.0.0',
+    hostApiVersion,
+    contributes: {
+      entities: [
+        {
+          type,
+          data: FIXTURE_DATA,
+          slugPattern: FIXTURE_SLUG_PATTERN,
+          payloadVersion: 1,
+          label: type,
+          labelPlural: `${type}s`,
+          displayOrder: 100,
+          pathPrefix: `/${type}s`,
+          systemPrompt: { roleNoun: type },
+        },
+      ],
+    },
+  };
+}

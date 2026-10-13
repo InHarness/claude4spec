@@ -15,6 +15,8 @@ import { projectDispatchMiddleware } from '../../../src/server/workspace/middlew
 import { buildProjectContext } from '../../../src/server/workspace/project-context.js';
 import { WorkspaceRegistry } from '../../../src/server/workspace/registry.js';
 import { bootstrapProject } from '../../../src/server/workspace/bootstrap.js';
+import { pluginsRouter } from '../../../src/server/routes/plugins.js';
+import { errorHandler } from '../../../src/server/routes/errors.js';
 import type { ProjectRecord, WorkspaceRecord } from '../../../src/server/workspace/types.js';
 
 /**
@@ -30,6 +32,8 @@ describe('ProjectContext — M31 edge cases on a real build', () => {
   let workspace: WorkspaceRecord;
   let cache: ProjectContextCache;
   let app: express.Express;
+  /** The `/api` composition `startServer` mounts: process routers, project dispatch, error envelope. */
+  let serverApp: express.Express;
   let httpServer: http.Server;
   let watchRuntime: FileWatchRuntime;
   /** A project that commits a project-local plugin whose code must never run here. */
@@ -99,6 +103,12 @@ describe('ProjectContext — M31 edge cases on a real build', () => {
     app = express();
     app.use(express.json());
     app.use('/api/projects/:id', projectDispatchMiddleware(registry, workspace, cache));
+
+    serverApp = express();
+    serverApp.use(express.json());
+    serverApp.use('/api', pluginsRouter({ pluginRegistry, pluginRecords: envelopeLoad.records }));
+    serverApp.use('/api/projects/:id', projectDispatchMiddleware(registry, workspace, cache));
+    serverApp.use('/api', errorHandler);
   }, 60_000);
 
   afterAll(async () => {
@@ -141,6 +151,25 @@ describe('ProjectContext — M31 edge cases on a real build', () => {
 
     // No code of the committed plugin ran on this machine.
     expect(fs.existsSync(sentinel)).toBe(false);
+  });
+
+  it('[ac:ac-frontend-pluginu-wola-route-project-scop] a plugin frontend calling a project-scoped route without /api/projects/<id> gets 404; the prefixed route answers', async () => {
+    // The contract: `/api/projects/<window.__C4S_PROJECT__.id>/<pathPrefix>`.
+    const ok = await request(serverApp).get(`/api/projects/${untrusted.id}/database-tables`);
+    expect(ok.status).toBe(200);
+
+    // Bare `/api/database-tables` — what a frontend that skipped the prefix sends,
+    // and also what `API_BASE` collapses to when it reads a global that does not
+    // exist (no project id ⇒ '/api'). No process-level router serves it.
+    const bare = await request(serverApp).get('/api/database-tables');
+    expect(bare.status).toBe(404);
+
+    // A prefix built from a missing global (`undefined` / empty id) is 404 too.
+    const undefinedId = await request(serverApp).get('/api/projects/undefined/database-tables');
+    expect(undefinedId.status).toBe(404);
+    expect(undefinedId.body.error?.code).toBe('PROJECT_NOT_IN_WORKSPACE');
+    const emptyId = await request(serverApp).get('/api/projects//database-tables');
+    expect(emptyId.status).toBe(404);
   });
 
   it('the MCP servers of a project context live as long as the context instance and are released with its dispose', async () => {

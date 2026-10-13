@@ -95,7 +95,7 @@ describe('M33 — base hot-reload of an ESM-only package', () => {
     expect(registry.listPluginRecords()[0]?.version).toBe('1.0.0');
   });
 
-  it('(b) editing its dist triggers the base reload pipeline (no restart, no CJS condition)', async () => {
+  it('[ac:ac-pakiet-plugin-bazy-z-exports-deklaruja-2] (b) editing its dist triggers the base reload pipeline (no restart, no CJS condition)', async () => {
     const registry = new PluginRegistryImpl();
     // Seed v1.0.0 as the bootstrap would.
     const importer = (specifier: string) =>

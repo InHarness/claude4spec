@@ -50,6 +50,12 @@ export interface PageContent {
  */
 export interface PageDetail extends PageContent {
   rootId: string;
+  /**
+   * 2.1.17 — the page's label: `frontmatter.title` → first H1 → `path`. With a
+   * header whose YAML does not parse, `frontmatter` is `{}` and the label comes
+   * from the H1 (the literal block rides in `frontmatterRaw`).
+   */
+  title: string;
   content: string;
 }
 

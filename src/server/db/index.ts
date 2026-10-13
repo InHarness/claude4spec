@@ -42,9 +42,19 @@ const openSlots = new Map<string, DbSlot>();
  *
  * Idempotent per key: a second call for the same slot returns the same handle
  * and takes a reference rather than opening a second connection to one file.
+ *
+ * 2.1.17 (M33 L10): `baseDir` is the registry home the slot lives under. The
+ * context build passes its own registry's `baseDir`, so the db slot and
+ * `registry.slotDir()` (the pre-migration backup) name the same directory by
+ * construction — the plugin test harness runs a registry in a throwaway home
+ * and must not open its database under the developer's `~/.claude4spec`.
+ * Absent ⇒ the process-wide home, as before.
  */
-export function openDb(workspace: WorkspaceRecord, projectId: string): Db {
-  const dir = slotDirFor(workspace.name, projectId);
+export function openDb(workspace: WorkspaceRecord, projectId: string, baseDir?: string): Db {
+  const dir =
+    baseDir === undefined
+      ? slotDirFor(workspace.name, projectId)
+      : path.join(baseDir, workspace.name, projectId);
   fs.mkdirSync(dir, { recursive: true });
   const dbPath = path.join(dir, 'db.sqlite');
 

@@ -9,6 +9,8 @@ import {
   hasProjectPlugins,
   loadProjectOverlay,
 } from './overlay-loader.js';
+import { PluginRegistryImpl } from './registry.js';
+import { loadOverlayLayer } from '../../workspace/project-skills.js';
 import type { PluginManifest, EntityContribution } from '../../../shared/plugin-host/manifest.js';
 
 function entity(type: string): EntityContribution {
@@ -145,7 +147,7 @@ describe('overlay-loader', () => {
     expect(res.overlay?.origin('glossary')).toBe(path.join('.claude4spec', 'plugins', 'glossary-pkg'));
   });
 
-  it('rejects the second project-local plugin that re-declares a type (PLUGIN_TYPE_CONFLICT)', async () => {
+  it('[ac:ac-dwa-pluginy-w-nakladce-project-local-wno] rejects the second project-local plugin that re-declares a type (PLUGIN_TYPE_CONFLICT)', async () => {
     const urlA = makePkg('a-pkg');
     const urlB = makePkg('b-pkg');
     const res = await loadProjectOverlay(
@@ -234,5 +236,30 @@ describe('overlay-loader', () => {
     expect(res.records[0]).toMatchObject({ status: 'loaded' });
     const mod = res.overlay?.listLocal().find((m) => m.type === 'widget');
     expect(typeof mod?.backend?.mount).toBe('function');
+  });
+
+  it('[ac:ac-repo-project-local-niezaufane-trustpro] untrusted repo (trustProjectPlugins unset): no overlay built, pool = base, project-local types unknown, trust prompt surfaced, no project-local code runs', async () => {
+    const url = makePkg('glossary-pkg');
+    const importer = fakeImporter({ [url]: { manifest: manifest() } }); // would contribute 'glossary'
+    const base = new PluginRegistryImpl();
+    base.registerPlugin(manifest({ name: '@acme/base', contributes: { entities: [entity('endpoint')] } }));
+
+    const layer = await loadOverlayLayer(cwd, undefined, importer);
+
+    // No project-local module executes: the entry was never imported.
+    expect(importer).not.toHaveBeenCalled();
+    // The overlay is not built.
+    expect(layer.overlayResult).toBeUndefined();
+    // The loader surfaces the trust prompt: packages present, reported untrusted.
+    expect(layer.localPluginsPresent).toBe(true);
+    expect(layer.records).toEqual([
+      expect.objectContaining({ package: 'glossary-pkg', code: 'PLUGIN_PROJECT_UNTRUSTED', trust: 'untrusted', layer: 'overlay' }),
+    ]);
+
+    // Pool = base, and a whitelisted project-local type resolves as `unknown`.
+    const host = base.consolidate({ entities: ['endpoint', 'glossary'] }, layer.overlayResult?.overlay);
+    expect(host.listAvailable().map((m) => m.type)).toEqual(['endpoint']);
+    expect(host.partition()).toEqual({ active: ['endpoint'], inactive: [], unknown: ['glossary'] });
+    expect(host.shadowReport()).toEqual([]);
   });
 });

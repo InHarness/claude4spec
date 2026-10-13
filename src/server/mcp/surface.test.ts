@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SkillRegistry, SkillResolver } from '../services/skill-registry.js';
 import {
   __invalidateSurfaceCache,
+  buildExternalMcpSurface,
   composeExternalSurface,
   EXTERNAL_MCP_ERROR_CODES,
   EXTERNAL_MCP_SERVER_NAME,
@@ -13,6 +14,8 @@ import { createMcpServer, mcpTool } from '../plugin-runtime/index.js';
 import { toolAdmittedByProfile } from '../operations/profile-gate.js';
 import type { McpServerFactory } from '../../shared/plugin-host/mcp.js';
 import { z } from 'zod';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
 /**
  * 0.2.13 §3/§4 — composition of the external surface, isolated from transport.
@@ -128,6 +131,28 @@ describe('composeExternalSurface', () => {
       expect(surface.toolNames).toContain('list_skills');
       expect(surface.toolNames).toContain('load_skill_file');
       expect(surface.byName.get('list_skills')?.annotations).toMatchObject({ readOnlyHint: true, idempotentHint: true });
+    }
+  });
+
+  /**
+   * 2.1.17 — the builder's own label (`skill-tools`) is internal; what a caller from
+   * outside sees is the composed server, and that one is named `c4s-reader` — the
+   * value the `server` field of both external skill entities carries.
+   */
+  it('[entity:c4s-reader-list-skills] [entity:c4s-reader-load-skill-file] both skill tools are seen on the wire under the server name c4s-reader, not the builder label skill-tools', async () => {
+    const server = buildExternalMcpSurface(stubDeps());
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'test-client', version: '0.0.0' });
+    await server.server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      expect(client.getServerVersion()?.name).toBe('c4s-reader');
+      expect(client.getServerVersion()?.name).not.toBe('skill-tools');
+      const names = (await client.listTools()).tools.map((t) => t.name);
+      expect(names).toContain('list_skills');
+      expect(names).toContain('load_skill_file');
+    } finally {
+      await client.close();
     }
   });
 

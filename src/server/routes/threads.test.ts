@@ -637,22 +637,112 @@ describe('POST /:id/ask — the answer names the plan by its project-relative pa
     expect(res.body.answer).toBe('The endpoint returns 404 for an unknown id.');
   });
 
-  it('[ac:ac-answer-tury-ask-nie-zawiera-sciezki-b] the answer carries neither an absolute path into the peer project nor its directory', async () => {
+  it('[ac:ac-answer-tury-ask-nie-zawiera-sciezki-b] the answer carries the peer project directory neither bare nor as the prefix of an absolute path — under its given and its real spelling', async () => {
+    const real = fs.realpathSync(dir);
     turnLeavesPlan(
       `I left the plan at ${path.join(dir, '.claude4spec', 'plans', 'rename-the-endpoint.md')}; ` +
-        `the page is ${path.join(dir, 'pages', 'api.md')}. The project lives in ${dir}.`,
+        `the page is ${path.join(real, 'pages', 'api.md')}. The project lives in ${dir}, also known as ${real}.`,
     );
 
     const res = await request(app()).post(`/threads/${thread.id}/ask`).send({ message: 'Please rename the endpoint.' });
 
     expect(res.status).toBe(200);
+    // Neither spelling survives — not bare, not as a prefix.
     expect(res.body.answer).not.toContain(dir);
-    expect(res.body.answer).not.toContain(fs.realpathSync(dir));
-    expect(res.body.answer).toContain('.claude4spec/plans/rename-the-endpoint.md');
-    expect(res.body.answer).toContain('pages/api.md');
+    expect(res.body.answer).not.toContain(real);
+    // `<cwd>/x` → `x`, bare `<cwd>` → `.`.
+    expect(res.body.answer).toBe(
+      'I left the plan at .claude4spec/plans/rename-the-endpoint.md; the page is pages/api.md. ' +
+        'The project lives in ., also known as ..',
+    );
     // Rewritten in place, so the plan is named once — no appended duplicate line.
     expect(res.body.answer).not.toContain('Plan: `');
-    // No absolute path survives anywhere in the text.
-    expect(res.body.answer).not.toMatch(/(^|[\s`'"(])\/[A-Za-z]/);
+  });
+
+  it('[ac:ac-answer-tury-ask-nie-zawiera-sciezki-b] the persisted message is not processed — only the HTTP answer is', async () => {
+    const raw = `See ${path.join(dir, 'pages', 'api.md')}.`;
+    const messages = [{ id: 'm1', role: 'assistant', content: raw }];
+    runAgentTurnMock.mockImplementationOnce(async (_deps, input) => ({
+      threadId: input.thread.id,
+      answer: raw,
+      messages: messages as never[],
+    }));
+
+    const res = await request(app()).post(`/threads/${thread.id}/ask`).send({ message: 'Where is it?' });
+
+    expect(res.body.answer).toBe('See pages/api.md.');
+    // What the turn stored (and returns as its messages) stays as the agent wrote it.
+    expect(res.body.messages[0].content).toBe(raw);
+  });
+
+  it('[ac:ac-gdy-answer-tury-ask-nie-wymienia-plan] an answer that does not name the plan the turn created ends with the line Plan: `<path relative to the peer project>`', async () => {
+    turnLeavesPlan('I cannot edit the specification, so I left a plan for its author.');
+
+    const res = await request(app()).post(`/threads/${thread.id}/ask`).send({ message: 'Please rename the endpoint.' });
+
+    expect(res.status).toBe(200);
+    const lines = (res.body.answer as string).split('\n');
+    expect(lines[0]).toBe('I cannot edit the specification, so I left a plan for its author.');
+    // The LAST line, exactly in this form, relative to the project — never the directory.
+    expect(lines[lines.length - 1]).toBe('Plan: `.claude4spec/plans/rename-the-endpoint.md`');
+    expect(res.body.answer).not.toContain(dir);
+    // Only the plan this turn left — the untouched older plan gets no line.
+    expect(res.body.answer).not.toContain('older-plan.md');
+  });
+
+  it('[ac:ac-gdy-answer-tury-ask-nie-wymienia-plan] a plan CHANGED in the turn (content hash differs) gets its line too, one line per plan', async () => {
+    runAgentTurnMock.mockImplementationOnce(async (_deps, input) => {
+      plans[0] = { path: 'older-plan.md', hash: 'h-old-edited' };
+      plans.push({ path: 'rename-the-endpoint.md', hash: 'h-new' });
+      return { threadId: input.thread.id, answer: 'Updated one plan and wrote another.', messages: [] };
+    });
+
+    const res = await request(app()).post(`/threads/${thread.id}/ask`).send({ message: 'Please rename the endpoint.' });
+
+    const lines = (res.body.answer as string).split('\n');
+    expect(lines.slice(-2)).toEqual([
+      'Plan: `.claude4spec/plans/older-plan.md`',
+      'Plan: `.claude4spec/plans/rename-the-endpoint.md`',
+    ]);
+    expect((res.body.answer as string).match(/^Plan: `/gm)).toHaveLength(2);
+  });
+
+  it('[ac:ac-gdy-answer-tury-ask-nie-wymienia-plan] a plan the answer already names gets no second line', async () => {
+    const answer = 'Left a plan: `.claude4spec/plans/rename-the-endpoint.md`.';
+    turnLeavesPlan(answer);
+
+    const res = await request(app()).post(`/threads/${thread.id}/ask`).send({ message: 'Please rename the endpoint.' });
+
+    expect(res.body.answer).toBe(answer);
+    expect(res.body.answer).not.toContain('Plan: `');
+  });
+
+  it('[ac:ac-sciezka-bezwzgledna-spoza-katalogu-pr] an absolute path outside the peer project passes through the answer unchanged', async () => {
+    const outside = [
+      '/etc/hosts',
+      path.join(os.tmpdir(), 'some-other-project', 'pages', 'a.md'),
+      // A sibling whose name starts with the project directory's name.
+      `${dir}-old/pages/a.md`,
+      // A path that merely CONTAINS the project directory's spelling.
+      `/mnt/backup${dir}/pages/a.md`,
+    ];
+    const answer = `Compare ${outside.join(', ')} with ${path.join(dir, 'pages', 'a.md')}.`;
+    runAgentTurnMock.mockImplementationOnce(async (_deps, input) => ({ threadId: input.thread.id, answer, messages: [] }));
+
+    const res = await request(app()).post(`/threads/${thread.id}/ask`).send({ message: 'Where else is it?' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.answer).toBe(`Compare ${outside.join(', ')} with pages/a.md.`);
+  });
+
+  it('a thread of another context_type gets its answer unchanged — no scrub, no plan line', async () => {
+    thread = makeThread({ contextType: 'chat' });
+    const answer = `The page is ${path.join(dir, 'pages', 'api.md')}.`;
+    turnLeavesPlan(answer);
+
+    const res = await request(app()).post(`/threads/${thread.id}/ask`).send({ message: 'Please rename the endpoint.' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.answer).toBe(answer);
   });
 });
