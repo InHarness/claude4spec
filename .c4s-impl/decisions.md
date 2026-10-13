@@ -1,0 +1,3 @@
+- 2026-10-13 — baseline (startMode resume): tests never run locally; main @ 28fd7de7 is the merge of PR #270 whose env-runner system verification reported `npm test` 5679/5679 green (e2e: 4 known non-branch failures). baselineGreen = true on that evidence; the full suite runs once in env-runner at system verification.
+- 2026-10-13 — jobs: the brief states that `pages/SKILL.md` has no user-jobs table at 2.1.20; no unit is given a job, the system verifier works from the units' `ac` criteria.
+- 2026-10-13 — entity types: `ac` criteria (observedIn unit), `endpoint` and `dto` built — the plugin endpoints of this window are global (`/api/plugins/...`), not under `/api/projects/<id>/`.
