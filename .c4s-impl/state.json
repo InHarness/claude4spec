@@ -1,5 +1,5 @@
 {
-  "iteration": 8,
+  "iteration": 12,
   "conventions": [
     {
       "label": "L4 (API)",
@@ -321,16 +321,35 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "m01-skills-root-collision/p1-l13-l13",
+          "layers": [
+            "L13"
+          ],
+          "slugs": [
+            "ac-nieudany-start-projektu-ktorego-roots",
+            "ac-projekt-sprzed-korzenia-systemowego-s"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "c9485f1aa5f69e908652df333d14d2e13941f9db",
+      "baseCommit": "c9485f1aa5f69e908652df333d14d2e13941f9db",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0,
+      "only": []
     },
     {
       "id": "ask-answer-postprocessing",
