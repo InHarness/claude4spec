@@ -20,6 +20,10 @@
  * patch thread, closed on one `patch_path`, never sees it — it has no
  * `transagent-tools` at all.
  *
+ * 2.1.18 (M10 `m10mcp00`, M44 `3f5ej79s`) — and `list_plans`, owned by M10: the
+ * set of plans the orchestrator picks a `planPath` for a banka from. `plan-tools`
+ * still carries no list on a thread — the agent editing a plan sees only its own.
+ *
  * Read-only cross-spec counterpart: `c4s-tools` (consults a DIFFERENT spec).
  */
 
@@ -27,7 +31,9 @@ import { createMcpServer, mcpTool, type CapturedMcpServer, type McpToolDefinitio
 import { z } from 'zod';
 import { toolError, toolFailure, toolSuccess } from '../operations/envelope.js';
 import { DEFAULT_LIMITS, paginate } from '../discovery/pagination.js';
+import { toIso } from '../services/artifact-content.js';
 import type { PatchService } from '../services/patch.js';
+import type { PlanService } from '../services/plan.js';
 import type { TransagentDispatcher } from '../services/transagent-dispatcher.js';
 import { DomainError } from '../services/tags.js';
 import { AgentTurnError } from '../../shared/agent-turn.js';
@@ -44,12 +50,17 @@ export interface TransagentToolsContext {
    * exercise `runTransagent` alone; the turn handler always passes it.
    */
   patches?: Pick<PatchService, 'listPatches'>;
-  /** The project `list_patches` answers for — the response-size ring's key. */
+  /**
+   * 2.1.18 — the plan set behind `list_plans`. Optional only for rigs that
+   * exercise `runTransagent` alone; the turn handler always passes it.
+   */
+  plans?: Pick<PlanService, 'listPlans'>;
+  /** The project `list_patches` / `list_plans` answer for — the response-size ring's key. */
   projectId?: string | null;
 }
 
 /** Tool names this server can carry, in registration order. */
-export const TRANSAGENT_TOOL_NAMES = ['runTransagent', 'list_patches'] as const;
+export const TRANSAGENT_TOOL_NAMES = ['runTransagent', 'list_patches', 'list_plans'] as const;
 
 export function buildTransagentToolsServer(ctx: TransagentToolsContext): CapturedMcpServer {
   const runTransagent = mcpTool(
@@ -160,6 +171,7 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
 
   const tools: McpToolDefinition[] = [runTransagent];
   if (ctx.patches) tools.push(buildListPatchesTool(ctx.patches, ctx.projectId ?? null));
+  if (ctx.plans) tools.push(buildListPlansTool(ctx.plans, ctx.projectId ?? null));
 
   return createMcpServer({
     name: 'transagent-tools',
@@ -231,6 +243,77 @@ function buildListPatchesTool(patches: Pick<PatchService, 'listPatches'>, projec
             ...(page.truncated ? { truncated: true } : {}),
           },
           { operation: 'list_patches', channel: 'internal', project: projectId },
+        );
+      } catch (err) {
+        return toolFailure(err);
+      }
+    },
+    { readOnlyHint: true },
+  );
+}
+
+/**
+ * 2.1.18 (M10 `ww4lujgo` / `m10mcp00`) — `list_plans`, the plan set as the
+ * orchestrator of a top-level chat thread reads it to pick a `planPath` for a
+ * banka. Filters `applied` (a plan without the key counts as `false`); the
+ * ORDER is `planService.listPlans({ order: 'created' })` — `created_at`
+ * ascending, tie by `path` — not the `/plans` page's most-recently-changed
+ * order; the WINDOW follows M39's implicit matrix (`limit` / `offset` with a
+ * finite default, `total` before the slice, `hasMore`). A row carries no plan
+ * content: only `get_plan` reads that, and only for the thread's own plan.
+ *
+ * ASSUMPTION:dev-0005 — no `list_plans` catalog row (Faza B pending at 2.1.18),
+ * no `search` parameter (`search_plans` is `n/a`), and the default page size
+ * (50) is ours — M39 names none for this list.
+ */
+function buildListPlansTool(plans: Pick<PlanService, 'listPlans'>, projectId: string | null) {
+  return mcpTool(
+    'list_plans',
+    [
+      'List the plans of this specification — the set you pick a plan from for a banka.',
+      'Ordered by `created_at` ascending (ties by `path`; a plan without `created_at` comes last).',
+      'Filter with `applied` (`false` = not yet applied to the spec; a plan with no `applied` field counts as false).',
+      "Each row: { path, title, applied, createdAt, updatedAt } — no plan content; `path` is what",
+      "runTransagent({ payload: { planPath } }) takes. Paged: `limit` / `offset`, answered with `total` and `hasMore`.",
+    ].join('\n'),
+    {
+      applied: z.boolean().optional().describe('Narrow to applied (true) or not yet applied (false). Omit for all.'),
+      limit: z.number().int().positive().optional(),
+      offset: z.number().int().nonnegative().optional(),
+    },
+    async (args) => {
+      try {
+        const rows = plans
+          .listPlans({
+            order: 'created',
+            ...(typeof args.applied === 'boolean' ? { applied: args.applied } : {}),
+          })
+          .map((p) => {
+            const createdAt = toIso(p.frontmatter.created_at);
+            return {
+              path: p.path,
+              title: p.title,
+              applied: p.frontmatter.applied === true,
+              createdAt: createdAt === '' ? null : createdAt,
+              updatedAt: p.updatedAt === '' ? null : p.updatedAt,
+            };
+          });
+        const page = paginate(
+          rows,
+          {
+            limit: typeof args.limit === 'number' ? args.limit : undefined,
+            offset: typeof args.offset === 'number' ? args.offset : undefined,
+          },
+          DEFAULT_LIMITS.listPlans,
+        );
+        return toolSuccess(
+          {
+            plans: page.items,
+            total: page.total,
+            hasMore: page.hasMore,
+            ...(page.truncated ? { truncated: true } : {}),
+          },
+          { operation: 'list_plans', channel: 'internal', project: projectId },
         );
       } catch (err) {
         return toolFailure(err);

@@ -48,7 +48,14 @@ function serviceOver(patches: Record<string, Record<string, unknown>>, briefs: s
 const dispatcher = { run: async () => ({ threadId: 'c', summary: '' }) } as unknown as TransagentDispatcher;
 
 function listTool(service: PatchService) {
-  const server = buildTransagentToolsServer({ parentThreadId: 'parent_1', dispatcher, patches: service, projectId: 'p1' });
+  // The turn handler passes both sets; `list_plans` is asserted in its own file.
+  const server = buildTransagentToolsServer({
+    parentThreadId: 'parent_1',
+    dispatcher,
+    patches: service,
+    plans: { listPlans: () => [] },
+    projectId: 'p1',
+  });
   const tool = server.tools.find((t) => t.name === 'list_patches');
   if (!tool) throw new Error('list_patches not registered');
   return { server, tool };

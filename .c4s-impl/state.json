@@ -1,5 +1,5 @@
 {
-  "iteration": 2,
+  "iteration": 3,
   "conventions": [
     {
       "label": "L15 (Context Types) — implementor `M44`",
@@ -583,16 +583,35 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "m10-list-plans/p1-l3-l15",
+          "layers": [
+            "L3",
+            "L15"
+          ],
+          "slugs": [
+            "ac-list-plans-wywolane-w-watku-chat-top",
+            "ac-list-plans-zwraca-plany-w-porzadku-cr"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "d31ef9427da7f2057dd85758318f40e3f75fedb7",
+      "baseCommit": "d31ef9427da7f2057dd85758318f40e3f75fedb7",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "only": []
     },
     {
       "id": "m21-list-briefs",

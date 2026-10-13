@@ -34,6 +34,8 @@ export const DEFAULT_LIMITS = {
   resolveIdentity: 20,
   /** 2.1.18 (M23) — `list_patches` in `transagent-tools`: the orchestrator's queue source. */
   listPatches: 50,
+  /** 2.1.18 (M10) — `list_plans` in `transagent-tools`: the orchestrator's plan picker. */
+  listPlans: 50,
 } as const;
 
 /** The ceiling a caller may ask for, whatever it passes. */

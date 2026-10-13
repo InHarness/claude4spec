@@ -2177,6 +2177,19 @@ describe('runAgentTurn — transagent-tools only on a top-level chat thread (2.1
     // patch-tools itself carries only the thread's own two operations.
     expect(prompt).toContain('<mcp name="patch-tools">get_patch, mark_patch_applied</mcp>');
   });
+
+  it('[section:iatop5pj] a top-level chat thread has list_plans on transagent-tools; a child chat thread and a patch thread do not, and plan-tools carries no list', async () => {
+    // 2.1.18 (M10 `m10mcp00`, M44 `3f5ej79s`, M05 `iatop5pj`) — the orchestrator's plan picker.
+    const top = await turnFor('chat', { parentThreadId: null });
+    expect(top.prompt).toMatch(/<mcp name="transagent-tools">[^<]*\blist_plans\b[^<]*<\/mcp>/);
+    expect(top.prompt).not.toMatch(/<mcp name="plan-tools">[^<]*\blist_plans\b/);
+
+    const child = await turnFor('chat', { parentThreadId: 'parent-1' });
+    expect(child.prompt).not.toMatch(/<mcp name="[^"]*">[^<]*\blist_plans\b/);
+
+    const patch = await turnFor('patch', { patchPath: 'p.md' });
+    expect(patch.prompt).not.toMatch(/<mcp name="[^"]*">[^<]*\blist_plans\b/);
+  });
 });
 
 /**
