@@ -1,5 +1,5 @@
 {
-  "iteration": 28,
+  "iteration": 32,
   "conventions": [
     {
       "label": "L4 (API)",
@@ -853,16 +853,38 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "writing-style-source-badge/p1-l2-l17",
+          "layers": [
+            "L2",
+            "L5",
+            "L17"
+          ],
+          "slugs": [
+            "section:ssh0om79",
+            "section:m6ukdbsc",
+            "section:os387tmx"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "1499f3ba06e387dd214dfa035246896b1d92b466",
+      "baseCommit": "1499f3ba06e387dd214dfa035246896b1d92b466",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0,
+      "only": []
     },
     {
       "id": "builtin-envelope-tests-via-harness",

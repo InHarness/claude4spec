@@ -20,6 +20,7 @@ import {
   SKILL_SOURCES,
   WRITING_STYLE_SOURCE_BADGE,
   writingStyleOptionLabel,
+  writingStyleSourceBadge,
   type WritingStyleSummary,
 } from '../../shared/writing-styles.js';
 import { configRouter } from './config.js';
@@ -248,5 +249,60 @@ describe('PATCH /api/config { writingStyle } over every source (M15 L17, 2.1.9)'
     const res = await request(app).patch('/config').send({ writingStyle: slug });
     expect(res.status).toBe(200);
     expect(readConfig(cwd).writingStyle).toBe(slug);
+  });
+});
+
+describe('the style source badge map (M15 L2 `ssh0om79`, 2.1.17)', () => {
+  it('[section:ssh0om79] one complete source → label map: user → yours, plugin → plugin, project-rooted → project skill, project-exposed → attached project; no two sources share a label, and both `user` registrations (project and global .claude/skills) share `yours`', async () => {
+    // The map, row by row, and complete over the registry's source set.
+    expect({ ...WRITING_STYLE_SOURCE_BADGE }).toEqual({
+      user: 'yours',
+      plugin: 'plugin',
+      'project-rooted': 'project skill',
+      'project-exposed': 'attached project',
+    });
+    expect(Object.keys(WRITING_STYLE_SOURCE_BADGE).sort()).toEqual([...SKILL_SOURCES].sort());
+    expect(new Set(Object.values(WRITING_STYLE_SOURCE_BADGE)).size).toBe(SKILL_SOURCES.length);
+    for (const source of SKILL_SOURCES) {
+      expect(writingStyleSourceBadge(source)).toBe(WRITING_STYLE_SOURCE_BADGE[source]);
+    }
+
+    // Every source the rig's registry actually emits is badged from the map.
+    const { app, writeUserStyle, writeRootedStyle } = await rig();
+    writeUserStyle('team-voice', 'Team Voice');
+    writeRootedStyle('project-voice', 'Project Voice');
+    const emitted = new Set((await available(app)).map((s) => s.source));
+    expect([...emitted].sort()).toEqual([...SKILL_SOURCES].sort());
+
+    // The two `user` registrations: a style of the project root and one of the
+    // global root both come out as `source: user`, so both read `yours`.
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-writing-styles-user-roots-'));
+    cleanups.push(() => fs.rmSync(base, { recursive: true, force: true }));
+    const projectDir = path.join(base, 'project', '.claude', 'skills');
+    const globalDir = path.join(base, 'home', '.claude', 'skills');
+    for (const [dir, slug, title] of [
+      [projectDir, 'project-local-voice', 'Project Local Voice'],
+      [globalDir, 'global-voice', 'Global Voice'],
+    ] as const) {
+      fs.mkdirSync(path.join(dir, slug), { recursive: true });
+      fs.writeFileSync(path.join(dir, slug, 'SKILL.md'), STYLE_MD(title));
+    }
+    const registry = SkillRegistry.load(
+      [
+        { dir: projectDir, source: 'user', registration: 'user-project' },
+        { dir: globalDir, source: 'user', registration: 'user-global' },
+      ],
+      { rescanTtlMs: 0 },
+    );
+    const cfgDir = path.join(base, 'project');
+    fs.mkdirSync(path.dirname(configPath(cfgDir)), { recursive: true });
+    fs.writeFileSync(configPath(cfgDir), JSON.stringify({ $schemaVersion: 4, writingStyle: null }));
+    const userApp = express().use(express.json()).use(configRouter({ cwd: cfgDir, skillRegistry: registry }));
+    const list = await available(userApp);
+    for (const slug of ['project-local-voice', 'global-voice']) {
+      const style = list.find((s) => s.slug === slug)!;
+      expect(style.source, slug).toBe('user');
+      expect(writingStyleSourceBadge(style.source), slug).toBe('yours');
+    }
   });
 });

@@ -23,7 +23,7 @@ export const WRITING_STYLE_SETTINGS: SettingsContribution = {
       useOptions: () =>
         useWritingStyles().data?.available.map((s) => ({
           value: s.slug,
-          // 2.1.9 (M15 L17 `m6ukdbsc`): a distinct badge per `source` value, not two.
+          // M15 L17 `m6ukdbsc`: the option carries its source badge from the M15 map (`ssh0om79`).
           label: writingStyleOptionLabel(s),
         })),
       validate: (_value, { config }) =>
