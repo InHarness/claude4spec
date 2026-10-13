@@ -884,7 +884,7 @@
         }
       ],
       "wave": 2,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "frontend-serving/p1-l4-l11",
@@ -910,14 +910,32 @@
             "ac-komponenty-pluginu-ze-zbundlowana-wla",
             "ac-build-frontendu-pluginu-wygenerowaneg"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "ac-frontend-pluginu-nie-bandluje-wlasnej-ko",
+            "ac-serwowanie-frontendu-nakladki-project-lo",
+            "ac-frontend-pluginu-zbudowany-automatycznym",
+            "ac-lucide-react-jest-externalized-peer-w"
+          ],
+          "only": [
+            {
+              "slug": "ac-frontend-pluginu-nie-bandluje-wlasnej-ko"
+            },
+            {
+              "slug": "ac-serwowanie-frontendu-nakladki-project-lo"
+            },
+            {
+              "slug": "ac-frontend-pluginu-zbudowany-automatycznym"
+            },
+            {
+              "slug": "ac-lucide-react-jest-externalized-peer-w"
+            }
+          ]
         }
       ],
-      "startCommit": "5f10e97258c18fd1d3a793674340f91be0cd520a",
+      "startCommit": "82deeabad3c8f1be503b07dfc61fbcd83e379a73",
       "baseCommit": "5f10e97258c18fd1d3a793674340f91be0cd520a",
       "rounds": {
         "review": 0,
