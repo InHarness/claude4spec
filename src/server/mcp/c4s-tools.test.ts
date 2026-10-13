@@ -156,7 +156,7 @@ describe('buildC4sToolsServer — ask addressing (2.1.0)', () => {
     expect(hoisted.calls[0]).toMatchObject({ project: 'app-spec', server: 'https://c4s.firma.dev', contextType: 'ask' });
   });
 
-  it('refuses LOCALLY, before any peer call: missing project, empty project, empty message', async () => {
+  it('[ac:ac-wywolanie-narzedzia-mcp-ask-bez-proje] refuses LOCALLY, before any peer call: missing project, empty project, empty message', async () => {
     const client = await connectClient('ws-5555');
     for (const args of [{ message: 'ping' }, { message: 'ping', project: '  ' }, { message: '', project: 'app-spec' }]) {
       const res = await client.callTool({ name: 'ask', arguments: args });

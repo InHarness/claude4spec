@@ -1,5 +1,5 @@
 {
-  "iteration": 50,
+  "iteration": 51,
   "conventions": [
     {
       "label": "L4 (API)",
@@ -440,17 +440,13 @@
             "ac-gdy-answer-tury-ask-nie-wymienia-plan",
             "ac-sciezka-bezwzgledna-spoza-katalogu-pr"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [
             "ac-wywolanie-narzedzia-mcp-ask-bez-proje"
           ],
-          "only": [
-            {
-              "slug": "ac-wywolanie-narzedzia-mcp-ask-bez-proje"
-            }
-          ]
+          "only": []
         }
       ],
       "startCommit": "44da1558489399a1053547ba949b80c66060e6fd",
@@ -883,7 +879,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "verified",
+      "status": "in-progress",
       "blockedBy": null,
       "portions": [
         {
@@ -898,14 +894,20 @@
             "section:m6ukdbsc",
             "section:os387tmx"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "section:os387tmx"
+          ],
+          "only": [
+            {
+              "slug": "section:os387tmx"
+            }
+          ]
         }
       ],
-      "startCommit": "1499f3ba06e387dd214dfa035246896b1d92b466",
+      "startCommit": null,
       "baseCommit": "1499f3ba06e387dd214dfa035246896b1d92b466",
       "rounds": {
         "review": 0,
