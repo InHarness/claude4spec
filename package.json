@@ -50,6 +50,10 @@
     },
     "./plugin-runtime/ambient": {
       "types": "./dist/plugin-types/ambient.d.ts"
+    },
+    "./plugin-testing": {
+      "types": "./dist/plugin-types/plugin-testing.d.ts",
+      "default": "./dist/server/plugin-testing/index.js"
     }
   },
   "scripts": {

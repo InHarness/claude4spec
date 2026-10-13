@@ -245,6 +245,13 @@ export interface ProjectContext {
   router: Router;
   db: Db;
   pluginHost: ProjectPluginHost;
+  /**
+   * 2.1.17 (M33 L11) — the entity write door this context hands every plugin's
+   * `MountContext.crud`: the generic CRUD verbs plus their rename fan-out and
+   * `entity:changed` broadcast. Exposed so the plugin test harness gives a test
+   * author the SAME door the plugin under test writes through, not a copy.
+   */
+  crud: CrudFacade;
   /** M13 dispatch bound to this context's host. */
   serialization: SerializationEngine;
   /** Per-project room emitter (all services broadcast through it). */
@@ -456,7 +463,9 @@ async function buildInner(
   }
   const skillResolver = new SkillResolver(skillRegistry, cwd);
 
-  const db: Db = openDb(workspace, projectId);
+  // 2.1.17: under THIS registry's home, so the slot below and the handle agree
+  // (the plugin test harness builds contexts over a throwaway registry home).
+  const db: Db = openDb(workspace, projectId, registry.baseDir);
   cleanup.push(() => db.close());
   const dbSlotDir = registry.slotDir(workspace, projectId);
   // 2.1.0 slot continuity: the slot records the directory it serves. A
@@ -1981,6 +1990,7 @@ async function buildInner(
     router,
     db,
     pluginHost,
+    crud: crudFacade,
     serialization: serializationEngine,
     ws,
     activeAdapters,

@@ -1,5 +1,5 @@
 {
-  "iteration": 16,
+  "iteration": 20,
   "conventions": [
     {
       "label": "L4 (API)",
@@ -536,16 +536,44 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "m33-plugin-testing-harness/p1-l10-l11",
+          "layers": [
+            "L10",
+            "L11"
+          ],
+          "slugs": [
+            "m33-requires-m49",
+            "ac-autor-pluginu-typuje-test-przez-d-ts",
+            "ac-dodanie-subpathu-plugin-testing-do-pu",
+            "ac-goly-import-c4s-plugin-runtime-w-kodz",
+            "ac-lamiaca-zmiana-sygnatury-createplugin",
+            "ac-manifest-ktory-punkt-rejestracji-odrz",
+            "ac-mountcontext-pluginu-uruchomionego-pr",
+            "ac-plugin-typujacy-sie-wylacznie-przez-p",
+            "ac-test-integracyjny-pakietu-pluginu-spo",
+            "ac-typ-encji-z-manifestu-przekazanego-do"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "2dfef250443d693e4f8b04a6513d8b3f175d2eba",
+      "baseCommit": "2dfef250443d693e4f8b04a6513d8b3f175d2eba",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0,
+      "only": []
     },
     {
       "id": "m33-loader-criteria-regression",
