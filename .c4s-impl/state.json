@@ -1,0 +1,1073 @@
+{
+  "iteration": 0,
+  "conventions": [
+    {
+      "label": "L4 (API)",
+      "key": "pages/layers/L4-api.md",
+      "offset": 2,
+      "anchor": "pondhd6o"
+    },
+    {
+      "label": "L5 (UI)",
+      "key": "pages/layers/L5-ui.md",
+      "offset": 2,
+      "anchor": "tehej2wz"
+    },
+    {
+      "label": "L10 (Project Scoping)",
+      "key": "pages/layers/L10-project-scoping.md",
+      "offset": 2,
+      "anchor": "l10slice0"
+    },
+    {
+      "label": "L11 (Plugin Runtime Surface), implementor `M33`",
+      "key": "pages/layers/L11-plugin-runtime-surface.md",
+      "offset": 2,
+      "anchor": "l11slice0"
+    },
+    {
+      "label": "L13 (Korzenie i rodzaje korzeni)",
+      "key": "pages/layers/L13-page-roots.md",
+      "offset": 2,
+      "anchor": "l13slice0"
+    },
+    {
+      "label": "L16 (System Prompt Contribution)",
+      "key": "pages/layers/L16-system-prompt-contribution.md",
+      "offset": 2,
+      "anchor": "6g3aicw4"
+    },
+    {
+      "label": "L17 (Project Settings)",
+      "key": "pages/layers/L17-project-settings.md",
+      "offset": 2,
+      "anchor": "ata1r5sz"
+    },
+    {
+      "label": "Tabela modułów i ich zadań, dla weryfikatora systemowego — osadzony arkusz `moduly-feature`",
+      "key": "pages/SKILL.md",
+      "offset": 13,
+      "anchor": "oq23nb0j"
+    }
+  ],
+  "waves": [
+    {
+      "n": 1,
+      "units": [
+        "m02-frontmatter-tolerant-read",
+        "m02-tree-create-button",
+        "m01-skills-root-collision",
+        "ask-answer-postprocessing",
+        "m33-plugin-testing-harness",
+        "m33-loader-criteria-regression",
+        "m37-version-gate-and-reader-contract",
+        "writing-style-source-badge"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 2,
+      "units": [
+        "builtin-envelope-tests-via-harness",
+        "m52-style-fork-any-plugin-style",
+        "m52-current-skill-and-edges"
+      ],
+      "startCommit": null
+    }
+  ],
+  "units": [
+    {
+      "id": "m02-frontmatter-tolerant-read",
+      "goal": "Strona, której blok YAML frontmattera się nie parsuje, czyta się poprawnie: pusty frontmatter plus dosłowny blok zwracany obok, bez błędu serwera. Zapis z edytora takiej strony zostawia ten blok w pliku bajt w bajt, dopóki autor go nie poprawi. Edytor nie podstawia pustego nagłówka.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m02-pages.md",
+            "change": {
+              "offset": 0,
+              "limit": 3,
+              "anchors": [
+                "79f5jyrk",
+                "gnxw0ua1",
+                "xlx33i1v"
+              ]
+            },
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "487vmesk",
+                "lzt9r2fu",
+                "6o9jy3sm"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m02-pages.md",
+            "context": {
+              "offset": 10,
+              "limit": 2,
+              "anchors": [
+                "79f5jyrk",
+                "gnxw0ua1"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m02-pages.md",
+            "context": {
+              "offset": 24,
+              "limit": 1,
+              "anchors": [
+                "xlx33i1v"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "dto",
+            "slugs": [
+              "page-detail"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-odczyt-strony-z-nieparsowalnym-frontmatterem",
+              "ac-zapis-z-edytora-zachowuje-nieparsowalny-frontmatter"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "blockedBy": null,
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "m02-tree-create-button",
+      "goal": "Nową stronę tworzy się przyciskiem `+` przy nagłówku grupy drzew stron. Strona zawsze trafia do korzenia podstawowego, niezależnie od otwartych akordeonów innych korzeni. Folder powstaje razem z pierwszą stroną w nim. Usunięte: z menu kontekstowego wiersza drzewa znikają pozycje usuwania, nowej strony i nowego folderu. Zostaje tylko zmiana nazwy, dla plików markdown. Pliki HTML i foldery nie mają menu.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m02-pages.md",
+            "change": {
+              "offset": 3,
+              "limit": 1,
+              "anchors": [
+                "66se825m"
+              ]
+            },
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "487vmesk",
+                "lzt9r2fu"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m02-pages.md",
+            "context": {
+              "offset": 34,
+              "limit": 2,
+              "anchors": [
+                "fws33efb",
+                "66se825m"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-przycisk-przy-naglowku-grupy-drzew-st"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "blockedBy": null,
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "m01-skills-root-collision",
+      "goal": "Projekt sprzed korzenia systemowego `skills`, którego wpis `roots[]` koliduje z tym korzeniem (przez identyfikator albo przez katalog), nie startuje. Wczytanie konfiguracji kończy się błędem nakładania przestrzeni nazw, loader niczego nie migruje, a `config.json` zostaje nietknięty. Naprawa należy do użytkownika: przez edycję katalogu albo przez przepływ przemianowania korzenia.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m01-project.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "85hp4f2v",
+                "cri3lyli"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "context": {
+              "offset": 11,
+              "limit": 1,
+              "anchors": [
+                "dklcl4nf"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "context": {
+              "offset": 17,
+              "limit": 1,
+              "anchors": [
+                "t4rxgh31"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "context": {
+              "offset": 26,
+              "limit": 2,
+              "anchors": [
+                "m01l13rt",
+                "m01rootsval"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "context": {
+              "offset": 32,
+              "limit": 1,
+              "anchors": [
+                "3zqke46q"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-nieudany-start-projektu-ktorego-roots",
+              "ac-projekt-sprzed-korzenia-systemowego-s"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "blockedBy": null,
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "ask-answer-postprocessing",
+      "goal": "Endpoint tury `ask` domyka formę `answer` po zakończeniu tury, zanim odpowie, niezależnie od tego, czy agent się zastosował. Dopisuje końcową linię ze ścieżką każdego planu założonego lub zmienionego w turze, jeśli `answer` go nie wymienia. Przepisuje każde wystąpienie katalogu projektu peera na ścieżkę względną, a ścieżki spoza projektu zostawia. Przetwarzana jest tylko odpowiedź HTTP. Zapisana wiadomość wątku i wątki innych typów kontekstu zostają bez zmian.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m05-chat-agent/L4-api.md",
+            "change": "all",
+            "context": {
+              "offset": 5,
+              "limit": 1,
+              "anchors": [
+                "za3t91al"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m05-chat-agent/m05-chat-agent.md",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "iv1lmc33",
+                "t3fsdybv",
+                "qi69o94d"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m11-c4s/L3-spec-operations.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "m11askpar",
+                "m11askdsc",
+                "m11askrul"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m11-c4s/m11-c4s.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m11cel00",
+                "m11dep00"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "mcp-tool",
+            "slugs": [
+              "c4s-tools-ask"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-answer-tury-ask-nie-zawiera-sciezki-b",
+              "ac-gdy-answer-tury-ask-nie-wymienia-plan",
+              "ac-sciezka-bezwzgledna-spoza-katalogu-pr"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "blockedBy": null,
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "m33-plugin-testing-harness",
+      "goal": "Publikowany pakiet hosta zyskuje osobny subpath z harnessem testowym i jego deklaracjami typów. Z listy manifestów pluginów harness stawia prawdziwy host w procesie na tymczasowym projekcie: rejestracja i fan-out jak w loaderze, ten sam host-owned resolver, typy z manifestów aktywne bez konfiguracji. Autor testu dostaje aplikację HTTP, CRUD encji, fasadę hosta, katalog roboczy, uchwyt bazy (nie trafia do kontekstu montowania pluginu), przechwycone broadcasty i sprzątanie. Harness leży poza wersjonowaną powierzchnią Host API: jego dodanie ani zmiana nie podbijają `hostApiVersion`, a powierzchnia runtime pluginu zostaje wolna od zależności serwerowych. Instancja harnessu to nowy element czasu życia w project scoping.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "change": {
+              "offset": 0,
+              "limit": 2,
+              "anchors": [
+                "m33purp01",
+                "m33deps01"
+              ]
+            },
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m33purp01",
+                "m33deps01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "change": {
+              "offset": 4,
+              "limit": 2,
+              "anchors": [
+                "m33l10sc",
+                "m33l11sc"
+              ]
+            },
+            "context": {
+              "offset": 7,
+              "limit": 2,
+              "anchors": [
+                "m33rt001",
+                "ywud56l6"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "context": {
+              "offset": 17,
+              "limit": 2,
+              "anchors": [
+                "m33l10sc",
+                "m33l11sc"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m33-requires-m49"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-autor-pluginu-typuje-test-przez-d-ts",
+              "ac-dodanie-subpathu-plugin-testing-do-pu",
+              "ac-goly-import-c4s-plugin-runtime-w-kodz",
+              "ac-lamiaca-zmiana-sygnatury-createplugin",
+              "ac-manifest-ktory-punkt-rejestracji-odrz",
+              "ac-mountcontext-pluginu-uruchomionego-pr",
+              "ac-plugin-typujacy-sie-wylacznie-przez-p",
+              "ac-test-integracyjny-pakietu-pluginu-spo",
+              "ac-typ-encji-z-manifestu-przekazanego-do"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "blockedBy": null,
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "m33-loader-criteria-regression",
+      "goal": "Zachowanie loadera pluginów się nie zmienia. Kryteria jego przypadków brzegowych zostały w specyfikacji przegrupowane do osobnej sekcji. Ta jednostka potwierdza, że każde z nich nadal zachodzi: bramki wersji i `engines`, kolizje typów, zaufanie nakładki project-local, budżety i walidacja wkładów subagentowych i skillowych, sygnał gotowości, watcher pakietów ESM-only.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "change": {
+              "offset": 6,
+              "limit": 1,
+              "anchors": [
+                "m33edge0"
+              ]
+            },
+            "context": {
+              "offset": 28,
+              "limit": 2,
+              "anchors": [
+                "m33edge0",
+                "m33ac001"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-chip-wolajacy-useeditor-wylacznie-w-h",
+              "ac-cli-mcp-m11-m12-startuja-bez-serwera",
+              "ac-config-entities-aktywuje-typ-ktorego",
+              "ac-dwa-pakiety-bazy-workspace-npm-wnoszac",
+              "ac-dwa-pluginy-w-nakladce-project-local-wno",
+              "ac-dwa-pluginy-wnoszace-subagenta-o-tej",
+              "ac-frontend-pluginu-wola-route-project-scop",
+              "ac-import-pakietu-ktory-rzucil-zepsut",
+              "ac-koperta-wbudowana-z-plugins-src-wno",
+              "ac-loader-emituje-sygnal-gotowosci-pluginow",
+              "ac-pakiet-plugin-bazy-z-exports-deklaruja-2",
+              "ac-pakiet-z-niespelnionym-engines-jest-po",
+              "ac-pakiet-z-niezgodnym-majorem-hostapivers",
+              "ac-plugin-bandlujacy-wlasna-kopie-reacta-ti",
+              "ac-plugin-deklarujacy-maxturns-rowne-suf",
+              "ac-plugin-project-local-wnoszacy-type-obe",
+              "ac-plugin-proponujacy-maxturns-powyzej-s",
+              "ac-repo-project-local-niezaufane-trustpro",
+              "ac-wklad-subagentowy-pomijajacy-maxturns",
+              "ac-wklad-subagentowy-z-model-spoza-zamkn",
+              "ac-wpis-contributes-skills-z-wartoscia-c"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "blockedBy": null,
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "m37-version-gate-and-reader-contract",
+      "goal": "W rejestrze skilli regułę „wersja wyższa niż obsługiwana → ostrzeżenie i pominięcie” egzekwują tylko źródła czytające `SKILL.md` z dysku (`user`, `project-rooted`). Źródło `plugin` wersji nie sprawdza, bo zgodność pakietu rozstrzyga bramka `hostApiVersion` loadera. Narzędzie listujące skille w zewnętrznym czytniku MCP przyjmuje typ kontekstu jako zwykły napis, walidowany w rdzeniu z dotychczasowym kodem odmowy, zamiast enumu odrzucanego po stronie SDK. Oba narzędzia czytnika są widoczne pod nazwą serwera `c4s-reader`.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m37-internal-skills-registry.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m37cel01",
+                "m37dep01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m37-internal-skills-registry.md",
+            "context": {
+              "offset": 12,
+              "limit": 2,
+              "anchors": [
+                "zscui1qz",
+                "aw9kcadc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m37-internal-skills-registry.md",
+            "context": {
+              "offset": 17,
+              "limit": 1,
+              "anchors": [
+                "8fvwl7qv"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m37-internal-skills-registry.md",
+            "context": {
+              "offset": 19,
+              "limit": 1,
+              "anchors": [
+                "r23brl2y"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m37-internal-skills-registry.md",
+            "context": {
+              "offset": 36,
+              "limit": 1,
+              "anchors": [
+                "b58luon6"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "mcp-tool",
+            "slugs": [
+              "c4s-reader-list-skills",
+              "c4s-reader-load-skill-file",
+              "skill-tools-load-skill-file"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "blockedBy": null,
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "writing-style-source-badge",
+      "goal": "Każdy styl pisania na obu powierzchniach wyboru (element wyboru stylu w ustawieniach projektu i karty stylu w onboardingu) niesie badge źródła. Etykietę bierze z jednej pełnej mapy wartości źródła rejestru, w której obie rejestracje źródła użytkownika dzielą jedną etykietę. Lista w onboardingu obejmuje style wszystkich źródeł rejestru ze zbioru selektowalnego.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m15-writing-styles.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 5,
+              "anchors": [
+                "17wo7eba",
+                "7j0i6cqq",
+                "umiahkh8",
+                "iki28xmv",
+                "ssh0om79"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m15-writing-styles.md",
+            "context": {
+              "offset": 24,
+              "limit": 3,
+              "anchors": [
+                "o6ltcsnk",
+                "u8umzmas",
+                "m6ukdbsc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m16-onboarding.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "x5c6lzgo",
+                "0jo31abd",
+                "6jif23wi"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m16-onboarding.md",
+            "context": {
+              "offset": 8,
+              "limit": 1,
+              "anchors": [
+                "os387tmx"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m16-onboarding.md",
+            "context": {
+              "offset": 11,
+              "limit": 1,
+              "anchors": [
+                "m16ui001"
+              ]
+            }
+          }
+        ],
+        "entities": []
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "blockedBy": null,
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "builtin-envelope-tests-via-harness",
+      "goal": "Testy kopert wbudowanych (`plugins/*/src/`) sięgają po działający host wyłącznie przez publikowany harness testowy, nigdy przez ścieżkę testów repo hosta. Dzięki temu wyniesienie koperty do osobnego repo nie zmienia żadnego importu ani w kodzie pakietu, ani w jego testach. Usunięte: importy harnessu i helperów testowych z wnętrza repo hosta w testach kopert wbudowanych.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "change": {
+              "offset": 3,
+              "limit": 1,
+              "anchors": [
+                "ywud56l6"
+              ]
+            },
+            "context": {
+              "offset": 8,
+              "limit": 1,
+              "anchors": [
+                "ywud56l6"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/L2-domain.md",
+            "change": "all",
+            "context": {
+              "offset": 3,
+              "limit": 2,
+              "anchors": [
+                "m13plenv",
+                "hevpbnsk"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m13cel00",
+                "m13dep00"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m13-requires-m33"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-test-koperty-wbudowanej-importuje-har",
+              "ac-wyniesienie-koperty-wbudowanej-do-oso",
+              "ac-ekstrakcja-koperty-wbudowanej-do-osob",
+              "ac-koperta-wbudowana-importuje-hosta-wylacz"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "m33-plugin-testing-harness",
+          "why": "testy importują harness, który ta jednostka publikuje"
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "blockedBy": null,
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "m52-style-fork-any-plugin-style",
+      "goal": "Zrzut stylu przyjmuje slug dowolnego stylu pisania z pluginu, nie tylko aktywnego, i niczego nie przełącza w konfiguracji. Kopia zapisuje w nagłówku pochodzenie w postaci `plugin:<slug>@<version>`, a jej własną wersję przycina do najwyższej obsługiwanej przez rejestr, żeby lokalna kopia była poprawnym pakietem i wygrywała swój slug. Usunięte: porównanie slugu z aktywnym stylem projektu.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "change": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "gx7f584v"
+              ]
+            },
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "q7uurue4",
+                "cppnlv9z"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "context": {
+              "offset": 7,
+              "limit": 1,
+              "anchors": [
+                "gx7f584v"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "context": {
+              "offset": 10,
+              "limit": 2,
+              "anchors": [
+                "hdkx97wq",
+                "84ae859b"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "context": {
+              "offset": 24,
+              "limit": 1,
+              "anchors": [
+                "oqhvnhyf"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "endpoint",
+            "slugs": [
+              "post-api-spec-skills-style-forks"
+            ]
+          },
+          {
+            "type": "dto",
+            "slugs": [
+              "fork-writing-style-request"
+            ]
+          },
+          {
+            "type": "spreadsheet",
+            "slugs": [
+              "katalog-operacji-m52"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "m52-style-fork-accepts-inactive-plugin-style",
+              "m52-style-fork-clamps-unsupported-version",
+              "m52-style-fork-records-forked-from"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "m37-version-gate-and-reader-contract",
+          "why": "przycięcie wersji opiera się na tym, że źródło `project-rooted` pomija zbyt wysoką wersję, a `plugin` nie"
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "blockedBy": null,
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "m52-current-skill-and-edges",
+      "goal": "Blok `<current_skill>` powstaje tylko dla pliku należącego do pakietu, czyli leżącego w podkatalogu pierwszego poziomu korzenia `skills`. Plik luzem w korzeniu nie daje żadnego bloku bieżącego pliku. Wariant bloku (odczyt albo przesłonięty) wybiera zwycięzca łańcucha precedencji slugu, nie poprawność pakietu, więc poprawny pakiet przewyższony rangą też dostaje wariant przesłonięty. `SKILL.md` z nieparsowalnym nagłówkiem otwiera się do edycji, a jego blok przeżywa zapis. Pozycja skilla na liście slash-komend edytora ma etykietę `/<slug>` i opis z listingu, bez tytułu skilla.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "change": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "9zio901p",
+                "rkbsi6ky"
+              ]
+            },
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "q7uurue4",
+                "cppnlv9z"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "context": {
+              "offset": 13,
+              "limit": 1,
+              "anchors": [
+                "r8r1aola"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "context": {
+              "offset": 17,
+              "limit": 3,
+              "anchors": [
+                "rxkafs5h",
+                "6evgp041",
+                "9zio901p"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "context": {
+              "offset": 26,
+              "limit": 1,
+              "anchors": [
+                "rkbsi6ky"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "code-snippet",
+            "slugs": [
+              "szablon-current-skill"
+            ]
+          },
+          {
+            "type": "spreadsheet",
+            "slugs": [
+              "wklad-do-edytora-m52"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "m52-edge-loose-file-no-current-skill",
+              "m52-edge-valid-outranked-package-shadowed",
+              "m52-invalid-frontmatter-package-editable"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "m02-frontmatter-tolerant-read",
+          "why": "edycja pakietu z nieparsowalnym nagłówkiem stoi na tolerancyjnym odczycie i zapisie stron"
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "blockedBy": null,
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    }
+  ],
+  "entityTypes": [
+    {
+      "type": "ac",
+      "role": "criteria",
+      "checks": "verifies",
+      "links": [
+        "verifies"
+      ],
+      "observedIn": "unit",
+      "inactive": "status = deprecated",
+      "version": 3
+    },
+    {
+      "type": "dto",
+      "role": "built",
+      "inCode": "the request/response TypeScript type (src/shared/** or the route module) of the payload the carrying route accepts or returns — field names, types and required/optional exactly as the DTO's `fields`",
+      "verify": "a vitest/supertest test next to the carrying route (src/server/routes/<route>*.test.ts) named with [entity:<slug>] asserting the live payload has every required field with its type and no removed field",
+      "links": [],
+      "version": 2
+    },
+    {
+      "type": "endpoint",
+      "role": "built",
+      "inCode": "the Express route (method + path) mounted under /api/projects/<id>/… in src/server/routes/<area>.ts, accepting the request DTO and answering the response/error DTOs at the linked status codes",
+      "verify": "a supertest test in src/server/routes/<area>*.test.ts named with [entity:<slug>] asserting method, path, the request body shape and the response/error payload shape and status per linkedDtos",
+      "links": [
+        "linkedDtos"
+      ],
+      "version": 3
+    },
+    {
+      "type": "mcp-tool",
+      "role": "built",
+      "inCode": "the tool registered on its MCP server (`server` field → src/server/mcp/<server>*.ts) with the entity's `name`, `params` (name, type, required), `description`, annotations and `logic`",
+      "verify": "a vitest test colocated with the server's tools file (src/server/mcp/<x>*.test.ts or surface.test.ts) named with [entity:<slug>] asserting the registered tool's name, input schema (params, required) and hints, and the behaviour its `logic` states",
+      "links": [],
+      "version": 1
+    },
+    {
+      "type": "code-snippet",
+      "role": "built",
+      "inCode": "the text of the system-prompt block the snippet templates — for `szablon-current-skill` the `<current_skill>` block emitted by src/server/services/system-prompt/blocks/m52-spec-skills.ts (both variants: readable / shadowed)",
+      "verify": "a vitest test next to the block (src/server/services/system-prompt/blocks/*.test.ts or the golden test) named with [entity:<slug>] asserting the rendered block carries the snippet's sentences and structure per variant — placeholder values may differ",
+      "links": [],
+      "version": 1
+    },
+    {
+      "type": "module-dependency",
+      "role": "context",
+      "links": [],
+      "version": 1
+    },
+    {
+      "type": "spreadsheet",
+      "role": "per-entity",
+      "version": 3
+    }
+  ],
+  "entityParts": [
+    {
+      "slug": "katalog-operacji-m52",
+      "type": "spreadsheet",
+      "why": "Operation catalog: each row is an operation the system registers with its channels, effects, guard and error codes — a structure built in code.",
+      "parts": [
+        {
+          "role": "built",
+          "items": "all data rows (2–4)",
+          "key": "nazwa (the backticked operation name, e.g. `fork_writing_style`)",
+          "inCode": "the operation descriptor in the core operation catalog (src/server/operations/core-operations.ts, profiles.ts, error-codes.ts) and its channel renderings (REST route src/server/routes/spec-skills.ts, service src/server/services/style-fork.ts) with the effects, addressing, guard and error codes the row states",
+          "verify": "a vitest test named with [entity:katalog-operacji-m52#<operation name>] (src/server/operations/catalog.test.ts or src/server/routes/spec-skills.route.test.ts) asserting the catalog entry (channels, error codes) and the observable addressing/guard"
+        }
+      ]
+    },
+    {
+      "slug": "wklad-do-edytora-m52",
+      "type": "spreadsheet",
+      "why": "Editor contribution table: its one row is the `spec-skills` command source registered for the chat-input context — a registration built in code.",
+      "parts": [
+        {
+          "role": "built",
+          "items": "all data rows (2)",
+          "key": "Nazwa",
+          "inCode": "the `spec-skills` command source registered for the chat-input context (items from the chat skill listing: id = slug, label = `/<slug>`, description from the listing, hint = slug, origin marker; no skill title; skill_ref insertion; /skills narrowing)",
+          "verify": "a frontend unit test named with [entity:wklad-do-edytora-m52#spec-skills] asserting item shape (label `/<slug>`, description from listing, no title), hint collision and /skills narrowing"
+        }
+      ]
+    }
+  ],
+  "errors": 0,
+  "systemVerified": false
+}
