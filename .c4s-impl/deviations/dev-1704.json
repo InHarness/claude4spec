@@ -1,0 +1,15 @@
+{
+  "id": "dev-1704",
+  "kind": "clarification",
+  "blocking": false,
+  "address": "builtin-envelope-tests-via-harness/ywud56l6",
+  "slugs": [
+    "ac-wyniesienie-koperty-wbudowanej-do-oso"
+  ],
+  "text": "M33 `ywud56l6` at 2.1.17 says a built-in envelope's tests reach a RUNNING host only through the published harness, and that extraction changes 'no import in the package's code nor in its tests'; `ac-wyniesienie-koperty-wbudowanej-do-oso` repeats the second, broader sentence. The unit goal names what is removed: imports of the harness and of the host repo's TEST HELPERS. Those are gone (10 suites now use `@inharness-ai/claude4spec/plugin-testing`; the two legacy-corpus suites, which drive the host's indexer/backfill/soft-FK checker, moved to the host's `tests/integration/entities/`). But 30 envelope test files still import host MODULES under `src/` (projection goldens via `src/server/db/projection`, `schema-diff`, `payload-upgrade`, `plugin-subagents`, `chat-context`, `registry`/`manifest`, `crud-schema-gen`, a host script, and the real Host UI Kit components wired into the 2.1.19 render suites' `@c4s/plugin-runtime/ui` mocks). None of them stands a host up, so the 'running host only through the harness' rule does not catch them, yet each would be rewritten on extraction — so the literal criterion is not met by them. Assumed: the criterion's scope is the route to a running host (harness + host test helpers), per the unit goal; the guard test asserts that strictly and holds the 30 files in a ratchet (no other test may leave its package; a fixed entry must leave the list). Needed in the spec: say whether envelope tests may import host modules that are not a running host (pure functions, host UI kit) — if not, which published surface replaces them (e.g. the real `…/plugin-runtime/ui` components via `vi.importActual`, projection/serialization helpers exposed by the harness) and in which release.",
+  "assumption": "ASSUMPTION:dev-1704 — the extraction promise for envelope tests is enforced for the route to a running host (harness, host test helpers); host-module imports in 30 existing suites are held in a shrinking ratchet in tests/integration/architecture/builtin-envelope-import-rule.test.ts.",
+  "unit": "builtin-envelope-tests-via-harness",
+  "portion": "builtin-envelope-tests-via-harness/p1-l2-l11",
+  "sent": true,
+  "patchPath": "2-1-16-to-2-1-17-builtin-envelope-tests-via-harness-ywud56l6-may-envelope-tests-import-host-modul.md"
+}

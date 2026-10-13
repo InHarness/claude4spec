@@ -20,6 +20,11 @@ const here = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 export default defineConfig({
   resolve: {
     alias: {
+      // 2.1.17 (M33 `ywud56l6`) — the published test harness, resolved to the
+      // host's source the way the root config resolves it. An extracted package
+      // gets the same specifier from its `@inharness-ai/claude4spec`
+      // devDependency; no import in `test/` changes either way.
+      '@inharness-ai/claude4spec/plugin-testing': here('../../src/server/plugin-testing/index.ts'),
       '@c4s/plugin-runtime': here('../../src/server/plugin-runtime/index.ts'),
     },
   },

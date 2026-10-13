@@ -15,13 +15,14 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
-import { createTestApp, type TestApp } from '../../../tests/helpers/test-app.js';
+import { createPluginTestApp, type PluginTestApp } from '@inharness-ai/claude4spec/plugin-testing';
+import { manifest } from '../src/manifest.js';
 
 describe('database-table — rename repoints soft foreign keys', () => {
-  let t: TestApp;
+  let t: PluginTestApp;
 
   beforeEach(async () => {
-    t = await createTestApp();
+    t = await createPluginTestApp([manifest]);
     await t.crud.create('database-table', { title: 'orders', columns: [] }, 'user');
     await t.crud.create(
       'database-table',
@@ -55,7 +56,7 @@ describe('database-table — rename repoints soft foreign keys', () => {
 
   it('repoints every referencing column when the target is renamed', async () => {
     const res = await request(t.app)
-      .patch('/api/database-tables/orders')
+      .patch(`${t.baseUrl}/database-tables/orders`)
       .send({ title: 'sales_orders', newSlug: 'sales-orders' });
     expect(res.status).toBe(200);
 
@@ -66,7 +67,7 @@ describe('database-table — rename repoints soft foreign keys', () => {
 
   it('leaves a column with no fk alone', async () => {
     await request(t.app)
-      .patch('/api/database-tables/orders')
+      .patch(`${t.baseUrl}/database-tables/orders`)
       .send({ title: 'sales_orders', newSlug: 'sales-orders' });
     expect(fkOf('order-items', 'sku')).toBeUndefined();
   });
@@ -81,7 +82,7 @@ describe('database-table — rename repoints soft foreign keys', () => {
    */
   it('does NOT move the slug when only `title` is edited', async () => {
     const res = await request(t.app)
-      .patch('/api/database-tables/orders')
+      .patch(`${t.baseUrl}/database-tables/orders`)
       .send({ title: 'sales_orders' });
     expect(res.status).toBe(200);
 

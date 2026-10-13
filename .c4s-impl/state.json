@@ -1,5 +1,5 @@
 {
-  "iteration": 32,
+  "iteration": 36,
   "conventions": [
     {
       "label": "L4 (API)",
@@ -72,7 +72,7 @@
         "m52-style-fork-any-plugin-style",
         "m52-current-skill-and-edges"
       ],
-      "startCommit": null
+      "startCommit": "09b965f0497f1b4f0000d5993252ebf9ffaa5458"
     }
   ],
   "units": [
@@ -958,16 +958,38 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "builtin-envelope-tests-via-harness/p1-l2-l11",
+          "layers": [
+            "L2",
+            "L11"
+          ],
+          "slugs": [
+            "ac-test-koperty-wbudowanej-importuje-har",
+            "ac-wyniesienie-koperty-wbudowanej-do-oso",
+            "ac-ekstrakcja-koperty-wbudowanej-do-osob",
+            "ac-koperta-wbudowana-importuje-hosta-wylacz"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "09b965f0497f1b4f0000d5993252ebf9ffaa5458",
+      "baseCommit": "09b965f0497f1b4f0000d5993252ebf9ffaa5458",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0,
+      "only": []
     },
     {
       "id": "m52-style-fork-any-plugin-style",

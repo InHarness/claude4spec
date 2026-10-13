@@ -1,17 +1,26 @@
 /**
  * The whole stack, on the REAL type rather than a fixture.
  *
- * `mcp-tool` arrives through `loadBuiltinEnvelopes`; nothing here constructs it.
+ * `mcp-tool` arrives through the host's registration point from this package's
+ * manifest; nothing here constructs the module.
  * That is the claim that matters most for a type whose entire backend is
  * derived: if registration silently drops the package (a version gate, a schema
  * the validator refuses), the failure is not an error anywhere — the host simply
  * has no `mcp-tool`, and `describe_entity_type` answers `INVALID_TYPE`.
+ *
+ * 2.1.17 (M33 `ywud56l6`): the host is reached ONLY through the published
+ * harness, `@inharness-ai/claude4spec/plugin-testing`, with the package's own
+ * manifest handed to `createPluginTestApp` — never through the host repo's test
+ * helpers — so moving this package out of the host repo changes no import here.
+ * Discovery of the built bundle by `loadBuiltinEnvelopes` is the host's claim
+ * and is pinned by the host's own suites, not by this package.
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createTestApp, type TestApp } from '../../../tests/helpers/test-app.js';
+import { createPluginTestApp, type PluginTestApp } from '@inharness-ai/claude4spec/plugin-testing';
+import { manifest } from '../src/manifest.js';
 
 const TOOL = {
   name: 'read_page',
@@ -27,10 +36,10 @@ const TOOL = {
 };
 
 describe('mcp-tool — the shipped type', () => {
-  let t: TestApp;
+  let t: PluginTestApp;
 
   beforeEach(async () => {
-    t = await createTestApp();
+    t = await createPluginTestApp([manifest]);
     await t.crud.create('mcp-tool', TOOL, 'user');
     t.broadcasts.length = 0;
   });
@@ -45,7 +54,7 @@ describe('mcp-tool — the shipped type', () => {
       fs.readFileSync(path.join(t.cwd, `.claude4spec/entities/mcp-tool/${slug}.json`), 'utf8'),
     );
 
-  it('is registered by the loader, not by this test', () => {
+  it('is registered from the package manifest through the host registration point', () => {
     expect(t.host.listEntities().map((m) => m.type)).toContain('mcp-tool');
   });
 

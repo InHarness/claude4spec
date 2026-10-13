@@ -1,10 +1,11 @@
 /**
  * The whole stack, on the REAL type rather than a fixture.
  *
- * `database-table` arrives through `loadBuiltinEnvelopes`, and nothing here
- * constructs it — which is the claim that matters, because under Host API 2.x
- * the type had stopped arriving at all: both packages that could contribute it
- * declare `hostApiVersion: '^1.0.0'` and the loader's gate drops them before
+ * `database-table` arrives through the host's registration point from this
+ * package's manifest, and nothing here constructs the module — which is the
+ * claim that matters, because under Host API 2.x the type had stopped arriving
+ * at all: both packages that could contribute it declare
+ * `hostApiVersion: '^1.0.0'` and the loader's gate drops them before
  * registration.
  *
  * It also pins the two rules the retired `database-table-tools` server used to
@@ -13,19 +14,27 @@
  * `entity-tools`, not at the internal `crud` facade beneath them, and that
  * asymmetry is the design: the inner door is what restore and the index rebuild
  * write through, and they have to accept the corpus as it already is.
+ *
+ * 2.1.17 (M33 `ywud56l6`): the host is reached ONLY through the published
+ * harness, `@inharness-ai/claude4spec/plugin-testing`, with the package's own
+ * manifest handed to `createPluginTestApp` — never through the host repo's test
+ * helpers — so moving this package out of the host repo changes no import here.
+ * Discovery of the built bundle by `loadBuiltinEnvelopes` is the host's claim
+ * and is pinned by the host's own suites, not by this package.
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
-import { createTestApp, type TestApp } from '../../../tests/helpers/test-app.js';
+import { createPluginTestApp, type PluginTestApp } from '@inharness-ai/claude4spec/plugin-testing';
+import { manifest } from '../src/manifest.js';
 
 describe('database-table — the shipped type', () => {
-  let t: TestApp;
+  let t: PluginTestApp;
 
   beforeEach(async () => {
-    t = await createTestApp();
+    t = await createPluginTestApp([manifest]);
     await t.crud.create(
       'database-table',
       {
@@ -52,7 +61,7 @@ describe('database-table — the shipped type', () => {
       fs.readFileSync(path.join(t.cwd, `.claude4spec/entities/database-table/${slug}.json`), 'utf8'),
     );
 
-  it('is registered by the loader, not by this test', () => {
+  it('is registered from the package manifest through the host registration point', () => {
     expect(t.host.listEntities().map((m) => m.type)).toContain('database-table');
   });
 
@@ -114,7 +123,7 @@ describe('database-table — the shipped type', () => {
    */
   describe('the identifier rule, at the doors that enforce it', () => {
     const post = (title: string) =>
-      request(t.app).post('/api/database-tables').send({ title, columns: [] });
+      request(t.app).post(`${t.baseUrl}/database-tables`).send({ title, columns: [] });
 
     const bad: Array<[string, string]> = [
       ['a name with spaces', 'order items'],
@@ -146,7 +155,7 @@ describe('database-table — the shipped type', () => {
       // Fields sit at the top level of a PATCH body; only `newSlug` is a
       // sibling with a special meaning.
       const res = await request(t.app)
-        .patch('/api/database-tables/order-items')
+        .patch(`${t.baseUrl}/database-tables/order-items`)
         .send({ title: 'select' });
       expect(res.status).toBe(400);
     });

@@ -13,14 +13,15 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
-import { createTestApp, type TestApp } from '../../../tests/helpers/test-app.js';
+import { createPluginTestApp, type PluginTestApp } from '@inharness-ai/claude4spec/plugin-testing';
+import { manifest } from '../src/manifest.js';
 import { deriveIndexName } from '../src/identity.js';
 
 describe('database-table — serializer views', () => {
-  let t: TestApp;
+  let t: PluginTestApp;
 
   beforeEach(async () => {
-    t = await createTestApp();
+    t = await createPluginTestApp([manifest]);
     await t.crud.create(
       'database-table',
       {
@@ -38,10 +39,10 @@ describe('database-table — serializer views', () => {
   });
   afterEach(() => t.cleanup());
 
-  const list = async () => (await request(t.app).get('/api/database-tables')).body.data as Array<Record<string, unknown>>;
+  const list = async () => (await request(t.app).get(`${t.baseUrl}/database-tables`)).body.data as Array<Record<string, unknown>>;
   /** Since 0.2.22 there is one shape: `?view=` is gone and a GET is the record. */
   const one = async (slug: string) =>
-    (await request(t.app).get(`/api/database-tables/${slug}`)).body.data as Record<string, unknown>;
+    (await request(t.app).get(`${t.baseUrl}/database-tables/${slug}`)).body.data as Record<string, unknown>;
 
   /**
    * 0.2.22 — a UI list row carries the SAME projection as every other read.

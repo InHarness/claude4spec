@@ -5,26 +5,33 @@
  * repo ran against a `fixtureModule('grid', …)` registered by the test itself —
  * the M39 tier-C machinery had no shipped consumer at all, and the e2e file for
  * its routes said so in its header. What only this level can show is that a type
- * declared in a manifest, built into a bundle, discovered as a built-in envelope
- * and registered through the loader ends up with the same behaviour the fixture
- * proved: `spreadsheet` arrives through `loadBuiltinEnvelopes`, and nothing here
- * constructs it.
+ * declared in a manifest and registered through the host's registration point
+ * ends up with the same behaviour the fixture proved: `spreadsheet` arrives from
+ * this package's manifest, and nothing here constructs the module.
  *
  * It therefore also pins the two claims the port rests on: that the sheet's
  * storage did not change, and that a cell can be written without resending the
  * grid.
+ *
+ * 2.1.17 (M33 `ywud56l6`): the host is reached ONLY through the published
+ * harness, `@inharness-ai/claude4spec/plugin-testing`, with the package's own
+ * manifest handed to `createPluginTestApp` — never through the host repo's test
+ * helpers — so moving this package out of the host repo changes no import here.
+ * Discovery of the built bundle by `loadBuiltinEnvelopes` is the host's claim
+ * and is pinned by the host's own suites, not by this package.
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createTestApp, type TestApp } from '../../../tests/helpers/test-app.js';
+import { createPluginTestApp, type PluginTestApp } from '@inharness-ai/claude4spec/plugin-testing';
+import { manifest } from '../src/manifest.js';
 
 describe('spreadsheet — the shipped type', () => {
-  let t: TestApp;
+  let t: PluginTestApp;
 
   beforeEach(async () => {
-    t = await createTestApp();
+    t = await createPluginTestApp([manifest]);
     await t.crud.create('spreadsheet', { title: 'Q1 revenue', nRows: 4, nCols: 3, headerRow: true }, 'user');
     t.broadcasts.length = 0;
   });
@@ -44,7 +51,7 @@ describe('spreadsheet — the shipped type', () => {
   const entityFile = () =>
     JSON.parse(fs.readFileSync(path.join(t.cwd, '.claude4spec/entities/spreadsheet/q1-revenue.json'), 'utf8'));
 
-  it('is registered by the loader, not by this test', () => {
+  it('is registered from the package manifest through the host registration point', () => {
     const types = t.host.listEntities().map((m) => m.type);
     expect(types).toContain('spreadsheet');
   });

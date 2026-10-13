@@ -10,13 +10,14 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
-import { createTestApp, type TestApp } from '../../../tests/helpers/test-app.js';
+import { createPluginTestApp, type PluginTestApp } from '@inharness-ai/claude4spec/plugin-testing';
+import { manifest } from '../src/manifest.js';
 
 describe('database-table — the doors a user actually reaches', () => {
-  let t: TestApp;
+  let t: PluginTestApp;
 
   beforeEach(async () => {
-    t = await createTestApp();
+    t = await createPluginTestApp([manifest]);
     await t.crud.create('database-table', { title: 'orders', columns: [] }, 'user');
   });
   afterEach(() => t.cleanup());
@@ -34,28 +35,28 @@ describe('database-table — the doors a user actually reaches', () => {
    * reported it.
    */
   it('reports a dangling fk on CREATE through the REST door', async () => {
-    const res = await request(t.app).post('/api/database-tables').send(withFk('nope'));
+    const res = await request(t.app).post(`${t.baseUrl}/database-tables`).send(withFk('nope'));
     expect(res.status).toBe(201);
     expect(JSON.stringify(res.body)).toMatch(/dangling/);
   });
 
   it('reports a dangling fk on UPDATE through the REST door', async () => {
-    await request(t.app).post('/api/database-tables').send(withFk('orders'));
+    await request(t.app).post(`${t.baseUrl}/database-tables`).send(withFk('orders'));
     const res = await request(t.app)
-      .patch('/api/database-tables/order-items')
+      .patch(`${t.baseUrl}/database-tables/order-items`)
       .send({ columns: [{ name: 'order_id', type: 'uuid', fk: { table: 'gone', column: 'id' } }] });
     expect(res.status).toBe(200);
     expect(JSON.stringify(res.body)).toMatch(/dangling/);
   });
 
   it('says nothing when the target resolves', async () => {
-    const res = await request(t.app).post('/api/database-tables').send(withFk('orders'));
+    const res = await request(t.app).post(`${t.baseUrl}/database-tables`).send(withFk('orders'));
     expect(res.status).toBe(201);
     expect(JSON.stringify(res.body)).not.toMatch(/dangling/);
   });
 
   it('warns without refusing — the table is still created', async () => {
-    await request(t.app).post('/api/database-tables').send(withFk('nope'));
+    await request(t.app).post(`${t.baseUrl}/database-tables`).send(withFk('nope'));
     const row = t.db.prepare('SELECT slug FROM database_table WHERE slug = ?').get('order-items');
     expect(row).toBeDefined();
   });
@@ -82,12 +83,12 @@ describe('database-table — the doors a user actually reaches', () => {
     // Exactly what the detail panel now sends: only the fields that changed.
     await t.crud.create('database-table', { title: 'order', columns: [] }, 'user');
     const res = await request(t.app)
-      .patch('/api/database-tables/order')
+      .patch(`${t.baseUrl}/database-tables/order`)
       .send({ description: 'Customer orders.' });
     expect(res.status).toBe(200);
     // …while resending it still refuses, which is what makes the omission matter.
     const resend = await request(t.app)
-      .patch('/api/database-tables/order')
+      .patch(`${t.baseUrl}/database-tables/order`)
       .send({ title: 'order', description: 'x' });
     expect(resend.status).toBe(400);
   });

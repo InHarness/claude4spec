@@ -15,7 +15,8 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
-import { createTestApp, type TestApp } from '../../../tests/helpers/test-app.js';
+import { createPluginTestApp, type PluginTestApp } from '@inharness-ai/claude4spec/plugin-testing';
+import { manifest } from '../src/manifest.js';
 import { toWritableHint } from '../src/entity/mcp-tool/frontend/summary.js';
 
 describe('toWritableHint', () => {
@@ -42,7 +43,7 @@ describe('toWritableHint', () => {
 });
 
 describe('mcp-tool — editing a tool that declares a hint', () => {
-  let t: TestApp;
+  let t: PluginTestApp;
   const base = {
     name: 'read_page',
     server: 'claude4spec',
@@ -52,13 +53,13 @@ describe('mcp-tool — editing a tool that declares a hint', () => {
   };
 
   beforeEach(async () => {
-    t = await createTestApp();
-    await request(t.app).post('/api/mcp-tools').send(base).expect(201);
+    t = await createPluginTestApp([manifest]);
+    await request(t.app).post(`${t.baseUrl}/mcp-tools`).send(base).expect(201);
   });
   afterEach(() => t.cleanup());
 
   const read = async () => {
-    const res = await request(t.app).get('/api/mcp-tools/claude4spec-read-page').expect(200);
+    const res = await request(t.app).get(`${t.baseUrl}/mcp-tools/claude4spec-read-page`).expect(200);
     return res.body.data as Record<string, unknown>;
   };
 
@@ -73,7 +74,7 @@ describe('mcp-tool — editing a tool that declares a hint', () => {
     if (typeof tool.readOnlyHint !== 'number') return;
 
     const res = await request(t.app)
-      .patch('/api/mcp-tools/claude4spec-read-page')
+      .patch(`${t.baseUrl}/mcp-tools/claude4spec-read-page`)
       .send({ description: 'Read one page, by path.', readOnlyHint: tool.readOnlyHint });
     expect(res.status).toBe(400);
     expect(JSON.stringify(res.body)).toMatch(/readOnlyHint/);
@@ -84,7 +85,7 @@ describe('mcp-tool — editing a tool that declares a hint', () => {
     const tool = await read();
 
     await request(t.app)
-      .patch('/api/mcp-tools/claude4spec-read-page')
+      .patch(`${t.baseUrl}/mcp-tools/claude4spec-read-page`)
       .send({
         description: 'Read one page, by path.',
         readOnlyHint: toWritableHint(tool.readOnlyHint as 0 | 1),

@@ -12,15 +12,16 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
-import { createTestApp, type TestApp } from '../../../tests/helpers/test-app.js';
+import { createPluginTestApp, type PluginTestApp } from '@inharness-ai/claude4spec/plugin-testing';
+import { manifest } from '../src/manifest.js';
 
 describe('mcp-tool — the shape the frontend reads', () => {
-  let t: TestApp;
+  let t: PluginTestApp;
 
   beforeEach(async () => {
-    t = await createTestApp();
+    t = await createPluginTestApp([manifest]);
     await request(t.app)
-      .post('/api/mcp-tools')
+      .post(`${t.baseUrl}/mcp-tools`)
       .send({
         name: 'read_page',
         server: 'claude4spec',
@@ -42,7 +43,7 @@ describe('mcp-tool — the shape the frontend reads', () => {
   afterEach(() => t.cleanup());
 
   const read = async () => {
-    const res = await request(t.app).get('/api/mcp-tools/claude4spec-read-page').expect(200);
+    const res = await request(t.app).get(`${t.baseUrl}/mcp-tools/claude4spec-read-page`).expect(200);
     return res.body.data as Record<string, unknown>;
   };
 
@@ -85,7 +86,7 @@ describe('mcp-tool — the shape the frontend reads', () => {
    * never looks at them.
    */
   it('carries assigned tags on the list payload', async () => {
-    const res = await request(t.app).get('/api/mcp-tools').expect(200);
+    const res = await request(t.app).get(`${t.baseUrl}/mcp-tools`).expect(200);
     const [tool] = res.body.data as Array<{ tags?: string[] }>;
     expect(tool.tags).toContain('protocol');
   });
