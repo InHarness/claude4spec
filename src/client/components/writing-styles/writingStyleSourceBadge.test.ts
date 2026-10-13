@@ -52,7 +52,12 @@ describe('writing style source badge on both selection surfaces (M15 ssh0om79, 2
       createElement(WritingStyleList, { available: AVAILABLE, selection: undefined, onSelect: () => {} }),
     );
     // One card (radio) per style of every source, plus the `None` card.
-    const radios = [...html.matchAll(/name="writing-style" value="([^"]+)"/g)].map((m) => m[1]);
+    // React's server renderer emits an <input>'s `value`/`checked` after its other
+    // attributes (`type, name, class, value`), so read each attribute independently.
+    const radios = [...html.matchAll(/<input\b[^>]*>/g)]
+      .map((m) => m[0])
+      .filter((tag) => /\btype="radio"/.test(tag) && /\bname="writing-style"/.test(tag))
+      .map((tag) => /\bvalue="([^"]*)"/.exec(tag)?.[1]);
     expect(radios).toEqual([...AVAILABLE.map((s) => s.slug), '__none__']);
     // Each style card carries its own source badge, next to its title.
     const cards = html.split('<label').slice(1);

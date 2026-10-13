@@ -1,5 +1,5 @@
 {
-  "iteration": 56,
+  "iteration": 57,
   "conventions": [
     {
       "label": "L4 (API)",
@@ -878,17 +878,13 @@
             "section:m6ukdbsc",
             "section:os387tmx"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [
             "section:os387tmx"
           ],
-          "only": [
-            {
-              "slug": "section:os387tmx"
-            }
-          ]
+          "only": []
         }
       ],
       "startCommit": "d834e38a744d2516401391ea00aafd0f54c6c829",
