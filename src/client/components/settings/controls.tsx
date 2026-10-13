@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { DirectoryPickerModal } from '../../host-ui-kit/overlay/DirectoryPickerModal.js';
+import { DirectoryPickerModal } from '../DirectoryPickerModal.js';
 import { parseLines, type ElementContext, type SettingsElementDecl } from './registry.js';
 
 /**

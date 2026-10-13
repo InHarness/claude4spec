@@ -18,7 +18,7 @@
  *
  * `binding: 'connected'` components reach host-owned data themselves through
  * the L11 surface and must name what they consume: `DocEditor` (the
- * `EditorBridge` singleton) and `EntityVersionHistoryView` (the version /
+ * `EditorBridge` and `QueryClient` singletons) and `EntityVersionHistoryView` (the version /
  * release hooks). They still only render — domain computation stays in M13/M17.
  *
  * Only `stable` components are part of the versioned `hostApiVersion` surface.
@@ -61,7 +61,7 @@ export { LoadingState, type LoadingStateProps } from './actions/LoadingState.js'
 export { FormField, type FormFieldProps } from './form/FormField.js';
 export { InlineEditField, type InlineEditFieldProps } from './form/InlineEditField.js';
 
-// Overlay/Create (experimental)
+// Overlay (group `overlay`, experimental)
 export { Dialog, type DialogProps } from './overlay/Dialog.js';
 export { FormShell, type FormShellProps } from './overlay/FormShell.js';
 
@@ -91,13 +91,14 @@ export {
 export { DocumentBody, type DocumentBodyProps } from './detail/DocumentBody.js';
 export { DocEditor, type DocEditorProps } from './detail/DocEditor.js';
 
-// Overlay/feedback (experimental)
+// Feedback (group `feedback`, experimental)
 export { Popover, type PopoverProps } from './overlay-feedback/Popover.js';
 export {
   ToastViewport,
   type ToastViewportProps,
   type ToastViewportItem,
 } from './overlay-feedback/ToastViewport.js';
+// `useToast` is exported BESIDE the catalog, not as a registry entry.
 export { useToast } from './overlay-feedback/useToast.js';
 
 // Pickers (experimental)

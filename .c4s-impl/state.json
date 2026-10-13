@@ -1,5 +1,5 @@
 {
-  "iteration": 1,
+  "iteration": 2,
   "conventions": [
     {
       "label": "L11 (Plugin Runtime Surface) — implementor M33",
@@ -406,15 +406,38 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "ui-kit-catalog/p1-l12-l12",
+          "layers": [
+            "L12"
+          ],
+          "slugs": [
+            "ac-dialog-grupa-overlay-create-jest-contr",
+            "ac-dialog-przyjmuje-width-number-doklad",
+            "ac-dialog-scrolluje-wewnetrznie-cialo-przy",
+            "ac-popover-grupa-overlay-feedback-m34-exp",
+            "ac-most-tokenow-c4s-plugin-runtime-ui-eksp",
+            "ac-groupedentitylist-jest-importowalny-z",
+            "ac-groupedentitylist-rysuje-tekst-pomocn",
+            "ac-usehosttokens-zwraca-nowe-wartosci-ko"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "f97f2556d860bd0e8d2b5358a810b81a61dd84c2",
+      "baseCommit": "f97f2556d860bd0e8d2b5358a810b81a61dd84c2",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0
     },
     {
       "id": "runtime-legs",

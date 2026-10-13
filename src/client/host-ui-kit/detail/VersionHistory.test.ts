@@ -25,21 +25,20 @@ describe('changedByBadgeStyle (M13/M34)', () => {
  * RELEASES.
  */
 describe('groupByRelease (0.2.77)', () => {
-  const v = (id: string, releaseId: number | null, releaseLabel?: string): VersionHistoryItem => ({
+  const v = (id: string, releaseLabel?: string): VersionHistoryItem => ({
     id,
     label: `v${id}`,
     createdAt: '2026-09-09',
-    releaseId,
     ...(releaseLabel ? { releaseLabel } : {}),
   });
 
   it('[ac:ac-timeline-wersji-encji-i-strony-grupuj] groups by release and pins the unreleased group to the top', () => {
     const groups = groupByRelease([
-      v('5', null),
-      v('4', null),
-      v('3', 2, 'v0.2'),
-      v('2', 1, 'v0.1'),
-      v('1', 1, 'v0.1'),
+      v('5'),
+      v('4'),
+      v('3', 'v0.2'),
+      v('2', 'v0.1'),
+      v('1', 'v0.1'),
     ]);
 
     expect(groups.map((g) => g.label)).toEqual(['Unreleased', 'v0.2', 'v0.1']);
@@ -52,24 +51,28 @@ describe('groupByRelease (0.2.77)', () => {
   });
 
   it('omits the unreleased group entirely when every version belongs to a release', () => {
-    const groups = groupByRelease([v('2', 1, 'v0.1'), v('1', 1, 'v0.1')]);
+    const groups = groupByRelease([v('2', 'v0.1'), v('1', 'v0.1')]);
     // This is the state right after `createRelease()`: nothing is unreleased, so
     // there is no empty group left sitting at the top of the axis.
     expect(groups).toHaveLength(1);
     expect(groups[0]!.unreleased).toBe(false);
   });
 
-  it('falls back to a release id when no name was supplied', () => {
-    // `showReleasePill: false` still groups — the id is the grouping key, not a
-    // decoration, so a caller that asked for no names gets an axis, not a flat list.
-    expect(groupByRelease([v('1', 7)])[0]!.label).toBe('Release 7');
+  it('2.1.20: the item has no releaseId — releaseLabel alone is the group heading', () => {
+    // The published `VersionHistoryItem` dropped `releaseId`; the label both
+    // heads the group and keys it, and an absent label means unreleased.
+    const item = v('1', 'Release 7');
+    expect('releaseId' in item).toBe(false);
+    const groups = groupByRelease([item]);
+    expect(groups[0]!.label).toBe('Release 7');
+    expect(groups[0]!.unreleased).toBe(false);
   });
 
   it('keeps two runs of the same release apart only when they are actually apart', () => {
     // Rows arrive newest-first, so a release's versions are contiguous; grouping
     // walks in order rather than bucketing, which is what keeps the axis ordered
     // without assuming release ids are monotonic.
-    const groups = groupByRelease([v('3', 9, 'nine'), v('2', 9, 'nine'), v('1', 4, 'four')]);
+    const groups = groupByRelease([v('3', 'nine'), v('2', 'nine'), v('1', 'four')]);
     expect(groups.map((g) => g.items.length)).toEqual([2, 1]);
   });
 });

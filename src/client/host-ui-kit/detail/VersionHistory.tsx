@@ -12,16 +12,13 @@ export interface VersionHistoryItem {
   label: string;
   createdAt: string;
   author?: string;
-  /** M13/M34: the release this version belongs to. 0.2.77 — now the GROUP HEADING in `timeline`, no longer a per-row pill. */
-  releaseLabel?: string;
   /**
-   * 0.2.77 — the grouping key. `null`/absent means unreleased.
-   *
-   * Distinct from `releaseLabel` because two releases could in principle carry
-   * the same display name, and because "unreleased" has to be recognisable
-   * without depending on a label being empty.
+   * M13/M34: the release this version belongs to — the GROUP HEADING in
+   * `timeline`, not a per-row label. Absent means unreleased. 2.1.20: the
+   * published item has no `releaseId`; the label is the only release field, so
+   * it is also what groups the timeline.
    */
-  releaseId?: number | null;
+  releaseLabel?: string;
   /** M13/M34: who made the change — rendered in `timeline` as a colour-coded badge so an agent edit is visually distinct from a user edit. */
   changedBy?: 'user' | 'agent' | 'filesystem';
   /** M13/M34: one-line description of what the change did (the version's change summary). */
@@ -68,14 +65,14 @@ export function groupByRelease(versions: readonly VersionHistoryItem[]): Version
   const unreleased: VersionHistoryItem[] = [];
   const groups: VersionGroup[] = [];
   for (const v of versions) {
-    if (v.releaseId === null || v.releaseId === undefined) {
+    if (v.releaseLabel === undefined || v.releaseLabel === '') {
       unreleased.push(v);
       continue;
     }
-    const key = String(v.releaseId);
+    const key = `release:${v.releaseLabel}`;
     const last = groups[groups.length - 1];
     if (last && last.key === key) last.items.push(v);
-    else groups.push({ key, label: v.releaseLabel ?? `Release ${key}`, unreleased: false, items: [v] });
+    else groups.push({ key, label: v.releaseLabel, unreleased: false, items: [v] });
   }
   return unreleased.length > 0
     ? [{ key: '__unreleased__', label: 'Unreleased', unreleased: true, items: unreleased }, ...groups]

@@ -1,0 +1,21 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.20",
+  "unit": "ui-kit-catalog",
+  "portion": "ui-kit-catalog/p1-l12-l12",
+  "claimed": [
+    "ac-dialog-grupa-overlay-create-jest-contr",
+    "ac-dialog-przyjmuje-width-number-doklad",
+    "ac-dialog-scrolluje-wewnetrznie-cialo-przy",
+    "ac-popover-grupa-overlay-feedback-m34-exp",
+    "ac-most-tokenow-c4s-plugin-runtime-ui-eksp",
+    "ac-groupedentitylist-jest-importowalny-z",
+    "ac-groupedentitylist-rysuje-tekst-pomocn",
+    "ac-usehosttokens-zwraca-nowe-wartosci-ko"
+  ],
+  "deviations": [],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

@@ -173,7 +173,7 @@ export const PLUGIN_RUNTIME_UI_EXPORT_NAMES = [
   // Form (experimental)
   'FormField',
   'InlineEditField',
-  // Overlay/Create (experimental)
+  // Overlay (experimental)
   'Dialog',
   'FormShell',
   // Panel detalu (experimental, M34/L11)
@@ -187,9 +187,10 @@ export const PLUGIN_RUNTIME_UI_EXPORT_NAMES = [
   'DocumentBody',
   'DocEditor',
   'EntityVersionHistoryView',
-  // Overlay/feedback (experimental, M34/L12)
+  // Feedback (experimental, M34/L12)
   'Popover',
   'ToastViewport',
+  // Hooks exported beside the catalog (no registry entry)
   'useToast',
   // Pickers (experimental, M34/L12)
   'EnumBadgePicker',

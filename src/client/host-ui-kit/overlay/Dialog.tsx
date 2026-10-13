@@ -3,7 +3,7 @@ import { X } from 'lucide-react';
 import { withStability } from '../stability.js';
 
 /**
- * `Dialog` (Overlay/Create, `experimental`) — a controlled modal shell: scrim +
+ * `Dialog` (group `overlay`, `experimental`) — a controlled modal shell: scrim +
  * focus-trap + paper/terra panel. The presentational extraction of the host's
  * hand-written create dialogs (`CreateBriefDialog`, `NewEndpointDialog`, …) so a
  * plugin author composes "New button → dialog → form" instead of rebuilding the
@@ -27,13 +27,19 @@ export interface DialogProps {
   /** Optional footer slot (e.g. Save/Cancel), pinned bottom-right. */
   footer?: ReactNode;
   children: ReactNode;
-  /** Panel width tier. Defaults to `md`. */
+  /**
+   * Panel tier. Defaults to `md`. The tier closes the panel's box: its width
+   * (unless `width` is given) AND its height cap. There is no `maxHeight` prop —
+   * a body taller than the tier's cap scrolls inside the panel, under a pinned
+   * footer.
+   */
   size?: 'sm' | 'md' | 'lg';
   /**
-   * Exact panel width in px, overriding `size`. For a variant whose width is
-   * specified independently of the tiers (the host's destructive-confirm is
-   * pinned at 400px) — so honouring it does not require retuning a tier every
-   * other call site shares.
+   * Exact panel width in px, overriding `size` for the WIDTH only. For a variant
+   * whose width is specified independently of the tiers (the host's
+   * destructive-confirm is pinned at 400px) — so honouring it does not require
+   * retuning a tier every other call site shares. The height cap still comes
+   * from `size`.
    */
   width?: number;
   /**
@@ -61,10 +67,20 @@ export interface DialogProps {
   zIndex?: number;
 }
 
-const SIZE_WIDTH: Record<NonNullable<DialogProps['size']>, number> = {
-  sm: 420,
-  md: 560,
-  lg: 760,
+/**
+ * The tier box. `width` is the tier's panel width (`sm` = 420px per the L12
+ * anatomy); `maxHeight` is the tier's height cap, past which the body scrolls.
+ * All three tiers currently share the viewport-relative cap — the anatomy pins
+ * no per-tier height — but the cap is read from the tier, never from `width`,
+ * so an exact `width` cannot change how tall the panel may grow.
+ */
+export const DIALOG_SIZE_TIERS: Record<
+  NonNullable<DialogProps['size']>,
+  { width: number; maxHeight: string }
+> = {
+  sm: { width: 420, maxHeight: 'calc(100vh - 48px)' },
+  md: { width: 560, maxHeight: 'calc(100vh - 48px)' },
+  lg: { width: 760, maxHeight: 'calc(100vh - 48px)' },
 };
 
 const FOCUSABLE =
@@ -175,6 +191,8 @@ function DialogImpl({
 
   if (!open) return null;
 
+  const tier = DIALOG_SIZE_TIERS[size];
+
   return (
     <div
       role="dialog"
@@ -199,11 +217,13 @@ function DialogImpl({
       <div
         ref={panelRef}
         tabIndex={-1}
+        data-dialog-part="panel"
         className="rounded-lg outline-none flex flex-col"
         style={{
-          width: width ?? SIZE_WIDTH[size],
+          // `width` wins over the tier for the width; the height cap is the tier's.
+          width: width ?? tier.width,
           maxWidth: 'calc(100vw - 32px)',
-          maxHeight: 'calc(100vh - 48px)',
+          maxHeight: tier.maxHeight,
           background: 'var(--c-card)',
           border: '1px solid var(--c-hair-strong)',
           boxShadow: '0 12px 40px rgba(0,0,0,0.18)',
@@ -211,7 +231,8 @@ function DialogImpl({
       >
         {title != null && (
           <div
-            className="flex items-center gap-2 px-5 py-3"
+            data-dialog-part="header"
+            className="flex items-center gap-2 px-5 py-3 shrink-0"
             style={{ borderBottom: '1px solid var(--c-hair)' }}
           >
             <div
@@ -235,11 +256,22 @@ function DialogImpl({
             )}
           </div>
         )}
-        <div className="px-5 py-4 overflow-auto nice-scroll">{children}</div>
+        {/* Overflow contract: the body is the ONLY scroll container (min-h-0 lets
+            it shrink below its content inside the capped flex column); the
+            footer is its sibling, outside the overflow, so it stays visible
+            whatever the scroll position. */}
+        <div
+          data-dialog-part="body"
+          className="px-5 py-4 overflow-auto nice-scroll min-h-0 flex-1"
+          style={{ overflowY: 'auto', minHeight: 0 }}
+        >
+          {children}
+        </div>
         {footer != null && (
           <div
-            className="flex items-center justify-end gap-2 px-5 py-3"
-            style={{ borderTop: '1px solid var(--c-hair)' }}
+            data-dialog-part="footer"
+            className="flex items-center justify-end gap-2 px-5 py-3 shrink-0"
+            style={{ borderTop: '1px solid var(--c-hair)', flexShrink: 0 }}
           >
             {footer}
           </div>

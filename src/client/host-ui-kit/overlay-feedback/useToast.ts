@@ -1,8 +1,10 @@
 import { fireToast, type ToastAction } from './toast-store.js';
 
 /**
- * `useToast` (Overlay/feedback, `experimental`) — the catalog's one
- * deliberate imperative exception (feedback is inherently imperative, not
+ * `useToast` (`experimental`, outside `hostApiVersion`) — a hook exported
+ * BESIDE the catalog (no registry entry: `stability`/`binding` describe
+ * components), and the `/ui` declarative doctrine's one deliberate imperative
+ * exception (feedback is inherently imperative, not
  * props-in). Fires a request `ToastViewport` (mounted once by the plugin
  * author, typically at their root) renders over `--z-toast`.
  */

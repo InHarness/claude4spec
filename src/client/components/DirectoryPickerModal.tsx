@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CornerLeftUp, Folder } from 'lucide-react';
-import { apiFetch } from '../../lib/api-core.js';
-import { Dialog } from './Dialog.js';
+import { apiFetch } from '../lib/api-core.js';
+import { Dialog } from '../host-ui-kit/overlay/Dialog.js';
 
 /**
  * 0.1.97: the server-side directory browser, extracted from `AddProjectDialog`

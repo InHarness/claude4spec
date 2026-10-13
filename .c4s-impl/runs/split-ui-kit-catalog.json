@@ -1,0 +1,22 @@
+{
+  "role": "implementer",
+  "unit": "ui-kit-catalog",
+  "packetBytes": 134275,
+  "portions": [
+    {
+      "name": "ui-kit-catalog/p1-l12-l12",
+      "layers": ["L12"],
+      "slugs": [
+        "ac-dialog-grupa-overlay-create-jest-contr",
+        "ac-dialog-przyjmuje-width-number-doklad",
+        "ac-dialog-scrolluje-wewnetrznie-cialo-przy",
+        "ac-popover-grupa-overlay-feedback-m34-exp",
+        "ac-most-tokenow-c4s-plugin-runtime-ui-eksp",
+        "ac-groupedentitylist-jest-importowalny-z",
+        "ac-groupedentitylist-rysuje-tekst-pomocn",
+        "ac-usehosttokens-zwraca-nowe-wartosci-ko"
+      ]
+    }
+  ],
+  "deviations": []
+}

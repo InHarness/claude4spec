@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { FolderPlus, Plus, X } from 'lucide-react';
 import { toast } from '../events.js';
 import { navigateDocument } from '../../lib/document-nav.js';
-import { DirectoryBrowser } from '../../host-ui-kit/overlay/DirectoryPickerModal.js';
+import { DirectoryBrowser } from '../../components/DirectoryPickerModal.js';
 import type { ModalFormProps } from '../ModalHost.js';
 
 /**
