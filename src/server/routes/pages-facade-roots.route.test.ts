@@ -21,6 +21,7 @@ import type { WsEvent } from '../../shared/types.js';
 import { mountRegistryRoots, type MountedRegistry } from '../workspace/root-registry-runtime.js';
 import { pagesRouter, type PageRootRuntime } from './pages.js';
 import { SkillRegistry, SkillResolver } from '../services/skill-registry.js';
+import { pageWritePayload } from '../../client/hooks/usePage.js';
 import { registerProjectRootedSkills } from '../services/project-rooted-skills.js';
 
 /**
@@ -739,5 +740,120 @@ describe('2.1.14 — PUT /api/pages/:rootId/* criteria (M02 m02octconc, the lite
       // The room is the project's: another project's client hears nothing.
       expect(fileChanged(elsewhere)).toEqual([]);
     });
+  });
+});
+
+/**
+ * 2.1.17 — M02 `gnxw0ua1` / `xlx33i1v`: a page whose frontmatter YAML does not
+ * parse reads, and the editor's save of it keeps the block byte for byte.
+ */
+describe('2.1.17 — a page whose frontmatter does not parse (M02 gnxw0ua1, xlx33i1v)', () => {
+  it('[entity:page-detail] GET /api/pages/:rootId/* answers PageDetail: path, title, content, frontmatter required with their types; frontmatterRaw only when the YAML does not parse', async () => {
+    const { app, abs } = await rig();
+    // (1) A header that parses: title from the frontmatter, no frontmatterRaw.
+    const good = '---\ntitle: M01 — Auth\norder: 1\nmodule: m01\n---\n\n# Heading\n\nContent...\n';
+    put(abs('pages', 'modules/m01-auth.md'), good);
+    const a = await request(app).get('/api/pages/pages/modules/m01-auth.md');
+    expect(a.status).toBe(200);
+    expect(typeof a.body.path).toBe('string');
+    expect(a.body.path).toBe('modules/m01-auth.md');
+    expect(typeof a.body.title).toBe('string');
+    expect(a.body.title).toBe('M01 — Auth');
+    expect(typeof a.body.content).toBe('string');
+    expect(a.body.content).toBe(good);
+    expect(a.body.frontmatter).toEqual({ title: 'M01 — Auth', order: 1, module: 'm01' });
+    expect(a.body).not.toHaveProperty('frontmatterRaw');
+
+    // (2) No header: frontmatter `{}`, title from the first H1, no frontmatterRaw.
+    put(abs('pages', 'plain.md'), '# Plain page\n\nText.\n');
+    const b = await request(app).get('/api/pages/pages/plain.md');
+    expect(b.status).toBe(200);
+    expect(b.body.frontmatter).toEqual({});
+    expect(b.body.title).toBe('Plain page');
+    expect(b.body).not.toHaveProperty('frontmatterRaw');
+
+    // (3) No header, no H1: the label chain closes on `path`.
+    put(abs('pages', 'notes/bare.md'), 'Just text.\n');
+    const c = await request(app).get('/api/pages/pages/notes/bare.md');
+    expect(c.body.title).toBe('notes/bare.md');
+
+    // (4) The DTO's second example: YAML that does not parse — frontmatter `{}`,
+    // the literal block (fences included) in `frontmatterRaw`, title from the H1.
+    const block = '---\ndescription: [niezamknięta lista\n---\n';
+    const broken = `${block}\n# Mój skill\n\nTreść...`;
+    put(abs('pages', 'moj-skill/SKILL.md'), broken);
+    const d = await request(app).get('/api/pages/pages/moj-skill/SKILL.md');
+    expect(d.status).toBe(200);
+    expect(d.body.path).toBe('moj-skill/SKILL.md');
+    expect(d.body.frontmatter).toEqual({});
+    expect(typeof d.body.frontmatterRaw).toBe('string');
+    expect(d.body.frontmatterRaw).toBe(block);
+    expect(d.body.title).toBe('Mój skill');
+    expect(d.body.content).toBe(broken);
+  });
+
+  it('[ac:ac-odczyt-strony-z-nieparsowalnym-frontmatterem] reading a page whose frontmatter YAML does not parse answers 200 with `frontmatter` = {} and the literal block in `frontmatterRaw`, not a server error', async () => {
+    const { app, abs } = await rig();
+    const block = '---\ntitle: "Unclosed\norder: [1, 2\n---\n';
+    const broken = `${block}# Broken header\n\nBody text.\n`;
+    put(abs('pages', 'modules/broken.md'), broken);
+    // Premise: this block really does not parse.
+    expect(() => matter(broken, {})).toThrow();
+
+    const res = await request(app).get('/api/pages/pages/modules/broken.md');
+    expect(res.status).toBe(200);
+    expect(res.body).not.toHaveProperty('error');
+    expect(res.body.frontmatter).toEqual({});
+    // The block byte for byte, delimiters included.
+    expect(res.body.frontmatterRaw).toBe(block);
+    // The rest of the record reads as usual: the whole file, its hash, the label from the H1.
+    expect(res.body.content).toBe(broken);
+    expect(res.body.hash).toBe(sha(broken));
+    expect(res.body.title).toBe('Broken header');
+    expect(res.body.body).toBe('# Broken header\n\nBody text.\n');
+  });
+
+  it('[ac:ac-zapis-z-edytora-zachowuje-nieparsowalny-frontmatter] the editor\'s save of a page whose frontmatter does not parse, header untouched, leaves the block in the file byte for byte (no empty header put in its place)', async () => {
+    const { app, abs } = await rig();
+    const block = '---\ntitle: "Unclosed\ntags: [a, b\n---\n';
+    const original = `${block}# Draft page\n\nDRAFT\n`;
+    put(abs('pages', 'draft.md'), original);
+
+    // What the editor holds: the page-detail read.
+    const read = await request(app).get('/api/pages/pages/draft.md');
+    expect(read.status).toBe(200);
+    expect(read.body.frontmatterRaw).toBe(block);
+
+    // What the editor sends (`pageWritePayload`): the block glued in front of the
+    // edited body, no frontmatter object — even though it holds `frontmatter: {}`.
+    const payload = pageWritePayload({
+      body: (read.body.body as string).replace('DRAFT', 'FINAL'),
+      frontmatter: read.body.frontmatter,
+      frontmatterRaw: read.body.frontmatterRaw,
+    });
+    expect(payload.frontmatter).toBeUndefined();
+    const saved = await request(app)
+      .put('/api/pages/pages/draft.md')
+      .send({ ...payload, expectedHash: read.body.hash });
+    expect(saved.status).toBe(200);
+
+    const onDisk = fs.readFileSync(abs('pages', 'draft.md'), 'utf8');
+    // The block opens the file exactly as before; the edit landed below it.
+    expect(onDisk.startsWith(block)).toBe(true);
+    expect(onDisk).toContain('FINAL');
+    expect(onDisk).not.toContain('DRAFT');
+    // No empty header substituted for the broken one.
+    expect(onDisk.startsWith('---\n---')).toBe(false);
+    expect(onDisk).not.toContain('{}\n---');
+    expect(saved.body.hash).toBe(sha(onDisk));
+
+    // A second save on the ack's hash still keeps the block.
+    const reread = await request(app).get('/api/pages/pages/draft.md');
+    expect(reread.body.frontmatterRaw).toBe(block);
+    const again = await request(app)
+      .put('/api/pages/pages/draft.md')
+      .send({ ...pageWritePayload({ body: reread.body.body, frontmatter: reread.body.frontmatter, frontmatterRaw: reread.body.frontmatterRaw }), expectedHash: saved.body.hash });
+    expect(again.status).toBe(200);
+    expect(fs.readFileSync(abs('pages', 'draft.md'), 'utf8').startsWith(block)).toBe(true);
   });
 });

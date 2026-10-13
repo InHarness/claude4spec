@@ -1,5 +1,5 @@
 {
-  "iteration": 0,
+  "iteration": 4,
   "conventions": [
     {
       "label": "L4 (API)",
@@ -63,7 +63,7 @@
         "m37-version-gate-and-reader-contract",
         "writing-style-source-badge"
       ],
-      "startCommit": null
+      "startCommit": "b525ac588e2f79df40c3afccf03f321423738a14"
     },
     {
       "n": 2,
@@ -142,16 +142,37 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "m02-frontmatter-tolerant-read/p1-l4-l5",
+          "layers": [
+            "L4",
+            "L5"
+          ],
+          "slugs": [
+            "page-detail",
+            "ac-odczyt-strony-z-nieparsowalnym-frontmatterem",
+            "ac-zapis-z-edytora-zachowuje-nieparsowalny-frontmatter"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "b525ac588e2f79df40c3afccf03f321423738a14",
+      "baseCommit": "b525ac588e2f79df40c3afccf03f321423738a14",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0,
+      "only": []
     },
     {
       "id": "m02-tree-create-button",
@@ -1069,5 +1090,6 @@
     }
   ],
   "errors": 0,
-  "systemVerified": false
+  "systemVerified": false,
+  "baselineGreen": true
 }

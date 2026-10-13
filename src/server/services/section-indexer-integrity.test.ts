@@ -196,6 +196,23 @@ describe('section index integrity', () => {
     expect(row?.heading_level).toBe(5);
   });
 
+  it('[ac:ac-zapis-z-edytora-zachowuje-nieparsowalny-frontmatter] the write-back after a save (m06-anchor-injection) of a page whose frontmatter does not parse keeps the block byte for byte', async () => {
+    const block = '---\ntitle: "Unclosed\ntags: [a, b\n---\n';
+    // What the editor's save put on disk: the literal block, then the body with a new heading.
+    await pages.write('broken.md', { body: `${block}<!-- anchor: aaaaaa11 -->\n# Top\n\n## New\ntext\n` });
+    expect((await pages.read('broken.md')).frontmatterRaw).toBe(block);
+
+    expect(await indexer.mintAnchors('pages', 'pages:pages', 'broken.md', () => {})).toBe(true);
+    const onDisk = await pages.readRaw('broken.md');
+    expect(onDisk.startsWith(block)).toBe(true);
+    const after = await pages.read('broken.md');
+    expect(after.frontmatterRaw).toBe(block);
+    expect(parseSections(after.body, { frontmatter: false }).sections.map((s) => s.anchor)).toEqual([
+      'aaaaaa11',
+      expect.stringMatching(/^[a-z0-9]{8}$/),
+    ]);
+  });
+
   it('full rebuild with suppress runs m06-anchor-injection before indexing each file (s2r014vw)', async () => {
     await pages.write('doc.md', { body: ['# Top', '', 'text', ''].join('\n') });
     const suppressed: string[] = [];

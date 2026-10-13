@@ -1,0 +1,25 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "m02-frontmatter-tolerant-read",
+    "base": "b525ac588e2f79df40c3afccf03f321423738a14"
+  },
+  "findings": [
+    {
+      "id": "rev-0001",
+      "file": "src/server/services/markdown-file-store.ts",
+      "line": 240,
+      "blocking": false,
+      "reason": "pageLabel re-implements the label chain that pages-link-indexer.ts:493 extractTitle already has (frontmatter.title -> first H1 -> fallback). The two now give different fallbacks (full relPath here, basename without .md there), so the same page can carry two different labels depending on whether it comes from GET page-detail or from the link index. The H1 regex also matches a `# comment` line inside a fenced code block that comes before the real H1. That is also true of the existing helper, but sharing one helper would keep the two in step."
+    },
+    {
+      "id": "rev-0002",
+      "file": "src/server/services/section-indexer.ts",
+      "line": 160,
+      "blocking": false,
+      "reason": "The literal frontmatterRaw write-back is fixed only in the two anchor write-back sites. Other server-side rewrites of a page still write { frontmatter: current.frontmatter, body } and so drop a broken header block silently: the edit_section batch (page-write.ts:1815), reference propagation on rename (references.ts:200/212/242) and section ops (sections.ts:222/231). This is outside the editor-save path the goal names, but it is the same data-loss mechanism. A small shared helper (read -> write that keeps frontmatterRaw) would close it everywhere and would replace the duplicated ternary in anchor-injection.ts and section-indexer.ts."
+    }
+  ],
+  "deviations": []
+}

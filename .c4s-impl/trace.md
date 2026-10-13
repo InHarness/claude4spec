@@ -1,0 +1,1 @@
+page-detail → src/shared/types.ts (PageDetail) + src/server/services/markdown-file-store.ts (readDetail, pageLabel, splitMarkdown); test src/server/routes/pages-facade-roots.route.test.ts [entity:page-detail]
