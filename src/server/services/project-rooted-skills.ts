@@ -235,17 +235,18 @@ function containsFile(dir: string): boolean {
 }
 
 /**
- * 2.1.9 (M52 `9zio901p`, `rkbsi6ky` case 13) — the `<current_skill>` reference for
- * a file the user has open in the `skills` root, by its root-relative path:
- * `<slug>/<file in package>`. When the slug's registry winner is NOT this root's
- * package (`project-rooted`), the open file is shadowed: `load_skill_file`
- * returns that winner, so the reference names it.
+ * M52 `9zio901p` (2.1.17), `rkbsi6ky` cases 9 and 13 — the `<current_skill>`
+ * reference for a file the user has open in the `skills` root, by its
+ * root-relative path `<slug>/<file in package>`.
  *
- * ASSUMPTION:dev-1301 — a loose file at the root's top level lies outside every
- * package (case 9): it has no slug, so no `<current_skill>` (`null`).
- * ASSUMPTION:dev-1302 — a VALID package outranked by another source (the
- * `contextual` chain puts `plugin` above `project-rooted`) is shadowed the same
- * way as the invalid one the template names: `load_skill_file` does not return it.
+ * Only a file of a PACKAGE (a first-level subdirectory) has one: a loose file at
+ * the root's top level belongs to no package, so it has no slug and no
+ * `load_skill_file` route — `null`, no block (case 9).
+ *
+ * The variant follows the slug's precedence winner, not the package's validity:
+ * when the winner is NOT this root's package (`project-rooted`) the open file is
+ * shadowed — whether the package is invalid or valid but outranked (a `plugin`
+ * entry in `contextual`) — and the reference names that winner (case 13).
  */
 export function currentSkillOf(
   filePath: string,

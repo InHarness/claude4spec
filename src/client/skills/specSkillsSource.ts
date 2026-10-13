@@ -10,8 +10,9 @@ import { fetchChatSkillListing } from './chatSkillListing.js';
  *
  *  - Items come from the skill listing of the `chat` context type, read at
  *    every opening of the popover (the slash framework pulls, nothing here
- *    caches): each skill → `/<slug>` with `id` = slug, `description`, `hint` =
- *    slug, and its listing `origin` as the origin marker.
+ *    caches): each skill → `/<slug>` with `id` = slug, `label` = `/<slug>`,
+ *    `description` = the listing entry's description, `hint` = slug, and its
+ *    listing `origin` as the origin marker. No skill title: the listing has none.
  *  - A fixed entry `/skills` narrows the same popover to this source's items.
  *    In that narrowed view the collision rule removes nothing, so a skill whose
  *    slug equals a built-in command (`/section`) stays reachable there.
@@ -48,8 +49,8 @@ export function specSkillItems(listing: SkillListing | null | undefined): SpecSk
     seen.add(row.slug);
     items.push({
       id: row.slug,
-      // ASSUMPTION:dev-0901 — the `chat` listing carries no title, so the
-      // label is the visible trigger `/<slug>` instead of the skill's title.
+      // 2.1.17 (`wklad-do-edytora-m52`): label = `/<slug>`; the skill's title is
+      // not shown, because the listing does not carry it.
       label: `/${row.slug}`,
       description: row.description ?? '',
       hint: row.slug,

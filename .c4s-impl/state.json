@@ -1,5 +1,5 @@
 {
-  "iteration": 40,
+  "iteration": 44,
   "conventions": [
     {
       "label": "L4 (API)",
@@ -1206,16 +1206,39 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "m52-current-skill-and-edges/p1-l8-l16",
+          "layers": [
+            "L8",
+            "L16"
+          ],
+          "slugs": [
+            "szablon-current-skill",
+            "wklad-do-edytora-m52#spec-skills",
+            "m52-edge-loose-file-no-current-skill",
+            "m52-edge-valid-outranked-package-shadowed",
+            "m52-invalid-frontmatter-package-editable"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "1f578561657f989cb439a615c1304c3cc6c5222f",
+      "baseCommit": "1f578561657f989cb439a615c1304c3cc6c5222f",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0,
+      "only": []
     }
   ],
   "entityTypes": [

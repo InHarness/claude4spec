@@ -374,6 +374,8 @@ describe('2.1.9 — the `skills` root has a facade (M52 i5frb6it, M02 m02multidi
     expect(b.status).toBe(200);
     expect(b.body.frontmatter).toEqual({});
     expect(b.body.frontmatterRaw).toBe(block);
+    // 2.1.17 page-detail: the label comes from the first H1.
+    expect(b.body.title).toBe('Reviewer');
     expect(b.body.body).toBe('# Reviewer\n\nOld text.\n');
     expect(b.body.content).toBe(broken);
     expect(b.body.hash).toBe(sha(broken));
@@ -387,6 +389,16 @@ describe('2.1.9 — the `skills` root has a facade (M52 i5frb6it, M02 m02multidi
     const onDisk = fs.readFileSync(abs('skills', 'reviewer/SKILL.md'), 'utf8');
     expect(onDisk).toBe(`${block}# Reviewer\n\nNew text.\n`);
     expect(saved.body.hash).toBe(sha(onDisk));
+
+    // Every save, not just the first: read again, edit again — the block is still unchanged.
+    const c = await request(app).get('/api/pages/skills/reviewer/SKILL.md');
+    expect(c.status).toBe(200);
+    expect(c.body.frontmatterRaw).toBe(block);
+    const again = await request(app)
+      .put('/api/pages/skills/reviewer/SKILL.md')
+      .send({ body: `${c.body.frontmatterRaw}# Reviewer\n\nThird text.\n`, expectedHash: c.body.hash });
+    expect(again.status).toBe(200);
+    expect(fs.readFileSync(abs('skills', 'reviewer/SKILL.md'), 'utf8')).toBe(`${block}# Reviewer\n\nThird text.\n`);
   });
 
   it('[ac:m52-invalid-frontmatter-package-editable] a package whose `SKILL.md` YAML does not parse reads the same on every read, also after the skill registry / frontmatter indexer have already run gray-matter over the same bytes (a warm gray-matter cache)', async () => {
