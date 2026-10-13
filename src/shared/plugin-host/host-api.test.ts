@@ -3,11 +3,15 @@ import { HOST_API_VERSION } from './manifest.js';
 import {
   buildMigrationInfo,
   HOST_API_MINOR_RELEASES,
+  HOST_API_RELEASES,
+  HOST_API_UNVERSIONED_CHANGES,
   migrationsBetween,
+  recordedUiKitStableComponents,
   rangeMajor,
   VERSIONED_UI_KIT_COMPONENTS,
 } from './host-api.js';
 import { UI_KIT_CATALOG } from '../../client/host-ui-kit/registry.js';
+import { UI_KIT_STABLE_COMPONENTS } from './ui-kit-surface.js';
 
 /**
  * M34/L12 (0.1.144): `stability` describes the contract towards PLUGINS only.
@@ -161,3 +165,59 @@ describe('2.1.0 — the Host API changelog records the minor bump', () => {
     expect(latest.changes[1]!.slot).toContain('registerExtensionReferenceType');
   });
 });
+
+/**
+ * 2.1.20 (M33 `m33load01`) — the specification's Host API changelog has its
+ * counterpart in code: every versioned entry in the release registry, every
+ * in-baseline entry in the unversioned-changes registry, and the composition of
+ * the `stable` UI-kit list is recorded by them.
+ */
+describe('[section:m33load01] the Host API changelog and its two registries in code', () => {
+  const sorted = (xs: Iterable<string>) => [...xs].sort();
+  const compare = (a: string, b: string) => {
+    const pa = a.split('.').map(Number);
+    const pb = b.split('.').map(Number);
+    for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pa[i]! - pb[i]!;
+    return 0;
+  };
+
+  it('[section:m33load01] the release registry holds each versioned changelog entry, oldest first, ending at HOST_API_VERSION', () => {
+    expect(HOST_API_RELEASES.map((r) => `${r.version}:${r.kind}`)).toEqual(['2.0.0:major', '2.1.0:minor']);
+    for (let i = 1; i < HOST_API_RELEASES.length; i++) {
+      expect(compare(HOST_API_RELEASES[i - 1]!.version, HOST_API_RELEASES[i]!.version)).toBeLessThan(0);
+    }
+    expect(HOST_API_RELEASES[HOST_API_RELEASES.length - 1]!.version).toBe(HOST_API_VERSION);
+    // The major carries the crossing's descriptors; every minor of the minor list is a release.
+    const major = HOST_API_RELEASES.find((r) => r.version === '2.0.0')!;
+    expect(major.migrations).toEqual(migrationsBetween(1, 2));
+    expect(major.migrations!.length).toBeGreaterThan(0);
+    for (const minor of HOST_API_MINOR_RELEASES) {
+      expect(HOST_API_RELEASES.find((r) => r.version === minor.version)?.changes).toEqual(minor.changes);
+    }
+  });
+
+  it('[section:m33load01] every in-baseline changelog entry has its unversioned-change record', () => {
+    const slots = HOST_API_UNVERSIONED_CHANGES.map((c) => c.slot);
+    const recorded = (re: RegExp) => slots.some((s) => re.test(s));
+    // additive: the fifth envelope slot, the field flag, the named validators, the read core in MountContext
+    expect(recorded(/^contributes\.skills$/)).toBe(true);
+    expect(recorded(/contentBearing/)).toBe(true);
+    expect(recorded(/ScalarNode\.kind/)).toBe(true);
+    expect(recorded(/MountContext\.\{getEntities,listEntities,searchEntities,describeTypes,resolveIdentity\}/)).toBe(true);
+    // retirements absorbed into the baseline
+    expect(recorded(/^injection/)).toBe(true);
+    expect(recorded(/SerializationContribution\.diff/)).toBe(true);
+    expect(recorded(/CollectionNode\.collection \(object form\)/)).toBe(true);
+    expect(recorded(/PluginSkillContribution\.contextTypes/)).toBe(true);
+    expect(recorded(/onUnregister/)).toBe(true);
+    expect(recorded(/stateSlice/) && recorded(/emptyState/)).toBe(true);
+    // additive facade/client-host names
+    expect(recorded(/^mcpTool\(…, annotations\?\)$/)).toBe(true);
+    expect(recorded(/onRegistryChanged/) && recorded(/registryVersion/)).toBe(true);
+  });
+
+  it('[section:m33load01] the composition of UI_KIT_STABLE_COMPONENTS is exactly what the registries record', () => {
+    expect(sorted(recordedUiKitStableComponents())).toEqual(sorted(UI_KIT_STABLE_COMPONENTS));
+  });
+});
+

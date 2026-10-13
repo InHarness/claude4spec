@@ -1,5 +1,5 @@
 {
-  "iteration": 2,
+  "iteration": 5,
   "conventions": [
     {
       "label": "L11 (Plugin Runtime Surface) — implementor M33",
@@ -29,7 +29,7 @@
         "runtime-legs",
         "frontend-serving"
       ],
-      "startCommit": null
+      "startCommit": "461d56806991d0e13f3ab0a0331ddb7f850eb269"
     },
     {
       "n": 3,
@@ -690,15 +690,72 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "runtime-legs/p1-l2-l2",
+          "layers": [
+            "L2"
+          ],
+          "slugs": [
+            "section:m33load01",
+            "section:m33rt001",
+            "section:ywud56l6"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        },
+        {
+          "name": "runtime-legs/p2-l11-l11",
+          "layers": [
+            "L11"
+          ],
+          "slugs": [
+            "ac-autor-pluginu-importuje-typy-host-api-z",
+            "ac-frontend-pluginu-ktory-statycznie-imp",
+            "ac-import-wartosci-tylko-backendowej-z-c",
+            "ac-goly-import-c4s-plugin-runtime-w-kodz",
+            "ac-manifest-ktory-punkt-rejestracji-odrz",
+            "ac-plugin-typujacy-sie-wylacznie-przez-p",
+            "section:m33l11sc",
+            "section:m13l11sc",
+            "section:m05l11sc",
+            "section:mn59j0le",
+            "section:m20l11sc",
+            "section:gz7q92lz"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        },
+        {
+          "name": "runtime-legs/p3-l12-l12",
+          "layers": [
+            "L12"
+          ],
+          "slugs": [
+            "section:m34l12sc"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "461d56806991d0e13f3ab0a0331ddb7f850eb269",
+      "baseCommit": "461d56806991d0e13f3ab0a0331ddb7f850eb269",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0
     },
     {
       "id": "frontend-serving",

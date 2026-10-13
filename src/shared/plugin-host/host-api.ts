@@ -188,6 +188,22 @@ export interface HostApiUnversionedChange {
   kind: 'slot-removed' | 'slot-added' | 'behaviour-changed';
   /** Why it needed no bump, and what it replaces or enables. */
   summary: string;
+  /**
+   * 2.1.20 (M33 `m33load01`) — the change this entry records to the composition
+   * of `UI_KIT_STABLE_COMPONENTS`: a catalog component promoted to `stable`, or
+   * taken off it. The composition of that list is a versioned surface, so a
+   * change to it without such an entry is an error (see
+   * {@link recordedUiKitStableComponents}).
+   */
+  uiKitStable?: UiKitStableDelta;
+}
+
+/** A change to the composition of the `stable` Host UI Kit list. */
+export interface UiKitStableDelta {
+  /** Components promoted `experimental → stable`. */
+  promoted?: readonly string[];
+  /** Components taken off the `stable` list. */
+  demoted?: readonly string[];
 }
 
 /**
@@ -548,7 +564,97 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       'turns instead of forming part of the skill\'s identity, so it may not ' +
       'take its envelope down with it.',
   },
+  /*
+   * 2.1.20 (M33 `m33load01`) — every in-baseline entry of the specification's
+   * Host API changelog has its counterpart here. The four below were changes
+   * the code already carried with no record; the rule is that a surface change
+   * with no entry in either registry is an error whether or not it bumps.
+   */
+  {
+    release: '0.2.29',
+    slot: 'PluginManifest.onUnregister (required → optional)',
+    kind: 'behaviour-changed',
+    summary:
+      'Unregistering a package is the HOST\'s job: `registry.unregisterPlugin(name)` ' +
+      'removes its capabilities and the project context is invalidated and rebuilt. ' +
+      'The hook stays only for resources the plugin opened itself in `backend.mount`, ' +
+      'so it is now optional. Relaxing a required slot to an optional one is backwards ' +
+      'compatible — a manifest that declares it stays valid — so it fits the current ' +
+      'baseline with no bump.',
+  },
+  {
+    release: '0.2.79',
+    slot: 'MountContext.{getEntities,listEntities,searchEntities,describeTypes,resolveIdentity}',
+    kind: 'slot-added',
+    summary:
+      'The five entity operations of the M39 read core, bound through `MountContext`, ' +
+      'through which an envelope reads entities of OTHER types and gets the serialized ' +
+      'record rather than a raw projection row. A surface change on both sides — ' +
+      '`mountBackend(ctx)` is itself versioned, so widening the context widens M13 too. ' +
+      'Purely additive: nothing that existed changes signature, so no bump.',
+  },
+  {
+    release: '0.2.80',
+    slot: 'clientPluginHost.onRegistryChanged / clientPluginHost.registryVersion',
+    kind: 'slot-added',
+    summary:
+      'A subscription to changes of the client registry and the counter of its version, ' +
+      'in the browser leg of `@c4s/plugin-runtime`, beside the existing `listEntities`. ' +
+      'No existing call changes: additive, inside the current baseline, no bump.',
+  },
+  {
+    release: '2.1.12',
+    slot: 'mcpTool(…, annotations?)',
+    kind: 'slot-added',
+    summary:
+      'The facade signature of `mcpTool` gains an optional `annotations?` parameter ' +
+      '(`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`, `title`) ' +
+      'that the host lists beside the tool in the external `tools/list`. Optional, so ' +
+      'every existing call stays valid: additive, no bump. The annotations belong to the ' +
+      'facade shape, not to the vendor type, so a vendor version bump behind the facade ' +
+      'still does not move the version.',
+  },
+  {
+    release: '2.1.12',
+    slot: 'FrontendModule.stateSlice / sidebarTab.emptyState',
+    kind: 'slot-removed',
+    summary:
+      'Two frontend fields that had no effect in the host: no host store ever took a ' +
+      'registered state slice, and the sidebar reads only the tab\'s icon, label and ' +
+      'order. Formally a narrowing of the surface; absorbed into the current baseline ' +
+      'under the same precedent as the `injection` removal and the withdrawal of ' +
+      '`registerExtensionReferenceType` — neither field changed host behaviour and no ' +
+      'external plugin is published. No bump, no `migrations[]` descriptor.',
+  },
 ];
+
+/**
+ * The composition of `UI_KIT_STABLE_COMPONENTS` when the 2.0.0 major was cut. The
+ * four Core components have been `stable` since the catalog was introduced (M34,
+ * 0.1.80) — before the 1 → 2 crossing — and no promotion or demotion has been
+ * recorded since.
+ */
+const UI_KIT_STABLE_AT_2_0_0 = ['EntityListHeader', 'DetailPanelShell', 'FieldRow', 'FieldGrid'] as const;
+
+/** One entry of the Host API release registry — a value `HOST_API_VERSION` has held. */
+export interface HostApiRelease {
+  /** The `HOST_API_VERSION` value this release set. */
+  version: string;
+  /** `major` crosses a boundary and carries `migrations[]`; `minor` never cuts a package off. */
+  kind: 'major' | 'minor';
+  title: string;
+  /** Major only — the descriptors of the crossing into this major. */
+  migrations?: readonly HostApiMigration[];
+  /** Minor only — the changes the bump carried. */
+  changes?: HostApiMinorRelease['changes'];
+  /**
+   * Major only — the full `stable` UI-kit composition at this release; later
+   * entries record changes to it as {@link UiKitStableDelta}s.
+   */
+  uiKitStable?: readonly string[];
+  /** Minor only — a change to the `stable` UI-kit composition this bump carried. */
+  uiKitStableDelta?: UiKitStableDelta;
+}
 
 /** One MINOR bump of `HOST_API_VERSION` — additive or harmless within the major. */
 export interface HostApiMinorRelease {
@@ -589,6 +695,45 @@ export const HOST_API_MINOR_RELEASES: readonly HostApiMinorRelease[] = [
     ],
   },
 ];
+
+/**
+ * 2.1.20 (M33 `m33load01`) — the Host API release registry: one entry per
+ * versioned entry of the specification's Host API changelog, oldest first. Its
+ * last entry is the running {@link HOST_API_VERSION}. Changes made inside the
+ * current baseline are not releases and live in {@link HOST_API_UNVERSIONED_CHANGES};
+ * together the two registries describe the same set of changes as the changelog.
+ */
+export const HOST_API_RELEASES: readonly HostApiRelease[] = [
+  {
+    version: '2.0.0',
+    kind: 'major',
+    title: 'The envelope declares its data structure — the first real major',
+    migrations: HOST_API_CHANGELOG.filter((m) => m.toMajor === 2),
+    uiKitStable: UI_KIT_STABLE_AT_2_0_0,
+  },
+  ...HOST_API_MINOR_RELEASES.map(
+    (r): HostApiRelease => ({ version: r.version, kind: 'minor', title: r.title, changes: r.changes }),
+  ),
+];
+
+/**
+ * The `stable` UI-kit composition the two registries record: the composition at
+ * the last major, folded with every recorded promotion and demotion after it. A
+ * test holds it equal to `UI_KIT_STABLE_COMPONENTS`, so changing that list
+ * without a registry entry fails — the explicit `stable`-list rule of M33.
+ */
+export function recordedUiKitStableComponents(): string[] {
+  const majors = HOST_API_RELEASES.filter((r) => r.kind === 'major');
+  const base = majors[majors.length - 1];
+  const set = new Set<string>(base?.uiKitStable ?? []);
+  const apply = (delta: UiKitStableDelta | undefined): void => {
+    for (const name of delta?.promoted ?? []) set.add(name);
+    for (const name of delta?.demoted ?? []) set.delete(name);
+  };
+  for (const r of HOST_API_RELEASES.slice(base ? HOST_API_RELEASES.indexOf(base) + 1 : 0)) apply(r.uiKitStableDelta);
+  for (const change of HOST_API_UNVERSIONED_CHANGES) apply(change.uiKitStable);
+  return [...set];
+}
 
 /** First numeric component of a semver RANGE (e.g. "^1.4.0" → 1, ">=2.5.0" → 2). */
 export function rangeMajor(range: string): number | null {

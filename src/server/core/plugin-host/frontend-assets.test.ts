@@ -11,7 +11,10 @@ import {
   resolveOverlayAsset,
   resolveWorkspaceAsset,
   nearestPackageRoot,
+  enumerateEnvelopeFrontendBundles,
+  resolveEnvelopeAsset,
 } from './frontend-assets.js';
+import type { BuiltinEnvelope } from './builtin-envelopes.js';
 import { buildFrontendManifest } from './frontend-manifest.js';
 import { buildImportMap } from './runtime-shims.js';
 import { HOST_API_VERSION } from '../../../shared/plugin-host/manifest.js';
@@ -352,5 +355,64 @@ describe('nearestPackageRoot', () => {
     // Guard: only assert null when the real fs has no package.json up to root.
     // os.tmpdir() chains have none, so the walk terminates at filesystem root.
     expect(nearestPackageRoot(deep)).toBeNull();
+  });
+});
+
+/**
+ * 2.1.20 (M33 `ywud56l6`) — a built-in envelope's frontend entry is found by the
+ * SAME rule as an npm package's: `exports['./frontend']`, falling back to
+ * `dist/frontend.js`, relative to the envelope folder. Moving an envelope out of
+ * the host repo therefore does not change how its frontend is discovered.
+ */
+describe('[section:ywud56l6] envelope frontend entry — the npm package rule, relative to the envelope folder', () => {
+  let root: string;
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-envelope-fe-'));
+  });
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  function envelope(name: string, pkg: Record<string, unknown>, files: string[]): BuiltinEnvelope {
+    const dir = path.join(root, name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name, version: '1.2.3', ...pkg }));
+    for (const f of files) {
+      fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true });
+      fs.writeFileSync(path.join(dir, f), '// built\n');
+    }
+    return { name, dir, specifier: `file://${path.join(dir, 'dist/index.js')}` };
+  }
+
+  it('[section:ywud56l6] resolves exports[./frontend] when declared, and dist/frontend.js otherwise — the same path the workspace tier resolves for an npm package', () => {
+    const declared = envelope(
+      'declared',
+      { exports: { '.': './dist/index.js', './frontend': { import: './out/fe.js' } } },
+      ['out/fe.js', 'out/frontend.css', 'out/chunk-1.js'],
+    );
+    const fallback = envelope('fallback', {}, ['dist/frontend.js']);
+    const unbuilt = envelope('unbuilt', { exports: { './frontend': './dist/frontend.js' } }, []);
+    const envelopes = [declared, fallback, unbuilt];
+
+    const bundles = enumerateEnvelopeFrontendBundles(envelopes);
+    expect(bundles).toEqual([
+      { name: 'declared', version: '1.2.3', hasCss: true },
+      { name: 'fallback', version: '1.2.3', hasCss: false },
+    ]);
+
+    // Assets are served next to the resolved entry, inside the envelope folder.
+    expect(resolveEnvelopeAsset('declared', 'fe.js', envelopes)).toBe(path.join(declared.dir, 'out/fe.js'));
+    expect(resolveEnvelopeAsset('declared', 'chunk-1.js', envelopes)).toBe(path.join(declared.dir, 'out/chunk-1.js'));
+    expect(resolveEnvelopeAsset('fallback', 'frontend.js', envelopes)).toBe(path.join(fallback.dir, 'dist/frontend.js'));
+    expect(resolveEnvelopeAsset('unbuilt', 'frontend.js', envelopes)).toBeNull();
+
+    // The npm-package rule, applied to the same folders as package roots, lands on the same files.
+    const asPackageRoot = (name: string) => envelopes.find((e) => e.name === name)?.dir ?? null;
+    expect(resolveWorkspaceFrontendAsset('declared', 'frontend.js', ['declared'], asPackageRoot)).toBe(
+      path.join(declared.dir, 'out/fe.js'),
+    );
+    expect(resolveWorkspaceFrontendAsset('fallback', 'frontend.js', ['fallback'], asPackageRoot)).toBe(
+      path.join(fallback.dir, 'dist/frontend.js'),
+    );
   });
 });

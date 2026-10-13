@@ -15,7 +15,7 @@
  * HOST's indexer, timestamp backfill and soft-FK checker over the envelope's
  * type, through the host repo's own test helper — host internals no plugin
  * reaches. A built-in envelope's tests reach a running host only through the
- * published harness (`@inharness-ai/claude4spec/plugin-testing`), so this
+ * internal test setup (`@c4s-internal/plugin-test-setup`, 2.1.20), so this
  * suite was moved out of `plugins/<name>/test/` into the host's suite.
  */
 

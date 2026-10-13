@@ -12,7 +12,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
-import { createPluginTestApp, type PluginTestApp } from '@inharness-ai/claude4spec/plugin-testing';
+import { createPluginTestApp, type PluginTestApp } from '@c4s-internal/plugin-test-setup';
 import { manifest } from '../src/manifest.js';
 
 describe('mcp-tool — the shape the frontend reads', () => {

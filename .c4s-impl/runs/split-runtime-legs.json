@@ -1,0 +1,36 @@
+{
+  "role": "implementer",
+  "unit": "runtime-legs",
+  "packetBytes": 299059,
+  "portions": [
+    {
+      "name": "runtime-legs/p1-l2-l2",
+      "layers": ["L2"],
+      "slugs": ["section:m33load01", "section:m33rt001", "section:ywud56l6"]
+    },
+    {
+      "name": "runtime-legs/p2-l11-l11",
+      "layers": ["L11"],
+      "slugs": [
+        "ac-autor-pluginu-importuje-typy-host-api-z",
+        "ac-frontend-pluginu-ktory-statycznie-imp",
+        "ac-import-wartosci-tylko-backendowej-z-c",
+        "ac-goly-import-c4s-plugin-runtime-w-kodz",
+        "ac-manifest-ktory-punkt-rejestracji-odrz",
+        "ac-plugin-typujacy-sie-wylacznie-przez-p",
+        "section:m33l11sc",
+        "section:m13l11sc",
+        "section:m05l11sc",
+        "section:mn59j0le",
+        "section:m20l11sc",
+        "section:gz7q92lz"
+      ]
+    },
+    {
+      "name": "runtime-legs/p3-l12-l12",
+      "layers": ["L12"],
+      "slugs": ["section:m34l12sc"]
+    }
+  ],
+  "deviations": []
+}

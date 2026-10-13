@@ -7,9 +7,10 @@
  * `package.json` and not one rewritten import:
  *   - its CODE (`src/`) imports the host only through `@c4s/plugin-runtime`
  *     (+ `/ui`), and every other relative import stays inside the package;
- *   - its TESTS reach a running host only through the published harness,
- *     `@inharness-ai/claude4spec/plugin-testing`, never through the host repo's
- *     test path (`tests/`).
+ *   - its TESTS reach a running host only through the host repo's internal,
+ *     unpublished test setup, by the alias `@c4s-internal/plugin-test-setup`
+ *     (2.1.20, M33 `ywud56l6`) — never by a relative path into the host repo's
+ *     test tree, and never through a specifier of the published package.
  *
  * The checks read the import specifiers off the files and resolve the relative
  * ones against the package directory — the question "does this import still
@@ -26,8 +27,10 @@ const REPO_ROOT = path.join(import.meta.dirname, '../../..');
 const PLUGINS = path.join(REPO_ROOT, 'plugins');
 const HOST_TESTS = path.join(REPO_ROOT, 'tests');
 
-/** The published specifier of the plugin test harness (package `exports['./plugin-testing']`). */
-const HARNESS = '@inharness-ai/claude4spec/plugin-testing';
+/** The alias of the host repo's internal test setup (2.1.20, M33 `ywud56l6`). */
+const TEST_SETUP = '@c4s-internal/plugin-test-setup';
+/** Where that alias resolves: the host repo's test tree, outside the published package. */
+const TEST_SETUP_FILE = path.join(REPO_ROOT, 'tests/helpers/plugin-test-setup.ts');
 /** The only host specifiers a built-in envelope's code may name. */
 const HOST_RUNTIME = new Set(['@c4s/plugin-runtime', '@c4s/plugin-runtime/ui']);
 
@@ -228,43 +231,74 @@ describe('built-in envelope code — the host only through @c4s/plugin-runtime',
   });
 });
 
-describe('built-in envelope tests — a running host only through the published harness', () => {
-  it('[ac:ac-test-koperty-wbudowanej-importuje-har] a built-in envelope test imports the harness from @inharness-ai/claude4spec/plugin-testing, never from the host repo test path', () => {
-    const viaHostTests: string[] = [];
-    const harnessElsewhere: string[] = [];
-    const harnessUsers: string[] = [];
+describe('built-in envelope tests — a running host only through the internal test setup', () => {
+  /**
+   * ASSUMPTION:dev-2001 — `ac-test-koperty-wbudowanej-importuje-har`
+   * (still active at 2.1.20) names the published `…/plugin-testing` harness;
+   * `ywud56l6` at 2.1.20 replaces it with the host repo's internal test setup
+   * and the unit retires the harness as a contract. This case asserts the page,
+   * not that criterion's title, so it does not carry its slug.
+   */
+  it('[section:ywud56l6] a built-in envelope test stands a host up through the internal test setup alias, never through the published package or a relative path', () => {
+    const viaRelativePath: string[] = [];
+    const viaPublishedPackage: string[] = [];
+    const setupElsewhere: string[] = [];
+    const setupUsers: string[] = [];
     for (const pkg of envelopes()) {
       for (const file of testFiles(pkg)) {
         const specs = specifiers(file);
         for (const spec of specs) {
+          if (spec === '@inharness-ai/claude4spec' || spec.startsWith('@inharness-ai/claude4spec/')) {
+            viaPublishedPackage.push(`${rel(file)}: '${spec}'`);
+          }
           if (!isRelative(spec)) continue;
           const to = target(file, spec);
-          // The host repo's test tree (`tests/helpers/test-app`, `test-db`, …).
-          if (inside(HOST_TESTS, to)) viaHostTests.push(`${rel(file)}: '${spec}'`);
-          // The harness's implementation, reached by path instead of by its published name.
-          if (inside(path.join(REPO_ROOT, 'src/server/plugin-testing'), to) || inside(path.join(REPO_ROOT, 'src/plugin-types'), to)) {
-            harnessElsewhere.push(`${rel(file)}: '${spec}'`);
+          // The host repo's test tree (the setup's own source lives there) or the
+          // published type sources.
+          if (inside(HOST_TESTS, to) || inside(path.join(REPO_ROOT, 'src/plugin-types'), to)) {
+            viaRelativePath.push(`${rel(file)}: '${spec}'`);
           }
         }
-        const usesHarness = /\bcreatePluginTestApp\b/.test(stripComments(fs.readFileSync(file, 'utf-8')));
-        if (usesHarness) {
-          if (specs.includes(HARNESS)) harnessUsers.push(rel(file));
-          else harnessElsewhere.push(`${rel(file)}: createPluginTestApp not imported from '${HARNESS}'`);
+        const usesSetup = /\bcreatePluginTestApp\b/.test(stripComments(fs.readFileSync(file, 'utf-8')));
+        if (usesSetup) {
+          if (specs.includes(TEST_SETUP)) setupUsers.push(rel(file));
+          else setupElsewhere.push(`${rel(file)}: createPluginTestApp not imported from '${TEST_SETUP}'`);
         }
       }
     }
-    expect(viaHostTests).toEqual([]);
-    expect(harnessElsewhere).toEqual([]);
-    // The tests that stand a host up do so through the harness — at least the
-    // three envelopes whose suites drive one (database-tables, mcp-tools, spreadsheets).
+    expect(viaRelativePath).toEqual([]);
+    expect(viaPublishedPackage).toEqual([]);
+    expect(setupElsewhere).toEqual([]);
+    // The suites that drive a running host — database-tables, mcp-tools, spreadsheets.
     for (const name of ['c4s-plugin-database-tables', 'c4s-plugin-mcp-tools', 'c4s-plugin-spreadsheets']) {
-      expect(harnessUsers.some((f) => f.startsWith(`plugins/${name}/`)), name).toBe(true);
+      expect(setupUsers.some((f) => f.startsWith(`plugins/${name}/`)), name).toBe(true);
     }
-    // The specifier they name is the one the package publishes.
+  });
+
+  it('[section:ywud56l6] the internal test setup is unpublished: the alias resolves into the host repo test tree, which the package neither ships nor exports', () => {
+    expect(fs.existsSync(TEST_SETUP_FILE)).toBe(true);
+    const setupSource = fs.readFileSync(TEST_SETUP_FILE, 'utf-8');
+    expect(stripComments(setupSource)).toMatch(/\bcreatePluginTestApp\b/);
+    // The root config and every envelope's own config map the alias to that file.
+    const configs = [
+      path.join(REPO_ROOT, 'vitest.config.ts'),
+      ...envelopes().map((pkg) => path.join(pkg, 'vitest.config.ts')).filter((f) => fs.existsSync(f)),
+    ];
+    expect(configs.length).toBeGreaterThan(1);
+    for (const config of configs) {
+      const text = fs.readFileSync(config, 'utf-8');
+      const m = new RegExp(`'${TEST_SETUP}':\\s*here\\('([^']+)'\\)`).exec(text);
+      expect(m, rel(config)).not.toBeNull();
+      expect(path.resolve(path.dirname(config), m![1]!), rel(config)).toBe(TEST_SETUP_FILE);
+    }
+    // Not part of the published package: `files` never ships the test tree, and
+    // no `exports` entry points into it.
     const pkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf-8')) as {
+      files: string[];
       exports: Record<string, unknown>;
     };
-    expect(pkg.exports).toHaveProperty(['./plugin-testing']);
+    expect(pkg.files.some((f) => f === 'tests' || f.startsWith('tests/'))).toBe(false);
+    expect(JSON.stringify(pkg.exports)).not.toMatch(/tests\/|plugin-test-setup/);
   });
 
   it('[ac:ac-wyniesienie-koperty-wbudowanej-do-oso] moving a built-in envelope to its own repo changes no import in its tests — none reaches the host repo test path, and no test outside the pending list leaves the package', () => {
@@ -276,7 +310,7 @@ describe('built-in envelope tests — a running host only through the published 
       }
     }
     const all = [...left.values()].flat();
-    // Never the host repo's test tree — the route to a running host is the harness.
+    // Never the host repo's test tree by path — the route to a running host is the internal setup alias.
     expect(all.filter((e) => inside(HOST_TESTS, path.join(REPO_ROOT, e.split(' → ')[1]!)))).toEqual([]);
     // No test outside the ratchet leaves its package at all…
     expect([...left.keys()].filter((f) => !HOST_SOURCE_IMPORTS_PENDING.has(f))).toEqual([]);

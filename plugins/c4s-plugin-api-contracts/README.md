@@ -39,7 +39,10 @@ import in `src/` changes. Three things would need adjusting, all outside `src/`:
 
 1. `tsconfig.json`'s `paths` for `@c4s/plugin-runtime` become the standard
    `/// <reference types="@inharness-ai/claude4spec/plugin-runtime/ambient" />`,
-   resolved through an `@inharness-ai/claude4spec` devDependency;
+   resolved through an `@inharness-ai/claude4spec` devDependency — once per
+   leg: the frontend code's tsconfig takes it as is (browser leg), the backend
+   code's adds `"customConditions": ["c4s-backend"]` (backend leg), so a
+   backend-only value used in `frontend.tsx` fails the plugin's typecheck;
 2. `vite.config.ts`'s `outDir` points back at a local `dist/`;
 3. the scaffold's `scripts/bundle-backend-deps.mjs` pass gets added, since an
    externally-loaded plugin cannot resolve `express`/`zod` from the host's

@@ -11,8 +11,12 @@
  *
  * Two channels compose:
  *   - top-level exports here type the subpath `@inharness-ai/claude4spec/plugin-runtime`;
- *   - the ambient `declare module '@c4s/plugin-runtime'` in `./ambient.d.ts` binds
- *     the runtime value specifier to this same surface.
+ *   - the ambient `declare module '@c4s/plugin-runtime'` binds the runtime value
+ *     specifier to this same surface, once per leg (2.1.20, M33 `m33l11sc`):
+ *     `./ambient.d.ts` for plugin frontend code (browser leg), and
+ *     `./ambient-backend.d.ts` for plugin backend code. Every type name rides
+ *     both legs; a VALUE rides only the leg that serves it at runtime
+ *     (`shared/plugin-host/runtime-legs.ts`). This file declares the union.
  *
  * SINGLE SOURCE OF TRUTH. The dep-free contract (manifest / EntityModule) is
  * RE-EXPORTED from its canonical host modules, so it cannot drift (a change to

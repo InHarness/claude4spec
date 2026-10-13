@@ -1,48 +1,40 @@
 /**
- * `@inharness-ai/claude4spec/plugin-testing` — the plugin test harness (M33 L11,
- * 2.1.17 `m33l11sc`).
+ * 2.1.20 (M33 `ywud56l6`) — the host repo's internal, unpublished test setup for
+ * the built-in envelopes.
+ *
+ * A built-in envelope's tests (`plugins/<name>/test/**`) reach a running host
+ * only through here, by the alias `@c4s-internal/plugin-test-setup` that the
+ * root `vitest.config.ts` and each envelope's own `vitest.config.ts` resolve to
+ * this file. Host tests import it by its path.
+ *
+ * Not a contract: the package neither ships nor exports it (`files` has no
+ * `tests/`, `exports` has no `./plugin-testing` — the published harness of
+ * 2.1.17 is withdrawn; M33 `m33l11sc` keeps it as an intent, not a contract),
+ * and a plugin outside the repository has no counterpart today. Moving an
+ * envelope out of the repo changes no import in its tests (the alias stays), but
+ * the tests have to be re-wired to whatever the host publishes by then.
  *
  * `createPluginTestApp(manifests)` stands a REAL host up in this process on a
- * throwaway project, for a plugin author's integration tests — including the
- * authors of the built-in envelopes, whose tests reach a running host only
- * through here (`ywud56l6`), never through the host repo's own test helpers.
- *
- * Fidelity, and where it stops:
+ * throwaway project. Fidelity, and where it stops:
  *   - every manifest registers through `registry.registerPlugin(manifest)` — the
  *     registration point and fan-out the loader uses — next to the directly
- *     built-in types and the built-in envelopes, exactly as `startServer` lays
- *     the catalog out;
+ *     built-in types and the built-in envelopes (`registerAllPlugins`, then
+ *     `loadBuiltinEnvelopes`), exactly as `startServer` lays the catalog out;
  *   - the project context is built by `buildProjectContext`, the runtime's own
  *     build, not by a test-only composition;
  *   - the host-owned `@c4s/plugin-runtime` resolver is installed the way the
- *     loader installs it (same latch, same published-subpath fallback when the
- *     runtime has no module hooks), so the bare import in plugin code resolves to
- *     THIS host's live values. It is installed when this module is evaluated, so
- *     a plugin module imported after the harness (dynamically, or with the
- *     harness preloaded via `node --import`) resolves the alias too;
+ *     loader installs it (same latch, same fallback when the runtime has no
+ *     module hooks);
  *   - NOT reproduced: discovery, the dynamic import of a package, the
- *     `hostApiVersion` / `engines` gate, the trust gate, hot reload. A green test
- *     here is no proof the package passes the loader's gate.
+ *     `hostApiVersion` / `engines` gate, the trust gate, hot reload.
  *
- * Outside the versioned Host API surface: neither this subpath nor its shape
- * moves `HOST_API_VERSION` — the harness is a matter of the package release
- * (npm semver), like the `experimental` UI-kit components. It pulls server
- * dependencies (express, better-sqlite3, the whole context build), which is why
- * it is a subpath of its own and `…/plugin-runtime` (+ `/ui`) stays dep-free:
- * nothing under `src/server/plugin-runtime/` may import this module.
- *
- * Lifetime (L10): one instance = one temporary project with its own context, db
- * handle and broadcast buffer, keyed by object identity. `createPluginTestApp`
- * returns once the context's background boot work has settled, and `cleanup()`
- * disposes the context (watchers, MCP factories, db handle) and only then removes
- * the temporary directory — nothing of the instance runs or logs after it resolves. Instances in one process share
- * the loader's two process-wide exceptions — the resolver latch (the first
- * instance installs it) and Node's ESM cache (plugin modules are never unloaded
- * between instances).
- *
- * The published types live in `src/plugin-types/plugin-testing.ts`; the db
- * handle returned here is for test assertions only and is never put on a
- * plugin's `MountContext`.
+ * Lifetime: one instance = one temporary project with its own context, db handle
+ * and broadcast buffer. `createPluginTestApp` returns once the context's
+ * background boot work has settled, and `cleanup()` disposes the context
+ * (watchers, MCP factories, db handle) and only then removes the temporary
+ * directory — nothing of the instance runs or logs after it resolves. The db
+ * handle is for test assertions only and is never put on a plugin's
+ * `MountContext`.
  */
 
 import fs from 'node:fs';
@@ -50,19 +42,19 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import type Database from 'better-sqlite3';
-import type { PluginManifest } from '../../shared/plugin-host/manifest.js';
-import type { WsEvent } from '../../shared/types.js';
-import { PluginRegistryImpl } from '../core/plugin-host/registry.js';
-import { registerAllPlugins } from '../core/plugin-host/register-builtins.js';
-import { loadBuiltinEnvelopes, type PluginLoadRecord } from '../core/plugin-host/loader.js';
-import { installPluginRuntimeResolver } from '../core/plugin-host/plugin-runtime-resolver.js';
-import type { CrudFacade, ProjectPluginHost } from '../core/plugin-host/types.js';
-import { FileWatchRuntime } from '../fs/watcher.js';
-import { errorHandler } from '../routes/errors.js';
-import { bootstrapProject } from '../workspace/bootstrap.js';
-import { buildProjectContext } from '../workspace/project-context.js';
-import { WorkspaceRegistry } from '../workspace/registry.js';
-import type { WsGateway } from '../ws/gateway.js';
+import type { PluginManifest } from '../../src/shared/plugin-host/manifest.js';
+import type { WsEvent } from '../../src/shared/types.js';
+import { PluginRegistryImpl } from '../../src/server/core/plugin-host/registry.js';
+import { registerAllPlugins } from '../../src/server/core/plugin-host/register-builtins.js';
+import { loadBuiltinEnvelopes, type PluginLoadRecord } from '../../src/server/core/plugin-host/loader.js';
+import { installPluginRuntimeResolver } from '../../src/server/core/plugin-host/plugin-runtime-resolver.js';
+import type { CrudFacade, ProjectPluginHost } from '../../src/server/core/plugin-host/types.js';
+import { FileWatchRuntime } from '../../src/server/fs/watcher.js';
+import { errorHandler } from '../../src/server/routes/errors.js';
+import { bootstrapProject } from '../../src/server/workspace/bootstrap.js';
+import { buildProjectContext } from '../../src/server/workspace/project-context.js';
+import { WorkspaceRegistry } from '../../src/server/workspace/registry.js';
+import type { WsGateway } from '../../src/server/ws/gateway.js';
 
 // Same resolver, same latch as the loader (`loadWorkspacePlugins`). At module
 // evaluation, not only in `createPluginTestApp`: the manifests are the harness's

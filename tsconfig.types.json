@@ -23,9 +23,9 @@
     "outDir": "./dist",
     "rootDir": "./src"
   },
-  "//6": "ambient.d.ts is shipped verbatim (re-exports the package's own subpaths,",
+  "//6": "ambient.d.ts + ambient-backend.d.ts (one per leg) are shipped verbatim (re-exports the package's own subpaths,",
   "//7": "which only resolve once installed), so it is excluded from compilation and",
   "//8": "copied into dist by the build:types script instead.",
   "include": ["src/plugin-types/**/*"],
-  "exclude": ["node_modules", "dist", "src/**/*.test.ts", "src/plugin-types/ambient.d.ts"]
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts", "src/plugin-types/ambient.d.ts", "src/plugin-types/ambient-backend.d.ts"]
 }

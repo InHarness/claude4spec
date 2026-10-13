@@ -1,0 +1,15 @@
+{
+  "id": "dev-2001",
+  "kind": "incorrect",
+  "blocking": false,
+  "address": "runtime-legs/ywud56l6",
+  "slugs": [
+    "ac-test-koperty-wbudowanej-importuje-har"
+  ],
+  "text": "At 2.1.20 M33 `ywud56l6` (and `m33l11sc`) say the tests of a built-in envelope use the host repo's internal, unpublished test setup and that the `…/plugin-testing` harness is an intent, not a contract; the unit goal retires the published harness. The criterion `ac-test-koperty-wbudowanej-importuje-har` is still `active` at 2.1.20 and its title still requires a built-in envelope test to import the harness from `@inharness-ai/claude4spec/plugin-testing`. The two disagree. Assumed: the page wins. Envelope tests now import `createPluginTestApp` from `@c4s-internal/plugin-test-setup`, a vitest alias (root config + every envelope's config) onto `tests/helpers/plugin-test-setup.ts`; the old test that carried `[ac:ac-test-koperty-wbudowanej-importuje-har]` is rewritten as `[section:ywud56l6]` and no longer carries that slug. The criterion should be deprecated or reworded to the internal setup. (`ac-wyniesienie-koperty-wbudowanej-do-oso` still holds literally: the alias keeps every import in the tests unchanged on extraction.)",
+  "assumption": "ASSUMPTION:dev-2001 — `ac-test-koperty-wbudowanej-importuje-har` (still active at 2.1.20) names the published `…/plugin-testing` harness; `ywud56l6` at 2.1.20 replaces it with the host repo's internal test setup. The case asserts the page, not that criterion's title, so it does not carry its slug.",
+  "unit": "runtime-legs",
+  "portion": "runtime-legs/p1-l2-l2",
+  "sent": true,
+  "patchPath": "2-1-19-to-2-1-20-runtime-legs-ywud56l6-at-2-1-20-m33-ywud56l6-and-m33l11sc-say-the-tests-of-a-bui.md"
+}

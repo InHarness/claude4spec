@@ -1,22 +1,26 @@
 /**
- * 2.1.17 (M33 L11 `m33l11sc`) — the plugin test harness, in process.
+ * 2.1.20 (M33 `ywud56l6`) — the host repo's internal test setup, in process.
  *
  * `createPluginTestApp` builds the runtime's own `ProjectContext` on a throwaway
  * project (it needs the built envelope bundles, like every test that loads them —
- * `pretest`). The real-runtime half — a package outside the host repo, its bare
- * `@c4s/plugin-runtime` import, the published subpath — is
- * `plugin-testing.subprocess.test.ts`.
+ * `pretest`). Until 2.1.20 this module was published as
+ * `@inharness-ai/claude4spec/plugin-testing`; it no longer is (M33 `m33l11sc`:
+ * the harness is an intent, not a contract), so the cases that pinned the
+ * published subpath — the external-package probe, the bare-import resolution
+ * through it, the loader-parity rejection — left with it.
+ *
+ * ASSUMPTION:dev-2002 — `ac-autor-pluginu-typuje-test-przez-d-ts` and
+ * `ac-test-integracyjny-pakietu-pluginu-spo` are still active at 2.1.20 but name
+ * the published `…/plugin-testing` subpath, which the page withdraws; their
+ * tests went with the subpath and no test carries their slugs.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import request from 'supertest';
-import type { PluginManifest } from '../../shared/plugin-host/manifest.js';
-import { PluginManifestError } from '../core/plugin-host/manifest-adapter.js';
-import { PluginRegistryImpl } from '../core/plugin-host/registry.js';
-import { loadWorkspacePlugins } from '../core/plugin-host/loader.js';
-import { createPluginTestApp, type PluginTestApp } from './index.js';
+import type { PluginManifest } from '../../src/shared/plugin-host/manifest.js';
+import { createPluginTestApp, type PluginTestApp } from '../helpers/plugin-test-setup.js';
 
 /** A plugin contributing one entity type the host has never heard of. */
 function gadgetManifest(mount?: (ctx: Record<string, unknown>) => void): PluginManifest {
@@ -43,7 +47,7 @@ function gadgetManifest(mount?: (ctx: Record<string, unknown>) => void): PluginM
   };
 }
 
-describe('createPluginTestApp — a real host in process', () => {
+describe('createPluginTestApp (internal test setup) — a real host in process', () => {
   const opened: PluginTestApp[] = [];
   afterEach(async () => {
     for (const t of opened.splice(0)) await t.cleanup();
@@ -127,26 +131,6 @@ describe('createPluginTestApp — a real host in process', () => {
       errors.mockRestore();
       warns.mockRestore();
     }
-  }, 60_000);
-
-  it('[ac:ac-manifest-ktory-punkt-rejestracji-odrz] a manifest the registration point rejects under the loader is rejected with the same error', async () => {
-    // Passes the loader's shape check and its version gate; the registration
-    // point (`registerPlugin`) is what refuses it.
-    const broken = { ...gadgetManifest(), name: '@acme/c4s-plugin-broken', contributes: 'nope' } as unknown as PluginManifest;
-
-    const { records } = await loadWorkspacePlugins(new PluginRegistryImpl(), ['broken-pkg'], async () => ({ manifest: broken }));
-    expect(records[0]).toMatchObject({ status: 'failed', code: 'PLUGIN_INVALID_MANIFEST' });
-    const loaderReason = records[0]!.reason!;
-
-    const rejection = await createPluginTestApp([broken]).then(
-      (t) => {
-        opened.push(t);
-        return null;
-      },
-      (err: unknown) => err,
-    );
-    expect(rejection).toBeInstanceOf(PluginManifestError);
-    expect((rejection as Error).message).toBe(loaderReason);
   }, 60_000);
 
   it('[ac:ac-mountcontext-pluginu-uruchomionego-pr] the MountContext of a plugin started by the harness does not carry the db handle the harness returns', async () => {

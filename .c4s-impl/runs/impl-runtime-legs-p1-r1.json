@@ -1,0 +1,12 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.20",
+  "unit": "runtime-legs",
+  "portion": "runtime-legs/p1-l2-l2",
+  "claimed": ["section:m33load01", "section:m33rt001", "section:ywud56l6"],
+  "deviations": ["dev-2001"],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

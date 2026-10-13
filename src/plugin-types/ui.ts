@@ -535,4 +535,12 @@ export interface UiKitComponentEntry {
 }
 export declare const UI_KIT_CATALOG: readonly UiKitComponentEntry[];
 export declare const STABLE_UI_KIT_COMPONENTS: readonly string[];
+/**
+ * The backend leg of `@c4s/plugin-runtime/ui` (M33 `m33rt001`): React-free, it
+ * carries this list of the `stable` component names and nothing else — the
+ * subpath's runtime export (`dist/server/plugin-runtime/ui.js`) serves exactly
+ * it. Typed for plugin backend code through `…/plugin-runtime/ambient` under the
+ * `c4s-backend` condition; the browser leg carries `STABLE_UI_KIT_COMPONENTS`.
+ */
+export declare const UI_KIT_STABLE_COMPONENTS: readonly string[];
 
