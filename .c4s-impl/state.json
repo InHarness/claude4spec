@@ -1,5 +1,5 @@
 {
-  "iteration": 63,
+  "iteration": 64,
   "conventions": [
     {
       "label": "L4 (API)",
@@ -561,17 +561,13 @@
             "ac-test-integracyjny-pakietu-pluginu-spo",
             "ac-typ-encji-z-manifestu-przekazanego-do"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [
             "goal:m33-plugin-testing-harness"
           ],
-          "only": [
-            {
-              "slug": "goal:m33-plugin-testing-harness"
-            }
-          ]
+          "only": []
         }
       ],
       "startCommit": "6f972cd7a4b1917e467426ca433bef3fba444f08",

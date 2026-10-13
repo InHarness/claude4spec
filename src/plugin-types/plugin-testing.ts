@@ -49,7 +49,11 @@ export interface PluginTestApp {
   db: any;
   /** Every WS event the project broadcast, in order (`broadcasts.length = 0` clears it). */
   broadcasts: unknown[];
-  /** Disposes the host and removes the temporary directory. */
+  /**
+   * Disposes the host and only then removes the temporary directory; once it
+   * resolves, nothing of this instance is running or logging (the host's
+   * background boot work settled before `createPluginTestApp` returned).
+   */
   cleanup(): Promise<void>;
 }
 

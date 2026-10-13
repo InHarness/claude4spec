@@ -8,7 +8,7 @@
  * `plugin-testing.subprocess.test.ts`.
  */
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import request from 'supertest';
@@ -99,6 +99,34 @@ describe('createPluginTestApp — a real host in process', () => {
     // Cleanup removes the temporary directory (project + registry home).
     expect(fs.existsSync(cwd)).toBe(false);
     expect(fs.existsSync(path.dirname(cwd))).toBe(false);
+  }, 60_000);
+
+  it('cleanup right after creation leaves nothing running: no background indexer logs after cleanup resolved, nothing left on disk', async () => {
+    // The context's boot passes (section/todos/link indexers, file-version and
+    // frontmatter baselines) run in the background of `buildProjectContext`. A
+    // cleanup that removed the directory under them made them log ENOENT after
+    // the test file ended — vitest's "Closing rpc while onUserConsoleLog was
+    // pending" teardown error, a red suite for every harness user.
+    const errors = vi.spyOn(console, 'error');
+    const warns = vi.spyOn(console, 'warn');
+    try {
+      const t = await createPluginTestApp([gadgetManifest()]);
+      const tmp = path.dirname(t.cwd);
+      await t.cleanup();
+      expect(fs.existsSync(tmp)).toBe(false);
+
+      // Flush: microtasks, I/O callbacks and timers that a still-running boot
+      // pass would need to reach its catch-and-log.
+      for (let i = 0; i < 5; i++) await new Promise<void>((r) => setImmediate(r));
+      await new Promise<void>((r) => setTimeout(r, 250));
+
+      const logged = [...errors.mock.calls, ...warns.mock.calls].map((args) => args.map(String).join(' '));
+      expect(logged.filter((line) => /indexer|file-version|sidebar accordions|ENOENT/.test(line))).toEqual([]);
+      expect(logged.filter((line) => line.includes(tmp))).toEqual([]);
+    } finally {
+      errors.mockRestore();
+      warns.mockRestore();
+    }
   }, 60_000);
 
   it('[ac:ac-manifest-ktory-punkt-rejestracji-odrz] a manifest the registration point rejects under the loader is rejected with the same error', async () => {

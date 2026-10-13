@@ -32,8 +32,10 @@
  * nothing under `src/server/plugin-runtime/` may import this module.
  *
  * Lifetime (L10): one instance = one temporary project with its own context, db
- * handle and broadcast buffer, keyed by object identity; `cleanup()` disposes the
- * context and removes the temporary directory. Instances in one process share
+ * handle and broadcast buffer, keyed by object identity. `createPluginTestApp`
+ * returns once the context's background boot work has settled, and `cleanup()`
+ * disposes the context (watchers, MCP factories, db handle) and only then removes
+ * the temporary directory — nothing of the instance runs or logs after it resolves. Instances in one process share
  * the loader's two process-wide exceptions — the resolver latch (the first
  * instance installs it) and Node's ESM cache (plugin modules are never unloaded
  * between instances).
@@ -88,7 +90,11 @@ export interface PluginTestApp {
   db: Database.Database;
   /** Every WS event the project broadcast, in order. Clear it with `broadcasts.length = 0`. */
   broadcasts: WsEvent[];
-  /** Disposes the context (watchers, MCP factories, db handle) and removes the temporary directory. */
+  /**
+   * Disposes the context (watchers, MCP factories, db handle) and only then removes
+   * the temporary directory. When it resolves nothing of this instance is running
+   * or logging. Idempotent.
+   */
   cleanup: () => Promise<void>;
 }
 
@@ -160,6 +166,19 @@ export async function createPluginTestApp(manifests: PluginManifest[]): Promise<
       mode: 'prod',
     });
 
+    // The context's boot passes (section/todos/link indexers, file-version and
+    // frontmatter baselines, sidebar rebuild) run in the background; the server
+    // serves without waiting. The harness waits: a test starts on a settled
+    // project, and no boot pass is still reading the directory when a test that
+    // never touched it cleans up right away.
+    try {
+      await ctx.bootSettled;
+    } catch (err) {
+      await ctx.dispose().catch(() => {});
+      await watchRuntime.close().catch(() => {});
+      throw err;
+    }
+
     const baseUrl = `/api/projects/${project.id}`;
     const app = express();
     app.use(express.json({ limit: '2mb' }));
@@ -180,6 +199,10 @@ export async function createPluginTestApp(manifests: PluginManifest[]): Promise<
         if (cleaned) return;
         cleaned = true;
         try {
+          // Already settled by the time the instance was handed out; awaited
+          // again so the order "background work over → dispose → remove the
+          // directory" holds by construction, not by the call above.
+          await ctx.bootSettled;
           await ctx.dispose();
           await watchRuntime.close();
         } finally {
