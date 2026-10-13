@@ -3,22 +3,16 @@
   "scope": {
     "kind": "unit",
     "id": "m02-frontmatter-tolerant-read",
-    "base": "b525ac588e2f79df40c3afccf03f321423738a14"
+    "base": "75ee2621"
   },
   "findings": [
     {
       "id": "rev-0001",
-      "file": "src/server/services/markdown-file-store.ts",
-      "line": 240,
-      "blocking": false,
-      "reason": "pageLabel re-implements the label chain that pages-link-indexer.ts:493 extractTitle already has (frontmatter.title -> first H1 -> fallback). The two now give different fallbacks (full relPath here, basename without .md there), so the same page can carry two different labels depending on whether it comes from GET page-detail or from the link index. The H1 regex also matches a `# comment` line inside a fenced code block that comes before the real H1. That is also true of the existing helper, but sharing one helper would keep the two in step."
-    },
-    {
-      "id": "rev-0002",
-      "file": "src/server/services/section-indexer.ts",
-      "line": 160,
-      "blocking": false,
-      "reason": "The literal frontmatterRaw write-back is fixed only in the two anchor write-back sites. Other server-side rewrites of a page still write { frontmatter: current.frontmatter, body } and so drop a broken header block silently: the edit_section batch (page-write.ts:1815), reference propagation on rename (references.ts:200/212/242) and section ops (sections.ts:222/231). This is outside the editor-save path the goal names, but it is the same data-loss mechanism. A small shared helper (read -> write that keeps frontmatterRaw) would close it everywhere and would replace the duplicated ternary in anchor-injection.ts and section-indexer.ts."
+      "file": "src/client/tiptap/pageEditor.formatting.test.ts",
+      "line": 98,
+      "blocking": true,
+      "portion": "m02-frontmatter-tolerant-read/p1-l4-l5",
+      "reason": "The test expects a 'link' mark, but the page editor has no Link extension. Tiptap v2 StarterKit does not include Link, @tiptap/extension-link is not a dependency (it is missing from package.json and from node_modules/@tiptap), and registrations.ts registers no link mark. PageRefNode's link_open rewrite also skips absolute hrefs (`/^[a-z]+:/i`), so `[link](https://example.com)` loses its <a> when ProseMirror parses it and stays plain text 'link'. `expect(marks).toContain('link')` will therefore fail in the env-runner suite. Fix it one of two ways: drop 'link' from the asserted marks (and the `[link](…)` from BODY, or assert that it stays readable text), or use a relative .md link that PageRefNode turns into a pageRef node, which needs an index in qc. Do not claim a mark the editor does not have."
     }
   ],
   "deviations": []
