@@ -346,7 +346,14 @@ describe('skill-tools — load_skill_file', () => {
     const schema = tool.inputSchema as { properties: Record<string, { description?: string }>; required?: string[] };
     expect(Object.keys(schema.properties)).toEqual(['contextType']);
     expect(schema.required ?? []).toEqual([]);
-    expect(schema.properties.contextType!.description).toContain(SKILL_TOOL_TEXT.external.contextType);
+    expect(schema.properties.contextType!.description).toBe(
+      "Context type whose skill set to list — one of `chat`, `brief`, `patch`, `ask`. Omit to list the whole registry instead of one context's set.",
+    );
+    // 2.1.17 — a plain string, deliberately not an enum: SDK-side schema validation
+    // would refuse an unknown value in its own error shape before the core sees it.
+    const contextTypeSchema = schema.properties.contextType as { type?: string; enum?: unknown };
+    expect(contextTypeSchema.type).toBe('string');
+    expect(contextTypeSchema.enum).toBeUndefined();
 
     const res = await client.callTool({ name: 'list_skills', arguments: {} });
     const body = JSON.parse((res.content as Array<{ text: string }>)[0]!.text);
@@ -360,6 +367,14 @@ describe('skill-tools — load_skill_file', () => {
       ],
       writingStyle: { slug: 'house-style', title: 'house-style' },
     });
+
+    // The only refusal: a value outside the enumeration reaches the core and comes
+    // back as the core's INVALID_ARGUMENT naming the legal values — not an SDK error.
+    const refused = await client.callTool({ name: 'list_skills', arguments: { contextType: 'breif' } });
+    expect(refused.isError).toBe(true);
+    const refusal = JSON.parse((refused.content as Array<{ text: string }>)[0]!.text);
+    expect(refusal.code).toBe('INVALID_ARGUMENT');
+    for (const legal of ['chat', 'brief', 'patch', 'ask']) expect(refusal.error).toContain(legal);
   });
 
   it('reads the LIVE registry, so a skill edited mid-thread takes effect on the next call', async () => {

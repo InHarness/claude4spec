@@ -1,5 +1,5 @@
 {
-  "iteration": 24,
+  "iteration": 28,
   "conventions": [
     {
       "label": "L4 (API)",
@@ -751,16 +751,37 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "m37-version-gate-and-reader-contract/p1-l3-l16",
+          "layers": [
+            "L3",
+            "L16"
+          ],
+          "slugs": [
+            "c4s-reader-list-skills",
+            "c4s-reader-load-skill-file",
+            "skill-tools-load-skill-file"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "9ef572c92403844d11d81ade36032aaf004906f2",
+      "baseCommit": "9ef572c92403844d11d81ade36032aaf004906f2",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0,
+      "only": []
     },
     {
       "id": "writing-style-source-badge",
