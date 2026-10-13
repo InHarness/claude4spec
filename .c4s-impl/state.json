@@ -1,5 +1,5 @@
 {
-  "iteration": 62,
+  "iteration": 63,
   "conventions": [
     {
       "label": "L4 (API)",
@@ -540,7 +540,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "verified",
+      "status": "in-progress",
       "blockedBy": null,
       "portions": [
         {
@@ -561,14 +561,20 @@
             "ac-test-integracyjny-pakietu-pluginu-spo",
             "ac-typ-encji-z-manifestu-przekazanego-do"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "goal:m33-plugin-testing-harness"
+          ],
+          "only": [
+            {
+              "slug": "goal:m33-plugin-testing-harness"
+            }
+          ]
         }
       ],
-      "startCommit": "2dfef250443d693e4f8b04a6513d8b3f175d2eba",
+      "startCommit": "6f972cd7a4b1917e467426ca433bef3fba444f08",
       "baseCommit": "2dfef250443d693e4f8b04a6513d8b3f175d2eba",
       "rounds": {
         "review": 0,
