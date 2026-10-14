@@ -10,7 +10,8 @@ import {
   npmFrontendSource,
   overlayFrontendSources,
   packageFrontendEntry,
-  resolvePluginAsset,
+  resolveBaseAsset,
+  resolveOverlayAsset,
   type FrontendPool,
 } from './frontend-assets.js';
 import type { BuiltinEnvelope } from './builtin-envelopes.js';
@@ -109,7 +110,7 @@ describe('frontend-assets — sources, effective pool, asset resolution', () => 
     expect(npmFrontendSource('not-installed', resolveRoot)).toBeNull();
   });
 
-  it('effective pool: only backend-`loaded` sources, overlay > npm > envelope on a name collision, overlay only when trusted', () => {
+  it('effective pool: only backend-`loaded` sources, overlay > npm > envelope on a name collision, overlay entries only when trusted live; a loaded overlay shadows from the context pool', () => {
     const npm = pkgRoot('shared', { name: 'shared', version: '2.0.0' }, { 'dist/frontend.js': 'export {}' });
     const envDir = path.join(tmp, 'envelopes', 'shared-env');
     writeTree(envDir, { 'package.json': JSON.stringify({ name: 'shared', version: '1.0.0' }), 'dist/frontend.js': 'export {}' });
@@ -124,7 +125,11 @@ describe('frontend-assets — sources, effective pool, asset resolution', () => 
     const pick = (p: FrontendPool) => effectiveFrontendSources(p).map((s) => `${s.kind}@${s.version}`);
 
     expect(pick(pool({ base: ['shared-env', 'shared'], overlay: ['shared'] }))).toEqual(['overlay@9.9.9']);
-    expect(pick(pool({ base: ['shared-env', 'shared'], overlay: ['shared'], trusted: false }))).toEqual(['npm@2.0.0']);
+    // Live trust cut the overlay's entry, but the context's pool still shadows the
+    // name: the npm package does not come back before the context is rebuilt.
+    expect(pick(pool({ base: ['shared-env', 'shared'], overlay: ['shared'], trusted: false }))).toEqual([]);
+    // An untrusted context never built the overlay: nothing shadows.
+    expect(pick(pool({ base: ['shared-env', 'shared'], overlay: [], trusted: false }))).toEqual(['npm@2.0.0']);
     expect(pick(pool({ base: ['shared-env', 'shared'] }))).toEqual(['npm@2.0.0']);
     expect(pick(pool({ base: ['shared-env'] }))).toEqual(['envelope@1.0.0']);
     expect(pick(pool({}))).toEqual([]);
@@ -138,16 +143,22 @@ describe('frontend-assets — sources, effective pool, asset resolution', () => 
       'dist/secret.json': '{}',
       'package.json.js': '',
     });
-    const pool: FrontendPool = { overlay: { cwd, trusted: true, loaded: new Set(['glossary']) } };
+    const overlayPool = { cwd, trusted: true, loaded: new Set(['glossary']) };
     const dist = path.join(dir, 'dist');
-    expect(resolvePluginAsset(pool, 'glossary', 'dto-ABC123.js')).toBe(path.join(dist, 'dto-ABC123.js'));
-    expect(resolvePluginAsset(pool, 'glossary', 'frontend.js.map')).toBe(path.join(dist, 'frontend.js.map'));
-    expect(resolvePluginAsset(pool, 'glossary', 'secret.json')).toBeNull();
-    expect(resolvePluginAsset(pool, 'glossary', '../package.json.js')).toBeNull();
-    expect(resolvePluginAsset(pool, 'glossary', 'sub/x.js')).toBeNull();
-    expect(resolvePluginAsset(pool, 'glossary', 'absent.js')).toBeNull();
-    expect(resolvePluginAsset(pool, 'nope', 'frontend.js')).toBeNull();
-    expect(resolvePluginAsset({ overlay: { cwd, trusted: false, loaded: new Set(['glossary']) } }, 'glossary', 'frontend.js')).toBeNull();
+    expect(resolveOverlayAsset(overlayPool, 'glossary', 'dto-ABC123.js')).toBe(path.join(dist, 'dto-ABC123.js'));
+    expect(resolveOverlayAsset(overlayPool, 'glossary', 'frontend.js.map')).toBe(path.join(dist, 'frontend.js.map'));
+    expect(resolveOverlayAsset(overlayPool, 'glossary', 'secret.json')).toBeNull();
+    expect(resolveOverlayAsset(overlayPool, 'glossary', '../package.json.js')).toBeNull();
+    expect(resolveOverlayAsset(overlayPool, 'glossary', 'sub/x.js')).toBeNull();
+    expect(resolveOverlayAsset(overlayPool, 'glossary', 'absent.js')).toBeNull();
+    expect(resolveOverlayAsset(overlayPool, 'nope', 'frontend.js')).toBeNull();
+    // The plugin is picked by name, never composed from it.
+    expect(resolveOverlayAsset(overlayPool, '../plugins/glossary', 'frontend.js')).toBeNull();
+    expect(resolveOverlayAsset({ cwd, trusted: false, loaded: new Set(['glossary']) }, 'glossary', 'frontend.js')).toBeNull();
+    expect(resolveOverlayAsset({ cwd, trusted: true, loaded: new Set() }, 'glossary', 'frontend.js')).toBeNull();
+    // The base resolver never reaches an overlay.
+    const pool: FrontendPool = { overlay: overlayPool };
+    expect(resolveBaseAsset(pool, 'glossary', 'frontend.js')).toBeNull();
   });
 });
 
@@ -240,10 +251,10 @@ describe('[section:ywud56l6] envelope frontend entry — the npm package rule, r
 
     // Assets are served next to the resolved entry, inside the envelope folder.
     const pool: FrontendPool = { envelopes: { list: envelopes, loaded: new Set(['declared', 'fallback', 'unbuilt']) } };
-    expect(resolvePluginAsset(pool, 'declared', 'fe.js')).toBe(path.join(declared.dir, 'out/fe.js'));
-    expect(resolvePluginAsset(pool, 'declared', 'chunk-1.js')).toBe(path.join(declared.dir, 'out/chunk-1.js'));
-    expect(resolvePluginAsset(pool, 'fallback', 'frontend.js')).toBe(path.join(fallback.dir, 'dist/frontend.js'));
-    expect(resolvePluginAsset(pool, 'unbuilt', 'frontend.js')).toBeNull();
+    expect(resolveBaseAsset(pool, 'declared', 'fe.js')).toBe(path.join(declared.dir, 'out/fe.js'));
+    expect(resolveBaseAsset(pool, 'declared', 'chunk-1.js')).toBe(path.join(declared.dir, 'out/chunk-1.js'));
+    expect(resolveBaseAsset(pool, 'fallback', 'frontend.js')).toBe(path.join(fallback.dir, 'dist/frontend.js'));
+    expect(resolveBaseAsset(pool, 'unbuilt', 'frontend.js')).toBeNull();
 
     // The npm-package rule, applied to the same folders as package roots, lands on the same files.
     expect(packageFrontendEntry(declared.dir)).toBe(path.join(declared.dir, 'out/fe.js'));

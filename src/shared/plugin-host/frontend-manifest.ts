@@ -14,15 +14,28 @@
 export interface PluginFrontendEntry {
   /** Plugin name (overlay: folder name; npm package / envelope: `package.json` name). */
   name: string;
-  /** Package version — the cache-bust key of the entry URL, NOT the plugin's Host API version. */
+  /**
+   * Package version, informational — the entry URL does not carry it (freshness
+   * under a fixed address is the asset routes' ETag revalidation). NOT the
+   * plugin's Host API version.
+   */
   version: string;
-  /** Absolute URL of the plugin's frontend entry, served as native ESM by `GET /api/plugins/:name/:asset`. */
+  /**
+   * Absolute URL of the plugin's frontend entry, served as native ESM by the asset
+   * route of its tier: base tier `/api/plugins/<name>/<file>` (the same in every
+   * project's manifest), overlay `/api/projects/<id>/plugins/<name>/<file>`. A
+   * scoped name is one segment, its slash encoded as `%2F`.
+   */
   entry: string;
-  /** URL of the precompiled `frontend.css` next to the entry, when the plugin ships one. */
+  /** URL of the precompiled `frontend.css` next to the entry (same folder, same tier), when the plugin ships one. */
   css?: string;
 }
 
-/** Response of `GET /api/plugins/frontend-manifest` (`frontend-manifest-response`). */
+/**
+ * Response of the project's frontend manifest, `GET /api/projects/:id/plugins/frontend-manifest`
+ * (`frontend-manifest-response`). `plugins[]` is the project's effective pool:
+ * base ∪ this project's overlay. No field carries the project's identity.
+ */
 export interface FrontendManifestResponse {
   /** The HOST's Host API version. The client does not compare it: the gate runs on the server. */
   hostApiVersion: string;
@@ -36,14 +49,17 @@ export interface FrontendManifestResponse {
   plugins: PluginFrontendEntry[];
 }
 
-/** Error code of every refusal of `GET /api/plugins/:name/:asset`. */
+/** Error code of every refusal of both plugin asset routes (base tier and project overlay). */
 export const PLUGIN_FRONTEND_NOT_FOUND = 'PLUGIN_FRONTEND_NOT_FOUND';
 
 /**
- * 404 body of `GET /api/plugins/:name/:asset` (`plugin-frontend-asset-error`). One
- * code for every cause — disallowed extension, a path separator or `..` in the
- * file name, an untrusted overlay, a missing file — so a client cannot tell a
- * missing file from a refused one.
+ * 404 body of both plugin asset routes — `GET /api/plugins/:name/:asset` and
+ * `GET /api/projects/:id/plugins/:name/:asset` (`plugin-frontend-asset-error`).
+ * One code for every refusal — disallowed extension, a path separator or `..`,
+ * an untrusted overlay, a plugin absent from the project's overlay, a missing
+ * file — so a client cannot tell a missing file from a refused one. The project
+ * prefix's own answers (404 `PROJECT_NOT_IN_WORKSPACE`, 500
+ * `PROJECT_BUILD_FAILED`) are not refusals of these routes and do not use it.
  */
 export interface PluginFrontendAssetError {
   error: { code: string; message: string };

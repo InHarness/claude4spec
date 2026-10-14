@@ -33,7 +33,6 @@ import { pluginsRouter } from './routes/plugins.js';
 import { errorHandler } from './routes/errors.js';
 import { buildImportMap } from './core/plugin-host/runtime-shims.js';
 import { discoverBuiltinEnvelopes, servableEnvelopes } from './core/plugin-host/builtin-envelopes.js';
-import { loadedRecordKeys } from './core/plugin-host/frontend-assets.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -359,6 +358,12 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       }
     : undefined;
 
+  // M33 phase 3 / 0.2.2: the base frontend tier — workspace/npm packages (the
+  // same resolved list `loadWorkspacePlugins` consumed) and the servable
+  // envelopes — served ungated for every project: by the process-global asset
+  // route, and announced by every project's manifest (2.1.22).
+  const frontendBase = { workspacePackages: resolvePluginPackages(workspace), envelopes };
+
   // M31: lazily-built, cached per-project contexts. The CLI-only overrides
   // (pagesDir flag, --remote-url, clone) apply solely to the initial project.
   const cache: ProjectContextCache = new ProjectContextCache(async (project) => {
@@ -369,6 +374,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       registry,
       pluginRegistry,
       pluginRecords: pluginLoad.records,
+      frontendBase,
       workspace,
       projectId: project.id,
       cwd: project.cwd,
@@ -480,38 +486,18 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   };
 
   app.use('/api', workspaceRouter({ registry, workspace, cache, mode, activateProject }));
-  // M33: process-level plugin endpoints (frontend manifest, runtime shims,
-  // loader diagnostics) — before the project dispatch so they stay prefix-free.
-  // Phase 2: project-local frontend serving binds to the process's primary
-  // project (the `--cwd`); `isTrusted` is read live so a trust flip applies
-  // without a restart. Workspace-only starts register nothing ⇒ serving disabled.
+  // M33: process-level plugin endpoints (runtime shims, BASE-tier frontend
+  // assets, loader diagnostics) — before the project dispatch so they stay
+  // prefix-free. 2.1.22: the frontend manifest and the overlay assets are the
+  // project router's (`/api/projects/:id/plugins/…`, see `buildProjectContext`);
+  // nothing here is bound to the project the process started with.
   app.use(
     '/api',
     pluginsRouter({
       pluginRegistry,
       pluginRecords: pluginLoad.records,
-      frontendServing: initialProject
-        ? {
-            cwd,
-            isTrusted: () => registry.getProjectTrust(workspace, initialProject.id) === true,
-            // 2.1.20: overlay frontends are announced only for folders whose
-            // backend is `loaded` in the primary project's context.
-            overlayLoaded: async () => {
-              try {
-                const ctx = await cache.get(initialProject);
-                return loadedRecordKeys(ctx.overlayRecords ?? []);
-              } catch {
-                return new Set<string>();
-              }
-            },
-          }
-        : undefined,
-      // M33 phase 3: workspace/npm plugin frontends are served ungated for every
-      // project — the same resolved package list `loadWorkspacePlugins` consumed.
-      workspacePackages: resolvePluginPackages(workspace),
-      // 0.2.2: envelope frontends are served ungated too — an envelope lives in
-      // the host repo, so the discovered list is its own allowlist.
-      envelopes,
+      workspacePackages: frontendBase.workspacePackages,
+      envelopes: frontendBase.envelopes,
     }),
   );
   app.use('/api/projects/:id', projectDispatchMiddleware(registry, workspace, cache));

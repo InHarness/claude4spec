@@ -1,5 +1,5 @@
 {
-  "iteration": 0,
+  "iteration": 3,
   "units": [
     {
       "id": "u1-serwowanie-frontendu-per-projekt",
@@ -120,7 +120,7 @@
           {
             "key": "pages/modules/m31-workspace.md",
             "context": {
-              "offset": 38,
+              "offset": 37,
               "limit": 1,
               "anchors": [
                 "m31cli01"
@@ -198,15 +198,71 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "p1-l2-l14",
+          "layers": [
+            "L2",
+            "M33 loader runtime",
+            "L4",
+            "L10",
+            "L11",
+            "L14"
+          ],
+          "slugs": [
+            "frontend-manifest-response",
+            "plugin-frontend-asset-error",
+            "get-api-plugins-frontend-manifest",
+            "get-api-plugins-name-asset",
+            "get-api-projects-id-plugins-name-asset",
+            "m33-requires-m31",
+            "ac-asset-200-cache-control-no-cache",
+            "ac-asset-etag-po-przebudowie-200",
+            "ac-asset-if-none-match-304",
+            "ac-cofniecie-zgody-cli-manifest-bez-nakladki",
+            "ac-cofniecie-zgody-cli-route-404",
+            "ac-endpoint-manifestu-frontendu-option-b",
+            "ac-importmap-bez-wpisow-pluginow",
+            "ac-importmap-shimy-peerow-i-runtime",
+            "ac-kolizja-z-nakladka-bez-frontendu-brak",
+            "ac-kolizja-z-nakladka-nie-loaded-npm",
+            "ac-kolizja-z-niezaufana-nakladka-npm",
+            "ac-manifest-b-nie-oglasza-nakladki-a",
+            "ac-przy-kolizji-nazwy-pluginu-manifest-f",
+            "ac-route-api-plugins-name-frontend-js-cs",
+            "ac-route-bazowy-404-dla-samej-nakladki",
+            "ac-route-bazowy-serwuje-npm-przy-kolizji",
+            "ac-route-nakladki-id-spoza-workspace-404",
+            "ac-route-nakladki-separator-w-name-404",
+            "ac-route-projektu-404-dla-nakladki-innego",
+            "ac-route-projektu-bez-zgody-odpowiada-404",
+            "ac-route-projektu-serwuje-assety-nakladki",
+            "ac-serwowanie-frontendu-nakladki-project-lo",
+            "ac-start-bez-cwd-manifest-oglasza-baze",
+            "ac-start-bez-cwd-manifest-oglasza-nakladke",
+            "ac-wpis-bazowy-ten-sam-entry-w-projektach",
+            "ac-wpis-nakladki-entry-pod-prefiksem-id",
+            "ac-wpis-pluginu-niesie-url-frontend-css",
+            "ac-wzgledny-import-chunka-ten-sam-projekt",
+            "ac-zadanie-route-u-assetow-pluginu-o-pli"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "0dbd4bfe13705118ad649c8018985feb142d615e",
+      "baseCommit": "0dbd4bfe13705118ad649c8018985feb142d615e",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "u2-fanout-zdarzen-mountow-procesowych",
@@ -476,7 +532,7 @@
         "u1-serwowanie-frontendu-per-projekt",
         "u2-fanout-zdarzen-mountow-procesowych"
       ],
-      "startCommit": null
+      "startCommit": "0dbd4bfe13705118ad649c8018985feb142d615e"
     },
     {
       "n": 2,

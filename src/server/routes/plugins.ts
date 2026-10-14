@@ -1,27 +1,30 @@
 /**
  * M33 process-level plugin routes. Mounted at `/api` (before the
- * `/api/projects/:id` dispatch) — the plugin catalog is process-global, so
- * these are reachable with a plain `fetch` (no project prefix):
+ * `/api/projects/:id` dispatch) — they depend on no project, so they are
+ * reachable with a plain `fetch` (no project prefix):
  *
- *   GET /api/plugins/frontend-manifest   → announced plugin frontends ("Option B")
  *   GET /api/plugins/runtime/<peer>.js   → shared-singleton ESM shim
  *   GET /api/plugins/<name>/<asset>      → a `.js` / `.css` / `.map` file from the
- *                                          folder of the plugin's frontend entry
- *                                          (overlay: trust-gated; npm, envelope: ungated)
+ *                                          folder of a BASE-tier plugin's frontend
+ *                                          entry (npm package or built-in envelope,
+ *                                          ungated) — never a project-local overlay
  *   GET /api/_meta/plugins               → loader diagnostics (per-package state)
+ *
+ * 2.1.22: the frontend manifest and the overlay assets live on the PROJECT
+ * router (`./plugins-project.ts`, under `/api/projects/:id`); nothing here is
+ * bound to the project the process started with.
  */
 
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
 import { HOST_API_VERSION } from '../../shared/plugin-host/manifest.js';
 import type { PluginRegistry } from '../core/plugin-host/types.js';
 import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
-import { buildFrontendManifest } from '../core/plugin-host/frontend-manifest.js';
 import {
   assetContentType,
-  loadedRecordKeys,
-  resolvePluginAsset,
-  type FrontendPool,
+  basePool,
+  resolveBaseAsset,
   type WorkspaceRootResolver,
 } from '../core/plugin-host/frontend-assets.js';
 import {
@@ -38,29 +41,15 @@ export { buildBasePluginPackages } from '../core/plugin-host/base-packages.js';
 
 export interface PluginRoutesDeps {
   pluginRegistry: PluginRegistry;
-  /** Per-package outcomes from the M33 bootstrap loader (workspace/npm layer). */
+  /**
+   * Per-package outcomes from the M33 bootstrap loader (envelopes + workspace/npm
+   * layer), kept current across base hot reloads — read per request.
+   */
   pluginRecords: PluginLoadRecord[];
   /**
-   * M33 phase 2: the process's primary project, whose project-local plugin
-   * frontends these process-global routes serve. Absent on workspace-only
-   * starts (nothing registered) ⇒ serving is disabled and the manifest lists no
-   * plugins. `isTrusted()` is read per request, so a `POST /trust-plugins` flip
-   * takes effect without a process restart.
-   */
-  frontendServing?: {
-    cwd: string;
-    isTrusted: () => boolean;
-    /**
-     * 2.1.20: the overlay folders whose BACKEND is `loaded` in the primary
-     * project's context (its overlay load records). Only those announce and serve
-     * a frontend — the same filter as the base pool. Absent ⇒ none.
-     */
-    overlayLoaded?: () => ReadonlySet<string> | Promise<ReadonlySet<string>>;
-  };
-  /**
    * M33 phase 3: the process's resolved workspace plugin package names (the same
-   * list `loadWorkspacePlugins` consumed). Their frontends are served UNGATED for
-   * every project, and they are advertised in the manifest. Empty by default.
+   * list `loadWorkspacePlugins` consumed). Their frontends are served UNGATED.
+   * Empty by default.
    */
   workspacePackages?: string[];
   /**
@@ -73,6 +62,62 @@ export interface PluginRoutesDeps {
   resolveWorkspaceRoot?: WorkspaceRootResolver;
 }
 
+/** The one 404 body of both plugin asset routes. */
+export function sendPluginAssetNotFound(res: Response): void {
+  const body: PluginFrontendAssetError = {
+    error: { code: PLUGIN_FRONTEND_NOT_FOUND, message: 'Plugin frontend asset not found' },
+  };
+  res.status(404).json(body);
+}
+
+/** A strong validator derived from the file's content. */
+function contentEtag(body: Buffer): string {
+  return `"${createHash('sha256').update(body).digest('base64url')}"`;
+}
+
+/** Does an `If-None-Match` header name `etag` (weak comparison, `*` matches)? */
+function ifNoneMatchHits(header: string | undefined, etag: string): boolean {
+  if (!header) return false;
+  const bare = etag.replace(/^W\//, '');
+  return header
+    .split(',')
+    .map((t) => t.trim())
+    .some((t) => t === '*' || t.replace(/^W\//, '') === bare);
+}
+
+/**
+ * Stream a resolved plugin asset, shared by both asset routes (L11 `9g96q3pp`,
+ * "freshness under a fixed address"): the entry and chunk URLs do not change
+ * when the frontend is rebuilt, so every 200 carries `Cache-Control: no-cache`
+ * and an `ETag` derived from the file's content — the browser revalidates on
+ * every use, a rebuilt file comes back as 200 with the new body, an unchanged
+ * one costs a 304 without a body. `nosniff` so a mistyped bundle can't be
+ * reinterpreted (mirrors routes/static). `abs === null` or a disallowed
+ * extension → 404 `PLUGIN_FRONTEND_NOT_FOUND`; a read error before any header
+ * was sent → 404 without a body.
+ */
+export async function sendPluginAsset(req: Request, res: Response, abs: string | null): Promise<void> {
+  const contentType = abs ? assetContentType(abs) : null;
+  if (!abs || !contentType) return sendPluginAssetNotFound(res);
+  let body: Buffer;
+  try {
+    body = await fs.promises.readFile(abs);
+  } catch {
+    if (!res.headersSent) res.status(404).end();
+    return;
+  }
+  const etag = contentEtag(body);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('ETag', etag);
+  if (ifNoneMatchHits(req.get('If-None-Match'), etag)) {
+    res.status(304).end();
+    return;
+  }
+  res.type(contentType);
+  res.status(200).end(body);
+}
+
 /** Diagnostics response — array of per-package records, extensible for phase 2. */
 export interface PluginsMetaResponse {
   hostApiVersion: string;
@@ -80,48 +125,8 @@ export interface PluginsMetaResponse {
 }
 
 export function pluginsRouter(deps: PluginRoutesDeps): Router {
-  const {
-    pluginRegistry,
-    pluginRecords,
-    frontendServing,
-    workspacePackages = [],
-    envelopes = [],
-    resolveWorkspaceRoot,
-  } = deps;
+  const { pluginRegistry, pluginRecords } = deps;
   const router = Router();
-
-  /**
-   * The effective frontend pool, read live per request: the trust gate, the
-   * overlay's load records and the base records (`pluginRecords` — envelopes +
-   * npm packages, kept current across hot reloads) can all change while the
-   * process runs. The manifest and the asset route read the SAME pool, so a name
-   * is served from exactly the source the manifest announced.
-   */
-  async function currentPool(): Promise<FrontendPool> {
-    const baseLoaded = loadedRecordKeys(pluginRecords);
-    const trusted = frontendServing ? frontendServing.isTrusted() : false;
-    return {
-      envelopes: { list: envelopes, loaded: baseLoaded },
-      npm: { packages: workspacePackages, loaded: baseLoaded, resolveRoot: resolveWorkspaceRoot },
-      overlay: frontendServing
-        ? {
-            cwd: frontendServing.cwd,
-            trusted,
-            loaded: trusted && frontendServing.overlayLoaded
-              ? await frontendServing.overlayLoaded()
-              : new Set<string>(),
-          }
-        : undefined,
-    };
-  }
-
-  router.get('/plugins/frontend-manifest', async (_req, res, next) => {
-    try {
-      res.json(buildFrontendManifest(await currentPool()));
-    } catch (err) {
-      next(err);
-    }
-  });
 
   router.get('/plugins/runtime/:file', async (req, res, next) => {
     try {
@@ -138,39 +143,22 @@ export function pluginsRouter(deps: PluginRoutesDeps): Router {
     }
   });
 
-  // M33 (2.1.20): `GET /api/plugins/:name/:asset` — any `.js` / `.css` / `.map`
-  // file in the folder of the plugin's resolved frontend entry. The entry is
-  // native ESM (the host does not re-bundle), so its relative imports (a
-  // code-split `./dto-*.js` chunk, a source map) resolve to siblings here. The
-  // source is the one the manifest announces for `:name` (overlay > npm package >
-  // envelope, backend `loaded` only). Every refusal — disallowed extension, a
-  // separator or `..` in the file name, an untrusted overlay, a missing file — is
-  // the same `404 PLUGIN_FRONTEND_NOT_FOUND`.
+  // M33 (2.1.22): `GET /api/plugins/:name/:asset` — the BASE tier only: any
+  // `.js` / `.css` / `.map` file in the folder of the resolved frontend entry of
+  // an npm package or a built-in envelope (npm over envelope on a name
+  // collision, backend `loaded` only), with no trust gate and no project. It
+  // never serves a project-local overlay — that is the project route's
+  // (`plugins-project.ts`) — so an overlay of the same name changes nothing here.
+  // Every refusal is the same `404 PLUGIN_FRONTEND_NOT_FOUND`.
   router.get('/plugins/:name/:asset', async (req: Request, res: Response, next) => {
-    const name = req.params.name!;
-    const asset = req.params.asset!;
     let abs: string | null;
     try {
-      abs = resolvePluginAsset(await currentPool(), name, asset);
+      // The base records are read per request: a hot reload keeps them current.
+      abs = resolveBaseAsset(basePool(deps), req.params.name!, req.params.asset!);
     } catch (err) {
       return next(err);
     }
-    const contentType = abs ? assetContentType(abs) : null;
-    if (!abs || !contentType) {
-      const body: PluginFrontendAssetError = {
-        error: { code: PLUGIN_FRONTEND_NOT_FOUND, message: 'Plugin frontend asset not found' },
-      };
-      return res.status(404).json(body);
-    }
-    // `nosniff` so a mistyped bundle can't be reinterpreted (mirrors routes/static).
-    // No `Cache-Control`: the entry URL's cache-bust is the package version.
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.type(contentType);
-    fs.createReadStream(abs)
-      .on('error', () => {
-        if (!res.headersSent) res.status(404).end();
-      })
-      .pipe(res);
+    await sendPluginAsset(req, res, abs);
   });
 
   router.get('/_meta/plugins', (_req, res) => {

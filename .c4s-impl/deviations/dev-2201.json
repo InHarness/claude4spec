@@ -1,0 +1,11 @@
+{
+  "id": "dev-2201",
+  "kind": "incorrect",
+  "blocking": false,
+  "address": "u1-serwowanie-frontendu-per-projekt/m31cli01",
+  "slugs": [],
+  "text": "The brief's u1 recipe reads page `pages/modules/m31-workspace.md` context section 38 labelled `m31cli01`. At 2.1.22 (`--from initial`) offset 38 is `y4g5htam` ('System Prompt Contribution (L16)'); `m31cli01` ('CLI (L14)') is at offset 37 (46 sections). The address is off by one; the anchor is unambiguous, so the loop corrected the read to offset 37 (orchestrator decision, approved by the user) and continued.",
+  "unit": "u1-serwowanie-frontendu-per-projekt",
+  "sent": true,
+  "patchPath": "2-1-21-to-2-1-22-u1-serwowanie-frontendu-per-projekt-m31cli01-context-section-38-is-off-by-one-an.md"
+}

@@ -1,15 +1,19 @@
 /**
- * M33 — plugin frontend sources, assets and the effective pool (2.1.20).
+ * M33 — plugin frontend sources, assets and the effective pool (2.1.20, 2.1.22).
  *
  * The serving layer for "Option B" plugin frontends. This express-free module
- * owns the one rule the manifest builder (`frontend-manifest.ts`) and the asset
- * route (`routes/plugins.ts`, `GET /api/plugins/:name/:asset`) share, so the two
- * cannot diverge (L11 `9g96q3pp`):
+ * owns the rules the manifest builder (`frontend-manifest.ts`) and both asset
+ * routes share, so they cannot diverge (L11 `9g96q3pp`):
  *
  *   • Three sources. A project-local OVERLAY (`<cwd>/.claude4spec/plugins/<folder>/`,
  *     behind `trustProjectPlugins`), an NPM PACKAGE of the workspace (ungated — a
  *     consciously installed package is trusted) and a BUILT-IN ENVELOPE (ungated —
  *     it lives in the host repo).
+ *   • Two addresses, one per tier (2.1.22). The base tier (npm package, envelope)
+ *     is served by the process-global `GET /api/plugins/:name/:asset` and depends
+ *     on no project; the overlay is served by the project route
+ *     `GET /api/projects/:id/plugins/:name/:asset`, for its own project only. The
+ *     process-global route never serves an overlay.
  *   • Entry rule. The overlay's entry is always the fixed `dist/frontend.js` (its
  *     `exports` are not read); a package's and an envelope's entry is
  *     `exports['./frontend']` (conditions `import` → `module` → `default` → `node`
@@ -20,7 +24,15 @@
  *     `loaded` after the `hostApiVersion` / `engines` gate — one rule for all three
  *     sources. A package without a backend entry never reaches `loaded`, so it
  *     never announces a frontend (no frontend-only plugins).
- *   • Precedence on a name collision: overlay over npm package over envelope.
+ *   • Precedence on a name collision, counted among backend-`loaded` plugins only:
+ *     overlay over npm package over envelope. An overlay whose backend is `loaded`
+ *     shadows the npm package even without a frontend entry of its own. The
+ *     shadowing is counted from the CONTEXT's pool, so when the live trust flag
+ *     cuts the overlay's entries the shadowed name does not come back before the
+ *     context is rebuilt.
+ *   • One condition for an overlay plugin, in the manifest and on the project
+ *     route alike: the live `trustProjectPlugins` flag of `(workspace × :id)` AND
+ *     a plugin of that name in the overlay of the current context instance.
  *
  * The host does NOT inspect a bundle's contents: a plugin that bundled its own
  * React or Tiptap is announced and served like any other (the starter template's
@@ -123,7 +135,7 @@ export interface FrontendSource {
   kind: FrontendSourceKind;
   /** The plugin name the manifest announces and the asset route is addressed by. */
   name: string;
-  /** Package version (cache-bust key of the entry URL), `'0.0.0'` when unreadable. */
+  /** Package version (informational — the entry URL does not carry it), `'0.0.0'` when unreadable. */
   version: string;
   /** Absolute path of the resolved, existing frontend entry. */
   entry: string;
@@ -219,12 +231,25 @@ export function envelopeFrontendSource(envelope: BuiltinEnvelope): FrontendSourc
 // ─── The effective pool ─────────────────────────────────────────────────────
 
 /**
+ * A project's overlay as the serving layer sees it: the project directory, the
+ * LIVE trust flag of `(workspace × project)` and the overlay folders whose
+ * backend is `loaded` in the CURRENT context instance.
+ */
+export interface OverlayFrontendPool {
+  cwd: string;
+  /** `trustProjectPlugins` of the pair, read live per request. */
+  trusted: boolean;
+  /** Overlay load-record ids (folder names) with a `loaded` backend in this context instance. */
+  loaded: ReadonlySet<string>;
+}
+
+/**
  * Everything the effective frontend pool is computed from. Each `loaded` set holds
  * the load-record ids (`PluginLoadRecord.package`) whose backend is `loaded`.
  */
 export interface FrontendPool {
-  /** The primary project's overlay. Absent on a workspace-only start. */
-  overlay?: { cwd: string; trusted: boolean; loaded: ReadonlySet<string> };
+  /** The project's overlay. Absent ⇒ base tier only (the process-global route). */
+  overlay?: OverlayFrontendPool;
   /** Workspace npm packages (the resolved list `loadWorkspacePlugins` consumed). */
   npm?: { packages: readonly string[]; loaded: ReadonlySet<string>; resolveRoot?: WorkspaceRootResolver };
   /** Built-in envelopes discovered under `<hostRoot>/plugins/`. */
@@ -237,12 +262,32 @@ export function loadedRecordKeys(records: ReadonlyArray<{ package: string; statu
 }
 
 /**
- * The effective pool: one source per plugin name, after the backend-`loaded`
- * filter and the collision precedence (overlay > npm package > envelope). Order:
- * envelopes, then npm packages, then the overlay — a later source replaces an
- * earlier one of the same name in place.
+ * The process's base tier as the routes receive it: the base load records (kept
+ * current across hot reloads, so read per request), the workspace npm package
+ * list and the servable built-in envelopes.
  */
-export function effectiveFrontendSources(pool: FrontendPool): FrontendSource[] {
+export interface FrontendBaseDeps {
+  pluginRecords: ReadonlyArray<{ package: string; status: string }>;
+  workspacePackages?: readonly string[];
+  envelopes?: readonly BuiltinEnvelope[];
+  /** Test seam: how a workspace package's root is found (default: `import.meta.resolve`). */
+  resolveWorkspaceRoot?: WorkspaceRootResolver;
+}
+
+/** The base part of the pool, read now from the base deps. */
+export function basePool(deps: FrontendBaseDeps): FrontendPool {
+  const loaded = loadedRecordKeys(deps.pluginRecords);
+  return {
+    envelopes: { list: deps.envelopes ?? [], loaded },
+    npm: { packages: deps.workspacePackages ?? [], loaded, resolveRoot: deps.resolveWorkspaceRoot },
+  };
+}
+
+/**
+ * The base tier: one source per name, backend-`loaded` only, npm package over
+ * envelope. The same for every project of the process — it depends on none.
+ */
+export function baseFrontendSources(pool: FrontendPool): FrontendSource[] {
   const byName = new Map<string, FrontendSource>();
   const admit = (src: FrontendSource | null, loaded: ReadonlySet<string>): void => {
     if (src && loaded.has(src.recordKey)) byName.set(src.name, src);
@@ -253,10 +298,29 @@ export function effectiveFrontendSources(pool: FrontendPool): FrontendSource[] {
   if (pool.npm) {
     for (const listed of pool.npm.packages) admit(npmFrontendSource(listed, pool.npm.resolveRoot), pool.npm.loaded);
   }
-  if (pool.overlay?.trusted) {
-    for (const src of overlayFrontendSources(pool.overlay.cwd)) admit(src, pool.overlay.loaded);
-  }
   return [...byName.values()];
+}
+
+/**
+ * The overlay frontends a project serves: the one condition, shared by the
+ * manifest and the project route — the live trust flag AND the folder's backend
+ * `loaded` in the current context instance.
+ */
+export function overlayServedSources(overlay: OverlayFrontendPool | undefined): FrontendSource[] {
+  if (!overlay || !overlay.trusted) return [];
+  return overlayFrontendSources(overlay.cwd).filter((src) => overlay.loaded.has(src.recordKey));
+}
+
+/**
+ * The project's effective pool, as its manifest announces it: the base tier
+ * minus every name a backend-`loaded` overlay plugin of the context shadows
+ * (with or without a frontend entry of its own, trusted live or not), plus the
+ * overlay's served frontends. Order: base sources, then the overlay.
+ */
+export function effectiveFrontendSources(pool: FrontendPool): FrontendSource[] {
+  const shadowed = pool.overlay?.loaded ?? new Set<string>();
+  const base = baseFrontendSources(pool).filter((src) => !shadowed.has(src.name));
+  return [...base, ...overlayServedSources(pool.overlay)];
 }
 
 /**
@@ -276,12 +340,28 @@ function resolveWithinDir(dir: string, asset: string): string | null {
 }
 
 /**
- * `GET /api/plugins/:name/:asset` — the file to stream, or null (→ 404). The
- * source is the one the manifest announces for `name` (same pool, same filter,
- * same precedence); the file must sit in the folder of its resolved entry.
+ * `GET /api/plugins/:name/:asset` — the base tier's file to stream, or null
+ * (→ 404). Never an overlay: an overlay of the same name changes nothing here.
+ * The file must sit in the folder of the source's resolved entry.
  */
-export function resolvePluginAsset(pool: FrontendPool, name: string, asset: string): string | null {
-  const src = effectiveFrontendSources(pool).find((s) => s.name === name);
+export function resolveBaseAsset(pool: FrontendPool, name: string, asset: string): string | null {
+  const src = baseFrontendSources(pool).find((s) => s.name === name);
+  if (!src) return null;
+  return resolveWithinDir(path.dirname(src.entry), asset);
+}
+
+/**
+ * `GET /api/projects/:id/plugins/:name/:asset` — the project overlay's file, or
+ * null (→ 404). The plugin is PICKED by name among the overlay's served sources,
+ * never composed from the path parameter, so a separator or `..` in `name`
+ * resolves nothing.
+ */
+export function resolveOverlayAsset(
+  overlay: OverlayFrontendPool | undefined,
+  name: string,
+  asset: string,
+): string | null {
+  const src = overlayServedSources(overlay).find((s) => s.name === name);
   if (!src) return null;
   return resolveWithinDir(path.dirname(src.entry), asset);
 }
