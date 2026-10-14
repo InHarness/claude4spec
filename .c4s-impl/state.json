@@ -1,0 +1,604 @@
+{
+  "iteration": 0,
+  "units": [
+    {
+      "id": "u1-serwowanie-frontendu-per-projekt",
+      "goal": "Manifest frontendu pluginów i assety nakładki project-local są serwowane per projekt, na routerze projektowym. Route proces-globalny serwuje już tylko tier bazowy (pakiet npm albo kopertę wbudowaną). Wpis nakładki w manifeście i route jej assetów spełniają jeden wspólny warunek: zgoda zaufania pary (workspace × projekt) czytana na żywo oraz plugin obecny w nakładce bieżącego kontekstu. Oba route'y assetów każą rewalidować plik pod stałym adresem (ETag, 304). Zmiana zgody w procesie serwera unieważnia kontekst projektu. Znika wiązanie serwowania z projektem startowym procesu i serwowanie nakładki przez route proces-globalny.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m33purp01",
+                "m33deps01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "context": {
+              "offset": 9,
+              "limit": 6,
+              "anchors": [
+                "m33trst0",
+                "h71olejg",
+                "rki0ykan",
+                "j1jk3ykt",
+                "mb89ks1x",
+                "m33l4001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "context": {
+              "offset": 17,
+              "limit": 1,
+              "anchors": [
+                "m33l10sc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/L11-plugin-runtime-surface.md",
+            "change": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "9g96q3pp",
+                "m33l5imp"
+              ]
+            },
+            "context": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "m33l5fe0"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/L11-plugin-runtime-surface.md",
+            "context": {
+              "offset": 2,
+              "limit": 3,
+              "anchors": [
+                "9g96q3pp",
+                "m33l5imp",
+                "m33l5css"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m31purp01",
+                "m31deps01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 6,
+              "limit": 1,
+              "anchors": [
+                "44viw74p"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 14,
+              "limit": 1,
+              "anchors": [
+                "zovs1ohc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 27,
+              "limit": 3,
+              "anchors": [
+                "ssn335r8",
+                "m31ctx001",
+                "l4txpfx0"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 38,
+              "limit": 1,
+              "anchors": [
+                "m31cli01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/L2-domain.md",
+            "context": {
+              "offset": 5,
+              "limit": 1,
+              "anchors": [
+                "m13pool0"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "dto",
+            "slugs": [
+              "frontend-manifest-response",
+              "plugin-frontend-asset-error"
+            ]
+          },
+          {
+            "type": "endpoint",
+            "slugs": [
+              "get-api-plugins-frontend-manifest",
+              "get-api-plugins-name-asset",
+              "get-api-projects-id-plugins-name-asset"
+            ]
+          },
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m33-requires-m31"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-asset-200-cache-control-no-cache",
+              "ac-asset-etag-po-przebudowie-200",
+              "ac-asset-if-none-match-304",
+              "ac-cofniecie-zgody-cli-manifest-bez-nakladki",
+              "ac-cofniecie-zgody-cli-route-404",
+              "ac-endpoint-manifestu-frontendu-option-b",
+              "ac-importmap-bez-wpisow-pluginow",
+              "ac-importmap-shimy-peerow-i-runtime",
+              "ac-kolizja-z-nakladka-bez-frontendu-brak",
+              "ac-kolizja-z-nakladka-nie-loaded-npm",
+              "ac-kolizja-z-niezaufana-nakladka-npm",
+              "ac-manifest-b-nie-oglasza-nakladki-a",
+              "ac-przy-kolizji-nazwy-pluginu-manifest-f",
+              "ac-route-api-plugins-name-frontend-js-cs",
+              "ac-route-bazowy-404-dla-samej-nakladki",
+              "ac-route-bazowy-serwuje-npm-przy-kolizji",
+              "ac-route-nakladki-id-spoza-workspace-404",
+              "ac-route-nakladki-separator-w-name-404",
+              "ac-route-projektu-404-dla-nakladki-innego",
+              "ac-route-projektu-bez-zgody-odpowiada-404",
+              "ac-route-projektu-serwuje-assety-nakladki",
+              "ac-serwowanie-frontendu-nakladki-project-lo",
+              "ac-start-bez-cwd-manifest-oglasza-baze",
+              "ac-start-bez-cwd-manifest-oglasza-nakladke",
+              "ac-wpis-bazowy-ten-sam-entry-w-projektach",
+              "ac-wpis-nakladki-entry-pod-prefiksem-id",
+              "ac-wpis-pluginu-niesie-url-frontend-css",
+              "ac-wzgledny-import-chunka-ten-sam-projekt",
+              "ac-zadanie-route-u-assetow-pluginu-o-pli"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u2-fanout-zdarzen-mountow-procesowych",
+      "goal": "Zdarzenie z mountu o zasięgu procesu, np. przebudowa puli bazowej pluginów, serwer rozsyła do pokoju WS każdego projektu procesu, osobno dla każdego. Zdarzenie z mountu o zasięgu kontekstu nadal trafia tylko do pokoju swojego projektu. Zdarzenie o przebudowie pluginu trafia do pokoju swojego projektu albo, dla puli bazowej, do pokojów wszystkich projektów. Niczego nie usuwa.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m49-local-server.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "pva0kg5v",
+                "nl0ypj3f"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m49-local-server.md",
+            "context": {
+              "offset": 8,
+              "limit": 2,
+              "anchors": [
+                "rq39pr4z",
+                "l4wsroom"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m40-file-watch-runtime.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "21j8a8rx",
+                "lezr5lgy"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m40-file-watch-runtime.md",
+            "context": {
+              "offset": 9,
+              "limit": 1,
+              "anchors": [
+                "tuy3l3eu"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m40-file-watch-runtime.md",
+            "context": {
+              "offset": 16,
+              "limit": 2,
+              "anchors": [
+                "kc23agex",
+                "zkxf6s7o"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/L7-file-change-reactions.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m33l7wch",
+                "m33l7pln"
+              ]
+            },
+            "deferred": [
+              {
+                "what": "reakcja klienta na zdarzenie przebudowy pluginu, czyli ponowne pobranie manifestu własnego projektu, import nowo ogłoszonych frontendów i przeładowanie dokumentu po przebudowie frontendu już zaimportowanego",
+                "to": "u3-klient-manifest-projektu-i-przeladowanie",
+                "why": "wymaga manifestu per projekt z u1 i ścieżki przeładowania strzeżonej przez edytor"
+              }
+            ]
+          }
+        ],
+        "entities": [
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m33-requires-m40",
+              "m40-requires-m49"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-zdarzenie-mountu-procesowego-kazdy-room"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u3-klient-manifest-projektu-i-przeladowanie",
+      "goal": "Przy starcie klient pobiera manifest frontendu własnego projektu, a id projektu bierze z globalu projektu wstrzykniętego w dokument; z tego samego globalu korzysta frontend pluginu przy wywołaniach project-scoped. Bez globalu klient nie uruchamia frontendów pluginów, a przy błędzie manifestu renderuje host bez nich. Gdy ponowny manifest zmienia wejście już zaimportowanego pluginu albo hot-reload przebudował zaimportowany frontend, klient przeładowuje dokument. Robi to dopiero wtedy, gdy edytor nie ma niezapisanych zmian. Znika ponowny import/remount frontendu już zaimportowanego w karcie: zastępuje go przeładowanie dokumentu.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m33-plugin-loader/L11-plugin-runtime-surface.md",
+            "change": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "m33l5man"
+              ]
+            },
+            "context": {
+              "offset": 0,
+              "limit": 2,
+              "anchors": [
+                "m33l5fe0",
+                "m33l5man"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/L11-plugin-runtime-surface.md",
+            "change": {
+              "offset": 3,
+              "limit": 1,
+              "anchors": [
+                "87z9w99s"
+              ]
+            },
+            "context": {
+              "offset": 6,
+              "limit": 1,
+              "anchors": [
+                "87z9w99s"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/L7-file-change-reactions.md",
+            "change": "all",
+            "context": {
+              "offset": 2,
+              "limit": 1,
+              "anchors": [
+                "m33l7pln"
+              ]
+            },
+            "completes": [
+              {
+                "what": "reakcja klienta na zdarzenie przebudowy pluginu, czyli ponowne pobranie manifestu własnego projektu, import nowo ogłoszonych frontendów i przeładowanie dokumentu po przebudowie frontendu już zaimportowanego",
+                "from": "u2-fanout-zdarzen-mountow-procesowych"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/L2-domain.md",
+            "change": "all",
+            "context": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "m13dom00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/L2-domain.md",
+            "context": {
+              "offset": 8,
+              "limit": 1,
+              "anchors": [
+                "mbladez6"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m20-editor-tiptap.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m20cel00",
+                "m20dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m20-editor-tiptap.md",
+            "context": {
+              "offset": 37,
+              "limit": 1,
+              "anchors": [
+                "m20l11sc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m20-editor-tiptap.md",
+            "context": {
+              "offset": 41,
+              "limit": 1,
+              "anchors": [
+                "m20edge0"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m33-requires-m20"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-blad-manifestu-host-bez-pluginow",
+              "ac-brak-globalu-projektu-bez-manifestu",
+              "ac-frontend-pluginu-czyta-project-id-z-wind",
+              "ac-przeladowanie-czeka-na-zapis-zmian",
+              "ac-zmiana-entry-zaimportowanego-przeladowuje"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u1-serwowanie-frontendu-per-projekt",
+          "why": "klient pobiera manifest spod prefiksu projektu i po przeładowaniu polega na rewalidacji assetów"
+        },
+        {
+          "unit": "u2-fanout-zdarzen-mountow-procesowych",
+          "why": "przeładowanie po przebudowie puli bazowej wymaga, by zdarzenie dotarło do karty każdego projektu"
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    }
+  ],
+  "waves": [
+    {
+      "n": 1,
+      "units": [
+        "u1-serwowanie-frontendu-per-projekt",
+        "u2-fanout-zdarzen-mountow-procesowych"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 2,
+      "units": [
+        "u3-klient-manifest-projektu-i-przeladowanie"
+      ],
+      "startCommit": null
+    }
+  ],
+  "conventions": [
+    {
+      "label": "L4 (API)",
+      "key": "pages/layers/L4-api.md",
+      "offset": 1,
+      "anchor": "4ekrg55r"
+    },
+    {
+      "label": "L4 (API)",
+      "key": "pages/layers/L4-api.md",
+      "offset": 2,
+      "anchor": "pondhd6o"
+    },
+    {
+      "label": "L7 (File Change Reactions)",
+      "key": "pages/layers/L7-file-change-reactions.md",
+      "offset": 1,
+      "anchor": "c872jd2a"
+    },
+    {
+      "label": "L7 (File Change Reactions)",
+      "key": "pages/layers/L7-file-change-reactions.md",
+      "offset": 2,
+      "anchor": "6qppsun2"
+    },
+    {
+      "label": "L7 (File Change Reactions)",
+      "key": "pages/layers/L7-file-change-reactions.md",
+      "offset": 3,
+      "anchor": "3nzulmvf"
+    },
+    {
+      "label": "L10 (Project Scoping)",
+      "key": "pages/layers/L10-project-scoping.md",
+      "offset": 1,
+      "anchor": "l10role01"
+    },
+    {
+      "label": "L10 (Project Scoping)",
+      "key": "pages/layers/L10-project-scoping.md",
+      "offset": 2,
+      "anchor": "l10slice0"
+    },
+    {
+      "label": "L11 (Plugin Runtime Surface) — implementor M33",
+      "key": "pages/layers/L11-plugin-runtime-surface.md",
+      "offset": 1,
+      "anchor": "l11role01"
+    },
+    {
+      "label": "L11 (Plugin Runtime Surface) — implementor M33",
+      "key": "pages/layers/L11-plugin-runtime-surface.md",
+      "offset": 2,
+      "anchor": "l11slice0"
+    },
+    {
+      "label": "Tabela modułów (user jobs)",
+      "key": "pages/SKILL.md",
+      "offset": 12,
+      "anchor": "45yst8co"
+    },
+    {
+      "label": "Tabela modułów (user jobs)",
+      "key": "pages/SKILL.md",
+      "offset": 13,
+      "anchor": "oq23nb0j"
+    },
+    {
+      "label": "Tabela modułów (user jobs)",
+      "key": "pages/SKILL.md",
+      "offset": 14,
+      "anchor": "zpn3gaip"
+    }
+  ],
+  "entityTypes": [
+    {
+      "type": "ac",
+      "role": "criteria",
+      "checks": "verifies",
+      "links": [
+        "verifies"
+      ],
+      "observedIn": "unit",
+      "inactive": "status = deprecated",
+      "version": 3
+    },
+    {
+      "type": "endpoint",
+      "role": "built",
+      "inCode": "the Express route (method + path): the base tier stays process-global under /api/plugins/:name/:asset; the frontend manifest and overlay assets live on the project router under /api/projects/:id/plugins/… (src/server/routes/plugins*.ts / the plugin loader's routers), answering the linked response/error DTOs at their status codes",
+      "verify": "a supertest test next to the route (src/server/routes/<area>*.test.ts or the plugin-loader tests) named with [entity:<slug>] asserting method, path, response/error payload shape and status per linkedDtos",
+      "links": [
+        "linkedDtos"
+      ],
+      "version": 3
+    },
+    {
+      "type": "dto",
+      "role": "built",
+      "inCode": "the TypeScript type (src/shared/** or the route module) of the payload the carrying route returns — field names, types and required/optional exactly as the DTO's `fields`",
+      "verify": "a vitest/supertest test next to the carrying route named with [entity:<slug>] asserting the live payload has every required field with its type and no removed field",
+      "links": [],
+      "version": 2
+    },
+    {
+      "type": "module-dependency",
+      "role": "context",
+      "links": [],
+      "version": 1
+    }
+  ],
+  "entityParts": [],
+  "systemVerified": false,
+  "errors": 0,
+  "baselineGreen": true
+}
