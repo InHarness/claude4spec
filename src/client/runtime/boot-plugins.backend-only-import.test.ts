@@ -40,7 +40,7 @@ vi.mock('../lib/api.js', () => ({
   pluginsApi: { frontendManifest: async () => server.manifest },
   metaApi: { pluginCommands: async () => ({ commands: [] }), entities: async () => ({}) },
 }));
-vi.mock('../lib/api-core.js', () => ({ PROJECT_ID: '' }));
+vi.mock('../lib/api-core.js', () => ({ PROJECT_ID: 'test-project' }));
 vi.mock('../tiptap/mountFrontend.js', () => ({ mountFrontend: (...a: unknown[]) => mountFrontend(...a) }));
 vi.mock('../tiptap/pluginCommands.js', () => ({ registerPluginCommands: () => {} }));
 vi.mock('./shared-runtime.js', () => ({ sharedRuntimeReady: Promise.resolve() }));

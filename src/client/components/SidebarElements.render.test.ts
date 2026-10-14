@@ -216,7 +216,7 @@ describe('Sidebar ELEMENTS follows activation (M50 8h2a734u)', () => {
     });
     // Another tab saved `entities: ['sbx-gadget']`: the server answers the new
     // activation from now on, and this tab gets the generic signals — a
-    // `plugin:reloaded` re-import and a query invalidation.
+    // `plugin:reloaded` manifest refetch and a query invalidation.
     server.activation = activation(['sbx-gadget']);
     await act(async () => {
       await reloadFrontendPlugins();

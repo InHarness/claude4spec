@@ -45,7 +45,7 @@ import type {
   AgentCredentialResponse,
   SetAgentCredentialRequest,
 } from '../../shared/agent-credential.js';
-import { ApiError, handle, apiFetch, unwrap } from './api-core.js';
+import { ApiError, handle, apiFetch, unwrap, PROJECT_ID } from './api-core.js';
 
 export { ApiError, handle };
 
@@ -595,12 +595,23 @@ export const metaApi = {
   },
 };
 
-// M33: process-level plugin endpoints. These live on the workspace router (not
-// per-project), so they use plain `fetch` — `apiFetch` would wrongly prepend the
-// `/api/projects/<id>` prefix.
+// M33: plugin frontend endpoints.
 export const pluginsApi = {
+  /**
+   * 2.1.22 (M33 `m33l5man`) — the frontend manifest of THIS tab's project, on the
+   * project router: `/api/projects/<id>/plugins/frontend-manifest` with
+   * `<id> = window.__C4S_PROJECT__.id`. There is no process-global manifest any
+   * more. Without the global there is nothing to address — no fallback value is
+   * put into the URL — so the call rejects without a request; the boot loader
+   * does not get this far in that case (`boot-plugins.ts`).
+   */
   async frontendManifest(): Promise<FrontendManifestResponse> {
-    return handle<FrontendManifestResponse>(await fetch('/api/plugins/frontend-manifest'));
+    if (!PROJECT_ID) {
+      throw new ApiError('NO_PROJECT', 'No project in this document — no plugin frontend manifest to fetch', 0);
+    }
+    return handle<FrontendManifestResponse>(
+      await fetch(`/api/projects/${encodeURIComponent(PROJECT_ID)}/plugins/frontend-manifest`),
+    );
   },
 };
 

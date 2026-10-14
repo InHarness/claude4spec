@@ -128,12 +128,13 @@ export function useFileWatcher() {
             // status; a HEAD change from another client reloads the route.
             handleGitStatusChanged(data, batcher);
           } else if (data.kind === 'plugin:reloaded') {
-            // M33 phase 3: a plugin in the pool was installed/removed/edited.
-            // Re-import its frontend (cache-bust), re-pin editor extensions +
-            // commands, then invalidate the plugin-derived caches. An open
-            // document survives: a live editor rebuilds on the registry's
-            // schema version and carries its content across.
-            void reloadFrontendPlugins().finally(() => {
+            // M33 (`m33l7pln` step 5): a plugin in the pool was installed/
+            // removed/edited. Refetch this project's manifest, import newly
+            // announced frontends, re-pin editor extensions + commands, then
+            // invalidate the plugin-derived caches. A rebuilt frontend this tab
+            // already imported is not re-imported: the document reloads once
+            // no editor holds unsaved changes (2.1.22, `m33l5man`).
+            void reloadFrontendPlugins({ name: data.name, tier: data.tier }).finally(() => {
               window.dispatchEvent(new CustomEvent(PLUGINS_RELOADED_EVENT, { detail: data }));
             });
             batcher.queue(['plugins-meta']);

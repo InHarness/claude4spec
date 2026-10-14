@@ -24,6 +24,7 @@ import { useOutlineStore } from '../state/outline.js';
 import { stem } from '../lib/artifact-path.js';
 import { withFrontmatterOf } from '../lib/artifact-frontmatter.js';
 import { AppliedBadge } from './AppliedBadge.js';
+import { useUnsavedEditsSource } from '../tiptap/unsavedEdits.js';
 
 interface Props {
   planPath: string;
@@ -73,6 +74,9 @@ export function PlanPage({ planPath }: Props) {
   const runInFlightRef = useRef(false);
 
   const [dirtyContent, setDirtyContent] = useState<string | null>(null);
+  // 2.1.22 (M20 `m20l11sc`): a plan is saved by hand — a plugin-driven document
+  // reload waits until the buffer is saved or discarded.
+  useUnsavedEditsSource(() => dirtyContent !== null && dirtyContent !== plan?.body);
   const [view, setView] = useState<PlanView>('plan');
   const [error, setError] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);

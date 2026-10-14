@@ -17,6 +17,7 @@ import {
   useSeededEditor,
 } from '../tiptap/useEditorSchema.js';
 import { EditorBridgeProvider } from '../tiptap/EditorContext.js';
+import { useUnsavedEditsSource } from '../tiptap/unsavedEdits.js';
 import { refreshAnnotations } from '../tiptap/extensions/AnnotationHighlight.js';
 import { AnnotationBubble } from '../tiptap/AnnotationBubble.js';
 import { OutlineFloater } from './OutlineFloater.js';
@@ -65,6 +66,11 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
   const inflightRef = useRef(0);
   const lastSavedBodyRef = useRef<string | null>(null);
   const isDirtyRef = useRef(false);
+  // 2.1.22 (M20 `m20l11sc`): unsaved = typed and not flushed, or a write not yet
+  // acknowledged — a plugin-driven document reload waits for neither to remain.
+  useUnsavedEditsSource(
+    () => isDirtyRef.current || pendingSaveRef.current !== null || inflightRef.current > 0,
+  );
   const seeded = useSeededEditor();
   const currentPathRef = useRef<string>(path);
   const prevPagesIndexRef = useRef<ReturnType<typeof usePagesIndex>>(undefined);

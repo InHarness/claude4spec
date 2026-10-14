@@ -16,6 +16,15 @@
  * host-API / engines gate — and its `importMap` is an informational copy the
  * client does not read (the server injected the real one). Each entry is
  * imported from its absolute `plugins[].entry` URL.
+ *
+ * 2.1.22 (M33 `m33l5man`, M13 `mbladez6` client step 1b): the manifest is the
+ * one of THIS tab's project (`window.__C4S_PROJECT__.id`). A document without
+ * that global runs no plugin frontends: no manifest request, no fallback id in
+ * a URL — the client registry holds the built-in types only. A failed manifest
+ * request leaves the host running without plugin frontends. An entry already
+ * imported in this tab is never imported a second time: when a refetched
+ * manifest changes it, or a hot-reload rebuilt it, the document reloads once
+ * the editors have nothing unsaved (`document-reload.ts`).
  */
 
 import { metaApi, pluginsApi } from '../lib/api.js';
@@ -24,6 +33,7 @@ import { clientPluginHost } from '../core/plugin-host/host.js';
 import { mountFrontend } from '../tiptap/mountFrontend.js';
 import { registerPluginCommands } from '../tiptap/pluginCommands.js';
 import { sharedRuntimeReady } from './shared-runtime.js';
+import { requestDocumentReload } from './document-reload.js';
 import type { AppRouter } from '../router.js';
 import type { FrontendManifestResponse } from '../../shared/plugin-host/frontend-manifest.js';
 
@@ -43,27 +53,56 @@ function injectCssOnce(href: string): void {
 }
 
 /**
- * Import every active plugin entry + pin its editor slots. On reload (`bust`),
- * append the entry's own `version` as the cache-bust token rather than a
- * timestamp: this re-imports a fresh module when the plugin version changes
- * (the overlay loader re-reads `manifest.version` on rebuild) while staying
- * BOUNDED — repeated reloads of the same version reuse one module URL instead
- * of leaking a new one each time. (A content hash in the server-served entry
- * URL is the ideal long-term key, once project-local frontend delivery lands.)
- * Returns nothing — slots land on `clientPluginHost` via `@c4s/plugin-runtime`,
- * then `mountFrontend` pins them into the shared registry.
+ * Entries imported in this tab, by plugin name. An ES module cannot be unloaded
+ * and a second `import()` of the same URL returns the module already loaded, so
+ * this map is what the tab really runs — the reference a refetched manifest is
+ * compared against.
  */
-async function loadManifestPlugins(
-  manifest: FrontendManifestResponse,
-  router: AppRouter,
-  bust = false,
-): Promise<void> {
+const importedEntries = new Map<string, string>();
+
+/** Test/diagnostic view of the entries this tab imported (name → entry URL). */
+export function importedPluginEntries(): ReadonlyMap<string, string> {
+  return importedEntries;
+}
+
+/** Loads one entry. A seam so tests can watch imports without a module server. */
+const nativeImport = (entry: string): Promise<unknown> =>
+  // @vite-ignore — runtime URL, must not be analyzed/bundled by Vite.
+  import(/* @vite-ignore */ entry);
+let importEntry: (entry: string) => Promise<unknown> = nativeImport;
+
+/** Test seam: replace the entry importer (`null` restores native `import()`). */
+export function __setPluginEntryImporter(importer: ((entry: string) => Promise<unknown>) | null): void {
+  importEntry = importer ?? nativeImport;
+}
+
+/** Whether an entry URL is a project-local overlay asset (vs. the base tier). */
+function entryTier(entry: string): 'base' | 'overlay' {
+  return entry.startsWith('/api/projects/') ? 'overlay' : 'base';
+}
+
+/**
+ * Import every newly announced plugin entry + pin its editor slots. An entry
+ * this tab already imported is not imported again: the same URL resolves to the
+ * loaded module, and a DIFFERENT `entry` for an imported plugin (e.g. trust now
+ * lets an overlay shadow the npm package, or stops it) cannot replace the module
+ * in place — it requests a document reload instead (M33 `m33l5man`). Returns
+ * nothing — slots land on `clientPluginHost` via `@c4s/plugin-runtime`, then
+ * `mountFrontend` pins them into the shared registry.
+ */
+async function loadManifestPlugins(manifest: FrontendManifestResponse, router: AppRouter): Promise<void> {
   for (const plugin of manifest.plugins) {
+    const imported = importedEntries.get(plugin.name);
+    if (imported !== undefined) {
+      if (imported !== plugin.entry) {
+        requestDocumentReload(`plugin "${plugin.name}" frontend entry changed (${imported} → ${plugin.entry})`);
+      }
+      continue;
+    }
     if (plugin.css) injectCssOnce(plugin.css);
-    const suffix = bust ? `?v=${encodeURIComponent(plugin.version)}` : '';
     try {
-      // @vite-ignore — runtime URL, must not be analyzed/bundled by Vite.
-      await import(/* @vite-ignore */ plugin.entry + suffix);
+      await importEntry(plugin.entry);
+      importedEntries.set(plugin.name, plugin.entry);
     } catch (err) {
       console.warn(`[plugin-host] failed to import plugin "${plugin.name}" (${plugin.entry})`, err);
     }
@@ -141,6 +180,9 @@ async function bootFrontendPluginsInner(router: AppRouter): Promise<void> {
   // The lucide-react peer is code-split (see shared-runtime.ts) — wait for it
   // to land on window.__c4s_shared before any plugin entry can reach the shim.
   await sharedRuntimeReady;
+  // No project global (a route outside a project, a stale document): step 1b is
+  // skipped — no manifest request, no substitute id in the URL.
+  if (!PROJECT_ID) return;
   let manifest: FrontendManifestResponse;
   try {
     manifest = await pluginsApi.frontendManifest();
@@ -153,20 +195,30 @@ async function bootFrontendPluginsInner(router: AppRouter): Promise<void> {
 }
 
 /**
- * M33 — react to a `plugin:reloaded` WS event WITHOUT a page reload.
- * Refetch the frontend-manifest, re-import each entry with a cache-bust, re-pin
- * editor extensions, and re-register declarative commands. This never calls
- * `setContent` itself. A live editor follows the registry's schema version
- * (`tiptap/registry.ts` → `tiptap/useEditorSchema.ts`): when a re-pinned
- * extension changes the schema, the editor rebuilds its instance and carries
- * the open document across, so unsaved edits survive the remount. (Until
- * 0.2.85 this comment promised a listener on `c4s:plugins-reloaded` that no
- * editor had; the window event is still dispatched for other consumers.)
+ * M33 (`m33l7pln` step 5) — react to a `plugin:reloaded` WS event.
+ *
+ * Refetch the manifest of this tab's project and import the frontends it newly
+ * announces (re-pinning editor extensions and commands). A frontend already
+ * imported in the tab is never imported again: when the event names a plugin
+ * whose frontend this tab imported — from the tier the event comes from — the
+ * hot-reload rebuilt it, and the document reloads instead, once no editor holds
+ * unsaved changes (`m33l5man`). Until then the frontend loaded earlier keeps
+ * working. A changed `entry` in the refetched manifest takes the same path
+ * (`loadManifestPlugins`).
  */
-export async function reloadFrontendPlugins(): Promise<void> {
+export async function reloadFrontendPlugins(
+  reloaded?: { name: string; tier?: 'base' | 'overlay' },
+): Promise<void> {
   if (!activeRouter) {
     console.warn('[plugin-host] plugin reload before boot — no router captured; skipping');
     return;
+  }
+  if (!PROJECT_ID) return;
+  if (reloaded) {
+    const imported = importedEntries.get(reloaded.name);
+    if (imported !== undefined && (reloaded.tier === undefined || entryTier(imported) === reloaded.tier)) {
+      requestDocumentReload(`plugin "${reloaded.name}" frontend was rebuilt`);
+    }
   }
   let manifest: FrontendManifestResponse;
   try {
@@ -175,7 +227,7 @@ export async function reloadFrontendPlugins(): Promise<void> {
     console.warn('[plugin-host] plugin reload — manifest refetch failed', err);
     return;
   }
-  await loadManifestPlugins(manifest, activeRouter, true);
+  await loadManifestPlugins(manifest, activeRouter);
   await registerProjectPluginCommands();
 }
 
@@ -199,6 +251,10 @@ export async function refreshPluginActivation(router: AppRouter | null = activeR
   clientPluginHost.applyActivation(await metaApi.entities());
   if (!router) return;
   activeRouter = router;
+  if (!PROJECT_ID) {
+    mountFrontend(router, clientPluginHost.listEntities());
+    return;
+  }
   let manifest: FrontendManifestResponse;
   try {
     manifest = await pluginsApi.frontendManifest();

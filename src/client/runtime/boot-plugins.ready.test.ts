@@ -16,7 +16,7 @@ vi.mock('../lib/api.js', () => ({
   pluginsApi: { frontendManifest: () => frontendManifest() },
   metaApi: { pluginCommands: async () => ({ commands: [] }), entities: async () => ({}) },
 }));
-vi.mock('../lib/api-core.js', () => ({ PROJECT_ID: '' }));
+vi.mock('../lib/api-core.js', () => ({ PROJECT_ID: 'test-project' }));
 vi.mock('../core/plugin-host/host.js', () => ({
   clientPluginHost: { listEntities: () => [], applyActivation: () => {} },
 }));
