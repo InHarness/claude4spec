@@ -19,8 +19,7 @@
  */
 
 import React from 'react';
-import { X } from 'lucide-react';
-import { FieldGrid, FieldRow, LoadingState } from '@c4s/plugin-runtime/ui';
+import { Dialog, FieldGrid, FieldRow, LoadingState } from '@c4s/plugin-runtime/ui';
 import { DependencySentence } from './sentence.js';
 import { fetchModuleDependency, type ModuleDependency } from './types.js';
 
@@ -49,55 +48,38 @@ export function ModuleDependencyOverlay({
     };
   }, [slug]);
 
-  return (
-    <div
-      data-testid="module-dependency-overlay"
-      className="fixed inset-0 z-50 flex items-center justify-center p-6"
-      style={{ background: 'rgba(0,0,0,0.45)' }}
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-[560px] rounded-lg p-5"
-        style={{ background: 'var(--c-bg)', border: '1px solid var(--c-hair)' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-4">
-          {loading ? (
-            <LoadingState lines={1} width={200} />
-          ) : record ? (
-            <DependencySentence dependent={record.dependent} provider={record.provider} small={false} />
-          ) : (
-            <span className="text-[13px]" style={{ color: 'var(--c-red)' }}>
-              {`broken module-dependency: ${slug}`}
-            </span>
-          )}
-          <button
-            type="button"
-            aria-label="Close"
-            onClick={onClose}
-            style={{ color: 'var(--c-muted)' }}
-          >
-            <X size={16} />
-          </button>
-        </div>
+  const title = loading ? (
+    <LoadingState lines={1} width={200} />
+  ) : record ? (
+    <DependencySentence dependent={record.dependent} provider={record.provider} small={false} />
+  ) : (
+    <span className="text-[13px]" style={{ color: 'var(--c-red)' }}>
+      {`broken module-dependency: ${slug}`}
+    </span>
+  );
 
+  // The window shell is the catalog's `Dialog` (M34 gate (a), 2.1.20): this type
+  // declares no host-local component, so it draws no scrim or panel of its own
+  // (ASSUMPTION:dev-2008 — the slice's Components consumed does not list `Dialog` yet).
+  // `title` gives the header row and its ✕; scrim click and `Esc` close it too.
+  return (
+    <Dialog open onClose={onClose} title={title} width={560} ariaLabel={`module-dependency ${slug}`}>
+      <div data-testid="module-dependency-overlay">
         {record ? (
-          <div className="mt-4">
-            <FieldGrid>
-              <FieldRow label="Needs" align="start">
-                <span className="text-[13px]" style={{ color: 'var(--c-ink)' }}>
-                  {record.needs}
-                </span>
-              </FieldRow>
-            </FieldGrid>
-            {caption ? (
-              <div className="mt-3 text-[12px] italic" style={{ color: 'var(--c-muted)' }}>
-                {caption}
-              </div>
-            ) : null}
+          <FieldGrid>
+            <FieldRow label="Needs" align="start">
+              <span className="text-[13px]" style={{ color: 'var(--c-ink)' }}>
+                {record.needs}
+              </span>
+            </FieldRow>
+          </FieldGrid>
+        ) : null}
+        {record && caption ? (
+          <div className="mt-3 text-[12px] italic" style={{ color: 'var(--c-muted)' }}>
+            {caption}
           </div>
         ) : null}
       </div>
-    </div>
+    </Dialog>
   );
 }

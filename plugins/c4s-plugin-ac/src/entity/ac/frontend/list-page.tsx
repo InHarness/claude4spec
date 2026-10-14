@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { CheckSquare, Plus, ScanSearch } from 'lucide-react';
 import { useAcs } from './hooks.js';
 import { AcCreateDialog } from './create-dialog.js';
-import { toast } from '../../../frontend-kit/host-events.js';
+import { toast } from '@c4s/plugin-runtime';
 import {
   ActionBar,
   ActionButton,
@@ -17,11 +17,9 @@ import {
 import { startSeededThread } from '@c4s/plugin-runtime';
 import type { AcKind, AcStatus } from '../../../types.js';
 import { ListPageLayout } from '../../../frontend-kit/ListPageLayout.js';
-// ASSUMPTION:dev-1906 — the 2.1.19 slice lists `ListPageHeader` and
-// `ListScrollArea` as this package's debt, but the package carries neither: this
-// list already composes their catalog replacements (`EntityListHeader`,
-// `EntityListLayout`, `LoadingState`, `EmptyState`) directly, and is not
-// regressed to the local copies.
+// The list composes `EntityListHeader`, `EntityListLayout`, `LoadingState` and
+// `EmptyState` directly; the package carries no `ListPageHeader` /
+// `ListScrollArea` (their debt entries were struck from the slice in 2.1.20).
 import { useEntityListQuery } from '../../../frontend-kit/useEntityListQuery.js';
 import { AC_LABEL_PLURAL } from '../../../identity.js';
 

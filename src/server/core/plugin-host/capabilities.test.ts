@@ -127,6 +127,29 @@ describe('M33 — registry capability records', () => {
     warn.mockRestore();
   });
 
+  /**
+   * 2.1.20 (M13 m13plenv) — `contributes.entities[]` carries the flat identity
+   * plus server slots, and NO frontend slot: a type's frontend is a separate
+   * module the plugin registers from its browser entry. A package still putting
+   * `frontend` into its entity contribution fails `registerPlugin` atomically —
+   * none of its types is registered.
+   */
+  it('[section:m13plenv] registerPlugin refuses an entity contribution carrying a frontend slot, registering nothing of that plugin', () => {
+    const registry = new PluginRegistryImpl();
+    const manifest = entityManifest({ name: '@c4s/plugin-old-frontend' });
+    const entity = manifest.contributes.entities![0]!;
+    (entity as unknown as Record<string, unknown>).frontend = { renderChip: () => null, renderCard: () => null };
+    expect(() => registry.registerPlugin(manifest)).toThrow(/`frontend` slot was withdrawn from the type contribution/);
+    expect(registry.getAvailable('widget')).toBeNull();
+    expect(registry.listPluginRecords()).toHaveLength(0);
+
+    // The same envelope without the slot registers its type.
+    const clean = entityManifest({ name: '@c4s/plugin-clean' });
+    expect('frontend' in clean.contributes.entities![0]!).toBe(false);
+    registry.registerPlugin(clean);
+    expect(registry.getAvailable('widget')).not.toBeNull();
+  });
+
   it('drops the settings DESCRIPTOR on unregister — the values under config.plugins are not its to touch', () => {
     // The brief's line: `contributes.settings` is a descriptor of a section under
     // `config.plugins[<name>]`, and only the descriptor is the registry's to

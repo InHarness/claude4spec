@@ -187,7 +187,8 @@ export interface PluginEngines {
  * {@link EntityModuleManifest} carrying the slots the host needs to lower it
  * into a server `BackendModule`. The express Router (`backend.routes`) and the
  * M47 payload chain are typed `unknown` here so the shared bundle stays dep-free;
- * the registry narrows them at registration time.
+ * the registry narrows them at registration time. It carries no frontend slot:
+ * a type's frontend is a separate browser-entry module (M13 `z7l89jhf`).
  */
 export interface EntityContribution extends EntityModuleManifest {
   /**
@@ -267,8 +268,15 @@ export interface EntityContribution extends EntityModuleManifest {
      */
   };
 
-  /** L8 — client editor extensions + render slots (narrowed client-side). */
-  frontend?: unknown;
+  /*
+   * 2.1.20 (M13 `z7l89jhf`) — the `frontend` slot was WITHDRAWN from the type
+   * contribution. The host never read it: a type's frontend enters the client
+   * registry only through the plugin's own browser entry
+   * (`registerFrontendModule` from `@c4s/plugin-runtime`, imported from the
+   * frontend manifest). A contribution still carrying the key is rejected at
+   * registration (`manifest-adapter.ts`), naming that successor. Recorded in
+   * `HOST_API_UNVERSIONED_CHANGES` — inside the baseline, no bump.
+   */
 }
 
 /**
@@ -554,6 +562,12 @@ export interface PluginManifest {
    */
   onUnregister?(): void;
   contributes: {
+    /**
+     * Capability "entity" — N `EntityContribution`s (flat identity + server
+     * slots typed `unknown`, NO frontend slot; M13 `m13plenv`). Fan-out
+     * `registerPlugin` → `registerEntityModule`. A type's frontend is a separate
+     * module the plugin registers from its browser entry.
+     */
     entities?: EntityContribution[];
     /**
      * 0.2.19 (M37) — skills contributed by this plugin, of either scope. The

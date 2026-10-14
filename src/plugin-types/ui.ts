@@ -227,15 +227,16 @@ export interface InlineEditFieldProps {
 }
 export declare const InlineEditField: ComponentType<InlineEditFieldProps>;
 
-// ── Overlay/Create (experimental) ──
+// ── Overlay (group `overlay`, experimental) ──
 export interface DialogProps {
   open: boolean;
   onClose: () => void;
   title?: ReactNode;
   footer?: ReactNode;
   children: ReactNode;
+  /** Panel tier; it also closes the panel height (there is no `maxHeight` prop — a taller body scrolls under a pinned footer). */
   size?: 'sm' | 'md' | 'lg';
-  /** Exact panel width in px, overriding `size`. */
+  /** Exact panel width in px, overriding `size` for the width; the height is still closed by `size`. */
   width?: number;
   /**
    * Defaults to `true`. With `false` the scrim click, `Escape` and the header ✕
@@ -402,7 +403,7 @@ export interface EntityVersionHistoryViewProps {
 }
 export declare const EntityVersionHistoryView: ComponentType<EntityVersionHistoryViewProps>;
 
-// ── Overlay/feedback (experimental, M34/L12) ──
+// ── Feedback (group `feedback`, experimental, M34/L12) ──
 export interface PopoverProps {
   open: boolean;
   onClose(): void;
@@ -429,7 +430,11 @@ export interface ToastViewportItem {
   action?: ToastAction;
 }
 export interface ToastViewportProps {
-  /** Caller-owned stack. Omitted, the viewport manages its own from `useToast()`. */
+  /**
+   * The stack to render — the component is CONTROLLED: it renders these and
+   * reports a close through `onDismiss`. Behaviour without `toasts` is not part
+   * of the contract.
+   */
   toasts?: ToastViewportItem[];
   onDismiss?(id: number | string): void;
   onPause?(id: number | string): void;
@@ -440,6 +445,13 @@ export interface ToastAction {
   label: string;
   onClick(): void;
 }
+/**
+ * Exported beside the catalog (no registry entry; tier `experimental`, outside
+ * `hostApiVersion`). The `/ui` declarative doctrine's one imperative exception.
+ * A thin layer over the shell's `toast` facade: the toast goes onto the host
+ * bus and appears in the host's one toast stack — a plugin mounts no
+ * `ToastViewport` for it. No `info` kind, no duration.
+ */
 export declare function useToast(): {
   success(message: string, action?: ToastAction): void;
   error(message: string, action?: ToastAction): void;
@@ -526,4 +538,12 @@ export interface UiKitComponentEntry {
 }
 export declare const UI_KIT_CATALOG: readonly UiKitComponentEntry[];
 export declare const STABLE_UI_KIT_COMPONENTS: readonly string[];
+/**
+ * The backend leg of `@c4s/plugin-runtime/ui` (M33 `m33rt001`): React-free, it
+ * carries this list of the `stable` component names and nothing else — the
+ * subpath's runtime export (`dist/server/plugin-runtime/ui.js`) serves exactly
+ * it. Typed for plugin backend code through `…/plugin-runtime/ambient` under the
+ * `c4s-backend` condition; the browser leg carries `STABLE_UI_KIT_COMPONENTS`.
+ */
+export declare const UI_KIT_STABLE_COMPONENTS: readonly string[];
 

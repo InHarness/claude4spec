@@ -1,316 +1,153 @@
-import { describe, expect, it, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  enumerateFrontendBundles,
-  resolveFrontendAsset,
-  enumerateWorkspaceFrontendBundles,
-  resolveWorkspaceFrontendAsset,
   assetContentType,
-  resolveOverlayAsset,
-  resolveWorkspaceAsset,
+  effectiveFrontendSources,
+  envelopeFrontendSource,
   nearestPackageRoot,
+  npmFrontendSource,
+  overlayFrontendSources,
+  packageFrontendEntry,
+  resolvePluginAsset,
+  type FrontendPool,
 } from './frontend-assets.js';
-import { buildFrontendManifest } from './frontend-manifest.js';
-import { buildImportMap } from './runtime-shims.js';
-import { HOST_API_VERSION } from '../../../shared/plugin-host/manifest.js';
-import type { PluginRegistry } from './types.js';
+import type { BuiltinEnvelope } from './builtin-envelopes.js';
 
-// The manifest builder ignores the registry today (the project-local frontend
-// axis is filesystem-driven); a bare cast is enough to exercise it.
-const REGISTRY = {} as PluginRegistry;
+/** Write `files` (relative path → content) under `dir`. */
+function writeTree(dir: string, files: Record<string, string>): void {
+  for (const [rel, content] of Object.entries(files)) {
+    const abs = path.join(dir, rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, content);
+  }
+}
 
-describe('frontend-assets', () => {
+describe('frontend-assets — sources, effective pool, asset resolution', () => {
+  let tmp: string;
   let cwd: string;
 
   beforeEach(() => {
-    cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-frontend-'));
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-frontend-'));
+    cwd = path.join(tmp, 'project');
+    fs.mkdirSync(cwd);
   });
   afterEach(() => {
-    fs.rmSync(cwd, { recursive: true, force: true });
+    fs.rmSync(tmp, { recursive: true, force: true });
   });
 
-  /**
-   * Materialize `<cwd>/.claude4spec/plugins/<name>/` with an optional built
-   * `dist/frontend.{js,css}` and a `package.json` carrying `version`.
-   */
-  function makePkg(
-    name: string,
-    opts: { version?: string; js?: boolean; css?: boolean; pkgJson?: boolean } = {},
-  ): void {
-    const { version = '2.3.4', js = true, css = false, pkgJson = true } = opts;
-    const dir = path.join(cwd, '.claude4spec', 'plugins', name);
-    fs.mkdirSync(path.join(dir, 'dist'), { recursive: true });
-    if (pkgJson) fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name, version }));
-    if (js) fs.writeFileSync(path.join(dir, 'dist', 'frontend.js'), 'export const x = 1;');
-    if (css) fs.writeFileSync(path.join(dir, 'dist', 'frontend.css'), '.x{color:red}');
+  /** `<cwd>/.claude4spec/plugins/<folder>/` with a package.json and the given files. */
+  function overlay(folder: string, pkg: Record<string, unknown> | null, files: Record<string, string>): string {
+    const dir = path.join(cwd, '.claude4spec', 'plugins', folder);
+    fs.mkdirSync(dir, { recursive: true });
+    if (pkg) fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg));
+    writeTree(dir, files);
+    return dir;
   }
 
-  describe('resolveFrontendAsset', () => {
-    it('returns the abs path for a trusted, built bundle', () => {
-      makePkg('glossary', { css: true });
-      const js = resolveFrontendAsset(cwd, true, 'glossary', 'frontend.js');
-      const css = resolveFrontendAsset(cwd, true, 'glossary', 'frontend.css');
-      expect(js).toBe(path.join(cwd, '.claude4spec', 'plugins', 'glossary', 'dist', 'frontend.js'));
-      expect(css).toBe(path.join(cwd, '.claude4spec', 'plugins', 'glossary', 'dist', 'frontend.css'));
-    });
+  /** A package root under `tmp` (stands in for `node_modules/<pkg>`). */
+  function pkgRoot(id: string, pkg: Record<string, unknown>, files: Record<string, string>): string {
+    const dir = path.join(tmp, 'node_modules', id);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg));
+    writeTree(dir, files);
+    return dir;
+  }
 
-    it('gate off ⇒ null (no project-committed bytes emitted)', () => {
-      makePkg('glossary');
-      expect(resolveFrontendAsset(cwd, false, 'glossary', 'frontend.js')).toBeNull();
-    });
-
-    it('missing build ⇒ null even when trusted', () => {
-      makePkg('glossary', { js: false }); // dir + package.json, but no dist/frontend.js
-      expect(resolveFrontendAsset(cwd, true, 'glossary', 'frontend.js')).toBeNull();
-      // css absent too
-      expect(resolveFrontendAsset(cwd, true, 'glossary', 'frontend.css')).toBeNull();
-    });
-
-    it('unknown / traversal name ⇒ null (only real overlay packages are eligible)', () => {
-      makePkg('glossary');
-      expect(resolveFrontendAsset(cwd, true, 'nope', 'frontend.js')).toBeNull();
-      expect(resolveFrontendAsset(cwd, true, '..', 'frontend.js')).toBeNull();
-      expect(resolveFrontendAsset(cwd, true, '../../etc', 'frontend.js')).toBeNull();
-    });
+  it('assetContentType allowlists only .js/.css/.map', () => {
+    expect(assetContentType('dto-ABC123.js')).toBe('text/javascript');
+    expect(assetContentType('frontend.css')).toBe('text/css');
+    expect(assetContentType('frontend.js.map')).toBe('application/json');
+    expect(assetContentType('package.json')).toBeNull();
+    expect(assetContentType('secret.env')).toBeNull();
+    expect(assetContentType('noext')).toBeNull();
   });
 
-  describe('generalized dist assets (native-ESM siblings)', () => {
-    it('assetContentType allowlists only .js/.css/.map', () => {
-      expect(assetContentType('dto-ABC123.js')).toBe('text/javascript');
-      expect(assetContentType('frontend.css')).toBe('text/css');
-      expect(assetContentType('frontend.js.map')).toBe('application/json');
-      expect(assetContentType('package.json')).toBeNull();
-      expect(assetContentType('secret.env')).toBeNull();
-      expect(assetContentType('noext')).toBeNull();
+  it('overlay: the entry is always dist/frontend.js — exports are not read; name = folder, version from its package.json', () => {
+    const dir = overlay(
+      'glossary',
+      { name: '@acme/glossary', version: '1.2.3', exports: { './frontend': './out/fe.js' } },
+      { 'dist/frontend.js': 'export {}', 'dist/frontend.css': '.x{}', 'out/fe.js': 'export {}' },
+    );
+    overlay('unbuilt', { name: 'unbuilt', version: '1.0.0' }, {});
+    overlay('legacy', null, { 'dist/frontend.js': 'export {}' });
+    const byName = new Map(overlayFrontendSources(cwd).map((s) => [s.name, s]));
+    expect([...byName.keys()].sort()).toEqual(['glossary', 'legacy']);
+    expect(byName.get('glossary')).toMatchObject({
+      kind: 'overlay',
+      version: '1.2.3',
+      entry: path.join(dir, 'dist', 'frontend.js'),
+      css: path.join(dir, 'dist', 'frontend.css'),
+      recordKey: 'glossary',
     });
-
-    it('overlay: serves a code-split chunk + source map sibling of frontend.js (trusted)', () => {
-      makePkg('glossary');
-      const dist = path.join(cwd, '.claude4spec', 'plugins', 'glossary', 'dist');
-      fs.writeFileSync(path.join(dist, 'dto-ABC123.js'), 'export const d = 1;');
-      fs.writeFileSync(path.join(dist, 'frontend.js.map'), '{}');
-      expect(resolveOverlayAsset(cwd, true, 'glossary', 'dto-ABC123.js')).toBe(
-        path.join(dist, 'dto-ABC123.js'),
-      );
-      expect(resolveOverlayAsset(cwd, true, 'glossary', 'frontend.js.map')).toBe(
-        path.join(dist, 'frontend.js.map'),
-      );
-    });
-
-    it('overlay: gate off / disallowed ext / traversal / missing ⇒ null', () => {
-      makePkg('glossary');
-      const dist = path.join(cwd, '.claude4spec', 'plugins', 'glossary', 'dist');
-      fs.writeFileSync(path.join(dist, 'chunk.js'), 'export const c = 1;');
-      // Secret next to the bundle must never be served (extension allowlist).
-      fs.writeFileSync(path.join(dist, 'secret.json'), '{"k":1}');
-      expect(resolveOverlayAsset(cwd, false, 'glossary', 'chunk.js')).toBeNull(); // gate off
-      expect(resolveOverlayAsset(cwd, true, 'glossary', 'secret.json')).toBeNull(); // ext
-      expect(resolveOverlayAsset(cwd, true, 'glossary', '../package.json')).toBeNull(); // traversal
-      expect(resolveOverlayAsset(cwd, true, 'glossary', 'sub/x.js')).toBeNull(); // separator
-      expect(resolveOverlayAsset(cwd, true, 'glossary', 'absent.js')).toBeNull(); // missing
-      expect(resolveOverlayAsset(cwd, true, 'nope', 'chunk.js')).toBeNull(); // unknown pkg
-    });
-
-    it('workspace: serves a chunk sibling of the resolved frontend entry, ungated but allowlist-bounded', () => {
-      const wsRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-ws-asset-'));
-      try {
-        fs.mkdirSync(path.join(wsRoot, 'dist'), { recursive: true });
-        fs.writeFileSync(
-          path.join(wsRoot, 'package.json'),
-          JSON.stringify({ name: 'c4s-ws-asset', version: '1.0.0', exports: { './frontend': { import: './dist/frontend.js' } } }),
-        );
-        fs.writeFileSync(path.join(wsRoot, 'dist', 'frontend.js'), 'export const x = 1;');
-        fs.writeFileSync(path.join(wsRoot, 'dist', 'dto-XYZ.js'), 'export const d = 1;');
-        const resolveRoot = (n: string) => (n === 'c4s-ws-asset' ? wsRoot : null);
-        expect(resolveWorkspaceAsset('c4s-ws-asset', 'dto-XYZ.js', ['c4s-ws-asset'], resolveRoot)).toBe(
-          path.join(wsRoot, 'dist', 'dto-XYZ.js'),
-        );
-        // Not in allowlist ⇒ null even for a resolvable, existing chunk.
-        expect(resolveWorkspaceAsset('c4s-ws-asset', 'dto-XYZ.js', [], resolveRoot)).toBeNull();
-        // Disallowed extension ⇒ null.
-        fs.writeFileSync(path.join(wsRoot, 'dist', 'meta.json'), '{}');
-        expect(resolveWorkspaceAsset('c4s-ws-asset', 'meta.json', ['c4s-ws-asset'], resolveRoot)).toBeNull();
-      } finally {
-        fs.rmSync(wsRoot, { recursive: true, force: true });
-      }
-    });
+    expect(byName.get('legacy')).toMatchObject({ version: '0.0.0', css: null });
   });
 
-  describe('enumerateFrontendBundles', () => {
-    it('lists only packages with a built dist/frontend.js, with version + hasCss', () => {
-      makePkg('with-css', { version: '1.2.3', css: true });
-      makePkg('no-css', { version: '0.9.0', css: false });
-      makePkg('no-build', { js: false }); // excluded — no dist/frontend.js
-      const bundles = enumerateFrontendBundles(cwd).sort((a, b) => a.name.localeCompare(b.name));
-      expect(bundles).toEqual([
-        { name: 'no-css', version: '0.9.0', hasCss: false },
-        { name: 'with-css', version: '1.2.3', hasCss: true },
-      ]);
-    });
+  it('npm package: exports[./frontend] (import → module → default → node → require), else dist/frontend.js; name + version from package.json', () => {
+    const declared = pkgRoot(
+      'declared',
+      { name: '@scope/declared', version: '3.1.4', exports: { './frontend': { require: './cjs/fe.js', import: './out/client.js' } } },
+      { 'out/client.js': 'export {}', 'out/frontend.css': '.x{}', 'cjs/fe.js': '', 'dist/frontend.js': 'export {}' },
+    );
+    const fallback = pkgRoot('fallback', { name: 'fallback', version: '1.0.0' }, { 'dist/frontend.js': 'export {}' });
+    const roots: Record<string, string> = { declared, fallback };
+    const resolveRoot = (n: string) => roots[n] ?? null;
 
-    it('missing/invalid package.json ⇒ version falls back to 0.0.0', () => {
-      makePkg('legacy', { pkgJson: false });
-      expect(enumerateFrontendBundles(cwd)).toEqual([
-        { name: 'legacy', version: '0.0.0', hasCss: false },
-      ]);
+    expect(npmFrontendSource('declared', resolveRoot)).toMatchObject({
+      kind: 'npm',
+      name: '@scope/declared',
+      version: '3.1.4',
+      entry: path.join(declared, 'out', 'client.js'),
+      css: path.join(declared, 'out', 'frontend.css'),
+      recordKey: 'declared',
     });
-
-    it('absent plugins dir ⇒ empty', () => {
-      expect(enumerateFrontendBundles(cwd)).toEqual([]);
+    expect(npmFrontendSource('fallback', resolveRoot)).toMatchObject({
+      entry: path.join(fallback, 'dist', 'frontend.js'),
+      css: null,
     });
+    expect(npmFrontendSource('not-installed', resolveRoot)).toBeNull();
   });
 
-  describe('buildFrontendManifest', () => {
-    it('trusted ⇒ one entry per built bundle with serving URLs', () => {
-      makePkg('glossary', { version: '1.0.0', css: true });
-      makePkg('notes', { version: '2.0.0', css: false });
-      const m = buildFrontendManifest(REGISTRY, { cwd, trusted: true });
-      expect(m.hostApiVersion).toBe(HOST_API_VERSION);
-      expect(m.importMap).toEqual(buildImportMap());
-      expect([...m.plugins].sort((a, b) => a.name.localeCompare(b.name))).toEqual([
-        {
-          name: 'glossary',
-          version: '1.0.0',
-          entry: '/api/plugins/glossary/frontend.js',
-          css: '/api/plugins/glossary/frontend.css',
-        },
-        { name: 'notes', version: '2.0.0', entry: '/api/plugins/notes/frontend.js' },
-      ]);
+  it('effective pool: only backend-`loaded` sources, overlay > npm > envelope on a name collision, overlay only when trusted', () => {
+    const npm = pkgRoot('shared', { name: 'shared', version: '2.0.0' }, { 'dist/frontend.js': 'export {}' });
+    const envDir = path.join(tmp, 'envelopes', 'shared-env');
+    writeTree(envDir, { 'package.json': JSON.stringify({ name: 'shared', version: '1.0.0' }), 'dist/frontend.js': 'export {}' });
+    const env: BuiltinEnvelope = { name: 'shared-env', dir: envDir, specifier: 'file:///x' };
+    overlay('shared', { name: 'shared', version: '9.9.9' }, { 'dist/frontend.js': 'export {}' });
+    const resolveRoot = (n: string) => (n === 'shared' ? npm : null);
+    const pool = (o: Partial<{ trusted: boolean; overlay: string[]; base: string[] }>): FrontendPool => ({
+      envelopes: { list: [env], loaded: new Set(o.base ?? []) },
+      npm: { packages: ['shared'], loaded: new Set(o.base ?? []), resolveRoot },
+      overlay: { cwd, trusted: o.trusted ?? true, loaded: new Set(o.overlay ?? []) },
     });
+    const pick = (p: FrontendPool) => effectiveFrontendSources(p).map((s) => `${s.kind}@${s.version}`);
 
-    it('untrusted ⇒ plugins [] but import map + host version intact', () => {
-      makePkg('glossary', { css: true });
-      const m = buildFrontendManifest(REGISTRY, { cwd, trusted: false });
-      expect(m.plugins).toEqual([]);
-      expect(m.importMap).toEqual(buildImportMap());
-      expect(m.hostApiVersion).toBe(HOST_API_VERSION);
-    });
-
-    it('no serving context (workspace-only start) ⇒ plugins []', () => {
-      const m = buildFrontendManifest(REGISTRY);
-      expect(m.plugins).toEqual([]);
-    });
+    expect(pick(pool({ base: ['shared-env', 'shared'], overlay: ['shared'] }))).toEqual(['overlay@9.9.9']);
+    expect(pick(pool({ base: ['shared-env', 'shared'], overlay: ['shared'], trusted: false }))).toEqual(['npm@2.0.0']);
+    expect(pick(pool({ base: ['shared-env', 'shared'] }))).toEqual(['npm@2.0.0']);
+    expect(pick(pool({ base: ['shared-env'] }))).toEqual(['envelope@1.0.0']);
+    expect(pick(pool({}))).toEqual([]);
   });
 
-  // ─── Workspace tier (phase 3) ─────────────────────────────────────────────
-  // A workspace plugin lives in `node_modules`; resolution is injected here (the
-  // `WorkspaceRootResolver` seam) so the test owns a temp package root instead of
-  // mutating the repo's node_modules (which is a symlink under a worktree).
-  describe('workspace tier', () => {
-    const FIXTURE = 'c4s-ws-fixture-plugin';
-    let wsRoot: string; // the installed package's root dir
-    /** Resolver mapping ONLY the fixture name → its temp root (else unresolvable). */
-    const resolveRoot = (name: string) => (name === FIXTURE ? wsRoot : null);
-
-    beforeAll(() => {
-      wsRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-ws-pkg-'));
-      fs.mkdirSync(path.join(wsRoot, 'dist'), { recursive: true });
-      fs.writeFileSync(
-        path.join(wsRoot, 'package.json'),
-        JSON.stringify({
-          name: FIXTURE,
-          version: '3.1.4',
-          exports: { './frontend': { import: './dist/frontend.js' } },
-        }),
-      );
-      fs.writeFileSync(path.join(wsRoot, 'dist', 'frontend.js'), 'export const x = 1;');
+  it('asset resolution: siblings of the announced entry only; extension / separator / traversal / missing ⇒ null', () => {
+    const dir = overlay('glossary', { name: 'glossary', version: '1.0.0' }, {
+      'dist/frontend.js': 'export {}',
+      'dist/dto-ABC123.js': 'export {}',
+      'dist/frontend.js.map': '{}',
+      'dist/secret.json': '{}',
+      'package.json.js': '',
     });
-    afterAll(() => {
-      fs.rmSync(wsRoot, { recursive: true, force: true });
-    });
-
-    it('resolves the package frontend.js (from exports[./frontend]) when allowlisted, ungated', () => {
-      const js = resolveWorkspaceFrontendAsset(FIXTURE, 'frontend.js', [FIXTURE], resolveRoot);
-      expect(js).toBe(path.join(wsRoot, 'dist', 'frontend.js'));
-    });
-
-    it('not in the allowlist ⇒ null (traversal/scope guard, even for a resolvable package)', () => {
-      expect(resolveWorkspaceFrontendAsset(FIXTURE, 'frontend.js', [], resolveRoot)).toBeNull();
-      expect(resolveWorkspaceFrontendAsset(FIXTURE, 'frontend.js', ['other'], resolveRoot)).toBeNull();
-    });
-
-    it('unresolvable package ⇒ null', () => {
-      expect(
-        resolveWorkspaceFrontendAsset('c4s-not-installed', 'frontend.js', ['c4s-not-installed'], resolveRoot),
-      ).toBeNull();
-    });
-
-    it('css sibling ⇒ null when not shipped', () => {
-      expect(resolveWorkspaceFrontendAsset(FIXTURE, 'frontend.css', [FIXTURE], resolveRoot)).toBeNull();
-    });
-
-    it('enumerate lists allowlisted built packages with version + hasCss', () => {
-      expect(enumerateWorkspaceFrontendBundles([FIXTURE], resolveRoot)).toEqual([
-        { name: FIXTURE, version: '3.1.4', hasCss: false },
-      ]);
-      expect(enumerateWorkspaceFrontendBundles([], resolveRoot)).toEqual([]);
-    });
-
-    it('manifest: workspace bundles are ungated (present even when project untrusted)', () => {
-      const m = buildFrontendManifest(REGISTRY, { cwd, trusted: false }, [FIXTURE], resolveRoot);
-      expect(m.plugins).toEqual([
-        { name: FIXTURE, version: '3.1.4', entry: `/api/plugins/${FIXTURE}/frontend.js` },
-      ]);
-    });
-
-    it('manifest: base ∪ overlay, overlay overrides a same-named workspace bundle', () => {
-      // Overlay (project-local) bundle of the SAME name, different version.
-      makePkg(FIXTURE, { version: '9.9.9' });
-      const m = buildFrontendManifest(REGISTRY, { cwd, trusted: true }, [FIXTURE], resolveRoot);
-      // De-duped by name → one entry; the overlay (project-local) copy wins.
-      expect(m.plugins).toEqual([
-        { name: FIXTURE, version: '9.9.9', entry: `/api/plugins/${FIXTURE}/frontend.js` },
-      ]);
-    });
-
-    it('manifest: distinct names from both tiers are both present', () => {
-      makePkg('overlay-only', { version: '1.0.0' });
-      const m = buildFrontendManifest(REGISTRY, { cwd, trusted: true }, [FIXTURE], resolveRoot);
-      const byName = [...m.plugins].sort((a, b) => a.name.localeCompare(b.name));
-      expect(byName).toEqual([
-        { name: FIXTURE, version: '3.1.4', entry: `/api/plugins/${FIXTURE}/frontend.js` },
-        { name: 'overlay-only', version: '1.0.0', entry: '/api/plugins/overlay-only/frontend.js' },
-      ]);
-    });
-
-    it('manifest: a SCOPED package name is percent-encoded into ONE path segment', () => {
-      // Regression: a scoped name (`@scope/pkg`) has a `/`. The asset URL must
-      // encode it so the `:name/:asset` serving route still matches — otherwise the
-      // frontend 404s and the plugin's sidebar entry silently disappears (the exact
-      // symptom when the preinstalled database-table plugin moved to its scoped name).
-      const SCOPED = '@inharness-ai/c4s-plugin-simple-database-tables';
-      const scopedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-ws-scoped-'));
-      fs.mkdirSync(path.join(scopedRoot, 'dist'), { recursive: true });
-      fs.writeFileSync(
-        path.join(scopedRoot, 'package.json'),
-        JSON.stringify({
-          name: SCOPED,
-          version: '0.1.0',
-          exports: { './frontend': { import: './dist/frontend.js' } },
-        }),
-      );
-      fs.writeFileSync(path.join(scopedRoot, 'dist', 'frontend.js'), 'export const x = 1;');
-      const resolveScoped = (name: string) => (name === SCOPED ? scopedRoot : null);
-      try {
-        const m = buildFrontendManifest(REGISTRY, undefined, [SCOPED], resolveScoped);
-        expect(m.plugins).toEqual([
-          {
-            name: SCOPED,
-            version: '0.1.0',
-            entry: `/api/plugins/${encodeURIComponent(SCOPED)}/frontend.js`,
-          },
-        ]);
-        // The name portion of the URL must be a SINGLE segment (no raw slash) and
-        // round-trip back to the real package name via the route's param decoding.
-        const seg = m.plugins[0]!.entry.slice('/api/plugins/'.length).split('/')[0]!;
-        expect(seg).not.toContain('/');
-        expect(decodeURIComponent(seg)).toBe(SCOPED);
-      } finally {
-        fs.rmSync(scopedRoot, { recursive: true, force: true });
-      }
-    });
+    const pool: FrontendPool = { overlay: { cwd, trusted: true, loaded: new Set(['glossary']) } };
+    const dist = path.join(dir, 'dist');
+    expect(resolvePluginAsset(pool, 'glossary', 'dto-ABC123.js')).toBe(path.join(dist, 'dto-ABC123.js'));
+    expect(resolvePluginAsset(pool, 'glossary', 'frontend.js.map')).toBe(path.join(dist, 'frontend.js.map'));
+    expect(resolvePluginAsset(pool, 'glossary', 'secret.json')).toBeNull();
+    expect(resolvePluginAsset(pool, 'glossary', '../package.json.js')).toBeNull();
+    expect(resolvePluginAsset(pool, 'glossary', 'sub/x.js')).toBeNull();
+    expect(resolvePluginAsset(pool, 'glossary', 'absent.js')).toBeNull();
+    expect(resolvePluginAsset(pool, 'nope', 'frontend.js')).toBeNull();
+    expect(resolvePluginAsset({ overlay: { cwd, trusted: false, loaded: new Set(['glossary']) } }, 'glossary', 'frontend.js')).toBeNull();
   });
 });
 
@@ -352,5 +189,66 @@ describe('nearestPackageRoot', () => {
     // Guard: only assert null when the real fs has no package.json up to root.
     // os.tmpdir() chains have none, so the walk terminates at filesystem root.
     expect(nearestPackageRoot(deep)).toBeNull();
+  });
+});
+
+/**
+ * 2.1.20 (M33 `ywud56l6`) — a built-in envelope's frontend entry is found by the
+ * SAME rule as an npm package's: `exports['./frontend']`, falling back to
+ * `dist/frontend.js`, relative to the envelope folder. Moving an envelope out of
+ * the host repo therefore does not change how its frontend is discovered.
+ */
+describe('[section:ywud56l6] envelope frontend entry — the npm package rule, relative to the envelope folder', () => {
+  let root: string;
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-envelope-fe-'));
+  });
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  function envelope(name: string, pkg: Record<string, unknown>, files: string[]): BuiltinEnvelope {
+    const dir = path.join(root, name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name, version: '1.2.3', ...pkg }));
+    for (const f of files) {
+      fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true });
+      fs.writeFileSync(path.join(dir, f), '// built\n');
+    }
+    return { name, dir, specifier: `file://${path.join(dir, 'dist/index.js')}` };
+  }
+
+  it('[section:ywud56l6] resolves exports[./frontend] when declared, and dist/frontend.js otherwise — the same path the npm package rule resolves', () => {
+    const declared = envelope(
+      'declared',
+      { exports: { '.': './dist/index.js', './frontend': { import: './out/fe.js' } } },
+      ['out/fe.js', 'out/frontend.css', 'out/chunk-1.js'],
+    );
+    const fallback = envelope('fallback', {}, ['dist/frontend.js']);
+    const unbuilt = envelope('unbuilt', { exports: { './frontend': './dist/frontend.js' } }, []);
+    const envelopes = [declared, fallback, unbuilt];
+
+    expect(envelopeFrontendSource(declared)).toMatchObject({
+      kind: 'envelope',
+      name: 'declared',
+      version: '1.2.3',
+      entry: path.join(declared.dir, 'out/fe.js'),
+      css: path.join(declared.dir, 'out/frontend.css'),
+    });
+    expect(envelopeFrontendSource(fallback)).toMatchObject({ entry: path.join(fallback.dir, 'dist/frontend.js'), css: null });
+    expect(envelopeFrontendSource(unbuilt)).toBeNull();
+
+    // Assets are served next to the resolved entry, inside the envelope folder.
+    const pool: FrontendPool = { envelopes: { list: envelopes, loaded: new Set(['declared', 'fallback', 'unbuilt']) } };
+    expect(resolvePluginAsset(pool, 'declared', 'fe.js')).toBe(path.join(declared.dir, 'out/fe.js'));
+    expect(resolvePluginAsset(pool, 'declared', 'chunk-1.js')).toBe(path.join(declared.dir, 'out/chunk-1.js'));
+    expect(resolvePluginAsset(pool, 'fallback', 'frontend.js')).toBe(path.join(fallback.dir, 'dist/frontend.js'));
+    expect(resolvePluginAsset(pool, 'unbuilt', 'frontend.js')).toBeNull();
+
+    // The npm-package rule, applied to the same folders as package roots, lands on the same files.
+    expect(packageFrontendEntry(declared.dir)).toBe(path.join(declared.dir, 'out/fe.js'));
+    expect(packageFrontendEntry(fallback.dir)).toBe(path.join(fallback.dir, 'dist/frontend.js'));
+    const asPackageRoot = (name: string) => envelopes.find((e) => e.name === name)?.dir ?? null;
+    expect(npmFrontendSource('declared', asPackageRoot)?.entry).toBe(path.join(declared.dir, 'out/fe.js'));
   });
 });

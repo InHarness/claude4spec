@@ -3,7 +3,6 @@ import { Check, Copy, Maximize2 } from 'lucide-react';
 import type { EntityCardProps } from '@c4s/plugin-runtime';
 import { DEFAULT_LANGUAGE } from '../../../identity.js';
 import { fetchCodeSnippet, useEntityChanged, type CodeSnippet } from './hooks.js';
-import { openModal } from '../../../frontend-kit/host-events.js';
 import { CodeSnippetView } from './view.js';
 import { openEditPopover } from './popover.js';
 
@@ -153,23 +152,26 @@ export function CodeSnippetCard({ slug, entity, caption, onOpen }: EntityCardPro
         >
           {copied ? <Check size={13} /> : <Copy size={13} />}
         </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            // Prefer the host's handler when it gave us one — a chip click takes
-            // the same path. Without one, open the `code-snippet-expand` window
-            // directly (0.2.110 M50): the host resolves it to this type's
-            // `renderOverlay`, so there is no second, locally portalled copy.
-            if (onOpen) onOpen();
-            else void openModal('code-snippet-expand', { slug, entity: record, ...(caption ? { caption } : {}) });
-          }}
-          aria-label="Open fullscreen"
-          className="shrink-0 rounded p-1"
-          style={{ color: 'var(--c-muted)' }}
-        >
-          <Maximize2 size={13} />
-        </button>
+        {/*
+          2.1.20 (M13 chipprops) — the `code-snippet-expand` window is opened by
+          the HOST: its handler arrives as `onOpen` (the same path a chip click
+          takes) and the card never opens the window itself. No handler (an
+          unresolvable reference) means no expand button.
+        */}
+        {onOpen && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpen();
+            }}
+            aria-label="Open fullscreen"
+            className="shrink-0 rounded p-1"
+            style={{ color: 'var(--c-muted)' }}
+          >
+            <Maximize2 size={13} />
+          </button>
+        )}
       </header>
 
       <CodeSnippetView code={record?.code ?? ''} language={record?.language} loading={loading} hideCopy />

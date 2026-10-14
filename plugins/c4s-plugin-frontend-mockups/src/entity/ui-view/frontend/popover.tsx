@@ -4,7 +4,7 @@ import { Monitor } from 'lucide-react';
 import { designSystemsApi } from '../../design-system/frontend/api.js';
 import { useUpdateUiView } from './hooks.js';
 import { apiFetch, handle } from '../../../frontend-kit/api-core.js';
-import { toast } from '../../../frontend-kit/host-events.js';
+import { toast } from '@c4s/plugin-runtime';
 import {
   FieldLabel,
   InlineError,

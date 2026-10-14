@@ -17,7 +17,7 @@
  */
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { toast } from './host-events.js';
+import { toast } from '@c4s/plugin-runtime';
 
 export const PLUGIN_COMMAND_EVENT = 'c4s:plugin-command';
 
@@ -137,6 +137,11 @@ function anchorStyle(coords: CaretCoords | null | undefined, width: number): CSS
 }
 
 /**
+ * Host-local (Host UI Kit slice of `c4s-plugin-code-snippets`): the frame of
+ * the `code-snippet-create` / `code-snippet-edit` window form, declared with
+ * `CodeSnippetPopover` (ASSUMPTION:dev-2007 — the entry names the form, not the
+ * frame).
+ *
  * The popover frame. Deliberately NOT the kit's `Dialog` — that is the create
  * MODAL, a different surface; a slash-create is a light anchored popover, and
  * this reproduces the host shell the two forms used to sit in.

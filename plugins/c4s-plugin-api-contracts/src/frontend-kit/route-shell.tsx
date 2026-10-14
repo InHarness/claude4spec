@@ -1,4 +1,12 @@
 /**
+ * DEBT (2.1.20, Host UI Kit slice of `c4s-plugin-api-contracts`, endpoint + dto): `RoutePane` — the pane a plugin route
+ * view sits in (`Pane` below), reproducing the host's route container. It fails
+ * the locality rule — each of four plugin packages keeps its own copy
+ * (condition 1), and the route view container is common to every entity type
+ * (condition 2). The catalog has no component that replaces it; it is a
+ * candidate of the catalog trajectory (M34). Recorded, not fixed here.
+ */
+/**
  * The two things every route this package contributes has to get right, and got
  * wrong when these routes moved out of the host's `router.tsx`.
  *

@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Layers, X } from 'lucide-react';
 import type { Root } from '../../../shared/types.js';
 import { PAGES_KIND, registryList, type RegistryRoot } from '../../../shared/root-kinds.js';
 import { apiFetch, handle } from '../../lib/api-core.js';
@@ -50,8 +49,10 @@ interface FieldsProps {
  *     root-agnostic — show once, as one shared count.
  *
  * Presentational + probe logic only (no dialog chrome / confirm button) so it can
- * be embedded directly inside the "Generate brief" modal (CreateBriefDialog) as
- * well as the standalone `BriefScopeModal`. The chosen `BriefScope` flows through
+ * be embedded directly inside the "Generate brief" modal (CreateBriefDialog). The
+ * standalone `BriefScopeModal` dialog that also wrapped these fields is gone
+ * (2.1.20): it was never mounted, and its own scrim and panel were an undeclared
+ * twin of the catalog's `Dialog` (M34 gate (a)). The chosen `BriefScope` flows through
  * to `createBrief({ roots })` — `kind: 'whole-release'` ⇒ omit `roots`,
  * `kind: 'roots'` ⇒ pass the array.
  */
@@ -215,98 +216,6 @@ export function BriefScopeFields({
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-interface ModalProps {
-  fromReleaseName: string | null;
-  toReleaseName: string;
-  roots: Root[];
-  onConfirm: (scope: BriefScope) => void;
-  onClose: () => void;
-  fetchChangedCount?: (rootId: string) => Promise<number | null>;
-}
-
-/**
- * Standalone brief-scope modal (dialog chrome around `BriefScopeFields`). Not
- * currently mounted in the "Generate brief" flow — the scope fields are embedded
- * directly in `CreateBriefDialog` — but kept as a self-contained picker for any
- * caller that wants scope selection as its own step.
- */
-export function BriefScopeModal({
-  fromReleaseName,
-  toReleaseName,
-  roots,
-  onConfirm,
-  onClose,
-  fetchChangedCount,
-}: ModalProps) {
-  const [scope, setScope] = useState<BriefScope>({ kind: 'whole-release' });
-  const canConfirm = scope.kind === 'whole-release' || scope.roots.length > 0;
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.4)' }}
-      onClick={onClose}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="rounded-lg w-[480px] p-5"
-        style={{
-          background: 'var(--c-bg)',
-          border: '1px solid var(--c-hair-strong)',
-          boxShadow: '0 12px 40px rgba(0,0,0,0.18)',
-        }}
-      >
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Layers size={16} style={{ color: 'var(--c-accent)' }} />
-            <h3 className="text-[14px] font-semibold" style={{ color: 'var(--c-ink)' }}>
-              Brief scope
-            </h3>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md p-1 btn-ghost"
-            style={{ color: 'var(--c-muted)' }}
-          >
-            <X size={14} />
-          </button>
-        </div>
-
-        <div className="text-[12.5px]">
-          <BriefScopeFields
-            fromReleaseName={fromReleaseName}
-            toReleaseName={toReleaseName}
-            roots={roots}
-            onChange={setScope}
-            fetchChangedCount={fetchChangedCount}
-          />
-        </div>
-
-        <div className="flex items-center justify-end gap-2 mt-5">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1.5 rounded text-[12.5px] btn-ghost"
-            style={{ color: 'var(--c-muted)' }}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => onConfirm(scope)}
-            disabled={!canConfirm}
-            className="px-3 py-1.5 rounded text-[12.5px]"
-            style={{ background: 'var(--c-accent)', color: '#fff', opacity: canConfirm ? 1 : 0.6 }}
-          >
-            Continue
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

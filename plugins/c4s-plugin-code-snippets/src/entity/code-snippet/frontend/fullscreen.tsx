@@ -5,13 +5,17 @@ import { fetchCodeSnippet, type CodeSnippet } from './hooks.js';
 import { CodeSnippetView } from './view.js';
 
 /**
- * The read-only fullscreen surface. `code-snippet` is a HIDDEN type — no detail
- * route, no detail panel — so this is where a chip or a card's maximise button
- * sends the reader instead of navigating.
+ * The read-only fullscreen surface — the CONTENT of the host's
+ * `code-snippet-expand` window (this type's `renderOverlay` slot). `code-snippet`
+ * is a HIDDEN type — no detail route, no detail panel — so a click on its chip,
+ * or on the card's maximise button, is routed by the HOST to that window (M13
+ * chipprops, 2.1.20); neither the chip nor the card opens this component itself.
  *
- * Two entrances, and they differ only in whether a record is already in hand:
- * the card passes the one it fetched, the chip passes nothing and this fetches
- * on open.
+ * ONE entrance, and it carries a slug: the window hands its content
+ * `{ slug, caption?, onClose }` and nothing else, whichever surface the click
+ * came from. So the record is resolved here, by `slug`, on open — there is no
+ * "record already in hand" variant any more (2.1.20 removed the card's own
+ * route into this surface, and with it the prefetched-record prop).
  *
  * ALWAYS FULL CONTENT: `alwaysExpanded` is passed unconditionally. The card's
  * collapse threshold is about not letting one embed swallow a page; a surface
@@ -23,25 +27,18 @@ import { CodeSnippetView } from './view.js';
  */
 export function CodeSnippetFullscreen({
   slug,
-  entity,
   caption,
   onClose,
 }: {
   slug: string;
-  entity?: CodeSnippet | null;
   caption?: string;
   onClose: () => void;
 }) {
-  const [record, setRecord] = React.useState<CodeSnippet | null>(entity ?? null);
-  const [loading, setLoading] = React.useState(!entity);
+  const [record, setRecord] = React.useState<CodeSnippet | null>(null);
+  const [loading, setLoading] = React.useState(true);
   const [copied, setCopied] = React.useState(false);
 
   React.useEffect(() => {
-    if (entity) {
-      setRecord(entity);
-      setLoading(false);
-      return;
-    }
     let live = true;
     setLoading(true);
     void fetchCodeSnippet(slug).then((next) => {
@@ -52,7 +49,7 @@ export function CodeSnippetFullscreen({
     return () => {
       live = false;
     };
-  }, [slug, entity]);
+  }, [slug]);
 
   const code = record?.code ?? '';
 

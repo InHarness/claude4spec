@@ -33,6 +33,10 @@ import type { MockupMountContext } from '../../host-kit/host-types.js';
  * manifest also lists `design-system` first — belt and braces, because a split
  * across two envelopes would cut the declaration no matter the order.
  */
+// 2.1.20 (M13 z7l89jhf) — the type's frontend is NOT part of this contribution:
+// the host rejects a `frontend` key here. `uiViewFrontendModule` (./frontend/module.tsx) enters
+// through the package's browser entry (`src/frontend.tsx`, `exports['./frontend']`)
+// via `registerFrontendModule`.
 export const uiViewEntity: EntityContribution = {
   type: UI_VIEW_TYPE,
   data: uiViewData,

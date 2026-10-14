@@ -21,7 +21,7 @@ import {
   useSlashSubmit,
   type EmbedEditor,
 } from '../../../frontend-kit/slash-create.js';
-import { toast } from '../../../frontend-kit/host-events.js';
+import { toast } from '@c4s/plugin-runtime';
 import { ENDPOINT_POPOVER_KIND, ENDPOINT_TYPE } from '../../../identity.js';
 import type { HttpMethod } from '../../../types.js';
 import { endpointsApi } from './api.js';

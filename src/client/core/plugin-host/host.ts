@@ -7,8 +7,6 @@
  * Phase 4+ migrates consumers to ask the host.
  */
 
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 import type { ClientPluginHost, FrontendModule } from './types.js';
 import { checkSlotShapes } from './slot-rules.js';
 import type { PluginActivationState } from '../../../shared/plugin-host/types.js';
@@ -39,23 +37,15 @@ function assertSlotShapes(module: FrontendModule): void {
   }
 }
 
-/**
- * M34/L11: pure-React smoke test of the chip renderer — catches a
- * synchronously-throwing `renderChip` at REGISTRATION time instead of
- * deferring the crash to the first inline mention actually rendered, which
- * (pre-M34) could take down the whole page. `entity: null` is the documented
- * broken-reference case every chip must already handle (see
- * `EntityChipProps`), so it's the natural minimal smoke-test prop.
+/*
+ * 2.1.20 — no smoke test here. Registration registers and mounts nothing; the
+ * behavioural smoke test of the render slots runs in the browser at the
+ * `mountFrontend` step (`runtime/validate-slots.ts`), where a chip that throws is
+ * swapped for the host's `rejected-slot` broken chip and the module STAYS
+ * mounted. A throwing smoke test here used to fail the plugin's own
+ * `registerFrontendModule` call — and with it the whole module (routes, sidebar
+ * tab, editor extensions) — for a defect confined to one slot.
  */
-function smokeTestChip(module: FrontendModule): void {
-  try {
-    renderToStaticMarkup(createElement(module.renderChip, { slug: '__smoke_test__', entity: null }));
-  } catch (err) {
-    throw new Error(
-      `client plugin-host: module '${module.type}' — renderChip threw during load-time smoke test: ${(err as Error).message}`,
-    );
-  }
-}
 
 class ClientPluginHostImpl implements ClientPluginHost {
   private modules = new Map<string, FrontendModule>();
@@ -68,7 +58,6 @@ class ClientPluginHostImpl implements ClientPluginHost {
       throw new Error('client plugin-host: module.type is required');
     }
     assertSlotShapes(module);
-    smokeTestChip(module);
     this.modules.set(module.type, module);
     this.notify();
   }
@@ -151,6 +140,11 @@ export const clientPluginHost: ClientPluginHost = new ClientPluginHostImpl();
  * Free-function form of `clientPluginHost.registerFrontendModule`, re-exported
  * through `@c4s/plugin-runtime` so a runtime plugin can hand its frontend slots
  * to the host without reaching into the singleton directly.
+ *
+ * 2.1.20 — this call, made by the plugin's own entry when the host imports it
+ * from the frontend manifest, is the ONLY way a plugin's frontend enters the
+ * client registry. It registers the module and mounts nothing: the host's
+ * `mountFrontend` step follows.
  */
 export function registerFrontendModule(module: FrontendModule): void {
   clientPluginHost.registerFrontendModule(module);

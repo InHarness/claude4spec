@@ -1,12 +1,19 @@
 /**
  * Client-side plugin manifest. Extends the shared EntityModuleManifest with
- * frontend-only slots (React components, sidebar tab, routes, state slice,
- * editor extensions).
+ * frontend-only slots (React components, sidebar tab, routes, editor
+ * extensions).
  *
- * Phase 0: only render* + detailPanel + useGetBySlug are required because the
- * legacy adapter populates them by wrapping the existing registerEntity()
- * calls. Routes / sidebarTab / editorExtensions are filled in Phase 3 per
- * entity.
+ * 2.1.20 — a plugin's frontend enters the client registry ONLY through its own
+ * `registerFrontendModule(module)` call (registration mounts nothing); the host
+ * mounts every active module afterwards, in the `mountFrontend` step. The plugin
+ * state slice (`stateSlice`) and `sidebarTab.emptyState` are gone from the
+ * contract.
+ *
+ * Required slots (M13 `z7l89jhf`): `renderChip`, `renderCard`, `useGetBySlug`
+ * and `listByTags` — a module missing any of them is rejected at registration
+ * (`slot-rules.ts`). Everything else is optional but bound by three consistency
+ * rules: `routes` and `detailPanel` both or neither; a hidden type (neither)
+ * declares `renderOverlay`; a type with a detail route does not.
  */
 
 import type { ComponentType } from 'react';
@@ -31,11 +38,8 @@ export interface SidebarTabSlot {
   label: string;
   /** Sort order — Pages = 1, Tags = 999, plugins live in between. */
   order: number;
-  /**
-   * 2.1.16 — declared and NOT rendered. The sidebar reads only `icon`, `label`
-   * and `order`; a type's list page carries its own empty text (open question 59).
-   */
-  emptyState?: ComponentType<unknown>;
+  // 2.1.20 — `emptyState` removed: the sidebar reads only `icon`, `label` and
+  // `order`, and a type's list page carries its own empty text.
 }
 
 /**
@@ -55,19 +59,6 @@ export type { EntityChipProps, EntityCardProps, EntityRowProps, EntityDetailProp
  */
 export type RouteTreeFragment = (ctx: { rootRoute: AnyRoute }) => AnyRoute[];
 
-/**
- * L? (M33 phase 3) — a plugin's optional client state-slice registration.
- * TYPED BUT UNCONSUMED: there is no host store-slice mechanism yet, so
- * `mountFrontend` only acknowledges it via a no-op registration point. Shape is
- * intentionally minimal until a real consumer lands (see the `stateSlice` patch).
- */
-export interface StateSliceContribution {
-  /** Unique slice key (namespaced by the plugin's entity type by convention). */
-  key: string;
-  /** Opaque initial state — the host has no store to merge it into yet. */
-  initial?: unknown;
-}
-
 export interface FrontendModule extends EntityModuleManifest {
   /** L8 — chip rendered inline by InlineMentionView etc. */
   renderChip: ComponentType<EntityChipProps<unknown>>;
@@ -86,7 +77,8 @@ export interface FrontendModule extends EntityModuleManifest {
   renderRow?: ComponentType<EntityRowProps<unknown>>;
 
   /**
-   * L5 — entity detail panel.
+   * L5 — entity detail panel DECLARATION, which the host never renders: the
+   * type's detail page is rendered by the component of its `routes` fragment.
    *
    * OPTIONAL, and bound to {@link routes}: a type declares BOTH or NEITHER.
    * Neither = a hidden entity. `EntityDetailProps` is a contract only for a
@@ -100,8 +92,9 @@ export interface FrontendModule extends EntityModuleManifest {
   detailPanel?: ComponentType<EntityDetailProps>;
 
   /**
-   * Read-only fullscreen surface opened by a click on a HIDDEN entity's chip or
-   * card.
+   * Content of the host's `<type>-expand` window, opened by a click on a HIDDEN
+   * entity's chip or card (2.1.20: the host opens the window through the shell's
+   * `openModal`; the chip opens nothing itself).
    *
    * 0.2.16 — required exactly when the type is hidden (no `routes`, no
    * `detailPanel`), and forbidden otherwise: a type WITH a detail route sends
@@ -109,20 +102,25 @@ export interface FrontendModule extends EntityModuleManifest {
    * would be a second, contradictory answer to "where does a click go".
    *
    * The overlay is the entity's own — the host owns the click mechanism
-   * (`openEntityHandler` → `EntityOverlayHost`), the entity owns what appears.
+   * (`openEntityHandler` → `openModal('<type>-expand')` → `ModalHost`), the
+   * entity owns what appears.
    * That split is the same one `renderChip` already lives under: a slot stays
    * declarative, the host-resolver keeps the wiring.
    */
   renderOverlay?: ComponentType<{ slug: string; caption?: string; onClose: () => void }>;
 
-  /** TanStack Query hook for resolving an entity by slug. */
+  /**
+   * REQUIRED — TanStack Query hook resolving an entity by slug. Called by the
+   * host-resolver (chip, card, reference lists, the release-diff entity card),
+   * never by a render slot.
+   */
   useGetBySlug: (
     slug: string | null
   ) => { data: unknown | null | undefined; isLoading: boolean };
 
   /**
-   * Async list of entities filtered by tags. Used by TaggedListView /
-   * TaggedListMixedView NodeViews to avoid per-type API switches.
+   * REQUIRED — async list of entity slugs of this type filtered by tags. Used by
+   * TaggedListView / TaggedListMixedView NodeViews to avoid per-type API switches.
    */
   listByTags: (args: { tags: string[]; filter: 'and' | 'or' }) => Promise<Array<{ slug: string }>>;
 
@@ -148,12 +146,6 @@ export interface FrontendModule extends EntityModuleManifest {
    * other one has to keep.
    */
   routes?: RouteTreeFragment;
-
-  /**
-   * Phase 3 — optional client state slice. Typed but currently UNCONSUMED (no
-   * host store mechanism); `mountFrontend` only acknowledges it.
-   */
-  stateSlice?: StateSliceContribution;
 }
 
 export interface ClientPluginHost {

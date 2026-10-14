@@ -6,8 +6,10 @@ import { UI_EVENTS, type ConfirmRequest } from './events.js';
  * A `c4s:confirm-open` payload as it may arrive. 0.2.110 answers through
  * `onConfirm` / `onCancel` and names a `kind`; a plugin built against the
  * pre-0.2.110 protocol still sends a bare `resolve(boolean)` and no `kind`.
- * The event names and payload shapes are the plugin contract, so the host keeps
- * accepting the old shape rather than silently leaving such a confirm unanswered.
+ * Since 2.1.20 (M50 `tbeatf5z`) a plugin confirms through the
+ * `confirmDestructive` facade of `@c4s/plugin-runtime` and the event is no
+ * longer plugin surface; the old shape is still accepted so a plugin built
+ * before that is not left with a confirm nobody answers.
  */
 type IncomingConfirm = Omit<ConfirmRequest, 'onConfirm' | 'onCancel' | 'kind' | 'danger'> &
   Partial<Pick<ConfirmRequest, 'onConfirm' | 'onCancel' | 'kind' | 'danger'>> & {

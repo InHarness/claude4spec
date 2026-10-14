@@ -1,3 +1,10 @@
+/**
+ * DEBT (2.1.20, Host UI Kit slice of M17): the create-release window on
+ * `releases-list` draws its own scrim and panel. It fails locality condition 2 —
+ * a window shell does not follow from anything release-specific and repeats
+ * with every form window. Its catalog replacement is `Dialog`.
+ * Recorded, not fixed here.
+ */
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useCreateRelease } from '../hooks/useReleases.js';

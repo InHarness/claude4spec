@@ -3,10 +3,11 @@
  * `/api/projects/:id` dispatch) — the plugin catalog is process-global, so
  * these are reachable with a plain `fetch` (no project prefix):
  *
- *   GET /api/plugins/frontend-manifest   → import map + active plugins ("Option B")
+ *   GET /api/plugins/frontend-manifest   → announced plugin frontends ("Option B")
  *   GET /api/plugins/runtime/<peer>.js   → shared-singleton ESM shim
- *   GET /api/plugins/<name>/frontend.js  → plugin frontend (overlay: trust-gated, workspace: ungated)
- *   GET /api/plugins/<name>/frontend.css → plugin styles  (overlay: trust-gated, workspace: ungated)
+ *   GET /api/plugins/<name>/<asset>      → a `.js` / `.css` / `.map` file from the
+ *                                          folder of the plugin's frontend entry
+ *                                          (overlay: trust-gated; npm, envelope: ungated)
  *   GET /api/_meta/plugins               → loader diagnostics (per-package state)
  */
 
@@ -18,10 +19,15 @@ import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import { buildFrontendManifest } from '../core/plugin-host/frontend-manifest.js';
 import {
   assetContentType,
-  resolveOverlayAsset,
-  resolveEnvelopeAsset,
-  resolveWorkspaceAsset,
+  loadedRecordKeys,
+  resolvePluginAsset,
+  type FrontendPool,
+  type WorkspaceRootResolver,
 } from '../core/plugin-host/frontend-assets.js';
+import {
+  PLUGIN_FRONTEND_NOT_FOUND,
+  type PluginFrontendAssetError,
+} from '../../shared/plugin-host/frontend-manifest.js';
 import { getRuntimeShim } from '../core/plugin-host/runtime-shims.js';
 // M33 phase 3: base-package assembly lives in a shared, express-free module so
 // the `c4s plugins` CLI reuses the SAME logic (no divergence). Re-exported here
@@ -41,7 +47,16 @@ export interface PluginRoutesDeps {
    * plugins. `isTrusted()` is read per request, so a `POST /trust-plugins` flip
    * takes effect without a process restart.
    */
-  frontendServing?: { cwd: string; isTrusted: () => boolean };
+  frontendServing?: {
+    cwd: string;
+    isTrusted: () => boolean;
+    /**
+     * 2.1.20: the overlay folders whose BACKEND is `loaded` in the primary
+     * project's context (its overlay load records). Only those announce and serve
+     * a frontend — the same filter as the base pool. Absent ⇒ none.
+     */
+    overlayLoaded?: () => ReadonlySet<string> | Promise<ReadonlySet<string>>;
+  };
   /**
    * M33 phase 3: the process's resolved workspace plugin package names (the same
    * list `loadWorkspacePlugins` consumed). Their frontends are served UNGATED for
@@ -54,6 +69,8 @@ export interface PluginRoutesDeps {
    * comes from a request.
    */
   envelopes?: BuiltinEnvelope[];
+  /** Test seam: how a workspace package's root is found (default: `import.meta.resolve`). */
+  resolveWorkspaceRoot?: WorkspaceRootResolver;
 }
 
 /** Diagnostics response — array of per-package records, extensible for phase 2. */
@@ -63,14 +80,47 @@ export interface PluginsMetaResponse {
 }
 
 export function pluginsRouter(deps: PluginRoutesDeps): Router {
-  const { pluginRegistry, pluginRecords, frontendServing, workspacePackages = [], envelopes = [] } = deps;
+  const {
+    pluginRegistry,
+    pluginRecords,
+    frontendServing,
+    workspacePackages = [],
+    envelopes = [],
+    resolveWorkspaceRoot,
+  } = deps;
   const router = Router();
 
-  router.get('/plugins/frontend-manifest', (_req, res) => {
-    const serving = frontendServing
-      ? { cwd: frontendServing.cwd, trusted: frontendServing.isTrusted() }
-      : undefined;
-    res.json(buildFrontendManifest(pluginRegistry, serving, workspacePackages, undefined, envelopes));
+  /**
+   * The effective frontend pool, read live per request: the trust gate, the
+   * overlay's load records and the base records (`pluginRecords` — envelopes +
+   * npm packages, kept current across hot reloads) can all change while the
+   * process runs. The manifest and the asset route read the SAME pool, so a name
+   * is served from exactly the source the manifest announced.
+   */
+  async function currentPool(): Promise<FrontendPool> {
+    const baseLoaded = loadedRecordKeys(pluginRecords);
+    const trusted = frontendServing ? frontendServing.isTrusted() : false;
+    return {
+      envelopes: { list: envelopes, loaded: baseLoaded },
+      npm: { packages: workspacePackages, loaded: baseLoaded, resolveRoot: resolveWorkspaceRoot },
+      overlay: frontendServing
+        ? {
+            cwd: frontendServing.cwd,
+            trusted,
+            loaded: trusted && frontendServing.overlayLoaded
+              ? await frontendServing.overlayLoaded()
+              : new Set<string>(),
+          }
+        : undefined,
+    };
+  }
+
+  router.get('/plugins/frontend-manifest', async (_req, res, next) => {
+    try {
+      res.json(buildFrontendManifest(await currentPool()));
+    } catch (err) {
+      next(err);
+    }
   });
 
   router.get('/plugins/runtime/:file', async (req, res, next) => {
@@ -88,39 +138,32 @@ export function pluginsRouter(deps: PluginRoutesDeps): Router {
     }
   });
 
-  // M33: stream any asset from a plugin's precompiled bundle dir (`dist/`). The
-  // entry `frontend.js` is native ESM (m33l5fe0 — the host does NOT re-bundle),
-  // so its relative imports (e.g. a code-split `./dto-*.js` chunk, source maps)
-  // resolve to siblings under `/api/plugins/<name>/<asset>`. Two tiers, tried in
-  // order, each strictly contained in the bundle dir + extension-allowlisted:
-  //   1. overlay (phase 2) — the trusted primary project's
-  //      `.claude4spec/plugins/<name>/dist/<asset>` (trust-gated); then
-  //   2. workspace (phase 3) — a workspace/npm plugin's `dist/<asset>`, UNGATED,
-  //      bounded to `workspacePackages` (which also guards traversal).
-  // The gate, the unknown-package/disallowed-extension guard, and the
-  // missing-file case all collapse to the same `404 PLUGIN_FRONTEND_NOT_FOUND`.
-  router.get('/plugins/:name/:asset', (req: Request, res: Response) => {
+  // M33 (2.1.20): `GET /api/plugins/:name/:asset` — any `.js` / `.css` / `.map`
+  // file in the folder of the plugin's resolved frontend entry. The entry is
+  // native ESM (the host does not re-bundle), so its relative imports (a
+  // code-split `./dto-*.js` chunk, a source map) resolve to siblings here. The
+  // source is the one the manifest announces for `:name` (overlay > npm package >
+  // envelope, backend `loaded` only). Every refusal — disallowed extension, a
+  // separator or `..` in the file name, an untrusted overlay, a missing file — is
+  // the same `404 PLUGIN_FRONTEND_NOT_FOUND`.
+  router.get('/plugins/:name/:asset', async (req: Request, res: Response, next) => {
     const name = req.params.name!;
     const asset = req.params.asset!;
-    const contentType = assetContentType(asset);
-    const abs =
-      contentType &&
-      ((frontendServing &&
-        resolveOverlayAsset(frontendServing.cwd, frontendServing.isTrusted(), name, asset)) ||
-        resolveWorkspaceAsset(name, asset, workspacePackages) ||
-        // Envelope last: an overlay or workspace package of the same name may
-        // deliberately shadow one, mirroring the manifest's insertion order and
-        // the backend registry's last-wins semantics.
-        resolveEnvelopeAsset(name, asset, envelopes));
+    let abs: string | null;
+    try {
+      abs = resolvePluginAsset(await currentPool(), name, asset);
+    } catch (err) {
+      return next(err);
+    }
+    const contentType = abs ? assetContentType(abs) : null;
     if (!abs || !contentType) {
-      return res.status(404).json({
-        error: {
-          code: 'PLUGIN_FRONTEND_NOT_FOUND',
-          message: `no ${asset} for plugin "${name}"`,
-        },
-      });
+      const body: PluginFrontendAssetError = {
+        error: { code: PLUGIN_FRONTEND_NOT_FOUND, message: 'Plugin frontend asset not found' },
+      };
+      return res.status(404).json(body);
     }
     // `nosniff` so a mistyped bundle can't be reinterpreted (mirrors routes/static).
+    // No `Cache-Control`: the entry URL's cache-bust is the package version.
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.type(contentType);
     fs.createReadStream(abs)

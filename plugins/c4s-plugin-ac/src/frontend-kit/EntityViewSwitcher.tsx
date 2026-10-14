@@ -4,11 +4,9 @@ import { clientPluginHost } from '@c4s/plugin-runtime';
 
 
 /**
- * DEBT (2.1.19, Host UI Kit slice of `c4s-plugin-ac`): a thin wrapper over the
- * catalog's `SegmentedControlTabs` that fails the locality rule — the same copy
- * stands in the `frontend-kit/` of two plugin packages (condition 1), and the
- * detail view switcher is common to every entity type (condition 2). Its
- * catalog replacement is `SegmentedControlTabs`. Recorded, not fixed here.
+ * Not host-local (2.1.20, Host UI Kit slice of `c4s-plugin-ac`): a thin wrapper
+ * composed only of the catalog's `SegmentedControlTabs`, with no anatomy of its
+ * own — the 2.1.19 debt entry for it was struck.
  *
  * The gap it names is ROUTING — not the control.
  *

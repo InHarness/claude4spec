@@ -62,7 +62,7 @@ describe('plugins-ready signal', () => {
     expect(boot.pluginBootPending()).toBe(true);
     expect(signalled).toBe(false);
 
-    release({ plugins: [], css: [] });
+    release({ plugins: [] });
     await running;
     await boot.frontendPluginsBooted;
 

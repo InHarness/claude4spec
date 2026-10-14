@@ -1,97 +1,48 @@
 /**
- * M33: build the `GET /api/plugins/frontend-manifest` payload.
+ * M33: build the `GET /api/plugins/frontend-manifest` payload (2.1.20).
  *
- * Emits the fixed peer import map + host API version and the active plugins to
- * boot ("Option B"). Two tiers feed `plugins[]` (see `buildFrontendManifest`):
- * the workspace/npm tier (ungated, every project) and the project-local overlay
- * tier (only when the primary project is trusted) — each pointing the client at
- * the serving routes in `routes/plugins.ts`. No tiers active ⇒ `plugins: []`, so
- * the import map + shim plumbing still stands up end-to-end with nothing to load.
+ * The manifest is filtered HERE, on the server: `plugins[]` announces exactly the
+ * effective frontend pool of `frontend-assets.ts` — sources whose backend is
+ * `loaded` after the `hostApiVersion` / `engines` gate, one per name with the
+ * overlay > npm package > envelope precedence. The client compares no versions.
+ *
+ * `importMap` is an informational copy of the map the server injects into the
+ * page (`injectImportMap` in `server/index.ts`): the host's peer shims and both
+ * runtime specifiers, with no plugin entries — a plugin entry is imported from
+ * its absolute `plugins[].entry` URL.
  */
 
+import path from 'node:path';
 import { HOST_API_VERSION } from '../../../shared/plugin-host/manifest.js';
 import type {
   FrontendManifestResponse,
   PluginFrontendEntry,
 } from '../../../shared/plugin-host/frontend-manifest.js';
 import { buildImportMap } from './runtime-shims.js';
-import {
-  enumerateFrontendBundles,
-  enumerateWorkspaceFrontendBundles,
-  type FrontendBundle,
-  type WorkspaceRootResolver,
-} from './frontend-assets.js';
-import { enumerateEnvelopeFrontendBundles } from './frontend-assets.js';
-import type { BuiltinEnvelope } from './builtin-envelopes.js';
-import type { PluginRegistry } from './types.js';
+import { effectiveFrontendSources, type FrontendPool, type FrontendSource } from './frontend-assets.js';
 
 /**
- * Serving context for the process's primary project. Absent on workspace-only
- * starts (nothing registered) ⇒ only workspace-tier frontends are advertised.
+ * One source → its manifest entry. The route is `/api/plugins/:name/:asset`, one
+ * path segment per part: a scoped name (`@scope/pkg`) is percent-encoded into a
+ * single segment (Express decodes `:name` back). The entry's file name is the
+ * resolved entry's own (e.g. `exports['./frontend']` → `./out/client.js` gives
+ * `client.js`), so the route serves exactly the file the rule picked.
  */
-export interface FrontendManifestServing {
-  cwd: string;
-  /** `trustProjectPlugins === true` for the primary project. Untrusted ⇒ no overlay plugins. */
-  trusted: boolean;
-}
-
-/** One bundle → the manifest entry pointing at the (tier-agnostic) serving routes. */
-function toEntry(b: FrontendBundle): PluginFrontendEntry {
-  // The serving route is `/api/plugins/:name/:asset` — a single path segment for
-  // the name. A SCOPED package (`@scope/pkg`) contains a `/`, so it MUST be
-  // percent-encoded to stay one segment (the route decodes `:name` back via
-  // Express param decoding). Without this a scoped plugin's frontend URL gains an
-  // extra segment, the route never matches → 404 → no frontend loads → no sidebar
-  // entry. The browser preserves the encoded segment when resolving the bundle's
-  // relative code-split siblings (`./chunk.js`), so those resolve too.
-  const seg = encodeURIComponent(b.name);
+function toEntry(src: FrontendSource): PluginFrontendEntry {
+  const base = `/api/plugins/${encodeURIComponent(src.name)}/`;
   return {
-    name: b.name,
-    version: b.version,
-    entry: `/api/plugins/${seg}/frontend.js`,
-    ...(b.hasCss ? { css: `/api/plugins/${seg}/frontend.css` } : {}),
+    name: src.name,
+    version: src.version,
+    entry: base + encodeURIComponent(path.basename(src.entry)),
+    ...(src.css ? { css: base + 'frontend.css' } : {}),
   };
 }
 
-/**
- * Build the boot manifest. `plugins[]` is base ∪ overlay:
- *   • envelope tier (0.2.2) — builtin packages under `<hostRoot>/plugins/`,
- *     ungated (they live in the host repo), advertised only once built;
- *   • workspace tier (`workspacePackages`) — ALWAYS advertised, ungated (a base
- *     npm install is trusted), present for every project of the process; and
- *   • overlay tier — the primary project's project-local bundles, ONLY when that
- *     project is trusted.
- * De-duped by `name`: an overlay bundle overrides a workspace bundle of the same
- * name (the project-local copy wins). CSS only when the bundle ships it, so a
- * style-less plugin omits `css` and the client never fetches it.
- */
-export function buildFrontendManifest(
-  _registry: PluginRegistry,
-  serving?: FrontendManifestServing,
-  workspacePackages: readonly string[] = [],
-  workspaceRootResolver?: WorkspaceRootResolver,
-  envelopes: readonly BuiltinEnvelope[] = [],
-): FrontendManifestResponse {
-  const byName = new Map<string, PluginFrontendEntry>();
-  // 0.2.2: envelopes go in FIRST, so a workspace package or a project-local
-  // overlay of the same name can still deliberately shadow one — matching the
-  // backend's last-wins collision semantics, where the envelope also registers
-  // first and can be overridden.
-  for (const b of enumerateEnvelopeFrontendBundles(envelopes)) byName.set(b.name, toEntry(b));
-  for (const b of enumerateWorkspaceFrontendBundles(workspacePackages, workspaceRootResolver))
-    byName.set(b.name, toEntry(b));
-  if (serving?.trusted) {
-    for (const b of enumerateFrontendBundles(serving.cwd)) byName.set(b.name, toEntry(b));
-  }
-  const plugins: PluginFrontendEntry[] = [...byName.values()];
-
-  // `importMap` is informational here (diagnostics / future non-head consumers).
-  // The AUTHORITATIVE copy the browser uses is injected server-side into the SPA
-  // `<head>` (see `injectImportMap` in server/index.ts) — both derive from the
-  // same `buildImportMap()`, so the two channels cannot diverge.
+/** Build the boot manifest from the effective frontend pool. */
+export function buildFrontendManifest(pool: FrontendPool = {}): FrontendManifestResponse {
   return {
     hostApiVersion: HOST_API_VERSION,
     importMap: buildImportMap(),
-    plugins,
+    plugins: effectiveFrontendSources(pool).map(toEntry),
   };
 }

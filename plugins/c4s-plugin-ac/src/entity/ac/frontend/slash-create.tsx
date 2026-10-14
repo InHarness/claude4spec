@@ -28,7 +28,7 @@ import {
   type EmbedEditor,
 } from '../../../frontend-kit/slash-create.js';
 import { FieldLabel, InlineError, PopoverFooter } from '../../../frontend-kit/popover-form.js';
-import { toast } from '../../../frontend-kit/host-events.js';
+import { toast } from '@c4s/plugin-runtime';
 import { AC_POPOVER_KIND, AC_TITLE_MAX_LENGTH, AC_TYPE } from '../../../identity.js';
 import type { AcKind } from '../../../types.js';
 import { keys as acKeys, useCreateAc } from './hooks.js';

@@ -17,7 +17,7 @@
  */
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { toast } from './host-events.js';
+import { toast } from '@c4s/plugin-runtime';
 
 export const PLUGIN_COMMAND_EVENT = 'c4s:plugin-command';
 
@@ -137,6 +137,13 @@ function anchorStyle(coords: CaretCoords | null | undefined, width: number): CSS
 }
 
 /**
+ * DEBT (2.1.20, Host UI Kit slice of `c4s-plugin-database-tables`, the popover form entry):
+ * `SlashPopoverShell` is the popover the package's popover form sits in, and is
+ * carried with that form's debt (ASSUMPTION:dev-2007 — the entry names the form
+ * fields, not the frame). Like the form, it fails the locality rule (a copy in
+ * five plugin packages, common to every entity type). Its catalog replacement
+ * is `FormField` in the catalog's `Popover`. Recorded, not fixed here.
+ *
  * The popover frame. Deliberately NOT the kit's `Dialog` — that is the create
  * MODAL, a different surface; a slash-create is a light anchored popover, and
  * this reproduces the host shell the two forms used to sit in.

@@ -61,6 +61,11 @@ const PUBLISHED_PLUGIN_RUNTIME_NAMES = [
   // `c4s-plugin-ac`, whose list screen is specified to seed a thread.
   'startSeededThread',
   'lineDiffHunks',
+  // 2.1.20 (M50 `tbeatf5z`) — the shell's four window facades.
+  'openPopover',
+  'openModal',
+  'confirmDestructive',
+  'toast',
 ] as const;
 
 /**
@@ -170,6 +175,14 @@ describe('MCP builder facade', () => {
     }
   });
 
+  it('declares the optional, C4S-owned annotations parameter of mcpTool (2.1.20)', () => {
+    expect(facadeCode).toMatch(/export declare function mcpTool\([\s\S]*?annotations\?: McpToolAnnotations,?\s*\): McpTool;/);
+    const annotationsDecl = /export interface McpToolAnnotations \{([^}]*)\}/s.exec(facadeCode)?.[1] ?? '';
+    for (const field of ['readOnlyHint?: boolean', 'destructiveHint?: boolean', 'idempotentHint?: boolean', 'openWorldHint?: boolean', 'title?: string']) {
+      expect(annotationsDecl).toContain(field);
+    }
+  });
+
   it('does NOT leak vendor MCP types into the published surface', () => {
     expect(facadeCode).not.toContain('McpServerConfig');
     expect(facadeCode).not.toContain('McpServerInstance');
@@ -215,6 +228,12 @@ describe('zod facade', () => {
  * OUTSIDE the versioned Host API surface, on the same rule as the `experimental`
  * UI-kit components: its shape is a matter of the package release (npm semver),
  * so neither adding it nor changing it moves `HOST_API_VERSION`.
+ *
+ * 2.1.20: the subpath is not published any more (an intent, not a contract); the
+ * implementation lives in the host repo's internal test setup
+ * (`tests/helpers/plugin-test-setup.ts`). The rule still holds of it: no record
+ * of the versioned surface carries it, so publishing it again later moves
+ * nothing either.
  */
 describe('plugin test harness subpath — outside hostApiVersion', () => {
   const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../../package.json', import.meta.url)), 'utf8')) as {
@@ -226,15 +245,16 @@ describe('plugin test harness subpath — outside hostApiVersion', () => {
     HOST_API_MINOR_RELEASES,
     HOST_API_UNVERSIONED_CHANGES,
   ]);
-  const publishedSurface = ['./plugin-runtime.ts', './ui.ts', './ambient.d.ts'].map((f) =>
+  const publishedSurface = ['./plugin-runtime.ts', './ui.ts', './ambient.d.ts', './ambient-backend.d.ts'].map((f) =>
     readFileSync(fileURLToPath(new URL(f, import.meta.url)), 'utf8'),
   );
 
   it('[ac:ac-dodanie-subpathu-plugin-testing-do-pu] adding the …/plugin-testing subpath to the published package does not change hostApiVersion', () => {
-    // The subpath is published…
-    expect(pkg.exports['./plugin-testing']).toBeDefined();
+    // 2.1.20 — not published today (M33 `m33l11sc`: an intent, not a contract)…
+    expect(pkg.exports['./plugin-testing']).toBeUndefined();
     // …and the Host API version is the baseline the published runtime surface pins
-    // (the first assertion of this file), not a bump.
+    // (the first assertion of this file): neither withdrawing the subpath nor
+    // adding it back is a bump.
     expect(HOST_API_VERSION).toBe('2.1.0');
     // No record of the versioned surface — major migrations, minor releases,
     // in-baseline changes — carries the harness: its addition was not a Host API change.
@@ -254,11 +274,9 @@ describe('plugin test harness subpath — outside hostApiVersion', () => {
     }
     // The harness module neither defines nor re-exports the version constant the
     // loader gates on: reshaping it cannot move `HOST_API_VERSION`.
-    const harness = readFileSync(fileURLToPath(new URL('../server/plugin-testing/index.ts', import.meta.url)), 'utf8');
-    const harnessTypes = readFileSync(fileURLToPath(new URL('./plugin-testing.ts', import.meta.url)), 'utf8');
-    for (const source of [harness, harnessTypes]) {
-      expect(source).not.toMatch(/HOST_API_VERSION\s*=|export\s*\{[^}]*HOST_API_VERSION/);
-    }
+    const harness = readFileSync(fileURLToPath(new URL('../../tests/helpers/plugin-test-setup.ts', import.meta.url)), 'utf8');
+    expect(harness).toMatch(/export async function createPluginTestApp\(/);
+    expect(harness).not.toMatch(/HOST_API_VERSION\s*=|export\s*\{[^}]*HOST_API_VERSION/);
     // A plugin built against the current major keeps passing the gate whatever the
     // harness looks like: no major boundary has been crossed past 2.
     expect(HOST_API_VERSION.split('.')[0]).toBe('2');

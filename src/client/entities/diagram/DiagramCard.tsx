@@ -287,12 +287,17 @@ export function DiagramCard({ slug, entity, caption, onOpen, onCaptionChange }: 
 }
 
 /**
- * 0.2.15 — the fullscreen surface a diagram chip or card opens, resolved from
- * the entity's `renderOverlay` slot by `EntityOverlayHost`.
+ * The diagram's `renderOverlay` slot — the CONTENT of the host's
+ * `diagram-expand` window (M13 chipprops, 2.1.20). The window's name and the way
+ * it opens are the host's: a click on the chip, or on the card's `Maximize2`,
+ * reaches `ModalHost` as `openModal('diagram-expand', { slug, caption? })`, and
+ * `ModalHost` resolves the content from this slot.
  *
- * It re-renders the SVG itself rather than being handed one: the overlay is
- * opened from an event carrying only `{ slug, caption }`, precisely so a chip in
- * chat — which never rendered an SVG — can open it too.
+ * It resolves the record by slug and renders the SVG ONCE, on open, rather than
+ * being handed one: the window carries only `{ slug, caption }`, whichever
+ * surface the click came from — a chip in chat never rendered an SVG at all.
+ * The shell around it is `DiagramFullscreen`, the same read-only pan+zoom
+ * surface regardless of where the click came from.
  */
 export function DiagramOverlay({
   slug,

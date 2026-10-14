@@ -32,6 +32,10 @@ import { DesignSystemService } from './backend/service.js';
  * (`designSystemPayloadV1ToV2`); the host enforces exactly `payloadVersion - 1`
  * steps at registration.
  */
+// 2.1.20 (M13 z7l89jhf) — the type's frontend is NOT part of this contribution:
+// the host rejects a `frontend` key here. `designSystemFrontendModule` (./frontend/module.tsx) enters
+// through the package's browser entry (`src/frontend.tsx`, `exports['./frontend']`)
+// via `registerFrontendModule`.
 export const designSystemEntity: EntityContribution = {
   type: DESIGN_SYSTEM_TYPE,
   data: designSystemData,

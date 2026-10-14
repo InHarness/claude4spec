@@ -3,14 +3,22 @@
  *
  * Two copies mean two reconcilers / two editor instances. The L11 contract is
  * externalized peers: the plugin imports the host's singletons (through
- * `@c4s/plugin-runtime` and the import map) and declares them as
- * `peerDependencies`, so the plugin's BUILD — at publication — is where a
- * bundled copy is caught. The loader does not inspect bundles at load time.
+ * `@c4s/plugin-runtime` and the server-injected import map) and its frontend
+ * build declares them `external`. The protection is the build configuration the
+ * starter template carries (M38 `m38ngo01`) — neither `c4s create-plugin` nor the
+ * host verifies it, and the loader does not inspect bundles at load time
+ * (`m33l5imp`).
  *
- * Pinned against every envelope shipped in this repo, through the artefacts
- * the publication actually uses: `package.json` and the Vite build config.
+ * The starter template lives in its own repository (InHarness/c4s-plugin-scaffold);
+ * a built-in envelope in this repo has the starter's layout (`ywud56l6`), so the
+ * build check is pinned against every envelope shipped here, through the
+ * artefacts the publication actually uses: `package.json` and the Vite config.
+ * ASSUMPTION:dev-2003 — the starter template lives in InHarness/c4s-plugin-scaffold
+ * (outside this repo); the starter-build criterion is pinned against the envelopes,
+ * which share the starter's layout.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -50,7 +58,7 @@ async function rollupExternal(dir: string): Promise<External> {
 }
 
 describe('plugins keep React/Tiptap external — detected at publication, not at load', () => {
-  it('[ac:ac-plugin-bandlujacy-wlasna-kopie-reacta-ti] every envelope with a frontend declares the host singletons as peers and its build leaves them external', async () => {
+  it('[ac:ac-build-frontendu-pluginu-wygenerowaneg] every plugin in the starter layout declares the host peers (React, Tiptap) as peers and its frontend build leaves them external, so the bundle carries no own copy', async () => {
     const withFrontend = envelopes.filter((e) => e.hasFrontend);
     expect(withFrontend.length).toBeGreaterThan(0);
 
@@ -74,7 +82,7 @@ describe('plugins keep React/Tiptap external — detected at publication, not at
     }
   });
 
-  it('the load-time gate checks host API and engines only — a bundled copy is not a load-time rejection', () => {
+  it('[ac:ac-plugin-bandlujacy-wlasna-kopie-reacta-ti] the load-time gate checks host API and engines only — a plugin with a bundled React/Tiptap copy is not rejected at load', () => {
     const manifest = {
       name: '@acme/bundles-react',
       version: '1.0.0',
@@ -82,5 +90,63 @@ describe('plugins keep React/Tiptap external — detected at publication, not at
       contributes: {},
     };
     expect(gateManifest(manifest)).toBeNull();
+  });
+});
+
+/**
+ * Why the externalization matters: a component written against a SECOND copy of
+ * React calls hooks on a dispatcher the host renderer never set, so its hooks
+ * fail inside the host tree.
+ */
+describe('a bundled own React copy runs on a second reconciler instance', () => {
+  const nodeRequire = createRequire(import.meta.url);
+
+  /** A fresh instance of the `react` package, as a plugin bundle would carry it. */
+  function loadSecondReactCopy(): typeof import('react') {
+    const reactDir = path.dirname(nodeRequire.resolve('react/package.json')) + path.sep;
+    const ours = (k: string) => k.startsWith(reactDir);
+    const saved = new Map<string, NodeJS.Module>();
+    for (const k of Object.keys(nodeRequire.cache)) {
+      if (ours(k)) {
+        saved.set(k, nodeRequire.cache[k]!);
+        delete nodeRequire.cache[k];
+      }
+    }
+    try {
+      return nodeRequire('react') as typeof import('react');
+    } finally {
+      // Put the host's copy back so nothing else in this process sees the second one.
+      for (const k of Object.keys(nodeRequire.cache)) if (ours(k)) delete nodeRequire.cache[k];
+      for (const [k, m] of saved) nodeRequire.cache[k] = m;
+    }
+  }
+
+  it('[ac:ac-komponenty-pluginu-ze-zbundlowana-wla] components of a plugin with its own bundled React copy render on a second reconciler instance, so their hooks fail in the host tree', () => {
+    // The host: its React and its renderer (which binds hooks to the host copy).
+    const hostReact = nodeRequire('react') as typeof import('react');
+    const { renderToStaticMarkup } = nodeRequire('react-dom/server') as typeof import('react-dom/server');
+    const pluginReact = loadSecondReactCopy();
+    expect(pluginReact).not.toBe(hostReact);
+    expect(pluginReact.useState).not.toBe(hostReact.useState);
+
+    // The same component, once against the host's React (externalized peer) and
+    // once against the plugin's own bundled copy.
+    function ExternalizedChip() {
+      const [label] = hostReact.useState('host');
+      return hostReact.createElement('span', null, label);
+    }
+    function BundledChip() {
+      const [label] = pluginReact.useState('plugin');
+      return pluginReact.createElement('span', null, label);
+    }
+
+    expect(renderToStaticMarkup(hostReact.createElement(ExternalizedChip))).toBe('<span>host</span>');
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      // The host renderer set ITS dispatcher; the second copy's is empty → the hook throws.
+      expect(() => renderToStaticMarkup(hostReact.createElement(BundledChip))).toThrow();
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });

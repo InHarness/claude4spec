@@ -95,7 +95,10 @@ const moduleOf = (type: string, label: string, order: number): FrontendModule =>
     renderOverlay: Noop,
     useGetBySlug: () => ({ data: null, isLoading: false }),
     listByTags: async () => [],
-    sidebarTab: { icon: order === 10 ? FileText : Tag, label, order, emptyState: TypeEmptyState },
+    // 2.1.20 — `sidebarTab` carries `icon`, `label`, `order` only: `emptyState`
+    // left the contract. The stray component below rides along untyped to prove
+    // nothing in the sidebar would render one even if a plugin still shipped it.
+    sidebarTab: { icon: order === 10 ? FileText : Tag, label, order, ...{ emptyState: TypeEmptyState } },
   }) as unknown as FrontendModule;
 
 clientPluginHost.registerFrontendModule(moduleOf('sbx-widget', 'Widgets', 10));
@@ -170,7 +173,7 @@ describe('Sidebar ELEMENTS follows activation (M50 8h2a734u)', () => {
     expect(server.entitiesCalls).toBe(1);
     expect(tabs()).toEqual([]);
     expect(host.textContent).toContain('No entity types configured.');
-    // The type's own `sidebarTab.emptyState` is declared, never rendered.
+    // A type's empty component is never rendered (2.1.20: no longer even in the contract).
     expect(host.querySelector('[data-testid="type-empty-state"]')).toBeNull();
     expect(host.textContent).not.toContain('No widgets yet');
     expect(reload).not.toHaveBeenCalled();

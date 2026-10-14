@@ -26,7 +26,7 @@ import {
   type EmbedEditor,
 } from '../../../frontend-kit/slash-create.js';
 import { InlineError, PopoverFooter, TextInput } from '../../../frontend-kit/popover-form.js';
-import { toast } from '../../../frontend-kit/host-events.js';
+import { toast } from '@c4s/plugin-runtime';
 import { UI_VIEW_LABEL, UI_VIEW_POPOVER_KIND, UI_VIEW_TYPE } from '../../../identity.js';
 import { keys as uiViewKeys, useCreateUiView } from './hooks.js';
 

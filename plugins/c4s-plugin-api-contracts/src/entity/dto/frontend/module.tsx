@@ -171,6 +171,7 @@ export const dtoFrontendModule: FrontendModule = {
   useGetBySlug: (slug) => useDto(slug) as ReturnType<FrontendModule['useGetBySlug']>,
   listByTags: ({ tags, filter }) => dtosApi.list({ tags, tagFilter: filter }),
   routes: dtoRoutes,
+  // ASSUMPTION:dev-2004 — the 2.1.20 page lists `[dtoSlashCommand]`; kept out on purpose.
   // NO `editorExtensions` slash command here. The manifest's `commands`
   // contribution (`capabilities/commands.ts`) is the one that works: it carries
   // a `popoverKind`, which is what `invokeSlash` dispatches on. A second entry

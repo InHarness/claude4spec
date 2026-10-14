@@ -35,6 +35,10 @@ import type { AcMountContext } from '../../host-kit/host-types.js';
  * its target into the same envelope, and a polymorphic one binds nothing —
  * applying that rule here would put every type in one package.
  */
+// 2.1.20 (M13 z7l89jhf) — the type's frontend is NOT part of this contribution:
+// the host rejects a `frontend` key here. `acFrontendModule` (./frontend/module.tsx) enters
+// through the package's browser entry (`src/frontend.tsx`, `exports['./frontend']`)
+// via `registerFrontendModule`.
 export const acEntity: EntityContribution = {
   type: AC_TYPE,
   data: acData,

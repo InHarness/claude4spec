@@ -156,6 +156,56 @@ describe('composeExternalSurface', () => {
     }
   });
 
+  /**
+   * 2.1.20 — the facade `mcpTool` takes optional annotations (fifth argument,
+   * C4S-owned shape). A plugin that passes them through `@c4s/plugin-runtime`
+   * sees them advertised beside THAT tool in the external `tools/list` — and only
+   * beside it: a sibling tool built without annotations carries none.
+   */
+  it('[ac:ac-adnotacje-podane-przez-plugin-w-fasad] annotations a plugin passes to the mcpTool facade appear beside that tool in the external tools/list', async () => {
+    const annotations = {
+      title: 'Read the overview',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    };
+    const pluginServer = createMcpServer({
+      name: 'spreadsheet-tools',
+      tools: [
+        mcpTool('annotated_op', 'annotated description', { x: z.string().optional() }, async () => ({ content: [] }), annotations),
+        mcpTool('plain_op', 'plain description', { x: z.string().optional() }, async () => ({ content: [] })),
+      ],
+    }) as unknown as McpServerFactory;
+    const pluginHost = {
+      buildMcpServers: () => [{ name: 'spreadsheet-tools', server: pluginServer }],
+      listEntities: () => [{ type: 'spreadsheet' }],
+    } as unknown as ExternalSurfaceDeps['pluginHost'];
+    const deps = stubDeps({ profile: 'chat', pluginHost });
+
+    // The declaration the HTTP mount registers from carries them…
+    expect(composeExternalSurface(deps).byName.get('annotated_op')?.annotations).toEqual(annotations);
+
+    // …and a client reading `tools/list` over the wire sees them on that tool.
+    const server = buildExternalMcpSurface(deps);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'test-client', version: '0.0.0' });
+    await server.server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const { tools } = await client.listTools();
+      const annotated = tools.find((t) => t.name === 'annotated_op');
+      expect(annotated).toBeDefined();
+      expect(annotated!.annotations).toMatchObject(annotations);
+      const plain = tools.find((t) => t.name === 'plain_op');
+      expect(plain).toBeDefined();
+      expect(plain!.annotations?.readOnlyHint).toBeUndefined();
+      expect(plain!.annotations?.title).toBeUndefined();
+    } finally {
+      await client.close();
+    }
+  });
+
   it('gives `ask` the peer tool to nobody — a consulted peer cannot consult onward', () => {
     expect(composeExternalSurface(stubDeps({ profile: 'chat' })).toolNames).toContain('ask');
     expect(composeExternalSurface(stubDeps({ profile: 'ask' })).toolNames).not.toContain('ask');

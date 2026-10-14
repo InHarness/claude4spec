@@ -11,8 +11,12 @@
  *
  * Two channels compose:
  *   - top-level exports here type the subpath `@inharness-ai/claude4spec/plugin-runtime`;
- *   - the ambient `declare module '@c4s/plugin-runtime'` in `./ambient.d.ts` binds
- *     the runtime value specifier to this same surface.
+ *   - the ambient `declare module '@c4s/plugin-runtime'` binds the runtime value
+ *     specifier to this same surface, once per leg (2.1.20, M33 `m33l11sc`):
+ *     `./ambient.d.ts` for plugin frontend code (browser leg), and
+ *     `./ambient-backend.d.ts` for plugin backend code. Every type name rides
+ *     both legs; a VALUE rides only the leg that serves it at runtime
+ *     (`shared/plugin-host/runtime-legs.ts`). This file declares the union.
  *
  * SINGLE SOURCE OF TRUTH. The dep-free contract (manifest / EntityModule) is
  * RE-EXPORTED from its canonical host modules, so it cannot drift (a change to
@@ -337,11 +341,24 @@ export type McpTool = unknown;
  */
 export type ZodRawShape = Record<string, unknown>;
 export declare function createMcpServer(def: { name: string; tools: McpTool[] }): McpServerFactory;
+/**
+ * Optional annotations of one tool (2.1.20). The host advertises them beside
+ * that tool in the external `tools/list`. Part of the C4S facade — the plugin
+ * passes them through this signature, never through a vendor type.
+ */
+export interface McpToolAnnotations {
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+  title?: string;
+}
 export declare function mcpTool(
   name: string,
   description: string,
   zodShape: ZodRawShape,
   handler: (input: unknown) => unknown,
+  annotations?: McpToolAnnotations,
 ): McpTool;
 
 /**
@@ -578,8 +595,6 @@ export interface SidebarTabSlot {
   icon: LucideIcon;
   label: string;
   order: number;
-  /** Declared and NOT rendered — the sidebar reads only `icon`, `label`, `order`. */
-  emptyState?: ComponentType<unknown>;
 }
 export interface SlashCommand {
   id: string;
@@ -628,8 +643,9 @@ export interface FrontendModule extends EntityModuleManifest {
    */
   detailPanel?: ComponentType<EntityDetailProps>;
   /**
-   * The read-only fullscreen surface a hidden type's chip and card open, since
-   * there is no detail route to navigate to.
+   * Content of the host's `<type>-expand` window, which a click on a hidden
+   * type's chip or card opens (the host opens it; the chip opens nothing
+   * itself), since there is no detail route to navigate to.
    *
    * Required exactly when the type is hidden, and rejected otherwise: a type
    * with a detail route must send its clicks to `editorBridge.openEntity`, and an
@@ -902,10 +918,87 @@ export interface StartSeededThreadOptions {
  * The published equivalent of a host-only facade, in the same sense as
  * `Popover` and `useToast`: it drives the M05 chat store, which is a singleton
  * rather than a window event, so a plugin cannot reproduce it by dispatching one
- * the way it can `toast`.
+ * the way it once could `toast` (now a facade of its own, below).
  *
  * `autoSubmit` sends the seed as an ordinary user message (persisted in
  * `chat_message`) when the thread is empty; without it the text is left in the
  * editor for the user to edit and send.
  */
 export declare function startSeededThread(prompt: string, opts?: StartSeededThreadOptions): void;
+
+// ── Shell window facades (M50 `tbeatf5z`, published 2.1.20) ──
+//
+// The four facades the host's own modules open windows with, exposed on the
+// browser leg as the same functions — not a copy in the plugin's bundle. A
+// plugin operates a `kind`; the `c4s:*` window events and their payloads are
+// not plugin surface (the one exception, `c4s:plugin-command`, is an event a
+// plugin RECEIVES). Signatures and result semantics are the host helpers'
+// (M50 `l5pregst`), with one difference: `kind` is an open string — a plugin's
+// kinds enter dynamically, so they are not checked against the host's typed
+// kind maps (M50 `l5pextnd`). Names and signatures count toward
+// `hostApiVersion`; their entry is additive within the current baseline.
+
+/** A button on a toast. */
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
+/** The options form of a toast's second argument: its action plus a per-call display time. */
+export interface ToastOptions {
+  action?: ToastAction;
+  durationMs?: number;
+}
+
+/** What `confirmDestructive` takes beside its `kind`. */
+export interface ConfirmDestructiveOptions {
+  title: string;
+  body: string;
+  /** Defaults to "Delete". */
+  confirmLabel?: string;
+  /** Defaults to "Cancel". */
+  cancelLabel?: string;
+  /** Defaults to `true` — the destructive styling. */
+  danger?: boolean;
+  /** Type-to-confirm: the confirm button stays disabled until the user types this exactly. */
+  requireText?: string;
+  /**
+   * Runs on Confirm while the window stays open. Resolving `false` keeps it open
+   * (the action was refused and reported by the callback itself); `true` closes
+   * it and settles the confirm as confirmed.
+   */
+  action?: () => Promise<boolean>;
+}
+
+/**
+ * Open the popover registered under `kind` at `{ x, y }`; the remaining keys are
+ * its props. Resolves with the submitted result, or `null` when cancelled.
+ */
+export declare function openPopover<R = unknown>(
+  kind: string,
+  input: { x: number; y: number; [prop: string]: unknown },
+): Promise<R | null>;
+
+/**
+ * Open the non-destructive modal registered under `kind` (e.g. `<type>-expand`).
+ * Resolves with the chosen branch's result, or `null` when cancelled.
+ * `dismissible: false` makes it a gate that only its own buttons close.
+ */
+export declare function openModal<R = unknown>(
+  kind: string,
+  props: Record<string, unknown>,
+  options?: { dismissible?: boolean },
+): Promise<R | null>;
+
+/** Ask the destructive-confirm window named `kind`. Resolves `true` when confirmed. */
+export declare function confirmDestructive(
+  kind: string,
+  options: ConfirmDestructiveOptions,
+): Promise<boolean>;
+
+/** Toasts on the host's single toast stack. A toast has no `kind`. */
+export declare const toast: {
+  success(message: string, action?: ToastAction | ToastOptions): void;
+  error(message: string, action?: ToastAction | ToastOptions): void;
+  warning(message: string, action?: ToastAction | ToastOptions): void;
+};

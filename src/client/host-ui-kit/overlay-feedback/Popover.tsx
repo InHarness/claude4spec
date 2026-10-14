@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefO
 import { withStability } from '../stability.js';
 
 /**
- * `Popover` (Overlay/feedback, `experimental`) — a controlled floating panel and
+ * `Popover` (group `feedback`, `experimental`) — a controlled floating panel and
  * the ONLY popover anatomy in C4S (M34/L12 one-implementation rule). The host's
  * imperative `openPopover()` bus is a *facade* over this component, not a twin:
  * `PopoverShell` (`src/client/ui/Popover.tsx`) maps an event payload onto these

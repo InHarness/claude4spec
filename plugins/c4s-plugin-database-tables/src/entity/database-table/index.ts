@@ -45,6 +45,10 @@ import { databaseTableSystemPrompt } from './system-prompt.js';
  * "Q1 report" is ordinary; two tables called `order_items` in one schema is a
  * mistake, and the hard `SLUG_CONFLICT` is the right answer to it.
  */
+// 2.1.20 (M13 z7l89jhf) — the type's frontend is NOT part of this contribution:
+// the host rejects a `frontend` key here. `databaseTableFrontendModule` (./frontend/module.tsx) enters
+// through the package's browser entry (`src/frontend.tsx`, `exports['./frontend']`)
+// via `registerFrontendModule`.
 export const databaseTableEntity: EntityContribution = {
   type: DATABASE_TABLE_TYPE,
   data: databaseTableData,

@@ -1,24 +1,30 @@
 /**
- * M33 — plugin frontend assets, two tiers.
+ * M33 — plugin frontend sources, assets and the effective pool (2.1.20).
  *
  * The serving layer for "Option B" plugin frontends. This express-free module
- * owns the single path/trust convention shared by the serving route
- * (`routes/plugins.ts`) and the manifest builder (`frontend-manifest.ts`), so
- * the two cannot diverge.
+ * owns the one rule the manifest builder (`frontend-manifest.ts`) and the asset
+ * route (`routes/plugins.ts`, `GET /api/plugins/:name/:asset`) share, so the two
+ * cannot diverge (L11 `9g96q3pp`):
  *
- *   • Overlay tier (phase 2): a TRUSTED project ships a precompiled bundle at
- *     `<cwd>/.claude4spec/plugins/<name>/dist/frontend.js` (+ optional
- *     `frontend.css`). Gated by `trustProjectPlugins` (per workspace × project,
- *     machine-local) — the CALLER resolves the gate and passes `trusted`; an
- *     untrusted/undecided project emits nothing, exactly like the overlay loader
- *     refuses to run untrusted project code.
+ *   • Three sources. A project-local OVERLAY (`<cwd>/.claude4spec/plugins/<folder>/`,
+ *     behind `trustProjectPlugins`), an NPM PACKAGE of the workspace (ungated — a
+ *     consciously installed package is trusted) and a BUILT-IN ENVELOPE (ungated —
+ *     it lives in the host repo).
+ *   • Entry rule. The overlay's entry is always the fixed `dist/frontend.js` (its
+ *     `exports` are not read); a package's and an envelope's entry is
+ *     `exports['./frontend']` (conditions `import` → `module` → `default` → `node`
+ *     → `require`), falling back to `dist/frontend.js`. CSS is `frontend.css` next
+ *     to the resolved entry. Name and version: the overlay's folder name + its
+ *     `package.json` version; a package's / envelope's own `package.json`.
+ *   • Manifest filter. A source is admitted only when its BACKEND has status
+ *     `loaded` after the `hostApiVersion` / `engines` gate — one rule for all three
+ *     sources. A package without a backend entry never reaches `loaded`, so it
+ *     never announces a frontend (no frontend-only plugins).
+ *   • Precedence on a name collision: overlay over npm package over envelope.
  *
- *   • Workspace tier (phase 3): a workspace/npm plugin (declared in
- *     `~/.claude4spec/workspaces.json`, installed under `node_modules`) serves
- *     its own `dist/frontend.js` (+ optional `dist/frontend.css`) UNGATED — a
- *     consciously-installed base package is trusted by virtue of npm install,
- *     parity with the backend base tier. Traversal-guarded by the passed
- *     workspace package allowlist (the same list `loadWorkspacePlugins` uses).
+ * The host does NOT inspect a bundle's contents: a plugin that bundled its own
+ * React or Tiptap is announced and served like any other (the starter template's
+ * `external` list is the protection, not a load-time check — `m33l5imp`).
  */
 
 import fs from 'node:fs';
@@ -72,69 +78,6 @@ export function nearestPackageRoot(startDir: string): string | null {
   return null;
 }
 
-/** The two precompiled assets a plugin frontend bundle may ship. */
-export type FrontendAssetFile = 'frontend.js' | 'frontend.css';
-
-/** Absolute path of a plugin's precompiled `dist/<file>`. */
-function bundleAssetPath(cwd: string, name: string, file: FrontendAssetFile): string {
-  return path.join(projectPluginsDir(cwd), name, 'dist', file);
-}
-
-/**
- * Resolve the absolute path to stream for `GET /api/plugins/<name>/<file>`, or
- * `null` when the request must 404. Returns null when:
- *   - the trust gate is off (`!trusted`) — never emit project-committed code,
- *   - `name` is not an actual overlay package — also guards path traversal, as
- *     only directory names enumerated under `.claude4spec/plugins/` are eligible,
- *   - the `dist/<file>` does not exist — a present, trusted project never
- *     fabricates a bundle.
- */
-export function resolveFrontendAsset(
-  cwd: string,
-  trusted: boolean,
-  name: string,
-  file: FrontendAssetFile,
-): string | null {
-  if (!trusted) return null;
-  if (!enumerateOverlayPackages(cwd).includes(name)) return null;
-  const abs = bundleAssetPath(cwd, name, file);
-  return fs.existsSync(abs) ? abs : null;
-}
-
-/** One plugin (either tier) with a built frontend bundle. */
-export interface FrontendBundle {
-  /** The manifest `name`: overlay = dir under `.claude4spec/plugins/`; workspace = npm package name. */
-  name: string;
-  /** Version from the package's `package.json`, or `'0.0.0'` if unreadable. */
-  version: string;
-  /** True when the bundle also ships a precompiled `dist/frontend.css`. */
-  hasCss: boolean;
-}
-
-/** Read an overlay package's declared version, falling back to `'0.0.0'`. */
-function readBundleVersion(cwd: string, name: string): string {
-  return packageVersion(readPackageJson(path.join(projectPluginsDir(cwd), name, 'package.json')));
-}
-
-/**
- * Project-local plugins that ship a built `dist/frontend.js`, for the frontend
- * manifest. Pure FS read; the caller gates by trust before calling (an
- * untrusted project advertises nothing). A package without a built bundle is
- * simply omitted — the build is the implementer's responsibility, not the host's.
- */
-export function enumerateFrontendBundles(cwd: string): FrontendBundle[] {
-  const bundles: FrontendBundle[] = [];
-  for (const name of enumerateOverlayPackages(cwd)) {
-    if (!fs.existsSync(bundleAssetPath(cwd, name, 'frontend.js'))) continue;
-    bundles.push({
-      name,
-      version: readBundleVersion(cwd, name),
-      hasCss: fs.existsSync(bundleAssetPath(cwd, name, 'frontend.css')),
-    });
-  }
-  return bundles;
-}
-
 // ─── Workspace tier (phase 3) ───────────────────────────────────────────────
 
 /** Resolve an installed workspace plugin package's absolute root dir, or null. */
@@ -169,86 +112,26 @@ const defaultWorkspaceRoot: WorkspaceRootResolver = (packageName) => {
   return nearestPackageRoot(path.dirname(fileURLToPath(entryUrl)));
 };
 
-/**
- * The package's declared `./frontend` import target (relative to its root), or
- * the `dist/frontend.js` convention when `exports` does not declare one. Reuses
- * the overlay loader's condition handling so the two tiers can't drift.
- */
-function workspaceFrontendEntryRel(pkg: PackageManifest | null): string {
-  const sub = (pkg?.exports as Record<string, unknown> | undefined)?.['./frontend'];
-  return resolveExportsEntry(sub) ?? 'dist/frontend.js';
-}
 
-/** Absolute path of a workspace package's `frontend.js`, given its parsed manifest. */
-function workspaceFrontendJs(root: string, pkg: PackageManifest | null): string {
-  return path.resolve(root, workspaceFrontendEntryRel(pkg));
-}
+// ─── Sources ────────────────────────────────────────────────────────────────
 
-/**
- * Resolve the absolute path to stream for `GET /api/plugins/<name>/<file>` from a
- * workspace/npm plugin, or `null` when the request must 404. UNGATED (a base
- * install is trusted) — but `packageName` MUST be in `allowedPackages` (the
- * resolved workspace plugin list), which both guards path traversal and bounds
- * serving to actually-declared plugins. The JS path comes from the package's
- * `exports['./frontend']` (fallback `dist/frontend.js`); CSS is its sibling
- * `frontend.css`. Returns null when the package is unresolvable or the file is
- * absent (a plugin without a built bundle simply serves nothing).
- */
-export function resolveWorkspaceFrontendAsset(
-  packageName: string,
-  file: FrontendAssetFile,
-  allowedPackages: readonly string[],
-  resolveRoot: WorkspaceRootResolver = defaultWorkspaceRoot,
-): string | null {
-  if (!allowedPackages.includes(packageName)) return null;
-  const root = resolveRoot(packageName);
-  if (!root) return null;
-  const frontendAbs = workspaceFrontendJs(root, readPackageJson(path.join(root, 'package.json')));
-  const abs =
-    file === 'frontend.js' ? frontendAbs : path.join(path.dirname(frontendAbs), 'frontend.css');
-  return fs.existsSync(abs) ? abs : null;
-}
+/** Which of the three sources contributed a frontend. */
+export type FrontendSourceKind = 'overlay' | 'npm' | 'envelope';
 
-/**
- * Workspace/npm plugins that ship a resolvable built `frontend` entry, for the
- * frontend manifest. UNGATED (parity with the backend base tier). A package
- * without a built bundle (or unresolvable) is simply omitted. `resolveRoot` is a
- * test seam — production passes the default `import.meta.resolve`-based resolver.
- *
- * `packageNames` is the resolved workspace allowlist, so every name is trusted by
- * construction (the traversal guard in `resolveWorkspaceFrontendAsset` exists for
- * the user-supplied route `:name`). Each package is resolved + its `package.json`
- * read exactly ONCE here (this runs per `GET /frontend-manifest`).
- */
-export function enumerateWorkspaceFrontendBundles(
-  packageNames: readonly string[],
-  resolveRoot: WorkspaceRootResolver = defaultWorkspaceRoot,
-): FrontendBundle[] {
-  const bundles: FrontendBundle[] = [];
-  for (const name of packageNames) {
-    const root = resolveRoot(name);
-    if (!root) continue;
-    const pkg = readPackageJson(path.join(root, 'package.json'));
-    const frontendAbs = workspaceFrontendJs(root, pkg);
-    if (!fs.existsSync(frontendAbs)) continue;
-    bundles.push({
-      name,
-      version: packageVersion(pkg),
-      hasCss: fs.existsSync(path.join(path.dirname(frontendAbs), 'frontend.css')),
-    });
-  }
-  return bundles;
+/** One plugin frontend, as resolved from one source. */
+export interface FrontendSource {
+  kind: FrontendSourceKind;
+  /** The plugin name the manifest announces and the asset route is addressed by. */
+  name: string;
+  /** Package version (cache-bust key of the entry URL), `'0.0.0'` when unreadable. */
+  version: string;
+  /** Absolute path of the resolved, existing frontend entry. */
+  entry: string;
+  /** Absolute path of `frontend.css` next to the entry, or null when not shipped. */
+  css: string | null;
+  /** The load-record id whose backend status admits this source (`PluginLoadRecord.package`). */
+  recordKey: string;
 }
-
-// ─── Generalized dist asset serving (native-ESM siblings) ───────────────────
-//
-// A plugin's `frontend.js` is served as native ESM (m33l5fe0 — the host does NOT
-// re-bundle), so its RELATIVE imports resolve against the module URL: a code-split
-// chunk `./dto-*.js` becomes `GET /api/plugins/<name>/dto-*.js`. Serving only
-// `frontend.js`/`frontend.css` (the original two-file enum) left those siblings
-// 404 and broke any code-split bundle (the first real plugin tripped on it). So
-// the host serves any allowlisted asset that physically sits next to the entry,
-// strictly contained in the bundle dir, under the SAME trust gating as the entry.
 
 /** Asset extensions a plugin bundle dir may serve, with their content types. */
 const ASSET_CONTENT_TYPE: Record<string, string> = {
@@ -263,109 +146,142 @@ export function assetContentType(asset: string): string | null {
 }
 
 /**
- * Resolve a single flat `asset` strictly within `distDir`. Returns `null` (→ 404)
- * on a disallowed extension, any path separator / traversal in the name, an
- * escape outside `distDir`, or a missing file. Vite library output is flat
- * (`frontend.js`, `dto-*.js`, `*.map` all in the bundle root), so a single
- * path-segment name with no separators is exactly what a relative ESM import
- * requests — and rejecting separators is the simplest sound traversal guard.
+ * Build a source from a resolved entry path; null when the entry is not built
+ * or is not a servable `.js` file (the asset route could never serve it).
  */
-function resolveWithinDist(distDir: string, asset: string): string | null {
+function toSource(
+  kind: FrontendSourceKind,
+  name: string,
+  version: string,
+  entry: string,
+  recordKey: string,
+): FrontendSource | null {
+  if (assetContentType(entry) !== 'text/javascript') return null;
+  if (!fs.existsSync(entry)) return null;
+  const css = path.join(path.dirname(entry), 'frontend.css');
+  return { kind, name, version, entry, css: fs.existsSync(css) ? css : null, recordKey };
+}
+
+/**
+ * The npm-package entry rule, relative to a package (or envelope) root:
+ * `exports['./frontend']` when declared, else `dist/frontend.js`.
+ */
+export function packageFrontendEntry(root: string): string {
+  const pkg = readPackageJson(path.join(root, 'package.json'));
+  const sub = (pkg?.exports as Record<string, unknown> | undefined)?.['./frontend'];
+  return path.resolve(root, resolveExportsEntry(sub) ?? 'dist/frontend.js');
+}
+
+/** A package's (or envelope's) own name from its `package.json`, else `fallback`. */
+function packageName(pkg: PackageManifest | null, fallback: string): string {
+  return pkg && typeof pkg.name === 'string' && pkg.name.length > 0 ? pkg.name : fallback;
+}
+
+/**
+ * Overlay frontends of `cwd` — a pure FS read, no gate: the caller decides trust.
+ * The entry is the fixed `dist/frontend.js` of each folder; `exports` are ignored
+ * (an overlay is not installed by a package manager).
+ */
+export function overlayFrontendSources(cwd: string): FrontendSource[] {
+  const out: FrontendSource[] = [];
+  for (const folder of enumerateOverlayPackages(cwd)) {
+    const dir = path.join(projectPluginsDir(cwd), folder);
+    const version = packageVersion(readPackageJson(path.join(dir, 'package.json')));
+    const src = toSource('overlay', folder, version, path.join(dir, 'dist', 'frontend.js'), folder);
+    if (src) out.push(src);
+  }
+  return out;
+}
+
+/** The frontend of one workspace npm package (`listed` = its name in the workspace list). */
+export function npmFrontendSource(
+  listed: string,
+  resolveRoot: WorkspaceRootResolver = defaultWorkspaceRoot,
+): FrontendSource | null {
+  const root = resolveRoot(listed);
+  if (!root) return null;
+  const pkg = readPackageJson(path.join(root, 'package.json'));
+  return toSource('npm', packageName(pkg, listed), packageVersion(pkg), packageFrontendEntry(root), listed);
+}
+
+/** The frontend of one built-in envelope — the npm rule, relative to its folder. */
+export function envelopeFrontendSource(envelope: BuiltinEnvelope): FrontendSource | null {
+  const pkg = readPackageJson(path.join(envelope.dir, 'package.json'));
+  return toSource(
+    'envelope',
+    packageName(pkg, envelope.name),
+    packageVersion(pkg),
+    packageFrontendEntry(envelope.dir),
+    envelope.name,
+  );
+}
+
+// ─── The effective pool ─────────────────────────────────────────────────────
+
+/**
+ * Everything the effective frontend pool is computed from. Each `loaded` set holds
+ * the load-record ids (`PluginLoadRecord.package`) whose backend is `loaded`.
+ */
+export interface FrontendPool {
+  /** The primary project's overlay. Absent on a workspace-only start. */
+  overlay?: { cwd: string; trusted: boolean; loaded: ReadonlySet<string> };
+  /** Workspace npm packages (the resolved list `loadWorkspacePlugins` consumed). */
+  npm?: { packages: readonly string[]; loaded: ReadonlySet<string>; resolveRoot?: WorkspaceRootResolver };
+  /** Built-in envelopes discovered under `<hostRoot>/plugins/`. */
+  envelopes?: { list: readonly BuiltinEnvelope[]; loaded: ReadonlySet<string> };
+}
+
+/** The `loaded` ids of a list of load records. */
+export function loadedRecordKeys(records: ReadonlyArray<{ package: string; status: string }>): Set<string> {
+  return new Set(records.filter((r) => r.status === 'loaded').map((r) => r.package));
+}
+
+/**
+ * The effective pool: one source per plugin name, after the backend-`loaded`
+ * filter and the collision precedence (overlay > npm package > envelope). Order:
+ * envelopes, then npm packages, then the overlay — a later source replaces an
+ * earlier one of the same name in place.
+ */
+export function effectiveFrontendSources(pool: FrontendPool): FrontendSource[] {
+  const byName = new Map<string, FrontendSource>();
+  const admit = (src: FrontendSource | null, loaded: ReadonlySet<string>): void => {
+    if (src && loaded.has(src.recordKey)) byName.set(src.name, src);
+  };
+  if (pool.envelopes) {
+    for (const e of pool.envelopes.list) admit(envelopeFrontendSource(e), pool.envelopes.loaded);
+  }
+  if (pool.npm) {
+    for (const listed of pool.npm.packages) admit(npmFrontendSource(listed, pool.npm.resolveRoot), pool.npm.loaded);
+  }
+  if (pool.overlay?.trusted) {
+    for (const src of overlayFrontendSources(pool.overlay.cwd)) admit(src, pool.overlay.loaded);
+  }
+  return [...byName.values()];
+}
+
+/**
+ * Resolve a single flat `asset` strictly within `dir`. Returns `null` (→ 404) on a
+ * disallowed extension, any path separator / `..` in the name, an escape outside
+ * `dir`, or a missing file. Vite library output is flat (`frontend.js`,
+ * `dto-*.js`, `*.map` beside each other), so a single path-segment name is exactly
+ * what a relative ESM import of the entry requests.
+ */
+function resolveWithinDir(dir: string, asset: string): string | null {
   if (!assetContentType(asset)) return null;
   if (asset.includes('/') || asset.includes('\\') || asset.includes('..')) return null;
-  const abs = path.join(distDir, asset);
-  const rel = path.relative(distDir, abs);
+  const abs = path.join(dir, asset);
+  const rel = path.relative(dir, abs);
   if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return null;
   return fs.existsSync(abs) ? abs : null;
 }
 
 /**
- * Overlay tier (trust-gated): resolve any allowlisted sibling of the project-local
- * bundle at `<cwd>/.claude4spec/plugins/<name>/dist/<asset>`. Same gate + package
- * guard as `resolveFrontendAsset`, generalized from the two fixed filenames.
+ * `GET /api/plugins/:name/:asset` — the file to stream, or null (→ 404). The
+ * source is the one the manifest announces for `name` (same pool, same filter,
+ * same precedence); the file must sit in the folder of its resolved entry.
  */
-export function resolveOverlayAsset(
-  cwd: string,
-  trusted: boolean,
-  name: string,
-  asset: string,
-): string | null {
-  if (!trusted) return null;
-  if (!enumerateOverlayPackages(cwd).includes(name)) return null;
-  return resolveWithinDist(path.join(projectPluginsDir(cwd), name, 'dist'), asset);
-}
-
-/**
- * Workspace tier (ungated, allowlist-bounded): resolve any allowlisted sibling of
- * a workspace/npm plugin's resolved `frontend` entry (i.e. files in the same
- * `dist/` dir). Generalizes `resolveWorkspaceFrontendAsset` from the two fixed
- * filenames so code-split chunks (`dto-*.js`) and source maps resolve.
- */
-export function resolveWorkspaceAsset(
-  packageName: string,
-  asset: string,
-  allowedPackages: readonly string[],
-  resolveRoot: WorkspaceRootResolver = defaultWorkspaceRoot,
-): string | null {
-  if (!allowedPackages.includes(packageName)) return null;
-  const root = resolveRoot(packageName);
-  if (!root) return null;
-  const frontendAbs = workspaceFrontendJs(root, readPackageJson(path.join(root, 'package.json')));
-  return resolveWithinDist(path.dirname(frontendAbs), asset);
-}
-
-// ─── Envelope tier (0.2.2) ──────────────────────────────────────────────────
-//
-// A builtin envelope (`<hostRoot>/plugins/<name>/`) is trusted by virtue of
-// living in the host repo, so this tier is UNGATED and needs no allowlist: the
-// discovered envelope list IS the allowlist, and it comes from the filesystem,
-// never from a request. Everything else — the `exports['./frontend']` lookup,
-// the extension allowlist, the containment check — is shared with the workspace
-// tier above, so the two cannot drift.
-
-/** Absolute path of an envelope's built `frontend.js`. */
-function envelopeFrontendJs(dir: string): string {
-  return path.resolve(dir, workspaceFrontendEntryRel(readPackageJson(path.join(dir, 'package.json'))));
-}
-
-function findEnvelope(name: string, envelopes: readonly BuiltinEnvelope[]): BuiltinEnvelope | null {
-  return envelopes.find((e) => e.name === name) ?? null;
-}
-
-/**
- * Resolve any allowlisted sibling of an envelope's built frontend entry, for
- * `GET /api/plugins/<name>/<file>`. Returns null when the envelope is unknown or
- * has not been built — an envelope with no frontend simply serves nothing, the
- * same as a workspace package without one.
- */
-export function resolveEnvelopeAsset(
-  name: string,
-  asset: string,
-  envelopes: readonly BuiltinEnvelope[],
-): string | null {
-  const envelope = findEnvelope(name, envelopes);
-  if (!envelope) return null;
-  return resolveWithinDist(path.dirname(envelopeFrontendJs(envelope.dir)), asset);
-}
-
-/**
- * Envelopes that ship a built frontend entry, for the frontend manifest. An
- * envelope whose bundle has not been built yet is omitted rather than
- * advertised — advertising it would make the client fetch a 404 on every boot.
- */
-export function enumerateEnvelopeFrontendBundles(
-  envelopes: readonly BuiltinEnvelope[],
-): FrontendBundle[] {
-  const bundles: FrontendBundle[] = [];
-  for (const envelope of envelopes) {
-    const pkg = readPackageJson(path.join(envelope.dir, 'package.json'));
-    const frontendAbs = envelopeFrontendJs(envelope.dir);
-    if (!fs.existsSync(frontendAbs)) continue;
-    bundles.push({
-      name: envelope.name,
-      version: packageVersion(pkg),
-      hasCss: fs.existsSync(path.join(path.dirname(frontendAbs), 'frontend.css')),
-    });
-  }
-  return bundles;
+export function resolvePluginAsset(pool: FrontendPool, name: string, asset: string): string | null {
+  const src = effectiveFrontendSources(pool).find((s) => s.name === name);
+  if (!src) return null;
+  return resolveWithinDir(path.dirname(src.entry), asset);
 }

@@ -98,15 +98,17 @@ function GroupedEntityListImpl<T>({
               fontSize: 11,
               fontWeight: 600,
               letterSpacing: '0.06em',
-              color: 'var(--c-text-muted)',
+              // Bridge tokens only (`--c-muted`, `--c-hair`): both are redefined
+              // under `.dark`, so the heading and its rule follow the theme mode.
+              color: 'var(--c-muted)',
               padding: '0 2px 2px',
-              borderBottom: '1px solid var(--c-border)',
+              borderBottom: '1px solid var(--c-hair)',
             }}
           >
             {group.label}
           </h2>
           {group.items.length === 0 ? (
-            <div style={{ padding: '8px 2px', color: 'var(--c-text-muted)', fontSize: 13 }}>
+            <div style={{ padding: '8px 2px', color: 'var(--c-muted)', fontSize: 13 }}>
               {emptyGroupState}
             </div>
           ) : (

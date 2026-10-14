@@ -39,6 +39,10 @@ import { mcpToolSystemPrompt } from './system-prompt.js';
  * exists on disk anywhere, so there is no earlier shape to migrate from. The
  * chain starts empty and stays that way until a field changes meaning.
  */
+// 2.1.20 (M13 z7l89jhf) — the type's frontend is NOT part of this contribution:
+// the host rejects a `frontend` key here. `mcpToolFrontendModule` (./frontend/module.tsx) enters
+// through the package's browser entry (`src/frontend.tsx`, `exports['./frontend']`)
+// via `registerFrontendModule`.
 export const mcpToolEntity: EntityContribution = {
   type: MCP_TOOL_TYPE,
   data: mcpToolData,

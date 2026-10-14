@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createPluginTestApp, type PluginTestApp } from '@inharness-ai/claude4spec/plugin-testing';
+import { createPluginTestApp, type PluginTestApp } from '@c4s-internal/plugin-test-setup';
 import { manifest } from '../src/manifest.js';
 import { buildOverview, cellLookup, densify, metaOf, toSparseCells } from '../src/entity/spreadsheet/overview.js';
 import type { RawEntity } from '../src/host-kit/host-types.js';

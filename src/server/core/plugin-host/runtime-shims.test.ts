@@ -57,6 +57,14 @@ describe('runtime-shims', () => {
     expect(src).toContain('export const useHostTokens =');
   });
 
+  it('[ac:ac-groupedentitylist-jest-importowalny-z] the @c4s/plugin-runtime/ui shim re-exports GroupedEntityList from the host bundle', async () => {
+    const src = await getRuntimeShim(PEER_SLUG['@c4s/plugin-runtime/ui']);
+    // A plugin's `import { GroupedEntityList } from '@c4s/plugin-runtime/ui'`
+    // resolves through this shim to the one host UI bundle.
+    expect(src).toContain('const __m = globalThis.__c4s_shared["@c4s/plugin-runtime/ui"];');
+    expect(src).toContain('export const GroupedEntityList = __m["GroupedEntityList"];');
+  });
+
   it('shares lucide-react as a curatorial peer (0.1.121, not hook-correctness-gated)', async () => {
     const map = buildImportMap();
     expect(map['lucide-react']).toBe('/api/plugins/runtime/lucide-react.js');

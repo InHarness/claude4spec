@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { UI_KIT_CATALOG, STABLE_UI_KIT_COMPONENTS } from './registry.js';
 import { UI_KIT_STABLE_COMPONENTS } from '../../shared/plugin-host/ui-kit-surface.js';
 import { HOST_API_VERSION } from '../../shared/plugin-host/manifest.js';
+// The backend half of `@c4s/plugin-runtime/ui` (what a plugin backend links against).
+import * as uiBackendLeg from '../../server/plugin-runtime/ui.js';
+// The browser half of `@c4s/plugin-runtime/ui` (the catalog's re-export surface).
+import * as uiBrowserSurface from './index.js';
 
 describe('Host UI Kit catalog registry (M34/L12)', () => {
   it('catalogs all 32 components across the eight groups', () => {
@@ -81,9 +85,38 @@ describe('Host UI Kit catalog registry (M34/L12)', () => {
     expect(HOST_API_VERSION).toBe('2.1.0');
   });
 
-  it('derived stable set matches the React-free versioned surface (no drift)', () => {
-    // The version surface (host-api.ts) reads the shared list; the components
-    // carry their own field-level `stability`. These two must agree.
-    expect(new Set(STABLE_UI_KIT_COMPONENTS)).toEqual(new Set(UI_KIT_STABLE_COMPONENTS));
+  it('[section:m34l12sc] STABLE_UI_KIT_COMPONENTS is derived from the registry and equals the backend /ui leg constant UI_KIT_STABLE_COMPONENTS', () => {
+    // Derived from the registry: exactly the `stable` entries, in catalog order.
+    expect(STABLE_UI_KIT_COMPONENTS).toEqual(
+      UI_KIT_CATALOG.filter((c) => c.stability === 'stable').map((c) => c.name),
+    );
+    // The browser `/ui` surface exports that same derived list.
+    expect(uiBrowserSurface.STABLE_UI_KIT_COMPONENTS).toBe(STABLE_UI_KIT_COMPONENTS);
+    // Equal to the constant the backend `/ui` leg carries — same names, no
+    // duplicates, nothing on one side missing from the other.
+    const backend = [...uiBackendLeg.UI_KIT_STABLE_COMPONENTS];
+    expect(new Set(backend).size).toBe(backend.length);
+    expect(new Set(STABLE_UI_KIT_COMPONENTS).size).toBe(STABLE_UI_KIT_COMPONENTS.length);
+    expect([...STABLE_UI_KIT_COMPONENTS].sort()).toEqual(backend.sort());
+    // The backend leg serves the shared versioned list itself, not a copy.
+    expect(uiBackendLeg.UI_KIT_STABLE_COMPONENTS).toBe(UI_KIT_STABLE_COMPONENTS);
+  });
+  it('[section:m34l12sc] /ui exports UI_KIT_CATALOG as data plus useToast, useHostTokens, HOST_TOKEN_NAMES and readHostTokens beside it, none of them a catalog entry', () => {
+    expect(uiBrowserSurface.UI_KIT_CATALOG).toBe(UI_KIT_CATALOG);
+    for (const e of UI_KIT_CATALOG) {
+      expect(Object.keys(e).filter((k) => k !== 'l11Surfaces').sort()).toEqual(
+        ['binding', 'group', 'name', 'stability'].sort(),
+      );
+    }
+    const names = UI_KIT_CATALOG.map((c) => c.name);
+    for (const beside of ['useToast', 'useHostTokens', 'HOST_TOKEN_NAMES', 'readHostTokens']) {
+      expect(uiBrowserSurface).toHaveProperty(beside);
+      expect(names).not.toContain(beside);
+    }
+    // DocEditor binds both live L11 singletons.
+    expect(UI_KIT_CATALOG.find((c) => c.name === 'DocEditor')?.l11Surfaces).toEqual([
+      'EditorBridge',
+      'QueryClient',
+    ]);
   });
 });

@@ -1,3 +1,9 @@
+/**
+ * DEBT (2.1.20, Host UI Kit slice of M21): the view switcher on `briefs-list`
+ * and `brief-page` is this host `SegmentedControl` from outside the catalog. It
+ * fails locality condition 2 — it is universal across entity types. Its catalog
+ * replacement is `SegmentedControlTabs`. Recorded, not fixed here.
+ */
 import { ButtonGroup, SegmentButton } from './ButtonGroup.js';
 
 export interface SegmentOption<T extends string> {

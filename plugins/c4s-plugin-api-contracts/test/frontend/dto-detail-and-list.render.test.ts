@@ -50,19 +50,29 @@ vi.mock('@tanstack/react-router', () => ({
   },
 }));
 
-vi.mock('@c4s/plugin-runtime', () => ({
-  clientPluginHost: {
-    listEntities: () => state.modules,
-    getAvailable: (type: string) => state.modules.find((m) => m.type === type) ?? null,
-    getEntity: (type: string) => state.modules.find((m) => m.type === type) ?? null,
-    onRegistryChanged: () => () => undefined,
-    registryVersion: () => 1,
-  },
-  useTags: () => ({ data: [] }),
-  useReferences: () => ({ data: [] }),
-  EditorBridgeProvider: ({ children }: { children: ReactNode }) => children,
-  queryClient: null,
-}));
+vi.mock('@c4s/plugin-runtime', async () => {
+  // 2.1.20 (M50 `tbeatf5z`): the plugin opens windows and toasts through the
+  // shell facades of `@c4s/plugin-runtime` — the host's own functions, so the
+  // real ones stand in here and the window they open is observed on the host side.
+  const host = await import('../../../../src/client/ui/events.js');
+  return {
+    openPopover: host.openPopover,
+    openModal: host.openModal,
+    confirmDestructive: host.confirmDestructive,
+    toast: host.toast,
+    clientPluginHost: {
+      listEntities: () => state.modules,
+      getAvailable: (type: string) => state.modules.find((m) => m.type === type) ?? null,
+      getEntity: (type: string) => state.modules.find((m) => m.type === type) ?? null,
+      onRegistryChanged: () => () => undefined,
+      registryVersion: () => 1,
+    },
+    useTags: () => ({ data: [] }),
+    useReferences: () => ({ data: [] }),
+    EditorBridgeProvider: ({ children }: { children: ReactNode }) => children,
+    queryClient: null,
+  };
+});
 
 vi.mock('@c4s/plugin-runtime/ui', async () => {
   const { createElement: h } = await import('react');
@@ -649,28 +659,33 @@ describe('[section:9hz21ysc] dto Host UI Kit slice', () => {
   });
 
   it('[section:9hz21ysc] each host-local frontend-kit duplicate is recorded as DEBT naming its catalog replacement', () => {
-    const debt: Array<[file: string, exports: string[], replacement: string]> = [
+    const debt: Array<[file: string, exports: string[], replacement: string | null]> = [
       ['EntityBreadcrumbBar.tsx', ['EntityBreadcrumbBar'], 'DetailPanelShell'],
       ['EntityViewSwitcher.tsx', ['EntityViewSwitcher'], 'SegmentedControlTabs'],
       ['SegmentedControl.tsx', ['SegmentedControl'], 'SegmentedControlTabs'],
       ['ButtonGroup.tsx', ['ButtonGroup', 'SegmentButton'], 'SegmentedControlTabs'],
-      ['atoms.tsx', ['MethodChip', 'TagChip'], 'Badge'],
+      ['atoms.tsx', ['TagChip'], 'Badge'],
       ['popover-form.tsx', ['FieldLabel', 'TextInput', 'SelectInput', 'InlineError', 'PopoverFooter'], 'FormField'],
+      ['ListPageLayout.tsx', ['ListPageLayout'], null],
+      // `RoutePane` — the package's copy of the host's route pane, exported as `Pane`.
+      ['route-shell.tsx', ['Pane'], null],
     ];
     for (const [file, exports, replacement] of debt) {
       const src = readFileSync(join(KIT_SRC, file), 'utf-8');
       for (const name of exports) {
         expect(src, `${file} exports ${name}`).toMatch(new RegExp(`export (function|const) ${name}\\b`));
       }
-      const header = src.match(/DEBT \(2\.1\.19[^]*?Recorded, not fixed here/)?.[0];
+      const header = src.match(/DEBT \(2\.1\.(?:19|20)[^]*?Recorded, not fixed here/)?.[0];
       expect(header, `${file} DEBT header`).toBeDefined();
-      expect(header!).toContain(`\`${replacement}\``);
+      // 2.1.20: `ListPageLayout` and `RoutePane` have no catalog replacement — trajectory candidates.
+      if (replacement === null) expect(header!).toContain('candidate of the catalog trajectory');
+      else expect(header!).toContain(`\`${replacement}\``);
     }
     // Recorded, not fixed: the dto detail route still renders through the local bar.
     expect(readFileSync(join(FRONTEND_SRC, 'routes.tsx'), 'utf-8')).toMatch(/<EntityBreadcrumbBar\b/);
   });
 
-  it('[section:9hz21ysc] ListPageHeader / ListScrollArea are not carried by this package — the dto list composes their replacements directly (ASSUMPTION:dev-1907)', () => {
+  it('[section:9hz21ysc] ListPageHeader / ListScrollArea (struck from the slice in 2.1.20) are not carried by this package — the dto list composes their replacements directly', () => {
     const kit = readdirSync(KIT_SRC);
     expect(kit).not.toContain('ListPageHeader.tsx');
     expect(kit).not.toContain('ListScrollArea.tsx');

@@ -13,7 +13,7 @@ import {
 } from './hooks.js';
 import { useTags } from '@c4s/plugin-runtime';
 import { useReferences } from '@c4s/plugin-runtime';
-import { confirmDestructive, toast } from '../../../frontend-kit/host-events.js';
+import { confirmDestructive, toast } from '@c4s/plugin-runtime';
 import { slugify } from '../../../identity.js';
 import { aliasTarget, lintTokens, resolve } from '../../../design-system-domain.js';
 import {

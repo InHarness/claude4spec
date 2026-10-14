@@ -10,6 +10,17 @@ interface Props {
   onClose: () => void;
 }
 
+/**
+ * The read-only pan+zoom fullscreen (`position:fixed; inset:0; zIndex:1300`) —
+ * the form of the `diagram-expand` window's content. 2.1.20 (c4s-plugin-diagram
+ * L12, M13 chipprops): it is rendered ONLY through the diagram's
+ * `renderOverlay` slot (`DiagramOverlay`, which resolves the record by slug and
+ * renders the SVG once, on open); the window's name and the way it opens are
+ * the host's. Neither the card nor the chip mounts it directly.
+ *
+ * Wheel → zoom around the cursor, drag → pan, fit-to-screen on open; keys `Esc`
+ * close, `+`/`=` and `-`/`_` zoom, `0` reset, `F` fit; scale clamped to [0.1, 12].
+ */
 export function DiagramFullscreen({ svg, caption, onClose }: Props) {
   const stageRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);

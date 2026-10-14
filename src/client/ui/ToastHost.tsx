@@ -14,11 +14,13 @@ interface ActiveToast extends ToastRequest {
 const DEFAULT_DURATION: Record<ToastVariant, number> = TOAST_DURATION_MS;
 
 /**
- * The host's toast FACADE (M34/L12 one-implementation rule): `ToastHost` IS the
- * catalog's `ToastViewport` — it renders no viewport of its own. What lives here
- * is only the invocation surface the catalog deliberately doesn't own: the
- * `c4s:toast` event bus, the queue, and the expiry timers (including the
- * per-call `durationMs` override that `toast.*` accepts).
+ * The host's toast stack (M34/L12 one-implementation rule): `ToastHost` renders
+ * the catalog's `ToastViewport` in CONTROLLED mode — it renders no viewport of
+ * its own. It holds the host's ONE toast stack: the `c4s:toast` event bus, the
+ * queue, and the expiry timers (including the per-call `durationMs` override
+ * that `toast.*` accepts). Every toast lands here — the shell's `toast` facade,
+ * the same facade on the plugin browser leg, and `/ui`'s `useToast()`, which is
+ * a thin layer over that facade (2.1.20, M34 `l0i0c5wm`).
  *
  * `toast.success/error/warning/info` are unchanged; 0.2.110 renamed the payload's
  * `kind` to `variant` (`c4s:toast { variant, message, action? }`).

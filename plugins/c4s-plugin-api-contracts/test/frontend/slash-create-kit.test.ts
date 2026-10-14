@@ -4,7 +4,20 @@
  * Both are `false` here, and the report names the entity so the user can embed
  * it by hand. (The kit is vendored per plugin; this copy stands for all six.)
  */
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// 2.1.20 (M50 `tbeatf5z`): the kit toasts through the `toast` facade of
+// `@c4s/plugin-runtime` (browser leg); the host behind it puts the toast on its
+// own bus. The runner's alias resolves the bare specifier to the backend leg, so
+// the browser facade is stood in for here — at the package boundary, without a
+// path into the host repo (the envelope must move to its own repo unchanged).
+const toastCalls = vi.hoisted(() => [] as Array<{ variant: string; message: string; arg: unknown }>);
+vi.mock('@c4s/plugin-runtime', () => {
+  const record = (variant: string) => (message: string, arg?: unknown) => {
+    toastCalls.push({ variant, message, arg });
+  };
+  return { toast: { success: record('success'), error: record('error'), warning: record('warning') } };
+});
 import {
   NOT_EMBEDDED_TOAST_MS,
   insertEmbed,
@@ -13,22 +26,6 @@ import {
   runInsert,
   type EmbedEditor,
 } from '../../src/frontend-kit/slash-create.js';
-
-const dispatched: Array<{ type: string; detail: Record<string, unknown> }> = [];
-beforeAll(() => {
-  const g = globalThis as Record<string, unknown>;
-  if (typeof g.CustomEvent === 'undefined') {
-    g.CustomEvent = class {
-      type: string;
-      detail: unknown;
-      constructor(type: string, init?: { detail?: unknown }) {
-        this.type = type;
-        this.detail = init?.detail;
-      }
-    };
-  }
-  g.window = { dispatchEvent: (e: (typeof dispatched)[number]) => dispatched.push(e) };
-});
 
 function editor(run: () => boolean): EmbedEditor & { inserted: unknown[] } {
   const inserted: unknown[] = [];
@@ -71,13 +68,12 @@ describe('slash-create kit — embed result', () => {
   });
 
   it('reportNotEmbedded fires a warning toast naming the entity and slug', () => {
-    dispatched.length = 0;
+    toastCalls.length = 0;
     reportNotEmbedded('GET /api/users', 'get-users');
-    expect(dispatched).toHaveLength(1);
-    expect(dispatched[0]!.type).toBe('c4s:toast');
-    expect(dispatched[0]!.detail.variant).toBe('warning');
-    expect(dispatched[0]!.detail.durationMs).toBe(NOT_EMBEDDED_TOAST_MS);
-    expect(dispatched[0]!.detail.message).toBe(notEmbeddedMessage('GET /api/users', 'get-users'));
-    expect(dispatched[0]!.detail.message).toMatch(/“GET \/api\/users” \(slug: get-users\) was created/);
+    expect(toastCalls).toHaveLength(1);
+    expect(toastCalls[0]!.variant).toBe('warning');
+    expect(toastCalls[0]!.arg).toEqual({ durationMs: NOT_EMBEDDED_TOAST_MS });
+    expect(toastCalls[0]!.message).toBe(notEmbeddedMessage('GET /api/users', 'get-users'));
+    expect(toastCalls[0]!.message).toMatch(/“GET \/api\/users” \(slug: get-users\) was created/);
   });
 });

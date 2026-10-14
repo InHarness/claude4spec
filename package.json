@@ -49,11 +49,10 @@
       "default": "./dist/server/plugin-runtime/ui.js"
     },
     "./plugin-runtime/ambient": {
+      "c4s-backend": {
+        "types": "./dist/plugin-types/ambient-backend.d.ts"
+      },
       "types": "./dist/plugin-types/ambient.d.ts"
-    },
-    "./plugin-testing": {
-      "types": "./dist/plugin-types/plugin-testing.d.ts",
-      "default": "./dist/server/plugin-testing/index.js"
     }
   },
   "scripts": {
@@ -62,7 +61,7 @@
     "c4s": "tsx src/bin/c4s.ts",
     "build:server": "tsc -p tsconfig.server.json && rm -rf dist/server/db/migrations && cp -R src/server/db/migrations dist/server/db/migrations && chmod +x dist/bin/claude4spec.js dist/bin/c4s.js dist/bin/c4s-mcp.js",
     "build:client": "vite build",
-    "build:types": "tsc -p tsconfig.types.json && cp src/plugin-types/ambient.d.ts dist/plugin-types/ambient.d.ts",
+    "build:types": "tsc -p tsconfig.types.json && cp src/plugin-types/ambient.d.ts src/plugin-types/ambient-backend.d.ts dist/plugin-types/",
     "build": "npm run build:client && npm run build:server && npm run build:types",
     "start": "node dist/bin/claude4spec.js",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.types.json --noEmit && npm run typecheck:envelopes",

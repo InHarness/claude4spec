@@ -194,4 +194,9 @@ function DocEditorImpl({ value, onChange, onBlur, readOnly, placeholder }: DocEd
   );
 }
 
-export const DocEditor = withStability(DocEditorImpl, 'experimental', 'connected', ['EditorBridge']);
+// 2.1.20 (M34 m34l12sc): binds BOTH live L11 singletons — the EditorBridge and
+// the host `QueryClient` (`useQueryClient()` above).
+export const DocEditor = withStability(DocEditorImpl, 'experimental', 'connected', [
+  'EditorBridge',
+  'QueryClient',
+]);

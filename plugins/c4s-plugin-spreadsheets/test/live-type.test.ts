@@ -13,10 +13,11 @@
  * storage did not change, and that a cell can be written without resending the
  * grid.
  *
- * 2.1.17 (M33 `ywud56l6`): the host is reached ONLY through the published
- * harness, `@inharness-ai/claude4spec/plugin-testing`, with the package's own
- * manifest handed to `createPluginTestApp` — never through the host repo's test
- * helpers — so moving this package out of the host repo changes no import here.
+ * 2.1.20 (M33 `ywud56l6`): the host is reached through the host repo's
+ * internal, unpublished test setup, `@c4s-internal/plugin-test-setup`, with the
+ * package's own manifest handed to `createPluginTestApp`. The specifier is a
+ * test-config alias, so moving this package out of the host repo changes no
+ * import here — but the tests have to be re-wired to a published harness then.
  * Discovery of the built bundle by `loadBuiltinEnvelopes` is the host's claim
  * and is pinned by the host's own suites, not by this package.
  */
@@ -24,7 +25,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createPluginTestApp, type PluginTestApp } from '@inharness-ai/claude4spec/plugin-testing';
+import { createPluginTestApp, type PluginTestApp } from '@c4s-internal/plugin-test-setup';
 import { manifest } from '../src/manifest.js';
 
 describe('spreadsheet — the shipped type', () => {

@@ -20,7 +20,7 @@ import {
   type EmbedEditor,
 } from '../../../frontend-kit/slash-create.js';
 import { InlineError, PopoverFooter, TextInput } from '../../../frontend-kit/popover-form.js';
-import { toast } from '../../../frontend-kit/host-events.js';
+import { toast } from '@c4s/plugin-runtime';
 import {
   DESIGN_SYSTEM_LABEL,
   DESIGN_SYSTEM_POPOVER_KIND,

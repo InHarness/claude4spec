@@ -50,7 +50,7 @@ import {
 } from '@c4s/plugin-runtime';
 import { ActionButton, DocEditor, FieldGrid, FieldRow, TagPicker } from '@c4s/plugin-runtime/ui';
 import { MCP_TOOL_TYPE } from '../../../identity.js';
-import { confirmDestructive, toast } from '../../../frontend-kit/host-events.js';
+import { confirmDestructive, toast } from '@c4s/plugin-runtime';
 import { useEntityDraftEditor } from '../../../frontend-kit/useEntityDraftEditor.js';
 import type { McpTool, McpToolHint, McpToolParam } from '../types.js';
 import { MCP_TOOL_HINTS } from '../types.js';

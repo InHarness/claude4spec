@@ -124,8 +124,9 @@ function ModalLayer({
   // the window from an effect (never as a side effect of rendering).
   const Overlay = expandOverlay(request.kind);
   if (!Overlay) return <CloseNow onClose={onClose} />;
-  // Every prop the opener sent reaches the type's overlay — a card that already
-  // holds the record passes it along (`entity`), so the overlay need not refetch.
+  // Every prop the opener sent reaches the type's overlay. Since 2.1.20 the only
+  // opener is the host (`openEntityOverlay`), which sends `{ slug, caption? }` —
+  // the overlay resolves its record by slug.
   const { caption, ...rest } = request.props as { slug: string; caption?: string };
   return (
     <Overlay
