@@ -219,13 +219,14 @@ export interface DispatchContext {
 }
 
 /**
- * M40 provides the broadcast MECHANISM: an event reaches the WS room of the
- * project owning the mount's scope. The EVENT CATALOG does not live in M40 —
+ * M40 provides the broadcast MECHANISM: an event of a `context` mount reaches
+ * the WS room of the project owning that context; an event of a `process`
+ * mount reaches the rooms of all projects of the process. The EVENT CATALOG does not live in M40 —
  * each event is declared and constructed by its owner, inside the owner's own
  * subscription.
  */
 export interface WatchBroadcaster {
-  /** `context:<id>` → that project's room. `process` → every live room. */
+  /** `context:<id>` → that project's room. `process` → the room of every project (M49 `l4wsroom`). */
   broadcast(scope: WatchScope, event: WsEvent): void;
 }
 

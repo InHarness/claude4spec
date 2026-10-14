@@ -1,5 +1,5 @@
 {
-  "iteration": 3,
+  "iteration": 6,
   "units": [
     {
       "id": "u1-serwowanie-frontendu-per-projekt",
@@ -363,15 +363,35 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u2-fanout-zdarzen-mountow-procesowych/p1-l4-l7",
+          "layers": [
+            "L4",
+            "L7"
+          ],
+          "slugs": [
+            "ac-zdarzenie-mountu-procesowego-kazdy-room",
+            "m33-requires-m40",
+            "m40-requires-m49"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "59bcdd6ca946475879236f79a7386445545eabcb",
+      "baseCommit": "59bcdd6ca946475879236f79a7386445545eabcb",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "u3-klient-manifest-projektu-i-przeladowanie",

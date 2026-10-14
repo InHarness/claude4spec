@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import { WsGateway } from './ws/gateway.js';
+import { createRoomBroadcaster } from './ws/watch-broadcaster.js';
 import { FileWatchRuntime } from './fs/watcher.js';
 import { PLUGINS_BASE_SOURCE } from './fs/sources.js';
 import { WorkspaceRegistry, DEFAULT_WORKSPACE_PORT } from './workspace/registry.js';
@@ -331,18 +332,11 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   //
   // M40 owns the WS transport but never the event catalog: it routes by the
   // mount's scope, and each owner constructs the event it declares.
+  // 2.1.22: a `process`-scope event reaches EVERY room of the gateway (each
+  // project separately), a `context:<id>` one only that project's room — see
+  // `createRoomBroadcaster`.
   const watchRuntime = new FileWatchRuntime({
-    broadcaster: {
-      broadcast: (scope, event) => {
-        if (scope === 'process') {
-          for (const id of cache.liveProjectIds()) gateway.broadcast(id, event);
-          return;
-        }
-        // Scope is `context:<projectId>#<instance>` — the instance suffix keeps
-        // two live contexts for one project apart; the ROOM is still the project.
-        gateway.broadcast(scope.slice('context:'.length).split('#')[0]!, event);
-      },
-    },
+    broadcaster: createRoomBroadcaster(gateway),
   });
 
   // M27 clone runs only on the FIRST build of the CLI-started project —
@@ -456,15 +450,14 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
           }
           reloaded.push({ name: rec.manifestName ?? pkg, version: rec.manifestVersion ?? '' });
         }
-        // Snapshot the rooms BEFORE invalidating: invalidateAll() empties the
-        // cache, after which liveProjectIds() would return [] and no client
-        // would ever be told to remount. Then invalidate once (not per-package).
-        const rooms = cache.liveProjectIds();
+        // Invalidate once (not per-package), then broadcast. 2.1.22 (M33/L7
+        // `m33l7pln` step 5, M40 `kc23agex`): `plugins:base` is a
+        // `scope: 'process'` mount, so its event goes through the M40 runtime
+        // to the room of EVERY project of the process — the gateway's rooms,
+        // not the context cache, which invalidateAll() has just emptied.
         cache.invalidateAll();
-        for (const id of rooms) {
-          for (const r of reloaded) {
-            gateway.broadcast(id, { kind: 'plugin:reloaded', name: r.name, version: r.version, tier: 'base' });
-          }
+        for (const r of reloaded) {
+          watchRuntime.broadcast('process', { kind: 'plugin:reloaded', name: r.name, version: r.version, tier: 'base' });
         }
       })
       .catch((err) => console.warn('[plugin-loader] base reload failed:', err));
