@@ -196,7 +196,6 @@ const PROJECTED_TABLES = new Set([
 const NEW_SINCE_LEGACY = new Set([
   'spreadsheet',
   'spreadsheet_cells',
-  'mcp_tool',
   // 0.2.45 — `code-snippet`, contributed by `c4s-plugin-code-snippets`.
   'code_snippet',
   // 0.2.70 — `module-dependency`, contributed by

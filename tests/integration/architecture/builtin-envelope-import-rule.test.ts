@@ -163,8 +163,6 @@ const HOST_SOURCE_IMPORTS_PENDING = new Set([
   'plugins/c4s-plugin-layered-vertical-slices/test/subagent-contribution.test.ts',
   'plugins/c4s-plugin-layered-vertical-slices/test/subagent-reader-contribution.test.ts',
   'plugins/c4s-plugin-layered-vertical-slices/test/subagent-review-contribution.test.ts',
-  'plugins/c4s-plugin-mcp-tools/test/frontend/mcp-tool-views.render.test.ts',
-  'plugins/c4s-plugin-mcp-tools/test/params-delta.test.ts',
   'plugins/c4s-plugin-spreadsheets/test/projection-golden.test.ts',
   'plugins/c4s-plugin-spreadsheets/test/regressions.test.ts',
   'plugins/c4s-plugin-spreadsheets/test/system-prompt.test.ts',
@@ -173,8 +171,8 @@ const HOST_SOURCE_IMPORTS_PENDING = new Set([
 
 describe('built-in envelope code — the host only through @c4s/plugin-runtime', () => {
   it('finds the built-in envelopes it checks', () => {
-    // A rule over zero packages passes vacuously; the repo ships ten.
-    expect(envelopes().length).toBeGreaterThanOrEqual(10);
+    // A rule over zero packages passes vacuously; the repo ships nine.
+    expect(envelopes().length).toBeGreaterThanOrEqual(9);
   });
 
   it('[ac:ac-koperta-wbudowana-importuje-hosta-wylacz] the code of a built-in envelope imports the host only through @c4s/plugin-runtime (+ /ui) — no bare import of host vendor code, services or tables', () => {
@@ -269,8 +267,8 @@ describe('built-in envelope tests — a running host only through the internal t
     expect(viaRelativePath).toEqual([]);
     expect(viaPublishedPackage).toEqual([]);
     expect(setupElsewhere).toEqual([]);
-    // The suites that drive a running host — database-tables, mcp-tools, spreadsheets.
-    for (const name of ['c4s-plugin-database-tables', 'c4s-plugin-mcp-tools', 'c4s-plugin-spreadsheets']) {
+    // The suites that drive a running host — database-tables, spreadsheets.
+    for (const name of ['c4s-plugin-database-tables', 'c4s-plugin-spreadsheets']) {
       expect(setupUsers.some((f) => f.startsWith(`plugins/${name}/`)), name).toBe(true);
     }
   });

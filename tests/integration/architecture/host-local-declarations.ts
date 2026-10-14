@@ -207,10 +207,6 @@ export const HOST_LOCAL_DECLARATIONS: readonly HostLocalDeclaration[] = [
     },
   ]),
 
-  // c4s-plugin-mcp-tools `h054mgoe`
-  { section: 'h054mgoe', consumer: 'c4s-plugin-mcp-tools', kind: 'debt', components: ['EntityBreadcrumbBar'], replacedBy: ['DetailPanelShell'], files: [kit('c4s-plugin-mcp-tools', 'EntityBreadcrumbBar.tsx')] },
-  ...trajectoryDebts('h054mgoe', 'c4s-plugin-mcp-tools', 'c4s-plugin-mcp-tools', false),
-
   // c4s-plugin-spreadsheets `lg0e57j1`
   {
     section: 'lg0e57j1',

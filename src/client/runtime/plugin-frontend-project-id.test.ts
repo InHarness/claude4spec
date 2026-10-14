@@ -27,7 +27,6 @@ const ENVELOPES_WITH_KIT = [
   'c4s-plugin-database-tables',
   'c4s-plugin-frontend-mockups',
   'c4s-plugin-layered-vertical-slices',
-  'c4s-plugin-mcp-tools',
   'c4s-plugin-spreadsheets',
 ];
 const kitPath = (plugin: string) => `../../../plugins/${plugin}/src/frontend-kit/api-core.js`;
