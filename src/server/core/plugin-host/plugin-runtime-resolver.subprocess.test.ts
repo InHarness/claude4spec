@@ -255,8 +255,10 @@ describe('builtin envelope — real load path', () => {
     // 2.1.9 grew the status list ALONE, to TEN: `c4s-plugin-skill-author` is the
     // second package contributing no entity type (one contextual skill,
     // `skill-author`), so the type list below is unchanged.
+    //
+    // Later shrank BOTH by one, to NINE: `c4s-plugin-mcp-tools` left the host
+    // repo — `mcp-tool` is now a project plugin, not a built-in envelope.
     expect(parsed.statuses).toEqual([
-      'loaded',
       'loaded',
       'loaded',
       'loaded',
@@ -274,7 +276,6 @@ describe('builtin envelope — real load path', () => {
       'design-system',
       'dto',
       'endpoint',
-      'mcp-tool',
       'module-dependency',
       'spreadsheet',
       'ui-view',

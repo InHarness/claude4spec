@@ -84,7 +84,6 @@ import { manifest as acManifest } from '../../../plugins/c4s-plugin-ac/src/manif
 import { manifest as apiContractsManifest } from '../../../plugins/c4s-plugin-api-contracts/src/manifest.js';
 import { manifest as databaseTablesManifest } from '../../../plugins/c4s-plugin-database-tables/src/manifest.js';
 import { manifest as frontendMockupsManifest } from '../../../plugins/c4s-plugin-frontend-mockups/src/manifest.js';
-import { manifest as mcpToolsManifest } from '../../../plugins/c4s-plugin-mcp-tools/src/manifest.js';
 import { manifest as lvsManifest } from '../../../plugins/c4s-plugin-layered-vertical-slices/src/manifest.js';
 import { acFrontendModule } from '../../../plugins/c4s-plugin-ac/src/entity/ac/frontend/module.js';
 import { dtoFrontendModule } from '../../../plugins/c4s-plugin-api-contracts/src/entity/dto/frontend/module.js';
@@ -92,7 +91,6 @@ import { endpointFrontendModule } from '../../../plugins/c4s-plugin-api-contract
 import { databaseTableFrontendModule } from '../../../plugins/c4s-plugin-database-tables/src/entity/database-table/frontend/module.js';
 import { designSystemFrontendModule } from '../../../plugins/c4s-plugin-frontend-mockups/src/entity/design-system/frontend/module.js';
 import { uiViewFrontendModule } from '../../../plugins/c4s-plugin-frontend-mockups/src/entity/ui-view/frontend/module.js';
-import { mcpToolFrontendModule } from '../../../plugins/c4s-plugin-mcp-tools/src/entity/mcp-tool/frontend/module.js';
 import { moduleDependencyFrontendModule } from '../../../plugins/c4s-plugin-layered-vertical-slices/src/entity/module-dependency/frontend/module.js';
 
 // Resolved with node:path from the module's own file path — under happy-dom the
@@ -109,7 +107,6 @@ const ENTRIES: Record<string, () => Promise<unknown>> = {
   'c4s-plugin-api-contracts': () => import('../../../plugins/c4s-plugin-api-contracts/src/frontend.js'),
   'c4s-plugin-database-tables': () => import('../../../plugins/c4s-plugin-database-tables/src/frontend.js'),
   'c4s-plugin-frontend-mockups': () => import('../../../plugins/c4s-plugin-frontend-mockups/src/frontend.js'),
-  'c4s-plugin-mcp-tools': () => import('../../../plugins/c4s-plugin-mcp-tools/src/frontend.js'),
   'c4s-plugin-layered-vertical-slices': () =>
     import('../../../plugins/c4s-plugin-layered-vertical-slices/src/frontend.js'),
 };
@@ -288,18 +285,6 @@ describe('package envelopes — frontend module outside the type contribution (2
       '/ui-views/$slug/preview',
       '/ui-views/$slug/history',
     ]);
-  });
-
-  it('[section:atmxa1s8] mcp-tool: no frontend block (and no lucide-react import) in mcpToolEntity, no backend; the browser entry registers mcpToolFrontendModule with routes /mcp-tools…, sidebarTab "MCP Tools" without emptyState, chip/card/row, detailPanel, no editorExtensions', () => {
-    expectContributionWithoutFrontend(
-      mcpToolsManifest,
-      'mcp-tool',
-      'plugins/c4s-plugin-mcp-tools/src/entity/mcp-tool/index.ts',
-    );
-    expect(contributionOf(mcpToolsManifest, 'mcp-tool').backend).toBeUndefined();
-    const mod = expectRegisteredByEntry('c4s-plugin-mcp-tools', mcpToolFrontendModule, 'mcp-tool');
-    expectVisible(mod, 'MCP Tools', ['/mcp-tools', '/mcp-tools/$slug', '/mcp-tools/$slug/history']);
-    expect(mod.editorExtensions).toBeUndefined();
   });
 
   it('[section:04i1idm7] module-dependency: no frontend block in moduleDependencyEntity; the browser entry registers a HIDDEN module — no sidebarTab, routes or detailPanel, renderRow/renderCard/renderChip and renderOverlay (the module-dependency-expand window content), no editorExtensions', () => {

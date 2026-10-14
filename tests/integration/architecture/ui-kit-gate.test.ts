@@ -413,21 +413,6 @@ describe('[section:yn1fk80a] ui-view Host UI Kit slice', () => {
   });
 });
 
-describe('[section:h054mgoe] c4s-plugin-mcp-tools Host UI Kit slice', () => {
-  it('[section:h054mgoe] the check reads two DŁUG entries — EntityBreadcrumbBar replaced by DetailPanelShell, and the new RoutePane with no catalog replacement', () => {
-    expect(entries('h054mgoe')).toEqual([debt(['EntityBreadcrumbBar'], ['DetailPanelShell']), debt(['RoutePane'])]);
-    assertTrajectoryDebts('h054mgoe', 'c4s-plugin-mcp-tools', false);
-  });
-
-  it('[section:h054mgoe] every own-markup file of the mcp-tools kit is one of the two entries', () => {
-    const own = scanFindings()
-      .filter((f) => f.file.startsWith('plugins/c4s-plugin-mcp-tools/'))
-      .map((f) => f.file)
-      .sort();
-    expect(own).toEqual([kit('c4s-plugin-mcp-tools', 'EntityBreadcrumbBar.tsx'), kit('c4s-plugin-mcp-tools', 'route-shell.tsx')]);
-  });
-});
-
 describe('[section:lg0e57j1] c4s-plugin-spreadsheets Host UI Kit slice', () => {
   const pkg = 'c4s-plugin-spreadsheets';
 

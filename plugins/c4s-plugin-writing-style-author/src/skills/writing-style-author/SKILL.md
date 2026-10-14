@@ -50,7 +50,7 @@ scope: writing-style
 
 `scope: writing-style` is what makes it **selectable** (`GET /api/writing-styles`, `PATCH /api/config` with `writingStyle: "<slug>"`).
 
-**Required frontmatter fields** (`update_skill_file` refuses a `SKILL.md` without a non-empty `description`; any other missing/malformed field is written, but the registry skips the package, which silently drops the style from selection): `title` (non-empty string), `description` (non-empty string), `version` (positive integer — start at `1`), `language` (`"en"` or `"pl"`, must match the actual language of the body). Get these right or the style won't appear at all — there's no error surfaced to the user beyond a server-log warning. Unknown keys are ignored, so a stray field is harmless; note that `injection` used to be one of these and no longer means anything — don't write it, and don't be alarmed by it in an older style.
+**Required frontmatter fields** (`update_skill_file` refuses a `SKILL.md` without a non-empty `description`; any other missing/malformed field is written, but the registry skips the package, which silently drops the style from selection): `title` (non-empty string), `description` (non-empty string), `version` (always `1` — it declares compatibility with the host application, not the style's own revision; never bump it when you edit a style), `language` (`"en"` or `"pl"`, must match the actual language of the body). Get these right or the style won't appear at all — there's no error surfaced to the user beyond a server-log warning. Unknown keys are ignored, so a stray field is harmless; note that `injection` used to be one of these and no longer means anything — don't write it, and don't be alarmed by it in an older style.
 
 Below the frontmatter, write the **body**: the style's actual conventions — tone, structure, terminology, what to prioritize, formatting rules — whatever the user described. This becomes the body of the turn's `<project_writing_skill>` block. The prompt does not claim it is a specification of anything — it renders the style's own `description` and says the style governs how the agent writes. What binds is what you write here.
 
@@ -98,7 +98,7 @@ A project attaching itself is ignored, so tell the author to check the style fro
 
 ### Route A
 
-A1. Compute `slug` per the algorithm above. If `load_skill_file("<slug>")` already answers with a package of this project's skills root — or a write with `expectedHash: ""` comes back `PAGE_CONFLICT` — the package exists: tell the user and ask whether to overwrite, version-bump, or pick a different title/slug. Don't silently clobber an existing style.
+A1. Compute `slug` per the algorithm above. If `load_skill_file("<slug>")` already answers with a package of this project's skills root — or a write with `expectedHash: ""` comes back `PAGE_CONFLICT` — the package exists: tell the user and ask whether to overwrite or pick a different title/slug. Don't silently clobber an existing style.
 
 A2. Write `SKILL.md` — `update_skill_file({ slug, file: "SKILL.md", content, expectedHash: "" })` — with the frontmatter contract above and a body capturing the user's actual conventions (don't invent conventions they didn't ask for).
 
