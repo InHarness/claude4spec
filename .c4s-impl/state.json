@@ -1,5 +1,5 @@
 {
-  "iteration": 9,
+  "iteration": 10,
   "units": [
     {
       "id": "u1-serwowanie-frontendu-per-projekt",
@@ -697,7 +697,7 @@
     }
   ],
   "entityParts": [],
-  "systemVerified": false,
+  "systemVerified": true,
   "errors": 0,
   "baselineGreen": true
 }
