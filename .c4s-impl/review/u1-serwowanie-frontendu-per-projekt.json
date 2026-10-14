@@ -1,9 +1,0 @@
-{
-  "role": "reviewer",
-  "scope": {
-    "kind": "unit",
-    "id": "u1-serwowanie-frontendu-per-projekt",
-    "base": "0dbd4bfe13705118ad649c8018985feb142d615e"
-  },
-  "findings": []
-}

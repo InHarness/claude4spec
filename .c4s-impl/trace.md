@@ -1,5 +1,0 @@
-frontend-manifest-response → src/shared/plugin-host/frontend-manifest.ts (FrontendManifestResponse; built by src/server/core/plugin-host/frontend-manifest.ts)
-plugin-frontend-asset-error → src/shared/plugin-host/frontend-manifest.ts (PluginFrontendAssetError; sent by src/server/routes/plugins.ts sendPluginAssetNotFound)
-get-api-plugins-frontend-manifest → src/server/routes/plugins-project.ts (GET /plugins/frontend-manifest on the project router, under /api/projects/:id)
-get-api-plugins-name-asset → src/server/routes/plugins.ts (GET /api/plugins/:name/:asset, base tier only)
-get-api-projects-id-plugins-name-asset → src/server/routes/plugins-project.ts (GET /plugins/:name/:asset on the project router, overlay only)

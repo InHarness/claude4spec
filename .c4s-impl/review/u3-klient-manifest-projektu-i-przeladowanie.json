@@ -1,9 +1,0 @@
-{
-  "role": "reviewer",
-  "scope": {
-    "kind": "unit",
-    "id": "u3-klient-manifest-projektu-i-przeladowanie",
-    "base": "8b072daa7d2b2319147d4393cb2a0e55a28a532a"
-  },
-  "findings": []
-}

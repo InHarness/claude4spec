@@ -1,9 +1,0 @@
-{
-  "role": "reviewer",
-  "scope": {
-    "kind": "unit",
-    "id": "u2-fanout-zdarzen-mountow-procesowych",
-    "base": "59bcdd6ca946475879236f79a7386445545eabcb"
-  },
-  "findings": []
-}
