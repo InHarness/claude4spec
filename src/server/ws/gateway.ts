@@ -159,6 +159,26 @@ export class WsGateway {
   }
 
   /**
+   * 2.1.22 (M49 `l4wsroom`, M40 `kc23agex`): an event WITHOUT a source project —
+   * one from a `scope: 'process'` mount such as the base plugin pool — goes to
+   * EVERY room in the map, each project's room separately. The convention
+   * "every WS event is addressed to a project room" holds: there is no channel
+   * outside the rooms, a process event simply reaches the room of every project.
+   *
+   * Every room the gateway holds, not only projects with a live context: a tab
+   * whose project context is evicted or not yet built is still a tab on that
+   * project, and the shared resource changed for it too.
+   */
+  broadcastToEveryRoom(event: WsEvent): void {
+    for (const projectId of [...this.rooms.keys()]) this.broadcast(projectId, event);
+  }
+
+  /** Project ids that currently hold a room (at least one connected socket). */
+  roomIds(): string[] {
+    return [...this.rooms.keys()];
+  }
+
+  /**
    * M31 dispose: notify the room its project context is gone, then close all
    * sockets. The SPA reacts to `project:disposed` (e.g. full reload).
    *

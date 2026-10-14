@@ -22,12 +22,10 @@ describe('M33 plugins router', () => {
     app = makeApp();
   });
 
-  it('GET /api/plugins/frontend-manifest returns the import map + empty plugins (phase 1)', async () => {
-    const res = await request(app).get('/api/plugins/frontend-manifest').expect(200);
-    expect(res.body.hostApiVersion).toBe(HOST_API_VERSION);
-    expect(res.body.plugins).toEqual([]);
-    expect(res.body.importMap.react).toBe('/api/plugins/runtime/react.js');
-    expect(res.body.importMap['@c4s/plugin-runtime']).toBe('/api/plugins/runtime/plugin-runtime.js');
+  it('GET /api/plugins/frontend-manifest is not served by the process-level router (2.1.22: the manifest lives under /api/projects/:id)', async () => {
+    const res = await request(app).get('/api/plugins/frontend-manifest');
+    expect(res.status).toBe(404);
+    expect(res.body?.plugins).toBeUndefined();
   });
 
   it('GET /api/plugins/runtime/react.js serves ESM reading the host singleton', async () => {

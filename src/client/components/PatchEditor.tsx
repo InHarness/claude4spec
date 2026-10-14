@@ -14,6 +14,7 @@ import {
 } from '../tiptap/useEditorSchema.js';
 import { ApiError } from '../lib/api-core.js';
 import { withFrontmatterOf } from '../lib/artifact-frontmatter.js';
+import { useUnsavedEditsSource } from '../tiptap/unsavedEdits.js';
 
 interface Props {
   patchPath: string;
@@ -32,6 +33,8 @@ export function PatchEditor({ patchPath }: Props) {
   const saveTimer = useRef<number | null>(null);
   const lastSavedBodyRef = useRef<string | null>(null);
   const isDirtyRef = useRef(false);
+  // 2.1.22 (M20 `m20l11sc`): a plugin-driven document reload waits for this.
+  useUnsavedEditsSource(() => isDirtyRef.current);
   const seeded = useSeededEditor();
   const [conflict, setConflict] = useState<boolean>(false);
 

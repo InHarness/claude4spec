@@ -147,8 +147,11 @@ import type { PeerProject } from '../services/chat-context.js';
 import type { PluginRegistry, ProjectPluginHost, ProjectPluginOverlay } from '../core/plugin-host/types.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import { pluginHostRouter } from '../core/plugin-host/cross-cutting.js';
-import { projectPluginsDir } from '../core/plugin-host/overlay-loader.js';
+import { projectPluginsDir, type PluginImporter } from '../core/plugin-host/overlay-loader.js';
 import { buildBasePluginPackages } from '../routes/plugins.js';
+import { projectPluginsFrontendRouter } from '../routes/plugins-project.js';
+import { loadedRecordKeys, type WorkspaceRootResolver } from '../core/plugin-host/frontend-assets.js';
+import type { BuiltinEnvelope } from '../core/plugin-host/builtin-envelopes.js';
 import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import type { ActiveAdapter, PendingInput } from '../routes/agent-turn.js';
 import { abortAllTurns } from '../routes/agent-turn.js';
@@ -196,8 +199,29 @@ export interface ProjectContextDeps {
   registry: WorkspaceRegistry;
   /** Process-immutable plugin catalog — consolidated per context. */
   pluginRegistry: PluginRegistry;
-  /** M33: base-layer (workspace/npm) loader records, for per-project /_meta/plugins. */
+  /**
+   * M33: base-layer (envelope + workspace/npm) loader records, for per-project
+   * /_meta/plugins and the project's frontend manifest (read per request — a base
+   * hot reload keeps the array current).
+   */
   pluginRecords: PluginLoadRecord[];
+  /**
+   * M33 (2.1.22): the rest of the process's base frontend tier the project's
+   * manifest announces — the resolved workspace package list and the servable
+   * built-in envelopes. Absent ⇒ none (hand-built test contexts).
+   */
+  frontendBase?: {
+    workspacePackages?: string[];
+    envelopes?: BuiltinEnvelope[];
+    /** Test seam: how a workspace package's root is found. */
+    resolveWorkspaceRoot?: WorkspaceRootResolver;
+  };
+  /**
+   * Test seam: how a TRUSTED overlay package's entry is imported (default: a
+   * dynamic `import()`). The trust gate itself is not bypassable through it —
+   * an untrusted overlay is never imported at all.
+   */
+  overlayImporter?: PluginImporter;
   workspace: WorkspaceRecord;
   /** Stable, stored `ProjectRecord.id` — the DB slot / ws-room key. Never re-derived from cwd. */
   projectId: string;
@@ -247,9 +271,10 @@ export interface ProjectContext {
   pluginHost: ProjectPluginHost;
   /**
    * 2.1.20 (M33 L11) — this context's project-local overlay load records (empty
-   * when untrusted or absent). The process-global frontend manifest reads the
-   * primary project's records to announce only overlay plugins whose backend is
-   * `loaded`. Optional so hand-built test contexts need not supply it.
+   * when untrusted or absent). 2.1.22: the project's own frontend manifest and
+   * overlay asset route (on this context's router) admit only overlay plugins
+   * whose backend is `loaded` here. Optional so hand-built test contexts need not
+   * supply it.
    */
   overlayRecords?: readonly PluginLoadRecord[];
   /**
@@ -427,7 +452,7 @@ async function buildInner(
   // `trustProjectPlugins` gate (see `loadOverlayLayer`). The trust prompt surfaces
   // on the client when `localPluginsPresent && trust === undefined`.
   const trust = registry.getProjectTrust(workspace, projectId);
-  const overlayLayer = await loadOverlayLayer(cwd, trust);
+  const overlayLayer = await loadOverlayLayer(cwd, trust, deps.overlayImporter);
   const { localPluginsPresent, overlayResult } = overlayLayer;
   const overlay: ProjectPluginOverlay | undefined = overlayResult?.overlay;
   const overlayRecords: PluginLoadRecord[] = overlayLayer.records;
@@ -1291,6 +1316,23 @@ async function buildInner(
     }),
   );
 
+  // M33 (2.1.22, L11 `9g96q3pp`): this project's frontend manifest and overlay
+  // assets. The overlay condition is the live trust flag of (workspace × this
+  // project) AND a backend-`loaded` overlay plugin of THIS context instance.
+  router.use(
+    projectPluginsFrontendRouter({
+      projectId,
+      cwd,
+      isTrusted: () => registry.getProjectTrust(workspace, projectId) === true,
+      overlayLoaded: loadedRecordKeys(overlayRecords),
+      base: {
+        pluginRecords: deps.pluginRecords,
+        workspacePackages: deps.frontendBase?.workspacePackages,
+        envelopes: deps.frontendBase?.envelopes,
+        resolveWorkspaceRoot: deps.frontendBase?.resolveWorkspaceRoot,
+      },
+    }),
+  );
   router.use(
     pluginHostRouter({
       host: pluginHost,
