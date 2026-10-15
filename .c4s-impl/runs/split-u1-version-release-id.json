@@ -1,1 +1,0 @@
-{"role":"implementer","unit":"u1-version-release-id","packetBytes":22504,"portions":[{"name":"u1-version-release-id/p1-l4-l11","layers":["L4","L11"],"slugs":["entity-version-meta","get-api-entities-type-slug-versions","ac-wiersz-listy-wersji-encji-niewydanej","ac-wiersz-listy-wersji-encji-przypisany"]}],"deviations":[]}

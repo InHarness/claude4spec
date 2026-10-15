@@ -1,2 +1,0 @@
-entity-version-meta → src/shared/entities.ts (EntityVersionMeta, emitted by src/server/services/versions.ts listVersions/toListItem/toDetail; published mirror src/plugin-types/plugin-runtime.ts EntityVersionMeta); test tests/integration/api/entities-router-generic-versions.test.ts
-get-api-entities-type-slug-versions → src/server/core/plugin-host/entities-router.ts (ENTITY_VERSIONS_ROUTE + GET '/:type/:slug/versions' satisfies EntityVersionListResponse); test tests/integration/api/entities-router-generic-versions.test.ts

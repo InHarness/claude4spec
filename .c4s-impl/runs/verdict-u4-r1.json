@@ -1,1 +1,0 @@
-{"role":"verifier","scope":{"kind":"unit","id":"u4-doceditor-catalog-entry"},"release":"2.1.25","rows":["ac-doceditor-m34-experimental-host-wired","ac-doceditor-obsluguje-slash-commands","ac-doceditor-pozwala-wstawic-odnosnik-do","goal:u4-doceditor-catalog-entry"],"allCovered":true,"suite":{"command":"npm run typecheck","exitCode":0}}

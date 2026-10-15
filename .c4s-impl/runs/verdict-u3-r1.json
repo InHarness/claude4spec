@@ -1,1 +1,0 @@
-{"role":"verifier","scope":{"kind":"unit","id":"u3-ui-kit-tag-type"},"release":"2.1.25","rows":["ac-pozycja-o-ksztalcie-tag-list-item-jes","goal:u3-ui-kit-tag-type","regression"],"allCovered":true,"suite":{"command":"npm run typecheck","exitCode":0}}
