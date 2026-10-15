@@ -3,6 +3,7 @@ import { Plus } from 'lucide-react';
 import { withStability } from '../stability.js';
 import { Badge } from '../actions/Badge.js';
 import { Popover } from '../overlay-feedback/Popover.js';
+import type { Tag } from '../../../shared/plugin-host/ui-kit-surface.js';
 
 /**
  * `TagPicker` (Panel detalu, `experimental`) — multi-select tags with an
@@ -16,7 +17,8 @@ import { Popover } from '../overlay-feedback/Popover.js';
  * inside a published `Popover` instead of always being visible inline.
  */
 export interface TagPickerProps {
-  allTags: { slug: string; name: string; color?: string | null }[];
+  /** The catalog's one tag type (`hpw2opbb`), description included; `useTags()` items pass as is. */
+  allTags: Tag[];
   selected: string[];
   onToggle(slug: string): void;
   onCreate?(name: string): void;

@@ -18,14 +18,15 @@
  * assignable to these published shapes (drift guard).
  *
  * `Tag` and `Stability` are dep-free and RE-EXPORTED from their canonical host
- * modules (single source of truth).
+ * module, the catalog's React-free slice (single source of truth). `Tag` is the
+ * kit's own minimal tag shape (2.1.25, M34 `hpw2opbb`), not the host's data
+ * record: a `TagListItem` from `useTags()` is assignable to it without a cast.
  */
 
 import type { ComponentType, ReactNode, CSSProperties, FormEvent } from 'react';
 import type { LucideIcon } from 'lucide-react';
 
-export type { Tag } from '../shared/entities.js';
-export type { Stability } from '../shared/plugin-host/ui-kit-surface.js';
+export type { Tag, Stability } from '../shared/plugin-host/ui-kit-surface.js';
 
 // ── Core (stable) — part of the versioned `hostApiVersion` surface ──
 export interface DetailBreadcrumb {
@@ -66,7 +67,7 @@ export interface EntityListHeaderProps {
 export declare const EntityListHeader: ComponentType<EntityListHeaderProps>;
 
 // ── List (experimental) — OUTSIDE the version guarantee ──
-import type { Tag } from '../shared/entities.js';
+import type { Tag } from '../shared/plugin-host/ui-kit-surface.js';
 
 export interface EntityListLayoutProps {
   header?: ReactNode;
@@ -337,7 +338,8 @@ export interface RichTextFieldProps {
 export declare const RichTextField: ComponentType<RichTextFieldProps>;
 
 export interface TagPickerProps {
-  allTags: { slug: string; name: string; color?: string | null }[];
+  /** The catalog's one tag type — the same `Tag` as `TagFilterBar.tags` and `EntityListRow.tagLookup`. */
+  allTags: Tag[];
   selected: string[];
   onToggle(slug: string): void;
   onCreate?(name: string): void;

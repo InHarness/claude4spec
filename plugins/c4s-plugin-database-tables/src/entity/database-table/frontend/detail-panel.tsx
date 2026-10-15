@@ -437,11 +437,7 @@ const TagsField: FC<{ slug: string }> = ({ slug }) => {
   return (
     <>
       <TagPicker
-        allTags={(catalog.data ?? []).map((t) => ({
-          slug: t.slug,
-          name: t.name,
-          color: t.color ?? undefined,
-        }))}
+        allTags={catalog.data ?? []}
         selected={entityTags.data}
         onToggle={handleToggle}
         onCreate={handleCreate}

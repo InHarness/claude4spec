@@ -44,3 +44,20 @@ export const UI_KIT_STABLE_COMPONENTS = [
 ] as const;
 
 export type StableUiKitComponent = (typeof UI_KIT_STABLE_COMPONENTS)[number];
+
+/**
+ * 2.1.25 (M34 `hpw2opbb`) — the catalog's one tag type. `TagFilterBar.tags`,
+ * `EntityListRow.tagLookup` and `TagPicker.allTags` all take it, and there is no
+ * second tag shape anywhere in the kit.
+ *
+ * It is a minimal STRUCTURAL shape, tied to no data source: the kit reads only
+ * these four fields. A richer record — the M18 `TagListItem` from `useTags()`
+ * (`counts`) or the host's own `Tag` (`counts`, timestamps) — is assignable to
+ * it as is, with no adapter and no cast.
+ */
+export interface Tag {
+  slug: string;
+  name: string;
+  color?: string | null;
+  description?: string | null;
+}
