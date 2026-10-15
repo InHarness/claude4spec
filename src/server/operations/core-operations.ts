@@ -929,7 +929,8 @@ export function registerCoreOperations(): void {
     pageWrite(
       'create_page',
       'Create a page that does not exist yet. Refuses PAGE_EXISTS rather than overwriting — the distinction update_page deliberately does not make.',
-      { rootId: z.string(), path: z.string(), content: z.string().optional() },
+      // CreatePageRequest; answers CreatePageResponse { rootId, path, hash, version, anchors } (2.1.23).
+      { rootId: z.string(), path: z.string(), content: z.string().optional(), title: z.string().optional() },
       // A second call with the same address is PAGE_EXISTS, not a no-op.
       false,
       ['PAGE_EXISTS', 'ROOT_NOT_FOUND'],

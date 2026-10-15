@@ -73,9 +73,9 @@ export function createPageToolsServer(
    * 2.1.9 — `resolveRoot` answers the roots WITH A FACADE (kinds whose `sidebar`
    * is not `hidden`), the same set the REST page routes resolve: the domain of
    * `rootId` does not depend on the channel (M02 `o01s9mwl`).
-   * ASSUMPTION:dev-0101 — an unknown root stays `ROOT_NOT_FOUND` (with the roots
-   * that have a facade in `hint`) on this channel too, as the L3 catalog row
-   * lists it; M02 `gj2vdsjm` says the agent channel reports it as `NOT_FOUND`.
+   * 2.1.23 — a `rootId` outside that set is `ROOT_NOT_FOUND` in every channel
+   * (the facade roots in `hint`); `NOT_FOUND` is only an unknown page in a
+   * known root.
    */
   const target = (rootId: string): PageWriteTarget => {
     const rt = deps.resolveRoot(rootId);
@@ -151,7 +151,7 @@ export function createPageToolsServer(
     'create_page',
     [
       'Create a page that does not exist yet. Fails PAGE_EXISTS rather than overwriting — use update_page for an existing one.',
-      'Returns { rootId, path, hash, version, content, anchors }. `content` is the file AS IT SETTLED: omit `content` and it is the generated template, and in either case the reaction chain has already injected `<!-- anchor: … -->` comments for your headings. Edit from it, not from what you sent.',
+      'Returns { rootId, path, hash, version, anchors } — never the page content, neither what you sent nor the file as it settled. The reaction chain has already injected `<!-- anchor: … -->` comments for your headings (listed in `anchors`), so read the page with get_page before editing it, not from what you sent.',
     ].join('\n'),
     {
       rootId: rootIdParam,

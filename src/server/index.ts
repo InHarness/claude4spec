@@ -16,7 +16,7 @@ import { readPeerConfigSummary } from './workspace/peer-config.js';
 import { checkRequest, hostOriginGuard } from './http/host-origin-guard.js';
 import { effectiveBindHost, localServerUrl } from '../core/workspace/network.js';
 import { buildProjectContext } from './workspace/project-context.js';
-import { ProjectContextCache } from './workspace/context-cache.js';
+import { ProjectBuildFailedError, ProjectContextCache } from './workspace/context-cache.js';
 import { projectDispatchMiddleware } from './workspace/middleware.js';
 import { workspaceRouter } from './workspace/routes.js';
 import type { WorkspaceRecord } from './workspace/types.js';
@@ -500,10 +500,23 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // `{ error: { code, message } }` instead of Express's HTML error page.
   app.use('/api', errorHandler);
 
-  // Eager warm of the CLI-started project: clone executes before listen and a
-  // broken initial config still fails the boot fast (parity with pre-M31). A
+  // Eager warm of the CLI-started project: clone executes before listen. A
   // workspace-only start has no initial project to warm.
-  const initialCtx = initialProject ? await cache.get(initialProject) : null;
+  //
+  // 2.1.23 — a project whose context cannot be BUILT (an unresolvable
+  // `config.writingStyle`, say) blocks that project, not the process: the
+  // server serves many projects, so the failure is logged and the project
+  // answers `500 PROJECT_BUILD_FAILED` (retried after the failed-build window)
+  // until `config.json` is repaired. Any other error still fails the boot.
+  let initialCtx: Awaited<ReturnType<typeof cache.get>> | null = null;
+  if (initialProject) {
+    try {
+      initialCtx = await cache.get(initialProject);
+    } catch (err) {
+      if (!(err instanceof ProjectBuildFailedError)) throw err;
+      console.error(`[claude4spec] project '${initialProject.id}' failed to build — ${err.message}`);
+    }
+  }
 
   const spaDeps = { registry, workspace, startCwd: cwd };
   const closeAssets = mode === 'dev' ? await mountDevVite(app, spaDeps) : mountProd(app, spaDeps);

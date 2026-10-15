@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { htmlRevisionKey, isHtmlPreviewPath, useHtmlViewerStore } from './htmlViewer.js';
+import { htmlRevisionKey, isHtmlPreviewPath, previewFileTypeOf, useHtmlViewerStore } from './htmlViewer.js';
 
 /**
  * 2.1.8 (M30 `8ya40xzg`): the open `.html` preview reloads on the BASE
@@ -21,6 +21,19 @@ describe('M30 html preview refresh on base file:changed (8ya40xzg)', () => {
     // Not an entry of the pages map at all.
     expect(isHtmlPreviewPath('report.htm')).toBe(false);
     expect(isHtmlPreviewPath('data.json')).toBe(false);
+  });
+
+  it('2.1.23 — classifies by the file map of the ROOT\'S kind: every raw entry of `skills` is a preview, whatever the extension', () => {
+    // A user root is of kind `pages`.
+    expect(previewFileTypeOf('adr', 'mock.html')).toBe('html');
+    expect(previewFileTypeOf('adr', 'notes/page.md')).toBe('markdown');
+    // `skills`: a raw package file (an image) and a loose file are previews; markdown is not.
+    expect(previewFileTypeOf('skills', 'writer/assets/diagram.png')).toBe('html');
+    expect(previewFileTypeOf('skills', 'README.txt')).toBe('html');
+    expect(previewFileTypeOf('skills', 'writer/SKILL.md')).toBe('markdown');
+    expect(previewFileTypeOf('skills', 'writer/workflows/brief.md')).toBe('markdown');
+    expect(isHtmlPreviewPath('writer/assets/diagram.png', 'skills')).toBe(true);
+    expect(isHtmlPreviewPath('writer/assets/diagram.png', 'pages')).toBe(false);
   });
 
   it('bumps the revision of exactly the changed (rootId, path), which re-keys the open iframe', () => {

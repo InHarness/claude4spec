@@ -180,7 +180,7 @@ describe('c4s release commands (2.1.11)', () => {
     it('refuses a trailing valueless --paths rather than dropping it', async () => {
       await expect(
         runReleaseDiff(args('release-diff', '--from', 'v1', '--to', 'v2', '--paths', 'pages/a.md', '--paths')),
-      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      ).rejects.toMatchObject({ code: 'INVALID_ARGS' });
       expect(seen).toEqual([]);
     });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseArgs, requireString, requireStringList } from './args.js';
+import { assertFlagValues, optionalInt, optionalString, parseArgs, paginationFrom, repeatedStrings, requireString, requireStringList } from './args.js';
 import { CliError } from './errors.js';
 
 describe('parseArgs', () => {
@@ -77,5 +77,37 @@ describe('requireStringList', () => {
   it("throws CliError 'INVALID_ARGS' when the flag is missing", () => {
     const args = parseArgs(['cmd']);
     expect(() => requireStringList(args, 'slugs')).toThrowError(CliError);
+  });
+});
+
+/**
+ * 2.1.23 — the argv parser's rule: argv that cannot be READ is a local
+ * `INVALID_ARGS`, before any command addresses the server.
+ */
+describe('INVALID_ARGS for unreadable argv (2.1.23)', () => {
+  const code = (fn: () => unknown): string | undefined => {
+    try {
+      fn();
+    } catch (err) {
+      return err instanceof CliError ? err.code : 'not-a-cli-error';
+    }
+    return undefined;
+  };
+
+  it('a non-integer --limit / --offset is INVALID_ARGS', () => {
+    expect(code(() => paginationFrom(parseArgs(['list-entities', '--limit', 'abc'])))).toBe('INVALID_ARGS');
+    expect(code(() => optionalInt(parseArgs(['x', '--offset', '1.5']), 'offset'))).toBe('INVALID_ARGS');
+  });
+
+  it('a value flag given without a value is INVALID_ARGS — trailing, or followed by another flag', () => {
+    expect(code(() => assertFlagValues(parseArgs(['get-entity', '--type', 'dto', '--slug'])))).toBe('INVALID_ARGS');
+    expect(code(() => assertFlagValues(parseArgs(['list-entities', '--project', '--limit', '3'])))).toBe('INVALID_ARGS');
+    expect(code(() => optionalString(parseArgs(['agent', 'hi', '--thread']), 'thread'))).toBe('INVALID_ARGS');
+    expect(code(() => repeatedStrings(parseArgs(['release-diff', '--paths', 'a', '--paths']), 'paths'))).toBe('INVALID_ARGS');
+  });
+
+  it('declared boolean flags and valued flags pass', () => {
+    expect(code(() => assertFlagValues(parseArgs(['get-sections', '--anchors', 'a,b', '--include-subtree', '--compact'])))).toBeUndefined();
+    expect(code(() => assertFlagValues(parseArgs(['list-entities', '--limit', '3', '--type=dto'])))).toBeUndefined();
   });
 });

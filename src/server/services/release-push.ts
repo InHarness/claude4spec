@@ -18,7 +18,7 @@ import { unlink } from 'node:fs/promises';
 import { DomainError } from './tags.js';
 import { readConfig, writeConfig } from '../config.js';
 import { RemoteUnauthorizedError, RemoteRequestError } from './remote-http-client.js';
-import type { ReleaseService } from './release.js';
+import { isReservedReleaseName, type ReleaseService } from './release.js';
 import type { RemoteAuthService, PushBundleOutcome } from './remote-auth.js';
 import type { GitService } from './git.js';
 import type { ReleasePushResponse } from '../../shared/release-push.js';
@@ -82,6 +82,12 @@ export class ReleasePushService {
    * not clean it up — the consumer owns it).
    */
   async push(releaseName: string): Promise<ReleasePushResponse> {
+    // 0. A reserved literal names a state, never a release (2.1.23) — refused
+    //    before the gate, so it is a 404 in every connection state, even when a
+    //    release carrying that name exists.
+    if (isReservedReleaseName(releaseName)) {
+      throw new DomainError('RELEASE_NOT_FOUND', `release '${releaseName}' not found — '${releaseName}' names a state, not a release`);
+    }
     // 1. Gate (M24). Snapshot identity here so it survives a 401 mid-push (which
     //    wipes remote_session) — the audit row still records who attempted it.
     const account = this.remoteAuth.getCurrentAccount();

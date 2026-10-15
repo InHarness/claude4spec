@@ -102,7 +102,7 @@ describe('command sources in the slash popover (M20 lxdrxdm2)', () => {
     expect(list).not.toHaveBeenCalled();
   });
 
-  it('[ac:m20-zrodlo-komend-kolizja-hint] an item whose hint equals a built-in command’s hint is not in the popover, the built-in command is', async () => {
+  it('[ac:m20-zrodlo-komend-kolizja-hint] an item whose hint equals a built-in command’s LABEL is not in the popover, the built-in command is', async () => {
     source('test-src:clash', () => [item('sec', '/section'), item('other', '/other')]);
 
     const rows = await createSlashSession('page').items('');
@@ -116,6 +116,17 @@ describe('command sources in the slash popover (M20 lxdrxdm2)', () => {
     narrowed.narrowTo('test-src:clash');
     const narrowedKeys = (await narrowed.items('')).map((r) => r.key);
     expect(narrowedKeys).toEqual(['source:test-src:clash:sec', 'source:test-src:clash:other']);
+  });
+
+  it('2.1.23 — the collision normalizes the item hint (no `/`, case-insensitive, trimmed) against the fixed command label; hint vs hint never collides', async () => {
+    // ` /Section ` vs the fixed `/section` (label) → the item goes, the command stays.
+    // `anchor` is the fixed `/section` command's HINT — no collision.
+    source('test-src:norm', () => [item('padded', ' /Section '), item('arg', 'anchor')]);
+
+    const keys = (await createSlashSession('page').items('')).map((r) => r.key);
+    expect(keys).toContain('command:section');
+    expect(keys).not.toContain('source:test-src:norm:padded');
+    expect(keys).toContain('source:test-src:norm:arg');
   });
 
   it('[ac:m20-zrodlo-komend-blad-odczytu] a source whose listing failed does not block the popover: it shows the context’s fixed commands', async () => {

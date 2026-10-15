@@ -2,8 +2,11 @@
  * M01 `7yzu5k8u` — the start-up check of `config.writingStyle` against the M37
  * skill registry (edge `m01-requires-m37`).
  *
- * An unresolvable writing style STOPS the start, and the message tells the two
- * causes apart, because they ask the user for two different actions:
+ * An unresolvable writing style FAILS THE PROJECT CONTEXT BUILD (2.1.23: that
+ * one project, never the process — every request to it, settings included,
+ * answers `500 PROJECT_BUILD_FAILED` until `config.json` is repaired by hand or
+ * the style's carrier is restored). The message tells the two causes apart,
+ * because they ask the user for two different actions:
  *
  * - `outside-registry` — the slug is not among the selectable styles: a typo, a
  *   style that does not exist, or the slug of a `contextual` skill (not a style,

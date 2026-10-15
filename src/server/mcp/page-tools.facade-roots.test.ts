@@ -76,7 +76,7 @@ async function rig() {
 }
 
 describe('2.1.9 — page-tools address the roots with a facade (M02 o01s9mwl, gj2vdsjm)', () => {
-  it('[entity:page-tools-create-page] create_page on page-tools: inputs rootId + path (required), content + title (optional); answers { rootId, path, hash, anchors[] } after writing through the root\'s store; refuses an existing page (PAGE_EXISTS) and a root without a facade', async () => {
+  it('[entity:page-tools-create-page] create_page on page-tools: inputs rootId + path (required), content + title (optional); answers { rootId, path, hash, version, anchors[] } (no content) after writing through the root\'s store; refuses an existing page (PAGE_EXISTS) and a root without a facade', async () => {
     const { client, call, abs } = await rig();
     const { tools } = await client.listTools();
     const tool = tools.find((t) => t.name === 'create_page')!;
@@ -92,6 +92,8 @@ describe('2.1.9 — page-tools address the roots with a facade (M02 o01s9mwl, gj
     const onDisk = fs.readFileSync(abs('adr', 'guides/auth.md'), 'utf8');
     expect(res.body.hash).toBe(sha(onDisk));
     expect(Array.isArray(res.body.anchors)).toBe(true);
+    expect(typeof res.body.version).toBe('number');
+    expect(res.body).not.toHaveProperty('content');
 
     // Omitting `content` writes the default template — a frontmatter block with `title`.
     const tpl = await call('create_page', { rootId: 'pages', path: 'empty.md', title: 'Empty' });

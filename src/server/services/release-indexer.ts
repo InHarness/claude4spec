@@ -29,7 +29,6 @@ import type Database from 'better-sqlite3';
 import type { ReleaseFileStore, ReleaseFileData } from './release-store.js';
 import type { SelfWriteSuppressor } from '../fs/sources.js';
 import type { WatchSubscriber, WatchScope } from '../fs/watcher.js';
-import { CURRENT_RELEASE_NAME } from '../../shared/entities.js';
 
 /**
  * 0.2.2: `roots` joins the rebuilt columns (migration 049).
@@ -126,20 +125,11 @@ export class ReleaseIndexerService implements WatchSubscriber {
       console.warn(`[release-indexer] skip ${slug}: ${(err as Error).message}`);
       return false;
     }
-    // 0.1.122 code-review fix: this upsert is the only spec_release write path
-    // that doesn't go through createRelease/updateRelease's reserved-name
-    // guard — without this check, a hand-edited or synced release-identity
-    // file named 'current' would silently shadow the diff route's `:to=current`
-    // sentinel forever (see isReservedReleaseName's doc comment in release.ts).
-    //
-    // 2.1.11: deliberately `current` ONLY, not every reserved name. `initial` /
-    // `null` became reserved for NEW names; a release that already carries one
-    // stays indexed (skipping it would hide existing data on every rebuild), and
-    // the diff resolves those literals before any name lookup anyway.
-    if (data.name === CURRENT_RELEASE_NAME) {
-      console.warn(`[release-indexer] skip ${slug}: release name '${data.name}' is reserved`);
-      return false;
-    }
+    // 2.1.23: no name filter. A release that already carries a reserved name
+    // (`current`, `initial`, `null`) — from before the reservation or from a file
+    // brought into the `releases` root — is kept and listed like any other row.
+    // It is unaddressable, because `findReleaseRow` refuses the literal before
+    // any lookup; the reserved-name guard lives only in create/updateRelease.
     upsert.run(
       data.name,
       data.slug,

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readPackageVersion } from './c4s/package-version.js';
-import { parseArgs } from './c4s/args.js';
+import { assertFlagValues, parseArgs } from './c4s/args.js';
 import { CliError, cliErrorFromDiscovery, codeToExit } from './c4s/errors.js';
 import { writeError } from './c4s/output.js';
 import { DEFAULT_MODEL } from '../core/agent/models.js';
@@ -342,6 +342,8 @@ async function main(): Promise<void> {
   if (!command) {
     throw new CliError('UNKNOWN_COMMAND', `unknown command '${args.command}'`, 'run `c4s --help`');
   }
+  // 2.1.23 — unreadable argv is refused here, for every command, before it runs.
+  assertFlagValues(args);
   return command.handler(args);
 }
 

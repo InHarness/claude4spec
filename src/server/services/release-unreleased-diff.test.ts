@@ -567,6 +567,21 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       expect(update.body.code).toBe('RELEASE_NOT_FOUND');
     });
 
+    it('[2.1.23] a release that carries a reserved name is listed but unaddressable by release_show / release_update', async () => {
+      const insert = db.prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`);
+      for (const name of ['initial', 'null', 'current']) insert.run(name, name, 'carried over', 'user');
+      const { call } = tools();
+      const list = await call('release_list', {});
+      expect(list.isError).toBeFalsy();
+      expect(JSON.stringify(list.body)).toContain('"initial"');
+      for (const releaseName of ['initial', 'null']) {
+        const show = await call('release_show', { releaseName });
+        expect(show.body.code).toBe('RELEASE_NOT_FOUND');
+      }
+      const update = await call('release_update', { releaseName: 'current', description: 'x' });
+      expect(update.body.code).toBe('RELEASE_NOT_FOUND');
+    });
+
     it.each(['initial', 'null'])('release_create / release_update refuse the name %s with RELEASE_NAME_RESERVED', async (literal) => {
       const { call } = tools();
       const create = await call('release_create', { name: literal, description: 'x' });

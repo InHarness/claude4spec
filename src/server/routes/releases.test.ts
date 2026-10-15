@@ -697,6 +697,23 @@ describe('release routes — view=operation (2.1.11)', () => {
     }
   });
 
+  it('[2.1.23] a release carrying a reserved name is listed, but POST /api/releases/initial/restore is still 404', async () => {
+    db.prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES ('initial', 'initial', 'carried over', 'user', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`).run();
+    const list = await request(app).get('/api/releases');
+    expect(list.status).toBe(200);
+    expect(list.body.releases.map((r: { name: string }) => r.name)).toContain('initial');
+    const restore = await request(app).post('/api/releases/initial/restore').send({ scope: 'spec' });
+    expect(restore.status).toBe(404);
+    expect(restore.body.error.code).toBe('RELEASE_NOT_FOUND');
+  });
+
+  it('[2.1.23] GET /api/releases without view answers the list under `releases`', async () => {
+    const res = await request(app).get('/api/releases');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toBeUndefined();
+    expect(res.body.releases).toHaveLength(7);
+  });
+
   it('PATCH on a missing name is 404 before RELEASE_FROZEN; on a frozen name it is 409', async () => {
     const missing = await request(app).patch('/api/releases/nope').send({ description: 'x' });
     expect(missing.status).toBe(404);

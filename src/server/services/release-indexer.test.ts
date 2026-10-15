@@ -217,31 +217,29 @@ describe('ReleaseIndexerService — upsert-by-slug id stability', () => {
     expect(after[0]!.slug).toBe('v2');
   });
 
-  it('indexAll skips a release-identity file reserved-named "current" (0.1.122 code-review fix)', async () => {
+  it('indexAll keeps release files named "current" and "initial" (2.1.23 — no name filter)', async () => {
     store.write('current', {
       name: 'current',
       slug: 'current',
-      description: 'Would shadow the :to=current diff-route sentinel forever',
+      description: 'Kept, listed, unaddressable',
       createdAt: '2026-01-01T00:00:00.000Z',
       createdBy: 'user',
       roots: ['pages'],
     });
-    store.write('v1', {
-      name: 'v1',
-      slug: 'v1',
-      description: 'First release',
+    store.write('initial', {
+      name: 'initial',
+      slug: 'initial',
+      description: 'Also kept',
       createdAt: '2026-01-02T00:00:00.000Z',
       createdBy: 'user',
       roots: ['pages'],
     });
     await indexer.indexAll();
 
-    const all = rows();
-    expect(all).toHaveLength(1);
-    expect(all[0]!.slug).toBe('v1');
+    expect(rows().map((r) => r.slug).sort()).toEqual(['current', 'initial']);
   });
 
-  it('an incremental upsert skips a file reserved-named "current"', async () => {
+  it('an incremental upsert keeps a file reserved-named "current"', async () => {
     store.write('current', {
       name: 'current',
       slug: 'current',
@@ -253,7 +251,7 @@ describe('ReleaseIndexerService — upsert-by-slug id stability', () => {
     indexer.onChange('context:test', 'releases', 'current.json');
     await new Promise((resolve) => setTimeout(resolve, 350));
 
-    expect(rows()).toHaveLength(0);
+    expect(rows().map((r) => r.slug)).toEqual(['current']);
   });
 
   it('an incremental upsert adds a single new file without a full rebuild', async () => {
