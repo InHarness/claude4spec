@@ -119,9 +119,10 @@ describe('config — remoteApiUrl syntax-only validation (0.1.65)', () => {
   });
 });
 
-// M33 phase 3: additive top-level `plugins` namespace (Record<string, object>),
-// PATCH deep-merges per `plugins[<name>]` (precedent: agent/git), one level deeper.
-describe('config — plugins namespace (M33 phase 3)', () => {
+// 2.1.21 (M26 `vm9rajvn` / `m26plset`): `plugins` is no longer a key of the
+// file — no reserved per-plugin settings namespace. A legacy key is an unknown
+// key: ignored on read (whatever its shape), never persisted by a write.
+describe('config — no plugins namespace (2.1.21)', () => {
   let dir: string;
 
   beforeEach(() => {
@@ -134,43 +135,29 @@ describe('config — plugins namespace (M33 phase 3)', () => {
   const write = (cfg: Record<string, unknown>) => {
     const file = configPath(dir);
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({ $schemaVersion: 3, name: 'X', ...cfg }));
+    fs.writeFileSync(file, JSON.stringify({ $schemaVersion: 4, name: 'X', ...cfg }));
   };
 
-  // 0.2.8 (C23): normalized to the `{}` default rather than left undefined.
-  it('normalizes a missing plugins field to {}', () => {
+  it('[section:m26plset] a missing plugins key is not defaulted — the normalized config has no plugins branch', () => {
     write({});
-    expect(readConfig(dir).plugins).toEqual({});
+    expect('plugins' in readConfig(dir)).toBe(false);
   });
 
-  it('reads a plugins namespace of per-plugin objects', () => {
-    write({ plugins: { '@c4s/foo': { a: 1, b: 2 } } });
-    expect(readConfig(dir).plugins).toEqual({ '@c4s/foo': { a: 1, b: 2 } });
-  });
-
-  it('rejects a non-object plugins field', () => {
+  it('[section:m26plset] a legacy plugins key is ignored on read — any shape, no error', () => {
+    write({ plugins: { '@c4s/foo': { a: 1 } } });
+    expect('plugins' in readConfig(dir)).toBe(false);
     write({ plugins: 42 });
-    expect(() => readConfig(dir)).toThrow(/plugins.*expected object/);
+    expect(() => readConfig(dir)).not.toThrow();
+    expect('plugins' in readConfig(dir)).toBe(false);
   });
 
-  it('rejects a non-object plugin sub-value', () => {
-    write({ plugins: { '@c4s/foo': 'nope' } });
-    expect(() => readConfig(dir)).toThrow(/plugins\.@c4s\/foo.*expected object/);
-  });
-
-  it('deep-merges plugins[name]: one-field write preserves the other fields and other namespaces', () => {
-    write({ plugins: { '@c4s/foo': { a: 1, b: 2 }, '@c4s/bar': { x: true } } });
-    const merged = writeConfig(dir, { plugins: { '@c4s/foo': { a: 9 } } });
-    expect(merged.plugins).toEqual({
-      '@c4s/foo': { a: 9, b: 2 },
-      '@c4s/bar': { x: true },
-    });
-  });
-
-  it('creates the namespace when none existed before', () => {
+  it('[section:m26plset] a write never persists a plugins key', () => {
     write({});
-    const merged = writeConfig(dir, { plugins: { '@c4s/foo': { a: 1 } } });
-    expect(merged.plugins).toEqual({ '@c4s/foo': { a: 1 } });
+    const merged = writeConfig(dir, { name: 'Y', plugins: { '@c4s/foo': { a: 1 } } } as never);
+    expect('plugins' in merged).toBe(false);
+    const onDisk = JSON.parse(fs.readFileSync(configPath(dir), 'utf8')) as Record<string, unknown>;
+    expect(onDisk.name).toBe('Y');
+    expect(onDisk).not.toHaveProperty('plugins');
   });
 });
 
@@ -677,7 +664,8 @@ describe('config — central default normalizer (C23, 0.2.8)', () => {
       switchAfterRelease: false,
     });
     expect(cfg.consistency).toEqual({ requireAcCoverage: 'off', requireModuleAc: 'off', requireTagConsumer: 'off' });
-    expect(cfg.plugins).toEqual({});
+    // 2.1.21: no plugins branch is defaulted.
+    expect('plugins' in cfg).toBe(false);
   });
 
   it('merges a partial branch instead of replacing it', () => {
@@ -792,10 +780,9 @@ describe('config — the config.json envelope (2.1.8)', () => {
     'onboardingCompleted',
     'remoteApiUrl',
     'remoteProjectId',
-    'plugins',
   ];
 
-  it('[entity:config-json-shape] a fresh file is version 4, uses only envelope keys, roots entries carry four fields and no system-root key exists', () => {
+  it('[entity:config-json-shape] a fresh file is version 4, uses only envelope keys, roots entries carry four fields, no system-root key exists and plugins is neither scaffolded nor reserved', () => {
     loadOrCreateConfig(dir, {});
     const raw = JSON.parse(fs.readFileSync(configPath(dir), 'utf8')) as Record<string, unknown>;
     expect(raw.$schemaVersion).toBe(4);
@@ -811,11 +798,17 @@ describe('config — the config.json envelope (2.1.8)', () => {
       entities: ['endpoint'],
       agent: { claudeUsePreset: true } as never,
       git: { enabled: true } as never,
-      plugins: { 'c4s-plugin-x': { on: true } },
     });
     const after = JSON.parse(fs.readFileSync(configPath(dir), 'utf8')) as Record<string, unknown>;
     for (const key of Object.keys(after)) expect(ENVELOPE_KEYS, key).toContain(key);
     expect(after.$schemaVersion).toBe(4);
+
+    // 2.1.21: `plugins` left the envelope — not scaffolded, and not a reserved key a write keeps.
+    expect(ENVELOPE_KEYS).not.toContain('plugins');
+    expect(raw).not.toHaveProperty('plugins');
+    writeConfig(dir, { plugins: { 'c4s-plugin-x': { on: true } } } as never);
+    expect(JSON.parse(fs.readFileSync(configPath(dir), 'utf8'))).not.toHaveProperty('plugins');
+    expect('plugins' in readConfig(dir)).toBe(false);
   });
 
   it('a legacy file with *Dir keys and extra per-root fields is not rewritten and stays at version 4', () => {

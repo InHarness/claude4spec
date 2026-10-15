@@ -69,18 +69,6 @@ export interface Config {
    */
   git?: GitSyncConfig;
   /**
-   * M33 phase 3: namespace for settings contributed by plugins
-   * (`contributes.settings`). Each loaded plugin with settings gets its own
-   * sub-object keyed by `manifest.name` (e.g. `"@c4s/plugin-foo"`), isolated
-   * from core fields (`entities` / `agent` / `git` / paths). Absent/missing ⇒
-   * `{}`. Additive — no `$schemaVersion` bump; projects without
-   * settings-bearing plugins keep prior behaviour. PATCH deep-merges per
-   * `plugins[<name>]` (precedent: `agent` / `git`), so writing one field
-   * preserves the plugin's other fields and other namespaces. Values persist
-   * even when the plugin is absent/inactive (user data preserved).
-   */
-  plugins?: Record<string, Record<string, unknown>>;
-  /**
    * 2.1.9 (M52 `wqvq1esb`): the project as a skill of its workspace — the
    * exposure fields (`exposed`, `name`, `description`, `entry`, `scope`,
    * `contextTypes`) and the attachments of other projects' skills (`uses`).
@@ -304,7 +292,6 @@ export type NormalizedConfig = Config & {
   agent: NormalizedAgentConfig;
   git: NormalizedGitSyncConfig;
   consistency: NormalizedConsistencyConfig;
-  plugins: Record<string, Record<string, unknown>>;
   description: string | null;
 };
 
@@ -376,7 +363,7 @@ export function builtinPagesRoot(dir: string = 'pages'): Root {
 
 /**
  * The single source of DEFAULT VALUES — including the nested branches
- * (`agent`/`git`/`consistency`/`plugins`), which before 0.2.8 had no defaults
+ * (`agent`/`git`/`consistency`), which before 0.2.8 had no defaults
  * anywhere and were re-invented with `??` at every point of use.
  * {@link normalizeConfig} is the single MECHANISM that applies them; adding a
  * new nested field means editing this function and nothing else.
@@ -411,8 +398,6 @@ export function defaults(cwd: string): NormalizedConfig {
     },
     // Consistency gates report only when explicitly turned on.
     consistency: { requireAcCoverage: 'off', requireModuleAc: 'off', requireTagConsumer: 'off' },
-    // M33 phase 3: no plugin settings until a plugin writes some.
-    plugins: {},
   };
 }
 
@@ -459,11 +444,7 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
  * - array in `loaded` → **replaces** the base array wholesale (`roots`,
  *   `agent.allowedPaths`, `agent.disallowedPaths`) — never element-wise;
  * - plain object in `loaded` → recursive merge (`agent`, `git`,
- *   `git.commitTarget`, `consistency`, `plugins`).
- *
- * `plugins` merges one level deep (per plugin name); a plugin's own settings
- * blob is opaque user data and is replaced, not descended into — same contract
- * as the deep-merge in {@link writeConfig}.
+ *   `git.commitTarget`, `consistency`).
  */
 export function normalizeConfig(loaded: Partial<Config>, base: NormalizedConfig): NormalizedConfig {
   return deepMerge(base as unknown as Record<string, unknown>, loaded as Record<string, unknown>, 0) as unknown as NormalizedConfig;
@@ -471,10 +452,8 @@ export function normalizeConfig(loaded: Partial<Config>, base: NormalizedConfig)
 
 /**
  * Recursion is bounded: objects are merged at the top level, at branch level
- * (`git`, `agent`, `plugins`) and one level below it (`git.commitTarget`,
- * `plugins[<name>]`). Deeper than that — inside a plugin's own settings blob —
- * values replace wholesale, because that is opaque user data we must not
- * reinterpret.
+ * (`git`, `agent`) and one level below it (`git.commitTarget`). Deeper than
+ * that, values replace wholesale.
  */
 function deepMerge(
   base: Record<string, unknown>,
@@ -488,7 +467,7 @@ function deepMerge(
     if (depth < 2 && isPlainObject(value) && isPlainObject(baseValue)) {
       out[key] = deepMerge(baseValue, value, depth + 1);
     } else if (depth < 2 && isPlainObject(value) && baseValue === undefined) {
-      // Branch with no default at all (e.g. `plugins[<name>]` on a bare base) —
+      // Branch with no default at all (e.g. `skill` on a bare base) —
       // take it as-is; there is nothing to merge with.
       out[key] = value;
     } else {
@@ -943,23 +922,9 @@ function validate(raw: unknown): Partial<Config> {
     }
     out.git = git;
   }
-  // M33 phase 3: `plugins` is a namespace of opaque per-plugin sub-objects. We
-  // validate only the shape (object-of-objects); the field semantics belong to
-  // each plugin's `contributes.settings` descriptor, not core config.
-  if ('plugins' in r) {
-    const p = r.plugins;
-    if (p === null || typeof p !== 'object' || Array.isArray(p)) {
-      throw typeError('plugins', 'object', p);
-    }
-    const plugins: Record<string, Record<string, unknown>> = {};
-    for (const [name, sub] of Object.entries(p as Record<string, unknown>)) {
-      if (sub === null || typeof sub !== 'object' || Array.isArray(sub)) {
-        throw typeError(`plugins.${name}`, 'object', sub);
-      }
-      plugins[name] = sub as Record<string, unknown>;
-    }
-    out.plugins = plugins;
-  }
+  // 2.1.21 (M26 `vm9rajvn`): `plugins` is no longer a key of the file — plugins
+  // have no reserved settings namespace. A legacy `plugins` key is an unknown key
+  // now: neither validated nor copied (forward compat — ignored, not an error).
   // 2.1.9 (M52): `skill.*` — shape only here (this also runs on every boot);
   // the semantic rules (kebab-case name, required-when-exposed, an existing entry
   // page, the context-type enumeration) belong to the field declarations, which
@@ -1346,8 +1311,7 @@ export function writeConfig(cwd: string, partial: Partial<Config>): NormalizedCo
   // (shallow spread would replace the whole object and drop the untouched flag).
   if (validated.git) {
     merged.git = { ...current.git, ...validated.git };
-    // 0.1.125: one level deeper for `commitTarget` — same nested precedent as
-    // `plugins[<name>]` below — so patching e.g. just `mode` preserves the
+    // 0.1.125: one level deeper for `commitTarget`, so patching e.g. just `mode` preserves the
     // previously-saved `branch`/`template`/`base`.
     if (validated.git.commitTarget) {
       merged.git.commitTarget = { ...current.git?.commitTarget, ...validated.git.commitTarget };
@@ -1357,15 +1321,6 @@ export function writeConfig(cwd: string, partial: Partial<Config>): NormalizedCo
   // alone must preserve `claudeUsePreset` (and vice versa).
   if (validated.agent) {
     merged.agent = { ...current.agent, ...validated.agent };
-  }
-  // M33 phase 3: nested deep-merge per `plugins[<name>]` — writing one field of
-  // one plugin preserves that plugin's other fields AND other plugins'
-  // namespaces (extends the agent/git deep-merge precedent one level deeper).
-  if (validated.plugins) {
-    merged.plugins = { ...current.plugins };
-    for (const [name, fields] of Object.entries(validated.plugins)) {
-      merged.plugins[name] = { ...current.plugins?.[name], ...fields };
-    }
   }
   // 2.1.9 (M52): the same deep-merge for `skill` — saving `uses` alone keeps the
   // exposure fields, and the reverse.

@@ -49,15 +49,7 @@ export function usePatchConfig() {
       if ('remoteProjectId' in variables) {
         qc.invalidateQueries({ queryKey: ['remote-project'] });
       }
-      // M33 phase 3: a `plugins` write always refreshes the config cache (above,
-      // via setQueryData). An `executive` field additionally rebuilds the
-      // context server-side (its `executive` kind ⇒ `context-rebuild`); the
-      // result surfaces on the next request, so a blanket invalidate keeps the
-      // client coherent. Only the server can tell executive from `hot-reload`,
-      // so every `plugins` write invalidates — over-invalidating a hot-reload
-      // write costs a refetch, under-invalidating an executive one leaves every
-      // cached query answering against a context that no longer exists.
-      if (CONTEXT_DEFINING_FIELDS.some((k) => k in variables) || 'plugins' in variables) {
+      if (CONTEXT_DEFINING_FIELDS.some((k) => k in variables)) {
         qc.invalidateQueries();
       }
     },

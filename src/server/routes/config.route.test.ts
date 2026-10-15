@@ -212,7 +212,7 @@ describe('GET/PATCH /config — agent.pathScopeStrength (0.1.103)', () => {
 // 0.1.125 — commit-target validation. `commitTarget`/`switchAfterRelease`
 // default to `{mode:'current', branch:null, template:null, base:null}`/
 // `false`; PATCH deep-merges `commitTarget` one level deeper (precedent:
-// `plugins[<name>]`) and rejects semantically-invalid `named`/`new` bodies.
+// the agent/git deep-merge) and rejects semantically-invalid `named`/`new` bodies.
 describe('PATCH /config — git.commitTarget (0.1.125)', () => {
   let dir: string;
 
@@ -484,16 +484,13 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
       onOnboardingCompleted: (pagesDir) => {
         welcomes.push(pagesDir);
       },
-      pluginSettingsSections: () => [
-        { name: 'c4s-plugin-x', version: '1', fields: [{ key: 'flag', label: 'Flag', control: 'toggle', kind: 'hot-reload', default: false }] },
-      ],
     });
     return express().use(express.json()).use(router);
   };
   const base = { id: 'pages', name: 'Pages', dir: 'pages', builtin: true };
   const adr = { id: 'adr', name: 'ADRs', dir: 'docs/adr', builtin: false };
 
-  it('[entity:app-config-response] GET /config carries the AppConfigResponse fields — and no system-root keys, no consistency', async () => {
+  it('[entity:app-config-response] GET /config carries the AppConfigResponse fields — and no system-root keys, no consistency, no per-plugin settings', async () => {
     writeFile({
       $schemaVersion: 4,
       name: 'demo',
@@ -501,6 +498,8 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
       roots: [base, adr],
       entities: ['endpoint'],
       consistency: { requireAcCoverage: 'warn' },
+      // A legacy per-plugin namespace in the file is an unknown key: never echoed.
+      plugins: { 'c4s-plugin-x': { flag: true } },
     });
     const res = await request(app()).get('/config');
     expect(res.status).toBe(200);
@@ -513,7 +512,6 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
     expect(body.writingStyleUnavailable).toBeNull();
     expect(body.language).toBeNull();
     expect(body.entities).toEqual(['endpoint']);
-    expect(body.plugins).toEqual({});
     expect(body.agent).toMatchObject({
       claudeUsePreset: false,
       conversationalLanguage: null,
@@ -532,12 +530,12 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
     });
     expect(body.onboarding).toEqual({ completed: true });
     expect(body.$schemaVersion).toBe(4);
-    for (const k of ['plansDir', 'briefsDir', 'patchesDir', 'entitiesDir', 'releasesDir', 'consistency']) {
+    for (const k of ['plansDir', 'briefsDir', 'patchesDir', 'entitiesDir', 'releasesDir', 'consistency', 'plugins']) {
       expect(k in body, k).toBe(false);
     }
   });
 
-  it('[entity:patch-config-request] PATCH /config takes the PatchConfigRequest fields; system-root keys and response-only fields are dropped silently', async () => {
+  it('[entity:patch-config-request] PATCH /config takes the PatchConfigRequest fields; system-root keys, response-only fields and per-plugin settings are dropped silently', async () => {
     writeFile({ $schemaVersion: 4, name: 'demo', roots: [base] });
     const res = await request(app())
       .patch('/config')
@@ -546,14 +544,14 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
         description: 'short pitch',
         roots: [base, adr],
         entities: ['endpoint'],
-        plugins: { 'c4s-plugin-x': { flag: true } },
         writingStyle: null,
         language: 'English',
         agent: { claudeUsePreset: true, conversationalLanguage: 'Polski', allowedPaths: ['/opt/x'], disallowedPaths: ['/opt/y'], disableDirectFilesystemAccess: false },
         git: { enabled: true },
         remoteProjectId: '11111111-2222-3333-4444-555555555555',
         onboardingCompleted: true,
-        // Not writable here: fixed system roots, response-only fields.
+        // Not writable here: fixed system roots, response-only fields, the removed per-plugin namespace.
+        plugins: { 'c4s-plugin-x': { flag: true } },
         plansDir: 'docs/plans',
         releasesDir: 'rel',
         configHash: 'x',
@@ -566,7 +564,6 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
       description: 'short pitch',
       roots: [base, adr],
       entities: ['endpoint'],
-      plugins: { 'c4s-plugin-x': { flag: true } },
       writingStyle: null,
       language: 'English',
       agent: { claudeUsePreset: true, conversationalLanguage: 'Polski', allowedPaths: ['/opt/x'], disallowedPaths: ['/opt/y'], disableDirectFilesystemAccess: false },
@@ -574,10 +571,23 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
       remoteProjectId: '11111111-2222-3333-4444-555555555555',
       onboardingCompleted: true,
     });
-    for (const k of ['plansDir', 'releasesDir', 'configHash', 'writingStyleUnavailable']) expect(k in file, k).toBe(false);
+    for (const k of ['plansDir', 'releasesDir', 'configHash', 'writingStyleUnavailable', 'plugins']) expect(k in file, k).toBe(false);
+    expect('plugins' in res.body).toBe(false);
     // A roots[] entry missing one of its four fields is refused.
     const partial = await request(app()).patch('/config').send({ roots: [{ id: 'pages', name: 'Pages', dir: 'pages' }] });
     expect(partial.status).toBe(400);
+  });
+
+  it('[section:m26plset] no plugin settings channel: a per-plugin value sent to PATCH is neither validated, written nor a context rebuild, and GET never carries one', async () => {
+    writeFile({ $schemaVersion: 4, name: 'demo', roots: [base] });
+    const res = await request(app())
+      .patch('/config')
+      .send({ plugins: { 'c4s-plugin-x': { flag: 'not-a-boolean', apiBase: 'https://x' } } });
+    expect(res.status).toBe(200);
+    expect(onDisk()).not.toHaveProperty('plugins');
+    expect(rebuilds).toBe(0);
+    const get = await request(app()).get('/config');
+    expect('plugins' in get.body).toBe(false);
   });
 
   it('[ac:ac-odczyt-konfiguracji-po-swiezym-bootst] a read after a fresh bootstrap returns onboarding.completed === false', async () => {

@@ -1,0 +1,1 @@
+{"role":"implementer","unit":"u1-m26-ustawienia-bez-pluginow","packetBytes":75697,"portions":[{"name":"u1-m26-ustawienia-bez-pluginow/p1-l4-l17","layers":["L4","L5","L10","L17"],"slugs":["app-config-response","patch-config-request","settings-page","config-json-shape","m26-requires-m13","m26plset","vm9rajvn","7f76eszm","alfjoj17"]}],"deviations":[]}

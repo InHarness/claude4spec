@@ -4,24 +4,19 @@ import { metaApi } from '../../lib/api.js';
 import { refreshPluginActivation } from '../../runtime/boot-plugins.js';
 import { clientPluginHost } from './host.js';
 import { PluginPoolElement } from './PluginPoolElement.js';
-import type { PluginSettingField } from '../../../shared/plugin-host/manifest.js';
-import {
-  EFFECT,
-  type ElementKind,
-  type SettingsContribution,
-  type SettingsElementDecl,
-} from '../../components/settings/registry.js';
+import { EFFECT, type SettingsContribution } from '../../components/settings/registry.js';
 
 /**
- * 0.2.113 — what the plugin host declares on `/settings`. Three separate things,
+ * 0.2.113 — what the plugin host declares on `/settings`. Two separate things,
  * kept apart on purpose:
  *
  *  - axis A — which entity types are ACTIVE in this project (`entities`), edited
  *    on the Entities card;
  *  - axis B — what the pool CONTAINS (`base ∪ overlay`), shown read-only on the
- *    Plugin pool card;
- *  - each plugin's own settings — a card per plugin, generated from its
- *    `PluginSettingField`s.
+ *    Plugin pool card.
+ *
+ * 2.1.21 (M26 `7f76eszm`): there are no generated per-plugin settings cards —
+ * plugins contribute no settings fields or elements to the page.
  */
 export const PLUGIN_HOST_SETTINGS: SettingsContribution = {
   cards: [
@@ -101,61 +96,4 @@ function useEntityTypeOptions() {
         return { value: type, label: `${m?.labelPlural ?? m?.label ?? type}${m ? '' : ' (overlay)'}` };
       });
   }, [data]);
-}
-
-const CONTROL_KIND: Record<PluginSettingField['control'], ElementKind> = {
-  toggle: 'toggle',
-  text: 'text',
-  select: 'select',
-  multiselect: 'multiselect',
-};
-
-/** `#plugin-<name>` — the package name made kebab (`@c4s/plugin-foo` → `plugin-c4s-plugin-foo`). */
-export function pluginCardAnchor(name: string): string {
-  return `plugin-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}`;
-}
-
-/**
- * One card per loaded + trusted plugin that declares settings — title
- * `manifest.name`, the version in the description, weight 100 (ties broken by
- * title, i.e. alphabetically). Validation is the type alone; a save deep-merges
- * under `plugins.<name>`. An inactive plugin declares nothing and loses its card,
- * but its values stay in the file.
- */
-export function usePluginSettingsContribution(): SettingsContribution {
-  const { data: sections } = useQuery({
-    queryKey: ['plugin-settings'],
-    queryFn: () => metaApi.pluginSettings().then((r) => r.sections),
-  });
-  return useMemo(() => {
-    if (!sections) return {};
-    return {
-      cards: sections.map((s) => ({
-        anchor: pluginCardAnchor(s.name),
-        title: s.name,
-        description: `Settings contributed by ${s.name} v${s.version}.`,
-        group: 'Plugins' as const,
-        weight: 100,
-        owner: s.name,
-      })),
-      elements: sections.flatMap((s) =>
-        s.fields.map(
-          (f, i): SettingsElementDecl => ({
-            id: f.key,
-            card: pluginCardAnchor(s.name),
-            weight: (i + 1) * 10,
-            kind: CONTROL_KIND[f.control],
-            owner: s.name,
-            configKey: ['plugins', s.name, f.key],
-            label: f.label,
-            help: f.help,
-            baseline: (config) => config.plugins?.[s.name]?.[f.key] ?? f.default,
-            // `executive` rebuilds the context; `hot-reload` gets the plain toast.
-            ...(f.kind === 'executive' ? { effectMessage: EFFECT.rebuild } : {}),
-            ...(f.options ? { useOptions: () => f.options } : {}),
-          }),
-        ),
-      ),
-    };
-  }, [sections]);
 }

@@ -55,11 +55,11 @@ describe('settings card registry (0.2.113)', () => {
     expect(page[0]!.elements).toEqual([]);
   });
 
-  it('plugin cards share a weight and fall back to alphabetical order', () => {
+  it('cards sharing a weight in one group fall back to alphabetical order', () => {
     const page = assembleSettings([
-      { cards: [card('plugin-zeta', 'Plugins', 100), card('plugin-alpha', 'Plugins', 100), card('plugin-pool', 'Plugins', 10)] },
+      { cards: [card('zeta', 'Integrations', 100), card('alpha', 'Integrations', 100), card('first', 'Integrations', 10)] },
     ]);
-    expect(page.map((c) => c.decl.anchor)).toEqual(['plugin-pool', 'plugin-alpha', 'plugin-zeta']);
+    expect(page.map((c) => c.decl.anchor)).toEqual(['first', 'alpha', 'zeta']);
   });
 
   it('the toast carries each changed element’s effect message once, and nothing for unchanged ones', () => {

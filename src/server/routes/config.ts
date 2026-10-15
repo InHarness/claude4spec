@@ -23,7 +23,6 @@ import type { ProjectionStatusRegistry } from '../services/projection-status.js'
 import type { ContextInvalidation, Root } from '../../shared/types.js';
 import { C4S_VERSION } from '../services/release-bundle.js';
 import type { SkillRegistry } from '../services/skill-registry.js';
-import type { PluginSettingsSection } from '../../shared/plugin-host/manifest.js';
 import { resolveAgentPathScope } from '../services/agent-path-scope.js';
 import { RootRegistry } from '../roots/registry.js';
 import {
@@ -53,8 +52,8 @@ export interface ConfigRouterDeps {
    * context — the next request rebuilds it. No restart, no banner.
    *
    * 0.2.113: the set is no longer a list here — it is every field whose declarant
-   * gave it the `context-rebuild` effect class (see `settings/registry.ts`),
-   * plugin `executive` fields included. (`pagesDir` was named here until config
+   * gave it the `context-rebuild` effect class (see `settings/registry.ts`).
+   * (`pagesDir` was named here until config
    * v4 replaced the scalar with `roots[]`.)
    *
    * 2.1.16 (M50 `8h2a734u`): a save whose only rebuilding field is `entities`
@@ -69,13 +68,6 @@ export interface ConfigRouterDeps {
    * onboarding can't leave an orphan index on the old path.
    */
   onOnboardingCompleted?: (effectivePagesDir: string) => void;
-  /**
-   * M33 phase 3: current plugin Settings sections (host.listSettings()). 0.2.113:
-   * each field becomes a declared `plugins.<name>.<key>` leaf of the registry —
-   * type-checked, and `executive` ⇒ `context-rebuild`. A plugin that declares
-   * nothing (inactive, uninstalled) gets its PATCH dropped; its values stay.
-   */
-  pluginSettingsSections?: () => PluginSettingsSection[];
   /** 0.2.113: entity types the host knows — feeds the `entities` unknown-slug warning. */
   knownEntityTypes?: () => string[];
   /**
@@ -191,8 +183,6 @@ function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRe
       },
       switchAfterRelease: c.git.switchAfterRelease,
     },
-    // M33 phase 3: persisted plugin settings namespace (absent ⇒ {}).
-    plugins: c.plugins,
     remoteProjectId: c.remoteProjectId ?? null,
     remoteApiUrl: c.remoteApiUrl ?? null,
     $schemaVersion: c.$schemaVersion,
@@ -242,10 +232,8 @@ export function configRouter(deps: ConfigRouterDeps): Router {
     try {
       const body = (req.body ?? {}) as Record<string, unknown>;
       const currentConfig = readConfig(cwd);
-      const registry = buildFieldRegistry({
-        pluginSections: deps.pluginSettingsSections?.() ?? [],
-        ...(deps.knownEntityTypes ? { knownEntityTypes: deps.knownEntityTypes } : {}),
-      });
+      // 2.1.21 (M26 `vm9rajvn`): the layer's field tables only — no plugin fields.
+      const registry = buildFieldRegistry(deps.knownEntityTypes ? { knownEntityTypes: deps.knownEntityTypes } : {});
       const reject = (key: string, message: string) =>
         res.status(400).json({ error: { code: 'VALIDATION', message, details: { field: key } } });
 
@@ -257,8 +245,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
        * still a type error, pinned to the container.
        */
       const writable = registry.list().filter((d) => d.apiWritable);
-      // Kept as SEGMENTS, not a dotted string: a plugin's package name may itself
-      // contain a dot, and re-splitting `plugins.@x/y.z` would miss the container.
+      // Kept as SEGMENTS, not a dotted string, so a segment is never re-split.
       const containers = new Map<string, readonly string[]>();
       for (const d of writable) {
         const segs = fieldPath(d);
@@ -338,8 +325,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         const pagesDir = builtinRoot(updated.roots).dir;
         deps.onOnboardingCompleted?.(pagesDir);
       }
-      // M31 + 0.2.113: a save of any `context-rebuild` field — core or a plugin's
-      // `executive` one — invalidates the context; the next request rebuilds it.
+      // M31 + 0.2.113: a save of any `context-rebuild` field invalidates the context; the next request rebuilds it.
       const rebuilding = present.filter((d) => d.effect === 'context-rebuild');
       if (rebuilding.length > 0) {
         // 2.1.16 (M50 `8h2a734u`): an activation-only save (Settings → Entities)

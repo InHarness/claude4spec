@@ -1,5 +1,5 @@
 {
-  "iteration": 0,
+  "iteration": 5,
   "units": [
     {
       "id": "u1-m26-ustawienia-bez-pluginow",
@@ -78,15 +78,43 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u1-m26-ustawienia-bez-pluginow/p1-l4-l17",
+          "layers": [
+            "L4",
+            "L5",
+            "L10",
+            "L17"
+          ],
+          "slugs": [
+            "app-config-response",
+            "patch-config-request",
+            "settings-page",
+            "config-json-shape",
+            "m26-requires-m13",
+            "m26plset",
+            "vm9rajvn",
+            "7f76eszm",
+            "alfjoj17"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "456a841681bd99495809700875635b21023e9a44",
+      "baseCommit": "456a841681bd99495809700875635b21023e9a44",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "u2-m13-m33-koperta-bez-ustawien",
@@ -291,7 +319,7 @@
       "units": [
         "u1-m26-ustawienia-bez-pluginow"
       ],
-      "startCommit": null
+      "startCommit": "456a841681bd99495809700875635b21023e9a44"
     },
     {
       "n": 2,

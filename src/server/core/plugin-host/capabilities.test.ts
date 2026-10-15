@@ -159,8 +159,6 @@ describe('M33 — registry capability records', () => {
     // The values half is structural rather than asserted here: the registry is
     // constructed with no config reference at all, so it has no channel through
     // which to reach them. What CAN be pinned is that the descriptor goes.
-    // Persistence of the values across writes is covered end-to-end in
-    // `tests/integration/api/config-plugins.test.ts`.
     const registry = new PluginRegistryImpl();
     registry.registerPlugin(fooManifest());
     expect(registry.consolidate({}).listSettings().map((s) => s.name)).toEqual(['@c4s/plugin-foo']);
