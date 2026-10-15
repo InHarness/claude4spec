@@ -11,6 +11,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -72,9 +73,17 @@ async function renderAppearance() {
 const option = (label: string) =>
   Array.from(host.querySelectorAll('button')).find((b) => b.textContent?.includes(label))!;
 
+/**
+ * `src/client/index.html`, resolved once at module load with `node:path`. Not
+ * `new URL('../index.html', import.meta.url)`: under a web environment Vitest
+ * rewrites that literal asset-URL pattern (`import.meta.url` → `self.location`),
+ * so it yields an `http:` URL and `fileURLToPath` throws.
+ */
+const INDEX_HTML = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'index.html');
+
 /** The anti-FOUC script of `index.html`, as the browser runs it before React mounts. */
 function runIndexHtmlInlineScript() {
-  const html = fs.readFileSync(fileURLToPath(new URL('../index.html', import.meta.url)), 'utf8');
+  const html = fs.readFileSync(INDEX_HTML, 'utf8');
   const inline = /<script>([\s\S]*?)<\/script>/.exec(html)?.[1];
   expect(inline, 'index.html has an inline <script> in <head>').toBeTruthy();
   new Function(inline!)();
