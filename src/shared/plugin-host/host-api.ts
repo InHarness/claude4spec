@@ -650,7 +650,7 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       'its two types and the host\'s settings listing are gone, together with the ' +
       '`/_meta/plugin-settings` route. `registerPlugin` / `unregisterPlugin` hand nothing ' +
       'to any settings registry; besides entities, only commands and subagents stay active ' +
-      'regardless of the `config.entities` whitelist. Formally breaking under rule (1), but ' +
+      'regardless of the project\'s entity-type whitelist. Formally breaking under rule (1), but ' +
       'with zero published plugins it is absorbed into the current baseline under rule (2): ' +
       '`HOST_API_VERSION` is unchanged and there is no `migrations[]` descriptor. A stale ' +
       '`settings` key on an old manifest is not read by anything.',
