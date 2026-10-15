@@ -176,7 +176,7 @@ describe('2.1.9 — /api/pages/:rootId addresses only roots with a facade (M02 l
     expect(typeof ok.body.data.version).toBe('number');
     const written = fs.readFileSync(abs('adr', 'new/n.md'), 'utf8');
     expect(written).toContain('title: New');
-    expect(ok.body.hash).toBe(sha(written));
+    expect(ok.body.data.hash).toBe(sha(written));
 
     const refused = await request(app).post('/api/pages/patches').send({ path: 'x.md', content: '# X\n' });
     expectRootNotFound(refused, 'patches');
@@ -516,7 +516,7 @@ describe('2.1.9 — a write through the `skills` root facade is visible to the v
       .send({
         frontmatter: { title: 'House style', description: 'How we write, revised.', version: 1, language: 'en', scope: 'writing-style' },
         body: '# House style\n',
-        expectedHash: created.body.hash,
+        expectedHash: created.body.data.hash,
       });
     expect(edited.status).toBe(200);
     expect(registry.listSelectable().find((s) => s.slug === 'house-style')?.description).toBe('How we write, revised.');

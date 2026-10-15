@@ -18,9 +18,10 @@ describe('c4s agent — an empty --brief is an argument error, not a create requ
     );
   });
 
-  it('rejects a valueless --brief (parsed as a boolean flag)', async () => {
-    await expect(run(['agent', 'msg', '--ct', 'brief', '--brief'])).rejects.toThrow(
-      /--brief needs a path/,
-    );
+  it('rejects a valueless --brief (parsed as a boolean flag) — INVALID_ARGS by the argv rule (2.1.23)', async () => {
+    await expect(run(['agent', 'msg', '--ct', 'brief', '--brief'])).rejects.toMatchObject({
+      code: 'INVALID_ARGS',
+      message: expect.stringMatching(/--brief requires a value/),
+    });
   });
 });
