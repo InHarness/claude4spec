@@ -1,6 +1,6 @@
 import type { FrontendModule } from '@c4s/plugin-runtime';
 import {
-  DATABASE_TABLE_DISPLAY_ORDER,
+  DATABASE_TABLE_SIDEBAR_ORDER,
   DATABASE_TABLE_LABEL,
   DATABASE_TABLE_LABEL_PLURAL,
   DATABASE_TABLE_PATH_PREFIX,
@@ -42,7 +42,6 @@ export const databaseTableFrontendModule: FrontendModule = {
   payloadVersion: 3,
   label: DATABASE_TABLE_LABEL,
   labelPlural: DATABASE_TABLE_LABEL_PLURAL,
-  displayOrder: DATABASE_TABLE_DISPLAY_ORDER,
   pathPrefix: DATABASE_TABLE_PATH_PREFIX,
   renderRow: DatabaseTableRow as FrontendModule['renderRow'],
   renderChip: DatabaseTableChip as FrontendModule['renderChip'],
@@ -62,6 +61,6 @@ export const databaseTableFrontendModule: FrontendModule = {
   sidebarTab: {
     icon: DatabaseTableIcon as unknown as NonNullable<FrontendModule['sidebarTab']>['icon'],
     label: DATABASE_TABLE_LABEL_PLURAL,
-    order: DATABASE_TABLE_DISPLAY_ORDER,
+    order: DATABASE_TABLE_SIDEBAR_ORDER,
   },
 };

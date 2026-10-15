@@ -11,7 +11,7 @@ import type {
   FrontendModule,
 } from '@c4s/plugin-runtime';
 import {
-  UI_VIEW_DISPLAY_ORDER,
+  UI_VIEW_SIDEBAR_ORDER,
   UI_VIEW_LABEL,
   UI_VIEW_LABEL_PLURAL,
   UI_VIEW_PATH_PREFIX,
@@ -264,7 +264,6 @@ export const uiViewFrontendModule: FrontendModule = {
   payloadVersion: 3,
   label: UI_VIEW_LABEL,
   labelPlural: UI_VIEW_LABEL_PLURAL,
-  displayOrder: UI_VIEW_DISPLAY_ORDER,
   pathPrefix: UI_VIEW_PATH_PREFIX,
   renderRow: UiViewRow as FrontendModule['renderRow'],
   renderChip: UiViewChip as FrontendModule['renderChip'],
@@ -280,5 +279,5 @@ export const uiViewFrontendModule: FrontendModule = {
   // substring both would show for `/uiview` — with THIS one selected by
   // default, because frontend modules mount before plugin commands register.
   // Choosing it deletes the typed text and opens nothing.
-  sidebarTab: { icon: Monitor, label: UI_VIEW_LABEL_PLURAL, order: UI_VIEW_DISPLAY_ORDER },
+  sidebarTab: { icon: Monitor, label: UI_VIEW_LABEL_PLURAL, order: UI_VIEW_SIDEBAR_ORDER },
 };

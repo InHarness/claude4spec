@@ -1,7 +1,6 @@
 import type { EntityContribution, MountContext } from '@c4s/plugin-runtime';
 import {
   DESIGN_SYSTEM_TYPE,
-  UI_VIEW_DISPLAY_ORDER,
   UI_VIEW_LABEL,
   UI_VIEW_LABEL_PLURAL,
   UI_VIEW_PATH_PREFIX,
@@ -46,7 +45,6 @@ export const uiViewEntity: EntityContribution = {
   payloadVersion: 4,
   label: UI_VIEW_LABEL,
   labelPlural: UI_VIEW_LABEL_PLURAL,
-  displayOrder: UI_VIEW_DISPLAY_ORDER,
   pathPrefix: UI_VIEW_PATH_PREFIX,
   dependsOn: [DESIGN_SYSTEM_TYPE],
   ...uiViewSerialization,

@@ -25,14 +25,6 @@ export const MODULE_DEPENDENCY_PATH_PREFIX = '/module-dependencies';
 export const MODULE_DEPENDENCY_LABEL = 'Module dependency';
 export const MODULE_DEPENDENCY_LABEL_PLURAL = 'Module dependencies';
 
-/**
- * The type is HIDDEN — the frontend module declares no `sidebarTab`, no `routes`
- * and no `detailPanel` — so this never orders anything in the UI. It exists
- * because `EntityModuleManifest` requires it, and it still orders the type in
- * catalogues, release snapshots and diffs. Last, after `code-snippet`'s 110.
- */
-export const MODULE_DEPENDENCY_DISPLAY_ORDER = 120;
-
 /*
  * NO PATTERN FOR THE MODULE IDENTIFIER, and no validator behind `dependent` /
  * `provider` either.

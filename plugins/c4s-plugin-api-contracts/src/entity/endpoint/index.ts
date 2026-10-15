@@ -1,6 +1,5 @@
 import type { EntityContribution, MountContext } from '@c4s/plugin-runtime';
 import {
-  ENDPOINT_DISPLAY_ORDER,
   ENDPOINT_PATH_PREFIX,
   ENDPOINT_TYPE,
 } from '../../identity.js';
@@ -31,7 +30,6 @@ export const endpointEntity: EntityContribution = {
   payloadVersion: 3,
   label: 'Endpoint',
   labelPlural: 'Endpoints',
-  displayOrder: ENDPOINT_DISPLAY_ORDER,
   pathPrefix: ENDPOINT_PATH_PREFIX,
   /**
    * Restore and index order is declared here, by the module that knows the

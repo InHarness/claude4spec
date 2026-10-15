@@ -14,12 +14,10 @@ import { slugify } from './slugify.js';
 export const ENDPOINT_TYPE = 'endpoint';
 export const ENDPOINT_TABLE = 'endpoint';
 export const ENDPOINT_PATH_PREFIX = '/endpoints';
-export const ENDPOINT_DISPLAY_ORDER = 10;
 
 export const DTO_TYPE = 'dto';
 export const DTO_TABLE = 'dto';
 export const DTO_PATH_PREFIX = '/dtos';
-export const DTO_DISPLAY_ORDER = 20;
 
 /**
  * The junction coupling the two types. It is why they must ship in ONE

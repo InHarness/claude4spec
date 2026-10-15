@@ -23,7 +23,6 @@ function widgetModule(overrides: Partial<BackendModule> = {}): BackendModule {
     payloadVersion: 1,
     label: 'Widget',
     labelPlural: 'Widgets',
-    displayOrder: 1,
     pathPrefix: '/widgets',
     systemPrompt: {
       roleNoun: 'Widgets',

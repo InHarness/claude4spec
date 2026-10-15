@@ -72,7 +72,6 @@ const sprocket = {
   payloadVersion: 1,
   label: 'Sprocket',
   labelPlural: 'Sprockets',
-  displayOrder: 950,
   pathPrefix: '/sprockets',
   systemPrompt: {
     roleNoun: 'Sprockets',
@@ -192,7 +191,7 @@ describe('item 63 — a type that declares only its data is a first-class type',
       // third, the per-type count attribute: frozen at turn 1, read by no block.
       expect(prompt).toContain('<entity type="sprocket">A sprocket is a toothed wheel. It fits DTOs.</entity>');
       expect(prompt).not.toContain('sprocket="3"');
-      // The embed type union — position depends on `displayOrder`, so match the
+      // The embed type union — position depends on the pool order, so match the
       // token inside the pipe-separated list rather than at a fixed offset.
       expect(prompt).toMatch(/(^|\|)sprocket(\||[^-\w])/);
     } finally {

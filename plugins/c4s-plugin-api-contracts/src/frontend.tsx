@@ -15,7 +15,7 @@ import { mountEndpointSlashCreate } from './entity/endpoint/frontend/slash-creat
 
 // DTO first, matching the manifest's declaration order and the dependency
 // direction. Registration order carries no meaning on the client — the host
-// sorts by `displayOrder` — but the two files should read the same way.
+// sorts by `type` — but the two files should read the same way.
 registerFrontendModule(dtoFrontendModule);
 registerFrontendModule(endpointFrontendModule);
 

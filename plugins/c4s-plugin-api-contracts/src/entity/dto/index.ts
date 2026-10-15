@@ -1,5 +1,5 @@
 import type { EntityContribution } from '@c4s/plugin-runtime';
-import { DTO_DISPLAY_ORDER, DTO_PATH_PREFIX, DTO_TYPE } from '../../identity.js';
+import { DTO_PATH_PREFIX, DTO_TYPE } from '../../identity.js';
 import { dtoSerialization } from './serializer.js';
 import { dtoSystemPrompt } from './system-prompt.js';
 import { dtoData, dtoSlugPattern } from './schema.js';
@@ -26,7 +26,6 @@ export const dtoEntity: EntityContribution = {
   payloadVersion: 2,
   label: 'DTO',
   labelPlural: 'DTOs',
-  displayOrder: DTO_DISPLAY_ORDER,
   pathPrefix: DTO_PATH_PREFIX,
   ...dtoSerialization,
   systemPrompt: dtoSystemPrompt,

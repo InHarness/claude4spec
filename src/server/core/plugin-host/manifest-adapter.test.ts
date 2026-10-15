@@ -17,7 +17,6 @@ function base(over: Partial<EntityContribution> = {}): EntityContribution {
     payloadVersion: 1,
     label: 'Glossary',
     labelPlural: 'Glossary',
-    displayOrder: 100,
     pathPrefix: '/glossary',
     systemPrompt: {
       roleNoun: 'Glossary',
@@ -126,6 +125,25 @@ describe('lowerEntityContribution', () => {
     // The same contribution without the key lowers, and the lowered module carries no frontend.
     const lowered = lowerEntityContribution(base());
     expect('frontend' in (lowered as unknown as Record<string, unknown>)).toBe(false);
+  });
+
+  /**
+   * 2.1.26 — `displayOrder` is gone from the type identity. A contribution
+   * without it lowers (the field is no longer required), the lowered module
+   * carries no ordering field, and a contribution still declaring it is refused
+   * as an unknown key — the field has no successor on the identity: ELEMENTS
+   * order lives only in the frontend's `sidebarTab.order`.
+   */
+  it('[section:z7l89jhf] the type identity has no `displayOrder`: not required, not copied, and refused when declared', () => {
+    const lowered = lowerEntityContribution(base());
+    expect('displayOrder' in (lowered as unknown as Record<string, unknown>)).toBe(false);
+    expect(lowered.label).toBe('Glossary');
+    expect(lowered.labelPlural).toBe('Glossary');
+    expect(lowered.pathPrefix).toBe('/glossary');
+    expect(() => lowerEntityContribution(base({ displayOrder: 10 } as never))).toThrow(PluginManifestError);
+    expect(() => lowerEntityContribution(base({ displayOrder: 10 } as never))).toThrow(
+      /unknown manifest key\(s\): `displayOrder`/,
+    );
   });
 });
 

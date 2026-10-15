@@ -115,7 +115,6 @@ function glossaryManifest(name: string, hostApiVersion: string, type: string): P
           payloadVersion: 1,
           label: type,
           labelPlural: `${type}s`,
-          displayOrder: 100,
           pathPrefix: `/${type}s`,
           systemPrompt: { roleNoun: type },
         },

@@ -1,6 +1,5 @@
 import type { EntityContribution } from '@c4s/plugin-runtime';
 import {
-  DESIGN_SYSTEM_DISPLAY_ORDER,
   DESIGN_SYSTEM_LABEL,
   DESIGN_SYSTEM_LABEL_PLURAL,
   DESIGN_SYSTEM_PATH_PREFIX,
@@ -43,7 +42,6 @@ export const designSystemEntity: EntityContribution = {
   payloadVersion: 3,
   label: DESIGN_SYSTEM_LABEL,
   labelPlural: DESIGN_SYSTEM_LABEL_PLURAL,
-  displayOrder: DESIGN_SYSTEM_DISPLAY_ORDER,
   pathPrefix: DESIGN_SYSTEM_PATH_PREFIX,
   ...designSystemSerialization,
   systemPrompt: designSystemSystemPrompt,

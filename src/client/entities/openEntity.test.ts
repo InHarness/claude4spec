@@ -51,7 +51,6 @@ function browsable(type: string): FrontendModule {
     payloadVersion: 1,
     label: type,
     labelPlural: `${type}s`,
-    displayOrder: 500,
     pathPrefix: `/${type}s`,
     renderChip: Noop,
     renderCard: Noop,

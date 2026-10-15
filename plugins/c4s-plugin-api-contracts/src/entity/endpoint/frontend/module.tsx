@@ -155,7 +155,6 @@ export const endpointFrontendModule: FrontendModule = {
   payloadVersion: 1,
   label: 'Endpoint',
   labelPlural: 'Endpoints',
-  displayOrder: 10,
   pathPrefix: '/endpoints',
   renderRow: EndpointRow as FrontendModule['renderRow'],
   renderChip: EndpointChip as FrontendModule['renderChip'],

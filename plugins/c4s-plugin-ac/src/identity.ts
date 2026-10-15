@@ -27,11 +27,12 @@ export const AC_LABEL = 'Acceptance Criterion';
 export const AC_LABEL_PLURAL = 'Acceptance Criteria';
 
 /**
- * Sidebar position, inherited from the host registration so the tab does not
- * move when the type changes delivery path. It sits between `ui-view` (40) and
- * `design-system` (60).
+ * The ELEMENTS tab's `sidebarTab.order` — since 2.1.26 the only ordering a type
+ * declares (the identity has no `displayOrder`). Inherited from the host
+ * registration so the tab does not move when the type changes delivery path. It
+ * sits between `ui-view` (40) and `design-system` (60).
  */
-export const AC_DISPLAY_ORDER = 50;
+export const AC_SIDEBAR_ORDER = 50;
 
 /**
  * The slash-create popover discriminator.

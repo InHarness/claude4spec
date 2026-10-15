@@ -42,7 +42,6 @@ function diagramModule(): BackendModule {
     payloadVersion: 1,
     label: 'Diagram',
     labelPlural: 'Diagrams',
-    displayOrder: 70,
     pathPrefix: '/diagrams',
     systemPrompt: {
       roleNoun: 'Diagrams',

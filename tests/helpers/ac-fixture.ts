@@ -98,7 +98,6 @@ export const acFixtureModule = {
   slugConflict: 'suffix',
   label: 'Acceptance Criterion',
   labelPlural: 'Acceptance Criteria',
-  displayOrder: 50,
   pathPrefix: '/acs',
   systemPrompt: acFixtureSystemPrompt,
 } as unknown as BackendModule;

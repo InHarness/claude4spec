@@ -260,6 +260,26 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
     }
   });
 
+  it('[section:m33load01] the 2.1.26 retirement of displayOrder is an unversioned removal from the type identity, with no bump and no migrations[] descriptor', () => {
+    const retired = HOST_API_UNVERSIONED_CHANGES.filter((c) => /displayOrder/.test(c.slot));
+    // Exactly one record, in this window's release, as a removal from the identity.
+    expect(retired).toHaveLength(1);
+    expect(retired[0]!.release).toBe('2.1.26');
+    expect(retired[0]!.kind).toBe('slot-removed');
+    expect(retired[0]!.slot).toContain('EntityModuleManifest');
+    // The ordering that survives is the sidebar tab's, and only it.
+    expect(retired[0]!.summary).toContain('sidebarTab.order');
+    expect(retired[0]!.uiKitStable).toBeUndefined();
+    // No bump: the version is still the 2.1.0 baseline, no release and no
+    // major-crossing descriptor carries the retirement.
+    expect(HOST_API_VERSION).toBe('2.1.0');
+    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0']);
+    for (const release of HOST_API_RELEASES) {
+      expect(JSON.stringify(release)).not.toMatch(/displayOrder/);
+    }
+    expect(JSON.stringify(migrationsBetween(0, Number.MAX_SAFE_INTEGER))).not.toMatch(/displayOrder/);
+  });
+
   it('[section:m33load01] the composition of UI_KIT_STABLE_COMPONENTS is exactly what the registries record', () => {
     expect(sorted(recordedUiKitStableComponents())).toEqual(sorted(UI_KIT_STABLE_COMPONENTS));
   });

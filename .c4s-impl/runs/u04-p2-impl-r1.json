@@ -1,0 +1,12 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.25-to-2.1.26",
+  "unit": "u04-display-order-retire",
+  "portion": "u04-display-order-retire/p2-l11-l11",
+  "claimed": ["section:m33load01", "section:fsu38c8q", "section:xvm9aann", "section:vc5pzsc0", "section:n6zlyrol", "section:ityp8g1r", "section:dgmmanifest", "section:dsmanifest", "section:cv8b7alf", "section:04i1idm7", "section:fbgmkqw7"],
+  "deviations": [],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

@@ -195,8 +195,8 @@ describe('api-contracts projection — equivalence with the retired hand-written
 
 describe('api-contracts projection — creation order does not matter', () => {
   /**
-   * `applyProjection` iterates modules in `displayOrder`, which has nothing to do
-   * with `dependsOn` — so the junction's `REFERENCES dto(slug)` can be emitted
+   * `applyProjection` iterates modules in the order it is given, which has nothing
+   * to do with `dependsOn` — so the junction's `REFERENCES dto(slug)` can be emitted
    * before `dto` exists. SQLite resolves a forward FK at DML time rather than at
    * CREATE time, and the call runs with foreign keys off inside one transaction,
    * so this holds; asserting it means a future change to either the ordering or

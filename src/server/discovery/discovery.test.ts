@@ -65,7 +65,6 @@ function widgetModule(): BackendModule {
     payloadVersion: 1,
     label: 'Widget',
     labelPlural: 'Widgets',
-    displayOrder: 10,
     pathPrefix: '/widgets',
     systemPrompt: {
       roleNoun: 'Widgets',
@@ -572,7 +571,6 @@ describe('discovery core', () => {
         payloadVersion: 1,
         label: 'Gadget',
         labelPlural: 'Gadgets',
-        displayOrder: 20,
         pathPrefix: '/gadgets',
         systemPrompt: { roleNoun: 'Gadgets' },
         backend: { crud: { createSchema: { title: z.string() } } } as BackendModule['backend'],

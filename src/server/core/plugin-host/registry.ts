@@ -279,9 +279,9 @@ export class PluginRegistryImpl implements PluginRegistry {
   }
 
   listAvailable(): BackendModule[] {
-    return Array.from(this.modules.values()).sort(
-      (a, b) => a.displayOrder - b.displayOrder
-    );
+    // 2.1.26 — no ordering field on the identity: the pool is listed by `type`
+    // (deterministic). Sidebar order is the frontend's `sidebarTab.order` alone.
+    return Array.from(this.modules.values()).sort((a, b) => a.type.localeCompare(b.type));
   }
 
   getAvailable(type: string): BackendModule | null {

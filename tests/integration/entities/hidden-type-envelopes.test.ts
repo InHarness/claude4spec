@@ -424,7 +424,6 @@ describe('spec-operation — the presentation table\'s slot set', () => {
       payloadVersion: 1,
       label: 'Spec operation',
       labelPlural: 'Spec operations',
-      displayOrder: 950,
       pathPrefix: '/spec-operations',
       renderChip: Noop,
       renderCard: Noop,
