@@ -1,5 +1,5 @@
 {
-  "iteration": 25,
+  "iteration": 26,
   "units": [
     {
       "id": "u1-m26-ustawienia-bez-pluginow",
@@ -453,6 +453,6 @@
   ],
   "entityParts": [],
   "baselineGreen": true,
-  "systemVerified": false,
+  "systemVerified": true,
   "errors": 0
 }
