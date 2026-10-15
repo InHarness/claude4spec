@@ -60,7 +60,7 @@ export function RawJsxView({ node, updateAttributes }: NodeViewProps) {
     fontSize: '12.5px',
     color: 'var(--c-ink, #3a342c)',
     background: 'var(--c-accent-soft, rgba(160, 120, 70, 0.10))',
-    border: '1px solid var(--c-border, #d9cdb8)',
+    border: '1px solid var(--c-hair-strong)',
     borderRadius: 4,
     padding: isBlock ? '8px 10px' : '0 4px',
     width: isBlock ? '100%' : undefined,

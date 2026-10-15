@@ -243,6 +243,23 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
     }
   });
 
+  it('[section:m33load01] the 2.1.25 single name of the /ui stable list is recorded as unversioned changes — the new browser name added, the old one removed — with no bump and no stable-list delta', () => {
+    const changes = HOST_API_UNVERSIONED_CHANGES.filter((c) => c.release === '2.1.25' && c.slot.startsWith('@c4s/plugin-runtime/ui:'));
+    const added = changes.find((c) => c.slot.includes('UI_KIT_STABLE_COMPONENTS'));
+    const removed = changes.find((c) => c.slot.includes('STABLE_UI_KIT_COMPONENTS') && !c.slot.includes('UI_KIT_STABLE_COMPONENTS'));
+    expect(added?.kind).toBe('slot-added');
+    expect(removed?.kind).toBe('slot-removed');
+    // The composition of the list is unchanged: neither entry carries a promotion or demotion…
+    expect(added?.uiKitStable).toBeUndefined();
+    expect(removed?.uiKitStable).toBeUndefined();
+    // …so no release records it, and the version stays the baseline.
+    expect(HOST_API_VERSION).toBe('2.1.0');
+    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0']);
+    for (const release of HOST_API_RELEASES) {
+      expect(JSON.stringify(release)).not.toMatch(/STABLE_UI_KIT_COMPONENTS/);
+    }
+  });
+
   it('[section:m33load01] the composition of UI_KIT_STABLE_COMPONENTS is exactly what the registries record', () => {
     expect(sorted(recordedUiKitStableComponents())).toEqual(sorted(UI_KIT_STABLE_COMPONENTS));
   });

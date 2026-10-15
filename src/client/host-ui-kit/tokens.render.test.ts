@@ -5,8 +5,8 @@
  * `readHostTokens()` and the `useHostTokens()` hook that re-reads on a theme
  * mode switch — plus the bridge-only colouring of `GroupedEntityList`.
  *
- * The real `styles/theme.css` (L5) is loaded into the document, so every value
- * asserted here is what the host actually paints.
+ * The real host theme stylesheet (`styles/theme.css`) is loaded into the
+ * document, so every value asserted here is what the host actually paints.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -98,7 +98,7 @@ describe('token bridge — closed name list (M34/L12)', () => {
     expect(typeof pluginRuntimeUi.useHostTokens).toBe('function');
   });
 
-  it('[ac:ac-most-tokenow-c4s-plugin-runtime-ui-eksp] every bridge name is an L5 variable; colours per mode, typography and z-index mode-invariant', () => {
+  it('[ac:ac-most-tokenow-c4s-plugin-runtime-ui-eksp] every bridge name is a host theme variable; colours per mode, typography and z-index mode-invariant', () => {
     for (const name of HOST_TOKEN_NAMES) expect(declares(ROOT_BLOCKS, name), name).toBe(true);
     for (const name of COLOR) expect(declares(DARK_BLOCKS, name), name).toBe(true);
     for (const name of [...TYPOGRAPHY, ...LAYERING]) expect(declares(DARK_BLOCKS, name), name).toBe(false);
@@ -131,6 +131,74 @@ describe('token bridge — closed name list (M34/L12)', () => {
     expect(t['--z-toast']).toBe('1300');
     // Every name resolves to something.
     for (const name of HOST_TOKEN_NAMES) expect(t[name], name).not.toBe('');
+  });
+});
+
+/**
+ * The bridge name → `c4s-paper-terra` token it carries, with the entity's value
+ * in Base mode and under the `dark` mode override. Colours resolve per mode;
+ * typography and layering have one value (no dark entry).
+ *
+ * The correspondence itself is kept by hand (no linter compares the entity
+ * with the code — M34 `m34l12sc`); this table is the written-down result of
+ * that manual check, and the test holds the code to it.
+ */
+const PAPER_TERRA: ReadonlyArray<[HostTokenName, string, string, string?]> = [
+  ['--c-bg', 'color-bg ← paper-bg', '#faf8f4', '#1b1a17'],
+  ['--c-panel', 'color-panel ← paper-panel', '#f3efe7', '#242320'],
+  ['--c-card', 'color-card ← paper-card', '#fffdf8', '#2c2b27'],
+  ['--c-ink', 'color-ink ← ink-900', '#2a2722', '#ece7dc'],
+  ['--c-muted', 'color-muted ← ink-500', '#7a7368', '#9a9184'],
+  ['--c-subtle', 'color-subtle ← ink-300', '#a39b8e', '#6a6357'],
+  ['--c-hair', 'color-hair ← paper-hair', '#e8e2d5', '#383530'],
+  ['--c-hair-strong', 'color-hair-strong ← paper-hair-strong', '#d8d1c0', '#4a463e'],
+  ['--c-accent', 'color-accent ← terra', '#c45a3b', '#e07a5c'],
+  ['--c-accent-soft', 'color-accent-soft ← terra-soft', '#f5dfd3', '#4a2a1e'],
+  ['--c-accent-ink', 'color-accent-ink ← terra-ink', '#8a3a22', '#f3b49a'],
+  ['--c-yellow', 'color-warning ← yellow', '#f9e6a2', '#5a4820'],
+  ['--c-yellow-ink', 'color-warning-ink ← yellow-ink', '#7a5c00', '#e8cf7a'],
+  ['--c-green', 'color-success ← green', '#6e8a5f', '#8fa87f'],
+  ['--c-green-soft', 'color-success-soft ← green-soft', '#dfe7d6', '#2f3d28'],
+  ['--c-blue', 'color-info ← blue', '#5d7ea2', '#8aa5c9'],
+  ['--c-blue-soft', 'color-info-soft ← blue-soft', '#d8e2ef', '#2a3646'],
+  ['--c-purple', 'color-purple ← purple', '#8a6da3', '#b39cca'],
+  ['--c-purple-soft', 'color-purple-soft ← purple-soft', '#e3d8ec', '#3a2f46'],
+  ['--c-red', 'color-danger ← red', '#b6553c', '#d87a5f'],
+  ['--c-red-soft', 'color-danger-soft ← red-soft', '#efd4c9', '#4a2820'],
+  ['--font-heading', 'font-serif', "'Lora', Georgia, serif"],
+  ['--font-body', 'font-sans', "'Inter', system-ui, sans-serif"],
+  ['--font-mono', 'font-mono', "'JetBrains Mono', ui-monospace, monospace"],
+  ['--text-h1', 'text-h1', '34px'],
+  ['--text-h2', 'text-h2', '22px'],
+  ['--text-h3', 'text-h3', '15px'],
+  ['--text-body', 'text-body', '15.5px'],
+  ['--text-lede', 'text-lede', '17px'],
+  ['--text-code', 'text-code', '13px'],
+  ['--weight-heading', 'weight-semibold', '600'],
+  ['--weight-body', 'weight-regular', '400'],
+  ['--weight-lede', 'weight-regular', '400'],
+  ['--z-popover', 'z-popover', '1100'],
+  ['--z-toast', 'z-toast', '1300'],
+];
+
+/** Font stacks compare without quoting: the entity lists family names bare. */
+const normalise = (v: string) => v.replace(/["']/g, '').replace(/\s*,\s*/g, ', ').trim();
+
+describe('token bridge — identity with c4s-paper-terra (M34/L12)', () => {
+  it('[ac:ac-tokeny-wystawiane-przez-c4s-plugin-runt] every token exposed by @c4s/plugin-runtime/ui resolves to its c4s-paper-terra value, in Base and dark mode', async () => {
+    // The table covers exactly the exposed names.
+    expect(PAPER_TERRA.map(([n]) => n)).toEqual([...pluginRuntimeUi.HOST_TOKEN_NAMES]);
+
+    const base = pluginRuntimeUi.readHostTokens();
+    for (const [name, token, value] of PAPER_TERRA) {
+      expect(normalise(base[name]), `${name} (${token})`).toBe(normalise(value));
+    }
+
+    await setDark(true);
+    const dark = pluginRuntimeUi.readHostTokens();
+    for (const [name, token, value, darkValue] of PAPER_TERRA) {
+      expect(normalise(dark[name]), `${name} (${token}, dark)`).toBe(normalise(darkValue ?? value));
+    }
   });
 });
 

@@ -120,7 +120,14 @@ export const UI_KIT_CATALOG: UiKitComponentEntry[] = [
  * change to any of these requires a major `hostApiVersion` bump + a
  * `migrations[]` descriptor (see `host-api.ts`). `experimental` components are
  * deliberately excluded.
+ *
+ * 2.1.25 (M33 `m33rt001` / `m33load01`) — the browser leg of
+ * `@c4s/plugin-runtime/ui` exports this list under the SAME name as the backend
+ * leg (`server/plugin-runtime/ui.ts`, which serves the shared constant of
+ * `shared/plugin-host/ui-kit-surface.ts`). Here it is derived from the catalog;
+ * a test holds it equal to the backend value. The previous browser name is gone
+ * with no alias.
  */
-export const STABLE_UI_KIT_COMPONENTS: string[] = UI_KIT_CATALOG.filter(
+export const UI_KIT_STABLE_COMPONENTS: readonly string[] = UI_KIT_CATALOG.filter(
   (c) => c.stability === 'stable',
 ).map((c) => c.name);

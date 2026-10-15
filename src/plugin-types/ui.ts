@@ -537,13 +537,14 @@ export interface UiKitComponentEntry {
   l11Surfaces?: readonly string[];
 }
 export declare const UI_KIT_CATALOG: readonly UiKitComponentEntry[];
-export declare const STABLE_UI_KIT_COMPONENTS: readonly string[];
 /**
- * The backend leg of `@c4s/plugin-runtime/ui` (M33 `m33rt001`): React-free, it
- * carries this list of the `stable` component names and nothing else — the
- * subpath's runtime export (`dist/server/plugin-runtime/ui.js`) serves exactly
- * it. Typed for plugin backend code through `…/plugin-runtime/ambient` under the
- * `c4s-backend` condition; the browser leg carries `STABLE_UI_KIT_COMPONENTS`.
+ * The names of the `stable` catalog components — the versioned `hostApiVersion`
+ * part of the kit. Declared ONCE for BOTH legs of `@c4s/plugin-runtime/ui`
+ * (M33 `m33rt001`, 2.1.25): the browser leg derives it from the catalog, the
+ * React-free backend leg (`dist/server/plugin-runtime/ui.js`) carries it and
+ * nothing else, and the two are equal. `…/plugin-runtime/ambient` re-exports it
+ * as a value on both legs; `UI_KIT_CATALOG` and the components only on the
+ * browser leg.
  */
 export declare const UI_KIT_STABLE_COMPONENTS: readonly string[];
 

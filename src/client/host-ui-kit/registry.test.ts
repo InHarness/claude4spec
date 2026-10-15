@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { UI_KIT_CATALOG, STABLE_UI_KIT_COMPONENTS } from './registry.js';
+import { UI_KIT_CATALOG, UI_KIT_STABLE_COMPONENTS as BROWSER_STABLE } from './registry.js';
 import { UI_KIT_STABLE_COMPONENTS } from '../../shared/plugin-host/ui-kit-surface.js';
 import { HOST_API_VERSION } from '../../shared/plugin-host/manifest.js';
 // The backend half of `@c4s/plugin-runtime/ui` (what a plugin backend links against).
@@ -81,23 +81,25 @@ describe('Host UI Kit catalog registry (M34/L12)', () => {
     const block = UI_KIT_CATALOG.find((c) => c.name === 'EntityVersionHistoryView');
     expect(block?.stability).toBe('experimental');
     // Adding it to the catalog must NOT pull it into `hostApiVersion`.
-    expect(STABLE_UI_KIT_COMPONENTS).not.toContain('EntityVersionHistoryView');
+    expect(BROWSER_STABLE).not.toContain('EntityVersionHistoryView');
     expect(HOST_API_VERSION).toBe('2.1.0');
   });
 
-  it('[section:m34l12sc] STABLE_UI_KIT_COMPONENTS is derived from the registry and equals the backend /ui leg constant UI_KIT_STABLE_COMPONENTS', () => {
+  it('[section:m34l12sc] the browser /ui leg derives UI_KIT_STABLE_COMPONENTS from the registry, equal to the backend /ui leg constant of the same name', () => {
     // Derived from the registry: exactly the `stable` entries, in catalog order.
-    expect(STABLE_UI_KIT_COMPONENTS).toEqual(
+    expect(BROWSER_STABLE).toEqual(
       UI_KIT_CATALOG.filter((c) => c.stability === 'stable').map((c) => c.name),
     );
-    // The browser `/ui` surface exports that same derived list.
-    expect(uiBrowserSurface.STABLE_UI_KIT_COMPONENTS).toBe(STABLE_UI_KIT_COMPONENTS);
+    // The browser `/ui` surface exports that same derived list, under the one
+    // name both legs share (2.1.25, m33rt001); the old browser name is gone.
+    expect(uiBrowserSurface.UI_KIT_STABLE_COMPONENTS).toBe(BROWSER_STABLE);
+    expect(uiBrowserSurface).not.toHaveProperty('STABLE_UI_KIT_COMPONENTS');
     // Equal to the constant the backend `/ui` leg carries — same names, no
     // duplicates, nothing on one side missing from the other.
     const backend = [...uiBackendLeg.UI_KIT_STABLE_COMPONENTS];
     expect(new Set(backend).size).toBe(backend.length);
-    expect(new Set(STABLE_UI_KIT_COMPONENTS).size).toBe(STABLE_UI_KIT_COMPONENTS.length);
-    expect([...STABLE_UI_KIT_COMPONENTS].sort()).toEqual(backend.sort());
+    expect(new Set(BROWSER_STABLE).size).toBe(BROWSER_STABLE.length);
+    expect([...BROWSER_STABLE].sort()).toEqual(backend.sort());
     // The backend leg serves the shared versioned list itself, not a copy.
     expect(uiBackendLeg.UI_KIT_STABLE_COMPONENTS).toBe(UI_KIT_STABLE_COMPONENTS);
   });

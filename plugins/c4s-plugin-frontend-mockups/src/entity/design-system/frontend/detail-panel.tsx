@@ -372,7 +372,7 @@ export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }:
         {warnings.length > 0 && (
           <div
             className="mt-4 rounded-md p-3"
-            style={{ background: 'var(--c-yellow-soft, rgba(196,162,79,0.12))', border: '1px dashed var(--c-yellow, #c4a24f)' }}
+            style={{ background: 'var(--c-panel)', border: '1px dashed var(--c-yellow, #c4a24f)' }}
           >
             <div
               className="flex items-center gap-1.5 mb-1 text-[11px] uppercase font-mono tracking-wider"

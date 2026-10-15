@@ -159,10 +159,10 @@ describe('…/plugin-runtime/ambient — one declaration per leg', () => {
       BROWSER_AMBIENT,
       [
         "import { registerFrontendModule, queryClient, useEntityTags, HOST_API_VERSION, type FrontendModule, type EntityChipProps } from '@c4s/plugin-runtime';",
-        "import { EntityListHeader, STABLE_UI_KIT_COMPONENTS, type EntityListHeaderProps } from '@c4s/plugin-runtime/ui';",
+        "import { EntityListHeader, UI_KIT_STABLE_COMPONENTS, type EntityListHeaderProps } from '@c4s/plugin-runtime/ui';",
         'export function Chip(props: EntityChipProps): null { void props; return null; }',
         'export function register(module: FrontendModule): void { registerFrontendModule(module); }',
-        'export const used = [queryClient, useEntityTags, HOST_API_VERSION, EntityListHeader, STABLE_UI_KIT_COMPONENTS];',
+        'export const used = [queryClient, useEntityTags, HOST_API_VERSION, EntityListHeader, UI_KIT_STABLE_COMPONENTS];',
         'export type Header = EntityListHeaderProps;',
       ].join('\n'),
     );
@@ -190,15 +190,16 @@ describe('…/plugin-runtime/ambient — one declaration per leg', () => {
 
   it('[ac:ac-import-wartosci-tylko-backendowej-z-c] importing a backend-only value of @c4s/plugin-runtime in plugin frontend code fails the plugin\'s type compilation', () => {
     expect(BACKEND_ONLY.length).toBeGreaterThan(0);
+    // 2.1.25 — `UI_KIT_STABLE_COMPONENTS` is no longer backend-only on `/ui`:
+    // both legs carry it under that one name, so it is not in this list.
     const source = [
       `import { ${BACKEND_ONLY.join(', ')} } from '@c4s/plugin-runtime';`,
-      "import { UI_KIT_STABLE_COMPONENTS } from '@c4s/plugin-runtime/ui';",
-      `export const used = [${BACKEND_ONLY.join(', ')}, UI_KIT_STABLE_COMPONENTS];`,
+      `export const used = [${BACKEND_ONLY.join(', ')}];`,
     ].join('\n');
 
     // Frontend code (browser leg): every backend-only value is a compile error…
     const frontend = compileWithLeg(BROWSER_AMBIENT, source);
-    for (const name of [...BACKEND_ONLY, 'UI_KIT_STABLE_COMPONENTS']) {
+    for (const name of BACKEND_ONLY) {
       expect(
         frontend.some((e) => e.includes(`'${name}'`)),
         `${name} — ${frontend.join(' | ')}`,
@@ -231,6 +232,10 @@ describe('[section:m33l11sc] the published type surface — subpaths and legs', 
     expect(sorted(backend['@c4s/plugin-runtime']!)).toEqual(sorted(pluginRuntimeNamesOnLeg('backend')));
     expect(sorted(browser['@c4s/plugin-runtime/ui']!)).toEqual(sorted(PLUGIN_RUNTIME_UI_EXPORT_NAMES));
     expect(backend['@c4s/plugin-runtime/ui']).toEqual(['UI_KIT_STABLE_COMPONENTS']);
+    // 2.1.25 (m33rt001) — one name for the `stable` list on both `/ui` legs;
+    // the previous browser name is gone with no alias.
+    expect(browser['@c4s/plugin-runtime/ui']).toContain('UI_KIT_STABLE_COMPONENTS');
+    expect(browser['@c4s/plugin-runtime/ui']).not.toContain('STABLE_UI_KIT_COMPONENTS');
     for (const file of [BROWSER_AMBIENT, BACKEND_AMBIENT]) {
       const text = fs.readFileSync(file, 'utf8');
       expect(text.match(/export type \* from '@inharness-ai\/claude4spec\/plugin-runtime';/g)?.length, file).toBe(1);
@@ -248,6 +253,26 @@ describe('[section:m33l11sc] the published type surface — subpaths and legs', 
     const errors = compileWithLeg(BACKEND_AMBIENT, source);
     for (const name of BROWSER_ONLY) expect(errors.some((e) => e.includes(`'${name}'`)), name).toBe(true);
     expect(compileWithLeg(BROWSER_AMBIENT, source)).toEqual([]);
+  }, 120_000);
+});
+
+describe('[section:m33rt001] one name for the stable list on both /ui legs', () => {
+  it('[section:m33rt001] UI_KIT_STABLE_COMPONENTS compiles from @c4s/plugin-runtime/ui on the browser and the backend leg; the old browser name STABLE_UI_KIT_COMPONENTS exists on neither', () => {
+    const uses = [
+      "import { UI_KIT_STABLE_COMPONENTS } from '@c4s/plugin-runtime/ui';",
+      'export const stable: readonly string[] = UI_KIT_STABLE_COMPONENTS;',
+    ].join('\n');
+    expect(compileWithLeg(BROWSER_AMBIENT, uses)).toEqual([]);
+    expect(compileWithLeg(BACKEND_AMBIENT, uses)).toEqual([]);
+
+    const old = [
+      "import { STABLE_UI_KIT_COMPONENTS } from '@c4s/plugin-runtime/ui';",
+      'export const stable = STABLE_UI_KIT_COMPONENTS;',
+    ].join('\n');
+    for (const file of [BROWSER_AMBIENT, BACKEND_AMBIENT]) {
+      const errors = compileWithLeg(file, old);
+      expect(errors.some((e) => e.includes("'STABLE_UI_KIT_COMPONENTS'")), `${path.basename(file)} — ${errors.join(' | ')}`).toBe(true);
+    }
   }, 120_000);
 });
 

@@ -1,5 +1,5 @@
 {
-  "iteration": 2,
+  "iteration": 6,
   "units": [
     {
       "id": "u1-version-release-id",
@@ -177,13 +177,46 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u2-plugin-runtime-ui-surface/p1-l2-l11",
+          "layers": [
+            "L2",
+            "L11"
+          ],
+          "slugs": [
+            "ac-zbior-nazw-wartosci-eksportowanych-pr"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        },
+        {
+          "name": "u2-plugin-runtime-ui-surface/p2-l12-l12",
+          "layers": [
+            "L12"
+          ],
+          "slugs": [
+            "ac-host-token-names-unia-hosttokenname-i",
+            "ac-kod-hosta-i-kopert-nie-odwoluje-sie-d",
+            "ac-most-tokenow-c4s-plugin-runtime-ui-eksp",
+            "ac-tokeny-wystawiane-przez-c4s-plugin-runt"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "ef61542691293c83f1daf0b32acf84776d1a05aa",
+      "baseCommit": "ef61542691293c83f1daf0b32acf84776d1a05aa",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },

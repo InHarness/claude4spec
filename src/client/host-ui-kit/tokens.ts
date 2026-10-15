@@ -19,13 +19,20 @@
  * (defined once in `:root`, not duplicated into `.dark`) — they don't change
  * with the light/dark toggle, only color does.
  *
- * DELIBERATE DEBT — three-way identity. The token SETS in the entity
- * `c4s-paper-terra` ↔ L5 CSS custom properties (`theme.css`) ↔ this bridge are
- * kept identical BY HAND. There is no linter enforcing equality; the
- * corresponding acceptance criterion is verified manually.
+ * Closed dictionary. The names below are the only host tokens: host and
+ * envelope code use no `--c-*` variable outside them, not even as a
+ * `var(--x, …)` fallback (`token-dictionary.test.ts` scans for it).
+ *
+ * DELIBERATE DEBT — entity ↔ code. The bridge names have four
+ * representations: the entity `c4s-paper-terra`, the host theme stylesheet
+ * (`styles/theme.css`), this constant and the published `HostTokenName` union
+ * (`plugin-types/ui.ts`). The three in code hold one name set under test
+ * (`token-dictionary.test.ts`). Only the entity ↔ code pair is kept by hand:
+ * no linter compares the entity with the code, so that criterion is verified
+ * manually.
  */
 
-/** The resolved presentation tokens the bridge exposes (the L5 `--c-*`/`--text-*`/`--font-*`/`--weight-*`/`--z-*` set). */
+/** The resolved presentation tokens the bridge exposes — the closed dictionary of host tokens (`--c-*`/`--text-*`/`--font-*`/`--weight-*`/`--z-*`). */
 export const HOST_TOKEN_NAMES = [
   '--c-bg',
   '--c-panel',
