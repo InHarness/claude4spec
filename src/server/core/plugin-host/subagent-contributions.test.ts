@@ -32,7 +32,6 @@ function overlayWith(subagents: PluginSubagentContribution[]): ProjectPluginOver
   return {
     listLocal: () => [],
     origin: () => '',
-    listSettings: () => [],
     listCommands: () => [],
     listSubagents: () => subagents,
   };
@@ -99,7 +98,7 @@ describe('contributes.subagents — base pool ∪ project-local overlay', () => 
     expect(host.listSubagents().map((s) => s.name)).toEqual(['local-only']);
   });
 
-  it('does NOT shadow by plugin name the way listSettings does', () => {
+  it('does NOT shadow by plugin name — base and overlay both reach the resolver', () => {
     // Two layers, same plugin name, different subagents: both must reach the resolver so
     // it can apply first-wins itself. Collapsing them here would hide the collision.
     const registry = new PluginRegistryImpl();

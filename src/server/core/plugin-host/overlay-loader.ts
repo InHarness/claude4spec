@@ -42,7 +42,6 @@ import type { BackendModule, ProjectPluginOverlay, UnloadedSkillSlug } from './t
 import type {
   PluginCommandContribution,
   PluginSubagentContribution,
-  PluginSettingsSection,
   PluginSkillContribution,
 } from '../../../shared/plugin-host/manifest.js';
 
@@ -160,8 +159,7 @@ export async function loadProjectOverlay(
   const skills: PluginSkillContribution[] = [];
   const unloadedSkills: UnloadedSkillSlug[] = [];
   // M33: non-entity capabilities of trusted project-local plugins. An
-  // entity-less plugin (commands/settings only) still produces these.
-  const settingsSections: PluginSettingsSection[] = [];
+  // entity-less plugin (commands/subagents only) still produces these.
   const commands: PluginCommandContribution[] = [];
   const subagents: PluginSubagentContribution[] = [];
   const teardowns: Array<() => void> = [];
@@ -277,7 +275,7 @@ export async function loadProjectOverlay(
 
     // 0.2.15 — the `contributes.referenceTypes` registration that used to sit
     // here is gone with the slot. A project-local plugin contributes entities,
-    // writing styles, settings and commands; XML reference tags are no longer
+    // writing styles, skills, commands and subagents; XML reference tags are no longer
     // among them.
     for (const m of lowered) {
       modules.set(m.type, m);
@@ -292,13 +290,6 @@ export async function loadProjectOverlay(
       });
     }
     // M33: capture non-entity capabilities + teardown of this trusted plugin.
-    if ((manifest.contributes?.settings ?? []).length > 0) {
-      settingsSections.push({
-        name: manifest.name,
-        version: manifest.version,
-        fields: manifest.contributes!.settings!,
-      });
-    }
     commands.push(...(manifest.contributes?.commands ?? []));
     subagents.push(...(manifest.contributes?.subagents ?? []));
     // 0.2.29 — the slot is OPTIONAL and its absence is the normal case, so no
@@ -336,14 +327,13 @@ export async function loadProjectOverlay(
 
   // No capabilities at all ⇒ no overlay host layer, but a plugin may still have
   // contributed writing styles — return those so the caller can push them.
-  // M33: an entity-less plugin with only settings/commands/subagents DOES
+  // M33: an entity-less plugin with only commands/subagents DOES
   // produce an overlay so the host surfaces those capabilities (axis B).
   // `subagents` belongs in this test for the same reason `commands` does: a
   // project-local package whose ONLY contribution is a subagent would otherwise
   // yield no overlay and be dropped in silence.
   if (
     modules.size === 0 &&
-    settingsSections.length === 0 &&
     commands.length === 0 &&
     subagents.length === 0
   ) {
@@ -353,7 +343,6 @@ export async function loadProjectOverlay(
   const overlay: ProjectPluginOverlay = {
     listLocal: () => Array.from(modules.values()),
     origin: (type) => originByType.get(type) ?? '',
-    listSettings: () => settingsSections,
     listCommands: () => commands,
     listSubagents: () => subagents,
   };

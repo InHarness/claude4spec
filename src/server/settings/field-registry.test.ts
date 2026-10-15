@@ -7,7 +7,6 @@ import request from 'supertest';
 import { configPath } from '../config.js';
 import { configRouter } from '../routes/config.js';
 import type { SkillRegistry } from '../services/skill-registry.js';
-import type { PluginSettingsSection } from '../../shared/plugin-host/manifest.js';
 import { FieldRegistrationError, FieldRegistry, checkFieldType, type FieldDeclaration } from './field-registry.js';
 import { STATIC_FIELD_REGISTRY, buildFieldRegistry } from './registry.js';
 
@@ -37,12 +36,27 @@ describe('field registry — one declarant per key (0.2.113)', () => {
     expect(() => buildFieldRegistry()).not.toThrow();
   });
 
-  it('a plugin field cannot shadow a core key: plugin leaves live under plugins.<name>', () => {
-    const sections: PluginSettingsSection[] = [
-      { name: '@c4s/x.y', version: '1', fields: [{ key: 'a', label: 'A', control: 'toggle', kind: 'hot-reload', default: false }] },
-    ];
-    const registry = buildFieldRegistry({ pluginSections: sections });
-    expect(registry.get('plugins.@c4s/x.y.a')?.owner).toBe('@c4s/x.y');
+  it('[section:vm9rajvn] the registry is the sum of the modules\' field tables only — no plugin-contributed field, no reserved plugins.<package> namespace', () => {
+    const registry = buildFieldRegistry({ knownEntityTypes: () => ['endpoint'] });
+    const keys = registry.list().map((d) => d.key);
+    expect(keys.length).toBeGreaterThan(0);
+    expect(keys.filter((k) => k === 'plugins' || k.startsWith('plugins.'))).toEqual([]);
+    expect(registry.list().filter((d) => (d.path ?? d.key.split('.'))[0] === 'plugins')).toEqual([]);
+    // Every declarant is a module of the layer; the same set the static registry holds.
+    expect(new Set(keys)).toEqual(new Set(STATIC_FIELD_REGISTRY.list().map((d) => d.key)));
+    // One declarant per key: a duplicate between two modules is a registration error.
+    const dup = registry.list()[0]!;
+    expect(() => buildFieldRegistry().register({ ...dup, owner: 'another-module' })).toThrow(FieldRegistrationError);
+  });
+
+  it('[section:alfjoj17] the registry is assembled from the declarations on every call — no shared instance, and nothing taken from the plugin pool', () => {
+    const a = buildFieldRegistry();
+    const b = buildFieldRegistry({ knownEntityTypes: () => ['endpoint'] });
+    expect(a).not.toBe(b);
+    expect(a).not.toBe(STATIC_FIELD_REGISTRY);
+    expect(a.list().map((d) => d.key)).toEqual(b.list().map((d) => d.key));
+    expect(a.list().map((d) => d.key)).toEqual(STATIC_FIELD_REGISTRY.list().map((d) => d.key));
+    expect(a.list().some((d) => d.key.startsWith('plugins.'))).toBe(false);
   });
 
   it('derives the rebuild and resume-lock sets from the declarations', () => {
@@ -72,13 +86,6 @@ describe('field registry — one declarant per key (0.2.113)', () => {
 
 describe('PATCH /config on the field registry (0.2.113)', () => {
   let dir: string;
-  const sections: PluginSettingsSection[] = [
-    {
-      name: '@c4s/plugin-foo',
-      version: '0.1.0',
-      fields: [{ key: 'enableBadge', label: 'Enable badge', control: 'toggle', kind: 'hot-reload', default: true }],
-    },
-  ];
 
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-cfg-registry-'));
@@ -99,7 +106,6 @@ describe('PATCH /config on the field registry (0.2.113)', () => {
         configRouter({
           cwd: dir,
           skillRegistry: {} as unknown as SkillRegistry,
-          pluginSettingsSections: () => sections,
           ...extra,
         }),
       );
@@ -176,23 +182,15 @@ describe('PATCH /config on the field registry (0.2.113)', () => {
     expect(warn.mock.calls.flat().join('\n')).toMatch(/unknown type/);
   });
 
-  it('a plugin field is type-checked against its declaration', async () => {
+  it('[section:vm9rajvn] a `plugins` body is an unknown key now — dropped silently (even in a wrong shape), nothing written under plugins', async () => {
     const res = await request(app())
       .patch('/config')
-      .send({ plugins: { '@c4s/plugin-foo': { enableBadge: 'yes' } } });
-    expect(res.status).toBe(400);
-    expect(res.body.error.details.field).toBe('plugins.@c4s/plugin-foo.enableBadge');
-  });
-
-  it('a key no plugin declares is dropped, and existing plugin values stay in the file', async () => {
-    fs.writeFileSync(
-      configPath(dir),
-      JSON.stringify({ $schemaVersion: 4, name: 'test', plugins: { '@c4s/gone': { keep: 1 } } }),
-    );
-    await request(app())
-      .patch('/config')
-      .send({ plugins: { '@c4s/gone': { keep: 2 }, '@c4s/plugin-foo': { undeclared: true, enableBadge: false } } })
-      .expect(200);
-    expect(onDisk().plugins).toEqual({ '@c4s/gone': { keep: 1 }, '@c4s/plugin-foo': { enableBadge: false } });
+      .send({ name: 'Renamed', plugins: { '@c4s/plugin-foo': { enableBadge: 'yes' } } });
+    expect(res.status).toBe(200);
+    expect(onDisk().name).toBe('Renamed');
+    expect(onDisk()).not.toHaveProperty('plugins');
+    const odd = await request(app()).patch('/config').send({ plugins: 42 });
+    expect(odd.status).toBe(200);
+    expect(onDisk()).not.toHaveProperty('plugins');
   });
 });

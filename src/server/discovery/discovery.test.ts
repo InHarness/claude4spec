@@ -80,7 +80,6 @@ function host(active: BackendModule[], available: BackendModule[] = active): Pro
   return {
     listAvailable: () => available,
     listEntities: () => active,
-    listSettings: () => [],
     listCommands: () => [],
     listSubagents: () => [],
     getEntity: (t: string) => (activeTypes.has(t) ? (byType.get(t) ?? null) : null),

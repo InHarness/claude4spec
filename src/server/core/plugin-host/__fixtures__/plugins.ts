@@ -1,7 +1,7 @@
 /**
  * M33 — reusable plugin manifest fixtures for tests and the local smoke
- * test. `plugin-foo` is an entity-less plugin exercising `contributes.settings`
- * + `contributes.commands` + the optional `onUnregister` (optional since 0.2.29 —
+ * test. `plugin-foo` is an entity-less plugin exercising `contributes.commands`
+ * + `contributes.subagents` + the optional `onUnregister` (optional since 0.2.29 —
  * declared here only so tests can spy on it, NOT because a plugin needs it);
  * `plugin-legacy`
  * targets a different major Host API (`^1.0.0`) so it is reported `incompatible`
@@ -13,8 +13,9 @@
 import type { PluginManifest } from '../../../../shared/plugin-host/manifest.js';
 
 /**
- * Entity-less plugin with settings + commands. `onUnregister` is overridable so a
- * test can spy on teardown — a real declarative package omits the slot entirely.
+ * Entity-less plugin with commands + a subagent (no `settings` slot since
+ * 2.1.21). `onUnregister` is overridable so a test can spy on teardown — a real
+ * declarative package omits the slot entirely.
  */
 export function fooManifest(onUnregister: () => void = () => {}): PluginManifest {
   return {
@@ -23,29 +24,20 @@ export function fooManifest(onUnregister: () => void = () => {}): PluginManifest
     hostApiVersion: '^2.0.0',
     onUnregister,
     contributes: {
-      settings: [
-        {
-          key: 'enableBadge',
-          label: 'Enable badge',
-          control: 'toggle',
-          kind: 'hot-reload',
-          default: true,
-          help: 'Show the foo badge in the sidebar.',
-        },
-        {
-          key: 'apiBase',
-          label: 'API base URL',
-          control: 'text',
-          kind: 'executive',
-          default: 'https://example.test',
-        },
-      ],
       commands: [
         {
           name: 'foo-insert',
           trigger: 'foo',
           label: 'Insert Foo',
           popoverKind: 'foo',
+        },
+      ],
+      subagents: [
+        {
+          name: 'foo-explore',
+          description: 'Explores foo.',
+          promptBody: 'You explore foo.',
+          tools: ['Read'],
         },
       ],
     },

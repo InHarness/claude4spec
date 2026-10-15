@@ -1309,9 +1309,6 @@ async function buildInner(
        * further down and before it, so the two never contend for the path.
        */
       projectionStatus,
-      // 0.2.113: the plugin declarants of the field registry — each field becomes a
-      // typed `plugins.<name>.<key>` leaf; `executive` ones rebuild the context.
-      pluginSettingsSections: () => pluginHost.listSettings(),
       knownEntityTypes: () => pluginHost.listAvailable().map((m) => m.type),
     }),
   );

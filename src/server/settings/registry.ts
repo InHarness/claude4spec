@@ -6,19 +6,18 @@ import { AGENT_SETTINGS_FIELDS } from '../services/agent-settings-fields.js';
 import { GIT_COMMIT_TARGET_RULE, GIT_SETTINGS_FIELDS } from '../services/git-settings-fields.js';
 import { REMOTE_SETTINGS_FIELDS } from '../services/remote-settings-fields.js';
 import { CONSISTENCY_SETTINGS_FIELDS } from '../discovery/ops/consistency-settings-fields.js';
-import { entitySettingsFields, pluginSettingsFields } from '../core/plugin-host/entity-settings-fields.js';
-import type { PluginSettingsSection } from '../../shared/plugin-host/manifest.js';
+import { entitySettingsFields } from '../core/plugin-host/entity-settings-fields.js';
 
 export interface BuildFieldRegistryInput {
-  /** `host.listSettings()` — the plugin declarants. Absent ⇒ no plugin fields. */
-  pluginSections?: PluginSettingsSection[];
   /** Entity types the host knows, for the `entities` unknown-slug warning. */
   knownEntityTypes?: () => string[];
 }
 
 /**
- * 0.2.113 — `config.json` as the SUM of what the modules declare. Built per request:
- * the plugin half follows the active plugin set, which changes without a restart.
+ * 0.2.113 — `config.json` as the SUM of what the modules declare. 2.1.21 (M26
+ * `vm9rajvn`): the sum of the layer's field tables ONLY — plugins contribute no
+ * fields and have no reserved `plugins.<package>` namespace. Built per request
+ * (M26 `alfjoj17`): nothing outlives the call.
  */
 export function buildFieldRegistry(input: BuildFieldRegistryInput = {}): FieldRegistry {
   return new FieldRegistry()
@@ -31,12 +30,11 @@ export function buildFieldRegistry(input: BuildFieldRegistryInput = {}): FieldRe
       ...REMOTE_SETTINGS_FIELDS,
       ...CONSISTENCY_SETTINGS_FIELDS,
       ...entitySettingsFields(input.knownEntityTypes),
-      ...pluginSettingsFields(input.pluginSections ?? []),
     )
     .registerCrossFieldRule(ROOTS_OVERLAP_RULE)
     .registerCrossFieldRule(GIT_COMMIT_TARGET_RULE)
     .registerCrossFieldRule(SKILL_EXPOSURE_RULE);
 }
 
-/** The static half (no plugins) — what the resume-config snapshot locks. */
+/** The registry without the known-entity-types probe — what the resume-config snapshot locks. */
 export const STATIC_FIELD_REGISTRY = buildFieldRegistry();

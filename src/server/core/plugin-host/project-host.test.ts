@@ -36,7 +36,6 @@ function overlayOf(modules: BackendModule[]): ProjectPluginOverlay {
   return {
     listLocal: () => modules,
     origin: (type) => `.claude4spec/plugins/${type}-pkg`,
-    listSettings: () => [],
     listCommands: () => [],
     listSubagents: () => [],
   };
@@ -178,6 +177,36 @@ describe('consolidate — overlay', () => {
     ]);
     // Both packages stay loaded — shadowing is a report, not a rejection.
     expect((res.body.packages as Array<{ status: string }>).map((p) => p.status)).toEqual(['loaded', 'loaded']);
+  });
+
+  it('[section:z7l89jhf] the host exposes no plugin settings list — no listSettings() and no /_meta/plugin-settings route', async () => {
+    const registry = new PluginRegistryImpl();
+    registry.registerPlugin({
+      name: '@acme/c4s-plugin-cmds',
+      version: '1.0.0',
+      hostApiVersion: '^2.0.0',
+      contributes: { commands: [{ name: 'x-insert', trigger: 'x', label: 'Insert X', popoverKind: 'x' }] },
+    });
+    const host = registry.consolidate({});
+    expect('listSettings' in host).toBe(false);
+
+    const app = express().use(
+      pluginHostRouter({
+        host,
+        registry: {} as never,
+        workspace: {} as never,
+        projectId: 'p1',
+        basePackages: [],
+        overlayRecords: [],
+        localPluginsPresent: false,
+        trust: undefined,
+      }),
+    );
+    expect((await request(app).get('/_meta/plugin-settings')).status).toBe(404);
+    // The sibling channel that stays is still served.
+    const commands = await request(app).get('/_meta/plugin-commands');
+    expect(commands.status).toBe(200);
+    expect((commands.body.commands as Array<{ trigger: string }>).map((c) => c.trigger)).toEqual(['x']);
   });
 });
 

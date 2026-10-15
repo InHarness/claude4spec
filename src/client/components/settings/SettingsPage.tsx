@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
 import { useConfig } from '../../hooks/useConfig.js';
 import { SettingsCardFrame } from './SettingsCardFrame.js';
 import { assembleSettings, type AssembledCard, type SettingsContribution } from './registry.js';
@@ -13,11 +13,15 @@ import { EXTERNAL_INTEGRATIONS_SETTINGS } from '../external-integrations/Externa
 import { WORKSPACE_SETTINGS } from '../workspace/DangerZoneElement.js';
 import { AGENT_SETTINGS } from '../../chat/settings/agentSettings.js';
 import { SPEC_SKILLS_SETTINGS } from '../spec-skills/specSkillsSettings.js';
-import { PLUGIN_HOST_SETTINGS, usePluginSettingsContribution } from '../../core/plugin-host/pluginSettings.js';
+import { PLUGIN_HOST_SETTINGS } from '../../core/plugin-host/pluginSettings.js';
 
 /**
  * 0.2.113 — every module that declares something on `/settings`. The order here
  * is irrelevant: the page orders by group → card weight → element weight.
+ *
+ * 2.1.21 (M26 `7f76eszm`): this list IS the card and element registry — the
+ * layer's `Karty`/`Elementy` tables plus the implementor's own cards (About,
+ * Index status). No cards are generated for plugins.
  */
 export const STATIC_SETTINGS_CONTRIBUTIONS: SettingsContribution[] = [
   REMOTE_ACCOUNT_SETTINGS,
@@ -34,49 +38,19 @@ export const STATIC_SETTINGS_CONTRIBUTIONS: SettingsContribution[] = [
   WORKSPACE_SETTINGS,
 ];
 
-// Assembled once at module load: a collision among the static declarants is a
+// Assembled once at module load: a collision among the declarants is a
 // registration error, and it fails loudly here rather than on some later render.
-const STATIC_ANCHORS = new Set(assembleSettings(STATIC_SETTINGS_CONTRIBUTIONS).map((c) => c.decl.anchor));
+const CARDS: AssembledCard[] = assembleSettings(STATIC_SETTINGS_CONTRIBUTIONS);
 
 /**
  * M26 → 0.2.113 — the full-page Settings surface at `/settings`, ASSEMBLED from
  * the declared cards and elements. One generic hash parameter, `#<card anchor>`,
- * smooth-scrolls to that card (plugin cards answer to `#plugin-<name>`).
+ * smooth-scrolls to that card.
  */
 export function SettingsPage() {
   const { data: config } = useConfig();
-  const pluginContribution = usePluginSettingsContribution();
 
-  const cards: AssembledCard[] = useMemo(() => {
-    // A plugin card whose anchor a core card already holds cannot be registered;
-    // it is left out rather than taking the page down with it.
-    // The same goes for two plugins whose names kebab to one anchor, and for an
-    // element a manifest declares twice: plugin input must never throw here.
-    const accepted = new Set<string>();
-    const pluginCards = (pluginContribution.cards ?? []).filter((c) => {
-      if (!STATIC_ANCHORS.has(c.anchor) && !accepted.has(c.anchor)) {
-        accepted.add(c.anchor);
-        return true;
-      }
-      console.warn(`[settings] plugin card "#${c.anchor}" collides with another card and is not shown`);
-      return false;
-    });
-    const seenElements = new Set<string>();
-    // Only onto a plugin card that was accepted — never onto a core card that
-    // happens to hold the same anchor.
-    const pluginElements = (pluginContribution.elements ?? []).filter((e) => {
-      const id = `${e.card}\u0000${e.id}`;
-      if (!accepted.has(e.card) || seenElements.has(id)) return false;
-      seenElements.add(id);
-      return true;
-    });
-    return assembleSettings([
-      ...STATIC_SETTINGS_CONTRIBUTIONS,
-      { cards: pluginCards, elements: pluginElements },
-    ]);
-  }, [pluginContribution]);
-
-  const visibleCards = config ? cards.filter((c) => !c.decl.visible || c.decl.visible(config)) : [];
+  const visibleCards = config ? CARDS.filter((c) => !c.decl.visible || c.decl.visible(config)) : [];
 
   useEffect(() => {
     const scrollToHash = () => {

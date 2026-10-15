@@ -30,7 +30,7 @@
  *
  * `/_meta/*` is shared with `pluginHostRouter`, which owns the activation and
  * plugin diagnostics under the same prefix (`/_meta/entities`, `/_meta/plugins`,
- * `/_meta/plugin-settings`, `/_meta/plugin-commands`). The paths are disjoint, so
+ * `/_meta/plugin-commands`). The paths are disjoint, so
  * both routers mount happily. Worth keeping straight: `/_meta/entities` reports
  * the ACTIVATION partition (active/inactive/unknown), while `/_meta/types` below
  * introspects SCHEMAS. Neither is a substitute for the other.

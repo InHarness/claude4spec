@@ -39,7 +39,6 @@ import type {
   PluginCommandContribution,
   PluginSubagentContribution,
   PluginManifest,
-  PluginSettingsSection,
   PluginSkillContribution,
 } from '../../../shared/plugin-host/manifest.js';
 import type {
@@ -451,12 +450,6 @@ export interface ProjectPluginOverlay {
   listLocal(): BackendModule[];
   /** Source path under `<cwd>/.claude4spec/plugins/` for the given type. */
   origin(type: string): string;
-  /**
-   * M33 — Settings sections contributed by trusted project-local
-   * plugins (one per plugin with `contributes.settings`). Trust is implicit:
-   * the overlay is built only on the trusted path.
-   */
-  listSettings(): PluginSettingsSection[];
   /** M33 — declarative editor commands from trusted project-local plugins. */
   listCommands(): PluginCommandContribution[];
   /** M33/M05 — subagent contributions from trusted project-local plugins. */
@@ -465,17 +458,16 @@ export interface ProjectPluginOverlay {
 
 /**
  * M33 — a registered base-layer plugin, retained by the registry so the
- * host can surface its non-entity capabilities (settings/commands) and the
+ * host can surface its non-entity capabilities (commands/subagents) and the
  * hot-reload pipeline can drop the whole record on re-registration. Retaining
- * the record IS the fan-out: skills, the settings descriptor and the commands
- * are all read off it by their consumers, so deleting it unwires them.
+ * the record IS the fan-out: skills, the commands and the subagents are all
+ * read off it by their consumers, so deleting it unwires them.
  */
 export interface RegisteredPluginRecord {
   name: string;
   version: string;
   /** Entity types this plugin contributed (for unregister + diagnostics). */
   contributedTypes: string[];
-  settings: PluginSettingsSection['fields'];
   commands: PluginCommandContribution[];
   /** M33/M05 — raw subagent contributions; policy is applied at turn build. */
   subagents: PluginSubagentContribution[];
@@ -542,8 +534,8 @@ export interface PluginRegistry {
    * plugin by name, fanning out BACKWARDS over its `contributedTypes[]`. Removes
    * its entity modules (so the types fall out of `listAvailable()`/`getAvailable`)
    * and its retained capability record — and with the record go the skills, the
-   * `config.plugins[<name>]` settings DESCRIPTOR and the commands, since all
-   * three are pull-read off it. Config VALUES are untouched.
+   * commands and the subagents, since all three are pull-read off it. Nothing
+   * is handed to a settings registry (2.1.21: plugins contribute no settings).
    *
    * 0.2.29 — this clears the REGISTRY only. It no longer calls the plugin's
    * `onUnregister` (the reload pipeline owns that, and calls it first), and it
@@ -611,26 +603,19 @@ export interface ProjectPluginHost {
   listEntities(): BackendModule[];
 
   /**
-   * M33 — Settings sections of ALL loaded + trusted plugins in the
-   * effective pool (base ∪ trusted overlay), one per plugin with
-   * `contributes.settings`. Deliberately does NOT filter by `config.entities`
-   * (contrast with `listEntities()`): a plugin's settings survive deactivation
-   * of its entity types — the user needs the panel to re-enable them. This is
-   * axis B (pool + trust), not axis A (entity whitelist).
-   */
-  listSettings(): PluginSettingsSection[];
-
-  /**
-   * M33 — declarative editor slash-commands of ALL loaded + trusted
-   * plugins, independent of `config.entities` (same two-axis rationale as
-   * `listSettings()`). Routed into the editor via `registerEditorExtension`.
+   * M33 — declarative editor slash-commands of ALL loaded + trusted plugins in
+   * the effective pool (base ∪ trusted overlay). Deliberately does NOT filter
+   * by `config.entities` (contrast with `listEntities()`): editor commands are
+   * not entities, so a plugin whose every type is deactivated keeps its
+   * commands. This is axis B (pool + trust), not axis A (entity whitelist).
+   * Routed into the editor via `registerEditorExtension`.
    */
   listCommands(): PluginCommandContribution[];
 
   /**
    * M33/M05 — raw subagent contributions of ALL loaded + trusted plugins, base
    * pool then project-local overlay, in discovery order. Same two-axis
-   * rationale as `listSettings()`: pool + trust, NOT `config.entities` — an
+   * rationale as `listCommands()`: pool + trust, NOT `config.entities` — an
    * entity-less plugin may contribute nothing but a subagent.
    *
    * Deliberately UNVALIDATED and unsanitized: policy (reserved names, dedupe,

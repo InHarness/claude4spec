@@ -115,6 +115,31 @@ describe('Danger zone — remove project (M31 h23797ko)', () => {
     expect(toasts).toEqual([]);
   });
 
+  it('[ac:ac-sekcja-danger-zone-w-settings-oferuje-d] the Danger zone offers two separate removals — Detach (purgeData=false, plain ConfirmModal) and Delete project and c4s data (purgeData=true, type-to-confirm modal) — each with its own confirmation window', async () => {
+    await render();
+    // Two distinct actions on the card.
+    expect(button('Detach project')).not.toBeNull();
+    expect(button('Delete project and c4s data')).not.toBeNull();
+
+    // Detach: the plain confirmation — no text to retype, confirm enabled at once.
+    await click(button('Detach project'));
+    expect(confirmWindow()?.getAttribute('data-modal-kind')).toBe('project-detach');
+    expect(host.querySelector('input')).toBeNull();
+    expect((button('Detach') as HTMLButtonElement).disabled).toBe(false);
+    await click(button('Detach'));
+    expect(requests).toEqual([{ url: '/api/workspace/projects/alpha?purgeData=false', method: 'DELETE' }]);
+
+    // Purge: a different window — type-to-confirm on the project name.
+    requests = [];
+    await click(button('Delete project and c4s data'));
+    expect(confirmWindow()?.getAttribute('data-modal-kind')).toBe('project-purge');
+    expect(nameInput()).not.toBeNull();
+    expect((button('Delete data') as HTMLButtonElement).disabled).toBe(true);
+    await typeInto(nameInput()!, 'alpha');
+    await click(button('Delete data'));
+    expect(requests).toEqual([{ url: '/api/workspace/projects/alpha?purgeData=true', method: 'DELETE' }]);
+  });
+
   it('a purge that leaves other projects navigates to /p/<redirectProjectId>/', async () => {
     deleteAnswer = { status: 200, body: { projects: [{ id: 'beta' }], redirectProjectId: 'beta' } };
     await render();

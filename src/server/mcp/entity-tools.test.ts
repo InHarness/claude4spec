@@ -76,7 +76,6 @@ function fakeDeps(extraActive: BackendModule[] = []): {
   const host: ProjectPluginHost = {
     listAvailable: () => Array.from(modules.values()),
     listEntities: () => Array.from(modules.values()).filter((m) => activeTypes.has(m.type)),
-    listSettings: () => [],
     listCommands: () => [],
     listSubagents: () => [],
     getEntity: (type) => (activeTypes.has(type) ? (modules.get(type) ?? null) : null),

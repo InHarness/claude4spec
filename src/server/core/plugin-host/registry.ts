@@ -8,7 +8,7 @@
  * pipeline mutates it via `registerPlugin` / `unregisterPlugin` and then
  * invalidates dependent `ProjectContext`s (axis B). The registry additionally
  * retains a per-plugin {@link RegisteredPluginRecord} so the host can surface
- * non-entity capabilities (settings/commands) and so `unregisterPlugin` can
+ * non-entity capabilities (commands/subagents) and so `unregisterPlugin` can
  * unwire the whole envelope by dropping one record.
  */
 
@@ -24,7 +24,6 @@ import type {
   PluginCommandContribution,
   PluginSubagentContribution,
   PluginManifest,
-  PluginSettingsModule,
   PluginSkillContribution,
 } from '../../../shared/plugin-host/manifest.js';
 import { ProjectPluginHostImpl } from './project-host.js';
@@ -167,7 +166,6 @@ export class PluginRegistryImpl implements PluginRegistry {
     const onUnregister: (() => void) | undefined =
       typeof manifest.onUnregister === 'function' ? () => manifest.onUnregister!() : undefined;
 
-    const settings: PluginSettingsModule = manifest.contributes.settings ?? [];
     const commands: PluginCommandContribution[] = manifest.contributes.commands ?? [];
     // Carried RAW. Validation, dedupe and sanitizing belong to the per-turn
     // resolver (services/plugin-subagents.ts) rather than here, because the
@@ -179,7 +177,6 @@ export class PluginRegistryImpl implements PluginRegistry {
         name: manifest.name,
         version: manifest.version,
         contributedTypes: entityModules.map((m) => m.type),
-        settings,
         commands,
         subagents,
         skills,
@@ -196,13 +193,14 @@ export class PluginRegistryImpl implements PluginRegistry {
 
   registerPlugin(manifest: PluginManifest): void {
     const { record } = this.validateAndLower(manifest);
-    // 0.2.19 — the fan-out is FIVE branches over four real capability kinds, and
-    // none of them reaches the M19 reference registry: entities →
+    // 2.1.21 — the fan-out is FIVE slots, and none of them reaches the M19
+    // reference registry nor any settings registry: entities →
     // registerEntityModule (here), skills → SkillRegistry (M37), writingStyles →
-    // the same SkillRegistry via the sugar lowering above, settings → the
-    // settings registry, commands → registerEditorExtension, and subagents →
-    // subagentsFor() at turn build (the last five read off the record by their
-    // own consumers).
+    // the same SkillRegistry via the sugar lowering above, commands →
+    // registerEditorExtension, and subagents → subagentsFor() at turn build (the
+    // last four read off the record by their own consumers). The envelope has
+    // no `settings` slot any more (M13 `m13plenv`); a stale key on an old
+    // manifest is not read by anything.
     for (const module of record.entityModules) {
       this.registerEntityModule(module);
     }
@@ -238,14 +236,14 @@ export class PluginRegistryImpl implements PluginRegistry {
    *
    * The fan-out backwards over `contributedTypes[]` is the two statements below:
    * the entity modules are deleted by type, and deleting the record takes the
-   * skills, the settings descriptor, the commands and the subagent
-   * contributions with it (every one of those is pull-read off the record,
+   * skills, the commands and the subagent contributions with it (every one of those is pull-read off the record,
    * never pushed anywhere). That is why the subagent capability needs no
    * teardown step of its own: `subagentsFor()` reads the registry by pull when
    * a turn is built and keeps no copy, and `subagents` is a per-turn mutable
    * field — so dropping the source is enough and the contribution is gone from
-   * the NEXT turn, with no session restart and no ProjectContext invalidation. Config VALUES under
-   * `config.plugins[<name>]` live in the config file and are not touched here.
+   * the NEXT turn, with no session restart and no ProjectContext invalidation.
+   * Nothing is handed back to a settings registry: plugins contribute no
+   * settings (2.1.21).
    *
    * Mounted things — Express routes, MCP factories, DI services — are NOT
    * removed here; they come down on the `ProjectContext` rebuild.
@@ -270,7 +268,6 @@ export class PluginRegistryImpl implements PluginRegistry {
       name: r.name,
       version: r.version,
       contributedTypes: [...r.contributedTypes],
-      settings: r.settings,
       commands: r.commands,
       subagents: r.subagents,
       onUnregister: r.onUnregister,

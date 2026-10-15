@@ -138,7 +138,6 @@ export function useFileWatcher() {
               window.dispatchEvent(new CustomEvent(PLUGINS_RELOADED_EVENT, { detail: data }));
             });
             batcher.queue(['plugins-meta']);
-            batcher.queue(['plugin-settings']);
             batcher.queue(['meta-entities']);
             batcher.queue(['config']);
             batcher.queue(['entities']);

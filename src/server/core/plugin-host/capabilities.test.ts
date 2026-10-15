@@ -35,14 +35,15 @@ function entityManifest(over: Partial<PluginManifest> = {}): PluginManifest {
 }
 
 describe('M33 — registry capability records', () => {
-  it('retains settings + commands per plugin in listPluginRecords', () => {
+  it('retains commands + subagents per plugin in listPluginRecords — and no settings', () => {
     const registry = new PluginRegistryImpl();
     registry.registerPlugin(fooManifest());
     const records = registry.listPluginRecords();
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({ name: '@c4s/plugin-foo', version: '0.1.0' });
-    expect(records[0]?.settings.map((f) => f.key)).toEqual(['enableBadge', 'apiBase']);
     expect(records[0]?.commands.map((c) => c.trigger)).toEqual(['foo']);
+    expect(records[0]?.subagents.map((s) => s.name)).toEqual(['foo-explore']);
+    expect(records[0]).not.toHaveProperty('settings');
   });
 
   it('unregisterPlugin drops the record + its entity modules WITHOUT calling onUnregister', () => {
@@ -150,65 +151,110 @@ describe('M33 — registry capability records', () => {
     expect(registry.getAvailable('widget')).not.toBeNull();
   });
 
-  it('drops the settings DESCRIPTOR on unregister — the values under config.plugins are not its to touch', () => {
-    // The brief's line: `contributes.settings` is a descriptor of a section under
-    // `config.plugins[<name>]`, and only the descriptor is the registry's to
-    // remove. Wiping the user's values because a package was momentarily
-    // unregistered — every hot-reload does exactly that — would be data loss.
-    //
-    // The values half is structural rather than asserted here: the registry is
-    // constructed with no config reference at all, so it has no channel through
-    // which to reach them. What CAN be pinned is that the descriptor goes.
-    // Persistence of the values across writes is covered end-to-end in
-    // `tests/integration/api/config-plugins.test.ts`.
-    const registry = new PluginRegistryImpl();
-    registry.registerPlugin(fooManifest());
-    expect(registry.consolidate({}).listSettings().map((s) => s.name)).toEqual(['@c4s/plugin-foo']);
+});
 
-    registry.unregisterPlugin('@c4s/plugin-foo');
-    expect(registry.consolidate({}).listSettings()).toEqual([]);
+/**
+ * 2.1.21 (M33 `m33l2001`, M13 `z7l89jhf` / `m13plenv`) — the envelope's fan-out is
+ * exactly five slots, none of which is `settings`: entities → registerEntityModule,
+ * writingStyles + skills → the M37 SkillRegistry (pull-read via `listSkills`),
+ * commands → the editor-extension channel (`listCommands`), subagents → the
+ * subagent-contribution registry (`listSubagents`). The envelope carries no XML
+ * reference types. A stale `settings` / `referenceTypes` key on an old manifest
+ * reaches no registry at all.
+ */
+describe('M33 — registerPlugin fan-out (2.1.21)', () => {
+  function fiveSlotManifest(): PluginManifest {
+    const base = entityManifest({ name: '@c4s/plugin-five' });
+    const manifest: PluginManifest = {
+      ...base,
+      contributes: {
+        entities: base.contributes.entities,
+        writingStyles: [
+          { slug: 'terse', title: 'Terse', description: 'short', version: 1, language: 'en', content: 'body' },
+        ],
+        skills: [
+          {
+            slug: 'house-rules',
+            title: 'House Rules',
+            description: 'always on',
+            version: 1,
+            language: 'en',
+            scope: 'contextual',
+            content: '# House rules',
+          },
+        ],
+        commands: [{ name: 'five-insert', trigger: 'five', label: 'Insert Five', popoverKind: 'five' }],
+        subagents: [{ name: 'five-explore', description: 'Explores five.', promptBody: 'Explore.', tools: ['Read'] }],
+      },
+    };
+    // Retired slots an outdated package may still carry — they must reach nothing.
+    const legacy = manifest.contributes as Record<string, unknown>;
+    legacy.settings = [{ key: 'flag', label: 'Flag', control: 'toggle', kind: 'hot-reload', default: true }];
+    legacy.referenceTypes = [{ tag: 'five_ref' }];
+    return manifest;
+  }
+
+  it('[ac:ac-registerplugin-fan-outuje-wylacznie-c] [section:m33l2001] [section:m13plenv] fans out exactly entities, writingStyles, skills, commands and subagents — no settings, no XML reference types', () => {
+    const registry = new PluginRegistryImpl();
+    registry.registerPlugin(fiveSlotManifest());
+    const host = registry.consolidate({});
+
+    // entities → registerEntityModule
+    expect(registry.getAvailable('widget')?.type).toBe('widget');
+    // writingStyles + skills → the same SkillRegistry feed
+    expect(registry.listSkills().map((s) => [s.slug, s.scope]).sort()).toEqual([
+      ['house-rules', 'contextual'],
+      ['terse', 'writing-style'],
+    ]);
+    // commands → editor-extension channel; subagents → subagent-contribution registry
+    expect(host.listCommands().map((c) => c.trigger)).toEqual(['five']);
+    expect(host.listSubagents().map((s) => s.name)).toEqual(['five-explore']);
+
+    // No settings channel: neither the record nor the host exposes one.
+    const record = registry.listPluginRecords()[0]!;
+    expect(Object.keys(record).sort()).toEqual(
+      ['commands', 'contributedTypes', 'name', 'onUnregister', 'subagents', 'version'].sort(),
+    );
+    expect('listSettings' in host).toBe(false);
+    // No XML reference types: the plugin contributed only its entity type.
+    expect(record.contributedTypes).toEqual(['widget']);
+  });
+
+  it('[ac:ac-registerplugin-fan-outuje-wylacznie-c] unregisterPlugin takes the same five slots back and hands nothing to a settings registry', () => {
+    const registry = new PluginRegistryImpl();
+    registry.registerPlugin(fiveSlotManifest());
+    registry.unregisterPlugin('@c4s/plugin-five');
+    const host = registry.consolidate({});
+    expect(registry.getAvailable('widget')).toBeNull();
+    expect(registry.listSkills()).toEqual([]);
+    expect(host.listCommands()).toEqual([]);
+    expect(host.listSubagents()).toEqual([]);
+    expect(registry.listPluginRecords()).toEqual([]);
   });
 });
 
-describe('M33 — host.listSettings / listCommands ignore config.entities', () => {
-  it('surfaces base-plugin settings + commands even when the entity whitelist is empty', () => {
+describe('M33 — host.listCommands / listSubagents ignore config.entities', () => {
+  it('[section:m13plset] surfaces base-plugin commands + subagents even when the entity whitelist is empty', () => {
     const registry = new PluginRegistryImpl();
     registry.registerPlugin(fooManifest());
     // entities: [] ⇒ axis A says NOTHING active; axis B (pool + trust) must still
-    // surface the plugin's settings + commands.
+    // surface the plugin's commands + subagents.
     const host = registry.consolidate({ entities: [] });
-    expect(host.listSettings().map((s) => s.name)).toEqual(['@c4s/plugin-foo']);
-    expect(host.listSettings()[0]?.fields.map((f) => f.key)).toEqual(['enableBadge', 'apiBase']);
     expect(host.listCommands().map((c) => c.trigger)).toEqual(['foo']);
+    expect(host.listSubagents().map((s) => s.name)).toEqual(['foo-explore']);
   });
 
-  it('merges base + trusted overlay capabilities (overlay shadows base by name)', () => {
+  it('merges base + trusted overlay commands', () => {
     const registry = new PluginRegistryImpl();
     registry.registerPlugin(fooManifest());
     const overlay: ProjectPluginOverlay = {
       listLocal: () => [],
       origin: () => '',
-      listSettings: () => [
-        { name: '@c4s/overlay-bar', version: '2.0.0', fields: [{ key: 'x', label: 'X', control: 'toggle', kind: 'hot-reload', default: false }] },
-      ],
       listCommands: () => [{ name: 'bar-cmd', trigger: 'bar', label: 'Bar', popoverKind: 'bar' }],
-    listSubagents: () => [],
+      listSubagents: () => [],
     };
     const host = registry.consolidate({ entities: [] }, overlay);
-    expect(host.listSettings().map((s) => s.name).sort()).toEqual(['@c4s/overlay-bar', '@c4s/plugin-foo']);
     expect(host.listCommands().map((c) => c.trigger).sort()).toEqual(['bar', 'foo']);
-  });
-
-  it('omits a plugin with no settings from listSettings', () => {
-    const registry = new PluginRegistryImpl();
-    registry.registerPlugin({
-      name: '@c4s/no-settings',
-      version: '1.0.0',
-      hostApiVersion: '^2.0.0',
-      onUnregister: () => {},
-      contributes: {},
-    });
-    expect(registry.consolidate({}).listSettings()).toEqual([]);
   });
 });
 

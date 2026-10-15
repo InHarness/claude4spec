@@ -14,7 +14,6 @@ import type { PluginMigrationInfo } from '../../shared/plugin-host/host-api.js';
 import type { FrontendManifestResponse } from '../../shared/plugin-host/frontend-manifest.js';
 import type {
   PluginCommandContribution,
-  PluginSettingsSection,
 } from '../../shared/plugin-host/manifest.js';
 import type {
   PageLinksAutocompleteResponse,
@@ -251,8 +250,6 @@ export interface ConfigResponse {
   remoteProjectId: string | null;
   /** M24: explicit remote-API override; null = production constant. UI hides this. */
   remoteApiUrl: string | null;
-  /** M33 phase 3: per-plugin settings namespace (absent ⇒ {}). */
-  plugins: Record<string, Record<string, unknown>>;
   /** M01: config schema version (0.1.96 bumped to 4 — pagesDir → roots[]). */
   $schemaVersion: number;
   /** 0.2.113: the running app's version (About card). */
@@ -314,8 +311,6 @@ export interface ConfigPatch {
     };
     switchAfterRelease?: boolean;
   };
-  /** M33 phase 3: plugin settings — deep-merged server-side per `plugins[<name>]`. */
-  plugins?: Record<string, Record<string, unknown>>;
   remoteProjectId?: string | null;
 }
 
@@ -574,10 +569,6 @@ export const metaApi = {
   /** M33 phase 2: per-project plugin pool (base/overlay), trust, shadowed types. */
   async plugins(): Promise<ProjectPluginsMeta> {
     return handle<ProjectPluginsMeta>(await apiFetch('/api/_meta/plugins'));
-  },
-  /** M33 phase 3: Settings sections of loaded+trusted plugins (one per plugin). */
-  async pluginSettings(): Promise<{ sections: PluginSettingsSection[] }> {
-    return handle<{ sections: PluginSettingsSection[] }>(await apiFetch('/api/_meta/plugin-settings'));
   },
   /** M33 phase 3: declarative editor slash-commands of loaded+trusted plugins. */
   async pluginCommands(): Promise<{ commands: PluginCommandContribution[] }> {

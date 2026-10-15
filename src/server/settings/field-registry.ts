@@ -74,11 +74,11 @@ export type FieldRule = (
 ) => FieldRuleResult | Promise<FieldRuleResult>;
 
 export interface FieldDeclaration {
-  /** Dotted path into `config.json` (`agent.allowedPaths`, `plugins.<name>.<key>`). */
+  /** Dotted path into `config.json` (`agent.allowedPaths`, `git.commitTarget.mode`). */
   key: string;
   /**
-   * The key's segments, when a segment itself may contain a dot — a plugin's
-   * `manifest.name` is a package name. Absent ⇒ `key.split('.')`.
+   * The key's segments, when a segment itself may contain a dot. Absent ⇒
+   * `key.split('.')`.
    */
   path?: readonly string[];
   /** The module that answers for the field. Documentary, and named in collision errors. */

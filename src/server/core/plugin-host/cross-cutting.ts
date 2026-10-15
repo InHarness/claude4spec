@@ -48,7 +48,7 @@ export interface PluginHostRouterDeps {
   /**
    * M31 cache-invalidation hook — fired after a trust change to rebuild the context.
    * Called WITHOUT a reason: a trust flip loads or unloads the whole overlay
-   * layer (plugin commands, plugin settings, the frontend manifest, cross-layer
+   * layer (plugin commands, plugin subagents, the frontend manifest, cross-layer
    * shadowing), not just activation, so every tab of the project keeps the M31
    * full reload. The goal there is "no server restart", which the rebuild gives.
    */
@@ -73,16 +73,11 @@ export function pluginHostRouter(deps: PluginHostRouterDeps): Router {
     res.json(host.partition());
   });
 
-  // M33: settings/commands of all loaded+trusted plugins in the
-  // effective pool — axis B, deliberately NOT filtered by `config.entities`
-  // (so a plugin's Settings section + slash-commands survive deactivation of
-  // its entity types). The Settings panel renders one section per plugin under
-  // `config.plugins[<name>]`; the editor registers each command as a slash
-  // extension.
-  router.get('/_meta/plugin-settings', (_req, res) => {
-    res.json({ sections: host.listSettings() });
-  });
-
+  // M33: commands of all loaded+trusted plugins in the effective pool —
+  // axis B, deliberately NOT filtered by `config.entities` (so a plugin's
+  // slash-commands survive deactivation of its entity types). The editor
+  // registers each command as a slash extension. 2.1.21: there is no
+  // `/_meta/plugin-settings` any more — plugins contribute no settings.
   router.get('/_meta/plugin-commands', (_req, res) => {
     res.json({ commands: host.listCommands() });
   });

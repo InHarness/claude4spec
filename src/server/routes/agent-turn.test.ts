@@ -2677,6 +2677,69 @@ describe('runAgentTurn — a thread keeps the writing style of its first turn (M
 });
 
 /**
+ * M26 `#project` card → `PATCH /api/config { writingStyle }` (effect `new-thread`):
+ * the settings save is read by the next NEW thread's first turn straight from
+ * config.json — no server restart, no context rebuild in between.
+ */
+describe('runAgentTurn — a writingStyle saved on the settings page reaches the next new thread (M26)', () => {
+  it('[ac:ac-zmiana-writingstyle-w-m26-sekcja-proje] after PATCH /api/config { writingStyle } the first turn of a new thread uses the new style, without a server restart', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const { default: express } = await import('express');
+    const { default: request } = await import('supertest');
+    const { writeConfig } = await import('../config.js');
+    const { configRouter } = await import('./config.js');
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-style-patch-'));
+    try {
+      writeConfig(cwd, { writingStyle: 'old-style' });
+      const titles: Record<string, string> = { 'old-style': 'Old Style', 'new-style': 'New Style' };
+      const skillRegistry = {
+        isSelectable: (slug: string) => slug in titles,
+        unselectableReason: () => 'is not installed',
+        listSelectable: () => [],
+      };
+      const resolveForContext = vi.fn((_ct: string, cfg: { writingStyle: string | null }) => ({
+        listing: [],
+        writingStyle: cfg.writingStyle ? { slug: cfg.writingStyle, title: titles[cfg.writingStyle]! } : null,
+      }));
+      const onContextConfigChanged = vi.fn();
+      // ONE server process for the whole test: the router and the turn deps are built once.
+      const server = express()
+        .use(express.json())
+        .use(configRouter({ cwd, skillRegistry: skillRegistry as never, onContextConfigChanged }));
+      const turnDeps = () => {
+        const { deps } = makeDeps();
+        (deps as unknown as { cwd: string }).cwd = cwd;
+        (deps as unknown as { skillResolver: unknown }).skillResolver = { resolveForContext };
+        return deps;
+      };
+
+      // Before the change: a new thread runs under old-style.
+      hoisted.events = [{ type: 'result', sessionId: 's-1' }];
+      await runAgentTurn(turnDeps(), makeInput());
+      expect(String(hoisted.lastExecute?.systemPrompt)).toContain('<project_writing_skill slug="old-style"');
+
+      // The settings page's Project card saves the new style.
+      const res = await request(server).patch('/config').send({ writingStyle: 'new-style' });
+      expect(res.status).toBe(200);
+      expect(res.body.writingStyle).toBe('new-style');
+      // `new-thread` effect: nothing is rebuilt or restarted.
+      expect(onContextConfigChanged).not.toHaveBeenCalled();
+
+      // The first turn of a NEW thread, same process: the new style.
+      hoisted.events = [{ type: 'result', sessionId: 's-2' }];
+      await runAgentTurn(turnDeps(), makeInput());
+      expect(resolveForContext).toHaveBeenLastCalledWith('chat', { writingStyle: 'new-style' });
+      const prompt = String(hoisted.lastExecute?.systemPrompt);
+      expect(prompt).toContain('<project_writing_skill slug="new-style"');
+      expect(prompt).not.toContain('slug="old-style"');
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
  * TERMINAL ERROR DELIVERY (0.2.50).
  *
  * The contract is explicit that "the iterator never throws (M01/M13)" — every

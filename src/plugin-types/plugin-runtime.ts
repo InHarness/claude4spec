@@ -106,8 +106,8 @@ export type {
   // since 0.2.53 but never reached this surface — an omission, not a policy:
   // without it a plugin author cannot type `contributes.subagents[]` at all.
   PluginSubagentContribution,
-  PluginSettingField,
-  PluginSettingsModule,
+  // 2.1.21 (M13 `m13plenv`): `PluginSettingField` / `PluginSettingsModule` are
+  // gone with the envelope's `settings` slot (HOST_API_UNVERSIONED_CHANGES).
   PluginCommandContribution,
 } from '../shared/plugin-host/manifest.js';
 export type { EntityModuleManifest, SystemPromptContribution };

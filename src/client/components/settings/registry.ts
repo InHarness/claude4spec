@@ -30,7 +30,7 @@ export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
  */
 export type ElementKind = 'toggle' | 'text' | 'textarea' | 'lines' | 'select' | 'multiselect' | 'path' | 'custom';
 
-/** A config key as path segments (a plugin's package name may itself contain dots). */
+/** A config key as path segments. */
 export type ConfigKeyPath = readonly string[];
 
 export interface SelectOption {

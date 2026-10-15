@@ -21,7 +21,7 @@ describe('c4s-plugin-writing-style-author — the envelope', () => {
     expect(manifest.contributes.subagents).toBeUndefined();
     expect(manifest.contributes.writingStyles).toBeUndefined();
     expect(manifest.contributes.commands).toBeUndefined();
-    expect(manifest.contributes.settings).toBeUndefined();
+    expect('settings' in manifest.contributes).toBe(false);
   });
 
   it('declares a host API range it can actually be gated against', () => {
