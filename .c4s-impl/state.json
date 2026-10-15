@@ -1,5 +1,5 @@
 {
-  "iteration": 10,
+  "iteration": 15,
   "units": [
     {
       "id": "u1-m26-ustawienia-bez-pluginow",
@@ -328,15 +328,35 @@
         }
       ],
       "wave": 3,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u3-pakiety-pluginow-bez-ustawien/p1-l11-l11",
+          "layers": [
+            "L11"
+          ],
+          "slugs": [
+            "section:91vq520g",
+            "section:ityp8g1r",
+            "section:5xmrx4j7",
+            "section:9yf6vj9w"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "7396ff09337ce507e894c68f976f140dfcd5429a",
+      "baseCommit": "7396ff09337ce507e894c68f976f140dfcd5429a",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     }
   ],
   "waves": [
@@ -359,7 +379,7 @@
       "units": [
         "u3-pakiety-pluginow-bez-ustawien"
       ],
-      "startCommit": null
+      "startCommit": "7396ff09337ce507e894c68f976f140dfcd5429a"
     }
   ],
   "conventions": [

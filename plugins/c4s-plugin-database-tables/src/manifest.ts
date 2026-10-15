@@ -13,10 +13,14 @@ import { databaseTableCommands } from './capabilities/commands.js';
  * only evidence, while 71 entity files sat on disk across six projects that
  * nothing could read.
  *
- * NO `settings`, NO `writingStyles`. The retired plugin shipped three
- * `src/capabilities/` stubs untouched from the scaffold — a Polish writing-style
- * document about how to write plugin specs, and a settings module that wrote
- * under the key `c4s-plugin-scaffold`. They were registered unconditionally
+ * Envelope (outside the entity contribution):
+ *   hostApiVersion: '^2.0.0'
+ *   contributes.commands: the `/database-table` slash command (capabilities/commands.ts)
+ *   contributes.writingStyles: NONE
+ *
+ * NO `writingStyles`. The retired plugin shipped `src/capabilities/` stubs
+ * untouched from the scaffold — among them a Polish writing-style document
+ * about how to write plugin specs. They were registered unconditionally
  * (`config.entities` filters entity types only), so they were live. They carry
  * no domain value and are not ported.
  *
