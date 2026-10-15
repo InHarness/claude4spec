@@ -13,17 +13,34 @@
  * `tool_result.error`); they never define their own.
  */
 
-export type DiscoveryErrorCode =
-  | 'ENTITY_NOT_FOUND'
-  | 'SECTION_NOT_FOUND'
-  | 'PAGE_NOT_FOUND'
-  | 'INVALID_TYPE'
-  | 'INVALID_ARGUMENT'
-  | 'AMBIGUOUS_ENTITY'
-  | 'AMBIGUOUS_PAGE'
-  | 'INDEX_NOT_MATERIALIZED'
-  | 'INDEX_STALE'
-  | 'SEARCH_BUDGET_EXCEEDED';
+/**
+ * The catalogue itself, as a value — the type below is derived from it, so a
+ * test can read the set the core owns rather than trusting this comment.
+ *
+ * 2.1.26 (M39 `7dad4wt0`) — **ambiguity has no code.** `AMBIGUOUS_ENTITY` and
+ * `AMBIGUOUS_PAGE` left the catalogue, together with their factories. Every
+ * identity regime takes a key that does not admit ambiguity — the type beside a
+ * slug, the root beside a path — and a phrase that DOES match several things is
+ * answered by `resolve_identity` with a scored candidate list, never a refusal.
+ *
+ * `INDEX_NOT_MATERIALIZED` stays in the catalogue (M29 semantics: no projection
+ * has been built for this project), but NO operation returns it: executing an
+ * operation belongs to the server process, which builds the projection before it
+ * serves the project, and a caller with no server gets `SERVER_NOT_RUNNING` from
+ * the CLI (M11) instead. There is accordingly no factory for it here.
+ */
+export const DISCOVERY_ERROR_CODES = [
+  'ENTITY_NOT_FOUND',
+  'SECTION_NOT_FOUND',
+  'PAGE_NOT_FOUND',
+  'INVALID_TYPE',
+  'INVALID_ARGUMENT',
+  'INDEX_NOT_MATERIALIZED',
+  'INDEX_STALE',
+  'SEARCH_BUDGET_EXCEEDED',
+] as const;
+
+export type DiscoveryErrorCode = (typeof DISCOVERY_ERROR_CODES)[number];
 
 export class DiscoveryError extends Error {
   readonly name = 'DiscoveryError';
@@ -106,40 +123,11 @@ export function invalidArgument(message: string, correction: string): DiscoveryE
   return new DiscoveryError('INVALID_ARGUMENT', message, correction);
 }
 
-export function ambiguousEntity(slug: string, candidates: readonly string[]): DiscoveryError {
-  return new DiscoveryError(
-    'AMBIGUOUS_ENTITY',
-    `slug '${slug}' exists for more than one type`,
-    `candidates: ${sample(candidates)}. Pass an explicit type.`,
-  );
-}
-
-export function ambiguousPage(pagePath: string, rootIds: readonly string[]): DiscoveryError {
-  return new DiscoveryError(
-    'AMBIGUOUS_PAGE',
-    `path '${pagePath}' exists in more than one root`,
-    `it exists in: ${sample(rootIds)}. Pass rootId to disambiguate.`,
-  );
-}
-
-/**
- * The db slot has no file. The hint deliberately does NOT suggest deleting or
- * rebuilding the index: no slot file also means no runtime state, so "just
- * rebuild it" would be advice to destroy a project's context on a hunch.
- */
-export function indexNotMaterialized(): DiscoveryError {
-  return new DiscoveryError(
-    'INDEX_NOT_MATERIALIZED',
-    'no index has been built for this project yet',
-    'Run `npx @inharness-ai/claude4spec` in the project directory once — it builds the index. Do not delete anything to fix this.',
-  );
-}
-
 /**
  * 0.2.77 (M39) — the projection EXISTS but has been marked as no longer
  * describing the state of the files.
  *
- * The sibling one line up, `INDEX_NOT_MATERIALIZED`, is a different answer to a
+ * Its catalogue sibling, `INDEX_NOT_MATERIALIZED`, is a different answer to a
  * different question, and that difference is what earned this a code of its own:
  * `INDEX_NOT_MATERIALIZED` means "there is no projection for this project — give
  * up", `INDEX_STALE` means "there is one, and it is out of date — rebuild and

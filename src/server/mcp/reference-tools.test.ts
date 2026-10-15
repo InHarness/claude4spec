@@ -15,8 +15,11 @@ import { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import { builtinPagesRoot } from '../config.js';
 import { createC4sReaderServer } from './c4s-reader.js';
-import { GET_PAGE_OUTLINE_RETURN } from './tool-contract-text.js';
+import { GET_PAGE_OUTLINE_RETURN, SEARCH_PAGES_DESCRIPTION } from './tool-contract-text.js';
 import { KIND_DECLARATIONS } from '../../shared/root-kinds.js';
+import { DiscoveryError } from '../discovery/errors.js';
+import type { DiscoveryCore } from '../discovery/types.js';
+import { expectToolMatchesRecord } from '../../../tests/helpers/read-tool-records.js';
 
 /**
  * Rule 12 — broken-reference detection for a HIDDEN entity type.
@@ -696,7 +699,7 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
       );
       expect(tool.inputSchema.required ?? []).toEqual([]);
       expect((tool.inputSchema.properties!.mode as { enum?: string[] }).enum).toEqual(['count', 'map', 'hits']);
-      expect(tool.description).toContain('only when the match falls outside every section');
+      expect(tool.description).toContain('a `kind: "page"` hit falls outside every section');
       expect(tool.description).not.toMatch(/root without (a|an) (section )?index/i);
     });
 
@@ -727,16 +730,16 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
       expect(reference.description).toContain(GET_PAGE_OUTLINE_RETURN);
       expect(params(reader)).toEqual(params(reference));
 
-      // What that sentence declares: hash on the envelope, `children` omitted on a leaf…
+      // What that sentence declares: hash on the envelope, `children` only on a node that has any…
       expect(GET_PAGE_OUTLINE_RETURN).toContain(
         'The response is `{ rootId, path, hash, frontmatter?, preamble?, sections[], truncated?, message? }`',
       );
-      expect(GET_PAGE_OUTLINE_RETURN).toContain('`hash` is on the ENVELOPE, never on a node');
-      expect(GET_PAGE_OUTLINE_RETURN).toContain('a leaf OMITS the key rather than sending `[]`');
+      expect(GET_PAGE_OUTLINE_RETURN).toContain('`hash` is on the ENVELOPE: the sha256 of the WHOLE page file');
+      expect(GET_PAGE_OUTLINE_RETURN).toContain('plus `children` ONLY when it has any');
       // …and none of the fields of a paginated listing or of a hashed node.
       expect(GET_PAGE_OUTLINE_RETURN).toContain('A node carries NO `content_hash`');
       expect(GET_PAGE_OUTLINE_RETURN).toContain('NO `heading_path`');
-      expect(GET_PAGE_OUTLINE_RETURN).toContain('The envelope carries no `total`, `hasMore`, `limit` or `offset`');
+      expect(GET_PAGE_OUTLINE_RETURN).toContain('the envelope carries no `total`, `hasMore`, `limit` or `offset`');
       for (const tool of [reader, reference]) {
         for (const key of ['limit', 'offset']) expect(params(tool)).not.toContain(key);
       }
@@ -846,5 +849,124 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
       }
       expect(bare.body.unanchoredHeadings).toEqual([]);
     });
+  });
+});
+
+/**
+ * 2.1.26 — the `reference-tools` read tools as their re-rendered `mcp-tool`
+ * records declare them (the `internal` renderings of M39/M19 read operations).
+ * Each tool: the record's name, description, parameters and (empty) hints; and the
+ * adapter behaviour its `logic` states — the core's result passed through
+ * unchanged, a core error carried with its code, message and hint, an exception
+ * without a code answered as `INTERNAL`.
+ */
+describe('reference-tools — the read tools as their 2.1.26 records declare them', () => {
+  type Core = Partial<Record<keyof DiscoveryCore, (input: unknown) => unknown>>;
+
+  const serverWith = (discovery: Core) =>
+    createReferenceToolsServer({ discovery } as unknown as ReferenceToolsDeps);
+  const declaredTool = (name: string) => serverWith({}).tools.find((t) => t.name === name);
+
+  async function invoke(discovery: Core, name: string, args: Record<string, unknown>) {
+    const tool = serverWith(discovery).tools.find((t) => t.name === name)!;
+    const res = (await tool.handler(args, {})) as { content: Array<{ text: string }>; isError?: boolean };
+    return { isError: res.isError === true, body: JSON.parse(res.content[0]!.text) as Record<string, unknown> };
+  }
+
+  async function expectPassThroughAdapter(
+    name: string,
+    method: keyof DiscoveryCore,
+    args: Record<string, unknown>,
+    forwarded: unknown,
+  ): Promise<void> {
+    const seen: unknown[] = [];
+    const answer = { from: 'core', nested: { rows: [{ a: 1 }, { b: 2 }] } };
+    const ok = await invoke({ [method]: (input: unknown) => (seen.push(input), answer) }, name, args);
+    expect(ok.isError).toBe(false);
+    expect(ok.body).toEqual(answer);
+    expect(seen).toEqual([forwarded]);
+
+    const refusal = new DiscoveryError('INVALID_ARGUMENT', 'refused by the core', 'the call that would have worked');
+    const refused = await invoke({ [method]: () => { throw refusal; } }, name, args);
+    expect(refused.isError).toBe(true);
+    expect(refused.body).toEqual({ error: 'refused by the core', code: 'INVALID_ARGUMENT', hint: 'the call that would have worked' });
+
+    const crashed = await invoke({ [method]: () => { throw new Error('boom'); } }, name, args);
+    expect(crashed.isError).toBe(true);
+    expect(crashed.body).toMatchObject({ code: 'INTERNAL', error: 'boom' });
+  }
+
+  it('[entity:reference-tools-check-consistency] check_consistency: the record\'s contract; severity, rule and limit forwarded to DiscoveryCore.checkConsistency, the report unchanged', async () => {
+    expectToolMatchesRecord(declaredTool('check_consistency'), 'reference-tools-check-consistency');
+    const args = { severity: 'warning', rule: 'unclosedCodeBlocks', limit: 2 };
+    await expectPassThroughAdapter('check_consistency', 'checkConsistency', args, args);
+  });
+
+  it('[entity:reference-tools-find-references] find_references: the record\'s contract (target optional in the schema); the target union forwarded, a missing target left for the core to refuse', async () => {
+    expectToolMatchesRecord(declaredTool('find_references'), 'reference-tools-find-references');
+    const args = { target: 'page', rootId: 'pages', path: 'modules/m19.md', limit: 10, offset: 0 };
+    await expectPassThroughAdapter('find_references', 'findReferences', args, { ...args, includeTagMatches: false });
+    const seen: unknown[] = [];
+    await invoke({ findReferences: (i) => (seen.push(i), { references: [], total: 0, hasMore: false }) }, 'find_references', {});
+    expect(seen).toEqual([{ target: undefined, includeTagMatches: false }]);
+  });
+
+  it('[entity:reference-tools-get-page] get_page: the record\'s contract (loose input, no line window); the page key forwarded to DiscoveryCore.getPage, the envelope unchanged', async () => {
+    expectToolMatchesRecord(declaredTool('get_page'), 'reference-tools-get-page');
+    const args = { rootId: 'pages', path: 'a.md' };
+    await expectPassThroughAdapter('get_page', 'getPage', args, args);
+  });
+
+  it('[entity:reference-tools-get-page-outline] get_page_outline: the record\'s contract; the page key forwarded to DiscoveryCore.getPageOutline, the tree unchanged', async () => {
+    expectToolMatchesRecord(declaredTool('get_page_outline'), 'reference-tools-get-page-outline');
+    const args = { rootId: 'pages', path: 'modules/m39.md' };
+    await expectPassThroughAdapter('get_page_outline', 'getPageOutline', args, args);
+  });
+
+  it('[entity:reference-tools-get-sections] get_sections: the record\'s contract; anchors forwarded, `includeSubtree` true only when it is true', async () => {
+    expectToolMatchesRecord(declaredTool('get_sections'), 'reference-tools-get-sections');
+    await expectPassThroughAdapter(
+      'get_sections',
+      'getSections',
+      { anchors: ['aaaa0001'], includeSubtree: true },
+      { anchors: ['aaaa0001'], includeSubtree: true },
+    );
+    const seen: unknown[] = [];
+    await invoke({ getSections: (i) => (seen.push(i), { results: [] }) }, 'get_sections', { anchors: ['aaaa0001'], includeSubtree: 1 });
+    expect(seen).toEqual([{ anchors: ['aaaa0001'], includeSubtree: false }]);
+  });
+
+  it('[entity:reference-tools-list-pages] list_pages: the record\'s contract (rootId required, integer paging); rootId, prefix, sort and the window forwarded to DiscoveryCore.listPages', async () => {
+    expectToolMatchesRecord(declaredTool('list_pages'), 'reference-tools-list-pages');
+    const args = { rootId: 'pages', prefix: '/modules', sort: 'path', limit: 100, offset: 0 };
+    await expectPassThroughAdapter('list_pages', 'listPages', args, args);
+  });
+
+  it('[entity:reference-tools-list-tags] list_tags: the record\'s contract; `withCounts` true only when it is true, minCount, coOccurringWith and the window forwarded', async () => {
+    expectToolMatchesRecord(declaredTool('list_tags'), 'reference-tools-list-tags');
+    const args = { withCounts: true, minCount: 1, coOccurringWith: 'auth', limit: 200, offset: 0 };
+    await expectPassThroughAdapter('list_tags', 'listTags', args, args);
+    const seen: unknown[] = [];
+    await invoke({ listTags: (i) => (seen.push(i), { items: [] }) }, 'list_tags', {});
+    expect(seen).toEqual([{ withCounts: false }]);
+  });
+
+  it('[entity:reference-tools-search-pages] search_pages: the record\'s contract (the shared description, three valves, integer context and paging); every input forwarded to DiscoveryCore.searchPages, the result unchanged', async () => {
+    const declared = declaredTool('search_pages');
+    expectToolMatchesRecord(declared, 'reference-tools-search-pages');
+    // One contract text, pasted by both renderings of the operation.
+    expect(declared!.description).toBe(SEARCH_PAGES_DESCRIPTION);
+    const args = {
+      query: '/v1/widgets',
+      rootId: 'pages',
+      mode: 'count',
+      pathInclude: '^modules/',
+      pathExclude: 'drift',
+      anchors: ['aaaa0001', 'bbbb0002'],
+      context: 3,
+      limit: 20,
+      offset: 40,
+    };
+    await expectPassThroughAdapter('search_pages', 'searchPages', args, args);
   });
 });

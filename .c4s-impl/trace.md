@@ -7,3 +7,45 @@
 - c4s-reader-get-field-content → src/server/mcp/c4s-reader.ts (`get_field_content`); test src/server/mcp/c4s-reader.test.ts
 - section:v0fldrd8 → src/server/discovery/ops/content.ts (the one generic operation), src/server/core/plugin-host/entities-router.ts (its one cross-cutting rest route), src/shared/plugin-host/data-schema.ts (`DEFAULT_CONTENT_OPERATION`); tests tests/integration/plugin-host/field-content-generic.test.ts, src/server/mcp/entity-tools.test.ts
 - section:gz7q92lz → src/server/core/plugin-host/types.ts + src/plugin-types/plugin-runtime.ts (MountContext: six read ops), src/server/workspace/project-context.ts (binding), src/shared/plugin-host/host-api.ts (0.2.79 unversioned entry names the six); test tests/integration/plugin-host/field-content-generic.test.ts
+- section:7dad4wt0 → src/server/discovery/errors.ts (`DISCOVERY_ERROR_CODES`: no `AMBIGUOUS_*`, no ambiguity / INDEX_NOT_MATERIALIZED factory), src/server/operations/error-codes.ts (`STATUS_FOR_DISCOVERY_CODE`), src/server/operations/core-operations.ts (no row declares them); test src/server/discovery/errors.test.ts
+- check-consistency → src/server/operations/core-operations.ts (`check_consistency` row, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- describe-types → src/server/operations/core-operations.ts (`describe_types` row, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- find-references → src/server/operations/core-operations.ts (`find_references` row, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- get-entities → src/server/operations/core-operations.ts (`get_entities` row, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- get-page → src/server/operations/core-operations.ts (`get_page` row, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- get-page-outline → src/server/operations/core-operations.ts (`get_page_outline` row, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- get-sections → src/server/operations/core-operations.ts (`get_sections` row, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- list-entities → src/server/operations/core-operations.ts (`list_entities` row, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- list-pages → src/server/operations/core-operations.ts (`list_pages` row, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- list-tags → src/server/operations/core-operations.ts (`list_tags` row, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- overview → src/server/operations/core-operations.ts (`overview` row, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- resolve-identity → src/server/operations/core-operations.ts (`resolve_identity` row, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- reference-tools-check-consistency → src/server/mcp/reference-tools.ts (`check_consistency`); test src/server/mcp/reference-tools.test.ts
+- c4s-reader-check-consistency → src/server/mcp/c4s-reader.ts (`check_consistency`); test src/server/mcp/c4s-reader.test.ts
+- entity-tools-describe-entity-type → src/server/mcp/entity-tools.ts (`describe_entity_type`); test src/server/mcp/entity-tools.test.ts
+- c4s-reader-describe-types → src/server/mcp/c4s-reader.ts (`describe_types`); test src/server/mcp/c4s-reader.test.ts
+- reference-tools-find-references → src/server/mcp/reference-tools.ts (`find_references`); test src/server/mcp/reference-tools.test.ts
+- c4s-reader-find-references → src/server/mcp/c4s-reader.ts (`find_references`); test src/server/mcp/c4s-reader.test.ts
+- entity-tools-get-entities → src/server/mcp/entity-tools.ts (`get_entities`); test src/server/mcp/entity-tools.test.ts
+- c4s-reader-get-entities → src/server/mcp/c4s-reader.ts (`get_entities`); test src/server/mcp/c4s-reader.test.ts
+- reference-tools-get-page → src/server/mcp/reference-tools.ts (`get_page`) + src/server/mcp/tool-contract-text.ts; test src/server/mcp/reference-tools.test.ts
+- c4s-reader-get-page → src/server/mcp/c4s-reader.ts (`get_page`) + src/server/mcp/tool-contract-text.ts; test src/server/mcp/c4s-reader.test.ts
+- reference-tools-get-page-outline → src/server/mcp/reference-tools.ts (`get_page_outline`) + src/server/mcp/tool-contract-text.ts; test src/server/mcp/reference-tools.test.ts
+- c4s-reader-get-page-outline → src/server/mcp/c4s-reader.ts (`get_page_outline`) + src/server/mcp/tool-contract-text.ts; test src/server/mcp/c4s-reader.test.ts
+- reference-tools-get-sections → src/server/mcp/reference-tools.ts (`get_sections`) + src/server/mcp/tool-contract-text.ts; test src/server/mcp/reference-tools.test.ts
+- c4s-reader-get-sections → src/server/mcp/c4s-reader.ts (`get_sections`) + src/server/mcp/tool-contract-text.ts; test src/server/mcp/c4s-reader.test.ts
+- entity-tools-list-entities → src/server/mcp/entity-tools.ts (`list_entities`); test src/server/mcp/entity-tools.test.ts
+- c4s-reader-list-entities → src/server/mcp/c4s-reader.ts (`list_entities`); test src/server/mcp/c4s-reader.test.ts
+- reference-tools-list-pages → src/server/mcp/reference-tools.ts (`list_pages`); test src/server/mcp/reference-tools.test.ts
+- c4s-reader-list-pages → src/server/mcp/c4s-reader.ts (`list_pages`); test src/server/mcp/c4s-reader.test.ts
+- reference-tools-list-tags → src/server/mcp/reference-tools.ts (`list_tags`); test src/server/mcp/reference-tools.test.ts
+- c4s-reader-list-tags → src/server/mcp/c4s-reader.ts (`list_tags`); test src/server/mcp/c4s-reader.test.ts
+- c4s-reader-overview → src/server/mcp/c4s-reader.ts (`overview`); test src/server/mcp/c4s-reader.test.ts
+- entity-tools-resolve-identity → src/server/mcp/entity-tools.ts (`resolve_identity`); test src/server/mcp/entity-tools.test.ts
+- c4s-reader-resolve-identity → src/server/mcp/c4s-reader.ts (`resolve_identity`); test src/server/mcp/c4s-reader.test.ts
+- search-entities → src/server/operations/core-operations.ts (`search_entities` row, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- search-pages → src/server/operations/core-operations.ts (`search_pages` row, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- entity-tools-search-entities → src/server/mcp/entity-tools.ts (`search_entities`); test src/server/mcp/entity-tools.test.ts
+- c4s-reader-search-entities → src/server/mcp/c4s-reader.ts (`search_entities`); test src/server/mcp/c4s-reader.test.ts
+- reference-tools-search-pages → src/server/mcp/reference-tools.ts (`search_pages`) + src/server/mcp/tool-contract-text.ts (`SEARCH_PAGES_DESCRIPTION`); test src/server/mcp/reference-tools.test.ts
+- c4s-reader-search-pages → src/server/mcp/c4s-reader.ts (`search_pages`) + src/server/mcp/tool-contract-text.ts (`SEARCH_PAGES_DESCRIPTION`); test src/server/mcp/c4s-reader.test.ts

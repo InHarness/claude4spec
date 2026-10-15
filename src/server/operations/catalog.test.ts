@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import {
   CATALOG,
   OperationCatalog,
@@ -16,6 +17,10 @@ import { KNOWN_OPERATION_CLASSES, PROFILES, mcpServerSetForProfile, profileAdmit
 import { pluginServerNamesFor, toolAdmittedByProfile, withheldTools } from './profile-gate.js';
 import { toolError, toolSuccess } from './envelope.js';
 import { httpStatusForCode } from './error-codes.js';
+import { createC4sReaderServer } from '../mcp/c4s-reader.js';
+import { createReferenceToolsServer, type ReferenceToolsDeps } from '../mcp/reference-tools.js';
+import { buildEntityTools, type EntityToolsDeps } from '../mcp/entity-tools.js';
+import { READ_TOOL_RECORDS } from '../../../tests/helpers/read-tool-records.js';
 
 registerCoreOperations();
 
@@ -226,7 +231,9 @@ describe('the seeded catalog', () => {
     expect(op.channels.mcp.kind).toBe('direct');
     expect(op.channels.rest.kind).toBe('na');
     expect((op.channels.rest as { reason: string }).reason).toContain('/api/pages/:rootId/*');
-    expect((op.channels.rest as { reason: string }).reason).toContain('page-detail');
+    // 2.1.26 — the record's `powody.rest`: M02's raw read for the editor, the file byte for byte with `hash`.
+    expect((op.channels.rest as { reason: string }).reason).toContain('M02');
+    expect((op.channels.rest as { reason: string }).reason).toContain('`hash`');
   });
 
   /**
@@ -673,5 +680,260 @@ describe('envelope and error taxonomy', () => {
      */
     expect((await request(app).get('/boom/SECTION_NOT_FOUND')).status).toBe(400);
     expect(httpStatusForCode('SECTION_NOT_FOUND')).toBe(404);
+  });
+});
+
+/**
+ * 2.1.26 — the fourteen M39/M19 read rows against their `spec-operation` records
+ * (`check-consistency` … `search-pages`): canonical name, scope, mediation,
+ * the four channel cells (an `n/a` carrying the record's `powody` entry), no side
+ * effects (`efekty: brak`), idempotent (`idempotencja: tak`), no content input
+ * (`opisTresci: n/d`), `errorCodes` exactly the record's `kodyBledow` (each once;
+ * `n/d` is the empty list), and `renderings` exactly its `narzedzia` — every
+ * named tool registered on its server, every agentic `direct` cell pointing at
+ * one and no `n/a` cell pointing at any.
+ */
+describe('the M39 read rows as their 2.1.26 records declare them', () => {
+  type Kind = 'direct' | 'na';
+  interface ReadRecord {
+    nazwa: string;
+    zasieg: 'project' | 'workspace';
+    mediacja: 'direct';
+    channels: Record<ChannelName, Kind>;
+    powody: Partial<Record<ChannelName, string>>;
+    kodyBledow: string[];
+    narzedzia: Partial<Record<'internal' | 'mcp', string[]>>;
+  }
+
+  /** The tools each server actually registers — built, not grepped. */
+  const registered = new Map<string, Set<string>>([
+    [
+      'c4s-reader',
+      new Set(
+        createC4sReaderServer({ reader: null, discovery: null, db: null, projectDir: null, packageVersion: 'test' }).tools.map(
+          (t) => t.name,
+        ),
+      ),
+    ],
+    [
+      'reference-tools',
+      new Set(createReferenceToolsServer({} as unknown as ReferenceToolsDeps).tools.map((t) => t.name)),
+    ],
+    ['entity-tools', new Set(buildEntityTools({} as unknown as EntityToolsDeps).map((t) => t.name))],
+  ]);
+
+  function expectRecordRow(record: ReadRecord): void {
+    const op = CATALOG.require(record.nazwa);
+    expect(op.name).toBe(record.nazwa);
+    expect(op.scope).toBe(record.zasieg);
+    expect(op.mediation).toBe(record.mediacja);
+    expect(op.opClass).toBe('read');
+    for (const channel of CHANNELS) {
+      const cell = op.channels[channel];
+      expect(cell.kind, `${record.nazwa}.${channel}`).toBe(record.channels[channel]);
+      if (cell.kind === 'na') expect(cell.reason, `${record.nazwa}.${channel} reason`).toBe(record.powody[channel]);
+    }
+    expect(op.sideEffects).toEqual(['none']);
+    expect(op.idempotent).toBe(true);
+    expect(op.contentInput).toBeUndefined();
+    // `error-code-once`, and exactly the record's subset of the taxonomy.
+    expect(new Set(op.errorCodes).size).toBe(op.errorCodes.length);
+    expect([...op.errorCodes].sort()).toEqual([...record.kodyBledow].sort());
+
+    // `narzedzia` → `renderings`, as `<server>.<tool>` of each named mcp-tool record.
+    const expected: Partial<Record<'internal' | 'mcp', string[]>> = {};
+    for (const [channel, slugs] of Object.entries(record.narzedzia) as Array<['internal' | 'mcp', string[]]>) {
+      expected[channel] = slugs.map((slug) => {
+        const tool = READ_TOOL_RECORDS[slug];
+        expect(tool, `mcp-tool record ${slug}`).toBeDefined();
+        return `${tool!.server}.${tool!.name}`;
+      });
+    }
+    expect(op.renderings ?? {}).toEqual(expected);
+    for (const channel of ['internal', 'mcp'] as const) {
+      const named = op.renderings?.[channel] ?? [];
+      if (op.channels[channel].kind === 'direct') expect(named.length, `${record.nazwa}.${channel}`).toBeGreaterThan(0);
+      else expect(named, `${record.nazwa}.${channel}`).toEqual([]);
+      for (const rendering of named) {
+        const [server, name] = rendering.split('.') as [string, string];
+        expect(registered.get(server)?.has(name), rendering).toBe(true);
+      }
+    }
+  }
+
+  it('[entity:check-consistency] check_consistency: project, direct, channels internal direct/cli direct/mcp direct/rest direct, no effects, idempotent, codes INVALID_ARGUMENT', () => {
+    expectRecordRow({
+      nazwa: 'check_consistency',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: {},
+      kodyBledow: ['INVALID_ARGUMENT'],
+      narzedzia: { internal: ['reference-tools-check-consistency'], mcp: ['c4s-reader-check-consistency'] },
+    });
+  });
+
+  it('[entity:describe-types] describe_types: project, direct, channels internal direct/cli direct/mcp direct/rest direct, no effects, idempotent, codes INVALID_TYPE', () => {
+    expectRecordRow({
+      nazwa: 'describe_types',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: {},
+      kodyBledow: ['INVALID_TYPE'],
+      narzedzia: { internal: ['entity-tools-describe-entity-type'], mcp: ['c4s-reader-describe-types', 'entity-tools-describe-entity-type'] },
+    });
+  });
+
+  it('[entity:find-references] find_references: project, direct, channels internal direct/cli direct/mcp direct/rest direct, no effects, idempotent, codes INVALID_ARGUMENT, INVALID_TYPE, INDEX_STALE', () => {
+    expectRecordRow({
+      nazwa: 'find_references',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: {},
+      kodyBledow: ['INVALID_ARGUMENT', 'INVALID_TYPE', 'INDEX_STALE'],
+      narzedzia: { internal: ['reference-tools-find-references'], mcp: ['c4s-reader-find-references'] },
+    });
+  });
+
+  it('[entity:get-entities] get_entities: project, direct, channels internal direct/cli direct/mcp direct/rest direct, no effects, idempotent, codes INVALID_TYPE, INVALID_ARGUMENT, INDEX_STALE', () => {
+    expectRecordRow({
+      nazwa: 'get_entities',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: {},
+      kodyBledow: ['INVALID_TYPE', 'INVALID_ARGUMENT', 'INDEX_STALE'],
+      narzedzia: { internal: ['entity-tools-get-entities'], mcp: ['c4s-reader-get-entities'] },
+    });
+  });
+
+  it('[entity:get-page] get_page: project, direct, channels internal direct/cli direct/mcp direct/rest na, no effects, idempotent, codes PAGE_NOT_FOUND, INVALID_ARGUMENT', () => {
+    expectRecordRow({
+      nazwa: 'get_page',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'na' },
+      powody: { rest: 'odczyt pliku dla edytora należy do M02: `GET /api/pages/:rootId/*` wydaje surowy plik bajt w bajt z `hash`, a nie strukturę tej operacji, więc renderowaniem `get_page` nie jest' },
+      kodyBledow: ['PAGE_NOT_FOUND', 'INVALID_ARGUMENT'],
+      narzedzia: { internal: ['reference-tools-get-page'], mcp: ['c4s-reader-get-page'] },
+    });
+  });
+
+  it('[entity:get-page-outline] get_page_outline: project, direct, channels internal direct/cli direct/mcp direct/rest na, no effects, idempotent, codes PAGE_NOT_FOUND, INVALID_ARGUMENT, INDEX_STALE', () => {
+    expectRecordRow({
+      nazwa: 'get_page_outline',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'na' },
+      powody: { rest: '`GET /api/sections` nie jest renderowaniem tej operacji: bez `pagePath` zwraca płaską listę globalną przez wszystkie strony, a outline jest z definicji kluczowany jedną stroną. Doprowadzenie trasy do parytetu jest osobną zmianą o własnym uzasadnieniu' },
+      kodyBledow: ['PAGE_NOT_FOUND', 'INVALID_ARGUMENT', 'INDEX_STALE'],
+      narzedzia: { internal: ['reference-tools-get-page-outline'], mcp: ['c4s-reader-get-page-outline'] },
+    });
+  });
+
+  it('[entity:get-sections] get_sections: project, direct, channels internal direct/cli direct/mcp direct/rest direct, no effects, idempotent, codes SECTION_NOT_FOUND, PAGE_NOT_FOUND, INVALID_ARGUMENT, INDEX_STALE', () => {
+    expectRecordRow({
+      nazwa: 'get_sections',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: {},
+      kodyBledow: ['SECTION_NOT_FOUND', 'PAGE_NOT_FOUND', 'INVALID_ARGUMENT', 'INDEX_STALE'],
+      narzedzia: { internal: ['reference-tools-get-sections'], mcp: ['c4s-reader-get-sections'] },
+    });
+  });
+
+  it('[entity:list-entities] list_entities: project, direct, channels internal direct/cli direct/mcp direct/rest direct, no effects, idempotent, codes INVALID_TYPE, INVALID_ARGUMENT, INDEX_STALE', () => {
+    expectRecordRow({
+      nazwa: 'list_entities',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: {},
+      kodyBledow: ['INVALID_TYPE', 'INVALID_ARGUMENT', 'INDEX_STALE'],
+      narzedzia: { internal: ['entity-tools-list-entities'], mcp: ['c4s-reader-list-entities'] },
+    });
+  });
+
+  it('[entity:list-pages] list_pages: project, direct, channels internal direct/cli direct/mcp direct/rest direct, no effects, idempotent, codes INVALID_ARGUMENT', () => {
+    expectRecordRow({
+      nazwa: 'list_pages',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: {},
+      kodyBledow: ['INVALID_ARGUMENT'],
+      narzedzia: { internal: ['reference-tools-list-pages'], mcp: ['c4s-reader-list-pages'] },
+    });
+  });
+
+  it('[entity:list-tags] list_tags: project, direct, channels internal direct/cli direct/mcp direct/rest direct, no effects, idempotent, codes INVALID_ARGUMENT, INDEX_STALE', () => {
+    expectRecordRow({
+      nazwa: 'list_tags',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: {},
+      kodyBledow: ['INVALID_ARGUMENT', 'INDEX_STALE'],
+      narzedzia: { internal: ['reference-tools-list-tags'], mcp: ['c4s-reader-list-tags'] },
+    });
+  });
+
+  it('[entity:overview] overview: project, direct, channels internal na/cli direct/mcp direct/rest direct, no effects, idempotent, codes none', () => {
+    expectRecordRow({
+      nazwa: 'overview',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'na', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: { internal: 'kanał wewnętrzny nie ma renderowania tej operacji i nie potrzebuje go: prompt niesie rooty, aktywne typy i tooling statycznie, a liczności rekordów odświeża `list_entities({ mode: \'count\' })`' },
+      kodyBledow: [],
+      narzedzia: { mcp: ['c4s-reader-overview'] },
+    });
+  });
+
+  it('[entity:resolve-identity] resolve_identity: project, direct, channels internal direct/cli direct/mcp direct/rest direct, no effects, idempotent, codes INVALID_TYPE, INDEX_STALE', () => {
+    expectRecordRow({
+      nazwa: 'resolve_identity',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: {},
+      kodyBledow: ['INVALID_TYPE', 'INDEX_STALE'],
+      narzedzia: { internal: ['entity-tools-resolve-identity'], mcp: ['c4s-reader-resolve-identity'] },
+    });
+  });
+
+  it('[entity:search-entities] search_entities: project, direct, channels internal direct/cli direct/mcp direct/rest direct, no effects, idempotent, codes INVALID_TYPE, INVALID_ARGUMENT, SEARCH_BUDGET_EXCEEDED, INDEX_STALE', () => {
+    expectRecordRow({
+      nazwa: 'search_entities',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: {},
+      kodyBledow: ['INVALID_TYPE', 'INVALID_ARGUMENT', 'SEARCH_BUDGET_EXCEEDED', 'INDEX_STALE'],
+      narzedzia: { internal: ['entity-tools-search-entities'], mcp: ['c4s-reader-search-entities'] },
+    });
+    // Addressed by the query plus `type` — `type` is the one required input.
+    const shape = z.object(CATALOG.require('search_entities').inputSchema as z.ZodRawShape);
+    expect(shape.safeParse({ query: 'x' }).success).toBe(false);
+    expect(shape.safeParse({ type: 'ac', query: 'x', filters: { status: ['active'] } }).success).toBe(true);
+  });
+
+  it('[entity:search-pages] search_pages: project, direct, channels internal direct/cli direct/mcp direct/rest direct, no effects, idempotent, codes INVALID_ARGUMENT, INDEX_STALE, SEARCH_BUDGET_EXCEEDED', () => {
+    expectRecordRow({
+      nazwa: 'search_pages',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: {},
+      kodyBledow: ['INVALID_ARGUMENT', 'INDEX_STALE', 'SEARCH_BUDGET_EXCEEDED'],
+      narzedzia: { internal: ['reference-tools-search-pages'], mcp: ['c4s-reader-search-pages'] },
+    });
+    // Addressed by the pattern plus a path filter — no input is required by the schema.
+    const shape = z.object(CATALOG.require('search_pages').inputSchema as z.ZodRawShape);
+    expect(shape.safeParse({}).success).toBe(true);
+    expect(shape.safeParse({ regex: 'x', rootId: 'pages', pathInclude: '^modules/', pathExclude: 'drift' }).success).toBe(true);
   });
 });

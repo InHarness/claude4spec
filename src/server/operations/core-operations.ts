@@ -86,34 +86,28 @@ const paging = {
 };
 
 /**
- * Every M39 read operation can answer with these — and this is the COMPLETE set.
+ * The error codes a read operation's row declares are the record's `kodyBledow`
+ * — and nothing else (2.1.26, M39 `m3s1nq7s`).
  *
- * `INVALID_VIEW` left the list in 0.2.22, when no read operation took a view
- * from a caller any more, and left the taxonomy entirely in 0.2.23 along with
- * the internal surfaces that could still name one. `SERIALIZER_THREW` went the
- * same way: it reported a type's own read code failing, and there is none.
- * A type that is unknown or deactivated answers `INVALID_TYPE`; an illegal name
- * in `select` answers `INVALID_ARGUMENT`. There is no third code, because a
- * type that is active always yields a record derived from its logical schema.
- */
-/**
- * 0.2.77 adds `INDEX_STALE` here rather than to each read that happens to be
- * projection-backed. The fail-closed rule is a property of the CORE, not of a
- * handful of operations: any read that hands out coordinates or identities a
- * caller then writes against refuses when its projection is marked. Declaring it
- * once means a channel cannot learn the code from one operation and be surprised
- * by it from the next.
+ * `kodyBledow` does not declare a taxonomy of its own: it CHOOSES from the one
+ * that stands (`7dad4wt0`), and the subset is the codes the operation actually
+ * answers with, not the ones its address would suggest. A missing entity in
+ * `get_entities` is an item with an empty record, not a refusal; a read that does
+ * not pass the freshness gate (`discovery/index.ts`) does not answer
+ * `INDEX_STALE`; `overview` answers with no code at all (`n/d`). So the rows
+ * below each carry their own list rather than a shared base plus extras — a
+ * shared base declared `INDEX_STALE` on `get_page` and `INVALID_TYPE` on
+ * `list_pages`, which neither can raise.
  *
- * `get_page` is the deliberate exception, and it is excluded at the GATE
- * (`discovery/index.ts`), not here — it reads the file, not a projection, so it
- * is the rescue path to content and a valid `expectedHash` while the rest refuse.
- * Declaring a code it cannot raise is harmless; omitting it from the reads that
- * CAN raise it would not be.
- */
-/**
- * 0.2.86 — `INDEX_NOT_MATERIALIZED` left this list. It is an internal-only code
- * (nothing on a channel can raise it any more); an external caller whose server
- * is down gets `SERVER_NOT_RUNNING` from the CLI instead.
+ * History that still holds: `INVALID_VIEW` and `SERIALIZER_THREW` left the
+ * taxonomy in 0.2.22/0.2.23; `INDEX_NOT_MATERIALIZED` is in the catalogue but no
+ * operation returns it (the server builds the projection before it serves; a
+ * caller without a server gets `SERVER_NOT_RUNNING` from the CLI); and 2.1.26
+ * removed `AMBIGUOUS_ENTITY` / `AMBIGUOUS_PAGE` — ambiguity has no code.
+ *
+ * `READ_CODES` survives only as the base of `get_field_content`, whose record
+ * keeps exactly that set plus its own code; the two search rows (2.1.26) list
+ * their records' codes like the others.
  */
 const READ_CODES = [
   'INVALID_TYPE',
@@ -134,7 +128,7 @@ function coreRead(
   name: string,
   summary: string,
   inputSchema: z.ZodRawShape,
-  extraCodes: readonly string[] = [],
+  errorCodes: readonly string[],
 ): OperationDeclaration {
   return {
     name,
@@ -143,7 +137,7 @@ function coreRead(
     mediation: 'direct',
     opClass: 'read',
     inputSchema,
-    errorCodes: [...READ_CODES, ...extraCodes],
+    errorCodes,
     sideEffects: ['none'],
     idempotent: true,
     channels: fullParity(),
@@ -196,39 +190,57 @@ export function registerCoreOperations(): void {
   seeded = true;
 
   // ── M39 read core (15) ────────────────────────────────────────────────────
+  //
+  // 2.1.26 — each row below matches its `spec-operation` record (`overview`,
+  // `describe-types`, `list-pages`, `get-page-outline`, `get-sections`,
+  // `get-page`, `list-entities`, `get-entities`, `list-tags`, `find-references`,
+  // `check-consistency`, `resolve-identity`): `errorCodes` is the record's
+  // `kodyBledow`, each code once, a channel `n/a` carries the record's `powody`
+  // entry, and `renderings` is its `narzedzia`.
 
   CATALOG.register({
-    ...coreRead('overview', 'Entry point to a specification: page roots with their properties, active entity types with counts and payload versions, tag count, claude4spec version.', {}),
+    ...coreRead('overview', 'Entry point to a specification: page roots with their properties, active entity types with counts and payload versions, tag count, claude4spec version.', {}, []),
     channels: {
       ...fullParity(),
       // 0.2.92 — a decision, not a backlog item: the built-in agent's prompt
       // carries all of it statically, and the one part that goes stale mid-turn
       // has its own operation.
       internal: na(
-        'kanał wewnętrzny nie ma renderowania tej operacji i nie potrzebuje go: prompt niesie rooty, aktywne typy i tooling statycznie, a liczności rekordów odświeża list_entities({ mode: \'count\' })',
+        "kanał wewnętrzny nie ma renderowania tej operacji i nie potrzebuje go: prompt niesie rooty, aktywne typy i tooling statycznie, a liczności rekordów odświeża `list_entities({ mode: 'count' })`",
       ),
     },
+    renderings: { mcp: ['c4s-reader.overview'] },
   });
 
-  CATALOG.register(
+  CATALOG.register({
     // The summary deliberately says "activation set" rather than naming the
     // config field: an architecture gate asserts that only the plugin host reads
     // `config.entities`, and it greps string literals too.
-    coreRead('describe_types', "Schemas of the active entity types. Without a type argument, all of them; a type outside the project's activation set is INVALID_TYPE, never a silent fallback.", {
+    ...coreRead('describe_types', "Schemas of the active entity types. Without a type argument, all of them; a type outside the project's activation set is INVALID_TYPE, never a silent fallback.", {
       types: z.array(z.string()).optional().describe('Restrict to these type ids. Omit for every active type.'),
-    }),
-  );
+    }, ['INVALID_TYPE']),
+    /**
+     * Two renderings in `mcp` under two names and two contracts — the record says
+     * so, and it is not drift: the external reader's own `describe_types`, and
+     * `entity-tools`' `describe_entity_type`, which is also the `internal` one.
+     */
+    renderings: {
+      internal: ['entity-tools.describe_entity_type'],
+      mcp: ['c4s-reader.describe_types', 'entity-tools.describe_entity_type'],
+    },
+  });
 
-  CATALOG.register(
-    coreRead('list_pages', 'Pages of one root. A page\'s identity is (rootId, relPath), so the root is part of the address, not a filter.', {
+  CATALOG.register({
+    ...coreRead('list_pages', 'Pages of one root. A page\'s identity is (rootId, relPath), so the root is part of the address, not a filter.', {
       rootId: z.string(),
       ...paging,
-    }, ['ROOT_NOT_FOUND']),
-  );
+    }, ['INVALID_ARGUMENT']),
+    renderings: { internal: ['reference-tools.list_pages'], mcp: ['c4s-reader.list_pages'] },
+  });
 
   /**
-   * 0.2.59 — `get_page_outline` replaces `list_sections`, and it is the one M39 read
-   * that does NOT declare four-channel parity.
+   * 0.2.59 — `get_page_outline` replaces `list_sections`, and it is one of the M39
+   * reads that does NOT declare four-channel parity.
    *
    * Declared through the object literal rather than `coreRead`, because `coreRead`
    * hard-codes `fullParity()` and this operation's `rest` cell is `n/a` with a
@@ -262,7 +274,7 @@ export function registerCoreOperations(): void {
      * be decidable from its declaration alone, without reading the implementation —
      * so it is decidable from right here.
      */
-    errorCodes: [...READ_CODES, 'PAGE_NOT_FOUND', 'ROOT_NOT_FOUND'],
+    errorCodes: ['PAGE_NOT_FOUND', 'INVALID_ARGUMENT', 'INDEX_STALE'],
     sideEffects: ['none'],
     idempotent: true,
     channels: {
@@ -270,27 +282,29 @@ export function registerCoreOperations(): void {
       cli: direct(),
       mcp: direct(),
       rest: na(
-        '`GET /api/sections` is NOT a rendering of this operation: without `pagePath` it returns a flat global list across every page, feeding the editor fuzzy-autocomplete (`/section`, `<SectionRefChip />`) — a mode the outline does not have and will not get, being keyed by ONE page. The route stays M06 semantics, not a transport over the core.',
+        '`GET /api/sections` nie jest renderowaniem tej operacji: bez `pagePath` zwraca płaską listę globalną przez wszystkie strony, a outline jest z definicji kluczowany jedną stroną. Doprowadzenie trasy do parytetu jest osobną zmianą o własnym uzasadnieniu',
       ),
     },
+    renderings: { internal: ['reference-tools.get_page_outline'], mcp: ['c4s-reader.get_page_outline'] },
   });
 
-  CATALOG.register(
-    coreRead('get_sections', 'Content of several sections addressed by anchor, in ONE call. The singular `get_section` was removed without a transition period: N sections cost N model turns, which was not acceptable.', {
+  CATALOG.register({
+    ...coreRead('get_sections', 'Content of several sections addressed by anchor, in ONE call. The singular `get_section` was removed without a transition period: N sections cost N model turns, which was not acceptable.', {
       anchors: z.array(z.string()).min(1),
       includeSubtree: z.boolean().optional(),
-    }, ['SECTION_NOT_FOUND', 'AMBIGUOUS_ANCHOR']),
-  );
+    }, ['SECTION_NOT_FOUND', 'PAGE_NOT_FOUND', 'INVALID_ARGUMENT', 'INDEX_STALE']),
+    renderings: { internal: ['reference-tools.get_sections'], mcp: ['c4s-reader.get_sections'] },
+  });
 
   {
     const getPage = coreRead(
       'get_page',
-      'One WHOLE page addressed by (rootId, path), as a collection of sections: frontmatter and preamble are envelope fields, each section an item keyed by its anchor. Computed from the file, not the index, so it never answers INDEX_STALE. No line window (2.1.8): a cut read resumes through get_page_outline + get_sections. Replaced `resolve_page({ path })` — the same relPath in several roots was ambiguous.',
+      'One WHOLE page addressed by (rootId, path), as a collection of sections: frontmatter and preamble are envelope fields, each section an item keyed by its anchor. Computed from the file, not the index, so it never answers INDEX_STALE. No line window (2.1.8): a cut read resumes through get_page_outline + get_sections. Replaced `resolve_page({ path })`, which took a relPath without its root.',
       {
         rootId: z.string(),
         path: z.string(),
       },
-      ['PAGE_NOT_FOUND', 'ROOT_NOT_FOUND', 'AMBIGUOUS_PAGE'],
+      ['PAGE_NOT_FOUND', 'INVALID_ARGUMENT'],
     );
     CATALOG.register({
       ...getPage,
@@ -302,14 +316,24 @@ export function registerCoreOperations(): void {
          * byte plus its hash), not a transport over this operation.
          */
         rest: na(
-          '`GET /api/pages/:rootId/*` is NOT a rendering of this operation: it is M02\'s raw read for the editor (`page-detail` — the whole file byte for byte plus its hash, no budget, no sections), because the editor writes the file back whole.',
+          'odczyt pliku dla edytora należy do M02: `GET /api/pages/:rootId/*` wydaje surowy plik bajt w bajt z `hash`, a nie strukturę tej operacji, więc renderowaniem `get_page` nie jest',
         ),
       },
+      renderings: { internal: ['reference-tools.get_page'], mcp: ['c4s-reader.get_page'] },
     });
   }
 
-  CATALOG.register(
-    coreRead(
+  /**
+   * 2.1.26 — `search_pages` against its record: `kodyBledow` is INVALID_ARGUMENT,
+   * INDEX_STALE and SEARCH_BUDGET_EXCEEDED. An unknown `rootId` is the core's
+   * INVALID_ARGUMENT, so `ROOT_NOT_FOUND` left the row, and so did `INVALID_TYPE`
+   * (no type in the address) and the second `INVALID_ARGUMENT` the shared base
+   * plus extras produced. INDEX_STALE is any mark of the sections projection,
+   * a search narrowed to one root included (the freshness gate checks the
+   * projection without an artifact key).
+   */
+  CATALOG.register({
+    ...coreRead(
       'search_pages',
       'Search the prose of the pages by phrase (`query`) or regex (`regex`) — cross-root by default; `rootId` only NARROWS. A hit is a SECTION (a page only when the match falls outside every section — then `rootId` + `path` with the match count, no anchor and no line number, readable through `get_page`), carrying `matchCount`; matches are lines. Modes are a cost ladder: `count` (totals), `map` (identity rows, the DEFAULT), `hits` (adds `hunks[]` + `omittedChars`). Enumeration order is `(rootId, path, line_start)` with a declared tie-break, so a full `limit`/`offset` traversal returns each hit exactly once.',
       {
@@ -323,12 +347,20 @@ export function registerCoreOperations(): void {
         context: z.number().int().nonnegative().optional(),
         ...paging,
       },
-      ['ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'SEARCH_BUDGET_EXCEEDED'],
+      ['INVALID_ARGUMENT', 'INDEX_STALE', 'SEARCH_BUDGET_EXCEEDED'],
     ),
-  );
+    renderings: { internal: ['reference-tools.search_pages'], mcp: ['c4s-reader.search_pages'] },
+  });
 
-  CATALOG.register(
-    coreRead(
+  /**
+   * 2.1.26 — `search_entities` against its record: `kodyBledow` is INVALID_TYPE,
+   * INVALID_ARGUMENT, SEARCH_BUDGET_EXCEEDED and INDEX_STALE (the type marked in
+   * the entity projection). The address is the query plus `type`; `filters`
+   * narrows by the type's declared scalar fields exactly as on `list_entities`,
+   * which is what the `internal` rendering forwards to the core.
+   */
+  CATALOG.register({
+    ...coreRead(
       'search_entities',
       'Search over one entity type by phrase (`query`) or regex (`regex`) — exactly one of the two. A hit is an ENTITY carrying `matchCount`; matches are occurrences, so an entity matched twice is one row with `matchCount: 2`. Modes are a cost ladder: `count` (totals), `map` (`{slug, title, matchCount}`, the DEFAULT, no entity content at all), `hits` (adds `hunks[]` + `omittedChars`). No mode carries a `score`: order is the contract instead — relevance under `query`, slug ascending under `regex`, both fully tie-broken. A hunk`s `field` is a legal `select` value for `get_entities` and never a content-bearing field, which stay outside both the scan scope and the evidence. Unlike `search_pages`, a pattern may cross a line: matching runs against the whole field value. Returns `searchedFields`, so an empty result is distinguishable from a field that was never searched.',
       {
@@ -336,30 +368,40 @@ export function registerCoreOperations(): void {
         query: z.string().optional(),
         regex: z.string().optional(),
         fields: z.array(z.string()).optional(),
+        filters: z.record(z.string(), z.unknown()).optional(),
         mode: z.enum(['count', 'map', 'hits']).optional(),
         ...paging,
       },
-      ['SEARCH_BUDGET_EXCEEDED'],
+      ['INVALID_TYPE', 'INVALID_ARGUMENT', 'SEARCH_BUDGET_EXCEEDED', 'INDEX_STALE'],
     ),
-  );
+    renderings: { internal: ['entity-tools.search_entities'], mcp: ['c4s-reader.search_entities'] },
+  });
 
-  CATALOG.register(
-    coreRead('list_entities', 'Entities of one type, paged. Rows are `{slug, title}` — discovery answers with keys; ask `get_entities` for content. The `createdAt` order is the only one whose offset window is stable under concurrent writes.', {
+  CATALOG.register({
+    ...coreRead('list_entities', 'Entities of one type, paged, narrowed by tags and by the type\'s own declared scalar fields, or only counted (`mode: count`). Rows are `{slug, title}` — discovery answers with keys; ask `get_entities` for content.', {
       type: z.string(),
+      tags: z.array(z.string()).optional(),
       tagFilter: z.enum(['and', 'or']).optional().describe("How to combine `tags`. Default 'and'."),
-      sort: z.enum(['createdAt', 'title', 'slug']).optional(),
-      dir: z.enum(['asc', 'desc']).optional(),
+      filters: z.record(z.string(), z.unknown()).optional(),
+      mode: z.enum(['items', 'count']).optional(),
       ...paging,
-    }),
-  );
+    }, ['INVALID_TYPE', 'INVALID_ARGUMENT', 'INDEX_STALE']),
+    renderings: { internal: ['entity-tools.list_entities'], mcp: ['c4s-reader.list_entities'] },
+  });
 
-  CATALOG.register(
-    coreRead('get_entities', 'Several entities of one type by slug, in ONE call. Width is the caller\'s: see `select`.', {
+  /**
+   * A slug with no entity is an ITEM with an empty record, never a refusal — so
+   * no `ENTITY_NOT_FOUND` here, and (2.1.26) no `AMBIGUOUS_ENTITY` either: the
+   * type beside every slug is the key that does not admit ambiguity.
+   */
+  CATALOG.register({
+    ...coreRead('get_entities', 'Several entities of one type by slug, in ONE call. Width is the caller\'s: see `select`.', {
       type: z.string(),
       slugs: z.array(z.string()).min(1),
       ...selectParam,
-    }, ['ENTITY_NOT_FOUND', 'AMBIGUOUS_ENTITY', 'INVALID_ARGUMENT']),
-  );
+    }, ['INVALID_TYPE', 'INVALID_ARGUMENT', 'INDEX_STALE']),
+    renderings: { internal: ['entity-tools.get_entities'], mcp: ['c4s-reader.get_entities'] },
+  });
 
   /**
    * 2.1.26 (M39 `v0fldrd8`, record `get-field-content`) — ONE generic core
@@ -375,21 +417,27 @@ export function registerCoreOperations(): void {
       type: z.string(),
       slug: z.string(),
       field: z.string(),
-    }, ['ENTITY_NOT_FOUND']),
+    }, [...READ_CODES, 'ENTITY_NOT_FOUND']),
   );
 
-  CATALOG.register(
-    coreRead('list_tags', 'The tag registry, paged, optionally with usage counts.', {
+  CATALOG.register({
+    ...coreRead('list_tags', 'The tag registry, paged, optionally with usage counts.', {
       withCounts: z.boolean().optional(),
       minCount: z.number().int().nonnegative().optional(),
       coOccurringWith: z.string().optional(),
       ...paging,
-    }),
-  );
+    }, ['INVALID_ARGUMENT', 'INDEX_STALE']),
+    renderings: { internal: ['reference-tools.list_tags'], mcp: ['c4s-reader.list_tags'] },
+  });
 
-  CATALOG.register(
-    coreRead('find_references', 'Who points at this entity, section or page. `includeTagMatches` additionally folds in dynamic `<tagged_list/>` matches, so one call answers both halves of "what breaks if I rename this".', {
-      target: z.enum(['entity', 'section', 'page']),
+  CATALOG.register({
+    ...coreRead('find_references', 'Who points at this entity, section or page. `includeTagMatches` additionally folds in dynamic `<tagged_list/>` matches, so one call answers both halves of "what breaks if I rename this".', {
+      /**
+       * Optional in the schema although every call needs it: a call WITHOUT
+       * `target` must reach the core, whose `INVALID_ARGUMENT` lists the
+       * variants — a schema refusal would answer with strictly less.
+       */
+      target: z.enum(['entity', 'section', 'page']).optional(),
       type: z.string().optional(),
       slug: z.string().optional(),
       anchor: z.string().optional(),
@@ -398,33 +446,40 @@ export function registerCoreOperations(): void {
       includeTagMatches: z.boolean().optional().describe('Default false. Merges `<tagged_list/>` / `<tagged_list_mixed/>` matches into the result.'),
       ...paging,
       /**
-       * No extra error codes: the base `READ_CODES` already name everything
-       * `discovery/ops/references.ts` can raise. This used to declare
-       * `ENTITY_NOT_FOUND` and `MISSING_TARGET` on top, and neither is
+       * Exactly what `discovery/ops/references.ts` can raise. This used to
+       * declare `ENTITY_NOT_FOUND` and `MISSING_TARGET` on top, and neither is
        * reachable — a missing `target`, a missing page key and an unknown
        * `rootId` are all `INVALID_ARGUMENT`, an unknown entity type is
        * `INVALID_TYPE`, and a target nothing cites is a SUCCESS with
        * `total: 0`. Declaring a `*_NOT_FOUND` told an agent to expect an
        * error exactly where it gets an empty list.
        */
-    }),
-  );
+    }, ['INVALID_ARGUMENT', 'INVALID_TYPE', 'INDEX_STALE']),
+    renderings: { internal: ['reference-tools.find_references'], mcp: ['c4s-reader.find_references'] },
+  });
 
-  CATALOG.register(
-    coreRead('check_consistency', 'M19 consistency rules over the specification. Read-only — the report fixes nothing. `summary` always carries FULL counts, so a truncated findings list stays visibly truncated.', {
+  /** Ungated (no freshness check), so no `INDEX_STALE`; an unknown `rule` is the one refusal. */
+  CATALOG.register({
+    ...coreRead('check_consistency', 'M19 consistency rules over the specification. Read-only — the report fixes nothing. `summary` always carries FULL counts, so a truncated findings list stays visibly truncated.', {
       severity: z.enum(['error', 'warning']).optional(),
       rule: z.union([z.string(), z.number()]).optional(),
       limit: z.number().int().positive().optional(),
-    }),
-  );
+    }, ['INVALID_ARGUMENT']),
+    renderings: { internal: ['reference-tools.check_consistency'], mcp: ['c4s-reader.check_consistency'] },
+  });
 
-  CATALOG.register(
-    coreRead('resolve_identity', 'Candidates for a name/slug fragment ACROSS every active type, as a discriminated union — a cross-type facade over the per-type indexes, so the caller need not know the type before asking.', {
+  /**
+   * 2.1.26 — ambiguity is not an error here, it is the answer: a phrase several
+   * entities match comes back as a ranked candidate list with a `score` each.
+   */
+  CATALOG.register({
+    ...coreRead('resolve_identity', 'Candidates for a name/slug fragment ACROSS every active type, ranked with a score each — a cross-type facade over the per-type indexes, so the caller need not know the type before asking. An ambiguous phrase is answered with the candidates, never refused.', {
       query: z.string(),
       types: z.array(z.string()).optional(),
       limit: z.number().int().positive().optional(),
-    }),
-  );
+    }, ['INVALID_TYPE', 'INDEX_STALE']),
+    renderings: { internal: ['entity-tools.resolve_identity'], mcp: ['c4s-reader.resolve_identity'] },
+  });
 
   // ── M31 Workspace ─────────────────────────────────────────────────────────
 

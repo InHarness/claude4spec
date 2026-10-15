@@ -1,0 +1,314 @@
+{
+ "role": "verifier",
+ "scope": {
+  "kind": "unit",
+  "id": "u07-core-read-tools"
+ },
+ "release": "2.1.26",
+ "rows": [
+  {
+   "slug": "section:7dad4wt0",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/discovery/errors.test.ts:21 — DISCOVERY_ERROR_CODES toEqual the 8 codes (no AMBIGUOUS_*), STATUS_FOR_DISCOVERY_CODE keys 1:1; no ambiguousEntity/ambiguousPage/indexNotMaterialized export; no catalog row declares AMBIGUOUS_*/INDEX_NOT_MATERIALIZED; SERVER_DELEGATING_CODES has SERVER_NOT_RUNNING (exit 8); sectionNotFound hint contains search_pages + get_page_outline; resolveIdentity answers slug 'user' under dto+endpoint with scored candidates. Code: src/server/discovery/errors.ts:36, src/server/operations/error-codes.ts:29, src/server/db/readonly.ts deleted. Remaining AMBIGUOUS_* only in CLI catalogue src/bin/c4s/errors.ts:91 (u10's goal) and plan-domain AMBIGUOUS_ANCHOR."
+  },
+  {
+   "slug": "check-consistency",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:764 [entity:check-consistency] expectRecordRow — name, scope, mediation, 4 channel cells (+ n/a powody verbatim), sideEffects none, idempotent, contentInput undefined, errorCodes == kodyBledow once each, renderings == narzedzia and each registered; row in src/server/operations/core-operations.ts matches the 2.1.26 record"
+  },
+  {
+   "slug": "reference-tools-check-consistency",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/reference-tools.test.ts:899 [entity:reference-tools-check-consistency] — record contract; severity/rule/limit forwarded; core error {error,code,hint}; INTERNAL; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "c4s-reader-check-consistency",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/c4s-reader.test.ts:393 [entity:c4s-reader-check-consistency] — record contract (enum severity, string|number rule, integer limit); filters forwarded; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "describe-types",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:776 [entity:describe-types] expectRecordRow — name, scope, mediation, 4 channel cells (+ n/a powody verbatim), sideEffects none, idempotent, contentInput undefined, errorCodes == kodyBledow once each, renderings == narzedzia and each registered; row in src/server/operations/core-operations.ts matches the 2.1.26 record"
+  },
+  {
+   "slug": "entity-tools-describe-entity-type",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/entity-tools.test.ts:901 [entity:entity-tools-describe-entity-type] — record contract; INVALID_TYPE / INACTIVE_TYPE; :912 one core call, per-type fallback with __error, crudSupported true; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "c4s-reader-describe-types",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/c4s-reader.test.ts:315 [entity:c4s-reader-describe-types] — record contract; types forwarded, omitted → { types: undefined }; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "find-references",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:788 [entity:find-references] expectRecordRow — name, scope, mediation, 4 channel cells (+ n/a powody verbatim), sideEffects none, idempotent, contentInput undefined, errorCodes == kodyBledow once each, renderings == narzedzia and each registered; row in src/server/operations/core-operations.ts matches the 2.1.26 record"
+  },
+  {
+   "slug": "reference-tools-find-references",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/reference-tools.test.ts:905 [entity:reference-tools-find-references] — record contract; target union forwarded with includeTagMatches:false; missing target to core; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "c4s-reader-find-references",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/c4s-reader.test.ts:380 [entity:c4s-reader-find-references] — record contract; missing target reaches core as { target: undefined, includeTagMatches: false }; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "get-entities",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:800 [entity:get-entities] expectRecordRow — name, scope, mediation, 4 channel cells (+ n/a powody verbatim), sideEffects none, idempotent, contentInput undefined, errorCodes == kodyBledow once each, renderings == narzedzia and each registered; row in src/server/operations/core-operations.ts matches the 2.1.26 record"
+  },
+  {
+   "slug": "entity-tools-get-entities",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/entity-tools.test.ts:965 [entity:entity-tools-get-entities] — record contract; type gate before core; :977 batches [50,1,1], no truncated/message; :1013 core errors uncaught; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "c4s-reader-get-entities",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/c4s-reader.test.ts:365 [entity:c4s-reader-get-entities] — record contract; type/slugs/select forwarded, answer unchanged; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "get-page",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:812 [entity:get-page] expectRecordRow — name, scope, mediation, 4 channel cells (+ n/a powody verbatim), sideEffects none, idempotent, contentInput undefined, errorCodes == kodyBledow once each, renderings == narzedzia and each registered; row in src/server/operations/core-operations.ts matches the 2.1.26 record"
+  },
+  {
+   "slug": "reference-tools-get-page",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/reference-tools.test.ts:914 [entity:reference-tools-get-page] — record contract (loose input, no line window); + :470 range refused by core; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "c4s-reader-get-page",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/c4s-reader.test.ts:353 [entity:c4s-reader-get-page] — record contract, no line window; + :156 range → INVALID_ARGUMENT (loose schema); tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "get-page-outline",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:824 [entity:get-page-outline] expectRecordRow — name, scope, mediation, 4 channel cells (+ n/a powody verbatim), sideEffects none, idempotent, contentInput undefined, errorCodes == kodyBledow once each, renderings == narzedzia and each registered; row in src/server/operations/core-operations.ts matches the 2.1.26 record"
+  },
+  {
+   "slug": "reference-tools-get-page-outline",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/reference-tools.test.ts:920 [entity:reference-tools-get-page-outline] — record contract (REFERENCE_TOOLS_GET_PAGE_OUTLINE_LEAD + GET_PAGE_OUTLINE_RETURN); tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "c4s-reader-get-page-outline",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/c4s-reader.test.ts:329 [entity:c4s-reader-get-page-outline] — record contract (LEAD + GET_PAGE_OUTLINE_RETURN verbatim); page key forwarded; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "get-sections",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:836 [entity:get-sections] expectRecordRow — name, scope, mediation, 4 channel cells (+ n/a powody verbatim), sideEffects none, idempotent, contentInput undefined, errorCodes == kodyBledow once each, renderings == narzedzia and each registered; row in src/server/operations/core-operations.ts matches the 2.1.26 record"
+  },
+  {
+   "slug": "reference-tools-get-sections",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/reference-tools.test.ts:926 [entity:reference-tools-get-sections] — record contract; includeSubtree:1 → false; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "c4s-reader-get-sections",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/c4s-reader.test.ts:335 [entity:c4s-reader-get-sections] — record contract (GET_SECTIONS_DESCRIPTION); includeSubtree true only when === true; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "list-entities",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:848 [entity:list-entities] expectRecordRow — name, scope, mediation, 4 channel cells (+ n/a powody verbatim), sideEffects none, idempotent, contentInput undefined, errorCodes == kodyBledow once each, renderings == narzedzia and each registered; row in src/server/operations/core-operations.ts matches the 2.1.26 record"
+  },
+  {
+   "slug": "entity-tools-list-entities",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/entity-tools.test.ts:1025 [entity:entity-tools-list-entities] — record contract, inputSchema has no sort/dir; :1037 default predicate, tagFilter and, limit 50/offset 0, hasMore from handler; :1069 INDEX_STALE uncaught; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "c4s-reader-list-entities",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/c4s-reader.test.ts:359 [entity:c4s-reader-list-entities] — record contract (keeps sort/dir per its record, integer paging); all forwarded; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "list-pages",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:860 [entity:list-pages] expectRecordRow — name, scope, mediation, 4 channel cells (+ n/a powody verbatim), sideEffects none, idempotent, contentInput undefined, errorCodes == kodyBledow once each, renderings == narzedzia and each registered; row in src/server/operations/core-operations.ts matches the 2.1.26 record"
+  },
+  {
+   "slug": "reference-tools-list-pages",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/reference-tools.test.ts:939 [entity:reference-tools-list-pages] — record contract (rootId required, integer paging); forwarded; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "c4s-reader-list-pages",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/c4s-reader.test.ts:323 [entity:c4s-reader-list-pages] — record contract (integer paging); rootId/prefix/sort/window forwarded; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "list-tags",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:872 [entity:list-tags] expectRecordRow — name, scope, mediation, 4 channel cells (+ n/a powody verbatim), sideEffects none, idempotent, contentInput undefined, errorCodes == kodyBledow once each, renderings == narzedzia and each registered; row in src/server/operations/core-operations.ts matches the 2.1.26 record"
+  },
+  {
+   "slug": "reference-tools-list-tags",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/reference-tools.test.ts:945 [entity:reference-tools-list-tags] — record contract; {} → { withCounts: false }; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "c4s-reader-list-tags",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/c4s-reader.test.ts:371 [entity:c4s-reader-list-tags] — record contract; withCounts:\"yes\" → false; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "overview",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:884 [entity:overview] expectRecordRow — name, scope, mediation, 4 channel cells (+ n/a powody verbatim), sideEffects none, idempotent, contentInput undefined, errorCodes == kodyBledow once each, renderings == narzedzia and each registered; row in src/server/operations/core-operations.ts matches the 2.1.26 record"
+  },
+  {
+   "slug": "c4s-reader-overview",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/c4s-reader.test.ts:310 [entity:c4s-reader-overview] — expectToolMatchesRecord + expectPassThroughAdapter (PROJECT_NOT_FOUND / pass-through / {error,code,hint} / INTERNAL); tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "resolve-identity",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:896 [entity:resolve-identity] expectRecordRow — name, scope, mediation, 4 channel cells (+ n/a powody verbatim), sideEffects none, idempotent, contentInput undefined, errorCodes == kodyBledow once each, renderings == narzedzia and each registered; row in src/server/operations/core-operations.ts matches the 2.1.26 record"
+  },
+  {
+   "slug": "entity-tools-resolve-identity",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/entity-tools.test.ts:1077 [entity:entity-tools-resolve-identity] — record contract, annotations.readOnlyHint undefined; types/limit only when given; :1100 core error code/message/hint, INTERNAL; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "c4s-reader-resolve-identity",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/c4s-reader.test.ts:399 [entity:c4s-reader-resolve-identity] — record contract; query/types/limit forwarded, scored candidates unchanged; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "search-entities",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:908 [entity:search-entities] expectRecordRow — name, scope, mediation, 4 channel cells (+ n/a powody verbatim), sideEffects none, idempotent, contentInput undefined, errorCodes == kodyBledow once each, renderings == narzedzia and each registered; row in src/server/operations/core-operations.ts matches the 2.1.26 record"
+  },
+  {
+   "slug": "entity-tools-search-entities",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/entity-tools.test.ts:1130 [entity:entity-tools-search-entities] — record contract; type gate; :1145 defaults map/50/0 + default predicate, filters forwarded, no truncated; :1172 count; :1179 core errors uncaught; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "c4s-reader-search-entities",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/c4s-reader.test.ts:405 [entity:c4s-reader-search-entities] — record contract, no filters; only the given input reaches the core; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "search-pages",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:924 [entity:search-pages] expectRecordRow — name, scope, mediation, 4 channel cells (+ n/a powody verbatim), sideEffects none, idempotent, contentInput undefined, errorCodes == kodyBledow once each, renderings == narzedzia and each registered; row in src/server/operations/core-operations.ts matches the 2.1.26 record"
+  },
+  {
+   "slug": "reference-tools-search-pages",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/reference-tools.test.ts:954 [entity:reference-tools-search-pages] — record contract; description toBe(SEARCH_PAGES_DESCRIPTION); every input forwarded; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "c4s-reader-search-pages",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/c4s-reader.test.ts:418 [entity:c4s-reader-search-pages] — record contract (SEARCH_PAGES_DESCRIPTION, integer context/paging); every input forwarded; tests/helpers/read-tool-records.ts (record copy verified equal to the 2.1.26 record: name, server, description, params, empty hints); code descriptions statically equal the record text"
+  },
+  {
+   "slug": "goal:u07-core-read-tools",
+   "level": 2,
+   "status": "covered",
+   "evidence": "Integer windows/explicit envelopes/filters/no page line window: all 27 read tools match their records (tests/helpers/read-tool-records.ts == spec; expectToolMatchesRecord in c4s-reader/reference-tools/entity-tools tests); search_pages hunks are string[] (src/server/discovery/types.ts:512, page-search.ts:291); catalog rows list_entities (tags/filters/mode, no sort/dir) and search_entities (filters) in core-operations.ts. No ambiguity code: src/server/discovery/errors.ts:36, error-codes.ts:29; resolve_identity scored candidates (errors.test.ts). INDEX_NOT_MATERIALIZED raised nowhere (no factory, dead db/readonly.ts deleted), CLI caller gets SERVER_NOT_RUNNING. Removed: AMBIGUOUS_* from core taxonomy (CLI copy is u10's goal), sort/dir on entity-tools list_entities + catalog row, no readOnlyHint on entity-tools resolve_identity (entity-tools.ts:576)."
+  }
+ ],
+ "suite": {
+  "command": "npm run typecheck",
+  "exitCode": 0,
+  "summary": "tsc --noEmit green across host and all plugin workspaces; tests not run (env-runner only), test bodies read statically"
+ }
+}

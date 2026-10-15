@@ -5,11 +5,12 @@ import { buildEntityTools, type EntityToolsDeps } from './entity-tools.js';
 import { createTestDb } from '../../../tests/helpers/test-db.js';
 import { applyProjection } from '../db/projection.js';
 import { RawEntityReader } from '../discovery/raw-entity-reader.js';
-import { entityNotFound, indexStale, invalidArgument } from '../discovery/errors.js';
+import { entityNotFound, indexStale, invalidArgument, searchBudgetExceeded } from '../discovery/errors.js';
 import { TagsService } from '../services/tags.js';
 import { VersionService } from '../services/versions.js';
 import type { EntityStore } from '../services/entity-store.js';
 import type { BackendModule, ProjectPluginHost } from '../core/plugin-host/types.js';
+import { expectToolMatchesRecord } from '../../../tests/helpers/read-tool-records.js';
 
 interface Widget {
   slug: string;
@@ -883,5 +884,311 @@ describe('[section:v0fldrd8] entity-tools: no field-content tool per type', () =
       { type: 'gizmo', slug: 'g', field: 'body' },
       { type: 'gizmo', slug: 'g', field: 'notes' },
     ]);
+  });
+});
+
+/**
+ * 2.1.26 — the four `entity-tools` read tools as their re-rendered `mcp-tool`
+ * records declare them (the `internal` renderings of `describe_types`,
+ * `get_entities`, `list_entities` and `resolve_identity`): name, description,
+ * parameters, no declared hint — `resolve_identity` included, whose read-only
+ * declaration is gone — and the behaviour each record's `logic` states.
+ */
+describe('entity-tools — the read tools as their 2.1.26 records declare them', () => {
+  type CoreStub = Record<string, (input: unknown) => unknown>;
+  const core = (deps: EntityToolsDeps) => deps.discovery as unknown as CoreStub;
+
+  it('[entity:entity-tools-describe-entity-type] describe_entity_type: the record\'s contract; unknown type INVALID_TYPE, inactive INACTIVE_TYPE', async () => {
+    const { deps } = fakeDeps();
+    expectToolMatchesRecord(tool(deps, 'describe_entity_type'), 'entity-tools-describe-entity-type');
+    const unknown = await tool(deps, 'describe_entity_type').handler({ type: 'nonexistent' }, {});
+    expect(unknown.isError).toBe(true);
+    expect(parse(unknown as never)).toMatchObject({ code: 'INVALID_TYPE' });
+    const inactive = await tool(deps, 'describe_entity_type').handler({ type: 'inactive' }, {});
+    expect(inactive.isError).toBe(true);
+    expect(parse(inactive as never)).toMatchObject({ code: 'INACTIVE_TYPE' });
+  });
+
+  it('[entity:entity-tools-describe-entity-type] without `type` every active type, each entry built from one core call; when that call throws, per type — and a type whose description throws gets `{ type, label, __error }`', async () => {
+    const { deps } = fakeDeps();
+    const derived = {
+      constraints: [{ field: 'title', type: 'maxLength', maxLength: 200 }],
+      contentFields: [{ field: 'body', operation: 'get_field_content' }],
+      selectableFields: ['title'],
+    };
+    const calls: unknown[] = [];
+    core(deps).describeTypes = (input) => {
+      calls.push(input);
+      return { types: ['widget', 'no-crud'].map((type) => ({ type, ...derived })) };
+    };
+    const all = parse((await tool(deps, 'describe_entity_type').handler({}, {})) as never) as {
+      types: Array<Record<string, unknown>>;
+    };
+    expect(calls).toEqual([{}]);
+    expect(all.types.map((t) => t.type)).toEqual(['widget', 'no-crud']);
+    for (const entry of all.types) {
+      expect(Object.keys(entry).sort()).toEqual(
+        [
+          'constraints',
+          'contentFields',
+          'createSchema',
+          'crudSupported',
+          'customToolsLine',
+          'label',
+          'searchableFields',
+          'selectableFields',
+          'type',
+          'updateSchema',
+        ].filter((k) => k !== 'customToolsLine' || entry.customToolsLine !== undefined),
+      );
+      expect(entry).toMatchObject({ label: 'Widget', crudSupported: true, ...derived });
+      expect(entry.createSchema).toMatchObject({ type: 'object' });
+      expect(entry.updateSchema).toMatchObject({ type: 'object' });
+      expect(entry.searchableFields).toEqual(expect.arrayContaining(['title']));
+    }
+
+    // The batch throws → one core call per type; the type whose own call throws
+    // degrades to its `__error` entry, the healthy one is untouched.
+    core(deps).describeTypes = (input) => {
+      const { types } = input as { types?: string[] };
+      if (!types) throw new Error('batch failed');
+      if (types[0] === 'no-crud') throw new Error('bad schema');
+      return { types: [{ type: types[0], ...derived }] };
+    };
+    const fallback = parse((await tool(deps, 'describe_entity_type').handler({}, {})) as never) as {
+      types: Array<Record<string, unknown>>;
+    };
+    expect(fallback.types[0]).toMatchObject({ type: 'widget', crudSupported: true, ...derived });
+    expect(fallback.types[1]).toEqual({ type: 'no-crud', label: 'Widget', __error: 'no-crud: bad schema' });
+  });
+
+  it('[entity:entity-tools-get-entities] get_entities: the record\'s contract; unknown type INVALID_TYPE and inactive INACTIVE_TYPE before the core', async () => {
+    const { deps } = fakeDeps();
+    expectToolMatchesRecord(tool(deps, 'get_entities'), 'entity-tools-get-entities');
+    const seen: unknown[] = [];
+    core(deps).getEntities = (input) => (seen.push(input), { results: [], selectedFields: [] });
+    const unknown = await tool(deps, 'get_entities').handler({ type: 'nonexistent', slugs: ['a'] }, {});
+    expect(parse(unknown as never)).toMatchObject({ code: 'INVALID_TYPE' });
+    const inactive = await tool(deps, 'get_entities').handler({ type: 'inactive', slugs: ['a'] }, {});
+    expect(parse(inactive as never)).toMatchObject({ code: 'INACTIVE_TYPE' });
+    expect(seen).toEqual([]);
+  });
+
+  it('[entity:entity-tools-get-entities] slugs go to the core in batches of 50 with no cap, a budget-cut item is re-fetched alone, and the answer is `{ type, selectedFields, results }` with no `truncated` or `message`', async () => {
+    const { deps } = fakeDeps();
+    const batches: string[][] = [];
+    core(deps).getEntities = (input) => {
+      const { slugs } = input as { slugs: string[] };
+      batches.push(slugs);
+      return {
+        type: 'widget',
+        selectedFields: ['title'],
+        // In a batch, `w-2` falls past the budget; asked alone it is emitted whole.
+        results: slugs.map((slug) =>
+          slug === 'w-2' && slugs.length > 1
+            ? { slug, entity: null, truncated: true }
+            : { slug, entity: slug === 'w-gone' ? null : { slug, title: slug } },
+        ),
+        truncated: slugs.length > 1,
+        message: 'response budget reached',
+      };
+    };
+    const slugs = [...Array.from({ length: 50 }, (_, i) => `w-${i}`), 'w-gone'];
+    const body = parse((await tool(deps, 'get_entities').handler({ type: 'widget', slugs, select: ['title'] }, {})) as never) as {
+      type: string;
+      selectedFields: string[];
+      results: Array<Record<string, unknown>>;
+    };
+    expect(batches.map((b) => b.length)).toEqual([50, 1, 1]);
+    expect(batches[2]).toEqual(['w-2']);
+    expect(Object.keys(body).sort()).toEqual(['results', 'selectedFields', 'type']);
+    expect(body).toMatchObject({ type: 'widget', selectedFields: ['title'] });
+    expect(body.results).toHaveLength(51);
+    expect(body.results[2]).toEqual({ slug: 'w-2', entity: { slug: 'w-2', title: 'w-2' } });
+    // A slug with no entity is an item with an empty record, not a refusal.
+    expect(body.results[50]).toEqual({ slug: 'w-gone', entity: null });
+    for (const row of body.results) expect(Object.keys(row).sort()).toEqual(['entity', 'slug']);
+  });
+
+  it('[entity:entity-tools-get-entities] the core\'s INVALID_ARGUMENT and INDEX_STALE are not caught by the handler', async () => {
+    const { deps } = fakeDeps();
+    for (const err of [invalidArgument('bad select', 'selectable: title'), indexStale('entities', ['widget'])]) {
+      core(deps).getEntities = () => {
+        throw err;
+      };
+      await expect(
+        tool(deps, 'get_entities').handler({ type: 'widget', slugs: ['w'], select: ['a.b'] }, {}),
+      ).rejects.toMatchObject({ code: err.code });
+    }
+  });
+
+  it('[entity:entity-tools-list-entities] list_entities: the record\'s contract (no sort, no dir); unknown type INVALID_TYPE and inactive INACTIVE_TYPE before the core', async () => {
+    const { deps } = fakeDeps();
+    const t = tool(deps, 'list_entities');
+    expectToolMatchesRecord(t, 'entity-tools-list-entities');
+    expect(Object.keys(t.inputSchema as object)).not.toContain('sort');
+    expect(Object.keys(t.inputSchema as object)).not.toContain('dir');
+    const unknown = await t.handler({ type: 'nonexistent' }, {});
+    expect(parse(unknown as never)).toMatchObject({ code: 'INVALID_TYPE' });
+    const inactive = await t.handler({ type: 'inactive' }, {});
+    expect(parse(inactive as never)).toMatchObject({ code: 'INACTIVE_TYPE' });
+  });
+
+  it('[entity:entity-tools-list-entities] the core enumerates with the type\'s default predicate; tagFilter defaults to and, empty tags filter nothing, limit 50 / offset 0 by default; hasMore from offset, items and total; count is `{ type, mode, total }`', async () => {
+    const { deps } = fakeDeps();
+    const seen: Array<Record<string, unknown>> = [];
+    core(deps).listEntities = (input) => {
+      seen.push(input as Record<string, unknown>);
+      return { mode: 'items', items: [{ slug: 'a', title: 'A' }], total: 3, hasMore: true };
+    };
+    const call = async (args: Record<string, unknown>) =>
+      parse((await tool(deps, 'list_entities').handler({ type: 'widget', ...args }, {})) as never);
+
+    expect(await call({})).toEqual({ type: 'widget', mode: 'items', items: [{ slug: 'a', title: 'A' }], total: 3, hasMore: true });
+    expect(seen[0]).toEqual({ type: 'widget', applyDefaultPredicate: true, limit: 50, offset: 0 });
+
+    await call({ tags: ['m39'], filters: { status: 'active' }, limit: 5, offset: 1 });
+    expect(seen[1]).toEqual({
+      type: 'widget',
+      tags: ['m39'],
+      tagFilter: 'and',
+      filters: { status: 'active' },
+      applyDefaultPredicate: true,
+      limit: 5,
+      offset: 1,
+    });
+
+    await call({ tags: [], tagFilter: 'or' });
+    expect(seen[2]).not.toHaveProperty('tags');
+    expect(seen[2]).not.toHaveProperty('tagFilter');
+
+    expect((await call({ offset: 2 })).hasMore).toBe(false);
+    expect(await call({ mode: 'count' })).toEqual({ type: 'widget', mode: 'count', total: 3 });
+  });
+
+  it('[entity:entity-tools-list-entities] the core\'s INDEX_STALE is not caught by the handler', async () => {
+    const { deps } = fakeDeps();
+    core(deps).listEntities = () => {
+      throw indexStale('entities', ['widget']);
+    };
+    await expect(tool(deps, 'list_entities').handler({ type: 'widget' }, {})).rejects.toMatchObject({ code: 'INDEX_STALE' });
+  });
+
+  it('[entity:entity-tools-resolve-identity] resolve_identity: the record\'s contract with no declared hint (no readOnlyHint); the core\'s candidates passed through, `types` and `limit` forwarded only when given', async () => {
+    const { deps } = fakeDeps();
+    const t = tool(deps, 'resolve_identity');
+    expectToolMatchesRecord(t, 'entity-tools-resolve-identity');
+    expect((t as { annotations?: { readOnlyHint?: boolean } }).annotations?.readOnlyHint).toBeUndefined();
+
+    const seen: Array<Record<string, unknown>> = [];
+    const answer = {
+      candidates: [
+        { type: 'dto', slug: 'user', title: 'User', score: 400 },
+        { type: 'endpoint', slug: 'user', title: 'User', score: 400 },
+      ],
+      truncated: false,
+    };
+    core(deps).resolveIdentity = (input) => (seen.push(input as Record<string, unknown>), answer);
+    const plain = await t.handler({ query: 'user' }, {});
+    expect(plain.isError).toBeFalsy();
+    expect(parse(plain as never)).toEqual(answer);
+    expect(Object.keys(seen[0]!)).toEqual(['query']);
+    await t.handler({ query: 'user', types: ['dto'], limit: 3 }, {});
+    expect(seen[1]).toEqual({ query: 'user', types: ['dto'], limit: 3 });
+  });
+
+  it('[entity:entity-tools-resolve-identity] a core error comes back with its code, message and hint; an exception without a code is INTERNAL', async () => {
+    const { deps } = fakeDeps();
+    core(deps).resolveIdentity = () => {
+      throw indexStale('entities', 'global');
+    };
+    const stale = await tool(deps, 'resolve_identity').handler({ query: 'user' }, {});
+    expect(stale.isError).toBe(true);
+    const body = parse(stale as never) as Record<string, unknown>;
+    expect(body.code).toBe('INDEX_STALE');
+    expect(String(body.error)).toContain("projection 'entities' is marked stale");
+    expect(String(body.hint)).toContain('Rebuild it');
+
+    core(deps).resolveIdentity = () => {
+      throw new Error('boom');
+    };
+    const crashed = await tool(deps, 'resolve_identity').handler({ query: 'user' }, {});
+    expect(parse(crashed as never)).toMatchObject({ code: 'INTERNAL', error: 'boom' });
+  });
+});
+
+/**
+ * 2.1.26 — `entity-tools · search_entities` (the `internal` rendering of
+ * `search_entities`) as its re-rendered record declares it: name, description,
+ * parameters (`filters` beside the search inputs, numeric paging), no declared
+ * hint; and the handler behaviour its `logic` states.
+ */
+describe('entity-tools — search_entities as its 2.1.26 record declares it', () => {
+  type CoreStub = Record<string, (input: unknown) => unknown>;
+  const core = (deps: EntityToolsDeps) => deps.discovery as unknown as CoreStub;
+
+  it('[entity:entity-tools-search-entities] the record\'s contract; unknown type INVALID_TYPE and inactive INACTIVE_TYPE, both before the core', async () => {
+    const { deps } = fakeDeps();
+    const t = tool(deps, 'search_entities');
+    expectToolMatchesRecord(t, 'entity-tools-search-entities');
+    const seen: unknown[] = [];
+    core(deps).searchEntities = (input) => (seen.push(input), { mode: 'map', items: [], total: 0, hasMore: false, searchedFields: [] });
+    const unknown = await t.handler({ type: 'nonexistent', query: 'x' }, {});
+    expect(unknown.isError).toBe(true);
+    expect(parse(unknown as never)).toMatchObject({ code: 'INVALID_TYPE' });
+    const inactive = await t.handler({ type: 'inactive', query: 'x' }, {});
+    expect(inactive.isError).toBe(true);
+    expect(parse(inactive as never)).toMatchObject({ code: 'INACTIVE_TYPE' });
+    expect(seen).toEqual([]);
+  });
+
+  it('[entity:entity-tools-search-entities] defaults mode map, limit 50, offset 0 and the type\'s default predicate; `filters` and the given input forwarded; map/hits answer `{ type, mode, items, total, hasMore, searchedFields }` without the core\'s `truncated`', async () => {
+    const { deps } = fakeDeps();
+    const seen: Array<Record<string, unknown>> = [];
+    const row = { slug: 'w-1', title: 'W', matchCount: 2, hunks: [{ field: 'title', text: 'W', matches: 2 }], omittedChars: 0 };
+    core(deps).searchEntities = (input) => {
+      seen.push(input as Record<string, unknown>);
+      const mode = (input as { mode: string }).mode;
+      return { mode, items: [row], total: 1, hasMore: false, truncated: false, searchedFields: ['slug', 'title'] };
+    };
+    const map = parse((await tool(deps, 'search_entities').handler({ type: 'widget', query: 'w' }, {})) as never);
+    expect(seen[0]).toEqual({ type: 'widget', query: 'w', fields: undefined, mode: 'map', limit: 50, offset: 0, applyDefaultPredicate: true });
+    expect('regex' in seen[0]!).toBe(false);
+    expect(map).toEqual({ type: 'widget', mode: 'map', items: [row], total: 1, hasMore: false, searchedFields: ['slug', 'title'] });
+
+    const filters = { status: ['active', 'deprecated'] };
+    const hits = parse(
+      (await tool(deps, 'search_entities').handler(
+        { type: 'widget', regex: 'w', fields: ['title'], mode: 'hits', limit: 5, offset: 10, filters },
+        {},
+      )) as never,
+    ) as Record<string, unknown>;
+    expect(seen[1]).toEqual({ type: 'widget', regex: 'w', fields: ['title'], mode: 'hits', limit: 5, offset: 10, applyDefaultPredicate: true, filters });
+    expect('query' in seen[1]!).toBe(false);
+    expect(Object.keys(hits).sort()).toEqual(['hasMore', 'items', 'mode', 'searchedFields', 'total', 'type']);
+    expect(hits).not.toHaveProperty('truncated');
+  });
+
+  it('[entity:entity-tools-search-entities] mode count answers `{ type, mode, total, matches, searchedFields }`', async () => {
+    const { deps } = fakeDeps();
+    core(deps).searchEntities = () => ({ mode: 'count', total: 3, matches: 7, searchedFields: ['title'], truncated: false });
+    const body = parse((await tool(deps, 'search_entities').handler({ type: 'widget', query: 'w', mode: 'count' }, {})) as never);
+    expect(body).toEqual({ type: 'widget', mode: 'count', total: 3, matches: 7, searchedFields: ['title'] });
+  });
+
+  it('[entity:entity-tools-search-entities] the core\'s INVALID_ARGUMENT, SEARCH_BUDGET_EXCEEDED and INDEX_STALE are not caught by the handler', async () => {
+    const { deps } = fakeDeps();
+    for (const err of [
+      invalidArgument('pass exactly one of query or regex', 'search_entities({ type, query })'),
+      searchBudgetExceeded('search_entities', 5000),
+      indexStale('entities', ['widget']),
+    ]) {
+      core(deps).searchEntities = () => {
+        throw err;
+      };
+      await expect(tool(deps, 'search_entities').handler({ type: 'widget', query: 'w' }, {})).rejects.toMatchObject({
+        code: err.code,
+      });
+    }
   });
 });

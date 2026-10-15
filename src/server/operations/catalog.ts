@@ -198,6 +198,19 @@ export interface OperationDeclaration {
   /** All four cells required. */
   readonly channels: Readonly<Record<ChannelName, ChannelCell>>;
   /**
+   * 2.1.26 — the record's `narzedzia`: per agentic channel, the tools that render
+   * this operation there, each as `<server>.<tool>` (`entity-tools.describe_entity_type`).
+   *
+   * A `direct` cell in `internal` or `mcp` holds only with a pointable rendering
+   * (L3 `g8adono9`), and this is where the row points. One operation may have
+   * more than one rendering in a channel, under different names — `describe_types`
+   * renders in `mcp` both as `c4s-reader.describe_types` and as
+   * `entity-tools.describe_entity_type`. Absent on rows whose record this window
+   * does not carry; `cli` and `rest` have no entry because their renderings are
+   * not MCP tools.
+   */
+  readonly renderings?: Readonly<Partial<Record<'internal' | 'mcp', readonly string[]>>>;
+  /**
    * Who contributes the implementation behind this name.
    *
    * `'host'` (the default) — this repo owns the operation. `'plugin'` — the name
