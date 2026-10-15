@@ -34,6 +34,7 @@ import { mountFrontend } from '../tiptap/mountFrontend.js';
 import { registerPluginCommands } from '../tiptap/pluginCommands.js';
 import { sharedRuntimeReady } from './shared-runtime.js';
 import { requestDocumentReload } from './document-reload.js';
+import { settlePluginBoot } from './plugin-boot-signal.js';
 import type { AppRouter } from '../router.js';
 import type { FrontendManifestResponse } from '../../shared/plugin-host/frontend-manifest.js';
 
@@ -148,22 +149,10 @@ async function registerProjectPluginCommands(): Promise<void> {
  * quietly become correct a moment later — which reads as a broken link, not as
  * loading. The router's `defaultNotFoundComponent` consults this to tell the
  * two apart. Resolves (never rejects) once the boot has settled either way.
+ * The signal itself lives in the import-free `plugin-boot-signal.ts` (2.1.25),
+ * so editor-side readers do not pull the loader's runtime graph in.
  */
-let bootSettled = false;
-let resolveBoot: (() => void) | undefined;
-export const frontendPluginsBooted: Promise<void> = new Promise((resolve) => {
-  resolveBoot = resolve;
-});
-
-/** True until the first `bootFrontendPlugins` call settles. */
-export function pluginBootPending(): boolean {
-  return !bootSettled;
-}
-
-function settleBoot(): void {
-  bootSettled = true;
-  resolveBoot?.();
-}
+export { frontendPluginsBooted, pluginBootPending } from './plugin-boot-signal.js';
 
 export async function bootFrontendPlugins(router: AppRouter): Promise<void> {
   activeRouter = router;
@@ -172,7 +161,7 @@ export async function bootFrontendPlugins(router: AppRouter): Promise<void> {
   } finally {
     // A failed boot still ends the window: whatever was missing is not coming,
     // and holding a spinner forever is worse than an honest 404.
-    settleBoot();
+    settlePluginBoot();
   }
 }
 

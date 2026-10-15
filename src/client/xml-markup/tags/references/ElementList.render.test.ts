@@ -56,13 +56,13 @@ vi.mock('../../../core/plugin-host/host.js', () => ({
 }));
 vi.mock('../../../entities/openEntity.js', () => ({ openEntityHandler: () => undefined }));
 vi.mock('../../../tiptap/EditorContext.js', () => ({ useEditorBridge: () => null }));
-// ElementList → shared → ChipResolver → state/brokenRefs → runtime/boot-plugins,
-// whose real graph (mountFrontend → … → entities/diagram/plugin) calls
-// `registerEntity` at module load against the registry mock above. Cut the
-// graph here, exporting exactly what brokenRefs imports from it.
-vi.mock('../../../runtime/boot-plugins.js', () => ({
+// ElementList → shared → ChipResolver → state/brokenRefs reads the plugins-ready
+// signal (`runtime/plugin-boot-signal`). Report the boot as settled, so an
+// unresolved type counts as broken here as it does after the boot.
+vi.mock('../../../runtime/plugin-boot-signal.js', () => ({
   frontendPluginsBooted: Promise.resolve(),
   pluginBootPending: () => false,
+  settlePluginBoot: () => {},
 }));
 
 const { ElementListRender } = await import('./ElementList.js');

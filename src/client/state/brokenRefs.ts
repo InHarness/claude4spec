@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from 'react';
-import { frontendPluginsBooted, pluginBootPending } from '../runtime/boot-plugins.js';
+import { frontendPluginsBooted, pluginBootPending } from '../runtime/plugin-boot-signal.js';
 import { create } from 'zustand';
 import type { Editor } from '@tiptap/core';
 
