@@ -228,6 +228,21 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
     expect(facades?.slot).toMatch(/^@c4s\/plugin-runtime:/);
   });
 
+  it('[section:m33load01] the 2.1.21 retirement of contributes.settings is an unversioned slot removal, with no bump and no migrations[] descriptor', () => {
+    const retired = HOST_API_UNVERSIONED_CHANGES.find((c) => /^contributes\.settings\b/.test(c.slot));
+    expect(retired?.release).toBe('2.1.21');
+    expect(retired?.kind).toBe('slot-removed');
+    for (const name of ['PluginSettingsModule', 'PluginSettingField', 'ProjectPluginHost.listSettings()']) {
+      expect(retired?.slot).toContain(name);
+    }
+    // No bump: the version is still the 2.1.0 baseline and no release carries the retirement.
+    expect(HOST_API_VERSION).toBe('2.1.0');
+    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0']);
+    for (const release of HOST_API_RELEASES) {
+      expect(JSON.stringify(release)).not.toMatch(/contributes\.settings|PluginSetting/);
+    }
+  });
+
   it('[section:m33load01] the composition of UI_KIT_STABLE_COMPONENTS is exactly what the registries record', () => {
     expect(sorted(recordedUiKitStableComponents())).toEqual(sorted(UI_KIT_STABLE_COMPONENTS));
   });

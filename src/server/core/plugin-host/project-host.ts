@@ -19,7 +19,6 @@ import type { PluginActivationState } from '../../../shared/plugin-host/types.js
 import type {
   PluginCommandContribution,
   PluginSubagentContribution,
-  PluginSettingsSection,
 } from '../../../shared/plugin-host/manifest.js';
 import type {
   EntityDiff,
@@ -107,31 +106,16 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
     return this.listAvailable().filter((m) => this.isActive(m.type));
   }
 
-  listSettings(): PluginSettingsSection[] {
-    // Axis B (pool + trust), NOT axis A: deliberately unfiltered by
-    // `config.entities`. Base records are always loaded+trusted; the overlay is
-    // only constructed on the trusted path, so its sections are trusted too.
-    // Overlay shadows base on a name collision (parity with type shadowing).
-    const byName = new Map<string, PluginSettingsSection>();
-    for (const r of this.registry.listPluginRecords()) {
-      if (r.settings.length > 0) {
-        byName.set(r.name, { name: r.name, version: r.version, fields: r.settings });
-      }
-    }
-    for (const section of this.overlay?.listSettings() ?? []) {
-      byName.set(section.name, section);
-    }
-    return Array.from(byName.values());
-  }
-
   listCommands(): PluginCommandContribution[] {
-    // Same two-axis rationale as listSettings(): pool + trust, not entities.
+    // Axis B (pool + trust), NOT axis A: deliberately unfiltered by
+    // `config.entities` — editor commands are not entities. Base records are
+    // always loaded+trusted; the overlay is only constructed on the trusted path.
     const base = this.registry.listPluginRecords().flatMap((r) => r.commands);
     return [...base, ...(this.overlay?.listCommands() ?? [])];
   }
 
   listSubagents(): PluginSubagentContribution[] {
-    // CONCATENATION, not shadowing (contrast listSettings): the dedupe key is
+    // CONCATENATION, not shadowing by plugin name: the dedupe key is
     // the subagent `name`, and it is resolved downstream with first-by-discovery
     // wins — so base must come first and the overlay must not overwrite it by
     // plugin name. Project-local contributes on equal footing with an

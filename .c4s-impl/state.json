@@ -1,5 +1,5 @@
 {
-  "iteration": 5,
+  "iteration": 10,
   "units": [
     {
       "id": "u1-m26-ustawienia-bez-pluginow",
@@ -228,15 +228,41 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u2-m13-m33-koperta-bez-ustawien/p1-l2-l17",
+          "layers": [
+            "L2",
+            "L11",
+            "L17"
+          ],
+          "slugs": [
+            "ac-registerplugin-fan-outuje-wylacznie-c",
+            "z7l89jhf",
+            "m13plenv",
+            "m13plset",
+            "m26esec",
+            "o4ju2d7m",
+            "m33l2001",
+            "m33load01"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "0cb58df28a6a17099bc3ce9625488f709b7896a7",
+      "baseCommit": "0cb58df28a6a17099bc3ce9625488f709b7896a7",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "u3-pakiety-pluginow-bez-ustawien",
@@ -326,7 +352,7 @@
       "units": [
         "u2-m13-m33-koperta-bez-ustawien"
       ],
-      "startCommit": null
+      "startCommit": "0cb58df28a6a17099bc3ce9625488f709b7896a7"
     },
     {
       "n": 3,

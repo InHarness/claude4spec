@@ -641,6 +641,20 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       'New names beside the existing ones, so no existing call changes: additive ' +
       'within the current baseline, no bump.',
   },
+  {
+    release: '2.1.21',
+    slot: 'contributes.settings / PluginSettingsModule / PluginSettingField / ProjectPluginHost.listSettings()',
+    kind: 'slot-removed',
+    summary:
+      'The plugin settings capability is retired: the envelope slot `contributes.settings`, ' +
+      'its two types and the host\'s settings listing are gone, together with the ' +
+      '`/_meta/plugin-settings` route. `registerPlugin` / `unregisterPlugin` hand nothing ' +
+      'to any settings registry; besides entities, only commands and subagents stay active ' +
+      'regardless of the `config.entities` whitelist. Formally breaking under rule (1), but ' +
+      'with zero published plugins it is absorbed into the current baseline under rule (2): ' +
+      '`HOST_API_VERSION` is unchanged and there is no `migrations[]` descriptor. A stale ' +
+      '`settings` key on an old manifest is not read by anything.',
+  },
 ];
 
 /**

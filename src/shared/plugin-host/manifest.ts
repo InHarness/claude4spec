@@ -384,33 +384,6 @@ export interface WritingStyleContribution {
 }
 
 /**
- * M33 — one settings field a plugin renders in its own Settings section
- * (panel M26), values stored under `config.plugins[<manifest.name>][key]`.
- * `kind` drives the reload classification on write:
- *   - `hot-reload` → only `invalidateQueries(['config'])`, no context rebuild
- *     (parity with `writingStyle` / `language`; takes effect next turn/thread).
- *   - `executive` → invalidates the `ProjectContext` (rebuild, no banner, no
- *     restart).
- */
-export interface PluginSettingField {
-  /** Stable field key inside the plugin's config namespace. */
-  key: string;
-  /** Human label shown in the Settings panel. */
-  label: string;
-  control: 'toggle' | 'text' | 'select' | 'multiselect';
-  kind: 'hot-reload' | 'executive';
-  /** Default applied when `config.plugins[<name>][key]` is absent. */
-  default: unknown;
-  /** Choices for `select` / `multiselect` controls. */
-  options?: { value: string; label: string }[];
-  /** Optional help/description text. */
-  help?: string;
-}
-
-/** A plugin's settings module = an ordered list of fields. */
-export type PluginSettingsModule = PluginSettingField[];
-
-/**
  * M33 — declarative editor slash-command contributed by a plugin
  * (typically an entity-less one). The loader normalizes each entry into an
  * `EditorExtensionRegistration.slashCommand` and routes it through
@@ -528,7 +501,7 @@ export interface PluginSubagentContribution {
  * The default export of a plugin package. `contributes` is the capability
  * bundle: `contributes.entities`, `contributes.skills` and its sugar
  * `contributes.writingStyles` (both pushed into the SkillRegistry as
- * `source: "plugin"`), and `contributes.settings` / `contributes.commands`.
+ * `source: "plugin"`), `contributes.commands` and `contributes.subagents`.
  */
 export interface PluginManifest {
   /** npm package name. */
@@ -547,7 +520,7 @@ export interface PluginManifest {
    * declare this at all.
    *
    * It is NOT how a plugin's capability comes down. Entity types, commands,
-   * settings and skills are unwired by the HOST — `registry.unregisterPlugin(name)`
+   * subagents and skills are unwired by the HOST — `registry.unregisterPlugin(name)`
    * fanning out over the envelope's `contributedTypes[]`, plus the
    * `ProjectContext` rebuild for the mounted side (Express routes, MCP
    * factories, DI services). An `onUnregister` that tries to unwire any of that
@@ -576,8 +549,13 @@ export interface PluginManifest {
     skills?: PluginSkillContribution[];
     /** M15 — writing styles contributed by this plugin (sugar for `skills` with `scope: 'writing-style'`). */
     writingStyles?: WritingStyleContribution[];
-    /** M33 — settings fields rendered per-plugin in Settings (M26). */
-    settings?: PluginSettingsModule;
+    /*
+     * 2.1.21 (M13 `m13plenv`) — the `settings` slot is GONE, together with
+     * `PluginSettingsModule` / `PluginSettingField` and
+     * `ProjectPluginHost.listSettings()`. Plugins no longer contribute fields
+     * to the project Settings page. Recorded in `HOST_API_UNVERSIONED_CHANGES`
+     * — inside the baseline, no bump, no `migrations[]` descriptor.
+     */
     /** M33 — declarative editor slash-commands (entity-less plugins). */
     commands?: PluginCommandContribution[];
     /**
@@ -599,14 +577,6 @@ export interface PluginManifest {
      * declares the field keeps loading, and the declaration is simply inert.
      */
   };
-}
-
-/** One plugin's Settings section, as returned by `ProjectPluginHost.listSettings()`. */
-export interface PluginSettingsSection {
-  /** Plugin package name — also the `config.plugins` namespace key. */
-  name: string;
-  version: string;
-  fields: PluginSettingsModule;
 }
 
 /**

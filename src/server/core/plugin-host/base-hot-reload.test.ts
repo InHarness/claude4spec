@@ -38,8 +38,8 @@ function moduleSource(version: string): string {
   hostApiVersion: '^2.0.0',
   onUnregister: () => {},
   contributes: {
-    settings: [
-      { key: 'enabled', label: 'Enabled', control: 'toggle', kind: 'hot-reload', default: true },
+    commands: [
+      { name: 'esm-only-insert', trigger: 'esm', label: 'Insert ESM', popoverKind: 'esm' },
     ],
   },
 };
