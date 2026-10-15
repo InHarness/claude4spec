@@ -206,19 +206,12 @@ describe('the page write primitive', () => {
     expect(onDisk).toBe('');
   });
 
-  it('create_page answers with the page identity, its anchors and the settled file', async () => {
+  it('create_page answers with the page identity, its version and anchors — never the content (2.1.23)', async () => {
     const res = await createPage(target, { path: 'made.md', content: '# A\n\nlots of text\n' }, 'agent');
-    expect(Object.keys(res).sort()).toEqual(['anchors', 'content', 'hash', 'path', 'rootId', 'version']);
+    expect(Object.keys(res).sort()).toEqual(['anchors', 'hash', 'path', 'rootId', 'version']);
     expect(res.rootId).toBe('pages');
     expect(res.path).toBe('made.md');
-    /**
-     * 0.2.76 — `content` is the SETTLED file, so it does carry the body back.
-     * That is the narrowed echo-free rule, not a breach of it: the chain runs
-     * in-band and injects anchors the caller could not have predicted, so these
-     * bytes are not the bytes sent. What still must never come back is anything
-     * the caller could have worked out for itself.
-     */
-    expect(res.content).toContain('lots of text');
+    expect(JSON.stringify(res)).not.toContain('lots of text');
   });
 
   it('update_page answers with the delta only — never the page, not even the settled one', async () => {

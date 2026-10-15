@@ -146,9 +146,9 @@ export interface ResolvedSkill {
   content: string;
   files: Record<string, SkillPackageFile>;
   /**
-   * Present only when the source's file read returns one (`project-rooted`). The
-   * registry never computes it. ASSUMPTION:dev-0402 — carried here although the
-   * contract snippet's `ResolvedSkill` has no such field.
+   * The disk hash of `SKILL.md` — present iff the source's file read returns one
+   * (`project-rooted`); the registry carries it unchanged and never computes it
+   * (2.1.23 contract). An invalid package does not go through `ResolvedSkill`.
    */
   hash?: string;
 }

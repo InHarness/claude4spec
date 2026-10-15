@@ -65,11 +65,11 @@ export function useFileWatcher() {
           } else if (data.kind === 'file:changed') {
             // 0.1.96 multiroot: page trees + documents are keyed by rootId.
             batcher.queue(['pages', data.rootId]);
-            if (isHtmlPreviewPath(data.path)) {
-              // M30: `.html` is a read-only preview — no editor, no reload
+            if (isHtmlPreviewPath(data.path, data.rootId)) {
+              // M30: a raw entry is a read-only preview — no editor, no reload
               // dialog; the open iframe just reloads. 2.1.8: on the base
               // `file:changed` (M30 has no reaction of its own), narrowed to the
-              // raw `**/*.html` entry of the `pages` kind's file map.
+              // raw entries of the root kind's file map (2.1.23).
               useHtmlViewerStore.getState().notifyChanged(data.rootId, data.path);
             } else if (data.origin === 'external') {
               useFileEventsStore.getState().notifyExternalChange(data.rootId, data.path);

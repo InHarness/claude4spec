@@ -314,24 +314,25 @@ export interface UpdateSectionsInput {
  * `rootId` and `path` are here and nowhere else because creation is the one
  * moment the caller learns the page's identity as the server records it.
  */
-export interface CreatePageResult {
+export interface CreatePageResponse {
   rootId: string;
   path: string;
+  /** sha256 of the settled file — arms `expectedHash` for the next edit. */
   hash: string;
   /** The version `capture` recorded, in-band, before this answer was built. */
   version: number;
   /**
-   * The file as it SETTLED, after the in-band `write-back` phase — anchors for
-   * the headings it introduced included. On a create with no `content` this is
-   * the generated template, which the caller could not have predicted at all.
+   * Every anchor the page now carries, in document order; `[]` on a root with
+   * no section index.
    *
-   * `update_page` deliberately does NOT carry this field (since 0.2.88): see the
-   * echo-free rule at the top of this file.
+   * 2.1.23: no `content` — neither the bytes sent nor the settled file comes
+   * back (echo-free, like `update_page`). Whoever needs the page reads it.
    */
-  content: string;
-  /** Every anchor the page now carries, in document order. */
   anchors: string[];
 }
+
+/** @deprecated alias kept for internal callers — the DTO is {@link CreatePageResponse}. */
+export type CreatePageResult = CreatePageResponse;
 
 /** `update_page` — a whole-page write. Identity was already known; only the delta is news. */
 export interface UpdatePageResult {
@@ -569,7 +570,7 @@ export async function createPage(
   target: PageWriteTarget,
   input: CreatePageInput,
   actor: WriteActor,
-): Promise<CreatePageResult> {
+): Promise<CreatePageResponse> {
   const relPath = input.path;
   if (!relPath) throw new DomainError('VALIDATION', 'path required');
   if (await target.pages.exists(relPath)) {
@@ -606,7 +607,6 @@ export async function createPage(
     path: relPath,
     hash: written.hash,
     version: written.version,
-    content: written.content,
     anchors: written.anchors,
   };
 }

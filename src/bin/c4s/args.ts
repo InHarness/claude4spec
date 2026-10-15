@@ -98,6 +98,23 @@ export function parseArgs(argv: string[]): ParsedArgs {
   return result;
 }
 
+/**
+ * 2.1.23 — the argv parser's own rule, for EVERY command whatever its execution
+ * mode: argv that cannot be READ ends locally in `INVALID_ARGS`, before the
+ * command settles its operation and before it addresses the server. A flag that
+ * takes a value (anything outside `KNOWN_BOOLEAN_FLAGS`) given without one is
+ * unreadable argv; so is a value that does not convert to the flag's declared
+ * type (`optionalInt` below). `INVALID_ARGUMENT` stays for argv that was read
+ * but contradicts the command's contract (missing required flag, unknown flag…).
+ */
+export function assertFlagValues(args: ParsedArgs): void {
+  for (const [name, value] of args.flags) {
+    if (value === true && !KNOWN_BOOLEAN_FLAGS.has(name)) {
+      throw new CliError('INVALID_ARGS', `--${name} requires a value`);
+    }
+  }
+}
+
 export function requireString(args: ParsedArgs, flag: string): string {
   const v = args.flags.get(flag);
   if (typeof v !== 'string' || !v) {
@@ -109,6 +126,8 @@ export function requireString(args: ParsedArgs, flag: string): string {
 export function optionalString(args: ParsedArgs, flag: string): string | undefined {
   const v = args.flags.get(flag);
   if (typeof v === 'string' && v) return v;
+  // 2.1.23 — a valueless flag is unreadable argv, not an absent one.
+  if (v === true) throw new CliError('INVALID_ARGS', `--${flag} requires a value`);
   return undefined;
 }
 
@@ -236,7 +255,7 @@ export function repeatedStrings(args: ParsedArgs, flag: string): string[] | unde
   // (`--paths a --paths`), which `multi` does not record — refuse it rather than
   // answer for the occurrences that did.
   if (!values || values.length === 0 || args.flags.get(flag) === true) {
-    throw new CliError('INVALID_ARGUMENT', `--${flag} requires a value`);
+    throw new CliError('INVALID_ARGS', `--${flag} requires a value`);
   }
   return values;
 }

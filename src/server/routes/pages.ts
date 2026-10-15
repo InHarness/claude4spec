@@ -295,7 +295,8 @@ export function pagesRouter(
     }
   });
 
-  // 0.1.96: explicit create (CreatePageRequest { path, title?, content? }). See
+  // 0.1.96: explicit create (CreatePageRequest { path, title?, content? } →
+  // CreatePageResponse { rootId, path, hash, version, anchors }). See
   // the `clarification` patch — the body shape was not enumerated in the brief.
   //
   // 0.2.26: `title` joined the body, and an omitted `content` now yields the
@@ -321,7 +322,9 @@ export function pagesRouter(
         },
         'user',
       );
-      res.status(201).json(result);
+      // 2.1.23 — the same `CreatePageResponse` payload `create_page` answers,
+      // in the L4 `{ data }` envelope; the page content is not echoed.
+      res.status(201).json({ data: result });
     } catch (err) {
       next(err);
     }

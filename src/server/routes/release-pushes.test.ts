@@ -105,8 +105,11 @@ beforeEach(async () => {
     return p;
   };
   const releases = {
-    // 2.1.11: the push resolves the release by NAME; only `v1` exists here.
+    // 2.1.11: the push resolves the release by NAME; only `v1` exists here —
+    // plus a release carrying the reserved name `current` (2.1.23), which the
+    // push must refuse before it ever reaches this lookup.
     resolveReleaseId: (name: string) => {
+      if (name === 'current') return releaseId;
       if (name !== 'v1') throw new DomainError('RELEASE_NOT_FOUND', `release '${name}' not found`);
       return releaseId;
     },
@@ -453,6 +456,12 @@ describe('/api/release-pushes — release addressed by name (2.1.11)', () => {
 
   it('POST with an unknown name is 404 RELEASE_NOT_FOUND', async () => {
     const res = await request(app).post('/api/release-pushes').send({ releaseName: 'nope' });
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('RELEASE_NOT_FOUND');
+  });
+
+  it('[2.1.23] POST with the name "current" is 404 RELEASE_NOT_FOUND even when a release named current exists', async () => {
+    const res = await request(app).post('/api/release-pushes').send({ releaseName: 'current' });
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('RELEASE_NOT_FOUND');
   });

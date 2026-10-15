@@ -14,6 +14,9 @@ import type { Root } from '../../shared/types.js';
 registerCoreReactions();
 
 /**
+ * 2.1.23 — the domain is every root WITH A FACADE (kind `sidebar` ≠ `hidden`):
+ * `pages` roots and `skills`, every raw file under `dir`, not only `.html`.
+ *
  * 2.1.8 — M30 as a consumer of L13 (`m30l13rt`). The `.html` preview has no
  * kind of its own: the raw `**\/*.html` entry belongs to the `pages` kind's file
  * map, so `GET /api/static/:rootId/*` serves every root of kind `pages`, the
@@ -46,7 +49,7 @@ async function app(): Promise<{ cwd: string; server: express.Express }> {
   const mounted = await mountRegistryRoots({ cwd, registry, userRoots: ROOTS, w: r.scoped('context:static#1') });
   const byId = new Map(mounted.rootRuntimes.map((rt) => [rt.root.id, rt.staticHtml]));
   const server = express();
-  server.use('/api/static/:rootId', staticRouter((rootId) => byId.get(rootId)));
+  server.use('/api/static/:rootId', staticRouter((rootId) => byId.get(rootId), () => [...byId.keys()]));
   return { cwd, server };
 }
 
@@ -79,5 +82,30 @@ describe('GET /api/static/:rootId/* — every root of kind pages (M30 m30l13rt)'
     fs.writeFileSync(path.join(cwd, 'pages', 'secret.html'), '<p>s</p>');
     // `docs/adr/../../pages/secret.html` would leave the adr root.
     await request(server).get('/api/static/adr/..%2F..%2Fpages%2Fsecret.html').expect(403);
+  });
+
+  it('a rootId outside the roots with a facade answers ROOT_NOT_FOUND with the facade roots in hint', async () => {
+    const { server } = await app();
+    const res = await request(server).get('/api/static/briefs/x.html').expect(404);
+    expect(res.body.error.code).toBe('ROOT_NOT_FOUND');
+    expect(res.body.error.hint).toContain('pages');
+    expect(res.body.error.hint).toContain('skills');
+    expect(res.body.error.hint).not.toContain('briefs');
+  });
+
+  it('a file missing from the dir of the root named by :rootId is 404', async () => {
+    const { server } = await app();
+    await request(server).get('/api/static/pages/missing.html').expect(404);
+  });
+
+  it('the `skills` root serves any raw package file — an image, not only .html — with a mime-derived Content-Type', async () => {
+    const { cwd, server } = await app();
+    const dir = path.join(cwd, '.claude4spec/skills', 'writer', 'assets');
+    fs.mkdirSync(dir, { recursive: true });
+    const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
+    fs.writeFileSync(path.join(dir, 'diagram.png'), png);
+    const res = await request(server).get('/api/static/skills/writer/assets/diagram.png').expect(200);
+    expect(res.headers['content-type']).toBe('image/png');
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
   });
 });

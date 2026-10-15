@@ -1415,7 +1415,7 @@ async function buildInner(
     '/pages/:rootId',
     pagesRouter(resolveRoot, pageVersions, discovery, () => [...rootById.keys()], sectionWriteDeps),
   );
-  router.use('/static/:rootId', staticRouter(resolveStatic));
+  router.use('/static/:rootId', staticRouter(resolveStatic, () => [...rootById.keys()]));
   // 2.1.9 — the sidebar's accordion array of every root; no `:rootId` segment.
   router.use('/sidebar-accordions', sidebarAccordionsRouter(sidebarAccordions));
   router.use('/tags', tagsRouter(tagsService, referencesService, discovery));

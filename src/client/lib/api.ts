@@ -91,13 +91,18 @@ export const api = {
    * "create a page that already exists" a refusal (`PAGE_EXISTS`) instead of a
    * silent overwrite.
    */
-  async create(rootId: string, path: string, content: string): Promise<{ path: string; hash: string }> {
+  async create(
+    rootId: string,
+    path: string,
+    content: string,
+  ): Promise<{ rootId: string; path: string; hash: string; version: number; anchors: string[] }> {
     const res = await apiFetch(`/api/pages/${encodeURIComponent(rootId)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path, content }),
     });
-    return handle<{ path: string; hash: string }>(res);
+    // 2.1.23 — `CreatePageResponse` in the `{ data }` envelope.
+    return unwrap<{ rootId: string; path: string; hash: string; version: number; anchors: string[] }>(res);
   },
 
   async write(

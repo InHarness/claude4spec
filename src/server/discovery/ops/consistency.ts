@@ -219,6 +219,8 @@ export async function checkConsistency(
     attrs: Record<string, string>;
     line: number;
     category: string;
+    /** Rule 8 (`section_ref`) rows only: the anchor that does not resolve (2.1.23). */
+    anchor?: string;
   }> = [];
 
   const categorise = (type: string): BrokenReferenceReason | 'active' => {
@@ -329,9 +331,10 @@ export async function checkConsistency(
             brokenExtensionReferences.push({
               rootId: root.id,
               pagePath: page.path,
+              anchor,
+              line: tag.line,
               tagType: tag.kind,
               attrs: tag.attrs,
-              line: tag.line,
               category: 'unknown-anchor',
             });
           }
@@ -369,9 +372,8 @@ export async function checkConsistency(
   const entitiesWithoutAcCoverage: Array<{ type: string; slug: string; severity: ConsistencySeverity }> = [];
   // 2.1.9 — a rule-11 row points at a page (the module's page), so it carries
   // the page key `(rootId, pagePath)` like every other page-pointing row.
-  // ASSUMPTION:dev-0201 — the bucket and field names stay as shipped
-  // (`module`, `brokenExtensionReferences`); only the page key is added.
-  // The tool record's sample spells them `moduleSlug`/`modulePath`/`brokenSectionRefs`.
+  // Row shape `{ module, rootId, pagePath, severity }`; rule 8 lands under
+  // `brokenExtensionReferences` (2.1.23 spec — no `brokenSectionRefs` key).
   const modulesWithoutAc: Array<{ module: string; rootId: string; pagePath: string; severity: ConsistencySeverity }> = [];
 
   /**

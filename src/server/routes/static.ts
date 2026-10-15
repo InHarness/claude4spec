@@ -2,10 +2,12 @@ import { Router } from 'express';
 import { StaticHtmlService, StaticPathTraversalError } from '../services/static-html.js';
 
 /**
- * M30 (L4): `GET /api/static/:rootId/*` — raw static file server rooted at a
- * page root's dir (0.1.96: was the single `pagesDir`). Each request resolves the
- * root's `StaticHtmlService` via `resolveStatic(req.params.rootId)`; unknown id →
- * 404 ROOT_NOT_FOUND.
+ * M30 (L4): `GET /api/static/:rootId/*` — raw static file server rooted at the
+ * `dir` of a root WITH A FACADE (its kind's `sidebar` is not `hidden` — `pages`,
+ * `skills`, …). Each request resolves the root's `StaticHtmlService` via
+ * `resolveStatic(req.params.rootId)`; an unknown id or a root without a facade
+ * → 404 ROOT_NOT_FOUND (2.1.23), with the facade roots in `hint`. Every raw file
+ * under `dir` is served, not only `.html` (an image in a skill package, say).
  *
  * Returns the raw bytes of the file (NOT a `{ data }` envelope), with `Content-Type`
  * inferred from the extension by Express's built-in `send`/mime. Path-traversal ⇒ 403,
@@ -23,6 +25,7 @@ import { StaticHtmlService, StaticPathTraversalError } from '../services/static-
  */
 export function staticRouter(
   resolveStatic: (rootId: string) => StaticHtmlService | undefined,
+  facadeRootIds: () => readonly string[] = () => [],
 ): Router {
   const router = Router({ mergeParams: true });
 
@@ -31,7 +34,13 @@ export function staticRouter(
       const rootId = (req.params as Record<string, string>).rootId ?? '';
       const staticHtml = resolveStatic(rootId);
       if (!staticHtml) {
-        return res.status(404).json({ error: { code: 'ROOT_NOT_FOUND', message: `root '${rootId}' not found` } });
+        return res.status(404).json({
+          error: {
+            code: 'ROOT_NOT_FOUND',
+            message: `root '${rootId}' not found`,
+            hint: `roots in this project: ${facadeRootIds().join(', ')}`,
+          },
+        });
       }
       const relPath = (req.params as Record<string, string>)[0];
       if (!relPath) return res.status(400).json({ error: 'missing path' });

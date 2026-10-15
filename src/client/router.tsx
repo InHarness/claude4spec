@@ -19,6 +19,7 @@ import { EmptyState } from './components/EmptyState.js';
 import { Editor } from './components/Editor.js';
 import { PageVersionHistory } from './components/PageVersionHistory.js';
 import { HtmlViewer } from './components/HtmlViewer.js';
+import { previewFileTypeOf } from './state/htmlViewer.js';
 import { TagsList } from './components/TagsList.js';
 import { TodosList } from './components/TodosList.js';
 import { PageLinksList } from './components/PageLinksList.js';
@@ -470,9 +471,10 @@ function PageRouteBody({ rootId, path }: { rootId: string; path: string }) {
     }),
     [navigate, rootId]
   );
-  // M30: shared /space/$rootId/$ route branches by file type — .html renders the read-only viewer,
-  // .md renders the Tiptap editor. HtmlViewer carries its own header (no version history).
-  if (path.toLowerCase().endsWith('.html')) {
+  // M30: shared /space/$rootId/$ route branches by the node's `fileType` (2.1.23 — from the
+  // root kind's file map, as the tree builds it, not the extension): `html` — any raw entry —
+  // renders the read-only viewer, `markdown` the Tiptap editor. HtmlViewer has its own header.
+  if (previewFileTypeOf(rootId, path) === 'html') {
     return (
       <RoutePane>
         <HtmlViewer rootId={rootId} path={path} />

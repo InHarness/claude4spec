@@ -165,16 +165,18 @@ describe('2.1.9 — /api/pages/:rootId addresses only roots with a facade (M02 l
     expectRootNotFound(await request(app).get('/api/pages/briefs/b.md'), 'briefs');
   });
 
-  it('[entity:post-api-pages] POST /api/pages/:rootId → 201 { rootId, path, hash } with the default template on a root with a facade; 404 ROOT_NOT_FOUND on a root without one, nothing written', async () => {
+  it('[entity:post-api-pages] POST /api/pages/:rootId → 201 { data: CreatePageResponse } (no content) with the default template on a root with a facade; 404 ROOT_NOT_FOUND on a root without one, nothing written', async () => {
     const { app, abs } = await rig();
     const ok = await request(app).post('/api/pages/adr').send({ path: 'new/n.md', title: 'New' });
     expect(ok.status).toBe(201);
-    expect(ok.body.rootId).toBe('adr');
-    expect(ok.body.path).toBe('new/n.md');
-    expect(ok.body.hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(Object.keys(ok.body.data).sort()).toEqual(['anchors', 'hash', 'path', 'rootId', 'version']);
+    expect(ok.body.data.rootId).toBe('adr');
+    expect(ok.body.data.path).toBe('new/n.md');
+    expect(ok.body.data.hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(typeof ok.body.data.version).toBe('number');
     const written = fs.readFileSync(abs('adr', 'new/n.md'), 'utf8');
     expect(written).toContain('title: New');
-    expect(ok.body.hash).toBe(sha(written));
+    expect(ok.body.data.hash).toBe(sha(written));
 
     const refused = await request(app).post('/api/pages/patches').send({ path: 'x.md', content: '# X\n' });
     expectRootNotFound(refused, 'patches');
@@ -514,7 +516,7 @@ describe('2.1.9 — a write through the `skills` root facade is visible to the v
       .send({
         frontmatter: { title: 'House style', description: 'How we write, revised.', version: 1, language: 'en', scope: 'writing-style' },
         body: '# House style\n',
-        expectedHash: created.body.hash,
+        expectedHash: created.body.data.hash,
       });
     expect(edited.status).toBe(200);
     expect(registry.listSelectable().find((s) => s.slug === 'house-style')?.description).toBe('How we write, revised.');

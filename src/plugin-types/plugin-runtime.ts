@@ -597,9 +597,17 @@ export interface SidebarTabSlot {
   order: number;
 }
 export interface SlashCommand {
+  /** Whitelist key in `EditorContextSpec.slashCommands`. */
   id: string;
+  /**
+   * The visible trigger AND the row's label in the autocomplete: `"/mention"`,
+   * `"/todo"`, … The prefix typed after `/` is matched against `id` and `label`
+   * (never `hint`); a command source's item whose normalized `hint` equals this
+   * `label` is dropped from the popover, the fixed command stays.
+   */
   label: string;
   description: string;
+  /** The argument hint shown next to the command: `"anchor"`, `"type + slug"`, … Not matched. */
   hint: string;
   pluginPopoverKind?: string;
 }

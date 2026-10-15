@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { PAGES_KIND, fileMapEntryOf } from '../../shared/root-kinds.js';
+import { PAGES_KIND, fileMapEntryOf, systemRootKindOf } from '../../shared/root-kinds.js';
+import type { PageFileType } from '../../shared/types.js';
 
 /**
  * M30: expand/collapse state for the HTML preview iframe. This is UI state kept OUTSIDE
@@ -20,15 +21,24 @@ interface HtmlViewerState {
 }
 
 /**
- * 2.1.8 (M30): does a `file:changed` path reach the open `.html` preview? Only a
- * path that falls under a raw entry of the `pages` kind's file map (today
- * `**\/*.html`) — the narrowing comes from the kind declaration, classified the
- * way `PagesService.walk` classifies it (`format === 'raw'`), not from an
- * extension or a pattern literal of our own.
+ * 2.1.23 (M30): the `fileType` of a file in a root with a facade — read off the
+ * file map of THAT ROOT'S KIND, classified the way `PagesService.walk` builds
+ * `PageNode.fileType`: a raw entry is `'html'` (the read-only `HtmlViewer`
+ * preview, whatever the extension — an image in a skill package included),
+ * anything else `'markdown'`. Never decided by the extension or the root id.
  */
-export function isHtmlPreviewPath(path: string): boolean {
-  const entry = fileMapEntryOf(PAGES_KIND, path);
-  return entry?.format === 'raw';
+export function previewFileTypeOf(rootId: string, path: string): PageFileType {
+  const kind = systemRootKindOf(rootId) ?? PAGES_KIND;
+  return fileMapEntryOf(kind, path)?.format === 'raw' ? 'html' : 'markdown';
+}
+
+/**
+ * 2.1.8 (M30): does a `file:changed` path reach the open preview? Only a path
+ * that falls under a raw entry of the root kind's file map (2.1.23: the kind of
+ * `rootId`, no longer always `pages`).
+ */
+export function isHtmlPreviewPath(path: string, rootId: string = ''): boolean {
+  return previewFileTypeOf(rootId, path) === 'html';
 }
 
 export const htmlRevisionKey = (rootId: string, path: string): string => `${rootId}:${path}`;

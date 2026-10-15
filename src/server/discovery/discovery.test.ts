@@ -2563,6 +2563,11 @@ describe('discovery core', () => {
     expect(pageRows.brokenReferences!.map((r) => r.pagePath)).toEqual(['refs.md']);
     expect(pageRows.anchorLinesInCode!.map((r) => r.pagePath)).toEqual(['refs.md']);
     expect(pageRows.unclosedCodeBlocks!.map((r) => r.pagePath)).toEqual(['open.md']);
+    // 2.1.23 — rule 8 row `{ rootId, pagePath, anchor, line }` under `brokenExtensionReferences`.
+    expect(pageRows.brokenExtensionReferences).toContainEqual(
+      expect.objectContaining({ rootId: 'pages', pagePath: 'refs.md', anchor: 'zzzzzz99', line: expect.any(Number) }),
+    );
+    expect(report).not.toHaveProperty('brokenSectionRefs');
     expect(pageRows.modulesWithoutAc).toEqual([
       expect.objectContaining({ module: 'm16', rootId: 'pages', pagePath: 'modules/m16-onboarding.md' }),
     ]);
