@@ -23,8 +23,9 @@ export function useReleaseList() {
  * the same `['releases']` query, so there is a single fetch and a single shape.
  * The map is keyed by the `releaseId` every version-list row
  * (`EntityVersionMeta`, 2.1.25) carries, so a version joins its release name in
- * one render. A version with `releaseId: null` (not yet released) is simply
- * absent from the map — callers render "(unreleased)".
+ * one render. Versions are grouped by release (2.1.26): a version with
+ * `releaseId: null` (not yet released) is simply absent from the map and falls
+ * into the "Unreleased" group; a version row carries no release pill.
  */
 export function useReleases(): Map<number, string> {
   const { data } = useReleaseList();

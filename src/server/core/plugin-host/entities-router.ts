@@ -574,10 +574,11 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
 
   /**
    * M13/M34: version-to-version diff for the plugin-facing `useVersionDiff`
-   * hook. `entity_version.data` is already the M17 snapshot (captured via
-   * `host.snapshot` at write time), so it's fed straight into `host.diff`
-   * unchanged — the same M47 `EntitySerializer.diff`/JSON-deep-diff-fallback
-   * path `ReleaseService.getReleaseDiff` uses for release-to-release diffs.
+   * hook. `entity_version.data` is the M17 snapshot (captured via
+   * `host.snapshot` at write time); after the payload upgrade below it goes to
+   * `host.diff`, which GENERATES the semantic delta from the type's logical
+   * schema — the same path `ReleaseService.getReleaseDiff` uses for
+   * release-to-release diffs. The answer is a delta, never text lines.
    * Response is shaped by the same `toRawDeltaEntityChange` helper release
    * diffing uses, including the `_serializerVersionMismatch` flag when the
    * two captured versions span a serializer upgrade.
