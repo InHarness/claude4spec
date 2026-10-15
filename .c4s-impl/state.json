@@ -1,0 +1,2134 @@
+{
+  "iteration": 0,
+  "units": [
+    {
+      "id": "u01-version-diff-runtime",
+      "goal": "Hook różnicy wersji encji zwraca wyłącznie deltę semantyczną i nie zasila już widoku diffu ani akcji porównania w osi czasu wersji. Różnica liniowa pochodzi z osobnego narzędzia powierzchni runtime. Wiersze wersji z odczytu wydań są grupowane po release, z grupą wersji nieprzypisanych.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "change": {
+              "offset": 7,
+              "limit": 1,
+              "anchors": [
+                "m13l11sc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m13cel00",
+                "m13dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 25,
+              "limit": 1,
+              "anchors": [
+                "m13l11sc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+            "change": {
+              "offset": 9,
+              "limit": 1,
+              "anchors": [
+                "m17l11sc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "xkpt256d",
+                "m17zal001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+            "context": {
+              "offset": 26,
+              "limit": 1,
+              "anchors": [
+                "m17l11sc"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-useversiondiff-type-slug-fromid-toid"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u04-display-order-retire",
+      "goal": "Pole kolejności wyświetlania znika z tożsamości typu w kontrakcie pluginu i z manifestów wszystkich pakietów typów. O kolejności zakładek decyduje wyłącznie zakładka paska bocznego, a typ bez zakładki nie deklaruje kolejności. Wersja Host API się nie zmienia; wymagany jest wpis w rejestrze zmian niewersjonowanych.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m13-entity-framework/L2-domain.md",
+            "change": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "z7l89jhf"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/L2-domain.md",
+            "context": {
+              "offset": 0,
+              "limit": 2,
+              "anchors": [
+                "m13dom00",
+                "z7l89jhf"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "change": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "m33load01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "context": {
+              "offset": 1,
+              "limit": 4,
+              "anchors": [
+                "m33purp01",
+                "m33deps01",
+                "m33l2001",
+                "m33load01"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-ac.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "plugac01",
+                "fsu38c8q"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-ac.md",
+            "context": {
+              "offset": 5,
+              "limit": 2,
+              "anchors": [
+                "5f8l7spw",
+                "205ctsev"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-api-contracts/dto.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "n4ivxve8",
+                "m7zixber"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-api-contracts/dto.md",
+            "context": {
+              "offset": 18,
+              "limit": 2,
+              "anchors": [
+                "frjal7h6",
+                "xvm9aann"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-api-contracts/endpoint.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "aaihelh6",
+                "feah45mf"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-api-contracts/endpoint.md",
+            "context": {
+              "offset": 16,
+              "limit": 2,
+              "anchors": [
+                "69i6wnvo",
+                "vc5pzsc0"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-code-snippets.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "rb4fixcw",
+                "n6zlyrol"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-code-snippets.md",
+            "context": {
+              "offset": 4,
+              "limit": 1,
+              "anchors": [
+                "nulyx140"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-code-snippets.md",
+            "context": {
+              "offset": 6,
+              "limit": 1,
+              "anchors": [
+                "io8apf7i"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-database-tables.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 4,
+              "anchors": [
+                "91vq520g",
+                "ityp8g1r",
+                "iqydvmh5",
+                "ovajlwnd"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-diagram.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "dgmenv11",
+                "dgmmanifest"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-diagram.md",
+            "context": {
+              "offset": 4,
+              "limit": 2,
+              "anchors": [
+                "dgmcel00",
+                "dgmdep00"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-frontend-mockups/design-system.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "dscel000",
+                "dsdep000"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-frontend-mockups/design-system.md",
+            "context": {
+              "offset": 25,
+              "limit": 1,
+              "anchors": [
+                "dsmanifest"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-frontend-mockups/ui-view/ui-view.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "uvcel000",
+                "uvdep000"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-frontend-mockups/ui-view/ui-view.md",
+            "context": {
+              "offset": 23,
+              "limit": 2,
+              "anchors": [
+                "uvrender",
+                "cv8b7alf"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-layered-vertical-slices.md",
+            "change": "all",
+            "context": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "y3yimbqb"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-layered-vertical-slices.md",
+            "context": {
+              "offset": 2,
+              "limit": 3,
+              "anchors": [
+                "1pbsl68f",
+                "04i1idm7",
+                "6vgwqwq6"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-spreadsheets.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 4,
+              "anchors": [
+                "k7v3qm2d",
+                "fbgmkqw7",
+                "ffnk1l1o",
+                "w91galmw"
+              ]
+            }
+          }
+        ],
+        "entities": []
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u06-field-content-op",
+      "goal": "Odczyt pola z treścią to jedna generyczna operacja rdzenia, adresowana typem, slugiem i nazwą pola, dostępna w każdym kanale. Jest szóstą operacją na powierzchni runtime pluginów, bez podbicia wersji, a zewnętrzny serwer odczytu ma dla niej własne narzędzie. Usunięta zostaje generowana przez hosta powierzchnia odczytu pola per typ (narzędzie i trasa).",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m39-discovery-core/L2-domain.md",
+            "change": {
+              "offset": 44,
+              "limit": 1,
+              "anchors": [
+                "v0fldrd8"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m39-discovery-core/L2-domain.md",
+            "context": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "jhdpduny"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m39-discovery-core/L2-domain.md",
+            "context": {
+              "offset": 78,
+              "limit": 1,
+              "anchors": [
+                "v0fldrd8"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m39-discovery-core/m39-discovery-core.md",
+            "change": {
+              "offset": 7,
+              "limit": 1,
+              "anchors": [
+                "gz7q92lz"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m39-discovery-core/m39-discovery-core.md",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "xmxv4lpo",
+                "yx7z9ivl",
+                "p7vq8lkf"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m39-discovery-core/m39-discovery-core.md",
+            "context": {
+              "offset": 19,
+              "limit": 1,
+              "anchors": [
+                "gz7q92lz"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "mcp-tool",
+            "slugs": [
+              "c4s-reader-get-field-content",
+              "entity-tools-get-field-content"
+            ]
+          },
+          {
+            "type": "spec-operation",
+            "slugs": [
+              "get-field-content"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u07-core-read-tools",
+      "goal": "Narzędzia odczytu rdzenia, zewnętrzne i wewnętrzne, odpowiadają swoim ponownie wyrenderowanym kontraktom: parametry okien są całkowite, koperty jawne, listowanie i wyszukiwanie encji mają poprawione filtry, odczyt strony nie ma okna linii, a trafienia wyszukiwania stron są tekstem. Taksonomia błędów rdzenia nie zna już kodu niejednoznaczności: rozwiązywanie tożsamości oddaje listę kandydatów z oceną. Kod niezmaterializowanego indeksu nigdy nie trafia do wołającego, bo serwer buduje projekcję przed obsługą, a wołający bez serwera dostaje błąd braku serwera. Usunięte zostają: kody niejednoznaczności, parametry sortowania w listowaniu encji i deklaracja tylko-do-odczytu na wewnętrznym rozwiązywaniu tożsamości.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m39-discovery-core/L2-domain.md",
+            "change": {
+              "offset": 48,
+              "limit": 1,
+              "anchors": [
+                "7dad4wt0"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m39-discovery-core/L2-domain.md",
+            "context": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "jhdpduny"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m39-discovery-core/L2-domain.md",
+            "context": {
+              "offset": 82,
+              "limit": 1,
+              "anchors": [
+                "7dad4wt0"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m39-discovery-core/m39-discovery-core.md",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "xmxv4lpo",
+                "yx7z9ivl",
+                "p7vq8lkf"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m39-discovery-core/m39-discovery-core.md",
+            "context": {
+              "offset": 13,
+              "limit": 1,
+              "anchors": [
+                "m3s1nq7s"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "mcp-tool",
+            "slugs": [
+              "c4s-reader-check-consistency",
+              "c4s-reader-describe-types",
+              "c4s-reader-find-references",
+              "c4s-reader-get-entities",
+              "c4s-reader-get-page-outline",
+              "c4s-reader-get-page",
+              "c4s-reader-get-sections",
+              "c4s-reader-list-entities",
+              "c4s-reader-list-pages",
+              "c4s-reader-list-tags",
+              "c4s-reader-overview",
+              "c4s-reader-resolve-identity",
+              "c4s-reader-search-entities",
+              "c4s-reader-search-pages",
+              "entity-tools-describe-entity-type",
+              "entity-tools-get-entities",
+              "entity-tools-list-entities",
+              "entity-tools-resolve-identity",
+              "entity-tools-search-entities",
+              "reference-tools-check-consistency",
+              "reference-tools-find-references",
+              "reference-tools-get-page-outline",
+              "reference-tools-get-page",
+              "reference-tools-get-sections",
+              "reference-tools-list-pages",
+              "reference-tools-list-tags",
+              "reference-tools-search-pages"
+            ]
+          },
+          {
+            "type": "spec-operation",
+            "slugs": [
+              "describe-types",
+              "get-entities",
+              "get-page",
+              "get-page-outline",
+              "get-sections",
+              "list-entities",
+              "list-pages",
+              "list-tags",
+              "overview",
+              "resolve-identity",
+              "search-entities",
+              "search-pages",
+              "check-consistency",
+              "find-references"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u08-entity-write-tools",
+      "goal": "Narzędzia mutacji encji i wiązania DTO z endpointem odpowiadają ponownie wyrenderowanym kontraktom. Tworzenie i aktualizacja zwracają ostrzeżenia per slug, a wiązanie i odwiązanie DTO są idempotentne. Operacje M13, łącznie z przywracaniem wersji encji, odpowiadają swoim rekordom.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m13cel00",
+                "m13dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 19,
+              "limit": 1,
+              "anchors": [
+                "m13mcp00"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "mcp-tool",
+            "slugs": [
+              "entity-tools-create-entities",
+              "entity-tools-delete-entities",
+              "entity-tools-update-entities",
+              "endpoint-tools-link-dto",
+              "endpoint-tools-unlink-dto"
+            ]
+          },
+          {
+            "type": "spec-operation",
+            "slugs": [
+              "create-entities",
+              "delete-entities",
+              "update-entities",
+              "link-dto",
+              "unlink-dto",
+              "restore-entity-version"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u09-page-operations",
+      "goal": "Narzędzia stron i zapisu sekcji odpowiadają ponownie wyrenderowanym kontraktom. Tworzenie zwraca treść po osiadnięciu, przeniesienie raportuje synchronizację cytowań, usunięcie brakującej strony jest sukcesem, a zapis sekcji ma doprecyzowane reguły kotwic. Operacje stron, znaczników zadań, linków stron i plików statycznych odpowiadają swoim rekordom. Usunięte zostają: guard współbieżności przy usuwaniu strony i deklarowane podpowiedzi adnotacji narzędzi stron.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m02-pages.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "487vmesk",
+                "lzt9r2fu"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m06-sections.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "1aq60bj4",
+                "ko9x8zqw"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m08-todos.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "5n5li2kx",
+                "htyo2j01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m08-todos.md",
+            "context": {
+              "offset": 8,
+              "limit": 1,
+              "anchors": [
+                "etdbmpok"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m14-page-links.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m14cel01",
+                "m14dep01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m14-page-links.md",
+            "context": {
+              "offset": 13,
+              "limit": 1,
+              "anchors": [
+                "m14mcp01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m30-static-html.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "z7k52855",
+                "zqehkg0f"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m30-static-html.md",
+            "context": {
+              "offset": 7,
+              "limit": 1,
+              "anchors": [
+                "fkqoflce"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "mcp-tool",
+            "slugs": [
+              "page-tools-create-page",
+              "page-tools-delete-page",
+              "page-tools-move-page",
+              "page-tools-update-page",
+              "page-tools-update-sections"
+            ]
+          },
+          {
+            "type": "spec-operation",
+            "slugs": [
+              "create-page",
+              "delete-page",
+              "move-page",
+              "update-page",
+              "update-sections",
+              "get-todo-counts",
+              "list-todos",
+              "get-page-link-counts",
+              "list-page-links",
+              "search-link-targets",
+              "get-static-file"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-kazdy-wiersz-katalogu-l3-opisujacy-op"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u12-brief-tools",
+      "goal": "Założenie briefu zwraca, obok ścieżki, hash i nazwy obu końców okna. Cztery narzędzia briefu dostają bliźniaki z jawnym adresowaniem dla połączenia bez wątku: ścieżka jest wymagana, a w kanale wewnętrznym zostają narzędzia związane z wątkiem briefu. Lista briefów trafia do narzędzi transagenta w wątku najwyższego poziomu. Operacje briefów odpowiadają swoim rekordom.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m21-briefs.md",
+            "change": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "m21srvct"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m21-briefs.md",
+            "change": {
+              "offset": 4,
+              "limit": 1,
+              "anchors": [
+                "01ytpznn"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m21-briefs.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m21cel001",
+                "m21zal001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m21-briefs.md",
+            "context": {
+              "offset": 8,
+              "limit": 1,
+              "anchors": [
+                "m21srvct"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m21-briefs.md",
+            "context": {
+              "offset": 15,
+              "limit": 1,
+              "anchors": [
+                "01ytpznn"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "mcp-tool",
+            "slugs": [
+              "brief-tools-get-brief",
+              "brief-tools-get-brief-explicit",
+              "brief-tools-get-brief-version",
+              "brief-tools-get-brief-version-explicit",
+              "brief-tools-list-brief-versions",
+              "brief-tools-list-brief-versions-explicit",
+              "brief-tools-update-brief",
+              "brief-tools-update-brief-explicit",
+              "transagent-tools-list-briefs"
+            ]
+          },
+          {
+            "type": "spec-operation",
+            "slugs": [
+              "create-brief",
+              "get-brief",
+              "get-brief-version",
+              "list-brief-versions",
+              "list-briefs",
+              "mark-brief-implemented",
+              "update-brief"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u13-plan-tools",
+      "goal": "Lista planów staje się ósmą operacją planów. Wewnętrznie renderują ją narzędzia transagenta w wątku najwyższego poziomu, a zewnętrznie narzędzia planu z jawnym adresowaniem. Narzędzia planu dostają bliźniaki z wymaganą ścieżką dla połączenia bez wątku, a kontrakty istniejących narzędzi (wersje, kolizja sluga przy pierwszym zapisie) odpowiadają ponownym renderom. Operacje planów odpowiadają swoim rekordom.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m10-plans.md",
+            "change": {
+              "offset": 6,
+              "limit": 1,
+              "anchors": [
+                "m10mcp00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m10-plans.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m10cel00",
+                "m10dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m10-plans.md",
+            "context": {
+              "offset": 24,
+              "limit": 2,
+              "anchors": [
+                "m10mcp00",
+                "m10opappl"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "mcp-tool",
+            "slugs": [
+              "plan-tools-create-plan",
+              "plan-tools-create-plan-explicit",
+              "plan-tools-get-plan",
+              "plan-tools-get-plan-explicit",
+              "plan-tools-get-plan-version",
+              "plan-tools-get-plan-version-explicit",
+              "plan-tools-list-plan-versions",
+              "plan-tools-list-plan-versions-explicit",
+              "plan-tools-list-plans-explicit",
+              "plan-tools-mark-plan-applied",
+              "plan-tools-mark-plan-applied-explicit",
+              "plan-tools-update-plan",
+              "plan-tools-update-plan-explicit",
+              "transagent-tools-list-plans"
+            ]
+          },
+          {
+            "type": "spec-operation",
+            "slugs": [
+              "create-plan",
+              "execute-plan",
+              "get-plan",
+              "get-plan-version",
+              "list-plan-versions",
+              "list-plans",
+              "mark-plan-applied",
+              "update-plan"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u14-patch-listing",
+      "goal": "Narzędzia transagenta dostają listę patchy z filtrem po briefie i stanie wdrożenia oraz z paginacją. Operacje patchy odpowiadają swoim rekordom.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m23-patches.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m23cel01",
+                "m23dep01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m23-patches.md",
+            "context": {
+              "offset": 13,
+              "limit": 1,
+              "anchors": [
+                "m23mcp01"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "mcp-tool",
+            "slugs": [
+              "transagent-tools-list-patches"
+            ]
+          },
+          {
+            "type": "spec-operation",
+            "slugs": [
+              "create-patch",
+              "get-patch",
+              "list-patches",
+              "mark-patch-applied"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u15-release-tools",
+      "goal": "Narzędzia wydań odpowiadają ponownie wyrenderowanym kontraktom. Zwrotki tworzenia i aktualizacji wydania mają liczniki w camelCase i stan synchronizacji z gitem, a wybór wymiarów diffu i podglądu jest zamkniętym wyliczeniem. Operacje wydań i wysyłki wydań odpowiadają swoim rekordom.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "xkpt256d",
+                "m17zal001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m25-release-push/m25-release-push.md",
+            "context": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "fl8fm071"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m25-release-push/m25-release-push.md",
+            "context": {
+              "offset": 4,
+              "limit": 1,
+              "anchors": [
+                "y63ffv9h"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m25-release-push/m25-release-push.md",
+            "context": {
+              "offset": 12,
+              "limit": 1,
+              "anchors": [
+                "jmf2dwzh"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "mcp-tool",
+            "slugs": [
+              "release-tools-release-create",
+              "release-tools-release-diff",
+              "release-tools-release-list",
+              "release-tools-release-show",
+              "release-tools-release-update"
+            ]
+          },
+          {
+            "type": "spec-operation",
+            "slugs": [
+              "release-create",
+              "release-diff",
+              "release-list",
+              "release-restore",
+              "release-show",
+              "release-update",
+              "get-release-push",
+              "list-release-pushes",
+              "push-release"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u16-skills-workspace-ops",
+      "goal": "Narzędzia skilli i listy projektów odpowiadają ponownie wyrenderowanym kontraktom (budżety odczytu, opcjonalna nazwa projektu w zwrotce). Operacje rejestru skilli, przestrzeni roboczej i pakietów skilli projektu odpowiadają swoim rekordom.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m37-internal-skills-registry.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m37cel01",
+                "m37dep01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m37-internal-skills-registry.md",
+            "context": {
+              "offset": 36,
+              "limit": 1,
+              "anchors": [
+                "b58luon6"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m31purp01",
+                "m31deps01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 22,
+              "limit": 1,
+              "anchors": [
+                "e2b17vga"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "q7uurue4",
+                "cppnlv9z"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "context": {
+              "offset": 10,
+              "limit": 1,
+              "anchors": [
+                "hdkx97wq"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "mcp-tool",
+            "slugs": [
+              "c4s-reader-list-skills",
+              "c4s-reader-load-skill-file",
+              "skill-tools-load-skill-file",
+              "workspace-tools-list-projects"
+            ]
+          },
+          {
+            "type": "spec-operation",
+            "slugs": [
+              "list-skills",
+              "load-skill-file",
+              "list-projects",
+              "fork-writing-style",
+              "list-exposed-projects",
+              "update-skill-file"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u02-host-ui-kit",
+      "goal": "Katalog komponentów hosta zmienia kilka kontraktów. Widok diffu renderuje wstrzyknięte hunks albo parę before/after jako dwa panele, a przy braku obu pokazuje stan pusty. Historia wersji encji grupuje wersje po release i przywraca wersję hookiem hosta. Toasty dostają rodzaj informacyjny. Siatka pól i powłoka formularza stają się kontenerami na dzieci. Usunięte zostają: pigułka release w wierszu wersji, jeden token typograficzny treści dokumentu i picker tagów z listy konsumentów typu tagu.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m34-host-ui-kit/m34-host-ui-kit.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m34purp01",
+                "m34deps01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m34-host-ui-kit/m34-host-ui-kit.md",
+            "context": {
+              "offset": 6,
+              "limit": 1,
+              "anchors": [
+                "m34l12sc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m34-host-ui-kit/L12-host-ui-kit.md",
+            "change": "all",
+            "context": {
+              "offset": 2,
+              "limit": 2,
+              "anchors": [
+                "rxqin83v",
+                "wbs9m5zj"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m34-host-ui-kit/L12-host-ui-kit.md",
+            "context": {
+              "offset": 5,
+              "limit": 2,
+              "anchors": [
+                "o6etg68k",
+                "hpw2opbb"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m34-host-ui-kit/L12-host-ui-kit.md",
+            "context": {
+              "offset": 12,
+              "limit": 1,
+              "anchors": [
+                "d97023iq"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-allowrestore-false-ukrywa-akcje-rest",
+              "ac-diffview-m34-experimental-renderuje-p",
+              "ac-diffview-z-pustym-propsem-hunks-renderuj",
+              "ac-w-widoku-entityversionhistoryview-wers"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u01-version-diff-runtime",
+          "why": "widok diffu i historia wersji konsumują nowe narzędzie różnicy liniowej i grupowanie wersji po release"
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u10-cli-and-turns",
+      "goal": "Katalog kodów błędów CLI ma 15 kodów. Dochodzą kody nieświeżego indeksu i przekroczonego budżetu wyszukiwania (mapowane z rdzenia) oraz kod zablokowanej konfiguracji wznowienia; „nie znaleziono strony” przypisano operacjom odczytu strony. Komenda odczytu pola renderuje generyczną operację rdzenia, a narzędzie konsultacji ma zamknięty wybór wysiłku. Operacje tur i wątków odpowiadają swoim rekordom. Usunięte zostają kody niejednoznaczności z katalogu CLI.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m11-c4s/L14-cli-commands.md",
+            "change": {
+              "offset": 0,
+              "limit": 2,
+              "anchors": [
+                "ihakwlks",
+                "m11dcmds"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m11-c4s/L14-cli-commands.md",
+            "context": {
+              "offset": 0,
+              "limit": 2,
+              "anchors": [
+                "ihakwlks",
+                "m11dcmds"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m11-c4s/L2-domain.md",
+            "change": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "m11dcore"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m11-c4s/L2-domain.md",
+            "change": {
+              "offset": 5,
+              "limit": 1,
+              "anchors": [
+                "g24dkd8t"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m11-c4s/L2-domain.md",
+            "context": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "m11dcore"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m11-c4s/L2-domain.md",
+            "context": {
+              "offset": 9,
+              "limit": 1,
+              "anchors": [
+                "g24dkd8t"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m11-c4s/m11-c4s.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m11cel00",
+                "m11dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m05-chat-agent/m05-chat-agent.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "iv1lmc33",
+                "t3fsdybv"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m05-chat-agent/m05-chat-agent.md",
+            "context": {
+              "offset": 11,
+              "limit": 1,
+              "anchors": [
+                "jivl7fxv"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m46-transagent.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "ix1l2e4g",
+                "t2nhwhwy"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m46-transagent.md",
+            "context": {
+              "offset": 12,
+              "limit": 1,
+              "anchors": [
+                "mt47zj15"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "mcp-tool",
+            "slugs": [
+              "c4s-tools-ask"
+            ]
+          },
+          {
+            "type": "spec-operation",
+            "slugs": [
+              "ask",
+              "abort-turn",
+              "create-thread",
+              "delete-thread",
+              "list-threads",
+              "run-turn",
+              "spawn-child-turn"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u07-core-read-tools",
+          "why": "mapowane kody pochodzą z nowej taksonomii błędów rdzenia"
+        },
+        {
+          "unit": "u06-field-content-op",
+          "why": "komenda odczytu pola deleguje do tej operacji"
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u03-plugin-runtime-exports",
+      "goal": "`@c4s/plugin-runtime` eksportuje singleton mostu edytora, jego provider i typ. Re-eksportuje pasek filtra tagów, a edytor dokumentu podpina most edytora i klienta zapytań. Usunięty z publicznej powierzchni zostaje hook mostu edytora, który staje się wewnętrzny dla hosta.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "change": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "m33rt001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "m33purp01",
+                "m33deps01",
+                "m33l2001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "context": {
+              "offset": 7,
+              "limit": 1,
+              "anchors": [
+                "m33rt001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m20-editor-tiptap.md",
+            "change": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "m20l11sc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m20-editor-tiptap.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m20cel00",
+                "m20dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m20-editor-tiptap.md",
+            "context": {
+              "offset": 28,
+              "limit": 1,
+              "anchors": [
+                "nvc5wy2p"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m20-editor-tiptap.md",
+            "context": {
+              "offset": 37,
+              "limit": 1,
+              "anchors": [
+                "m20l11sc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m19-references.md",
+            "change": {
+              "offset": 12,
+              "limit": 1,
+              "anchors": [
+                "m19l11sc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m19-references.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m19cel00",
+                "m19dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m19-references.md",
+            "context": {
+              "offset": 35,
+              "limit": 1,
+              "anchors": [
+                "m19l11sc"
+              ]
+            }
+          }
+        ],
+        "entities": []
+      },
+      "dependsOn": [
+        {
+          "unit": "u02-host-ui-kit",
+          "why": "re-eksportowane komponenty i ich połączone warianty powstają tam"
+        },
+        {
+          "unit": "u01-version-diff-runtime",
+          "why": "hunks widoku diffu pochodzą z nowego narzędzia"
+        }
+      ],
+      "wave": 3,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u05-tag-errors-tagslist",
+      "goal": "Przypięcie tagu do encji nieaktywnego typu kończy się ogólnym błędem walidacji, a do nieistniejącej encji ogólnym „nie znaleziono”. Narzędzia tagów mają ponownie wyrenderowane kontrakty, a lista tagów układa kropkę koloru, nazwę i liczniki w slotach wiersza listy. Usunięte zostają: dedykowane kody błędu nieaktywnego typu i nieznalezionej encji przy tagowaniu oraz jawny slug w tworzeniu tagu (slug jest wyprowadzany).",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m13-entity-framework/L2-domain.md",
+            "change": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "5yr06jez"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/L2-domain.md",
+            "context": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "m13dom00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/L2-domain.md",
+            "context": {
+              "offset": 10,
+              "limit": 1,
+              "anchors": [
+                "5yr06jez"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m18-tags.md",
+            "change": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "ais9x109"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m18-tags.md",
+            "change": {
+              "offset": 4,
+              "limit": 1,
+              "anchors": [
+                "0ljsk5jr"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m18-tags.md",
+            "change": {
+              "offset": 6,
+              "limit": 2,
+              "anchors": [
+                "xfkinig4",
+                "m18acc00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m18-tags.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m18cel00",
+                "m18dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m18-tags.md",
+            "context": {
+              "offset": 4,
+              "limit": 1,
+              "anchors": [
+                "m18dom00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m18-tags.md",
+            "context": {
+              "offset": 6,
+              "limit": 1,
+              "anchors": [
+                "ais9x109"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m18-tags.md",
+            "context": {
+              "offset": 14,
+              "limit": 1,
+              "anchors": [
+                "0ljsk5jr"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m18-tags.md",
+            "context": {
+              "offset": 18,
+              "limit": 1,
+              "anchors": [
+                "xfkinig4"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m18-tags.md",
+            "context": {
+              "offset": 23,
+              "limit": 1,
+              "anchors": [
+                "m18acc00"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "mcp-tool",
+            "slugs": [
+              "reference-tools-create-tag",
+              "reference-tools-delete-tag",
+              "reference-tools-tag-entity",
+              "reference-tools-untag-entity",
+              "reference-tools-update-tag"
+            ]
+          },
+          {
+            "type": "spec-operation",
+            "slugs": [
+              "create-tag",
+              "delete-tag",
+              "tag-entity",
+              "untag-entity",
+              "update-tag"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u02-host-ui-kit",
+          "why": "lista tagów renderuje się przez komponenty listowe, których kontrakt typu tagu zmienia się tam"
+        }
+      ],
+      "wave": 3,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u11-external-mcp-surface",
+      "goal": "Zewnętrzne połączenie MCP ma jeden serwer odczytu, w którym serwery źródłowe scalają się w płaską przestrzeń nazw, a przy kolizji wygrywa pierwsza deklaracja. Treść pól czyta się własnym narzędziem tego serwera zamiast narzędzia generowanego per typ. Tabela profili połączenia na nowo rozmieszcza odczyty, plany, zapisy, opis typu i konsultację; profil briefu nie ma planów ani opisu typu, a profil `chat` niesie pełny zestaw.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m12-external-mcp.md",
+            "change": {
+              "offset": 0,
+              "limit": 4,
+              "anchors": [
+                "b52znwjr",
+                "m12mcp00",
+                "4cli19xs",
+                "ecawzsbr"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m12-external-mcp.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m12cel00",
+                "m12dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m12-external-mcp.md",
+            "context": {
+              "offset": 6,
+              "limit": 1,
+              "anchors": [
+                "b52znwjr"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m12-external-mcp.md",
+            "context": {
+              "offset": 14,
+              "limit": 1,
+              "anchors": [
+                "m12mcp00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m12-external-mcp.md",
+            "context": {
+              "offset": 17,
+              "limit": 1,
+              "anchors": [
+                "4cli19xs"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m12-external-mcp.md",
+            "context": {
+              "offset": 23,
+              "limit": 1,
+              "anchors": [
+                "ecawzsbr"
+              ]
+            }
+          }
+        ],
+        "entities": []
+      },
+      "dependsOn": [
+        {
+          "unit": "u06-field-content-op",
+          "why": "narzędzie odczytu pola serwera"
+        },
+        {
+          "unit": "u07-core-read-tools",
+          "why": "wspólne odczyty profili"
+        },
+        {
+          "unit": "u12-brief-tools",
+          "why": "profile udostępniają warianty z jawnym adresem"
+        },
+        {
+          "unit": "u13-plan-tools",
+          "why": "profile udostępniają warianty z jawnym adresem"
+        },
+        {
+          "unit": "u16-skills-workspace-ops",
+          "why": "narzędzia skilli i listy projektów w serwerze odczytu"
+        }
+      ],
+      "wave": 3,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u17-operation-catalogue",
+      "goal": "Katalog operacji w kodzie zgadza się z 78 rekordami operacji okna. Każda operacja bezpośrednia w kanale wewnętrznym lub agentowym wskazuje istniejące narzędzie, lista reguł niesie same identyfikatory albo wykluczenia, a opis treści zapisu ma jedną z dozwolonych wartości. Usunięte zostają kryteria pakietu `c4s-plugin-app-spec` i typu operacji dostarczanego przez ten pakiet (19 kryteriów): okno już ich nie wymaga.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m43-spec-operations-core.md",
+            "context": {
+              "offset": 1,
+              "limit": 4,
+              "anchors": [
+                "zpvxirvp",
+                "gkugsry5",
+                "ke1jxhqh",
+                "l3admit0"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m43-spec-operations-core.md",
+            "context": {
+              "offset": 9,
+              "limit": 2,
+              "anchors": [
+                "hdqhc8xp",
+                "3s8b933r"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m43-spec-operations-core.md",
+            "context": {
+              "offset": 24,
+              "limit": 1,
+              "anchors": [
+                "k0ddfllq"
+              ]
+            }
+          },
+          {
+            "key": "pages/layers/L3-spec-operations.md",
+            "context": {
+              "offset": 2,
+              "limit": 2,
+              "anchors": [
+                "l3slice0",
+                "g8adono9"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-kazdy-identyfikator-zacytowany-w-polu",
+              "ac-kazdy-wiersz-katalogu-operacji-ma-nie",
+              "ac-pole-reguly-wiersza-katalogu-nie-zawi",
+              "ac-wiersz-katalogu-operacji-o-wartosci-d"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u05-tag-errors-tagslist",
+          "why": "kryteria sprawdzają cały katalog wobec zbudowanych narzędzi"
+        },
+        {
+          "unit": "u06-field-content-op",
+          "why": "kryteria sprawdzają cały katalog wobec zbudowanych narzędzi"
+        },
+        {
+          "unit": "u07-core-read-tools",
+          "why": "kryteria sprawdzają cały katalog wobec zbudowanych narzędzi"
+        },
+        {
+          "unit": "u08-entity-write-tools",
+          "why": "kryteria sprawdzają cały katalog wobec zbudowanych narzędzi"
+        },
+        {
+          "unit": "u09-page-operations",
+          "why": "kryteria sprawdzają cały katalog wobec zbudowanych narzędzi"
+        },
+        {
+          "unit": "u10-cli-and-turns",
+          "why": "kryteria sprawdzają cały katalog wobec zbudowanych narzędzi"
+        },
+        {
+          "unit": "u12-brief-tools",
+          "why": "kryteria sprawdzają cały katalog wobec zbudowanych narzędzi"
+        },
+        {
+          "unit": "u13-plan-tools",
+          "why": "kryteria sprawdzają cały katalog wobec zbudowanych narzędzi"
+        },
+        {
+          "unit": "u14-patch-listing",
+          "why": "kryteria sprawdzają cały katalog wobec zbudowanych narzędzi"
+        },
+        {
+          "unit": "u15-release-tools",
+          "why": "kryteria sprawdzają cały katalog wobec zbudowanych narzędzi"
+        },
+        {
+          "unit": "u16-skills-workspace-ops",
+          "why": "kryteria sprawdzają cały katalog wobec zbudowanych narzędzi"
+        }
+      ],
+      "wave": 4,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    }
+  ],
+  "waves": [
+    {
+      "n": 1,
+      "units": [
+        "u01-version-diff-runtime",
+        "u04-display-order-retire",
+        "u06-field-content-op",
+        "u07-core-read-tools",
+        "u08-entity-write-tools",
+        "u09-page-operations",
+        "u12-brief-tools",
+        "u13-plan-tools",
+        "u14-patch-listing",
+        "u15-release-tools",
+        "u16-skills-workspace-ops"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 2,
+      "units": [
+        "u02-host-ui-kit",
+        "u10-cli-and-turns"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 3,
+      "units": [
+        "u03-plugin-runtime-exports",
+        "u05-tag-errors-tagslist",
+        "u11-external-mcp-surface"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 4,
+      "units": [
+        "u17-operation-catalogue"
+      ],
+      "startCommit": null
+    }
+  ],
+  "conventions": [
+    {
+      "label": "L3 (Spec Operations) — implementor M43",
+      "key": "pages/modules/m43-spec-operations-core.md",
+      "offset": 24,
+      "anchor": "k0ddfllq"
+    },
+    {
+      "label": "L3 — forma rekordu operacji",
+      "key": "pages/layers/L3-spec-operations.md",
+      "offset": 3,
+      "anchor": "g8adono9"
+    },
+    {
+      "label": "L11 (Plugin Runtime Surface) — implementor M33",
+      "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+      "offset": 18,
+      "anchor": "m33l11sc"
+    },
+    {
+      "label": "L12 (Host UI Kit) — implementor M34",
+      "key": "pages/modules/m34-host-ui-kit/m34-host-ui-kit.md",
+      "offset": 6,
+      "anchor": "m34l12sc"
+    },
+    {
+      "label": "L14 (CLI Commands) — implementor M11",
+      "key": "pages/modules/m11-c4s/L14-cli-commands.md",
+      "offset": 0,
+      "anchor": "ihakwlks"
+    },
+    {
+      "label": "L15 (Context Types) — implementor M44",
+      "key": "pages/modules/m44-context-types.md",
+      "offset": 7,
+      "anchor": "3f5ej79s"
+    },
+    {
+      "label": "Tabela warstw (arkusz warstwy)",
+      "key": "pages/SKILL.md",
+      "offset": 11,
+      "anchor": "rjuyutgc"
+    },
+    {
+      "label": "User jobs table — none; nearest is the modules table (system verifier)",
+      "key": "pages/SKILL.md",
+      "offset": 13,
+      "anchor": "oq23nb0j"
+    }
+  ],
+  "entityTypes": [
+    {
+      "type": "ac",
+      "role": "criteria",
+      "checks": "verifies",
+      "links": [
+        "verifies"
+      ],
+      "observedIn": "unit",
+      "inactive": "status = deprecated",
+      "version": 3
+    },
+    {
+      "type": "mcp-tool",
+      "role": "built",
+      "inCode": "the tool registered on its MCP server (slug prefix → src/server/mcp/<server>*.ts, e.g. reference-tools.ts, entity-tools, brief-tools.ts, plan-tools.ts, transagent-tools.ts; the external c4s-reader server for c4s-reader-*), its input schema derived from the operation declaration in src/server/operations/core-operations.ts: the entity's `name`, `params` (name, type, required, default), `description`, annotation hints (an empty hint = the server declares nothing, not false) and the behaviour `logic` states; `returns` describes the payload",
+      "verify": "a vitest test colocated with the server's tools file (src/server/mcp/<server>*.test.ts, or the c4s-reader server's test) named with [entity:<slug>] asserting the registered tool's name, input schema (params, required), declared hints, and the behaviour its `logic` states",
+      "links": [],
+      "version": 1
+    },
+    {
+      "type": "spec-operation",
+      "role": "built",
+      "inCode": "the operation's declaration in the L3 operation catalog (src/server/operations/catalog.ts types, rows registered in src/server/operations/core-operations.ts): canonical name = `nazwa`, scope (`zasieg`), mediation, the four channel cells (direct / via / na with reason, `poza katalogiem`), sideEffects (`efekty`), idempotence, errorCodes (`kodyBledow`), contentInput (`opisTresci`), and the internal/mcp `direct` rendering naming the tool in `narzedzia`; `zachowanie` is the behaviour the owning core function implements",
+      "verify": "a vitest test in src/server/operations/catalog.test.ts (or next to the owning module's core) named with [entity:<slug>] asserting the registered declaration matches the record's fields (name, scope, channels, idempotence, error codes, contentInput, the mcp-tool each internal/mcp direct cell names)",
+      "links": [],
+      "version": 1
+    }
+  ],
+  "entityParts": [],
+  "baselineGreen": true,
+  "systemVerified": false,
+  "errors": 0
+}
