@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { UI_KIT_CATALOG, UI_KIT_STABLE_COMPONENTS as BROWSER_STABLE } from './registry.js';
 import { UI_KIT_STABLE_COMPONENTS } from '../../shared/plugin-host/ui-kit-surface.js';
@@ -115,10 +117,21 @@ describe('Host UI Kit catalog registry (M34/L12)', () => {
       expect(uiBrowserSurface).toHaveProperty(beside);
       expect(names).not.toContain(beside);
     }
-    // DocEditor binds both live L11 singletons.
-    expect(UI_KIT_CATALOG.find((c) => c.name === 'DocEditor')?.l11Surfaces).toEqual([
-      'EditorBridge',
-      'QueryClient',
-    ]);
+  });
+
+  it('[ac:ac-doceditor-m34-experimental-host-wired] the connected DocEditor entry names the L11 singletons editorBridge and queryClient as its consumed surface', () => {
+    const docEditor = UI_KIT_CATALOG.find((c) => c.name === 'DocEditor');
+    expect(docEditor?.binding).toBe('connected');
+    expect(docEditor?.stability).toBe('experimental');
+    expect(docEditor?.l11Surfaces).toEqual(['editorBridge', 'queryClient']);
+    // Both names are singletons the published `@c4s/plugin-runtime` surface
+    // (L11) actually exports, not labels of their own.
+    const published = readFileSync(
+      fileURLToPath(new URL('../../plugin-types/plugin-runtime.ts', import.meta.url)),
+      'utf8',
+    );
+    for (const singleton of docEditor?.l11Surfaces ?? []) {
+      expect(published).toMatch(new RegExp(`export declare const ${singleton}: `));
+    }
   });
 });
