@@ -104,7 +104,11 @@ export async function linkDto(
   if (!RELATIONS.has(relation)) {
     throw new DomainError('VALIDATION', `invalid relation '${relation}'`);
   }
-  if (relation === 'request' && statusCode !== null) {
+  // 2.1.26 (`endpoint-tools · link_dto`): a status that is not an integer is
+  // treated as no status — normalized BEFORE the request rule, so `request`
+  // with such a value is a link without a status, not a refusal.
+  const status = normalizeStatus(statusCode);
+  if (relation === 'request' && status !== null) {
     throw new DomainError('VALIDATION', 'request relation must not carry a status code');
   }
   if (!deps.reader.getEntity('dto', dtoSlug)) {
@@ -112,7 +116,7 @@ export async function linkDto(
   }
 
   const links = readLinks(deps, endpointSlug);
-  const next: DtoLink = { dto: dtoSlug, relation, statusCode: normalizeStatus(statusCode) };
+  const next: DtoLink = { dto: dtoSlug, relation, statusCode: status };
   if (links.some((l) => sameLink(l, next))) return;
   await deps.update(endpointSlug, [...links, next]);
   deps.dtoTouched?.(dtoSlug);

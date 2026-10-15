@@ -11,6 +11,7 @@ import { VersionService } from '../services/versions.js';
 import type { EntityStore } from '../services/entity-store.js';
 import type { BackendModule, ProjectPluginHost } from '../core/plugin-host/types.js';
 import { expectToolMatchesRecord } from '../../../tests/helpers/read-tool-records.js';
+import { expectToolMatchesWriteRecord } from '../../../tests/helpers/write-tool-records.js';
 
 interface Widget {
   slug: string;
@@ -1190,5 +1191,175 @@ describe('entity-tools — search_entities as its 2.1.26 record declares it', ()
         code: err.code,
       });
     }
+  });
+});
+
+/**
+ * 2.1.26 — the three M13 mutation tools as their re-rendered `mcp-tool` records
+ * declare them (the `internal`/`mcp` renderings of `create_entities`,
+ * `update_entities` and `delete_entities`): name, description, parameters, no
+ * declared hint, and the behaviour each record's `logic` states — the whole-call
+ * type refusals, the per-item envelope (`{ slug }`, `{ slug, warnings[] }`,
+ * `{ error, code }`), the actor `agent` and the change broadcast.
+ */
+describe('entity-tools — the mutation tools as their 2.1.26 records declare them', () => {
+  /** A type with a soft-FK scalar: a write naming a missing target WARNS, never blocks. */
+  const palModule = () =>
+    widgetModule({
+      type: 'pal',
+      data: {
+        schema: {
+          title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+          buddy: { type: 'string', ref: 'pal', onMissing: 'warn', onDelete: 'leave-dangling' },
+        },
+      },
+    });
+  const results = (r: { content: Array<{ text: string }> }) => (parse(r) as { results: Array<Record<string, unknown>> }).results;
+
+  it('[entity:entity-tools-create-entities] create_entities: the record\'s contract; unknown type INVALID_TYPE, inactive INACTIVE_TYPE, both for the whole call before any item is written', async () => {
+    const { deps, rows } = fakeDeps();
+    expectToolMatchesWriteRecord(tool(deps, 'create_entities'), 'entity-tools-create-entities');
+    const unknown = await tool(deps, 'create_entities').handler({ type: 'nonexistent', items: [{ title: 'x' }] });
+    expect(unknown.isError).toBe(true);
+    expect(parse(unknown)).toMatchObject({ code: 'INVALID_TYPE' });
+    const inactive = await tool(deps, 'create_entities').handler({ type: 'inactive', items: [{ title: 'x' }] });
+    expect(inactive.isError).toBe(true);
+    expect(parse(inactive)).toMatchObject({ code: 'INACTIVE_TYPE' });
+    expect(rows().map((w) => w.slug)).toEqual(['widget-existing']);
+    expect(deps.ws.broadcast).not.toHaveBeenCalled();
+  });
+
+  it('[entity:entity-tools-create-entities] per item, in input order: { slug }, VALIDATION_ERROR for a schema failure, a domain code kept (SLUG_CONFLICT), anything else INTERNAL — the others still written', async () => {
+    const { deps, rows } = fakeDeps();
+    (deps.entityStore!.persist as unknown as ReturnType<typeof vi.fn>).mockImplementation((_type: string, slug: string) => {
+      if (slug === 'boom') throw new Error('disk full');
+    });
+    const result = await tool(deps, 'create_entities').handler({
+      type: 'widget',
+      items: [{ title: 'a' }, { title: 7 }, { title: 'dup', slug: 'widget-existing' }, { title: 'boom' }, { title: 'b' }],
+    });
+    expect(result.isError).toBeUndefined();
+    const r = results(result);
+    expect(r).toHaveLength(5);
+    expect(r[0]).toEqual({ slug: 'a' });
+    expect(r[1]).toMatchObject({ code: 'VALIDATION_ERROR' });
+    expect(r[2]).toMatchObject({ code: 'SLUG_CONFLICT' });
+    expect(r[3]).toEqual({ error: 'disk full', code: 'INTERNAL' });
+    expect(r[4]).toEqual({ slug: 'b' });
+    expect(rows().map((w) => w.slug)).toEqual(expect.arrayContaining(['a', 'b', 'widget-existing']));
+  });
+
+  it('[entity:entity-tools-create-entities] an item whose write returned warnings answers { slug, warnings[] }; written with actor agent and broadcast as entity:changed per created entity', async () => {
+    const { deps } = fakeDeps([palModule()]);
+    const capture = vi.spyOn(deps.versionService!, 'captureEntitySnapshot');
+    const result = await tool(deps, 'create_entities').handler({
+      type: 'pal',
+      items: [{ title: 'one' }, { title: 'two', buddy: 'ghost' }],
+    });
+    const r = results(result);
+    expect(r[0]).toEqual({ slug: 'one' });
+    expect(r[1]!.slug).toBe('two');
+    expect(r[1]!.warnings).toEqual([expect.stringMatching(/ghost.*dangling/)]);
+    expect(capture).toHaveBeenCalledWith('pal', 'one', 'create', 'agent', 'Created');
+    expect(deps.ws.broadcast).toHaveBeenCalledWith({ kind: 'entity:changed', entityType: 'pal', slug: 'one', action: 'create' });
+    expect(deps.ws.broadcast).toHaveBeenCalledWith({ kind: 'entity:changed', entityType: 'pal', slug: 'two', action: 'create' });
+  });
+
+  it('[entity:entity-tools-update-entities] update_entities: the record\'s contract; unknown type INVALID_TYPE, inactive INACTIVE_TYPE, both for the whole call', async () => {
+    const { deps, rows } = fakeDeps();
+    expectToolMatchesWriteRecord(tool(deps, 'update_entities'), 'entity-tools-update-entities');
+    const update = [{ slug: 'widget-existing', data: { title: 'changed' } }];
+    const unknown = await tool(deps, 'update_entities').handler({ type: 'nonexistent', updates: update });
+    expect(unknown.isError).toBe(true);
+    expect(parse(unknown)).toMatchObject({ code: 'INVALID_TYPE' });
+    const inactive = await tool(deps, 'update_entities').handler({ type: 'inactive', updates: update });
+    expect(inactive.isError).toBe(true);
+    expect(parse(inactive)).toMatchObject({ code: 'INACTIVE_TYPE' });
+    expect(rows()).toEqual([{ slug: 'widget-existing', title: 'existing' }]);
+  });
+
+  it('[entity:entity-tools-update-entities] per item: VALIDATION_ERROR for a schema failure, an absent slug keeps its domain code, anything else INTERNAL — the others still applied', async () => {
+    const { deps, rows } = fakeDeps();
+    await seed(deps, 'boom');
+    (deps.entityStore!.persist as unknown as ReturnType<typeof vi.fn>).mockImplementation((_type: string, slug: string) => {
+      if (slug === 'boom') throw new Error('disk full');
+    });
+    const result = await tool(deps, 'update_entities').handler({
+      type: 'widget',
+      updates: [
+        { slug: 'widget-existing', data: { title: 7 } },
+        { slug: 'widget-ghost', data: { title: 'x' } },
+        { slug: 'boom', data: { title: 'boom 2' } },
+        { slug: 'widget-existing', data: { title: 'changed' } },
+      ],
+    });
+    const r = results(result);
+    expect(r[0]).toMatchObject({ code: 'VALIDATION_ERROR' });
+    expect(r[1]).toMatchObject({ code: 'NOT_FOUND' });
+    expect(r[2]).toEqual({ error: 'disk full', code: 'INTERNAL' });
+    expect(r[3]).toEqual({ slug: 'widget-existing' });
+    expect(rows().find((w) => w.slug === 'widget-existing')?.title).toBe('changed');
+  });
+
+  it('[entity:entity-tools-update-entities] newSlug goes to the write with data — the result is the NEW slug and page references are repointed; warnings come back as { slug, warnings[] }; actor agent, entity:changed broadcast', async () => {
+    const { deps } = fakeDeps([palModule()]);
+    await tool(deps, 'create_entities').handler({ type: 'pal', items: [{ title: 'one' }, { title: 'two' }] });
+    const capture = vi.spyOn(deps.versionService!, 'captureEntitySnapshot');
+    const result = await tool(deps, 'update_entities').handler({
+      type: 'pal',
+      updates: [
+        { slug: 'one', data: { title: 'uno' }, newSlug: 'uno' },
+        { slug: 'two', data: { buddy: 'ghost' } },
+      ],
+    });
+    const r = results(result);
+    expect(r[0]).toEqual({ slug: 'uno' });
+    expect(deps.referencesService.propagateSlugChange).toHaveBeenCalledWith('pal', 'one', 'uno');
+    expect(r[1]!.slug).toBe('two');
+    expect(r[1]!.warnings).toEqual([expect.stringMatching(/ghost.*dangling/)]);
+    expect(capture).toHaveBeenCalledWith('pal', 'uno', 'update', 'agent', 'Updated');
+    expect(deps.ws.broadcast).toHaveBeenCalledWith({ kind: 'entity:changed', entityType: 'pal', slug: 'uno', action: 'update' });
+  });
+
+  it('[entity:entity-tools-delete-entities] delete_entities: the record\'s contract; unknown type INVALID_TYPE, inactive INACTIVE_TYPE, both for the whole call', async () => {
+    const { deps, rows } = fakeDeps();
+    expectToolMatchesWriteRecord(tool(deps, 'delete_entities'), 'entity-tools-delete-entities');
+    const unknown = await tool(deps, 'delete_entities').handler({ type: 'nonexistent', slugs: ['widget-existing'] });
+    expect(unknown.isError).toBe(true);
+    expect(parse(unknown)).toMatchObject({ code: 'INVALID_TYPE' });
+    const inactive = await tool(deps, 'delete_entities').handler({ type: 'inactive', slugs: ['widget-existing'] });
+    expect(inactive.isError).toBe(true);
+    expect(parse(inactive)).toMatchObject({ code: 'INACTIVE_TYPE' });
+    expect(rows().map((w) => w.slug)).toEqual(['widget-existing']);
+  });
+
+  it('[entity:entity-tools-delete-entities] references are collected BEFORE the delete and grouped by pagePath; an absent slug is NOT_FOUND for its item (a repeat is a refusal); another error is INTERNAL', async () => {
+    const { deps, rows } = fakeDeps();
+    await seed(deps, 'c', 'd');
+    const presentWhenAsked: boolean[] = [];
+    (deps.referencesService.findReferences as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      async (_type: string, slug: string) => {
+        if (slug === 'd') throw new Error('index gone');
+        presentWhenAsked.push(rows().some((w) => w.slug === slug));
+        return slug === 'c'
+          ? [{ pagePath: 'modules/m21-briefs.md' }, { pagePath: 'modules/m21-briefs.md' }, { pagePath: 'index.md' }]
+          : [];
+      },
+    );
+    const result = await tool(deps, 'delete_entities').handler({ type: 'widget', slugs: ['c', 'widget-ghost', 'd', 'c'] });
+    const r = results(result);
+    expect(r[0]).toEqual({
+      deleted: true,
+      brokenReferences: [
+        { pagePath: 'modules/m21-briefs.md', count: 2 },
+        { pagePath: 'index.md', count: 1 },
+      ],
+    });
+    expect(r[1]).toMatchObject({ code: 'NOT_FOUND' });
+    expect(r[2]).toEqual({ error: 'index gone', code: 'INTERNAL' });
+    expect(r[3]).toMatchObject({ code: 'NOT_FOUND' });
+    expect(presentWhenAsked[0]).toBe(true);
+    expect(rows().map((w) => w.slug)).toEqual(['d', 'widget-existing']);
+    expect(deps.ws.broadcast).toHaveBeenCalledWith({ kind: 'entity:changed', entityType: 'widget', slug: 'c', action: 'delete' });
   });
 });

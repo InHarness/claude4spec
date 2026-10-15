@@ -49,3 +49,14 @@
 - c4s-reader-search-entities → src/server/mcp/c4s-reader.ts (`search_entities`); test src/server/mcp/c4s-reader.test.ts
 - reference-tools-search-pages → src/server/mcp/reference-tools.ts (`search_pages`) + src/server/mcp/tool-contract-text.ts (`SEARCH_PAGES_DESCRIPTION`); test src/server/mcp/reference-tools.test.ts
 - c4s-reader-search-pages → src/server/mcp/c4s-reader.ts (`search_pages`) + src/server/mcp/tool-contract-text.ts (`SEARCH_PAGES_DESCRIPTION`); test src/server/mcp/c4s-reader.test.ts
+- create-entities → src/server/operations/core-operations.ts (`create_entities` row, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- update-entities → src/server/operations/core-operations.ts (`update_entities` row, `updates[]` input, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- delete-entities → src/server/operations/core-operations.ts (`delete_entities` row, contentInput n/a, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- link-dto → src/server/operations/core-operations.ts (`link_dto` row via `typeOp` + `dtoLinkOverrides`); test src/server/operations/catalog.test.ts
+- unlink-dto → src/server/operations/core-operations.ts (`unlink_dto` row via `typeOp` + `dtoLinkOverrides`); test src/server/operations/catalog.test.ts
+- restore-entity-version → src/server/operations/core-operations.ts (`restore_entity_version` row; owner `VersionService.restore` behind `POST /api/entities/:type/:slug/versions/:version/restore` in src/server/core/plugin-host/entities-router.ts); test src/server/operations/catalog.test.ts
+- entity-tools-create-entities → src/server/mcp/entity-tools.ts (`create_entities`); test src/server/mcp/entity-tools.test.ts
+- entity-tools-update-entities → src/server/mcp/entity-tools.ts (`update_entities`); test src/server/mcp/entity-tools.test.ts
+- entity-tools-delete-entities → src/server/mcp/entity-tools.ts (`delete_entities`); test src/server/mcp/entity-tools.test.ts
+- endpoint-tools-link-dto → plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/mcp.ts (`link_dto`) + backend/link-dto.ts (`linkDto`); test plugins/c4s-plugin-api-contracts/test/backend/endpoint-tools.test.ts
+- endpoint-tools-unlink-dto → plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/mcp.ts (`unlink_dto`) + backend/link-dto.ts (`unlinkDto`); test plugins/c4s-plugin-api-contracts/test/backend/endpoint-tools.test.ts

@@ -21,6 +21,9 @@ import { createC4sReaderServer } from '../mcp/c4s-reader.js';
 import { createReferenceToolsServer, type ReferenceToolsDeps } from '../mcp/reference-tools.js';
 import { buildEntityTools, type EntityToolsDeps } from '../mcp/entity-tools.js';
 import { READ_TOOL_RECORDS } from '../../../tests/helpers/read-tool-records.js';
+import { WRITE_TOOL_RECORDS } from '../../../tests/helpers/write-tool-records.js';
+import { createEndpointToolsServer } from '../../../plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/mcp.js';
+import type { LinkDtoDeps } from '../../../plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/link-dto.js';
 
 registerCoreOperations();
 
@@ -935,5 +938,171 @@ describe('the M39 read rows as their 2.1.26 records declare them', () => {
     const shape = z.object(CATALOG.require('search_pages').inputSchema as z.ZodRawShape);
     expect(shape.safeParse({}).success).toBe(true);
     expect(shape.safeParse({ regex: 'x', rootId: 'pages', pathInclude: '^modules/', pathExclude: 'drift' }).success).toBe(true);
+  });
+});
+
+/**
+ * 2.1.26 — the M13 mutation rows as their `spec-operation` records declare them
+ * (`create-entities`, `update-entities`, `delete-entities`, `link-dto`,
+ * `unlink-dto`, `restore-entity-version`): scope `project`, the record's
+ * mediation and four channel cells (a `via` / `n/a` cell carrying the record's
+ * `powody` verbatim), effects file/db/ui-notify, idempotence, content input
+ * (`dosłowny` → `literal`, `n/d` → `n/a`), `errorCodes` exactly the record's
+ * `kodyBledow` (each once), and `renderings` exactly its `narzedzia` — every named
+ * tool registered on its server, every agentic `direct` cell pointing at one and
+ * no `n/a` cell pointing at any.
+ */
+describe('the M13 mutation rows as their 2.1.26 records declare them', () => {
+  type Cell = { kind: 'direct' } | { kind: 'via'; operation: string; reason: string } | { kind: 'na'; reason: string };
+  interface WriteRecord {
+    nazwa: string;
+    mediacja: 'direct' | 'human-mediated';
+    channels: Record<ChannelName, Cell>;
+    idempotencja: boolean;
+    opisTresci: 'literal' | 'n/a';
+    kodyBledow: string[];
+    narzedzia: Partial<Record<'internal' | 'mcp', string[]>>;
+  }
+  const D: Cell = { kind: 'direct' };
+
+  const registered = new Map<string, Set<string>>([
+    ['entity-tools', new Set(buildEntityTools({} as unknown as EntityToolsDeps).map((t) => t.name))],
+    [
+      'endpoint-tools',
+      new Set(
+        (
+          createEndpointToolsServer({ links: {} as unknown as LinkDtoDeps }) as unknown as { tools: ReadonlyArray<{ name: string }> }
+        ).tools.map((t) => t.name),
+      ),
+    ],
+  ]);
+
+  function expectRecordRow(record: WriteRecord): void {
+    const op = CATALOG.require(record.nazwa);
+    expect(op.name).toBe(record.nazwa);
+    expect(op.scope).toBe('project');
+    expect(op.mediation).toBe(record.mediacja);
+    expect(op.opClass).toBe('write');
+    for (const channel of CHANNELS) {
+      expect(op.channels[channel], `${record.nazwa}.${channel}`).toEqual(record.channels[channel]);
+    }
+    expect(op.sideEffects).toEqual(['file', 'db', 'ui-notify']);
+    expect(op.idempotent).toBe(record.idempotencja);
+    expect(op.contentInput).toBe(record.opisTresci);
+    expect(new Set(op.errorCodes).size).toBe(op.errorCodes.length);
+    expect([...op.errorCodes].sort()).toEqual([...record.kodyBledow].sort());
+
+    const expected: Partial<Record<'internal' | 'mcp', string[]>> = {};
+    for (const [channel, slugs] of Object.entries(record.narzedzia) as Array<['internal' | 'mcp', string[]]>) {
+      expected[channel] = slugs.map((slug) => {
+        const tool = WRITE_TOOL_RECORDS[slug];
+        expect(tool, `mcp-tool record ${slug}`).toBeDefined();
+        return `${tool!.server}.${tool!.name}`;
+      });
+    }
+    expect(op.renderings ?? {}).toEqual(expected);
+    for (const channel of ['internal', 'mcp'] as const) {
+      const named = op.renderings?.[channel] ?? [];
+      if (op.channels[channel].kind === 'direct') expect(named.length, `${record.nazwa}.${channel}`).toBeGreaterThan(0);
+      else expect(named, `${record.nazwa}.${channel}`).toEqual([]);
+      for (const rendering of named) {
+        const [server, name] = rendering.split('.') as [string, string];
+        expect(registered.get(server)?.has(name), rendering).toBe(true);
+      }
+    }
+  }
+
+  it('[entity:create-entities] create_entities: project, direct, all four channels direct, file/db/ui-notify, not idempotent, literal, codes INVALID_TYPE, SLUG_CONFLICT, VALIDATION, rendered by entity-tools · create_entities', () => {
+    expectRecordRow({
+      nazwa: 'create_entities',
+      mediacja: 'direct',
+      channels: { internal: D, cli: D, mcp: D, rest: D },
+      idempotencja: false,
+      opisTresci: 'literal',
+      kodyBledow: ['INVALID_TYPE', 'SLUG_CONFLICT', 'VALIDATION'],
+      narzedzia: { internal: ['entity-tools-create-entities'], mcp: ['entity-tools-create-entities'] },
+    });
+  });
+
+  it('[entity:update-entities] update_entities: project, direct, all four channels direct, file/db/ui-notify, idempotent, literal, codes INVALID_TYPE, ENTITY_NOT_FOUND, VALIDATION, rendered by entity-tools · update_entities, addressed by (type, slug)', () => {
+    expectRecordRow({
+      nazwa: 'update_entities',
+      mediacja: 'direct',
+      channels: { internal: D, cli: D, mcp: D, rest: D },
+      idempotencja: true,
+      opisTresci: 'literal',
+      kodyBledow: ['INVALID_TYPE', 'ENTITY_NOT_FOUND', 'VALIDATION'],
+      narzedzia: { internal: ['entity-tools-update-entities'], mcp: ['entity-tools-update-entities'] },
+    });
+    const shape = z.object(CATALOG.require('update_entities').inputSchema as z.ZodRawShape);
+    expect(shape.safeParse({ type: 'ac', updates: [{ slug: 'a', data: { title: 'x' }, newSlug: 'b' }] }).success).toBe(true);
+    expect(shape.safeParse({ type: 'ac', updates: [{ data: { title: 'x' } }] }).success).toBe(false);
+  });
+
+  it('[entity:delete-entities] delete_entities: project, direct, all four channels direct, file/db/ui-notify, not idempotent, no content input, codes INVALID_TYPE, ENTITY_NOT_FOUND, VALIDATION, rendered by entity-tools · delete_entities', () => {
+    expectRecordRow({
+      nazwa: 'delete_entities',
+      mediacja: 'direct',
+      channels: { internal: D, cli: D, mcp: D, rest: D },
+      idempotencja: false,
+      opisTresci: 'n/a',
+      kodyBledow: ['INVALID_TYPE', 'ENTITY_NOT_FOUND', 'VALIDATION'],
+      narzedzia: { internal: ['entity-tools-delete-entities'], mcp: ['entity-tools-delete-entities'] },
+    });
+  });
+
+  const viaProxy: Cell = {
+    kind: 'via',
+    operation: 'call_type_tool',
+    reason: 'via `call_type_tool` — ogólne proxy hosta dla narzędzi typów; plugin nie wnosi własnego routera',
+  };
+
+  it('[entity:link-dto] link_dto: project, direct, internal/cli/mcp direct, rest via call_type_tool, file/db/ui-notify, idempotent, no content input, codes NOT_FOUND, VALIDATION, rendered by endpoint-tools · link_dto', () => {
+    expectRecordRow({
+      nazwa: 'link_dto',
+      mediacja: 'direct',
+      channels: { internal: D, cli: D, mcp: D, rest: viaProxy },
+      idempotencja: true,
+      opisTresci: 'n/a',
+      kodyBledow: ['NOT_FOUND', 'VALIDATION'],
+      narzedzia: { internal: ['endpoint-tools-link-dto'], mcp: ['endpoint-tools-link-dto'] },
+    });
+    // Addressed by the (endpoint, dto) pair with the relation role.
+    const shape = z.object(CATALOG.require('link_dto').inputSchema as z.ZodRawShape);
+    expect(shape.safeParse({ endpointSlug: 'e', dtoSlug: 'd', relation: 'response', statusCode: 200 }).success).toBe(true);
+    expect(shape.safeParse({ endpointSlug: 'e', dtoSlug: 'd' }).success).toBe(false);
+  });
+
+  it('[entity:unlink-dto] unlink_dto: project, direct, internal/cli/mcp direct, rest via call_type_tool, file/db/ui-notify, idempotent, no content input, codes NOT_FOUND, VALIDATION, rendered by endpoint-tools · unlink_dto', () => {
+    expectRecordRow({
+      nazwa: 'unlink_dto',
+      mediacja: 'direct',
+      channels: { internal: D, cli: D, mcp: D, rest: viaProxy },
+      idempotencja: true,
+      opisTresci: 'n/a',
+      kodyBledow: ['NOT_FOUND', 'VALIDATION'],
+      narzedzia: { internal: ['endpoint-tools-unlink-dto'], mcp: ['endpoint-tools-unlink-dto'] },
+    });
+    // statusCode is optional: without it every binding of the pair in that relation goes.
+    const shape = z.object(CATALOG.require('unlink_dto').inputSchema as z.ZodRawShape);
+    expect(shape.safeParse({ endpointSlug: 'e', dtoSlug: 'd', relation: 'error' }).success).toBe(true);
+  });
+
+  it('[entity:restore-entity-version] restore_entity_version: project, human-mediated, internal/cli/mcp n/a with the record\'s reason, rest direct, file/db/ui-notify, idempotent, literal, codes INVALID_TYPE, VALIDATION, NOT_FOUND, INTERNAL, no renderings, addressed by (type, slug, version)', () => {
+    const reason = 'akt user-initiated, bo cofa cudzą pracę; przegląd klasyfikacji otwarty';
+    expectRecordRow({
+      nazwa: 'restore_entity_version',
+      mediacja: 'human-mediated',
+      channels: { internal: { kind: 'na', reason }, cli: { kind: 'na', reason }, mcp: { kind: 'na', reason }, rest: D },
+      idempotencja: true,
+      opisTresci: 'literal',
+      kodyBledow: ['INVALID_TYPE', 'VALIDATION', 'NOT_FOUND', 'INTERNAL'],
+      narzedzia: {},
+    });
+    const shape = z.object(CATALOG.require('restore_entity_version').inputSchema as z.ZodRawShape);
+    expect(shape.safeParse({ type: 'ac', slug: 'a', version: 3 }).success).toBe(true);
+    expect(shape.safeParse({ type: 'ac', slug: 'a' }).success).toBe(false);
+    // Not an agentic operation: no entity-tools tool carries its name.
+    expect(registered.get('entity-tools')!.has('restore_entity_version')).toBe(false);
   });
 });

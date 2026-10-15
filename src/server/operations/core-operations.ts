@@ -795,12 +795,26 @@ export function registerCoreOperations(): void {
   // result envelope, and a duplicate slug fails that element with SLUG_CONFLICT
   // rather than rolling back its siblings.
 
+  /**
+   * 2.1.26 — the three rows are the M13 records `create-entities`,
+   * `update-entities` and `delete-entities`: project scope, direct mediation,
+   * direct in all four channels, effects file/db/ui-notify, `errorCodes` exactly
+   * the record's `kodyBledow`, and `renderings` the record's `narzedzia` (one
+   * `entity-tools` tool per operation, in both agentic channels).
+   *
+   * ASSUMPTION:dev-2602 — `update_entities` / `delete_entities` declare
+   * `ENTITY_NOT_FOUND` as their records do, while their `entity-tools` renderings
+   * answer an absent slug with the per-item code `NOT_FOUND`, as the re-rendered
+   * `mcp-tool` records state. The row follows the operation record; the tool
+   * follows its own.
+   */
   const entityWrite = (
     name: string,
     summary: string,
     inputSchema: z.ZodRawShape,
     idempotent: boolean,
-    extraCodes: readonly string[] = [],
+    errorCodes: readonly string[],
+    contentInput: ContentInputMode,
   ): OperationDeclaration => ({
     name,
     summary,
@@ -808,37 +822,51 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'write',
     inputSchema,
-    errorCodes: ['INVALID_TYPE', 'VALIDATION', ...extraCodes],
+    errorCodes,
     sideEffects: ['file', 'db', 'ui-notify'],
     /**
      * 0.2.37 — `data` carries the FULL VALUE of every field it changes,
      * `contentBearing` fields with long text payloads included. The partial
      * update an entity mutation offers is partial BY FIELD, never inside a
-     * field's content, so there is nothing differential about it. A natural
-     * extension, but a separate change with its own owner.
+     * field's content, so there is nothing differential about it (`literal`;
+     * the record's `dosłowny`). A delete takes no content at all (`n/a`).
      */
-    contentInput: 'literal',
+    contentInput,
     idempotent,
     channels: fullParity(),
+    renderings: { internal: [`entity-tools.${name}`], mcp: [`entity-tools.${name}`] },
   });
 
   CATALOG.register(
     entityWrite(
       'create_entities',
-      'Create several entities of one type. Per-item, non-transactional: a duplicate slug fails that item with SLUG_CONFLICT and leaves the rest applied.',
+      'Create several entities of one type. Per-item, non-transactional: a duplicate slug fails that item with SLUG_CONFLICT and leaves the rest applied; an item whose write raised warnings reports them beside its slug.',
       { type: z.string(), items: z.array(z.record(z.string(), z.unknown())).min(1) },
       false,
-      ['SLUG_CONFLICT'],
+      ['INVALID_TYPE', 'SLUG_CONFLICT', 'VALIDATION'],
+      'literal',
     ),
   );
 
+  /**
+   * Addressed by `(type, slug)` per element: `updates[]` carries `slug`, the
+   * partial `data` and an optional explicit `newSlug` — the shape the rendering
+   * takes. (This row named the list `items`, a second spelling of the input the
+   * tool has never accepted.)
+   */
   CATALOG.register(
     entityWrite(
       'update_entities',
-      'Update several entities of one type. Idempotent per element.',
-      { type: z.string(), items: z.array(z.record(z.string(), z.unknown())).min(1) },
+      'Update several entities of one type, partial by field (each changed field gets its full value). Idempotent per element; an absent slug fails that item with ENTITY_NOT_FOUND; an item whose write raised warnings reports them beside its slug.',
+      {
+        type: z.string(),
+        updates: z
+          .array(z.object({ slug: z.string(), data: z.record(z.string(), z.unknown()), newSlug: z.string().optional() }))
+          .min(1),
+      },
       true,
-      ['ENTITY_NOT_FOUND'],
+      ['INVALID_TYPE', 'ENTITY_NOT_FOUND', 'VALIDATION'],
+      'literal',
     ),
   );
 
@@ -846,12 +874,9 @@ export function registerCoreOperations(): void {
    * 0.2.86 — two corrections to this row, both from reading the handler.
    *
    * `idempotent: false`: a repeat is NOT a no-op. An absent slug fails that
-   * item with `NOT_FOUND`, deliberately — `entity-tools.ts` states the reason
-   * (the generic door answers `{ deleted: false }`, and reporting that as
-   * `{ deleted: true }` would tell an agent it removed something that was never
-   * there). The declaration said `true` while the code said otherwise, and a
-   * caller trusting the declaration would retry a batch and read the retry's
-   * failures as real ones.
+   * item, deliberately — `entity-tools.ts` states the reason (the generic door
+   * answers `{ deleted: false }`, and reporting that as `{ deleted: true }`
+   * would tell an agent it removed something that was never there).
    *
    * And the summary names `brokenReferences`, because M43 `echo-free` makes it
    * the substance of the answer rather than a detail: the address of the effect
@@ -866,9 +891,48 @@ export function registerCoreOperations(): void {
       'Delete several entities of one type. Per-item, non-transactional: an absent slug fails that item with ENTITY_NOT_FOUND and leaves the rest applied, so a repeat is not a no-op. Each deleted item answers with `brokenReferences` — the pages that referenced it, counted before the delete; references neither block the delete nor get rewritten.',
       { type: z.string(), slugs: z.array(z.string()).min(1) },
       false,
-      ['ENTITY_NOT_FOUND'],
+      ['INVALID_TYPE', 'ENTITY_NOT_FOUND', 'VALIDATION'],
+      'n/a',
     ),
   );
+
+  /**
+   * 2.1.26 — M13 record `restore-entity-version`: bring an entity back to an
+   * earlier `entity_version` on an explicit decision of the user in the UI.
+   *
+   * Human-mediated, and rendered in `rest` alone
+   * (`POST /api/entities/:type/:slug/versions/:version/restore`, owner
+   * `VersionService.restore`). The three other cells are `n/a` with the record's
+   * reasons: the act undoes someone else's work, so it is user-initiated, and
+   * letting it into the agentic channels first needs a meaning of "restore" for a
+   * caller that does not see the history (M13 `m13mcp00`). No `renderings`.
+   *
+   * Behaviour (the owner's): restoring a version that is a delete tombstone
+   * deletes the entity; a deleted entity cannot be restored — no entity or no
+   * such version is `NOT_FOUND`; an inactive type is `INVALID_TYPE`; an unknown
+   * type, a boot in progress or a missing payload migration is `VALIDATION`.
+   * Idempotent: restoring the same version twice leaves the same state. The
+   * restored snapshot is written whole (`literal`).
+   */
+  const RESTORE_NA_REASON = 'akt user-initiated, bo cofa cudzą pracę; przegląd klasyfikacji otwarty';
+  CATALOG.register({
+    name: 'restore_entity_version',
+    summary: 'Restore an entity to an earlier version, on an explicit decision of the user in the UI. Restoring a delete tombstone deletes the entity; a deleted entity cannot be restored.',
+    scope: 'project',
+    mediation: 'human-mediated',
+    opClass: 'write',
+    inputSchema: { type: z.string(), slug: z.string(), version: z.number().int().positive() },
+    errorCodes: ['INVALID_TYPE', 'VALIDATION', 'NOT_FOUND', 'INTERNAL'],
+    sideEffects: ['file', 'db', 'ui-notify'],
+    contentInput: 'literal',
+    idempotent: true,
+    channels: {
+      internal: na(RESTORE_NA_REASON),
+      cli: na(RESTORE_NA_REASON),
+      mcp: na(RESTORE_NA_REASON),
+      rest: direct(),
+    },
+  });
 
   // ── M18 tags ──────────────────────────────────────────────────────────────
 
@@ -1781,6 +1845,7 @@ export function registerCoreOperations(): void {
     opClass: 'read' | 'write',
     idempotent: boolean,
     inputSchema: z.ZodRawShape = {},
+    overrides: Partial<Pick<OperationDeclaration, 'contentInput' | 'channels' | 'renderings'>> = {},
   ) =>
     CATALOG.register({
       name,
@@ -1813,6 +1878,7 @@ export function registerCoreOperations(): void {
         // (`POST /api/entities/:type/tools/:tool`) rather than a route of its own.
         rest: via('call_type_tool', 'generic host proxy — the plugin contributes no router'),
       },
+      ...overrides,
     });
 
   // spreadsheet — sheet by slug, cells 1-based inclusive (r1,c1)-(r2,c2).
@@ -1827,10 +1893,35 @@ export function registerCoreOperations(): void {
   typeOp('delete_row', 'Delete a row, reindexing every row past it.', 'write', false);
   typeOp('delete_column', 'Delete a column, reindexing every column past it.', 'write', false);
 
-  // endpoint — both idempotent; unlink without a statusCode removes every
-  // binding matching (endpoint, dto, relation).
-  typeOp('link_dto', 'Bind a DTO to an endpoint. Idempotent — a duplicate binding is a no-op.', 'write', true);
-  typeOp('unlink_dto', 'Remove a DTO binding. Idempotent.', 'write', true);
+  /**
+   * endpoint — 2.1.26, the M13 records `link-dto` / `unlink-dto`. Both idempotent
+   * (a repeated link or unlink is a no-op, not a refusal); unlink without a
+   * statusCode removes every binding of the pair in that relation. Addressed by
+   * `(endpoint, dto)` with the relation; no content input (`n/a`) — the binding
+   * is fully determined by the identifiers. `rest` is `via` the generic host
+   * proxy, with the record's reason; `internal` and `mcp` render through the
+   * plugin's `endpoint-tools` server (`narzedzia`).
+   */
+  const DTO_LINK_SHAPE = {
+    endpointSlug: z.string(),
+    dtoSlug: z.string(),
+    relation: z.enum(['request', 'response', 'error']),
+    statusCode: z.number().optional(),
+  };
+  const DTO_LINK_REST_REASON =
+    'via `call_type_tool` — ogólne proxy hosta dla narzędzi typów; plugin nie wnosi własnego routera';
+  const dtoLinkOverrides = (tool: string) => ({
+    contentInput: 'n/a' as const,
+    channels: {
+      internal: direct(),
+      cli: direct(),
+      mcp: direct(),
+      rest: via('call_type_tool', DTO_LINK_REST_REASON),
+    },
+    renderings: { internal: [`endpoint-tools.${tool}`], mcp: [`endpoint-tools.${tool}`] },
+  });
+  typeOp('link_dto', 'Bind a DTO to an endpoint in one relation role. Idempotent — an identical binding already present is a no-op.', 'write', true, DTO_LINK_SHAPE, dtoLinkOverrides('link_dto'));
+  typeOp('unlink_dto', 'Remove a DTO binding from an endpoint; without statusCode every binding of the pair in that relation. Idempotent — nothing to remove is a no-op.', 'write', true, DTO_LINK_SHAPE, dtoLinkOverrides('unlink_dto'));
 
   // ac / diagram — read-only analysis. `analyze_ac_against_entities` is
   // idempotent in STATE but not in content: its answer comes from an LLM.
