@@ -278,15 +278,41 @@ export interface TagUpdateInput {
   description?: string | null;
 }
 
-export interface VersionListItem {
+/**
+ * DTO `entity-version-meta` — the light meta of one entity version (no
+ * snapshot data), the row of the version list. M13 owns the row; M17 adds
+ * `releaseId`.
+ */
+export interface EntityVersionMeta {
   version: number;
+  /** 'user' | 'agent' */
   changedBy: ChangedBy;
+  // ASSUMPTION:dev-0001 — the DTO declares `changeSummary: string` (required);
+  // the column is nullable and legacy/no-summary captures carry `null`, so the
+  // row keeps `string | null` rather than inventing an empty summary.
   changeSummary: string | null;
+  /** ISO 8601 timestamp */
   createdAt: string;
-  /** M17: release this version was captured into. Null/absent = unreleased (release_id IS NULL). */
-  releaseId?: number;
+  /**
+   * M17 (2.1.25): the id of the release this version belongs to; `null` for a
+   * change not yet released (`release_id IS NULL`). Every row the version list
+   * returns carries the field — `null` is emitted, never omitted. It is the
+   * same key the plugin-facing `useReleases()` mirror maps to a release name.
+   */
+  releaseId?: number | null;
+}
+
+export interface VersionListItem extends EntityVersionMeta {
   /** M17: kind of mutation captured. Null/absent for legacy rows. */
   op?: 'create' | 'update' | 'delete';
+}
+
+/**
+ * Declared 200 response of `GET /api/entities/:type/:slug/versions` — the
+ * version list, one `EntityVersionMeta` row per captured version, newest first.
+ */
+export interface EntityVersionListResponse {
+  versions: EntityVersionMeta[];
 }
 
 export interface VersionDetail extends VersionListItem {

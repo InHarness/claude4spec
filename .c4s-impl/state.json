@@ -1,5 +1,5 @@
 {
-  "iteration": 0,
+  "iteration": 2,
   "units": [
     {
       "id": "u1-version-release-id",
@@ -69,13 +69,32 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u1-version-release-id/p1-l4-l11",
+          "layers": [
+            "L4",
+            "L11"
+          ],
+          "slugs": [
+            "entity-version-meta",
+            "get-api-entities-type-slug-versions",
+            "ac-wiersz-listy-wersji-encji-niewydanej",
+            "ac-wiersz-listy-wersji-encji-przypisany"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "3d12446844050a98dfe0d039c01dcd6ef22abf12",
+      "baseCommit": "3d12446844050a98dfe0d039c01dcd6ef22abf12",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },
@@ -331,7 +350,7 @@
         "u3-ui-kit-tag-type",
         "u4-doceditor-catalog-entry"
       ],
-      "startCommit": null
+      "startCommit": "3d12446844050a98dfe0d039c01dcd6ef22abf12"
     }
   ],
   "conventions": [

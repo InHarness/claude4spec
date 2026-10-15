@@ -221,6 +221,20 @@ export interface UiKitStableDelta {
  */
 export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] = [
   {
+    release: '2.1.25',
+    slot: '@c4s/plugin-runtime: VersionListItem.releaseId (EntityVersionMeta)',
+    kind: 'behaviour-changed',
+    summary:
+      'Every row of the entity version list now carries `releaseId`: the id of ' +
+      'the release the version belongs to, or `null` for a change not yet ' +
+      'released, where the field used to be omitted. The row is named after its ' +
+      'DTO, `EntityVersionMeta`, which `VersionListItem` extends, and its type ' +
+      'widens from `number | undefined` to `number | null | undefined`. Additive ' +
+      'inside the baseline: a reader testing `releaseId != null` behaves exactly ' +
+      'as before, and the id is the key of the `useReleases()` map, so a plugin ' +
+      'joins a version to its release name without storing anything.',
+  },
+  {
     release: '0.2.4',
     slot: 'backend.crud.searchableFields',
     kind: 'slot-removed',

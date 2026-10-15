@@ -21,8 +21,10 @@ export function useReleaseList() {
  * `useReleases` in the codebase: the host's own version-history timeline and
  * every plugin (via `@c4s/plugin-runtime`) read release labels through it, off
  * the same `['releases']` query, so there is a single fetch and a single shape.
- * A version with `release_id IS NULL` is simply absent from the map — callers
- * render "(unreleased)".
+ * The map is keyed by the `releaseId` every version-list row
+ * (`EntityVersionMeta`, 2.1.25) carries, so a version joins its release name in
+ * one render. A version with `releaseId: null` (not yet released) is simply
+ * absent from the map — callers render "(unreleased)".
  */
 export function useReleases(): Map<number, string> {
   const { data } = useReleaseList();

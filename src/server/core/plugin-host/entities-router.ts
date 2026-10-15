@@ -3,7 +3,7 @@ import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
 import type { EntityStore } from '../../services/entity-store.js';
 import { type RawEntityReader } from '../../discovery/raw-entity-reader.js';
-import type { EntityCountsResponse } from '../../../shared/entities.js';
+import type { EntityCountsResponse, EntityVersionListResponse } from '../../../shared/entities.js';
 import type { EntityType } from '../../../shared/entities.js';
 import { z } from 'zod';
 import { DomainError } from '../../services/tags.js';
@@ -125,6 +125,21 @@ function decodeToolFailure(result: unknown): { code: string; message: string } {
   // that was being lost.
   return { code: 'INTERNAL', message: typeof text === 'string' ? text : 'tool reported an error' };
 }
+
+/**
+ * M13 (+ M17 `releaseId`, 2.1.25) — the declared contract of the entity
+ * version-list route. Its 200 response is the list of `EntityVersionMeta` rows
+ * (DTO `entity-version-meta`) under `versions`; the handler below is checked
+ * against `EntityVersionListResponse` with `satisfies`, so the declaration and
+ * the payload cannot drift apart.
+ */
+export const ENTITY_VERSIONS_ROUTE = {
+  method: 'GET',
+  path: '/api/entities/:type/:slug/versions',
+  responses: {
+    200: { dto: 'entity-version-meta', type: 'EntityVersionMeta', array: true, field: 'versions' },
+  },
+} as const;
 
 /**
  * Cross-cutting host-owned router for /api/entities/:type/:slug/...:
@@ -536,7 +551,8 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
       const type = assertType(host, req.params.type);
       const slug = req.params.slug;
       assertExists(host, type, slug);
-      res.json({ versions: versions.listVersions(type, slug) });
+      // Declared 200 response: ENTITY_VERSIONS_ROUTE.responses[200] — rows of `entity-version-meta`.
+      res.status(200).json({ versions: versions.listVersions(type, slug) } satisfies EntityVersionListResponse);
     } catch (err) {
       next(err);
     }
