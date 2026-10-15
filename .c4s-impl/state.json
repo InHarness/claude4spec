@@ -1,5 +1,5 @@
 {
-  "iteration": 15,
+  "iteration": 19,
   "units": [
     {
       "id": "u1-m26-ustawienia-bez-pluginow",
@@ -100,17 +100,17 @@
             "alfjoj17"
           ],
           "status": "implemented",
-          "rounds": 1,
+          "rounds": 2,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": "456a841681bd99495809700875635b21023e9a44",
-      "baseCommit": "456a841681bd99495809700875635b21023e9a44",
+      "startCommit": "de6d0c3dc4f75690b8949754368d706983a2685e",
+      "baseCommit": "de6d0c3dc4f75690b8949754368d706983a2685e",
       "rounds": {
         "review": 0,
-        "unit": 1
+        "unit": 2
       },
       "jobs": [],
       "lastUncovered": 0,

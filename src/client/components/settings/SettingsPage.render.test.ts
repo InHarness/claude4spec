@@ -24,8 +24,19 @@ vi.mock('./SettingsCardFrame.js', async () => {
   };
 });
 
+// The sidebar slot's link, reduced to what it would navigate to.
+vi.mock('@tanstack/react-router', async (importOriginal) => {
+  const { createElement: h } = await import('react');
+  return {
+    ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+    Link: ({ to, hash, children }: { to: string; hash?: string; children?: unknown }) =>
+      h('a', { href: hash ? `${to}#${hash}` : to, 'data-to': to, 'data-hash': hash ?? '' }, children as never),
+  };
+});
+
 import { SettingsPage, STATIC_SETTINGS_CONTRIBUTIONS } from './SettingsPage.js';
 import { assembleSettings } from './registry.js';
+import { UserSection } from '../UserSection.js';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -115,5 +126,44 @@ describe('SettingsPage — composition without a plugin settings channel (2.1.21
     expect(new Set(anchors)).toEqual(new Set(declared));
     expect(anchors).toHaveLength(declared.length);
     expect(fetched.some((url) => url.includes('plugin-settings'))).toBe(false);
+  });
+});
+
+describe('SettingsPage — entry from the sidebar avatar (M24 → M26)', () => {
+  it('[ac:ac-klik-na-avatar-w-sidebarze-m24-stan-zal] the signed-in sidebar avatar (connected: true) links to /settings#user-section, and the page smooth-scrolls to the User card for that hash', async () => {
+    // The M24 slot, signed in (seeded, not refetched: the fetch stub answers `{}`).
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    qc.setQueryData(['remote-account'], {
+      connected: true,
+      remoteAccountId: 'a',
+      accountEmail: 'ada@example.com',
+      accountStatus: 'active',
+      connectedAt: '2026-10-01T10:00:00.000Z',
+    });
+    await act(async () => {
+      root.render(createElement(QueryClientProvider, { client: qc }, createElement(UserSection)));
+    });
+    const avatar = host.querySelector('a')!;
+    expect(avatar).not.toBeNull();
+    expect(avatar.textContent).toContain('AD'); // the avatar initials
+    expect(avatar.getAttribute('data-to')).toBe('/settings');
+    expect(avatar.getAttribute('data-hash')).toBe('user-section');
+    expect(avatar.getAttribute('href')).toBe('/settings#user-section');
+
+    // Landing on that URL: the page scrolls smoothly to the User card.
+    const scrolled: Array<{ id: string; opts: unknown }> = [];
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = function (this: HTMLElement, opts?: unknown) {
+      scrolled.push({ id: this.id, opts });
+    } as typeof HTMLElement.prototype.scrollIntoView;
+    try {
+      window.location.hash = '#user-section';
+      const anchors = await render();
+      expect(anchors[0]).toBe('user-section');
+      expect(scrolled).toContainEqual({ id: 'user-section', opts: { behavior: 'smooth', block: 'start' } });
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+      window.location.hash = '';
+    }
   });
 });
