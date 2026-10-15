@@ -237,7 +237,7 @@ export function ExamplesPanel({ examples, fields, onChange }: Props) {
               className="text-[12px] px-3 py-1 rounded"
               style={{
                 background: 'var(--c-accent)',
-                color: 'var(--c-paper, #fff)',
+                color: '#fff',
               }}
             >
               Add
@@ -362,7 +362,7 @@ export function ExamplesPanel({ examples, fields, onChange }: Props) {
                             <button
                               onClick={() => commitJsonEdit(i)}
                               className="text-[11px] px-2 py-0.5 rounded"
-                              style={{ background: 'var(--c-accent)', color: 'var(--c-paper, #fff)' }}
+                              style={{ background: 'var(--c-accent)', color: '#fff' }}
                             >
                               Save
                             </button>
@@ -384,9 +384,9 @@ export function ExamplesPanel({ examples, fields, onChange }: Props) {
                         <div
                           className="mt-1 text-[11px] px-2 py-1 rounded"
                           style={{
-                            background: 'var(--c-warn-bg, #fdf6e3)',
-                            color: 'var(--c-warn-ink, #8a6d3b)',
-                            border: '1px solid var(--c-warn-border, #e7d9b3)',
+                            background: 'var(--c-yellow)',
+                            color: 'var(--c-yellow-ink)',
+                            border: '1px solid var(--c-hair-strong)',
                           }}
                         >
                           {warnings.map((w) => (
@@ -510,7 +510,7 @@ function ExampleMetaEditor({
       <button
         onClick={commit}
         className="text-[11px] px-2 py-0.5 rounded"
-        style={{ background: 'var(--c-accent)', color: 'var(--c-paper, #fff)' }}
+        style={{ background: 'var(--c-accent)', color: '#fff' }}
       >
         save
       </button>

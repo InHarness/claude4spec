@@ -528,7 +528,7 @@ function PersistedUserInputCard({
     response?.action === 'accept'
       ? 'var(--c-green)'
       : response?.action === 'decline'
-        ? 'var(--c-orange, #c99467)'
+        ? 'var(--c-red)'
         : 'var(--c-subtle)';
   const actionLabel = response?.action ?? (responseContent ? 'answered' : 'pending');
 

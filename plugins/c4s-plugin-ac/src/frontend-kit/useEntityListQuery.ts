@@ -39,18 +39,12 @@ export function useEntityListQuery(type: string, opts: Options) {
     [search, tagFilter, tagMode, extraKey],
   );
 
-  /**
-   * HOST TYPE DRIFT: `useTags()` returns `TagListItem`, which lacks the
-   * `createdAt`/`updatedAt` present on the kit's `Tag` even though the two are
-   * meant to be one shape. Neither `TagFilterBar` nor `EntityListRow` reads
-   * either field, so the cast is safe — but it is the host's inconsistency, not
-   * this package's, and it is filed as a patch.
-   */
-  const tagCatalog = tags as unknown as Tag[];
-  const tagLookup = useMemo(() => new Map(tagCatalog.map((t) => [t.slug, t])), [tagCatalog]);
+  // `useTags()` items are assignable to the kit's `Tag` as is (M34 `hpw2opbb`):
+  // no adapter and no cast.
+  const tagLookup = useMemo(() => new Map<string, Tag>(tags.map((t) => [t.slug, t])), [tags]);
 
   const tagBar: TagBarProps = {
-    tags: tagCatalog.filter((t) => (t.counts[type] ?? 0) > 0),
+    tags: tags.filter((t) => (t.counts[type] ?? 0) > 0),
     tagFilter,
     onTagToggle,
     tagMode,

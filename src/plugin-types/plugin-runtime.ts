@@ -770,12 +770,20 @@ export declare const editorBridge: EditorBridge;
 // intentionally loose (not `UseQueryResult<T>`/`UseMutationResult<T>`) so
 // this surface stays decoupled from a specific `@tanstack/react-query`
 // version — plugins already get the real types via that shared peer.
-export interface VersionListItem {
+/**
+ * DTO `entity-version-meta` — one row of the entity version list. `releaseId`
+ * is the release the version belongs to, `null` for a change not yet released;
+ * it is the key of the `useReleases()` map, so a plugin joins a version to its
+ * release name in one render.
+ */
+export interface EntityVersionMeta {
   version: number;
   changedBy: 'user' | 'agent';
   changeSummary: string | null;
   createdAt: string;
-  releaseId?: number;
+  releaseId?: number | null;
+}
+export interface VersionListItem extends EntityVersionMeta {
   op?: 'create' | 'update' | 'delete';
 }
 export interface VersionDetail extends VersionListItem {
@@ -897,7 +905,11 @@ export interface Release {
 export declare const releasesService: {
   listReleases(): Promise<Release[]>;
 };
-/** `releaseId → name`. A version with no release is simply absent from the map. */
+/**
+ * `releaseId → name`, keyed by `EntityVersionMeta.releaseId` — the same id every
+ * version-list row carries. A version with `releaseId: null` (not yet released)
+ * has no entry; render it as "(unreleased)".
+ */
 export declare function useReleases(): Map<number, string>;
 
 // ── M13/L11 line-diff util ──

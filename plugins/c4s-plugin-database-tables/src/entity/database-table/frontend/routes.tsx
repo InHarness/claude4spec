@@ -131,12 +131,11 @@ function DatabaseTableListRoute(): JSX.Element {
   // Tag universe comes from the host's tag catalog narrowed to tags actually used
   // on `database-table` items (`counts[TYPE] > 0`) — the bar stays hidden (below)
   // when THIS list's entities carry no tags, not merely when the project has none.
-  // `useTags()`'s `TagListItem` lacks `createdAt`/`updatedAt` present on the kit's
-  // `Tag` even though they are meant to be one shape (a host type-surface drift);
-  // neither `TagFilterBar` nor `EntityListRow` reads either field.
+  // `useTags()`'s `TagListItem` is assignable to the kit's `Tag` as is (M34
+  // `hpw2opbb`): no adapter and no cast.
   const tagCatalog = useTags();
   const tagUniverse = useMemo<Tag[]>(
-    () => ((tagCatalog.data ?? []) as Tag[]).filter((t) => (t.counts[DATABASE_TABLE_TYPE] ?? 0) > 0),
+    () => (tagCatalog.data ?? []).filter((t) => (t.counts[DATABASE_TABLE_TYPE] ?? 0) > 0),
     [tagCatalog.data],
   );
   // Rows' chip lookup is derived from the same universe, not built ad hoc per row.

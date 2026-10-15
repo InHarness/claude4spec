@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import type { Tag } from '../../../shared/entities.js';
+import type { Tag } from '../../../shared/plugin-host/ui-kit-surface.js';
 import { Badge } from '../actions/Badge.js';
 import { withStability } from '../stability.js';
 

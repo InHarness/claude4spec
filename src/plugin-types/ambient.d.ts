@@ -107,6 +107,6 @@ declare module '@c4s/plugin-runtime/ui' {
     HOST_TOKEN_NAMES,
     readHostTokens,
     UI_KIT_CATALOG,
-    STABLE_UI_KIT_COMPONENTS,
+    UI_KIT_STABLE_COMPONENTS,
   } from '@inharness-ai/claude4spec/plugin-runtime/ui';
 }

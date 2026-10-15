@@ -221,6 +221,20 @@ export interface UiKitStableDelta {
  */
 export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] = [
   {
+    release: '2.1.25',
+    slot: '@c4s/plugin-runtime: VersionListItem.releaseId (EntityVersionMeta)',
+    kind: 'behaviour-changed',
+    summary:
+      'Every row of the entity version list now carries `releaseId`: the id of ' +
+      'the release the version belongs to, or `null` for a change not yet ' +
+      'released, where the field used to be omitted. The row is named after its ' +
+      'DTO, `EntityVersionMeta`, which `VersionListItem` extends, and its type ' +
+      'widens from `number | undefined` to `number | null | undefined`. Additive ' +
+      'inside the baseline: a reader testing `releaseId != null` behaves exactly ' +
+      'as before, and the id is the key of the `useReleases()` map, so a plugin ' +
+      'joins a version to its release name without storing anything.',
+  },
+  {
     release: '0.2.4',
     slot: 'backend.crud.searchableFields',
     kind: 'slot-removed',
@@ -654,6 +668,30 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       'with zero published plugins it is absorbed into the current baseline under rule (2): ' +
       '`HOST_API_VERSION` is unchanged and there is no `migrations[]` descriptor. A stale ' +
       '`settings` key on an old manifest is not read by anything.',
+  },
+  {
+    release: '2.1.25',
+    slot: '@c4s/plugin-runtime/ui: UI_KIT_STABLE_COMPONENTS (browser leg)',
+    kind: 'slot-added',
+    summary:
+      'The browser leg of `/ui` exports the list of `stable` component names under ' +
+      '`UI_KIT_STABLE_COMPONENTS`, the name the backend leg already carried; it is ' +
+      'derived from the catalog and equal to the backend value. The `/ui` types declare ' +
+      'that one constant for both legs (`UI_KIT_CATALOG` and the components for the ' +
+      'browser leg only). A new name: additive within the current baseline, no bump. ' +
+      'The composition of the list does not change, so the explicit rule for the ' +
+      '`stable` list asks for no changelog entry.',
+  },
+  {
+    release: '2.1.25',
+    slot: '@c4s/plugin-runtime/ui: STABLE_UI_KIT_COMPONENTS (browser leg)',
+    kind: 'slot-removed',
+    summary:
+      'The previous browser-leg name of the `stable` list is gone with no alias — ' +
+      'replaced by `UI_KIT_STABLE_COMPONENTS`, the one name both `/ui` legs share. ' +
+      'Formally a narrowing under rule (1); with zero published plugins it is absorbed ' +
+      'into the current baseline under the precedent of the `injection` retirement: ' +
+      '`HOST_API_VERSION` is unchanged and there is no `migrations[]` descriptor.',
   },
 ];
 

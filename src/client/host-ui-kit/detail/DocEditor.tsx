@@ -196,7 +196,10 @@ function DocEditorImpl({ value, onChange, onBlur, readOnly, placeholder }: DocEd
 
 // 2.1.20 (M34 m34l12sc): binds BOTH live L11 singletons — the EditorBridge and
 // the host `QueryClient` (`useQueryClient()` above).
+// 2.1.25 (M34 m34l12sc): the entry names them as the L11 surface spells them —
+// the `@c4s/plugin-runtime` exports `editorBridge` and `queryClient` — the way
+// `EntityVersionHistoryView` names its hooks.
 export const DocEditor = withStability(DocEditorImpl, 'experimental', 'connected', [
-  'EditorBridge',
-  'QueryClient',
+  'editorBridge',
+  'queryClient',
 ]);

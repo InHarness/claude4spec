@@ -225,7 +225,7 @@ function McpConfigBlock() {
                   className="rounded-full px-2.5 py-1 text-[11.5px] font-medium"
                   style={{
                     background: selected ? 'var(--c-accent)' : 'transparent',
-                    color: selected ? '#fff' : 'var(--c-ink-soft)',
+                    color: selected ? '#fff' : 'var(--c-muted)',
                     border: `1px solid ${selected ? 'var(--c-accent)' : 'var(--c-hair)'}`,
                   }}
                 >

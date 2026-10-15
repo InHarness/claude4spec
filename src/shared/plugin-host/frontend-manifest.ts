@@ -241,5 +241,5 @@ export const PLUGIN_RUNTIME_UI_EXPORT_NAMES = [
   'readHostTokens',
   // Stability metadata
   'UI_KIT_CATALOG',
-  'STABLE_UI_KIT_COMPONENTS',
+  'UI_KIT_STABLE_COMPONENTS',
 ] as const;

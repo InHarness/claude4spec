@@ -111,7 +111,7 @@ const PUBLISHED_PLUGIN_RUNTIME_UI_NAMES = [
   'HOST_TOKEN_NAMES',
   'readHostTokens',
   'UI_KIT_CATALOG',
-  'STABLE_UI_KIT_COMPONENTS',
+  'UI_KIT_STABLE_COMPONENTS',
 ] as const;
 
 describe('published Host API type surface', () => {

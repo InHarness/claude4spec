@@ -25,7 +25,7 @@ export function IndexStatusElement() {
     <>
       <div className="flex flex-col gap-1.5">
         {isLoading && rows.length === 0 ? (
-          <div className="text-[12.5px]" style={{ color: 'var(--c-ink-soft)' }}>
+          <div className="text-[12.5px]" style={{ color: 'var(--c-muted)' }}>
             Loading…
           </div>
         ) : (
@@ -45,7 +45,7 @@ export function IndexStatusElement() {
           onClick={() => rebuild.mutate(undefined)}
           disabled={rebuild.isPending}
         />
-        <span className="text-[11.5px]" style={{ color: 'var(--c-ink-soft)' }}>
+        <span className="text-[11.5px]" style={{ color: 'var(--c-muted)' }}>
           Rebuilding is safe at any time — it can be run on a projection that is already fresh.
         </span>
       </div>
@@ -62,7 +62,7 @@ function Row({ row, busy, onRebuild }: { row: ProjectionStatusRow; busy: boolean
     >
       <div className="flex-1 min-w-0">
         <div className="text-[12.5px] truncate">{row.label}</div>
-        <div className="text-[11px] truncate" style={{ color: 'var(--c-ink-soft)' }}>
+        <div className="text-[11px] truncate" style={{ color: 'var(--c-muted)' }}>
           Last rebuilt: {formatWhen(row.lastRebuiltAt)}
         </div>
       </div>
@@ -93,7 +93,7 @@ function StateBadge({ row }: { row: ProjectionStatusRow }) {
 
 function describe(row: ProjectionStatusRow): { text: string; color: string } {
   if (row.state === 'fresh') return { text: 'Fresh', color: 'var(--c-green, #4a7c59)' };
-  if (row.state === 'not_materialized') return { text: 'Not built', color: 'var(--c-ink-soft)' };
+  if (row.state === 'not_materialized') return { text: 'Not built', color: 'var(--c-muted)' };
   const scope =
     row.scope === 'global'
       ? 'all'

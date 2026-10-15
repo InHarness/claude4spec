@@ -186,7 +186,7 @@ function ItemBadgeList({ items }: { items: unknown[] }) {
         const item = raw as ItemEnvelope;
         if (isErrorItem(item)) {
           return (
-            <div key={i} className="font-mono text-[12px]" style={{ color: 'var(--c-error, #c0392b)' }}>
+            <div key={i} className="font-mono text-[12px]" style={{ color: 'var(--c-red)' }}>
               ✗ {String(item.error)} <span style={{ color: 'var(--c-subtle)' }}>({String(item.code)})</span>
             </div>
           );
@@ -196,7 +196,7 @@ function ItemBadgeList({ items }: { items: unknown[] }) {
           <div key={i} className="font-mono text-[12px]" style={{ color: 'var(--c-ink)' }}>
             {String(item.slug ?? '?')}
             {warnings.length > 0 && (
-              <span style={{ color: 'var(--c-warning, #b8860b)' }}> — {warnings.join('; ')}</span>
+              <span style={{ color: 'var(--c-yellow-ink)' }}> — {warnings.join('; ')}</span>
             )}
           </div>
         );
@@ -327,7 +327,7 @@ const entityToolsRenderers: Record<string, ToolRenderer> = {
             const item = raw as ItemEnvelope & { brokenReferences?: Array<{ pagePath: string; count: number }> };
             if (isErrorItem(item)) {
               return (
-                <div key={i} className="font-mono text-[12px]" style={{ color: 'var(--c-error, #c0392b)' }}>
+                <div key={i} className="font-mono text-[12px]" style={{ color: 'var(--c-red)' }}>
                   ✗ {String(item.error)} <span style={{ color: 'var(--c-subtle)' }}>({String(item.code)})</span>
                 </div>
               );
@@ -337,7 +337,7 @@ const entityToolsRenderers: Record<string, ToolRenderer> = {
               <div key={i} className="font-mono text-[12px]" style={{ color: 'var(--c-ink)' }}>
                 {String(item.slug ?? '?')}
                 {broken.length > 0 && (
-                  <span style={{ color: 'var(--c-warning, #b8860b)' }}>
+                  <span style={{ color: 'var(--c-yellow-ink)' }}>
                     {' '}
                     — {broken.reduce((n, b) => n + b.count, 0)} broken reference(s) in {broken.length} page(s)
                   </span>

@@ -345,7 +345,7 @@ export class VersionService {
       changedBy: r.changed_by as ChangedBy,
       changeSummary: r.change_summary,
       createdAt: r.created_at,
-      ...(r.release_id !== null ? { releaseId: r.release_id } : {}),
+      releaseId: r.release_id,
       ...(r.op ? { op: r.op as VersionOp } : {}),
     }));
   }
@@ -441,7 +441,7 @@ export class VersionService {
       changedBy: row.changed_by as ChangedBy,
       changeSummary: row.change_summary,
       createdAt: row.created_at,
-      ...(row.release_id !== null ? { releaseId: row.release_id } : {}),
+      releaseId: row.release_id,
       ...(row.op ? { op: row.op as VersionOp } : {}),
     };
   }
@@ -456,7 +456,7 @@ export class VersionService {
       changeSummary: row.change_summary,
       createdAt: row.created_at,
       serializerVersion: row.serializer_version,
-      ...(row.release_id !== null ? { releaseId: row.release_id } : {}),
+      releaseId: row.release_id,
       ...(row.op ? { op: row.op as VersionOp } : {}),
     };
   }

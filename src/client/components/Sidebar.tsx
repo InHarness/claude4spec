@@ -762,7 +762,7 @@ function PageRow({
           aria-label="New page path, relative to this root"
         />
         {error && (
-          <div className="text-[11px] pt-0.5" style={{ color: 'var(--c-danger, #b3261e)' }}>
+          <div className="text-[11px] pt-0.5" style={{ color: 'var(--c-red)' }}>
             {error}
           </div>
         )}

@@ -68,6 +68,40 @@ describe('[section:m33rt001] the leg inventory of @c4s/plugin-runtime', () => {
     }
   });
 
+  it('[ac:ac-zbior-nazw-wartosci-eksportowanych-pr] the set of value names the backend leg of the main @c4s/plugin-runtime entry exports equals the set of inventory names marked backend or both', () => {
+    // The inventory's backend + shared rows, read straight off the table.
+    const inventory = PLUGIN_RUNTIME_LEGS.filter((row) => row.leg === 'backend' || row.leg === 'both').flatMap(
+      (row) => [...row.names],
+    );
+    // The leg inventory as M33 m33rt001 states it at 2.1.25 (exhaustive for the
+    // backend leg): `HOST_API_VERSION` (both) plus the backend rows of M13 and M39.
+    expect(sorted(inventory)).toEqual(
+      sorted([
+        'HOST_API_VERSION',
+        'createMcpServer',
+        'mcpTool',
+        'z',
+        'checkValidator',
+        'validatorMessage',
+        'contentBytes',
+        'DEFAULT_CONTENT_OPERATION',
+        'TOOL_RESULT_CEILING_TOKENS',
+        'DomainError',
+      ]),
+    );
+    // The Node barrel the bare specifier resolves to: its value exports (types
+    // are erased, so the module namespace holds values only) are exactly that
+    // set — nothing missing, nothing extra.
+    const exported = Object.keys(backendLeg);
+    expect(new Set(exported).size).toBe(exported.length);
+    expect(sorted(exported)).toEqual(sorted(inventory));
+    for (const name of inventory) expect(backendLeg, name).toHaveProperty(name);
+    // No browser-only name of the inventory is on the backend leg.
+    for (const row of PLUGIN_RUNTIME_LEGS.filter((r) => r.leg === 'browser')) {
+      for (const name of row.names) expect(exported, name).not.toContain(name);
+    }
+  });
+
   it('[section:m33rt001] the browser leg (the import-map shim) carries exactly the browser and shared names, and no backend-only name', async () => {
     const shim = await getRuntimeShim('plugin-runtime');
     expect(shim).not.toBeNull();
@@ -80,12 +114,13 @@ describe('[section:m33rt001] the leg inventory of @c4s/plugin-runtime', () => {
     }
   });
 
-  it('[section:m33rt001] the /ui backend leg carries only UI_KIT_STABLE_COMPONENTS; the browser /ui leg carries STABLE_UI_KIT_COMPONENTS beside the components', async () => {
+  it('[section:m33rt001] the /ui backend leg carries only UI_KIT_STABLE_COMPONENTS; the browser /ui leg carries the same UI_KIT_STABLE_COMPONENTS beside the components, and no STABLE_UI_KIT_COMPONENTS', async () => {
     expect(Object.keys(uiBackendLeg)).toEqual(['UI_KIT_STABLE_COMPONENTS']);
     const uiShim = await getRuntimeShim('plugin-runtime-ui');
     const exported = shimExports(uiShim!);
     expect(sorted(exported)).toEqual(sorted(PLUGIN_RUNTIME_UI_EXPORT_NAMES));
-    expect(exported).toContain('STABLE_UI_KIT_COMPONENTS');
-    expect(exported).not.toContain('UI_KIT_STABLE_COMPONENTS');
+    // 2.1.25 — one name on both legs; the previous browser name has no alias.
+    expect(exported).toContain('UI_KIT_STABLE_COMPONENTS');
+    expect(exported).not.toContain('STABLE_UI_KIT_COMPONENTS');
   });
 });

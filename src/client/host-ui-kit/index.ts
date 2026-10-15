@@ -116,7 +116,7 @@ export { HOST_TOKEN_NAMES, readHostTokens, type HostTokenName } from './tokens.j
 export { type Stability, type Binding, type WithStability } from './stability.js';
 export {
   UI_KIT_CATALOG,
-  STABLE_UI_KIT_COMPONENTS,
+  UI_KIT_STABLE_COMPONENTS,
   type UiKitGroup,
   type UiKitComponentEntry,
 } from './registry.js';

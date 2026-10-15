@@ -21,7 +21,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import * as uiBrowserLeg from '../../runtime/plugin-runtime-ui.js';
 import { ToastHost } from '../../ui/ToastHost.js';
 import { UI_EVENTS, toast } from '../../ui/events.js';
-import { UI_KIT_CATALOG, STABLE_UI_KIT_COMPONENTS } from '../registry.js';
+import { UI_KIT_CATALOG, UI_KIT_STABLE_COMPONENTS } from '../registry.js';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -162,8 +162,8 @@ describe('[ac:ac-toastviewport-usetoast-grupa-overlay] ToastViewport (Feedback) 
     expect(UI_KIT_CATALOG.map((e) => e.name)).not.toContain('useToast');
     expect(typeof uiBrowserLeg.useToast).toBe('function');
     expect(uiBrowserLeg.ToastViewport).toBeDefined();
-    expect(STABLE_UI_KIT_COMPONENTS).not.toContain('ToastViewport');
-    expect(STABLE_UI_KIT_COMPONENTS).not.toContain('useToast');
+    expect(UI_KIT_STABLE_COMPONENTS).not.toContain('ToastViewport');
+    expect(UI_KIT_STABLE_COMPONENTS).not.toContain('useToast');
   });
 
   it('[ac:ac-toastviewport-usetoast-grupa-overlay] the imperative handle exposes exactly success/error/warning, and each renders over --z-toast', async () => {

@@ -268,7 +268,7 @@ export function UiViewDetail({
           <div
             className="mt-4 rounded-md p-3"
             style={{
-              background: 'var(--c-yellow-soft, rgba(196,162,79,0.12))',
+              background: 'var(--c-panel)',
               border: '1px dashed var(--c-yellow, #c4a24f)',
             }}
           >

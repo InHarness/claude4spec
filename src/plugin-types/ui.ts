@@ -18,14 +18,15 @@
  * assignable to these published shapes (drift guard).
  *
  * `Tag` and `Stability` are dep-free and RE-EXPORTED from their canonical host
- * modules (single source of truth).
+ * module, the catalog's React-free slice (single source of truth). `Tag` is the
+ * kit's own minimal tag shape (2.1.25, M34 `hpw2opbb`), not the host's data
+ * record: a `TagListItem` from `useTags()` is assignable to it without a cast.
  */
 
 import type { ComponentType, ReactNode, CSSProperties, FormEvent } from 'react';
 import type { LucideIcon } from 'lucide-react';
 
-export type { Tag } from '../shared/entities.js';
-export type { Stability } from '../shared/plugin-host/ui-kit-surface.js';
+export type { Tag, Stability } from '../shared/plugin-host/ui-kit-surface.js';
 
 // ── Core (stable) — part of the versioned `hostApiVersion` surface ──
 export interface DetailBreadcrumb {
@@ -66,7 +67,7 @@ export interface EntityListHeaderProps {
 export declare const EntityListHeader: ComponentType<EntityListHeaderProps>;
 
 // ── List (experimental) — OUTSIDE the version guarantee ──
-import type { Tag } from '../shared/entities.js';
+import type { Tag } from '../shared/plugin-host/ui-kit-surface.js';
 
 export interface EntityListLayoutProps {
   header?: ReactNode;
@@ -337,7 +338,8 @@ export interface RichTextFieldProps {
 export declare const RichTextField: ComponentType<RichTextFieldProps>;
 
 export interface TagPickerProps {
-  allTags: { slug: string; name: string; color?: string | null }[];
+  /** The catalog's one tag type — the same `Tag` as `TagFilterBar.tags` and `EntityListRow.tagLookup`. */
+  allTags: Tag[];
   selected: string[];
   onToggle(slug: string): void;
   onCreate?(name: string): void;
@@ -537,13 +539,14 @@ export interface UiKitComponentEntry {
   l11Surfaces?: readonly string[];
 }
 export declare const UI_KIT_CATALOG: readonly UiKitComponentEntry[];
-export declare const STABLE_UI_KIT_COMPONENTS: readonly string[];
 /**
- * The backend leg of `@c4s/plugin-runtime/ui` (M33 `m33rt001`): React-free, it
- * carries this list of the `stable` component names and nothing else — the
- * subpath's runtime export (`dist/server/plugin-runtime/ui.js`) serves exactly
- * it. Typed for plugin backend code through `…/plugin-runtime/ambient` under the
- * `c4s-backend` condition; the browser leg carries `STABLE_UI_KIT_COMPONENTS`.
+ * The names of the `stable` catalog components — the versioned `hostApiVersion`
+ * part of the kit. Declared ONCE for BOTH legs of `@c4s/plugin-runtime/ui`
+ * (M33 `m33rt001`, 2.1.25): the browser leg derives it from the catalog, the
+ * React-free backend leg (`dist/server/plugin-runtime/ui.js`) carries it and
+ * nothing else, and the two are equal. `…/plugin-runtime/ambient` re-exports it
+ * as a value on both legs; `UI_KIT_CATALOG` and the components only on the
+ * browser leg.
  */
 export declare const UI_KIT_STABLE_COMPONENTS: readonly string[];
 
