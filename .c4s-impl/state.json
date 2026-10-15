@@ -1,5 +1,5 @@
 {
-  "iteration": 12,
+  "iteration": 13,
   "units": [
     {
       "id": "u1-version-release-id",
@@ -379,7 +379,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "u4-doceditor-catalog-entry/p1-l11-l12",
@@ -392,14 +392,24 @@
             "ac-doceditor-obsluguje-slash-commands",
             "ac-doceditor-pozwala-wstawic-odnosnik-do"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "ac-doceditor-obsluguje-slash-commands",
+            "ac-doceditor-pozwala-wstawic-odnosnik-do"
+          ],
+          "only": [
+            {
+              "slug": "ac-doceditor-obsluguje-slash-commands"
+            },
+            {
+              "slug": "ac-doceditor-pozwala-wstawic-odnosnik-do"
+            }
+          ]
         }
       ],
-      "startCommit": "078f6f24b3df18ae10ac0cd3e2a131f5ff8f8956",
+      "startCommit": "bf0f7c394d3ff6ec21d6b4371742750aa7352a3d",
       "baseCommit": "078f6f24b3df18ae10ac0cd3e2a131f5ff8f8956",
       "rounds": {
         "review": 0,

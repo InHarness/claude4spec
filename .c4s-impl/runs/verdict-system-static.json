@@ -1,0 +1,1 @@
+{"role":"verifier-system","scope":{"kind":"system","id":"system"},"release":"2.1.25","staticRows":18,"allCovered":true,"suite":{"command":"npm run typecheck (static; full suite pending in env-runner)","exitCode":0}}
