@@ -1,0 +1,1 @@
+{"role":"implementer","unit":"u06-field-content-op","packetBytes":82894,"portions":[{"name":"u06-field-content-op/p1-l2-l11","layers":["L2","L3","L11"],"slugs":["get-field-content","entity-tools-get-field-content","c4s-reader-get-field-content","section:v0fldrd8","section:gz7q92lz"]}],"deviations":[]}

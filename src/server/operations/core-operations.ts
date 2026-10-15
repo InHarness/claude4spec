@@ -361,12 +361,21 @@ export function registerCoreOperations(): void {
     }, ['ENTITY_NOT_FOUND', 'AMBIGUOUS_ENTITY', 'INVALID_ARGUMENT']),
   );
 
+  /**
+   * 2.1.26 (M39 `v0fldrd8`, record `get-field-content`) — ONE generic core
+   * operation, not a surface generated per type: a field enters its domain by
+   * the `contentBearing` flag alone, so the number of these operations does not
+   * depend on which plugins are installed. Codes are the record's
+   * `kodyBledow` — `INVALID_TYPE`, `INVALID_ARGUMENT`, `INDEX_STALE` from the
+   * read base plus `ENTITY_NOT_FOUND` — each declared once (`error-code-once`):
+   * `INVALID_ARGUMENT` used to be listed a second time here.
+   */
   CATALOG.register(
     coreRead('get_field_content', 'The content of ONE content-bearing field, by (type, slug, field). Such a field is issued by no generic read; this is how it is fetched — on every channel, including the REST layer behind the UI.', {
       type: z.string(),
       slug: z.string(),
       field: z.string(),
-    }, ['ENTITY_NOT_FOUND', 'INVALID_ARGUMENT']),
+    }, ['ENTITY_NOT_FOUND']),
   );
 
   CATALOG.register(

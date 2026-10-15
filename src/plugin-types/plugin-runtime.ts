@@ -170,8 +170,11 @@ export interface MountContext {
    */
   discovery(): any;
   /**
-   * 0.2.79 — the M39 read core's plugin surface: EXACTLY five operations, for
-   * reading entities of types owned by another plugin or module.
+   * 0.2.79 — the M39 read core's plugin surface: EXACTLY six operations
+   * (`getEntities`, `listEntities`, `searchEntities`, `describeTypes`,
+   * `resolveIdentity`, `getFieldContent`), for reading entities of types owned
+   * by another plugin or module. Additive within the current baseline — no
+   * `HOST_API_VERSION` bump.
    *
    * Unlike the handles above, these are typed for real. They are bound through
    * `MountContext` at parity with `versionService` / `tagsService` /

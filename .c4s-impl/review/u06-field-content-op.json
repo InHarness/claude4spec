@@ -1,0 +1,26 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "u06-field-content-op",
+    "base": "0b3992aa8983e79141694db0cd02a011b5a7e5d5"
+  },
+  "findings": [
+    {
+      "id": "rev-0001",
+      "file": "src/plugin-types/plugin-runtime.ts",
+      "line": 48,
+      "blocking": false,
+      "reason": "The unit rewrote the published MountContext doc to 'EXACTLY six operations' (line 173) but left the import comment a few lines above saying `MountContext` states 'the five signatures for real'; the same stale count survives in src/shared/discovery/read-surface.ts:2 ('the shapes of the five operations bound onto MountContext'). The published declaration file now contradicts itself on the surface's size — update both to six.",
+      "portion": "u06-field-content-op/p1-l2-l11"
+    },
+    {
+      "id": "rev-0002",
+      "file": "tests/integration/plugin-host/field-content-generic.test.ts",
+      "line": 177,
+      "blocking": false,
+      "reason": "`expect(HOST_API_VERSION).toBe('2.1.0')` pins a literal version. The assertion just above (last HOST_API_RELEASES entry === HOST_API_VERSION) already proves 'no bump for this surface'; the literal adds nothing and will break this unrelated [section:gz7q92lz] test on the next legitimate Host API release.",
+      "portion": "u06-field-content-op/p1-l2-l11"
+    }
+  ]
+}

@@ -276,6 +276,42 @@ describe('the seeded catalog', () => {
     expect(op!.errorCodes).not.toContain('MISSING_TARGET');
   });
 
+  /**
+   * 2.1.26 — the record `get-field-content` (M39): one generic core operation,
+   * rendered `direct` on all four channels. Its internal rendering is the
+   * `entity-tools` tool (`entity-tools-get-field-content`), its mcp rendering
+   * the external reader's own tool (`c4s-reader-get-field-content`); `cli` is
+   * `c4s get-field-content`. `kodyBledow` is declared once each.
+   */
+  it('[entity:get-field-content] get_field_content is declared as its record says: project, direct on every channel, no effects, idempotent, four codes once each', () => {
+    const op = CATALOG.require('get_field_content');
+    expect(op.name).toBe('get_field_content');
+    expect(op.scope).toBe('project');
+    expect(op.mediation).toBe('direct');
+    expect(op.opClass).toBe('read');
+    for (const channel of CHANNELS) expect(op.channels[channel].kind, channel).toBe('direct');
+    expect(op.sideEffects).toEqual(['none']);
+    expect(op.idempotent).toBe(true);
+    // `opisTresci: n/d` — no file is written, so no content-input mode is declared.
+    expect(op.contentInput).toBeUndefined();
+    // Addressing `(type, slug, field)`, one field of one entity per call.
+    expect(Object.keys(op.inputSchema).sort()).toEqual(['field', 'slug', 'type']);
+    // `error-code-once`: the list carries no duplicate…
+    expect(new Set(op.errorCodes).size).toBe(op.errorCodes.length);
+    // …and is exactly the record's `kodyBledow`.
+    expect([...op.errorCodes].sort()).toEqual(['ENTITY_NOT_FOUND', 'INDEX_STALE', 'INVALID_ARGUMENT', 'INVALID_TYPE']);
+
+    // `narzedzia`: each agentic `direct` cell names a registered tool.
+    const mcpDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../mcp');
+    const toolsIn = (file: string): string[] =>
+      Array.from(fs.readFileSync(path.join(mcpDir, file), 'utf-8').matchAll(/\b(?:mcpTool|op)\(\s*\n?\s*'([a-z_]+)'/g)).map(
+        (m) => m[1]!,
+      );
+    // internal → entity-tools-get-field-content; mcp → c4s-reader-get-field-content. One each.
+    expect(toolsIn('entity-tools.ts').filter((n) => n === 'get_field_content')).toHaveLength(1);
+    expect(toolsIn('c4s-reader.ts').filter((n) => n === 'get_field_content')).toHaveLength(1);
+  });
+
   it('every declared opClass is one the profile registry knows', () => {
     for (const op of CATALOG.list()) {
       expect(KNOWN_OPERATION_CLASSES).toContain(op.opClass);

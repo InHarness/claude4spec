@@ -470,12 +470,12 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
    * the transport is how two surfaces start disagreeing about the same refusal.
    */
   /**
-   * The `rest` rendering of `get_field_content` — one route PER FIELD, not per
-   * type: a type with two content-bearing fields is addressable at two URLs.
-   *
-   * It is not modelled as an endpoint entity, because how many of these exist
-   * depends on which plugins are installed, and a spec cannot enumerate routes
-   * that only exist in some deployments.
+   * The `rest` rendering of `get_field_content` — ONE cross-cutting route for
+   * the one generic core operation (2.1.26, M39 `v0fldrd8`). Nothing here is
+   * generated per type or per field: a type with two content-bearing fields is
+   * addressable at two URLs of this same pattern only because `:field` is a path
+   * parameter, and a type gets it by the `contentBearing` flag alone — no plugin
+   * contributes a route for it.
    *
    * NO EXCEPTION FOR THE UI. The React component rendering a diagram fetches its
    * body here, exactly as an agent does — the width of a record is the same
@@ -491,6 +491,10 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
    * does. On every other surface the same condition really is a bad argument and
    * keeps its 400. The message is the core's either way, so it still carries the
    * covered field names and a caller can fix the URL from the response.
+   *
+   * ASSUMPTION:dev-2601 — the cross-cutting content route is the one rest
+   * rendering of the generic get_field_content; its 404 remap stays as M13
+   * `tnpe8kzk` states it at 2.1.26 (the record says INVALID_ARGUMENT).
    */
   router.get('/:type/:slug/content/:field', (req, res, next) => {
     try {

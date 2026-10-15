@@ -4,9 +4,16 @@
  *
  * A `contentBearing` field is excluded from every generic read on every surface;
  * what a caller gets instead is `has<Field>`, `<field>Bytes` and the NAME of
- * this operation. This is the other half of that bargain, and the host generates
- * it for every flagged field of every type — which is what makes the exclusion
- * honest rather than a way of losing data behind a flag.
+ * this operation. This is the other half of that bargain — which is what makes
+ * the exclusion honest rather than a way of losing data behind a flag.
+ *
+ * 2.1.26 (M39 `v0fldrd8`) — GENERIC, NOT GENERATED PER TYPE. There is one
+ * operation, and a field enters its domain by the `contentBearing` flag alone:
+ * the type's author writes no operation, no route and no tool. Its count does
+ * not depend on the installed plugins — every channel renders this one function
+ * (`entity-tools` and `c4s-reader` each register one `get_field_content` tool,
+ * `c4s get-field-content`, and one cross-cutting REST route), and none of them
+ * is derived per type or per field.
  *
  * Keyed by a single coordinate, `(type, slug, field)`. That is the degenerate
  * case of the keyed-collection discipline: a spreadsheet's cells need a window

@@ -5,6 +5,7 @@ import { buildEntityTools, type EntityToolsDeps } from './entity-tools.js';
 import { createTestDb } from '../../../tests/helpers/test-db.js';
 import { applyProjection } from '../db/projection.js';
 import { RawEntityReader } from '../discovery/raw-entity-reader.js';
+import { entityNotFound, indexStale, invalidArgument } from '../discovery/errors.js';
 import { TagsService } from '../services/tags.js';
 import { VersionService } from '../services/versions.js';
 import type { EntityStore } from '../services/entity-store.js';
@@ -758,5 +759,129 @@ describe('entity-tools: no overview (0.2.92, M05 internal channel)', () => {
     const result = await tool(deps, 'resolve_identity').handler({ query: 'user', types: ['dto'], limit: 3 });
     expect(result.isError).toBeFalsy();
     expect(seen).toEqual([{ query: 'user', types: ['dto'], limit: 3 }]);
+  });
+});
+
+/**
+ * 2.1.26 — `entity-tools · get_field_content` (record
+ * `entity-tools-get-field-content`), the `internal` rendering of the generic
+ * core operation `get_field_content`. The handler checks the type (unknown →
+ * `INVALID_TYPE`, inactive → `INACTIVE_TYPE`) BEFORE the core and then calls
+ * `DiscoveryCore.getFieldContent`; it does not catch the core's refusals, so
+ * those are not reframed into this server's `{ error, code, hint }` envelope.
+ */
+describe('[entity:entity-tools-get-field-content] entity-tools: get_field_content', () => {
+  type Shape = Record<string, { isOptional: () => boolean; description?: string }>;
+
+  function withCore(deps: EntityToolsDeps, impl: (input: unknown) => unknown): unknown[] {
+    const seen: unknown[] = [];
+    (deps.discovery as unknown as { getFieldContent: (i: unknown) => unknown }).getFieldContent = (input) => {
+      seen.push(input);
+      return impl(input);
+    };
+    return seen;
+  }
+
+  it('[entity:entity-tools-get-field-content] is registered with the record\'s name, description, params (all three required) and no declared hints', () => {
+    const { deps } = fakeDeps();
+    const t = tool(deps, 'get_field_content');
+    expect(t.name).toBe('get_field_content');
+    expect(t.description).toBe(
+      'Fetch the content of ONE content-bearing field of one entity. Such a field never travels in get_entities or list_entities — you get `has<Field>`/`<field>Bytes` and this operation\'s name instead — so this is how you read a diagram body or any other field measured in kilobytes. Call describe_entity_type for the type\'s `contentFields`. A field that is not content-bearing is INVALID_ARGUMENT with the covered fields listed; an unknown slug is NOT_FOUND. No side effects; write the field with update_entities as usual.',
+    );
+    const shape = t.inputSchema as unknown as Shape;
+    expect(Object.keys(shape).sort()).toEqual(['field', 'slug', 'type']);
+    for (const key of ['type', 'slug', 'field']) expect(shape[key]!.isOptional(), key).toBe(false);
+    expect(shape.type!.description).toBe('Entity type, e.g. "diagram"');
+    expect(shape.slug!.description).toBeUndefined();
+    expect(shape.field!.description).toBe('A content-bearing field of that type, e.g. "source"');
+    // Every hint of the record is empty: the server declares none.
+    expect((t as { annotations?: unknown }).annotations).toBeUndefined();
+  });
+
+  it('[entity:entity-tools-get-field-content] an unknown type is INVALID_TYPE and an inactive one INACTIVE_TYPE, both before the core is asked', async () => {
+    const { deps } = fakeDeps();
+    const seen = withCore(deps, () => {
+      throw new Error('the core must not be reached');
+    });
+    const unknown = await tool(deps, 'get_field_content').handler({ type: 'nonexistent', slug: 'x', field: 'body' });
+    expect(unknown.isError).toBe(true);
+    expect(parse(unknown)).toMatchObject({ code: 'INVALID_TYPE' });
+    const inactive = await tool(deps, 'get_field_content').handler({ type: 'inactive', slug: 'x', field: 'body' });
+    expect(inactive.isError).toBe(true);
+    expect(parse(inactive)).toMatchObject({ code: 'INACTIVE_TYPE' });
+    expect(seen).toEqual([]);
+  });
+
+  it('[entity:entity-tools-get-field-content] passes (type, slug, field) to DiscoveryCore.getFieldContent and returns { type, slug, field, content, bytes } as the core gave it', async () => {
+    const { deps } = fakeDeps();
+    const answer = { type: 'widget', slug: 'widget-existing', field: 'body', content: 'héllo', bytes: 6 };
+    const seen = withCore(deps, () => answer);
+    const result = await tool(deps, 'get_field_content').handler({ type: 'widget', slug: 'widget-existing', field: 'body' });
+    expect(result.isError).toBeFalsy();
+    expect(seen).toEqual([{ type: 'widget', slug: 'widget-existing', field: 'body' }]);
+    expect(parse(result)).toEqual(answer);
+  });
+
+  it('[entity:entity-tools-get-field-content] the core\'s INVALID_ARGUMENT, ENTITY_NOT_FOUND and INDEX_STALE are not caught by the handler', async () => {
+    const { deps } = fakeDeps();
+    for (const err of [
+      invalidArgument("'title' is not a content-bearing field of 'widget'", 'content-bearing fields of this type: body'),
+      entityNotFound('widget', 'missing', ['widget-existing']),
+      indexStale('entities', ['widget']),
+    ]) {
+      withCore(deps, () => {
+        throw err;
+      });
+      await expect(
+        tool(deps, 'get_field_content').handler({ type: 'widget', slug: 'missing', field: 'title' }),
+      ).rejects.toMatchObject({ code: err.code });
+    }
+  });
+});
+
+/**
+ * 2.1.26 (M39 `v0fldrd8`) — the content read is ONE generic operation, not a
+ * surface generated per type: an active type with a content-bearing field adds
+ * no tool to `entity-tools`, and the one `get_field_content` serves it.
+ */
+describe('[section:v0fldrd8] entity-tools: no field-content tool per type', () => {
+  const contentType = () =>
+    widgetModule({
+      type: 'gizmo',
+      data: {
+        schema: {
+          ...FIXTURE_DATA.schema,
+          body: { type: 'string', contentBearing: true },
+          notes: { type: 'string', contentBearing: true },
+        },
+      },
+    });
+
+  it('[section:v0fldrd8] the tool list is the same with or without a type declaring two content-bearing fields', () => {
+    const without = buildEntityTools(fakeDeps().deps).map((t) => t.name);
+    const withType = buildEntityTools(fakeDeps([contentType()]).deps).map((t) => t.name);
+    expect(withType).toEqual(without);
+    expect(withType.filter((n) => n === 'get_field_content')).toHaveLength(1);
+    expect(withType.some((n) => /gizmo|body|notes/.test(n))).toBe(false);
+  });
+
+  it('[section:v0fldrd8] the one get_field_content answers that type\'s fields through the same core call', async () => {
+    const { deps } = fakeDeps([contentType()]);
+    const seen: unknown[] = [];
+    (deps.discovery as unknown as { getFieldContent: (i: unknown) => unknown }).getFieldContent = (input) => {
+      seen.push(input);
+      const { type, slug, field } = input as { type: string; slug: string; field: string };
+      return { type, slug, field, content: field, bytes: field.length };
+    };
+    for (const field of ['body', 'notes']) {
+      const result = await tool(deps, 'get_field_content').handler({ type: 'gizmo', slug: 'g', field });
+      expect(result.isError).toBeFalsy();
+      expect(parse(result)).toMatchObject({ type: 'gizmo', field, content: field });
+    }
+    expect(seen).toEqual([
+      { type: 'gizmo', slug: 'g', field: 'body' },
+      { type: 'gizmo', slug: 'g', field: 'notes' },
+    ]);
   });
 });

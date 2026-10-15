@@ -203,7 +203,7 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
     expect(recorded(/^contributes\.skills$/)).toBe(true);
     expect(recorded(/contentBearing/)).toBe(true);
     expect(recorded(/ScalarNode\.kind/)).toBe(true);
-    expect(recorded(/MountContext\.\{getEntities,listEntities,searchEntities,describeTypes,resolveIdentity\}/)).toBe(true);
+    expect(recorded(/MountContext\.\{getEntities,listEntities,searchEntities,describeTypes,resolveIdentity,getFieldContent\}/)).toBe(true);
     // retirements absorbed into the baseline
     expect(recorded(/^injection/)).toBe(true);
     expect(recorded(/SerializationContribution\.diff/)).toBe(true);

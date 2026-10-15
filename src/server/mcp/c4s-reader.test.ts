@@ -187,3 +187,63 @@ describe('c4s-reader — get_page forwards a stale range to the core (2.1.14)', 
     expect(body.hint).toContain('pages');
   });
 });
+
+/**
+ * 2.1.26 — `c4s-reader · get_field_content` (record
+ * `c4s-reader-get-field-content`): the external read server's own tool for the
+ * generic core operation `get_field_content`, its `mcp` rendering. The adapter
+ * passes the core's result (`DiscoveryCore.getFieldContent`) through unchanged.
+ */
+describe('[entity:c4s-reader-get-field-content] c4s-reader — get_field_content', () => {
+  it('[entity:c4s-reader-get-field-content] is listed with the record\'s description and three required params, and declares no hints', async () => {
+    const tool = find(await listTools(readerServer()), 'get_field_content');
+    expect(tool.description).toBe(
+      'The content of ONE content-bearing field of one entity, addressed by (type, slug, field). A content-bearing field is carried by NO generic read — get_entities answers with `has<Field>`, `<field>Bytes` and this operation\'s name — so this is the only way to read one. `describe_types` lists each type\'s `contentFields` with the operation that issues them. A field that is not content-bearing is INVALID_ARGUMENT with the covered fields attached; an unknown slug is ENTITY_NOT_FOUND.',
+    );
+    expect(params(tool)).toEqual(['field', 'slug', 'type']);
+    expect([...(tool.inputSchema.required ?? [])].sort()).toEqual(['field', 'slug', 'type']);
+    const props = tool.inputSchema.properties as Record<string, { type?: string; description?: string }>;
+    expect(props.type).toMatchObject({ type: 'string', description: 'Entity type' });
+    expect(props.slug).toMatchObject({ type: 'string', description: 'Entity slug' });
+    expect(props.field).toMatchObject({ type: 'string', description: 'A content-bearing field of that type' });
+    // All four hints of the record are empty: nothing is declared.
+    const hints = (tool.annotations ?? {}) as Record<string, unknown>;
+    for (const hint of ['readOnlyHint', 'destructiveHint', 'idempotentHint', 'openWorldHint']) {
+      expect(hints[hint], hint).toBeUndefined();
+    }
+  });
+
+  it('[entity:c4s-reader-get-field-content] passes the core\'s { type, slug, field, content, bytes } through unchanged', async () => {
+    const seen: unknown[] = [];
+    const answer = { type: 'diagram', slug: 'flow', field: 'source', content: 'flowchart TD; A-->B', bytes: 19 };
+    const discovery = {
+      getFieldContent: (input: unknown) => {
+        seen.push(input);
+        return answer;
+      },
+    } as unknown as DiscoveryCore;
+    const captured = createC4sReaderServer({
+      reader: {} as RawEntityReader,
+      discovery,
+      db: {} as Database.Database,
+      projectDir: '/tmp/unused',
+      packageVersion: 'test',
+    });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'test-client', version: '0.0.0' });
+    await captured.server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const res = await client.callTool({
+        name: 'get_field_content',
+        arguments: { type: 'diagram', slug: 'flow', field: 'source' },
+      });
+      expect(res.isError).toBeFalsy();
+      const text = (res.content as Array<{ type: string; text?: string }>)[0]?.text ?? '{}';
+      expect(JSON.parse(text)).toEqual(answer);
+      expect(seen).toEqual([{ type: 'diagram', slug: 'flow', field: 'source' }]);
+    } finally {
+      await client.close();
+    }
+  });
+});

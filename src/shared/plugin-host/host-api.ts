@@ -598,12 +598,13 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
   },
   {
     release: '0.2.79',
-    slot: 'MountContext.{getEntities,listEntities,searchEntities,describeTypes,resolveIdentity}',
+    slot: 'MountContext.{getEntities,listEntities,searchEntities,describeTypes,resolveIdentity,getFieldContent}',
     kind: 'slot-added',
     summary:
-      'The five entity operations of the M39 read core, bound through `MountContext`, ' +
+      'The six entity operations of the M39 read core, bound through `MountContext`, ' +
       'through which an envelope reads entities of OTHER types and gets the serialized ' +
-      'record rather than a raw projection row. A surface change on both sides — ' +
+      'record rather than a raw projection row; `getFieldContent` is the sixth, the ' +
+      'one that follows a `contentFields` descriptor to the value. A surface change on both sides — ' +
       '`mountBackend(ctx)` is itself versioned, so widening the context widens M13 too. ' +
       'Purely additive: nothing that existed changes signature, so no bump.',
   },

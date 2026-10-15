@@ -1,0 +1,39 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "unit", "id": "u06-field-content-op" },
+  "release": "2.1.26",
+  "rows": [
+    {
+      "slug": "get-field-content",
+      "type": "spec-operation",
+      "level": 1,
+      "status": "covered",
+      "evidence": "trace.md:5; src/server/operations/core-operations.ts:373-380 coreRead('get_field_content', {type,slug,field}, ['ENTITY_NOT_FOUND']) -> project/direct/read, fullParity (4x direct), sideEffects ['none'], idempotent, errorCodes = READ_CODES(INVALID_TYPE,INVALID_ARGUMENT,INDEX_STALE)+ENTITY_NOT_FOUND = record kodyBledow once each, no contentInput (opisTresci n/d). zachowanie: src/server/discovery/ops/content.ts:56-67 (INVALID_ARGUMENT with covered fields, ENTITY_NOT_FOUND), src/server/discovery/index.ts:138-140 (INDEX_STALE via assertFresh). narzedzia: entity-tools.ts:290 + c4s-reader.ts:406. Test src/server/operations/catalog.test.ts:286 '[entity:get-field-content]' asserts scope, mediation, 4 direct channels, sideEffects ['none'], idempotent, contentInput undefined, inputSchema keys, `expect([...op.errorCodes].sort()).toEqual(['ENTITY_NOT_FOUND','INDEX_STALE','INVALID_ARGUMENT','INVALID_TYPE'])`, one get_field_content tool in entity-tools.ts and in c4s-reader.ts; read through: passes."
+    },
+    {
+      "slug": "entity-tools-get-field-content",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "trace.md:6; src/server/mcp/entity-tools.ts:290-310: name, description verbatim to the record, params type('Entity type, e.g. \"diagram\"')/slug(no description)/field('A content-bearing field of that type, e.g. \"source\"') all required, no annotations (mcpTool returns annotations undefined); logic: resolveType -> INVALID_TYPE/INACTIVE_TYPE before core, core result returned unchanged, core throws not caught. Tests src/server/mcp/entity-tools.test.ts:787-843 '[entity:entity-tools-get-field-content]' (4 its) assert description toBe(record), keys ['field','slug','type'] non-optional, param descriptions, `expect(annotations).toBeUndefined()`, INVALID_TYPE/INACTIVE_TYPE with `expect(seen).toEqual([])`, pass-through `expect(parse(result)).toEqual(answer)`, and `.rejects.toMatchObject({ code: err.code })` for INVALID_ARGUMENT/ENTITY_NOT_FOUND/INDEX_STALE; read through: passes."
+    },
+    {
+      "slug": "c4s-reader-get-field-content",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "trace.md:7; src/server/mcp/c4s-reader.ts:406-419 op('get_field_content', record description verbatim, {type:'Entity type', slug:'Entity slug', field:'A content-bearing field of that type'}) -> discovery.getFieldContent passed through by op wrapper (ok(result.value)); no hints. Tests src/server/mcp/c4s-reader.test.ts:197-248 '[entity:c4s-reader-get-field-content]' assert listed description toBe(record), params/required ['field','slug','type'], property descriptions, all four hints undefined, and via InMemoryTransport `expect(JSON.parse(text)).toEqual(answer)` + `expect(seen).toEqual([{type:'diagram',slug:'flow',field:'source'}])`; read through: passes."
+    },
+    {
+      "slug": "goal:u06-field-content-op",
+      "level": 2,
+      "status": "covered",
+      "evidence": "One generic core op: src/server/discovery/ops/content.ts:38 getFieldContent, catalog row core-operations.ts:373 (only catalog op matching /content/), all four channels: entity-tools.ts:290 (internal), c4s-reader.ts:406 (mcp, own tool), src/bin/c4s/commands/get-field-content.ts (cli), one cross-cutting route entities-router.ts:499 GET /:type/:slug/content/:field (rest). Sixth plugin-runtime op without bump: src/server/core/plugin-host/types.ts:270 + src/plugin-types/plugin-runtime.ts:217 getFieldContent, host-api.ts:601 unversioned slot-added entry naming six, HOST_API_VERSION 2.1.0 unchanged. No per-type tool/route generated anywhere (grep of src/plugins); proven by entity-tools.test.ts:847 '[section:v0fldrd8]' (tool list identical with/without a type with two contentBearing fields) and tests/integration/plugin-host/field-content-generic.test.ts (catalog unchanged after installing a plugin type, REST serves it with no plugin route, MountContext binds exactly six reads, no bump). Route kept per dev-2601 (M13 tnpe8kzk at 2.1.26). Cosmetic leftover: src/shared/discovery/read-surface.ts:2 doc comment still says 'the five operations bound onto MountContext'."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "> @inharness-ai/c4s-plugin-ac@0.2.80 typecheck > tsc --noEmit; > @inharness-ai/c4s-plugin-skill-author@2.1.9 typecheck > tsc --noEmit (all workspaces clean). Tests not run locally by build rule; tests touching the diff read through (catalog.test.ts, entity-tools.test.ts, c4s-reader.test.ts, host-api.test.ts:206 regex updated to six, field-content-generic.test.ts, discovery-core.test.ts, surface.test.ts) — none broken. stubs.json empty: no stub rows."
+  }
+}
