@@ -27,7 +27,8 @@ describe('/plans page list (M10 m10api00)', () => {
   beforeEach(() => apiFetch.mockReset());
 
   it('[section:m10api00] the /plans page list comes from the artifact family route GET /api/artifacts/:kind with :kind=plan, filters passed through as query', async () => {
-    apiFetch.mockResolvedValue(listResponse([{ path: 'a.md', title: 'A', applied: true, updatedAt: '2026-10-01T00:00:00Z' }]));
+    // A Response body can be read once: every call gets a fresh one.
+    apiFetch.mockImplementation(async () => listResponse([{ path: 'a.md', title: 'A', applied: true, updatedAt: '2026-10-01T00:00:00Z' }]));
 
     const all = await fetchPlanList();
     expect(apiFetch).toHaveBeenLastCalledWith('/api/artifacts/plan', undefined);

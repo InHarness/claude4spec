@@ -518,7 +518,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "u5-m10-list-plans-order/p1-l3-l4",
@@ -529,24 +529,20 @@
           "slugs": [
             "list-plans"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [
             "section:m10api00"
           ],
-          "only": [
-            {
-              "slug": "section:m10api00"
-            }
-          ]
+          "only": []
         }
       ],
       "startCommit": "94c0fb5d12a5db2bf770d365e4732808e30a57ce",
       "baseCommit": "4ca15c78693703987e98ed89a0b8bdc0a64e67b1",
       "rounds": {
         "review": 0,
-        "unit": 1
+        "unit": 2
       },
       "jobs": []
     },
