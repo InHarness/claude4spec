@@ -22,9 +22,23 @@
  * operation, which is the whole premise of the release — so first-wins is not a
  * tie-break, it is the catalog collapsing back to one row per operation.
  *
- * `c4s-reader` is ordered first deliberately: its fourteen tools are the M39
+ * `c4s-reader` is ordered first deliberately: its fifteen tools are the M39
  * discovery core rendered with no service layer in between, which is the
- * definition the catalog names as the owner.
+ * definition the catalog names as the owner. So the core reads — `get_entities`,
+ * `get_field_content`, `find_references`, … — are issued by the `c4s-reader`
+ * declaration, never by their internal counterparts (M12 `m12mcp00`). A
+ * rendering under a DIFFERENT name is not shadowed: `entity-tools`'
+ * `describe_entity_type` stands beside `c4s-reader`'s `describe_types`, two
+ * renderings of the one operation `describe_types`.
+ *
+ * No source server's name reaches the client: tools go out unprefixed, under the
+ * one server name `c4s-reader`. The `mcp__c4s-reader__<tool>` prefix a model
+ * sees comes from the KEY of the client's config entry (`MCP_CONFIG_SERVER_KEY`
+ * in `mcp-config.ts`), not from the handshake.
+ *
+ * Content-bearing fields are read through `c4s-reader`'s own `get_field_content`
+ * (M12 `4cli19xs`) — a rendering of the catalog operation, not a tool generated
+ * per type.
  *
  * ## The name stays `c4s-reader`, and it is misleading
  *
@@ -43,7 +57,7 @@ import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { createMcpServer, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import type { McpToolDefinition } from '@inharness-ai/agent-adapters';
 import { gateServer, pluginServerNamesFor } from '../operations/profile-gate.js';
-import { BRIEF_ALLOWED_PLUGIN_MCP, mcpServerSetForProfile } from '../operations/profiles.js';
+import { BRIEF_ALLOWED_PLUGIN_MCP, mcpRenderingProfile, mcpServerSetForProfile } from '../operations/profiles.js';
 import { createC4sReaderServer, type C4sReaderDeps } from './c4s-reader.js';
 import { buildPlanToolsServer } from './plan-tools.js';
 import { buildBriefToolsServer } from './brief-tools.js';
@@ -154,8 +168,9 @@ export const RETIRED_EXTERNAL_MCP_ERROR_CODES: readonly string[] = [
 function sourceServers(deps: ExternalSurfaceDeps): Array<{ name: string; server: CapturedMcpServer }> {
   // The coarse, server-level view DERIVED from the profile's operation classes —
   // the same one the turn dispatcher reads, so the two channels cannot select
-  // different servers for the same profile.
-  const set = mcpServerSetForProfile(deps.profile);
+  // different servers for the same profile. Read for the profile this channel
+  // RENDERS (`patch` → `chat`, M12 `ecawzsbr`).
+  const set = mcpServerSetForProfile(mcpRenderingProfile(deps.profile));
   const servers: Array<{ name: string; server: CapturedMcpServer }> = [
     { name: EXTERNAL_MCP_SERVER_NAME, server: createC4sReaderServer(deps.reader) },
   ];
@@ -350,6 +365,10 @@ export function __invalidateSurfaceCache(host: ProjectPluginHost): void {
 
 function composeUncached(deps: ExternalSurfaceDeps): ExternalSurface {
   const pluginServers = pluginServerNamesFor(deps.pluginHost.listEntities().map((m) => m.type));
+  // 2.1.26 (M12 `ecawzsbr`): the channel's closed profile table decides which
+  // registry profile's set is rendered — `patch` degenerates to `chat`, and a
+  // value outside the table throws here (the mount refuses it before this).
+  const rendered = mcpRenderingProfile(deps.profile);
 
   const tools: McpToolDeclaration[] = [];
   const byName = new Map<string, McpToolDeclaration>();
@@ -358,7 +377,7 @@ function composeUncached(deps: ExternalSurfaceDeps): ExternalSurface {
     // fail-closed rule for a plugin's own server, which must hold on this
     // channel too: an external `ask` connection reaching `spreadsheet-tools`'
     // six mutating operations is the exact hole the gate was built to close.
-    const gated = gateServer(deps.profile, name, server, pluginServers);
+    const gated = gateServer(rendered, name, server, pluginServers);
     if (!gated?.tools) continue;
     for (const tool of gated.tools) {
       if (byName.has(tool.name)) continue;

@@ -10,12 +10,22 @@
  * for its whole life. An external connection that names no profile gets `chat` —
  * the same definition the internal channel renders.
  *
+ * 2.1.26 (M12 `ecawzsbr`) — the rendering in the `mcp` channel. The reads
+ * COMMON to every profile are the read tools of the discovery core and of the
+ * skills registry (the `c4s-reader` server's own), `list_projects` and the
+ * release reads; plans and briefs go through their explicit-addressing tools.
+ *
  * | profile | operations in the `mcp` channel |
  * |---|---|
- * | `chat` (default) | the full catalog — entity CRUD, section writes, artifacts, agent turns |
- * | `ask` | read-class entries + plan tools — a peer may leave a plan, it may not mutate the spec |
- * | `brief` | brief entries + read entries; brief operations require an EXPLICIT brief-addressing parameter |
- * | `patch` | the same set as `chat` |
+ * | `chat` (default) | common reads, plans with their writes, `describe_entity_type`, writes of pages, sections, entities and tags, DTO links, release create/edit, and peer consultation (`ask`) |
+ * | `ask` | TRIM to the common reads, plans with their writes and `describe_entity_type` — a peer may leave a plan, it may not mutate the spec |
+ * | `brief` | TRIM to the common reads and the brief tools — no plans, no `describe_entity_type`; a brief is addressed by an EXPLICIT `path` |
+ * | `patch` | DEGENERATES to `chat` — see {@link MCP_CHANNEL_PROFILES} |
+ *
+ * That table is CLOSED in the `mcp` channel: {@link MCP_CHANNEL_PROFILES} names
+ * its four rows literally and is not derived from this registry, so a fifth
+ * context type added here is refused by the external mount until that table
+ * gains a row for it — never silently rendered as the widest profile.
  *
  * (2.1.18, M44 `3f5ej79s`: inside the app `patch` differs from `chat` by one
  * SERVER — it has no `transagent-tools`. That is a turn-mount column below
@@ -182,6 +192,10 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
     // A consulted peer reads and may leave a plan. It cannot mutate the spec, and
     // it cannot consult onward (`peer`) or delegate (`turn`) — the recursion
     // guard is a property of the profile, so no channel can route around it.
+    // ASSUMPTION:dev-2613 — in the `mcp` channel `read` here also admits the
+    // catalogued type-specific reads of plugin servers (`get_range`), so a
+    // skeleton record and its windowed content stay on one connection (M12
+    // `4cli19xs`); the M12 `ask` row names only the common reads.
     operationClasses: new Set<OperationClass>(['read', 'plan']),
     pluginServers: 'all',
     requiresExplicitBriefTarget: false,
@@ -228,9 +242,62 @@ export const KNOWN_OPERATION_CLASSES = ALL_CLASSES;
 /**
  * The profile names, at runtime.
  *
- * Derived from `PROFILES` rather than written out again, so a profile added to
- * the registry is immediately nameable on the wire — the external MCP mount
- * validates `?profile=` against this. `ChatContextType` is a type and cannot be
- * enumerated at runtime, which is what made a hand-kept second list tempting.
+ * Derived from `PROFILES` rather than written out again. `ChatContextType` is a
+ * type and cannot be enumerated at runtime, which is what made a hand-kept
+ * second list tempting.
+ *
+ * 2.1.26: the external MCP mount no longer validates `?profile=` against this —
+ * its table is closed ({@link MCP_CHANNEL_PROFILES}), so a profile added to the
+ * registry is NOT nameable on that wire until the table gains its row.
  */
 export const KNOWN_PROFILES = Object.keys(PROFILES) as readonly ChatContextType[];
+
+/**
+ * 2.1.26 (M12 `ecawzsbr`) — the profile table of the `mcp` channel, CLOSED.
+ *
+ * Four rows, written out literally rather than derived from {@link PROFILES} or
+ * {@link KNOWN_PROFILES}: this table is not a mirror of the registry. A value the
+ * registry knows and this table does not gets NO default branch — the external
+ * mount refuses a connection naming it before exposing any catalog. Closing the
+ * other way, a silent fallback to the widest profile, would make the gate open
+ * itself on the day someone adds a fifth value, which is exactly the day it has
+ * to hold.
+ *
+ * Each row names the registry profile whose operation set the channel renders
+ * for it. `patch` renders `chat`'s: inside the app the two differ only in the
+ * prompt layer (the `<current_patch>` identity block and the type's domain
+ * rules) and in bubble orchestration, and this channel has neither — no prompt
+ * of ours, and no bubble-spawning operation in any profile. A profile that does
+ * not differ by its operation set once the prompt pipeline is gone is not a
+ * separate profile here.
+ */
+export const MCP_CHANNEL_PROFILES = {
+  chat: 'chat',
+  ask: 'ask',
+  brief: 'brief',
+  patch: 'chat',
+} as const satisfies Readonly<Record<string, ChatContextType>>;
+
+/** A profile name the `mcp` channel accepts — a row of {@link MCP_CHANNEL_PROFILES}. */
+export type McpChannelProfile = keyof typeof MCP_CHANNEL_PROFILES;
+
+/** The accepted names, in the table's order. */
+export const MCP_CHANNEL_PROFILE_NAMES = Object.keys(MCP_CHANNEL_PROFILES) as readonly McpChannelProfile[];
+
+/** Is `value` a row of the closed `mcp` table? Registry membership alone is not enough. */
+export function isMcpChannelProfile(value: string): value is McpChannelProfile {
+  return Object.prototype.hasOwnProperty.call(MCP_CHANNEL_PROFILES, value);
+}
+
+/**
+ * The registry profile whose operation set the `mcp` channel renders for this
+ * connection profile (`patch` → `chat`). A value outside the closed table is a
+ * programming error here — the mount rejects it at connection set-up — so this
+ * throws rather than defaulting.
+ */
+export function mcpRenderingProfile(profile: ChatContextType): ChatContextType {
+  if (!isMcpChannelProfile(profile)) {
+    throw new Error(`profile '${profile}' has no rendering in the mcp channel`);
+  }
+  return MCP_CHANNEL_PROFILES[profile];
+}

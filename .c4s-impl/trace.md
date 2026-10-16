@@ -171,3 +171,7 @@
 - section:5yr06jez → src/server/core/plugin-host/entities-router.ts (`assertTaggableType`: POST/DELETE `/:type/:slug/tags` inactive → 400 VALIDATION), src/server/mcp/reference-tools.ts (`validateActiveType`); test src/server/core/plugin-host/entities-router.test.ts
 - section:ais9x109, section:0ljsk5jr, section:m18acc00 → src/server/mcp/reference-tools.ts, src/server/services/tags.ts; test src/server/mcp/reference-tools.tags.test.ts
 - section:xfkinig4 → src/client/components/TagsList.tsx (EntityListRow `leading` / `children` / `trailing`); test src/client/components/TagsList.render.test.ts
+- section:m12mcp00 → src/server/mcp/surface.ts (one server `c4s-reader`, flat first-wins merge, c4s-reader composed first), src/server/mcp/mcp-config.ts (`MCP_CONFIG_SERVER_KEY`); test src/server/mcp/surface.test.ts
+- section:4cli19xs → src/server/mcp/c4s-reader.ts (`get_field_content`), src/server/mcp/surface.ts (type servers in the same composition); test src/server/mcp/surface.test.ts
+- section:ecawzsbr → src/server/operations/profiles.ts (`MCP_CHANNEL_PROFILES` closed table, `mcpRenderingProfile`: patch → chat), src/server/mcp/http-mount.ts (`profileFromRequest` against the closed table), src/server/mcp/surface.ts; test src/server/mcp/surface.test.ts
+- section:b52znwjr → src/server/mcp/surface.ts, src/server/operations/profile-gate.ts (hard gate), src/server/mcp/c4s-reader.ts (read-only core); test src/server/mcp/surface.test.ts

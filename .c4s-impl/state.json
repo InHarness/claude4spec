@@ -1,5 +1,5 @@
 {
-  "iteration": 63,
+  "iteration": 67,
   "units": [
     {
       "id": "u01-version-diff-runtime",
@@ -2337,15 +2337,36 @@
         }
       ],
       "wave": 3,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u11-external-mcp-surface/p1-l3-l15",
+          "layers": [
+            "L3",
+            "L15"
+          ],
+          "slugs": [
+            "section:b52znwjr",
+            "section:m12mcp00",
+            "section:4cli19xs",
+            "section:ecawzsbr"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "d56819d17f22a91c2f2dffc71dbe75d4d54e0741",
+      "baseCommit": "d56819d17f22a91c2f2dffc71dbe75d4d54e0741",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "only": []
     },
     {
       "id": "u17-operation-catalogue",
