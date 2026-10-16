@@ -14,7 +14,19 @@ import { expect } from 'vitest';
 import { declaredParams, type DeclaredTool } from './read-tool-records.js';
 
 export interface WriteToolRecord {
-  server: 'entity-tools' | 'endpoint-tools' | 'page-tools' | 'brief-tools' | 'plan-tools' | 'patch-tools' | 'transagent-tools' | 'release-tools';
+  server:
+    | 'entity-tools'
+    | 'endpoint-tools'
+    | 'page-tools'
+    | 'brief-tools'
+    | 'plan-tools'
+    | 'patch-tools'
+    | 'transagent-tools'
+    | 'release-tools'
+    | 'skill-tools'
+    | 'c4s-reader'
+    | 'workspace-tools'
+    | 'spec-skill-tools';
   name: string;
   description: string;
   params: Array<{ name: string; type: string; required: boolean; description?: string }>;

@@ -1,0 +1,35 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "u16-skills-workspace-ops",
+    "base": "74900c7f826e66c0c64848abf53a2c498636489c"
+  },
+  "findings": [
+    {
+      "id": "rev-0001",
+      "file": "src/server/mcp/skill-tools.test.ts",
+      "line": 7,
+      "blocking": false,
+      "reason": "The rewritten contract tests now check descriptions through `SKILL_TOOL_RECORDS`, and they dropped every use of `SKILL_TOOL_TEXT`. The symbol is still imported on line 7, but no code in the file uses it any more. Nothing enforces unused imports here (no `noUnusedLocals`, no linter), so this is dead code that will stay. Remove it from the import.",
+      "portion": "u16-skills-workspace-ops/p1-l3-l3"
+    },
+    {
+      "id": "rev-0002",
+      "file": "src/server/mcp/skill-tools.test.ts",
+      "line": 470,
+      "blocking": false,
+      "reason": "`[entity:list-skills]` pulls in `listSkills` with `await import('../services/skill-operations.js')` inside the test body. Every other dependency in the file is a static top-level import, and the module has no side effect that would need a lazy load. Make it a static import next to the others.",
+      "portion": "u16-skills-workspace-ops/p1-l3-l3"
+    },
+    {
+      "id": "rev-0003",
+      "file": "tests/helpers/skill-tool-records.ts",
+      "line": 81,
+      "blocking": false,
+      "reason": "The M31 `workspace-tools-list-projects` record lives in `SKILL_TOOL_RECORDS`, in a file named for skill tools, so workspace-tools.test.ts has to import a skill-tools map to get its own record. The other record helpers are split per server family (release-tool-records, patch-tool-records, ...). Move it to its own map, or give the file and the export a neutral name, so the next reader can find it.",
+      "portion": "u16-skills-workspace-ops/p1-l3-l3"
+    }
+  ],
+  "deviations": []
+}

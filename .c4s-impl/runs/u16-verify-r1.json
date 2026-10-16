@@ -1,0 +1,91 @@
+{
+  "role": "verifier",
+  "scope": {
+    "kind": "unit",
+    "id": "u16-skills-workspace-ops"
+  },
+  "release": "2.1.26",
+  "rows": [
+    {
+      "slug": "c4s-reader-list-skills",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/skill-tools.test.ts:392 — expectToolMatchesToolRecord(list_skills, SKILL_TOOL_RECORDS['c4s-reader-list-skills']) (name, description, contextType optional string, readOnly+idempotent); schema.properties.contextType.type 'string', enum undefined; {} → listing+writingStyle; contextType 'breif' → INVALID_ARGUMENT naming chat/brief/patch/ask. Code src/server/mcp/skill-tools.ts:132-160 unchanged and matches.",
+      "type": "mcp-tool"
+    },
+    {
+      "slug": "c4s-reader-load-skill-file",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/skill-tools.test.ts:373 — record match (description points at list_skills, file param 'Defaults to \"SKILL.md\".', no schema default), hash undefined from non-writable source, file read {slug,path,content}, expectLoadSkillFileLogic: SKILL_NOT_FOUND 'outside the registry' + closest slug hint, INVALID_ARGUMENT for '', absolute, backslash, '..', '.', SKILL_FILE_NOT_FOUND, NOT_TEXT, DEFAULT_BUDGET_CHARS === 50_000 cut + truncationHint, no disk path. Owner src/server/services/skill-operations.ts:315-334,353.",
+      "type": "mcp-tool"
+    },
+    {
+      "slug": "skill-tools-load-skill-file",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/skill-tools.test.ts:354 — turn server tools == ['load_skill_file'], record match (turn description, slug from <available_skills/>), open keys exactly content/description/files/scope/slug/source/title, file read {slug,path,content}, same logic block as the external rendering (50 000 budget).",
+      "type": "mcp-tool"
+    },
+    {
+      "slug": "workspace-tools-list-projects",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/workspace-tools.test.ts:98 — record match (new 4-line description, no params, no hints: annotations {}); listProjects over a real WorkspaceRecord: {workspace:'default', projects:[{id,name,description},{id:'broken'}]} for malformed config.json; no project dir in payload. Code src/server/mcp/workspace-tools.ts:36-41, src/server/workspace/list-projects.ts (name optional).",
+      "type": "mcp-tool"
+    },
+    {
+      "slug": "list-skills",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/skill-tools.test.ts:444 — expectOperationMatchesRecord: scope project, direct, internal na with powody.internal verbatim, cli/mcp/rest direct, effects none, idempotent, no contentInput, codes [INVALID_ARGUMENT], renderings {mcp:['c4s-reader.list_skills']}; zachowanie via listSkills: whole registry without contextType, 'breif' → INVALID_ARGUMENT with legal values. Row src/server/operations/core-operations.ts:523-551.",
+      "type": "spec-operation"
+    },
+    {
+      "slug": "load-skill-file",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/skill-tools.test.ts:493 — project, direct, fullParity, none, idempotent, codes SKILL_NOT_FOUND/SKILL_FILE_NOT_FOUND/NOT_TEXT/INVALID_ARGUMENT, renderings internal skill-tools.load_skill_file + mcp c4s-reader.load_skill_file, input (slug required, file optional), omitted file == 'SKILL.md'. Row core-operations.ts:553-573.",
+      "type": "spec-operation"
+    },
+    {
+      "slug": "list-projects",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/workspace-tools.test.ts:124 — zasieg workspace, direct, internal/cli/mcp direct, rest na 'odłożone do fazy 2 — trasy tej operacji jeszcze nie zbudowano' (powody.rest verbatim), none, idempotent, no codes, renderings internal+mcp workspace-tools.list_projects, inputSchema {}. Row core-operations.ts:485-507; catalog.test.ts:349 still holds (rest.kind na).",
+      "type": "spec-operation"
+    },
+    {
+      "slug": "fork-writing-style",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/routes/spec-skills.route.test.ts:305 — project, human-mediated, internal/cli/mcp na 'akcja karty ustawień', rest direct, file+ui-notify, not idempotent, contentInput n/a, codes SKILL_NOT_FOUND/SKILL_ALREADY_EXISTS/INVALID_ARGUMENT, no renderings, input [slug]; taken slug → 409 SKILL_ALREADY_EXISTS without overwrite; zachowanie: non-plugin style → 400 INVALID_ARGUMENT. Row core-operations.ts:643-665.",
+      "type": "spec-operation"
+    },
+    {
+      "slug": "list-exposed-projects",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/routes/spec-skills.route.test.ts:111 — zasieg workspace, direct, internal/cli/mcp na 'zasila wyłącznie kartę ustawień', rest direct, none, idempotent, no codes (n/d), no renderings, inputSchema {}; GET /api/spec-skills/exposed-projects twice → 200, identical bodies. Row core-operations.ts:678-696.",
+      "type": "spec-operation"
+    },
+    {
+      "slug": "update-skill-file",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/spec-skill-tools.test.ts:220 — project, agent-mediated, internal direct rendered by spec-skill-tools.update_skill_file, cli/mcp na 'zapis skilli z zewnątrz poza v1', rest na 'człowiek pisze trasami zapisu stron przez fasadę korzenia `skills`', file, idempotent, literal+diff (obydwa), five codes; expectedHash required; stale hash → PAGE_CONFLICT, file unchanged. Row core-operations.ts:600-620.",
+      "type": "spec-operation"
+    },
+    {
+      "slug": "goal:u16-skills-workspace-ops",
+      "level": 2,
+      "status": "covered",
+      "evidence": "The four tools carry their 2.1.26 records verbatim (skill-tools.ts SKILL_TOOL_TEXT; workspace-tools.ts:36-41 with name? optional), the 50 000-char read budget (discovery/budget.ts DEFAULT_BUDGET_CHARS, skill-operations.ts:353) and list_projects' optional name (list-projects.ts ProjectListItem.name?); the six catalog rows in core-operations.ts match their spec-operation records incl. renderings from narzedzia and powody reasons verbatim. Recipe anchors verified (m37cel01,m37dep01,b58luon6,m31purp01,m31deps01,e2b17vga,q7uurue4,cppnlv9z,hdkx97wq). No stale old-reason assertion remains (grep). npm run typecheck exit 0."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck (static; full suite env-runner only)",
+    "exitCode": 0,
+    "summary": "tsc --noEmit green across root and all plugin workspaces; tests touching the changed rows read through (catalog.test.ts:349, surface.test.ts:117-153) still hold."
+  }
+}

@@ -14,6 +14,8 @@ import type { WriteToolRecord } from './write-tool-records.js';
 
 export interface OperationRecord {
   nazwa: string;
+  /** Defaults to `project`. */
+  zasieg?: 'project' | 'workspace';
   /** Defaults to `direct`. */
   mediacja?: 'direct' | 'agent-mediated' | 'human-mediated';
   channels: Record<'internal' | 'cli' | 'mcp' | 'rest', ChannelCell>;
@@ -25,7 +27,8 @@ export interface OperationRecord {
 }
 
 /**
- * The registered declaration matches its record: name, scope `project`, the
+ * The registered declaration matches its record: name, the record's scope
+ * (`project` unless it says `workspace`), the
  * record's mediation, the four channel cells, effects, idempotence, content
  * input, exactly the record's codes (each once), and `renderings` exactly its
  * `narzedzia` — each named mcp-tool record resolved through `toolRecords`; an
@@ -34,12 +37,12 @@ export interface OperationRecord {
  */
 export function expectOperationMatchesRecord(
   record: OperationRecord,
-  toolRecords: Record<string, WriteToolRecord>,
+  toolRecords: Record<string, Pick<WriteToolRecord, 'server' | 'name'>>,
 ): OperationDeclaration {
   registerCoreOperations();
   const op = CATALOG.require(record.nazwa);
   expect(op.name).toBe(record.nazwa);
-  expect(op.scope).toBe('project');
+  expect(op.scope).toBe(record.zasieg ?? 'project');
   expect(op.mediation).toBe(record.mediacja ?? 'direct');
   for (const channel of ['internal', 'cli', 'mcp', 'rest'] as const) {
     expect(op.channels[channel], `${record.nazwa}.${channel}`).toEqual(record.channels[channel]);

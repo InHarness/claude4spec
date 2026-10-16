@@ -133,3 +133,13 @@
 - push-release → src/server/operations/core-operations.ts (`push_release` row, new, human-mediated, rest only; owner `ReleasePushService.push` + `POST /api/release-pushes`); test src/server/operations/catalog.test.ts
 - list-release-pushes → src/server/operations/core-operations.ts (`list_release_pushes` row, new, rest only; owner `GET /api/release-pushes` in src/server/routes/release-pushes.ts); test src/server/operations/catalog.test.ts
 - get-release-push → src/server/operations/core-operations.ts (`get_release_push` row, new, rest only; owner `GET /api/release-pushes/:id`); test src/server/operations/catalog.test.ts
+- skill-tools-load-skill-file → src/server/mcp/skill-tools.ts (`load_skill_file`, turn mount `SKILL_TOOL_TEXT.turn`; owner `loadSkillFileLive` in src/server/services/skill-operations.ts); test src/server/mcp/skill-tools.test.ts
+- c4s-reader-load-skill-file → src/server/mcp/skill-tools.ts (`load_skill_file`, external mount with a resolver, `SKILL_TOOL_TEXT.external`, seen as `c4s-reader` via src/server/mcp/surface.ts; owner `loadSkillFileLive`); test src/server/mcp/skill-tools.test.ts
+- c4s-reader-list-skills → src/server/mcp/skill-tools.ts (`list_skills`, external mount only; owner `listSkills` in src/server/services/skill-operations.ts); test src/server/mcp/skill-tools.test.ts
+- workspace-tools-list-projects → src/server/mcp/workspace-tools.ts (`list_projects`; owner `listProjects` in src/server/workspace/list-projects.ts); test src/server/mcp/workspace-tools.test.ts
+- list-skills → src/server/operations/core-operations.ts (`list_skills` row, rendering `c4s-reader.list_skills`); test src/server/mcp/skill-tools.test.ts
+- load-skill-file → src/server/operations/core-operations.ts (`load_skill_file` row, renderings `skill-tools.load_skill_file` / `c4s-reader.load_skill_file`); test src/server/mcp/skill-tools.test.ts
+- list-projects → src/server/operations/core-operations.ts (`list_projects` row, renderings `workspace-tools.list_projects` internal + mcp); test src/server/mcp/workspace-tools.test.ts
+- update-skill-file → src/server/operations/core-operations.ts (`update_skill_file` row, rendering `spec-skill-tools.update_skill_file`; owner src/server/services/skill-write.ts); test src/server/mcp/spec-skill-tools.test.ts
+- fork-writing-style → src/server/operations/core-operations.ts (`fork_writing_style` row, rest only; owner src/server/services/style-fork.ts + `POST /api/spec-skills/style-forks`); test src/server/routes/spec-skills.route.test.ts
+- list-exposed-projects → src/server/operations/core-operations.ts (`list_exposed_projects` row, rest only; owner src/server/services/exposed-projects.ts + `GET /api/spec-skills/exposed-projects`); test src/server/routes/spec-skills.route.test.ts

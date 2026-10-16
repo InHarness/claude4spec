@@ -5,8 +5,8 @@ import express from 'express';
 import request from 'supertest';
 import { afterEach, describe, expect, it } from 'vitest';
 import { readConfig, writeConfig, type SkillConfig } from '../config.js';
-import { CATALOG } from '../operations/catalog.js';
 import { registerCoreOperations } from '../operations/core-operations.js';
+import { expectOperationMatchesRecord } from '../../../tests/helpers/operation-records.js';
 import { listExposedProjectRows, listExposedProjects } from '../services/exposed-projects.js';
 import { specSkillsRouter } from './spec-skills.js';
 
@@ -103,20 +103,34 @@ describe('GET /api/spec-skills/exposed-projects (M52 L4, 2.1.9)', () => {
     expect(billing).toEqual({ name: 'billing-rules', uses: true, status: 'unavailable' });
   });
 
-  it('[entity:katalog-operacji-m52#list_exposed_projects] the catalog row: workspace scope, read, no error codes, rendered on rest only — and its rest rendering answers', async () => {
-    const op = CATALOG.require('list_exposed_projects');
-    expect(op.scope).toBe('workspace');
-    expect(op.mediation).toBe('direct');
+  /**
+   * 2.1.26 — the M52 page embeds the `spec-operation` records instead of the
+   * `katalog-operacji-m52` sheet, so the row is held against its record
+   * `list-exposed-projects`.
+   */
+  it('[entity:list-exposed-projects] list_exposed_projects: workspace, direct, internal/cli/mcp n/a with the record\'s reason, rest direct, no effects, idempotent, no codes, no renderings, addressed by the current project — and its rest rendering answers the same twice', async () => {
+    const CARD_ONLY = 'zasila wyłącznie kartę ustawień';
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'list_exposed_projects',
+        zasieg: 'workspace',
+        channels: {
+          internal: { kind: 'na', reason: CARD_ONLY },
+          cli: { kind: 'na', reason: CARD_ONLY },
+          mcp: { kind: 'na', reason: CARD_ONLY },
+          rest: { kind: 'direct' },
+        },
+        efekty: ['none'],
+        idempotencja: true,
+        opisTresci: undefined,
+        kodyBledow: [],
+        narzedzia: {},
+      },
+      {},
+    );
     expect(op.opClass).toBe('read');
-    expect(op.errorCodes).toEqual([]);
-    expect(op.sideEffects).toEqual(['none']);
-    expect(op.idempotent).toBe(true);
-    expect(op.channels.rest.kind).toBe('direct');
-    for (const ch of ['internal', 'cli', 'mcp'] as const) {
-      const cell = op.channels[ch];
-      expect(cell.kind, ch).toBe('na');
-      expect(cell.kind === 'na' && cell.reason).toContain('#skills settings card');
-    }
+    // Addressed by the current project (its attachments), not by an argument; no paging.
+    expect(op.inputSchema).toEqual({});
     // Observable: the read has no guard — it answers, and answers the same twice.
     const { app } = workspace();
     const a = await request(app).get('/api/spec-skills/exposed-projects');
@@ -284,23 +298,35 @@ describe('POST /api/spec-skills/style-forks (M52 L4, 2.1.9)', () => {
     }
   });
 
-  it('[entity:katalog-operacji-m52#fork_writing_style] the catalog row: project scope, human-mediated, file + ui-notify effects, not idempotent, rest only, the three error codes, addressed by the slug of any plugin style — and the guard is observable: an existing package of the slug is refused, never overwritten', async () => {
-    const op = CATALOG.require('fork_writing_style');
-    expect(op.scope).toBe('project');
-    expect(op.mediation).toBe('human-mediated');
-    expect(op.sideEffects).toEqual(['file', 'ui-notify']);
-    expect(op.idempotent).toBe(false);
-    expect([...op.errorCodes].sort()).toEqual(['INVALID_ARGUMENT', 'SKILL_ALREADY_EXISTS', 'SKILL_NOT_FOUND']);
+  /**
+   * 2.1.26 — held against the `spec-operation` record `fork-writing-style` (the
+   * M52 page no longer embeds the `katalog-operacji-m52` sheet).
+   */
+  it('[entity:fork-writing-style] fork_writing_style: project, human-mediated, internal/cli/mcp n/a with the record\'s reason, rest direct, file + ui-notify effects, not idempotent, no content input, codes SKILL_NOT_FOUND, SKILL_ALREADY_EXISTS, INVALID_ARGUMENT, no renderings, addressed by the slug of any plugin style — an existing package of the slug is refused, never overwritten, and a style not from a plugin is INVALID_ARGUMENT', async () => {
+    const SETTINGS_CARD = 'akcja karty ustawień';
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'fork_writing_style',
+        mediacja: 'human-mediated',
+        channels: {
+          internal: { kind: 'na', reason: SETTINGS_CARD },
+          cli: { kind: 'na', reason: SETTINGS_CARD },
+          mcp: { kind: 'na', reason: SETTINGS_CARD },
+          rest: { kind: 'direct' },
+        },
+        efekty: ['file', 'ui-notify'],
+        idempotencja: false,
+        opisTresci: 'n/a',
+        kodyBledow: ['SKILL_NOT_FOUND', 'SKILL_ALREADY_EXISTS', 'INVALID_ARGUMENT'],
+        narzedzia: {},
+      },
+      {},
+    );
+    expect(op.opClass).toBe('write');
     expect(Object.keys(op.inputSchema)).toEqual(['slug']);
     // Addressing: the slug of a plugin writing style — any, not only the active one.
     expect(op.summary).toContain('not only the active one');
     expect(op.summary).toContain('not compared with `config.writingStyle`');
-    expect(op.channels.rest.kind).toBe('direct');
-    for (const ch of ['internal', 'cli', 'mcp'] as const) {
-      const cell = op.channels[ch];
-      expect(cell.kind, ch).toBe('na');
-      expect(cell.kind === 'na' && cell.reason).toContain('settings card');
-    }
 
     const r = await forkRig();
     try {
@@ -313,6 +339,18 @@ describe('POST /api/spec-skills/style-forks (M52 L4, 2.1.9)', () => {
       expect(res.body.error.code).toBe('SKILL_ALREADY_EXISTS');
       expect(fs.readdirSync(own)).toEqual(['notes.md']);
       expect(fs.readFileSync(path.join(own, 'notes.md'), 'utf8')).toBe('mine\n');
+
+      // The record's `zachowanie`: a style that does not come from a plugin is INVALID_ARGUMENT.
+      const userStyle = path.join(r.cwd, '.claude', 'skills', 'house-voice');
+      fs.mkdirSync(userStyle, { recursive: true });
+      fs.writeFileSync(
+        path.join(userStyle, 'SKILL.md'),
+        ['---', 'title: House Voice', 'description: Ours.', 'version: 1', 'language: en', '---', '', '# House Voice', ''].join('\n'),
+      );
+      const notPlugin = await request(r.app).post('/api/spec-skills/style-forks').send({ slug: 'house-voice' });
+      expect(notPlugin.status).toBe(400);
+      expect(notPlugin.body.error.code).toBe('INVALID_ARGUMENT');
+      expect(fs.existsSync(path.join(r.skillsDir, 'house-voice'))).toBe(false);
     } finally {
       await r.close();
     }

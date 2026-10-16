@@ -500,10 +500,11 @@ export function registerCoreOperations(): void {
       internal: direct(),
       cli: direct(),
       mcp: direct(),
-      // Maps under the existing `/api/workspace/*` family, but the concrete route
-      // is deferred (phase 2, not built) — the brief says so explicitly.
-      rest: na('deferred to phase 2 — no route built yet; the workspace registry is reachable over `GET /api/workspace`'),
+      // 2.1.26 — the reason is the record's `powody.rest`, verbatim.
+      rest: na('odłożone do fazy 2 — trasy tej operacji jeszcze nie zbudowano'),
     },
+    // 2.1.26 — the record's `narzedzia`: one tool renders it in both agentic channels.
+    renderings: { internal: ['workspace-tools.list_projects'], mcp: ['workspace-tools.list_projects'] },
   });
 
   // ── M37 Internal Skills Registry ─────────────────────────────────────────
@@ -537,11 +538,16 @@ export function registerCoreOperations(): void {
       // Mounting is per-server: a `list_skills` tool on the turn's `skill-tools`
       // would appear in all four context types at once, and the turn already has
       // the listing as the `<available_skills>` block before its first tool call.
-      internal: na('a turn gets the listing as the <available_skills> system-prompt block; MCP mounting is per-server, so a tool here would reach all four context types at once'),
+      // 2.1.26 — the reason is the record's `powody.internal`, verbatim.
+      internal: na(
+        'tura dostaje listing jako blok `<available_skills>` promptu systemowego; montowanie MCP jest per serwer, więc narzędzie w tym kanale trafiłoby naraz do wszystkich czterech typów kontekstu',
+      ),
       cli: direct(),
       mcp: direct(),
       rest: direct(),
     },
+    // 2.1.26 — the record's `narzedzia`: the external reader's `list_skills` only.
+    renderings: { mcp: ['c4s-reader.list_skills'] },
   });
 
   CATALOG.register({
@@ -561,6 +567,9 @@ export function registerCoreOperations(): void {
     sideEffects: ['none'],
     idempotent: true,
     channels: fullParity(),
+    // 2.1.26 — the record's `narzedzia`: the turn's `skill-tools` (internal) and the
+    // external reader (mcp), both built by `buildSkillToolsServer`.
+    renderings: { internal: ['skill-tools.load_skill_file'], mcp: ['c4s-reader.load_skill_file'] },
   });
 
   // ── M52 Spec Skills (2.1.9) ──────────────────────────────────────────────
@@ -600,12 +609,14 @@ export function registerCoreOperations(): void {
     sideEffects: ['file'],
     contentInput: 'literal+diff',
     idempotent: true,
+    // 2.1.26 — the `n/a` reasons are the record's `powody`, verbatim.
     channels: {
       internal: direct(),
-      cli: na('writing skills from outside is out of v1'),
-      mcp: na('writing skills from outside is out of v1'),
-      rest: na("a person writes through the page write routes over the `skills` root's facade"),
+      cli: na('zapis skilli z zewnątrz poza v1'),
+      mcp: na('zapis skilli z zewnątrz poza v1'),
+      rest: na('człowiek pisze trasami zapisu stron przez fasadę korzenia `skills`'),
     },
+    renderings: { internal: ['spec-skill-tools.update_skill_file'] },
   });
 
   /**
@@ -644,10 +655,11 @@ export function registerCoreOperations(): void {
     sideEffects: ['file', 'ui-notify'],
     contentInput: 'n/a',
     idempotent: false,
+    // 2.1.26 — the `n/a` reasons are the record's `powody`, verbatim.
     channels: {
-      internal: na('an action of the settings card'),
-      cli: na('an action of the settings card'),
-      mcp: na('an action of the settings card'),
+      internal: na('akcja karty ustawień'),
+      cli: na('akcja karty ustawień'),
+      mcp: na('akcja karty ustawień'),
       rest: direct(),
     },
   });
@@ -674,10 +686,11 @@ export function registerCoreOperations(): void {
     errorCodes: [],
     sideEffects: ['none'],
     idempotent: true,
+    // 2.1.26 — the `n/a` reasons are the record's `powody`, verbatim.
     channels: {
-      internal: na('feeds only the #skills settings card'),
-      cli: na('feeds only the #skills settings card'),
-      mcp: na('feeds only the #skills settings card'),
+      internal: na('zasila wyłącznie kartę ustawień'),
+      cli: na('zasila wyłącznie kartę ustawień'),
+      mcp: na('zasila wyłącznie kartę ustawień'),
       rest: direct(),
     },
   });

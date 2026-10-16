@@ -1,5 +1,5 @@
 {
-  "iteration": 43,
+  "iteration": 47,
   "units": [
     {
       "id": "u01-version-diff-runtime",
@@ -1551,15 +1551,41 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u16-skills-workspace-ops/p1-l3-l3",
+          "layers": [
+            "L3"
+          ],
+          "slugs": [
+            "c4s-reader-list-skills",
+            "c4s-reader-load-skill-file",
+            "skill-tools-load-skill-file",
+            "workspace-tools-list-projects",
+            "list-skills",
+            "load-skill-file",
+            "list-projects",
+            "fork-writing-style",
+            "list-exposed-projects",
+            "update-skill-file"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "74900c7f826e66c0c64848abf53a2c498636489c",
+      "baseCommit": "74900c7f826e66c0c64848abf53a2c498636489c",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "only": []
     },
     {
       "id": "u02-host-ui-kit",
