@@ -214,11 +214,12 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
  * ascending, tie by `path`, undated last); the WINDOW follows M39's implicit
  * matrix (`limit` / `offset` with a finite default, `total` before the slice,
  * `hasMore`). `echo-free`: rows carry the address and the flag, no content.
-
  *
- * ASSUMPTION:dev-0003 — rendered here although the catalog row's `internal` cell
- * still reads `n/a` at 2.1.18 (Faza B pending); no catalog row is declared, and
- * the default page size (50) is ours — M39 names none for this list.
+ * 2.1.26 — the `internal` rendering of the `list_patches` catalog row (M23's
+ * read-family list, `transagent-tools-list-patches`): its input is the row's
+ * (`brief?`, `applied?`, `limit?`, `offset?`); default `limit` 50, maximum
+ * 1000, default `offset` 0, as the record states; an empty `createdAt`
+ * answers `null`.
  */
 function buildListPatchesTool(patches: Pick<PatchService, 'listPatches'>, projectId: string | null) {
   return mcpTool(

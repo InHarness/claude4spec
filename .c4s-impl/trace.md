@@ -114,3 +114,8 @@
 - list-plans → src/server/operations/core-operations.ts (`list_plans` row, new; renderings `transagent-tools.list_plans` internal, `plan-tools.list_plans` mcp; owner `PlanService.listPlans`); test src/server/mcp/plan-tools.test.ts
 - mark-plan-applied → src/server/operations/core-operations.ts (`mark_plan_applied` row; owner `PlanService.setAppliedByThread`); test src/server/mcp/plan-tools.test.ts
 - update-plan → src/server/operations/core-operations.ts (`update_plan` row, idempotent `'conditional'`; owner `PlanService.update`); test src/server/mcp/plan-tools.test.ts
+- transagent-tools-list-patches → src/server/mcp/transagent-tools.ts (`list_patches`, `buildListPatchesTool`; owner `PatchService.listPatches`); test src/server/mcp/transagent-tools.list-patches.test.ts
+- create-patch → src/server/operations/core-operations.ts (`create_patch` row, no renderings; owner `createPatch` in src/server/services/patch-write.ts); test src/server/mcp/patch-tools.test.ts
+- get-patch → src/server/operations/core-operations.ts (`get_patch` row, rendering `patch-tools.get_patch`; owner `PatchService.getPatch`); test src/server/mcp/patch-tools.test.ts
+- list-patches → src/server/operations/core-operations.ts (`list_patches` row, new; rendering `transagent-tools.list_patches` internal, rest `GET /api/artifacts/patch`; owner `PatchService.listPatches`); test src/server/routes/artifacts.test.ts
+- mark-patch-applied → src/server/operations/core-operations.ts (`mark_patch_applied` row, rendering `patch-tools.mark_patch_applied`; owner `PatchService.markApplied`); test src/server/mcp/patch-tools.test.ts

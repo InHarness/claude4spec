@@ -22,6 +22,7 @@ import { errorHandler } from './errors.js';
 import { systemRootId } from '../../shared/root-kinds.js';
 import type { ReleaseService } from '../services/release.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
+import { expectPatchOperationRecord } from '../../../tests/helpers/patch-tool-records.js';
 
 const fakeWs = { broadcast: () => {} } as unknown as WsEmitter;
 /** Release names in creation order (index = rank); tests that need ranks set it. */
@@ -651,6 +652,62 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       expect(pendingOnly.body.data).toHaveLength(1);
 
       const bogus = await request(app).get('/api/artifacts/patch?applied=any');
+      expect(bogus.status).toBe(400);
+      expect(bogus.body.error.code).toBe('VALIDATION');
+    });
+
+    it('[entity:list-patches] list_patches as its record declares it: project, direct, internal/rest direct, cli/mcp n/a with the record\'s reasons, no effects, idempotent, filters `brief` / `applied` + window, code VALIDATION, rendered by transagent-tools · list_patches (internal) — created_at ascending with ties by path and undated last, a brief that does not exist an empty list rather than a refusal, an invalid applied filter VALIDATION', async () => {
+      const op = expectPatchOperationRecord({
+        nazwa: 'list_patches',
+        channels: {
+          internal: { kind: 'direct' },
+          cli: { kind: 'na', reason: 'brak komendy `c4s`: jedynym realnym wołającym jest agent w wątku albo użytkownik w UI, nie człowiek w terminalu' },
+          mcp: { kind: 'na', reason: 'przegląd zbioru zgłoszeń należy do UI i REST; klient kanału `mcp` nie ma intencji, której obiektem byłby zbiór patchy' },
+          rest: { kind: 'direct' },
+        },
+        efekty: ['none'],
+        idempotencja: true,
+        opisTresci: undefined,
+        kodyBledow: ['VALIDATION'],
+        narzedzia: { internal: ['transagent-tools-list-patches'] },
+      });
+      expect(op.opClass).toBe('read');
+      expect(Object.keys(op.inputSchema).sort()).toEqual(['applied', 'brief', 'limit', 'offset']);
+
+      // The brief the patches name exists, so the `brief` filter resolves to it.
+      await writeArtifact('brief', 'v1-to-v2.md', { type: 'brief', from_release: 'v1', to_release: 'v2' }, '# Brief\n');
+      // The order: created_at ascending, ties by path, a patch without created_at last.
+      const fm = (created_at?: string) => ({
+        type: 'patch',
+        brief: 'v1-to-v2.md',
+        patch_kind: 'drift',
+        ...(created_at ? { created_at } : {}),
+        applied: false,
+      });
+      await writeArtifact('patch', 'a-late.md', fm('2026-01-05T00:00:00.000Z'), '# Patch — late\n');
+      await writeArtifact('patch', 'z-tie.md', fm('2026-01-03T00:00:00.000Z'), '# Patch — tie\n');
+      await writeArtifact('patch', 'c-tie.md', fm('2026-01-03T00:00:00.000Z'), '# Patch — tie\n');
+      await writeArtifact('patch', 'b-undated.md', fm(), '# Patch — undated\n');
+      const all = await request(app).get('/api/artifacts/patch');
+      expect(all.status).toBe(200);
+      expect(all.body.data.map((r: { path: string }) => r.path)).toEqual([
+        'v1-to-v2-drift.md',
+        'c-tie.md',
+        'z-tie.md',
+        'a-late.md',
+        'b-undated.md',
+      ]);
+      // Idempotent: the same query answers the same rows.
+      expect((await request(app).get('/api/artifacts/patch')).body.data).toEqual(all.body.data);
+
+      const ofBrief = await request(app).get('/api/artifacts/patch?brief=v1-to-v2.md');
+      expect(ofBrief.status).toBe(200);
+      expect(ofBrief.body.data).toHaveLength(5);
+      const noSuchBrief = await request(app).get('/api/artifacts/patch?brief=no-such-brief.md');
+      expect(noSuchBrief.status).toBe(200);
+      expect(noSuchBrief.body.data).toEqual([]);
+
+      const bogus = await request(app).get('/api/artifacts/patch?applied=maybe');
       expect(bogus.status).toBe(400);
       expect(bogus.body.error.code).toBe('VALIDATION');
     });

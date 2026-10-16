@@ -1,0 +1,19 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "u14-patch-listing",
+    "base": "82b22cf54474cd19df4d9db3b919d55c68999cd4"
+  },
+  "findings": [
+    {
+      "id": "rev-0001",
+      "file": "tests/helpers/patch-tool-records.ts",
+      "line": 34,
+      "blocking": false,
+      "reason": "The `patch-tools-get-patch` and `patch-tools-mark-patch-applied` entries carry full descriptions and params copied from the records, but only their `server`/`name` are ever read (to resolve `narzedzia` → `renderings`); nothing holds the registered patch-tools tools against them with `expectToolMatchesToolRecord`. The copied text can go stale without any test noticing. Either assert them in patch-tools.test.ts or trim the entries to server + name.",
+      "portion": "u14-patch-listing/p1-l3-l3"
+    }
+  ],
+  "deviations": []
+}

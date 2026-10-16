@@ -698,7 +698,9 @@ export function registerCoreOperations(): void {
       createdBy: z.string().optional().describe('Reporter identity. Defaults to the calling channel.'),
     },
     errorCodes: ['BRIEF_NOT_FOUND', 'VALIDATION', 'PATCH_WRITE_FAILED'],
-    sideEffects: ['file', 'db'],
+    // 2.1.26 — the `create-patch` record's `efekty`: the in-band M42 chain
+    // (`writePatchRecord`) ends in the frontmatter indexer's `patches:changed`.
+    sideEffects: ['file', 'db', 'ui-notify'],
     /**
      * 0.2.37 — `literal`, and a differential mode is not merely absent here, it
      * is out of the question. A patch PROPOSES A NEW ARTEFACT; the server
@@ -711,10 +713,11 @@ export function registerCoreOperations(): void {
     channels: {
       // 2.1.4: a patch has ONE producer — the implementer, in its terminal (and
       // REST under it). The patch thread applies a patch, it never files one, and
-      // no agent channel renders this operation.
-      internal: na('the patch thread applies patches, it never files them'),
+      // no agent channel renders this operation. 2.1.26 — the `create-patch`
+      // record's `powody`, verbatim; `narzedzia` is empty, so no `renderings`.
+      internal: na('producentem patcha jest terminalowy agent-implementer, a wątek `patch` patch **stosuje**, zamiast go zgłaszać'),
       cli: direct(),
-      mcp: na('drift has one producer: the implementer in the cli channel'),
+      mcp: na('zgłoszenie driftu ma jednego producenta, implementera pracującego kanałem `cli`'),
       rest: direct(),
     },
   });
@@ -741,15 +744,24 @@ export function registerCoreOperations(): void {
         .optional()
         .describe('1-based inclusive line window; no `sectionIndexed` gate. A `start` past the end of the file is INVALID_ARGUMENT stating the size.'),
     },
-    errorCodes: ['PATCH_NOT_FOUND', 'INVALID_ARGUMENT'],
+    /**
+     * 2.1.26 — the `get-patch` record's three codes: PATCH_NOT_FOUND for an
+     * unknown path, INVALID_ARGUMENT for a window starting past the end (stating
+     * the size), PATCH_INVALID_FRONTMATTER for a file in the patches root whose
+     * frontmatter does not mark a patch (`PatchService.getPatch`).
+     */
+    errorCodes: ['PATCH_NOT_FOUND', 'INVALID_ARGUMENT', 'PATCH_INVALID_FRONTMATTER'],
     sideEffects: ['none'],
     idempotent: true,
     channels: {
       internal: direct(),
-      cli: na('no c4s command renders a patch read yet'),
-      mcp: na('the mcp channel has no thread anchored in a patch'),
-      rest: via('get_artifact', 'generic artifact-family endpoint — GET /api/artifacts/patch/:path'),
+      // 2.1.26 — the record's `powody`, verbatim. `rest` is GET /api/artifacts/patch/:path.
+      cli: na('żadna komenda `c4s` nie renderuje jeszcze odczytu patcha'),
+      mcp: na('odczyt patcha istnieje dla wątku, który ten patch stosuje; kanał `mcp` nie ma wątku zakotwiczonego w patchu'),
+      rest: via('get_artifact', 'via `get_artifact` — uogólniona trasa odczytu rodziny artefaktów'),
     },
+    // 2.1.26 — the record's `narzedzia`: `patch-tools-get-patch` (internal).
+    renderings: { internal: ['patch-tools.get_patch'] },
   });
 
   /**
@@ -770,16 +782,74 @@ export function registerCoreOperations(): void {
       applied: z.boolean().describe('Only true is accepted from the agent channel.'),
       path: z.string().optional().describe('Patch path relative to the patches root (.claude4spec/patches). Defaulted from the thread only in the `internal` channel.'),
     },
-    errorCodes: ['PATCH_NOT_FOUND', 'INVALID_ARGUMENT'],
+    // 2.1.26 — the `mark-patch-applied` record's three codes; PATCH_INVALID_FRONTMATTER
+    // comes from the shared loader (`getPatch`) on a file that is not a patch.
+    errorCodes: ['PATCH_NOT_FOUND', 'INVALID_ARGUMENT', 'PATCH_INVALID_FRONTMATTER'],
     sideEffects: ['file', 'db', 'ui-notify'],
     contentInput: 'n/a',
     idempotent: true,
     channels: {
       internal: direct(),
-      cli: na('the declaration is made by the thread that applies the patch, not a terminal'),
-      mcp: na('the declaration is made by the thread that applies the patch'),
-      rest: via('update_artifact_frontmatter', 'PATCH /api/artifacts/patch/:path/frontmatter with { applied } — two-way, user-driven'),
+      // 2.1.26 — the record's `powody`, verbatim. `rest` is
+      // PATCH /api/artifacts/patch/:path/frontmatter with { applied }.
+      cli: na('jedyny realny wołający kończy wdrożenie patcha w wątku, nie w terminalu'),
+      mcp: na('deklarację wdrożenia składa wątek, który patch stosuje; kanał `mcp` nie ma wątku zakotwiczonego w patchu'),
+      rest: via(
+        'update_artifact_frontmatter',
+        'via `update_artifact_frontmatter` — uogólniona trasa frontmatteru rodziny artefaktów, dwukierunkowa i prowadzona przez użytkownika',
+      ),
     },
+    // 2.1.26 — the record's `narzedzia`: `patch-tools-mark-patch-applied` (internal).
+    renderings: { internal: ['patch-tools.mark_patch_applied'] },
+  });
+
+  /**
+   * 2.1.26 (M23 `m23mcp01`) — `list_patches`, the read family's list position:
+   * the project's patch set, optionally narrowed to one brief (`brief`, a path
+   * relative to the briefs root) or to the applied state (`applied`). Its one
+   * rendering is `transagent-tools · list_patches` (internal), mounted only on a
+   * top-level `chat` thread — the orchestrator plans a patch series from it and
+   * re-checks the flag after every banka. A `patch` thread, closed on one patch,
+   * never has it. `rest` is `GET /api/artifacts/patch` (`?brief`, `?applied`).
+   *
+   * The order is the domain's (`PatchService.listPatches`: `created_at`
+   * ascending, ties by `path`, undated last by `path`); the window is M39's
+   * implicit matrix. A brief in the filter that does not exist yields an empty
+   * list, not a refusal; an invalid `applied` value is VALIDATION (the REST
+   * query parser — the internal rendering's schema admits a boolean only).
+   *
+   * Class `read`, as `list_briefs` / `list_plans`: `chat` admits it, and the
+   * operation never mutates.
+   */
+  CATALOG.register({
+    name: 'list_patches',
+    summary:
+      "The project's patches — path, title, brief, kind, applied flag and creation time, never content — optionally narrowed to one brief or to the applied state.",
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'read',
+    inputSchema: {
+      brief: z
+        .string()
+        .optional()
+        .describe('Brief path relative to the briefs root (.claude4spec/briefs). Omit for every brief.'),
+      applied: z
+        .boolean()
+        .optional()
+        .describe('Narrow to applied (true) or not yet applied (false). Omit for all.'),
+      ...paging,
+    },
+    errorCodes: ['VALIDATION'],
+    sideEffects: ['none'],
+    idempotent: true,
+    channels: {
+      internal: direct(),
+      // The record's `powody`, verbatim.
+      cli: na('brak komendy `c4s`: jedynym realnym wołającym jest agent w wątku albo użytkownik w UI, nie człowiek w terminalu'),
+      mcp: na('przegląd zbioru zgłoszeń należy do UI i REST; klient kanału `mcp` nie ma intencji, której obiektem byłby zbiór patchy'),
+      rest: direct(),
+    },
+    renderings: { internal: ['transagent-tools.list_patches'] },
   });
 
   // ── M13 entity writes ─────────────────────────────────────────────────────

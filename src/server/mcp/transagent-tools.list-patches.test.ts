@@ -4,7 +4,12 @@ import { buildTransagentToolsServer, TRANSAGENT_TOOL_NAMES } from './transagent-
 import { PatchService } from '../services/patch.js';
 import type { TransagentDispatcher } from '../services/transagent-dispatcher.js';
 import { systemRootId } from '../../shared/root-kinds.js';
-import { DEFAULT_LIMITS } from '../discovery/pagination.js';
+import { DEFAULT_LIMITS, MAX_LIMIT, resolvePageRequest } from '../discovery/pagination.js';
+import { CATALOG } from '../operations/catalog.js';
+import { registerCoreOperations } from '../operations/core-operations.js';
+import { toolAdmittedByProfile } from '../operations/profile-gate.js';
+import { PATCH_TOOL_RECORDS } from '../../../tests/helpers/patch-tool-records.js';
+import { expectToolMatchesToolRecord } from '../../../tests/helpers/write-tool-records.js';
 
 /**
  * 2.1.18 (M23 `m23brsv01` / `m23mcp01` / `m23edg01`, M44 `3f5ej79s`) —
@@ -160,6 +165,62 @@ describe('transagent-tools · list_patches (2.1.18)', () => {
     const tail = (await list(service, { limit: 10, offset: DEFAULT_LIMITS.listPatches })).body;
     expect(tail.patches).toHaveLength(5);
     expect(tail.hasMore).toBe(false);
+  });
+
+  it('[entity:transagent-tools-list-patches] transagent-tools · list_patches: the record\'s name, description, `brief` (string) + `applied` (boolean) + `limit` / `offset` (integers), all optional, readOnlyHint — `{ patches, total, hasMore }` rows of { path, title, brief, patchKind, applied, createdAt } without content, total after the filters and before the window, default limit 50 and maximum 1000, default offset 0, an empty createdAt answered as null', async () => {
+    const record = PATCH_TOOL_RECORDS['transagent-tools-list-patches'];
+    expect(record).toBeDefined();
+    const { server, tool } = listTool(serviceOver({}));
+    expect(server.tools.find((t) => t.name === 'list_patches')).toBe(tool);
+    expectToolMatchesToolRecord(tool, record!);
+    // The rendering's input is the catalog row's, and the chat profile admits it.
+    registerCoreOperations();
+    expect(Object.keys(tool.inputSchema as Record<string, unknown>).sort()).toEqual(
+      Object.keys(CATALOG.require('list_patches').inputSchema).sort(),
+    );
+    expect(toolAdmittedByProfile('chat', 'list_patches')).toBe(true);
+
+    const many: Record<string, Record<string, unknown>> = {};
+    for (let i = 0; i < 60; i++) {
+      const n = String(i).padStart(3, '0');
+      many[`p-${n}.md`] = patchFile({ brief: 'b.md', patch_kind: 'drift', created_at: `2026-01-01T00:00:00.${n}Z` });
+    }
+    // Another brief's patches: filtered out before the window, so not in `total`.
+    many['zz-other.md'] = patchFile({ brief: 'other.md', patch_kind: 'drift', created_at: '2026-01-02T00:00:00.000Z' });
+    const service = serviceOver(many, ['b.md', 'other.md']);
+    const first = (await list(service, { brief: 'b.md' })).body;
+    expect(Object.keys(first).sort()).toEqual(['hasMore', 'patches', 'total']);
+    // Default limit 50, default offset 0: the window starts at the head of the list.
+    expect(DEFAULT_LIMITS.listPatches).toBe(50);
+    expect(first.patches).toHaveLength(50);
+    expect(first.total).toBe(60);
+    expect(first.hasMore).toBe(true);
+    expect(paths(first)).toEqual(paths((await list(service, { brief: 'b.md', offset: 0, limit: 50 })).body));
+    expect(paths(first)[0]).toBe('p-000.md');
+    // A row: the address, the brief, the kind, the flag and the creation time — no content.
+    expect(first.patches[0]).toEqual({
+      path: 'p-000.md',
+      title: expect.any(String),
+      brief: 'b.md',
+      patchKind: 'drift',
+      applied: false,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    expect(JSON.stringify(first)).not.toContain('# Patch');
+    // The maximum: a limit above 1000 is answered as 1000, not refused.
+    expect(MAX_LIMIT).toBe(1000);
+    expect(resolvePageRequest({ limit: 5000 }, DEFAULT_LIMITS.listPatches)).toEqual({ limit: 1000, offset: 0 });
+    const over = await list(service, { limit: 5000 });
+    expect(over.isError).toBe(false);
+    expect(over.body.patches).toHaveLength(61);
+    expect(over.body.total).toBe(61);
+    expect(over.body.hasMore).toBe(false);
+
+    // A patch with no created_at: `createdAt` comes back as null.
+    const undated = serviceOver({ 'bare.md': patchFile({ brief: 'b.md', patch_kind: 'drift' }) }, ['b.md']);
+    const bare = (await list(undated)).body.patches as Array<Record<string, unknown>>;
+    expect(bare).toHaveLength(1);
+    expect(bare[0]!.createdAt).toBeNull();
   });
 
   it('a rig without the patch set mounts runTransagent alone', () => {
