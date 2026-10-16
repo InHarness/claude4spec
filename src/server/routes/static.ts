@@ -10,8 +10,11 @@ import { StaticHtmlService, StaticPathTraversalError } from '../services/static-
  * under `dir` is served, not only `.html` (an image in a skill package, say).
  *
  * Returns the raw bytes of the file (NOT a `{ data }` envelope), with `Content-Type`
- * inferred from the extension by Express's built-in `send`/mime. Path-traversal ⇒ 403,
- * missing file ⇒ 404. Same origin as the app.
+ * inferred from the extension by Express's built-in `send`/mime. Empty path ⇒ 400,
+ * path-traversal ⇒ 403, missing file ⇒ 404 — each a bare `{ error }` body with NO
+ * `code` (2.1.27, M30 L4 `fkqoflce`). Every file response sets BOTH
+ * `X-Content-Type-Options: nosniff` (no longer optional) and the CSP `sandbox`
+ * header. Same origin as the app.
  *
  * 0.2.28 — ISOLATION, corrected. This used to say isolation was enforced by the
  * `sandbox` ATTRIBUTE on `HtmlViewer`'s iframe, "independently of the shared
@@ -59,7 +62,7 @@ export function staticRouter(
         return res.status(404).json({ error: 'not found' });
       }
 
-      // Defense-in-depth: stop the browser from MIME-sniffing the response.
+      // Always set (2.1.27): stop the browser from MIME-sniffing the response.
       res.setHeader('X-Content-Type-Options', 'nosniff');
       // The real isolation contract — enforcing form, and a header rather than
       // an iframe attribute so it survives a top-level open (see above). No

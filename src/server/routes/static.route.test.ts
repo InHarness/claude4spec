@@ -109,3 +109,53 @@ describe('GET /api/static/:rootId/* — every root of kind pages (M30 m30l13rt)'
     expect(res.headers['x-content-type-options']).toBe('nosniff');
   });
 });
+
+/**
+ * 2.1.27 — M30 L4 transport and refusals (`fkqoflce`): the three refusals carry a
+ * bare `{ error }` body with no `code`, and EVERY file response sets both
+ * `X-Content-Type-Options: nosniff` (no longer optional) and the CSP `sandbox`
+ * header — the second isolation layer beside the iframe's `sandbox` attribute.
+ */
+describe('GET /api/static/:rootId/* — refusals and isolation headers (2.1.27)', () => {
+  it('[entity:get-api-static] [section:fkqoflce] an empty path is 400 with a bare { error } body, no code', async () => {
+    const { server } = await app();
+    for (const url of ['/api/static/pages/', '/api/static/pages']) {
+      const res = await request(server).get(url).expect(400);
+      expect(typeof res.body.error).toBe('string');
+      expect(Object.keys(res.body)).toEqual(['error']);
+      expect(res.body.code).toBeUndefined();
+    }
+  });
+
+  it('[entity:get-api-static] [section:fkqoflce] a path escaping the root dir is 403 with a bare { error } body, no code', async () => {
+    const { cwd, server } = await app();
+    fs.writeFileSync(path.join(cwd, 'pages', 'secret.html'), '<p>s</p>');
+    const res = await request(server).get('/api/static/adr/..%2F..%2Fpages%2Fsecret.html').expect(403);
+    expect(typeof res.body.error).toBe('string');
+    expect(Object.keys(res.body)).toEqual(['error']);
+    expect(res.headers['content-security-policy']).toBeUndefined();
+  });
+
+  it('[entity:get-api-static] [section:fkqoflce] a missing file is 404 with a bare { error } body, no code', async () => {
+    const { server } = await app();
+    const res = await request(server).get('/api/static/pages/missing.html').expect(404);
+    expect(typeof res.body.error).toBe('string');
+    expect(Object.keys(res.body)).toEqual(['error']);
+  });
+
+  it('[entity:get-api-static] [section:fkqoflce] every file response sets nosniff and CSP sandbox allow-scripts allow-forms allow-modals', async () => {
+    const { cwd, server } = await app();
+    fs.writeFileSync(path.join(cwd, 'pages', 'mock.html'), '<p>mock</p>');
+    fs.writeFileSync(path.join(cwd, 'pages', 'style.css'), 'p{}');
+    for (const [url, type] of [
+      ['/api/static/pages/mock.html', 'text/html'],
+      ['/api/static/pages/style.css', 'text/css'],
+    ] as const) {
+      const res = await request(server).get(url).expect(200);
+      expect(res.headers['content-type']).toContain(type);
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+      expect(res.headers['content-security-policy']).toBe('sandbox allow-scripts allow-forms allow-modals');
+      expect(res.headers['content-security-policy']).not.toContain('allow-same-origin');
+    }
+  });
+});
