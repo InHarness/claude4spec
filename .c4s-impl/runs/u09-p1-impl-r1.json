@@ -1,0 +1,30 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.26",
+  "unit": "u09-page-operations",
+  "portion": "u09-page-operations/p1-l3",
+  "claimed": [
+    "create-page",
+    "page-tools-create-page",
+    "delete-page",
+    "page-tools-delete-page",
+    "move-page",
+    "page-tools-move-page",
+    "update-page",
+    "page-tools-update-page",
+    "update-sections",
+    "page-tools-update-sections",
+    "get-todo-counts",
+    "list-todos",
+    "get-page-link-counts",
+    "list-page-links",
+    "search-link-targets",
+    "get-static-file",
+    "ac-kazdy-wiersz-katalogu-l3-opisujacy-op"
+  ],
+  "deviations": ["dev-2604", "dev-2605", "dev-2606"],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

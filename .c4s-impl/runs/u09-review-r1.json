@@ -1,0 +1,10 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "u09-page-operations",
+    "base": "4b1c82721192eec29ade5e5a081ccf33bcd0f9f4"
+  },
+  "findings": [],
+  "deviations": ["dev-2607"]
+}

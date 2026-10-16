@@ -1,0 +1,140 @@
+{
+ "role": "verifier",
+ "scope": {
+  "kind": "unit",
+  "id": "u09-page-operations"
+ },
+ "release": "2.1.26",
+ "rows": [
+  {
+   "slug": "page-tools-create-page",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/page-tools.facade-roots.test.ts:81 expectToolMatchesWriteRecord(create_page, 'page-tools-create-page') (description/params verbatim from 2.1.26 record, annotations {}); `expect(Object.keys(res.body).sort()).toEqual(['anchors','content','hash','path','rootId','version'])`, `expect(res.body.content).toBe(onDisk)`, template title trim/basename, PAGE_EXISTS hint update_page, VALIDATION, ROOT_NOT_FOUND hint; code src/server/mcp/page-tools.ts:157, services/page-write.ts createPage returns written.content"
+  },
+  {
+   "slug": "page-tools-delete-page",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/page-tools.test.ts:543 record match, params ['path','rootId'] no expectedHash, ROOT_NOT_FOUND, VALIDATION, `expect(missing.body).toEqual({ ok: true, deleted: false })`, stale expectedHash ignored → deleted:true; actor agent at src/server/mcp/page-tools.test.ts:271; code page-tools.ts:295"
+  },
+  {
+   "slug": "page-tools-move-page",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/page-tools.test.ts:576 record match, no hints; answer keys incl. citationSync, hash unchanged, `citationSync: { rewritten: [], error: 'link projection is stale' }` with move kept; ROOT_NOT_FOUND/INVALID_ARGUMENT/PAGE_CONFLICT/NOT_FOUND/PAGE_EXISTS/NOT_IMPLEMENTED; code page-tools.ts:318, page-write.ts:1073"
+  },
+  {
+   "slug": "page-tools-update-page",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/page-tools.test.ts:343 expectToolMatchesWriteRecord (description verbatim, params, hints readOnly false/destructive true/idempotent false/openWorld false as only annotations); create-or-replace behaviour, legacy `content` INVALID_ARGUMENT; code page-tools.ts:206-292"
+  },
+  {
+   "slug": "page-tools-update-sections",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/page-tools.test.ts:647 record match, no hints; validation order INVALID_ARGUMENT/VALIDATION incl. `delete` + content → INVALID_ARGUMENT, SECTION_NOT_FOUND, two pages INVALID_ARGUMENT, ROOT_NOT_FOUND, PAGE_CONFLICT with currentHash, INDEX_STALE, rows per element with previousHeading; code page-tools.ts:358, page-write.ts updateSections delete-content guard"
+  },
+  {
+   "slug": "create-page",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:1202 expectRecordRow: name, scope project, mediation direct, four channel cells, sideEffects, idempotent, contentInput, errorCodes (sorted equal), renderings vs narzedzia — literal, codes PAGE_EXISTS/ROOT_NOT_FOUND/VALIDATION, renderings page-tools.create_page, no expectedHash; rows in src/server/operations/core-operations.ts"
+  },
+  {
+   "slug": "update-page",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:1219 expectRecordRow: name, scope project, mediation direct, four channel cells, sideEffects, idempotent, contentInput, errorCodes (sorted equal), renderings vs narzedzia — idempotent 'conditional', literal+diff, 7 codes, required expectedHash; rows in src/server/operations/core-operations.ts"
+  },
+  {
+   "slug": "delete-page",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:1236 expectRecordRow: name, scope project, mediation direct, four channel cells, sideEffects, idempotent, contentInput, errorCodes (sorted equal), renderings vs narzedzia — idempotent true, n/a content, codes ROOT_NOT_FOUND/PAGE_CONFLICT/VALIDATION, optional expectedHash; rows in src/server/operations/core-operations.ts"
+  },
+  {
+   "slug": "move-page",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:1252 expectRecordRow: name, scope project, mediation direct, four channel cells, sideEffects, idempotent, contentInput, errorCodes (sorted equal), renderings vs narzedzia — not idempotent, n/a, 6 codes (NOT_IMPLEMENTED dropped per dev-2605), required guard; rows in src/server/operations/core-operations.ts"
+  },
+  {
+   "slug": "update-sections",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:1267 expectRecordRow: name, scope project, mediation direct, four channel cells, sideEffects, idempotent, contentInput, errorCodes (sorted equal), renderings vs narzedzia — 'conditional', literal+diff, 10 codes, input [dropAnchors, edits, expectedHash]; rows in src/server/operations/core-operations.ts"
+  },
+  {
+   "slug": "get-todo-counts",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:1304 expectRecordRow: name, scope project, mediation direct, four channel cells, sideEffects, idempotent, contentInput, errorCodes (sorted equal), renderings vs narzedzia — read, internal/cli/mcp n/a with record reasons verbatim, rest direct, efekty none, no codes, no renderings, input {}; rows in src/server/operations/core-operations.ts"
+  },
+  {
+   "slug": "list-todos",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:1318 expectRecordRow: name, scope project, mediation direct, four channel cells, sideEffects, idempotent, contentInput, errorCodes (sorted equal), renderings vs narzedzia — read, uiRouteOnly reasons, input {} (no window); rows in src/server/operations/core-operations.ts"
+  },
+  {
+   "slug": "get-page-link-counts",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:1333 expectRecordRow: name, scope project, mediation direct, four channel cells, sideEffects, idempotent, contentInput, errorCodes (sorted equal), renderings vs narzedzia — read, uiRouteOnly reasons, input {}; rows in src/server/operations/core-operations.ts"
+  },
+  {
+   "slug": "list-page-links",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:1347 expectRecordRow: name, scope project, mediation direct, four channel cells, sideEffects, idempotent, contentInput, errorCodes (sorted equal), renderings vs narzedzia — read, uiRouteOnly reasons, input {}; rows in src/server/operations/core-operations.ts"
+  },
+  {
+   "slug": "search-link-targets",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:1361 expectRecordRow: name, scope project, mediation direct, four channel cells, sideEffects, idempotent, contentInput, errorCodes (sorted equal), renderings vs narzedzia — internal/cli/mcp via search_pages with record reasons, rest direct, limit ≤ 50; rows in src/server/operations/core-operations.ts"
+  },
+  {
+   "slug": "get-static-file",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:1391 expectRecordRow: name, scope project, mediation direct, four channel cells, sideEffects, idempotent, contentInput, errorCodes (sorted equal), renderings vs narzedzia — read, n/a reasons verbatim, code ROOT_NOT_FOUND, input (rootId, path); rows in src/server/operations/core-operations.ts"
+  },
+  {
+   "slug": "ac-kazdy-wiersz-katalogu-l3-opisujacy-op",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:76 for every file-writing row whose input carries content/body/textEdits/edits: `expect(['literal','diff','literal+diff'], op.name).toContain(op.contentInput)` (never n/a), plus `update_page`/`update_sections` → 'literal+diff', create_page 'literal'; core-operations.ts rows match"
+  },
+  {
+   "slug": "goal:u09-page-operations",
+   "level": 2,
+   "status": "covered",
+   "evidence": "create_page answers settled content (page-write.ts createPage, page-tools.ts:157; REST strips it, dev-2604); move_page citationSync (page-write.ts:1073); delete missing → {ok:true,deleted:false} (page-write.ts:916); update_sections anchor rules in description + delete-with-content refused (page-write.ts updateSections); 11 spec-operation rows match records (core-operations.ts); removed: delete_page tool has no expectedHash (page-tools.ts:295), hints on create/delete/move/update_sections removed (only update_page declares its record's hints, page-tools.ts:292)"
+  }
+ ],
+ "suite": {
+  "command": "npm run typecheck",
+  "exitCode": 0,
+  "summary": "tsc --noEmit across workspaces: EXIT 0. Static read of touched tests (page-tools*.test.ts, catalog.test.ts, page-write.test.ts, release-0-2-13-contract.test.ts, plan-write/patch-tools catalog-wide checks, pages route tests) finds none broken by the diff; no stubs for u09."
+ }
+}

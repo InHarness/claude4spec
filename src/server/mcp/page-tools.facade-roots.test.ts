@@ -15,6 +15,7 @@ import type { Root } from '../../shared/types.js';
 import { registerCoreReactions } from '../workspace/core-reactions.js';
 import { mountRegistryRoots } from '../workspace/root-registry-runtime.js';
 import { createPageToolsServer } from './page-tools.js';
+import { expectToolMatchesWriteRecord } from '../../../tests/helpers/write-tool-records.js';
 
 /**
  * 2.1.9 — `page-tools` over the roots WITH A FACADE (M02 `o01s9mwl`): the four
@@ -53,7 +54,7 @@ async function rig() {
     w: runtime.scoped('context:page-tools-facades#1'),
   });
   const rootById = new Map(mounted.rootRuntimes.map((rt) => [rt.root.id, rt]));
-  const { server } = createPageToolsServer({
+  const instance = createPageToolsServer({
     sections: new SectionsService(db),
     resolveRoot: (rootId) => {
       const rt = rootById.get(rootId);
@@ -61,6 +62,7 @@ async function rig() {
     },
     rootIds: () => [...rootById.keys()],
   });
+  const { server } = instance;
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'test-client', version: '0.0.0' });
   await server.connect(serverTransport);
@@ -72,38 +74,51 @@ async function rig() {
     return { isError: res.isError === true, body: JSON.parse(text) as Record<string, any> };
   };
   const abs = (rootId: string, rel: string): string => path.join(cwd, registry.get(rootId)!.dir, rel);
-  return { client, call, abs, registry };
+  return { client, call, abs, registry, tools: instance.tools };
 }
 
 describe('2.1.9 — page-tools address the roots with a facade (M02 o01s9mwl, gj2vdsjm)', () => {
-  it('[entity:page-tools-create-page] create_page on page-tools: inputs rootId + path (required), content + title (optional); answers { rootId, path, hash, version, anchors[] } (no content) after writing through the root\'s store; refuses an existing page (PAGE_EXISTS) and a root without a facade', async () => {
-    const { client, call, abs } = await rig();
+  it('[entity:page-tools-create-page] create_page on page-tools: the 2.1.26 record\'s description and parameters (rootId + path required, title + content optional), no hints; answers { rootId, path, hash, version, content, anchors[] } with `content` the file AS IT SETTLED (the template when no content was sent); unknown root ROOT_NOT_FOUND with the roots in `hint`, empty path VALIDATION, an existing page PAGE_EXISTS pointing at update_page', async () => {
+    const { client, call, abs, tools: declared } = await rig();
+    expectToolMatchesWriteRecord(declared.find((t) => t.name === 'create_page'), 'page-tools-create-page');
     const { tools } = await client.listTools();
     const tool = tools.find((t) => t.name === 'create_page')!;
-    expect(tool).toBeDefined();
     expect(Object.keys(tool.inputSchema.properties ?? {}).sort()).toEqual(['content', 'path', 'rootId', 'title']);
     expect([...(tool.inputSchema.required ?? [])].sort()).toEqual(['path', 'rootId']);
-    expect(tool.description).toContain('PAGE_EXISTS');
 
     const res = await call('create_page', { rootId: 'adr', path: 'guides/auth.md', content: '# Auth\n\n## Login\n' });
     expect(res.isError).toBe(false);
+    expect(Object.keys(res.body).sort()).toEqual(['anchors', 'content', 'hash', 'path', 'rootId', 'version']);
     expect(res.body.rootId).toBe('adr');
     expect(res.body.path).toBe('guides/auth.md');
     const onDisk = fs.readFileSync(abs('adr', 'guides/auth.md'), 'utf8');
+    // `content` is the settled file, and `hash` is its sha256 — not the bytes that were sent.
+    expect(res.body.content).toBe(onDisk);
     expect(res.body.hash).toBe(sha(onDisk));
     expect(Array.isArray(res.body.anchors)).toBe(true);
+    // Every anchor the answer lists is a comment in the content it answers.
+    for (const anchor of res.body.anchors as string[]) expect(res.body.content).toContain(`<!-- anchor: ${anchor} -->`);
     expect(typeof res.body.version).toBe('number');
-    expect(res.body).not.toHaveProperty('content');
 
-    // Omitting `content` writes the default template — a frontmatter block with `title`.
-    const tpl = await call('create_page', { rootId: 'pages', path: 'empty.md', title: 'Empty' });
+    // Omitting `content` writes the default template — a frontmatter block with `title` — and answers it.
+    const tpl = await call('create_page', { rootId: 'pages', path: 'empty.md', title: '  Empty  ' });
     expect(tpl.isError).toBe(false);
-    expect(fs.readFileSync(abs('pages', 'empty.md'), 'utf8')).toContain('title: Empty');
+    const tplOnDisk = fs.readFileSync(abs('pages', 'empty.md'), 'utf8');
+    expect(tplOnDisk).toContain('title: Empty');
+    expect(tpl.body.content).toBe(tplOnDisk);
+    // …and without a title the file name, extension dropped.
+    const untitled = await call('create_page', { rootId: 'pages', path: 'nested/m16-onboarding.md' });
+    expect(untitled.body.content).toContain('title: m16-onboarding');
 
     const dup = await call('create_page', { rootId: 'adr', path: 'guides/auth.md', content: 'clobber' });
     expect(dup.isError).toBe(true);
     expect(dup.body.code).toBe('PAGE_EXISTS');
+    expect(dup.body.hint).toContain('update_page');
     expect(fs.readFileSync(abs('adr', 'guides/auth.md'), 'utf8')).toBe(onDisk);
+
+    const emptyPath = await call('create_page', { rootId: 'pages', path: '' });
+    expect(emptyPath.isError).toBe(true);
+    expect(emptyPath.body.code).toBe('VALIDATION');
 
     const refused = await call('create_page', { rootId: 'briefs', path: 'b.md', content: '# B\n' });
     expect(refused.isError).toBe(true);

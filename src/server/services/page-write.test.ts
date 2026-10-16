@@ -206,12 +206,16 @@ describe('the page write primitive', () => {
     expect(onDisk).toBe('');
   });
 
-  it('create_page answers with the page identity, its version and anchors — never the content (2.1.23)', async () => {
+  it('create_page answers with the page identity, its version, anchors and the file as it SETTLED (2.1.26)', async () => {
     const res = await createPage(target, { path: 'made.md', content: '# A\n\nlots of text\n' }, 'agent');
-    expect(Object.keys(res).sort()).toEqual(['anchors', 'hash', 'path', 'rootId', 'version']);
+    expect(Object.keys(res).sort()).toEqual(['anchors', 'content', 'hash', 'path', 'rootId', 'version']);
     expect(res.rootId).toBe('pages');
     expect(res.path).toBe('made.md');
-    expect(JSON.stringify(res)).not.toContain('lots of text');
+    // `content` is the bytes on disk, not an echo of the request: `hash` is its sha256.
+    const onDisk = await fs.readFile(path.join(pages.root, 'made.md'), 'utf-8');
+    const { createHash } = await import('node:crypto');
+    expect(res.content).toBe(onDisk);
+    expect(res.hash).toBe(createHash('sha256').update(onDisk, 'utf-8').digest('hex'));
   });
 
   it('update_page answers with the delta only — never the page, not even the settled one', async () => {

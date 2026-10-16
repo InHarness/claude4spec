@@ -23,6 +23,7 @@ import { buildEntityTools, type EntityToolsDeps } from '../mcp/entity-tools.js';
 import { READ_TOOL_RECORDS } from '../../../tests/helpers/read-tool-records.js';
 import { WRITE_TOOL_RECORDS } from '../../../tests/helpers/write-tool-records.js';
 import { createEndpointToolsServer } from '../../../plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/mcp.js';
+import { createPageToolsServer, type PageToolsDeps } from '../mcp/page-tools.js';
 import type { LinkDtoDeps } from '../../../plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/link-dto.js';
 
 registerCoreOperations();
@@ -63,17 +64,33 @@ describe('operation catalog — declaration rules', () => {
     expect(() => cat.register(decl({ sideEffects: ['db'] }))).not.toThrow();
   });
 
-  it('[ac:ac-kazdy-wiersz-katalogu-l3-opisujacy-op] every registered file-writing operation declares one', () => {
+  /**
+   * 2.1.26 — the criterion's wording: a row describing a CONTENT write says how
+   * the caller describes the new content — `dosłowny`, `różnicowy` or `obydwa`
+   * (`literal`, `diff`, `literal+diff`) — and never `n/d` (`n/a`). `n/a` stays
+   * legal for a file write that takes no content from the caller (a delete, a
+   * move, a flag), which is why the check keys on the input: a row whose input
+   * carries the new content (`content`, `body`, `textEdits`, a section batch's
+   * `edits`) is a content write.
+   */
+  it('[ac:ac-kazdy-wiersz-katalogu-l3-opisujacy-op] every operation that writes content declares literal, diff or both — never n/a, never silence', () => {
+    const CONTENT_FIELDS = ['content', 'body', 'textEdits', 'edits'];
     const writesFiles = CATALOG.list().filter((op) => op.sideEffects.includes('file'));
+    const contentWrites = writesFiles.filter((op) => CONTENT_FIELDS.some((f) => f in op.inputSchema));
     // A guard against the guard: if this ever comes back empty the assertion
     // below would pass while proving nothing.
-    expect(writesFiles.length).toBeGreaterThan(5);
-    for (const op of writesFiles) {
-      expect(['literal', 'diff', 'literal+diff', 'n/a'], op.name).toContain(op.contentInput);
+    expect(contentWrites.length).toBeGreaterThan(3);
+    for (const op of writesFiles) expect(op.contentInput, op.name).toBeDefined();
+    for (const op of contentWrites) {
+      expect(['literal', 'diff', 'literal+diff'], op.name).toContain(op.contentInput);
     }
-    // The two page-content writes the criterion names say "both" explicitly.
+    // The page-content writes: both modes on the two the criterion names, the
+    // literal one on create; the page writes that carry no content say so.
     expect(CATALOG.require('update_page').contentInput).toBe('literal+diff');
     expect(CATALOG.require('update_sections').contentInput).toBe('literal+diff');
+    expect(CATALOG.require('create_page').contentInput).toBe('literal');
+    expect(CATALOG.require('delete_page').contentInput).toBe('n/a');
+    expect(CATALOG.require('move_page').contentInput).toBe('n/a');
   });
 
   it('the three operations that got a differential mode declare it, and the three that did not say so', () => {
@@ -1104,5 +1121,300 @@ describe('the M13 mutation rows as their 2.1.26 records declare them', () => {
     expect(shape.safeParse({ type: 'ac', slug: 'a' }).success).toBe(false);
     // Not an agentic operation: no entity-tools tool carries its name.
     expect(registered.get('entity-tools')!.has('restore_entity_version')).toBe(false);
+  });
+});
+
+/**
+ * 2.1.26 — the page operations (M02 `create-page`, `update-page`, `delete-page`,
+ * `move-page`; M06 `update-sections`) and the UI read routes of M08, M14 and M30
+ * (`get-todo-counts`, `list-todos`, `get-page-link-counts`, `list-page-links`,
+ * `search-link-targets`, `get-static-file`) as their `spec-operation` records
+ * declare them. Each row: name = `nazwa`, scope, mediation, the four channel
+ * cells (an `n/a` / `via` carrying the record's `powody` verbatim), side effects
+ * (`efekty`), idempotence (`warunkowa` → `'conditional'`), content input
+ * (`opisTresci`: `dosłowny` → `literal`, `obydwa` → `literal+diff`, `n/d` →
+ * `n/a` on a file write and nothing on a read), `errorCodes` exactly the record's
+ * `kodyBledow` (`n/d` → none), and `renderings` exactly its `narzedzia`.
+ */
+describe('the page, TODO, page-link and static-file rows as their 2.1.26 records declare them', () => {
+  type Cell = { kind: 'direct' } | { kind: 'via'; operation: string; reason: string } | { kind: 'na'; reason: string };
+  interface PageRecord {
+    nazwa: string;
+    opClass: 'write' | 'read';
+    channels: Record<ChannelName, Cell>;
+    efekty: string[];
+    idempotencja: boolean | 'conditional';
+    opisTresci: 'literal' | 'literal+diff' | 'n/a' | undefined;
+    kodyBledow: string[];
+    narzedzia: Partial<Record<'internal' | 'mcp', string[]>>;
+  }
+  const D: Cell = { kind: 'direct' };
+  const ALL_DIRECT = { internal: D, cli: D, mcp: D, rest: D };
+  const PAGE_EFFECTS = ['file', 'db', 'ui-notify'];
+
+  const pageTools = new Set(
+    createPageToolsServer({
+      sections: {},
+      resolveRoot: () => undefined,
+      rootIds: () => [],
+    } as unknown as PageToolsDeps).tools.map((t) => t.name),
+  );
+
+  function expectRecordRow(record: PageRecord): void {
+    const op = CATALOG.require(record.nazwa);
+    expect(op.name).toBe(record.nazwa);
+    expect(op.scope).toBe('project');
+    expect(op.mediation).toBe('direct');
+    expect(op.opClass).toBe(record.opClass);
+    for (const channel of CHANNELS) {
+      expect(op.channels[channel], `${record.nazwa}.${channel}`).toEqual(record.channels[channel]);
+    }
+    expect(op.sideEffects).toEqual(record.efekty);
+    expect(op.idempotent).toBe(record.idempotencja);
+    expect(op.contentInput).toBe(record.opisTresci);
+    expect(new Set(op.errorCodes).size).toBe(op.errorCodes.length);
+    expect([...op.errorCodes].sort()).toEqual([...record.kodyBledow].sort());
+
+    const expected: Partial<Record<'internal' | 'mcp', string[]>> = {};
+    for (const [channel, slugs] of Object.entries(record.narzedzia) as Array<['internal' | 'mcp', string[]]>) {
+      expected[channel] = slugs.map((slug) => {
+        const tool = WRITE_TOOL_RECORDS[slug];
+        expect(tool, `mcp-tool record ${slug}`).toBeDefined();
+        return `${tool!.server}.${tool!.name}`;
+      });
+    }
+    expect(op.renderings ?? {}).toEqual(expected);
+    for (const channel of ['internal', 'mcp'] as const) {
+      const named = op.renderings?.[channel] ?? [];
+      if (op.channels[channel].kind === 'direct') expect(named.length, `${record.nazwa}.${channel}`).toBeGreaterThan(0);
+      else expect(named, `${record.nazwa}.${channel}`).toEqual([]);
+      for (const rendering of named) {
+        const [server, name] = rendering.split('.') as [string, string];
+        expect(server).toBe('page-tools');
+        expect(pageTools.has(name), rendering).toBe(true);
+      }
+    }
+  }
+
+  const required = (name: string, key: string): boolean =>
+    !(CATALOG.require(name).inputSchema[key] as unknown as { isOptional(): boolean }).isOptional();
+
+  it('[entity:create-page] create_page: project, direct, all four channels direct, file/db/ui-notify, not idempotent, literal, codes PAGE_EXISTS, ROOT_NOT_FOUND, VALIDATION, rendered by page-tools · create_page, addressed by (rootId, path), no guard', () => {
+    expectRecordRow({
+      nazwa: 'create_page',
+      opClass: 'write',
+      channels: ALL_DIRECT,
+      efekty: PAGE_EFFECTS,
+      idempotencja: false,
+      opisTresci: 'literal',
+      kodyBledow: ['PAGE_EXISTS', 'ROOT_NOT_FOUND', 'VALIDATION'],
+      narzedzia: { internal: ['page-tools-create-page'], mcp: ['page-tools-create-page'] },
+    });
+    expect(Object.keys(CATALOG.require('create_page').inputSchema).sort()).toEqual(['content', 'path', 'rootId', 'title']);
+    expect(required('create_page', 'rootId') && required('create_page', 'path')).toBe(true);
+    // `guard: n/d` — the path collision is the guard; no expectedHash.
+    expect(CATALOG.require('create_page').inputSchema).not.toHaveProperty('expectedHash');
+  });
+
+  it('[entity:update-page] update_page: project, direct, all four channels direct, file/db/ui-notify, conditionally idempotent, literal+diff, codes PAGE_CONFLICT, ROOT_NOT_FOUND, INVALID_ARGUMENT, FIND_NOT_FOUND, MATCH_COUNT_MISMATCH, ANCHOR_LOSS, VALIDATION, rendered by page-tools · update_page, required guard', () => {
+    expectRecordRow({
+      nazwa: 'update_page',
+      opClass: 'write',
+      channels: ALL_DIRECT,
+      efekty: PAGE_EFFECTS,
+      idempotencja: 'conditional',
+      opisTresci: 'literal+diff',
+      kodyBledow: ['PAGE_CONFLICT', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'FIND_NOT_FOUND', 'MATCH_COUNT_MISMATCH', 'ANCHOR_LOSS', 'VALIDATION'],
+      narzedzia: { internal: ['page-tools-update-page'], mcp: ['page-tools-update-page'] },
+    });
+    expect(required('update_page', 'rootId') && required('update_page', 'path')).toBe(true);
+    expect(required('update_page', 'expectedHash')).toBe(true);
+    // The two content descriptions are both offered, each optional: `body` (+ `frontmatter`) or `textEdits`.
+    for (const key of ['body', 'frontmatter', 'textEdits']) expect(required('update_page', key), key).toBe(false);
+  });
+
+  it('[entity:delete-page] delete_page: project, direct, all four channels direct, file/db/ui-notify, idempotent, no content input, codes ROOT_NOT_FOUND, PAGE_CONFLICT, VALIDATION, rendered by page-tools · delete_page, optional guard', () => {
+    expectRecordRow({
+      nazwa: 'delete_page',
+      opClass: 'write',
+      channels: ALL_DIRECT,
+      efekty: PAGE_EFFECTS,
+      idempotencja: true,
+      opisTresci: 'n/a',
+      kodyBledow: ['ROOT_NOT_FOUND', 'PAGE_CONFLICT', 'VALIDATION'],
+      narzedzia: { internal: ['page-tools-delete-page'], mcp: ['page-tools-delete-page'] },
+    });
+    expect(Object.keys(CATALOG.require('delete_page').inputSchema).sort()).toEqual(['expectedHash', 'path', 'rootId']);
+    // `guard: opcjonalny`.
+    expect(required('delete_page', 'expectedHash')).toBe(false);
+  });
+
+  it('[entity:move-page] move_page: project, direct, all four channels direct, file/db/ui-notify, not idempotent, no content input, codes PAGE_CONFLICT, PAGE_EXISTS, NOT_FOUND, ROOT_NOT_FOUND, INVALID_ARGUMENT, VALIDATION, rendered by page-tools · move_page, addressed by (rootId, from → to), required guard', () => {
+    expectRecordRow({
+      nazwa: 'move_page',
+      opClass: 'write',
+      channels: ALL_DIRECT,
+      efekty: PAGE_EFFECTS,
+      idempotencja: false,
+      opisTresci: 'n/a',
+      kodyBledow: ['PAGE_CONFLICT', 'PAGE_EXISTS', 'NOT_FOUND', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'VALIDATION'],
+      narzedzia: { internal: ['page-tools-move-page'], mcp: ['page-tools-move-page'] },
+    });
+    expect(Object.keys(CATALOG.require('move_page').inputSchema).sort()).toEqual(['expectedHash', 'from', 'rootId', 'to']);
+    for (const key of ['rootId', 'from', 'to', 'expectedHash']) expect(required('move_page', key), key).toBe(true);
+  });
+
+  it('[entity:update-sections] update_sections: project, direct, all four channels direct, file/db/ui-notify, conditionally idempotent, literal+diff, codes SECTION_NOT_FOUND, INVALID_ARGUMENT, FIND_NOT_FOUND, MATCH_COUNT_MISMATCH, ANCHOR_LOSS, ANCHOR_DUPLICATE, INDEX_STALE, PAGE_CONFLICT, ROOT_NOT_FOUND, VALIDATION, rendered by page-tools · update_sections, addressed by anchor, a batch under one required guard', () => {
+    expectRecordRow({
+      nazwa: 'update_sections',
+      opClass: 'write',
+      channels: ALL_DIRECT,
+      efekty: PAGE_EFFECTS,
+      idempotencja: 'conditional',
+      opisTresci: 'literal+diff',
+      kodyBledow: [
+        'SECTION_NOT_FOUND',
+        'INVALID_ARGUMENT',
+        'FIND_NOT_FOUND',
+        'MATCH_COUNT_MISMATCH',
+        'ANCHOR_LOSS',
+        'ANCHOR_DUPLICATE',
+        'INDEX_STALE',
+        'PAGE_CONFLICT',
+        'ROOT_NOT_FOUND',
+        'VALIDATION',
+      ],
+      narzedzia: { internal: ['page-tools-update-sections'], mcp: ['page-tools-update-sections'] },
+    });
+    // Addressed by anchor — no rootId, no path: the index resolves both.
+    const shape = z.object(CATALOG.require('update_sections').inputSchema as z.ZodRawShape);
+    expect(Object.keys(CATALOG.require('update_sections').inputSchema).sort()).toEqual(['dropAnchors', 'edits', 'expectedHash']);
+    expect(shape.safeParse({ expectedHash: 'h', edits: [{ anchor: 'a', action: 'rename', heading: 'H' }, { anchor: 'b', action: 'delete' }] }).success).toBe(true);
+    expect(shape.safeParse({ expectedHash: 'h', edits: [] }).success).toBe(false);
+    expect(shape.safeParse({ edits: [{ anchor: 'a', action: 'delete' }] }).success).toBe(false);
+  });
+
+  const uiRouteOnly = (): Record<ChannelName, Cell> => ({
+    internal: { kind: 'na', reason: 'kod renderuje operację wyłącznie trasą REST interfejsu, a katalog operacji kodu jej nie deklaruje' },
+    cli: { kind: 'na', reason: 'brak komendy `c4s`; kod renderuje operację wyłącznie trasą REST interfejsu' },
+    mcp: { kind: 'na', reason: 'kod renderuje operację wyłącznie trasą REST interfejsu, a katalog operacji kodu jej nie deklaruje' },
+    rest: D,
+  });
+
+  it('[entity:get-todo-counts] get_todo_counts: project, direct, internal/cli/mcp n/a with the record\'s reasons, rest direct, no effects, idempotent, no codes, no renderings, no target', () => {
+    expectRecordRow({
+      nazwa: 'get_todo_counts',
+      opClass: 'read',
+      channels: uiRouteOnly(),
+      efekty: ['none'],
+      idempotencja: true,
+      opisTresci: undefined,
+      kodyBledow: [],
+      narzedzia: {},
+    });
+    expect(CATALOG.require('get_todo_counts').inputSchema).toEqual({});
+  });
+
+  it('[entity:list-todos] list_todos: project, direct, internal/cli/mcp n/a with the record\'s reasons, rest direct, no effects, idempotent, no codes, no renderings, the whole project at once (no window parameters)', () => {
+    expectRecordRow({
+      nazwa: 'list_todos',
+      opClass: 'read',
+      channels: uiRouteOnly(),
+      efekty: ['none'],
+      idempotencja: true,
+      opisTresci: undefined,
+      kodyBledow: [],
+      narzedzia: {},
+    });
+    // No window and no response budget: no limit/offset to pass.
+    expect(CATALOG.require('list_todos').inputSchema).toEqual({});
+  });
+
+  it('[entity:get-page-link-counts] get_page_link_counts: project, direct, internal/cli/mcp n/a with the record\'s reasons, rest direct, no effects, idempotent, no codes, no renderings, no target', () => {
+    expectRecordRow({
+      nazwa: 'get_page_link_counts',
+      opClass: 'read',
+      channels: uiRouteOnly(),
+      efekty: ['none'],
+      idempotencja: true,
+      opisTresci: undefined,
+      kodyBledow: [],
+      narzedzia: {},
+    });
+    expect(CATALOG.require('get_page_link_counts').inputSchema).toEqual({});
+  });
+
+  it('[entity:list-page-links] list_page_links: project, direct, internal/cli/mcp n/a with the record\'s reasons, rest direct, no effects, idempotent, no codes, no renderings, the whole project at once (no window parameters)', () => {
+    expectRecordRow({
+      nazwa: 'list_page_links',
+      opClass: 'read',
+      channels: uiRouteOnly(),
+      efekty: ['none'],
+      idempotencja: true,
+      opisTresci: undefined,
+      kodyBledow: [],
+      narzedzia: {},
+    });
+    expect(CATALOG.require('list_page_links').inputSchema).toEqual({});
+  });
+
+  it('[entity:search-link-targets] search_link_targets: project, direct, internal/cli/mcp via search_pages with the record\'s reasons, rest direct, no effects, idempotent, no codes, no renderings, at most 50 candidates', () => {
+    const viaSearch = (reason: string): Cell => ({ kind: 'via', operation: 'search_pages', reason });
+    const agentReason =
+      'via `search_pages` — podpowiadanie pod kursor jest potrzebą edytora, a agent adresuje strony pełną ścieżką i sięga po `pathInclude`';
+    expectRecordRow({
+      nazwa: 'search_link_targets',
+      opClass: 'read',
+      channels: {
+        internal: viaSearch(agentReason),
+        cli: viaSearch(
+          'via `search_pages` — podpowiadanie pod kursor jest potrzebą edytora; w terminalu stronę znajduje się wyszukiwaniem stron zawężonym po ścieżce (`pathInclude`)',
+        ),
+        mcp: viaSearch(agentReason),
+        rest: D,
+      },
+      efekty: ['none'],
+      idempotencja: true,
+      opisTresci: undefined,
+      kodyBledow: [],
+      narzedzia: {},
+    });
+    // The operation it goes via is in the catalog.
+    expect(CATALOG.has('search_pages')).toBe(true);
+    // Top-N: 50 at most, never the whole map.
+    const shape = z.object(CATALOG.require('search_link_targets').inputSchema as z.ZodRawShape);
+    expect(shape.safeParse({ q: 'guides/', limit: 50, root: 'pages' }).success).toBe(true);
+    expect(shape.safeParse({ q: 'guides/', limit: 51 }).success).toBe(false);
+    expect(shape.safeParse({}).success).toBe(true);
+  });
+
+  it('[entity:get-static-file] get_static_file: project, direct, internal/cli/mcp n/a with the record\'s reasons, rest direct, no effects, idempotent, code ROOT_NOT_FOUND, no renderings, addressed by (rootId, path)', () => {
+    const agentReason = 'wynikiem są bajty pod render w iframe; treść spec agent czyta operacjami rdzenia M39';
+    expectRecordRow({
+      nazwa: 'get_static_file',
+      opClass: 'read',
+      channels: {
+        internal: { kind: 'na', reason: agentReason },
+        cli: { kind: 'na', reason: 'plik jest adresowalny wprost URL-em, więc komenda nie dodaje nic ponad pobranie bajtów' },
+        mcp: { kind: 'na', reason: agentReason },
+        rest: D,
+      },
+      efekty: ['none'],
+      idempotencja: true,
+      opisTresci: undefined,
+      kodyBledow: ['ROOT_NOT_FOUND'],
+      narzedzia: {},
+    });
+    expect(Object.keys(CATALOG.require('get_static_file').inputSchema).sort()).toEqual(['path', 'rootId']);
+    expect(required('get_static_file', 'rootId') && required('get_static_file', 'path')).toBe(true);
+  });
+
+  it('none of the six read rows is a tool name on any server the profile gate could be asked about', () => {
+    // The rows are `read`; were a tool to carry one of these names the gate would
+    // classify it by this row. No MCP rendering exists (`narzedzia: []`).
+    for (const name of ['get_todo_counts', 'list_todos', 'get_page_link_counts', 'list_page_links', 'search_link_targets', 'get_static_file']) {
+      expect(pageTools.has(name), name).toBe(false);
+      expect(CATALOG.require(name).renderings, name).toBeUndefined();
+    }
   });
 });

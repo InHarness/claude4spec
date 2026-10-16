@@ -993,13 +993,20 @@ export function registerCoreOperations(): void {
   // class of a channel, not a promise that a command exists. Fifteen other
   // operations are in the same position, and 0.2.13's L14 command surface is
   // read-only by design.
+  //
+  // 2.1.26 — each row matches its `spec-operation` record (`create-page`,
+  // `update-page`, `delete-page`, `move-page`, `update-sections`): `errorCodes`
+  // is the record's `kodyBledow`, each code once (no shared base plus extras),
+  // `idempotent` its `idempotencja` (`warunkowa` → `'conditional'`), and
+  // `renderings` its `narzedzia` — the `page-tools` tool of the same name in
+  // both agentic channels.
 
   const pageWrite = (
     name: string,
     summary: string,
     inputSchema: z.ZodRawShape,
-    idempotent: boolean,
-    extraCodes: readonly string[],
+    idempotent: boolean | 'conditional',
+    errorCodes: readonly string[],
     contentInput: ContentInputMode,
   ): OperationDeclaration => ({
     name,
@@ -1008,7 +1015,7 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'write',
     inputSchema,
-    errorCodes: ['VALIDATION', ...extraCodes],
+    errorCodes,
     // `ui-notify` is not decoration: the write is labelled through M40's write
     // token and its reactions are driven to completion before the caller is
     // answered, which is what re-indexes the page and pushes it to open editors.
@@ -1016,6 +1023,7 @@ export function registerCoreOperations(): void {
     contentInput,
     idempotent,
     channels: fullParity(),
+    renderings: { internal: [`page-tools.${name}`], mcp: [`page-tools.${name}`] },
   });
 
   /**
@@ -1057,11 +1065,12 @@ export function registerCoreOperations(): void {
     pageWrite(
       'create_page',
       'Create a page that does not exist yet. Refuses PAGE_EXISTS rather than overwriting — the distinction update_page deliberately does not make.',
-      // CreatePageRequest; answers CreatePageResponse { rootId, path, hash, version, anchors } (2.1.23).
+      // CreatePageRequest; REST answers CreatePageResponse { rootId, path, hash, version, anchors } (2.1.23),
+      // the `create_page` tool the same plus the settled `content` (2.1.26).
       { rootId: z.string(), path: z.string(), content: z.string().optional(), title: z.string().optional() },
       // A second call with the same address is PAGE_EXISTS, not a no-op.
       false,
-      ['PAGE_EXISTS', 'ROOT_NOT_FOUND'],
+      ['PAGE_EXISTS', 'ROOT_NOT_FOUND', 'VALIDATION'],
       // There is nothing on the page yet to substitute fragments of.
       'literal',
     ),
@@ -1070,13 +1079,11 @@ export function registerCoreOperations(): void {
   /**
    * 0.2.37 — TWO modes, and the row has to carry both.
    *
-   * `idempotent` stays `true` and is now a half-truth the summary has to
-   * repair: the literal branch is idempotent, the differential branch is not
-   * (replaying it answers `FIND_NOT_FOUND`, the `delete` class of behaviour).
-   * The field is one boolean per operation and the honest reading of it is "the
-   * operation as declared can be repeated", which the default mode can. The
-   * asymmetry is spelt out in the summary and in every channel's description
-   * rather than hidden behind a flag that has no third value.
+   * 2.1.26 — `idempotent: 'conditional'`, the record's `warunkowa`: the literal
+   * branch is idempotent by content, the differential branch is not (replaying
+   * it answers `FIND_NOT_FOUND`, the `delete` class of behaviour). Until the
+   * field had a third value this row said `true` and left the summary to repair
+   * the half-truth.
    *
    * This is also the first row whose `rest` cell renders onto TWO routes —
    * `PUT` for the literal mode, `PATCH` for the differential one. See the
@@ -1095,22 +1102,37 @@ export function registerCoreOperations(): void {
         dropAnchors: z.array(z.string()).optional(),
         ...expectedHash,
       },
-      true,
+      'conditional',
       // ASSUMPTION:dev-0101 — an unknown root is ROOT_NOT_FOUND (the row: NOT_FOUND).
       // ASSUMPTION:m02u-dev-0001 — the row's ROOT_NOT_WRITABLE has no producer in the page write path.
       // No NOT_FOUND for a missing page: the literal mode creates it (M02 `gj2vdsjm`, 2.1.14).
-      ['PAGE_CONFLICT', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'FIND_NOT_FOUND', 'MATCH_COUNT_MISMATCH', 'ANCHOR_LOSS'],
+      ['PAGE_CONFLICT', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'FIND_NOT_FOUND', 'MATCH_COUNT_MISMATCH', 'ANCHOR_LOSS', 'VALIDATION'],
       'literal+diff',
     ),
   );
 
+  /**
+   * 2.1.26 — the record's guard is `opcjonalny`, and the row carries it as an
+   * optional `expectedHash`: the REST rendering takes it (query or body) and a
+   * mismatch is `PAGE_CONFLICT`. The `delete_page` tool withdrew the parameter
+   * this window, so in the agentic channels the guard does not run — a property
+   * of the rendering, not of the operation. A page that is not there is a
+   * success with `deleted: false`, never a refusal, hence `idempotent: true`.
+   */
   CATALOG.register(
     pageWrite(
       'delete_page',
       'Delete a page. The content stays recoverable through file_version — the delete authors a tombstone rather than dropping the history.',
-      { rootId: z.string(), path: z.string() },
+      {
+        rootId: z.string(),
+        path: z.string(),
+        expectedHash: z
+          .string()
+          .optional()
+          .describe('Optional. sha256 of the file as last read; a mismatch → PAGE_CONFLICT carrying the current hash.'),
+      },
       true,
-      ['ROOT_NOT_FOUND'],
+      ['ROOT_NOT_FOUND', 'PAGE_CONFLICT', 'VALIDATION'],
       // A delete names a page and carries no content at all.
       'n/a',
     ),
@@ -1134,7 +1156,9 @@ export function registerCoreOperations(): void {
       'Move a page to another path within the SAME root — one call covers both renaming a file and moving it to a different directory. The content is never read or re-serialized, so the hash is unchanged; citations of the old path are rewritten afterwards, each as its own write. NOT idempotent: a replay answers NOT_FOUND.',
       { rootId: z.string(), from: z.string(), to: z.string(), ...expectedHash },
       false,
-      ['PAGE_CONFLICT', 'PAGE_EXISTS', 'NOT_FOUND', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'NOT_IMPLEMENTED'],
+      // ASSUMPTION:dev-2605 — the record's `kodyBledow`, which does not list the
+      // NOT_IMPLEMENTED the tool's `logic` names for a root without a record store.
+      ['PAGE_CONFLICT', 'PAGE_EXISTS', 'NOT_FOUND', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'VALIDATION'],
       'n/a',
     ),
   );
@@ -1156,29 +1180,159 @@ export function registerCoreOperations(): void {
         ).min(1),
         dropAnchors: z.array(z.string()).optional(),
       },
-      // `replace` and `delete` are idempotent; `append` and `insert_after` are
-      // not, so the operation as a whole cannot claim to be.
+      // 2.1.26 — `'conditional'` (the record's `warunkowa`): `replace` is
+      // idempotent by content, `rename` by heading text, `delete` with
+      // SECTION_NOT_FOUND on a repeat; `append`, `insert_after` and `edit` are
+      // not, and a batch is as idempotent as the product of its edits.
       //
       // `dropAnchors` does not change that: a superset of what a repeat call
       // actually drops is legal precisely so the idempotent actions stay
       // idempotent when the declaration is replayed verbatim.
-      false,
+      'conditional',
       [
         'SECTION_NOT_FOUND',
-        'PAGE_CONFLICT',
-        'ROOT_NOT_FOUND',
         'INVALID_ARGUMENT',
-        'ANCHOR_LOSS',
-        'ANCHOR_DUPLICATE',
         'FIND_NOT_FOUND',
         'MATCH_COUNT_MISMATCH',
+        'ANCHOR_LOSS',
+        'ANCHOR_DUPLICATE',
         // 0.2.77 — the whole batch is refused before any edit reaches the file
         // when the addressed page's section projection is marked stale. A write
         // that takes its coordinates from a projection that did not recompute
         // lands in the wrong place, which is the one outcome worth refusing for.
         'INDEX_STALE',
+        'PAGE_CONFLICT',
+        'ROOT_NOT_FOUND',
+        'VALIDATION',
       ],
       'literal+diff',
+    ),
+  );
+
+  // ── M08 TODOs / M14 Page Links / M30 Static HTML — the UI's read routes ────
+  //
+  // 2.1.26 — five operations whose only rendering is a REST route the UI calls
+  // (`GET /api/todos`, `/api/todos/counts`, `/api/page-links`,
+  // `/api/page-links/counts`, `GET /api/static/:rootId/*`), plus the `@`
+  // autocomplete, which the agentic channels and the CLI reach through
+  // `search_pages`. Each row is its `spec-operation` record: project, direct,
+  // no side effects, idempotent, `rest: direct`, the other three cells `n/a` or
+  // `via` with the record's `powody` verbatim, `errorCodes` its `kodyBledow`
+  // (`n/d` → none), no `renderings` (`narzedzia: []`). Declared as `read`, so no
+  // profile is admitted anything new: no MCP tool carries any of these names.
+
+  /** A read rendered by the UI's REST route alone, with the record's three reasons. */
+  const restOnlyRead = (
+    name: string,
+    summary: string,
+    inputSchema: z.ZodRawShape,
+    errorCodes: readonly string[],
+    reasons: { internal: string; cli: string; mcp: string },
+  ): OperationDeclaration => ({
+    ...coreRead(name, summary, inputSchema, errorCodes),
+    channels: { internal: na(reasons.internal), cli: na(reasons.cli), mcp: na(reasons.mcp), rest: direct() },
+  });
+
+  /**
+   * The reasons M08 and M14 give for the three cells a UI route leaves empty —
+   * verbatim, although "the code's operation catalogue does not declare it"
+   * stops being true with these very rows. ASSUMPTION:dev-2606
+   */
+  const uiRouteOnly = {
+    internal: 'kod renderuje operację wyłącznie trasą REST interfejsu, a katalog operacji kodu jej nie deklaruje',
+    cli: 'brak komendy `c4s`; kod renderuje operację wyłącznie trasą REST interfejsu',
+    mcp: 'kod renderuje operację wyłącznie trasą REST interfejsu, a katalog operacji kodu jej nie deklaruje',
+  };
+
+  // M08 — `GET /api/todos/counts`: `{ byPath, total }`, keyed `${rootId}:${relPath}`.
+  CATALOG.register(
+    restOnlyRead(
+      'get_todo_counts',
+      'Count the TODO markers per root and per page, for the page-tree badges.',
+      {},
+      [],
+      uiRouteOnly,
+    ),
+  );
+
+  // M08 — `GET /api/todos`: every marker of the project at once, each with the
+  // anchor of the section it stands in — a write address for M06's operations.
+  CATALOG.register(
+    restOnlyRead(
+      'list_todos',
+      'List every TODO marker of the specification pages, each with the address of the section it stands in — all at once, no window, no response budget.',
+      {},
+      [],
+      uiRouteOnly,
+    ),
+  );
+
+  // M14 — `GET /api/page-links/counts`: the counters alone, cheap on purpose
+  // (badge, invalidation on `pageLinks:changed`); the list is `list_page_links`.
+  CATALOG.register(
+    restOnlyRead(
+      'get_page_link_counts',
+      'Counts of broken links, unresolved mentions and all links between pages — the counters alone, never the list.',
+      {},
+      [],
+      uiRouteOnly,
+    ),
+  );
+
+  // M14 — `GET /api/page-links`: the whole project's link maps at once, keys
+  // composite `${rootId}:${relPath}`; never page content.
+  CATALOG.register(
+    restOnlyRead(
+      'list_page_links',
+      'The link map between pages with reverse links and unresolved mentions, for the whole project at once — no window, no response budget, never page content.',
+      {},
+      [],
+      uiRouteOnly,
+    ),
+  );
+
+  /**
+   * M14 — `GET /api/page-links/autocomplete`: top-N candidates for an `@` prefix,
+   * 10 by default and 50 at most, over self ∪ the source root's `linkTargets`;
+   * an unknown source root is skipped, not refused. The agentic channels and the
+   * CLI reach the same need through `search_pages` with `pathInclude`.
+   */
+  CATALOG.register({
+    ...coreRead(
+      'search_link_targets',
+      'Suggest link targets for the path prefix typed after `@` in the editor — the top N candidates (10 by default, at most 50), never the whole map.',
+      {
+        q: z.string().optional().describe('The path prefix typed after `@`.'),
+        limit: z.number().int().positive().max(50).optional().describe('How many candidates — 10 when omitted, at most 50.'),
+        root: z.string().optional().describe('The source page\'s root, searched first; an unknown one is skipped, not refused.'),
+      },
+      [],
+    ),
+    channels: {
+      internal: via('search_pages', 'via `search_pages` — podpowiadanie pod kursor jest potrzebą edytora, a agent adresuje strony pełną ścieżką i sięga po `pathInclude`'),
+      cli: via('search_pages', 'via `search_pages` — podpowiadanie pod kursor jest potrzebą edytora; w terminalu stronę znajduje się wyszukiwaniem stron zawężonym po ścieżce (`pathInclude`)'),
+      mcp: via('search_pages', 'via `search_pages` — podpowiadanie pod kursor jest potrzebą edytora, a agent adresuje strony pełną ścieżką i sięga po `pathInclude`'),
+      rest: direct(),
+    },
+  });
+
+  /**
+   * M30 — `GET /api/static/:rootId/*`: the raw bytes of a file inside a root with
+   * a facade, for an iframe. A root outside that set (unknown, or `sidebar:
+   * hidden`) is ROOT_NOT_FOUND with no fallback to `pages`; an empty path, one
+   * that leaves the root's `dir`, and a missing file are refused without a code.
+   */
+  CATALOG.register(
+    restOnlyRead(
+      'get_static_file',
+      'The raw bytes of a file inside a root with a facade, so the UI can render it in an iframe.',
+      { rootId: z.string(), path: z.string() },
+      ['ROOT_NOT_FOUND'],
+      {
+        internal: 'wynikiem są bajty pod render w iframe; treść spec agent czyta operacjami rdzenia M39',
+        cli: 'plik jest adresowalny wprost URL-em, więc komenda nie dodaje nic ponad pobranie bajtów',
+        mcp: 'wynikiem są bajty pod render w iframe; treść spec agent czyta operacjami rdzenia M39',
+      },
     ),
   );
 

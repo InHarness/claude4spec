@@ -187,8 +187,14 @@ export interface OperationDeclaration {
    * Whether repeating the call with the same input leaves the same state.
    * Batch operations additionally document partial-success/per-item semantics
    * in their `summary` — they are not transactional.
+   *
+   * 2.1.26 — the record's `idempotencja` has three values, and `'conditional'`
+   * is its `warunkowa`: idempotent in one input mode and not in another
+   * (`update_page`: literal yes, differential no), the condition stated in the
+   * record's `powody.idempotencja`. Before, such a row had to pick a boolean
+   * and repair the half-truth in its summary.
    */
-  readonly idempotent: boolean;
+  readonly idempotent: boolean | 'conditional';
   /**
    * REQUIRED of every operation whose `sideEffects` include `'file'`. See
    * {@link ContentInputMode} — an omission is a declaration error, not a
@@ -206,8 +212,8 @@ export interface OperationDeclaration {
    * more than one rendering in a channel, under different names — `describe_types`
    * renders in `mcp` both as `c4s-reader.describe_types` and as
    * `entity-tools.describe_entity_type`. Absent on rows whose record this window
-   * does not carry; `cli` and `rest` have no entry because their renderings are
-   * not MCP tools.
+   * does not carry, and on rows whose record names no tool (`narzedzia: []`);
+   * `cli` and `rest` have no entry because their renderings are not MCP tools.
    */
   readonly renderings?: Readonly<Partial<Record<'internal' | 'mcp', readonly string[]>>>;
   /**

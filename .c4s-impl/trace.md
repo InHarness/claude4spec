@@ -60,3 +60,19 @@
 - entity-tools-delete-entities → src/server/mcp/entity-tools.ts (`delete_entities`); test src/server/mcp/entity-tools.test.ts
 - endpoint-tools-link-dto → plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/mcp.ts (`link_dto`) + backend/link-dto.ts (`linkDto`); test plugins/c4s-plugin-api-contracts/test/backend/endpoint-tools.test.ts
 - endpoint-tools-unlink-dto → plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/mcp.ts (`unlink_dto`) + backend/link-dto.ts (`unlinkDto`); test plugins/c4s-plugin-api-contracts/test/backend/endpoint-tools.test.ts
+- create-page → src/server/operations/core-operations.ts (`create_page` row, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- update-page → src/server/operations/core-operations.ts (`update_page` row, idempotent `'conditional'`); test src/server/operations/catalog.test.ts
+- delete-page → src/server/operations/core-operations.ts (`delete_page` row, optional `expectedHash`); test src/server/operations/catalog.test.ts
+- move-page → src/server/operations/core-operations.ts (`move_page` row); test src/server/operations/catalog.test.ts
+- update-sections → src/server/operations/core-operations.ts (`update_sections` row, idempotent `'conditional'`); test src/server/operations/catalog.test.ts
+- get-todo-counts → src/server/operations/core-operations.ts (`get_todo_counts` row; owner `GET /api/todos/counts` in src/server/routes/todos.ts); test src/server/operations/catalog.test.ts
+- list-todos → src/server/operations/core-operations.ts (`list_todos` row; owner `GET /api/todos` in src/server/routes/todos.ts); test src/server/operations/catalog.test.ts
+- get-page-link-counts → src/server/operations/core-operations.ts (`get_page_link_counts` row; owner `GET /api/page-links/counts` in src/server/routes/page-links.ts); test src/server/operations/catalog.test.ts
+- list-page-links → src/server/operations/core-operations.ts (`list_page_links` row; owner `GET /api/page-links` in src/server/routes/page-links.ts); test src/server/operations/catalog.test.ts
+- search-link-targets → src/server/operations/core-operations.ts (`search_link_targets` row; owner `GET /api/page-links/autocomplete` in src/server/routes/page-links.ts); test src/server/operations/catalog.test.ts
+- get-static-file → src/server/operations/core-operations.ts (`get_static_file` row; owner `GET /api/static/:rootId/*` in src/server/routes/static.ts); test src/server/operations/catalog.test.ts
+- page-tools-create-page → src/server/mcp/page-tools.ts (`create_page`) + src/server/services/page-write.ts (`createPage` answers the settled `content`); test src/server/mcp/page-tools.facade-roots.test.ts
+- page-tools-update-page → src/server/mcp/page-tools.ts (`update_page`); test src/server/mcp/page-tools.test.ts
+- page-tools-delete-page → src/server/mcp/page-tools.ts (`delete_page`); test src/server/mcp/page-tools.test.ts
+- page-tools-move-page → src/server/mcp/page-tools.ts (`move_page`); test src/server/mcp/page-tools.test.ts
+- page-tools-update-sections → src/server/mcp/page-tools.ts (`update_sections`) + src/server/services/page-write.ts (`updateSections` refuses `content` on `delete`); test src/server/mcp/page-tools.test.ts
