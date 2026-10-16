@@ -98,8 +98,11 @@ describe('consolidate — overlay', () => {
     const host = registry.consolidate(config, overlayOf([mod('glossary')]));
 
     const part = host.partition();
+    // 2.1.26 — the identity carries no ordering field (sidebar order is the
+    // frontend's `sidebarTab.order` alone), so every set is listed by `type`:
+    // registration order (endpoint, dto, ac) does not leak into the payload.
     expect(part).toEqual({
-      active: ['endpoint', 'ac'],
+      active: ['ac', 'endpoint'],
       inactive: ['dto', 'glossary'],
       unknown: ['ghost'],
     });

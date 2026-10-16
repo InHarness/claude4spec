@@ -1,5 +1,5 @@
 {
-  "iteration": 74,
+  "iteration": 78,
   "units": [
     {
       "id": "u01-version-diff-runtime",
@@ -392,9 +392,11 @@
             "section:z7l89jhf"
           ],
           "status": "implemented",
-          "rounds": 1,
+          "rounds": 2,
           "partial": 0,
-          "uncovered": [],
+          "uncovered": [
+            "system:project-host-consolidate-order"
+          ],
           "only": []
         },
         {
@@ -422,15 +424,15 @@
           "only": []
         }
       ],
-      "startCommit": "3d42f73cf9c99873911397b873391bb1067e5de9",
-      "baseCommit": "3d42f73cf9c99873911397b873391bb1067e5de9",
+      "startCommit": "b98c0a6b7c0f248cc981b75aa31a5d0039c114d8",
+      "baseCommit": "b98c0a6b7c0f248cc981b75aa31a5d0039c114d8",
       "rounds": {
         "review": 0,
         "unit": 1
       },
       "jobs": [],
-      "lastUncovered": 0,
-      "only": []
+      "only": [],
+      "lastUncovered": 0
     },
     {
       "id": "u06-field-content-op",
@@ -1215,7 +1217,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "u13-plan-tools/p1-l3",
@@ -1246,21 +1248,26 @@
             "mark-plan-applied",
             "update-plan"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "system:discovery-core-architecture"
+          ],
+          "only": [
+            {
+              "slug": "system:discovery-core-architecture"
+            }
+          ]
         }
       ],
-      "startCommit": "df6687cc8950273a5482f2cf23636e1d54d906d4",
-      "baseCommit": "df6687cc8950273a5482f2cf23636e1d54d906d4",
+      "startCommit": "b98c0a6b7c0f248cc981b75aa31a5d0039c114d8",
+      "baseCommit": "b98c0a6b7c0f248cc981b75aa31a5d0039c114d8",
       "rounds": {
         "review": 0,
-        "unit": 1
+        "unit": 0
       },
       "jobs": [],
-      "lastUncovered": 0,
       "only": []
     },
     {
@@ -1667,7 +1674,7 @@
         }
       ],
       "wave": 2,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "u02-host-ui-kit/p1-l12-l12",
@@ -1680,21 +1687,26 @@
             "ac-diffview-z-pustym-propsem-hunks-renderuj",
             "ac-w-widoku-entityversionhistoryview-wers"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "ac-w-widoku-entityversionhistoryview-wers"
+          ],
+          "only": [
+            {
+              "slug": "ac-w-widoku-entityversionhistoryview-wers"
+            }
+          ]
         }
       ],
-      "startCommit": "bd98a2d89ddde42c57066ee1eb32b244e568ad8d",
-      "baseCommit": "bd98a2d89ddde42c57066ee1eb32b244e568ad8d",
+      "startCommit": "b98c0a6b7c0f248cc981b75aa31a5d0039c114d8",
+      "baseCommit": "b98c0a6b7c0f248cc981b75aa31a5d0039c114d8",
       "rounds": {
         "review": 0,
-        "unit": 1
+        "unit": 0
       },
       "jobs": [],
-      "lastUncovered": 0,
       "only": []
     },
     {
@@ -2199,7 +2211,7 @@
         }
       ],
       "wave": 3,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "u05-tag-errors-tagslist/p1-l2-l12",
@@ -2225,21 +2237,26 @@
             "update-tag",
             "reference-tools-update-tag"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "section:xfkinig4"
+          ],
+          "only": [
+            {
+              "slug": "section:xfkinig4"
+            }
+          ]
         }
       ],
-      "startCommit": "10a31d6f8604d8f6c754b15588d53092f67e5868",
-      "baseCommit": "10a31d6f8604d8f6c754b15588d53092f67e5868",
+      "startCommit": "b98c0a6b7c0f248cc981b75aa31a5d0039c114d8",
+      "baseCommit": "b98c0a6b7c0f248cc981b75aa31a5d0039c114d8",
       "rounds": {
         "review": 0,
-        "unit": 1
+        "unit": 0
       },
       "jobs": [],
-      "lastUncovered": 0,
       "only": []
     },
     {

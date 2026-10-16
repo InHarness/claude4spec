@@ -3,17 +3,8 @@
   "scope": {
     "kind": "unit",
     "id": "u04-display-order-retire",
-    "base": "3d42f73cf9c99873911397b873391bb1067e5de9"
+    "base": "b98c0a6b7c0f248cc981b75aa31a5d0039c114d8"
   },
-  "findings": [
-    {
-      "id": "rev-0001",
-      "file": "src/client/components/release/DeltaSection.tsx",
-      "line": 8,
-      "blocking": false,
-      "reason": "registrySectionOrder() now inherits listAvailable()'s alphabetical-by-type order, so the release delta sections visibly reorder (AC, Database Tables, Design Systems, Diagrams, DTOs, Endpoints, ... instead of Endpoints/DTOs first). The doc comment still opens with 'in REGISTRY registration order (spec m17uidet01)', which the code no longer does: it is neither registration order nor the sidebarTab.order the goal names as the one surviving ordering. Either order the sections by the modules' sidebarTab.order (with a type tiebreak for tabless types) so they match ELEMENTS, or fix the comment to say they are listed by type. The same alphabetical fallback reaches Settings → Entities options and the system-prompt type unions; these are harmless but are a user-visible change that the decisions log records only for the host lists.",
-      "portion": "u04-display-order-retire/p1-l2-l2"
-    }
-  ],
+  "findings": [],
   "deviations": []
 }
