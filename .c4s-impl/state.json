@@ -1,5 +1,5 @@
 {
-  "iteration": 84,
+  "iteration": 87,
   "units": [
     {
       "id": "u01-version-diff-runtime",
@@ -2205,7 +2205,7 @@
         }
       ],
       "wave": 3,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "u05-tag-errors-tagslist/p1-l2-l12",
@@ -2231,27 +2231,24 @@
             "update-tag",
             "reference-tools-update-tag"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [
             "section:xfkinig4"
           ],
-          "only": [
-            {
-              "slug": "section:xfkinig4"
-            }
-          ]
+          "only": []
         }
       ],
-      "startCommit": "b98c0a6b7c0f248cc981b75aa31a5d0039c114d8",
-      "baseCommit": "b98c0a6b7c0f248cc981b75aa31a5d0039c114d8",
+      "startCommit": "69474e68bd054936c45c3f3f0c6a23645596d5e3",
+      "baseCommit": "69474e68bd054936c45c3f3f0c6a23645596d5e3",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": [],
-      "only": []
+      "only": [],
+      "lastUncovered": 0
     },
     {
       "id": "u11-external-mcp-surface",

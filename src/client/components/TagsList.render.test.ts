@@ -61,29 +61,39 @@ describe('TagsList — rows through EntityListRow slots', () => {
     rowProps.length = 0;
     const html = renderToStaticMarkup(createElement(TagsList));
 
-    expect(rowProps).toHaveLength(1);
-    const props = rowProps[0]!;
+    // One row per tag is a property of the MARKUP, not of how many times the
+    // renderer invoked the row component: a renderer may call a function
+    // component more than once for a single committed row (system run r1 saw
+    // two captures for one tag), so the capture list is not a row count.
+    const count = (needle: string) => html.split(needle).length - 1;
+    expect(count('aria-label="Change tag color"')).toBe(TAGS.length);
+    expect(count('2 endpoints · 1 DTO')).toBe(TAGS.length);
+    expect(count('>Auth<')).toBe(TAGS.length);
 
-    // `icon` takes a LucideIcon only — the dot does not go there.
-    expect(props.icon).toBeUndefined();
+    // Every invocation the row component received carries the same slot split.
+    expect(rowProps.length).toBeGreaterThan(0);
+    for (const props of rowProps) {
+      // `icon` takes a LucideIcon only — the dot does not go there.
+      expect(props.icon).toBeUndefined();
 
-    // `leading`: the colour dot, in the tag's colour.
-    expect(isValidElement(props.leading)).toBe(true);
-    const leading = markupOf(props.leading);
-    expect(leading).toContain('aria-label="Change tag color"');
-    expect(leading).toContain('background:#c45a3b');
-    expect(leading).not.toContain('Auth');
+      // `leading`: the colour dot, in the tag's colour.
+      expect(isValidElement(props.leading)).toBe(true);
+      const leading = markupOf(props.leading);
+      expect(leading).toContain('aria-label="Change tag color"');
+      expect(leading).toContain('background:#c45a3b');
+      expect(leading).not.toContain('Auth');
 
-    // `children`: the name (inline-editable), not the dot nor the counters.
-    const children = markupOf(props.children);
-    expect(children).toContain('Auth');
-    expect(children).not.toContain('Change tag color');
-    expect(children).not.toContain('2 endpoints');
+      // `children`: the name (inline-editable), not the dot nor the counters.
+      const children = markupOf(props.children);
+      expect(children).toContain('Auth');
+      expect(children).not.toContain('Change tag color');
+      expect(children).not.toContain('2 endpoints');
 
-    // `trailing`: the per-type counters, one per active type.
-    const trailing = markupOf(props.trailing as ReactElement);
-    expect(trailing).toContain('2 endpoints · 1 DTO');
-    expect(trailing).not.toContain('Auth');
+      // `trailing`: the per-type counters, one per active type.
+      const trailing = markupOf(props.trailing as ReactElement);
+      expect(trailing).toContain('2 endpoints · 1 DTO');
+      expect(trailing).not.toContain('Auth');
+    }
 
     // And the row itself renders all three, dot first, counters last.
     const dotAt = html.indexOf('Change tag color');

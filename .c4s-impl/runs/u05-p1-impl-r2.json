@@ -1,0 +1,12 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.26",
+  "unit": "u05-tag-errors-tagslist",
+  "portion": "u05-tag-errors-tagslist/p1-l2-l12",
+  "claimed": ["section:xfkinig4"],
+  "deviations": [],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

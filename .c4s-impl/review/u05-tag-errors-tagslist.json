@@ -3,15 +3,15 @@
   "scope": {
     "kind": "unit",
     "id": "u05-tag-errors-tagslist",
-    "base": "10a31d6f8604d8f6c754b15588d53092f67e5868"
+    "base": "69474e68bd054936c45c3f3f0c6a23645596d5e3"
   },
   "findings": [
     {
       "id": "rev-0001",
-      "file": "src/server/core/plugin-host/entities-router.ts",
-      "line": 36,
+      "file": "src/client/components/TagsList.render.test.ts",
+      "line": 66,
       "blocking": false,
-      "reason": "The `assertType` doc comment still says a deactivated type answers `INVALID_TYPE` (404) because 'the version/tag/collection routes are consumers'. After this diff the tag-assignment doors (POST/DELETE `/:type/:slug/tags`) use `assertTaggableType` → `400 VALIDATION`; only `GET /:type/:slug/tags` keeps `assertType`. The comment now contradicts the new guard 15 lines below — narrow it to the routes that still call `assertType` (version, collection, the tag read).",
+      "reason": "The new comment cites a workflow artefact ('system run r1 saw two captures for one tag') that means nothing to a future reader of the repo and will not exist outside this implementation loop. Keep the timeless rationale (a function component may be invoked more than once per committed row, so the capture list is not a row count) and drop the run reference. The double capture's root cause also stays unexplained (TagsList maps each tag to one TagRow → one EntityListRow), so the comment should not present it as established renderer behaviour beyond 'may'.",
       "portion": "u05-tag-errors-tagslist/p1-l2-l12"
     }
   ],
