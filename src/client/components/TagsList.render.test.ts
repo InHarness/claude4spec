@@ -45,9 +45,13 @@ vi.mock('../host-ui-kit/list/EntityListRow.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../host-ui-kit/list/EntityListRow.js')>();
   return {
     ...actual,
-    EntityListRow: (props: EntityListRowProps) => {
-      rowProps.push(props);
-      return createElement(actual.EntityListRow, props);
+    EntityListRow: (props?: EntityListRowProps) => {
+      // React's development build also calls a function component with NO
+      // arguments, outside rendering, to build a component stack for a warning
+      // raised beneath it (here: `Popover`'s `useLayoutEffect` on the server).
+      // That call is not a row, so only a call that received props is recorded.
+      if (props && typeof props === 'object') rowProps.push(props);
+      return createElement(actual.EntityListRow, props as EntityListRowProps);
     },
   };
 });
@@ -61,17 +65,13 @@ describe('TagsList — rows through EntityListRow slots', () => {
     rowProps.length = 0;
     const html = renderToStaticMarkup(createElement(TagsList));
 
-    // One row per tag is a property of the MARKUP, not of how many times the
-    // renderer invoked the row component: a renderer may call a function
-    // component more than once for a single committed row (system run r1 saw
-    // two captures for one tag), so the capture list is not a row count.
+    // One row per tag — in the markup, and in the rows the component was given.
     const count = (needle: string) => html.split(needle).length - 1;
     expect(count('aria-label="Change tag color"')).toBe(TAGS.length);
     expect(count('2 endpoints · 1 DTO')).toBe(TAGS.length);
     expect(count('>Auth<')).toBe(TAGS.length);
+    expect(rowProps).toHaveLength(TAGS.length);
 
-    // Every invocation the row component received carries the same slot split.
-    expect(rowProps.length).toBeGreaterThan(0);
     for (const props of rowProps) {
       // `icon` takes a LucideIcon only — the dot does not go there.
       expect(props.icon).toBeUndefined();
