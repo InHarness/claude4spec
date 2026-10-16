@@ -1853,11 +1853,16 @@ export function registerCoreOperations(): void {
    * `01ytpznn` records the missing external tool as an open item). The
    * `internal` reason is the record's `powody.internal`, verbatim. The service
    * answers the path, the hash and both ends of the window as resolved.
+   *
+   * 2.1.27 — the record's `zachowanie` drops the initial thread and the thread
+   * list from the operation: `create_brief` writes the brief file only, and
+   * answers no thread list. The top-level initial thread is opened by the
+   * REST route that composes this write with `createThreadForBrief`.
    */
   registerRow({
     name: 'create_brief',
     summary:
-      'Mint a brief — with a ready-made body (`content`, stored verbatim), or empty for a release window. Never runs an agent turn. Answers `{ briefPath, hash, fromReleaseName, toReleaseName }`.',
+      'Mint a brief file — with a ready-made body (`content`, stored verbatim), or empty for a release window. Writes the file only: never runs an agent turn, opens no thread. Answers `{ briefPath, hash, fromReleaseName, toReleaseName }`.',
     scope: 'project',
     mediation: 'direct',
     opClass: 'brief',
@@ -1903,8 +1908,10 @@ export function registerCoreOperations(): void {
      * the operation is what brings the artifact into being.
      */
     contentInput: 'literal',
-    // Every call mints a NEW brief and opens its initial thread; `suffix` is how
-    // a caller settles the slug collision that follows.
+    // Every call mints a NEW brief file; `suffix` is how a caller settles the
+    // slug collision that follows. 2.1.27 — the operation opens no thread: the
+    // initial thread is the REST route's composition (`POST /api/briefs`,
+    // M21 `47opytlw`), not part of `create_brief`.
     idempotent: false,
     channels: {
       internal: na(

@@ -8,3 +8,5 @@ unlink-dto → src/server/operations/core-operations.ts (row unlink_dto, rest di
 entity-tools-get-field-content → src/server/mcp/entity-tools.ts (get_field_content)
 c4s-reader-find-references → src/server/mcp/c4s-reader.ts (find_references) + src/server/operations/core-operations.ts (row find_references, mcp: c4s-reader.find_references)
 c4s-reader-check-consistency → src/server/mcp/c4s-reader.ts (check_consistency) + src/server/operations/core-operations.ts (row check_consistency, mcp: c4s-reader.check_consistency)
+create-brief → src/server/operations/core-operations.ts (row create_brief) + src/server/services/brief.ts (BriefService.createBrief — file only, no thread)
+post-api-briefs → src/server/routes/briefs.ts (POST /api/briefs, typed BriefCreateRequest → { data: BriefResponse }; composes createBrief + createThreadForBrief) + src/shared/entities.ts (BriefCreateRequest, BriefResponse)

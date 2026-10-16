@@ -412,13 +412,30 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u4-m21-brief-create-route/p1-l3-l4",
+          "layers": [
+            "L3",
+            "L4"
+          ],
+          "slugs": [
+            "create-brief",
+            "post-api-briefs"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "c3b239910b4d8f5fd9d05529b6587016fc0c8d7d",
+      "baseCommit": "c3b239910b4d8f5fd9d05529b6587016fc0c8d7d",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },
