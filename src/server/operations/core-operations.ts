@@ -2309,9 +2309,11 @@ export function registerCoreOperations(): void {
    * (a repeated link or unlink is a no-op, not a refusal); unlink without a
    * statusCode removes every binding of the pair in that relation. Addressed by
    * `(endpoint, dto)` with the relation; no content input (`n/a`) — the binding
-   * is fully determined by the identifiers. `rest` is `via` the generic host
-   * proxy, with the record's reason; `internal` and `mcp` render through the
-   * plugin's `endpoint-tools` server (`narzedzia`).
+   * is fully determined by the identifiers. 2.1.27 — `rest` is `direct`: the
+   * endpoint plugin's own resource routes `POST|DELETE /api/endpoints/:slug/dtos`
+   * reach the same functions, so the generic proxy is not their only road;
+   * `internal` and `mcp` render through the plugin's `endpoint-tools` server
+   * (`narzedzia`).
    */
   const DTO_LINK_SHAPE = {
     endpointSlug: z.string(),
@@ -2319,15 +2321,13 @@ export function registerCoreOperations(): void {
     relation: z.enum(['request', 'response', 'error']),
     statusCode: z.number().optional(),
   };
-  const DTO_LINK_REST_REASON =
-    'via `call_type_tool` — ogólne proxy hosta dla narzędzi typów; plugin nie wnosi własnego routera';
   const dtoLinkOverrides = (tool: string) => ({
     contentInput: 'n/a' as const,
     channels: {
       internal: direct(),
       cli: direct(),
       mcp: direct(),
-      rest: via('call_type_tool', DTO_LINK_REST_REASON),
+      rest: direct(),
     },
     renderings: { internal: [`endpoint-tools.${tool}`], mcp: [`endpoint-tools.${tool}`] },
   });

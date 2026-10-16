@@ -3,3 +3,6 @@ update-page → src/server/operations/core-operations.ts (row update_page) + src
 move-page → src/server/operations/core-operations.ts (row move_page) + src/server/services/page-write.ts (movePage, facadeRootIds) + src/server/mcp/page-tools.ts / src/server/routes/pages.ts (pass the facade roots)
 delete-page → src/server/operations/core-operations.ts (row delete_page) + src/server/services/page-write.ts (deletePage)
 update-sections → src/server/operations/core-operations.ts (row update_sections) + src/server/services/page-write.ts (updateSections)
+link-dto → src/server/operations/core-operations.ts (row link_dto, rest direct) + plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/routes.ts (POST /api/endpoints/:slug/dtos) + plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/link-dto.ts (linkDto)
+unlink-dto → src/server/operations/core-operations.ts (row unlink_dto, rest direct) + plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/routes.ts (DELETE /api/endpoints/:slug/dtos/:dtoSlug/:relation) + plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/link-dto.ts (unlinkDto)
+entity-tools-get-field-content → src/server/mcp/entity-tools.ts (get_field_content)

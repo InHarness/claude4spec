@@ -379,6 +379,55 @@ describe('surface memoization', () => {
  * host operation AND inherit its catalog class — so its own mutating handler was
  * admitted to the read-only `ask` profile.
  */
+/**
+ * 2.1.27 (M13 `v0v4ku5d`) — every rendering reads one registry. The host builds
+ * the `{type}-tools` server from the type's registry; the `internal` channel
+ * mounts it in the turn and the `mcp` channel merges it straight into the
+ * external surface beside the other source servers — the same tool schema in
+ * both, and no generic proxy tool on the `mcp` channel in any posture.
+ */
+describe('[section:v0v4ku5d] mcp channel: {type}-tools merged directly, no generic proxy', () => {
+  const PROXY_TOOL_NAMES = ['list_plugin_tools', 'call_plugin_tool', 'list_type_tools', 'call_type_tool'];
+
+  it('[section:v0v4ku5d] the {type}-tools server the host builds is merged into the external surface with the very declaration (same input schema) the internal mount gets, and no generic proxy tool exists in any profile', () => {
+    const linkShape = {
+      endpointSlug: z.string(),
+      dtoSlug: z.string(),
+      relation: z.enum(['request', 'response', 'error']),
+      statusCode: z.number().optional(),
+    };
+    const endpointTools = createMcpServer({
+      name: 'endpoint-tools',
+      tools: [
+        mcpTool('link_dto', 'link', linkShape, async () => ({ content: [] })),
+        mcpTool('unlink_dto', 'unlink', linkShape, async () => ({ content: [] })),
+      ],
+    });
+    const entry = { name: 'endpoint-tools', server: endpointTools as unknown as McpServerFactory };
+    const host = {
+      buildMcpServers: () => [entry],
+      listEntities: () => [{ type: 'endpoint' }],
+    } as unknown as ExternalSurfaceDeps['pluginHost'];
+
+    // The internal channel mounts what `buildMcpServers()` returns; the mcp
+    // channel composes from the same call — one registry, one declaration.
+    const internalDecl = endpointTools.tools!.find((t) => t.name === 'link_dto')!;
+    const surface = composeExternalSurface(stubDeps({ profile: 'chat', pluginHost: host }));
+    const external = surface.byName.get('link_dto');
+    expect(external).toBe(internalDecl);
+    expect(Object.keys(external!.inputSchema).sort()).toEqual(['dtoSlug', 'endpointSlug', 'relation', 'statusCode']);
+    expect(surface.toolNames).toContain('unlink_dto');
+
+    // Without a generic proxy: every profile of the closed table, every posture
+    // (project-bound and workspace-bound mounts compose through this same call).
+    for (const profile of MCP_CHANNEL_PROFILE_NAMES) {
+      __invalidateSurfaceCache(host);
+      const names = composeExternalSurface(stubDeps({ profile, pluginHost: host })).toolNames;
+      for (const proxy of PROXY_TOOL_NAMES) expect(names, `${profile}: ${proxy}`).not.toContain(proxy);
+    }
+  });
+});
+
 describe('plugin tools cannot shadow host operations', () => {
   const hostileHost = () =>
     pluginHostWith(

@@ -92,7 +92,7 @@ describe('get_field_content — one generic operation, the sixth on the plugin r
     return { t, ctx: seen as unknown as Record<string, unknown>, slug: created.body.data.slug as string };
   }
 
-  it('[section:v0fldrd8] a plugin type gets its content-bearing field served by the generic operation with no operation, route or tool of its own', async () => {
+  it('[section:v0fldrd8] [section:uuvadx9p] a plugin type gets its content-bearing field served by the generic operation keyed (type, slug, field) with no operation, route or tool of its own', async () => {
     const operationsBefore = CATALOG.list().map((op) => op.name).sort();
     const { t, ctx, slug } = await openWithGadget();
     const read = ctx as unknown as ReadSurface;
