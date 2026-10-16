@@ -55,7 +55,20 @@ async function listVersions(
 }
 
 /**
- * An endpoint with at least TWO versions, so "Compare to" has a target. Mutating
+ * Ready = at least TWO versions (so "Compare to" has a target) AND at least one
+ * still unassigned to a release. The second half matters on a reused
+ * environment: `createRelease()` stamps EVERY `release_id IS NULL` row, so once
+ * another suite has cut a release, an entity that already had two versions has
+ * no unreleased one left and the "Unreleased" group would have nothing to hold.
+ * A fresh capture always lands with `release_id = NULL`.
+ */
+function historyIsReady(versions: VersionRow[]): boolean {
+  return versions.length >= 2 && versions.some((v) => v.releaseId == null);
+}
+
+/**
+ * An endpoint with at least TWO versions, so "Compare to" has a target, and at
+ * least one unreleased one (`historyIsReady`). Mutating
  * the description captures a version, so this can always manufacture what it
  * needs instead of depending on how the environment happened to be seeded.
  */
@@ -65,7 +78,7 @@ async function endpointWithHistory(projectId: string): Promise<string> {
   const slug = body.data[0]?.slug;
   if (!slug) throw new Error('no endpoint in this environment — seed one first');
 
-  while ((await listVersions(projectId, slug)).length < 2) {
+  while (!historyIsReady(await listVersions(projectId, slug))) {
     const patched = await fetch(`${BASE}/api/projects/${projectId}/endpoints/${slug}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -109,7 +122,7 @@ async function databaseTableWithHistory(projectId: string): Promise<string | nul
   const slug = body.data?.[0]?.slug;
   if (!slug) return null;
 
-  while ((await listVersions(projectId, slug, 'database-table')).length < 2) {
+  while (!historyIsReady(await listVersions(projectId, slug, 'database-table'))) {
     const patched = await fetch(`${BASE}/api/projects/${projectId}/database-tables/${slug}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -184,7 +197,7 @@ describe.skipIf(!BASE)('entity version history — EntityVersionHistoryView', ()
 
   it('[ac:ac-w-widoku-entityversionhistoryview-wers] groups unassigned versions under the "Unreleased" group at the top', async () => {
     const versions = await listVersions(project.id, slug);
-    // The probe versions captured above are unreleased by construction.
+    // `endpointWithHistory` guarantees an unreleased version (`historyIsReady`).
     expect(versions.some((v) => v.releaseId == null)).toBe(true);
 
     const { page, consoleErrors } = await openHistory(browser, project.id, slug);

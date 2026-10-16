@@ -1,5 +1,5 @@
 {
-  "iteration": 81,
+  "iteration": 84,
   "units": [
     {
       "id": "u01-version-diff-runtime",
@@ -1671,7 +1671,7 @@
         }
       ],
       "wave": 2,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "u02-host-ui-kit/p1-l12-l12",
@@ -1684,27 +1684,24 @@
             "ac-diffview-z-pustym-propsem-hunks-renderuj",
             "ac-w-widoku-entityversionhistoryview-wers"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [
             "ac-w-widoku-entityversionhistoryview-wers"
           ],
-          "only": [
-            {
-              "slug": "ac-w-widoku-entityversionhistoryview-wers"
-            }
-          ]
+          "only": []
         }
       ],
-      "startCommit": "b98c0a6b7c0f248cc981b75aa31a5d0039c114d8",
-      "baseCommit": "b98c0a6b7c0f248cc981b75aa31a5d0039c114d8",
+      "startCommit": "11b00713ec74d5131fda0eeb656ddd6a0617fe5c",
+      "baseCommit": "11b00713ec74d5131fda0eeb656ddd6a0617fe5c",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": [],
-      "only": []
+      "only": [],
+      "lastUncovered": 0
     },
     {
       "id": "u10-cli-and-turns",
