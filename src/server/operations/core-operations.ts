@@ -1650,11 +1650,17 @@ export function registerCoreOperations(): void {
    * `mcp` is `direct` with no tool behind it yet — a declaration ahead of its
    * rendering, deliberately. The M39 parity assertion covers the external
    * reader's rows; this one sits with `create_patch`, outside that set.
+   *
+   * 2.1.26 — the `create-brief` record: `narzedzia` is empty, so no rendering
+   * is named; the `mcp` cell stays `direct` as the record declares it (M21
+   * `01ytpznn` records the missing external tool as an open item). The
+   * `internal` reason is the record's `powody.internal`, verbatim. The service
+   * answers the path, the hash and both ends of the window as resolved.
    */
   CATALOG.register({
     name: 'create_brief',
     summary:
-      'Mint a brief — with a ready-made body (`content`, stored verbatim), or empty for a release window. Never runs an agent turn. Answers `{ briefPath, hash }`.',
+      'Mint a brief — with a ready-made body (`content`, stored verbatim), or empty for a release window. Never runs an agent turn. Answers `{ briefPath, hash, fromReleaseName, toReleaseName }`.',
     scope: 'project',
     mediation: 'direct',
     opClass: 'brief',
@@ -1705,7 +1711,7 @@ export function registerCoreOperations(): void {
     idempotent: false,
     channels: {
       internal: na(
-        "a brief-scoped turn is anchored in one artifact and writes its body; minting another brief is not the brief author's act",
+        'tura wątku `brief` jest zakotwiczona w jednym artefakcie i pisze jego treść; powołanie kolejnego briefu nie jest czynnością autora briefu',
       ),
       cli: direct(),
       mcp: direct(),
@@ -1741,6 +1747,10 @@ export function registerCoreOperations(): void {
    * would withhold the rendering from the only thread it exists for (and plan
    * mode would list a read as mutating). The operation reads and never mutates
    * — `sideEffects: ['none']` — which is what `read` means.
+   *
+   * 2.1.26 — the `list-briefs` record names its one rendering
+   * (`transagent-tools-list-briefs`, internal); `mcp` stays `direct` with none,
+   * as the record declares it (an open item of M21 `01ytpznn`).
    */
   CATALOG.register({
     name: 'list_briefs',
@@ -1764,6 +1774,7 @@ export function registerCoreOperations(): void {
       mcp: direct(),
       rest: direct(),
     },
+    renderings: { internal: ['transagent-tools.list_briefs'] },
   });
 
   CATALOG.register({
@@ -1785,7 +1796,11 @@ export function registerCoreOperations(): void {
      * addressed brief operation carries NO `path` — absent, not optional.
      *
      * Codes: `BRIEF_NOT_FOUND` for an unknown path, `INVALID_ARGUMENT` for a
-     * window starting past the end of the file (stating its size) or malformed.
+     * window starting past the end of the file (stating its size) or malformed,
+     * and (2.1.26, the `get-brief` record) `BRIEF_INVALID_FRONTMATTER` for a file
+     * of the briefs root whose frontmatter is not a brief's. Renderings: the
+     * thread mount (`brief-tools-get-brief`, internal) and the threadless one
+     * (`brief-tools-get-brief-explicit`, mcp) — both `brief-tools · get_brief`.
      */
     inputSchema: {
       path: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Required on every external channel; absent from the internal rendering (isolation).'),
@@ -1796,10 +1811,11 @@ export function registerCoreOperations(): void {
           '0.2.40 — 1-based inclusive line window. Unconditionally allowed: an artifact never enters `section_index`, so there is no `sectionIndexed` gate and no second way to resume a large read. A `start` past the end of the file is INVALID_ARGUMENT stating the size.',
         ),
     },
-    errorCodes: ['BRIEF_NOT_FOUND', 'INVALID_ARGUMENT'],
+    errorCodes: ['BRIEF_NOT_FOUND', 'INVALID_ARGUMENT', 'BRIEF_INVALID_FRONTMATTER'],
     sideEffects: ['none'],
     idempotent: true,
     channels: fullParity(),
+    renderings: { internal: ['brief-tools.get_brief'], mcp: ['brief-tools.get_brief'] },
   });
 
   CATALOG.register({
@@ -1834,6 +1850,9 @@ export function registerCoreOperations(): void {
      * `insert_after_section` raise, which the row's code cell does not list
      * (`INVALID_ARGUMENT` for overlapping matches, `FIND_NOT_FOUND`,
      * `MATCH_COUNT_MISMATCH`, `MISSING_TARGET`).
+     *
+     * 2.1.26 — the `update-brief` record lists exactly these, plus
+     * `BRIEF_INVALID_FRONTMATTER` (the write reads the brief first).
      */
     errorCodes: [
       'BRIEF_NOT_FOUND',
@@ -1844,6 +1863,7 @@ export function registerCoreOperations(): void {
       'MISSING_TARGET',
       'FIND_NOT_FOUND',
       'MATCH_COUNT_MISMATCH',
+      'BRIEF_INVALID_FRONTMATTER',
     ],
     sideEffects: ['file', 'db', 'ui-notify'],
     /**
@@ -1852,8 +1872,13 @@ export function registerCoreOperations(): void {
      * 2.1.14 — the row's `opis treści` is `obydwa`: exactly one shape per call.
      */
     contentInput: 'literal+diff',
-    idempotent: false,
+    /**
+     * 2.1.26 — the record's `idempotencja: warunkowa`: `replace` is idempotent
+     * by content; `append`, `insert_after_section` and `textEdits` are not.
+     */
+    idempotent: 'conditional',
     channels: fullParity(),
+    renderings: { internal: ['brief-tools.update_brief'], mcp: ['brief-tools.update_brief'] },
   });
 
   /**
@@ -1872,6 +1897,11 @@ export function registerCoreOperations(): void {
    * Idempotent: a repeat at the value the file already holds writes nothing
    * (`BriefService.updateFrontmatter`). Codes: `BRIEF_NOT_FOUND` for an unknown path,
    * `IMMUTABLE_FIELD` for any other frontmatter key (the M36 family guard).
+   *
+   * 2.1.26 — the `mark-brief-implemented` record: `internal` is `n/a` with the
+   * record's reason (the operation states a fact about code the thread does not
+   * see), no rendering is named, and `BRIEF_INVALID_FRONTMATTER` joins the codes
+   * (the flag write reads the brief first).
    */
   CATALOG.register({
     name: 'mark_brief_implemented',
@@ -1886,11 +1916,18 @@ export function registerCoreOperations(): void {
         .optional()
         .describe('The value to set. Omitted = true (the terminal implementer\'s "done"); the UI may set false.'),
     },
-    errorCodes: ['BRIEF_NOT_FOUND', 'IMMUTABLE_FIELD'],
+    errorCodes: ['BRIEF_NOT_FOUND', 'IMMUTABLE_FIELD', 'BRIEF_INVALID_FRONTMATTER'],
     sideEffects: ['file', 'db', 'ui-notify'],
     contentInput: 'n/a',
     idempotent: true,
-    channels: fullParity(),
+    channels: {
+      internal: na(
+        'operacja deklaruje fakt o kodzie w repozytorium docelowym, którego wątek nie widzi, więc serwer briefu celowo jej nie niesie; znacznik ustawia implementer w terminalu albo użytkownik w UI',
+      ),
+      cli: direct(),
+      mcp: direct(),
+      rest: direct(),
+    },
   });
 
   CATALOG.register({
@@ -1910,12 +1947,13 @@ export function registerCoreOperations(): void {
     idempotent: true,
     channels: {
       internal: direct(),
-      // ASSUMPTION:dev-0004 — the row's `cli` cell reads `direct`, while M21 L14
-      // (`xqksf67f`) names exactly four brief commands and no history command.
-      cli: na('no `c4s` brief-history command: the terminal implementer reads the current brief, not its history'),
+      // 2.1.26 — the `list-brief-versions` record's `cli: n/a`, its reason
+      // verbatim (M21 L14 `xqksf67f` names no brief-history command).
+      cli: na('brak komendy `c4s` historii briefu: implementer w terminalu czyta bieżący brief, nie jego historię'),
       mcp: direct(),
       rest: direct(),
     },
+    renderings: { internal: ['brief-tools.list_brief_versions'], mcp: ['brief-tools.list_brief_versions'] },
   });
 
   CATALOG.register({
@@ -1937,11 +1975,12 @@ export function registerCoreOperations(): void {
     idempotent: true,
     channels: {
       internal: direct(),
-      // ASSUMPTION:dev-0004 — see `list_brief_versions`.
-      cli: na('no `c4s` brief-history command: the terminal implementer reads the current brief, not its history'),
+      // 2.1.26 — the `get-brief-version` record's `cli: n/a`, its reason verbatim.
+      cli: na('brak komendy `c4s` historii briefu: implementer w terminalu czyta bieżący brief, nie jego historię'),
       mcp: direct(),
       rest: direct(),
     },
+    renderings: { internal: ['brief-tools.get_brief_version'], mcp: ['brief-tools.get_brief_version'] },
   });
 
   CATALOG.register({

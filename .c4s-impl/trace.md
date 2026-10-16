@@ -76,3 +76,19 @@
 - page-tools-delete-page → src/server/mcp/page-tools.ts (`delete_page`); test src/server/mcp/page-tools.test.ts
 - page-tools-move-page → src/server/mcp/page-tools.ts (`move_page`); test src/server/mcp/page-tools.test.ts
 - page-tools-update-sections → src/server/mcp/page-tools.ts (`update_sections`) + src/server/services/page-write.ts (`updateSections` refuses `content` on `delete`); test src/server/mcp/page-tools.test.ts
+- brief-tools-get-brief → src/server/mcp/brief-tools.ts (`get_brief`, thread mount); test src/server/mcp/brief-tools.test.ts
+- brief-tools-get-brief-explicit → src/server/mcp/brief-tools.ts (`get_brief`, `target: 'explicit'` mount); test src/server/mcp/brief-tools.test.ts
+- brief-tools-update-brief → src/server/mcp/brief-tools.ts (`update_brief`, thread mount; conflict envelope carries `currentContent`); test src/server/mcp/brief-tools.test.ts
+- brief-tools-update-brief-explicit → src/server/mcp/brief-tools.ts (`update_brief`, explicit mount); test src/server/mcp/brief-tools.test.ts
+- brief-tools-list-brief-versions → src/server/mcp/brief-tools.ts (`list_brief_versions`, thread mount); test src/server/mcp/brief-tools.test.ts
+- brief-tools-list-brief-versions-explicit → src/server/mcp/brief-tools.ts (`list_brief_versions`, explicit mount); test src/server/mcp/brief-tools.test.ts
+- brief-tools-get-brief-version → src/server/mcp/brief-tools.ts (`get_brief_version`, thread mount); test src/server/mcp/brief-tools.test.ts
+- brief-tools-get-brief-version-explicit → src/server/mcp/brief-tools.ts (`get_brief_version`, explicit mount); test src/server/mcp/brief-tools.test.ts
+- transagent-tools-list-briefs → src/server/mcp/transagent-tools.ts (`list_briefs`, `buildListBriefsTool`); test src/server/mcp/transagent-tools.list-briefs.test.ts
+- create-brief → src/server/operations/core-operations.ts (`create_brief` row; owner `BriefService.createBrief` + `POST /api/briefs` in src/server/routes/briefs.ts); test src/server/mcp/brief-tools.test.ts
+- get-brief → src/server/operations/core-operations.ts (`get_brief` row, `renderings` = narzedzia; owner `BriefService.getBrief`); test src/server/mcp/brief-tools.test.ts
+- get-brief-version → src/server/operations/core-operations.ts (`get_brief_version` row; owner `BriefService.getVersionAddressed`); test src/server/mcp/brief-tools.test.ts
+- list-brief-versions → src/server/operations/core-operations.ts (`list_brief_versions` row; owner `BriefService.listVersionsAddressed`); test src/server/mcp/brief-tools.test.ts
+- list-briefs → src/server/operations/core-operations.ts (`list_briefs` row, rendering `transagent-tools.list_briefs`; owner `BriefService.listBriefs`); test src/server/mcp/brief-tools.test.ts
+- mark-brief-implemented → src/server/operations/core-operations.ts (`mark_brief_implemented` row, internal n/a; owner `BriefService.updateFrontmatter`); test src/server/mcp/brief-tools.test.ts
+- update-brief → src/server/operations/core-operations.ts (`update_brief` row, idempotent `'conditional'`; owner `brief-tools` `update_brief` + `BriefService.updateContent`); test src/server/mcp/brief-tools.test.ts

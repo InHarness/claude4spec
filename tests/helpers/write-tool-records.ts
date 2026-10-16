@@ -14,7 +14,7 @@ import { expect } from 'vitest';
 import { declaredParams, type DeclaredTool } from './read-tool-records.js';
 
 export interface WriteToolRecord {
-  server: 'entity-tools' | 'endpoint-tools' | 'page-tools';
+  server: 'entity-tools' | 'endpoint-tools' | 'page-tools' | 'brief-tools' | 'transagent-tools';
   name: string;
   description: string;
   params: Array<{ name: string; type: string; required: boolean; description?: string }>;
@@ -165,7 +165,16 @@ export const WRITE_TOOL_RECORDS: Record<string, WriteToolRecord> = {
 export function expectToolMatchesWriteRecord(tool: DeclaredTool | undefined, slug: string): void {
   const record = WRITE_TOOL_RECORDS[slug];
   expect(record, `record ${slug}`).toBeDefined();
-  expect(tool, `tool ${record!.server} · ${record!.name}`).toBeDefined();
+  expectToolMatchesToolRecord(tool, record!);
+}
+
+/**
+ * The same check against a record held elsewhere (e.g. `brief-tool-records.ts`):
+ * name, description verbatim, parameters with type / requiredness / description,
+ * and exactly the record's non-empty hints as annotations.
+ */
+export function expectToolMatchesToolRecord(tool: DeclaredTool | undefined, record: WriteToolRecord): void {
+  expect(tool, `tool ${record.server} · ${record.name}`).toBeDefined();
   expect(tool!.name).toBe(record!.name);
   expect(tool!.description).toBe(record!.description);
   const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);

@@ -1,5 +1,5 @@
 {
-  "iteration": 27,
+  "iteration": 31,
   "units": [
     {
       "id": "u01-version-diff-runtime",
@@ -1098,15 +1098,47 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u12-brief-tools/p1-l3",
+          "layers": [
+            "L3"
+          ],
+          "slugs": [
+            "brief-tools-get-brief",
+            "brief-tools-get-brief-explicit",
+            "brief-tools-get-brief-version",
+            "brief-tools-get-brief-version-explicit",
+            "brief-tools-list-brief-versions",
+            "brief-tools-list-brief-versions-explicit",
+            "brief-tools-update-brief",
+            "brief-tools-update-brief-explicit",
+            "transagent-tools-list-briefs",
+            "create-brief",
+            "get-brief",
+            "get-brief-version",
+            "list-brief-versions",
+            "list-briefs",
+            "mark-brief-implemented",
+            "update-brief"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "1b59a62b04a0eb5f2727acadecc658629b9472b0",
+      "baseCommit": "1b59a62b04a0eb5f2727acadecc658629b9472b0",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "only": []
     },
     {
       "id": "u13-plan-tools",

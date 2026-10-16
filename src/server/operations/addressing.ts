@@ -61,8 +61,9 @@ export const OWNER_THREAD_ISOLATION: Readonly<Partial<Record<ArtifactKind, strin
    * mount) carry NO `path`: the address is closed over from
    * `chat_thread.brief_path`, and the absence of the parameter is what isolates —
    * an optional one would be a default, and a default does not isolate. The
-   * declaration covers `get_brief`, `update_brief`, `mark_brief_implemented` and
-   * both version operations; external channels keep `path` required.
+   * declaration covers `get_brief`, `update_brief` and both version operations
+   * (2.1.26: `mark_brief_implemented` is not rendered in `internal` at all —
+   * its record's `internal` is `n/a`); external channels keep `path` required.
    */
   brief: 'M21 01ytpznn — a brief thread sees only the brief it is pinned to',
   /**
