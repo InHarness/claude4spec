@@ -6,7 +6,6 @@ export type CliErrorCode =
   | 'SECTION_NOT_FOUND'
   | 'INVALID_TYPE'
   | 'INVALID_ARGS'
-  | 'AMBIGUOUS_SLUGS'
   | 'SCHEMA_OUT_OF_DATE'
   | 'FILE_NOT_FOUND'
   | 'UNKNOWN_COMMAND'
@@ -15,6 +14,10 @@ export type CliErrorCode =
   | 'SERVER_NOT_RECOGNIZED'
   | 'NOT_FOUND'
   | 'STREAM_IN_PROGRESS'
+  // 2.1.26 (M11 `g24dkd8t`) — HTTP 409 from the peer's turn endpoint: a
+  // `--thread` continuation whose model, reasoning level or file scope differs
+  // from the thread's first turn. The fifteenth code of the turn family.
+  | 'RESUME_CONFIG_LOCKED'
   | 'AGENT_UNAVAILABLE'
   | 'AGENT_ERROR'
   | 'TIMEOUT'
@@ -26,8 +29,8 @@ export type CliErrorCode =
   // Kept next to its sibling because the pair is only useful together: one says
   // "nothing is built", the other "what is built is out of date". Deliberately
   // NOT given an exit code of its own — `codeToExit` leaves it at the generic 1,
-  // as the `AMBIGUOUS_*` codes are, because the recovery is in the message
-  // (rebuild the projection, retry), not in a shell-level branch.
+  // because the recovery is in the message (rebuild the projection, retry), not
+  // in a shell-level branch.
   | 'INDEX_STALE'
   | 'PROJECT_NOT_IN_WORKSPACE'
   // 2.1.0 — `--project <id>` matches no registered project id (was
@@ -79,17 +82,21 @@ export type CliErrorCode =
   | 'SCAFFOLD_WRITE_FAILED'
   | 'INSTALL_FAILED'
   // 0.2.3 M39 — MAPPED FROM THE DISCOVERY CORE, not raised by the CLI itself.
-  // The other core codes (ENTITY_NOT_FOUND, SECTION_NOT_FOUND, INVALID_TYPE,
-  // AMBIGUOUS_*, INDEX_NOT_MATERIALIZED) were already in this
-  // union under their own names; these two are new here because no CLI command
-  // used to be able to address a page or to refuse an argument the way the core
-  // does. `INVALID_ARGUMENT` is deliberately NOT folded into the CLI's own
-  // `INVALID_ARGS`: one means "you typed the flags wrong", the other carries a
-  // correction from the core, and collapsing them would lose the hint.
+  // The core codes the dispatcher maps (M11 L14 `ihakwlks`): ENTITY_NOT_FOUND,
+  // SECTION_NOT_FOUND, PAGE_NOT_FOUND, INVALID_TYPE, INVALID_ARGUMENT,
+  // INDEX_STALE and SEARCH_BUDGET_EXCEEDED, each under the core's own name.
+  // `PAGE_NOT_FOUND` is raised by the page reads (`get-page`, `get-page-outline`,
+  // and per item in `get-sections`), never by `list-pages`. `INVALID_ARGUMENT`
+  // is deliberately NOT folded into the CLI's own `INVALID_ARGS`: one means
+  // "you typed the flags wrong", the other carries a correction from the core,
+  // and collapsing them would lose the hint.
+  //
+  // 2.1.26 — the ambiguity codes are gone from this catalog (`AMBIGUOUS_SLUGS`,
+  // `AMBIGUOUS_ENTITY`, `AMBIGUOUS_PAGE`): no operation the CLI renders answers
+  // with them. The selector ambiguities `AMBIGUOUS_WORKSPACE` /
+  // `AMBIGUOUS_PROJECT` stay — they are M11's own, raised by the resolver.
   | 'PAGE_NOT_FOUND'
   | 'INVALID_ARGUMENT'
-  | 'AMBIGUOUS_ENTITY'
-  | 'AMBIGUOUS_PAGE'
   // 0.2.13 — `--root-id` naming a root the project does not have. Raised by the
   // REST rendering ahead of the core (the per-root routers resolve the id from
   // the path segment), so it never travelled the `INVALID_ARGUMENT` path the
@@ -253,13 +260,8 @@ export function codeToExit(code: string): number {
     // The repair is to start the server once; nothing is wrong with the command.
     case 'REGISTRY_MIGRATION_PENDING':
       return 27;
-    // 0.2.6 — the core's two ambiguity codes. A caller that has to disambiguate
-    // must be able to see it from the exit status, the way it already can for
-    // the two workspace-level ambiguities above.
-    case 'AMBIGUOUS_ENTITY':
-      return 20;
-    case 'AMBIGUOUS_PAGE':
-      return 21;
+    // 2.1.26 — exit 20 / 21 belonged to the core's ambiguity codes, removed
+    // from the catalog with them; the numbers are not reused.
     // 0.2.65 M31 — the registry itself is unreadable. Its own status, not folded
     // into the exit-4 "you typed it wrong" group: the caller typed nothing wrong,
     // and the repair is to the machine's `~/.claude4spec/`, not to the command.

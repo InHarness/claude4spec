@@ -42,7 +42,6 @@ function fixture(type: string, data: DataDeclaration): BackendModule {
     payloadVersion: 1,
     label: type,
     labelPlural: `${type}s`,
-    displayOrder: 900,
     pathPrefix: `/${type}s`,
     systemPrompt: { roleNoun: type },
   } as BackendModule);
@@ -110,7 +109,6 @@ describe('rename listeners', () => {
       payloadVersion: 1,
       label: 'widget',
       labelPlural: 'widgets',
-      displayOrder: 900,
       pathPrefix: '/widgets',
       systemPrompt: { roleNoun: 'widget' },
       backend: {

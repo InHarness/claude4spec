@@ -22,13 +22,12 @@ import { PROJECTION_IDS, ProjectionStatusRegistry } from './projection-status.js
 let db: Database.Database;
 let warn: ReturnType<typeof vi.spyOn>;
 
-type Mod = { type: string; table: string; displayOrder?: number; auxTables?: string[] };
+type Mod = { type: string; table: string; auxTables?: string[] };
 
 /** Host double: `available` is the whole pool, `active` the config.entities subset. */
 function hostWith(available: Mod[], activeTypes?: string[]): PluginHost {
   const isActive = (t: string) => (activeTypes ? activeTypes.includes(t) : true);
   const norm = available.map(({ auxTables, ...m }) => ({
-    displayOrder: 10,
     ...m,
     backend: auxTables ? { auxTables } : undefined,
   }));

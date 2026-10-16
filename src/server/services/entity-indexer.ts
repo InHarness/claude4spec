@@ -89,7 +89,7 @@ export class EntityIndexerService implements WatchSubscriber {
     return topoSortModules(this.host.listEntities(), (remaining) =>
       console.warn(
         `[entity-indexer] dependsOn cycle among [${remaining.join(', ')}] — ` +
-          `indexing those types in displayOrder instead`,
+          `indexing those types in type order instead`,
       ),
     );
   }

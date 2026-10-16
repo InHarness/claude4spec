@@ -21,7 +21,6 @@ function mod(type: string, over: Partial<BackendModule> = {}): BackendModule {
     payloadUpgrades: [() => ({ upgraded: true })],
     label: type,
     labelPlural: `${type}s`,
-    displayOrder: 100,
     pathPrefix: `/${type}s`,
     systemPrompt: { roleNoun: type, narrativeBlock: `NARRATIVE-OF-${type}` },
     ...over,

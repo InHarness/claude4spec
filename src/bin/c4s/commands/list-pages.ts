@@ -43,6 +43,9 @@ export const listPagesCommand: CliCommandContribution = {
   name: 'list-pages',
   operation: 'list_pages',
   executionMode: 'server-delegating',
-  errorCodes: ['INVALID_ARGS', 'INVALID_ARGUMENT', 'PAGE_NOT_FOUND', 'ROOT_NOT_FOUND'],
+  // 2.1.26 (M11 `m11dcmds`) — no `PAGE_NOT_FOUND`: a listing addresses a root,
+  // not a page, so there is no `(rootId, path)` for it to miss. An unknown root
+  // is `ROOT_NOT_FOUND`; `PAGE_NOT_FOUND` belongs to the page reads.
+  errorCodes: ['INVALID_ARGS', 'INVALID_ARGUMENT', 'ROOT_NOT_FOUND'],
   handler: runListPages,
 };

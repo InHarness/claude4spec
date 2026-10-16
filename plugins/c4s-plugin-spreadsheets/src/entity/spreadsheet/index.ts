@@ -1,7 +1,6 @@
 import type { EntityContribution, MountContext } from '@c4s/plugin-runtime';
 import {
   SPREADSHEET_ATTR_ORDER,
-  SPREADSHEET_DISPLAY_ORDER,
   SPREADSHEET_LABEL,
   SPREADSHEET_LABEL_PLURAL,
   SPREADSHEET_PATH_PREFIX,
@@ -55,7 +54,6 @@ export const spreadsheetEntity: EntityContribution = {
   payloadVersion: 3,
   label: SPREADSHEET_LABEL,
   labelPlural: SPREADSHEET_LABEL_PLURAL,
-  displayOrder: SPREADSHEET_DISPLAY_ORDER,
   pathPrefix: SPREADSHEET_PATH_PREFIX,
   ...spreadsheetSerialization,
   systemPrompt: spreadsheetSystemPrompt,

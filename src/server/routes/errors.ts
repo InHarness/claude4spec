@@ -18,7 +18,7 @@ import { STATUS_FOR_CODE, STATUS_FOR_DISCOVERY_CODE, httpStatusForCode } from '.
  *
  * The bug it does fix: `STATUS_FOR_CODE[code] ?? 400` alone flattened every code
  * that lives ONLY in the discovery table — `ENTITY_NOT_FOUND`, `PAGE_NOT_FOUND`,
- * `INVALID_TYPE`, `AMBIGUOUS_ENTITY`, `INDEX_NOT_MATERIALIZED` — to 400, while
+ * `INVALID_TYPE`, `INDEX_STALE`, `INDEX_NOT_MATERIALIZED` — to 400, while
  * the same code raised through `entities-router`'s tool proxy answered 404/409/503.
  * Two renderings of one code is what the shared table exists to prevent. And a
  * `DomainError('INTERNAL')` — what `decodeToolFailure` yields for a crashed plugin

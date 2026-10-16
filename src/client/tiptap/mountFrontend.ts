@@ -44,8 +44,8 @@ function routePath(route: { path?: string; fullPath?: string }): string | undefi
 }
 
 export function mountFrontend(router: AppRouter, modules: FrontendModule[]): void {
-  // Stable, deterministic order: low displayOrder first (first-wins on route dups).
-  const ordered = [...modules].sort((a, b) => a.displayOrder - b.displayOrder);
+  // Stable, deterministic order: by `type` (first-wins on route dups).
+  const ordered = [...modules].sort((a, b) => a.type.localeCompare(b.type));
 
   // Seed the seen-paths set from the host's static base routes so a plugin can
   // never shadow a built-in host route (the host wins for base paths).

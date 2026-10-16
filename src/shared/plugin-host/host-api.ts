@@ -598,12 +598,13 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
   },
   {
     release: '0.2.79',
-    slot: 'MountContext.{getEntities,listEntities,searchEntities,describeTypes,resolveIdentity}',
+    slot: 'MountContext.{getEntities,listEntities,searchEntities,describeTypes,resolveIdentity,getFieldContent}',
     kind: 'slot-added',
     summary:
-      'The five entity operations of the M39 read core, bound through `MountContext`, ' +
+      'The six entity operations of the M39 read core, bound through `MountContext`, ' +
       'through which an envelope reads entities of OTHER types and gets the serialized ' +
-      'record rather than a raw projection row. A surface change on both sides — ' +
+      'record rather than a raw projection row; `getFieldContent` is the sixth, the ' +
+      'one that follows a `contentFields` descriptor to the value. A surface change on both sides — ' +
       '`mountBackend(ctx)` is itself versioned, so widening the context widens M13 too. ' +
       'Purely additive: nothing that existed changes signature, so no bump.',
   },
@@ -692,6 +693,21 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       'Formally a narrowing under rule (1); with zero published plugins it is absorbed ' +
       'into the current baseline under the precedent of the `injection` retirement: ' +
       '`HOST_API_VERSION` is unchanged and there is no `migrations[]` descriptor.',
+  },
+  {
+    release: '2.1.26',
+    slot: 'EntityModuleManifest.displayOrder (EntityContribution)',
+    kind: 'slot-removed',
+    summary:
+      'The `displayOrder` field is gone from the type identity (`EntityModuleManifest`, ' +
+      'hence `EntityContribution`). The order of the ELEMENTS entries comes only from ' +
+      '`sidebarTab.order`; a type without a tab declares no order at all. The field was ' +
+      'required but the host never read it for anything a user could see — the sidebar ' +
+      'already sorted by `sidebarTab.order` — and a contribution still declaring it is ' +
+      'now refused at registration as an unknown key. Formally a narrowing under rule (1); ' +
+      'absorbed into the current baseline under the precedent of the three frontend-field ' +
+      'retirement (2.1.12): `HOST_API_VERSION` is unchanged and there is no `migrations[]` ' +
+      'descriptor.',
   },
 ];
 

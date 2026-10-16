@@ -938,8 +938,8 @@ function checkComputedDefaults(type: string, schema: DataDeclaration['schema']):
 /**
  * A `contentBearing` field's content must be REACHABLE.
  *
- * The host generates `get_field_content` for every flagged field, so the default
- * always resolves. A type naming its own operation — the windowed-read pattern —
+ * The generic core operation `get_field_content` serves every flagged field, so
+ * the default always resolves. A type naming its own operation — the windowed-read pattern —
  * is checked against the operation catalog, because a field excluded from every
  * generic read with nothing behind it is write-only data.
  *

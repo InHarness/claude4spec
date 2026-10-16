@@ -42,7 +42,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ZodRawShape } from 'zod';
 import type { ChatContextType } from '../../shared/entities.js';
-import { KNOWN_PROFILES } from '../operations/profiles.js';
+import { isMcpChannelProfile, MCP_CHANNEL_PROFILE_NAMES } from '../operations/profiles.js';
 import { toolError } from '../operations/envelope.js';
 import type { McpToolDeclaration } from '../../shared/plugin-host/mcp.js';
 import { composeExternalSurface, EXTERNAL_MCP_SERVER_NAME, type ExternalSurface, type ExternalSurfaceDeps } from './surface.js';
@@ -164,18 +164,23 @@ export function reapIdleMcpSessions(now = Date.now()): number {
  * on the mount URL, read once at initialize. A bad value is rejected outright
  * rather than silently downgraded to `chat`: silently widening a caller who
  * asked to be narrow is the wrong direction to fail in.
+ *
+ * 2.1.26 (M12 `ecawzsbr`): "known" means a row of the channel's CLOSED table
+ * (`MCP_CHANNEL_PROFILES`), not a value of the context-type registry. A value
+ * the registry knows and the table does not is refused here, at connection
+ * set-up, before any catalog is exposed — it gets no default branch.
  */
 export function profileFromRequest(req: Request): { ok: true; profile: ChatContextType } | { ok: false; message: string } {
   const raw = req.query.profile;
   if (raw === undefined) return { ok: true, profile: 'chat' };
   const value = Array.isArray(raw) ? raw[0] : raw;
-  if (typeof value !== 'string' || !KNOWN_PROFILES.includes(value as ChatContextType)) {
+  if (typeof value !== 'string' || !isMcpChannelProfile(value)) {
     return {
       ok: false,
-      message: `unknown profile '${String(value)}'; expected one of ${KNOWN_PROFILES.join(', ')}`,
+      message: `unknown profile '${String(value)}'; expected one of ${MCP_CHANNEL_PROFILE_NAMES.join(', ')}`,
     };
   }
-  return { ok: true, profile: value as ChatContextType };
+  return { ok: true, profile: value };
 }
 
 function jsonRpcError(res: Response, status: number, code: string, message: string): void {

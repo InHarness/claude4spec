@@ -170,8 +170,11 @@ export interface MountContext {
    */
   discovery(): any;
   /**
-   * 0.2.79 — the M39 read core's plugin surface: EXACTLY five operations, for
-   * reading entities of types owned by another plugin or module.
+   * 0.2.79 — the M39 read core's plugin surface: EXACTLY six operations
+   * (`getEntities`, `listEntities`, `searchEntities`, `describeTypes`,
+   * `resolveIdentity`, `getFieldContent`), for reading entities of types owned
+   * by another plugin or module. Additive within the current baseline — no
+   * `HOST_API_VERSION` bump.
    *
    * Unlike the handles above, these are typed for real. They are bound through
    * `MountContext` at parity with `versionService` / `tagsService` /
@@ -822,6 +825,11 @@ export declare function useRestoreVersion(): MutationLike<{ type: string; slug: 
  * identity of the row it describes. `changes` is the CLOSED eight-operation
  * dictionary — a consumer can switch over it exhaustively, for every entity
  * type at once.
+ *
+ * 2.1.26 — `useVersionDiff` returns this delta (operations on fields and on
+ * collection items), never text lines. It is NOT the data source of `DiffView`
+ * nor of the `VersionHistory variant='timeline'` "Compare to" action, and the
+ * host does not render it: `DiffView` hunks come from `lineDiffHunks`.
  */
 export type DiffOpKind =
   | 'field_changed'
@@ -907,8 +915,10 @@ export declare const releasesService: {
 };
 /**
  * `releaseId → name`, keyed by `EntityVersionMeta.releaseId` — the same id every
- * version-list row carries. A version with `releaseId: null` (not yet released)
- * has no entry; render it as "(unreleased)".
+ * version-list row carries. Versions are GROUPED by release: a version assigned
+ * to a release goes to that release's group; a version with `releaseId: null`
+ * (not yet released) has no entry and goes to the "Unreleased" group. A version
+ * row carries no release pill.
  */
 export declare function useReleases(): Map<number, string>;
 
@@ -918,7 +928,8 @@ export declare function useReleases(): Map<number, string>;
  * Kit vocabulary (`DiffView.hunks`) — never the host-internal
  * `{ op: 'keep'|'added'|'removed'; content }` shape. A pure function, not a
  * singleton. Distinct from `useVersionDiff`, which is the semantic delta from
- * M47's generated delta; neither replaces the other.
+ * M47's generated delta; neither replaces the other. This util — not
+ * `useVersionDiff` — feeds `DiffView`; the `EntityVersionHistoryView` block uses it.
  */
 export declare function lineDiffHunks(
   before: unknown,

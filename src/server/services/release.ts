@@ -1887,7 +1887,7 @@ export class ReleaseService {
     const order = topoSortModules(this.host.listEntities(), (remaining) =>
       console.warn(
         `[release] dependsOn cycle among [${remaining.join(', ')}] — ` +
-          `restoring those types in displayOrder instead`,
+          `restoring those types in type order instead`,
       ),
     ).map((m) => m.type as RawEntityType);
 
@@ -2216,7 +2216,7 @@ export class ReleaseService {
         const order = topoSortModules(this.host.listEntities(), (remaining) =>
           console.warn(
             `[release] dependsOn cycle among [${remaining.join(', ')}] — ` +
-              `restoring those types in displayOrder instead`,
+              `restoring those types in type order instead`,
           ),
         ).map((m) => m.type);
         for (const type of order) {

@@ -4,7 +4,7 @@
  * client-side plugin host.
  *
  * Phase 0: when registerEntity() is called, we synthesize a FrontendModule
- * manifest from the EntityDef plus per-type defaults (table, displayOrder)
+ * manifest from the EntityDef plus per-type defaults (table)
  * and push it into clientPluginHost. The other slots (sidebarTab, routes,
  * editorExtensions) stay empty — existing wiring still drives
  * Sidebar.tsx and router.tsx directly.
@@ -16,7 +16,6 @@ import { clientPluginHost } from './host.js';
 
 interface LegacyDefaults {
   table: string;
-  displayOrder: number;
 }
 
 const LEGACY_DEFAULTS: Record<string, LegacyDefaults> = {
@@ -31,7 +30,6 @@ export function legacyRegisterClientEntity(def: EntityDef<unknown>): void {
 
   const defaults = LEGACY_DEFAULTS[def.type] ?? {
     table: def.type.replace(/-/g, '_'),
-    displayOrder: 999,
   };
 
   const module: FrontendModule = {
@@ -55,7 +53,6 @@ export function legacyRegisterClientEntity(def: EntityDef<unknown>): void {
     payloadVersion: 1,
     label: def.label,
     labelPlural: def.labelPlural,
-    displayOrder: defaults.displayOrder,
     pathPrefix: `/${def.type}s`,
     renderChip: def.renderChip,
     renderCard: def.renderCard,

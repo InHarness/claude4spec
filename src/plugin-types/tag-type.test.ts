@@ -58,7 +58,8 @@ describe('[section:hpw2opbb] the kit\'s one Tag type', () => {
   it('[ac:ac-pozycja-o-ksztalcie-tag-list-item-jes] a tag-list-item is assignable to Tag from @c4s/plugin-runtime/ui without a cast', () => {
     // A plugin hands `useTags()` items straight to every kit slot that takes a
     // tag: the one `Tag`, `TagFilterBar.tags`, `EntityListRow.tagLookup` (a map
-    // the plugin builds from the same list) and `TagPicker.allTags`.
+    // the plugin builds from the same list) — and to `TagPicker.allTags`, whose
+    // inline item shape (2.1.26, `d97023iq`) the same items also satisfy.
     const source = [
       IMPORTS,
       'declare const items: TagListItem[];',
@@ -79,16 +80,31 @@ describe('[section:hpw2opbb] the kit\'s one Tag type', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('[section:hpw2opbb] TagPicker.allTags takes the full Tag, description included', () => {
-    const source = [
+  it('[section:hpw2opbb] 2.1.26: TagPicker.allTags is not a consumer of Tag — its item shape is inline, without description', () => {
+    // The inline `{ slug; name; color? }` item takes a tag without a description.
+    const ok = [
       IMPORTS,
       'export const props: TagPickerProps = {',
-      "  allTags: [{ slug: 'billing', name: 'Billing', color: null, description: 'Payment flows' }],",
+      "  allTags: [{ slug: 'billing', name: 'Billing', color: null }],",
       '  selected: [],',
       '  onToggle() {},',
       '};',
-      "export const minimal: Tag = { slug: 'billing', name: 'Billing' };",
+      "export const minimal: Tag = { slug: 'billing', name: 'Billing', description: 'Payment flows' };",
     ].join('\n');
-    expect(compileAuthorFile(source)).toEqual([]);
+    expect(compileAuthorFile(ok)).toEqual([]);
+
+    // `description` belongs to `Tag`, not to the picker item: a fresh literal
+    // carrying it is an excess property, so `allTags` is NOT typed as `Tag[]`.
+    const withDescription = [
+      IMPORTS,
+      'export const props: TagPickerProps = {',
+      "  allTags: [{ slug: 'billing', name: 'Billing', description: 'Payment flows' }],",
+      '  selected: [],',
+      '  onToggle() {},',
+      '};',
+    ].join('\n');
+    const diagnostics = compileAuthorFile(withDescription);
+    expect(diagnostics.length).toBeGreaterThan(0);
+    expect(diagnostics.join('\n')).toMatch(/description/);
   });
 });

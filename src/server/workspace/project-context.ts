@@ -888,7 +888,7 @@ async function buildInner(
 
   /**
    * The core, or a refusal naming why it is not there yet. Shared by the
-   * `discovery()` thunk and by the five bound read operations below, so both
+   * `discovery()` thunk and by the six bound read operations below, so both
    * report the same thing when a plugin reaches for a read during mount.
    */
   const requireDiscoveryCore = (): DiscoveryCore => {
@@ -905,7 +905,7 @@ async function buildInner(
     host: pluginHost,
     discovery: requireDiscoveryCore,
     /**
-     * 0.2.79 — the five M39 read operations a plugin may use to read entities of
+     * 0.2.79 — the M39 read operations a plugin may use to read entities of
      * a type that is not its own. Project-scoped by construction: this function
      * has already resolved the project, so the core they close over is this
      * project's. Resolved lazily, at call time — mounting runs before the core

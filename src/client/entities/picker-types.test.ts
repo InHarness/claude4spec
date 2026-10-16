@@ -24,7 +24,6 @@ function moduleOf(type: string, opts: { row: boolean }): FrontendModule {
     payloadVersion: 1,
     label: type,
     labelPlural: `${type}s`,
-    displayOrder: 900,
     pathPrefix: `/${type}s`,
     renderChip: Noop,
     renderCard: Noop,

@@ -11,7 +11,7 @@ import type {
   FrontendModule,
 } from '@c4s/plugin-runtime';
 import {
-  DESIGN_SYSTEM_DISPLAY_ORDER,
+  DESIGN_SYSTEM_SIDEBAR_ORDER,
   DESIGN_SYSTEM_LABEL,
   DESIGN_SYSTEM_LABEL_PLURAL,
   DESIGN_SYSTEM_PATH_PREFIX,
@@ -223,7 +223,6 @@ export const designSystemFrontendModule: FrontendModule = {
   payloadVersion: 2,
   label: DESIGN_SYSTEM_LABEL,
   labelPlural: DESIGN_SYSTEM_LABEL_PLURAL,
-  displayOrder: DESIGN_SYSTEM_DISPLAY_ORDER,
   pathPrefix: DESIGN_SYSTEM_PATH_PREFIX,
   renderRow: DesignSystemRow as FrontendModule['renderRow'],
   renderChip: DesignSystemChip as FrontendModule['renderChip'],
@@ -238,6 +237,6 @@ export const designSystemFrontendModule: FrontendModule = {
   sidebarTab: {
     icon: Palette,
     label: DESIGN_SYSTEM_LABEL_PLURAL,
-    order: DESIGN_SYSTEM_DISPLAY_ORDER,
+    order: DESIGN_SYSTEM_SIDEBAR_ORDER,
   },
 };

@@ -8,8 +8,9 @@ import { PageDiffCard } from './PageDiffCard.js';
  * Sections per entity type, in REGISTRY registration order (spec m17uidet01).
  * Pages stay first; the entity sections that follow are no longer a hardcoded
  * `Endpoints → DTOs → Database Tables → UI Views` list — they are derived from
- * `clientPluginHost` (core types in `displayOrder`, then a section per active
- * plugin, e.g. Database Tables from the preinstalled plugin). Labels come from
+ * `clientPluginHost` (`listAvailable()`, by type — the identity carries no
+ * ordering field since 2.1.26), one section per available type, plugins
+ * included (e.g. Database Tables from the preinstalled plugin). Labels come from
  * each module's `label` / `labelPlural`.
  */
 export function registrySectionOrder(): Array<{

@@ -41,6 +41,23 @@ export interface PlanToolsContext {
 }
 
 
+/**
+ * 2.1.26 — `update_plan`'s description, the `plan-tools-update-plan` and
+ * `plan-tools-update-plan-explicit` records' text verbatim: one text for both
+ * mounts (the records carry the same one). Only the schema differs — the
+ * threadless mount requires `path`.
+ */
+const UPDATE_PLAN_DESCRIPTION = [
+  "Create or update the deployment plan attached to this thread.",
+  "EXACTLY ONE of three variants per call, else INVALID_ARGUMENT: `content` — the complete markdown, create-or-replace; `textEdits` — literal find/replaceWith counted over the WHOLE plan; `edits` — a section batch by `anchor` (from get_plan), several actions per anchor.",
+  "Batch actions: `replace` (OWN body), `append` (end of OWN body) and `insert_after` (after the subtree) take `content`; `delete` (subtree, heading, anchor) takes nothing; `edit` takes `textEdits`, counted inside the subtree alone; `rename` takes `heading`: the heading line alone, level and anchor kept. Wrong fields for an action, an invalid `rename` heading, or a `content` heading at or above the section's level in `replace`/`append`: INVALID_ARGUMENT for the whole batch. No `dropAnchors`, no ANCHOR_LOSS; each row's `droppedAnchors` names what went.",
+  "The batch is TRANSACTIONAL and order-independent. `find` is matched on the plan as read. A `replace` carrying an existing subsection's anchor is INVALID_ARGUMENT. Anchors only: unknown → SECTION_NOT_FOUND, duplicated → AMBIGUOUS_ANCHOR.",
+  "FIRST call in a thread: `title` REQUIRED (creates the file, slug immutable), else MISSING_TITLE; on an empty plan only `content` succeeds. Otherwise `expectedHash` is REQUIRED — the WHOLE plan's hash; missing → INVALID_ARGUMENT, stale → PLAN_CONFLICT (409) with the current hash. One `changeSummary`, one `file_version` entry per call.",
+  "Returns { path, version, hash, results }: a row per element in input order, { anchor, action, affectedAnchors, droppedAnchors, replacements?, previousHeading? }; whole-plan variants: one row, null `anchor` and `action`. Content does not come back.",
+  "IDEMPOTENT: `content`, `replace`, `rename` (not a `replace` adding a deeper heading). `delete` repeated → SECTION_NOT_FOUND, `edit`/`textEdits` → FIND_NOT_FOUND, `append`/`insert_after` duplicate.",
+  "Use in plan_mode or when asked for a plan. It cannot change `applied` — use `mark_plan_applied`.",
+].join('\n');
+
 export function buildPlanToolsServer(
   ctx: PlanToolsContext,
   projectId: string | null = null,
@@ -65,9 +82,16 @@ export function buildPlanToolsServer(
    * `get_brief`'s and to `get_page.range`, and — like `get_brief`'s —
    * unconditionally allowed, because a plan never enters `section_index`.
    */
+  /*
+   * 2.1.26 — the bounds are NOT in the schema: `plan-tools-get-plan`'s logic
+   * refuses a non-integer window, a start below 1 or an end before the start
+   * with `INVALID_ARGUMENT` (`applyArtifactRange`), and a schema bound would
+   * answer those with the transport's input-validation error instead of the code.
+   * Same shape as `get_brief`'s window.
+   */
   const rangeParam = {
     range: z
-      .object({ start: z.number().int().positive(), end: z.number().int().positive() })
+      .object({ start: z.number(), end: z.number() })
       .optional()
       .describe(
         '1-based inclusive line window { start, end } onto the plan. Always allowed. A start past the end of the file is refused with the file size.',
@@ -211,25 +235,7 @@ export function buildPlanToolsServer(
 
   const updatePlan = mcpTool(
     'update_plan',
-    [
-      'Create or update the deployment plan attached to this thread.',
-      'THREE INPUT VARIANTS, EXACTLY ONE PER CALL. More than one, or none, is INVALID_ARGUMENT.',
-      '- `content`: the complete plan markdown. The create-or-replace primitive — this is what writes a plan that does not exist yet.',
-      '- `textEdits`: literal find/replaceWith substitutions counted over the WHOLE plan.',
-      '- `edits`: a section batch, addressed by `anchor` (from get_plan); one anchor may carry several actions.',
-      'Batch actions: `replace` (swaps the section\'s OWN body — heading and subsections untouched; a heading outside a code block at or above the section\'s level in `content` is INVALID_ARGUMENT, deeper headings become its first children) / `append` (adds at the end of the section\'s OWN body, before its first subsection — a heading outside a code block at or above the section\'s level in `content` is INVALID_ARGUMENT for the whole batch; deeper headings become its first children) / `insert_after` (adds after the section and its subtree) take `content`; `delete` (removes the subtree with its heading and anchor) takes neither; `edit` (substitutes literal fragments) takes `textEdits` — inside the addressed subtree ALONE (from its anchor line, heading included), which is where its match counts differ from the top-level variant\'s; and `rename` (rewrites the heading line alone) takes `heading`. Every action with the wrong complement of fields is INVALID_ARGUMENT for the whole batch; at `rename` the heading text must be ONE LINE, without a leading `#`, without an anchor comment and non-empty once trimmed — each of those four violations is INVALID_ARGUMENT for the whole batch too.',
-      '`rename` keeps the heading LEVEL and the section\'s anchor and does not touch the subtree: a `##` stays a `##` whatever text you send; the heading changes only through `rename`. Plans carry no `dropAnchors` and no ANCHOR_LOSS — a plan\'s anchors are plan-local and nothing outside the file can cite one — so `rename` enters a plan batch with no referential guard at all.',
-      '`delete`, `insert_after` and `edit` act on the SUBTREE, `replace` and `append` on the OWN BODY — below the heading, before the first subsection — and both refuse headings at or above the section\'s level. `delete` on a `##` carrying three `###` removes all four with their anchors; `replace` on it leaves the three untouched. The `droppedAnchors` of each result row names what went, on success as well as on refusal. Patterns are counted BEFORE the write; which elements collide is spelled out under `edits`.',
-      'The batch is TRANSACTIONAL and its ORDER DOES NOT MATTER: one rejected entry means nothing at all is written (no version, no event), and two orderings of the same batch produce identical text. An `edit`\'s `find` is always matched on the plan as you read it, never on text the same batch writes. A `replace` whose `content` carries the anchor of an existing subsection is INVALID_ARGUMENT (a duplicate anchor).',
-      'Sections are addressed by ANCHOR ONLY — the `heading` FIELD of a `rename` entry is its new TEXT, never an address. An unknown anchor is SECTION_NOT_FOUND with no append-at-end fallback, `rename` included, and an anchor duplicated inside the plan is AMBIGUOUS_ANCHOR.',
-      'On the FIRST call in a thread (no plan attached yet), `title` is REQUIRED — it creates the plan file (slug = slugify(title), immutable — a later title change edits frontmatter only, it never renames the file). Omitting `title` fails MISSING_TITLE in every variant, before any anchor is resolved. On an empty plan only `content` can succeed: `edits` answers SECTION_NOT_FOUND and `textEdits` FIND_NOT_FOUND, and neither leaves a plan file behind.',
-      '`expectedHash` is REQUIRED on every call EXCEPT that first, creating one: pass the `hash` from get_plan or from your previous update_plan. It is the hash of the WHOLE plan in all three variants, a batch touching one section included. Omitting it fails INVALID_ARGUMENT; a stale value fails PLAN_CONFLICT (409) carrying the current hash. A plan has several concurrent writers (this thread, the UI, an attach), so a write without the guard silently drops someone else\'s edit.',
-      '`changeSummary` is ONE per call, however many edits the call carries — and so is the `file_version` entry.',
-      'Returns { path, version, hash, results } — the hash arms your next call. Each `results` row is { anchor, action, affectedAnchors, droppedAnchors, replacements?, previousHeading? }, ONE ROW PER ELEMENT in the order you GAVE them — several rows may share an anchor, so read them by position; `replacements` appears only where a literal match ran, and `previousHeading` — the heading text from before the write — only on a `rename` row, the key being absent elsewhere rather than empty. Whole-plan variants answer with one row whose `anchor` and `action` are null. The plan content does not come back; you already have it.',
-      'IDEMPOTENCE: `content`, a batch `replace` and a batch `rename` repeat harmlessly (same text, new version number) — `rename` matches nothing literally, so a repeat has nothing to fail to find. Except a `replace` whose `content` carries a deeper heading: that heading became a SUBSECTION, which a repeated `replace` (own body only) does not overwrite, so the repeat adds it a second time. `delete` repeated answers SECTION_NOT_FOUND, `edit`/`textEdits` answer FIND_NOT_FOUND, and `append`/`insert_after` duplicate their content.',
-      'WHEN TO CALL IT. In plan_mode=true: always — persist the plan here rather than writing it out as prose in your reply, which is the one place it cannot be reviewed, versioned or applied from. Outside plan_mode: when the user explicitly asks for a deployment plan or an architectural proposal. An ordinary answer is not a plan.',
-      'This tool cannot change `applied` — use `mark_plan_applied`.',
-    ].join('\n'),
+    UPDATE_PLAN_DESCRIPTION,
     {
       ...pathParam,
       content: z
@@ -263,10 +269,11 @@ export function buildPlanToolsServer(
         )
         .min(1)
         .optional()
+        // The `edits` parameter's description, both records' text verbatim. Inlined, not a
+        // named constant: discovery-core's transport guard reads `.describe(IDENT)` as a
+        // call into the serialization engine (see decisions.md, u13 r2).
         .describe(
-          'VARIANT 3: a transactional section batch. Mutually exclusive with content and textEdits. ' +
-            "replace — swap the section's OWN BODY — heading and subsections untouched; deeper headings in `content` become its first children, a heading at or above its level is INVALID_ARGUMENT. " +
-            'COLLISIONS — each element CLAIMS part of the plan as it was BEFORE the write: `delete` the whole subtree with its anchor line, `replace` the own body, `edit` each matched fragment, `rename` the section\'s HEAD (anchor line + heading line); `append` and `insert_after` claim only a POINT (end of the own body / end of the subtree). The batch is INVALID_ARGUMENT when two claims share a character or a point lies strictly INSIDE a claimed range — whether the elements address one anchor or different ones; a point on a range\'s edge is fine. Also refused: two elements of the SAME action on one anchor (merge the `textEdits` lists, concatenate the `content`), and ANY element addressing an anchor inside a subtree being deleted, that anchor itself included. So `rename` + `replace` + `insert_after` on one anchor is fine, and so is `replace` on a parent next to edits in its subsections. Inserts sharing a position land innermost first — `append` before `insert_after` of the same section, a descendant\'s `insert_after` before its ancestor\'s; an insert on a range\'s edge goes after a range ending there and before one starting there. `results[]` carries one row PER ELEMENT, so two rows may share an anchor — read them by position.',
+          "VARIANT 3: a transactional section batch. Mutually exclusive with content and textEdits. replace — swap the section's OWN BODY; deeper headings in `content` become its first children, a heading at or above its level is INVALID_ARGUMENT. COLLISIONS — each element CLAIMS the plan as it was BEFORE the write: `delete` the subtree with its anchor line, `replace` the own body, `edit` each matched fragment, `rename` the anchor and heading lines; `append` and `insert_after` claim only a POINT. INVALID_ARGUMENT when two claims share a character or a point lies strictly INSIDE a claim (an edge is fine), for two elements of the SAME action on one anchor, and for ANY element addressing an anchor inside a deleted subtree. Inserts sharing a position land innermost first — `append` before `insert_after` of the same section, a descendant's before its ancestor's. `results[]` carries one row PER ELEMENT; read them by position.",
         ),
       title: z.string().optional(),
       /**
@@ -320,6 +327,13 @@ export function buildPlanToolsServer(
     }
   );
 
+  /**
+   * 2.1.26 — `plan-tools-list-plans-explicit`, the `mcp` rendering of the
+   * `list_plans` operation (its `internal` one is `transagent-tools · list_plans`).
+   * ASSUMPTION:dev-2609 — built as the record states it (`search`, most recently
+   * changed first, no window), although M10 `m10mcp00` gives the operation an
+   * `applied` filter, `created_at` order and the M39 window.
+   */
   const listPlans = mcpTool(
     'list_plans',
     'List the plans in this project — path, title, last update. The path is what get_plan / update_plan take on this connection.',
@@ -386,7 +400,9 @@ export function buildPlanToolsServer(
     'Get a specific version snapshot with full content. Use to inspect historical plan state or prepare a diff locally.',
     {
       ...pathParam,
-      version: z.number().int().positive(),
+      // 2.1.26 — `integer`, with no lower bound in the schema: a number off the
+      // history (0 included) is the record's `INVALID_ARGUMENT` stating 1..N.
+      version: z.number().int(),
     },
     async (args) => {
       try {

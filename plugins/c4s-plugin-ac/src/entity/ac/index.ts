@@ -1,6 +1,5 @@
 import type { EntityContribution, MountContext } from '@c4s/plugin-runtime';
 import {
-  AC_DISPLAY_ORDER,
   AC_LABEL,
   AC_LABEL_PLURAL,
   AC_PATH_PREFIX,
@@ -55,7 +54,6 @@ export const acEntity: EntityContribution = {
 
   label: AC_LABEL,
   labelPlural: AC_LABEL_PLURAL,
-  displayOrder: AC_DISPLAY_ORDER,
   pathPrefix: AC_PATH_PREFIX,
   ...acSerialization,
   systemPrompt: acSystemPrompt,

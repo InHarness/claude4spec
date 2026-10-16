@@ -313,7 +313,7 @@ export function pagesRouter(
       const rt = resolve(req, res);
       if (!rt) return;
       const body = (req.body ?? {}) as { path?: string; title?: string; content?: string };
-      const result = await createPage(
+      const { content: _settled, ...result } = await createPage(
         rt,
         {
           path: typeof body.path === 'string' ? body.path : '',
@@ -322,8 +322,10 @@ export function pagesRouter(
         },
         'user',
       );
-      // 2.1.23 — the same `CreatePageResponse` payload `create_page` answers,
-      // in the L4 `{ data }` envelope; the page content is not echoed.
+      // 2.1.23 — `CreatePageResponse` in the L4 `{ data }` envelope; the page
+      // content is not echoed. 2.1.26: the `create_page` tool answers the settled
+      // file beside these fields; this rendering's DTO does not carry it.
+      // ASSUMPTION:dev-2604
       res.status(201).json({ data: result });
     } catch (err) {
       next(err);

@@ -187,3 +187,66 @@ describe('GET /:type/:slug/versions/:from/diff/:to', () => {
     expect(res.body.op).toBe('noop');
   });
 });
+
+/**
+ * 2.1.26 — the M13 deactivation contract, M18 row: `tag_entity` (and its pair
+ * `untag_entity`) on a type inactive in this project is refused `400 VALIDATION`
+ * in the REST rendering too — the dedicated `INACTIVE_TYPE`, and the `INVALID_TYPE`
+ * (404) the version routes answer with, are not the tag doors' codes. A missing
+ * entity is the generic `404 NOT_FOUND`. Nothing is assigned or persisted.
+ */
+describe('the REST tag doors on an inactive type (2.1.26)', () => {
+  function app() {
+    const calls: string[] = [];
+    const host = {
+      getAvailable: (type: string) => (type === 'endpoint' || type === 'ghost' ? {} : null),
+      isActive: (type: string) => type === 'endpoint',
+      listEntities: () => [{ type: 'endpoint' }],
+      entityExists: (type: string, slug: string) => type === 'endpoint' && slug === 'my-slug',
+    } as unknown as ProjectPluginHost;
+    const tags = {
+      getEntityTagSlugs: () => (calls.push('read'), []),
+      assignTags: () => (calls.push('assign'), []),
+      removeEntityTag: () => (calls.push('remove'), []),
+    } as unknown as TagsService;
+    const store = { persist: () => void calls.push('persist') } as unknown as EntityStore;
+    const router = entitiesRouter(
+      host,
+      tags,
+      {} as unknown as VersionService,
+      store,
+      {} as unknown as RawEntityReader,
+      {} as unknown as DiscoveryCore,
+    );
+    return { calls, server: express().use(express.json()).use('/api/entities', router) };
+  }
+
+  it('[section:5yr06jez] tag_entity on a type inactive in this project → 400 VALIDATION (not INACTIVE_TYPE, not INVALID_TYPE); untag_entity likewise; a missing entity → 404 NOT_FOUND', async () => {
+    const { calls, server } = app();
+
+    const tagInactive = await request(server).post('/api/entities/ghost/g1/tags').send({ tags: ['auth'] });
+    expect(tagInactive.status).toBe(400);
+    expect(tagInactive.body.error.code).toBe('VALIDATION');
+
+    const untagInactive = await request(server).delete('/api/entities/ghost/g1/tags/auth');
+    expect(untagInactive.status).toBe(400);
+    expect(untagInactive.body.error.code).toBe('VALIDATION');
+
+    const tagUnknown = await request(server).post('/api/entities/nope/x/tags').send({ tags: ['auth'] });
+    expect(tagUnknown.status).toBe(400);
+    expect(tagUnknown.body.error.code).toBe('VALIDATION');
+
+    const missing = await request(server).post('/api/entities/endpoint/no-such/tags').send({ tags: ['auth'] });
+    expect(missing.status).toBe(404);
+    expect(missing.body.error.code).toBe('NOT_FOUND');
+
+    for (const res of [tagInactive, untagInactive, tagUnknown, missing]) {
+      expect(['INACTIVE_TYPE', 'INVALID_TYPE', 'ENTITY_NOT_FOUND']).not.toContain(res.body.error.code);
+    }
+    expect(calls).toEqual([]);
+
+    const ok = await request(server).post('/api/entities/endpoint/my-slug/tags').send({ tags: ['auth'] });
+    expect(ok.status).toBe(200);
+    expect(calls).toEqual(['read', 'assign', 'persist']);
+  });
+});

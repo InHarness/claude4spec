@@ -1,6 +1,5 @@
 import type { EntityContribution } from '@c4s/plugin-runtime';
 import {
-  CODE_SNIPPET_DISPLAY_ORDER,
   CODE_SNIPPET_LABEL,
   CODE_SNIPPET_LABEL_PLURAL,
   CODE_SNIPPET_PATH_PREFIX,
@@ -51,7 +50,6 @@ export const codeSnippetEntity: EntityContribution = {
   payloadVersion: 1,
   label: CODE_SNIPPET_LABEL,
   labelPlural: CODE_SNIPPET_LABEL_PLURAL,
-  displayOrder: CODE_SNIPPET_DISPLAY_ORDER,
   pathPrefix: CODE_SNIPPET_PATH_PREFIX,
   systemPrompt: codeSnippetSystemPrompt,
 };

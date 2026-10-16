@@ -20,6 +20,8 @@ const state = vi.hoisted(() => ({
     error?: unknown;
   },
   snapshots: {} as Record<number, unknown>,
+  releases: new Map<number, string>(),
+  restoreMutate: (() => {}) as (...args: unknown[]) => void,
 }));
 
 vi.mock('../../hooks/useVersions.js', () => ({
@@ -27,13 +29,18 @@ vi.mock('../../hooks/useVersions.js', () => ({
   useVersionDetail: (_type: string, _slug: string, version: number | null) => ({
     data: version != null && version in state.snapshots ? { version, data: state.snapshots[version] } : undefined,
   }),
-  useRestoreVersion: () => ({ isPending: false, isError: false, error: null, mutate: () => {} }),
+  useRestoreVersion: () => ({
+    isPending: false,
+    isError: false,
+    error: null,
+    mutate: (...args: unknown[]) => state.restoreMutate(...args),
+  }),
 }));
 vi.mock('../../hooks/useReleases.js', () => ({
-  useReleases: () => new Map<number, string>(),
+  useReleases: () => state.releases,
 }));
 
-import { EntityVersionHistoryView } from './EntityVersionHistoryView.js';
+import { EntityVersionHistoryView, type EntityVersionHistoryViewProps } from './EntityVersionHistoryView.js';
 import { ApiError } from '../../lib/api-core.js';
 
 const notFound = () => new ApiError('NOT_FOUND', 'Entity not found', 404);
@@ -48,10 +55,14 @@ function setList(next: ListResult) {
   state.list = next;
 }
 
-async function render() {
+async function render(extra: Partial<EntityVersionHistoryViewProps> = {}) {
   await act(async () => {
-    root.render(createElement(EntityVersionHistoryView, { type: 'dto', slug: 'user-dto' }));
+    root.render(createElement(EntityVersionHistoryView, { type: 'dto', slug: 'user-dto', ...extra }));
   });
+}
+
+function buttons(label: string): HTMLButtonElement[] {
+  return Array.from(host.querySelectorAll<HTMLButtonElement>('button')).filter((b) => b.textContent === label);
 }
 
 async function click(el: Element) {
@@ -73,6 +84,8 @@ beforeEach(() => {
   document.body.appendChild(host);
   root = createRoot(host);
   state.snapshots = {};
+  state.releases = new Map();
+  state.restoreMutate = () => {};
 });
 
 afterEach(() => {
@@ -165,5 +178,112 @@ describe('EntityVersionHistoryView on a deleted entity (M34)', () => {
     const alert = host.querySelector('[role="alert"]');
     expect(alert).not.toBeNull();
     expect(alert!.textContent).toContain('Internal server error');
+  });
+});
+
+describe('EntityVersionHistoryView restore (M34)', () => {
+  beforeEach(() => {
+    setList({
+      data: [
+        { version: 3, changedBy: 'user', changeSummary: null, createdAt: '2026-10-03T10:00:00Z' },
+        { version: 2, changedBy: 'agent', changeSummary: null, createdAt: '2026-10-02T10:00:00Z' },
+        { version: 1, changedBy: 'user', changeSummary: null, createdAt: '2026-10-01T10:00:00Z' },
+      ],
+      isLoading: false,
+      isError: false,
+    });
+    state.snapshots = { 1: { n: 1 }, 2: { n: 2 }, 3: { n: 3 } };
+  });
+
+  it('[ac:ac-allowrestore-false-ukrywa-akcje-rest] allowRestore={false} hides the restore action', async () => {
+    await render({ allowRestore: false });
+    // The timeline is rendered (so the absence is not just an empty view)…
+    expect(host.textContent).toContain('v2');
+    expect(buttons('Compare to').length).toBeGreaterThan(0);
+    // …but no row offers Restore.
+    expect(buttons('Restore')).toEqual([]);
+  });
+
+  it('[ac:ac-allowrestore-false-ukrywa-akcje-rest] with allowRestore by default, restore runs the host useRestoreVersion hook', async () => {
+    const calls: unknown[][] = [];
+    state.restoreMutate = (...args) => calls.push(args);
+    const restored: string[] = [];
+    await render({ onRestored: (id: string) => restored.push(id) });
+
+    const restore = buttons('Restore');
+    // Every non-active row (v2, v1) offers it; the active v3 does not.
+    expect(restore.length).toBe(2);
+    await click(restore[0]!);
+
+    // The hook's mutation is what runs — with the entity identity and the row's
+    // version — not a mutation of the component's own nor an author callback.
+    expect(calls.length).toBe(1);
+    expect(calls[0]![0]).toEqual({ type: 'dto', slug: 'user-dto', version: 2 });
+    expect(restored).toEqual([]); // onRestored fires only on the hook's onSuccess
+    const opts = calls[0]![1] as { onSuccess?: () => void };
+    opts.onSuccess?.();
+    expect(restored).toEqual(['2']);
+  });
+});
+
+describe('EntityVersionHistoryView release grouping (M34)', () => {
+  beforeEach(() => {
+    setList({
+      data: [
+        { version: 4, changedBy: 'user', changeSummary: null, createdAt: '2026-10-04T10:00:00Z' },
+        { version: 3, changedBy: 'agent', changeSummary: null, createdAt: '2026-10-03T10:00:00Z', releaseId: 7 },
+        { version: 2, changedBy: 'user', changeSummary: null, createdAt: '2026-10-02T10:00:00Z', releaseId: 7 },
+        { version: 1, changedBy: 'user', changeSummary: null, createdAt: '2026-10-01T10:00:00Z', releaseId: 5 },
+      ],
+      isLoading: false,
+      isError: false,
+    });
+    state.snapshots = { 1: { n: 1 }, 2: { n: 2 }, 3: { n: 3 }, 4: { n: 4 } };
+    state.releases = new Map([
+      [7, '2.1.0'],
+      [5, '2.0.0'],
+    ]);
+  });
+
+  function groupIds(): string[] {
+    return Array.from(host.querySelectorAll('[data-testid^="version-group-"]')).map(
+      (g) => g.getAttribute('data-testid')!,
+    );
+  }
+
+  it('[ac:ac-w-widoku-entityversionhistoryview-wers] groups versions by release, unassigned ones in "Unreleased" at the top', async () => {
+    await render();
+
+    expect(groupIds()).toEqual([
+      'version-group-__unreleased__',
+      'version-group-release:2.1.0',
+      'version-group-release:2.0.0',
+    ]);
+    const unreleased = host.querySelector('[data-testid="version-group-__unreleased__"]')!;
+    expect(unreleased.textContent).toContain('Unreleased');
+    expect(unreleased.textContent).toContain('v4');
+    expect(unreleased.textContent).not.toContain('v3');
+
+    // v4 active, v3 the default compare target → the 2.1.0 group is open.
+    const r210 = host.querySelector('[data-testid="version-group-release:2.1.0"]')!;
+    expect(r210.textContent).toContain('v3');
+    expect(r210.textContent).toContain('v2');
+
+    // The release name is the GROUP heading only — no per-row release pill.
+    const names = Array.from(host.querySelectorAll('*')).filter(
+      (n) => n.children.length === 0 && n.textContent === '2.1.0',
+    );
+    expect(names.length).toBe(1);
+    expect(host.textContent).not.toContain('(unreleased)');
+  });
+
+  it('[ac:ac-w-widoku-entityversionhistoryview-wers] showReleasePill={false} keeps the grouping but heads each group "Release <id>"', async () => {
+    await render({ showReleasePill: false });
+    expect(groupIds()).toEqual([
+      'version-group-__unreleased__',
+      'version-group-release:Release 7',
+      'version-group-release:Release 5',
+    ]);
+    expect(host.textContent).not.toContain('2.1.0');
   });
 });

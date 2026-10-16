@@ -12,7 +12,7 @@
  */
 
 export interface VerifyGroupInput {
-  /** Entity types with an active module, in display order. */
+  /** Entity types with an active module, in the client host's listing order. */
   moduleTypes: string[];
   /** Linked slugs per type, from the AC's current draft. */
   selected: Record<string, string[]>;

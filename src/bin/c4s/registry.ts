@@ -119,10 +119,13 @@ export interface CliCommandContribution {
  * Commands that are `server-delegating` and legitimately render NO catalog
  * operation.
  *
- * An agent turn is not a catalog operation — the catalog's subject is
- * specification CONTENT (or a turn OVER that content addressed as one), and
- * these two address the agent runtime itself: they create a thread and run a
- * turn on it. `resolve` is the other kind of exception: it reads a local file
+ * `agent` is not a catalog operation — the catalog's subject is specification
+ * CONTENT (or a turn OVER that content addressed as one), and `c4s agent`
+ * addresses the agent runtime itself: it creates a thread of any context type
+ * and runs a turn on it. (2.1.26: `ask` left this list — the peer consultation
+ * is the catalog operation `ask`, whose record renders it in `cli` directly, so
+ * its contribution names it like every other rendering does.) `resolve` is the
+ * other kind of exception: it reads a local file
  * and delegates its expansion to the M19 embed-expansion core (whose entity
  * reader is `get_entities`), and deliberately has no operation of its own,
  * because an expanded embed hands the consumer a payload where it had an edge.
@@ -139,7 +142,7 @@ export interface CliCommandContribution {
  * exception a decision someone wrote down, rather than the check quietly
  * admitting anything it does not recognise.
  */
-const NON_CATALOG_DELEGATING = new Set(['agent', 'ask', 'resolve', 'plugins']);
+const NON_CATALOG_DELEGATING = new Set(['agent', 'resolve', 'plugins']);
 
 /**
  * Item 26 — the contribution invariant, in both directions.

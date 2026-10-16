@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { UI_KIT_CATALOG, UI_KIT_STABLE_COMPONENTS as BROWSER_STABLE } from './registry.js';
 import { UI_KIT_STABLE_COMPONENTS } from '../../shared/plugin-host/ui-kit-surface.js';
 import { HOST_API_VERSION } from '../../shared/plugin-host/manifest.js';
+import { PLUGIN_RUNTIME_UI_EXPORT_NAMES } from '../../shared/plugin-host/frontend-manifest.js';
+import { pluginRuntimeLegOf } from '../../shared/plugin-host/runtime-legs.js';
 // The backend half of `@c4s/plugin-runtime/ui` (what a plugin backend links against).
 import * as uiBackendLeg from '../../server/plugin-runtime/ui.js';
 // The browser half of `@c4s/plugin-runtime/ui` (the catalog's re-export surface).
@@ -132,6 +134,35 @@ describe('Host UI Kit catalog registry (M34/L12)', () => {
     );
     for (const singleton of docEditor?.l11Surfaces ?? []) {
       expect(published).toMatch(new RegExp(`export declare const ${singleton}: `));
+    }
+  });
+
+  it('[section:m33rt001] the data services feed the L12 catalog (TagFilterBar among it, re-exported on /ui), DiffView takes its hunks from a caller, and the connected DocEditor binds the editorBridge and queryClient singletons', () => {
+    const byName = (n: string) => UI_KIT_CATALOG.find((c) => c.name === n);
+    // L12 consumers of the data services: presentational, props-in — TagFilterBar
+    // is one of them and travels on the browser leg of `@c4s/plugin-runtime/ui`.
+    for (const name of ['VersionHistory', 'TagPicker', 'TagFilterBar', 'ReferencesList']) {
+      expect(byName(name)?.binding, name).toBe('presentational');
+      expect(byName(name)?.l11Surfaces, name).toBeUndefined();
+      expect(PLUGIN_RUNTIME_UI_EXPORT_NAMES, name).toContain(name);
+      expect(uiBrowserSurface, name).toHaveProperty(name);
+    }
+    expect(byName('TagFilterBar')?.group).toBe('list');
+    // DiffView's hunks do not come from a data service: the component is
+    // presentational and consumes no L11 surface; `lineDiffHunks` (a pure util,
+    // browser leg) is one of the sources a caller hands it.
+    expect(byName('DiffView')?.binding).toBe('presentational');
+    expect(byName('DiffView')?.l11Surfaces).toBeUndefined();
+    expect(pluginRuntimeLegOf('lineDiffHunks')).toBe('browser');
+    // The connected components power themselves: EntityVersionHistoryView calls
+    // the hooks, DocEditor binds the editorBridge and queryClient singletons —
+    // every name a browser-leg value of `@c4s/plugin-runtime`.
+    const connected = UI_KIT_CATALOG.filter((c) => c.binding === 'connected').map((c) => c.name);
+    expect(connected).toEqual(expect.arrayContaining(['DocEditor', 'EntityVersionHistoryView']));
+    expect(byName('DocEditor')?.l11Surfaces).toEqual(['editorBridge', 'queryClient']);
+    for (const c of UI_KIT_CATALOG.filter((e) => e.binding === 'connected')) {
+      expect(c.l11Surfaces?.length ?? 0, c.name).toBeGreaterThan(0);
+      for (const surface of c.l11Surfaces ?? []) expect(pluginRuntimeLegOf(surface), `${c.name} → ${surface}`).toBe('browser');
     }
   });
 });

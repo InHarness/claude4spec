@@ -28,14 +28,6 @@ export const CODE_SNIPPET_PATH_PREFIX = '/code-snippets';
 export const CODE_SNIPPET_LABEL = 'Code snippet';
 export const CODE_SNIPPET_LABEL_PLURAL = 'Code snippets';
 
-/**
- * The type is HIDDEN — the frontend module declares no `sidebarTab`, no `routes`
- * and no `detailPanel` — so this never orders anything in the UI. It exists
- * because `EntityModuleManifest` requires it, and it still orders the type in
- * catalogues, release snapshots and diffs. Last, after `spreadsheet`'s 100.
- */
-export const CODE_SNIPPET_DISPLAY_ORDER = 110;
-
 /** The popover kind `/code-snippet` dispatches. See `capabilities/commands.ts`. */
 export const CODE_SNIPPET_POPOVER_KIND = `${CODE_SNIPPET_TYPE}-create`;
 

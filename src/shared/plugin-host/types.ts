@@ -98,8 +98,9 @@ export interface EntityModuleManifest {
   /** Plural human label, e.g. "Endpoints" — used in sidebar tabs and prose. */
   labelPlural: string;
 
-  /** Sidebar / display ordering hint (lower = earlier). */
-  displayOrder: number;
+  // 2.1.26 — the identity carries NO ordering field. `displayOrder` is retired:
+  // the order of ELEMENTS entries comes only from the frontend's
+  // `sidebarTab.order`, and a type without a sidebar tab declares no order.
 
   /**
    * Derive a slug from a CreateInput payload.

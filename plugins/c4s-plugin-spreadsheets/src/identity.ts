@@ -47,13 +47,6 @@ export const SPREADSHEET_PATH_PREFIX = '/spreadsheets';
 export const SPREADSHEET_LABEL = 'Spreadsheet';
 export const SPREADSHEET_LABEL_PLURAL = 'Spreadsheets';
 
-/**
- * Last in the sidebar order among contributed types — except the type never
- * reaches the sidebar at all (the frontend module declares no `sidebarTab`), so
- * this only orders it in catalogues, release snapshots and diffs.
- */
-export const SPREADSHEET_DISPLAY_ORDER = 100;
-
 /** The keyed collection every read and write addresses. */
 export const CELLS_FIELD = 'cells';
 

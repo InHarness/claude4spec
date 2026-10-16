@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { FrontendModule } from '@c4s/plugin-runtime';
 import {
-  SPREADSHEET_DISPLAY_ORDER,
   SPREADSHEET_LABEL,
   SPREADSHEET_LABEL_PLURAL,
   SPREADSHEET_PATH_PREFIX,
@@ -40,7 +39,6 @@ export const spreadsheetFrontendModule: FrontendModule = {
   payloadVersion: 2,
   label: SPREADSHEET_LABEL,
   labelPlural: SPREADSHEET_LABEL_PLURAL,
-  displayOrder: SPREADSHEET_DISPLAY_ORDER,
   pathPrefix: SPREADSHEET_PATH_PREFIX,
 
   renderChip: SpreadsheetChip,

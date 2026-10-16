@@ -99,7 +99,7 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
     const merged = new Map<string, BackendModule>();
     for (const m of this.registry.listAvailable()) merged.set(m.type, m);
     for (const [type, m] of this.overlayModules) merged.set(type, m);
-    return Array.from(merged.values()).sort((a, b) => a.displayOrder - b.displayOrder);
+    return Array.from(merged.values()).sort((a, b) => a.type.localeCompare(b.type));
   }
 
   listEntities(): BackendModule[] {

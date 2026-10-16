@@ -120,9 +120,10 @@ export interface FieldFlags {
    * lifted and there is no UI exception: a React component fetches a body
    * through the same operation an agent does.
    *
-   * The remaining rule: the content must be REACHABLE. The host generates
-   * `get_field_content(type, slug, field)` for every flagged field, on all three
-   * channels, so this holds by default. A type wanting something richer than
+   * The remaining rule: the content must be REACHABLE. One generic core
+   * operation, `get_field_content(type, slug, field)`, serves every flagged
+   * field on every channel — the flag alone puts a field in its domain, nothing
+   * is generated per type (2.1.26, M39 `v0fldrd8`) — so this holds by default. A type wanting something richer than
    * "return the whole value" — a windowed read, say — names its own operation in
    * `contentOperation`, and registration rejects a name that does not resolve.
    * A field excluded from every read with no operation behind it would be
@@ -130,7 +131,7 @@ export interface FieldFlags {
    */
   contentBearing?: boolean;
   /**
-   * Overrides the host-generated `get_field_content` for THIS field.
+   * Overrides the generic core `get_field_content` for THIS field.
    *
    * Only meaningful alongside `contentBearing`. The name must resolve in the
    * operation catalog at registration — see `data-schema-validation` — because
@@ -695,7 +696,7 @@ export function contentBytes(value: unknown): number {
   return new TextEncoder().encode(text ?? '').length;
 }
 
-/** The host-generated operation that issues a `contentBearing` field's content. */
+/** The generic core operation that issues a `contentBearing` field's content (one for every type). */
 export const DEFAULT_CONTENT_OPERATION = 'get_field_content';
 
 /** Which operation hands over THIS field's content — the type's override, or the host's. */

@@ -18,14 +18,13 @@
 
 import type { EntityModuleManifest } from '../../../shared/plugin-host/types.js';
 
-type OrderableModule = Pick<EntityModuleManifest, 'type' | 'displayOrder' | 'dependsOn'>;
+type OrderableModule = Pick<EntityModuleManifest, 'type' | 'dependsOn'>;
 
 /**
  * Topologically sort modules so every module follows the ones it `dependsOn`.
  *
- * - Ties break on `displayOrder`, then `type`, so the result is STABLE: an
- *   unchanged set of modules always yields the same order, which matters because
- *   restore order is observable in `entity_version`.
+ * - Ties break on `type`, so the result is STABLE: an unchanged set of
+ *   modules always yields the same order, which matters because restore order is observable in `entity_version`.
  * - Dependencies on types absent from `modules` (unknown, or deactivated in this
  *   project) are ignored. `dependsOn` is a soft ordering hint, not referential
  *   integrity — deactivating `design-system` must not strand `ui-view`.
@@ -38,8 +37,7 @@ export function topoSortModules<T extends OrderableModule>(
   onCycle?: (remaining: string[]) => void,
 ): T[] {
   const byType = new Map(modules.map((m) => [m.type, m]));
-  const tiebreak = (a: T, b: T) =>
-    a.displayOrder - b.displayOrder || a.type.localeCompare(b.type);
+  const tiebreak = (a: T, b: T) => a.type.localeCompare(b.type);
 
   const pending = [...modules].sort(tiebreak);
   const emitted = new Set<string>();
@@ -69,7 +67,7 @@ export function topoSortTypes(modules: OrderableModule[]): string[] {
   return topoSortModules(modules, (remaining) =>
     console.warn(
       `[entity-order] dependsOn cycle among [${remaining.join(', ')}] — ` +
-        `falling back to displayOrder for those types`,
+        `falling back to type order for those types`,
     ),
   ).map((m) => m.type);
 }

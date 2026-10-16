@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { FrontendModule } from '@c4s/plugin-runtime';
 import {
-  MODULE_DEPENDENCY_DISPLAY_ORDER,
   MODULE_DEPENDENCY_LABEL,
   MODULE_DEPENDENCY_LABEL_PLURAL,
   MODULE_DEPENDENCY_PATH_PREFIX,
@@ -43,7 +42,6 @@ export const moduleDependencyFrontendModule: FrontendModule = {
   payloadVersion: 1,
   label: MODULE_DEPENDENCY_LABEL,
   labelPlural: MODULE_DEPENDENCY_LABEL_PLURAL,
-  displayOrder: MODULE_DEPENDENCY_DISPLAY_ORDER,
   pathPrefix: MODULE_DEPENDENCY_PATH_PREFIX,
 
   renderRow: ModuleDependencyRow as FrontendModule['renderRow'],

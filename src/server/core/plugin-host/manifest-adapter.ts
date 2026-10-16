@@ -175,7 +175,6 @@ const MANIFEST_FIELDS = [
   'payloadVersion',
   'label',
   'labelPlural',
-  'displayOrder',
   'pathPrefix',
 ] as const;
 
@@ -385,7 +384,6 @@ const ENVELOPE_KEYS: ReadonlySet<string> = new Set([
   'payloadUpgrades',
   'label',
   'labelPlural',
-  'displayOrder',
   'pathPrefix',
   'dependsOn',
   'systemPrompt',
@@ -495,7 +493,6 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
     type: c.type,
     label: c.label,
     labelPlural: c.labelPlural,
-    displayOrder: c.displayOrder,
     data: c.data,
     slugPattern: c.slugPattern,
     ...(c.slugConflict ? { slugConflict: c.slugConflict } : {}),

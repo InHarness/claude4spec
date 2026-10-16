@@ -23,12 +23,18 @@
  * a file the caller did not name. `PROFILES.brief.requiresExplicitBriefTarget`
  * is what selects this mode, and it exists so that the fallback cannot be
  * reintroduced by accident.
+ *
+ * 2.1.26 (M21 `01ytpznn`) — the two mounts are two sets of declarations, each
+ * with its own `mcp-tool` record: `brief-tools-<tool>` (thread mount,
+ * `internal`) and `brief-tools-<tool>-explicit` (threadless mount, external
+ * `mcp`, seen by a `brief`-profile connection). Not the same tools under another
+ * name: `path` is required in the explicit ones and the descriptions differ.
  */
 
 import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import { z } from 'zod';
 import { ConflictError, composeBriefBody, type BriefService } from '../services/brief.js';
-import { toolFailure, toolSuccess } from '../operations/envelope.js';
+import { toolError, toolFailure, toolSuccess } from '../operations/envelope.js';
 import { DomainError } from '../services/tags.js';
 import { applyTextEdits, type MatchPosition, type PositionResolver, type TextEdit } from '../services/text-edits.js';
 import { bodyPositionResolver } from '../services/section-text.js';
@@ -87,9 +93,15 @@ const EXPLICIT_BRIEF_ARG = {
  *
  * 2.1.13 — the description is the `brief-tools-get-brief` entity's, verbatim.
  */
+/*
+ * 2.1.26 — the bounds are NOT in the schema: the record's logic refuses a
+ * non-integer window, a start below 1 or an end before the start with
+ * `INVALID_ARGUMENT` (`applyArtifactRange`), and a schema bound would answer
+ * those with the transport's input-validation error instead of the code.
+ */
 const BRIEF_RANGE_ARG = {
   range: z
-    .object({ start: z.number().int().positive(), end: z.number().int().positive() })
+    .object({ start: z.number(), end: z.number() })
     .optional()
     .describe(
       'Line window { start, end }, 1-based and inclusive. Use it to read a long brief in parts or to fetch the rest after a truncated response. A start past the end of the file is refused with the file size.',
@@ -170,7 +182,16 @@ export function buildBriefToolsServer(
    */
   const ok = (data: unknown, operation: string) =>
     toolSuccess(data, { operation, channel: 'mcp', project: projectId });
-  const fail = toolFailure;
+  /**
+   * 2.1.26 — `update_brief`'s record: a stale hash is `BRIEF_CONFLICT` "with the
+   * current hash AND content". The shared envelope forwards `currentHash` only,
+   * so the conflict's `currentContent` — what the caller diffs against before it
+   * retries, the field the REST rendering already returns — is added here.
+   */
+  const fail = (err: unknown) =>
+    err instanceof ConflictError && err.currentContent !== undefined
+      ? toolError(err.code, err.message, undefined, { currentHash: err.currentHash, currentContent: err.currentContent })
+      : toolFailure(err);
 
   /**
    * The one place the two addressing modes differ at runtime.
@@ -453,7 +474,9 @@ export function buildBriefToolsServer(
     explicit ? EXPLICIT_GET_BRIEF_VERSION_DESCRIPTION : THREAD_GET_BRIEF_VERSION_DESCRIPTION,
     {
       ...pathParam,
-      version: z.number().int().positive().describe('Version number, from list_brief_versions.'),
+      // 2.1.26 — `integer`, with no lower bound in the schema: a number off the
+      // history (0 included) is the record's `INVALID_ARGUMENT` stating 1..N.
+      version: z.number().int().describe('Version number, from list_brief_versions.'),
     },
     async (args) => {
       try {

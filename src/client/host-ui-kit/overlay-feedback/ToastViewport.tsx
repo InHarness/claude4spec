@@ -28,8 +28,8 @@ export const TOAST_DURATION_MS: Record<ToastKind, number> = {
 
 export const TOAST_COLOR: Record<ToastKind, string> = {
   success: 'var(--c-accent)',
-  error: 'var(--c-red, #c45a3b)',
-  warning: 'var(--c-yellow-ink)',
+  error: 'var(--c-red)',
+  warning: 'var(--c-yellow)',
   info: 'var(--c-muted)',
 };
 

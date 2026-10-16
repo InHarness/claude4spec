@@ -214,11 +214,12 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
  * ascending, tie by `path`, undated last); the WINDOW follows M39's implicit
  * matrix (`limit` / `offset` with a finite default, `total` before the slice,
  * `hasMore`). `echo-free`: rows carry the address and the flag, no content.
-
  *
- * ASSUMPTION:dev-0003 — rendered here although the catalog row's `internal` cell
- * still reads `n/a` at 2.1.18 (Faza B pending); no catalog row is declared, and
- * the default page size (50) is ours — M39 names none for this list.
+ * 2.1.26 — the `internal` rendering of the `list_patches` catalog row (M23's
+ * read-family list, `transagent-tools-list-patches`): its input is the row's
+ * (`brief?`, `applied?`, `limit?`, `offset?`); default `limit` 50, maximum
+ * 1000, default `offset` 0, as the record states; an empty `createdAt`
+ * answers `null`.
  */
 function buildListPatchesTool(patches: Pick<PatchService, 'listPatches'>, projectId: string | null) {
   return mcpTool(
@@ -358,9 +359,12 @@ function buildListBriefsTool(briefs: Pick<BriefService, 'listBriefs'>, projectId
  * finite default, `total` before the slice, `hasMore`). A row carries no plan
  * content: only `get_plan` reads that, and only for the thread's own plan.
  *
- * ASSUMPTION:dev-0005 — no `list_plans` catalog row (Faza B pending at 2.1.18),
- * no `search` parameter (`search_plans` is `n/a`), and the default page size
- * (50) is ours — M39 names none for this list.
+ * No `search` parameter (`search_plans` is `n/a`).
+ *
+ * 2.1.26 — the `internal` rendering of the `list_plans` catalog row (M10's
+ * eighth plan operation, `transagent-tools-list-plans`): default `limit` 50,
+ * maximum 1000, default `offset` 0, as the record states; empty dates answer
+ * `null`.
  */
 function buildListPlansTool(plans: Pick<PlanService, 'listPlans'>, projectId: string | null) {
   return mcpTool(

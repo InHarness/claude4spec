@@ -50,6 +50,27 @@ function assertType(host: ProjectPluginHost, type: string): EntityType {
 }
 
 /**
+ * 2.1.26 — the type guard of the two tag-assignment doors (`tag_entity` /
+ * `untag_entity` in their `rest` rendering). The operation declares its codes
+ * once for every channel — `VALIDATION`, `NOT_FOUND` — and its behaviour says a
+ * type unknown OR inactive is refused with `VALIDATION` (M18 "Przypadki
+ * brzegowe", M13 deactivation contract: `400 VALIDATION`). `assertType` answers a
+ * deactivated type with `INVALID_TYPE` (404), which is right for the version and
+ * collection routes and wrong here: the MCP rendering of the same operation
+ * already says `VALIDATION`, and a channel does not change an error code.
+ */
+function assertTaggableType(host: ProjectPluginHost, type: string): EntityType {
+  if (host.isActive(type)) return type as EntityType;
+  throw new DomainError(
+    'VALIDATION',
+    `unsupported or inactive entity type '${type}'. Active: [${host
+      .listEntities()
+      .map((m) => m.type)
+      .join(', ')}]`,
+  );
+}
+
+/**
  * 0.2.13 — the type guard for the CATALOG routes below (`/:type/search`,
  * `/:type/tools`), distinct from `assertType` above on two counts that matter.
  *
@@ -470,12 +491,12 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
    * the transport is how two surfaces start disagreeing about the same refusal.
    */
   /**
-   * The `rest` rendering of `get_field_content` — one route PER FIELD, not per
-   * type: a type with two content-bearing fields is addressable at two URLs.
-   *
-   * It is not modelled as an endpoint entity, because how many of these exist
-   * depends on which plugins are installed, and a spec cannot enumerate routes
-   * that only exist in some deployments.
+   * The `rest` rendering of `get_field_content` — ONE cross-cutting route for
+   * the one generic core operation (2.1.26, M39 `v0fldrd8`). Nothing here is
+   * generated per type or per field: a type with two content-bearing fields is
+   * addressable at two URLs of this same pattern only because `:field` is a path
+   * parameter, and a type gets it by the `contentBearing` flag alone — no plugin
+   * contributes a route for it.
    *
    * NO EXCEPTION FOR THE UI. The React component rendering a diagram fetches its
    * body here, exactly as an agent does — the width of a record is the same
@@ -491,6 +512,10 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
    * does. On every other surface the same condition really is a bad argument and
    * keeps its 400. The message is the core's either way, so it still carries the
    * covered field names and a caller can fix the URL from the response.
+   *
+   * ASSUMPTION:dev-2601 — the cross-cutting content route is the one rest
+   * rendering of the generic get_field_content; its 404 remap stays as M13
+   * `tnpe8kzk` states it at 2.1.26 (the record says INVALID_ARGUMENT).
    */
   router.get('/:type/:slug/content/:field', (req, res, next) => {
     try {
@@ -574,10 +599,11 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
 
   /**
    * M13/M34: version-to-version diff for the plugin-facing `useVersionDiff`
-   * hook. `entity_version.data` is already the M17 snapshot (captured via
-   * `host.snapshot` at write time), so it's fed straight into `host.diff`
-   * unchanged — the same M47 `EntitySerializer.diff`/JSON-deep-diff-fallback
-   * path `ReleaseService.getReleaseDiff` uses for release-to-release diffs.
+   * hook. `entity_version.data` is the M17 snapshot (captured via
+   * `host.snapshot` at write time); after the payload upgrade below it goes to
+   * `host.diff`, which GENERATES the semantic delta from the type's logical
+   * schema — the same path `ReleaseService.getReleaseDiff` uses for
+   * release-to-release diffs. The answer is a delta, never text lines.
    * Response is shaped by the same `toRawDeltaEntityChange` helper release
    * diffing uses, including the `_serializerVersionMismatch` flag when the
    * two captured versions span a serializer upgrade.
@@ -660,7 +686,7 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
 
   router.post('/:type/:slug/tags', (req, res, next) => {
     try {
-      const type = assertType(host, req.params.type);
+      const type = assertTaggableType(host, req.params.type);
       const slug = req.params.slug;
       assertExists(host, type, slug);
       const body = req.body as { tags?: string[] };
@@ -680,7 +706,7 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
 
   router.delete('/:type/:slug/tags/:tagSlug', (req, res, next) => {
     try {
-      const type = assertType(host, req.params.type);
+      const type = assertTaggableType(host, req.params.type);
       const slug = req.params.slug;
       assertExists(host, type, slug);
       const before = tags.getEntityTagSlugs(type, slug);

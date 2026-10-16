@@ -11,9 +11,9 @@ import { RootRegistry } from '../roots/registry.js';
 import type { Root } from '../../shared/types.js';
 import { registerCoreReactions } from '../workspace/core-reactions.js';
 import { mountRegistryRoots } from '../workspace/root-registry-runtime.js';
-import { CATALOG } from '../operations/catalog.js';
 import { registerCoreOperations } from '../operations/core-operations.js';
 import { profileAdmits } from '../operations/profiles.js';
+import { expectOperationMatchesRecord } from '../../../tests/helpers/operation-records.js';
 import {
   SPEC_SKILL_TOOLS_SERVER,
   SpecSkillTools,
@@ -210,23 +210,34 @@ describe('spec-skill-tools · update_skill_file (M52, 2.1.9)', () => {
     expect(fs.readFileSync(abs('cached/SKILL.md'), 'utf-8')).toBe(SKILL_MD);
   });
 
-  it('[entity:katalog-operacji-m52#update_skill_file] the L3 catalog row: project scope, agent-mediated, write class, internal direct and n/a with a reason in cli/mcp/rest, the five error codes, file effect, literal+diff, idempotent — and the guard is observable: a stale expectedHash is PAGE_CONFLICT', async () => {
-    const row = CATALOG.require('update_skill_file');
-    expect(row.scope).toBe('project');
-    expect(row.mediation).toBe('agent-mediated');
-    expect(row.opClass).toBe('write');
-    expect(row.channels.internal).toEqual({ kind: 'direct' });
-    for (const channel of ['cli', 'mcp', 'rest'] as const) {
-      const cell = row.channels[channel];
-      expect(cell.kind, channel).toBe('na');
-      expect((cell as { reason: string }).reason.length, channel).toBeGreaterThan(0);
-    }
-    expect([...row.errorCodes].sort()).toEqual(
-      ['FIND_NOT_FOUND', 'INVALID_ARGUMENT', 'MATCH_COUNT_MISMATCH', 'PAGE_CONFLICT', 'SKILL_READ_ONLY'].sort(),
+  /**
+   * 2.1.26 — the M52 page embeds the `spec-operation` records instead of the
+   * `katalog-operacji-m52` sheet, so the row is held against its record
+   * `update-skill-file`: agent-mediated, internal direct rendered by
+   * `spec-skill-tools · update_skill_file`, cli/mcp/rest `n/a` with the record's
+   * `powody` verbatim, effect `plik`, idempotent, `obydwa`, the five codes.
+   */
+  it('[entity:update-skill-file] update_skill_file: project, agent-mediated, internal direct rendered by spec-skill-tools · update_skill_file, cli/mcp/rest n/a with the record\'s reasons, file effect, idempotent, literal+diff, codes SKILL_READ_ONLY, INVALID_ARGUMENT, PAGE_CONFLICT, FIND_NOT_FOUND, MATCH_COUNT_MISMATCH, addressed by (slug, file) under a required guard — a stale expectedHash is PAGE_CONFLICT', async () => {
+    const OUTSIDE_V1 = 'zapis skilli z zewnątrz poza v1';
+    const row = expectOperationMatchesRecord(
+      {
+        nazwa: 'update_skill_file',
+        mediacja: 'agent-mediated',
+        channels: {
+          internal: { kind: 'direct' },
+          cli: { kind: 'na', reason: OUTSIDE_V1 },
+          mcp: { kind: 'na', reason: OUTSIDE_V1 },
+          rest: { kind: 'na', reason: 'człowiek pisze trasami zapisu stron przez fasadę korzenia `skills`' },
+        },
+        efekty: ['file'],
+        idempotencja: true,
+        opisTresci: 'literal+diff',
+        kodyBledow: ['SKILL_READ_ONLY', 'INVALID_ARGUMENT', 'PAGE_CONFLICT', 'FIND_NOT_FOUND', 'MATCH_COUNT_MISMATCH'],
+        narzedzia: { internal: ['spec-skill-tools-update-skill-file'] },
+      },
+      { 'spec-skill-tools-update-skill-file': { server: SPEC_SKILL_TOOLS_SERVER, name: 'update_skill_file' } },
     );
-    expect(row.sideEffects).toEqual(['file']);
-    expect(row.contentInput).toBe('literal+diff');
-    expect(row.idempotent).toBe(true);
+    expect(row.opClass).toBe('write');
     // Addressing (slug, file) and the REQUIRED guard live in the input shape.
     expect(Object.keys(row.inputSchema).sort()).toEqual(['content', 'expectedHash', 'file', 'slug', 'textEdits'].sort());
     const expectedHash = row.inputSchema.expectedHash as { safeParse(v: unknown): { success: boolean } };

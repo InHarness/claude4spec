@@ -29,8 +29,12 @@ export const STATUS_FOR_DISCOVERY_CODE: Record<DiscoveryErrorCode, number> = {
   PAGE_NOT_FOUND: 404,
   INVALID_TYPE: 404,
   INVALID_ARGUMENT: 400,
-  AMBIGUOUS_ENTITY: 409,
-  AMBIGUOUS_PAGE: 409,
+  /**
+   * 2.1.26 (M39 `7dad4wt0`) — kept because the code is still in the catalogue,
+   * but no operation answers with it: the server builds the projection before it
+   * serves a project. The `AMBIGUOUS_*` pair that used to sit above it is gone —
+   * ambiguity has no code.
+   */
   INDEX_NOT_MATERIALIZED: 503,
   /**
    * 0.2.77 (M39/M06) — the projection is there but marked stale.

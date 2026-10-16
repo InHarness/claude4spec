@@ -12,6 +12,11 @@ import {
 import { buildPlanToolsServer } from './plan-tools.js';
 import { createMcpServer, mcpTool } from '../plugin-runtime/index.js';
 import { toolAdmittedByProfile } from '../operations/profile-gate.js';
+import { CATALOG } from '../operations/catalog.js';
+import { isMcpChannelProfile, MCP_CHANNEL_PROFILE_NAMES, MCP_CHANNEL_PROFILES } from '../operations/profiles.js';
+import { C4S_READER_TOOL_NAMES, createC4sReaderServer } from './c4s-reader.js';
+import { MCP_CONFIG_SERVER_KEY } from './mcp-config.js';
+import { profileFromRequest } from './http-mount.js';
 import type { McpServerFactory } from '../../shared/plugin-host/mcp.js';
 import { z } from 'zod';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -606,5 +611,233 @@ describe('mark_plan_applied', () => {
     expect(JSON.parse(res.content[0]!.text)).toEqual({ path: 'some-plan.md', applied: true });
     // 2.1.13 — no `path` key at all on the internal mount: the pinned plan is the target.
     expect(calls).toEqual([['t-1', { applied: true }]]);
+  });
+});
+
+/**
+ * 2.1.26 — M12 External MCP, the four changed sections.
+ *
+ * A host stub carrying the internal servers the external surface composes from
+ * (`entity-tools`, `reference-tools`, `page-tools`, `release-tools`) plus two
+ * type servers (`endpoint-tools` with the DTO links, `spreadsheet-tools` with a
+ * windowed read). Every stub tool's description is `<name> description`, so the
+ * declaration that won a name collision is recognisable by its text.
+ */
+describe('M12 2.1.26 — one external read server and its profile table', () => {
+  const fullHost = () =>
+    pluginHostWith(
+      [
+        {
+          name: 'entity-tools',
+          tools: ['get_entities', 'get_field_content', 'list_entities', 'describe_entity_type', 'create_entities', 'update_entities'],
+        },
+        { name: 'reference-tools', tools: ['find_references', 'list_tags', 'create_tag', 'tag_entity'] },
+        { name: 'page-tools', tools: ['create_page', 'update_page', 'update_sections'] },
+        { name: 'release-tools', tools: ['release_list', 'release_show', 'release_diff', 'release_create', 'release_update'] },
+        { name: 'endpoint-tools', tools: ['link_dto', 'unlink_dto'] },
+        { name: 'spreadsheet-tools', tools: ['get_overview', 'get_range', 'set_cell'] },
+      ],
+      ['endpoint', 'spreadsheet'],
+    );
+  const namesFor = (profile: ExternalSurfaceDeps['profile']) =>
+    composeExternalSurface(stubDeps({ profile, pluginHost: fullHost() })).toolNames;
+
+  /** The reads every profile shares: the reader's own tools, list_projects, release reads. */
+  const COMMON_READS = [
+    ...C4S_READER_TOOL_NAMES,
+    'list_skills',
+    'load_skill_file',
+    'list_projects',
+    'release_list',
+    'release_show',
+    'release_diff',
+  ];
+  const PLANS = ['create_plan', 'get_plan', 'update_plan', 'list_plans', 'list_plan_versions', 'get_plan_version', 'mark_plan_applied'];
+  const BRIEFS = ['get_brief', 'update_brief', 'list_brief_versions', 'get_brief_version'];
+  const CHAT_WRITES = [
+    'create_page', 'update_page', 'update_sections',
+    'create_entities', 'update_entities',
+    'create_tag', 'tag_entity',
+    'link_dto', 'unlink_dto',
+    'release_create', 'release_update',
+  ];
+
+  it('[section:m12mcp00] one server, c4s-reader: sources merge into one flat namespace, the first declaration wins a collision, and no source server name reaches the client', async () => {
+    const deps = stubDeps({ profile: 'chat', pluginHost: fullHost() });
+    const surface = composeExternalSurface(deps);
+
+    // Flat: one row per name, even though entity-tools and reference-tools
+    // declare names c4s-reader already declared.
+    expect(new Set(surface.toolNames).size).toBe(surface.toolNames.length);
+    for (const name of ['get_entities', 'get_field_content', 'list_entities', 'find_references', 'list_tags']) {
+      expect(surface.toolNames.filter((n) => n === name), name).toHaveLength(1);
+      // …and the row is c4s-reader's (composed first), not the internal counterpart's.
+      expect(surface.byName.get(name)!.description, name).not.toBe(`${name} description`);
+    }
+    const reader = createC4sReaderServer(deps.reader);
+    expect(surface.byName.get('get_entities')!.description).toBe(
+      reader.tools!.find((t) => t.name === 'get_entities')!.description,
+    );
+
+    // A rendering under a DIFFERENT name is not shadowed: describe_entity_type
+    // stands beside describe_types — two renderings of `describe_types`.
+    expect(surface.toolNames).toContain('describe_types');
+    expect(surface.toolNames).toContain('describe_entity_type');
+    const describeTypes = CATALOG.get('describe_types')!;
+    expect(describeTypes.renderings?.mcp).toEqual(['c4s-reader.describe_types', 'entity-tools.describe_entity_type']);
+
+    // Over the wire: one server named c4s-reader, tool names unprefixed — no
+    // `entity-tools` / `reference-tools` / `mcp__` in any name the client sees.
+    const server = buildExternalMcpSurface(deps);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'test-client', version: '0.0.0' });
+    await server.server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      expect(client.getServerVersion()?.name).toBe('c4s-reader');
+      const listed = (await client.listTools()).tools.map((t) => t.name);
+      expect([...listed].sort()).toEqual([...surface.toolNames]);
+      for (const name of listed) {
+        expect(name).not.toMatch(/-tools|c4s-reader|__/);
+      }
+    } finally {
+      await client.close();
+    }
+
+    // The full-name prefix comes from the client config KEY: the issued config
+    // uses `c4s-reader`, so a model sees `mcp__c4s-reader__<tool>`.
+    expect(MCP_CONFIG_SERVER_KEY).toBe('c4s-reader');
+    expect(MCP_CONFIG_SERVER_KEY).toBe(EXTERNAL_MCP_SERVER_NAME);
+  });
+
+  it('[section:4cli19xs] field content is issued by c4s-reader\'s own get_field_content in every profile, and type-specific tools stay on the same connection', async () => {
+    const seen: unknown[] = [];
+    const answer = { type: 'diagram', slug: 'flow', field: 'source', content: 'A-->B', bytes: 5 };
+    const reader = {
+      reader: {} as never,
+      db: {} as never,
+      projectDir: '/tmp/unused',
+      packageVersion: 'test',
+      discovery: {
+        getFieldContent: (input: unknown) => {
+          seen.push(input);
+          return answer;
+        },
+      } as never,
+    };
+    for (const profile of ['chat', 'patch', 'ask', 'brief'] as const) {
+      const surface = composeExternalSurface(stubDeps({ profile, reader, pluginHost: fullHost() }));
+      const decl = surface.byName.get('get_field_content');
+      expect(decl, profile).toBeDefined();
+      // The c4s-reader declaration — the record's description — not the
+      // entity-tools one composed after it.
+      expect(decl!.description, profile).toMatch(/^The content of ONE content-bearing field of one entity, addressed by \(type, slug, field\)\./);
+      expect(Object.keys(decl!.inputSchema).sort()).toEqual(['field', 'slug', 'type']);
+      // No tool generated per type for content: every content tool on the surface
+      // is the one generic name.
+      expect(surface.toolNames.filter((n) => /content/.test(n)), profile).toEqual(['get_field_content']);
+      // It renders the catalog operation: the core's answer passes through unchanged.
+      const res = (await decl!.handler({ type: 'diagram', slug: 'flow', field: 'source' }, {})) as {
+        content: Array<{ text: string }>;
+      };
+      expect(JSON.parse(res.content[0]!.text)).toEqual(answer);
+    }
+    expect(seen).toHaveLength(4);
+    expect(seen[0]).toEqual({ type: 'diagram', slug: 'flow', field: 'source' });
+
+    // Type-specific servers are composed into the same connection: the
+    // spreadsheet skeleton comes from get_entities, its cells from get_range,
+    // both on one surface; the only narrowing is the profile.
+    const chat = namesFor('chat');
+    expect(chat).toContain('get_entities');
+    expect(chat).toContain('get_range');
+    expect(chat).toContain('set_cell');
+    const ask = namesFor('ask');
+    expect(ask).toContain('get_range');
+    expect(ask).not.toContain('set_cell');
+  });
+
+  it('[section:ecawzsbr] the closed profile table: common reads everywhere; chat the full set and the default; ask trimmed to reads, plans and describe_entity_type; brief to reads and brief tools; patch degenerates to chat', () => {
+    const chat = namesFor('chat');
+    const ask = namesFor('ask');
+    const brief = namesFor('brief');
+    const patch = namesFor('patch');
+
+    for (const [profile, names] of [['chat', chat], ['ask', ask], ['brief', brief], ['patch', patch]] as const) {
+      for (const read of COMMON_READS) expect(names, `${profile}/${read}`).toContain(read);
+    }
+
+    // chat — common reads, plans with writes, describe_entity_type, writes of
+    // pages / sections / entities / tags, DTO links, release create/edit, peer.
+    for (const name of [...PLANS, 'describe_entity_type', ...CHAT_WRITES, 'ask']) {
+      expect(chat, `chat/${name}`).toContain(name);
+    }
+
+    // ask — trim to common reads + plans with writes + describe_entity_type.
+    for (const name of [...PLANS, 'describe_entity_type']) expect(ask, `ask/${name}`).toContain(name);
+    for (const name of [...CHAT_WRITES, 'ask', ...BRIEFS]) expect(ask, `ask/${name}`).not.toContain(name);
+
+    // brief — trim to common reads + brief tools; no plans, no describe_entity_type.
+    for (const name of BRIEFS) expect(brief, `brief/${name}`).toContain(name);
+    for (const name of [...PLANS, 'describe_entity_type', ...CHAT_WRITES, 'ask', 'get_range']) {
+      expect(brief, `brief/${name}`).not.toContain(name);
+    }
+    // The brief tools take the brief by an explicit `path`.
+    const briefSurface = composeExternalSurface(stubDeps({ profile: 'brief', pluginHost: fullHost() }));
+    expect(Object.keys(briefSurface.byName.get('get_brief')!.inputSchema)).toContain('path');
+
+    // patch renders chat's set exactly.
+    expect(patch).toEqual(chat);
+    expect(MCP_CHANNEL_PROFILES.patch).toBe('chat');
+
+    // Default `chat`; the table is closed — four rows, and a value outside it is
+    // refused at set-up rather than falling back to the widest profile.
+    expect(MCP_CHANNEL_PROFILE_NAMES).toEqual(['chat', 'ask', 'brief', 'patch']);
+    expect(profileFromRequest({ query: {} } as never)).toEqual({ ok: true, profile: 'chat' });
+    expect(profileFromRequest({ query: { profile: 'ask' } } as never)).toEqual({ ok: true, profile: 'ask' });
+    const refused = profileFromRequest({ query: { profile: 'review' } } as never);
+    expect(refused.ok).toBe(false);
+    expect(isMcpChannelProfile('review')).toBe(false);
+    expect(() => composeExternalSurface(stubDeps({ profile: 'review' as never }))).toThrow(/no rendering in the mcp channel/);
+  });
+
+  it('[section:b52znwjr] the surface is not read-only: chat carries writes of spec content, plans and releases and peer consultation, while the discovery core declares no mutating operation and the profile is the hard gate', async () => {
+    // The M39 core stays read-only by construction: every c4s-reader tool is a
+    // catalog read.
+    for (const name of C4S_READER_TOOL_NAMES) {
+      expect(CATALOG.get(name)?.opClass, name).toBe('read');
+    }
+
+    // The surface is not: chat reaches spec-content writes, plan writes, release
+    // writes and the peer.
+    const chat = namesFor('chat');
+    for (const name of ['update_sections', 'create_entities', 'create_tag', 'update_plan', 'release_create', 'ask']) {
+      expect(chat, name).toContain(name);
+      const op = CATALOG.get(name);
+      if (name !== 'ask' && op) expect(op.opClass, name).not.toBe('read');
+    }
+
+    // The replacement guarantee is the hard profile gate: a write outside the
+    // profile is not in tools/list, and calling it by name is an unknown tool.
+    const server = buildExternalMcpSurface(stubDeps({ profile: 'ask', pluginHost: fullHost() }));
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'test-client', version: '0.0.0' });
+    await server.server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const listed = (await client.listTools()).tools.map((t) => t.name);
+      expect(listed).not.toContain('create_entities');
+      const outcome = await client
+        .callTool({ name: 'create_entities', arguments: {} })
+        .then((r) => ({ ok: true as const, r }), (e: unknown) => ({ ok: false as const, e }));
+      if (outcome.ok) {
+        expect(outcome.r.isError).toBe(true);
+        expect(JSON.stringify(outcome.r.content)).toMatch(/not found/i);
+      } else {
+        expect(String(outcome.e)).toMatch(/not found/i);
+      }
+    } finally {
+      await client.close();
+    }
   });
 });

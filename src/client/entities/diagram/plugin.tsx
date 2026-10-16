@@ -118,8 +118,6 @@ export const diagramFrontendModule: FrontendModule = {
   payloadVersion: 2,
   label: 'Diagram',
   labelPlural: 'Diagrams',
-  // Mirrors the server module (`diagramBackendModule`): after design-system (60).
-  displayOrder: 70,
   pathPrefix: '/diagrams',
 
   renderChip: DiagramChip as ComponentType<EntityChipProps<unknown>>,

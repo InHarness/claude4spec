@@ -8,7 +8,7 @@ import { pluginHostRouter } from './cross-cutting.js';
 import type { BackendModule, MountContext, ProjectPluginOverlay } from './types.js';
 
 /** Minimal BackendModule for pool/activation assertions. */
-function mod(type: string, displayOrder = 100): BackendModule {
+function mod(type: string): BackendModule {
   return {
     type,
     data: FIXTURE_DATA,
@@ -16,7 +16,6 @@ function mod(type: string, displayOrder = 100): BackendModule {
     payloadVersion: 1,
     label: type,
     labelPlural: `${type}s`,
-    displayOrder,
     pathPrefix: `/${type}s`,
     systemPrompt: {
       roleNoun: type,
@@ -55,8 +54,8 @@ describe('consolidate — overlay', () => {
   });
 
   it('overlay shadows a same-typed base module (cross-layer) and reports it', () => {
-    const baseEndpoint = mod('endpoint', 1);
-    const overlayEndpoint = mod('endpoint', 2);
+    const baseEndpoint = mod('endpoint');
+    const overlayEndpoint = mod('endpoint');
     const registry = new PluginRegistryImpl();
     registry.registerEntityModule(baseEndpoint);
     const host = registry.consolidate({}, overlayOf([overlayEndpoint]));
@@ -99,8 +98,11 @@ describe('consolidate — overlay', () => {
     const host = registry.consolidate(config, overlayOf([mod('glossary')]));
 
     const part = host.partition();
+    // 2.1.26 — the identity carries no ordering field (sidebar order is the
+    // frontend's `sidebarTab.order` alone), so every set is listed by `type`:
+    // registration order (endpoint, dto, ac) does not leak into the payload.
     expect(part).toEqual({
-      active: ['endpoint', 'ac'],
+      active: ['ac', 'endpoint'],
       inactive: ['dto', 'glossary'],
       unknown: ['ghost'],
     });
@@ -135,8 +137,8 @@ describe('consolidate — overlay', () => {
   });
 
   it('[ac:ac-plugin-project-local-wnoszacy-type-obe] a project-local type present in the base shadows it — reported by the per-project /_meta/plugins with both origins, not an error', async () => {
-    const baseEndpoint = mod('endpoint', 1);
-    const overlayEndpoint = mod('endpoint', 2);
+    const baseEndpoint = mod('endpoint');
+    const overlayEndpoint = mod('endpoint');
     const registry = new PluginRegistryImpl();
     registry.registerEntityModule(baseEndpoint);
     let host!: ReturnType<PluginRegistryImpl['consolidate']>;

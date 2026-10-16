@@ -1,9 +1,21 @@
+import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
 import { createReleaseToolsServer } from './index.js';
-import type { ReleaseService } from '../../services/release.js';
+import { ReleaseService } from '../../services/release.js';
 import type { GitService } from '../../services/git.js';
 import type { WsEmitter } from '../../ws/project-emitter.js';
 import type { RawDelta, FileDiff, SpecSnapshot } from '../../../shared/entities.js';
+import { runMigrations } from '../../db/migrate.js';
+import type { PluginHost } from '../../core/plugin-host/types.js';
+import type { FileSerializer } from '../../services/file-serializer.js';
+import type { VersionService } from '../../services/versions.js';
+import type { FileVersionService } from '../../services/file-version.js';
+import type { RawEntityReader } from '../../discovery/raw-entity-reader.js';
+import type { TagsService } from '../../services/tags.js';
+import type { PagesService } from '../../services/pages.js';
+import { RELEASE_TOOL_RECORDS } from '../../../../tests/helpers/release-tool-records.js';
+import { expectToolMatchesToolRecord } from '../../../../tests/helpers/write-tool-records.js';
+import { expectOperationMatchesRecord } from '../../../../tests/helpers/operation-records.js';
 
 /**
  * `release_diff`'s SECOND ENGINE — `toReleaseName: "current"`.
@@ -540,5 +552,481 @@ describe('release_diff — 2.1.11 `slugs` filter', () => {
     const { call } = harness();
     const res = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', ...extra });
     expect(res.body.code).toBe(code);
+  });
+});
+
+// ─── 2.1.26 — the five `mcp-tool` records and the six M17 `spec-operation` records ───
+
+/**
+ * A real `ReleaseService` over an in-memory database, for the record tests of the
+ * writers and the list: what the records' `logic` states (trim, refusal codes,
+ * actor `agent`, the assignment, camelCase counters, `gitSync`, the order of the
+ * release axis) is the service's, reached through the tool. The git service and
+ * the emitter are spies.
+ */
+function liveHarness(opts: { commit?: unknown; pull?: unknown } = {}) {
+  const db = new Database(':memory:');
+  runMigrations(db);
+  const releaseService = new ReleaseService(
+    db,
+    { getEntity: () => null, listEntities: () => [] } as unknown as PluginHost,
+    {} as unknown as VersionService,
+    { assignToRelease: () => {} } as unknown as FileVersionService,
+    { version: 'v1' } as unknown as FileSerializer,
+    {} as unknown as RawEntityReader,
+    {} as unknown as TagsService,
+    {} as unknown as PagesService,
+  );
+  const gitCalls: Array<{ kind: string; releaseId: number }> = [];
+  const gitService = {
+    commitOnRelease: async (r: { id: number }) => {
+      gitCalls.push({ kind: 'commitOnRelease', releaseId: r.id });
+      return opts.commit === undefined ? { status: 'committed', branch: 'main' } : opts.commit;
+    },
+    commitPull: async (r: { id: number }) => {
+      gitCalls.push({ kind: 'commitPull', releaseId: r.id });
+      return opts.pull === undefined ? { status: 'committed', branch: 'main' } : opts.pull;
+    },
+  } as unknown as GitService;
+  releaseService.setGitService(gitService);
+  const broadcasts: Array<Record<string, unknown>> = [];
+  const server = createReleaseToolsServer({
+    releaseService,
+    gitService,
+    ws: { broadcast: (e: Record<string, unknown>) => broadcasts.push(e) } as unknown as WsEmitter,
+    roots: () => ROOTS,
+  });
+  const call = async (tool: string, args: Record<string, unknown>) => {
+    const t = server.tools.find((x) => x.name === tool)!;
+    const res = (await t.handler(args, {} as never)) as { isError?: boolean; content: Array<{ text: string }> };
+    return { isError: res.isError === true, body: JSON.parse(res.content[0]!.text) as any };
+  };
+  const unreleased = (slug: string) =>
+    db
+      .prepare(`INSERT INTO entity_version (entity_type, entity_slug, version, data, changed_by) VALUES ('endpoint', ?, 1, '{}', 'user')`)
+      .run(slug);
+  const releaseIdOf = (slug: string) =>
+    (db.prepare(`SELECT release_id AS r FROM entity_version WHERE entity_slug = ?`).get(slug) as { r: number | null }).r;
+  return { db, server, call, gitCalls, broadcasts, unreleased, releaseIdOf };
+}
+
+const toolOf = (name: string) =>
+  createReleaseToolsServer({
+    releaseService: {} as ReleaseService,
+    gitService: {} as GitService,
+    ws: { broadcast: () => {} } as unknown as WsEmitter,
+    roots: () => ROOTS,
+  }).tools.find((t) => t.name === name);
+
+describe('release-tools — the 2.1.26 mcp-tool records', () => {
+  it('[entity:release-tools-release-create] release_create: name, description and both required parameters as the record states them, no hints; trims, refuses with VALIDATION / RELEASE_NAME_RESERVED / RELEASE_DESCRIPTION_REQUIRED / RELEASE_DESCRIPTION_TOO_LONG / RELEASE_NAME_CONFLICT / RELEASE_SLUG_CONFLICT, records actor agent, assigns every unreleased version and answers camelCase countBreakdown with gitSync', async () => {
+    expectToolMatchesToolRecord(toolOf('release_create'), RELEASE_TOOL_RECORDS['release-tools-release-create']!);
+
+    const h = liveHarness();
+    h.unreleased('ep-a');
+    const res = await h.call('release_create', { name: '  0.2.33  ', description: '  Kontrakty wire jako encje  ' });
+    expect(res.isError).toBe(false);
+    expect(res.body).toMatchObject({
+      name: '0.2.33',
+      description: 'Kontrakty wire jako encje',
+      createdBy: 'agent',
+      countBreakdown: { entities: { endpoint: 1 }, pages: 0, total: 1 },
+      gitSync: { status: 'committed', branch: 'main' },
+    });
+    expect(Object.keys(res.body).sort()).toEqual(
+      ['countBreakdown', 'createdAt', 'createdBy', 'description', 'gitSync', 'id', 'name'].sort(),
+    );
+    expect(res.body).not.toHaveProperty('count_breakdown');
+    // Every unreleased version went into the new release, in its transaction.
+    expect(h.releaseIdOf('ep-a')).toBe(res.body.id);
+    // After the transaction: the broadcast, then the git commit of THIS release.
+    expect(h.broadcasts).toEqual([{ kind: 'release:created', releaseId: res.body.id, name: '0.2.33' }]);
+    expect(h.gitCalls).toEqual([{ kind: 'commitOnRelease', releaseId: res.body.id }]);
+
+    const refusals: Array<[Record<string, unknown>, string]> = [
+      [{ name: '   ', description: 'x' }, 'VALIDATION'],
+      [{ name: 'current', description: 'x' }, 'RELEASE_NAME_RESERVED'],
+      [{ name: 'initial', description: 'x' }, 'RELEASE_NAME_RESERVED'],
+      [{ name: 'null', description: 'x' }, 'RELEASE_NAME_RESERVED'],
+      [{ name: 'v9', description: '   ' }, 'RELEASE_DESCRIPTION_REQUIRED'],
+      [{ name: 'v9', description: 'x'.repeat(501) }, 'RELEASE_DESCRIPTION_TOO_LONG'],
+      [{ name: '0.2.33', description: 'again' }, 'RELEASE_NAME_CONFLICT'],
+      // Another name, the same slug as `0.2.33`.
+      [{ name: '0-2-33', description: 'x' }, 'RELEASE_SLUG_CONFLICT'],
+    ];
+    for (const [args, code] of refusals) {
+      const r = await h.call('release_create', args);
+      expect(r.isError, code).toBe(true);
+      expect(r.body.code).toBe(code);
+    }
+    expect((h.db.prepare('SELECT COUNT(*) AS n FROM spec_release').get() as { n: number }).n).toBe(1);
+  });
+
+  it('[entity:release-tools-release-create] gitSync is null when the commit did not run (git off, no repository)', async () => {
+    const h = liveHarness({ commit: null });
+    const res = await h.call('release_create', { name: 'v1', description: 'first' });
+    expect(res.isError).toBe(false);
+    expect(res.body.gitSync).toBeNull();
+    expect(res.body.countBreakdown).toEqual({ entities: {}, pages: 0, total: 0 });
+  });
+
+  it('[entity:release-tools-release-list] release_list: optional limit / offset as the record states them, no hints; default window 5 from 0 with no upper bound, newest first by created_at then id, `{ releases, total }` with total before the window, negative → INVALID_PAGINATION', async () => {
+    expectToolMatchesToolRecord(toolOf('release_list'), RELEASE_TOOL_RECORDS['release-tools-release-list']!);
+
+    const h = liveHarness();
+    const insert = h.db.prepare(
+      `INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES (?, ?, 'd', 'user', ?)`,
+    );
+    // r1..r6 a minute apart, plus `tie` sharing r6's timestamp with a higher id.
+    for (let i = 1; i <= 6; i++) insert.run(`r${i}`, `r${i}`, `2026-08-0${i}T00:00:00.000Z`);
+    insert.run('tie', 'tie', '2026-08-06T00:00:00.000Z');
+
+    const first = await h.call('release_list', {});
+    expect(first.isError).toBe(false);
+    expect(first.body.total).toBe(7);
+    expect(first.body.releases.map((r: { name: string }) => r.name)).toEqual(['tie', 'r6', 'r5', 'r4', 'r3']);
+    expect(Object.keys(first.body.releases[0]).sort()).toEqual(['createdAt', 'createdBy', 'description', 'id', 'name']);
+
+    const rest = await h.call('release_list', { offset: 5 });
+    expect(rest.body.releases.map((r: { name: string }) => r.name)).toEqual(['r2', 'r1']);
+    const all = await h.call('release_list', { limit: 1000 });
+    expect(all.body.releases).toHaveLength(7);
+
+    for (const bad of [{ limit: -1 }, { offset: -1 }]) {
+      const r = await h.call('release_list', bad);
+      expect(r.isError).toBe(true);
+      expect(r.body.code).toBe('INVALID_PAGINATION');
+    }
+  });
+
+  it('[entity:release-tools-release-show] release_show: releaseName required, include as enum(pages, entities)[], entityTypes, limit, offset as the record states them, no hints; filter refusals, RELEASE_NOT_FOUND for an unknown name or a literal, identity-only rows windowed by one window per list', async () => {
+    const tool = toolOf('release_show');
+    expectToolMatchesToolRecord(tool, RELEASE_TOOL_RECORDS['release-tools-release-show']!);
+
+    const live = liveHarness();
+    for (const name of ['nope', 'current', 'initial', 'null']) {
+      const r = await live.call('release_show', { releaseName: name });
+      expect(r.isError, name).toBe(true);
+      expect(r.body.code).toBe('RELEASE_NOT_FOUND');
+    }
+
+    const server = createReleaseToolsServer({
+      releaseService: {
+        resolveReleaseId: (name: string) => name,
+        getReleaseSnapshot: () => V1_SNAPSHOT,
+      } as unknown as ReleaseService,
+      gitService: {} as GitService,
+      ws: { broadcast: () => {} } as unknown as WsEmitter,
+      roots: () => ROOTS,
+    });
+    const show = server.tools.find((t) => t.name === 'release_show')!;
+    const call = async (args: Record<string, unknown>) => {
+      const res = (await show.handler(args, {} as never)) as { isError?: boolean; content: Array<{ text: string }> };
+      return { isError: res.isError === true, body: JSON.parse(res.content[0]!.text) as any };
+    };
+    for (const [args, code] of [
+      [{ include: [] }, 'INVALID_INCLUDE_FILTER'],
+      [{ entityTypes: [] }, 'INVALID_ENTITY_TYPES_FILTER'],
+      [{ include: ['pages'], entityTypes: ['dto'] }, 'CONFLICTING_FILTERS'],
+      [{ limit: -1 }, 'INVALID_PAGINATION'],
+      [{ offset: -2 }, 'INVALID_PAGINATION'],
+    ] as Array<[Record<string, unknown>, string]>) {
+      const r = await call({ releaseName: 'v1', ...args });
+      expect(r.body.code).toBe(code);
+    }
+
+    const full = await call({ releaseName: 'v1' });
+    expect(full.body.release).toEqual({
+      id: 1,
+      name: 'v1',
+      description: '',
+      created_by: 'agent',
+      created_at: '2026-09-01T00:00:00.000Z',
+    });
+    expect(full.body.total).toEqual({ entities: 2, pages: 1 });
+    expect(full.body.entities).toEqual([
+      { type: 'endpoint', slug: 'ep-kept', name: 'Kept (old)' },
+      { type: 'dto', slug: 'dto-gone', name: 'Gone' },
+    ]);
+    expect(full.body.pages).toEqual([{ path: 'pages/gone.md' }]);
+    // The same window cuts both lists; `total` is counted before it.
+    const windowed = await call({ releaseName: 'v1', limit: 1, offset: 1 });
+    expect(windowed.body.entities).toEqual([{ type: 'dto', slug: 'dto-gone', name: 'Gone' }]);
+    expect(windowed.body.pages).toEqual([]);
+    expect(windowed.body.total).toEqual({ entities: 2, pages: 1 });
+    // `include` keeps `total` keys and lists in lock-step.
+    const pagesOnly = await call({ releaseName: 'v1', include: ['pages'] });
+    expect(pagesOnly.body.total).toEqual({ pages: 1 });
+    expect(pagesOnly.body).not.toHaveProperty('entities');
+  });
+
+  it('[entity:release-tools-release-diff] release_diff: fromReleaseName as string | null, toReleaseName, include as enum(pages, entities)[] and the filter and window parameters as the record states them, no hints; window refusals first, empty filters and literals refused, `current` against the unassigned state with `to.id: null`, entities and pages windowed independently after filters', async () => {
+    expectToolMatchesToolRecord(toolOf('release_diff'), RELEASE_TOOL_RECORDS['release-tools-release-diff']!);
+
+    const { calls, call } = harness();
+    for (const [args, code] of [
+      [{ fromReleaseName: 'v1', toReleaseName: 'v2', include: [] }, 'INVALID_INCLUDE_FILTER'],
+      [{ fromReleaseName: 'v1', toReleaseName: 'v2', entityTypes: [] }, 'INVALID_ENTITY_TYPES_FILTER'],
+      [{ fromReleaseName: 'v1', toReleaseName: 'v2', slugs: [] }, 'INVALID_SLUGS_FILTER'],
+      [{ fromReleaseName: 'v1', toReleaseName: 'v2', roots: [] }, 'INVALID_ROOTS_FILTER'],
+      [{ fromReleaseName: 'v1', toReleaseName: 'v2', paths: [] }, 'INVALID_PATHS_FILTER'],
+      [{ fromReleaseName: 'v1', toReleaseName: 'v2', include: ['pages'], entityTypes: ['dto'] }, 'CONFLICTING_FILTERS'],
+      [{ fromReleaseName: 'v1', toReleaseName: 'v2', offset: -1, include: [] }, 'INVALID_PAGINATION'],
+      [{ fromReleaseName: 'current', toReleaseName: 'v2' }, 'INVALID_DIFF_RANGE'],
+      [{ fromReleaseName: 'initial', toReleaseName: 'current' }, 'INVALID_DIFF_RANGE'],
+    ] as Array<[Record<string, unknown>, string]>) {
+      const r = await call(args);
+      expect(r.isError).toBe(true);
+      expect(r.body.code).toBe(code);
+    }
+    expect(calls.getReleaseDiff).toEqual([]);
+    expect(calls.getUnreleasedDiff).toEqual([]);
+
+    // `current` as `to`: the delta from the unassigned state, `to.id: null`;
+    // the window (here 1 from 0) cuts entities and pages independently, `total` before it.
+    const res = await call({ fromReleaseName: 'v1', toReleaseName: 'current', limit: 1 });
+    expect(res.isError).toBe(false);
+    expect(calls.getUnreleasedDiff).toEqual(['v1']);
+    expect(res.body.to).toEqual({ id: null, name: 'current' });
+    expect(res.body.total).toEqual({ entities: 3, pages: 2 });
+    expect(res.body.entities).toHaveLength(1);
+    expect(res.body.pages).toHaveLength(1);
+
+    // An unknown name is RELEASE_NOT_FOUND (the real name lookup).
+    const live = liveHarness();
+    const missing = await live.call('release_diff', { fromReleaseName: 'nope', toReleaseName: 'current' });
+    expect(missing.body.code).toBe('RELEASE_NOT_FOUND');
+  });
+
+  it('[entity:release-tools-release-update] release_update: releaseName required and the optional name / description / assignUnreleased as the record states them, no hints; RELEASE_NOT_FOUND before RELEASE_FROZEN, rename checks, camelCase countBreakdown, gitSync null without assignment', async () => {
+    expectToolMatchesToolRecord(toolOf('release_update'), RELEASE_TOOL_RECORDS['release-tools-release-update']!);
+
+    const h = liveHarness();
+    await h.call('release_create', { name: 'v1', description: 'first' });
+    const v2 = await h.call('release_create', { name: 'v2', description: 'second' });
+    h.gitCalls.length = 0;
+    h.broadcasts.length = 0;
+
+    // A literal or an unknown name → RELEASE_NOT_FOUND; a frozen (older) release → RELEASE_FROZEN.
+    for (const name of ['current', 'nope']) {
+      expect((await h.call('release_update', { releaseName: name, description: 'x' })).body.code).toBe('RELEASE_NOT_FOUND');
+    }
+    expect((await h.call('release_update', { releaseName: 'v1', description: 'x' })).body.code).toBe('RELEASE_FROZEN');
+
+    for (const [args, code] of [
+      [{ name: '  ' }, 'VALIDATION'],
+      [{ name: 'initial' }, 'RELEASE_NAME_RESERVED'],
+      [{ name: 'v1' }, 'RELEASE_NAME_CONFLICT'],
+      [{ name: 'V1' }, 'RELEASE_SLUG_CONFLICT'],
+      [{ description: '  ' }, 'RELEASE_DESCRIPTION_REQUIRED'],
+      [{ description: 'y'.repeat(501) }, 'RELEASE_DESCRIPTION_TOO_LONG'],
+    ] as Array<[Record<string, unknown>, string]>) {
+      const r = await h.call('release_update', { releaseName: 'v2', ...args });
+      expect(r.isError, code).toBe(true);
+      expect(r.body.code).toBe(code);
+    }
+
+    const renamed = await h.call('release_update', { releaseName: 'v2', name: ' v2.1 ', description: 'sharper' });
+    expect(renamed.isError).toBe(false);
+    expect(renamed.body).toMatchObject({ id: v2.body.id, name: 'v2.1', description: 'sharper', gitSync: null });
+    expect(renamed.body.countBreakdown).toEqual({ entities: {}, pages: 0, total: 0 });
+    expect(renamed.body).not.toHaveProperty('count_breakdown');
+    // Without `assignUnreleased` nothing is committed.
+    expect(h.gitCalls).toEqual([]);
+    expect(h.broadcasts).toEqual([{ kind: 'release:updated', releaseId: v2.body.id, name: 'v2.1' }]);
+  });
+
+  it('[entity:release-tools-release-update] assignUnreleased: commit first, then assign the unreleased versions — unless the commit ended in an error', async () => {
+    const h = liveHarness();
+    await h.call('release_create', { name: 'v1', description: 'first' });
+    h.unreleased('ep-late');
+    h.gitCalls.length = 0;
+
+    const res = await h.call('release_update', { releaseName: 'v1', assignUnreleased: true });
+    expect(res.isError).toBe(false);
+    expect(h.gitCalls).toEqual([{ kind: 'commitPull', releaseId: res.body.id }]);
+    expect(res.body.gitSync).toEqual({ status: 'committed', branch: 'main' });
+    expect(res.body.countBreakdown).toEqual({ entities: { endpoint: 1 }, pages: 0, total: 1 });
+    expect(h.releaseIdOf('ep-late')).toBe(res.body.id);
+
+    const failing = liveHarness({ pull: { status: 'error', message: 'boom' } });
+    await failing.call('release_create', { name: 'v1', description: 'first' });
+    failing.unreleased('ep-late');
+    const refused = await failing.call('release_update', { releaseName: 'v1', assignUnreleased: true });
+    expect(refused.isError).toBe(false);
+    expect(refused.body.gitSync).toMatchObject({ status: 'error' });
+    expect(failing.releaseIdOf('ep-late')).toBeNull();
+  });
+});
+
+describe('release-tools — the 2.1.26 spec-operation records of M17', () => {
+  const D = { kind: 'direct' } as const;
+  const CLI_WRITE = "bin `c4s` jest klientem odczytu i diagnostyki; stan release'ów zmienia się przez kanały `mcp`, `rest` i `internal`";
+  const ALL_DIRECT = { internal: D, cli: D, mcp: D, rest: D };
+  const rendered = (slug: string) => ({ internal: [slug], mcp: [slug] });
+  const registered = new Set(
+    createReleaseToolsServer({
+      releaseService: {} as ReleaseService,
+      gitService: {} as GitService,
+      ws: { broadcast: () => {} } as unknown as WsEmitter,
+      roots: () => ROOTS,
+    }).tools.map((t) => t.name),
+  );
+  const expectRenderedHere = (op: { renderings?: { internal?: readonly string[]; mcp?: readonly string[] } }) => {
+    for (const r of [...(op.renderings?.internal ?? []), ...(op.renderings?.mcp ?? [])]) {
+      const [server, name] = r.split('.') as [string, string];
+      expect(server).toBe('release-tools');
+      expect(registered.has(name), r).toBe(true);
+    }
+  };
+
+  it('[entity:release-create] release_create: project, direct, internal/mcp/rest direct, cli n/a with the record\'s reason, file/db/ui-notify, not idempotent, no content input, codes VALIDATION, RELEASE_NOT_FOUND, RELEASE_NAME_CONFLICT, RELEASE_NAME_RESERVED, RELEASE_DESCRIPTION_REQUIRED, RELEASE_DESCRIPTION_TOO_LONG, rendered by release-tools · release_create', () => {
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'release_create',
+        channels: { internal: D, cli: { kind: 'na', reason: CLI_WRITE }, mcp: D, rest: D },
+        efekty: ['file', 'db', 'ui-notify'],
+        idempotencja: false,
+        opisTresci: 'n/a',
+        kodyBledow: [
+          'VALIDATION',
+          'RELEASE_NOT_FOUND',
+          'RELEASE_NAME_CONFLICT',
+          'RELEASE_NAME_RESERVED',
+          'RELEASE_DESCRIPTION_REQUIRED',
+          'RELEASE_DESCRIPTION_TOO_LONG',
+        ],
+        narzedzia: rendered('release-tools-release-create'),
+      },
+      RELEASE_TOOL_RECORDS,
+    );
+    expectRenderedHere(op);
+    // No input address: the subject is the whole project.
+    expect(Object.keys(op.inputSchema).sort()).toEqual(['description', 'name']);
+  });
+
+  it('[entity:release-diff] release_diff: project, direct, all four channels direct, no effects, idempotent, codes VALIDATION, RELEASE_NOT_FOUND and the eight filter / range codes, rendered by release-tools · release_diff, addressed by the from / to pair', () => {
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'release_diff',
+        channels: ALL_DIRECT,
+        efekty: ['none'],
+        idempotencja: true,
+        opisTresci: 'n/a',
+        kodyBledow: [
+          'VALIDATION',
+          'RELEASE_NOT_FOUND',
+          'INVALID_INCLUDE_FILTER',
+          'INVALID_ENTITY_TYPES_FILTER',
+          'CONFLICTING_FILTERS',
+          'INVALID_PAGINATION',
+          'INVALID_DIFF_RANGE',
+          'INVALID_PATHS_FILTER',
+          'INVALID_ROOTS_FILTER',
+          'INVALID_SLUGS_FILTER',
+        ],
+        narzedzia: rendered('release-tools-release-diff'),
+      },
+      RELEASE_TOOL_RECORDS,
+    );
+    expectRenderedHere(op);
+    expect(op.inputSchema).toHaveProperty('fromReleaseName');
+    expect(op.inputSchema).toHaveProperty('toReleaseName');
+  });
+
+  it('[entity:release-list] release_list: project, direct, all four channels direct, no effects, idempotent, codes VALIDATION, RELEASE_NOT_FOUND, INVALID_PAGINATION, rendered by release-tools · release_list, windowed by limit / offset', () => {
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'release_list',
+        channels: ALL_DIRECT,
+        efekty: ['none'],
+        idempotencja: true,
+        opisTresci: 'n/a',
+        kodyBledow: ['VALIDATION', 'RELEASE_NOT_FOUND', 'INVALID_PAGINATION'],
+        narzedzia: rendered('release-tools-release-list'),
+      },
+      RELEASE_TOOL_RECORDS,
+    );
+    expectRenderedHere(op);
+    expect(Object.keys(op.inputSchema).sort()).toEqual(['limit', 'offset']);
+  });
+
+  it('[entity:release-show] release_show: project, direct, all four channels direct, no effects, idempotent, codes VALIDATION, RELEASE_NOT_FOUND, INVALID_INCLUDE_FILTER, INVALID_ENTITY_TYPES_FILTER, CONFLICTING_FILTERS, INVALID_PAGINATION, rendered by release-tools · release_show, addressed by releaseName', () => {
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'release_show',
+        channels: ALL_DIRECT,
+        efekty: ['none'],
+        idempotencja: true,
+        opisTresci: 'n/a',
+        kodyBledow: [
+          'VALIDATION',
+          'RELEASE_NOT_FOUND',
+          'INVALID_INCLUDE_FILTER',
+          'INVALID_ENTITY_TYPES_FILTER',
+          'CONFLICTING_FILTERS',
+          'INVALID_PAGINATION',
+        ],
+        narzedzia: rendered('release-tools-release-show'),
+      },
+      RELEASE_TOOL_RECORDS,
+    );
+    expectRenderedHere(op);
+    expect(op.inputSchema).toHaveProperty('releaseName');
+  });
+
+  it('[entity:release-update] release_update: project, direct, internal/mcp/rest direct, cli n/a with the record\'s reason, db/ui-notify, not idempotent, codes VALIDATION, RELEASE_NOT_FOUND, RELEASE_FROZEN, RELEASE_NAME_CONFLICT, RELEASE_NAME_RESERVED, RELEASE_DESCRIPTION_REQUIRED, RELEASE_DESCRIPTION_TOO_LONG, rendered by release-tools · release_update, addressed by releaseName', () => {
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'release_update',
+        channels: { internal: D, cli: { kind: 'na', reason: CLI_WRITE }, mcp: D, rest: D },
+        efekty: ['db', 'ui-notify'],
+        idempotencja: false,
+        opisTresci: 'n/a',
+        kodyBledow: [
+          'VALIDATION',
+          'RELEASE_NOT_FOUND',
+          'RELEASE_FROZEN',
+          'RELEASE_NAME_CONFLICT',
+          'RELEASE_NAME_RESERVED',
+          'RELEASE_DESCRIPTION_REQUIRED',
+          'RELEASE_DESCRIPTION_TOO_LONG',
+        ],
+        narzedzia: rendered('release-tools-release-update'),
+      },
+      RELEASE_TOOL_RECORDS,
+    );
+    expectRenderedHere(op);
+    expect(op.inputSchema).toHaveProperty('releaseName');
+  });
+
+  it('[entity:release-restore] release_restore: project, human-mediated, internal/cli/mcp n/a with the records\' reasons, rest direct, file/db, idempotent, no content input, code RELEASE_NOT_FOUND, no renderings, addressed by releaseName — and no release-tools tool carries it', () => {
+    const userInitiated =
+      'user-initiated: operacja nadpisuje bieżącą specyfikację cudzą, zamrożoną wersją, więc jej wyzwolenie samo w sobie jest decyzją (przegląd otwarty)';
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'release_restore',
+        mediacja: 'human-mediated',
+        channels: {
+          internal: { kind: 'na', reason: userInitiated },
+          cli: { kind: 'na', reason: userInitiated },
+          mcp: {
+            kind: 'na',
+            reason:
+              "narzędzie agentowe restore'u świadomie nie istnieje: nie było use case'u, który uzasadniałby oddanie tej decyzji agentowi (przegląd otwarty)",
+          },
+          rest: D,
+        },
+        efekty: ['file', 'db'],
+        idempotencja: true,
+        opisTresci: 'n/a',
+        kodyBledow: ['RELEASE_NOT_FOUND'],
+        narzedzia: {},
+      },
+      {},
+    );
+    expect(op.opClass).toBe('write');
+    expect(Object.keys(op.inputSchema)).toEqual(['releaseName']);
+    expect(registered.has('release_restore')).toBe(false);
   });
 });

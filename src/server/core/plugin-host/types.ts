@@ -220,9 +220,10 @@ export interface MountContext {
    */
   discovery: () => DiscoveryCore;
   /**
-   * 0.2.79 — the M39 read core's PLUGIN SURFACE: exactly five operations, by
-   * which an envelope reads entities of types belonging to other plugins or
-   * modules.
+   * 0.2.79 — the M39 read core's PLUGIN SURFACE: exactly six operations
+   * (`getEntities`, `listEntities`, `searchEntities`, `describeTypes`,
+   * `resolveIdentity`, `getFieldContent` — M39 `gz7q92lz`), by which an envelope
+   * reads entities of types belonging to other plugins or modules.
    *
    * Bound HERE, at parity with `versionService` / `tagsService` /
    * `referencesService`, rather than re-exported from a barrel. The reason is
@@ -262,8 +263,9 @@ export interface MountContext {
    * it would come straight back on extraction.
    *
    * Widening the surface later is allowed and narrowing it is not, so this is
-   * additive within the `2.0.0` baseline like the five: `HOST_API_VERSION` does
-   * not move and the loader gains no new check.
+   * additive within the current baseline like the other five (rule (2), M33
+   * `m33load01`): `HOST_API_VERSION` does not move and the loader gains no new
+   * check.
    */
   getFieldContent(input: GetFieldContentInput): GetFieldContentResult;
   /**

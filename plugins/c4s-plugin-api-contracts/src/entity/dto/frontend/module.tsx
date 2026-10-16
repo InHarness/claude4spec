@@ -159,7 +159,6 @@ export const dtoFrontendModule: FrontendModule = {
   payloadVersion: 1,
   label: 'DTO',
   labelPlural: 'DTOs',
-  displayOrder: 20,
   pathPrefix: '/dtos',
   renderRow: DtoRow as FrontendModule['renderRow'],
   renderChip: DtoChip as FrontendModule['renderChip'],

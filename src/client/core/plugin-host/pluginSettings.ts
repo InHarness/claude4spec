@@ -80,17 +80,13 @@ export const PLUGIN_HOST_SETTINGS: SettingsContribution = {
   ],
 };
 
-/** The effective pool (`active ∪ inactive` from `GET /api/meta/entities`), in display order. */
+/** The effective pool (`active ∪ inactive` from `GET /api/meta/entities`), by type. */
 function useEntityTypeOptions() {
   const { data } = useQuery({ queryKey: ['meta-entities'], queryFn: () => metaApi.entities() });
   return useMemo(() => {
     if (!data) return undefined;
     return [...data.active, ...data.inactive]
-      .sort((a, b) => {
-        const oa = clientPluginHost.getAvailable(a)?.displayOrder ?? 9999;
-        const ob = clientPluginHost.getAvailable(b)?.displayOrder ?? 9999;
-        return oa - ob || a.localeCompare(b);
-      })
+      .sort((a, b) => a.localeCompare(b))
       .map((type) => {
         const m = clientPluginHost.getAvailable(type);
         return { value: type, label: `${m?.labelPlural ?? m?.label ?? type}${m ? '' : ' (overlay)'}` };

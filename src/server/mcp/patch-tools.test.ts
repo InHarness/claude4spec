@@ -20,6 +20,8 @@ import { CATALOG } from '../operations/catalog.js';
 import { registerCoreOperations } from '../operations/core-operations.js';
 import { CONTEXT_TYPE_REGISTRY } from '../services/chat-context.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
+import { createPatch } from '../services/patch-write.js';
+import { expectPatchOperationRecord } from '../../../tests/helpers/patch-tool-records.js';
 
 /**
  * 2.1.4 (M23) — `patch-tools`, the patch thread's own server: `get_patch` and
@@ -239,5 +241,147 @@ describe('patch-tools (thread-bound)', () => {
     await call('mark_patch_applied', { applied: true, path: 'big.md' });
     const onDisk = await fs.readFile(path.join(cwd, 'patches', 'big.md'), 'utf-8');
     expect(onDisk).toContain('line 19999 ');
+  });
+
+  // ── spec-operation records (2.1.26) ──────────────────────────────────────
+  //
+  // The M23 operations as their `spec-operation` records declare them at 2.1.26:
+  // name, scope, mediation, the four channel cells (an `n/a` / `via` carrying the
+  // record's `powody` verbatim), effects, idempotence, content input, exactly the
+  // record's `kodyBledow`, and `renderings` exactly its `narzedzia`. `list-patches`
+  // is asserted beside its REST rendering (routes/artifacts.test.ts).
+
+  const notAPatch = async (rel: string) =>
+    fs.writeFile(path.join(cwd, 'patches', rel), ['---', 'type: plan', 'title: Not a patch', '---', '', '# Plan', ''].join('\n'), 'utf-8');
+
+  it('[entity:create-patch] create_patch as its record declares it: project, direct, internal/mcp n/a with the record\'s reasons, cli/rest direct, file+db+ui-notify, not idempotent, literal content, codes BRIEF_NOT_FOUND, VALIDATION, PATCH_WRITE_FAILED, no renderings — the slug `{brief-slug}-{slugify(desc)}.md` from the server, two filings of one drift two files, an unknown brief BRIEF_NOT_FOUND, a missing brief / empty desc / no body / unknown kind VALIDATION', async () => {
+    const op = expectPatchOperationRecord({
+      nazwa: 'create_patch',
+      channels: {
+        internal: { kind: 'na', reason: 'producentem patcha jest terminalowy agent-implementer, a wątek `patch` patch **stosuje**, zamiast go zgłaszać' },
+        cli: { kind: 'direct' },
+        mcp: { kind: 'na', reason: 'zgłoszenie driftu ma jednego producenta, implementera pracującego kanałem `cli`' },
+        rest: { kind: 'direct' },
+      },
+      efekty: ['file', 'db', 'ui-notify'],
+      idempotencja: false,
+      opisTresci: 'literal',
+      kodyBledow: ['BRIEF_NOT_FOUND', 'VALIDATION', 'PATCH_WRITE_FAILED'],
+      narzedzia: {},
+    });
+    // The intent, not a finished file: brief, desc, kind, body (+ reporter).
+    expect(Object.keys(op.inputSchema).sort()).toEqual(['body', 'brief', 'createdBy', 'desc', 'patchKind']);
+    // No patch-thread tool files a patch.
+    expect((await client.listTools()).tools.map((t) => t.name)).not.toContain('create_patch');
+
+    const briefsDirAbs = path.join(cwd, 'briefs');
+    const patchesDirAbs = path.join(cwd, 'patches');
+    await fs.mkdir(briefsDirAbs, { recursive: true });
+    await fs.writeFile(path.join(briefsDirAbs, 'v1-to-v2.md'), '---\ntype: brief\n---\n\n# Brief\n', 'utf-8');
+    const deps = { briefsDirAbs, patchesDirAbs };
+    const input = { brief: 'v1-to-v2.md', desc: 'Missing path', body: 'what drifted' };
+
+    const first = await createPatch(deps, input, 'rest');
+    expect(first).toEqual({ path: 'v1-to-v2-missing-path.md' });
+    const second = await createPatch(deps, input, 'rest');
+    expect(second.path).not.toBe(first.path);
+    expect((await fs.readdir(patchesDirAbs)).filter((f) => f.startsWith('v1-to-v2-missing-path'))).toHaveLength(2);
+    const written = await fs.readFile(path.join(patchesDirAbs, first.path), 'utf-8');
+    expect(written).toMatch(/type: patch/);
+    expect(written).toMatch(/brief: v1-to-v2\.md/);
+    expect(written).toMatch(/applied: false/);
+
+    await expect(createPatch(deps, { ...input, brief: 'no-such-brief.md' }, 'rest')).rejects.toMatchObject({ code: 'BRIEF_NOT_FOUND' });
+    await expect(createPatch(deps, { ...input, brief: undefined }, 'rest')).rejects.toMatchObject({ code: 'VALIDATION' });
+    await expect(createPatch(deps, { ...input, desc: '  ' }, 'rest')).rejects.toMatchObject({ code: 'VALIDATION' });
+    await expect(createPatch(deps, { ...input, body: undefined }, 'rest')).rejects.toMatchObject({ code: 'VALIDATION' });
+    await expect(createPatch(deps, { ...input, patchKind: 'typo' }, 'rest')).rejects.toMatchObject({ code: 'VALIDATION' });
+  });
+
+  it('[entity:get-patch] get_patch as its record declares it: project, direct, internal direct, cli/mcp n/a and rest via get_artifact with the record\'s reasons, no effects, idempotent, `path` + window `range`, codes PATCH_NOT_FOUND, INVALID_ARGUMENT, PATCH_INVALID_FRONTMATTER, rendered by patch-tools · get_patch (internal) — content, frontmatter and hash; an unknown path PATCH_NOT_FOUND, a window past the end INVALID_ARGUMENT, a non-patch file PATCH_INVALID_FRONTMATTER', async () => {
+    const op = expectPatchOperationRecord({
+      nazwa: 'get_patch',
+      channels: {
+        internal: { kind: 'direct' },
+        cli: { kind: 'na', reason: 'żadna komenda `c4s` nie renderuje jeszcze odczytu patcha' },
+        mcp: { kind: 'na', reason: 'odczyt patcha istnieje dla wątku, który ten patch stosuje; kanał `mcp` nie ma wątku zakotwiczonego w patchu' },
+        rest: { kind: 'via', operation: 'get_artifact', reason: 'via `get_artifact` — uogólniona trasa odczytu rodziny artefaktów' },
+      },
+      efekty: ['none'],
+      idempotencja: true,
+      opisTresci: undefined,
+      kodyBledow: ['PATCH_NOT_FOUND', 'INVALID_ARGUMENT', 'PATCH_INVALID_FRONTMATTER'],
+      narzedzia: { internal: ['patch-tools-get-patch'] },
+    });
+    expect(Object.keys(op.inputSchema).sort()).toEqual(['path', 'range']);
+
+    const read = await call('get_patch', { path: 'p.md' });
+    expect(read.isError).toBe(false);
+    expect(read.body.content).toContain('line B');
+    expect(read.body.path).toBe('p.md');
+    expect(read.body.frontmatter).toMatchObject({ patch_kind: 'drift', brief: 'b.md' });
+    expect(read.body.hash).toMatch(/^[0-9a-f]{64}$/);
+    // Idempotent: a second read answers the same.
+    expect((await call('get_patch', { path: 'p.md' })).body).toEqual(read.body);
+
+    const unknown = await call('get_patch', { path: 'nope.md' });
+    expect(unknown.isError).toBe(true);
+    expect(unknown.raw.error?.code ?? unknown.raw.code).toBe('PATCH_NOT_FOUND');
+    const past = await call('get_patch', { path: 'p.md', range: { start: 999, end: 1000 } });
+    expect(past.isError).toBe(true);
+    expect(past.raw.error?.code ?? past.raw.code).toBe('INVALID_ARGUMENT');
+    await notAPatch('plan-like.md');
+    const invalid = await call('get_patch', { path: 'plan-like.md' });
+    expect(invalid.isError).toBe(true);
+    expect(invalid.raw.error?.code ?? invalid.raw.code).toBe('PATCH_INVALID_FRONTMATTER');
+  });
+
+  it('[entity:mark-patch-applied] mark_patch_applied as its record declares it: project, direct, internal direct, cli/mcp n/a and rest via update_artifact_frontmatter with the record\'s reasons, file+db+ui-notify, idempotent, no content, addressed by `path`, codes PATCH_NOT_FOUND, INVALID_ARGUMENT, PATCH_INVALID_FRONTMATTER, rendered by patch-tools · mark_patch_applied (internal) — frontmatter only, through version capture, a repeat a no-op, an unknown path PATCH_NOT_FOUND, `false` INVALID_ARGUMENT, a non-patch file PATCH_INVALID_FRONTMATTER', async () => {
+    const op = expectPatchOperationRecord({
+      nazwa: 'mark_patch_applied',
+      channels: {
+        internal: { kind: 'direct' },
+        cli: { kind: 'na', reason: 'jedyny realny wołający kończy wdrożenie patcha w wątku, nie w terminalu' },
+        mcp: { kind: 'na', reason: 'deklarację wdrożenia składa wątek, który patch stosuje; kanał `mcp` nie ma wątku zakotwiczonego w patchu' },
+        rest: {
+          kind: 'via',
+          operation: 'update_artifact_frontmatter',
+          reason: 'via `update_artifact_frontmatter` — uogólniona trasa frontmatteru rodziny artefaktów, dwukierunkowa i prowadzona przez użytkownika',
+        },
+      },
+      efekty: ['file', 'db', 'ui-notify'],
+      idempotencja: true,
+      opisTresci: 'n/a',
+      kodyBledow: ['PATCH_NOT_FOUND', 'INVALID_ARGUMENT', 'PATCH_INVALID_FRONTMATTER'],
+      narzedzia: { internal: ['patch-tools-mark-patch-applied'] },
+    });
+    expect(Object.keys(op.inputSchema).sort()).toEqual(['applied', 'path']);
+
+    // Frontmatter only, through version capture (file + db + ui-notify).
+    const bodyBefore = (await service.getPatch('p.md', { full: true })).body;
+    expect((await call('mark_patch_applied', { applied: true, path: 'p.md' })).isError).toBe(false);
+    const after = await service.getPatch('p.md', { full: true });
+    expect(after.frontmatter.applied).toBe(true);
+    expect(after.body).toBe(bodyBefore);
+    expect(versionCount('p.md')).toBe(1);
+    expect(broadcast).toHaveBeenCalledWith({ kind: 'patches:changed', path: 'p.md' });
+    const events = broadcast.mock.calls.length;
+    // A repeat on the same value: no write, no version, no event.
+    const settled = await fs.readFile(path.join(cwd, 'patches', 'p.md'), 'utf-8');
+    expect((await call('mark_patch_applied', { applied: true, path: 'p.md' })).isError).toBe(false);
+    expect(await fs.readFile(path.join(cwd, 'patches', 'p.md'), 'utf-8')).toBe(settled);
+    expect(versionCount('p.md')).toBe(1);
+    expect(broadcast.mock.calls.length).toBe(events);
+
+    const unknown = await call('mark_patch_applied', { applied: true, path: 'nope.md' });
+    expect(unknown.isError).toBe(true);
+    expect(unknown.raw.error?.code ?? unknown.raw.code).toBe('PATCH_NOT_FOUND');
+    const unmark = await call('mark_patch_applied', { applied: false, path: 'p.md' });
+    expect(unmark.isError).toBe(true);
+    expect(unmark.raw.error?.code ?? unmark.raw.code).toBe('INVALID_ARGUMENT');
+    await notAPatch('plan-like.md');
+    const invalid = await call('mark_patch_applied', { applied: true, path: 'plan-like.md' });
+    expect(invalid.isError).toBe(true);
+    expect(invalid.raw.error?.code ?? invalid.raw.code).toBe('PATCH_INVALID_FRONTMATTER');
   });
 });

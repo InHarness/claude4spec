@@ -147,11 +147,18 @@ export function createPageToolsServer(
     )
     .min(1);
 
+  /**
+   * 2.1.26 — the answer carries `content`, the file AS IT SETTLED (the generated
+   * template when no `content` was sent, the anchor comments the reaction chain
+   * injected in either case), so the caller edits from the bytes on disk rather
+   * than from what it sent. The REST rendering keeps `CreatePageResponse`
+   * without it. ASSUMPTION:dev-2604
+   */
   const createPageTool = mcpTool(
     'create_page',
     [
-      'Create a page that does not exist yet. Fails PAGE_EXISTS rather than overwriting — use update_page for an existing one.',
-      'Returns { rootId, path, hash, version, anchors } — never the page content, neither what you sent nor the file as it settled. The reaction chain has already injected `<!-- anchor: … -->` comments for your headings (listed in `anchors`), so read the page with get_page before editing it, not from what you sent.',
+      "Create a page that does not exist yet. Fails PAGE_EXISTS rather than overwriting — use update_page for an existing one.",
+      "Returns { rootId, path, hash, version, content, anchors }. `content` is the file AS IT SETTLED: omit `content` and it is the generated template, and in either case the reaction chain has already injected `<!-- anchor: … -->` comments for your headings. Edit from it, not from what you sent.",
     ].join('\n'),
     {
       rootId: rootIdParam,
@@ -189,26 +196,27 @@ export function createPageToolsServer(
   );
 
   /**
-   * 2.1.14 — the description is the entity's (`page-tools-update-page`), verbatim,
-   * followed by two paragraphs the entity carries in `logic` and `returns`
-   * rather than in its description: the anchor guard of both modes and the
-   * shape of the answer. A literal write is create-or-replace — a page missing
-   * from a known root is created, never refused with NOT_FOUND (M02 `gj2vdsjm`).
+   * 2.1.26 — the description is the record's (`page-tools-update-page`), verbatim,
+   * the anchor guard of both modes and the shape of the answer included. A
+   * literal write is create-or-replace — a page missing from a known root is
+   * created, never refused with NOT_FOUND (M02 `gj2vdsjm`). The four hints are
+   * the record's and the only ones on this server: the other four page tools
+   * declare none (2.1.26 withdrew theirs).
    */
   const updatePageTool = mcpTool(
     'update_page',
     [
-      'Write a specification page, addressed by `(rootId, path)`. A literal write creates the page when it does not exist yet — this is the create-or-replace primitive. Describe the new content in ONE of two ways, never both: literally via `body` (the complete markdown, optionally with a `frontmatter` object beside it), or differentially via `textEdits` (literal find/replace substitutions applied to the current file). Giving both, or neither, is an error.',
-      '',
-      "WHICH SCOPE TO USE. For a punctual change inside a page with a section index, prefer `update_sections` with the target section's anchor — a shorter `find` and fewer accidental matches. To change a heading's TEXT use its `rename` action, which keeps the anchor; a `find` swallowing the anchor comment destroys it and needs `dropAnchors`. Reach for `textEdits` here when the target crosses sections, lies outside any section (frontmatter, the preamble before the first heading), or the page has no section index. Reach for `body` when rewriting the page wholesale.",
-      '',
-      'DIFFERENTIAL MODE. `find` matches BYTE FOR BYTE — no whitespace normalisation, no regular expressions; whitespace copied inexactly is the single most common reason a `find` misses. `expectedMatches` OMITTED MEANS EXACTLY ONE match — that default is invisible in the schema, so read it here: pass a number to require exactly that many, or `"all"` to replace every occurrence without declaring how many. All `find` patterns are counted against the content BEFORE the write, so the list declares a SET of substitutions, not a sequence: two matches may not overlap, and one may not sit inside another edit\'s range.',
-      '',
-      '`expectedHash` is REQUIRED in both modes. Renaming one thing across N pages is N calls, each with its own hash — there is no cross-page batch, because the hash guards one file.',
-      '',
-      'ANCHOR LOSS, IN BOTH MODES: if the write removes an `<!-- anchor: … -->` comment that something cites, it is refused with ANCHOR_LOSS (400) naming each anchor and who cites it. Name those anchors in `dropAnchors` to go ahead. In differential mode the touched scope is the matched fragments, so every entry must lie inside one; in literal `body` mode it is the whole page, so every entry must be an anchor this page has now (otherwise INVALID_ARGUMENT). To rewrite a page wholesale, assemble the body from get_page: preamble, then per item its anchor line, heading line and body — an anchor you leave out is a loss. The guard runs on every page root. Literal `body` mode is idempotent by content; differential mode is NOT — repeating a successful call with a refreshed expectedHash answers FIND_NOT_FOUND.',
-      '',
-      'Returns { hash, version, changedAnchors }, plus `replacements` in differential mode and `droppedAnchors` when the write removed any anchor. The page is NOT returned. The write-back phase injects `<!-- anchor: … -->` comments for headings you introduced, so the bytes on disk are NOT the bytes you sent: if you need them — e.g. to write the whole page again without stripping those anchors — re-read it with `get_page`. The returned `hash` is taken AFTER that injection, so it arms your next `expectedHash` as is. `changedAnchors` lists sections that changed relative to the page BEFORE this write, not relative to what you sent: an empty list does NOT mean the file equals your body.',
+      "Write a specification page, addressed by `(rootId, path)`. A literal write creates a missing page (create-or-replace). Describe the new content in ONE of two ways, never both: literally via `body` (the complete markdown, optionally with a `frontmatter` object beside it), or differentially via `textEdits` (literal find/replace substitutions applied to the current file). Both, or neither, is an error.",
+      "",
+      "For a punctual change inside one section prefer `update_sections` (its `rename` keeps the anchor). Use `textEdits` here when the target crosses sections, lies outside any section (frontmatter, preamble) or the page has no section index; use `body` for a wholesale rewrite.",
+      "",
+      "DIFFERENTIAL MODE. `find` matches BYTE FOR BYTE — no whitespace normalisation, no regular expressions. `expectedMatches` OMITTED MEANS EXACTLY ONE match; pass a number, or `\"all\"` for every occurrence. All patterns are counted against the content BEFORE the write: a SET of substitutions, not a sequence — two matches may not overlap.",
+      "",
+      "`expectedHash` is REQUIRED in both modes. It guards one file: N pages are N calls.",
+      "",
+      "ANCHOR LOSS, IN BOTH MODES: a write removing a cited `<!-- anchor: … -->` comment is refused with ANCHOR_LOSS (400) naming each anchor and who cites it; name those anchors in `dropAnchors` to go ahead. Differential mode: every entry must lie inside a matched fragment. Literal mode: every entry must be an anchor this page has now (otherwise INVALID_ARGUMENT). The guard runs on every page root. Literal mode is idempotent by content; differential mode is NOT — a repeat answers FIND_NOT_FOUND.",
+      "",
+      "Returns { hash, version, changedAnchors }, plus `replacements` in differential mode and `droppedAnchors` when the write removed any anchor. The page is NOT returned. Anchors are injected for new headings, so the bytes on disk are not the bytes you sent — re-read with `get_page` if you need them; `hash` is taken after that injection. `changedAnchors` is relative to the page BEFORE this write.",
     ].join('\n'),
     {
       rootId: rootIdParam,
@@ -350,19 +358,13 @@ export function createPageToolsServer(
   const updateSectionsTool = mcpTool(
     'update_sections',
     [
-      'Edit one or more sections of ONE page, addressed by anchor. Read-modify-write of the whole page under the hood — a convenience over update_page, not a separate store.',
-      'Actions: `replace` (swap the section\'s OWN body), `append` (add at the end of the section\'s OWN body, before its first subsection), `insert_after` (add after the section and its subsections), `delete` (remove the SUBTREE with its heading and anchor), `edit` (substitute literal fragments inside the subtree), `rename` (rewrite the heading line). EXACTLY ONE field per action: `content` for replace/append/insert_after, `textEdits` for `edit`, `heading` for `rename`, and nothing at all for `delete`. Any other combination — a field the action does not take, or its own field missing — is INVALID_ARGUMENT for the WHOLE batch.',
-      '`rename` rewrites the heading LINE ALONE — level and anchor preserved, body untouched. It is IDEMPOTENT by heading text: repeating it with the same text succeeds and leaves the page identical, because it matches nothing literally and so has nothing to fail to find. It never drops an anchor, so it can never trip ANCHOR_LOSS — and neither can `replace` or `append`.',
-      '`edit` matches LITERALLY, byte for byte, inside the addressed subtree only — from its anchor line, heading included. One `edit` entry may carry many substitutions; a second `edit` element on the same anchor is refused. Omitting `expectedMatches` means EXACTLY 1. Zero hits → FIND_NOT_FOUND (with a whitespace-normalization diagnosis); wrong count → MATCH_COUNT_MISMATCH (with each hit as anchor + line).',
-      'SECTION SCOPE VS PAGE SCOPE: `update_page` with `textEdits` covers everything this covers, since a literal `find` can be made unique page-wide. The section scope buys two things — a shorter `find`, needing no disambiguating context, and a narrower space to hit by accident. Use the section when the target sits in one known section; use the page when it crosses sections or lies outside all of them.',
-      '`edit` is NOT idempotent, and one `edit` costs the WHOLE BATCH its idempotence, because the batch is all-or-nothing. Replaying a successful one answers FIND_NOT_FOUND. Its `find` is always matched on the page as you read it, never on text the same batch writes.',
-      '`delete`, `insert_after` and the `edit` match window act on the SUBTREE (a `##` with three `###` is all four). `replace` and `append` act on the OWN BODY — what get_sections returns, below the heading, above the first subsection — and refuse a `content` heading at or above the section\'s level. The heading changes only through `rename`; the subsections and their anchors are never touched by `replace`. ONE ANCHOR MAY CARRY SEVERAL ACTIONS — `rename` + `replace` rewrites a whole section in ONE batch. Which elements collide is spelled out under `edits`.',
-      'ANCHOR LOSS: `delete` destroys the anchor comments of the subsections it spans, an `edit` whose `find` swallows an `<!-- anchor: … -->` comment destroys that anchor — and content that opens a code block nothing closes turns every section below it into code, swallowing their anchors too. An anchor-shaped line inside a code block is an example, never an anchor, and never counts. If a destroyed anchor is cited anywhere (`<section_ref/>` or a `page.md#anchor` link) the WHOLE batch is refused with ANCHOR_LOSS (400), listing each anchor, its heading text and who cites it. To go ahead anyway, name those anchors in `dropAnchors`; to keep them, use `replace` on the parent instead of deleting the subtree, or narrow the `find`. Dropping an UNCITED anchor is never refused — it is just reported.',
-      'ANCHOR DUPLICATE: never send an `<!-- anchor: … -->` comment for a NEW heading. Anchor values are minted by the indexer alone, so a comment in your `content` is a copied line: if the value is already held anywhere in the project, or its line ends up over no heading of its own, the WHOLE batch is refused with ANCHOR_DUPLICATE (400) naming where the value currently lives. There is no override — drop the comment and the new heading is given a fresh anchor on the next indexing pass. Moving a section WITHIN one page is unaffected: `delete` plus `insert_after` in the same batch nets to zero, so the anchor survives the move. Between pages, remove it from the source first, then insert it in the target.',
-      'All anchors must be on the SAME page (else INVALID_ARGUMENT).',
-      'TRANSACTIONAL — unlike every other batch here, there is no partial success: either all edits land or none do. They apply bottom-up regardless of the order you list them, so earlier edits never shift later ones.',
-      '`expectedHash` is the PAGE hash and guards the whole batch — which is the point of batching: editing sections one call at a time makes your own hash stale after the first one.',
-      'Returns { path, hash, version, results: [{ anchor, action, affectedAnchors, droppedAnchors, addedAnchors }] }, ONE ROW PER ELEMENT in the order you gave them — two rows may share an anchor, so read them by position; no anchor appears in `droppedAnchors` of two rows; an `edit` row also carries `replacements`, and a `rename` row `previousHeading` — the heading text as it stood BEFORE the write, absent (the key missing, not empty) on every other row. It is not an echo: you addressed the section by anchor, so the old text is the one thing you could not have sent. `droppedAnchors` and `addedAnchors` are filled on SUCCESS too — together they are how you see what identities a write cost and what it brought in, so there is no dry-run mode to ask for. For `edit` `droppedAnchors` is measured over the fragments your patterns matched, not over the whole subtree.',
+      "Edit sections of ONE page by anchor. All anchors must be on the SAME page (else INVALID_ARGUMENT).",
+      "Each action takes EXACTLY ONE field: `replace` (the OWN body), `append` (end of the OWN body, before the first subsection) and `insert_after` (after the subtree) take `content`; `edit` (literal substitutions inside the subtree, heading included) takes `textEdits`; `rename` (the heading line alone, level and anchor kept) takes `heading`; `delete` (the SUBTREE with its heading and anchor) takes nothing. Any other combination is INVALID_ARGUMENT for the WHOLE batch. `replace`/`append` refuse a `content` heading at or above the section's level. One anchor may carry several actions.",
+      "`edit` matches BYTE FOR BYTE, on the page as read; one entry may carry many substitutions, a second `edit` on the same anchor is refused. Omitted `expectedMatches` means EXACTLY 1. 0 hits → FIND_NOT_FOUND, wrong count → MATCH_COUNT_MISMATCH. `edit` is NOT idempotent and costs the whole batch its idempotence; `rename` is idempotent by heading text.",
+      "ANCHOR LOSS: `delete`, a `find` swallowing an anchor comment, or `content` opening an unclosed code block destroys anchors (an anchor-shaped line inside code never counts). A destroyed CITED anchor refuses the WHOLE batch with ANCHOR_LOSS (400) unless named in `dropAnchors`; an uncited one is only reported. `replace`, `append` and `rename` never drop one.",
+      "ANCHOR DUPLICATE: never send an anchor comment for a NEW heading; a value held elsewhere, or over no heading of its own, refuses the WHOLE batch with ANCHOR_DUPLICATE (400), no override.",
+      "TRANSACTIONAL, applied bottom-up regardless of order. `expectedHash` is the PAGE hash and guards the whole batch.",
+      "Returns { path, hash, version, results }: a row per element, in input order: { anchor, action, affectedAnchors, droppedAnchors, addedAnchors }, `replacements` on `edit`, `previousHeading` (text before the write) on `rename`. Dropped/added anchors are reported on success too.",
     ].join('\n'),
     {
       expectedHash: expectedHashParam,
@@ -397,10 +399,7 @@ export function createPageToolsServer(
         )
         .min(1)
         .describe(
-          'The edits to apply, all addressing sections of one page. ' +
-            "replace — swap the section's OWN BODY — heading and subsections untouched; deeper headings in `content` become its first children, a heading at or above its level is INVALID_ARGUMENT. " +
-            "append — add at the end of the section's OWN body, before its first subsection — a heading outside a code block at or above the addressed section's level in `content` is INVALID_ARGUMENT for the whole batch; deeper headings become its first children. " +
-            'COLLISIONS — each element CLAIMS part of the page as it was BEFORE the write: `delete` the whole subtree with its anchor line, `replace` the own body, `edit` each matched fragment, `rename` the section\'s HEAD (anchor line + heading line); `append` and `insert_after` claim only a POINT (end of the own body / end of the subtree). The batch is INVALID_ARGUMENT when two claims share a character or a point lies strictly INSIDE a claimed range — whether the elements address one anchor or different ones; a point on a range\'s edge is fine. Also refused: two elements of the SAME action on one anchor (merge the `textEdits` lists, concatenate the `content`), and ANY element addressing an anchor inside a subtree being deleted, that anchor itself included. So `rename` + `replace` + `insert_after` on one anchor is fine, and so is `replace` on a parent next to edits in its subsections. Inserts sharing a position land innermost first — `append` before `insert_after` of the same section, a descendant\'s `insert_after` before its ancestor\'s; an insert on a range\'s edge goes after a range ending there and before one starting there. `results[]` carries one row PER ELEMENT, so two rows may share an anchor — read them by position.',
+          "The edits to apply, all addressing sections of one page. replace — swap the section's OWN BODY; deeper headings in `content` become its first children, a heading at or above its level is INVALID_ARGUMENT. append — the same, at the end of the own body. COLLISIONS — each element CLAIMS the page as it was BEFORE the write: `delete` the subtree with its anchor line, `replace` the own body, `edit` each matched fragment, `rename` the anchor and heading lines; `append` and `insert_after` claim only a POINT. INVALID_ARGUMENT when two claims share a character or a point lies strictly INSIDE a claim (an edge is fine), for two elements of the SAME action on one anchor, and for ANY element addressing an anchor inside a deleted subtree. Inserts sharing a position land innermost first — `append` before `insert_after` of the same section, a descendant's before its ancestor's. `results[]` carries one row PER ELEMENT; read them by position.",
         ),
       dropAnchors: z
         .array(z.string())

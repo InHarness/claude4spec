@@ -25,8 +25,6 @@ export const diagramBackendModule: BackendModule = {
 
   label: 'Diagram',
   labelPlural: 'Diagrams',
-  // After design-system (60) — diagrams sit at the end of ELEMENTS.
-  displayOrder: 70,
   pathPrefix: '/diagrams',
   ...diagramSerialization,
   systemPrompt: diagramSystemPrompt,

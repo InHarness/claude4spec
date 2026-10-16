@@ -12,7 +12,6 @@ function entity(type: string): EntityContribution {
     payloadVersion: 1,
     label: type,
     labelPlural: `${type}s`,
-    displayOrder: 100,
     pathPrefix: `/${type}s`,
     systemPrompt: {
       roleNoun: type,

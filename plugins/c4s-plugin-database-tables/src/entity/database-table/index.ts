@@ -1,7 +1,6 @@
 import type { EntityContribution } from '@c4s/plugin-runtime';
 import {
   DATABASE_TABLE_ATTR_ORDER,
-  DATABASE_TABLE_DISPLAY_ORDER,
   DATABASE_TABLE_LABEL,
   DATABASE_TABLE_LABEL_PLURAL,
   DATABASE_TABLE_PATH_PREFIX,
@@ -56,7 +55,6 @@ export const databaseTableEntity: EntityContribution = {
   payloadVersion: 3,
   label: DATABASE_TABLE_LABEL,
   labelPlural: DATABASE_TABLE_LABEL_PLURAL,
-  displayOrder: DATABASE_TABLE_DISPLAY_ORDER,
   pathPrefix: DATABASE_TABLE_PATH_PREFIX,
   ...databaseTableSerialization,
   systemPrompt: databaseTableSystemPrompt,

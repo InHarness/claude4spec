@@ -16,6 +16,10 @@ import { registerCoreOperations } from '../operations/core-operations.js';
 import { PagesService } from '../services/pages.js';
 import { SectionsService } from '../services/sections.js';
 import type { SelfWriteMarker, WriteActor } from '../fs/sources.js';
+import type { McpToolDeclaration } from '../../shared/plugin-host/mcp.js';
+import { expectToolMatchesWriteRecord } from '../../../tests/helpers/write-tool-records.js';
+import { SectionIndexerService } from '../services/section-indexer.js';
+import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 
 /**
  * 0.2.13 item 28 — `page-tools`, the write path that had to exist before the
@@ -38,6 +42,28 @@ function recordingWriter(calls: Array<{ relPath: string; actor: WriteActor }>): 
 /** One scope for this rig — the primitive keys its re-entrancy check on it. */
 const RIG_SCOPE: WatchScope = 'context:page-tools-rig';
 
+/** Calls a declared tool's handler directly — past the transport's schema check, onto the operation's own. */
+async function invoke(tools: readonly McpToolDeclaration[], name: string, args: Record<string, unknown>) {
+  const res = (await tools.find((t) => t.name === name)!.handler(args, {})) as {
+    content: Array<{ text: string }>;
+    isError?: boolean;
+  };
+  return { isError: res.isError === true, body: JSON.parse(res.content[0]!.text) as Record<string, any> };
+}
+
+/** The plugin host the section indexer asks about embedded entities — this rig has none. */
+const NO_ENTITIES = {
+  listEntities: () => [],
+  listAvailable: () => [],
+  getEntity: () => null,
+  getAvailable: () => null,
+  isActive: () => false,
+  entityExists: () => false,
+  getEntityService: () => null,
+} as unknown as ProjectPluginHost;
+
+const sha256 = (text: string): string => createHash('sha256').update(text, 'utf-8').digest('hex');
+
 describe('page-tools', () => {
   let cwd: string;
   let db: Database.Database;
@@ -45,6 +71,9 @@ describe('page-tools', () => {
   let client: Client;
   let origins: Array<{ relPath: string; actor: WriteActor }>;
   let runtime: FileWatchRuntime;
+  /** The tools as the server declared them — raw zod shapes, annotations, handlers. */
+  let declared: readonly McpToolDeclaration[];
+  let target: { pages: PagesService; writer: SelfWriteMarker };
 
   beforeEach(async () => {
     cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-page-tools-'));
@@ -67,12 +96,14 @@ describe('page-tools', () => {
       adapter: markdownAdapter,
     });
     origins = [];
-    const target = { pages, writer: recordingWriter(origins) };
-    const { server } = createPageToolsServer({
+    target = { pages, writer: recordingWriter(origins) };
+    const instance = createPageToolsServer({
       sections: new SectionsService(db),
       resolveRoot: (rootId) => (rootId === 'pages' ? target : undefined),
       rootIds: () => ['pages', 'guides'],
     });
+    declared = instance.tools;
+    const { server } = instance;
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     client = new Client({ name: 'test-client', version: '0.0.0' });
     await server.connect(serverTransport);
@@ -309,7 +340,10 @@ describe('page-tools', () => {
     expect(await fs.readFile(path.join(pages.root, 'dup.md'), 'utf-8')).toBe('original');
   });
 
-  it('[entity:page-tools-update-page] update_page is on page-tools with its parameter set (`body` + `frontmatter` literal, `textEdits` differential), its hints, an always-on anchor guard, and a literal write that creates or replaces', async () => {
+  it('[entity:page-tools-update-page] update_page is on page-tools with its 2.1.26 record\'s description, parameter set (`body` + `frontmatter` literal, `textEdits` differential) and hints, an always-on anchor guard, and a literal write that creates or replaces', async () => {
+    // The record, verbatim: name, description, every parameter, and the four hints
+    // (readOnly 0, destructive 1, idempotent 0, openWorld 0) as the only annotations.
+    expectToolMatchesWriteRecord(declared.find((t) => t.name === 'update_page'), 'page-tools-update-page');
     const { tools } = await client.listTools();
     const tool = tools.find((t) => t.name === 'update_page')!;
     expect(tool).toBeDefined();
@@ -330,7 +364,7 @@ describe('page-tools', () => {
     expect((props.body as { description?: string }).description).toContain('a page that does not exist yet is created');
     expect((props.frontmatter as { description?: string }).description).toContain("replaces the page's frontmatter wholesale");
     expect((props.textEdits as { description?: string }).description).toContain('Mutually exclusive with `body`');
-    expect(tool.description).toContain('this is the create-or-replace primitive');
+    expect(tool.description).toContain('A literal write creates a missing page (create-or-replace)');
     // The entity's hints: readOnly 0, destructive 1, idempotent 0, openWorld 0.
     expect(tool.annotations).toMatchObject({
       readOnlyHint: false,
@@ -475,7 +509,7 @@ describe('page-tools', () => {
      */
     const updatePage = tools.find((t) => t.name === 'update_page')!;
     expect(Object.keys(updatePage.inputSchema.properties!)).not.toContain('heading');
-    expect(updatePage.description).toContain("To change a heading's TEXT use its `rename` action");
+    expect(updatePage.description).toContain('prefer `update_sections` (its `rename` keeps the anchor)');
   });
 
   it('update_sections on an unindexed anchor is SECTION_NOT_FOUND, not a crash', async () => {
@@ -500,5 +534,206 @@ describe('page-tools', () => {
     expect(res.isError).toBe(true);
     expect(res.body.code).toBe('INVALID_ARGUMENT');
     expect(await fs.readFile(path.join(pages.root, 'guard.md'), 'utf-8')).toBe('x');
+  });
+  /**
+   * 2.1.26 — `page-tools · delete_page` as its record states it: no `expectedHash`
+   * parameter (the concurrency guard does not run in this channel), no hints, and
+   * a missing page is a SUCCESS with `deleted: false`.
+   */
+  it('[entity:page-tools-delete-page] delete_page: the record\'s description and (rootId, path) alone, no hints; unknown root ROOT_NOT_FOUND, empty path VALIDATION, a missing page { ok: true, deleted: false }, no concurrency guard', async () => {
+    expectToolMatchesWriteRecord(declared.find((t) => t.name === 'delete_page'), 'page-tools-delete-page');
+    const { tools } = await client.listTools();
+    const tool = tools.find((t) => t.name === 'delete_page')!;
+    expect(Object.keys(tool.inputSchema.properties ?? {}).sort()).toEqual(['path', 'rootId']);
+    expect(tool.inputSchema.properties).not.toHaveProperty('expectedHash');
+
+    const unknownRoot = await call('delete_page', { rootId: 'nope', path: 'a.md' });
+    expect(unknownRoot.isError).toBe(true);
+    expect(unknownRoot.body.code).toBe('ROOT_NOT_FOUND');
+    const emptyPath = await invoke(declared, 'delete_page', { rootId: 'pages', path: '' });
+    expect(emptyPath.isError).toBe(true);
+    expect(emptyPath.body.code).toBe('VALIDATION');
+
+    // No page at the address: success, nothing deleted — not a refusal.
+    const missing = await call('delete_page', { rootId: 'pages', path: 'never.md' });
+    expect(missing.isError).toBe(false);
+    expect(missing.body).toEqual({ ok: true, deleted: false });
+
+    // The tool hands the service no `expectedHash`: a stale one sent anyway guards nothing.
+    await call('create_page', { rootId: 'pages', path: 'doomed.md', content: '# Doomed\n' });
+    const deleted = await invoke(declared, 'delete_page', { rootId: 'pages', path: 'doomed.md', expectedHash: 'f'.repeat(64) });
+    expect(deleted.isError).toBe(false);
+    expect(deleted.body).toEqual({ ok: true, deleted: true });
+    expect(await pages.exists('doomed.md')).toBe(false);
+    // The content of the deleted page does not come back.
+    expect(JSON.stringify(deleted.body)).not.toContain('Doomed');
+  });
+
+  /**
+   * 2.1.26 — `page-tools · move_page`: the answer reports `citationSync`, and a
+   * propagation that fails after the move does not undo it.
+   */
+  it('[entity:page-tools-move-page] move_page: the record\'s description and parameters, no hints; answers { rootId, path, hash, version, citationSync } with the hash unchanged; a failed citation sync lands in citationSync.error without undoing the move; its refusals carry their codes', async () => {
+    expectToolMatchesWriteRecord(declared.find((t) => t.name === 'move_page'), 'page-tools-move-page');
+
+    const created = await call('create_page', { rootId: 'pages', path: 'a.md', content: '# A\n' });
+    const moved = await call('move_page', { rootId: 'pages', from: 'a.md', to: 'guides/a.md', expectedHash: created.body.hash });
+    expect(moved.isError).toBe(false);
+    expect(Object.keys(moved.body).sort()).toEqual(['citationSync', 'hash', 'path', 'rootId', 'version']);
+    expect(moved.body).toMatchObject({ rootId: 'pages', path: 'guides/a.md', hash: created.body.hash });
+    expect(typeof moved.body.version).toBe('number');
+    // This rig wires no link indexer: nothing to rewrite, no error.
+    expect(moved.body.citationSync).toEqual({ rewritten: [] });
+
+    // With a propagation: the rewritten pages are reported…
+    const rewriting = createPageToolsServer({
+      sections: new SectionsService(db),
+      resolveRoot: (rootId) => (rootId === 'pages' ? target : undefined),
+      rootIds: () => ['pages'],
+      propagateRename: async () => ['index.md', 'modules/m02-pages.md'],
+    }).tools;
+    const synced = await invoke(rewriting, 'move_page', { rootId: 'pages', from: 'guides/a.md', to: 'b.md', expectedHash: created.body.hash });
+    expect(synced.isError).toBe(false);
+    expect(synced.body.citationSync).toEqual({ rewritten: ['index.md', 'modules/m02-pages.md'] });
+
+    // …and one that breaks after the move answers WITH the move, the error in citationSync.
+    const failing = createPageToolsServer({
+      sections: new SectionsService(db),
+      resolveRoot: (rootId) => (rootId === 'pages' ? target : undefined),
+      rootIds: () => ['pages'],
+      propagateRename: async () => {
+        throw new Error('link projection is stale');
+      },
+    }).tools;
+    const broken = await invoke(failing, 'move_page', { rootId: 'pages', from: 'b.md', to: 'c.md', expectedHash: created.body.hash });
+    expect(broken.isError).toBe(false);
+    expect(broken.body.path).toBe('c.md');
+    expect(broken.body.citationSync).toEqual({ rewritten: [], error: 'link projection is stale' });
+    expect(await pages.exists('c.md')).toBe(true);
+    expect(await pages.exists('b.md')).toBe(false);
+
+    // Refusals, each with its code and neither file touched.
+    const hash = created.body.hash as string;
+    const codeOf = async (args: Record<string, unknown>) => (await invoke(declared, 'move_page', args)).body.code;
+    expect(await codeOf({ rootId: 'nope', from: 'c.md', to: 'd.md', expectedHash: hash })).toBe('ROOT_NOT_FOUND');
+    expect(await codeOf({ rootId: 'pages', from: '', to: 'd.md', expectedHash: hash })).toBe('INVALID_ARGUMENT');
+    expect(await codeOf({ rootId: 'pages', from: 'c.md', to: '', expectedHash: hash })).toBe('INVALID_ARGUMENT');
+    expect(await codeOf({ rootId: 'pages', from: 'c.md', to: 'd.md' })).toBe('INVALID_ARGUMENT');
+    expect(await codeOf({ rootId: 'pages', from: 'c.md', to: 'd.md', expectedHash: 'f'.repeat(64) })).toBe('PAGE_CONFLICT');
+    expect(await codeOf({ rootId: 'pages', from: 'gone.md', to: 'd.md', expectedHash: hash })).toBe('NOT_FOUND');
+    expect(await codeOf({ rootId: 'pages', from: 'c.md', to: '../outside.md', expectedHash: hash })).toBe('INVALID_ARGUMENT');
+    await call('create_page', { rootId: 'pages', path: 'taken.md', content: '# T\n' });
+    expect(await codeOf({ rootId: 'pages', from: 'c.md', to: 'taken.md', expectedHash: hash })).toBe('PAGE_EXISTS');
+    expect(await pages.exists('c.md')).toBe(true);
+    expect(await fs.readFile(path.join(pages.root, 'taken.md'), 'utf-8')).toBe('# T\n');
+
+    // A root with no record store cannot move a file at all.
+    const storeless = { pages: new PagesService(cwd, 'pages', 'pages'), writer: recordingWriter([]) };
+    const noStore = createPageToolsServer({
+      sections: new SectionsService(db),
+      resolveRoot: () => storeless,
+      rootIds: () => ['pages'],
+    }).tools;
+    expect((await invoke(noStore, 'move_page', { rootId: 'pages', from: 'c.md', to: 'd.md', expectedHash: hash })).body.code).toBe(
+      'NOT_IMPLEMENTED',
+    );
+  });
+
+  /**
+   * 2.1.26 — `page-tools · update_sections` over a real section index: the
+   * record's description, parameters and (empty) hints, the refusals its `logic`
+   * lists in order, and the answer's shape.
+   */
+  it('[entity:page-tools-update-sections] update_sections: the record\'s description and parameters, no hints; validation before the read (INVALID_ARGUMENT / VALIDATION), anchors resolved by section_index (SECTION_NOT_FOUND, two pages INVALID_ARGUMENT, unmounted root ROOT_NOT_FOUND, INDEX_STALE), the page hash guard, and one result row per element', async () => {
+    expectToolMatchesWriteRecord(declared.find((t) => t.name === 'update_sections'), 'page-tools-update-sections');
+
+    const ghost = new PagesService(cwd, 'ghost', 'ghost');
+    await ghost.ensureRoot();
+    const indexer = new SectionIndexerService(
+      db,
+      new Map([
+        ['pages', { pages }],
+        ['ghost', { pages: ghost }],
+      ]),
+      { broadcast: () => {} } as never,
+      NO_ENTITIES,
+    );
+    const docA = '<!-- anchor: aaaa0001 -->\n## One\n\nalpha\n\n<!-- anchor: aaaa0002 -->\n## Two\n\nbeta\n';
+    const a = await call('create_page', { rootId: 'pages', path: 'a.md', content: docA });
+    await call('create_page', { rootId: 'pages', path: 'b.md', content: '<!-- anchor: bbbb0001 -->\n## Other\n\ngamma\n' });
+    await fs.writeFile(path.join(ghost.root, 'g.md'), '<!-- anchor: cccc0001 -->\n## Ghost\n\nboo\n', 'utf-8');
+    for (const [root, rel] of [['pages', 'a.md'], ['pages', 'b.md'], ['ghost', 'g.md']] as const) {
+      await indexer.indexPage(root, rel);
+    }
+    const hash = a.body.hash as string;
+    const codeOf = async (args: Record<string, unknown>) => (await invoke(declared, 'update_sections', args)).body.code;
+
+    // Validation before anything is read.
+    expect(await codeOf({ expectedHash: hash, edits: [] })).toBe('INVALID_ARGUMENT');
+    expect(await codeOf({ expectedHash: hash, edits: [{ anchor: 'aaaa0001', action: 'move' }] })).toBe('INVALID_ARGUMENT');
+    expect(await codeOf({ expectedHash: hash, edits: [{ action: 'replace', content: 'x' }] })).toBe('VALIDATION');
+    expect(await codeOf({ expectedHash: hash, edits: [{ anchor: 'aaaa0001', action: 'replace' }] })).toBe('VALIDATION');
+    // A field outside its action — `delete` takes none at all.
+    expect(await codeOf({ expectedHash: hash, edits: [{ anchor: 'aaaa0001', action: 'delete', content: 'x' }] })).toBe('INVALID_ARGUMENT');
+    expect(await codeOf({ expectedHash: hash, edits: [{ anchor: 'aaaa0001', action: 'replace', content: 'x', heading: 'H' }] })).toBe(
+      'INVALID_ARGUMENT',
+    );
+
+    // Anchors are resolved through section_index, which also names the page and its root.
+    expect(await codeOf({ expectedHash: hash, edits: [{ anchor: 'zzzz9999', action: 'delete' }] })).toBe('SECTION_NOT_FOUND');
+    expect(
+      await codeOf({
+        expectedHash: hash,
+        edits: [
+          { anchor: 'aaaa0001', action: 'delete' },
+          { anchor: 'bbbb0001', action: 'delete' },
+        ],
+      }),
+    ).toBe('INVALID_ARGUMENT');
+    expect(await codeOf({ expectedHash: hash, edits: [{ anchor: 'cccc0001', action: 'delete' }] })).toBe('ROOT_NOT_FOUND');
+
+    // The page hash guards the whole batch.
+    expect(await codeOf({ expectedHash: '', edits: [{ anchor: 'aaaa0001', action: 'replace', content: 'x' }] })).toBe(
+      'INVALID_ARGUMENT',
+    );
+    const stale = await invoke(declared, 'update_sections', {
+      expectedHash: 'f'.repeat(64),
+      edits: [{ anchor: 'aaaa0001', action: 'replace', content: 'x' }],
+    });
+    expect(stale.body.code).toBe('PAGE_CONFLICT');
+    expect(stale.body.currentHash).toBe(hash);
+
+    // One anchor, two actions, one batch: a row per element in input order.
+    const ok = await call('update_sections', {
+      expectedHash: hash,
+      edits: [
+        { anchor: 'aaaa0001', action: 'rename', heading: 'First' },
+        { anchor: 'aaaa0001', action: 'replace', content: 'ALPHA' },
+      ],
+    });
+    expect(ok.isError).toBe(false);
+    expect(Object.keys(ok.body).sort()).toEqual(['hash', 'path', 'results', 'version']);
+    expect(ok.body.path).toBe('a.md');
+    const onDisk = await fs.readFile(path.join(pages.root, 'a.md'), 'utf-8');
+    expect(ok.body.hash).toBe(sha256(onDisk));
+    // The heading line rewritten under its kept anchor, the own body replaced, the next section intact.
+    expect(onDisk).toContain('<!-- anchor: aaaa0001 -->\n## First\n');
+    expect(onDisk).toContain('ALPHA');
+    expect(onDisk).not.toContain('alpha');
+    expect(onDisk).toContain('<!-- anchor: aaaa0002 -->\n## Two\n\nbeta');
+    expect(ok.body.results.map((r: { anchor: string; action: string }) => `${r.anchor}:${r.action}`)).toEqual([
+      'aaaa0001:rename',
+      'aaaa0001:replace',
+    ]);
+    expect(ok.body.results[0]).toMatchObject({ previousHeading: 'One', droppedAnchors: [], addedAnchors: [] });
+    expect(ok.body.results[1]).not.toHaveProperty('previousHeading');
+    for (const row of ok.body.results) expect(row).not.toHaveProperty('replacements');
+
+    // An indexed anchor missing from the file is INDEX_STALE, not a write in the wrong place.
+    const underneath = '<!-- anchor: aaaa0001 -->\n## First\n\nALPHA\n';
+    await fs.writeFile(path.join(pages.root, 'a.md'), underneath, 'utf-8');
+    expect(
+      await codeOf({ expectedHash: sha256(underneath), edits: [{ anchor: 'aaaa0002', action: 'replace', content: 'x' }] }),
+    ).toBe('INDEX_STALE');
   });
 });

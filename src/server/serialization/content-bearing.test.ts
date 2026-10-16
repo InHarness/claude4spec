@@ -128,7 +128,6 @@ describe('contentBearing — load-time validation', () => {
       payloadVersion: 1,
       label: 'Doc',
       labelPlural: 'Docs',
-      displayOrder: 1,
       pathPrefix: '/docs',
       systemPrompt: { roleNoun: 'doc' },
     } as unknown as BackendModule;

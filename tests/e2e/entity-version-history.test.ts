@@ -13,8 +13,8 @@ import { chromium, type Browser, type Page } from 'playwright';
  * Structurally out of Vitest's reach: this component fetches from three hooks
  * and composes four other catalog components, and there is no React Testing
  * Library in this repo. A `curl` on the route proves the SPA shell answered 200
- * — it cannot tell whether the timeline rendered, whether the release pill says
- * "(unreleased)", or whether the page logged a 404 while doing it.
+ * — it cannot tell whether the timeline rendered, whether unreleased versions
+ * sit under the "Unreleased" group, or whether the page logged a 404 while doing it.
  */
 const BASE = process.env.C4S_E2E_BASE_URL?.replace(/\/$/, '');
 
@@ -55,7 +55,20 @@ async function listVersions(
 }
 
 /**
- * An endpoint with at least TWO versions, so "Compare to" has a target. Mutating
+ * Ready = at least TWO versions (so "Compare to" has a target) AND at least one
+ * still unassigned to a release. The second half matters on a reused
+ * environment: `createRelease()` stamps EVERY `release_id IS NULL` row, so once
+ * another suite has cut a release, an entity that already had two versions has
+ * no unreleased one left and the "Unreleased" group would have nothing to hold.
+ * A fresh capture always lands with `release_id = NULL`.
+ */
+function historyIsReady(versions: VersionRow[]): boolean {
+  return versions.length >= 2 && versions.some((v) => v.releaseId == null);
+}
+
+/**
+ * An endpoint with at least TWO versions, so "Compare to" has a target, and at
+ * least one unreleased one (`historyIsReady`). Mutating
  * the description captures a version, so this can always manufacture what it
  * needs instead of depending on how the environment happened to be seeded.
  */
@@ -65,7 +78,7 @@ async function endpointWithHistory(projectId: string): Promise<string> {
   const slug = body.data[0]?.slug;
   if (!slug) throw new Error('no endpoint in this environment — seed one first');
 
-  while ((await listVersions(projectId, slug)).length < 2) {
+  while (!historyIsReady(await listVersions(projectId, slug))) {
     const patched = await fetch(`${BASE}/api/projects/${projectId}/endpoints/${slug}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -109,7 +122,7 @@ async function databaseTableWithHistory(projectId: string): Promise<string | nul
   const slug = body.data?.[0]?.slug;
   if (!slug) return null;
 
-  while ((await listVersions(projectId, slug, 'database-table')).length < 2) {
+  while (!historyIsReady(await listVersions(projectId, slug, 'database-table'))) {
     const patched = await fetch(`${BASE}/api/projects/${projectId}/database-tables/${slug}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -182,9 +195,9 @@ describe.skipIf(!BASE)('entity version history — EntityVersionHistoryView', ()
     await page.close();
   });
 
-  it('[ac:ac-w-widoku-entityversionhistoryview-wers] labels an unassigned version as unreleased rather than leaving it blank', async () => {
+  it('[ac:ac-w-widoku-entityversionhistoryview-wers] groups unassigned versions under the "Unreleased" group at the top', async () => {
     const versions = await listVersions(project.id, slug);
-    // The probe versions captured above are unreleased by construction.
+    // `endpointWithHistory` guarantees an unreleased version (`historyIsReady`).
     expect(versions.some((v) => v.releaseId == null)).toBe(true);
 
     const { page, consoleErrors } = await openHistory(browser, project.id, slug);
@@ -194,10 +207,9 @@ describe.skipIf(!BASE)('entity version history — EntityVersionHistoryView', ()
      * longer a pill repeated on every row — and unassigned versions gather under
      * one "Unreleased" group pinned to the top of the axis.
      *
-     * The criterion's substance is unchanged and still asserted here: an
-     * unassigned version is VISIBLY labelled as such rather than showing a blank
-     * marker. Only its wording still describes the pre-0.2.77 pill, which is
-     * filed as a clarification patch against this brief.
+     * 2.1.26 — the criterion now names exactly this: versions grouped by
+     * release, the unassigned ones in the "Unreleased" group. The row carries
+     * no release pill.
      */
     const group = page.locator('[data-testid="version-group-__unreleased__"]');
     await expect.poll(() => group.count()).toBe(1);
@@ -206,6 +218,7 @@ describe.skipIf(!BASE)('entity version history — EntityVersionHistoryView', ()
     // read as one move rather than a reordering.
     const firstGroupTestId = await page.locator('[data-testid^="version-group-"]').first().getAttribute('data-testid');
     expect(firstGroupTestId).toBe('version-group-__unreleased__');
+    expect(await page.getByText('(unreleased)').count()).toBe(0);
     expect(consoleErrors).toEqual([]);
     await page.close();
   });
@@ -286,8 +299,10 @@ describe.skipIf(!BASE)('entity version history — EntityVersionHistoryView', ()
     expect(await page.getByRole('button', { name: 'Restore' }).count()).toBeGreaterThan(0);
     expect(await page.getByRole('tab', { name: 'Diff' }).isVisible()).toBe(true);
     expect(await page.getByRole('tab', { name: 'Snapshot' }).isVisible()).toBe(true);
-    // Release pill and changedBy badge — the two things the hand-rolled pane dropped.
-    expect(await page.getByText('(unreleased)').first().isVisible()).toBe(true);
+    // Release grouping and changedBy badge — the two things the hand-rolled pane
+    // dropped. 2.1.26: the release lives in the group heading, not a row pill.
+    expect(await page.getByText('Unreleased').first().isVisible()).toBe(true);
+    expect(await page.getByText('(unreleased)').count()).toBe(0);
     expect(await page.getByText(/^(user|agent|filesystem)$/).first().isVisible()).toBe(true);
     // The block picks a version AND a compare target on load, so the diff is
     // already rendered — the old pane needed two clicks before showing anything.
@@ -299,7 +314,7 @@ describe.skipIf(!BASE)('entity version history — EntityVersionHistoryView', ()
     await page.close();
   });
 
-  it('[ac:ac-allowrestore-false-ukrywa-akcje-rest] restores through the entity version endpoint, not the release one', async () => {
+  it('restores through the entity version endpoint, not the release one', async () => {
     const calls: string[] = [];
     const page: Page = (await openHistory(browser, project.id, slug)).page;
     page.on('request', (r) => {

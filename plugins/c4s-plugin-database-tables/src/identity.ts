@@ -26,8 +26,12 @@ export const DATABASE_TABLE_PATH_PREFIX = '/database-tables';
 export const DATABASE_TABLE_LABEL = 'Database Table';
 export const DATABASE_TABLE_LABEL_PLURAL = 'Database Tables';
 
-/** Sidebar position, inherited from the retired plugin so the tab does not move. */
-export const DATABASE_TABLE_DISPLAY_ORDER = 100;
+/**
+ * The ELEMENTS tab's `sidebarTab.order` — since 2.1.26 the only ordering a type
+ * declares (the identity has no `displayOrder`). Inherited from the retired
+ * plugin so the tab does not move.
+ */
+export const DATABASE_TABLE_SIDEBAR_ORDER = 100;
 
 /**
  * The slash-create popover discriminator.

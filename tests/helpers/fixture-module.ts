@@ -55,7 +55,6 @@ export function fixtureModule(type: string, opts: FixtureModuleOpts = {}): Backe
     payloadVersion: 1,
     label: type,
     labelPlural: `${type}s`,
-    displayOrder: 999,
     pathPrefix: `/${type}s`,
     // 0.2.24 — no serialization slot at all. `payloadVersion: 1` above is the
     // whole contribution a type with no diff and no migrations makes.

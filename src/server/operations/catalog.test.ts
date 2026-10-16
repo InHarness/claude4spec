@@ -2,20 +2,35 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import {
   CATALOG,
   OperationCatalog,
   OperationCatalogError,
   direct,
   na,
+  type ChannelCell,
   type ChannelName,
+  type ContentInputMode,
   type OperationDeclaration,
 } from './catalog.js';
+import { FIELD_CLOSED_RULES, RULE_IDS, type RuleCitation, type RuleId } from './rules.js';
 import { registerCoreOperations } from './core-operations.js';
 import { KNOWN_OPERATION_CLASSES, PROFILES, mcpServerSetForProfile, profileAdmits } from './profiles.js';
 import { pluginServerNamesFor, toolAdmittedByProfile, withheldTools } from './profile-gate.js';
 import { toolError, toolSuccess } from './envelope.js';
 import { httpStatusForCode } from './error-codes.js';
+import { createC4sReaderServer } from '../mcp/c4s-reader.js';
+import { createReferenceToolsServer, type ReferenceToolsDeps } from '../mcp/reference-tools.js';
+import { buildEntityTools, type EntityToolsDeps } from '../mcp/entity-tools.js';
+import { READ_TOOL_RECORDS } from '../../../tests/helpers/read-tool-records.js';
+import { WRITE_TOOL_RECORDS } from '../../../tests/helpers/write-tool-records.js';
+import { expectOperationMatchesRecord } from '../../../tests/helpers/operation-records.js';
+import { TAG_TOOL_RECORDS } from '../../../tests/helpers/tag-tool-records.js';
+import { CATALOGUE_TOOL_RECORDS, SPEC_OPERATION_RECORDS } from '../../../tests/helpers/spec-operation-records.js';
+import { createEndpointToolsServer } from '../../../plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/mcp.js';
+import { createPageToolsServer, type PageToolsDeps } from '../mcp/page-tools.js';
+import type { LinkDtoDeps } from '../../../plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/link-dto.js';
 
 registerCoreOperations();
 
@@ -55,17 +70,33 @@ describe('operation catalog — declaration rules', () => {
     expect(() => cat.register(decl({ sideEffects: ['db'] }))).not.toThrow();
   });
 
-  it('[ac:ac-kazdy-wiersz-katalogu-l3-opisujacy-op] every registered file-writing operation declares one', () => {
+  /**
+   * 2.1.26 — the criterion's wording: a row describing a CONTENT write says how
+   * the caller describes the new content — `dosłowny`, `różnicowy` or `obydwa`
+   * (`literal`, `diff`, `literal+diff`) — and never `n/d` (`n/a`). `n/a` stays
+   * legal for a file write that takes no content from the caller (a delete, a
+   * move, a flag), which is why the check keys on the input: a row whose input
+   * carries the new content (`content`, `body`, `textEdits`, a section batch's
+   * `edits`) is a content write.
+   */
+  it('[ac:ac-kazdy-wiersz-katalogu-l3-opisujacy-op] every operation that writes content declares literal, diff or both — never n/a, never silence', () => {
+    const CONTENT_FIELDS = ['content', 'body', 'textEdits', 'edits'];
     const writesFiles = CATALOG.list().filter((op) => op.sideEffects.includes('file'));
+    const contentWrites = writesFiles.filter((op) => CONTENT_FIELDS.some((f) => f in op.inputSchema));
     // A guard against the guard: if this ever comes back empty the assertion
     // below would pass while proving nothing.
-    expect(writesFiles.length).toBeGreaterThan(5);
-    for (const op of writesFiles) {
-      expect(['literal', 'diff', 'literal+diff', 'n/a'], op.name).toContain(op.contentInput);
+    expect(contentWrites.length).toBeGreaterThan(3);
+    for (const op of writesFiles) expect(op.contentInput, op.name).toBeDefined();
+    for (const op of contentWrites) {
+      expect(['literal', 'diff', 'literal+diff'], op.name).toContain(op.contentInput);
     }
-    // The two page-content writes the criterion names say "both" explicitly.
+    // The page-content writes: both modes on the two the criterion names, the
+    // literal one on create; the page writes that carry no content say so.
     expect(CATALOG.require('update_page').contentInput).toBe('literal+diff');
     expect(CATALOG.require('update_sections').contentInput).toBe('literal+diff');
+    expect(CATALOG.require('create_page').contentInput).toBe('literal');
+    expect(CATALOG.require('delete_page').contentInput).toBe('n/a');
+    expect(CATALOG.require('move_page').contentInput).toBe('n/a');
   });
 
   it('the three operations that got a differential mode declare it, and the three that did not say so', () => {
@@ -169,7 +200,7 @@ describe('the seeded catalog', () => {
    * (`describe_entity_type` renders `describe_types` internally), and the alias
    * is written down here rather than inferred.
    */
-  it('[ac:ac-wiersz-katalogu-operacji-o-wartosci-d] every internal/mcp `direct` cell of an M39 row has a declared rendering', () => {
+  it('every internal/mcp `direct` cell of an M39 row has a tool registered on its server (the whole-catalogue check is in `the catalogue against the window\'s 78 records`)', () => {
     const mcpDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../mcp');
     const declared = (file: string): Set<string> =>
       new Set(
@@ -226,7 +257,9 @@ describe('the seeded catalog', () => {
     expect(op.channels.mcp.kind).toBe('direct');
     expect(op.channels.rest.kind).toBe('na');
     expect((op.channels.rest as { reason: string }).reason).toContain('/api/pages/:rootId/*');
-    expect((op.channels.rest as { reason: string }).reason).toContain('page-detail');
+    // 2.1.26 — the record's `powody.rest`: M02's raw read for the editor, the file byte for byte with `hash`.
+    expect((op.channels.rest as { reason: string }).reason).toContain('M02');
+    expect((op.channels.rest as { reason: string }).reason).toContain('`hash`');
   });
 
   /**
@@ -274,6 +307,44 @@ describe('the seeded catalog', () => {
     ]);
     expect(op!.errorCodes).not.toContain('ENTITY_NOT_FOUND');
     expect(op!.errorCodes).not.toContain('MISSING_TARGET');
+  });
+
+  /**
+   * 2.1.26 — the record `get-field-content` (M39): one generic core operation,
+   * rendered `direct` on all four channels. Its internal rendering is the
+   * `entity-tools` tool (`entity-tools-get-field-content`), its mcp rendering
+   * the external reader's own tool (`c4s-reader-get-field-content`); `cli` is
+   * `c4s get-field-content`. `kodyBledow` is declared once each.
+   */
+  it('[entity:get-field-content] get_field_content is declared as its record says: project, direct on every channel, no effects, idempotent, four codes once each', () => {
+    const op = CATALOG.require('get_field_content');
+    expect(op.name).toBe('get_field_content');
+    expect(op.scope).toBe('project');
+    expect(op.mediation).toBe('direct');
+    expect(op.opClass).toBe('read');
+    for (const channel of CHANNELS) expect(op.channels[channel].kind, channel).toBe('direct');
+    expect(op.sideEffects).toEqual(['none']);
+    expect(op.idempotent).toBe(true);
+    // `opisTresci: n/d` — no file is written, so no content-input mode is declared.
+    expect(op.contentInput).toBeUndefined();
+    // Addressing `(type, slug, field)`, one field of one entity per call.
+    expect(Object.keys(op.inputSchema).sort()).toEqual(['field', 'slug', 'type']);
+    // `error-code-once`: the list carries no duplicate…
+    expect(new Set(op.errorCodes).size).toBe(op.errorCodes.length);
+    // …and is exactly the record's `kodyBledow`.
+    expect([...op.errorCodes].sort()).toEqual(['ENTITY_NOT_FOUND', 'INDEX_STALE', 'INVALID_ARGUMENT', 'INVALID_TYPE']);
+
+    // `narzedzia`: each agentic `direct` cell names a registered tool.
+    const mcpDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../mcp');
+    const toolsIn = (file: string): string[] =>
+      Array.from(fs.readFileSync(path.join(mcpDir, file), 'utf-8').matchAll(/\b(?:mcpTool|op)\(\s*\n?\s*'([a-z_]+)'/g)).map(
+        (m) => m[1]!,
+      );
+    // internal → entity-tools-get-field-content; mcp → c4s-reader-get-field-content. One each.
+    expect(toolsIn('entity-tools.ts').filter((n) => n === 'get_field_content')).toHaveLength(1);
+    expect(toolsIn('c4s-reader.ts').filter((n) => n === 'get_field_content')).toHaveLength(1);
+    // …and the row points at exactly those two renderings.
+    expect(op.renderings).toEqual({ internal: ['entity-tools.get_field_content'], mcp: ['c4s-reader.get_field_content'] });
   });
 
   it('every declared opClass is one the profile registry knows', () => {
@@ -409,25 +480,27 @@ describe('the profile gate', () => {
     // grants it — so an undeclared name on a surface this repo ships stays
     // governed by the coarse server gate.
     //
-    // `runTransagent` is the TOOL name, and stays undeclared on purpose: 0.2.15
-    // declares the OPERATION as `run_turn` and records the tool as its rendering
-    // in the `via` cell, rather than renaming either side to match the other.
+    // `runTransagent` is the TOOL name, and stays undeclared on purpose: the
+    // OPERATION it renders is `spawn_child_turn` (2.1.26 — its `renderings`),
+    // rather than renaming either side to match the other.
     expect(CATALOG.has('runTransagent')).toBe(false);
     expect(toolAdmittedByProfile('brief', 'runTransagent')).toBe(true);
   });
 
-  it('declares run_turn, whose MCP rendering is the differently-named runTransagent', () => {
+  it('declares run_turn, reached internally via spawn_child_turn, whose rendering is the differently-named runTransagent', () => {
     /**
      * 0.2.15. The spec has always called this operation `run_turn`; the code has
      * always called its one rendering `runTransagent`, and the catalog knew
      * neither — so the gate took the permissive branch for it, which makes an
-     * omission indistinguishable from a decision. The `via` cell is where the
-     * naming gap is recorded instead of being spread across two repositories.
+     * omission indistinguishable from a decision. 2.1.26: the `run-turn` record
+     * has `mcp: n/a` — an external connection is not a turn — and the tool is
+     * recorded as the rendering of `spawn_child_turn`, the `via` target.
      */
     const row = CATALOG.require('run_turn');
     expect(row.opClass).toBe('turn');
     expect(row.idempotent).toBe(false);
-    expect(row.channels.mcp).toMatchObject({ kind: 'via', operation: 'runTransagent' });
+    expect(row.channels.mcp.kind).toBe('na');
+    expect(CATALOG.require('spawn_child_turn').renderings).toEqual({ internal: ['transagent-tools.runTransagent'] });
     // 0.2.87 (M46): internally a turn run is reached only by spawning a child thread.
     expect(row.channels.internal).toMatchObject({ kind: 'via', operation: 'spawn_child_turn' });
     const spawn = CATALOG.require('spawn_child_turn');
@@ -637,5 +710,1343 @@ describe('envelope and error taxonomy', () => {
      */
     expect((await request(app).get('/boom/SECTION_NOT_FOUND')).status).toBe(400);
     expect(httpStatusForCode('SECTION_NOT_FOUND')).toBe(404);
+  });
+});
+
+/**
+ * 2.1.26 — the fourteen M39/M19 read rows against their `spec-operation` records
+ * (`check-consistency` … `search-pages`): canonical name, scope, mediation,
+ * the four channel cells (an `n/a` carrying the record's `powody` entry), no side
+ * effects (`efekty: brak`), idempotent (`idempotencja: tak`), no content input
+ * (`opisTresci: n/d`), `errorCodes` exactly the record's `kodyBledow` (each once;
+ * `n/d` is the empty list), and `renderings` exactly its `narzedzia` — every
+ * named tool registered on its server, every agentic `direct` cell pointing at
+ * one and no `n/a` cell pointing at any.
+ */
+describe('the M39 read rows as their 2.1.26 records declare them', () => {
+  type Kind = 'direct' | 'na';
+  interface ReadRecord {
+    nazwa: string;
+    zasieg: 'project' | 'workspace';
+    mediacja: 'direct';
+    channels: Record<ChannelName, Kind>;
+    powody: Partial<Record<ChannelName, string>>;
+    kodyBledow: string[];
+    narzedzia: Partial<Record<'internal' | 'mcp', string[]>>;
+  }
+
+  /** The tools each server actually registers — built, not grepped. */
+  const registered = new Map<string, Set<string>>([
+    [
+      'c4s-reader',
+      new Set(
+        createC4sReaderServer({ reader: null, discovery: null, db: null, projectDir: null, packageVersion: 'test' }).tools.map(
+          (t) => t.name,
+        ),
+      ),
+    ],
+    [
+      'reference-tools',
+      new Set(createReferenceToolsServer({} as unknown as ReferenceToolsDeps).tools.map((t) => t.name)),
+    ],
+    ['entity-tools', new Set(buildEntityTools({} as unknown as EntityToolsDeps).map((t) => t.name))],
+  ]);
+
+  function expectRecordRow(record: ReadRecord): void {
+    const op = CATALOG.require(record.nazwa);
+    expect(op.name).toBe(record.nazwa);
+    expect(op.scope).toBe(record.zasieg);
+    expect(op.mediation).toBe(record.mediacja);
+    expect(op.opClass).toBe('read');
+    for (const channel of CHANNELS) {
+      const cell = op.channels[channel];
+      expect(cell.kind, `${record.nazwa}.${channel}`).toBe(record.channels[channel]);
+      if (cell.kind === 'na') expect(cell.reason, `${record.nazwa}.${channel} reason`).toBe(record.powody[channel]);
+    }
+    expect(op.sideEffects).toEqual(['none']);
+    expect(op.idempotent).toBe(true);
+    expect(op.contentInput).toBeUndefined();
+    // `error-code-once`, and exactly the record's subset of the taxonomy.
+    expect(new Set(op.errorCodes).size).toBe(op.errorCodes.length);
+    expect([...op.errorCodes].sort()).toEqual([...record.kodyBledow].sort());
+
+    // `narzedzia` → `renderings`, as `<server>.<tool>` of each named mcp-tool record.
+    const expected: Partial<Record<'internal' | 'mcp', string[]>> = {};
+    for (const [channel, slugs] of Object.entries(record.narzedzia) as Array<['internal' | 'mcp', string[]]>) {
+      expected[channel] = slugs.map((slug) => {
+        const tool = READ_TOOL_RECORDS[slug];
+        expect(tool, `mcp-tool record ${slug}`).toBeDefined();
+        return `${tool!.server}.${tool!.name}`;
+      });
+    }
+    expect(op.renderings ?? {}).toEqual(expected);
+    for (const channel of ['internal', 'mcp'] as const) {
+      const named = op.renderings?.[channel] ?? [];
+      if (op.channels[channel].kind === 'direct') expect(named.length, `${record.nazwa}.${channel}`).toBeGreaterThan(0);
+      else expect(named, `${record.nazwa}.${channel}`).toEqual([]);
+      for (const rendering of named) {
+        const [server, name] = rendering.split('.') as [string, string];
+        expect(registered.get(server)?.has(name), rendering).toBe(true);
+      }
+    }
+  }
+
+  it('[entity:check-consistency] check_consistency: project, direct, channels internal direct/cli direct/mcp direct/rest direct, no effects, idempotent, codes INVALID_ARGUMENT', () => {
+    expectRecordRow({
+      nazwa: 'check_consistency',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: {},
+      kodyBledow: ['INVALID_ARGUMENT'],
+      narzedzia: { internal: ['reference-tools-check-consistency'], mcp: ['c4s-reader-check-consistency'] },
+    });
+  });
+
+  it('[entity:describe-types] describe_types: project, direct, channels internal direct/cli direct/mcp direct/rest direct, no effects, idempotent, codes INVALID_TYPE', () => {
+    expectRecordRow({
+      nazwa: 'describe_types',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: {},
+      kodyBledow: ['INVALID_TYPE'],
+      narzedzia: { internal: ['entity-tools-describe-entity-type'], mcp: ['c4s-reader-describe-types', 'entity-tools-describe-entity-type'] },
+    });
+  });
+
+  it('[entity:find-references] find_references: project, direct, channels internal direct/cli direct/mcp direct/rest direct, no effects, idempotent, codes INVALID_ARGUMENT, INVALID_TYPE, INDEX_STALE', () => {
+    expectRecordRow({
+      nazwa: 'find_references',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: {},
+      kodyBledow: ['INVALID_ARGUMENT', 'INVALID_TYPE', 'INDEX_STALE'],
+      narzedzia: { internal: ['reference-tools-find-references'], mcp: ['c4s-reader-find-references'] },
+    });
+  });
+
+  it('[entity:get-entities] get_entities: project, direct, channels internal direct/cli direct/mcp direct/rest direct, no effects, idempotent, codes INVALID_TYPE, INVALID_ARGUMENT, INDEX_STALE', () => {
+    expectRecordRow({
+      nazwa: 'get_entities',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: {},
+      kodyBledow: ['INVALID_TYPE', 'INVALID_ARGUMENT', 'INDEX_STALE'],
+      narzedzia: { internal: ['entity-tools-get-entities'], mcp: ['c4s-reader-get-entities'] },
+    });
+  });
+
+  it('[entity:get-page] get_page: project, direct, channels internal direct/cli direct/mcp direct/rest na, no effects, idempotent, codes PAGE_NOT_FOUND, INVALID_ARGUMENT', () => {
+    expectRecordRow({
+      nazwa: 'get_page',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'na' },
+      powody: { rest: 'odczyt pliku dla edytora należy do M02: `GET /api/pages/:rootId/*` wydaje surowy plik bajt w bajt z `hash`, a nie strukturę tej operacji, więc renderowaniem `get_page` nie jest' },
+      kodyBledow: ['PAGE_NOT_FOUND', 'INVALID_ARGUMENT'],
+      narzedzia: { internal: ['reference-tools-get-page'], mcp: ['c4s-reader-get-page'] },
+    });
+  });
+
+  it('[entity:get-page-outline] get_page_outline: project, direct, channels internal direct/cli direct/mcp direct/rest na, no effects, idempotent, codes PAGE_NOT_FOUND, INVALID_ARGUMENT, INDEX_STALE', () => {
+    expectRecordRow({
+      nazwa: 'get_page_outline',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'na' },
+      powody: { rest: '`GET /api/sections` nie jest renderowaniem tej operacji: bez `pagePath` zwraca płaską listę globalną przez wszystkie strony, a outline jest z definicji kluczowany jedną stroną. Doprowadzenie trasy do parytetu jest osobną zmianą o własnym uzasadnieniu' },
+      kodyBledow: ['PAGE_NOT_FOUND', 'INVALID_ARGUMENT', 'INDEX_STALE'],
+      narzedzia: { internal: ['reference-tools-get-page-outline'], mcp: ['c4s-reader-get-page-outline'] },
+    });
+  });
+
+  it('[entity:get-sections] get_sections: project, direct, channels internal direct/cli direct/mcp direct/rest direct, no effects, idempotent, codes SECTION_NOT_FOUND, PAGE_NOT_FOUND, INVALID_ARGUMENT, INDEX_STALE', () => {
+    expectRecordRow({
+      nazwa: 'get_sections',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: {},
+      kodyBledow: ['SECTION_NOT_FOUND', 'PAGE_NOT_FOUND', 'INVALID_ARGUMENT', 'INDEX_STALE'],
+      narzedzia: { internal: ['reference-tools-get-sections'], mcp: ['c4s-reader-get-sections'] },
+    });
+  });
+
+  it('[entity:list-entities] list_entities: project, direct, channels internal direct/cli direct/mcp direct/rest direct, no effects, idempotent, codes INVALID_TYPE, INVALID_ARGUMENT, INDEX_STALE', () => {
+    expectRecordRow({
+      nazwa: 'list_entities',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: {},
+      kodyBledow: ['INVALID_TYPE', 'INVALID_ARGUMENT', 'INDEX_STALE'],
+      narzedzia: { internal: ['entity-tools-list-entities'], mcp: ['c4s-reader-list-entities'] },
+    });
+  });
+
+  it('[entity:list-pages] list_pages: project, direct, channels internal direct/cli direct/mcp direct/rest direct, no effects, idempotent, codes INVALID_ARGUMENT', () => {
+    expectRecordRow({
+      nazwa: 'list_pages',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: {},
+      kodyBledow: ['INVALID_ARGUMENT'],
+      narzedzia: { internal: ['reference-tools-list-pages'], mcp: ['c4s-reader-list-pages'] },
+    });
+  });
+
+  it('[entity:list-tags] list_tags: project, direct, channels internal direct/cli direct/mcp direct/rest direct, no effects, idempotent, codes INVALID_ARGUMENT, INDEX_STALE', () => {
+    expectRecordRow({
+      nazwa: 'list_tags',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: {},
+      kodyBledow: ['INVALID_ARGUMENT', 'INDEX_STALE'],
+      narzedzia: { internal: ['reference-tools-list-tags'], mcp: ['c4s-reader-list-tags'] },
+    });
+  });
+
+  it('[entity:overview] overview: project, direct, channels internal na/cli direct/mcp direct/rest direct, no effects, idempotent, codes none', () => {
+    expectRecordRow({
+      nazwa: 'overview',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'na', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: { internal: 'kanał wewnętrzny nie ma renderowania tej operacji i nie potrzebuje go: prompt niesie rooty, aktywne typy i tooling statycznie, a liczności rekordów odświeża `list_entities({ mode: \'count\' })`' },
+      kodyBledow: [],
+      narzedzia: { mcp: ['c4s-reader-overview'] },
+    });
+  });
+
+  it('[entity:resolve-identity] resolve_identity: project, direct, channels internal direct/cli direct/mcp direct/rest direct, no effects, idempotent, codes INVALID_TYPE, INDEX_STALE', () => {
+    expectRecordRow({
+      nazwa: 'resolve_identity',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: {},
+      kodyBledow: ['INVALID_TYPE', 'INDEX_STALE'],
+      narzedzia: { internal: ['entity-tools-resolve-identity'], mcp: ['c4s-reader-resolve-identity'] },
+    });
+  });
+
+  it('[entity:search-entities] search_entities: project, direct, channels internal direct/cli direct/mcp direct/rest direct, no effects, idempotent, codes INVALID_TYPE, INVALID_ARGUMENT, SEARCH_BUDGET_EXCEEDED, INDEX_STALE', () => {
+    expectRecordRow({
+      nazwa: 'search_entities',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: {},
+      kodyBledow: ['INVALID_TYPE', 'INVALID_ARGUMENT', 'SEARCH_BUDGET_EXCEEDED', 'INDEX_STALE'],
+      narzedzia: { internal: ['entity-tools-search-entities'], mcp: ['c4s-reader-search-entities'] },
+    });
+    // Addressed by the query plus `type` — `type` is the one required input.
+    const shape = z.object(CATALOG.require('search_entities').inputSchema as z.ZodRawShape);
+    expect(shape.safeParse({ query: 'x' }).success).toBe(false);
+    expect(shape.safeParse({ type: 'ac', query: 'x', filters: { status: ['active'] } }).success).toBe(true);
+  });
+
+  it('[entity:search-pages] search_pages: project, direct, channels internal direct/cli direct/mcp direct/rest direct, no effects, idempotent, codes INVALID_ARGUMENT, INDEX_STALE, SEARCH_BUDGET_EXCEEDED', () => {
+    expectRecordRow({
+      nazwa: 'search_pages',
+      zasieg: 'project',
+      mediacja: 'direct',
+      channels: { internal: 'direct', cli: 'direct', mcp: 'direct', rest: 'direct' },
+      powody: {},
+      kodyBledow: ['INVALID_ARGUMENT', 'INDEX_STALE', 'SEARCH_BUDGET_EXCEEDED'],
+      narzedzia: { internal: ['reference-tools-search-pages'], mcp: ['c4s-reader-search-pages'] },
+    });
+    // Addressed by the pattern plus a path filter — no input is required by the schema.
+    const shape = z.object(CATALOG.require('search_pages').inputSchema as z.ZodRawShape);
+    expect(shape.safeParse({}).success).toBe(true);
+    expect(shape.safeParse({ regex: 'x', rootId: 'pages', pathInclude: '^modules/', pathExclude: 'drift' }).success).toBe(true);
+  });
+});
+
+/**
+ * 2.1.26 — the M13 mutation rows as their `spec-operation` records declare them
+ * (`create-entities`, `update-entities`, `delete-entities`, `link-dto`,
+ * `unlink-dto`, `restore-entity-version`): scope `project`, the record's
+ * mediation and four channel cells (a `via` / `n/a` cell carrying the record's
+ * `powody` verbatim), effects file/db/ui-notify, idempotence, content input
+ * (`dosłowny` → `literal`, `n/d` → `n/a`), `errorCodes` exactly the record's
+ * `kodyBledow` (each once), and `renderings` exactly its `narzedzia` — every named
+ * tool registered on its server, every agentic `direct` cell pointing at one and
+ * no `n/a` cell pointing at any.
+ */
+describe('the M13 mutation rows as their 2.1.26 records declare them', () => {
+  type Cell = { kind: 'direct' } | { kind: 'via'; operation: string; reason: string } | { kind: 'na'; reason: string };
+  interface WriteRecord {
+    nazwa: string;
+    mediacja: 'direct' | 'human-mediated';
+    channels: Record<ChannelName, Cell>;
+    idempotencja: boolean;
+    opisTresci: 'literal' | 'n/a';
+    kodyBledow: string[];
+    narzedzia: Partial<Record<'internal' | 'mcp', string[]>>;
+  }
+  const D: Cell = { kind: 'direct' };
+
+  const registered = new Map<string, Set<string>>([
+    ['entity-tools', new Set(buildEntityTools({} as unknown as EntityToolsDeps).map((t) => t.name))],
+    [
+      'endpoint-tools',
+      new Set(
+        (
+          createEndpointToolsServer({ links: {} as unknown as LinkDtoDeps }) as unknown as { tools: ReadonlyArray<{ name: string }> }
+        ).tools.map((t) => t.name),
+      ),
+    ],
+  ]);
+
+  function expectRecordRow(record: WriteRecord): void {
+    const op = CATALOG.require(record.nazwa);
+    expect(op.name).toBe(record.nazwa);
+    expect(op.scope).toBe('project');
+    expect(op.mediation).toBe(record.mediacja);
+    expect(op.opClass).toBe('write');
+    for (const channel of CHANNELS) {
+      expect(op.channels[channel], `${record.nazwa}.${channel}`).toEqual(record.channels[channel]);
+    }
+    expect(op.sideEffects).toEqual(['file', 'db', 'ui-notify']);
+    expect(op.idempotent).toBe(record.idempotencja);
+    expect(op.contentInput).toBe(record.opisTresci);
+    expect(new Set(op.errorCodes).size).toBe(op.errorCodes.length);
+    expect([...op.errorCodes].sort()).toEqual([...record.kodyBledow].sort());
+
+    const expected: Partial<Record<'internal' | 'mcp', string[]>> = {};
+    for (const [channel, slugs] of Object.entries(record.narzedzia) as Array<['internal' | 'mcp', string[]]>) {
+      expected[channel] = slugs.map((slug) => {
+        const tool = WRITE_TOOL_RECORDS[slug];
+        expect(tool, `mcp-tool record ${slug}`).toBeDefined();
+        return `${tool!.server}.${tool!.name}`;
+      });
+    }
+    expect(op.renderings ?? {}).toEqual(expected);
+    for (const channel of ['internal', 'mcp'] as const) {
+      const named = op.renderings?.[channel] ?? [];
+      if (op.channels[channel].kind === 'direct') expect(named.length, `${record.nazwa}.${channel}`).toBeGreaterThan(0);
+      else expect(named, `${record.nazwa}.${channel}`).toEqual([]);
+      for (const rendering of named) {
+        const [server, name] = rendering.split('.') as [string, string];
+        expect(registered.get(server)?.has(name), rendering).toBe(true);
+      }
+    }
+  }
+
+  it('[entity:create-entities] create_entities: project, direct, all four channels direct, file/db/ui-notify, not idempotent, literal, codes INVALID_TYPE, SLUG_CONFLICT, VALIDATION, rendered by entity-tools · create_entities', () => {
+    expectRecordRow({
+      nazwa: 'create_entities',
+      mediacja: 'direct',
+      channels: { internal: D, cli: D, mcp: D, rest: D },
+      idempotencja: false,
+      opisTresci: 'literal',
+      kodyBledow: ['INVALID_TYPE', 'SLUG_CONFLICT', 'VALIDATION'],
+      narzedzia: { internal: ['entity-tools-create-entities'], mcp: ['entity-tools-create-entities'] },
+    });
+  });
+
+  it('[entity:update-entities] update_entities: project, direct, all four channels direct, file/db/ui-notify, idempotent, literal, codes INVALID_TYPE, ENTITY_NOT_FOUND, VALIDATION, rendered by entity-tools · update_entities, addressed by (type, slug)', () => {
+    expectRecordRow({
+      nazwa: 'update_entities',
+      mediacja: 'direct',
+      channels: { internal: D, cli: D, mcp: D, rest: D },
+      idempotencja: true,
+      opisTresci: 'literal',
+      kodyBledow: ['INVALID_TYPE', 'ENTITY_NOT_FOUND', 'VALIDATION'],
+      narzedzia: { internal: ['entity-tools-update-entities'], mcp: ['entity-tools-update-entities'] },
+    });
+    const shape = z.object(CATALOG.require('update_entities').inputSchema as z.ZodRawShape);
+    expect(shape.safeParse({ type: 'ac', updates: [{ slug: 'a', data: { title: 'x' }, newSlug: 'b' }] }).success).toBe(true);
+    expect(shape.safeParse({ type: 'ac', updates: [{ data: { title: 'x' } }] }).success).toBe(false);
+  });
+
+  it('[entity:delete-entities] delete_entities: project, direct, all four channels direct, file/db/ui-notify, not idempotent, no content input, codes INVALID_TYPE, ENTITY_NOT_FOUND, VALIDATION, rendered by entity-tools · delete_entities', () => {
+    expectRecordRow({
+      nazwa: 'delete_entities',
+      mediacja: 'direct',
+      channels: { internal: D, cli: D, mcp: D, rest: D },
+      idempotencja: false,
+      opisTresci: 'n/a',
+      kodyBledow: ['INVALID_TYPE', 'ENTITY_NOT_FOUND', 'VALIDATION'],
+      narzedzia: { internal: ['entity-tools-delete-entities'], mcp: ['entity-tools-delete-entities'] },
+    });
+  });
+
+  const viaProxy: Cell = {
+    kind: 'via',
+    operation: 'call_type_tool',
+    reason: 'via `call_type_tool` — ogólne proxy hosta dla narzędzi typów; plugin nie wnosi własnego routera',
+  };
+
+  it('[entity:link-dto] link_dto: project, direct, internal/cli/mcp direct, rest via call_type_tool, file/db/ui-notify, idempotent, no content input, codes NOT_FOUND, VALIDATION, rendered by endpoint-tools · link_dto', () => {
+    expectRecordRow({
+      nazwa: 'link_dto',
+      mediacja: 'direct',
+      channels: { internal: D, cli: D, mcp: D, rest: viaProxy },
+      idempotencja: true,
+      opisTresci: 'n/a',
+      kodyBledow: ['NOT_FOUND', 'VALIDATION'],
+      narzedzia: { internal: ['endpoint-tools-link-dto'], mcp: ['endpoint-tools-link-dto'] },
+    });
+    // Addressed by the (endpoint, dto) pair with the relation role.
+    const shape = z.object(CATALOG.require('link_dto').inputSchema as z.ZodRawShape);
+    expect(shape.safeParse({ endpointSlug: 'e', dtoSlug: 'd', relation: 'response', statusCode: 200 }).success).toBe(true);
+    expect(shape.safeParse({ endpointSlug: 'e', dtoSlug: 'd' }).success).toBe(false);
+  });
+
+  it('[entity:unlink-dto] unlink_dto: project, direct, internal/cli/mcp direct, rest via call_type_tool, file/db/ui-notify, idempotent, no content input, codes NOT_FOUND, VALIDATION, rendered by endpoint-tools · unlink_dto', () => {
+    expectRecordRow({
+      nazwa: 'unlink_dto',
+      mediacja: 'direct',
+      channels: { internal: D, cli: D, mcp: D, rest: viaProxy },
+      idempotencja: true,
+      opisTresci: 'n/a',
+      kodyBledow: ['NOT_FOUND', 'VALIDATION'],
+      narzedzia: { internal: ['endpoint-tools-unlink-dto'], mcp: ['endpoint-tools-unlink-dto'] },
+    });
+    // statusCode is optional: without it every binding of the pair in that relation goes.
+    const shape = z.object(CATALOG.require('unlink_dto').inputSchema as z.ZodRawShape);
+    expect(shape.safeParse({ endpointSlug: 'e', dtoSlug: 'd', relation: 'error' }).success).toBe(true);
+  });
+
+  it('[entity:restore-entity-version] restore_entity_version: project, human-mediated, internal/cli/mcp n/a with the record\'s reason, rest direct, file/db/ui-notify, idempotent, literal, codes INVALID_TYPE, VALIDATION, NOT_FOUND, INTERNAL, no renderings, addressed by (type, slug, version)', () => {
+    const reason = 'akt user-initiated, bo cofa cudzą pracę; przegląd klasyfikacji otwarty';
+    expectRecordRow({
+      nazwa: 'restore_entity_version',
+      mediacja: 'human-mediated',
+      channels: { internal: { kind: 'na', reason }, cli: { kind: 'na', reason }, mcp: { kind: 'na', reason }, rest: D },
+      idempotencja: true,
+      opisTresci: 'literal',
+      kodyBledow: ['INVALID_TYPE', 'VALIDATION', 'NOT_FOUND', 'INTERNAL'],
+      narzedzia: {},
+    });
+    const shape = z.object(CATALOG.require('restore_entity_version').inputSchema as z.ZodRawShape);
+    expect(shape.safeParse({ type: 'ac', slug: 'a', version: 3 }).success).toBe(true);
+    expect(shape.safeParse({ type: 'ac', slug: 'a' }).success).toBe(false);
+    // Not an agentic operation: no entity-tools tool carries its name.
+    expect(registered.get('entity-tools')!.has('restore_entity_version')).toBe(false);
+  });
+});
+
+/**
+ * 2.1.26 — the page operations (M02 `create-page`, `update-page`, `delete-page`,
+ * `move-page`; M06 `update-sections`) and the UI read routes of M08, M14 and M30
+ * (`get-todo-counts`, `list-todos`, `get-page-link-counts`, `list-page-links`,
+ * `search-link-targets`, `get-static-file`) as their `spec-operation` records
+ * declare them. Each row: name = `nazwa`, scope, mediation, the four channel
+ * cells (an `n/a` / `via` carrying the record's `powody` verbatim), side effects
+ * (`efekty`), idempotence (`warunkowa` → `'conditional'`), content input
+ * (`opisTresci`: `dosłowny` → `literal`, `obydwa` → `literal+diff`, `n/d` →
+ * `n/a` on a file write and nothing on a read), `errorCodes` exactly the record's
+ * `kodyBledow` (`n/d` → none), and `renderings` exactly its `narzedzia`.
+ */
+describe('the page, TODO, page-link and static-file rows as their 2.1.26 records declare them', () => {
+  type Cell = { kind: 'direct' } | { kind: 'via'; operation: string; reason: string } | { kind: 'na'; reason: string };
+  interface PageRecord {
+    nazwa: string;
+    opClass: 'write' | 'read';
+    channels: Record<ChannelName, Cell>;
+    efekty: string[];
+    idempotencja: boolean | 'conditional';
+    opisTresci: 'literal' | 'literal+diff' | 'n/a' | undefined;
+    kodyBledow: string[];
+    narzedzia: Partial<Record<'internal' | 'mcp', string[]>>;
+  }
+  const D: Cell = { kind: 'direct' };
+  const ALL_DIRECT = { internal: D, cli: D, mcp: D, rest: D };
+  const PAGE_EFFECTS = ['file', 'db', 'ui-notify'];
+
+  const pageTools = new Set(
+    createPageToolsServer({
+      sections: {},
+      resolveRoot: () => undefined,
+      rootIds: () => [],
+    } as unknown as PageToolsDeps).tools.map((t) => t.name),
+  );
+
+  function expectRecordRow(record: PageRecord): void {
+    const op = CATALOG.require(record.nazwa);
+    expect(op.name).toBe(record.nazwa);
+    expect(op.scope).toBe('project');
+    expect(op.mediation).toBe('direct');
+    expect(op.opClass).toBe(record.opClass);
+    for (const channel of CHANNELS) {
+      expect(op.channels[channel], `${record.nazwa}.${channel}`).toEqual(record.channels[channel]);
+    }
+    expect(op.sideEffects).toEqual(record.efekty);
+    expect(op.idempotent).toBe(record.idempotencja);
+    expect(op.contentInput).toBe(record.opisTresci);
+    expect(new Set(op.errorCodes).size).toBe(op.errorCodes.length);
+    expect([...op.errorCodes].sort()).toEqual([...record.kodyBledow].sort());
+
+    const expected: Partial<Record<'internal' | 'mcp', string[]>> = {};
+    for (const [channel, slugs] of Object.entries(record.narzedzia) as Array<['internal' | 'mcp', string[]]>) {
+      expected[channel] = slugs.map((slug) => {
+        const tool = WRITE_TOOL_RECORDS[slug];
+        expect(tool, `mcp-tool record ${slug}`).toBeDefined();
+        return `${tool!.server}.${tool!.name}`;
+      });
+    }
+    expect(op.renderings ?? {}).toEqual(expected);
+    for (const channel of ['internal', 'mcp'] as const) {
+      const named = op.renderings?.[channel] ?? [];
+      if (op.channels[channel].kind === 'direct') expect(named.length, `${record.nazwa}.${channel}`).toBeGreaterThan(0);
+      else expect(named, `${record.nazwa}.${channel}`).toEqual([]);
+      for (const rendering of named) {
+        const [server, name] = rendering.split('.') as [string, string];
+        expect(server).toBe('page-tools');
+        expect(pageTools.has(name), rendering).toBe(true);
+      }
+    }
+  }
+
+  const required = (name: string, key: string): boolean =>
+    !(CATALOG.require(name).inputSchema[key] as unknown as { isOptional(): boolean }).isOptional();
+
+  it('[entity:create-page] create_page: project, direct, all four channels direct, file/db/ui-notify, not idempotent, literal, codes PAGE_EXISTS, ROOT_NOT_FOUND, VALIDATION, rendered by page-tools · create_page, addressed by (rootId, path), no guard', () => {
+    expectRecordRow({
+      nazwa: 'create_page',
+      opClass: 'write',
+      channels: ALL_DIRECT,
+      efekty: PAGE_EFFECTS,
+      idempotencja: false,
+      opisTresci: 'literal',
+      kodyBledow: ['PAGE_EXISTS', 'ROOT_NOT_FOUND', 'VALIDATION'],
+      narzedzia: { internal: ['page-tools-create-page'], mcp: ['page-tools-create-page'] },
+    });
+    expect(Object.keys(CATALOG.require('create_page').inputSchema).sort()).toEqual(['content', 'path', 'rootId', 'title']);
+    expect(required('create_page', 'rootId') && required('create_page', 'path')).toBe(true);
+    // `guard: n/d` — the path collision is the guard; no expectedHash.
+    expect(CATALOG.require('create_page').inputSchema).not.toHaveProperty('expectedHash');
+  });
+
+  it('[entity:update-page] update_page: project, direct, all four channels direct, file/db/ui-notify, conditionally idempotent, literal+diff, codes PAGE_CONFLICT, ROOT_NOT_FOUND, INVALID_ARGUMENT, FIND_NOT_FOUND, MATCH_COUNT_MISMATCH, ANCHOR_LOSS, VALIDATION, rendered by page-tools · update_page, required guard', () => {
+    expectRecordRow({
+      nazwa: 'update_page',
+      opClass: 'write',
+      channels: ALL_DIRECT,
+      efekty: PAGE_EFFECTS,
+      idempotencja: 'conditional',
+      opisTresci: 'literal+diff',
+      kodyBledow: ['PAGE_CONFLICT', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'FIND_NOT_FOUND', 'MATCH_COUNT_MISMATCH', 'ANCHOR_LOSS', 'VALIDATION'],
+      narzedzia: { internal: ['page-tools-update-page'], mcp: ['page-tools-update-page'] },
+    });
+    expect(required('update_page', 'rootId') && required('update_page', 'path')).toBe(true);
+    expect(required('update_page', 'expectedHash')).toBe(true);
+    // The two content descriptions are both offered, each optional: `body` (+ `frontmatter`) or `textEdits`.
+    for (const key of ['body', 'frontmatter', 'textEdits']) expect(required('update_page', key), key).toBe(false);
+  });
+
+  it('[entity:delete-page] delete_page: project, direct, all four channels direct, file/db/ui-notify, idempotent, no content input, codes ROOT_NOT_FOUND, PAGE_CONFLICT, VALIDATION, rendered by page-tools · delete_page, optional guard', () => {
+    expectRecordRow({
+      nazwa: 'delete_page',
+      opClass: 'write',
+      channels: ALL_DIRECT,
+      efekty: PAGE_EFFECTS,
+      idempotencja: true,
+      opisTresci: 'n/a',
+      kodyBledow: ['ROOT_NOT_FOUND', 'PAGE_CONFLICT', 'VALIDATION'],
+      narzedzia: { internal: ['page-tools-delete-page'], mcp: ['page-tools-delete-page'] },
+    });
+    expect(Object.keys(CATALOG.require('delete_page').inputSchema).sort()).toEqual(['expectedHash', 'path', 'rootId']);
+    // `guard: opcjonalny`.
+    expect(required('delete_page', 'expectedHash')).toBe(false);
+  });
+
+  it('[entity:move-page] move_page: project, direct, all four channels direct, file/db/ui-notify, not idempotent, no content input, codes PAGE_CONFLICT, PAGE_EXISTS, NOT_FOUND, ROOT_NOT_FOUND, INVALID_ARGUMENT, VALIDATION, rendered by page-tools · move_page, addressed by (rootId, from → to), required guard', () => {
+    expectRecordRow({
+      nazwa: 'move_page',
+      opClass: 'write',
+      channels: ALL_DIRECT,
+      efekty: PAGE_EFFECTS,
+      idempotencja: false,
+      opisTresci: 'n/a',
+      kodyBledow: ['PAGE_CONFLICT', 'PAGE_EXISTS', 'NOT_FOUND', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'VALIDATION'],
+      narzedzia: { internal: ['page-tools-move-page'], mcp: ['page-tools-move-page'] },
+    });
+    expect(Object.keys(CATALOG.require('move_page').inputSchema).sort()).toEqual(['expectedHash', 'from', 'rootId', 'to']);
+    for (const key of ['rootId', 'from', 'to', 'expectedHash']) expect(required('move_page', key), key).toBe(true);
+  });
+
+  it('[entity:update-sections] update_sections: project, direct, all four channels direct, file/db/ui-notify, conditionally idempotent, literal+diff, codes SECTION_NOT_FOUND, INVALID_ARGUMENT, FIND_NOT_FOUND, MATCH_COUNT_MISMATCH, ANCHOR_LOSS, ANCHOR_DUPLICATE, INDEX_STALE, PAGE_CONFLICT, ROOT_NOT_FOUND, VALIDATION, rendered by page-tools · update_sections, addressed by anchor, a batch under one required guard', () => {
+    expectRecordRow({
+      nazwa: 'update_sections',
+      opClass: 'write',
+      channels: ALL_DIRECT,
+      efekty: PAGE_EFFECTS,
+      idempotencja: 'conditional',
+      opisTresci: 'literal+diff',
+      kodyBledow: [
+        'SECTION_NOT_FOUND',
+        'INVALID_ARGUMENT',
+        'FIND_NOT_FOUND',
+        'MATCH_COUNT_MISMATCH',
+        'ANCHOR_LOSS',
+        'ANCHOR_DUPLICATE',
+        'INDEX_STALE',
+        'PAGE_CONFLICT',
+        'ROOT_NOT_FOUND',
+        'VALIDATION',
+      ],
+      narzedzia: { internal: ['page-tools-update-sections'], mcp: ['page-tools-update-sections'] },
+    });
+    // Addressed by anchor — no rootId, no path: the index resolves both.
+    const shape = z.object(CATALOG.require('update_sections').inputSchema as z.ZodRawShape);
+    expect(Object.keys(CATALOG.require('update_sections').inputSchema).sort()).toEqual(['dropAnchors', 'edits', 'expectedHash']);
+    expect(shape.safeParse({ expectedHash: 'h', edits: [{ anchor: 'a', action: 'rename', heading: 'H' }, { anchor: 'b', action: 'delete' }] }).success).toBe(true);
+    expect(shape.safeParse({ expectedHash: 'h', edits: [] }).success).toBe(false);
+    expect(shape.safeParse({ edits: [{ anchor: 'a', action: 'delete' }] }).success).toBe(false);
+  });
+
+  const uiRouteOnly = (): Record<ChannelName, Cell> => ({
+    internal: { kind: 'na', reason: 'kod renderuje operację wyłącznie trasą REST interfejsu, a katalog operacji kodu jej nie deklaruje' },
+    cli: { kind: 'na', reason: 'brak komendy `c4s`; kod renderuje operację wyłącznie trasą REST interfejsu' },
+    mcp: { kind: 'na', reason: 'kod renderuje operację wyłącznie trasą REST interfejsu, a katalog operacji kodu jej nie deklaruje' },
+    rest: D,
+  });
+
+  it('[entity:get-todo-counts] get_todo_counts: project, direct, internal/cli/mcp n/a with the record\'s reasons, rest direct, no effects, idempotent, no codes, no renderings, no target', () => {
+    expectRecordRow({
+      nazwa: 'get_todo_counts',
+      opClass: 'read',
+      channels: uiRouteOnly(),
+      efekty: ['none'],
+      idempotencja: true,
+      opisTresci: undefined,
+      kodyBledow: [],
+      narzedzia: {},
+    });
+    expect(CATALOG.require('get_todo_counts').inputSchema).toEqual({});
+  });
+
+  it('[entity:list-todos] list_todos: project, direct, internal/cli/mcp n/a with the record\'s reasons, rest direct, no effects, idempotent, no codes, no renderings, the whole project at once (no window parameters)', () => {
+    expectRecordRow({
+      nazwa: 'list_todos',
+      opClass: 'read',
+      channels: uiRouteOnly(),
+      efekty: ['none'],
+      idempotencja: true,
+      opisTresci: undefined,
+      kodyBledow: [],
+      narzedzia: {},
+    });
+    // No window and no response budget: no limit/offset to pass.
+    expect(CATALOG.require('list_todos').inputSchema).toEqual({});
+  });
+
+  it('[entity:get-page-link-counts] get_page_link_counts: project, direct, internal/cli/mcp n/a with the record\'s reasons, rest direct, no effects, idempotent, no codes, no renderings, no target', () => {
+    expectRecordRow({
+      nazwa: 'get_page_link_counts',
+      opClass: 'read',
+      channels: uiRouteOnly(),
+      efekty: ['none'],
+      idempotencja: true,
+      opisTresci: undefined,
+      kodyBledow: [],
+      narzedzia: {},
+    });
+    expect(CATALOG.require('get_page_link_counts').inputSchema).toEqual({});
+  });
+
+  it('[entity:list-page-links] list_page_links: project, direct, internal/cli/mcp n/a with the record\'s reasons, rest direct, no effects, idempotent, no codes, no renderings, the whole project at once (no window parameters)', () => {
+    expectRecordRow({
+      nazwa: 'list_page_links',
+      opClass: 'read',
+      channels: uiRouteOnly(),
+      efekty: ['none'],
+      idempotencja: true,
+      opisTresci: undefined,
+      kodyBledow: [],
+      narzedzia: {},
+    });
+    expect(CATALOG.require('list_page_links').inputSchema).toEqual({});
+  });
+
+  it('[entity:search-link-targets] search_link_targets: project, direct, internal/cli/mcp via search_pages with the record\'s reasons, rest direct, no effects, idempotent, no codes, no renderings, at most 50 candidates', () => {
+    const viaSearch = (reason: string): Cell => ({ kind: 'via', operation: 'search_pages', reason });
+    const agentReason =
+      'via `search_pages` — podpowiadanie pod kursor jest potrzebą edytora, a agent adresuje strony pełną ścieżką i sięga po `pathInclude`';
+    expectRecordRow({
+      nazwa: 'search_link_targets',
+      opClass: 'read',
+      channels: {
+        internal: viaSearch(agentReason),
+        cli: viaSearch(
+          'via `search_pages` — podpowiadanie pod kursor jest potrzebą edytora; w terminalu stronę znajduje się wyszukiwaniem stron zawężonym po ścieżce (`pathInclude`)',
+        ),
+        mcp: viaSearch(agentReason),
+        rest: D,
+      },
+      efekty: ['none'],
+      idempotencja: true,
+      opisTresci: undefined,
+      kodyBledow: [],
+      narzedzia: {},
+    });
+    // The operation it goes via is in the catalog.
+    expect(CATALOG.has('search_pages')).toBe(true);
+    // Top-N: 50 at most, never the whole map.
+    const shape = z.object(CATALOG.require('search_link_targets').inputSchema as z.ZodRawShape);
+    expect(shape.safeParse({ q: 'guides/', limit: 50, root: 'pages' }).success).toBe(true);
+    expect(shape.safeParse({ q: 'guides/', limit: 51 }).success).toBe(false);
+    expect(shape.safeParse({}).success).toBe(true);
+  });
+
+  it('[entity:get-static-file] get_static_file: project, direct, internal/cli/mcp n/a with the record\'s reasons, rest direct, no effects, idempotent, code ROOT_NOT_FOUND, no renderings, addressed by (rootId, path)', () => {
+    const agentReason = 'wynikiem są bajty pod render w iframe; treść spec agent czyta operacjami rdzenia M39';
+    expectRecordRow({
+      nazwa: 'get_static_file',
+      opClass: 'read',
+      channels: {
+        internal: { kind: 'na', reason: agentReason },
+        cli: { kind: 'na', reason: 'plik jest adresowalny wprost URL-em, więc komenda nie dodaje nic ponad pobranie bajtów' },
+        mcp: { kind: 'na', reason: agentReason },
+        rest: D,
+      },
+      efekty: ['none'],
+      idempotencja: true,
+      opisTresci: undefined,
+      kodyBledow: ['ROOT_NOT_FOUND'],
+      narzedzia: {},
+    });
+    expect(Object.keys(CATALOG.require('get_static_file').inputSchema).sort()).toEqual(['path', 'rootId']);
+    expect(required('get_static_file', 'rootId') && required('get_static_file', 'path')).toBe(true);
+  });
+
+  it('none of the six read rows is a tool name on any server the profile gate could be asked about', () => {
+    // The rows are `read`; were a tool to carry one of these names the gate would
+    // classify it by this row. No MCP rendering exists (`narzedzia: []`).
+    for (const name of ['get_todo_counts', 'list_todos', 'get_page_link_counts', 'list_page_links', 'search_link_targets', 'get_static_file']) {
+      expect(pageTools.has(name), name).toBe(false);
+      expect(CATALOG.require(name).renderings, name).toBeUndefined();
+    }
+  });
+});
+
+/**
+ * 2.1.26 — the three M25 rows as their `spec-operation` records declare them
+ * (`push-release`, `list-release-pushes`, `get-release-push`): each renders only
+ * as its REST route under `/api/release-pushes`; the other three cells are `n/a`
+ * with the records' `powody` verbatim, and `narzedzia` is empty. The routes'
+ * behaviour (`zachowanie`) is held in `routes/release-pushes.test.ts`.
+ */
+describe('the M25 release-push rows as their 2.1.26 records declare them', () => {
+  const D = { kind: 'direct' } as const;
+  const UI_ONLY = 'kod renderuje operację wyłącznie trasą REST interfejsu, a katalog operacji kodu jej nie deklaruje';
+  const NO_CLI = 'brak komendy `c4s`; kod renderuje operację wyłącznie trasą REST interfejsu';
+  const USER_INITIATED =
+    'akt user-initiated: push wyprowadza bajty specyfikacji poza maszynę pod tożsamością zalogowanego użytkownika; przegląd klasyfikacji otwarty';
+  const required = (name: string, key: string): boolean =>
+    !(CATALOG.require(name).inputSchema[key] as unknown as { isOptional(): boolean }).isOptional();
+
+  it('[entity:push-release] push_release: project, human-mediated, internal/cli/mcp n/a (user-initiated), rest direct, file/db/ui-notify, not idempotent, no content input, codes NOT_CONNECTED, ACCOUNT_NOT_ACTIVE, SESSION_EXPIRED, PUSH_FAILED, RELEASE_NOT_FOUND, VALIDATION, no renderings, addressed by releaseName', () => {
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'push_release',
+        mediacja: 'human-mediated',
+        channels: {
+          internal: { kind: 'na', reason: USER_INITIATED },
+          cli: { kind: 'na', reason: USER_INITIATED },
+          mcp: { kind: 'na', reason: USER_INITIATED },
+          rest: D,
+        },
+        efekty: ['file', 'db', 'ui-notify'],
+        idempotencja: false,
+        opisTresci: 'n/a',
+        kodyBledow: ['NOT_CONNECTED', 'ACCOUNT_NOT_ACTIVE', 'SESSION_EXPIRED', 'PUSH_FAILED', 'RELEASE_NOT_FOUND', 'VALIDATION'],
+        narzedzia: {},
+      },
+      {},
+    );
+    expect(op.opClass).toBe('write');
+    expect(Object.keys(op.inputSchema)).toEqual(['releaseName']);
+    expect(required('push_release', 'releaseName')).toBe(true);
+  });
+
+  it('[entity:list-release-pushes] list_release_pushes: project, direct, internal/mcp n/a (REST only), cli n/a (no c4s command), rest direct, no effects, idempotent, code VALIDATION, no renderings, optional releaseName and no paging', () => {
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'list_release_pushes',
+        channels: { internal: { kind: 'na', reason: UI_ONLY }, cli: { kind: 'na', reason: NO_CLI }, mcp: { kind: 'na', reason: UI_ONLY }, rest: D },
+        efekty: ['none'],
+        idempotencja: true,
+        opisTresci: undefined,
+        kodyBledow: ['VALIDATION'],
+        narzedzia: {},
+      },
+      {},
+    );
+    expect(op.opClass).toBe('read');
+    // Without a parameter the whole history; with `releaseName` one release's. No window.
+    expect(Object.keys(op.inputSchema)).toEqual(['releaseName']);
+    expect(required('list_release_pushes', 'releaseName')).toBe(false);
+  });
+
+  it('[entity:get-release-push] get_release_push: project, direct, internal/mcp n/a (REST only), cli n/a (no c4s command), rest direct, no effects, idempotent, codes VALIDATION, RELEASE_PUSH_NOT_FOUND, no renderings, addressed by the audit entry id', () => {
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'get_release_push',
+        channels: { internal: { kind: 'na', reason: UI_ONLY }, cli: { kind: 'na', reason: NO_CLI }, mcp: { kind: 'na', reason: UI_ONLY }, rest: D },
+        efekty: ['none'],
+        idempotencja: true,
+        opisTresci: undefined,
+        kodyBledow: ['VALIDATION', 'RELEASE_PUSH_NOT_FOUND'],
+        narzedzia: {},
+      },
+      {},
+    );
+    expect(op.opClass).toBe('read');
+    const shape = z.object(op.inputSchema as z.ZodRawShape);
+    expect(shape.safeParse({ id: 3 }).success).toBe(true);
+    expect(shape.safeParse({ id: 1.5 }).success).toBe(false);
+  });
+});
+
+/**
+ * 2.1.26 — the M05 / M11 / M46 turn and thread rows as their `spec-operation`
+ * records declare them (`ask`, `abort-turn`, `create-thread`, `delete-thread`,
+ * `list-threads`, `run-turn`, `spawn-child-turn`). The `na` / `via` reasons are
+ * the records' `powody`, verbatim; `narzedzia` resolves through the two mcp-tool
+ * records named here. The behaviour (`zachowanie`) is held where it is
+ * implemented: `routes/chat.ts` (abort), `routes/threads.ts` +
+ * `services/chat.ts` (threads), `mcp/transagent-tools.test.ts` (spawn) and
+ * `mcp/c4s-tools.test.ts` (ask).
+ */
+describe('the turn and thread rows as their 2.1.26 records declare them', () => {
+  const D = { kind: 'direct' } as const;
+  const TOOLS = {
+    'c4s-tools-ask': { server: 'c4s-tools', name: 'ask' },
+    'transagent-tools-runtransagent': { server: 'transagent-tools', name: 'runTransagent' },
+  } as const;
+  const THREADS = 'katalog wątków jest wewnętrzną sprawą interfejsu';
+  const THREAD_CHANNELS = {
+    internal: { kind: 'na', reason: THREADS },
+    cli: { kind: 'na', reason: THREADS },
+    mcp: { kind: 'na', reason: THREADS },
+    rest: D,
+  } as const;
+  const optional = (name: string, key: string): boolean =>
+    (CATALOG.require(name).inputSchema[key] as unknown as { isOptional(): boolean }).isOptional();
+
+  it('[entity:ask] ask: workspace, agent-mediated, all four channels direct, file/db, not idempotent, no content input, the fifteen codes with RESUME_CONFIG_LOCKED, rendered by c4s-tools-ask in internal and mcp, effort a closed choice', () => {
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'ask',
+        zasieg: 'workspace',
+        mediacja: 'agent-mediated',
+        channels: { internal: D, cli: D, mcp: D, rest: D },
+        efekty: ['file', 'db'],
+        idempotencja: false,
+        opisTresci: 'n/a',
+        kodyBledow: [
+          'PROJECT_NOT_FOUND',
+          'PROJECT_ID_NOT_FOUND',
+          'AMBIGUOUS_WORKSPACE',
+          'AMBIGUOUS_PROJECT',
+          'PROJECT_NOT_IN_WORKSPACE',
+          'SERVER_NOT_RUNNING',
+          'SERVER_NOT_RECOGNIZED',
+          'INVALID_ARGS',
+          'NOT_FOUND',
+          'STREAM_IN_PROGRESS',
+          'AGENT_UNAVAILABLE',
+          'AGENT_ERROR',
+          'TIMEOUT',
+          'ABORTED',
+          'RESUME_CONFIG_LOCKED',
+        ],
+        narzedzia: { internal: ['c4s-tools-ask'], mcp: ['c4s-tools-ask'] },
+      },
+      TOOLS,
+    );
+    expect(op.errorCodes).toHaveLength(15);
+    expect(op.opClass).toBe('peer');
+    // The peer's context is fixed, not a parameter: no contextType / brief input.
+    expect(Object.keys(op.inputSchema).sort()).toEqual(
+      ['effort', 'message', 'model', 'project', 'server', 'threadId', 'workspace'].sort(),
+    );
+    const shape = z.object(op.inputSchema as z.ZodRawShape);
+    expect(shape.safeParse({ message: 'q', project: 'p', effort: 'high' }).success).toBe(true);
+    expect(shape.safeParse({ message: 'q', project: 'p', effort: 'max' }).success).toBe(false);
+  });
+
+  it('[entity:abort-turn] abort_turn: project, direct, all four channels direct, db/ui-notify, idempotent, no content input, codes THREAD_NOT_FOUND and VALIDATION, addressed by threadId or the request id, no rendering', () => {
+    // Not through the shared matcher: the record declares the agentic cells
+    // `direct` with an empty `narzedzia` (ASSUMPTION:dev-2612), which the
+    // matcher's direct-names-a-rendering rule refuses. Every other field is
+    // asserted the way the matcher asserts it.
+    const op = CATALOG.require('abort_turn');
+    expect(op.name).toBe('abort_turn');
+    expect(op.scope).toBe('project');
+    expect(op.mediation).toBe('direct');
+    for (const channel of CHANNELS) expect(op.channels[channel], channel).toEqual(D);
+    expect([...op.sideEffects].sort()).toEqual(['db', 'ui-notify']);
+    expect(op.idempotent).toBe(true);
+    expect(op.contentInput).toBeUndefined();
+    expect(new Set(op.errorCodes).size).toBe(op.errorCodes.length);
+    expect([...op.errorCodes].sort()).toEqual(['THREAD_NOT_FOUND', 'VALIDATION']);
+    expect(op.renderings ?? {}).toEqual({});
+    expect(op.opClass).toBe('turn');
+    expect(Object.keys(op.inputSchema).sort()).toEqual(['requestId', 'threadId']);
+    expect(optional('abort_turn', 'threadId')).toBe(true);
+    expect(optional('abort_turn', 'requestId')).toBe(true);
+    // The answer is a confirmation, not the thread's state.
+    expect(op.summary).toMatch(/\{ aborted, clearedTexts \}/);
+  });
+
+  it('[entity:create-thread] create_thread: project, human-mediated, internal/cli/mcp n/a (the thread catalogue is the UI\'s), rest direct, db/ui-notify, not idempotent, code VALIDATION, no renderings', () => {
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'create_thread',
+        mediacja: 'human-mediated',
+        channels: THREAD_CHANNELS,
+        efekty: ['db', 'ui-notify'],
+        idempotencja: false,
+        opisTresci: undefined,
+        kodyBledow: ['VALIDATION'],
+        narzedzia: {},
+      },
+      TOOLS,
+    );
+    expect(Object.keys(op.inputSchema).sort()).toEqual(['context_type', 'title']);
+    expect(op.summary).toMatch(/VALIDATION/);
+  });
+
+  it('[entity:delete-thread] delete_thread: project, human-mediated, internal/cli/mcp n/a, rest direct, db/ui-notify, idempotent, code NOT_FOUND, addressed by threadId, no renderings', () => {
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'delete_thread',
+        mediacja: 'human-mediated',
+        channels: THREAD_CHANNELS,
+        efekty: ['db', 'ui-notify'],
+        idempotencja: true,
+        opisTresci: undefined,
+        kodyBledow: ['NOT_FOUND'],
+        narzedzia: {},
+      },
+      TOOLS,
+    );
+    expect(Object.keys(op.inputSchema)).toEqual(['threadId']);
+    expect(optional('delete_thread', 'threadId')).toBe(false);
+  });
+
+  it('[entity:list-threads] list_threads: project, human-mediated, internal/cli/mcp n/a, rest direct, no effects, idempotent, no codes of its own, a limit/offset window', () => {
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'list_threads',
+        mediacja: 'human-mediated',
+        channels: THREAD_CHANNELS,
+        efekty: ['none'],
+        idempotencja: true,
+        opisTresci: undefined,
+        kodyBledow: [],
+        narzedzia: {},
+      },
+      TOOLS,
+    );
+    expect(Object.keys(op.inputSchema).sort()).toEqual(['limit', 'offset']);
+    expect(op.summary).toMatch(/20 rows/);
+  });
+
+  it('[entity:run-turn] run_turn: project, direct, internal via spawn_child_turn, cli/mcp/rest n/a, file/db/ui-notify, not idempotent, no content input, codes AGENT_ERROR, STREAM_IN_PROGRESS, RESUME_CONFIG_LOCKED, NOT_FOUND, no renderings', () => {
+    expectOperationMatchesRecord(
+      {
+        nazwa: 'run_turn',
+        channels: {
+          internal: {
+            kind: 'via',
+            operation: 'spawn_child_turn',
+            reason:
+              'via `spawn_child_turn` — agent wbudowany osiąga bieg tury wyłącznie zakładając wątek podrzędny; tury najwyższego poziomu z wnętrza własnej tury nie zleca',
+          },
+          cli: { kind: 'na', reason: 'brak powierzchni CLI — turę-dziecko zakłada się wyłącznie z wnętrza tury' },
+          mcp: {
+            kind: 'na',
+            reason:
+              'połączenie zewnętrzne nie jest turą: serwer zakładający turę-dziecko montuje się tylko w wątku czatu najwyższego poziomu, nigdy na zewnątrz',
+          },
+          rest: { kind: 'na', reason: 'brak powierzchni REST — jedynym wołającym jest tura-rodzic' },
+        },
+        efekty: ['file', 'db', 'ui-notify'],
+        idempotencja: false,
+        opisTresci: 'n/a',
+        kodyBledow: ['AGENT_ERROR', 'STREAM_IN_PROGRESS', 'RESUME_CONFIG_LOCKED', 'NOT_FOUND'],
+        narzedzia: {},
+      },
+      TOOLS,
+    );
+  });
+
+  it('[entity:spawn-child-turn] spawn_child_turn: project, agent-mediated, internal direct rendered by transagent-tools-runtransagent, cli/mcp/rest n/a, file/db/ui-notify, not idempotent, no content input, its eight codes', () => {
+    expectOperationMatchesRecord(
+      {
+        nazwa: 'spawn_child_turn',
+        mediacja: 'agent-mediated',
+        channels: {
+          internal: D,
+          cli: { kind: 'na', reason: 'operacja wewnętrzna — osiągalna wyłącznie przez `run_turn` z wnętrza tury' },
+          mcp: {
+            kind: 'na',
+            reason: 'operacja wewnętrzna; połączenie zewnętrzne nie jest turą, więc nie ma tury, której wątek byłby dzieckiem',
+          },
+          rest: {
+            kind: 'na',
+            reason:
+              'operacja wewnętrzna bez powierzchni REST; wątek-dziecko jest wykluczony z listy wątków, więc z zewnątrz nie ma adresu',
+          },
+        },
+        efekty: ['file', 'db', 'ui-notify'],
+        idempotencja: false,
+        opisTresci: 'n/a',
+        kodyBledow: [
+          'AGENT_ERROR',
+          'TIMEOUT',
+          'IDLE_TIMEOUT',
+          'ABORTED',
+          'INVALID_ARGS',
+          'NOT_FOUND',
+          'STREAM_IN_PROGRESS',
+          'RESUME_CONFIG_LOCKED',
+        ],
+        narzedzia: { internal: ['transagent-tools-runtransagent'] },
+      },
+      TOOLS,
+    );
+  });
+});
+
+/**
+ * 2.1.26 — the five M18 tag write rows as their `spec-operation` records declare
+ * them: project, direct, all four channels direct, file/db/ui-notify, no content
+ * input, the record's own `kodyBledow` (no dedicated `INACTIVE_TYPE` /
+ * `ENTITY_NOT_FOUND` any more), and the namesake `reference-tools` tool as the
+ * rendering in both agentic channels. The behaviour (`zachowanie`) is held in
+ * `mcp/reference-tools.tags.test.ts`.
+ */
+describe('the M18 tag write rows as their 2.1.26 records declare them', () => {
+  const D = { kind: 'direct' } as const;
+  const ALL_DIRECT = { internal: D, cli: D, mcp: D, rest: D };
+  const keys = (name: string) => Object.keys(CATALOG.require(name).inputSchema).sort();
+  const tagRow = (nazwa: string, slug: string, idempotencja: boolean, kodyBledow: string[]) =>
+    expectOperationMatchesRecord(
+      {
+        nazwa,
+        channels: ALL_DIRECT,
+        efekty: ['file', 'db', 'ui-notify'],
+        idempotencja,
+        opisTresci: 'n/a',
+        kodyBledow,
+        narzedzia: { internal: [slug], mcp: [slug] },
+      },
+      TAG_TOOL_RECORDS,
+    );
+
+  it('[entity:create-tag] create_tag: project, direct, all four channels direct, file/db/ui-notify, not idempotent, no content input, codes VALIDATION, SLUG_CONFLICT, rendered by reference-tools · create_tag, no address (the slug is derived, never supplied)', () => {
+    const op = tagRow('create_tag', 'reference-tools-create-tag', false, ['VALIDATION', 'SLUG_CONFLICT']);
+    expect(op.opClass).toBe('write');
+    expect(keys('create_tag')).toEqual(['color', 'description', 'name']);
+    expect(op.errorCodes).not.toContain('NOT_FOUND');
+  });
+
+  it('[entity:update-tag] update_tag: project, direct, all four channels direct, file/db/ui-notify, idempotent, no content input, codes VALIDATION, NOT_FOUND, SLUG_CONFLICT, rendered by reference-tools · update_tag, addressed by the tag slug', () => {
+    const op = tagRow('update_tag', 'reference-tools-update-tag', true, ['VALIDATION', 'NOT_FOUND', 'SLUG_CONFLICT']);
+    expect(op.opClass).toBe('write');
+    expect(keys('update_tag')).toEqual(['data', 'slug']);
+  });
+
+  it('[entity:delete-tag] delete_tag: project, direct, all four channels direct, file/db/ui-notify, idempotent, no content input, codes VALIDATION, NOT_FOUND, rendered by reference-tools · delete_tag, addressed by the tag slug', () => {
+    const op = tagRow('delete_tag', 'reference-tools-delete-tag', true, ['VALIDATION', 'NOT_FOUND']);
+    expect(op.opClass).toBe('write');
+    expect(keys('delete_tag')).toEqual(['slug']);
+  });
+
+  it('[entity:tag-entity] tag_entity: project, direct, all four channels direct, file/db/ui-notify, idempotent, no content input, codes VALIDATION, NOT_FOUND (no INACTIVE_TYPE / ENTITY_NOT_FOUND), rendered by reference-tools · tag_entity, addressed by (type, slug) plus the tag list', () => {
+    const op = tagRow('tag_entity', 'reference-tools-tag-entity', true, ['VALIDATION', 'NOT_FOUND']);
+    expect(op.opClass).toBe('write');
+    expect(op.errorCodes).not.toContain('INACTIVE_TYPE');
+    expect(op.errorCodes).not.toContain('ENTITY_NOT_FOUND');
+    expect(keys('tag_entity')).toEqual(['slug', 'tags', 'type']);
+  });
+
+  it('[entity:untag-entity] untag_entity: project, direct, all four channels direct, file/db/ui-notify, idempotent, no content input, codes VALIDATION, NOT_FOUND (no INACTIVE_TYPE / ENTITY_NOT_FOUND), rendered by reference-tools · untag_entity, addressed by (type, slug) plus the tag list', () => {
+    const op = tagRow('untag_entity', 'reference-tools-untag-entity', true, ['VALIDATION', 'NOT_FOUND']);
+    expect(op.opClass).toBe('write');
+    expect(op.errorCodes).not.toContain('INACTIVE_TYPE');
+    expect(op.errorCodes).not.toContain('ENTITY_NOT_FOUND');
+    expect(keys('untag_entity')).toEqual(['slug', 'tags', 'type']);
+  });
+});
+
+/**
+ * 2.1.26 — the whole code catalogue against the window's 78 `spec-operation`
+ * records (`tests/helpers/spec-operation-records.ts`), not a sample: every record
+ * has its row and every row but the plugin ones the window has no record for has
+ * a record; each row answers for the record's fields; and the four L3/M43
+ * criteria on `reguly` and `narzedzia` hold for every row at once.
+ */
+describe("the catalogue against the window's 78 records", () => {
+  const RECORD_CHANNEL: Record<ChannelCell['kind'], string> = { direct: 'direct', via: 'via', na: 'n/a' };
+  const EFFECT: Record<string, string> = { brak: 'none', plik: 'file', db: 'db', 'ui-notify': 'ui-notify' };
+  const IDEMPOTENCE: Record<string, boolean | 'conditional'> = { tak: true, nie: false, warunkowa: 'conditional' };
+  const CONTENT_INPUT: Record<string, ContentInputMode> = { dosłowny: 'literal', różnicowy: 'diff', obydwa: 'literal+diff' };
+  /** The rows the window carries no record for: plugin-contributed, declared for the profile gate. */
+  const PLUGIN_ROWS_WITHOUT_RECORD = [
+    'analyze_ac_against_entities',
+    'delete_column',
+    'delete_row',
+    'get_overview',
+    'get_range',
+    'insert_column',
+    'insert_row',
+    'set_cell',
+    'set_range',
+    'validate_diagram',
+  ];
+  /** The identifiers of M43's domain section (`ke1jxhqh`), as the page declares them. */
+  const M43_RULE_IDS = [
+    'echo-free',
+    'guard-declared',
+    'destructive-declared',
+    'batch-required',
+    'rename-heading-only',
+    'error-code-once',
+    'explicit-addressing',
+    'operation-only-write',
+    'diff-mode-declared',
+    'literal-match',
+    'match-count-declared',
+    'edit-set-not-procedure',
+    'replacements-returned',
+    'diff-field-names',
+    'claimed-spans-disjoint',
+    'insertion-order',
+    'delete-exclusive',
+    'one-action-per-anchor',
+  ];
+  /**
+   * The agentic `direct` cells whose own record names no tool in that channel —
+   * the record breaks L3 `g8adono9` (`direct-without-tool`) and the row follows
+   * the record. ASSUMPTION:dev-2612 (abort_turn) and ASSUMPTION:dev-2614 (the
+   * three brief operations' `mcp`): the specification fixes these records.
+   */
+  const RECORD_DIRECT_WITHOUT_TOOL = [
+    'abort_turn.internal',
+    'abort_turn.mcp',
+    'create_brief.mcp',
+    'list_briefs.mcp',
+    'mark_brief_implemented.mcp',
+  ];
+
+  /** Source files whose tool registrations make up each server a rendering may name. */
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+  const SERVER_SOURCES: Record<string, string[]> = {
+    'c4s-reader': ['src/server/mcp/c4s-reader.ts', 'src/server/mcp/skill-tools.ts'],
+    'reference-tools': ['src/server/mcp/reference-tools.ts'],
+    'entity-tools': ['src/server/mcp/entity-tools.ts'],
+    'page-tools': ['src/server/mcp/page-tools.ts'],
+    'brief-tools': ['src/server/mcp/brief-tools.ts'],
+    'plan-tools': ['src/server/mcp/plan-tools.ts'],
+    'patch-tools': ['src/server/mcp/patch-tools.ts'],
+    'transagent-tools': ['src/server/mcp/transagent-tools.ts'],
+    'c4s-tools': ['src/server/mcp/c4s-tools.ts'],
+    'skill-tools': ['src/server/mcp/skill-tools.ts'],
+    'spec-skill-tools': ['src/server/mcp/spec-skill-tools.ts'],
+    'workspace-tools': ['src/server/mcp/workspace-tools.ts'],
+    'release-tools': ['src/server/mcp/release-tools/index.ts'],
+    'endpoint-tools': ['plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/mcp.ts'],
+    'spreadsheet-tools': ['plugins/c4s-plugin-spreadsheets/src/entity/spreadsheet/mcp.ts'],
+    'ac-tools': ['plugins/c4s-plugin-ac/src/entity/ac/backend/mcp.ts'],
+    'diagram-tools': ['src/server/entities/diagram/mcp-server.ts'],
+  };
+  /** The plugin `${type}-tools` servers whose tools the record-less plugin rows name. */
+  const PLUGIN_TYPE_SERVERS = ['endpoint-tools', 'spreadsheet-tools', 'ac-tools', 'diagram-tools'];
+  const sourceOf = (server: string): string | undefined => {
+    const files = SERVER_SOURCES[server];
+    return files?.map((f) => fs.readFileSync(path.join(repoRoot, f), 'utf-8')).join('\n');
+  };
+  /** A tool exists when its server's source names the server and registers the tool by name. */
+  const toolExists = (rendering: string): boolean => {
+    const [server, tool] = rendering.split('.') as [string, string];
+    const src = sourceOf(server);
+    if (!src || !src.includes(`'${server}'`)) return false;
+    return new RegExp(`\\(\\s*'${tool}'`).test(src);
+  };
+
+  const byName = new Map(SPEC_OPERATION_RECORDS.map((r) => [r.nazwa, r]));
+
+  it('every one of the 78 records has its row, and every other row is a plugin row the window has no record for', () => {
+    expect(SPEC_OPERATION_RECORDS).toHaveLength(78);
+    expect(byName.size).toBe(78);
+    for (const record of SPEC_OPERATION_RECORDS) expect(CATALOG.has(record.nazwa), record.nazwa).toBe(true);
+    const withoutRecord = CATALOG.list()
+      .filter((op) => !byName.has(op.name))
+      .map((op) => op.name)
+      .sort();
+    expect(withoutRecord).toEqual(PLUGIN_ROWS_WITHOUT_RECORD);
+    for (const name of withoutRecord) expect(CATALOG.require(name).contributedBy, name).toBe('plugin');
+  });
+
+  it('every row answers for its record: scope, mediation, the four channel values (a via / n/a with the record\'s reason), effects, idempotence, error codes once each', () => {
+    for (const record of SPEC_OPERATION_RECORDS) {
+      const op = CATALOG.require(record.nazwa);
+      expect(op.scope, record.nazwa).toBe(record.zasieg);
+      expect(op.mediation, record.nazwa).toBe(record.mediacja);
+      for (const channel of CHANNELS) {
+        const cell = op.channels[channel];
+        expect(RECORD_CHANNEL[cell.kind], `${record.nazwa}.${channel}`).toBe(record[channel]);
+        if (cell.kind !== 'direct') expect(cell.reason, `${record.nazwa}.${channel} reason`).toBe(record.powody[channel]);
+      }
+      expect([...op.sideEffects].sort(), record.nazwa).toEqual(record.efekty.map((e) => EFFECT[e]).sort());
+      expect(op.idempotent, record.nazwa).toBe(IDEMPOTENCE[record.idempotencja]);
+      expect(new Set(op.errorCodes).size, record.nazwa).toBe(op.errorCodes.length);
+      const codes = record.kodyBledow.length === 1 && record.kodyBledow[0] === 'n/d' ? [] : record.kodyBledow;
+      expect([...op.errorCodes].sort(), record.nazwa).toEqual([...codes].sort());
+    }
+  });
+
+  it('the content description of every row is an allowed value: a record\'s `dosłowny` / `różnicowy` / `obydwa` is literal / diff / literal+diff, and `n/d` is `n/a` — or no declaration where the row writes no file', () => {
+    const allowed = new Set<ContentInputMode | undefined>(['literal', 'diff', 'literal+diff', 'n/a']);
+    for (const op of CATALOG.list()) {
+      if (op.contentInput !== undefined) expect(allowed.has(op.contentInput), op.name).toBe(true);
+      if (op.sideEffects.includes('file')) expect(op.contentInput, op.name).toBeDefined();
+    }
+    for (const record of SPEC_OPERATION_RECORDS) {
+      const op = CATALOG.require(record.nazwa);
+      if (record.opisTresci === 'n/d') {
+        if (op.sideEffects.includes('file')) expect(op.contentInput, record.nazwa).toBe('n/a');
+        else expect([undefined, 'n/a'], record.nazwa).toContain(op.contentInput);
+      } else {
+        expect(op.contentInput, record.nazwa).toBe(CONTENT_INPUT[record.opisTresci]);
+      }
+    }
+  });
+
+  it('[ac:ac-kazdy-identyfikator-zacytowany-w-polu] every identifier cited in the `rules` of any row occurs in the M43 domain section — and the row cites what its record cites', () => {
+    expect([...RULE_IDS]).toEqual(M43_RULE_IDS);
+    const vocabulary = new Set(M43_RULE_IDS);
+    const cited = new Set<string>();
+    for (const op of CATALOG.list()) {
+      for (const element of op.rules ?? []) {
+        if (element.id === 'n/d') continue;
+        cited.add(element.id);
+        expect(vocabulary.has(element.id), `${op.name}: ${element.id}`).toBe(true);
+      }
+    }
+    // Every record's `reguly` is carried over identifier for identifier.
+    for (const record of SPEC_OPERATION_RECORDS) {
+      const op = CATALOG.require(record.nazwa);
+      expect(
+        (op.rules ?? []).map((e) => ({ id: e.id, ...(e.exclusion !== undefined ? { wykluczenie: e.exclusion } : {}) })),
+        record.nazwa,
+      ).toEqual(record.reguly);
+    }
+    // The three rules a record field closes are never cited.
+    for (const id of FIELD_CLOSED_RULES) expect(cited.has(id), id).toBe(false);
+    // The registry refuses an identifier outside the vocabulary.
+    expect(() => new OperationCatalog().register(decl({ rules: [{ id: 'made-up-rule' as RuleId }] }))).toThrow(
+      /not an identifier of the M43 rules vocabulary/,
+    );
+  });
+
+  it('[ac:ac-kazdy-wiersz-katalogu-operacji-ma-nie] every row with a record has a non-empty `rules` list — identifiers, elements with an exclusion, or one `n/d`', () => {
+    for (const record of SPEC_OPERATION_RECORDS) {
+      const rules = CATALOG.require(record.nazwa).rules;
+      expect(rules, record.nazwa).toBeDefined();
+      expect(rules!.length, record.nazwa).toBeGreaterThan(0);
+      const nd = rules!.filter((e) => e.id === 'n/d');
+      // `n/d` is the one element of a row nothing binds, never beside another.
+      if (nd.length > 0) expect(rules, record.nazwa).toEqual([{ id: 'n/d' }]);
+    }
+    const cat = new OperationCatalog();
+    expect(() => cat.register(decl({ name: 'get_empty', rules: [] }))).toThrow(/'rules' is empty/);
+    expect(() => cat.register(decl({ name: 'get_mixed', rules: [{ id: 'n/d' }, { id: 'echo-free' }] }))).toThrow(
+      /'n\/d' stands alone/,
+    );
+    expect(cat.register(decl({ name: 'get_unbound', rules: [{ id: 'n/d' }] })).rules).toEqual([{ id: 'n/d' }]);
+    expect(
+      cat.register(decl({ name: 'get_excluded', rules: [{ id: 'echo-free', exclusion: 'nie mutuje' }] })).rules,
+    ).toEqual([{ id: 'echo-free', exclusion: 'nie mutuje' }]);
+  });
+
+  it('[ac:ac-pole-reguly-wiersza-katalogu-nie-zawi] no `rules` element of any row is a descriptive sentence: each carries a rule identifier and, at most, the reason of its exclusion', () => {
+    const IDENTIFIER = /^(?:[a-z]+(?:-[a-z]+)*|n\/d)$/;
+    let exclusions = 0;
+    for (const op of CATALOG.list()) {
+      for (const element of op.rules ?? []) {
+        expect(Object.keys(element).every((k) => k === 'id' || k === 'exclusion'), `${op.name}: ${JSON.stringify(element)}`).toBe(true);
+        expect(element.id, op.name).toMatch(IDENTIFIER);
+        if (element.exclusion !== undefined) {
+          exclusions += 1;
+          expect(element.exclusion.trim().length, `${op.name}: ${element.id}`).toBeGreaterThan(0);
+          expect(element.exclusion.length, `${op.name}: ${element.id}`).toBeLessThanOrEqual(300);
+        }
+      }
+    }
+    // As many exclusions as the window's records carry (twenty), none dropped and none added.
+    expect(exclusions).toBe(SPEC_OPERATION_RECORDS.flatMap((r) => r.reguly).filter((e) => e.wykluczenie !== undefined).length);
+    const cat = new OperationCatalog();
+    expect(() =>
+      cat.register(
+        decl({ rules: [{ id: 'Wyjście nie powtarza treści przekazanej w parametrze.' as RuleId }] }),
+      ),
+    ).toThrow(OperationCatalogError);
+    expect(() =>
+      cat.register(decl({ name: 'get_extra', rules: [{ id: 'echo-free', note: 'zwraca adres skutku' } as unknown as RuleCitation] })),
+    ).toThrow(/only 'id' and 'exclusion'/);
+  });
+
+  it('[ac:ac-wiersz-katalogu-operacji-o-wartosci-d] every row with `direct` in `internal` or `mcp` points in `renderings` at a tool rendering it in that channel, as its record\'s `narzedzia` names it', () => {
+    const withoutTool: string[] = [];
+    const recordless = new Set(PLUGIN_ROWS_WITHOUT_RECORD);
+    for (const op of CATALOG.list()) {
+      if (recordless.has(op.name)) {
+        // A plugin row the window has no record for: the host core names no
+        // plugin server, so the row carries no `renderings`. Its `direct` cells
+        // are rendered by the contributing plugin's own `${type}-tools` server,
+        // mounted at runtime — which must register a tool under the row's name.
+        expect(op.contributedBy, op.name).toBe('plugin');
+        expect(op.renderings, op.name).toBeUndefined();
+        const servers = PLUGIN_TYPE_SERVERS.filter((server) => toolExists(`${server}.${op.name}`));
+        expect(servers.length, `${op.name}: no plugin type server registers it`).toBe(1);
+        continue;
+      }
+      for (const channel of ['internal', 'mcp'] as const) {
+        const named = op.renderings?.[channel] ?? [];
+        if (op.channels[channel].kind === 'direct') {
+          if (named.length === 0) withoutTool.push(`${op.name}.${channel}`);
+        } else {
+          expect(named, `${op.name}.${channel} is not direct but names a rendering`).toEqual([]);
+        }
+        // Every named rendering is a tool its server registers.
+        for (const rendering of named) expect(toolExists(rendering), rendering).toBe(true);
+      }
+    }
+    // The only direct cells without a tool are the records' own (see RECORD_DIRECT_WITHOUT_TOOL).
+    expect(withoutTool.sort()).toEqual(RECORD_DIRECT_WITHOUT_TOOL);
+    for (const cell of RECORD_DIRECT_WITHOUT_TOOL) {
+      const [name, channel] = cell.split('.') as [string, 'internal' | 'mcp'];
+      const record = byName.get(name)!;
+      expect(record[channel], cell).toBe('direct');
+      expect(record.narzedzia[channel], cell).toBeUndefined();
+    }
+    // `renderings` is exactly the record's `narzedzia`, each slug resolved to `<server>.<tool>`.
+    for (const record of SPEC_OPERATION_RECORDS) {
+      const op = CATALOG.require(record.nazwa);
+      const expected: Partial<Record<'internal' | 'mcp', string[]>> = {};
+      for (const [channel, slugs] of Object.entries(record.narzedzia) as Array<['internal' | 'mcp', string[]]>) {
+        expected[channel] = slugs.map((slug) => {
+          const tool = CATALOGUE_TOOL_RECORDS[slug];
+          expect(tool, `mcp-tool record ${slug}`).toBeDefined();
+          return `${tool!.server}.${tool!.name}`;
+        });
+      }
+      expect(op.renderings ?? {}, record.nazwa).toEqual(expected);
+    }
   });
 });

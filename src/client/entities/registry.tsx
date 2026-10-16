@@ -91,7 +91,7 @@ export function getEntityDef<T = unknown>(type: string): EntityDef<T> | null {
  */
 export type EntityPickerKind = 'element' | 'list';
 
-/** 2.1.1 — the active types a type picker of `kind` offers, in display order. */
+/** 2.1.1 — the active types a type picker of `kind` offers, in the client host's listing order. */
 export function listPickerEntityTypes(kind: EntityPickerKind): EntityType[] {
   const active = clientPluginHost.listEntities();
   return (kind === 'list' ? active.filter((m) => m.renderRow) : active).map((m) => m.type);

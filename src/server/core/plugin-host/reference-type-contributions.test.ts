@@ -38,7 +38,6 @@ function entity(type: string): EntityContribution {
     payloadVersion: 1,
     label: type,
     labelPlural: `${type}s`,
-    displayOrder: 100,
     pathPrefix: `/${type}s`,
     systemPrompt: {
       roleNoun: type,
@@ -56,7 +55,6 @@ function widgetModule(): BackendModule {
     payloadVersion: 1,
     label: 'Widget',
     labelPlural: 'Widgets',
-    displayOrder: 100,
     pathPrefix: '/widgets',
     systemPrompt: { roleNoun: 'widget' },
   };

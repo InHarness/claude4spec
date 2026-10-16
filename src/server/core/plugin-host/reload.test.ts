@@ -24,7 +24,6 @@ function pluginV(version: string, onUnregister: (() => void) | undefined = () =>
           payloadVersion: 1,
           label: 'Thing',
           labelPlural: 'Things',
-          displayOrder: 100,
           pathPrefix: '/things',
           systemPrompt: {
             roleNoun: 'thing',

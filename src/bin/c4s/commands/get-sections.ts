@@ -58,6 +58,9 @@ export const getSectionsCommand: CliCommandContribution = {
   name: 'get-sections',
   operation: 'get_sections',
   executionMode: 'server-delegating',
-  errorCodes: ['INVALID_ARGS', 'INVALID_ARGUMENT', 'SECTION_NOT_FOUND'],
+  // 2.1.26 (M11 `m11dcmds`) — `PAGE_NOT_FOUND` is one of the page reads' codes
+  // and reaches this command as an ITEM error, like `SECTION_NOT_FOUND`: the
+  // exit stays 0 for the batch.
+  errorCodes: ['INVALID_ARGS', 'INVALID_ARGUMENT', 'SECTION_NOT_FOUND', 'PAGE_NOT_FOUND'],
   handler: runGetSections,
 };

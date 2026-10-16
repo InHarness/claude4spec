@@ -88,7 +88,6 @@ const moduleOf = (type: string, label: string, order: number): FrontendModule =>
     payloadVersion: 1,
     label,
     labelPlural: label,
-    displayOrder: order,
     pathPrefix: `/${type}s`,
     renderChip: Noop,
     renderCard: Noop,
@@ -156,7 +155,12 @@ afterEach(() => {
 });
 
 describe('Sidebar ELEMENTS follows activation (M50 8h2a734u)', () => {
-  it('renders one tab per active type with a sidebarTab, in sidebarTab.order, with its count', () => {
+  it('[section:z7l89jhf] renders one tab per active type with a sidebarTab, in sidebarTab.order — the only ordering source — with its count', () => {
+    // 2.1.26 — the identity carries no `displayOrder`: the pool lists by type
+    // (gadget before widget), and the ELEMENTS order still follows `sidebarTab.order`.
+    const pool = clientPluginHost.listAvailable().map((m) => m.type).filter((t) => t.startsWith('sbx-'));
+    expect(pool).toEqual(['sbx-gadget', 'sbx-widget']);
+    expect(clientPluginHost.listAvailable().some((m) => 'displayOrder' in m)).toBe(false);
     expect(tabs()).toEqual(['Widgets', 'Gadgets']);
     expect(host.textContent).toContain('3');
     expect(host.textContent).not.toContain('No entity types configured.');

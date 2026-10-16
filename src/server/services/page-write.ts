@@ -325,14 +325,24 @@ export interface CreatePageResponse {
    * Every anchor the page now carries, in document order; `[]` on a root with
    * no section index.
    *
-   * 2.1.23: no `content` — neither the bytes sent nor the settled file comes
-   * back (echo-free, like `update_page`). Whoever needs the page reads it.
+   * 2.1.23: no `content` in this DTO — the REST answer does not echo the page.
+   * 2.1.26: the `create_page` tool does answer the settled file; see
+   * {@link CreatePageResult}.
    */
   anchors: string[];
 }
 
-/** @deprecated alias kept for internal callers — the DTO is {@link CreatePageResponse}. */
-export type CreatePageResult = CreatePageResponse;
+/**
+ * 2.1.26 — what `createPage` answers: the REST DTO plus `content`, the file AS IT
+ * SETTLED (frontmatter included, the template when no `content` was sent, the
+ * anchor comments the reaction chain injected). The `create_page` tool
+ * (`page-tools-create-page`) answers all of it; `POST /api/pages/:rootId` sends
+ * {@link CreatePageResponse} without `content` (DTO `create-page-response`).
+ * ASSUMPTION:dev-2604
+ */
+export interface CreatePageResult extends CreatePageResponse {
+  content: string;
+}
 
 /** `update_page` — a whole-page write. Identity was already known; only the delta is news. */
 export interface UpdatePageResult {
@@ -570,7 +580,7 @@ export async function createPage(
   target: PageWriteTarget,
   input: CreatePageInput,
   actor: WriteActor,
-): Promise<CreatePageResponse> {
+): Promise<CreatePageResult> {
   const relPath = input.path;
   if (!relPath) throw new DomainError('VALIDATION', 'path required');
   if (await target.pages.exists(relPath)) {
@@ -607,6 +617,7 @@ export async function createPage(
     path: relPath,
     hash: written.hash,
     version: written.version,
+    content: written.content,
     anchors: written.anchors,
   };
 }
@@ -1459,6 +1470,19 @@ export async function updateSections(
           'INVALID_ARGUMENT',
           `edit for '${edit.anchor}' carries textEdits, which only action 'edit' accepts`,
           `action '${edit.action}' describes its new content in \`content\``,
+        );
+      }
+      /**
+       * 2.1.26 — `delete` takes NO field, and a `content` beside it is refused
+       * like any other field outside its action (`page-tools-update-sections`):
+       * it used to be dropped in silence, the one combination the mapping above
+       * still let through.
+       */
+      if (edit.action === 'delete' && edit.content !== undefined) {
+        throw new DomainError(
+          'INVALID_ARGUMENT',
+          `edit for '${edit.anchor}' carries content, which action 'delete' does not take`,
+          "action 'delete' removes the subtree and takes no field at all",
         );
       }
       if (edit.action !== 'delete' && typeof edit.content !== 'string') {

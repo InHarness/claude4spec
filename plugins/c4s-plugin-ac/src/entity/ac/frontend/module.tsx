@@ -7,7 +7,7 @@ import type {
 } from '@c4s/plugin-runtime';
 import type { Ac } from '../../../types.js';
 import {
-  AC_DISPLAY_ORDER,
+  AC_SIDEBAR_ORDER,
   AC_LABEL,
   AC_LABEL_PLURAL,
   AC_PATH_PREFIX,
@@ -222,7 +222,6 @@ export const acFrontendModule: FrontendModule = {
   payloadVersion: 3,
   label: AC_LABEL,
   labelPlural: AC_LABEL_PLURAL,
-  displayOrder: AC_DISPLAY_ORDER,
   pathPrefix: AC_PATH_PREFIX,
   renderRow: AcRow as FrontendModule['renderRow'],
   renderChip: AcChip as FrontendModule['renderChip'],
@@ -234,5 +233,5 @@ export const acFrontendModule: FrontendModule = {
   routes: acRoutes,
   useGetBySlug: (slug) => useAc(slug) as ReturnType<FrontendModule['useGetBySlug']>,
   listByTags: ({ tags, filter }) => acsApi.list({ tags, tagFilter: filter, status: 'all' }),
-  sidebarTab: { icon: CheckSquare, label: AC_LABEL_PLURAL, order: AC_DISPLAY_ORDER },
+  sidebarTab: { icon: CheckSquare, label: AC_LABEL_PLURAL, order: AC_SIDEBAR_ORDER },
 };

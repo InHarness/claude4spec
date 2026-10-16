@@ -7,6 +7,9 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { buildSkillToolsServer, SKILL_TOOL_TEXT } from './skill-tools.js';
 import { SkillRegistry, SkillResolver, type SkillRoot } from '../services/skill-registry.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
+import { SKILL_TOOL_RECORDS } from '../../../tests/helpers/skill-tool-records.js';
+import { expectToolMatchesToolRecord } from '../../../tests/helpers/write-tool-records.js';
+import { expectOperationMatchesRecord } from '../../../tests/helpers/operation-records.js';
 
 /**
  * `load_skill_file` — the only channel to a skill's content since 0.2.36.
@@ -32,8 +35,12 @@ describe('skill-tools — load_skill_file', () => {
     return { dir: root, source: 'user' };
   }
 
-  async function mount(registry: SkillRegistry) {
-    const { server } = buildSkillToolsServer(registry);
+  async function mount(registry: SkillRegistry, opts: { external?: boolean } = {}) {
+    const { server } = buildSkillToolsServer(
+      registry,
+      opts.external ? 'p' : null,
+      opts.external ? { resolver: new SkillResolver(registry, tmp) } : {},
+    );
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     client = new Client({ name: 'test-client', version: '0.0.0' });
     await server.connect(serverTransport);
@@ -295,61 +302,94 @@ describe('skill-tools — load_skill_file', () => {
     expect(body.slug).toBe('house-style');
   });
 
-  it('[entity:skill-tools-load-skill-file] contract: name, input fields, description and both response shapes', async () => {
+  /**
+   * 2.1.26 — the `logic` both `load_skill_file` records state, observed through
+   * the mounted tool: the handler calls the registry's live read and returns its
+   * answer; each refusal keeps its code and hint; the winner of the whole
+   * registry is served; content is cut at 50 000 characters.
+   */
+  async function expectLoadSkillFileLogic(): Promise<void> {
+    // SKILL_NOT_FOUND: a slug the registry does not resolve, with the reason and the closest slugs.
+    const unknown = await call({ slug: 'house' });
+    expect(unknown.isError).toBe(true);
+    expect(unknown.body.code).toBe('SKILL_NOT_FOUND');
+    expect(unknown.body.error).toContain('outside the registry');
+    expect(unknown.body.hint).toContain('house-style');
+    // INVALID_ARGUMENT: empty, absolute, with a backslash, with a `..` segment, or the package directory.
+    for (const file of ['', '/etc/passwd', 'workflows\\brief.md', 'workflows/../../x.md', '.']) {
+      const bad = await call({ slug: 'house-style', file });
+      expect(bad.isError, JSON.stringify(file)).toBe(true);
+      expect(bad.body.code, JSON.stringify(file)).toBe('INVALID_ARGUMENT');
+      expect(bad.body.hint, JSON.stringify(file)).toBeTruthy();
+    }
+    // SKILL_FILE_NOT_FOUND: a file outside the package.
+    const missing = await call({ slug: 'house-style', file: 'workflows/patch.md' });
+    expect(missing.body.code).toBe('SKILL_FILE_NOT_FOUND');
+    // NOT_TEXT: a binary file.
+    const binary = await call({ slug: 'house-style', file: 'diagram.png' });
+    expect(binary.body.code).toBe('NOT_TEXT');
+    // The budget is 50 000 characters.
+    expect(DEFAULT_BUDGET_CHARS).toBe(50_000);
+    const cut = await call({ slug: 'house-style', file: 'workflows/huge.md' });
+    expect(cut.isError).toBe(false);
+    expect(cut.body.content.length).toBe(50_000);
+    expect(cut.body.truncated).toBe(true);
+    expect(cut.body.truncationHint).toContain('workflows/huge.md');
+    // No answer carries a disk path.
+    const opened = await call({ slug: 'house-style' });
+    expect(JSON.stringify(opened.body)).not.toContain(tmp);
+  }
+
+  /** A `house-style` package with a text subfile, a binary one and one past the budget. */
+  function writeLogicPackage(): SkillRoot {
     const root = writeSkill('house-style');
-    fs.mkdirSync(path.join(root.dir, 'house-style', 'workflows'), { recursive: true });
-    fs.writeFileSync(path.join(root.dir, 'house-style', 'workflows', 'brief.md'), 'm\n');
-    await mount(SkillRegistry.load([root]));
+    const dir = path.join(root.dir, 'house-style');
+    fs.mkdirSync(path.join(dir, 'workflows'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'workflows', 'brief.md'), 'm\n');
+    fs.writeFileSync(path.join(dir, 'workflows', 'huge.md'), 'x'.repeat(50_500));
+    fs.writeFileSync(path.join(dir, 'diagram.png'), Buffer.from([0x89, 0x50, 0x00, 0x01]));
+    return root;
+  }
 
-    const { tools } = await client.listTools();
-    expect(tools).toHaveLength(1);
-    const tool = tools[0]!;
-    expect(tool.name).toBe('load_skill_file');
-    expect(tool.description).toBe(SKILL_TOOL_TEXT.turn.loadSkillFile);
-    expect(tool.description).toContain('<available_skills/>');
-    expect(tool.description).toContain('<project_writing_skill>');
-    const schema = tool.inputSchema as { properties: Record<string, { description?: string }>; required?: string[] };
-    expect(Object.keys(schema.properties).sort()).toEqual(['file', 'slug']);
-    expect(schema.required).toEqual(['slug']);
-    expect(schema.properties.slug!.description).toBe(SKILL_TOOL_TEXT.turn.slug);
-    expect(schema.properties.file!.description).toContain('Omit to open the skill itself.');
+  it('[entity:skill-tools-load-skill-file] skill-tools · load_skill_file: name, description, slug (required) and file (optional, defaults to SKILL.md) as the record states them, readOnly + idempotent hints; opening answers slug/title/description/scope/source/content/files (hash only from a writable source), a file read answers slug/path/content; refusals SKILL_NOT_FOUND / INVALID_ARGUMENT / SKILL_FILE_NOT_FOUND / NOT_TEXT, content cut at 50 000 characters', async () => {
+    const turn = buildSkillToolsServer(SkillRegistry.load([]));
+    expectToolMatchesToolRecord(
+      turn.tools.find((t) => t.name === 'load_skill_file'),
+      SKILL_TOOL_RECORDS['skill-tools-load-skill-file']!,
+    );
+    expect(turn.tools.map((t) => t.name)).toEqual(['load_skill_file']);
 
-    // Opening: slug, title, description, scope, source, content, files — `hash` only from a writable source.
+    await mount(SkillRegistry.load([writeLogicPackage()]));
     const opened = await call({ slug: 'house-style' });
     expect(Object.keys(opened.body).sort()).toEqual(['content', 'description', 'files', 'scope', 'slug', 'source', 'title']);
     expect(opened.body.source).toBe('user');
-    expect(opened.body.files).toEqual([{ path: 'workflows/brief.md', bytes: 2, lines: 1, isText: true }]);
-    // Subfile: slug, path, content.
+    expect(opened.body.files).toContainEqual({ path: 'workflows/brief.md', bytes: 2, lines: 1, isText: true });
     const sub = await call({ slug: 'house-style', file: 'workflows/brief.md' });
     expect(Object.keys(sub.body).sort()).toEqual(['content', 'path', 'slug']);
+    expect(sub.body).toEqual({ slug: 'house-style', path: 'workflows/brief.md', content: 'm\n' });
+    await expectLoadSkillFileLogic();
   });
 
-  it('[entity:c4s-reader-load-skill-file] contract on the external surface: name, input fields, wording that points at list_skills, response shape', async () => {
-    const registry = SkillRegistry.load([writeSkill('house-style')]);
-    const { tools } = buildSkillToolsServer(registry, 'p', { resolver: new SkillResolver(registry, tmp) });
-    const tool = tools.find((t) => t.name === 'load_skill_file')!;
-    expect(tool.description).toBe(SKILL_TOOL_TEXT.external.loadSkillFile);
-    expect(tool.description).toContain('list_skills');
-    expect(tool.description).toContain('invalidReason');
-
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  it('[entity:c4s-reader-load-skill-file] c4s-reader · load_skill_file: name, description (points at list_skills), slug (required) and file (optional, defaults to SKILL.md) as the record states them, readOnly + idempotent hints; the same answers and refusals as the turn rendering, content cut at 50 000 characters', async () => {
+    const registry = SkillRegistry.load([writeLogicPackage()]);
     const external = buildSkillToolsServer(registry, 'p', { resolver: new SkillResolver(registry, tmp) });
-    client = new Client({ name: 'test-client', version: '0.0.0' });
-    await external.server.connect(serverTransport);
-    await client.connect(clientTransport);
-    const listed = (await client.listTools()).tools.find((t) => t.name === 'load_skill_file')!;
-    const schema = listed.inputSchema as { properties: Record<string, { description?: string }>; required?: string[] };
-    expect(Object.keys(schema.properties).sort()).toEqual(['file', 'slug']);
-    expect(schema.required).toEqual(['slug']);
-    expect(schema.properties.slug!.description).toBe(SKILL_TOOL_TEXT.external.slug);
+    expectToolMatchesToolRecord(
+      external.tools.find((t) => t.name === 'load_skill_file'),
+      SKILL_TOOL_RECORDS['c4s-reader-load-skill-file']!,
+    );
 
+    await mount(registry, { external: true });
     const opened = await call({ slug: 'house-style' });
     expect(opened.isError).toBe(false);
-    expect(opened.body).toMatchObject({ slug: 'house-style', scope: 'writing-style', source: 'user', files: [] });
+    expect(opened.body).toMatchObject({ slug: 'house-style', scope: 'writing-style', source: 'user' });
+    expect(opened.body.hash).toBeUndefined();
     expect(typeof opened.body.content).toBe('string');
+    const sub = await call({ slug: 'house-style', file: 'workflows/brief.md' });
+    expect(sub.body).toEqual({ slug: 'house-style', path: 'workflows/brief.md', content: 'm\n' });
+    await expectLoadSkillFileLogic();
   });
 
-  it('[entity:c4s-reader-list-skills] contract: name, optional contextType, rows { slug, description, origin } and writingStyle beside them', async () => {
+  it('[entity:c4s-reader-list-skills] c4s-reader · list_skills: name, description, optional contextType (a string, not an enum) as the record states them, readOnly + idempotent hints; answers { listing: [{ slug, description, origin }], writingStyle: { slug, title } }, the whole registry without contextType, INVALID_ARGUMENT naming the legal values for an unknown one', async () => {
     const registry = SkillRegistry.load([writeSkill('house-style')]);
     registry.addPluginSkill({
       slug: 'ui-view-mockup-generator',
@@ -363,25 +403,17 @@ describe('skill-tools — load_skill_file', () => {
     fs.mkdirSync(path.join(tmp, '.claude4spec'), { recursive: true });
     fs.writeFileSync(path.join(tmp, '.claude4spec', 'config.json'), JSON.stringify({ writingStyle: 'house-style' }));
     const external = buildSkillToolsServer(registry, 'p', { resolver: new SkillResolver(registry, tmp) });
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    client = new Client({ name: 'test-client', version: '0.0.0' });
-    await external.server.connect(serverTransport);
-    await client.connect(clientTransport);
+    const declared = external.tools.find((t) => t.name === 'list_skills');
+    expectToolMatchesToolRecord(declared, SKILL_TOOL_RECORDS['c4s-reader-list-skills']!);
+    expect(external.tools.map((t) => t.name)).toEqual(['load_skill_file', 'list_skills']);
 
+    await mount(registry, { external: true });
     const tool = (await client.listTools()).tools.find((t) => t.name === 'list_skills')!;
-    expect(tool.description).toBe(SKILL_TOOL_TEXT.external.listSkills);
-    expect(tool.annotations).toMatchObject({ readOnlyHint: true, idempotentHint: true });
-    const schema = tool.inputSchema as { properties: Record<string, { description?: string }>; required?: string[] };
-    expect(Object.keys(schema.properties)).toEqual(['contextType']);
+    const schema = tool.inputSchema as { properties: Record<string, { type?: string; enum?: unknown }>; required?: string[] };
     expect(schema.required ?? []).toEqual([]);
-    expect(schema.properties.contextType!.description).toBe(
-      "Context type whose skill set to list — one of `chat`, `brief`, `patch`, `ask`. Omit to list the whole registry instead of one context's set.",
-    );
-    // 2.1.17 — a plain string, deliberately not an enum: SDK-side schema validation
-    // would refuse an unknown value in its own error shape before the core sees it.
-    const contextTypeSchema = schema.properties.contextType as { type?: string; enum?: unknown };
-    expect(contextTypeSchema.type).toBe('string');
-    expect(contextTypeSchema.enum).toBeUndefined();
+    // A plain string, deliberately not an enum: a value outside the list reaches the operation.
+    expect(schema.properties.contextType!.type).toBe('string');
+    expect(schema.properties.contextType!.enum).toBeUndefined();
 
     const res = await client.callTool({ name: 'list_skills', arguments: {} });
     const body = JSON.parse((res.content as Array<{ text: string }>)[0]!.text);
@@ -396,13 +428,91 @@ describe('skill-tools — load_skill_file', () => {
       writingStyle: { slug: 'house-style', title: 'house-style' },
     });
 
-    // The only refusal: a value outside the enumeration reaches the core and comes
-    // back as the core's INVALID_ARGUMENT naming the legal values — not an SDK error.
     const refused = await client.callTool({ name: 'list_skills', arguments: { contextType: 'breif' } });
     expect(refused.isError).toBe(true);
     const refusal = JSON.parse((refused.content as Array<{ text: string }>)[0]!.text);
     expect(refusal.code).toBe('INVALID_ARGUMENT');
     for (const legal of ['chat', 'brief', 'patch', 'ask']) expect(refusal.error).toContain(legal);
+  });
+
+  /**
+   * 2.1.26 — the two M37 catalog rows as their `spec-operation` records declare
+   * them: `list_skills` (internal `n/a` with the record's reason, rendered by
+   * `c4s-reader · list_skills`) and `load_skill_file` (four channels direct,
+   * rendered by `skill-tools` internally and `c4s-reader` externally).
+   */
+  it('[entity:list-skills] list_skills: project, direct, internal n/a with the record\'s reason, cli/mcp/rest direct, no effects, idempotent, code INVALID_ARGUMENT, rendered by c4s-reader · list_skills, addressed by the context type — omitted it is the whole registry, an unknown one is INVALID_ARGUMENT with the legal values', async () => {
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'list_skills',
+        channels: {
+          internal: {
+            kind: 'na',
+            reason:
+              'tura dostaje listing jako blok `<available_skills>` promptu systemowego; montowanie MCP jest per serwer, więc narzędzie w tym kanale trafiłoby naraz do wszystkich czterech typów kontekstu',
+          },
+          cli: { kind: 'direct' },
+          mcp: { kind: 'direct' },
+          rest: { kind: 'direct' },
+        },
+        efekty: ['none'],
+        idempotencja: true,
+        opisTresci: undefined,
+        kodyBledow: ['INVALID_ARGUMENT'],
+        narzedzia: { mcp: ['c4s-reader-list-skills'] },
+      },
+      SKILL_TOOL_RECORDS,
+    );
+    expect(op.opClass).toBe('read');
+    expect(Object.keys(op.inputSchema)).toEqual(['contextType']);
+
+    // `zachowanie`, observed through the operation the renderings wrap.
+    const { listSkills } = await import('../services/skill-operations.js');
+    const registry = SkillRegistry.load([]);
+    registry.addPluginSkill({
+      slug: 'ui-view-mockup-generator',
+      title: 'Mockups',
+      description: 'Author the HTML mockup of a ui-view entity from its design system tokens.',
+      version: 1,
+      language: 'en',
+      scope: 'contextual',
+      content: 'body',
+    });
+    const resolver = new SkillResolver(registry, tmp);
+    expect(listSkills(resolver).listing.map((r) => r.slug)).toEqual(['ui-view-mockup-generator']);
+    let refusal: { code?: string; message?: string } | undefined;
+    try {
+      listSkills(resolver, 'breif');
+    } catch (err) {
+      refusal = err as { code?: string; message?: string };
+    }
+    expect(refusal?.code).toBe('INVALID_ARGUMENT');
+    for (const legal of ['chat', 'brief', 'patch', 'ask']) expect(refusal?.message).toContain(legal);
+  });
+
+  it('[entity:load-skill-file] load_skill_file: project, direct, all four channels direct, no effects, idempotent, codes SKILL_NOT_FOUND, SKILL_FILE_NOT_FOUND, NOT_TEXT, INVALID_ARGUMENT, rendered by skill-tools · load_skill_file (internal) and c4s-reader · load_skill_file (mcp), addressed by (slug, file) with file defaulting to SKILL.md', async () => {
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'load_skill_file',
+        channels: { internal: { kind: 'direct' }, cli: { kind: 'direct' }, mcp: { kind: 'direct' }, rest: { kind: 'direct' } },
+        efekty: ['none'],
+        idempotencja: true,
+        opisTresci: undefined,
+        kodyBledow: ['SKILL_NOT_FOUND', 'SKILL_FILE_NOT_FOUND', 'NOT_TEXT', 'INVALID_ARGUMENT'],
+        narzedzia: { internal: ['skill-tools-load-skill-file'], mcp: ['c4s-reader-load-skill-file'] },
+      },
+      SKILL_TOOL_RECORDS,
+    );
+    expect(op.opClass).toBe('read');
+    expect(Object.keys(op.inputSchema).sort()).toEqual(['file', 'slug']);
+    const shape = op.inputSchema as unknown as Record<string, { isOptional(): boolean }>;
+    expect(shape.slug!.isOptional()).toBe(false);
+    expect(shape.file!.isOptional()).toBe(true);
+    // `file` defaults to SKILL.md: the explicit default reads the same as the omitted one.
+    await mount(SkillRegistry.load([writeSkill('house-style')]));
+    const omitted = await call({ slug: 'house-style' });
+    const explicit = await call({ slug: 'house-style', file: 'SKILL.md' });
+    expect(explicit.body.content).toBe(omitted.body.content);
   });
 
   it('reads the LIVE registry, so a skill edited mid-thread takes effect on the next call', async () => {

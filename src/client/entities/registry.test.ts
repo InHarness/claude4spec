@@ -18,7 +18,6 @@ describe('getEntityDef resolves plugin-host-registered types', () => {
     payloadVersion: 1,
     label: 'Test Plugin Entity',
     labelPlural: 'Test Plugin Entities',
-    displayOrder: 500,
     pathPrefix: '/test-plugin-entities',
     renderChip: Noop,
     renderCard: Noop,

@@ -11,7 +11,7 @@
  * slug (a rename goes exclusively through `newSlug`, never through editing
  * `title` alone). There is deliberately NO `onBack`, no `onOpenEntity`, no `onOpenPage`:
  * back is the host breadcrumb, and cross-entity navigation goes through the
- * `useEditorBridge()` / `editorBridge` singleton.
+ * `editorBridge` singleton of `@c4s/plugin-runtime`.
  *
  * The panel calls `useGetBySlug(slug)` ITSELF and discriminates three states:
  * `undefined` → `LoadingState`, `null` → `EmptyState`, otherwise the editable

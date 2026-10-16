@@ -21,7 +21,6 @@ function entityManifest(over: Partial<PluginManifest> = {}): PluginManifest {
           payloadVersion: 1,
           label: 'Widget',
           labelPlural: 'Widgets',
-          displayOrder: 100,
           pathPrefix: '/widgets',
           systemPrompt: {
             roleNoun: 'widget',

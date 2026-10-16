@@ -22,9 +22,11 @@ import type { ApiError } from '../../lib/api-core.js';
  *
  * The boundary the `connected` class does NOT move: this block renders, it does
  * not compute. It implements no versioning, no diff algorithm and no release
- * semantics — restore goes down the host's existing `versionService` path
- * (M13), the labels come from `useReleases` (M17) and the diff from the pure
- * `lineDiffHunks` util. The host's own history routes render this very block,
+ * semantics — restore goes through the host's `useRestoreVersion` hook (M13),
+ * the labels come from `useReleases` (M17) and the diff from the pure
+ * `lineDiffHunks` util over the two `useVersionDetail` snapshots (never
+ * `useVersionDiff`). Versions are grouped by release with "Unreleased" on top;
+ * the version row carries no release pill. The host's own history routes render this very block,
  * so host and plugin show an identical view.
  *
  * Consumed L11 surface: `useVersions`, `useVersionDetail`, `useRestoreVersion`,
@@ -37,7 +39,7 @@ export interface EntityVersionHistoryViewProps {
   allowRestore?: boolean;
   /** Show the "Compare to" selection and the diff panel. Default `true`. */
   allowCompare?: boolean;
-  /** Show the release-name pill (`(unreleased)` when the version has no release). Default `true`. */
+  /** Release GROUP heading: `true` (default) heads a group with the release name, `false` with the anonymous `Release <id>`. The version row carries no release pill either way. */
   showReleasePill?: boolean;
   /** Rendered instead of the default empty state when the entity has no versions at all. */
   emptyState?: ReactNode;

@@ -3,7 +3,9 @@ import { buildTransagentToolsServer, TRANSAGENT_TOOL_NAMES } from './transagent-
 import { BriefService } from '../services/brief.js';
 import type { TransagentDispatcher } from '../services/transagent-dispatcher.js';
 import { systemRootId } from '../../shared/root-kinds.js';
-import { DEFAULT_LIMITS } from '../discovery/pagination.js';
+import { DEFAULT_LIMITS, MAX_LIMIT, resolvePageRequest } from '../discovery/pagination.js';
+import { BRIEF_TOOL_RECORDS } from '../../../tests/helpers/brief-tool-records.js';
+import { expectToolMatchesToolRecord } from '../../../tests/helpers/write-tool-records.js';
 import { CATALOG } from '../operations/catalog.js';
 import { toolAdmittedByProfile } from '../operations/profile-gate.js';
 
@@ -174,6 +176,46 @@ describe('transagent-tools · list_briefs (2.1.18)', () => {
     expect(tail.briefs).toHaveLength(5);
     expect(paths(tail)[4]).toBe('b-000.md');
     expect(tail.hasMore).toBe(false);
+  });
+
+  it('[entity:transagent-tools-list-briefs] transagent-tools · list_briefs: the record\'s name, description, `implemented` (boolean) + `limit` / `offset` (integers), all optional, readOnlyHint — `{ briefs, total, hasMore }` rows without content, default limit 50 and maximum 1000, default offset 0, an empty generatedAt answered as null', async () => {
+    const record = BRIEF_TOOL_RECORDS['transagent-tools-list-briefs'];
+    expect(record).toBeDefined();
+    const { server, tool } = listTool(serviceOver({}));
+    expect(server.tools.find((t) => t.name === 'list_briefs')).toBe(tool);
+    expectToolMatchesToolRecord(tool, record!);
+
+    const many: Record<string, Record<string, unknown>> = {};
+    for (let i = 0; i < 60; i++) {
+      const n = String(i).padStart(3, '0');
+      many[`b-${n}.md`] = brief({ title: `B${n}`, from: 'v1', to: 'v2', generatedAt: `2026-01-01T00:00:00.${n}Z` });
+    }
+    many['z-undated.md'] = brief({ title: 'Z', from: 'v2', to: null, generatedAt: '' });
+    const service = serviceOver(many);
+
+    const first = (await list(service)).body;
+    expect(Object.keys(first).sort()).toEqual(['briefs', 'hasMore', 'total']);
+    // Default limit 50, default offset 0: the window starts at the head of the list.
+    expect(first.briefs).toHaveLength(50);
+    expect(first.total).toBe(61);
+    expect(first.hasMore).toBe(true);
+    expect(paths(first)).toEqual(paths((await list(service, { offset: 0, limit: 50 })).body));
+    // The brief open from v2 heads the list; its empty generatedAt comes back as null.
+    expect(first.briefs[0]).toEqual({
+      path: 'z-undated.md',
+      title: 'Z',
+      fromRelease: 'v2',
+      toRelease: null,
+      implemented: false,
+      generatedAt: null,
+    });
+    // The maximum: a limit above 1000 is answered as 1000, not refused.
+    expect(MAX_LIMIT).toBe(1000);
+    expect(resolvePageRequest({ limit: 5000 }, DEFAULT_LIMITS.listBriefs)).toEqual({ limit: 1000, offset: 0 });
+    const over = await list(service, { limit: 5000 });
+    expect(over.isError).toBe(false);
+    expect(over.body.briefs).toHaveLength(61);
+    expect(over.body.hasMore).toBe(false);
   });
 
   it('a rig without the brief set does not register list_briefs', () => {

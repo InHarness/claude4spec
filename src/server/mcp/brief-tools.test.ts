@@ -29,6 +29,12 @@ import { systemRootId } from '../../shared/root-kinds.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
+import { BRIEF_TOOL_RECORDS } from '../../../tests/helpers/brief-tool-records.js';
+import { expectToolMatchesToolRecord } from '../../../tests/helpers/write-tool-records.js';
+import express from 'express';
+import request from 'supertest';
+import { briefsRouter } from '../routes/briefs.js';
+import { errorHandler } from '../routes/errors.js';
 import { getBriefCommand } from '../../bin/c4s/commands/get-brief.js';
 import { listBriefsCommand } from '../../bin/c4s/commands/list-briefs.js';
 import { markBriefImplementedCommand } from '../../bin/c4s/commands/mark-brief-implemented.js';
@@ -591,7 +597,7 @@ describe('update_brief — entity shape and insert_after_section addressing', ()
   /** The body part of what was written (the frontmatter block stripped). */
   const bodyOf = (file: string) => file.replace(/^---\n[\s\S]*?\n---\n/, '');
 
-  it('[entity:brief-tools-update-brief] update_brief on brief-tools: the entity\'s description and parameters (action, content, textEdits, anchor, heading, expectedHash, changeSummary — no `path` on the thread mount, required on the threadless one), write hints; exactly one input shape, both or neither VALIDATION before the file is touched; `{ newHash }` for an action, `{ newHash, replacements }` for textEdits', async () => {
+  it('update_brief on brief-tools, both mounts (stubbed service): the description and parameters (action, content, textEdits, anchor, heading, expectedHash, changeSummary — no `path` on the thread mount, required on the threadless one), write hints; exactly one input shape, both or neither VALIDATION before the file is touched; `{ newHash }` for an action, `{ newHash, replacements }` for textEdits', async () => {
     const explicit = await connect(BODY, 'explicit');
     const thread = await connect(BODY, 'thread');
     const tool = async (client: Client) => (await client.listTools()).tools.find((t) => t.name === 'update_brief')!;
@@ -745,8 +751,12 @@ describe('brief-tools — one tool per internal brief operation', () => {
    * 2.1.18 (M21 `01ytpznn`) — `list_briefs` IS rendered in `internal` now, but on
    * `transagent-tools` in a top-level `chat` thread, never in a brief thread (and
    * its class is `read`, so the operations are picked by name, not by class).
+   *
+   * 2.1.26 — `mark_brief_implemented`'s record makes its `internal` cell `n/a`
+   * (with its reason), so it is no longer an internal cell at all; `list_briefs`
+   * is the one internal brief operation rendered outside a brief thread.
    */
-  const DECLARED_NOT_RENDERED_INTERNALLY = ['list_briefs', 'mark_brief_implemented'];
+  const DECLARED_NOT_RENDERED_INTERNALLY = ['list_briefs'];
 
   it('[ac:ac-kazda-operacja-briefu-renderowana-w-k] every brief operation rendered in `internal` in a brief thread is a brief-tools tool, and their count equals the tools mounted on a brief thread', async () => {
     registerCoreOperations();
@@ -756,8 +766,9 @@ describe('brief-tools — one tool per internal brief operation', () => {
       .sort();
     // The two cells not rendered in a brief thread are exactly the recorded ones…
     for (const name of DECLARED_NOT_RENDERED_INTERNALLY) expect(internalDirectBriefOps, name).toContain(name);
-    // …and `create_brief` is not internal at all (n/a, with its reason).
+    // …and `create_brief` / `mark_brief_implemented` are not internal at all (n/a, with their reasons).
     expect(internalDirectBriefOps).not.toContain('create_brief');
+    expect(internalDirectBriefOps).not.toContain('mark_brief_implemented');
     const internalBriefOps = internalDirectBriefOps.filter((n) => !DECLARED_NOT_RENDERED_INTERNALLY.includes(n));
 
     // What a `context_type='brief'` thread mounts: brief-tools in thread mode.
@@ -890,7 +901,7 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
 
   // ── mcp-tool entity ──────────────────────────────────────────────────────
 
-  it('[entity:brief-tools-get-brief] get_brief on brief-tools: `range` (object, optional) with the entity\'s description, readOnlyHint only, the entity\'s description verbatim; no `path` on the thread mount (M21 thread isolation), `path` required on the threadless mount — and the logic: thread-resolved address, content + frontmatter + hash, unknown path and a window past the file refused with the operation\'s codes', async () => {
+  it('get_brief on brief-tools, both mounts: `range` (object, optional) with the entity\'s description, readOnlyHint only, the entity\'s description verbatim; no `path` on the thread mount (M21 thread isolation), `path` required on the threadless mount — and the logic: thread-resolved address, content + frontmatter + hash, unknown path and a window past the file refused with the operation\'s codes', async () => {
     const int = await toolOf(internal, 'get_brief');
     const ext = await toolOf(external, 'get_brief');
     // The thread mount has no `path` at all: M21 declares thread isolation (01ytpznn).
@@ -945,7 +956,7 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     expect((await call(internal, 'get_brief', { range: { start: 5, end: 2 } })).body.code).toBe('INVALID_ARGUMENT');
   });
 
-  it('[entity:brief-tools-list-brief-versions] list_brief_versions on brief-tools: the entity\'s description verbatim, readOnlyHint only, no `path` on the thread mount (the row\'s limit/offset window only), `path` required on the threadless mount — and the logic: metadata only, never content; an unknown path is BRIEF_NOT_FOUND', async () => {
+  it('list_brief_versions on brief-tools, both mounts: the description verbatim, readOnlyHint only, no `path` on the thread mount (the row\'s limit/offset window only), `path` required on the threadless mount — and the logic: metadata only, never content; an unknown path is BRIEF_NOT_FOUND', async () => {
     const int = await toolOf(internal, 'list_brief_versions');
     const ext = await toolOf(external, 'list_brief_versions');
     expect(int.description).toBe(
@@ -979,7 +990,7 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     expect(unknown.body.code).toBe('BRIEF_NOT_FOUND');
   });
 
-  it('[entity:brief-tools-get-brief-version] get_brief_version on brief-tools: the entity\'s description verbatim, readOnlyHint only, `version` (number, required) with the entity\'s description and no `path` on the thread mount, `path` required on the threadless mount — and the logic: a pure read of one snapshot that leaves the live file untouched; an unknown path is BRIEF_NOT_FOUND, a version off the history a validation error with the available range', async () => {
+  it('get_brief_version on brief-tools, both mounts: the description verbatim, readOnlyHint only, `version` (number, required) with the entity\'s description and no `path` on the thread mount, `path` required on the threadless mount — and the logic: a pure read of one snapshot that leaves the live file untouched; an unknown path is BRIEF_NOT_FOUND, a version off the history a validation error with the available range', async () => {
     const int = await toolOf(internal, 'get_brief_version');
     const ext = await toolOf(external, 'get_brief_version');
     expect(int.description).toBe(
@@ -1013,6 +1024,244 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     expect(off.isError).toBe(true);
     expect(off.body.code).toBe('INVALID_ARGUMENT');
     expect(off.body.hint).toContain('1..2');
+    expect((await call(external, 'get_brief_version', { path: 'nope.md', version: 1 })).body.code).toBe('BRIEF_NOT_FOUND');
+  });
+
+  // ── 2.1.26 mcp-tool records: the thread mount and its explicit twins ─────
+
+  /** The registered declarations of one mount, as the host holds them (raw zod shapes). */
+  const declaredOf = (ctx: Parameters<typeof buildBriefToolsServer>[0]) => buildBriefToolsServer(ctx).tools;
+  const threadDeclared = () => declaredOf({ threadId, briefPath, briefService: service });
+  const explicitDeclared = () => declaredOf({ briefService: service, target: 'explicit' });
+  const recordOf = (slug: string) => {
+    const record = BRIEF_TOOL_RECORDS[slug];
+    expect(record, slug).toBeDefined();
+    return record!;
+  };
+  /** A file in the briefs root whose frontmatter is not a brief's. */
+  async function notABrief(): Promise<string> {
+    await fs.writeFile(path.join(briefsRoot, 'not-a-brief.md'), '---\ntype: page\ntitle: x\n---\n# A page\n', 'utf-8');
+    return 'not-a-brief.md';
+  }
+
+  it('[entity:brief-tools-get-brief] brief-tools · get_brief (thread mount): the record\'s name, description, `range` only (no `path`), readOnlyHint — the thread\'s brief fixed at build time, a missing file BRIEF_NOT_FOUND, a non-brief file BRIEF_INVALID_FRONTMATTER, a non-integer window, a start below 1, an end before the start or a start past the file INVALID_ARGUMENT, the content cut at 25 000 characters with the frontmatter still parsed from the whole file', async () => {
+    expectToolMatchesToolRecord(threadDeclared().find((t) => t.name === 'get_brief'), recordOf('brief-tools-get-brief'));
+
+    // The brief is the thread's, fixed when the server was built: a `path` does not move it.
+    const other = await service.createBrief({ fromReleaseName: 'v1', toReleaseName: 'v2', content: '# Other\n\nother brief\n', suffix: 'other' });
+    const pinned = await call(internal, 'get_brief', { path: other.briefPath });
+    expect(pinned.body.path).toBe(briefPath);
+    expect(pinned.body.content).not.toContain('other brief');
+    const read = await call(internal, 'get_brief', {});
+    const bytes = await fileBytes(briefPath);
+    expect(read.isError).toBe(false);
+    expect(Object.keys(read.body).sort()).toEqual(['body', 'content', 'frontmatter', 'hash', 'path']);
+    expect(read.body.content).toBe(bytes);
+    expect(read.body.body).toBe(matter(bytes).content);
+    expect(read.body.hash).toBe(sha256(bytes));
+
+    // Window refusals, each INVALID_ARGUMENT from the operation (not a transport error).
+    const lines = bytes.split('\n').length;
+    for (const range of [{ start: 1.5, end: 3 }, { start: 0, end: 3 }, { start: 5, end: 2 }, { start: lines + 2, end: lines + 5 }]) {
+      const refused = await call(internal, 'get_brief', { range });
+      expect(refused.isError, JSON.stringify(range)).toBe(true);
+      expect(refused.body.code, JSON.stringify(range)).toBe('INVALID_ARGUMENT');
+    }
+
+    // The 25 000-character content budget; the frontmatter is parsed from the whole file.
+    const big = await bigBrief();
+    const bigThread = await connect({ threadId, briefPath: big, briefService: service });
+    const cut = await call(bigThread, 'get_brief', {});
+    expect(cut.body.truncated).toBe(true);
+    expect(cut.body.truncationHint).toContain('range');
+    expect(cut.body.content.length).toBe(25_000);
+    expect(cut.body.frontmatter).toMatchObject({ type: 'brief', from_release: 'v1', to_release: 'v2' });
+    expect(cut.body.hash).toBe(sha256(await fileBytes(big)));
+
+    // A file that is not a brief, and a thread whose brief is gone.
+    const notBrief = await connect({ threadId, briefPath: await notABrief(), briefService: service });
+    expect((await call(notBrief, 'get_brief', {})).body.code).toBe('BRIEF_INVALID_FRONTMATTER');
+    await fs.rm(path.join(briefsRoot, briefPath));
+    const gone = await call(internal, 'get_brief', {});
+    expect(gone.isError).toBe(true);
+    expect(gone.body.code).toBe('BRIEF_NOT_FOUND');
+  });
+
+  it('[entity:brief-tools-get-brief-explicit] brief-tools · get_brief (explicit): the record\'s name, description, required `path` + `range`, readOnlyHint — an empty `path` refused BRIEF_NOT_FOUND like an unknown one (real paths in the hint), a non-brief file BRIEF_INVALID_FRONTMATTER, and the frontmatter parsed from the whole file when a window comes back', async () => {
+    expectToolMatchesToolRecord(explicitDeclared().find((t) => t.name === 'get_brief'), recordOf('brief-tools-get-brief-explicit'));
+
+    for (const empty of ['', '   ']) {
+      const refused = await call(external, 'get_brief', { path: empty });
+      expect(refused.isError).toBe(true);
+      expect(refused.body.code).toBe('BRIEF_NOT_FOUND');
+    }
+    const unknown = await call(external, 'get_brief', { path: 'no-such-brief.md' });
+    expect(unknown.body.code).toBe('BRIEF_NOT_FOUND');
+    expect(unknown.body.hint).toContain(briefPath);
+    expect((await call(external, 'get_brief', { path: await notABrief() })).body.code).toBe('BRIEF_INVALID_FRONTMATTER');
+
+    const bytes = await fileBytes(briefPath);
+    const lines = bytes.split('\n');
+    const window = await call(external, 'get_brief', { path: briefPath, range: { start: lines.length - 3, end: lines.length - 2 } });
+    expect(window.isError).toBe(false);
+    expect(window.body.content).toBe(lines.slice(lines.length - 4, lines.length - 2).join('\n'));
+    expect(window.body.frontmatter).toMatchObject({ type: 'brief', from_release: 'v1', to_release: 'v2', implemented: false });
+    // The hash is the WHOLE file's, also for a window.
+    expect(window.body.hash).toBe(sha256(bytes));
+  });
+
+  it('[entity:brief-tools-update-brief] brief-tools · update_brief (thread mount): the record\'s name, description, parameters without `path`, write hints — VALIDATION before the file is read (empty hash, both shapes or neither, anchor/heading with textEdits, action without content or content without action), a stale hash BRIEF_CONFLICT with the current hash and content, `replace` swapping the whole body, insert_after_section without a target MISSING_TARGET, the frontmatter kept, an `agent` version and a `briefs:changed` event', async () => {
+    expectToolMatchesToolRecord(threadDeclared().find((t) => t.name === 'update_brief'), recordOf('brief-tools-update-brief'));
+
+    // The VALIDATION refusals come before the file is read: a thread whose brief does not exist still gets them.
+    const ghost = await connect({ threadId, briefPath: 'ghost.md', briefService: service });
+    const refusals: Array<Record<string, unknown>> = [
+      { action: 'append', content: 'x', expectedHash: '  ' },
+      { action: 'append', content: 'x', textEdits: [{ find: 'a', replaceWith: 'b' }], expectedHash: 'h' },
+      { expectedHash: 'h' },
+      { textEdits: [{ find: 'a', replaceWith: 'b' }], anchor: 'aaaa1111', expectedHash: 'h' },
+      { textEdits: [{ find: 'a', replaceWith: 'b' }], heading: 'Alpha', expectedHash: 'h' },
+      { action: 'append', expectedHash: 'h' },
+      { content: 'x', expectedHash: 'h' },
+    ];
+    for (const args of refusals) expect((await call(ghost, 'update_brief', args)).body.code, JSON.stringify(args)).toBe('VALIDATION');
+    expect((await call(ghost, 'update_brief', { action: 'append', content: 'x', expectedHash: 'h' })).body.code).toBe('BRIEF_NOT_FOUND');
+
+    const before = await fileBytes(briefPath);
+    const stale = await call(internal, 'update_brief', { action: 'append', content: 'x', expectedHash: 'f'.repeat(64) });
+    expect(stale.body.code).toBe('BRIEF_CONFLICT');
+    expect(stale.body.currentHash).toBe(sha256(before));
+    expect(stale.body.currentContent).toBe(before);
+    expect(await fileBytes(briefPath)).toBe(before);
+
+    const target = await call(internal, 'update_brief', { action: 'insert_after_section', content: 'x', expectedHash: sha256(before) });
+    expect(target.body.code).toBe('MISSING_TARGET');
+
+    const events: Array<{ kind: string; path?: string; origin?: string }> = [];
+    (service as unknown as { deps: { ws: WsEmitter } }).deps.ws = { broadcast: (e: unknown) => events.push(e as never) };
+    const replaced = await call(internal, 'update_brief', { action: 'replace', content: '# Rewritten\n\nonly this\n', expectedHash: sha256(before) });
+    expect(replaced.isError).toBe(false);
+    expect(Object.keys(replaced.body)).toEqual(['newHash']);
+    const after = await fileBytes(briefPath);
+    expect(replaced.body.newHash).toBe(sha256(after));
+    // `replace` is the whole body; the frontmatter is the file's, unchanged.
+    expect(matter(after).content).toBe('# Rewritten\n\nonly this\n');
+    expect(matter(after).data).toEqual(matter(before).data);
+    const latest = service.listVersions(briefPath)[0]!;
+    expect(latest.changedBy).toBe('agent');
+    expect(service.listVersions(briefPath)).toHaveLength(2);
+    expect(events).toContainEqual(expect.objectContaining({ kind: 'briefs:changed', path: briefPath }));
+  });
+
+  it('[entity:brief-tools-update-brief-explicit] brief-tools · update_brief (explicit): the record\'s name, description, parameters with a required `path`, write hints — VALIDATION before the file is read, a stale hash BRIEF_CONFLICT with the current hash and content checked before the edits apply, the frontmatter kept', async () => {
+    expectToolMatchesToolRecord(explicitDeclared().find((t) => t.name === 'update_brief'), recordOf('brief-tools-update-brief-explicit'));
+
+    // Before the file is read: an unknown path still gets VALIDATION for a malformed call.
+    for (const args of [
+      { path: 'ghost.md', action: 'append', content: 'x', expectedHash: ' ' },
+      { path: 'ghost.md', action: 'append', expectedHash: 'h' },
+      { path: 'ghost.md', textEdits: [{ find: 'a', replaceWith: 'b' }], anchor: 'aaaa1111', expectedHash: 'h' },
+      { path: 'ghost.md', expectedHash: 'h' },
+    ]) {
+      expect((await call(external, 'update_brief', args)).body.code, JSON.stringify(args)).toBe('VALIDATION');
+    }
+    const before = await fileBytes(briefPath);
+    // Checked before the edits: a `find` that matches nothing is answered by the conflict, not FIND_NOT_FOUND.
+    const stale = await call(external, 'update_brief', {
+      path: briefPath,
+      textEdits: [{ find: 'NOT IN THE BRIEF', replaceWith: 'x' }],
+      expectedHash: 'f'.repeat(64),
+    });
+    expect(stale.body.code).toBe('BRIEF_CONFLICT');
+    expect(stale.body.currentHash).toBe(sha256(before));
+    expect(stale.body.currentContent).toBe(before);
+
+    const ok = await call(external, 'update_brief', {
+      path: briefPath,
+      textEdits: [{ find: 'beta body', replaceWith: 'BETA' }],
+      expectedHash: sha256(before),
+    });
+    expect(ok.body).toEqual({ newHash: sha256(await fileBytes(briefPath)), replacements: 1 });
+    expect(matter(await fileBytes(briefPath)).data).toEqual(matter(before).data);
+  });
+
+  it('[entity:brief-tools-list-brief-versions] brief-tools · list_brief_versions (thread mount): the record\'s name, description, `limit` / `offset` (integers, no `path`), readOnlyHint — the thread\'s brief checked to exist first, `{ versions, total }` oldest first without content, every version from `offset` without `limit`, offset 0 by default', async () => {
+    expectToolMatchesToolRecord(
+      threadDeclared().find((t) => t.name === 'list_brief_versions'),
+      recordOf('brief-tools-list-brief-versions'),
+    );
+    const first = await call(internal, 'get_brief', {});
+    const second = await call(internal, 'update_brief', { action: 'append', content: 'second edit', expectedHash: first.body.hash });
+    await call(internal, 'update_brief', { action: 'append', content: 'third edit', expectedHash: second.body.newHash });
+
+    const all = await call(internal, 'list_brief_versions', {});
+    expect(Object.keys(all.body).sort()).toEqual(['total', 'versions']);
+    expect(all.body.total).toBe(3);
+    expect(all.body.versions.map((v: { version: number }) => v.version)).toEqual([1, 2, 3]);
+    expect(JSON.stringify(all.body)).not.toContain('alpha body');
+    expect(JSON.stringify(all.body)).not.toContain('third edit');
+    // No `limit` → everything from `offset`.
+    expect((await call(internal, 'list_brief_versions', { offset: 1 })).body.versions.map((v: { version: number }) => v.version)).toEqual([2, 3]);
+    expect((await call(internal, 'list_brief_versions', { limit: 1 })).body.versions.map((v: { version: number }) => v.version)).toEqual([1]);
+
+    const ghost = await connect({ threadId, briefPath: 'ghost.md', briefService: service });
+    const missing = await call(ghost, 'list_brief_versions', {});
+    expect(missing.isError).toBe(true);
+    expect(missing.body.code).toBe('BRIEF_NOT_FOUND');
+  });
+
+  it('[entity:brief-tools-list-brief-versions-explicit] brief-tools · list_brief_versions (explicit): the record\'s name, description, required `path` + `limit` / `offset`, readOnlyHint — existence checked before the history (an unknown path is BRIEF_NOT_FOUND, never an empty list), every version from `offset` without `limit`', async () => {
+    expectToolMatchesToolRecord(
+      explicitDeclared().find((t) => t.name === 'list_brief_versions'),
+      recordOf('brief-tools-list-brief-versions-explicit'),
+    );
+    const first = await call(external, 'get_brief', { path: briefPath });
+    await call(external, 'update_brief', { path: briefPath, action: 'append', content: 'second', expectedHash: first.body.hash });
+    const all = await call(external, 'list_brief_versions', { path: briefPath });
+    expect(all.body).toMatchObject({ total: 2 });
+    expect(all.body.versions.map((v: { version: number }) => v.version)).toEqual([1, 2]);
+    expect((await call(external, 'list_brief_versions', { path: briefPath, offset: 1 })).body.versions.map((v: { version: number }) => v.version)).toEqual([2]);
+    const unknown = await call(external, 'list_brief_versions', { path: 'nope.md' });
+    expect(unknown.isError).toBe(true);
+    expect(unknown.body.code).toBe('BRIEF_NOT_FOUND');
+    expect(unknown.body.versions).toBeUndefined();
+  });
+
+  it('[entity:brief-tools-get-brief-version] brief-tools · get_brief_version (thread mount): the record\'s name, description, `version` (integer, required, no `path`), readOnlyHint — the thread\'s brief, a missing file BRIEF_NOT_FOUND, a number off the history (0 included) INVALID_ARGUMENT with 1..N in the hint, the snapshot with its metadata and `data`, the live file untouched', async () => {
+    expectToolMatchesToolRecord(
+      threadDeclared().find((t) => t.name === 'get_brief_version'),
+      recordOf('brief-tools-get-brief-version'),
+    );
+    const first = await call(internal, 'get_brief', {});
+    await call(internal, 'update_brief', { action: 'replace', content: '# Rewritten\n', expectedHash: first.body.hash });
+    const live = await fileBytes(briefPath);
+    const v1 = await call(internal, 'get_brief_version', { version: 1 });
+    expect(v1.isError).toBe(false);
+    expect(v1.body).toMatchObject({ path: briefPath, version: 1, op: 'create' });
+    expect(v1.body.data.content).toContain('alpha body');
+    expect(await fileBytes(briefPath)).toBe(live);
+    expect((await call(internal, 'list_brief_versions', {})).body.total).toBe(2);
+    for (const version of [0, 9]) {
+      const off = await call(internal, 'get_brief_version', { version });
+      expect(off.body.code, String(version)).toBe('INVALID_ARGUMENT');
+      expect(off.body.hint, String(version)).toContain('1..2');
+    }
+    const ghost = await connect({ threadId, briefPath: 'ghost.md', briefService: service });
+    expect((await call(ghost, 'get_brief_version', { version: 1 })).body.code).toBe('BRIEF_NOT_FOUND');
+  });
+
+  it('[entity:brief-tools-get-brief-version-explicit] brief-tools · get_brief_version (explicit): the record\'s name, description, required `path` + `version` (integer), readOnlyHint — a number off the history INVALID_ARGUMENT with 1..N in the hint, an unknown path BRIEF_NOT_FOUND', async () => {
+    expectToolMatchesToolRecord(
+      explicitDeclared().find((t) => t.name === 'get_brief_version'),
+      recordOf('brief-tools-get-brief-version-explicit'),
+    );
+    const v1 = await call(external, 'get_brief_version', { path: briefPath, version: 1 });
+    expect(v1.isError).toBe(false);
+    expect(v1.body.version).toBe(1);
+    expect(v1.body.data.content).toContain('alpha body');
+    const off = await call(external, 'get_brief_version', { path: briefPath, version: 4 });
+    expect(off.body.code).toBe('INVALID_ARGUMENT');
+    expect(off.body.hint).toContain('1..1');
     expect((await call(external, 'get_brief_version', { path: 'nope.md', version: 1 })).body.code).toBe('BRIEF_NOT_FOUND');
   });
 
@@ -1207,50 +1456,94 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     expect(read.body.content).toBe(await fileBytes(briefPath));
   });
 
-  // ── katalog-operacji-m21 rows ────────────────────────────────────────────
+  // ── spec-operation records (2.1.26) ──────────────────────────────────────
+  //
+  // The seven M21 operations, as their `spec-operation` records declare them at
+  // 2.1.26 (they replace the rows of the `katalog-operacji-m21` table the page
+  // embedded until 2.1.25): name, scope, mediation, the four channel cells (an
+  // `n/a` carrying the record's `powody` verbatim), effects, idempotence,
+  // content input, exactly the record's `kodyBledow`, and `renderings` exactly
+  // its `narzedzia` — each named mcp-tool record resolved to `<server>.<tool>`.
 
-  it('[entity:katalog-operacji-m21#get_brief] the row: project, direct in all four channels, no effects, idempotent, `path` + read window `range?` (no internal default declared), echo-free; BRIEF_NOT_FOUND + INVALID_ARGUMENT', async () => {
-    const op = CATALOG.require('get_brief');
+  type Cell = { kind: 'direct' } | { kind: 'na'; reason: string };
+  const D: Cell = { kind: 'direct' };
+
+  function expectOperationRecord(record: {
+    nazwa: string;
+    channels: Record<'internal' | 'cli' | 'mcp' | 'rest', Cell>;
+    efekty: string[];
+    idempotencja: boolean | 'conditional';
+    opisTresci: 'literal' | 'literal+diff' | 'n/a' | undefined;
+    kodyBledow: string[];
+    narzedzia: Partial<Record<'internal' | 'mcp', string[]>>;
+  }) {
+    const op = CATALOG.require(record.nazwa);
+    expect(op.name).toBe(record.nazwa);
     expect(op.scope).toBe('project');
     expect(op.mediation).toBe('direct');
+    for (const channel of ['internal', 'cli', 'mcp', 'rest'] as const) {
+      expect(op.channels[channel], `${record.nazwa}.${channel}`).toEqual(record.channels[channel]);
+    }
+    expect([...op.sideEffects].sort()).toEqual([...record.efekty].sort());
+    expect(op.idempotent).toBe(record.idempotencja);
+    expect(op.contentInput).toBe(record.opisTresci);
+    expect(new Set(op.errorCodes).size).toBe(op.errorCodes.length);
+    expect([...op.errorCodes].sort()).toEqual([...record.kodyBledow].sort());
+    const expected: Partial<Record<'internal' | 'mcp', string[]>> = {};
+    for (const [channel, slugs] of Object.entries(record.narzedzia) as Array<['internal' | 'mcp', string[]]>) {
+      expected[channel] = slugs.map((slug) => `${recordOf(slug).server}.${recordOf(slug).name}`);
+    }
+    expect(op.renderings ?? {}).toEqual(expected);
+    return op;
+  }
+
+  it('[entity:get-brief] get_brief as its record declares it: project, direct, all four channels direct, no effects, idempotent, `path` + read window `range?`, codes BRIEF_NOT_FOUND, INVALID_ARGUMENT, BRIEF_INVALID_FRONTMATTER, rendered by brief-tools · get_brief (internal thread mount, mcp explicit) — a non-brief file BRIEF_INVALID_FRONTMATTER, a window past the end INVALID_ARGUMENT with the file size', async () => {
+    const op = expectOperationRecord({
+      nazwa: 'get_brief',
+      channels: { internal: D, cli: D, mcp: D, rest: D },
+      efekty: ['none'],
+      idempotencja: true,
+      opisTresci: undefined,
+      kodyBledow: ['BRIEF_NOT_FOUND', 'INVALID_ARGUMENT', 'BRIEF_INVALID_FRONTMATTER'],
+      narzedzia: { internal: ['brief-tools-get-brief'], mcp: ['brief-tools-get-brief-explicit'] },
+    });
     expect(op.opClass).toBe('brief');
-    for (const channel of ['internal', 'cli', 'mcp', 'rest'] as const) expect(op.channels[channel].kind, channel).toBe('direct');
-    expect(op.sideEffects).toEqual(['none']);
-    expect(op.idempotent).toBe(true);
-    expect([...op.errorCodes].sort()).toEqual(['BRIEF_NOT_FOUND', 'INVALID_ARGUMENT']);
     expect(Object.keys(op.inputSchema).sort()).toEqual(['path', 'range']);
-    // The row no longer declares an internal default from the thread.
-    expect(JSON.stringify(op.inputSchema.path!.description ?? '')).not.toMatch(/default|thread/i);
     // explicit-addressing: every external channel requires `path`; the internal
-    // rendering carries none (M21 thread isolation, 2.1.14).
+    // rendering carries none (M21 thread isolation).
     for (const channel of ['cli', 'mcp', 'rest'] as const) expect(artifactAddressingShape('brief', channel)).toBe('required');
     expect(artifactAddressingShape('brief', 'internal')).toBe('absent');
     expect((await toolOf(external, 'get_brief')).inputSchema.required).toEqual(['path']);
     expect(props(await toolOf(internal, 'get_brief'))).not.toContain('path');
     // cli rendering: `c4s get-brief` names this operation, server-delegating.
     expect(getBriefCommand).toMatchObject({ operation: 'get_brief', executionMode: 'server-delegating' });
-    expect(getBriefCommand.errorCodes).toEqual(expect.arrayContaining(['BRIEF_NOT_FOUND', 'INVALID_ARGUMENT']));
 
-    expect((await call(external, 'get_brief', { path: 'nope.md' })).body.code).toBe('BRIEF_NOT_FOUND');
-    expect((await call(external, 'get_brief', { path: '  ' })).body.code).toBe('BRIEF_NOT_FOUND');
-    expect((await call(external, 'get_brief', { path: briefPath, range: { start: 999, end: 1000 } })).body.code).toBe('INVALID_ARGUMENT');
-    // echo-free read: the answer is the record, no envelope noise.
+    // The behaviour, in the owning core function.
+    await expect(service.getBrief(await notABrief())).rejects.toMatchObject({ code: 'BRIEF_INVALID_FRONTMATTER' });
+    const lines = (await fileBytes(briefPath)).split('\n').length;
+    await expect(service.getBrief(briefPath, { range: { start: lines + 1, end: lines + 4 } })).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+      message: expect.stringContaining(`has ${lines} lines`),
+    });
+    await expect(service.getBrief('nope.md')).rejects.toMatchObject({ code: 'BRIEF_NOT_FOUND' });
+    // echo-free read: the answer is the brief, no envelope noise.
     const ok = await call(external, 'get_brief', { path: briefPath });
     expect(Object.keys(ok.body).sort()).toEqual(['body', 'content', 'frontmatter', 'hash', 'path']);
   });
 
-  it('[entity:katalog-operacji-m21#list_briefs] the row: project, direct in all four channels (internal rendered on transagent-tools, never by brief-tools), no effects, idempotent, filter `implemented` + paging `limit`/`offset` with total counted after the filter; VALIDATION', async () => {
-    const op = CATALOG.require('list_briefs');
-    expect(op.scope).toBe('project');
-    expect(op.mediation).toBe('direct');
-    // 2.1.18 — a read: the class `chat` admits, where its rendering lives.
+  it('[entity:list-briefs] list_briefs as its record declares it: project, direct, all four channels direct, no effects, idempotent, filter `implemented` + paging `limit`/`offset`, code VALIDATION, rendered by transagent-tools · list_briefs in internal only (never by brief-tools) — the list on the release axis', async () => {
+    const op = expectOperationRecord({
+      nazwa: 'list_briefs',
+      channels: { internal: D, cli: D, mcp: D, rest: D },
+      efekty: ['none'],
+      idempotencja: true,
+      opisTresci: undefined,
+      kodyBledow: ['VALIDATION'],
+      narzedzia: { internal: ['transagent-tools-list-briefs'] },
+    });
+    // A read: the class `chat` admits, where its rendering lives.
     expect(op.opClass).toBe('read');
-    for (const channel of ['internal', 'cli', 'mcp', 'rest'] as const) expect(op.channels[channel].kind, channel).toBe('direct');
-    expect(op.sideEffects).toEqual(['none']);
-    expect(op.idempotent).toBe(true);
-    expect([...op.errorCodes]).toEqual(['VALIDATION']);
     expect(Object.keys(op.inputSchema).sort()).toEqual(['implemented', 'limit', 'offset']);
-    // No brief-tools tool renders it (M21 01ytpznn: its internal rendering is transagent-tools').
     expect(await mountedNames(internal)).not.toContain('list_briefs');
     expect(await mountedNames(external)).not.toContain('list_briefs');
     expect(listBriefsCommand).toMatchObject({ operation: 'list_briefs', executionMode: 'server-delegating' });
@@ -1258,30 +1551,39 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     // The operation's function: the filter, then the list on the release axis.
     await service.updateFrontmatter({ path: briefPath, patch: { implemented: true }, changedBy: 'user' });
     await bigBrief();
-    expect(service.listBriefs().map((b) => b.path).sort()).toEqual(['v1-to-v2-big.md', 'v1-to-v2.md']);
+    await service.createBrief({ fromReleaseName: 'v2', toReleaseName: null, content: '# Open\n' });
+    // Newest cycle first: the brief open from v2 sits above the v1 → v2 briefs.
+    expect(service.listBriefs()[0]!.path).toBe('v2-to-next.md');
+    expect(service.listBriefs().map((b) => b.path).sort()).toEqual(['v1-to-v2-big.md', 'v1-to-v2.md', 'v2-to-next.md']);
     expect(service.listBriefs({ implemented: true }).map((b) => b.path)).toEqual(['v1-to-v2.md']);
-    expect(service.listBriefs({ implemented: false }).map((b) => b.path)).toEqual(['v1-to-v2-big.md']);
+    expect(service.listBriefs({ implemented: false }).map((b) => b.path).sort()).toEqual(['v1-to-v2-big.md', 'v2-to-next.md']);
   });
 
-  it('[entity:katalog-operacji-m21#update_brief] the row: direct in all four channels, file+db+ui-notify, conditional idempotence (append and textEdits are not), content described both ways — exactly one shape per call, both or neither VALIDATION —, `path` (absent internally) + anchor/heading, mandatory expectedHash guard; BRIEF_NOT_FOUND, BRIEF_CONFLICT, IMMUTABLE_FIELD, VALIDATION', async () => {
-    const op = CATALOG.require('update_brief');
-    expect(op.scope).toBe('project');
-    expect(op.mediation).toBe('direct');
-    for (const channel of ['internal', 'cli', 'mcp', 'rest'] as const) expect(op.channels[channel].kind, channel).toBe('direct');
-    expect([...op.sideEffects].sort()).toEqual(['db', 'file', 'ui-notify']);
-    expect(op.idempotent).toBe(false);
-    // `obydwa`: the literal action shape and the differential `textEdits`, one per call.
-    expect(op.contentInput).toBe('literal+diff');
-    // ASSUMPTION:m21-dev-0001 — the row's four codes, plus the diff engine's.
-    expect(op.errorCodes).toEqual(expect.arrayContaining(['BRIEF_NOT_FOUND', 'BRIEF_CONFLICT', 'IMMUTABLE_FIELD', 'VALIDATION']));
-    expect(op.errorCodes).not.toContain('NOT_FOUND');
+  it('[entity:update-brief] update_brief as its record declares it: project, direct, all four channels direct, file+db+ui-notify, conditionally idempotent, content described both ways, required guard, codes BRIEF_NOT_FOUND, BRIEF_CONFLICT, VALIDATION, INVALID_ARGUMENT, IMMUTABLE_FIELD, MISSING_TARGET, FIND_NOT_FOUND, MATCH_COUNT_MISMATCH, BRIEF_INVALID_FRONTMATTER, rendered by brief-tools · update_brief (internal thread mount, mcp explicit) — exactly one shape, a missing hash VALIDATION, `replace` idempotent by content while `append` is not, an immutable frontmatter field IMMUTABLE_FIELD, `implemented` immutable for the agent', async () => {
+    const op = expectOperationRecord({
+      nazwa: 'update_brief',
+      channels: { internal: D, cli: D, mcp: D, rest: D },
+      efekty: ['file', 'db', 'ui-notify'],
+      idempotencja: 'conditional',
+      opisTresci: 'literal+diff',
+      kodyBledow: [
+        'BRIEF_NOT_FOUND',
+        'BRIEF_CONFLICT',
+        'VALIDATION',
+        'INVALID_ARGUMENT',
+        'IMMUTABLE_FIELD',
+        'MISSING_TARGET',
+        'FIND_NOT_FOUND',
+        'MATCH_COUNT_MISMATCH',
+        'BRIEF_INVALID_FRONTMATTER',
+      ],
+      narzedzia: { internal: ['brief-tools-update-brief'], mcp: ['brief-tools-update-brief-explicit'] },
+    });
     expect(Object.keys(op.inputSchema).sort()).toEqual(
       ['action', 'anchor', 'changeSummary', 'content', 'expectedHash', 'heading', 'path', 'textEdits'],
     );
+    // `guard: wymagany`.
     expect(op.inputSchema.expectedHash!.isOptional()).toBe(false);
-    expect(op.inputSchema.changeSummary!.isOptional()).toBe(true);
-    expect((await toolOf(external, 'update_brief')).inputSchema.required).toEqual(expect.arrayContaining(['path', 'expectedHash']));
-    // `path` is absent from the internal rendering (isolation), required externally.
     expect(props(await toolOf(internal, 'update_brief'))).not.toContain('path');
 
     // Exactly one input shape: both, neither, or half the action shape → VALIDATION, and the file is not touched.
@@ -1291,166 +1593,170 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     expect(both.body.code).toBe('VALIDATION');
     expect((await call(internal, 'update_brief', { expectedHash: h0 })).body.code).toBe('VALIDATION');
     expect((await call(internal, 'update_brief', { content: 'x', expectedHash: h0 })).body.code).toBe('VALIDATION');
+    expect((await call(internal, 'update_brief', { action: 'append', content: 'x', expectedHash: ' ' })).body.code).toBe('VALIDATION');
     expect(await fileBytes(briefPath)).toBe(untouched);
     expect(service.listVersions(briefPath)).toHaveLength(1);
-    // The differential shape answers `{ newHash, replacements }`; changeSummary is optional and recorded.
-    const diff = await call(internal, 'update_brief', {
-      textEdits: [{ find: 'beta body', replaceWith: 'BETA BODY' }],
-      changeSummary: 'shout beta',
-      expectedHash: h0,
-    });
-    expect(diff.isError).toBe(false);
-    expect(Object.keys(diff.body).sort()).toEqual(['newHash', 'replacements']);
-    expect(diff.body.replacements).toBe(1);
-    expect(await fileBytes(briefPath)).toContain('BETA BODY');
-    expect(diff.body.newHash).toBe(sha256(await fileBytes(briefPath)));
 
-    const unknown = await call(external, 'update_brief', { path: 'nope.md', action: 'append', content: 'x', expectedHash: 'h' });
-    expect(unknown.body.code).toBe('BRIEF_NOT_FOUND');
-    const missingHash = await call(internal, 'update_brief', { action: 'append', content: 'x', expectedHash: ' ' });
-    expect(missingHash.body.code).toBe('VALIDATION');
-    const stale = await call(internal, 'update_brief', { action: 'append', content: 'x', expectedHash: 'f'.repeat(64) });
-    expect(stale.body.code).toBe('BRIEF_CONFLICT');
-    // A frontmatter change through the content write is IMMUTABLE_FIELD (rest rendering's function).
+    // `replace` is idempotent by content…
+    const r1 = await call(internal, 'update_brief', { action: 'replace', content: '# Same\n\nsame body\n', expectedHash: h0 });
+    const afterFirst = await fileBytes(briefPath);
+    const r2 = await call(internal, 'update_brief', { action: 'replace', content: '# Same\n\nsame body\n', expectedHash: r1.body.newHash });
+    expect(r2.body.newHash).toBe(r1.body.newHash);
+    expect(await fileBytes(briefPath)).toBe(afterFirst);
+    // …`append` is not: two calls, two fragments.
+    const a = await call(internal, 'update_brief', { action: 'append', content: 'twice', expectedHash: r2.body.newHash });
+    await call(internal, 'update_brief', { action: 'append', content: 'twice', expectedHash: a.body.newHash });
+    expect((await fileBytes(briefPath)).match(/twice/g)).toHaveLength(2);
+
+    // An immutable frontmatter field, and `implemented` for the agent, are IMMUTABLE_FIELD.
     const { hash, content } = await service.getBrief(briefPath, { full: true });
     await expect(
       service.updateContent({ path: briefPath, content: content.replace('from_release: v1', 'from_release: v0'), expectedHash: hash, changedBy: 'user' }),
     ).rejects.toMatchObject({ code: 'IMMUTABLE_FIELD' });
-    // `append` is not idempotent: two calls, two fragments; the answer is { newHash } only.
-    const a = await call(internal, 'update_brief', { action: 'append', content: 'twice', expectedHash: hash });
-    expect(Object.keys(a.body)).toEqual(['newHash']);
-    await call(internal, 'update_brief', { action: 'append', content: 'twice', expectedHash: a.body.newHash });
-    expect((await fileBytes(briefPath)).match(/twice/g)).toHaveLength(2);
+    await expect(
+      service.updateContent({ path: briefPath, content: content.replace('implemented: false', 'implemented: true'), expectedHash: hash, changedBy: 'agent' }),
+    ).rejects.toMatchObject({ code: 'IMMUTABLE_FIELD' });
+    expect((await call(external, 'update_brief', { path: 'nope.md', action: 'append', content: 'x', expectedHash: 'h' })).body.code).toBe('BRIEF_NOT_FOUND');
   });
 
-  it('[entity:katalog-operacji-m21#mark_brief_implemented] the row: registered, direct in all four channels (no brief-tools tool — the brief profile does not expose it), file+db+ui-notify, idempotent, no content input, `path`; BRIEF_NOT_FOUND + IMMUTABLE_FIELD', async () => {
-    const op = CATALOG.require('mark_brief_implemented');
-    expect(op.scope).toBe('project');
-    expect(op.mediation).toBe('direct');
+  it('[entity:mark-brief-implemented] mark_brief_implemented as its record declares it: project, direct, internal n/a with the record\'s reason (no brief-tools tool), cli/mcp/rest direct, file+db+ui-notify, idempotent, no content input, `path`, codes BRIEF_NOT_FOUND, IMMUTABLE_FIELD, BRIEF_INVALID_FRONTMATTER, no renderings — only the flag changes, a repeat is a no-op without a version, a non-brief file BRIEF_INVALID_FRONTMATTER, an unknown path BRIEF_NOT_FOUND', async () => {
+    const op = expectOperationRecord({
+      nazwa: 'mark_brief_implemented',
+      channels: {
+        internal: {
+          kind: 'na',
+          reason:
+            'operacja deklaruje fakt o kodzie w repozytorium docelowym, którego wątek nie widzi, więc serwer briefu celowo jej nie niesie; znacznik ustawia implementer w terminalu albo użytkownik w UI',
+        },
+        cli: D,
+        mcp: D,
+        rest: D,
+      },
+      efekty: ['file', 'db', 'ui-notify'],
+      idempotencja: true,
+      opisTresci: 'n/a',
+      kodyBledow: ['BRIEF_NOT_FOUND', 'IMMUTABLE_FIELD', 'BRIEF_INVALID_FRONTMATTER'],
+      narzedzia: {},
+    });
     expect(op.opClass).toBe('brief');
-    for (const channel of ['internal', 'cli', 'mcp', 'rest'] as const) expect(op.channels[channel].kind, channel).toBe('direct');
-    expect([...op.sideEffects].sort()).toEqual(['db', 'file', 'ui-notify']);
-    expect(op.idempotent).toBe(true);
-    expect(op.contentInput).toBe('n/a');
-    expect([...op.errorCodes].sort()).toEqual(['BRIEF_NOT_FOUND', 'IMMUTABLE_FIELD']);
     expect(Object.keys(op.inputSchema).sort()).toEqual(['implemented', 'path']);
     expect(op.inputSchema.path!.isOptional()).toBe(false);
     // Not a position of brief-tools on either mount.
     expect(await mountedNames(internal)).not.toContain('mark_brief_implemented');
     expect(await mountedNames(external)).not.toContain('mark_brief_implemented');
-    // cli rendering: `c4s mark-brief-implemented` renders THIS operation.
     expect(markBriefImplementedCommand).toMatchObject({ operation: 'mark_brief_implemented', executionMode: 'server-delegating' });
-    expect(markBriefImplementedCommand.errorCodes).toEqual(expect.arrayContaining(['BRIEF_NOT_FOUND', 'IMMUTABLE_FIELD']));
 
-    // The function behind the cli/rest renderings.
+    // The function behind the cli/rest renderings: only the flag changes.
     const before = service.listVersions(briefPath).length;
+    const bodyBefore = matter(await fileBytes(briefPath)).content;
     const marked = await service.updateFrontmatter({ path: briefPath, patch: { implemented: true }, changedBy: 'user' });
     expect(marked.frontmatter.implemented).toBe(true);
-    expect(await fileBytes(briefPath)).toMatch(/implemented: true/);
+    expect(matter(await fileBytes(briefPath)).content).toBe(bodyBefore);
     expect(service.listVersions(briefPath).length).toBe(before + 1);
-    // Idempotent: the repeat writes nothing and records no version.
+    // A repeat at the value the file holds: no write, no version.
     const bytes = await fileBytes(briefPath);
     await service.updateFrontmatter({ path: briefPath, patch: { implemented: true }, changedBy: 'user' });
     expect(await fileBytes(briefPath)).toBe(bytes);
     expect(service.listVersions(briefPath).length).toBe(before + 1);
-    // The body is untouched (a long brief is not cut to the response budget by the flag write).
-    const big = await bigBrief();
-    const bigBefore = matter(await fileBytes(big)).content;
-    await service.updateFrontmatter({ path: big, patch: { implemented: true }, changedBy: 'user' });
-    const bigAfter = matter(await fileBytes(big));
-    expect(bigAfter.data.implemented).toBe(true);
-    expect(bigAfter.content).toBe(bigBefore);
+    // Another frontmatter key is refused IMMUTABLE_FIELD by the M36 family guard
+    // in front of this function (asserted on the rest rendering, artifacts.test.ts).
+    await expect(
+      service.updateFrontmatter({ path: await notABrief(), patch: { implemented: true }, changedBy: 'user' }),
+    ).rejects.toMatchObject({ code: 'BRIEF_INVALID_FRONTMATTER' });
     await expect(
       service.updateFrontmatter({ path: 'nope.md', patch: { implemented: true }, changedBy: 'user' }),
     ).rejects.toMatchObject({ code: 'BRIEF_NOT_FOUND' });
   });
 
-  it('[entity:katalog-operacji-m21#list_brief_versions] the row: direct internal/mcp/rest (cli n/a — dev-0004), no effects, idempotent, `path` + history window limit/offset, metadata only; BRIEF_NOT_FOUND for an unknown path, never an empty list', async () => {
-    const op = CATALOG.require('list_brief_versions');
-    expect(op.scope).toBe('project');
-    expect(op.mediation).toBe('direct');
-    expect(op.opClass).toBe('brief');
-    expect(op.channels.internal.kind).toBe('direct');
-    expect(op.channels.mcp.kind).toBe('direct');
-    expect(op.channels.rest.kind).toBe('direct');
-    // ASSUMPTION:dev-0004 — M21 L14 names no brief-history command.
-    expect(op.channels.cli.kind).toBe('na');
-    expect(op.sideEffects).toEqual(['none']);
-    expect(op.idempotent).toBe(true);
-    expect([...op.errorCodes]).toEqual(['BRIEF_NOT_FOUND']);
-    expect(Object.keys(op.inputSchema).sort()).toEqual(['limit', 'offset', 'path']);
-    expect(props(await toolOf(internal, 'list_brief_versions'))).toEqual(['limit', 'offset']);
-    const ext = await toolOf(external, 'list_brief_versions');
-    expect(props(ext)).toEqual(['limit', 'offset', 'path']);
-    expect(ext.inputSchema.required).toEqual(['path']);
+  const NO_HISTORY_COMMAND: Cell = {
+    kind: 'na',
+    reason: 'brak komendy `c4s` historii briefu: implementer w terminalu czyta bieżący brief, nie jego historię',
+  };
 
-    const first = await call(internal, 'get_brief', {});
-    await call(internal, 'update_brief', { action: 'append', content: 'second', expectedHash: first.body.hash });
-    const all = await call(external, 'list_brief_versions', { path: briefPath });
-    expect(all.body.total).toBe(2);
-    expect(all.body.versions.map((v: { version: number }) => v.version)).toEqual([1, 2]);
-    expect(JSON.stringify(all.body)).not.toContain('alpha body');
-    const page = await call(internal, 'list_brief_versions', { offset: 1, limit: 1 });
-    expect(page.body.versions.map((v: { version: number }) => v.version)).toEqual([2]);
-    expect(page.body.total).toBe(2);
+  it('[entity:list-brief-versions] list_brief_versions as its record declares it: project, direct, internal/mcp/rest direct, cli n/a with the record\'s reason, no effects, idempotent, `path` + history window `limit`/`offset`, code BRIEF_NOT_FOUND, rendered by brief-tools · list_brief_versions (internal thread mount, mcp explicit)', async () => {
+    const op = expectOperationRecord({
+      nazwa: 'list_brief_versions',
+      channels: { internal: D, cli: NO_HISTORY_COMMAND, mcp: D, rest: D },
+      efekty: ['none'],
+      idempotencja: true,
+      opisTresci: undefined,
+      kodyBledow: ['BRIEF_NOT_FOUND'],
+      narzedzia: { internal: ['brief-tools-list-brief-versions'], mcp: ['brief-tools-list-brief-versions-explicit'] },
+    });
+    expect(Object.keys(op.inputSchema).sort()).toEqual(['limit', 'offset', 'path']);
     const unknown = await call(external, 'list_brief_versions', { path: 'nope.md' });
     expect(unknown.isError).toBe(true);
     expect(unknown.body.code).toBe('BRIEF_NOT_FOUND');
+    const page = await call(internal, 'list_brief_versions', { offset: 0, limit: 1 });
+    expect(page.body).toMatchObject({ total: 1 });
   });
 
-  it('[entity:katalog-operacji-m21#get_brief_version] the row: direct internal/mcp/rest (cli n/a — dev-0004), no effects, idempotent, `(path, version)`; BRIEF_NOT_FOUND for an unknown path, a version off the history INVALID_ARGUMENT with the range (dev-0003)', async () => {
-    const op = CATALOG.require('get_brief_version');
-    expect(op.scope).toBe('project');
-    expect(op.mediation).toBe('direct');
-    expect(op.opClass).toBe('brief');
-    expect(op.channels.internal.kind).toBe('direct');
-    expect(op.channels.mcp.kind).toBe('direct');
-    expect(op.channels.rest.kind).toBe('direct');
-    expect(op.channels.cli.kind).toBe('na');
-    expect(op.sideEffects).toEqual(['none']);
-    expect(op.idempotent).toBe(true);
-    expect([...op.errorCodes].sort()).toEqual(['BRIEF_NOT_FOUND', 'INVALID_ARGUMENT']);
+  it('[entity:get-brief-version] get_brief_version as its record declares it: project, direct, internal/mcp/rest direct, cli n/a with the record\'s reason, no effects, idempotent, `(path, version)`, codes BRIEF_NOT_FOUND, INVALID_ARGUMENT, rendered by brief-tools · get_brief_version (internal thread mount, mcp explicit) — a version off the history INVALID_ARGUMENT with the available range', async () => {
+    const op = expectOperationRecord({
+      nazwa: 'get_brief_version',
+      channels: { internal: D, cli: NO_HISTORY_COMMAND, mcp: D, rest: D },
+      efekty: ['none'],
+      idempotencja: true,
+      opisTresci: undefined,
+      kodyBledow: ['BRIEF_NOT_FOUND', 'INVALID_ARGUMENT'],
+      narzedzia: { internal: ['brief-tools-get-brief-version'], mcp: ['brief-tools-get-brief-version-explicit'] },
+    });
     expect(Object.keys(op.inputSchema).sort()).toEqual(['path', 'version']);
-    expect(props(await toolOf(internal, 'get_brief_version'))).toEqual(['version']);
-    const ext = await toolOf(external, 'get_brief_version');
-    expect(props(ext)).toEqual(['path', 'version']);
-    expect([...(ext.inputSchema.required ?? [])].sort()).toEqual(['path', 'version']);
-
-    const v1 = await call(external, 'get_brief_version', { path: briefPath, version: 1 });
-    expect(v1.isError).toBe(false);
-    expect(v1.body.version).toBe(1);
-    expect(JSON.stringify(v1.body)).toContain('alpha body');
-    const off = await call(internal, 'get_brief_version', { version: 7 });
-    expect(off.isError).toBe(true);
-    expect(off.body.code).toBe('INVALID_ARGUMENT');
-    expect(off.body.hint).toContain('1..1');
-    expect((await call(external, 'get_brief_version', { path: 'nope.md', version: 1 })).body.code).toBe('BRIEF_NOT_FOUND');
+    await expect(service.getVersionAddressed(briefPath, 7)).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+      hint: expect.stringContaining('1..1'),
+    });
+    await expect(service.getVersionAddressed('nope.md', 1)).rejects.toMatchObject({ code: 'BRIEF_NOT_FOUND' });
   });
 
-  it('[entity:katalog-operacji-m21#create_brief] the row: direct, internal n/a with its reason, cli/mcp/rest direct, file+db+ui-notify, not idempotent, literal content, addressed by the release window; BRIEF_SAME_RELEASE + VALIDATION', async () => {
-    const op = CATALOG.require('create_brief');
-    expect(op.scope).toBe('project');
-    expect(op.mediation).toBe('direct');
-    expect(op.channels.internal.kind).toBe('na');
-    expect((op.channels.internal as { reason: string }).reason).toMatch(/anchored in one artifact/);
-    for (const channel of ['cli', 'mcp', 'rest'] as const) expect(op.channels[channel].kind, channel).toBe('direct');
-    expect([...op.sideEffects].sort()).toEqual(['db', 'file', 'ui-notify']);
-    expect(op.idempotent).toBe(false);
-    expect(op.contentInput).toBe('literal');
-    expect([...op.errorCodes].sort()).toEqual(['BRIEF_SAME_RELEASE', 'VALIDATION']);
+  it('[entity:create-brief] create_brief as its record declares it: project, direct, internal n/a with the record\'s reason, cli/mcp/rest direct, file+db+ui-notify, not idempotent, literal content, codes BRIEF_SAME_RELEASE, VALIDATION, no renderings — blank content, a window without ends, an empty end name, an unknown release or roots on an open window VALIDATION; the service answers path, hash and both ends; the REST rendering opens the initial thread and answers the brief file with that thread first', async () => {
+    const op = expectOperationRecord({
+      nazwa: 'create_brief',
+      channels: {
+        internal: {
+          kind: 'na',
+          reason:
+            'tura wątku `brief` jest zakotwiczona w jednym artefakcie i pisze jego treść; powołanie kolejnego briefu nie jest czynnością autora briefu',
+        },
+        cli: D,
+        mcp: D,
+        rest: D,
+      },
+      efekty: ['file', 'db', 'ui-notify'],
+      idempotencja: false,
+      opisTresci: 'literal',
+      kodyBledow: ['BRIEF_SAME_RELEASE', 'VALIDATION'],
+      narzedzia: {},
+    });
     expect(Object.keys(op.inputSchema).sort()).toEqual(['content', 'fromReleaseName', 'roots', 'suffix', 'toReleaseName']);
-    // No brief-tools tool mints a brief.
     expect(await mountedNames(internal)).not.toContain('create_brief');
     expect(await mountedNames(external)).not.toContain('create_brief');
 
-    // Not idempotent: each call mints a new brief (a collision is settled by `suffix`).
-    const again = await service.createBrief({ fromReleaseName: 'v1', toReleaseName: 'v2', content: 'body\n', suffix: 'two' });
-    expect(again.briefPath).not.toBe(briefPath);
+    // The service answers the path, the hash and both ends of the window as resolved.
+    const again = await service.createBrief({ toReleaseName: null, content: 'body\n' });
+    expect(Object.keys(again).sort()).toEqual(['briefPath', 'fromReleaseName', 'hash', 'toReleaseName']);
+    expect(again).toMatchObject({ fromReleaseName: 'v2', toReleaseName: null });
     expect(again.hash).toBe(sha256(await fileBytes(again.briefPath)));
-    await expect(service.createBrief({ fromReleaseName: 'v1', toReleaseName: 'v1' })).rejects.toMatchObject({ code: 'BRIEF_SAME_RELEASE' });
-    await expect(service.createBrief({ fromReleaseName: 'v1', toReleaseName: 'v2', content: '  \n' })).rejects.toMatchObject({ code: 'VALIDATION' });
-    // A window naming a release that does not exist is an invalid input — VALIDATION, not a leaked RELEASE_NOT_FOUND.
-    await expect(service.createBrief({ fromReleaseName: 'ghost', toReleaseName: 'v2' })).rejects.toMatchObject({ code: 'VALIDATION' });
-    await expect(service.createBrief({ fromReleaseName: 'v1', toReleaseName: 'ghost' })).rejects.toMatchObject({ code: 'VALIDATION' });
+    await expect(service.createBrief({ fromReleaseName: 'v1', toReleaseName: ' v1 ' })).rejects.toMatchObject({ code: 'BRIEF_SAME_RELEASE' });
+    for (const opts of [
+      { fromReleaseName: 'v1', toReleaseName: 'v2', content: '  \n' },
+      { fromReleaseName: null, toReleaseName: null },
+      { fromReleaseName: ' ', toReleaseName: 'v2' },
+      { fromReleaseName: 'ghost', toReleaseName: 'v2' },
+      { fromReleaseName: 'v1', toReleaseName: 'ghost' },
+      { fromReleaseName: 'v1', toReleaseName: null, roots: ['pages'] },
+    ]) {
+      await expect(service.createBrief(opts), JSON.stringify(opts)).rejects.toMatchObject({ code: 'VALIDATION' });
+    }
+
+    // The REST rendering: a new initial thread, first in the brief's thread list, even beside an older one.
+    const app = express().use(express.json()).use('/api/briefs', briefsRouter(service, chat)).use(errorHandler);
+    await fs.rm(path.join(briefsRoot, briefPath));
+    const res = await request(app).post('/api/briefs').send({ fromReleaseName: 'v1', toReleaseName: 'v2', content: '# Again\n' });
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({ path: briefPath, frontmatter: expect.objectContaining({ type: 'brief' }) });
+    expect(Object.keys(res.body.data)).toEqual(expect.arrayContaining(['path', 'frontmatter', 'content', 'hash', 'threads']));
+    expect(res.body.data.threads.length).toBe(2);
+    expect(res.body.data.threads[0].id).not.toBe(threadId);
   });
 });

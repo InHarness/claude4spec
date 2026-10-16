@@ -32,11 +32,13 @@ export const DESIGN_SYSTEM_LABEL = 'Design System';
 export const DESIGN_SYSTEM_LABEL_PLURAL = 'Design Systems';
 
 /**
- * Sidebar positions, inherited from the host registration so neither tab moves
- * when the types change delivery path. `ac` sits at 50 between them.
+ * The ELEMENTS tabs' `sidebarTab.order` — since 2.1.26 the only ordering a type
+ * declares (the identity has no `displayOrder`). Inherited from the host
+ * registration so neither tab moves when the types change delivery path. `ac`
+ * sits at 50 between them.
  */
-export const UI_VIEW_DISPLAY_ORDER = 40;
-export const DESIGN_SYSTEM_DISPLAY_ORDER = 60;
+export const UI_VIEW_SIDEBAR_ORDER = 40;
+export const DESIGN_SYSTEM_SIDEBAR_ORDER = 60;
 
 /**
  * The slash-create popover discriminators.

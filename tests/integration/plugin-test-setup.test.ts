@@ -37,7 +37,6 @@ function gadgetManifest(mount?: (ctx: Record<string, unknown>) => void): PluginM
           payloadVersion: 1,
           label: 'Gadget',
           labelPlural: 'Gadgets',
-          displayOrder: 900,
           pathPrefix: '/gadgets',
           systemPrompt: { roleNoun: 'gadget', mcpToolsLine: 'gadget-tools: ...' },
           ...(mount ? { backend: { mount } } : {}),

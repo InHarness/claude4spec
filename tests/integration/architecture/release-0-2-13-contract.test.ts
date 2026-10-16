@@ -673,7 +673,8 @@ describe('a page is written by an operation, not by a file tool', () => {
     // with the same address is PAGE_EXISTS, and a caller retrying on a timeout
     // has to know that in advance.
     expect(CATALOG.get('create_page')!.idempotent).toBe(false);
-    expect(CATALOG.get('update_page')!.idempotent).toBe(true);
+    // 2.1.26 — `update_page` is idempotent in its literal mode only: `'conditional'`.
+    expect(CATALOG.get('update_page')!.idempotent).toBe('conditional');
   });
 
   it('[ac:ac-crud-stron-dziala-przez-ui-i-wbudowane-n] page roots are denied for WRITE and left open for READ', async () => {
