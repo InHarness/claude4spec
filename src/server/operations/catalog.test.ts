@@ -473,25 +473,27 @@ describe('the profile gate', () => {
     // grants it — so an undeclared name on a surface this repo ships stays
     // governed by the coarse server gate.
     //
-    // `runTransagent` is the TOOL name, and stays undeclared on purpose: 0.2.15
-    // declares the OPERATION as `run_turn` and records the tool as its rendering
-    // in the `via` cell, rather than renaming either side to match the other.
+    // `runTransagent` is the TOOL name, and stays undeclared on purpose: the
+    // OPERATION it renders is `spawn_child_turn` (2.1.26 — its `renderings`),
+    // rather than renaming either side to match the other.
     expect(CATALOG.has('runTransagent')).toBe(false);
     expect(toolAdmittedByProfile('brief', 'runTransagent')).toBe(true);
   });
 
-  it('declares run_turn, whose MCP rendering is the differently-named runTransagent', () => {
+  it('declares run_turn, reached internally via spawn_child_turn, whose rendering is the differently-named runTransagent', () => {
     /**
      * 0.2.15. The spec has always called this operation `run_turn`; the code has
      * always called its one rendering `runTransagent`, and the catalog knew
      * neither — so the gate took the permissive branch for it, which makes an
-     * omission indistinguishable from a decision. The `via` cell is where the
-     * naming gap is recorded instead of being spread across two repositories.
+     * omission indistinguishable from a decision. 2.1.26: the `run-turn` record
+     * has `mcp: n/a` — an external connection is not a turn — and the tool is
+     * recorded as the rendering of `spawn_child_turn`, the `via` target.
      */
     const row = CATALOG.require('run_turn');
     expect(row.opClass).toBe('turn');
     expect(row.idempotent).toBe(false);
-    expect(row.channels.mcp).toMatchObject({ kind: 'via', operation: 'runTransagent' });
+    expect(row.channels.mcp.kind).toBe('na');
+    expect(CATALOG.require('spawn_child_turn').renderings).toEqual({ internal: ['transagent-tools.runTransagent'] });
     // 0.2.87 (M46): internally a turn run is reached only by spawning a child thread.
     expect(row.channels.internal).toMatchObject({ kind: 'via', operation: 'spawn_child_turn' });
     const spawn = CATALOG.require('spawn_child_turn');
@@ -1496,5 +1498,218 @@ describe('the M25 release-push rows as their 2.1.26 records declare them', () =>
     const shape = z.object(op.inputSchema as z.ZodRawShape);
     expect(shape.safeParse({ id: 3 }).success).toBe(true);
     expect(shape.safeParse({ id: 1.5 }).success).toBe(false);
+  });
+});
+
+/**
+ * 2.1.26 — the M05 / M11 / M46 turn and thread rows as their `spec-operation`
+ * records declare them (`ask`, `abort-turn`, `create-thread`, `delete-thread`,
+ * `list-threads`, `run-turn`, `spawn-child-turn`). The `na` / `via` reasons are
+ * the records' `powody`, verbatim; `narzedzia` resolves through the two mcp-tool
+ * records named here. The behaviour (`zachowanie`) is held where it is
+ * implemented: `routes/chat.ts` (abort), `routes/threads.ts` +
+ * `services/chat.ts` (threads), `mcp/transagent-tools.test.ts` (spawn) and
+ * `mcp/c4s-tools.test.ts` (ask).
+ */
+describe('the turn and thread rows as their 2.1.26 records declare them', () => {
+  const D = { kind: 'direct' } as const;
+  const TOOLS = {
+    'c4s-tools-ask': { server: 'c4s-tools', name: 'ask' },
+    'transagent-tools-runtransagent': { server: 'transagent-tools', name: 'runTransagent' },
+  } as const;
+  const THREADS = 'katalog wątków jest wewnętrzną sprawą interfejsu';
+  const THREAD_CHANNELS = {
+    internal: { kind: 'na', reason: THREADS },
+    cli: { kind: 'na', reason: THREADS },
+    mcp: { kind: 'na', reason: THREADS },
+    rest: D,
+  } as const;
+  const optional = (name: string, key: string): boolean =>
+    (CATALOG.require(name).inputSchema[key] as unknown as { isOptional(): boolean }).isOptional();
+
+  it('[entity:ask] ask: workspace, agent-mediated, all four channels direct, file/db, not idempotent, no content input, the fifteen codes with RESUME_CONFIG_LOCKED, rendered by c4s-tools-ask in internal and mcp, effort a closed choice', () => {
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'ask',
+        zasieg: 'workspace',
+        mediacja: 'agent-mediated',
+        channels: { internal: D, cli: D, mcp: D, rest: D },
+        efekty: ['file', 'db'],
+        idempotencja: false,
+        opisTresci: 'n/a',
+        kodyBledow: [
+          'PROJECT_NOT_FOUND',
+          'PROJECT_ID_NOT_FOUND',
+          'AMBIGUOUS_WORKSPACE',
+          'AMBIGUOUS_PROJECT',
+          'PROJECT_NOT_IN_WORKSPACE',
+          'SERVER_NOT_RUNNING',
+          'SERVER_NOT_RECOGNIZED',
+          'INVALID_ARGS',
+          'NOT_FOUND',
+          'STREAM_IN_PROGRESS',
+          'AGENT_UNAVAILABLE',
+          'AGENT_ERROR',
+          'TIMEOUT',
+          'ABORTED',
+          'RESUME_CONFIG_LOCKED',
+        ],
+        narzedzia: { internal: ['c4s-tools-ask'], mcp: ['c4s-tools-ask'] },
+      },
+      TOOLS,
+    );
+    expect(op.errorCodes).toHaveLength(15);
+    expect(op.opClass).toBe('peer');
+    // The peer's context is fixed, not a parameter: no contextType / brief input.
+    expect(Object.keys(op.inputSchema).sort()).toEqual(
+      ['effort', 'message', 'model', 'project', 'server', 'threadId', 'workspace'].sort(),
+    );
+    const shape = z.object(op.inputSchema as z.ZodRawShape);
+    expect(shape.safeParse({ message: 'q', project: 'p', effort: 'high' }).success).toBe(true);
+    expect(shape.safeParse({ message: 'q', project: 'p', effort: 'max' }).success).toBe(false);
+  });
+
+  it('[entity:abort-turn] abort_turn: project, direct, all four channels direct, db/ui-notify, idempotent, no content input, codes THREAD_NOT_FOUND and VALIDATION, addressed by threadId or the request id, no rendering', () => {
+    // Not through the shared matcher: the record declares the agentic cells
+    // `direct` with an empty `narzedzia` (ASSUMPTION:dev-2612), which the
+    // matcher's direct-names-a-rendering rule refuses. Every other field is
+    // asserted the way the matcher asserts it.
+    const op = CATALOG.require('abort_turn');
+    expect(op.name).toBe('abort_turn');
+    expect(op.scope).toBe('project');
+    expect(op.mediation).toBe('direct');
+    for (const channel of CHANNELS) expect(op.channels[channel], channel).toEqual(D);
+    expect([...op.sideEffects].sort()).toEqual(['db', 'ui-notify']);
+    expect(op.idempotent).toBe(true);
+    expect(op.contentInput).toBeUndefined();
+    expect(new Set(op.errorCodes).size).toBe(op.errorCodes.length);
+    expect([...op.errorCodes].sort()).toEqual(['THREAD_NOT_FOUND', 'VALIDATION']);
+    expect(op.renderings ?? {}).toEqual({});
+    expect(op.opClass).toBe('turn');
+    expect(Object.keys(op.inputSchema).sort()).toEqual(['requestId', 'threadId']);
+    expect(optional('abort_turn', 'threadId')).toBe(true);
+    expect(optional('abort_turn', 'requestId')).toBe(true);
+    // The answer is a confirmation, not the thread's state.
+    expect(op.summary).toMatch(/\{ aborted, clearedTexts \}/);
+  });
+
+  it('[entity:create-thread] create_thread: project, human-mediated, internal/cli/mcp n/a (the thread catalogue is the UI\'s), rest direct, db/ui-notify, not idempotent, code VALIDATION, no renderings', () => {
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'create_thread',
+        mediacja: 'human-mediated',
+        channels: THREAD_CHANNELS,
+        efekty: ['db', 'ui-notify'],
+        idempotencja: false,
+        opisTresci: undefined,
+        kodyBledow: ['VALIDATION'],
+        narzedzia: {},
+      },
+      TOOLS,
+    );
+    expect(Object.keys(op.inputSchema).sort()).toEqual(['context_type', 'title']);
+    expect(op.summary).toMatch(/VALIDATION/);
+  });
+
+  it('[entity:delete-thread] delete_thread: project, human-mediated, internal/cli/mcp n/a, rest direct, db/ui-notify, idempotent, code NOT_FOUND, addressed by threadId, no renderings', () => {
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'delete_thread',
+        mediacja: 'human-mediated',
+        channels: THREAD_CHANNELS,
+        efekty: ['db', 'ui-notify'],
+        idempotencja: true,
+        opisTresci: undefined,
+        kodyBledow: ['NOT_FOUND'],
+        narzedzia: {},
+      },
+      TOOLS,
+    );
+    expect(Object.keys(op.inputSchema)).toEqual(['threadId']);
+    expect(optional('delete_thread', 'threadId')).toBe(false);
+  });
+
+  it('[entity:list-threads] list_threads: project, human-mediated, internal/cli/mcp n/a, rest direct, no effects, idempotent, no codes of its own, a limit/offset window', () => {
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'list_threads',
+        mediacja: 'human-mediated',
+        channels: THREAD_CHANNELS,
+        efekty: ['none'],
+        idempotencja: true,
+        opisTresci: undefined,
+        kodyBledow: [],
+        narzedzia: {},
+      },
+      TOOLS,
+    );
+    expect(Object.keys(op.inputSchema).sort()).toEqual(['limit', 'offset']);
+    expect(op.summary).toMatch(/20 rows/);
+  });
+
+  it('[entity:run-turn] run_turn: project, direct, internal via spawn_child_turn, cli/mcp/rest n/a, file/db/ui-notify, not idempotent, no content input, codes AGENT_ERROR, STREAM_IN_PROGRESS, RESUME_CONFIG_LOCKED, NOT_FOUND, no renderings', () => {
+    expectOperationMatchesRecord(
+      {
+        nazwa: 'run_turn',
+        channels: {
+          internal: {
+            kind: 'via',
+            operation: 'spawn_child_turn',
+            reason:
+              'via `spawn_child_turn` — agent wbudowany osiąga bieg tury wyłącznie zakładając wątek podrzędny; tury najwyższego poziomu z wnętrza własnej tury nie zleca',
+          },
+          cli: { kind: 'na', reason: 'brak powierzchni CLI — turę-dziecko zakłada się wyłącznie z wnętrza tury' },
+          mcp: {
+            kind: 'na',
+            reason:
+              'połączenie zewnętrzne nie jest turą: serwer zakładający turę-dziecko montuje się tylko w wątku czatu najwyższego poziomu, nigdy na zewnątrz',
+          },
+          rest: { kind: 'na', reason: 'brak powierzchni REST — jedynym wołającym jest tura-rodzic' },
+        },
+        efekty: ['file', 'db', 'ui-notify'],
+        idempotencja: false,
+        opisTresci: 'n/a',
+        kodyBledow: ['AGENT_ERROR', 'STREAM_IN_PROGRESS', 'RESUME_CONFIG_LOCKED', 'NOT_FOUND'],
+        narzedzia: {},
+      },
+      TOOLS,
+    );
+  });
+
+  it('[entity:spawn-child-turn] spawn_child_turn: project, agent-mediated, internal direct rendered by transagent-tools-runtransagent, cli/mcp/rest n/a, file/db/ui-notify, not idempotent, no content input, its eight codes', () => {
+    expectOperationMatchesRecord(
+      {
+        nazwa: 'spawn_child_turn',
+        mediacja: 'agent-mediated',
+        channels: {
+          internal: D,
+          cli: { kind: 'na', reason: 'operacja wewnętrzna — osiągalna wyłącznie przez `run_turn` z wnętrza tury' },
+          mcp: {
+            kind: 'na',
+            reason: 'operacja wewnętrzna; połączenie zewnętrzne nie jest turą, więc nie ma tury, której wątek byłby dzieckiem',
+          },
+          rest: {
+            kind: 'na',
+            reason:
+              'operacja wewnętrzna bez powierzchni REST; wątek-dziecko jest wykluczony z listy wątków, więc z zewnątrz nie ma adresu',
+          },
+        },
+        efekty: ['file', 'db', 'ui-notify'],
+        idempotencja: false,
+        opisTresci: 'n/a',
+        kodyBledow: [
+          'AGENT_ERROR',
+          'TIMEOUT',
+          'IDLE_TIMEOUT',
+          'ABORTED',
+          'INVALID_ARGS',
+          'NOT_FOUND',
+          'STREAM_IN_PROGRESS',
+          'RESUME_CONFIG_LOCKED',
+        ],
+        narzedzia: { internal: ['transagent-tools-runtransagent'] },
+      },
+      TOOLS,
+    );
   });
 });

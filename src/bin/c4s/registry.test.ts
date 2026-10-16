@@ -68,11 +68,14 @@ describe('validateCommandContributions', () => {
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain('names no catalog operation');
 
-    // `agent`/`ask` run an agent turn and `resolve` is a composition — each is
-    // an exception someone wrote down rather than one the check invented.
-    for (const name of ['agent', 'ask', 'resolve']) {
+    // `agent` runs an agent turn and `resolve` is a composition — each is an
+    // exception someone wrote down rather than one the check invented.
+    for (const name of ['agent', 'resolve']) {
       expect(validateCommandContributions([contribution({ name })], isCatalogOperation)).toEqual([]);
     }
+    // 2.1.26 — `ask` is no exception any more: it renders the catalog operation
+    // `ask`, so a contribution named `ask` without the operation is refused.
+    expect(validateCommandContributions([contribution({ name: 'ask' })], isCatalogOperation)).toHaveLength(1);
   });
 
   it('says nothing about the three server-free modes', () => {
@@ -93,5 +96,38 @@ describe('validateCommandContributions', () => {
       isCatalogOperation,
     );
     expect(problems).toHaveLength(3);
+  });
+});
+
+/**
+ * 2.1.26 (M11 L14 `m11dcmds`) — the command surface against its operations.
+ * `PAGE_NOT_FOUND` belongs to the page reads — `get-page`, `get-page-outline`,
+ * and `get-sections` as an item error — and no longer to `list-pages`, which
+ * addresses a root. `get-field-content` renders the generic core operation
+ * `get_field_content` rather than being generated per field.
+ */
+describe('the 2.1.26 command surface', () => {
+  it('[section:m11dcmds] PAGE_NOT_FOUND is declared by get-page, get-page-outline and get-sections, not by list-pages', async () => {
+    const { getPageCommand } = await import('./commands/get-page.js');
+    const { getPageOutlineCommand } = await import('./commands/get-page-outline.js');
+    const { getSectionsCommand } = await import('./commands/get-sections.js');
+    const { listPagesCommand } = await import('./commands/list-pages.js');
+    for (const c of [getPageCommand, getPageOutlineCommand, getSectionsCommand]) {
+      expect(c.errorCodes, c.name).toContain('PAGE_NOT_FOUND');
+    }
+    expect(listPagesCommand.errorCodes).not.toContain('PAGE_NOT_FOUND');
+    // An unknown root stays the page router's ROOT_NOT_FOUND.
+    expect(listPagesCommand.errorCodes).toContain('ROOT_NOT_FOUND');
+  });
+
+  it('[section:m11dcmds] get-field-content renders the generic core operation get_field_content', async () => {
+    const { getFieldContentCommand } = await import('./commands/get-field-content.js');
+    const { CATALOG } = await import('../../server/operations/catalog.js');
+    const { registerCoreOperations } = await import('../../server/operations/core-operations.js');
+    registerCoreOperations();
+    expect(getFieldContentCommand.operation).toBe('get_field_content');
+    expect(getFieldContentCommand.executionMode).toBe('server-delegating');
+    expect(CATALOG.require('get_field_content').channels.cli.kind).toBe('direct');
+    expect(validateCommandContributions([getFieldContentCommand], (n) => CATALOG.has(n))).toEqual([]);
   });
 });

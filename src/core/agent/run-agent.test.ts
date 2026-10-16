@@ -402,3 +402,47 @@ describe('runAgent — 2.1.0: --server gives only the address and requires --pro
     expect(urls[0]).toBe('http://remote.example:7000/api/projects/shared/config');
   });
 });
+
+/**
+ * 2.1.26 (M11 `g24dkd8t` / `m11dcore`) — the fifteenth code of the turn family.
+ * A `--thread` continuation whose session config differs from the thread's
+ * first turn is refused by the peer's run-turn endpoint with HTTP 409
+ * `RESUME_CONFIG_LOCKED`; `runAgent` propagates that code (with its message and
+ * hint), distinct from the other 409, `STREAM_IN_PROGRESS`.
+ */
+describe('runAgent — RESUME_CONFIG_LOCKED from the peer', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('[section:g24dkd8t] a continuation refused with 409 RESUME_CONFIG_LOCKED surfaces that code, not STREAM_IN_PROGRESS or AGENT_ERROR', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(String(url));
+        if (String(url).endsWith('/config')) return { status: 200, ok: true, json: async () => VALID_CONFIG };
+        return {
+          status: 409,
+          ok: false,
+          json: async () => ({
+            error: {
+              code: 'RESUME_CONFIG_LOCKED',
+              message: 'architectureConfig.claude_effort differs from the first turn',
+              hint: "send the first turn's config or start a new thread",
+            },
+          }),
+        };
+      }),
+    );
+
+    const err = await runAgent({ ...BASE, message: 'ping', contextType: 'ask', threadId: 'T-old', effort: 'low' }).catch(
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(AgentError);
+    expect((err as AgentError).code).toBe('RESUME_CONFIG_LOCKED');
+    expect((err as AgentError).message).toContain('claude_effort');
+    expect((err as AgentError).hint).toContain('new thread');
+    // A continuation founds no thread: health-check, then the run-turn call.
+    expect(urls.some((u) => u.endsWith('/threads'))).toBe(false);
+    expect(urls.at(-1)).toContain('/threads/T-old/ask');
+  });
+});

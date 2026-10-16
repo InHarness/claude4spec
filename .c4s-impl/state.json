@@ -1,5 +1,5 @@
 {
-  "iteration": 51,
+  "iteration": 55,
   "units": [
     {
       "id": "u01-version-diff-runtime",
@@ -1850,15 +1850,44 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u10-cli-and-turns/p1-l3-l14",
+          "layers": [
+            "L3",
+            "L14"
+          ],
+          "slugs": [
+            "c4s-tools-ask",
+            "ask",
+            "abort-turn",
+            "create-thread",
+            "delete-thread",
+            "list-threads",
+            "run-turn",
+            "spawn-child-turn",
+            "section:ihakwlks",
+            "section:m11dcmds",
+            "section:m11dcore",
+            "section:g24dkd8t"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "dc2d87695fd5634e87bea9fb9adfd88d38737ebf",
+      "baseCommit": "dc2d87695fd5634e87bea9fb9adfd88d38737ebf",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "only": []
     },
     {
       "id": "u03-plugin-runtime-exports",

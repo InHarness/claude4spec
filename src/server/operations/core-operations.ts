@@ -2149,7 +2149,9 @@ export function registerCoreOperations(): void {
     name: 'ask',
     summary: 'Consult another claude4spec specification synchronously. The peer runs read-only and returns { threadId, answer }.',
     scope: 'workspace',
-    mediation: 'direct',
+    // 2.1.26 — the `ask` record: `agent-mediated`, because the call costs a
+    // turn of the PEER's agent.
+    mediation: 'agent-mediated',
     opClass: 'peer',
     inputSchema: {
       message: z.string(),
@@ -2160,7 +2162,9 @@ export function registerCoreOperations(): void {
       model: z.string().optional(),
       effort: z.enum(['low', 'medium', 'high']).optional(),
     },
-    // Inherits the CLI's 14 codes in three groups rather than defining its own.
+    // The record's fifteen codes (M11 `m11dcore`), in three groups by the moment
+    // the error arises: local validation, the peer endpoint's HTTP status
+    // (2.1.26 adds RESUME_CONFIG_LOCKED, its 409), and the turn body.
     errorCodes: [
       'PROJECT_NOT_FOUND',
       'PROJECT_ID_NOT_FOUND',
@@ -2178,9 +2182,18 @@ export function registerCoreOperations(): void {
       'ABORTED',
       'RESUME_CONFIG_LOCKED',
     ],
-    sideEffects: ['db'],
+    /**
+     * 2.1.26 — `plik` + `db`: the peer writes a `chat_thread` + `chat_message`
+     * and possibly a plan file; its pages and entities stay untouched. A file
+     * effect with no content from the caller — the question is not content — so
+     * `contentInput` is `n/a`.
+     */
+    sideEffects: ['file', 'db'],
+    contentInput: 'n/a',
     idempotent: false,
     channels: fullParity(),
+    // The record's `narzedzia`: `c4s-tools-ask` in both agentic channels.
+    renderings: { internal: ['c4s-tools.ask'], mcp: ['c4s-tools.ask'] },
   });
 
   // ── M13 type-specific operations (per §7 of the release) ──────────────────
@@ -2336,7 +2349,9 @@ export function registerCoreOperations(): void {
           "Id of an existing banka whose session to resume. The call creates a new child thread of the current thread, which inherits the banka's binding: context type, artifact path, plan mode and locked session config. The referenced thread is not modified. Omit to spawn a fresh banka.",
         ),
     },
-    errorCodes: ['AGENT_ERROR', 'STREAM_IN_PROGRESS', 'RESUME_CONFIG_LOCKED'],
+    // 2.1.26 — the `run-turn` record adds NOT_FOUND: a continuation thread
+    // that does not exist.
+    errorCodes: ['AGENT_ERROR', 'STREAM_IN_PROGRESS', 'RESUME_CONFIG_LOCKED', 'NOT_FOUND'],
     sideEffects: ['file', 'db', 'ui-notify'],
     /**
      * A turn writes files, but its caller hands over an instruction, not
@@ -2345,15 +2360,23 @@ export function registerCoreOperations(): void {
      */
     contentInput: 'n/a',
     idempotent: false,
+    /**
+     * 2.1.26 — the four cells and their reasons are the `run-turn` record's
+     * `powody`, verbatim. `mcp` is `n/a`, no longer `via runTransagent`: an
+     * external connection is not a turn, and `runTransagent` renders
+     * `spawn_child_turn` (its `narzedzia`), which `internal` reaches `via`.
+     * The record names no tool of its own, so the row carries no `renderings`.
+     */
     channels: {
-      /**
-       * 0.2.87 (M46): the built-in agent reaches a turn run ONLY by spawning a child
-       * thread. It never commissions a top-level turn from inside its own turn.
-       */
-      internal: via('spawn_child_turn', 'the built-in agent reaches a turn run only by founding a child thread; it never commissions a top-level turn from inside its own turn'),
-      mcp: via('runTransagent', 'same server, mounted only for a top-level context_type=chat thread (parent_thread_id IS NULL) — never for patch, brief or ask, and stripped inside a child turn (recursion depth 1)'),
-      cli: na('no CLI surface — a child turn is spawned from within a turn'),
-      rest: na('no REST surface — the parent turn is the only caller'),
+      internal: via(
+        'spawn_child_turn',
+        'via `spawn_child_turn` — agent wbudowany osiąga bieg tury wyłącznie zakładając wątek podrzędny; tury najwyższego poziomu z wnętrza własnej tury nie zleca',
+      ),
+      cli: na('brak powierzchni CLI — turę-dziecko zakłada się wyłącznie z wnętrza tury'),
+      mcp: na(
+        'połączenie zewnętrzne nie jest turą: serwer zakładający turę-dziecko montuje się tylko w wątku czatu najwyższego poziomu, nigdy na zewnątrz',
+      ),
+      rest: na('brak powierzchni REST — jedynym wołającym jest tura-rodzic'),
     },
   });
 
@@ -2405,28 +2428,115 @@ export function registerCoreOperations(): void {
     sideEffects: ['file', 'db', 'ui-notify'],
     contentInput: 'n/a',
     idempotent: false,
+    // 2.1.26 — the `spawn-child-turn` record's `powody`, verbatim, and its one
+    // rendering (`narzedzia`: `transagent-tools-runtransagent`, internal).
     channels: {
       internal: direct(),
-      cli: na('internal operation — reached only through run_turn from inside a turn'),
-      mcp: na('internal operation — the MCP door is run_turn (runTransagent)'),
-      rest: na('internal operation — no REST surface'),
+      cli: na('operacja wewnętrzna — osiągalna wyłącznie przez `run_turn` z wnętrza tury'),
+      mcp: na('operacja wewnętrzna; połączenie zewnętrzne nie jest turą, więc nie ma tury, której wątek byłby dzieckiem'),
+      rest: na(
+        'operacja wewnętrzna bez powierzchni REST; wątek-dziecko jest wykluczony z listy wątków, więc z zewnątrz nie ma adresu',
+      ),
     },
+    renderings: { internal: ['transagent-tools.runTransagent'] },
   });
 
+  /**
+   * 2.1.26 — the `abort-turn` record. Addressed by the thread's `threadId` OR by
+   * the request id of the running turn (`POST /api/chat/abort/:threadId` and
+   * `POST /api/chat/abort`): by thread, an idle thread is a no-op success and an
+   * unknown one `THREAD_NOT_FOUND`; by request id, a missing id is `VALIDATION`
+   * and an id with nothing running a no-op success. Either way the abort
+   * cascades to child turns and clears the thread's queue, and the answer is a
+   * confirmation — `aborted` plus `clearedTexts` — not the thread's state.
+   *
+   * ASSUMPTION:dev-2612 — the record declares all four cells `direct` with an
+   * empty `narzedzia`, so the agentic `direct` cells point at no rendering (L3
+   * `g8adono9` requires one); M05 `jivl7fxv` records that gap as its own open
+   * item. The row follows the record and names no rendering.
+   */
   CATALOG.register({
     name: 'abort_turn',
     summary:
-      'Abort the running turn of a thread, addressed BY THREAD. Answers a CONFIRMATION of the interruption — { aborted } — not the thread\'s state, which the caller can read if it wants it. Idempotent: aborting a thread with no live turn is a no-op, not an error. An unknown thread is THREAD_NOT_FOUND.',
+      'Abort the running turn of a thread, addressed by threadId or by the running turn\'s request id. Answers a CONFIRMATION — { aborted, clearedTexts } — not the thread\'s state. Idempotent: nothing running is a no-op, not an error; an unknown thread is THREAD_NOT_FOUND, a request-id abort without the id VALIDATION. Cascades to child turns and clears the queue.',
     scope: 'project',
     mediation: 'direct',
     opClass: 'turn',
     inputSchema: {
-      threadId: z.string(),
+      threadId: z.string().optional().describe('The thread whose running turn to abort.'),
+      requestId: z.string().optional().describe('The request id of the running turn, instead of the thread.'),
     },
-    errorCodes: ['THREAD_NOT_FOUND'],
+    errorCodes: ['THREAD_NOT_FOUND', 'VALIDATION'],
     sideEffects: ['db', 'ui-notify'],
     idempotent: true,
     channels: fullParity(),
+  });
+
+  /**
+   * 2.1.26 — the three M05 thread-catalogue rows (`create-thread`,
+   * `delete-thread`, `list-threads`). Each is a human act in the UI rendered
+   * only as its REST route under `/api/threads`; `internal`, `cli` and `mcp` are
+   * `n/a` with the records' shared reason, and no tool renders them. Owners:
+   * `ChatService.createThread` / `deleteThread` / `listThreads` behind
+   * `routes/threads.ts`.
+   */
+  const THREAD_CATALOGUE_REASON = 'katalog wątków jest wewnętrzną sprawą interfejsu';
+  const threadCatalogueChannels = {
+    internal: na(THREAD_CATALOGUE_REASON),
+    cli: na(THREAD_CATALOGUE_REASON),
+    mcp: na(THREAD_CATALOGUE_REASON),
+    rest: direct(),
+  };
+
+  CATALOG.register({
+    name: 'create_thread',
+    summary:
+      'Found a new conversation thread with the agent, at the user\'s request in the UI. A context other than chat or ask is refused with VALIDATION: brief and patch threads are founded with their artifact.',
+    scope: 'project',
+    mediation: 'human-mediated',
+    opClass: 'turn',
+    inputSchema: {
+      title: z.string().optional(),
+      context_type: z.string().optional().describe("'chat' (default) or 'ask'; any other value is VALIDATION."),
+    },
+    errorCodes: ['VALIDATION'],
+    sideEffects: ['db', 'ui-notify'],
+    idempotent: false,
+    channels: threadCatalogueChannels,
+  });
+
+  CATALOG.register({
+    name: 'delete_thread',
+    summary:
+      'Delete the named conversation thread, at the user\'s request in the UI. A repeat hits a thread that no longer exists and is NOT_FOUND. Deleting a thread does not stop a turn running in it — abort_turn does.',
+    scope: 'project',
+    mediation: 'human-mediated',
+    opClass: 'turn',
+    inputSchema: {
+      threadId: z.string(),
+    },
+    errorCodes: ['NOT_FOUND'],
+    sideEffects: ['db', 'ui-notify'],
+    idempotent: true,
+    channels: threadCatalogueChannels,
+  });
+
+  CATALOG.register({
+    name: 'list_threads',
+    summary:
+      'The project\'s threads for the user in the UI, most recently changed first. Without a window the list has 20 rows, so it never returns every thread at once.',
+    scope: 'project',
+    mediation: 'human-mediated',
+    opClass: 'turn',
+    inputSchema: {
+      limit: z.number().int().positive().optional().describe('Default 20.'),
+      offset: z.number().int().nonnegative().optional(),
+    },
+    // The record's `kodyBledow: ["n/d"]` — the operation has no codes of its own.
+    errorCodes: [],
+    sideEffects: ['none'],
+    idempotent: true,
+    channels: threadCatalogueChannels,
   });
 
   // ── M17 Releases ──────────────────────────────────────────────────────────

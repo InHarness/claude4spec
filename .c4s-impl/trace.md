@@ -143,3 +143,15 @@
 - update-skill-file → src/server/operations/core-operations.ts (`update_skill_file` row, rendering `spec-skill-tools.update_skill_file`; owner src/server/services/skill-write.ts); test src/server/mcp/spec-skill-tools.test.ts
 - fork-writing-style → src/server/operations/core-operations.ts (`fork_writing_style` row, rest only; owner src/server/services/style-fork.ts + `POST /api/spec-skills/style-forks`); test src/server/routes/spec-skills.route.test.ts
 - list-exposed-projects → src/server/operations/core-operations.ts (`list_exposed_projects` row, rest only; owner src/server/services/exposed-projects.ts + `GET /api/spec-skills/exposed-projects`); test src/server/routes/spec-skills.route.test.ts
+- c4s-tools-ask → src/server/mcp/c4s-tools.ts (`ask` on c4s-tools: params per the 2.1.26 record, `effort` enum(low, medium, high), no hints); test src/server/mcp/c4s-tools.test.ts
+- ask → src/server/operations/core-operations.ts (`ask` row: workspace, agent-mediated, file+db, 15 codes, renderings `c4s-tools.ask` internal + mcp); test src/server/operations/catalog.test.ts; cli rendering src/bin/c4s/commands/ask.ts (`operation: 'ask'`)
+- abort-turn → src/server/operations/core-operations.ts (`abort_turn` row, threadId | requestId, THREAD_NOT_FOUND + VALIDATION; owner src/server/routes/chat.ts abort routes); test src/server/operations/catalog.test.ts
+- create-thread → src/server/operations/core-operations.ts (`create_thread` row, rest only; owner `POST /api/threads` in src/server/routes/threads.ts); test src/server/operations/catalog.test.ts
+- delete-thread → src/server/operations/core-operations.ts (`delete_thread` row, rest only; owner `ChatService.deleteThread` + `DELETE /api/threads/:id`); test src/server/operations/catalog.test.ts
+- list-threads → src/server/operations/core-operations.ts (`list_threads` row, rest only; owner `GET /api/threads`, default 20); test src/server/operations/catalog.test.ts
+- run-turn → src/server/operations/core-operations.ts (`run_turn` row: internal via spawn_child_turn, cli/mcp/rest n/a, + NOT_FOUND); test src/server/operations/catalog.test.ts
+- spawn-child-turn → src/server/operations/core-operations.ts (`spawn_child_turn` row, renderings `transagent-tools.runTransagent`); test src/server/operations/catalog.test.ts
+- section:ihakwlks → src/bin/c4s/errors.ts (CliErrorCode: core-mapped codes incl. INDEX_STALE / SEARCH_BUDGET_EXCEEDED; AMBIGUOUS_SLUGS / AMBIGUOUS_ENTITY / AMBIGUOUS_PAGE removed, exits 20/21 gone); test src/bin/c4s/errors.test.ts
+- section:m11dcmds → src/bin/c4s/commands/list-pages.ts, get-sections.ts (PAGE_NOT_FOUND on the page reads, not list-pages), get-field-content.ts (renders `get_field_content`); test src/bin/c4s/registry.test.ts
+- section:m11dcore → src/core/agent/http.ts (AgentErrorCode + RESUME_CONFIG_LOCKED), src/bin/c4s/commands/ask.ts (the 15 codes); test src/bin/c4s/errors.test.ts
+- section:g24dkd8t → src/bin/c4s/errors.ts, src/bin/c4s/commands/agent.ts + ask.ts (RESUME_CONFIG_LOCKED, 409 propagated by runAgent); tests src/bin/c4s/errors.test.ts, src/core/agent/run-agent.test.ts

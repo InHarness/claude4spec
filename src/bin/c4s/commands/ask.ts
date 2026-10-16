@@ -73,9 +73,16 @@ export async function runAsk_cli(args: ParsedArgs): Promise<void> {
 // Eksport pod historyczna nazwa — `src/bin/c4s.ts` importuje `runAsk`.
 export { runAsk_cli as runAsk };
 
+/**
+ * 2.1.26 — the `cli` rendering of the catalog operation `ask` (its record's
+ * `cli: direct`), so the contribution names it rather than standing in the
+ * NON_CATALOG_DELEGATING exceptions. Its codes are the operation's fifteen:
+ * the shared resolver/server set plus `INVALID_ARGS` and `RESUME_CONFIG_LOCKED`.
+ */
 export const askCommand: CliCommandContribution = {
   name: 'ask',
+  operation: 'ask',
   executionMode: 'server-delegating',
-  errorCodes: [...SERVER_DELEGATING_CODES, 'INVALID_ARGS'],
+  errorCodes: [...SERVER_DELEGATING_CODES, 'INVALID_ARGS', 'RESUME_CONFIG_LOCKED'],
   handler: runAsk_cli,
 };

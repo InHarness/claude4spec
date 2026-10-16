@@ -162,6 +162,9 @@ export const agentCommand: CliCommandContribution = {
   executionMode: 'server-delegating',
   errorCodes: [
     ...SERVER_DELEGATING_CODES,
+    // 2.1.26 (M11 `g24dkd8t`) — the turn family's 409 for a `--thread`
+    // continuation with a changed session config.
+    'RESUME_CONFIG_LOCKED',
     'INVALID_ARGS',
     'VALIDATION',
     'BRIEF_NOT_FOUND',

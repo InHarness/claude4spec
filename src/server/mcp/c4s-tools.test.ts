@@ -37,6 +37,7 @@ vi.mock('../../core/agent/run-agent.js', () => ({
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { ASK_TOOL_DESCRIPTION, buildC4sToolsServer } from './c4s-tools.js';
+import { AgentError, runAgent } from '../../core/agent/run-agent.js';
 import { toolAdmittedByProfile } from '../operations/profile-gate.js';
 import { CONTEXT_TYPE_REGISTRY } from '../services/chat-context.js';
 import { INTERACTION_RULES } from '../services/interaction-rules.js';
@@ -222,6 +223,63 @@ describe('c4s-tools · ask — contract (2.1.9)', () => {
     expect(res.isError).toBeFalsy();
     const content = res.content as Array<{ type: string; text: string }>;
     expect(JSON.parse(content[0].text)).toEqual({ threadId: 'peer-thread', answer: 'pong' });
+  });
+
+  /**
+   * 2.1.26 — the re-rendered record: each param's description verbatim, `effort`
+   * a closed choice `enum(low, medium, high)`, all four hints empty (the server
+   * declares none), and the `logic`'s error path — a refusal before any peer
+   * call, the caller's workspace by default, an agent error with its own code
+   * and hint, anything else as `AGENT_ERROR`.
+   */
+  it('[entity:c4s-tools-ask] params as the 2.1.26 record lists them, effort a closed choice, no hints, and the error path its logic states', async () => {
+    const client = await connectClient('ws-caller');
+    const { tools } = await client.listTools();
+    const ask = tools.find((t) => t.name === 'ask')!;
+    const props = (ask.inputSchema as { properties: Record<string, { description?: string; type?: string; enum?: string[] }> })
+      .properties;
+    expect(props.message!.description).toBe('Question/prompt for the peer spec.');
+    expect(props.project!.description).toBe("The peer project's `id`, exactly as <workspace_projects/> lists it. Not a path, not a name.");
+    expect(props.workspace!.description).toBe("Workspace override; defaults to the caller's workspace when omitted.");
+    expect(props.server!.description).toBe('Peer server address override (e.g. its publicUrl). Valid only together with `project`.');
+    expect(props.threadId!.description).toBe('Continue an existing peer thread.');
+    expect(props.model!.description).toBe(
+      "Peer turn model alias. Default: opus-5.5. The selectable list is the peer's own, published by its GET /api/chat/config. Resume-immutable. Passed through unvalidated here; a value the peer does not offer fails on the peer side.",
+    );
+    expect(props.model!.type).toBe('string');
+    expect(props.model!.enum).toBeUndefined();
+    expect(props.effort!.description).toBe(
+      'Reasoning level for the peer turn, mapped to architectureConfig.claude_effort. Default: medium. Resume-immutable.',
+    );
+    expect(props.effort!.enum).toEqual(['low', 'medium', 'high']);
+    // Empty hints: the server declares no annotations at all.
+    const hints = (ask.annotations ?? {}) as Record<string, unknown>;
+    for (const h of ['readOnlyHint', 'destructiveHint', 'idempotentHint', 'openWorldHint']) expect(hints[h], h).toBeUndefined();
+
+    // Without `workspace` the caller's is taken; the call is a locked `ask` turn.
+    hoisted.calls.length = 0;
+    await client.callTool({ name: 'ask', arguments: { message: 'ping', project: 'app-spec' } });
+    expect(hoisted.calls[0]).toMatchObject({ workspace: 'ws-caller', contextType: 'ask', output: 'final' });
+
+    // An agent error comes back with its own code and hint.
+    vi.mocked(runAgent).mockImplementationOnce(async () => {
+      throw new AgentError('RESUME_CONFIG_LOCKED', 'session config changed', 'send the first turn\'s config');
+    });
+    const locked = await client.callTool({ name: 'ask', arguments: { message: 'ping', project: 'app-spec', threadId: 't1' } });
+    expect(locked.isError).toBe(true);
+    expect(JSON.parse((locked.content as Array<{ text: string }>)[0].text)).toEqual({
+      error: 'session config changed',
+      code: 'RESUME_CONFIG_LOCKED',
+      hint: "send the first turn's config",
+    });
+
+    // Anything else is AGENT_ERROR.
+    vi.mocked(runAgent).mockImplementationOnce(async () => {
+      throw new Error('socket hang up');
+    });
+    const other = await client.callTool({ name: 'ask', arguments: { message: 'ping', project: 'app-spec' } });
+    expect(other.isError).toBe(true);
+    expect(JSON.parse((other.content as Array<{ text: string }>)[0].text)).toMatchObject({ code: 'AGENT_ERROR', error: 'socket hang up' });
   });
 
   /**

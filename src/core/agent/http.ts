@@ -44,6 +44,10 @@ export type AgentErrorCode =
   | 'PROJECT_BUILD_FAILED'
   | 'NOT_FOUND'
   | 'STREAM_IN_PROGRESS'
+  // 2.1.26 (M11 `m11dcore`) — HTTP 409 from the peer: a `threadId`
+  // continuation with a changed session config (model, reasoning level, file
+  // scope). Propagated verbatim from the server's envelope by `readJson`.
+  | 'RESUME_CONFIG_LOCKED'
   | 'AGENT_UNAVAILABLE'
   | 'AGENT_ERROR'
   | 'TIMEOUT'

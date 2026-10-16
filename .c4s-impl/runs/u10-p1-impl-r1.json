@@ -1,0 +1,25 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.26",
+  "unit": "u10-cli-and-turns",
+  "portion": "u10-cli-and-turns/p1-l3-l14",
+  "claimed": [
+    "c4s-tools-ask",
+    "ask",
+    "abort-turn",
+    "create-thread",
+    "delete-thread",
+    "list-threads",
+    "run-turn",
+    "spawn-child-turn",
+    "section:ihakwlks",
+    "section:m11dcmds",
+    "section:m11dcore",
+    "section:g24dkd8t"
+  ],
+  "deviations": ["dev-2612"],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}
