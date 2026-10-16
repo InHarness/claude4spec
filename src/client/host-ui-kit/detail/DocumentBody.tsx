@@ -5,9 +5,9 @@ import { withStability } from '../stability.js';
  * `DocumentBody` (Panel detalu, `experimental`) — sibling of `FieldGrid`: a
  * freeform single-column "document" layout (large inline-editable title +
  * loose-flowing content) instead of a `label`↔`value` grid. Styled with the
- * token bridge's typography set (`--text-h1`/`--font-heading` for the title,
- * `--text-lede`/`--text-body` for content) so it matches the host's own
- * `.prose-spec` scale. Contributed by M13.
+ * token bridge's typography set — the entity style `heading-1` for the title,
+ * `body` for content (2.1.26: `lede` is no longer a content style here) — so
+ * it matches the host's own `.prose-spec` scale. Contributed by M13.
  */
 export interface DocumentBodyProps {
   title?: { value: string; onChange?(v: string): void; placeholder?: string };

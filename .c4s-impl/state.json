@@ -1,5 +1,5 @@
 {
-  "iteration": 47,
+  "iteration": 51,
   "units": [
     {
       "id": "u01-version-diff-runtime",
@@ -1667,15 +1667,35 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u02-host-ui-kit/p1-l12-l12",
+          "layers": [
+            "L12"
+          ],
+          "slugs": [
+            "ac-allowrestore-false-ukrywa-akcje-rest",
+            "ac-diffview-m34-experimental-renderuje-p",
+            "ac-diffview-z-pustym-propsem-hunks-renderuj",
+            "ac-w-widoku-entityversionhistoryview-wers"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "bd98a2d89ddde42c57066ee1eb32b244e568ad8d",
+      "baseCommit": "bd98a2d89ddde42c57066ee1eb32b244e568ad8d",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "only": []
     },
     {
       "id": "u10-cli-and-turns",
@@ -2391,7 +2411,7 @@
         "u02-host-ui-kit",
         "u10-cli-and-turns"
       ],
-      "startCommit": null
+      "startCommit": "bd98a2d89ddde42c57066ee1eb32b244e568ad8d"
     },
     {
       "n": 3,

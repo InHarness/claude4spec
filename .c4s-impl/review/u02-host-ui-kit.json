@@ -1,0 +1,19 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "u02-host-ui-kit",
+    "base": "bd98a2d89ddde42c57066ee1eb32b244e568ad8d"
+  },
+  "findings": [
+    {
+      "id": "rev-0001",
+      "file": "src/client/host-ui-kit/detail/TagPicker.tsx",
+      "line": 18,
+      "blocking": false,
+      "reason": "The new `TagPickerTag` alias and its own `/** … */` were put between the component's JSDoc block (lines 7-17, \"`TagPicker` (Panel detalu, `experimental`) — multi-select tags…\") and `export interface TagPickerProps`. TypeScript attaches only the nearest JSDoc, so the alias gets the one-line comment, the component description no longer attaches to anything, and an IDE hover on `TagPickerProps` loses it. Move the alias above the component JSDoc, or after the interface.",
+      "portion": "u02-host-ui-kit/p1-l12-l12"
+    }
+  ],
+  "deviations": []
+}

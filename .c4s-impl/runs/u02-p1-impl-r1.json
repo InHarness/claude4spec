@@ -1,0 +1,17 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.26",
+  "unit": "u02-host-ui-kit",
+  "portion": "u02-host-ui-kit/p1-l12-l12",
+  "claimed": [
+    "ac-allowrestore-false-ukrywa-akcje-rest",
+    "ac-diffview-m34-experimental-renderuje-p",
+    "ac-diffview-z-pustym-propsem-hunks-renderuj",
+    "ac-w-widoku-entityversionhistoryview-wers"
+  ],
+  "deviations": [],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

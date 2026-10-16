@@ -274,7 +274,7 @@ export interface VersionHistoryItem {
   label: string;
   createdAt: string;
   author?: string;
-  /** M13/M34: shown per-row in the `timeline` variant (kit doesn't fetch releases — author supplies it). */
+  /** M13/M34: the release this version belongs to — the `timeline` GROUP HEADING ("Unreleased" group on top when absent), not a per-row label. */
   releaseLabel?: string;
   /** M13/M34: who made the change — a colour-coded badge in `timeline`, so agent edits read differently from user edits. */
   changedBy?: 'user' | 'agent' | 'filesystem';
@@ -313,7 +313,7 @@ export interface DiffViewProps {
   /** Pre-stringified "after" text — see `before`. */
   after?: string;
   title?: string;
-  /** `'inline'` (default): one unified column. `'split'`: two columns. Only affects `hunks` rendering. */
+  /** `'inline'` (default): one unified column. `'split'`: two columns. Only affects `hunks` — a `before`/`after` pair always renders as two plain-text panes, without add/del colours. */
   mode?: 'inline' | 'split';
 }
 export declare const DiffView: ComponentType<DiffViewProps>;
@@ -338,8 +338,8 @@ export interface RichTextFieldProps {
 export declare const RichTextField: ComponentType<RichTextFieldProps>;
 
 export interface TagPickerProps {
-  /** The catalog's one tag type — the same `Tag` as `TagFilterBar.tags` and `EntityListRow.tagLookup`. */
-  allTags: Tag[];
+  /** Written inline — NOT the catalog's `Tag` type (2.1.26, `d97023iq`); a `useTags()` item is assignable as is. */
+  allTags: { slug: string; name: string; color?: string | null }[];
   selected: string[];
   onToggle(slug: string): void;
   onCreate?(name: string): void;
@@ -384,8 +384,10 @@ export declare const DocEditor: ComponentType<DocEditorProps>;
  * The catalog's first `binding: 'connected'` block: give it `type` + `slug` and
  * it fetches versions, snapshots and release labels itself, then composes
  * `EntityDetailToolbar` / `VersionHistory` / `SegmentedControlTabs` / `DiffView`.
- * It renders but does not compute — restore goes down the host's existing
- * `versionService` path, never a mutation of its own.
+ * It renders but does not compute — the diff comes from the `lineDiffHunks`
+ * util, and restore goes through the host's `useRestoreVersion` hook, never a
+ * mutation of its own. Versions are grouped by release, "Unreleased" on top;
+ * the version row carries no release pill.
  */
 export interface EntityVersionHistoryViewProps {
   type: string;
@@ -394,7 +396,7 @@ export interface EntityVersionHistoryViewProps {
   allowRestore?: boolean;
   /** Show the "Compare to" selection and the diff panel. Default `true`. */
   allowCompare?: boolean;
-  /** Show the release-name pill (`(unreleased)` when the version has no release). Default `true`. */
+  /** Release GROUP heading: `true` (default) heads a group with the release name, `false` with the anonymous `Release <id>`. No per-row pill either way. */
   showReleasePill?: boolean;
   /** Rendered instead of the default empty state when the entity has no versions. */
   emptyState?: ReactNode;

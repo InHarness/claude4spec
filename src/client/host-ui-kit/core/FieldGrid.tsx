@@ -2,8 +2,9 @@ import type { ReactNode } from 'react';
 import { withStability } from '../stability.js';
 
 /**
- * `FieldGrid` (Core, `stable`; contributed by M13) — layout container for a
- * column of {@link FieldRow}s in a detail panel. Provides consistent vertical
+ * `FieldGrid` (Core, `stable`; contributed by M13) — layout container: a
+ * column of `children` into which the consumer puts its {@link FieldRow}s
+ * (2.1.26 — `FieldGrid` renders no rows itself). Provides consistent vertical
  * rhythm and an optional max width matching the host's detail body.
  *
  * Pure-presentational: children only.

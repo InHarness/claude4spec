@@ -2,8 +2,9 @@ import type { FormEvent, ReactNode } from 'react';
 import { withStability } from '../stability.js';
 
 /**
- * `FormShell` (Overlay/Create, `experimental`) — a form container that composes
- * the existing `FormField` / `InlineEditField` atoms. The presentational
+ * `FormShell` (Overlay/Create, `experimental`) — a form container the consumer
+ * puts its `FormField` / `InlineEditField` fields into as `children`; the shell
+ * itself composes no fields (2.1.26). The presentational
  * extraction of the `<form>` body shared by the host's create dialogs: fields,
  * a form-level error line, and a Save/Cancel actions row.
  *
