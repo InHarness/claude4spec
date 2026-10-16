@@ -1,0 +1,19 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "u17-operation-catalogue",
+    "base": "6e51603da79870aef6ca188a208693f19d590fc5"
+  },
+  "findings": [
+    {
+      "id": "rev-0001",
+      "file": "src/server/operations/core-operations.ts",
+      "line": 2292,
+      "blocking": true,
+      "reason": "`onServer` makes the host core name plugin MCP servers literally (`spreadsheet-tools`, `ac-tools`, `diagram-tools`) for ten plugin rows that have no spec-operation record. The plugin rows already lived here, so this only deepens existing coupling, and `renderings` is metadata that no runtime code reads. But the repo's plugin/core boundary keeps plugin-entity knowledge out of the core. A later move of these rows (or of their renderings) into the plugins' own contributions would remove that coupling. Merge as is, and note it at the gate. [Orchestrator: promoted to blocking — project rule: host core must not know plugin entities/servers (feedback: plugin↔core boundary). Fix: no plugin server names in core-operations.ts; plugin rows without a spec-operation record carry no renderings, or derive the server from the registered plugin at runtime.]",
+      "portion": "u17-operation-catalogue/p1-l3-l3"
+    }
+  ],
+  "deviations": []
+}

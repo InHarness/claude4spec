@@ -58,6 +58,19 @@
 import { z } from 'zod';
 import { PATCH_KINDS } from '../../core/briefs/types.js';
 import { CATALOG, direct, na, via, type ContentInputMode, type OperationDeclaration } from './catalog.js';
+import { OPERATION_RULES } from './operation-rules.js';
+
+/**
+ * 2.1.26 — every row is registered with its record's `reguly` (`rules`), from
+ * {@link OPERATION_RULES}: the citation list is a field of the record like the
+ * others, kept as one table because it is the same handful of identifiers on
+ * every row. A row the table has no entry for (a plugin row the window carries
+ * no record for) is registered without `rules`.
+ */
+function registerRow(op: OperationDeclaration): OperationDeclaration {
+  const rules = op.rules ?? OPERATION_RULES[op.name];
+  return CATALOG.register(rules ? { ...op, rules } : op);
+}
 
 /**
  * The field projection, on the operations that return whole records.
@@ -198,7 +211,7 @@ export function registerCoreOperations(): void {
   // `kodyBledow`, each code once, a channel `n/a` carries the record's `powody`
   // entry, and `renderings` is its `narzedzia`.
 
-  CATALOG.register({
+  registerRow({
     ...coreRead('overview', 'Entry point to a specification: page roots with their properties, active entity types with counts and payload versions, tag count, claude4spec version.', {}, []),
     channels: {
       ...fullParity(),
@@ -212,7 +225,7 @@ export function registerCoreOperations(): void {
     renderings: { mcp: ['c4s-reader.overview'] },
   });
 
-  CATALOG.register({
+  registerRow({
     // The summary deliberately says "activation set" rather than naming the
     // config field: an architecture gate asserts that only the plugin host reads
     // `config.entities`, and it greps string literals too.
@@ -230,7 +243,7 @@ export function registerCoreOperations(): void {
     },
   });
 
-  CATALOG.register({
+  registerRow({
     ...coreRead('list_pages', 'Pages of one root. A page\'s identity is (rootId, relPath), so the root is part of the address, not a filter.', {
       rootId: z.string(),
       ...paging,
@@ -250,7 +263,7 @@ export function registerCoreOperations(): void {
    * outline has no such mode and will not get one, being keyed by ONE page. That
    * route stays M06's own semantics rather than becoming a transport over the core.
    */
-  CATALOG.register({
+  registerRow({
     name: 'get_page_outline',
     summary:
       "One page's headings as a TREE in document order — a table of contents. Keyed by (rootId, path) alone: no `by` discriminator, no anchor variant, no fuzzy `query`, no limit/offset, no depth cap. Each node carries `anchor`, `heading`, `level` and the `size` of its body, with `children` present only when it has any; the envelope carries the file `hash` that `update_sections` takes as `expectedHash`. It emits no content — bodies come from `get_sections`.",
@@ -288,7 +301,7 @@ export function registerCoreOperations(): void {
     renderings: { internal: ['reference-tools.get_page_outline'], mcp: ['c4s-reader.get_page_outline'] },
   });
 
-  CATALOG.register({
+  registerRow({
     ...coreRead('get_sections', 'Content of several sections addressed by anchor, in ONE call. The singular `get_section` was removed without a transition period: N sections cost N model turns, which was not acceptable.', {
       anchors: z.array(z.string()).min(1),
       includeSubtree: z.boolean().optional(),
@@ -306,7 +319,7 @@ export function registerCoreOperations(): void {
       },
       ['PAGE_NOT_FOUND', 'INVALID_ARGUMENT'],
     );
-    CATALOG.register({
+    registerRow({
       ...getPage,
       channels: {
         ...getPage.channels,
@@ -332,7 +345,7 @@ export function registerCoreOperations(): void {
    * a search narrowed to one root included (the freshness gate checks the
    * projection without an artifact key).
    */
-  CATALOG.register({
+  registerRow({
     ...coreRead(
       'search_pages',
       'Search the prose of the pages by phrase (`query`) or regex (`regex`) — cross-root by default; `rootId` only NARROWS. A hit is a SECTION (a page only when the match falls outside every section — then `rootId` + `path` with the match count, no anchor and no line number, readable through `get_page`), carrying `matchCount`; matches are lines. Modes are a cost ladder: `count` (totals), `map` (identity rows, the DEFAULT), `hits` (adds `hunks[]` + `omittedChars`). Enumeration order is `(rootId, path, line_start)` with a declared tie-break, so a full `limit`/`offset` traversal returns each hit exactly once.',
@@ -359,7 +372,7 @@ export function registerCoreOperations(): void {
    * narrows by the type's declared scalar fields exactly as on `list_entities`,
    * which is what the `internal` rendering forwards to the core.
    */
-  CATALOG.register({
+  registerRow({
     ...coreRead(
       'search_entities',
       'Search over one entity type by phrase (`query`) or regex (`regex`) — exactly one of the two. A hit is an ENTITY carrying `matchCount`; matches are occurrences, so an entity matched twice is one row with `matchCount: 2`. Modes are a cost ladder: `count` (totals), `map` (`{slug, title, matchCount}`, the DEFAULT, no entity content at all), `hits` (adds `hunks[]` + `omittedChars`). No mode carries a `score`: order is the contract instead — relevance under `query`, slug ascending under `regex`, both fully tie-broken. A hunk`s `field` is a legal `select` value for `get_entities` and never a content-bearing field, which stay outside both the scan scope and the evidence. Unlike `search_pages`, a pattern may cross a line: matching runs against the whole field value. Returns `searchedFields`, so an empty result is distinguishable from a field that was never searched.',
@@ -377,7 +390,7 @@ export function registerCoreOperations(): void {
     renderings: { internal: ['entity-tools.search_entities'], mcp: ['c4s-reader.search_entities'] },
   });
 
-  CATALOG.register({
+  registerRow({
     ...coreRead('list_entities', 'Entities of one type, paged, narrowed by tags and by the type\'s own declared scalar fields, or only counted (`mode: count`). Rows are `{slug, title}` — discovery answers with keys; ask `get_entities` for content.', {
       type: z.string(),
       tags: z.array(z.string()).optional(),
@@ -394,7 +407,7 @@ export function registerCoreOperations(): void {
    * no `ENTITY_NOT_FOUND` here, and (2.1.26) no `AMBIGUOUS_ENTITY` either: the
    * type beside every slug is the key that does not admit ambiguity.
    */
-  CATALOG.register({
+  registerRow({
     ...coreRead('get_entities', 'Several entities of one type by slug, in ONE call. Width is the caller\'s: see `select`.', {
       type: z.string(),
       slugs: z.array(z.string()).min(1),
@@ -412,15 +425,17 @@ export function registerCoreOperations(): void {
    * read base plus `ENTITY_NOT_FOUND` — each declared once (`error-code-once`):
    * `INVALID_ARGUMENT` used to be listed a second time here.
    */
-  CATALOG.register(
-    coreRead('get_field_content', 'The content of ONE content-bearing field, by (type, slug, field). Such a field is issued by no generic read; this is how it is fetched — on every channel, including the REST layer behind the UI.', {
+  registerRow({
+    ...coreRead('get_field_content', 'The content of ONE content-bearing field, by (type, slug, field). Such a field is issued by no generic read; this is how it is fetched — on every channel, including the REST layer behind the UI.', {
       type: z.string(),
       slug: z.string(),
       field: z.string(),
     }, [...READ_CODES, 'ENTITY_NOT_FOUND']),
-  );
+    // `narzedzia`: internal → `entity-tools-get-field-content`, mcp → `c4s-reader-get-field-content`.
+    renderings: { internal: ['entity-tools.get_field_content'], mcp: ['c4s-reader.get_field_content'] },
+  });
 
-  CATALOG.register({
+  registerRow({
     ...coreRead('list_tags', 'The tag registry, paged, optionally with usage counts.', {
       withCounts: z.boolean().optional(),
       minCount: z.number().int().nonnegative().optional(),
@@ -430,7 +445,7 @@ export function registerCoreOperations(): void {
     renderings: { internal: ['reference-tools.list_tags'], mcp: ['c4s-reader.list_tags'] },
   });
 
-  CATALOG.register({
+  registerRow({
     ...coreRead('find_references', 'Who points at this entity, section or page. `includeTagMatches` additionally folds in dynamic `<tagged_list/>` matches, so one call answers both halves of "what breaks if I rename this".', {
       /**
        * Optional in the schema although every call needs it: a call WITHOUT
@@ -459,7 +474,7 @@ export function registerCoreOperations(): void {
   });
 
   /** Ungated (no freshness check), so no `INDEX_STALE`; an unknown `rule` is the one refusal. */
-  CATALOG.register({
+  registerRow({
     ...coreRead('check_consistency', 'M19 consistency rules over the specification. Read-only — the report fixes nothing. `summary` always carries FULL counts, so a truncated findings list stays visibly truncated.', {
       severity: z.enum(['error', 'warning']).optional(),
       rule: z.union([z.string(), z.number()]).optional(),
@@ -472,7 +487,7 @@ export function registerCoreOperations(): void {
    * 2.1.26 — ambiguity is not an error here, it is the answer: a phrase several
    * entities match comes back as a ranked candidate list with a `score` each.
    */
-  CATALOG.register({
+  registerRow({
     ...coreRead('resolve_identity', 'Candidates for a name/slug fragment ACROSS every active type, ranked with a score each — a cross-type facade over the per-type indexes, so the caller need not know the type before asking. An ambiguous phrase is answered with the candidates, never refused.', {
       query: z.string(),
       types: z.array(z.string()).optional(),
@@ -483,7 +498,7 @@ export function registerCoreOperations(): void {
 
   // ── M31 Workspace ─────────────────────────────────────────────────────────
 
-  CATALOG.register({
+  registerRow({
     name: 'list_projects',
     summary: 'Projects of the workspace: { workspace, projects: [{ id, name?, description? }] } — never a directory. A conscious navigational exception in a catalog otherwise about specification content — without it a project-scoped catalog is unreachable from outside.',
     scope: 'workspace',
@@ -519,7 +534,7 @@ export function registerCoreOperations(): void {
    *
    * Semantics in `services/skill-operations.ts`; every channel only wraps it.
    */
-  CATALOG.register({
+  registerRow({
     name: 'list_skills',
     summary: 'Skills of the project registry as { slug, description, origin, project? } rows (`origin` = the `source` of the winning entry; `project` only for origin project-exposed), plus the active writing style ({ slug, title } or null) reported beside them, never as a row. `contextType` narrows to the resolver set of that conversation type; omitted, it addresses the whole registry.',
     scope: 'project',
@@ -550,7 +565,7 @@ export function registerCoreOperations(): void {
     renderings: { mcp: ['c4s-reader.list_skills'] },
   });
 
-  CATALOG.register({
+  registerRow({
     name: 'load_skill_file',
     summary: 'Open a skill of the project registry (SKILL.md in the form its source serves it, the entry\'s `source`, `hash` from a writable source, and the manifest of the package files — cut to the source\'s manifest limit if it declares one) or read one package subfile by (slug, file). Serves the precedence winner of the whole registry, not a context-filtered subset; never a disk path. A slug the registry does not resolve is refused with its reason.',
     scope: 'project',
@@ -597,7 +612,7 @@ export function registerCoreOperations(): void {
    * as read-only, pointing at `ask` on the provider (`SkillWriteDeps.readOnlyReason`,
    * wired in the project context).
    */
-  CATALOG.register({
+  registerRow({
     name: 'update_skill_file',
     summary:
       'Write one file of a skill package of the current project, addressed by (slug, file) with `file` defaulting to SKILL.md, through the project\'s `skills` root. Exactly one of `content` (the whole new file) and `textEdits` (literal substitutions). `expectedHash` is REQUIRED: the file\'s current hash, or "" to create a file that must not exist yet; any other mismatch is PAGE_CONFLICT. A SKILL.md left without a non-empty `description` in its frontmatter is refused. Answers { slug, file, hash }.',
@@ -637,7 +652,7 @@ export function registerCoreOperations(): void {
    * `INVALID_ARGUMENT` also covers a style that does not come from a plugin.
    * `config.writingStyle` is never changed.
    */
-  CATALOG.register({
+  registerRow({
     name: 'fork_writing_style',
     summary:
       'Copy the package of a writing style that comes from a plugin — any such style, named by its slug, not only the active one — into a package of the same slug in the project\'s `skills` root. The slug is not compared with `config.writingStyle`, which stays unchanged. The copy records its origin as `forkedFrom: plugin:<slug>@<version>` in its SKILL.md frontmatter, and its own `version` is capped at the highest one the skill registry supports. An existing package of that slug is refused, never overwritten. Answers { slug, path }.',
@@ -675,7 +690,7 @@ export function registerCoreOperations(): void {
    * is one answer, no paging: it is short by nature, and an incomplete one would
    * be useless for choosing attachments.
    */
-  CATALOG.register({
+  registerRow({
     name: 'list_exposed_projects',
     summary:
       'Projects of the workspace exposed as a skill, seen from the current project: one row per skill name with the provider\'s description and project id, whether the current project attaches it (`uses`), and the attachment status — ok, unavailable (no project exposes the name) or ambiguous (several do). The current project has no row.',
@@ -697,7 +712,7 @@ export function registerCoreOperations(): void {
 
   // ── M23 Patches ───────────────────────────────────────────────────────────
 
-  CATALOG.register({
+  registerRow({
     name: 'create_patch',
     summary: 'File a patch against a brief: which brief, what class of deviation, what drifted. Takes the INTENT, not a finished file — the server writes it.',
     scope: 'project',
@@ -744,7 +759,7 @@ export function registerCoreOperations(): void {
    * `opClass: 'read'` (not `brief`): the patch profile does not admit `brief`,
    * and a `brief` row here would make the gate drop the thread's own tool.
    */
-  CATALOG.register({
+  registerRow({
     name: 'get_patch',
     summary: 'Read a patch: path, frontmatter (patch_kind, applied, brief), markdown content and sha256 hash.',
     scope: 'project',
@@ -784,7 +799,7 @@ export function registerCoreOperations(): void {
    * and notifies no client). No concurrency guard: one boolean flipped in one
    * direction converges to the same value.
    */
-  CATALOG.register({
+  registerRow({
     name: 'mark_patch_applied',
     summary:
       'Declare a patch applied to the specification. One-way from the agent channel — `applied: false` is INVALID_ARGUMENT; only the user unsets it. Idempotent: a repeat writes nothing.',
@@ -834,7 +849,7 @@ export function registerCoreOperations(): void {
    * Class `read`, as `list_briefs` / `list_plans`: `chat` admits it, and the
    * operation never mutates.
    */
-  CATALOG.register({
+  registerRow({
     name: 'list_patches',
     summary:
       "The project's patches — path, title, brief, kind, applied flag and creation time, never content — optionally narrowed to one brief or to the applied state.",
@@ -920,7 +935,7 @@ export function registerCoreOperations(): void {
     renderings: { internal: [`entity-tools.${name}`], mcp: [`entity-tools.${name}`] },
   });
 
-  CATALOG.register(
+  registerRow(
     entityWrite(
       'create_entities',
       'Create several entities of one type. Per-item, non-transactional: a duplicate slug fails that item with SLUG_CONFLICT and leaves the rest applied; an item whose write raised warnings reports them beside its slug.',
@@ -937,7 +952,7 @@ export function registerCoreOperations(): void {
    * takes. (This row named the list `items`, a second spelling of the input the
    * tool has never accepted.)
    */
-  CATALOG.register(
+  registerRow(
     entityWrite(
       'update_entities',
       'Update several entities of one type, partial by field (each changed field gets its full value). Idempotent per element; an absent slug fails that item with ENTITY_NOT_FOUND; an item whose write raised warnings reports them beside its slug.',
@@ -968,7 +983,7 @@ export function registerCoreOperations(): void {
    * there is nothing left to find), does not block the delete, and rewrites
    * nothing — the soft FK is the author's to repair in prose.
    */
-  CATALOG.register(
+  registerRow(
     entityWrite(
       'delete_entities',
       'Delete several entities of one type. Per-item, non-transactional: an absent slug fails that item with ENTITY_NOT_FOUND and leaves the rest applied, so a repeat is not a no-op. Each deleted item answers with `brokenReferences` — the pages that referenced it, counted before the delete; references neither block the delete nor get rewritten.',
@@ -998,7 +1013,7 @@ export function registerCoreOperations(): void {
    * restored snapshot is written whole (`literal`).
    */
   const RESTORE_NA_REASON = 'akt user-initiated, bo cofa cudzą pracę; przegląd klasyfikacji otwarty';
-  CATALOG.register({
+  registerRow({
     name: 'restore_entity_version',
     summary: 'Restore an entity to an earlier version, on an explicit decision of the user in the UI. Restoring a delete tombstone deletes the entity; a deleted entity cannot be restored.',
     scope: 'project',
@@ -1037,7 +1052,7 @@ export function registerCoreOperations(): void {
     idempotent: boolean,
     errorCodes: string[],
   ) =>
-    CATALOG.register({
+    registerRow({
       name,
       summary,
       scope: 'project',
@@ -1162,7 +1177,7 @@ export function registerCoreOperations(): void {
       .describe('Omitted means EXACTLY ONE. "all" substitutes every hit without declaring a count.'),
   });
 
-  CATALOG.register(
+  registerRow(
     pageWrite(
       'create_page',
       'Create a page that does not exist yet. Refuses PAGE_EXISTS rather than overwriting — the distinction update_page deliberately does not make.',
@@ -1190,7 +1205,7 @@ export function registerCoreOperations(): void {
    * `PUT` for the literal mode, `PATCH` for the differential one. See the
    * `ChannelCell` doc in `catalog.ts` for the conditions that permits.
    */
-  CATALOG.register(
+  registerRow(
     pageWrite(
       'update_page',
       'Write a page — create or replace: EITHER in full (`body` plus optional `frontmatter`, which replaces the page\'s frontmatter wholesale) OR differentially (`textEdits` — literal find/replaceWith substitutions over the whole file, frontmatter included). Exactly one of the two per call; both or neither is INVALID_ARGUMENT. The literal mode creates a page missing from a known root rather than answering NOT_FOUND (M02 `gj2vdsjm`) — which is how the editor saves a new page. The differential mode is NOT idempotent — replaying it answers FIND_NOT_FOUND. Both modes carry M06\'s ANCHOR_LOSS guard, overridable with `dropAnchors`; the returned `hash` is taken after the in-band anchor injection.',
@@ -1220,7 +1235,7 @@ export function registerCoreOperations(): void {
    * of the rendering, not of the operation. A page that is not there is a
    * success with `deleted: false`, never a refusal, hence `idempotent: true`.
    */
-  CATALOG.register(
+  registerRow(
     pageWrite(
       'delete_page',
       'Delete a page. The content stays recoverable through file_version — the delete authors a tombstone rather than dropping the history.',
@@ -1251,7 +1266,7 @@ export function registerCoreOperations(): void {
    * `rest` renders it as `POST /api/pages/:rootId/move`, with both paths in the
    * body; the route's own comment carries why the URL cannot hold them.
    */
-  CATALOG.register(
+  registerRow(
     pageWrite(
       'move_page',
       'Move a page to another path within the SAME root — one call covers both renaming a file and moving it to a different directory. The content is never read or re-serialized, so the hash is unchanged; citations of the old path are rewritten afterwards, each as its own write. NOT idempotent: a replay answers NOT_FOUND.',
@@ -1264,7 +1279,7 @@ export function registerCoreOperations(): void {
     ),
   );
 
-  CATALOG.register(
+  registerRow(
     pageWrite(
       'update_sections',
       'Edit one or more sections of ONE page, addressed by anchor. A convenience over update_page — read-modify-write of the whole page with the same primitive — not a separate store, and not a structural gap in the model. Six actions: `replace`/`append`/`insert_after` take `content` (2.1.7: `replace` and `append` act on the section\'s OWN body — below the heading, before its first subsection — and refuse a heading at or above the section\'s level), `delete` takes neither, `edit` (0.2.37) takes `textEdits` — literal substitutions inside the addressed subtree — and `rename` (0.2.100) takes `heading`, rewriting the heading line alone with its level and its anchor kept. TRANSACTIONAL: the single exception to the partial-success rule, because every edit rewrites the same file. One anchor may carry several actions; elements whose claims on the page (as it was before the write) collide refuse the batch, and `results[]` has one row per element.',
@@ -1346,7 +1361,7 @@ export function registerCoreOperations(): void {
   };
 
   // M08 — `GET /api/todos/counts`: `{ byPath, total }`, keyed `${rootId}:${relPath}`.
-  CATALOG.register(
+  registerRow(
     restOnlyRead(
       'get_todo_counts',
       'Count the TODO markers per root and per page, for the page-tree badges.',
@@ -1358,7 +1373,7 @@ export function registerCoreOperations(): void {
 
   // M08 — `GET /api/todos`: every marker of the project at once, each with the
   // anchor of the section it stands in — a write address for M06's operations.
-  CATALOG.register(
+  registerRow(
     restOnlyRead(
       'list_todos',
       'List every TODO marker of the specification pages, each with the address of the section it stands in — all at once, no window, no response budget.',
@@ -1370,7 +1385,7 @@ export function registerCoreOperations(): void {
 
   // M14 — `GET /api/page-links/counts`: the counters alone, cheap on purpose
   // (badge, invalidation on `pageLinks:changed`); the list is `list_page_links`.
-  CATALOG.register(
+  registerRow(
     restOnlyRead(
       'get_page_link_counts',
       'Counts of broken links, unresolved mentions and all links between pages — the counters alone, never the list.',
@@ -1382,7 +1397,7 @@ export function registerCoreOperations(): void {
 
   // M14 — `GET /api/page-links`: the whole project's link maps at once, keys
   // composite `${rootId}:${relPath}`; never page content.
-  CATALOG.register(
+  registerRow(
     restOnlyRead(
       'list_page_links',
       'The link map between pages with reverse links and unresolved mentions, for the whole project at once — no window, no response budget, never page content.',
@@ -1398,7 +1413,7 @@ export function registerCoreOperations(): void {
    * an unknown source root is skipped, not refused. The agentic channels and the
    * CLI reach the same need through `search_pages` with `pathInclude`.
    */
-  CATALOG.register({
+  registerRow({
     ...coreRead(
       'search_link_targets',
       'Suggest link targets for the path prefix typed after `@` in the editor — the top N candidates (10 by default, at most 50), never the whole map.',
@@ -1423,7 +1438,7 @@ export function registerCoreOperations(): void {
    * hidden`) is ROOT_NOT_FOUND with no fallback to `pages`; an empty path, one
    * that leaves the root's `dir`, and a missing file are refused without a code.
    */
-  CATALOG.register(
+  registerRow(
     restOnlyRead(
       'get_static_file',
       'The raw bytes of a file inside a root with a facade, so the UI can render it in an iframe.',
@@ -1449,7 +1464,7 @@ export function registerCoreOperations(): void {
    * Same deliberate exception to "from outside you pass intent, not shape" as
    * `create_brief`. A taken slug is a refusal, not a suffixed variant.
    */
-  CATALOG.register({
+  registerRow({
     name: 'create_plan',
     summary:
       'Create a plan file together with its carrier thread (top-level, `context_type = chat`, `plan_path` set) from a `title` and the full `content`. Never runs a turn. A slug that is taken is PLAN_ALREADY_EXISTS; empty content is INVALID_ARGUMENT. Answers `{ planPath, hash, threads }`.',
@@ -1494,7 +1509,7 @@ export function registerCoreOperations(): void {
   /** Both mounts of `plan-tools` render the operation under its own name. */
   const planRenderings = (tool: string) => ({ internal: [`plan-tools.${tool}`], mcp: [`plan-tools.${tool}`] });
 
-  CATALOG.register({
+  registerRow({
     name: 'get_plan',
     summary:
       "Read a plan: content, frontmatter, version number and hash, optionally through a 1-based inclusive line window (`range`). A thread with no plan pinned reads `plan: null`; an unknown `path` is PLAN_NOT_FOUND. A plan over the response budget comes back `truncated: true` with a `truncationHint` pointing at `range`.",
@@ -1544,7 +1559,7 @@ export function registerCoreOperations(): void {
    * is the operation's — the `applied` filter and the window; the external
    * rendering's `search` is a shape of that channel.
    */
-  CATALOG.register({
+  registerRow({
     name: 'list_plans',
     summary:
       "The project's plans — path, title and dates, never content (`get_plan` reads that) — to pick one to read, change or hand to a child thread. Filter with `applied`.",
@@ -1570,7 +1585,7 @@ export function registerCoreOperations(): void {
     renderings: { internal: ['transagent-tools.list_plans'], mcp: ['plan-tools.list_plans'] },
   });
 
-  CATALOG.register({
+  registerRow({
     name: 'update_plan',
     summary:
       "Edit a plan through EXACTLY ONE of three input variants: `content` (the whole plan, literally), `textEdits` (literal substitutions counted over the whole plan), or `edits` (a transactional section batch addressed by anchor, with the same six actions and the same collision rules as update_sections). More than one variant, or none, is INVALID_ARGUMENT. The first update in a thread with no plan requires `title` and creates the file; the slug is slugify(title) and immutable thereafter.",
@@ -1670,7 +1685,7 @@ export function registerCoreOperations(): void {
   });
 
   /** 2.1.13 — the plan's version axis (`file_version`, rootId `plans`): metadata only, oldest first. */
-  CATALOG.register({
+  registerRow({
     name: 'list_plan_versions',
     summary:
       "A plan's version history from `file_version` — metadata without content, oldest first (offset 0 is version 1), windowed by `limit` / `offset`. A thread with no plan pinned lists nothing; an unknown `path` is PLAN_NOT_FOUND.",
@@ -1696,7 +1711,7 @@ export function registerCoreOperations(): void {
     renderings: planRenderings('list_plan_versions'),
   });
 
-  CATALOG.register({
+  registerRow({
     name: 'get_plan_version',
     summary:
       'One version snapshot of a plan, with its content, addressed by `(path, version)`. An unknown `path` is PLAN_NOT_FOUND; a version off the plan\'s axis is INVALID_ARGUMENT.',
@@ -1732,7 +1747,7 @@ export function registerCoreOperations(): void {
    * changes: every profile that already mounts `plan-tools` gets this tool too.
    * That is the intent — the posture gate deliberately does not cover it.
    */
-  CATALOG.register({
+  registerRow({
     name: 'mark_plan_applied',
     summary:
       "Declare a plan applied to the specification. One-way from the agent channel — `applied: false` is INVALID_ARGUMENT; only the user unsets it. Idempotent: a repeat at the same value writes nothing.",
@@ -1789,7 +1804,7 @@ export function registerCoreOperations(): void {
    * editable draft. No tool renders it, so no profile's reach changes.
    */
   const EXECUTE_PLAN_NA = 'akt user-initiated; przegląd tej klasyfikacji jest otwarty';
-  CATALOG.register({
+  registerRow({
     name: 'execute_plan',
     summary:
       'Open a new thread over a plan, with the plan pinned to it; the execution prompt lands in the composer as an editable draft. User-initiated. An unknown plan is PLAN_NOT_FOUND.',
@@ -1837,7 +1852,7 @@ export function registerCoreOperations(): void {
    * `internal` reason is the record's `powody.internal`, verbatim. The service
    * answers the path, the hash and both ends of the window as resolved.
    */
-  CATALOG.register({
+  registerRow({
     name: 'create_brief',
     summary:
       'Mint a brief — with a ready-made body (`content`, stored verbatim), or empty for a release window. Never runs an agent turn. Answers `{ briefPath, hash, fromReleaseName, toReleaseName }`.',
@@ -1932,7 +1947,7 @@ export function registerCoreOperations(): void {
    * (`transagent-tools-list-briefs`, internal); `mcp` stays `direct` with none,
    * as the record declares it (an open item of M21 `01ytpznn`).
    */
-  CATALOG.register({
+  registerRow({
     name: 'list_briefs',
     summary: 'Briefs of the project on the release axis (newest cycle first, unknown releases last), optionally narrowed to implemented or pending.',
     scope: 'project',
@@ -1957,7 +1972,7 @@ export function registerCoreOperations(): void {
     renderings: { internal: ['transagent-tools.list_briefs'] },
   });
 
-  CATALOG.register({
+  registerRow({
     name: 'get_brief',
     summary: 'Read a brief: frontmatter and body.',
     scope: 'project',
@@ -1998,7 +2013,7 @@ export function registerCoreOperations(): void {
     renderings: { internal: ['brief-tools.get_brief'], mcp: ['brief-tools.get_brief'] },
   });
 
-  CATALOG.register({
+  registerRow({
     name: 'update_brief',
     summary:
       'Write a brief body through EXACTLY ONE of two input shapes — `action` + `content` (replace / append / insert_after_section) or `textEdits` (literal substitutions counted over the whole body) — guarded by a REQUIRED `expectedHash`. Answers `{ newHash, replacements?, warning? }` — `warning` when an `insert_after_section` target is missing (appended at the end) or ambiguous (after the first match).',
@@ -2083,7 +2098,7 @@ export function registerCoreOperations(): void {
    * see), no rendering is named, and `BRIEF_INVALID_FRONTMATTER` joins the codes
    * (the flag write reads the brief first).
    */
-  CATALOG.register({
+  registerRow({
     name: 'mark_brief_implemented',
     summary: "Set a brief's `implemented` frontmatter flag — the only mutable field of a brief. Answers the brief's path, frontmatter and hash.",
     scope: 'project',
@@ -2110,7 +2125,7 @@ export function registerCoreOperations(): void {
     },
   });
 
-  CATALOG.register({
+  registerRow({
     name: 'list_brief_versions',
     summary: "A brief's version history (metadata only), oldest first.",
     scope: 'project',
@@ -2136,7 +2151,7 @@ export function registerCoreOperations(): void {
     renderings: { internal: ['brief-tools.list_brief_versions'], mcp: ['brief-tools.list_brief_versions'] },
   });
 
-  CATALOG.register({
+  registerRow({
     name: 'get_brief_version',
     summary: 'One version snapshot of a brief, with its content.',
     scope: 'project',
@@ -2163,7 +2178,7 @@ export function registerCoreOperations(): void {
     renderings: { internal: ['brief-tools.get_brief_version'], mcp: ['brief-tools.get_brief_version'] },
   });
 
-  CATALOG.register({
+  registerRow({
     name: 'ask',
     summary: 'Consult another claude4spec specification synchronously. The peer runs read-only and returns { threadId, answer }.',
     scope: 'workspace',
@@ -2233,7 +2248,7 @@ export function registerCoreOperations(): void {
     inputSchema: z.ZodRawShape = {},
     overrides: Partial<Pick<OperationDeclaration, 'contentInput' | 'channels' | 'renderings'>> = {},
   ) =>
-    CATALOG.register({
+    registerRow({
       name,
       summary,
       scope: 'project',
@@ -2266,6 +2281,14 @@ export function registerCoreOperations(): void {
       },
       ...overrides,
     });
+
+  /**
+   * 2.1.26 — a plugin row the window carries no `spec-operation` record for
+   * names no `renderings`: its agentic `direct` cells are rendered by the
+   * `${type}-tools` server of the plugin that contributes it, which the plugin
+   * host mounts at runtime. The host core does not know plugin servers by name
+   * (plugin ↔ core boundary), so the row stays silent about which one.
+   */
 
   // spreadsheet — sheet by slug, cells 1-based inclusive (r1,c1)-(r2,c2).
   typeOp('get_overview', 'Shape of a spreadsheet: sheets, dimensions, populated ranges.', 'read', true);
@@ -2338,7 +2361,7 @@ export function registerCoreOperations(): void {
    * turn on a live session is refused with `STREAM_IN_PROGRESS` rather than
    * queued. Batch spawn is unsupported.
    */
-  CATALOG.register({
+  registerRow({
     name: 'run_turn',
     summary:
       'Delegate a unit of work to a hidden CHILD turn of this specification, in a chosen contextType. Returns { threadId, summary } — a concise summary, never the transcript. At most one child in flight at a time; the call blocks until the child finishes, and further calls in the same turn are allowed once the previous one has returned.',
@@ -2419,7 +2442,7 @@ export function registerCoreOperations(): void {
    * `tool_result.isError`), explicit-addressing (a continuation names its `threadId`,
    * never "the last child") — have no catalog field; they are upheld by the dispatcher.
    */
-  CATALOG.register({
+  registerRow({
     name: 'spawn_child_turn',
     summary:
       'Found a new hidden child thread of this specification on every call and run one turn in it: sets parent_thread_id and spawned_by_tool_use_id; a spawn binds the per-contextType artifact addressed by payload (patchPath required for patch, planPath optional for chat, a new brief for brief) and plan_mode, a continuation (threadId) copies the referenced banka\'s binding, plan_mode, config snapshot and session and resumes it. At most one child in flight at a time; sequential calls in one parent turn are allowed. Returns only { threadId } of the new row and a summary.',
@@ -2473,7 +2496,7 @@ export function registerCoreOperations(): void {
    * `g8adono9` requires one); M05 `jivl7fxv` records that gap as its own open
    * item. The row follows the record and names no rendering.
    */
-  CATALOG.register({
+  registerRow({
     name: 'abort_turn',
     summary:
       'Abort the running turn of a thread, addressed by threadId or by the running turn\'s request id. Answers a CONFIRMATION — { aborted, clearedTexts } — not the thread\'s state. Idempotent: nothing running is a no-op, not an error; an unknown thread is THREAD_NOT_FOUND, a request-id abort without the id VALIDATION. Cascades to child turns and clears the queue.',
@@ -2506,7 +2529,7 @@ export function registerCoreOperations(): void {
     rest: direct(),
   };
 
-  CATALOG.register({
+  registerRow({
     name: 'create_thread',
     summary:
       'Found a new conversation thread with the agent, at the user\'s request in the UI. A context other than chat or ask is refused with VALIDATION: brief and patch threads are founded with their artifact.',
@@ -2523,7 +2546,7 @@ export function registerCoreOperations(): void {
     channels: threadCatalogueChannels,
   });
 
-  CATALOG.register({
+  registerRow({
     name: 'delete_thread',
     summary:
       'Delete the named conversation thread, at the user\'s request in the UI. A repeat hits a thread that no longer exists and is NOT_FOUND. Deleting a thread does not stop a turn running in it — abort_turn does.',
@@ -2539,7 +2562,7 @@ export function registerCoreOperations(): void {
     channels: threadCatalogueChannels,
   });
 
-  CATALOG.register({
+  registerRow({
     name: 'list_threads',
     summary:
       'The project\'s threads for the user in the UI, most recently changed first. Without a window the list has 20 rows, so it never returns every thread at once.',
@@ -2603,7 +2626,7 @@ export function registerCoreOperations(): void {
     sideEffects: Array<'none' | 'file' | 'db' | 'ui-notify'>,
     extraCodes: readonly string[] = [],
   ): void => {
-    CATALOG.register({
+    registerRow({
       name,
       summary,
       scope: 'project',
@@ -2742,7 +2765,7 @@ export function registerCoreOperations(): void {
    * route's partial scopes (`entity` / `page` without a target) also answer
    * VALIDATION, which the record does not list. Declared as the record says.
    */
-  CATALOG.register({
+  registerRow({
     name: 'release_restore',
     summary:
       "Restore the specification from the snapshot of the named release, on the user's decision. A repeated restore of the same release yields the same state.",
@@ -2782,7 +2805,7 @@ export function registerCoreOperations(): void {
   const PUSH_USER_INITIATED =
     'akt user-initiated: push wyprowadza bajty specyfikacji poza maszynę pod tożsamością zalogowanego użytkownika; przegląd klasyfikacji otwarty';
 
-  CATALOG.register({
+  registerRow({
     name: 'push_release',
     summary:
       "Send the named release's bundle to the remote project on behalf of the signed-in user. Blocking: it answers with the finished transport, and every call that reaches the transport appends an audit row.",
@@ -2803,7 +2826,7 @@ export function registerCoreOperations(): void {
     },
   });
 
-  CATALOG.register({
+  registerRow({
     name: 'list_release_pushes',
     summary:
       "The local audit of release pushes, newest first — all of it, or one release's history by name (an unknown name is an empty list). No paging.",
@@ -2822,7 +2845,7 @@ export function registerCoreOperations(): void {
     },
   });
 
-  CATALOG.register({
+  registerRow({
     name: 'get_release_push',
     summary: 'One entry of the local release-push audit, by its id.',
     scope: 'project',

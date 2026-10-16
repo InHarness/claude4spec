@@ -1,0 +1,55 @@
+{
+  "role": "verifier",
+  "scope": {
+    "kind": "unit",
+    "id": "u17-operation-catalogue"
+  },
+  "release": "2.1.26",
+  "rows": [
+    {
+      "slug": "ac-kazdy-identyfikator-zacytowany-w-polu",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/operations/catalog.test.ts:1928 — asserts `expect([...RULE_IDS]).toEqual(M43_RULE_IDS)` (18 ids = the backticked identifiers of the M43 ke1jxhqh subsections jpbgmnju..ijjgl17b at 2.1.26, checked), every cited id `vocabulary.has(element.id)` over CATALOG.list(), each row's rules `toEqual(record.reguly)` (OPERATION_RULES in src/server/operations/operation-rules.ts compared mechanically against all 78 records at 2.1.26: 0 diffs), field-closed ids never cited, and register() throws /not an identifier of the M43 rules vocabulary/ (src/server/operations/rules.ts rulesProblem, catalog.ts:299). Reads through as passing; typecheck green."
+    },
+    {
+      "slug": "ac-kazdy-wiersz-katalogu-operacji-ma-nie",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/operations/catalog.test.ts:1955 — for all 78 records `expect(rules!.length).toBeGreaterThan(0)`, `n/d` only as `[{ id: 'n/d' }]`; register() throws /'rules' is empty/ and /'n\\/d' stands alone/, accepts a lone n/d and an exclusion element (rules.ts rulesProblem). All 78 rows get rules via registerRow (core-operations.ts:70-73; every registration goes through it). Passing by reading; typecheck green."
+    },
+    {
+      "slug": "ac-pole-reguly-wiersza-katalogu-nie-zawi",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/operations/catalog.test.ts:1975 — every element's keys within {id, exclusion}, `expect(element.id).toMatch(/^(?:[a-z]+(?:-[a-z]+)*|n\\/d)$/)`, exclusion non-empty and <=300, exclusion count equals the records' (20, verified against spec); register() rejects a sentence as id (OperationCatalogError) and an extra `note` key (/only 'id' and 'exclusion'/). Passing by reading; typecheck green."
+    },
+    {
+      "slug": "ac-wiersz-katalogu-operacji-o-wartosci-d",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/operations/catalog.test.ts:2002 — for every row, internal/mcp `direct` cells name renderings, non-direct cells name none, every rendering `toolExists` on its server source (statically re-checked for all 82 mcp-tool slugs of the records' narzedzia plus the 10 plugin rows' spreadsheet-tools/ac-tools/diagram-tools tools: 0 misses), and `op.renderings` equals each record's `narzedzia` resolved via CATALOGUE_TOOL_RECORDS (all 82 slugs resolve). The only direct cells without a tool are asserted to be exactly abort_turn.internal/.mcp, create_brief.mcp, list_briefs.mcp, mark_brief_implemented.mcp — confirmed against the 2.1.26 records: those records themselves declare `direct` with no narzedzia entry (spec-side gap, non-blocking ASSUMPTION:dev-2612 / dev-2614 filed). Passing by reading; typecheck green."
+    },
+    {
+      "slug": "goal:u17-operation-catalogue",
+      "level": 2,
+      "status": "covered",
+      "evidence": "(1) Catalogue = 78 records: tests/helpers/spec-operation-records.ts compared field by field (nazwa, zasieg, mediacja, 4 channels, channel powody, efekty, idempotencja, opisTresci, reguly, kodyBledow, narzedzia) against `release-diff --from initial --to 2.1.26` spec-operation records: 78/78, 0 diffs; src/server/operations/catalog.test.ts:1882 (every record has a row, the other 10 rows are plugin rows) and src/server/operations/catalog.test.ts:1894 (rows answer for the record). (2) Agentic direct -> existing tool: src/server/operations/catalog.test.ts:2002, get_field_content renderings added (core-operations.ts; src/server/operations/catalog.test.ts:347), plugin rows via onServer; the 5 cells without a tool are the records' own gap (dev-2612/dev-2614, non-blocking). (3) rules carry only ids/exclusions: rules.ts, operation-rules.ts, catalog.ts:299, src/server/operations/catalog.test.ts:1928/1955/1975. (4) opisTresci allowed values: src/server/operations/catalog.test.ts:1912 (allowed set literal/diff/literal+diff/n/a plus record mapping; spec has n/d 66, dosłowny 7, obydwa 5). (5) Removal of the 19 deleted c4s-plugin-app-spec / spec-operation-type criteria (op: delete in the 2.1.25->2.1.26 ac change read): `git grep -F` of all 19 slugs over the repo (excluding .c4s-impl) returns nothing — no test, skiplist or code asserts them; no c4s-plugin-app-spec package under plugins/; the only remaining mention is a manifest-name fixture in src/client/runtime/boot-plugins.project-manifest.test.ts:169 that asserts none of the removed criteria."
+    },
+    {
+      "slug": "regression",
+      "level": 2,
+      "status": "covered",
+      "evidence": "No tests run (env-runner only). Readers of the changed code checked: no runtime reader of `renderings`/`rules` outside catalog.ts/core-operations.ts; the M39 test that lost the [ac:] tag (src/server/operations/catalog.test.ts:203) still holds; brief/patch/plan/release-tools entity tests' `renderings` expectations are untouched by this diff (only get_field_content and the 10 plugin rows gained renderings, nothing asserts their absence); the rules check runs last in register(), so the decl() negative cases throw the asserted messages. stubs.json has no stub for u17. npm run typecheck exit 0."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "tsc --noEmit across root and all plugin workspaces: no errors (tests not run locally — env-runner only)"
+  }
+}

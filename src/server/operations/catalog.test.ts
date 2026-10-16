@@ -9,9 +9,12 @@ import {
   OperationCatalogError,
   direct,
   na,
+  type ChannelCell,
   type ChannelName,
+  type ContentInputMode,
   type OperationDeclaration,
 } from './catalog.js';
+import { FIELD_CLOSED_RULES, RULE_IDS, type RuleCitation, type RuleId } from './rules.js';
 import { registerCoreOperations } from './core-operations.js';
 import { KNOWN_OPERATION_CLASSES, PROFILES, mcpServerSetForProfile, profileAdmits } from './profiles.js';
 import { pluginServerNamesFor, toolAdmittedByProfile, withheldTools } from './profile-gate.js';
@@ -24,6 +27,7 @@ import { READ_TOOL_RECORDS } from '../../../tests/helpers/read-tool-records.js';
 import { WRITE_TOOL_RECORDS } from '../../../tests/helpers/write-tool-records.js';
 import { expectOperationMatchesRecord } from '../../../tests/helpers/operation-records.js';
 import { TAG_TOOL_RECORDS } from '../../../tests/helpers/tag-tool-records.js';
+import { CATALOGUE_TOOL_RECORDS, SPEC_OPERATION_RECORDS } from '../../../tests/helpers/spec-operation-records.js';
 import { createEndpointToolsServer } from '../../../plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/mcp.js';
 import { createPageToolsServer, type PageToolsDeps } from '../mcp/page-tools.js';
 import type { LinkDtoDeps } from '../../../plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/link-dto.js';
@@ -196,7 +200,7 @@ describe('the seeded catalog', () => {
    * (`describe_entity_type` renders `describe_types` internally), and the alias
    * is written down here rather than inferred.
    */
-  it('[ac:ac-wiersz-katalogu-operacji-o-wartosci-d] every internal/mcp `direct` cell of an M39 row has a declared rendering', () => {
+  it('every internal/mcp `direct` cell of an M39 row has a tool registered on its server (the whole-catalogue check is in `the catalogue against the window\'s 78 records`)', () => {
     const mcpDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../mcp');
     const declared = (file: string): Set<string> =>
       new Set(
@@ -339,6 +343,8 @@ describe('the seeded catalog', () => {
     // internal → entity-tools-get-field-content; mcp → c4s-reader-get-field-content. One each.
     expect(toolsIn('entity-tools.ts').filter((n) => n === 'get_field_content')).toHaveLength(1);
     expect(toolsIn('c4s-reader.ts').filter((n) => n === 'get_field_content')).toHaveLength(1);
+    // …and the row points at exactly those two renderings.
+    expect(op.renderings).toEqual({ internal: ['entity-tools.get_field_content'], mcp: ['c4s-reader.get_field_content'] });
   });
 
   it('every declared opClass is one the profile registry knows', () => {
@@ -1774,5 +1780,273 @@ describe('the M18 tag write rows as their 2.1.26 records declare them', () => {
     expect(op.errorCodes).not.toContain('INACTIVE_TYPE');
     expect(op.errorCodes).not.toContain('ENTITY_NOT_FOUND');
     expect(keys('untag_entity')).toEqual(['slug', 'tags', 'type']);
+  });
+});
+
+/**
+ * 2.1.26 — the whole code catalogue against the window's 78 `spec-operation`
+ * records (`tests/helpers/spec-operation-records.ts`), not a sample: every record
+ * has its row and every row but the plugin ones the window has no record for has
+ * a record; each row answers for the record's fields; and the four L3/M43
+ * criteria on `reguly` and `narzedzia` hold for every row at once.
+ */
+describe("the catalogue against the window's 78 records", () => {
+  const RECORD_CHANNEL: Record<ChannelCell['kind'], string> = { direct: 'direct', via: 'via', na: 'n/a' };
+  const EFFECT: Record<string, string> = { brak: 'none', plik: 'file', db: 'db', 'ui-notify': 'ui-notify' };
+  const IDEMPOTENCE: Record<string, boolean | 'conditional'> = { tak: true, nie: false, warunkowa: 'conditional' };
+  const CONTENT_INPUT: Record<string, ContentInputMode> = { dosłowny: 'literal', różnicowy: 'diff', obydwa: 'literal+diff' };
+  /** The rows the window carries no record for: plugin-contributed, declared for the profile gate. */
+  const PLUGIN_ROWS_WITHOUT_RECORD = [
+    'analyze_ac_against_entities',
+    'delete_column',
+    'delete_row',
+    'get_overview',
+    'get_range',
+    'insert_column',
+    'insert_row',
+    'set_cell',
+    'set_range',
+    'validate_diagram',
+  ];
+  /** The identifiers of M43's domain section (`ke1jxhqh`), as the page declares them. */
+  const M43_RULE_IDS = [
+    'echo-free',
+    'guard-declared',
+    'destructive-declared',
+    'batch-required',
+    'rename-heading-only',
+    'error-code-once',
+    'explicit-addressing',
+    'operation-only-write',
+    'diff-mode-declared',
+    'literal-match',
+    'match-count-declared',
+    'edit-set-not-procedure',
+    'replacements-returned',
+    'diff-field-names',
+    'claimed-spans-disjoint',
+    'insertion-order',
+    'delete-exclusive',
+    'one-action-per-anchor',
+  ];
+  /**
+   * The agentic `direct` cells whose own record names no tool in that channel —
+   * the record breaks L3 `g8adono9` (`direct-without-tool`) and the row follows
+   * the record. ASSUMPTION:dev-2612 (abort_turn) and ASSUMPTION:dev-2614 (the
+   * three brief operations' `mcp`): the specification fixes these records.
+   */
+  const RECORD_DIRECT_WITHOUT_TOOL = [
+    'abort_turn.internal',
+    'abort_turn.mcp',
+    'create_brief.mcp',
+    'list_briefs.mcp',
+    'mark_brief_implemented.mcp',
+  ];
+
+  /** Source files whose tool registrations make up each server a rendering may name. */
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+  const SERVER_SOURCES: Record<string, string[]> = {
+    'c4s-reader': ['src/server/mcp/c4s-reader.ts', 'src/server/mcp/skill-tools.ts'],
+    'reference-tools': ['src/server/mcp/reference-tools.ts'],
+    'entity-tools': ['src/server/mcp/entity-tools.ts'],
+    'page-tools': ['src/server/mcp/page-tools.ts'],
+    'brief-tools': ['src/server/mcp/brief-tools.ts'],
+    'plan-tools': ['src/server/mcp/plan-tools.ts'],
+    'patch-tools': ['src/server/mcp/patch-tools.ts'],
+    'transagent-tools': ['src/server/mcp/transagent-tools.ts'],
+    'c4s-tools': ['src/server/mcp/c4s-tools.ts'],
+    'skill-tools': ['src/server/mcp/skill-tools.ts'],
+    'spec-skill-tools': ['src/server/mcp/spec-skill-tools.ts'],
+    'workspace-tools': ['src/server/mcp/workspace-tools.ts'],
+    'release-tools': ['src/server/mcp/release-tools/index.ts'],
+    'endpoint-tools': ['plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/mcp.ts'],
+    'spreadsheet-tools': ['plugins/c4s-plugin-spreadsheets/src/entity/spreadsheet/mcp.ts'],
+    'ac-tools': ['plugins/c4s-plugin-ac/src/entity/ac/backend/mcp.ts'],
+    'diagram-tools': ['src/server/entities/diagram/mcp-server.ts'],
+  };
+  /** The plugin `${type}-tools` servers whose tools the record-less plugin rows name. */
+  const PLUGIN_TYPE_SERVERS = ['endpoint-tools', 'spreadsheet-tools', 'ac-tools', 'diagram-tools'];
+  const sourceOf = (server: string): string | undefined => {
+    const files = SERVER_SOURCES[server];
+    return files?.map((f) => fs.readFileSync(path.join(repoRoot, f), 'utf-8')).join('\n');
+  };
+  /** A tool exists when its server's source names the server and registers the tool by name. */
+  const toolExists = (rendering: string): boolean => {
+    const [server, tool] = rendering.split('.') as [string, string];
+    const src = sourceOf(server);
+    if (!src || !src.includes(`'${server}'`)) return false;
+    return new RegExp(`\\(\\s*'${tool}'`).test(src);
+  };
+
+  const byName = new Map(SPEC_OPERATION_RECORDS.map((r) => [r.nazwa, r]));
+
+  it('every one of the 78 records has its row, and every other row is a plugin row the window has no record for', () => {
+    expect(SPEC_OPERATION_RECORDS).toHaveLength(78);
+    expect(byName.size).toBe(78);
+    for (const record of SPEC_OPERATION_RECORDS) expect(CATALOG.has(record.nazwa), record.nazwa).toBe(true);
+    const withoutRecord = CATALOG.list()
+      .filter((op) => !byName.has(op.name))
+      .map((op) => op.name)
+      .sort();
+    expect(withoutRecord).toEqual(PLUGIN_ROWS_WITHOUT_RECORD);
+    for (const name of withoutRecord) expect(CATALOG.require(name).contributedBy, name).toBe('plugin');
+  });
+
+  it('every row answers for its record: scope, mediation, the four channel values (a via / n/a with the record\'s reason), effects, idempotence, error codes once each', () => {
+    for (const record of SPEC_OPERATION_RECORDS) {
+      const op = CATALOG.require(record.nazwa);
+      expect(op.scope, record.nazwa).toBe(record.zasieg);
+      expect(op.mediation, record.nazwa).toBe(record.mediacja);
+      for (const channel of CHANNELS) {
+        const cell = op.channels[channel];
+        expect(RECORD_CHANNEL[cell.kind], `${record.nazwa}.${channel}`).toBe(record[channel]);
+        if (cell.kind !== 'direct') expect(cell.reason, `${record.nazwa}.${channel} reason`).toBe(record.powody[channel]);
+      }
+      expect([...op.sideEffects].sort(), record.nazwa).toEqual(record.efekty.map((e) => EFFECT[e]).sort());
+      expect(op.idempotent, record.nazwa).toBe(IDEMPOTENCE[record.idempotencja]);
+      expect(new Set(op.errorCodes).size, record.nazwa).toBe(op.errorCodes.length);
+      const codes = record.kodyBledow.length === 1 && record.kodyBledow[0] === 'n/d' ? [] : record.kodyBledow;
+      expect([...op.errorCodes].sort(), record.nazwa).toEqual([...codes].sort());
+    }
+  });
+
+  it('the content description of every row is an allowed value: a record\'s `dosłowny` / `różnicowy` / `obydwa` is literal / diff / literal+diff, and `n/d` is `n/a` — or no declaration where the row writes no file', () => {
+    const allowed = new Set<ContentInputMode | undefined>(['literal', 'diff', 'literal+diff', 'n/a']);
+    for (const op of CATALOG.list()) {
+      if (op.contentInput !== undefined) expect(allowed.has(op.contentInput), op.name).toBe(true);
+      if (op.sideEffects.includes('file')) expect(op.contentInput, op.name).toBeDefined();
+    }
+    for (const record of SPEC_OPERATION_RECORDS) {
+      const op = CATALOG.require(record.nazwa);
+      if (record.opisTresci === 'n/d') {
+        if (op.sideEffects.includes('file')) expect(op.contentInput, record.nazwa).toBe('n/a');
+        else expect([undefined, 'n/a'], record.nazwa).toContain(op.contentInput);
+      } else {
+        expect(op.contentInput, record.nazwa).toBe(CONTENT_INPUT[record.opisTresci]);
+      }
+    }
+  });
+
+  it('[ac:ac-kazdy-identyfikator-zacytowany-w-polu] every identifier cited in the `rules` of any row occurs in the M43 domain section — and the row cites what its record cites', () => {
+    expect([...RULE_IDS]).toEqual(M43_RULE_IDS);
+    const vocabulary = new Set(M43_RULE_IDS);
+    const cited = new Set<string>();
+    for (const op of CATALOG.list()) {
+      for (const element of op.rules ?? []) {
+        if (element.id === 'n/d') continue;
+        cited.add(element.id);
+        expect(vocabulary.has(element.id), `${op.name}: ${element.id}`).toBe(true);
+      }
+    }
+    // Every record's `reguly` is carried over identifier for identifier.
+    for (const record of SPEC_OPERATION_RECORDS) {
+      const op = CATALOG.require(record.nazwa);
+      expect(
+        (op.rules ?? []).map((e) => ({ id: e.id, ...(e.exclusion !== undefined ? { wykluczenie: e.exclusion } : {}) })),
+        record.nazwa,
+      ).toEqual(record.reguly);
+    }
+    // The three rules a record field closes are never cited.
+    for (const id of FIELD_CLOSED_RULES) expect(cited.has(id), id).toBe(false);
+    // The registry refuses an identifier outside the vocabulary.
+    expect(() => new OperationCatalog().register(decl({ rules: [{ id: 'made-up-rule' as RuleId }] }))).toThrow(
+      /not an identifier of the M43 rules vocabulary/,
+    );
+  });
+
+  it('[ac:ac-kazdy-wiersz-katalogu-operacji-ma-nie] every row with a record has a non-empty `rules` list — identifiers, elements with an exclusion, or one `n/d`', () => {
+    for (const record of SPEC_OPERATION_RECORDS) {
+      const rules = CATALOG.require(record.nazwa).rules;
+      expect(rules, record.nazwa).toBeDefined();
+      expect(rules!.length, record.nazwa).toBeGreaterThan(0);
+      const nd = rules!.filter((e) => e.id === 'n/d');
+      // `n/d` is the one element of a row nothing binds, never beside another.
+      if (nd.length > 0) expect(rules, record.nazwa).toEqual([{ id: 'n/d' }]);
+    }
+    const cat = new OperationCatalog();
+    expect(() => cat.register(decl({ name: 'get_empty', rules: [] }))).toThrow(/'rules' is empty/);
+    expect(() => cat.register(decl({ name: 'get_mixed', rules: [{ id: 'n/d' }, { id: 'echo-free' }] }))).toThrow(
+      /'n\/d' stands alone/,
+    );
+    expect(cat.register(decl({ name: 'get_unbound', rules: [{ id: 'n/d' }] })).rules).toEqual([{ id: 'n/d' }]);
+    expect(
+      cat.register(decl({ name: 'get_excluded', rules: [{ id: 'echo-free', exclusion: 'nie mutuje' }] })).rules,
+    ).toEqual([{ id: 'echo-free', exclusion: 'nie mutuje' }]);
+  });
+
+  it('[ac:ac-pole-reguly-wiersza-katalogu-nie-zawi] no `rules` element of any row is a descriptive sentence: each carries a rule identifier and, at most, the reason of its exclusion', () => {
+    const IDENTIFIER = /^(?:[a-z]+(?:-[a-z]+)*|n\/d)$/;
+    let exclusions = 0;
+    for (const op of CATALOG.list()) {
+      for (const element of op.rules ?? []) {
+        expect(Object.keys(element).every((k) => k === 'id' || k === 'exclusion'), `${op.name}: ${JSON.stringify(element)}`).toBe(true);
+        expect(element.id, op.name).toMatch(IDENTIFIER);
+        if (element.exclusion !== undefined) {
+          exclusions += 1;
+          expect(element.exclusion.trim().length, `${op.name}: ${element.id}`).toBeGreaterThan(0);
+          expect(element.exclusion.length, `${op.name}: ${element.id}`).toBeLessThanOrEqual(300);
+        }
+      }
+    }
+    // As many exclusions as the window's records carry (twenty), none dropped and none added.
+    expect(exclusions).toBe(SPEC_OPERATION_RECORDS.flatMap((r) => r.reguly).filter((e) => e.wykluczenie !== undefined).length);
+    const cat = new OperationCatalog();
+    expect(() =>
+      cat.register(
+        decl({ rules: [{ id: 'Wyjście nie powtarza treści przekazanej w parametrze.' as RuleId }] }),
+      ),
+    ).toThrow(OperationCatalogError);
+    expect(() =>
+      cat.register(decl({ name: 'get_extra', rules: [{ id: 'echo-free', note: 'zwraca adres skutku' } as unknown as RuleCitation] })),
+    ).toThrow(/only 'id' and 'exclusion'/);
+  });
+
+  it('[ac:ac-wiersz-katalogu-operacji-o-wartosci-d] every row with `direct` in `internal` or `mcp` points in `renderings` at a tool rendering it in that channel, as its record\'s `narzedzia` names it', () => {
+    const withoutTool: string[] = [];
+    const recordless = new Set(PLUGIN_ROWS_WITHOUT_RECORD);
+    for (const op of CATALOG.list()) {
+      if (recordless.has(op.name)) {
+        // A plugin row the window has no record for: the host core names no
+        // plugin server, so the row carries no `renderings`. Its `direct` cells
+        // are rendered by the contributing plugin's own `${type}-tools` server,
+        // mounted at runtime — which must register a tool under the row's name.
+        expect(op.contributedBy, op.name).toBe('plugin');
+        expect(op.renderings, op.name).toBeUndefined();
+        const servers = PLUGIN_TYPE_SERVERS.filter((server) => toolExists(`${server}.${op.name}`));
+        expect(servers.length, `${op.name}: no plugin type server registers it`).toBe(1);
+        continue;
+      }
+      for (const channel of ['internal', 'mcp'] as const) {
+        const named = op.renderings?.[channel] ?? [];
+        if (op.channels[channel].kind === 'direct') {
+          if (named.length === 0) withoutTool.push(`${op.name}.${channel}`);
+        } else {
+          expect(named, `${op.name}.${channel} is not direct but names a rendering`).toEqual([]);
+        }
+        // Every named rendering is a tool its server registers.
+        for (const rendering of named) expect(toolExists(rendering), rendering).toBe(true);
+      }
+    }
+    // The only direct cells without a tool are the records' own (see RECORD_DIRECT_WITHOUT_TOOL).
+    expect(withoutTool.sort()).toEqual(RECORD_DIRECT_WITHOUT_TOOL);
+    for (const cell of RECORD_DIRECT_WITHOUT_TOOL) {
+      const [name, channel] = cell.split('.') as [string, 'internal' | 'mcp'];
+      const record = byName.get(name)!;
+      expect(record[channel], cell).toBe('direct');
+      expect(record.narzedzia[channel], cell).toBeUndefined();
+    }
+    // `renderings` is exactly the record's `narzedzia`, each slug resolved to `<server>.<tool>`.
+    for (const record of SPEC_OPERATION_RECORDS) {
+      const op = CATALOG.require(record.nazwa);
+      const expected: Partial<Record<'internal' | 'mcp', string[]>> = {};
+      for (const [channel, slugs] of Object.entries(record.narzedzia) as Array<['internal' | 'mcp', string[]]>) {
+        expected[channel] = slugs.map((slug) => {
+          const tool = CATALOGUE_TOOL_RECORDS[slug];
+          expect(tool, `mcp-tool record ${slug}`).toBeDefined();
+          return `${tool!.server}.${tool!.name}`;
+        });
+      }
+      expect(op.renderings ?? {}, record.nazwa).toEqual(expected);
+    }
   });
 });

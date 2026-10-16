@@ -1,0 +1,17 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.26",
+  "unit": "u17-operation-catalogue",
+  "portion": "u17-operation-catalogue/p1-l3-l3",
+  "claimed": [
+    "ac-kazdy-identyfikator-zacytowany-w-polu",
+    "ac-kazdy-wiersz-katalogu-operacji-ma-nie",
+    "ac-pole-reguly-wiersza-katalogu-nie-zawi",
+    "ac-wiersz-katalogu-operacji-o-wartosci-d"
+  ],
+  "deviations": ["dev-2614"],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

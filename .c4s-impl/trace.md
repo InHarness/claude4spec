@@ -175,3 +175,7 @@
 - section:4cli19xs → src/server/mcp/c4s-reader.ts (`get_field_content`), src/server/mcp/surface.ts (type servers in the same composition); test src/server/mcp/surface.test.ts
 - section:ecawzsbr → src/server/operations/profiles.ts (`MCP_CHANNEL_PROFILES` closed table, `mcpRenderingProfile`: patch → chat), src/server/mcp/http-mount.ts (`profileFromRequest` against the closed table), src/server/mcp/surface.ts; test src/server/mcp/surface.test.ts
 - section:b52znwjr → src/server/mcp/surface.ts, src/server/operations/profile-gate.ts (hard gate), src/server/mcp/c4s-reader.ts (read-only core); test src/server/mcp/surface.test.ts
+- ac-kazdy-identyfikator-zacytowany-w-polu → src/server/operations/rules.ts (`RULE_IDS`, `rulesProblem`), src/server/operations/operation-rules.ts, src/server/operations/catalog.ts (`rules`, validated in `register`); test src/server/operations/catalog.test.ts
+- ac-kazdy-wiersz-katalogu-operacji-ma-nie → src/server/operations/operation-rules.ts (78 non-empty lists), src/server/operations/rules.ts (empty / lone `n/d`); test src/server/operations/catalog.test.ts
+- ac-pole-reguly-wiersza-katalogu-nie-zawi → src/server/operations/rules.ts (`RuleCitation { id, exclusion? }`, extra keys refused); test src/server/operations/catalog.test.ts
+- ac-wiersz-katalogu-operacji-o-wartosci-d → src/server/operations/core-operations.ts (`renderings` on every agentic `direct` row: get_field_content, plugin rows via `onServer`); test src/server/operations/catalog.test.ts

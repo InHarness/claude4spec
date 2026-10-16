@@ -60,6 +60,7 @@
  */
 
 import type { ZodRawShape } from 'zod';
+import { rulesProblem, type RuleCitation } from './rules.js';
 
 /** The four rendering channels. A declaration must answer for all of them. */
 export type ChannelName = 'internal' | 'cli' | 'mcp' | 'rest';
@@ -217,6 +218,16 @@ export interface OperationDeclaration {
    */
   readonly renderings?: Readonly<Partial<Record<'internal' | 'mcp', readonly string[]>>>;
   /**
+   * 2.1.26 — the record's `reguly`: the shared M43 rules that bind this
+   * operation, CITED by identifier (`echo-free`, `error-code-once`, …), an
+   * excluded one with its reason, or exactly one `{ id: 'n/d' }` when none of the
+   * rules no field closes binds it. Never a sentence describing a rule — that is
+   * a second source of truth (M43 `hdqhc8xp`). Validated by `register()` against
+   * the closed vocabulary in `rules.ts`. Every row with a `spec-operation` record
+   * carries it; a plugin row the window has no record for does not.
+   */
+  readonly rules?: readonly RuleCitation[];
+  /**
    * Who contributes the implementation behind this name.
    *
    * `'host'` (the default) — this repo owns the operation. `'plugin'` — the name
@@ -284,6 +295,10 @@ export class OperationCatalog {
       throw new OperationCatalogError(
         `operation '${op.name}' writes a file but does not declare 'contentInput' — say 'literal', 'diff', 'literal+diff' or 'n/a'`,
       );
+    }
+    if (op.rules !== undefined) {
+      const problem = rulesProblem(op.rules);
+      if (problem) throw new OperationCatalogError(`operation '${op.name}': ${problem}`);
     }
     this.byName.set(op.name, op);
     return op;
