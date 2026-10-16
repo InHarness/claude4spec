@@ -1,5 +1,5 @@
 {
-  "iteration": 78,
+  "iteration": 81,
   "units": [
     {
       "id": "u01-version-diff-runtime",
@@ -1217,7 +1217,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "u13-plan-tools/p1-l3",
@@ -1248,27 +1248,24 @@
             "mark-plan-applied",
             "update-plan"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [
             "system:discovery-core-architecture"
           ],
-          "only": [
-            {
-              "slug": "system:discovery-core-architecture"
-            }
-          ]
+          "only": []
         }
       ],
-      "startCommit": "b98c0a6b7c0f248cc981b75aa31a5d0039c114d8",
-      "baseCommit": "b98c0a6b7c0f248cc981b75aa31a5d0039c114d8",
+      "startCommit": "d8f428bbb3bf236bff241a26687d3f6405d08a56",
+      "baseCommit": "d8f428bbb3bf236bff241a26687d3f6405d08a56",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": [],
-      "only": []
+      "only": [],
+      "lastUncovered": 0
     },
     {
       "id": "u14-patch-listing",

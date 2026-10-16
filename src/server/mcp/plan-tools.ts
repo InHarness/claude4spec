@@ -58,10 +58,6 @@ const UPDATE_PLAN_DESCRIPTION = [
   "Use in plan_mode or when asked for a plan. It cannot change `applied` — use `mark_plan_applied`.",
 ].join('\n');
 
-/** The `edits` parameter's description, both records' text verbatim. */
-const UPDATE_PLAN_EDITS_DESCRIPTION =
-  "VARIANT 3: a transactional section batch. Mutually exclusive with content and textEdits. replace — swap the section's OWN BODY; deeper headings in `content` become its first children, a heading at or above its level is INVALID_ARGUMENT. COLLISIONS — each element CLAIMS the plan as it was BEFORE the write: `delete` the subtree with its anchor line, `replace` the own body, `edit` each matched fragment, `rename` the anchor and heading lines; `append` and `insert_after` claim only a POINT. INVALID_ARGUMENT when two claims share a character or a point lies strictly INSIDE a claim (an edge is fine), for two elements of the SAME action on one anchor, and for ANY element addressing an anchor inside a deleted subtree. Inserts sharing a position land innermost first — `append` before `insert_after` of the same section, a descendant's before its ancestor's. `results[]` carries one row PER ELEMENT; read them by position.";
-
 export function buildPlanToolsServer(
   ctx: PlanToolsContext,
   projectId: string | null = null,
@@ -273,7 +269,12 @@ export function buildPlanToolsServer(
         )
         .min(1)
         .optional()
-        .describe(UPDATE_PLAN_EDITS_DESCRIPTION),
+        // The `edits` parameter's description, both records' text verbatim. Inlined, not a
+        // named constant: discovery-core's transport guard reads `.describe(IDENT)` as a
+        // call into the serialization engine (see decisions.md, u13 r2).
+        .describe(
+          "VARIANT 3: a transactional section batch. Mutually exclusive with content and textEdits. replace — swap the section's OWN BODY; deeper headings in `content` become its first children, a heading at or above its level is INVALID_ARGUMENT. COLLISIONS — each element CLAIMS the plan as it was BEFORE the write: `delete` the subtree with its anchor line, `replace` the own body, `edit` each matched fragment, `rename` the anchor and heading lines; `append` and `insert_after` claim only a POINT. INVALID_ARGUMENT when two claims share a character or a point lies strictly INSIDE a claim (an edge is fine), for two elements of the SAME action on one anchor, and for ANY element addressing an anchor inside a deleted subtree. Inserts sharing a position land innermost first — `append` before `insert_after` of the same section, a descendant's before its ancestor's. `results[]` carries one row PER ELEMENT; read them by position.",
+        ),
       title: z.string().optional(),
       /**
        * Optional in the SCHEMA, required by the OPERATION on every call but the
