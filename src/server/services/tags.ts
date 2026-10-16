@@ -89,9 +89,15 @@ export class TagsService {
     return this.toTag(row, this.countsByTagSlug(slug));
   }
 
+  /**
+   * The slug is DERIVED from `name`, never supplied (2.1.26 `create_tag`): an
+   * explicit `slug` on the input is not part of the contract and is not read.
+   * A name that yields no slug is the caller's `VALIDATION`, not an `INTERNAL`.
+   */
   create(input: TagCreateInput): Tag {
-    const slug = tagSlug(input.name);
-    if (!slug) throw new Error('tag name produces empty slug');
+    const name = typeof input?.name === 'string' ? input.name.trim() : '';
+    const slug = name ? tagSlug(name) : '';
+    if (!slug) throw new DomainError('VALIDATION', 'tag name produces empty slug', 'pass a non-empty `name`');
     assertSlugAvailable(slug);
     return this.insert(slug, input, input.color ?? this.pickColor(slug));
   }

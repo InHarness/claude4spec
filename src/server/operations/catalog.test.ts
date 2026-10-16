@@ -23,6 +23,7 @@ import { buildEntityTools, type EntityToolsDeps } from '../mcp/entity-tools.js';
 import { READ_TOOL_RECORDS } from '../../../tests/helpers/read-tool-records.js';
 import { WRITE_TOOL_RECORDS } from '../../../tests/helpers/write-tool-records.js';
 import { expectOperationMatchesRecord } from '../../../tests/helpers/operation-records.js';
+import { TAG_TOOL_RECORDS } from '../../../tests/helpers/tag-tool-records.js';
 import { createEndpointToolsServer } from '../../../plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/mcp.js';
 import { createPageToolsServer, type PageToolsDeps } from '../mcp/page-tools.js';
 import type { LinkDtoDeps } from '../../../plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/link-dto.js';
@@ -1711,5 +1712,67 @@ describe('the turn and thread rows as their 2.1.26 records declare them', () => 
       },
       TOOLS,
     );
+  });
+});
+
+/**
+ * 2.1.26 — the five M18 tag write rows as their `spec-operation` records declare
+ * them: project, direct, all four channels direct, file/db/ui-notify, no content
+ * input, the record's own `kodyBledow` (no dedicated `INACTIVE_TYPE` /
+ * `ENTITY_NOT_FOUND` any more), and the namesake `reference-tools` tool as the
+ * rendering in both agentic channels. The behaviour (`zachowanie`) is held in
+ * `mcp/reference-tools.tags.test.ts`.
+ */
+describe('the M18 tag write rows as their 2.1.26 records declare them', () => {
+  const D = { kind: 'direct' } as const;
+  const ALL_DIRECT = { internal: D, cli: D, mcp: D, rest: D };
+  const keys = (name: string) => Object.keys(CATALOG.require(name).inputSchema).sort();
+  const tagRow = (nazwa: string, slug: string, idempotencja: boolean, kodyBledow: string[]) =>
+    expectOperationMatchesRecord(
+      {
+        nazwa,
+        channels: ALL_DIRECT,
+        efekty: ['file', 'db', 'ui-notify'],
+        idempotencja,
+        opisTresci: 'n/a',
+        kodyBledow,
+        narzedzia: { internal: [slug], mcp: [slug] },
+      },
+      TAG_TOOL_RECORDS,
+    );
+
+  it('[entity:create-tag] create_tag: project, direct, all four channels direct, file/db/ui-notify, not idempotent, no content input, codes VALIDATION, SLUG_CONFLICT, rendered by reference-tools · create_tag, no address (the slug is derived, never supplied)', () => {
+    const op = tagRow('create_tag', 'reference-tools-create-tag', false, ['VALIDATION', 'SLUG_CONFLICT']);
+    expect(op.opClass).toBe('write');
+    expect(keys('create_tag')).toEqual(['color', 'description', 'name']);
+    expect(op.errorCodes).not.toContain('NOT_FOUND');
+  });
+
+  it('[entity:update-tag] update_tag: project, direct, all four channels direct, file/db/ui-notify, idempotent, no content input, codes VALIDATION, NOT_FOUND, SLUG_CONFLICT, rendered by reference-tools · update_tag, addressed by the tag slug', () => {
+    const op = tagRow('update_tag', 'reference-tools-update-tag', true, ['VALIDATION', 'NOT_FOUND', 'SLUG_CONFLICT']);
+    expect(op.opClass).toBe('write');
+    expect(keys('update_tag')).toEqual(['data', 'slug']);
+  });
+
+  it('[entity:delete-tag] delete_tag: project, direct, all four channels direct, file/db/ui-notify, idempotent, no content input, codes VALIDATION, NOT_FOUND, rendered by reference-tools · delete_tag, addressed by the tag slug', () => {
+    const op = tagRow('delete_tag', 'reference-tools-delete-tag', true, ['VALIDATION', 'NOT_FOUND']);
+    expect(op.opClass).toBe('write');
+    expect(keys('delete_tag')).toEqual(['slug']);
+  });
+
+  it('[entity:tag-entity] tag_entity: project, direct, all four channels direct, file/db/ui-notify, idempotent, no content input, codes VALIDATION, NOT_FOUND (no INACTIVE_TYPE / ENTITY_NOT_FOUND), rendered by reference-tools · tag_entity, addressed by (type, slug) plus the tag list', () => {
+    const op = tagRow('tag_entity', 'reference-tools-tag-entity', true, ['VALIDATION', 'NOT_FOUND']);
+    expect(op.opClass).toBe('write');
+    expect(op.errorCodes).not.toContain('INACTIVE_TYPE');
+    expect(op.errorCodes).not.toContain('ENTITY_NOT_FOUND');
+    expect(keys('tag_entity')).toEqual(['slug', 'tags', 'type']);
+  });
+
+  it('[entity:untag-entity] untag_entity: project, direct, all four channels direct, file/db/ui-notify, idempotent, no content input, codes VALIDATION, NOT_FOUND (no INACTIVE_TYPE / ENTITY_NOT_FOUND), rendered by reference-tools · untag_entity, addressed by (type, slug) plus the tag list', () => {
+    const op = tagRow('untag_entity', 'reference-tools-untag-entity', true, ['VALIDATION', 'NOT_FOUND']);
+    expect(op.opClass).toBe('write');
+    expect(op.errorCodes).not.toContain('INACTIVE_TYPE');
+    expect(op.errorCodes).not.toContain('ENTITY_NOT_FOUND');
+    expect(keys('untag_entity')).toEqual(['slug', 'tags', 'type']);
   });
 });

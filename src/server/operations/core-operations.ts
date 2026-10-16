@@ -1019,7 +1019,24 @@ export function registerCoreOperations(): void {
 
   // ── M18 tags ──────────────────────────────────────────────────────────────
 
-  const tagWrite = (name: string, summary: string, inputSchema: z.ZodRawShape, idempotent: boolean) =>
+  /**
+   * 2.1.26 — each row carries its record's `kodyBledow` and its `narzedzia`.
+   *
+   * The codes are per operation, not one pair for all five: `create_tag` cannot
+   * miss a target (it addresses nothing) but can collide (`SLUG_CONFLICT`),
+   * `update_tag` can do both, and the three that address an existing tag or
+   * entity answer `NOT_FOUND`. A type unknown or inactive is `VALIDATION` — the
+   * dedicated `INACTIVE_TYPE` / `ENTITY_NOT_FOUND` of the tag doors are gone.
+   * Every row is rendered by its namesake on `reference-tools`, in both agentic
+   * channels.
+   */
+  const tagWrite = (
+    name: string,
+    summary: string,
+    inputSchema: z.ZodRawShape,
+    idempotent: boolean,
+    errorCodes: string[],
+  ) =>
     CATALOG.register({
       name,
       summary,
@@ -1027,12 +1044,13 @@ export function registerCoreOperations(): void {
       mediation: 'direct',
       opClass: 'write',
       inputSchema,
-      errorCodes: ['VALIDATION', 'NOT_FOUND'],
+      errorCodes,
       sideEffects: ['file', 'db', 'ui-notify'],
       // A tag is a name and a colour; there is no content to describe either way.
       contentInput: 'n/a',
       idempotent,
       channels: fullParity(),
+      renderings: { internal: [`reference-tools.${name}`], mcp: [`reference-tools.${name}`] },
     });
 
   /**
@@ -1048,16 +1066,16 @@ export function registerCoreOperations(): void {
    * use: a tag is created by NAME (the slug is derived and returned), colour and
    * description are optional, and a tag is not identified by a colour.
    */
-  tagWrite('create_tag', 'Create a tag in the registry. The slug is derived from `name` and returned.', { name: z.string(), color: z.string().optional(), description: z.string().optional() }, false);
+  tagWrite('create_tag', 'Create a tag in the registry. The slug is derived from `name` and returned.', { name: z.string(), color: z.string().optional(), description: z.string().optional() }, false, ['VALIDATION', 'SLUG_CONFLICT']);
   // `update_tag` nests its mutable fields under `data` because `reference-tools`
   // does, and for the same reason the four rows around it were corrected: the row
   // is a DECLARATION of the operation that runs, not a second design of it. Left
   // flat, this was the one tag row still carrying the divergence the comment
   // above claims to have closed.
-  tagWrite('update_tag', 'Rename or restyle a tag; a slug change propagates through references.', { slug: z.string(), data: z.object({ name: z.string().optional(), color: z.string().nullable().optional(), description: z.string().nullable().optional() }) }, true);
-  tagWrite('delete_tag', 'Remove a tag from the registry and every entity carrying it.', { slug: z.string() }, true);
-  tagWrite('tag_entity', 'Attach tags to an entity. Idempotent — the entity ends up with the UNION of its existing tags and these. Tags that do not exist yet are created.', { type: z.string(), slug: z.string(), tags: z.array(z.string()) }, true);
-  tagWrite('untag_entity', 'Detach tags from an entity. Idempotent.', { type: z.string(), slug: z.string(), tags: z.array(z.string()) }, true);
+  tagWrite('update_tag', 'Rename or restyle a tag; a slug change propagates through references.', { slug: z.string(), data: z.object({ name: z.string().optional(), color: z.string().nullable().optional(), description: z.string().nullable().optional() }) }, true, ['VALIDATION', 'NOT_FOUND', 'SLUG_CONFLICT']);
+  tagWrite('delete_tag', 'Remove a tag from the registry and every entity carrying it.', { slug: z.string() }, true, ['VALIDATION', 'NOT_FOUND']);
+  tagWrite('tag_entity', 'Attach tags to an entity. Idempotent — the entity ends up with the UNION of its existing tags and these. Tags that do not exist yet are created.', { type: z.string(), slug: z.string(), tags: z.array(z.string()) }, true, ['VALIDATION', 'NOT_FOUND']);
+  tagWrite('untag_entity', 'Detach tags from an entity. Idempotent.', { type: z.string(), slug: z.string(), tags: z.array(z.string()) }, true, ['VALIDATION', 'NOT_FOUND']);
 
   // ── M02 Pages / M06 Sections — the page WRITE path (item 28) ──────────────
   //

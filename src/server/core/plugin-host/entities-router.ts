@@ -50,6 +50,27 @@ function assertType(host: ProjectPluginHost, type: string): EntityType {
 }
 
 /**
+ * 2.1.26 — the type guard of the two tag-assignment doors (`tag_entity` /
+ * `untag_entity` in their `rest` rendering). The operation declares its codes
+ * once for every channel — `VALIDATION`, `NOT_FOUND` — and its behaviour says a
+ * type unknown OR inactive is refused with `VALIDATION` (M18 "Przypadki
+ * brzegowe", M13 deactivation contract: `400 VALIDATION`). `assertType` answers a
+ * deactivated type with `INVALID_TYPE` (404), which is right for the version and
+ * collection routes and wrong here: the MCP rendering of the same operation
+ * already says `VALIDATION`, and a channel does not change an error code.
+ */
+function assertTaggableType(host: ProjectPluginHost, type: string): EntityType {
+  if (host.isActive(type)) return type as EntityType;
+  throw new DomainError(
+    'VALIDATION',
+    `unsupported or inactive entity type '${type}'. Active: [${host
+      .listEntities()
+      .map((m) => m.type)
+      .join(', ')}]`,
+  );
+}
+
+/**
  * 0.2.13 — the type guard for the CATALOG routes below (`/:type/search`,
  * `/:type/tools`), distinct from `assertType` above on two counts that matter.
  *
@@ -665,7 +686,7 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
 
   router.post('/:type/:slug/tags', (req, res, next) => {
     try {
-      const type = assertType(host, req.params.type);
+      const type = assertTaggableType(host, req.params.type);
       const slug = req.params.slug;
       assertExists(host, type, slug);
       const body = req.body as { tags?: string[] };
@@ -685,7 +706,7 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
 
   router.delete('/:type/:slug/tags/:tagSlug', (req, res, next) => {
     try {
-      const type = assertType(host, req.params.type);
+      const type = assertTaggableType(host, req.params.type);
       const slug = req.params.slug;
       assertExists(host, type, slug);
       const before = tags.getEntityTagSlugs(type, slug);

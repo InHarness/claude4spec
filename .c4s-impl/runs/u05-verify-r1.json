@@ -1,0 +1,121 @@
+{
+ "role": "verifier",
+ "scope": {
+  "kind": "unit",
+  "id": "u05-tag-errors-tagslist"
+ },
+ "release": "2.1.25..2.1.26",
+ "rows": [
+  {
+   "slug": "section:5yr06jez",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/core/plugin-host/entities-router.ts:62 assertTaggableType (inactive/unknown → DomainError('VALIDATION')) used by POST /:type/:slug/tags and DELETE /:type/:slug/tags/:tagSlug; src/server/mcp/reference-tools.ts:82 validateActiveType → VALIDATION; entity-tools keeps INACTIVE_TYPE as the after_change L3 row states. Test src/server/core/plugin-host/entities-router.test.ts:224 [section:5yr06jez]: expect(tagInactive.status).toBe(400); expect(tagInactive.body.error.code).toBe('VALIDATION'); untag likewise; missing → 404 NOT_FOUND; calls stay []"
+  },
+  {
+   "slug": "section:ais9x109",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/mcp/reference-tools.tags.test.ts [section:ais9x109]: tag_entity persists widget/w1, auto-creates {slug:'auth',name:'auth',color:null,description:null}, repeat addedCount 0, inactive ghost → body.code 'VALIDATION' with httpStatusForCode 400, untag removes from tags[] (persisted ['widget/w1']); getEntityTagSlugs read"
+  },
+  {
+   "slug": "section:0ljsk5jr",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/mcp/reference-tools.tags.test.ts [section:0ljsk5jr]: dup create → 'SLUG_CONFLICT' (409); tag_entity missing entity → 'NOT_FOUND' (404), inactive → 'VALIDATION' (400), neither ENTITY_NOT_FOUND nor INACTIVE_TYPE; auto-create name=slug/null/null; delete cascades (entity_tag n:0, affectedEntities 1); tag without entities stays; inactive type counter omitted (counts {widget:1})"
+  },
+  {
+   "slug": "section:xfkinig4",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/components/TagsList.tsx:113-136 EntityListRow leading=<ColorSwatch>, name in children, counters in trailing, no icon. Test src/client/components/TagsList.render.test.ts [section:xfkinig4]: expect(props.icon).toBeUndefined(); leading contains 'background:#c45a3b'; children contains 'Auth'; trailing contains '2 endpoints · 1 DTO'; order dot<name<counts"
+  },
+  {
+   "slug": "section:m18acc00",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/mcp/reference-tools.tags.test.ts [section:m18acc00]: create/update/delete_tag each bump tagsJsonWrites (persistTags); tag_entity/untag_entity persist ['widget/w1']; idempotent addedCount 0; auto-create name=slug; inactive → 'VALIDATION' (400); rename persists entity files + propagations [['auth','identity']]"
+  },
+  {
+   "slug": "create-tag",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/operations/core-operations.ts:1069 tagWrite('create_tag',…,false,['VALIDATION','SLUG_CONFLICT']) + renderings reference-tools.create_tag; src/server/operations/catalog.test.ts [entity:create-tag] expectOperationMatchesRecord(scope project, direct, all four direct, efekty, idempotencja false, opisTresci n/a, kodyBledow, narzedzia) + keys ['color','description','name']; zachowanie SLUG_CONFLICT asserted in src/server/mcp/reference-tools.tags.test.ts [entity:reference-tools-create-tag]"
+  },
+  {
+   "slug": "reference-tools-create-tag",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/reference-tools.ts:97 create_tag (no slug param); src/server/services/tags.ts:97 create derives slug, empty → VALIDATION. src/server/mcp/reference-tools.tags.test.ts [entity:reference-tools-create-tag]: expectToolMatchesToolRecord (description, params name/color/description, no hints); not.toContain('slug'); explicit slug ignored → {slug:'auth-layer',name:'Auth Layer'}; palette colour; 'List' → VALIDATION; taken → SLUG_CONFLICT; tag:changed broadcast"
+  },
+  {
+   "slug": "delete-tag",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "core-operations.ts:1076 delete_tag codes ['VALIDATION','NOT_FOUND'], idempotent, renderings reference-tools.delete_tag; src/server/operations/catalog.test.ts [entity:delete-tag] expectOperationMatchesRecord + keys ['slug']; zachowanie (cascade, NOT_FOUND on missing) in src/server/mcp/reference-tools.tags.test.ts [entity:reference-tools-delete-tag]"
+  },
+  {
+   "slug": "reference-tools-delete-tag",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "reference-tools.ts:154 delete_tag; src/server/mcp/reference-tools.tags.test.ts [entity:reference-tools-delete-tag]: record contract match; unknown → NOT_FOUND also on repeat; toEqual({deleted:true,affectedEntities:2}); affected files persisted; tag:changed delete broadcast"
+  },
+  {
+   "slug": "tag-entity",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "core-operations.ts:1077 tag_entity codes ['VALIDATION','NOT_FOUND'], idempotent, renderings reference-tools.tag_entity; src/server/operations/catalog.test.ts [entity:tag-entity] expectOperationMatchesRecord + not.toContain('INACTIVE_TYPE'/'ENTITY_NOT_FOUND') + keys ['slug','tags','type']"
+  },
+  {
+   "slug": "reference-tools-tag-entity",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "reference-tools.ts:196 tag_entity; src/server/mcp/reference-tools.tags.test.ts [entity:reference-tools-tag-entity]: record match; 'nope'/'ghost' → VALIDATION; missing → NOT_FOUND; names→slugs, auto-created tag color null; union set; persisted ['widget/w1']; {tagged:true,addedCount:1}; repeat addedCount 0; entity:changed + tag:changed broadcasts"
+  },
+  {
+   "slug": "untag-entity",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "core-operations.ts:1078 untag_entity codes ['VALIDATION','NOT_FOUND'], idempotent, renderings reference-tools.untag_entity; src/server/operations/catalog.test.ts [entity:untag-entity] expectOperationMatchesRecord + no INACTIVE_TYPE/ENTITY_NOT_FOUND + keys"
+  },
+  {
+   "slug": "reference-tools-untag-entity",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "reference-tools.ts:233 untag_entity; src/server/mcp/reference-tools.tags.test.ts [entity:reference-tools-untag-entity]: record match; nope/ghost → VALIDATION; missing → NOT_FOUND; unassigned/undefined tags not counted → {untagged:true,removedCount:1}; definitions survive; broadcasts"
+  },
+  {
+   "slug": "update-tag",
+   "type": "spec-operation",
+   "level": 1,
+   "status": "covered",
+   "evidence": "core-operations.ts:1075 update_tag codes ['VALIDATION','NOT_FOUND','SLUG_CONFLICT'], idempotent, renderings reference-tools.update_tag; src/server/operations/catalog.test.ts [entity:update-tag] expectOperationMatchesRecord + keys ['data','slug']; zachowanie (untouched fields, propagation, NOT_FOUND/SLUG_CONFLICT) in src/server/mcp/reference-tools.tags.test.ts [entity:reference-tools-update-tag]"
+  },
+  {
+   "slug": "reference-tools-update-tag",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "reference-tools.ts:123 update_tag; src/server/mcp/reference-tools.tags.test.ts [entity:reference-tools-update-tag]: record match; nope → NOT_FOUND; 'List' → VALIDATION; 'Billing' → SLUG_CONFLICT; color null clears, description kept; rename → {slug:'identity',updated:true}, persisted ['widget/w1'], propagations [['auth','identity']]"
+  },
+  {
+   "slug": "goal:u05-tag-errors-tagslist",
+   "level": 2,
+   "status": "covered",
+   "evidence": "Inactive type → VALIDATION: reference-tools.ts:82 validateActiveType, entities-router.ts:62 assertTaggableType; missing entity → NOT_FOUND: reference-tools.ts:209/246, entities-router.ts:25 assertExists. Re-rendered tool contracts: reference-tools.ts:97-260 match 2.1.26 records (tests/helpers/tag-tool-records.ts). TagsList slots: TagsList.tsx:113-136 leading/children/trailing. Removals: no INACTIVE_TYPE/ENTITY_NOT_FOUND on any tag door (grep: remaining INACTIVE_TYPE only in entity-tools.ts, which M13 L3 row keeps; core-operations tag rows declare per-record codes); create_tag has no slug param, TagCreateInput (src/shared/entities.ts:269) has no slug, TagsService.create derives slug only (tags.ts:97-103), REST POST /api/tags goes through the same create. Typecheck green."
+  }
+ ],
+ "suite": {
+  "command": "npm run typecheck (static verification; tests run only in env-runner)",
+  "exitCode": 0,
+  "summary": "tsc --noEmit clean across root and all plugin workspaces; tests touching the diff read through (reference-tools.tags.test.ts, catalog.test.ts, entities-router.test.ts, TagsList.render.test.ts, entity-tools.test.ts INACTIVE_TYPE assertions unaffected) — no breakage found"
+ }
+}

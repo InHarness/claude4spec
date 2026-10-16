@@ -1,0 +1,19 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "u05-tag-errors-tagslist",
+    "base": "10a31d6f8604d8f6c754b15588d53092f67e5868"
+  },
+  "findings": [
+    {
+      "id": "rev-0001",
+      "file": "src/server/core/plugin-host/entities-router.ts",
+      "line": 36,
+      "blocking": false,
+      "reason": "The `assertType` doc comment still says a deactivated type answers `INVALID_TYPE` (404) because 'the version/tag/collection routes are consumers'. After this diff the tag-assignment doors (POST/DELETE `/:type/:slug/tags`) use `assertTaggableType` → `400 VALIDATION`; only `GET /:type/:slug/tags` keeps `assertType`. The comment now contradicts the new guard 15 lines below — narrow it to the routes that still call `assertType` (version, collection, the tag read).",
+      "portion": "u05-tag-errors-tagslist/p1-l2-l12"
+    }
+  ],
+  "deviations": []
+}

@@ -27,7 +27,8 @@ export interface WriteToolRecord {
     | 'c4s-reader'
     | 'workspace-tools'
     | 'spec-skill-tools'
-    | 'c4s-tools';
+    | 'c4s-tools'
+    | 'reference-tools';
   name: string;
   description: string;
   params: Array<{ name: string; type: string; required: boolean; description?: string }>;

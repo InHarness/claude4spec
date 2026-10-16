@@ -158,3 +158,16 @@
 - section:m33rt001 → src/client/runtime/plugin-runtime.ts (editorBridge / EditorBridgeProvider / services / lineDiffHunks), src/client/host-ui-kit/registry.ts (TagFilterBar on /ui; DiffView presentational; DocEditor connected, l11Surfaces editorBridge + queryClient); test src/client/host-ui-kit/registry.test.ts
 - section:m20l11sc → src/plugin-types/plugin-runtime.ts (EditorBridge type, editorBridge, EditorBridgeProvider), src/client/tiptap/EditorContext.tsx (useEditorBridge host-internal, used by DocEditor); test src/server/plugin-runtime/l11-surfaces.test.ts
 - section:m19l11sc → src/client/runtime/plugin-runtime.ts (host editorBridge + EditorBridgeProvider re-exported, EditorBridge type, no useEditorBridge), src/server/core/plugin-host/runtime-shims.ts; tests src/server/plugin-runtime/l11-surfaces.test.ts, src/client/runtime/plugin-runtime.test.ts
+- create-tag → src/server/operations/core-operations.ts (`create_tag` row: codes VALIDATION + SLUG_CONFLICT, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- update-tag → src/server/operations/core-operations.ts (`update_tag` row: codes VALIDATION + NOT_FOUND + SLUG_CONFLICT, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- delete-tag → src/server/operations/core-operations.ts (`delete_tag` row, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- tag-entity → src/server/operations/core-operations.ts (`tag_entity` row, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- untag-entity → src/server/operations/core-operations.ts (`untag_entity` row, `renderings` = narzedzia); test src/server/operations/catalog.test.ts
+- reference-tools-create-tag → src/server/mcp/reference-tools.ts (`create_tag`), src/server/services/tags.ts (`create`: derived slug, empty name → VALIDATION); test src/server/mcp/reference-tools.tags.test.ts
+- reference-tools-update-tag → src/server/mcp/reference-tools.ts (`update_tag`); test src/server/mcp/reference-tools.tags.test.ts
+- reference-tools-delete-tag → src/server/mcp/reference-tools.ts (`delete_tag`); test src/server/mcp/reference-tools.tags.test.ts
+- reference-tools-tag-entity → src/server/mcp/reference-tools.ts (`tag_entity`); test src/server/mcp/reference-tools.tags.test.ts
+- reference-tools-untag-entity → src/server/mcp/reference-tools.ts (`untag_entity`); test src/server/mcp/reference-tools.tags.test.ts
+- section:5yr06jez → src/server/core/plugin-host/entities-router.ts (`assertTaggableType`: POST/DELETE `/:type/:slug/tags` inactive → 400 VALIDATION), src/server/mcp/reference-tools.ts (`validateActiveType`); test src/server/core/plugin-host/entities-router.test.ts
+- section:ais9x109, section:0ljsk5jr, section:m18acc00 → src/server/mcp/reference-tools.ts, src/server/services/tags.ts; test src/server/mcp/reference-tools.tags.test.ts
+- section:xfkinig4 → src/client/components/TagsList.tsx (EntityListRow `leading` / `children` / `trailing`); test src/client/components/TagsList.render.test.ts
