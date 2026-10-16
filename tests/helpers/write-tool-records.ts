@@ -14,7 +14,7 @@ import { expect } from 'vitest';
 import { declaredParams, type DeclaredTool } from './read-tool-records.js';
 
 export interface WriteToolRecord {
-  server: 'entity-tools' | 'endpoint-tools' | 'page-tools' | 'brief-tools' | 'transagent-tools';
+  server: 'entity-tools' | 'endpoint-tools' | 'page-tools' | 'brief-tools' | 'plan-tools' | 'transagent-tools';
   name: string;
   description: string;
   params: Array<{ name: string; type: string; required: boolean; description?: string }>;

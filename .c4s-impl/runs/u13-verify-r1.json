@@ -1,0 +1,175 @@
+{
+  "role": "verifier",
+  "scope": {
+    "kind": "unit",
+    "id": "u13-plan-tools"
+  },
+  "release": "2.1.25..2.1.26",
+  "rows": [
+    {
+      "slug": "plan-tools-create-plan",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/plan-tools.test.ts:614 expectToolMatchesToolRecord(declOf('thread','create_plan'), PLAN_TOOL_RECORDS[...]) — record text in tests/helpers/plan-tool-records.ts:28 matches the 2.1.26 record verbatim (description, 2 params, no hints); logic via expectCreatePlanLogic src/server/mcp/plan-tools.test.ts:570 (path 'logic-plan.md', PLAN_ALREADY_EXISTS, missing/empty content INVALID_ARGUMENT, rollback of file+version+thread, no chat_message); src/server/mcp/plan-tools.ts:213; trace.md:95"
+    },
+    {
+      "slug": "plan-tools-create-plan-explicit",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/plan-tools.test.ts:621 record match on the explicit mount + same logic + returned path/hash accepted by update_plan (edited.body.path 'hand-on.md'); plan-tools.ts:213 (explicit description); trace.md:96"
+    },
+    {
+      "slug": "plan-tools-get-plan",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/plan-tools.test.ts:635 record match (range only); {plan:null}, INVALID_ARGUMENT for 1.5/0/end<start/past-end windows (schema bounds removed, plan-tools.ts:96; applyArtifactRange artifact-read.ts:66), hash of whole file under window, truncated at 25 000, PLAN_INVALID_FRONTMATTER, NOT_FOUND; trace.md:97"
+    },
+    {
+      "slug": "plan-tools-get-plan-explicit",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/plan-tools.test.ts:670 record match (path required + range); empty path INVALID_ARGUMENT hint /list_plans/, unknown path PLAN_NOT_FOUND, {plan} keys; trace.md:98"
+    },
+    {
+      "slug": "plan-tools-get-plan-version",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/plan-tools.test.ts:687 record match (version integer, required; plan-tools.ts:404 z.number().int()); planless INVALID_ARGUMENT hint /update_plan/, version 0 and 7 INVALID_ARGUMENT hint '1 to 1', PLAN_INVALID_FRONTMATTER, NOT_FOUND; trace.md:99"
+    },
+    {
+      "slug": "plan-tools-get-plan-version-explicit",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/plan-tools.test.ts:710 record match (path+version required); unknown path PLAN_NOT_FOUND, snapshot v2 with data.content, off-history INVALID_ARGUMENT hint '1 to 2'; trace.md:100"
+    },
+    {
+      "slug": "plan-tools-list-plan-versions",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/plan-tools.test.ts:724 record match (limit/offset integer, optional, no descriptions); planless {versions:[],total:0}, oldest first [1,2,3], offset without limit, PLAN_INVALID_FRONTMATTER, NOT_FOUND; trace.md:101"
+    },
+    {
+      "slug": "plan-tools-list-plan-versions-explicit",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/plan-tools.test.ts:749 record match; unknown path PLAN_NOT_FOUND, oldest first, window offset 1 limit 1 → [2], total 2; trace.md:102"
+    },
+    {
+      "slug": "plan-tools-list-plans-explicit",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/plan-tools.test.ts:764 record match (search optional); thread mount has none (declOf('thread','list_plans') undefined), rows {path,title,updatedAt} most-recently-changed first, case-insensitive search, updatedAt = last version time or frontmatter created_at; plan-tools.ts:336 (dev-2609, non-blocking, page vs record contract); trace.md:103"
+    },
+    {
+      "slug": "plan-tools-mark-plan-applied",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/plan-tools.test.ts:788 record match (applied only); unapplied INVALID_ARGUMENT hint /UI|plan page/, planless INVALID_ARGUMENT, frontmatter-only write, no version row, plan:updated {version:1, threadId:'t-1', changedBy:'agent'}, repeat no write/no event; trace.md:104"
+    },
+    {
+      "slug": "plan-tools-mark-plan-applied-explicit",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/plan-tools.test.ts:818 record match (path+applied required); unknown path PLAN_NOT_FOUND, {path,applied:true}, repeat leaves bytes, version count and events unchanged; trace.md:105"
+    },
+    {
+      "slug": "plan-tools-update-plan",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/plan-tools.test.ts:839 record match (UPDATE_PLAN_DESCRIPTION / UPDATE_PLAN_EDITS_DESCRIPTION verbatim, plan-tools.ts:41-54); two variants INVALID_ARGUMENT, blank title MISSING_TITLE, taken slug suffixed 'clash-2.md', create version, pinned, expectedHash unchecked on create, missing hash INVALID_ARGUMENT, stale PLAN_CONFLICT with currentHash, title without effect, one version + plan:updated per call; empty-slug 'plan' fallback unreachable (dev-2608, non-blocking, test asserts slug-shaped name); trace.md:106"
+    },
+    {
+      "slug": "plan-tools-update-plan-explicit",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/plan-tools.test.ts:891 record match (path required + six); empty path INVALID_ARGUMENT /list_plans/, unknown path PLAN_NOT_FOUND hint lists 'known-plan.md' with no file written, no create branch (title no effect), {path,version,hash,results} with null anchor/action row; trace.md:107"
+    },
+    {
+      "slug": "transagent-tools-list-plans",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/transagent-tools.list-plans.test.ts:175 expectToolMatchesToolRecord(tool, PLAN_TOOL_RECORDS['transagent-tools-list-plans']) incl. readOnlyHint true (transagent-tools.ts:421); default limit 50/offset 0, limit 5000 clamped to 1000, {plans,total,hasMore}, empty dates → null; transagent-tools.ts:367; trace.md:108"
+    },
+    {
+      "slug": "create-plan",
+      "type": "spec-operation",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/plan-tools.test.ts:974 expectOperationRecord: direct ×4, file+db, idempotent false, contentInput 'literal', codes PLAN_ALREADY_EXISTS+INVALID_ARGUMENT, renderings {internal:['plan-tools.create_plan'], mcp:['plan-tools.create_plan']} (core-operations.ts:1351-1375); service.create slug/refusals/no turn; trace.md:109"
+    },
+    {
+      "slug": "execute-plan",
+      "type": "spec-operation",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/plan-tools.test.ts:1195 human-mediated, internal/cli/mcp na('akt user-initiated; przegląd tej klasyfikacji jest otwarty') (core-operations.ts:1691), rest direct, db+ui-notify, not idempotent, codes PLAN_NOT_FOUND+INVALID_ARGUMENT, no renderings, input planId; attachThreadToPlan opens a new thread each time, unknown → PLAN_NOT_FOUND; trace.md:110"
+    },
+    {
+      "slug": "get-plan",
+      "type": "spec-operation",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/plan-tools.test.ts:998 direct, cli na(PLAN_NO_CLI = record powody.cli verbatim, core-operations.ts:1392), effects none, idempotent, 4 codes (core-operations.ts:1418), renderings plan-tools.get_plan both channels; path required mcp / absent internal; service refusals PLAN_NOT_FOUND / INVALID_ARGUMENT / PLAN_INVALID_FRONTMATTER / NOT_FOUND; trace.md:111"
+    },
+    {
+      "slug": "get-plan-version",
+      "type": "spec-operation",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/plan-tools.test.ts:1139 direct, cli na, none, idempotent, codes PLAN_NOT_FOUND+INVALID_ARGUMENT, renderings plan-tools.get_plan_version, input (path, version) (core-operations.ts:1599); unknown path PLAN_NOT_FOUND, off-axis INVALID_ARGUMENT; trace.md:112"
+    },
+    {
+      "slug": "list-plan-versions",
+      "type": "spec-operation",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/plan-tools.test.ts:1117 direct, cli na, none, idempotent, 4 codes, renderings plan-tools.list_plan_versions, input path+limit+offset (core-operations.ts:1573); oldest first, unknown path PLAN_NOT_FOUND; trace.md:113"
+    },
+    {
+      "slug": "list-plans",
+      "type": "spec-operation",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/plan-tools.test.ts:1088 new row core-operations.ts:1446: direct, cli na('brak komendy `c4s`: …' verbatim), none, idempotent, no codes (n/d), opClass read, input applied+limit+offset, renderings {internal:['transagent-tools.list_plans'], mcp:['plan-tools.list_plans']}; not on thread mount, on explicit mount; rows without content; trace.md:114"
+    },
+    {
+      "slug": "mark-plan-applied",
+      "type": "spec-operation",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/plan-tools.test.ts:1160 direct, cli na('jedyny realny wołający kończy wykonanie planu w wątku, nie w terminalu'), file+ui-notify, idempotent, 4 codes, renderings plan-tools.mark_plan_applied (core-operations.ts:1635-1680); frontmatter only, no version, repeat no-op, unmark/planless INVALID_ARGUMENT, PLAN_NOT_FOUND, PLAN_INVALID_FRONTMATTER, NOT_FOUND; trace.md:115"
+    },
+    {
+      "slug": "update-plan",
+      "type": "spec-operation",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/plan-tools.test.ts:1025 direct, cli na, file+db+ui-notify, idempotent 'conditional', literal+diff, 13 codes (core-operations.ts:1539-1545), renderings plan-tools.update_plan; whole-plan guard PLAN_CONFLICT on a section batch, PLAN_NOT_FOUND, SECTION_NOT_FOUND, FIND_NOT_FOUND, MATCH_COUNT_MISMATCH, content repeat same hash vs append repeat different hash; trace.md:116"
+    },
+    {
+      "slug": "goal:u13-plan-tools",
+      "level": 2,
+      "status": "covered",
+      "evidence": "list_plans is the eighth plan row (core-operations.ts:1446) rendered internally by transagent-tools.list_plans (top-level chat, transagent-tools.ts:367) and externally by plan-tools.list_plans on the explicit mount only (plan-tools.ts:336, :497); plan-tools explicit twins carry required path (addressingParam, plan-tools.ts:79) and match their -explicit records; version contracts (get_plan_version integer without lower bound, list_plan_versions oldest first) and first-write slug collision (-2 suffix, test :839) match the re-renders; all eight operation rows match their spec-operation records (tests :974-:1222). npm run typecheck exit 0; no readable test broken by the diff (surface.test, catalog.test, release-0-2-98-contract, transagent-tools.list-briefs, system-prompt golden checked)."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck (static verification only; full suite runs in env-runner at system verification)",
+    "exitCode": 0,
+    "summary": "tsc --noEmit green for host and all plugin workspaces; tests read statically, none run locally"
+  }
+}

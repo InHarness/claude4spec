@@ -1,0 +1,37 @@
+{
+  "role": "implementer",
+  "unit": "u13-plan-tools",
+  "packetBytes": 107630,
+  "portions": [
+    {
+      "name": "u13-plan-tools/p1-l3",
+      "layers": [
+        "L3"
+      ],
+      "slugs": [
+        "plan-tools-create-plan-explicit",
+        "plan-tools-create-plan",
+        "plan-tools-get-plan-explicit",
+        "plan-tools-get-plan-version-explicit",
+        "plan-tools-get-plan-version",
+        "plan-tools-get-plan",
+        "plan-tools-list-plan-versions-explicit",
+        "plan-tools-list-plan-versions",
+        "plan-tools-list-plans-explicit",
+        "plan-tools-mark-plan-applied-explicit",
+        "plan-tools-mark-plan-applied",
+        "plan-tools-update-plan-explicit",
+        "plan-tools-update-plan",
+        "transagent-tools-list-plans",
+        "create-plan",
+        "execute-plan",
+        "get-plan-version",
+        "get-plan",
+        "list-plan-versions",
+        "list-plans",
+        "mark-plan-applied",
+        "update-plan"
+      ]
+    }
+  ]
+}

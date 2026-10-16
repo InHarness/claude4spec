@@ -679,6 +679,9 @@ export class PlanService {
          * same failure mode the `target: 'explicit'` mount was introduced to fix.
          */
         const composed = composePlanBody('', payload);
+        // ASSUMPTION:dev-2608 — `slugify` never answers '' (it falls back to a
+        // deterministic `x-<hash>`), so the record's `plan` name for an empty
+        // slug is this unreachable guard, kept for a slug rule that might.
         const base = slugify(trimmedTitle) || 'plan';
         // v0.1.129 fix: the OUTER lock (keyed `thread:${threadId}`) only
         // serializes calls from the SAME thread — it does nothing when two

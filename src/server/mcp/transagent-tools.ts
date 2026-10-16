@@ -358,9 +358,12 @@ function buildListBriefsTool(briefs: Pick<BriefService, 'listBriefs'>, projectId
  * finite default, `total` before the slice, `hasMore`). A row carries no plan
  * content: only `get_plan` reads that, and only for the thread's own plan.
  *
- * ASSUMPTION:dev-0005 — no `list_plans` catalog row (Faza B pending at 2.1.18),
- * no `search` parameter (`search_plans` is `n/a`), and the default page size
- * (50) is ours — M39 names none for this list.
+ * No `search` parameter (`search_plans` is `n/a`).
+ *
+ * 2.1.26 — the `internal` rendering of the `list_plans` catalog row (M10's
+ * eighth plan operation, `transagent-tools-list-plans`): default `limit` 50,
+ * maximum 1000, default `offset` 0, as the record states; empty dates answer
+ * `null`.
  */
 function buildListPlansTool(plans: Pick<PlanService, 'listPlans'>, projectId: string | null) {
   return mcpTool(

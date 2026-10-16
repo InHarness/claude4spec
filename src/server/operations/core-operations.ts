@@ -1370,6 +1370,8 @@ export function registerCoreOperations(): void {
     // A second identical call hits the slug the first one took.
     idempotent: false,
     channels: fullParity(),
+    // 2.1.26 — the `create-plan` record's `narzedzia`: one `create_plan` per mount.
+    renderings: { internal: ['plan-tools.create_plan'], mcp: ['plan-tools.create_plan'] },
   });
 
   /**
@@ -1382,7 +1384,14 @@ export function registerCoreOperations(): void {
    * Read, edit and the version axis have no `cli` command.
    */
   const PLAN_PATH_DESC = 'Plan path relative to the plans root (.claude4spec/plans). Required on every external channel; ABSENT in `internal`, where M10 declares thread isolation and the plan is the one pinned to the thread (`chat_thread.plan_path`).';
-  const PLAN_NO_CLI = 'no `c4s` command: the only real callers are the agent in a thread and the user in the UI, not a person at a terminal';
+  /**
+   * 2.1.26 — the records' `powody.cli`, verbatim (Polish, as the other rows'
+   * `n/a` reasons taken from records): `get_plan`, `update_plan`,
+   * `list_plan_versions`, `get_plan_version`.
+   */
+  const PLAN_NO_CLI = 'jedynym realnym wołającym jest agent w wątku albo użytkownik w UI, nie człowiek w terminalu';
+  /** Both mounts of `plan-tools` render the operation under its own name. */
+  const planRenderings = (tool: string) => ({ internal: [`plan-tools.${tool}`], mcp: [`plan-tools.${tool}`] });
 
   CATALOG.register({
     name: 'get_plan',
@@ -1400,7 +1409,13 @@ export function registerCoreOperations(): void {
           '1-based inclusive line window. Unconditionally allowed — a plan never enters `section_index`. A `start` past the end of the file is INVALID_ARGUMENT stating the size.',
         ),
     },
-    errorCodes: ['PLAN_NOT_FOUND', 'INVALID_ARGUMENT'],
+    /**
+     * 2.1.26 — the `get-plan` record's four codes: PLAN_NOT_FOUND for an unknown
+     * explicit `path`, NOT_FOUND for a pinned plan whose file is gone,
+     * PLAN_INVALID_FRONTMATTER for a file that is not a plan, INVALID_ARGUMENT for
+     * a malformed window or one starting past the end.
+     */
+    errorCodes: ['PLAN_NOT_FOUND', 'INVALID_ARGUMENT', 'NOT_FOUND', 'PLAN_INVALID_FRONTMATTER'],
     sideEffects: ['none'],
     idempotent: true,
     channels: {
@@ -1409,6 +1424,49 @@ export function registerCoreOperations(): void {
       mcp: direct(),
       rest: direct(),
     },
+    renderings: planRenderings('get_plan'),
+  });
+
+  /**
+   * 2.1.26 (M10 `m10mcp00`) — `list_plans`, the eighth plan operation: the
+   * project's plan set, from which a caller picks a plan to read, change or hand
+   * to a child thread. Rendered internally by `transagent-tools · list_plans`
+   * (top-level `chat` thread only — `created_at` ascending, `applied` filter,
+   * M39 window) and externally by `plan-tools · list_plans` on the threadless
+   * mount, where the caller names the plan by `path` anyway. The thread mount of
+   * `plan-tools` carries no list (M10 thread isolation). `rest` is
+   * `GET /api/artifacts/plan` (the `/plans` page). The record declares no codes
+   * (`n/d`).
+   *
+   * Class `read`, as `list_briefs`: the gate matches by name and `chat` admits
+   * no `brief`-like class for a read, and the operation never mutates. The input
+   * is the operation's — the `applied` filter and the window; the external
+   * rendering's `search` is a shape of that channel.
+   */
+  CATALOG.register({
+    name: 'list_plans',
+    summary:
+      "The project's plans — path, title and dates, never content (`get_plan` reads that) — to pick one to read, change or hand to a child thread. Filter with `applied`.",
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'read',
+    inputSchema: {
+      applied: z
+        .boolean()
+        .optional()
+        .describe('Narrow to applied (true) or not yet applied (false). Omit for all.'),
+      ...paging,
+    },
+    errorCodes: [],
+    sideEffects: ['none'],
+    idempotent: true,
+    channels: {
+      internal: direct(),
+      cli: na('brak komendy `c4s`: jedynym realnym wołającym jest agent w wątku albo użytkownik w UI, nie człowiek w terminalu'),
+      mcp: direct(),
+      rest: direct(),
+    },
+    renderings: { internal: ['transagent-tools.list_plans'], mcp: ['plan-tools.list_plans'] },
   });
 
   CATALOG.register({
@@ -1464,6 +1522,13 @@ export function registerCoreOperations(): void {
      * no `path` to validate and always runs in an existing thread, and a missing
      * external `path` is INVALID_ARGUMENT.
      */
+    /*
+     * 2.1.26 — the `update-plan` record's thirteen codes. Beyond the nine above:
+     * `NOT_FOUND` (a pinned plan whose file is gone) and `PLAN_INVALID_FRONTMATTER`
+     * (a file that is not a plan) from the shared loader; `VALIDATION` and
+     * `UNKNOWN_ARTIFACT_KIND` from the `rest` rendering (the M36 artifact route's
+     * body validation and its kind lookup).
+     */
     errorCodes: [
       'PLAN_CONFLICT',
       'PLAN_NOT_FOUND',
@@ -1474,6 +1539,10 @@ export function registerCoreOperations(): void {
       'MISSING_TITLE',
       'IMMUTABLE_FIELD',
       'INVALID_ARGUMENT',
+      'VALIDATION',
+      'PLAN_INVALID_FRONTMATTER',
+      'NOT_FOUND',
+      'UNKNOWN_ARTIFACT_KIND',
     ],
     sideEffects: ['file', 'db', 'ui-notify'],
     /**
@@ -1484,18 +1553,19 @@ export function registerCoreOperations(): void {
      */
     contentInput: 'literal+diff',
     /**
-     * `content` and a batch `replace` repeat harmlessly; `delete`, `edit` and
-     * `textEdits` do not, so the operation as a whole cannot claim to be — the
-     * same half-truth `update_page` carries, spelt out in the summary and in
-     * every channel's description rather than hidden behind a boolean.
+     * 2.1.26 — `idempotencja: warunkowa` (the record's `powody.idempotencja`):
+     * `content`, `replace` and `rename` are idempotent by content; `delete`
+     * answers SECTION_NOT_FOUND on a repeat, `edit` / `textEdits` FIND_NOT_FOUND,
+     * and `append` / `insert_after` duplicate.
      */
-    idempotent: false,
+    idempotent: 'conditional',
     channels: {
       internal: direct(),
       cli: na(PLAN_NO_CLI),
       mcp: direct(),
       rest: direct(),
     },
+    renderings: planRenderings('update_plan'),
   });
 
   /** 2.1.13 — the plan's version axis (`file_version`, rootId `plans`): metadata only, oldest first. */
@@ -1510,7 +1580,8 @@ export function registerCoreOperations(): void {
       path: z.string().optional().describe(PLAN_PATH_DESC),
       ...paging,
     },
-    errorCodes: ['PLAN_NOT_FOUND', 'INVALID_ARGUMENT'],
+    // 2.1.26 — the `list-plan-versions` record's four codes (as `get_plan`'s).
+    errorCodes: ['PLAN_NOT_FOUND', 'INVALID_ARGUMENT', 'NOT_FOUND', 'PLAN_INVALID_FRONTMATTER'],
     sideEffects: ['none'],
     idempotent: true,
     channels: {
@@ -1521,6 +1592,7 @@ export function registerCoreOperations(): void {
       // (routes/artifacts.ts): PLAN_NOT_FOUND for an unknown path.
       rest: direct(),
     },
+    renderings: planRenderings('list_plan_versions'),
   });
 
   CATALOG.register({
@@ -1532,7 +1604,7 @@ export function registerCoreOperations(): void {
     opClass: 'plan',
     inputSchema: {
       path: z.string().optional().describe(PLAN_PATH_DESC),
-      version: z.number().int().positive(),
+      version: z.number().int(),
     },
     errorCodes: ['PLAN_NOT_FOUND', 'INVALID_ARGUMENT'],
     sideEffects: ['none'],
@@ -1546,6 +1618,7 @@ export function registerCoreOperations(): void {
       // `getVersion`: PLAN_NOT_FOUND / INVALID_ARGUMENT, as on mcp.
       rest: direct(),
     },
+    renderings: planRenderings('get_plan_version'),
   });
 
   /**
@@ -1578,10 +1651,12 @@ export function registerCoreOperations(): void {
      * guard stays reachable through the generic REST frontmatter route, which
      * has its own row.
      */
-    // 2.1.13 — the row's two codes: PLAN_NOT_FOUND for an unknown external
-    // `path`; INVALID_ARGUMENT for `applied: false` and for a thread with no plan
-    // pinned (ASSUMPTION:dev-0002).
-    errorCodes: ['PLAN_NOT_FOUND', 'INVALID_ARGUMENT'],
+    // 2.1.13 — PLAN_NOT_FOUND for an unknown external `path`; INVALID_ARGUMENT
+    // for `applied: false` and for a thread with no plan pinned
+    // (ASSUMPTION:dev-0002). 2.1.26 — the `mark-plan-applied` record adds the
+    // loader's two: NOT_FOUND (a pinned plan whose file is gone) and
+    // PLAN_INVALID_FRONTMATTER (a file that is not a plan).
+    errorCodes: ['PLAN_NOT_FOUND', 'INVALID_ARGUMENT', 'NOT_FOUND', 'PLAN_INVALID_FRONTMATTER'],
     // No `db`: a frontmatter-only plan write deliberately records no
     // `file_version` row, so the plan's version history is untouched.
     sideEffects: ['file', 'ui-notify'],
@@ -1592,7 +1667,8 @@ export function registerCoreOperations(): void {
       internal: direct(),
       // Deliberately no `c4s` command — the flag is declared by the agent that
       // ran the plan, which is never the terminal.
-      cli: na('no c4s command: the only real caller finishes executing the plan in a thread, not at a terminal'),
+      // 2.1.26 — the record's `powody.cli`, verbatim.
+      cli: na('jedyny realny wołający kończy wykonanie planu w wątku, nie w terminalu'),
       mcp: direct(),
       // 2.1.13 — the row says `direct`: the rendering is
       // PATCH /api/artifacts/plan/<path>/frontmatter with { applied }, which calls
@@ -1600,6 +1676,7 @@ export function registerCoreOperations(): void {
       // operation (`update_artifact_frontmatter` is not a catalog row).
       rest: direct(),
     },
+    renderings: planRenderings('mark_plan_applied'),
   });
 
   /**
@@ -1610,6 +1687,7 @@ export function registerCoreOperations(): void {
    * with the plan pinned, the execution prompt landing in the composer as an
    * editable draft. No tool renders it, so no profile's reach changes.
    */
+  const EXECUTE_PLAN_NA = 'akt user-initiated; przegląd tej klasyfikacji jest otwarty';
   CATALOG.register({
     name: 'execute_plan',
     summary:
@@ -1625,9 +1703,10 @@ export function registerCoreOperations(): void {
     // Every trigger opens a new thread.
     idempotent: false,
     channels: {
-      internal: na('a user-initiated act; the review of this classification is open'),
-      cli: na('a user-initiated act; the review of this classification is open'),
-      mcp: na('a user-initiated act; the review of this classification is open'),
+      // 2.1.26 — the `execute-plan` record's `powody`, verbatim; `narzedzia` is empty.
+      internal: na(EXECUTE_PLAN_NA),
+      cli: na(EXECUTE_PLAN_NA),
+      mcp: na(EXECUTE_PLAN_NA),
       rest: direct(),
     },
   });

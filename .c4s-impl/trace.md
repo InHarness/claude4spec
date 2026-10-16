@@ -92,3 +92,25 @@
 - list-briefs → src/server/operations/core-operations.ts (`list_briefs` row, rendering `transagent-tools.list_briefs`; owner `BriefService.listBriefs`); test src/server/mcp/brief-tools.test.ts
 - mark-brief-implemented → src/server/operations/core-operations.ts (`mark_brief_implemented` row, internal n/a; owner `BriefService.updateFrontmatter`); test src/server/mcp/brief-tools.test.ts
 - update-brief → src/server/operations/core-operations.ts (`update_brief` row, idempotent `'conditional'`; owner `brief-tools` `update_brief` + `BriefService.updateContent`); test src/server/mcp/brief-tools.test.ts
+- plan-tools-create-plan → src/server/mcp/plan-tools.ts (`create_plan`, thread mount; owner `PlanService.create`); test src/server/mcp/plan-tools.test.ts
+- plan-tools-create-plan-explicit → src/server/mcp/plan-tools.ts (`create_plan`, `target: 'explicit'` mount); test src/server/mcp/plan-tools.test.ts
+- plan-tools-get-plan → src/server/mcp/plan-tools.ts (`get_plan`, thread mount; window without schema bounds); test src/server/mcp/plan-tools.test.ts
+- plan-tools-get-plan-explicit → src/server/mcp/plan-tools.ts (`get_plan`, explicit mount); test src/server/mcp/plan-tools.test.ts
+- plan-tools-get-plan-version → src/server/mcp/plan-tools.ts (`get_plan_version`, thread mount; `version` integer, no lower bound); test src/server/mcp/plan-tools.test.ts
+- plan-tools-get-plan-version-explicit → src/server/mcp/plan-tools.ts (`get_plan_version`, explicit mount); test src/server/mcp/plan-tools.test.ts
+- plan-tools-list-plan-versions → src/server/mcp/plan-tools.ts (`list_plan_versions`, thread mount); test src/server/mcp/plan-tools.test.ts
+- plan-tools-list-plan-versions-explicit → src/server/mcp/plan-tools.ts (`list_plan_versions`, explicit mount); test src/server/mcp/plan-tools.test.ts
+- plan-tools-list-plans-explicit → src/server/mcp/plan-tools.ts (`list_plans`, explicit mount only); test src/server/mcp/plan-tools.test.ts
+- plan-tools-mark-plan-applied → src/server/mcp/plan-tools.ts (`mark_plan_applied`, thread mount; owner `PlanService.setAppliedByThread`); test src/server/mcp/plan-tools.test.ts
+- plan-tools-mark-plan-applied-explicit → src/server/mcp/plan-tools.ts (`mark_plan_applied`, explicit mount); test src/server/mcp/plan-tools.test.ts
+- plan-tools-update-plan → src/server/mcp/plan-tools.ts (`update_plan`, thread mount, `UPDATE_PLAN_DESCRIPTION`; owner `PlanService.update`); test src/server/mcp/plan-tools.test.ts
+- plan-tools-update-plan-explicit → src/server/mcp/plan-tools.ts (`update_plan`, explicit mount); test src/server/mcp/plan-tools.test.ts
+- transagent-tools-list-plans → src/server/mcp/transagent-tools.ts (`list_plans`, `buildListPlansTool`); test src/server/mcp/transagent-tools.list-plans.test.ts
+- create-plan → src/server/operations/core-operations.ts (`create_plan` row, renderings `plan-tools.create_plan`; owner `PlanService.create`); test src/server/mcp/plan-tools.test.ts
+- execute-plan → src/server/operations/core-operations.ts (`execute_plan` row, no renderings; owner `PlanService.attachThreadToPlan`); test src/server/mcp/plan-tools.test.ts
+- get-plan → src/server/operations/core-operations.ts (`get_plan` row; owner `PlanService.getByAddress` / `getByThread`); test src/server/mcp/plan-tools.test.ts
+- get-plan-version → src/server/operations/core-operations.ts (`get_plan_version` row); test src/server/mcp/plan-tools.test.ts
+- list-plan-versions → src/server/operations/core-operations.ts (`list_plan_versions` row); test src/server/mcp/plan-tools.test.ts
+- list-plans → src/server/operations/core-operations.ts (`list_plans` row, new; renderings `transagent-tools.list_plans` internal, `plan-tools.list_plans` mcp; owner `PlanService.listPlans`); test src/server/mcp/plan-tools.test.ts
+- mark-plan-applied → src/server/operations/core-operations.ts (`mark_plan_applied` row; owner `PlanService.setAppliedByThread`); test src/server/mcp/plan-tools.test.ts
+- update-plan → src/server/operations/core-operations.ts (`update_plan` row, idempotent `'conditional'`; owner `PlanService.update`); test src/server/mcp/plan-tools.test.ts

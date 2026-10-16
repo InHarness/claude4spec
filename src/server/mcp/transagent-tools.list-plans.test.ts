@@ -4,7 +4,9 @@ import { buildTransagentToolsServer, TRANSAGENT_TOOL_NAMES } from './transagent-
 import { PlanService } from '../services/plan.js';
 import type { TransagentDispatcher } from '../services/transagent-dispatcher.js';
 import { systemRootId } from '../../shared/root-kinds.js';
-import { DEFAULT_LIMITS } from '../discovery/pagination.js';
+import { DEFAULT_LIMITS, MAX_LIMIT, resolvePageRequest } from '../discovery/pagination.js';
+import { PLAN_TOOL_RECORDS } from '../../../tests/helpers/plan-tool-records.js';
+import { expectToolMatchesToolRecord } from '../../../tests/helpers/write-tool-records.js';
 
 /**
  * 2.1.18 (M10 `ww4lujgo` / `m10mcp00`, M44 `3f5ej79s`, M05 `iatop5pj`) —
@@ -168,6 +170,50 @@ describe('transagent-tools · list_plans (2.1.18)', () => {
     const tail = (await list(service, { limit: 10, offset: DEFAULT_LIMITS.listPlans })).body;
     expect(tail.plans).toHaveLength(5);
     expect(tail.hasMore).toBe(false);
+  });
+
+  it('[entity:transagent-tools-list-plans] transagent-tools · list_plans: the record\'s name, description, `applied` (boolean) + `limit` / `offset` (integers), all optional, readOnlyHint — `{ plans, total, hasMore }` rows without content, default limit 50 and maximum 1000, default offset 0, empty dates answered as null', async () => {
+    const record = PLAN_TOOL_RECORDS['transagent-tools-list-plans'];
+    expect(record).toBeDefined();
+    const { server, tool } = listTool(serviceOver({}));
+    expect(server.tools.find((t) => t.name === 'list_plans')).toBe(tool);
+    expectToolMatchesToolRecord(tool, record!);
+
+    const many: Record<string, Record<string, unknown>> = {};
+    for (let i = 0; i < 60; i++) {
+      const n = String(i).padStart(3, '0');
+      many[`p-${n}.md`] = planFile({ title: `P${n}`, created_at: `2026-01-01T00:00:00.${n}Z`, created_by: 'agent' });
+    }
+    const service = serviceOver(many);
+    const first = (await list(service)).body;
+    expect(Object.keys(first).sort()).toEqual(['hasMore', 'plans', 'total']);
+    // Default limit 50, default offset 0: the window starts at the head of the list.
+    expect(DEFAULT_LIMITS.listPlans).toBe(50);
+    expect(first.plans).toHaveLength(50);
+    expect(first.total).toBe(60);
+    expect(first.hasMore).toBe(true);
+    expect(paths(first)).toEqual(paths((await list(service, { offset: 0, limit: 50 })).body));
+    expect(paths(first)[0]).toBe('p-000.md');
+    // The maximum: a limit above 1000 is answered as 1000, not refused.
+    expect(MAX_LIMIT).toBe(1000);
+    expect(resolvePageRequest({ limit: 5000 }, DEFAULT_LIMITS.listPlans)).toEqual({ limit: 1000, offset: 0 });
+    const over = await list(service, { limit: 5000 });
+    expect(over.isError).toBe(false);
+    expect(over.body.plans).toHaveLength(60);
+    expect(over.body.hasMore).toBe(false);
+
+    // A plan with no created_at and no version: both dates come back as null.
+    const undated = new PlanService({
+      plansPages: { rootId: PLANS },
+      frontmatterIndexer: {
+        findByFrontmatterType: () => [{ rootId: PLANS, path: 'bare.md', frontmatter: planFile({ title: 'Bare' }) }],
+      },
+      pageVersions: { getLatestForPath: () => undefined },
+      chatService: { threadCountForPlan: () => 0, findLastThreadIdForPlan: () => null },
+    } as unknown as ConstructorParameters<typeof PlanService>[0]);
+    expect((await list(undated)).body.plans).toEqual([
+      { path: 'bare.md', title: 'Bare', applied: false, createdAt: null, updatedAt: null },
+    ]);
   });
 
   it('a rig without the plan set does not register list_plans', () => {
