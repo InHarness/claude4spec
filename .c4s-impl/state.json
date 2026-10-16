@@ -318,13 +318,32 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u3-m12-reader-reference-tools/p1-l3-l6",
+          "layers": [
+            "L3",
+            "L6"
+          ],
+          "slugs": [
+            "c4s-reader-find-references",
+            "c4s-reader-check-consistency",
+            "section:m12mcp00",
+            "section:m19mcp00"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "0a89e255e31097bcf58bc3b55e9a395a3d8d04f8",
+      "baseCommit": "0a89e255e31097bcf58bc3b55e9a395a3d8d04f8",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },

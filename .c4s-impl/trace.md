@@ -6,3 +6,5 @@ update-sections → src/server/operations/core-operations.ts (row update_section
 link-dto → src/server/operations/core-operations.ts (row link_dto, rest direct) + plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/routes.ts (POST /api/endpoints/:slug/dtos) + plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/link-dto.ts (linkDto)
 unlink-dto → src/server/operations/core-operations.ts (row unlink_dto, rest direct) + plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/routes.ts (DELETE /api/endpoints/:slug/dtos/:dtoSlug/:relation) + plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/link-dto.ts (unlinkDto)
 entity-tools-get-field-content → src/server/mcp/entity-tools.ts (get_field_content)
+c4s-reader-find-references → src/server/mcp/c4s-reader.ts (find_references) + src/server/operations/core-operations.ts (row find_references, mcp: c4s-reader.find_references)
+c4s-reader-check-consistency → src/server/mcp/c4s-reader.ts (check_consistency) + src/server/operations/core-operations.ts (row check_consistency, mcp: c4s-reader.check_consistency)
