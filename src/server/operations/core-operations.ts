@@ -1186,7 +1186,9 @@ export function registerCoreOperations(): void {
       { rootId: z.string(), path: z.string(), content: z.string().optional(), title: z.string().optional() },
       // A second call with the same address is PAGE_EXISTS, not a no-op.
       false,
-      ['PAGE_EXISTS', 'ROOT_NOT_FOUND', 'VALIDATION'],
+      // 2.1.27 — a path that leaves the root is INVALID_ARGUMENT, its own code
+      // beside the empty path's VALIDATION.
+      ['PAGE_EXISTS', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'VALIDATION'],
       // There is nothing on the page yet to substitute fragments of.
       'literal',
     ),
@@ -1208,7 +1210,7 @@ export function registerCoreOperations(): void {
   registerRow(
     pageWrite(
       'update_page',
-      'Write a page — create or replace: EITHER in full (`body` plus optional `frontmatter`, which replaces the page\'s frontmatter wholesale) OR differentially (`textEdits` — literal find/replaceWith substitutions over the whole file, frontmatter included). Exactly one of the two per call; both or neither is INVALID_ARGUMENT. The literal mode creates a page missing from a known root rather than answering NOT_FOUND (M02 `gj2vdsjm`) — which is how the editor saves a new page. The differential mode is NOT idempotent — replaying it answers FIND_NOT_FOUND. Both modes carry M06\'s ANCHOR_LOSS guard, overridable with `dropAnchors`; the returned `hash` is taken after the in-band anchor injection.',
+      'Write a page — create or replace: EITHER in full (`body` plus optional `frontmatter`, which replaces the page\'s frontmatter wholesale) OR differentially (`textEdits` — literal find/replaceWith substitutions over the whole file, frontmatter included). Exactly one of the two per call; both or neither is INVALID_ARGUMENT. The literal mode creates a page missing from a known root rather than answering NOT_FOUND (the `update-page` record) — which is how the editor saves a new page. The differential mode is NOT idempotent — replaying it answers FIND_NOT_FOUND. Both modes carry M06\'s ANCHOR_LOSS guard, overridable with `dropAnchors`; the returned `hash` is taken after the in-band anchor injection.',
       {
         rootId: z.string(),
         path: z.string(),
@@ -1221,7 +1223,7 @@ export function registerCoreOperations(): void {
       'conditional',
       // ASSUMPTION:dev-0101 — an unknown root is ROOT_NOT_FOUND (the row: NOT_FOUND).
       // ASSUMPTION:m02u-dev-0001 — the row's ROOT_NOT_WRITABLE has no producer in the page write path.
-      // No NOT_FOUND for a missing page: the literal mode creates it (M02 `gj2vdsjm`, 2.1.14).
+      // No NOT_FOUND for a missing page: the literal mode creates it (2.1.14; the record's `zachowanie` since 2.1.27).
       ['PAGE_CONFLICT', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'FIND_NOT_FOUND', 'MATCH_COUNT_MISMATCH', 'ANCHOR_LOSS', 'VALIDATION'],
       'literal+diff',
     ),
@@ -1272,9 +1274,9 @@ export function registerCoreOperations(): void {
       'Move a page to another path within the SAME root — one call covers both renaming a file and moving it to a different directory. The content is never read or re-serialized, so the hash is unchanged; citations of the old path are rewritten afterwards, each as its own write. NOT idempotent: a replay answers NOT_FOUND.',
       { rootId: z.string(), from: z.string(), to: z.string(), ...expectedHash },
       false,
-      // ASSUMPTION:dev-2605 — the record's `kodyBledow`, which does not list the
-      // NOT_IMPLEMENTED the tool's `logic` names for a root without a record store.
-      ['PAGE_CONFLICT', 'PAGE_EXISTS', 'NOT_FOUND', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'VALIDATION'],
+      // 2.1.27 — the record declares NOT_IMPLEMENTED (a root without a record
+      // store) and no longer VALIDATION: an empty `from`/`to` is INVALID_ARGUMENT.
+      ['PAGE_CONFLICT', 'PAGE_EXISTS', 'NOT_FOUND', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'NOT_IMPLEMENTED'],
       'n/a',
     ),
   );

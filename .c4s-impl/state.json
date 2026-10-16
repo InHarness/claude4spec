@@ -106,13 +106,32 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u1-m02-page-write-refusals/p1-l3-l3",
+          "layers": [
+            "L3"
+          ],
+          "slugs": [
+            "create-page",
+            "update-page",
+            "move-page",
+            "delete-page",
+            "update-sections"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "1b2fada7b2d39945e5823211bbce8641b6f897b4",
+      "baseCommit": "1b2fada7b2d39945e5823211bbce8641b6f897b4",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },
@@ -527,7 +546,7 @@
         "u5-m10-list-plans-order",
         "u6-m30-static-headers"
       ],
-      "startCommit": null
+      "startCommit": "1b2fada7b2d39945e5823211bbce8641b6f897b4"
     }
   ],
   "conventions": [

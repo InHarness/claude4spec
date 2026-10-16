@@ -1209,7 +1209,7 @@ describe('the page, TODO, page-link and static-file rows as their 2.1.26 records
   const required = (name: string, key: string): boolean =>
     !(CATALOG.require(name).inputSchema[key] as unknown as { isOptional(): boolean }).isOptional();
 
-  it('[entity:create-page] create_page: project, direct, all four channels direct, file/db/ui-notify, not idempotent, literal, codes PAGE_EXISTS, ROOT_NOT_FOUND, VALIDATION, rendered by page-tools · create_page, addressed by (rootId, path), no guard', () => {
+  it('[entity:create-page] create_page: project, direct, all four channels direct, file/db/ui-notify, not idempotent, literal, codes PAGE_EXISTS, ROOT_NOT_FOUND, INVALID_ARGUMENT, VALIDATION, rendered by page-tools · create_page, addressed by (rootId, path), no guard', () => {
     expectRecordRow({
       nazwa: 'create_page',
       opClass: 'write',
@@ -1217,7 +1217,7 @@ describe('the page, TODO, page-link and static-file rows as their 2.1.26 records
       efekty: PAGE_EFFECTS,
       idempotencja: false,
       opisTresci: 'literal',
-      kodyBledow: ['PAGE_EXISTS', 'ROOT_NOT_FOUND', 'VALIDATION'],
+      kodyBledow: ['PAGE_EXISTS', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'VALIDATION'],
       narzedzia: { internal: ['page-tools-create-page'], mcp: ['page-tools-create-page'] },
     });
     expect(Object.keys(CATALOG.require('create_page').inputSchema).sort()).toEqual(['content', 'path', 'rootId', 'title']);
@@ -1259,7 +1259,7 @@ describe('the page, TODO, page-link and static-file rows as their 2.1.26 records
     expect(required('delete_page', 'expectedHash')).toBe(false);
   });
 
-  it('[entity:move-page] move_page: project, direct, all four channels direct, file/db/ui-notify, not idempotent, no content input, codes PAGE_CONFLICT, PAGE_EXISTS, NOT_FOUND, ROOT_NOT_FOUND, INVALID_ARGUMENT, VALIDATION, rendered by page-tools · move_page, addressed by (rootId, from → to), required guard', () => {
+  it('[entity:move-page] move_page: project, direct, all four channels direct, file/db/ui-notify, not idempotent, no content input, codes PAGE_CONFLICT, PAGE_EXISTS, NOT_FOUND, ROOT_NOT_FOUND, INVALID_ARGUMENT, NOT_IMPLEMENTED, rendered by page-tools · move_page, addressed by (rootId, from → to), required guard', () => {
     expectRecordRow({
       nazwa: 'move_page',
       opClass: 'write',
@@ -1267,7 +1267,7 @@ describe('the page, TODO, page-link and static-file rows as their 2.1.26 records
       efekty: PAGE_EFFECTS,
       idempotencja: false,
       opisTresci: 'n/a',
-      kodyBledow: ['PAGE_CONFLICT', 'PAGE_EXISTS', 'NOT_FOUND', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'VALIDATION'],
+      kodyBledow: ['PAGE_CONFLICT', 'PAGE_EXISTS', 'NOT_FOUND', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'NOT_IMPLEMENTED'],
       narzedzia: { internal: ['page-tools-move-page'], mcp: ['page-tools-move-page'] },
     });
     expect(Object.keys(CATALOG.require('move_page').inputSchema).sort()).toEqual(['expectedHash', 'from', 'rootId', 'to']);

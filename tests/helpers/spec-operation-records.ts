@@ -3,7 +3,9 @@
  * initial --to 2.1.26` returns them, in the fields a catalog row answers for:
  * `nazwa`, scope, mediation, the four channel values with the channel entries of
  * `powody`, `efekty`, `idempotencja`, `opisTresci`, `reguly`, `kodyBledow` and
- * `narzedzia` (mcp-tool slugs per agentic channel). The whole-catalogue tests in
+ * `narzedzia` (mcp-tool slugs per agentic channel). 2.1.27 changed two of them:
+ * `create-page` gained INVALID_ARGUMENT, `move-page` swapped VALIDATION for
+ * NOT_IMPLEMENTED. The whole-catalogue tests in
  * `src/server/operations/catalog.test.ts` hold every row against this list.
  *
  * `CATALOGUE_TOOL_RECORDS` resolves every slug a record's `narzedzia` names to
@@ -141,7 +143,7 @@ export const SPEC_OPERATION_RECORDS: readonly SpecOperationRecord[] = [
     idempotencja: 'nie',
     opisTresci: 'dosłowny',
     reguly: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'operation-only-write' }],
-    kodyBledow: ['PAGE_EXISTS', 'ROOT_NOT_FOUND', 'VALIDATION'],
+    kodyBledow: ['PAGE_EXISTS', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'VALIDATION'],
     narzedzia: { internal: ['page-tools-create-page'], mcp: ['page-tools-create-page'] },
   },
   {
@@ -940,7 +942,7 @@ export const SPEC_OPERATION_RECORDS: readonly SpecOperationRecord[] = [
     idempotencja: 'nie',
     opisTresci: 'n/d',
     reguly: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'destructive-declared' }, { id: 'operation-only-write' }],
-    kodyBledow: ['PAGE_CONFLICT', 'PAGE_EXISTS', 'NOT_FOUND', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'VALIDATION'],
+    kodyBledow: ['PAGE_CONFLICT', 'PAGE_EXISTS', 'NOT_FOUND', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'NOT_IMPLEMENTED'],
     narzedzia: { internal: ['page-tools-move-page'], mcp: ['page-tools-move-page'] },
   },
   {

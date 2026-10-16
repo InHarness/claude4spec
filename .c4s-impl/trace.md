@@ -1,0 +1,5 @@
+create-page → src/server/operations/core-operations.ts (row create_page) + src/server/services/page-write.ts (createPage, assertInsideRoot)
+update-page → src/server/operations/core-operations.ts (row update_page) + src/server/services/page-write.ts (updatePage, assertInsideRoot, assertNoUndeclaredAnchorLoss)
+move-page → src/server/operations/core-operations.ts (row move_page) + src/server/services/page-write.ts (movePage, facadeRootIds) + src/server/mcp/page-tools.ts / src/server/routes/pages.ts (pass the facade roots)
+delete-page → src/server/operations/core-operations.ts (row delete_page) + src/server/services/page-write.ts (deletePage)
+update-sections → src/server/operations/core-operations.ts (row update_sections) + src/server/services/page-write.ts (updateSections)
