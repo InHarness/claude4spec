@@ -10,9 +10,8 @@
  * to `<server>.<tool>` through it.
  */
 
-import { expect } from 'vitest';
-import { CATALOG, type ChannelCell, type OperationDeclaration } from '../../src/server/operations/catalog.js';
-import { registerCoreOperations } from '../../src/server/operations/core-operations.js';
+import type { OperationDeclaration } from '../../src/server/operations/catalog.js';
+import { expectOperationMatchesRecord, type OperationRecord } from './operation-records.js';
 import type { WriteToolRecord } from './write-tool-records.js';
 
 export const PATCH_TOOL_RECORDS: Record<string, WriteToolRecord> = {
@@ -60,50 +59,16 @@ export const PATCH_TOOL_RECORDS: Record<string, WriteToolRecord> = {
 
 /**
  * A `spec-operation` record of M23 (`create-patch`, `get-patch`, `list-patches`,
- * `mark-patch-applied`) in the fields the catalog row carries: `nazwa`, the
- * four channel cells (an `n/a` / `via` carrying the record's `powody` entry
- * verbatim), `efekty`, `idempotencja`, `opisTresci`, `kodyBledow` and
- * `narzedzia` as mcp-tool slugs per channel. Scope `project` and mediation
- * `direct` hold for all four.
+ * `mark-patch-applied`) in the fields the catalog row carries; mediation
+ * `direct` holds for all four.
  */
-export interface PatchOperationRecord {
-  nazwa: string;
-  channels: Record<'internal' | 'cli' | 'mcp' | 'rest', ChannelCell>;
-  efekty: string[];
-  idempotencja: boolean | 'conditional';
-  opisTresci: 'literal' | 'literal+diff' | 'n/a' | undefined;
-  kodyBledow: string[];
-  narzedzia: Partial<Record<'internal' | 'mcp', string[]>>;
-}
+export type PatchOperationRecord = Omit<OperationRecord, 'mediacja'>;
 
 /**
- * The registered declaration matches its record: name, scope, mediation, the
- * four channel cells, effects, idempotence, content input, exactly the record's
- * codes (each once), and `renderings` exactly its `narzedzia` — each named
- * mcp-tool record resolved to `<server>.<tool>` through `PATCH_TOOL_RECORDS`.
+ * The registered declaration matches its record (the shared
+ * `expectOperationMatchesRecord`), each named mcp-tool record resolved to
+ * `<server>.<tool>` through `PATCH_TOOL_RECORDS`.
  */
 export function expectPatchOperationRecord(record: PatchOperationRecord): OperationDeclaration {
-  registerCoreOperations();
-  const op = CATALOG.require(record.nazwa);
-  expect(op.name).toBe(record.nazwa);
-  expect(op.scope).toBe('project');
-  expect(op.mediation).toBe('direct');
-  for (const channel of ['internal', 'cli', 'mcp', 'rest'] as const) {
-    expect(op.channels[channel], `${record.nazwa}.${channel}`).toEqual(record.channels[channel]);
-  }
-  expect([...op.sideEffects].sort()).toEqual([...record.efekty].sort());
-  expect(op.idempotent).toBe(record.idempotencja);
-  expect(op.contentInput).toBe(record.opisTresci);
-  expect(new Set(op.errorCodes).size).toBe(op.errorCodes.length);
-  expect([...op.errorCodes].sort()).toEqual([...record.kodyBledow].sort());
-  const expected: Partial<Record<'internal' | 'mcp', string[]>> = {};
-  for (const [channel, slugs] of Object.entries(record.narzedzia) as Array<['internal' | 'mcp', string[]]>) {
-    expected[channel] = slugs.map((slug) => {
-      const tool = PATCH_TOOL_RECORDS[slug];
-      expect(tool, slug).toBeDefined();
-      return `${tool!.server}.${tool!.name}`;
-    });
-  }
-  expect(op.renderings ?? {}).toEqual(expected);
-  return op;
+  return expectOperationMatchesRecord({ ...record, mediacja: 'direct' }, PATCH_TOOL_RECORDS);
 }

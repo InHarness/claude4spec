@@ -2442,6 +2442,17 @@ export function registerCoreOperations(): void {
    * stay reachable from every profile, which is what they were; the two writers
    * become reachable only from a profile that admits `write` (`chat`, `patch`),
    * which is what they always should have been.
+   *
+   * 2.1.26 — each row follows its `spec-operation` record (`release-list`,
+   * `release-show`, `release-diff`, `release-create`, `release-update`):
+   * `errorCodes` is exactly the record's `kodyBledow` (the shared base
+   * VALIDATION + RELEASE_NOT_FOUND opens every one of them), and `renderings`
+   * is its `narzedzia` — `release-tools.<tool>` in both agentic channels.
+   *
+   * ASSUMPTION:dev-2610 — `release_create` and `release_update` also raise
+   * RELEASE_SLUG_CONFLICT (two names that slugify alike), which their tool
+   * records' `logic` names but the operation records' `kodyBledow` omit. The
+   * rows declare the records' lists; the service behaviour is unchanged.
    */
   const releaseOp = (
     name: string,
@@ -2474,14 +2485,15 @@ export function registerCoreOperations(): void {
         // route's `view=operation`). The writers stay off the CLI: M11 is a read
         // client of the specification, and a shell-invocable release mutation is
         // a different risk profile from one behind an agent turn or the UI's own
-        // button.
+        // button. 2.1.26: the reason is the records' `powody.cli`, verbatim.
         cli:
           opClass === 'read'
             ? direct()
-            : na('bin `c4s` is a read and diagnostics client; release state is mutated through mcp/rest/internal'),
+            : na('bin `c4s` jest klientem odczytu i diagnostyki; stan release\'ów zmienia się przez kanały `mcp`, `rest` i `internal`'),
         mcp: direct(),
         rest: direct(),
       },
+      renderings: { internal: [`release-tools.${name}`], mcp: [`release-tools.${name}`] },
     });
   };
 
@@ -2556,7 +2568,7 @@ export function registerCoreOperations(): void {
     'write',
     { name: z.string(), description: z.string() },
     ['db', 'file', 'ui-notify'],
-    ['RELEASE_NAME_CONFLICT', 'RELEASE_NAME_RESERVED'],
+    ['RELEASE_NAME_CONFLICT', 'RELEASE_NAME_RESERVED', 'RELEASE_DESCRIPTION_REQUIRED', 'RELEASE_DESCRIPTION_TOO_LONG'],
   );
   releaseOp(
     'release_update',
@@ -2569,6 +2581,121 @@ export function registerCoreOperations(): void {
       assignUnreleased: z.boolean().optional(),
     },
     ['db', 'ui-notify'],
-    ['RELEASE_FROZEN', 'RELEASE_NAME_CONFLICT', 'RELEASE_NAME_RESERVED'],
+    [
+      'RELEASE_FROZEN',
+      'RELEASE_NAME_CONFLICT',
+      'RELEASE_NAME_RESERVED',
+      'RELEASE_DESCRIPTION_REQUIRED',
+      'RELEASE_DESCRIPTION_TOO_LONG',
+    ],
   );
+
+  /**
+   * 2.1.26 — `release_restore` (record `release-restore`): the REST route
+   * `POST /api/releases/:name/restore`, triggered by the user in the UI. No
+   * agent tool and no `c4s` command renders it — the record's reasons, verbatim.
+   * The default scope restores the whole specification from the release's
+   * snapshot; repeating it changes nothing but captures new `file_version`s.
+   *
+   * ASSUMPTION:dev-2611 — the record's only code is RELEASE_NOT_FOUND; the
+   * route's partial scopes (`entity` / `page` without a target) also answer
+   * VALIDATION, which the record does not list. Declared as the record says.
+   */
+  CATALOG.register({
+    name: 'release_restore',
+    summary:
+      "Restore the specification from the snapshot of the named release, on the user's decision. A repeated restore of the same release yields the same state.",
+    scope: 'project',
+    mediation: 'human-mediated',
+    opClass: 'write',
+    inputSchema: { releaseName: z.string() },
+    errorCodes: ['RELEASE_NOT_FOUND'],
+    sideEffects: ['file', 'db'],
+    // The restored content comes off the release's snapshot, never out of the request.
+    contentInput: 'n/a',
+    idempotent: true,
+    channels: {
+      internal: na(
+        'user-initiated: operacja nadpisuje bieżącą specyfikację cudzą, zamrożoną wersją, więc jej wyzwolenie samo w sobie jest decyzją (przegląd otwarty)',
+      ),
+      cli: na(
+        'user-initiated: operacja nadpisuje bieżącą specyfikację cudzą, zamrożoną wersją, więc jej wyzwolenie samo w sobie jest decyzją (przegląd otwarty)',
+      ),
+      mcp: na(
+        "narzędzie agentowe restore'u świadomie nie istnieje: nie było use case'u, który uzasadniałby oddanie tej decyzji agentowi (przegląd otwarty)",
+      ),
+      rest: direct(),
+    },
+  });
+
+  // ── M25 Release Push ──────────────────────────────────────────────────────
+
+  /**
+   * 2.1.26 — the three M25 rows (records `push-release`, `list-release-pushes`,
+   * `get-release-push`). Each renders only as its REST route under
+   * `/api/release-pushes` over `ReleasePushService`; the `n/a` reasons are the
+   * records' `powody`, verbatim.
+   */
+  const RELEASE_PUSH_UI_ONLY = 'kod renderuje operację wyłącznie trasą REST interfejsu, a katalog operacji kodu jej nie deklaruje';
+  const RELEASE_PUSH_NO_CLI = 'brak komendy `c4s`; kod renderuje operację wyłącznie trasą REST interfejsu';
+  const PUSH_USER_INITIATED =
+    'akt user-initiated: push wyprowadza bajty specyfikacji poza maszynę pod tożsamością zalogowanego użytkownika; przegląd klasyfikacji otwarty';
+
+  CATALOG.register({
+    name: 'push_release',
+    summary:
+      "Send the named release's bundle to the remote project on behalf of the signed-in user. Blocking: it answers with the finished transport, and every call that reaches the transport appends an audit row.",
+    scope: 'project',
+    mediation: 'human-mediated',
+    opClass: 'write',
+    inputSchema: { releaseName: z.string() },
+    errorCodes: ['NOT_CONNECTED', 'ACCOUNT_NOT_ACTIVE', 'SESSION_EXPIRED', 'PUSH_FAILED', 'RELEASE_NOT_FOUND', 'VALIDATION'],
+    sideEffects: ['file', 'db', 'ui-notify'],
+    // The bundle is built from the release's history, never out of the request.
+    contentInput: 'n/a',
+    idempotent: false,
+    channels: {
+      internal: na(PUSH_USER_INITIATED),
+      cli: na(PUSH_USER_INITIATED),
+      mcp: na(PUSH_USER_INITIATED),
+      rest: direct(),
+    },
+  });
+
+  CATALOG.register({
+    name: 'list_release_pushes',
+    summary:
+      "The local audit of release pushes, newest first — all of it, or one release's history by name (an unknown name is an empty list). No paging.",
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'read',
+    inputSchema: { releaseName: z.string().optional() },
+    errorCodes: ['VALIDATION'],
+    sideEffects: ['none'],
+    idempotent: true,
+    channels: {
+      internal: na(RELEASE_PUSH_UI_ONLY),
+      cli: na(RELEASE_PUSH_NO_CLI),
+      mcp: na(RELEASE_PUSH_UI_ONLY),
+      rest: direct(),
+    },
+  });
+
+  CATALOG.register({
+    name: 'get_release_push',
+    summary: 'One entry of the local release-push audit, by its id.',
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'read',
+    inputSchema: { id: z.number().int() },
+    errorCodes: ['VALIDATION', 'RELEASE_PUSH_NOT_FOUND'],
+    sideEffects: ['none'],
+    idempotent: true,
+    channels: {
+      internal: na(RELEASE_PUSH_UI_ONLY),
+      cli: na(RELEASE_PUSH_NO_CLI),
+      mcp: na(RELEASE_PUSH_UI_ONLY),
+      rest: direct(),
+    },
+  });
 }

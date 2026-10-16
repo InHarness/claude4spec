@@ -22,6 +22,7 @@ import { createReferenceToolsServer, type ReferenceToolsDeps } from '../mcp/refe
 import { buildEntityTools, type EntityToolsDeps } from '../mcp/entity-tools.js';
 import { READ_TOOL_RECORDS } from '../../../tests/helpers/read-tool-records.js';
 import { WRITE_TOOL_RECORDS } from '../../../tests/helpers/write-tool-records.js';
+import { expectOperationMatchesRecord } from '../../../tests/helpers/operation-records.js';
 import { createEndpointToolsServer } from '../../../plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/mcp.js';
 import { createPageToolsServer, type PageToolsDeps } from '../mcp/page-tools.js';
 import type { LinkDtoDeps } from '../../../plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/link-dto.js';
@@ -1416,5 +1417,84 @@ describe('the page, TODO, page-link and static-file rows as their 2.1.26 records
       expect(pageTools.has(name), name).toBe(false);
       expect(CATALOG.require(name).renderings, name).toBeUndefined();
     }
+  });
+});
+
+/**
+ * 2.1.26 — the three M25 rows as their `spec-operation` records declare them
+ * (`push-release`, `list-release-pushes`, `get-release-push`): each renders only
+ * as its REST route under `/api/release-pushes`; the other three cells are `n/a`
+ * with the records' `powody` verbatim, and `narzedzia` is empty. The routes'
+ * behaviour (`zachowanie`) is held in `routes/release-pushes.test.ts`.
+ */
+describe('the M25 release-push rows as their 2.1.26 records declare them', () => {
+  const D = { kind: 'direct' } as const;
+  const UI_ONLY = 'kod renderuje operację wyłącznie trasą REST interfejsu, a katalog operacji kodu jej nie deklaruje';
+  const NO_CLI = 'brak komendy `c4s`; kod renderuje operację wyłącznie trasą REST interfejsu';
+  const USER_INITIATED =
+    'akt user-initiated: push wyprowadza bajty specyfikacji poza maszynę pod tożsamością zalogowanego użytkownika; przegląd klasyfikacji otwarty';
+  const required = (name: string, key: string): boolean =>
+    !(CATALOG.require(name).inputSchema[key] as unknown as { isOptional(): boolean }).isOptional();
+
+  it('[entity:push-release] push_release: project, human-mediated, internal/cli/mcp n/a (user-initiated), rest direct, file/db/ui-notify, not idempotent, no content input, codes NOT_CONNECTED, ACCOUNT_NOT_ACTIVE, SESSION_EXPIRED, PUSH_FAILED, RELEASE_NOT_FOUND, VALIDATION, no renderings, addressed by releaseName', () => {
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'push_release',
+        mediacja: 'human-mediated',
+        channels: {
+          internal: { kind: 'na', reason: USER_INITIATED },
+          cli: { kind: 'na', reason: USER_INITIATED },
+          mcp: { kind: 'na', reason: USER_INITIATED },
+          rest: D,
+        },
+        efekty: ['file', 'db', 'ui-notify'],
+        idempotencja: false,
+        opisTresci: 'n/a',
+        kodyBledow: ['NOT_CONNECTED', 'ACCOUNT_NOT_ACTIVE', 'SESSION_EXPIRED', 'PUSH_FAILED', 'RELEASE_NOT_FOUND', 'VALIDATION'],
+        narzedzia: {},
+      },
+      {},
+    );
+    expect(op.opClass).toBe('write');
+    expect(Object.keys(op.inputSchema)).toEqual(['releaseName']);
+    expect(required('push_release', 'releaseName')).toBe(true);
+  });
+
+  it('[entity:list-release-pushes] list_release_pushes: project, direct, internal/mcp n/a (REST only), cli n/a (no c4s command), rest direct, no effects, idempotent, code VALIDATION, no renderings, optional releaseName and no paging', () => {
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'list_release_pushes',
+        channels: { internal: { kind: 'na', reason: UI_ONLY }, cli: { kind: 'na', reason: NO_CLI }, mcp: { kind: 'na', reason: UI_ONLY }, rest: D },
+        efekty: ['none'],
+        idempotencja: true,
+        opisTresci: undefined,
+        kodyBledow: ['VALIDATION'],
+        narzedzia: {},
+      },
+      {},
+    );
+    expect(op.opClass).toBe('read');
+    // Without a parameter the whole history; with `releaseName` one release's. No window.
+    expect(Object.keys(op.inputSchema)).toEqual(['releaseName']);
+    expect(required('list_release_pushes', 'releaseName')).toBe(false);
+  });
+
+  it('[entity:get-release-push] get_release_push: project, direct, internal/mcp n/a (REST only), cli n/a (no c4s command), rest direct, no effects, idempotent, codes VALIDATION, RELEASE_PUSH_NOT_FOUND, no renderings, addressed by the audit entry id', () => {
+    const op = expectOperationMatchesRecord(
+      {
+        nazwa: 'get_release_push',
+        channels: { internal: { kind: 'na', reason: UI_ONLY }, cli: { kind: 'na', reason: NO_CLI }, mcp: { kind: 'na', reason: UI_ONLY }, rest: D },
+        efekty: ['none'],
+        idempotencja: true,
+        opisTresci: undefined,
+        kodyBledow: ['VALIDATION', 'RELEASE_PUSH_NOT_FOUND'],
+        narzedzia: {},
+      },
+      {},
+    );
+    expect(op.opClass).toBe('read');
+    const shape = z.object(op.inputSchema as z.ZodRawShape);
+    expect(shape.safeParse({ id: 3 }).success).toBe(true);
+    expect(shape.safeParse({ id: 1.5 }).success).toBe(false);
   });
 });

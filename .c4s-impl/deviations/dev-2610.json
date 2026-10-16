@@ -1,0 +1,17 @@
+{
+  "id": "dev-2610",
+  "kind": "clarification",
+  "blocking": false,
+  "address": "u15-release-tools/L3",
+  "slugs": [
+    "release-create",
+    "release-update",
+    "release-tools-release-create",
+    "release-tools-release-update"
+  ],
+  "text": "The 2.1.26 `logic` of the mcp-tool records `release-tools-release-create` and `release-tools-release-update` names a refusal `RELEASE_SLUG_CONFLICT` (a name whose slug equals another release's slug), and the code raises it. The `kodyBledow` of the spec-operation records `release-create` and `release-update` do not list it (they list VALIDATION, RELEASE_NOT_FOUND, RELEASE_NAME_CONFLICT, RELEASE_NAME_RESERVED, RELEASE_DESCRIPTION_REQUIRED, RELEASE_DESCRIPTION_TOO_LONG, plus RELEASE_FROZEN on update). Built (implementer): the catalog rows declare exactly the records' `kodyBledow`; the service keeps raising RELEASE_SLUG_CONFLICT as the tool records' `logic` says. Needed from the spec: add RELEASE_SLUG_CONFLICT to both operation records' `kodyBledow`, or drop it from the tool records' `logic` (and say what a slug collision answers instead).",
+  "unit": "u15-release-tools",
+  "portion": "u15-release-tools/p1-l3-l3",
+  "sent": true,
+  "patchPath": "2-1-25-to-2-1-26-workflow-u15-release-tools-l3-the-2-1-26-logic-of-the-mcp-tool-records-release-tools-rele.md"
+}

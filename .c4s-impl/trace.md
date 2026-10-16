@@ -119,3 +119,17 @@
 - get-patch → src/server/operations/core-operations.ts (`get_patch` row, rendering `patch-tools.get_patch`; owner `PatchService.getPatch`); test src/server/mcp/patch-tools.test.ts
 - list-patches → src/server/operations/core-operations.ts (`list_patches` row, new; rendering `transagent-tools.list_patches` internal, rest `GET /api/artifacts/patch`; owner `PatchService.listPatches`); test src/server/routes/artifacts.test.ts
 - mark-patch-applied → src/server/operations/core-operations.ts (`mark_patch_applied` row, rendering `patch-tools.mark_patch_applied`; owner `PatchService.markApplied`); test src/server/mcp/patch-tools.test.ts
+- release-tools-release-create → src/server/mcp/release-tools/index.ts (`release_create`; owner `ReleaseService.createRelease` + `GitService.commitOnRelease`); test src/server/mcp/release-tools/index.test.ts
+- release-tools-release-list → src/server/mcp/release-tools/index.ts (`release_list`; owner `releaseListOperation` in src/server/services/release-operations.ts); test src/server/mcp/release-tools/index.test.ts
+- release-tools-release-show → src/server/mcp/release-tools/index.ts (`release_show`; owner `releaseShowOperation` + `projectSpecSnapshot`); test src/server/mcp/release-tools/index.test.ts
+- release-tools-release-diff → src/server/mcp/release-tools/index.ts (`release_diff`; owner `releaseDiffOperation` + `projectReleaseDiff`); test src/server/mcp/release-tools/index.test.ts
+- release-tools-release-update → src/server/mcp/release-tools/index.ts (`release_update`; owner `ReleaseService.updateRelease`); test src/server/mcp/release-tools/index.test.ts
+- release-create → src/server/operations/core-operations.ts (`release_create` row via `releaseOp`, renderings `release-tools.release_create`); test src/server/mcp/release-tools/index.test.ts
+- release-diff → src/server/operations/core-operations.ts (`release_diff` row, renderings `release-tools.release_diff`); test src/server/mcp/release-tools/index.test.ts
+- release-list → src/server/operations/core-operations.ts (`release_list` row, renderings `release-tools.release_list`); test src/server/mcp/release-tools/index.test.ts
+- release-show → src/server/operations/core-operations.ts (`release_show` row, renderings `release-tools.release_show`); test src/server/mcp/release-tools/index.test.ts
+- release-update → src/server/operations/core-operations.ts (`release_update` row, renderings `release-tools.release_update`); test src/server/mcp/release-tools/index.test.ts
+- release-restore → src/server/operations/core-operations.ts (`release_restore` row, new, human-mediated, rest only; owner `POST /api/releases/:name/restore` in src/server/routes/releases.ts); test src/server/mcp/release-tools/index.test.ts
+- push-release → src/server/operations/core-operations.ts (`push_release` row, new, human-mediated, rest only; owner `ReleasePushService.push` + `POST /api/release-pushes`); test src/server/operations/catalog.test.ts
+- list-release-pushes → src/server/operations/core-operations.ts (`list_release_pushes` row, new, rest only; owner `GET /api/release-pushes` in src/server/routes/release-pushes.ts); test src/server/operations/catalog.test.ts
+- get-release-push → src/server/operations/core-operations.ts (`get_release_push` row, new, rest only; owner `GET /api/release-pushes/:id`); test src/server/operations/catalog.test.ts
