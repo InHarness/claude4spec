@@ -1553,8 +1553,15 @@ export function registerCoreOperations(): void {
    * M39 window) and externally by `plan-tools · list_plans` on the threadless
    * mount, where the caller names the plan by `path` anyway. The thread mount of
    * `plan-tools` carries no list (M10 thread isolation). `rest` is
-   * `GET /api/artifacts/plan` (the `/plans` page). The record declares no codes
-   * (`n/d`).
+   * `GET /api/artifacts/plan` (the `/plans` page's list, M10 `m10api00`). The
+   * record declares no codes (`n/d`).
+   *
+   * 2.1.27 — the record's `zachowanie` states the behaviour of the core
+   * (`PlanService.listPlans({ order: 'created' })`): the `applied` filter (a
+   * plan with no key counts as `false`), `created_at` ascending — immutable in
+   * the plan's frontmatter (`q1txzrf0`) — ties by `path`, and the M39
+   * implicit-matrix window (`8suur17i`). The rest rendering answers in that
+   * order; the `/plans` page arranges the rows for display itself.
    *
    * Class `read`, as `list_briefs`: the gate matches by name and `chat` admits
    * no `brief`-like class for a read, and the operation never mutates. The input

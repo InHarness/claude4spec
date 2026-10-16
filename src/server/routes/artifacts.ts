@@ -216,14 +216,36 @@ function buildPlanAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
     list(query) {
       const search = typeof query.search === 'string' ? query.search : undefined;
       const applied = parseAppliedFilter(query.applied);
-      // Maps listPlans()'s already-fetched frontmatter/hash directly — no
-      // second frontmatter-indexer lookup or file_version query per row.
-      return plans.listPlans({ search, applied }).map((item) => ({
+      /*
+       * 2.1.27 (M10 `m10api00`, `list_plans` rest: direct) — this route IS the
+       * `list_plans` operation's rest rendering and the `/plans` page's list.
+       * The ORDER is the owning module's (M10): `created_at` ascending —
+       * immutable in the plan's frontmatter (`q1txzrf0`) — ties by `path`, the
+       * same `order: 'created'` the internal rendering answers with; this
+       * endpoint declares none of its own. The `/plans` page arranges the rows
+       * for display itself (most recently changed first, `usePlans`).
+       * Maps listPlans()'s already-fetched frontmatter/hash directly — no
+       * second frontmatter-indexer lookup or file_version query per row.
+       */
+      const rows = plans.listPlans({ search, applied, order: 'created' }).map((item) => ({
         path: item.path,
         frontmatter: item.frontmatter,
         hash: item.hash,
         updatedAt: item.updatedAt,
       }));
+      /*
+       * The M39 implicit-matrix window (`8suur17i`) — `limit` / `offset`, taken
+       * AFTER the `applied` filter over the stable order above. Applied only
+       * when the caller asks, as for `list_briefs`: the unpaged list is what
+       * the `/plans` page has always read (the generic list carries no `total`).
+       * ASSUMPTION:dev-2701 — REST list = list_plans order, window only when asked.
+       */
+      if (query.limit === undefined && query.offset === undefined) return rows;
+      const { limit, offset } = parsePaging({
+        limit: query.limit ?? String(rows.length),
+        offset: query.offset,
+      });
+      return rows.slice(offset, offset + limit);
     },
     async get(path, range) {
       // 2.1.13 — the rest rendering of `get_plan`: an unknown path is PLAN_NOT_FOUND.

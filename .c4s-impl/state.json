@@ -518,13 +518,29 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u5-m10-list-plans-order/p1-l3-l4",
+          "layers": [
+            "L3",
+            "L4"
+          ],
+          "slugs": [
+            "list-plans"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "4ca15c78693703987e98ed89a0b8bdc0a64e67b1",
+      "baseCommit": "4ca15c78693703987e98ed89a0b8bdc0a64e67b1",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },
