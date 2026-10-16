@@ -1,5 +1,5 @@
 {
-  "iteration": 55,
+  "iteration": 59,
   "units": [
     {
       "id": "u01-version-diff-runtime",
@@ -2012,15 +2012,34 @@
         }
       ],
       "wave": 3,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u03-plugin-runtime-exports/p1-l11-l11",
+          "layers": [
+            "L11"
+          ],
+          "slugs": [
+            "section:m33rt001",
+            "section:m20l11sc",
+            "section:m19l11sc"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "1b7c560a389c35c2dfceb0534347c335326e37f6",
+      "baseCommit": "1b7c560a389c35c2dfceb0534347c335326e37f6",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "only": []
     },
     {
       "id": "u05-tag-errors-tagslist",
@@ -2449,7 +2468,7 @@
         "u05-tag-errors-tagslist",
         "u11-external-mcp-surface"
       ],
-      "startCommit": null
+      "startCommit": "1b7c560a389c35c2dfceb0534347c335326e37f6"
     },
     {
       "n": 4,

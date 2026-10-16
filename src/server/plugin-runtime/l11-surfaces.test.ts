@@ -15,6 +15,7 @@ import * as backendLeg from './index.js';
 import { getRuntimeShim } from '../core/plugin-host/runtime-shims.js';
 import { PLUGIN_RUNTIME_LEGS, pluginRuntimeLegOf } from '../../shared/plugin-host/runtime-legs.js';
 import { HOST_API_VERSION } from '../../shared/plugin-host/manifest.js';
+import { PLUGIN_RUNTIME_EXPORT_NAMES } from '../../shared/plugin-host/frontend-manifest.js';
 import { DomainError } from '../services/tags.js';
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
@@ -74,6 +75,19 @@ async function assertCarried(module: string, anchor: string, names: { browser?: 
   for (const name of names.types ?? []) expect(declaresType(name), `type ${name}`).toBe(true);
 }
 
+/** `name` is on no leg of `@c4s/plugin-runtime`: not served, not typed, not declared, no alias. */
+async function assertNotPublished(name: string) {
+  expect(pluginRuntimeLegOf(name), name).toBeUndefined();
+  expect(PLUGIN_RUNTIME_EXPORT_NAMES as readonly string[], name).not.toContain(name);
+  expect(await browserShim(), name).not.toContain(name);
+  expect(backendLeg, name).not.toHaveProperty(name);
+  expect(browserAmbient, name).not.toContain(name);
+  expect(backendAmbient, name).not.toContain(name);
+  expect(published, name).not.toContain(name);
+  expect(read('../../plugin-types/ambient.d.ts'), name).not.toContain(name);
+  expect(read('../../plugin-types/ambient-backend.d.ts'), name).not.toContain(name);
+}
+
 describe('L11 names of the consumer modules, per leg', () => {
   it('[section:m13l11sc] M13 carries clientPluginHost, registerFrontendModule, queryClient, the version hooks and lineDiffHunks in the browser, and the MCP facade, z, the validators and the content helpers on the backend', async () => {
     await assertCarried('M13', 'm13l11sc', {
@@ -129,6 +143,34 @@ describe('L11 names of the consumer modules, per leg', () => {
     expect(bridge).toMatch(/openSection: \(pagePath: string, anchor: string\) => void;/);
     expect(published).toMatch(/export declare const editorBridge: EditorBridge;/);
     expect(published).toMatch(/export declare function EditorBridgeProvider\(props: \{\s*bridge: EditorBridge;/);
+  });
+
+  it('[section:m20l11sc] the EditorBridge type is exported beside editorBridge, and the useEditorBridge hook is host-internal — on no leg of @c4s/plugin-runtime', async () => {
+    // The type travels the type channel next to the singleton it types.
+    expect(declaresType('EditorBridge')).toBe(true);
+    expect(published).toMatch(/export declare const editorBridge: EditorBridge;/);
+    await assertNotPublished('useEditorBridge');
+    // Host-internal: the host keeps the hook, and its own components (DocEditor
+    // among them) reach the bridge through it.
+    expect(read('../../client/tiptap/EditorContext.tsx')).toMatch(/export function useEditorBridge\(\): EditorBridge \| null/);
+    expect(read('../../client/host-ui-kit/detail/DocEditor.tsx')).toMatch(
+      /import \{[^}]*\buseEditorBridge\b[^}]*\} from '\.\.\/\.\.\/tiptap\/EditorContext\.js';/,
+    );
+  });
+
+  it('[section:m19l11sc] plugin renders bind to the host editorBridge singleton, re-exported with EditorBridgeProvider and the EditorBridge type; useEditorBridge is not exported', async () => {
+    const shim = await browserShim();
+    for (const name of ['editorBridge', 'EditorBridgeProvider']) {
+      expect(declaresValue(name), name).toBe(true);
+      expect(shim, name).toContain(name);
+      expect(browserAmbient, name).toContain(name);
+      expect(PLUGIN_RUNTIME_EXPORT_NAMES, name).toContain(name);
+    }
+    expect(declaresType('EditorBridge')).toBe(true);
+    // The shim hands out the host's own value off the shared namespace, not a copy.
+    const shimSource = (await getRuntimeShim('plugin-runtime'))!;
+    expect(shimSource).toMatch(/^export const editorBridge = [^\n]*\beditorBridge\b/m);
+    await assertNotPublished('useEditorBridge');
   });
 
   it('[section:gz7q92lz] M39 carries TOOL_RESULT_CEILING_TOKENS and DomainError on the backend leg — the host\'s own values', async () => {
