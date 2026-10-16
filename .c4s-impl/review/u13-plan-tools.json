@@ -1,9 +1,0 @@
-{
-  "role": "reviewer",
-  "scope": {
-    "kind": "unit",
-    "id": "u13-plan-tools",
-    "base": "d8f428bbb3bf236bff241a26687d3f6405d08a56"
-  },
-  "findings": []
-}
