@@ -40,7 +40,8 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
    * matched before any later `/workspace/...` pattern could shadow it.
    *
    * Same catalog as the project-bound mount; the difference is that the project
-   * parameter has no default here and must be named with `?project=`.
+   * parameter has no default here — every project-scoped call names its project
+   * in its `project` argument (`?project=` survives only as a compat default).
    */
   router.use('/workspace/mcp', workspaceMcpRouter({
     registry,

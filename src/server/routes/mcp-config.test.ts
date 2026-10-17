@@ -31,7 +31,8 @@ describe('GET /_meta/mcp-config', () => {
     for (const v of body.variants) {
       expect(typeof v.label).toBe('string');
       expect(v.snippet).toContain('http://localhost:4555/api/');
-      expect(v.snippet).toContain('p1');
+      // The workspace-bound entry carries no project: each call names its own.
+      if (v.id !== 'http-workspace') expect(v.snippet).toContain('p1');
     }
   });
 

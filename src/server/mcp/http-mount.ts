@@ -45,24 +45,34 @@ import type { ChatContextType } from '../../shared/entities.js';
 import { isMcpChannelProfile, MCP_CHANNEL_PROFILE_NAMES } from '../operations/profiles.js';
 import { toolError } from '../operations/envelope.js';
 import type { McpToolDeclaration } from '../../shared/plugin-host/mcp.js';
-import { composeExternalSurface, EXTERNAL_MCP_SERVER_NAME, type ExternalSurface, type ExternalSurfaceDeps } from './surface.js';
+import { EXTERNAL_MCP_SERVER_NAME, type ExternalSurface } from './surface.js';
 
 /** Package version reported in the MCP handshake. */
 export interface McpMountOptions {
   packageVersion: string;
   /**
-   * Resolve the surface deps for THIS request. Called per request, never
-   * cached by the mount — caching belongs to `ProjectContextCache`, which
-   * already knows when a context is stale.
+   * Resolve the surface for THIS request, under `profile` — the session's pinned
+   * one on an established session, the handshake's otherwise. Called per
+   * request, never cached by the mount — caching belongs to
+   * `ProjectContextCache`, which already knows when a context is stale.
    *
    * Returning `null` means the request named no resolvable project; the mount
-   * answers a protocol-level error rather than composing an empty surface.
+   * answers a protocol-level error rather than composing an empty surface. A
+   * throw is a failed context build (`500 PROJECT_BUILD_FAILED`).
+   *
+   * The mount takes a SURFACE rather than deps because the two mounts render
+   * one differently: the project-bound one composes its project's surface, the
+   * workspace-bound one re-renders a template with a per-call `project`
+   * argument (`bindProjectPerCall`). `previous` is the established session's
+   * current surface (absent on a handshake), for a resolver that would rather
+   * keep it than degrade it.
    */
-  resolve: (req: Request) => Promise<ExternalSurfaceDeps | null>;
+  surface: (req: Request, profile: ChatContextType, previous?: ExternalSurface) => Promise<ExternalSurface | null>;
   /**
-   * What this request is bound to — the project id, or the `?project=` selector.
-   * Compared against the session's pinned value so a later request cannot
-   * re-point an established session at a different project.
+   * What this request is bound to — `project:<id>` on the project-bound mount,
+   * the workspace (plus the `?project=` compat default, if any) on the
+   * workspace-bound one. Compared against the session's pinned value so a later
+   * request cannot re-point an established session at a different binding.
    */
   binding: (req: Request) => string;
   /**
@@ -80,7 +90,8 @@ interface Session {
   profile: ChatContextType;
   /**
    * The binding target fixed at initialize — the project id for the
-   * project-bound mount, the `?project=` selector for the workspace-bound one.
+   * project-bound mount, the workspace for the workspace-bound one (whose calls
+   * name their project per call).
    *
    * Pinned for the same reason the profile is. A client holding a session id can
    * put whatever it likes in a later request's query string, and without this a
@@ -272,6 +283,23 @@ function registerOne(session: Session, decl: McpToolDeclaration): RegisteredTool
  * Streamable HTTP transport defines.
  */
 export function mcpRequestHandler(opts: McpMountOptions) {
+  const handle = mcpRequestHandlerUnguarded(opts);
+  /**
+   * Nothing thrown while serving one MCP request may leave this function.
+   * Express 4 does not catch a rejected async handler, so an escaped throw is an
+   * unhandled rejection and takes the whole server process down — one bad tool
+   * schema once turned a single `initialize` into an outage for every project.
+   */
+  return async (req: Request, res: Response): Promise<void> => {
+    try {
+      await handle(req, res);
+    } catch (err) {
+      if (!res.headersSent) jsonRpcError(res, 500, 'INTERNAL', err instanceof Error ? err.message : String(err));
+    }
+  };
+}
+
+function mcpRequestHandlerUnguarded(opts: McpMountOptions) {
   return async (req: Request, res: Response): Promise<void> => {
     const sessionId = req.headers['mcp-session-id'];
     const existing = typeof sessionId === 'string' ? SESSIONS.get(sessionId) : undefined;
@@ -308,16 +336,21 @@ export function mcpRequestHandler(opts: McpMountOptions) {
       return;
     }
 
-    let deps: ExternalSurfaceDeps | null;
+    // The profile is pinned: on an established session its own value wins over
+    // whatever this request's query says. On a handshake a bad value is refused
+    // below, after the project — the order the mount has always answered in.
+    const chosen = existing ? ({ ok: true, profile: existing.profile } as const) : profileFromRequest(req);
+
+    let surface: ExternalSurface | null;
     try {
-      deps = await opts.resolve(req);
+      surface = await opts.surface(req, chosen.ok ? chosen.profile : 'chat', existing?.current);
     } catch (err) {
       // A failed context build is this project's problem, not the process's —
       // the middleware's own 15s failure cache keeps it from becoming a storm.
       jsonRpcError(res, 500, 'PROJECT_BUILD_FAILED', err instanceof Error ? err.message : String(err));
       return;
     }
-    if (!deps) {
+    if (!surface) {
       jsonRpcError(
         res,
         404,
@@ -328,9 +361,7 @@ export function mcpRequestHandler(opts: McpMountOptions) {
     }
 
     if (existing) {
-      // The profile is pinned too: `deps.profile` is whatever the resolver
-      // produced from this request's query, and the session's own value wins.
-      syncTools(existing, composeExternalSurface({ ...deps, profile: existing.profile }));
+      syncTools(existing, surface);
       await existing.transport.handleRequest(req, res, req.body);
       return;
     }
@@ -340,7 +371,6 @@ export function mcpRequestHandler(opts: McpMountOptions) {
       return;
     }
 
-    const chosen = profileFromRequest(req);
     if (!chosen.ok) {
       jsonRpcError(res, 400, 'VALIDATION', chosen.message);
       return;
@@ -368,14 +398,14 @@ export function mcpRequestHandler(opts: McpMountOptions) {
       transport,
       profile: chosen.profile,
       binding: opts.binding(req),
-      current: { tools: [], byName: new Map(), toolNames: [] },
+      current: { tools: [], byName: new Map(), toolNames: [], scopeByName: new Map() },
       registered: new Map(),
       lastSeen: Date.now(),
     };
 
     // Registered BEFORE connect, so the initial set is the handshake's answer
     // rather than a change notification the client cannot have subscribed to yet.
-    syncTools(session, composeExternalSurface({ ...deps, profile: chosen.profile }));
+    syncTools(session, surface);
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
   };

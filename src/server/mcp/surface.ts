@@ -51,12 +51,16 @@
  * permissions of a connection.
  */
 
+import { z } from 'zod';
+import { z as z3 } from 'zod/v3';
 import type { ChatContextType } from '../../shared/entities.js';
 import type { McpToolDeclaration } from '../../shared/plugin-host/mcp.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { createMcpServer, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import type { McpToolDefinition } from '@inharness-ai/agent-adapters';
 import { gateServer, pluginServerNamesFor } from '../operations/profile-gate.js';
+import { CATALOG, type OperationScope } from '../operations/catalog.js';
+import { toolError } from '../operations/envelope.js';
 import { BRIEF_ALLOWED_PLUGIN_MCP, mcpRenderingProfile, mcpServerSetForProfile } from '../operations/profiles.js';
 import { createC4sReaderServer, type C4sReaderDeps } from './c4s-reader.js';
 import { buildPlanToolsServer } from './plan-tools.js';
@@ -287,6 +291,13 @@ export interface ExternalSurface {
   byName: ReadonlyMap<string, McpToolDeclaration>;
   /** Sorted tool names — the fingerprint `tools/list_changed` is decided on. */
   toolNames: readonly string[];
+  /**
+   * The catalog scope of every tool, decided by one bounded rule: a tool is
+   * `workspace`-scoped only when a HOST catalog row says so (`list_projects`,
+   * `ask`); a plugin's tool, or one with no row, needs a project. The
+   * workspace-bound mount reads it to know which tools take `project` per call.
+   */
+  scopeByName: ReadonlyMap<string, OperationScope>;
 }
 
 /**
@@ -370,9 +381,18 @@ function composeUncached(deps: ExternalSurfaceDeps): ExternalSurface {
   // value outside the table throws here (the mount refuses it before this).
   const rendered = mcpRenderingProfile(deps.profile);
 
+  return mergeServers(rendered, sourceServers(deps), pluginServers);
+}
+
+function mergeServers(
+  rendered: ChatContextType,
+  servers: Array<{ name: string; server: CapturedMcpServer }>,
+  pluginServers: ReadonlySet<string>,
+): ExternalSurface {
   const tools: McpToolDeclaration[] = [];
   const byName = new Map<string, McpToolDeclaration>();
-  for (const { name, server } of sourceServers(deps)) {
+  const scopeByName = new Map<string, OperationScope>();
+  for (const { name, server } of servers) {
     // The per-tool profile gate, identical to the turn's — including the
     // fail-closed rule for a plugin's own server, which must hold on this
     // channel too: an external `ask` connection reaching `spreadsheet-tools`'
@@ -383,10 +403,142 @@ function composeUncached(deps: ExternalSurfaceDeps): ExternalSurface {
       if (byName.has(tool.name)) continue;
       byName.set(tool.name, tool);
       tools.push(tool);
+      const op = pluginServers.has(name) ? undefined : CATALOG.get(tool.name);
+      scopeByName.set(tool.name, op && op.contributedBy !== 'plugin' ? op.scope : 'project');
     }
   }
 
-  return { tools, byName, toolNames: [...byName.keys()].sort() };
+  return { tools, byName, toolNames: [...byName.keys()].sort(), scopeByName };
+}
+
+/**
+ * The surface of a workspace with NO project to template from — only the
+ * workspace-scoped servers, which need none. Gated like every other surface.
+ */
+export function composeWorkspaceScopedSurface(deps: {
+  profile: ChatContextType;
+  listProjects: () => ListProjectsResult;
+  workspaceName: string;
+}): ExternalSurface {
+  const rendered = mcpRenderingProfile(deps.profile);
+  const set = mcpServerSetForProfile(rendered);
+  const servers: Array<{ name: string; server: CapturedMcpServer }> = [];
+  if (set.c4sTools) servers.push({ name: 'c4s-tools', server: buildC4sToolsServer(deps.workspaceName) });
+  servers.push({ name: 'workspace-tools', server: buildWorkspaceToolsServer(deps.listProjects) });
+  return mergeServers(rendered, servers, new Set());
+}
+
+/** What `bindProjectPerCall` resolves a call's `project` argument into. */
+export type ProjectCallTarget =
+  | { ok: true; projectId: string; surface: ExternalSurface }
+  | { ok: false; code: 'PROJECT_NOT_IN_WORKSPACE' | 'PROJECT_BUILD_FAILED'; message: string };
+
+/**
+ * The `project` argument every project-scoped tool takes on the workspace-bound
+ * mount (M12 `np1dkobs`: there the parameter has NO default).
+ *
+ * Optional at the zod level on purpose: a zod-required argument is refused by
+ * the SDK before the handler runs, with its own generic validation error — and
+ * the contract says a missing or wrong `project` answers
+ * `PROJECT_NOT_IN_WORKSPACE` with the list of ids. So the handler is where it is
+ * enforced, and the description is where it is stated.
+ *
+ * Built in the SAME zod flavour as the shape it joins. The SDK refuses a shape
+ * mixing v3 and v4 schemas (`Mixed Zod versions detected in object shape`), and
+ * a plugin's tools may be declared with its own zod 3 — a v4 field injected into
+ * such a shape threw out of `registerTool` on the first request.
+ */
+const PROJECT_CALL_ARGUMENT = z
+  .string()
+  .optional()
+  .describe('Required on this connection: registry `id` of the project this call addresses, exactly as `list_projects` returns it. Not a name, not a path.');
+const PROJECT_CALL_ARGUMENT_V3 = z3
+  .string()
+  .optional()
+  .describe('Required on this connection: registry `id` of the project this call addresses, exactly as `list_projects` returns it. Not a name, not a path.');
+
+export function projectCallArgumentFor(shape: Record<string, unknown>): unknown {
+  const values = Object.values(shape);
+  const isV3 = values.length > 0 && values.every((v) => !(v as { _zod?: unknown })._zod);
+  return isV3 ? PROJECT_CALL_ARGUMENT_V3 : PROJECT_CALL_ARGUMENT;
+}
+
+/**
+ * A declaration's input as a RAW shape, whichever of the forms the SDK accepts
+ * it was declared in: a raw shape, or a whole `z.object(...)` (v4 keeps the
+ * shape on `_zod.def.shape`, v3 on `.shape`). Spreading an object SCHEMA copies
+ * its internals rather than its fields — the first build of this mount did that
+ * and the SDK threw on the result. `null` for a schema with no object shape.
+ */
+function rawShapeOf(input: Record<string, unknown>): Record<string, unknown> | null {
+  const v4 = (input as { _zod?: { def?: { shape?: unknown } } })._zod;
+  if (v4) return typeof v4.def?.shape === 'object' ? (v4.def.shape as Record<string, unknown>) : null;
+  if ((input as { _def?: unknown })._def) {
+    const shape = (input as { shape?: unknown }).shape;
+    return typeof shape === 'object' && shape !== null ? (shape as Record<string, unknown>) : null;
+  }
+  return input;
+}
+
+/**
+ * Re-render a surface for the workspace-bound mount: every project-scoped tool
+ * gets a `project` argument and resolves it PER CALL, so one session can address
+ * different projects on different calls; workspace-scoped tools pass through
+ * unchanged and need no project.
+ *
+ * The wrapping handler closes over `resolveTarget` only — never over the
+ * template's declaration or context — and dispatches to the TARGET project's own
+ * declaration of the same name. A tool the template advertises but the target
+ * project lacks (a plugin active in one project only) answers `NOT_FOUND`.
+ */
+export function bindProjectPerCall(
+  surface: ExternalSurface,
+  resolveTarget: (project: string | undefined) => Promise<ProjectCallTarget>,
+  workspaceScoped?: ExternalSurface,
+): ExternalSurface {
+  const tools: McpToolDeclaration[] = [];
+  const byName = new Map<string, McpToolDeclaration>();
+  for (const decl of surface.tools) {
+    // A workspace-scoped tool answers from the MOUNT's workspace when the caller
+    // supplies one, not from whatever the template project's context captured.
+    const bound: McpToolDeclaration =
+      surface.scopeByName.get(decl.name) === 'workspace'
+        ? (workspaceScoped?.byName.get(decl.name) ?? decl)
+        : bindOne(decl, resolveTarget);
+    tools.push(bound);
+    byName.set(bound.name, bound);
+  }
+  return { tools, byName, toolNames: surface.toolNames, scopeByName: surface.scopeByName };
+}
+
+function bindOne(
+  decl: McpToolDeclaration,
+  resolveTarget: (project: string | undefined) => Promise<ProjectCallTarget>,
+): McpToolDeclaration {
+  // Fields copied, `decl.handler` replaced: the bound declaration keeps no
+  // reference to the template context's handler (see `registerOne`'s note).
+  const name = decl.name;
+  // An input that is not an object (no shape to extend) cannot carry `project`
+  // as a field; such a tool keeps its schema and answers from the URL default.
+  const shape = rawShapeOf(decl.inputSchema);
+  return {
+    ...decl,
+    inputSchema: shape ? { project: projectCallArgumentFor(shape), ...shape } : decl.inputSchema,
+    handler: async (args: Record<string, unknown>, extra: unknown) => {
+      const { project, ...rest } = args;
+      const target = await resolveTarget(typeof project === 'string' ? project.trim() || undefined : undefined);
+      if (!target.ok) return toolError(target.code, target.message);
+      const live = target.surface.byName.get(name);
+      if (!live) {
+        return toolError(
+          'NOT_FOUND',
+          `tool '${name}' is not available in project '${target.projectId}'`,
+          'that project has a different plugin pool; its own catalog does not carry this tool',
+        );
+      }
+      return live.handler(rest, extra);
+    },
+  };
 }
 
 /**
