@@ -43,7 +43,7 @@ describe('endpoint ↔ dto links (generic collection writes)', () => {
       statusCode: number | null;
     }>;
 
-  it('links a DTO, and reports it on the endpoint', async () => {
+  it('[entity:link-dto] rest direct — POST /api/endpoints/:slug/dtos, the endpoint plugin\'s own resource route (no proxy), links a DTO and reports it on the endpoint', async () => {
     const res = await link({ dtoSlug: 'user-dto', relation: 'response', statusCode: 200 });
     expect(res.status).toBe(201);
     /**
@@ -56,7 +56,7 @@ describe('endpoint ↔ dto links (generic collection writes)', () => {
     expect(await links()).toMatchObject([{ dto: 'user-dto', relation: 'response', statusCode: 200 }]);
   });
 
-  it('is idempotent — the same link twice is one link', async () => {
+  it('[entity:link-dto] is idempotent — the same link twice is one link, the repeat a no-op and not a refusal', async () => {
     await link({ dtoSlug: 'user-dto', relation: 'response', statusCode: 200 });
     expect((await link({ dtoSlug: 'user-dto', relation: 'response', statusCode: 200 })).status).toBe(201);
     expect(await links()).toHaveLength(1);
@@ -69,7 +69,7 @@ describe('endpoint ↔ dto links (generic collection writes)', () => {
     expect(await links()).toHaveLength(3);
   });
 
-  it('unlinks one status code and leaves its siblings alone', async () => {
+  it('[entity:unlink-dto] rest direct — DELETE /api/endpoints/:slug/dtos/:dtoSlug/:relation unlinks one status code and leaves its siblings alone', async () => {
     await link({ dtoSlug: 'error-dto', relation: 'response', statusCode: 404 });
     await link({ dtoSlug: 'error-dto', relation: 'response', statusCode: 500 });
 
@@ -81,13 +81,22 @@ describe('endpoint ↔ dto links (generic collection writes)', () => {
     expect(await links()).toMatchObject([{ dto: 'error-dto', relation: 'response', statusCode: 500 }]);
   });
 
-  it('omitting statusCode removes every link for that dto and relation', async () => {
+  it('[entity:unlink-dto] omitting statusCode removes every link for that dto and relation', async () => {
     await link({ dtoSlug: 'error-dto', relation: 'response', statusCode: 404 });
     await link({ dtoSlug: 'error-dto', relation: 'response', statusCode: 500 });
     await link({ dtoSlug: 'user-dto', relation: 'request' });
 
     await request(t.app).delete('/api/endpoints/get-users/dtos/error-dto/response').expect(200);
     expect(await links()).toMatchObject([{ dto: 'user-dto', relation: 'request', statusCode: null }]);
+  });
+
+  it('[entity:unlink-dto] a repeated unlink is a no-op, not a refusal', async () => {
+    await link({ dtoSlug: 'user-dto', relation: 'response', statusCode: 200 });
+    await request(t.app).delete('/api/endpoints/get-users/dtos/user-dto/response?statusCode=200').expect(200);
+    const again = await request(t.app).delete('/api/endpoints/get-users/dtos/user-dto/response?statusCode=200');
+    expect(again.status).toBe(200);
+    expect(again.body).toEqual({ unlinked: true });
+    expect(await links()).toEqual([]);
   });
 
   /**

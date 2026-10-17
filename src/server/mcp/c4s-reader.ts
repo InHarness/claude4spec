@@ -33,6 +33,13 @@ import {
  * contract: a tag is an edge, and pasting the payload in destroys the edge. The
  * surviving surface for expansion is `c4s resolve` in the CLI.
  *
+ * 2.1.27 (M12 `m12mcp00`): the reader's own read tools render the sets of three
+ * owner cores — discovery M39, skill registry M37 (`list_skills` /
+ * `load_skill_file`, composed beside this server on the external surface) and
+ * the reference graph M19 (`find_references`, `check_consistency`). The M19 pair
+ * keeps the contract of its internal rendering on `reference-tools`: the same
+ * core call, the same envelope, the same error navigation.
+ *
  * Every tool here is read-only, and structurally so rather than by review: the
  * core exposes no mutating operation, so there is no path from this process to
  * a write.

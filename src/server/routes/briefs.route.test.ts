@@ -19,6 +19,7 @@ import { errorHandler } from './errors.js';
 import { systemRootId } from '../../shared/root-kinds.js';
 import type { ReleaseService } from '../services/release.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
+import type { BriefCreateRequest, BriefResponse } from '../../shared/entities.js';
 
 const fakeWs = { broadcast: () => {} } as unknown as WsEmitter;
 
@@ -152,6 +153,56 @@ describe('briefsRouter — POST /api/briefs', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION');
+  });
+
+  /**
+   * 2.1.27 — `post-api-briefs` (tag `m21`): the request DTO is
+   * `brief-create-request`, the 200 response DTO is `brief-response`, and the
+   * route — not `create_brief` — opens the initial thread: top-level, no turn.
+   */
+  it('[entity:post-api-briefs] POST /api/briefs takes a BriefCreateRequest and answers 200 with a BriefResponse; it composes the file write with a top-level initial thread (context_type brief, no parent, no turn) listed first; 400 VALIDATION for a window with no end or blank content, 400 BRIEF_SAME_RELEASE for equal ends', async () => {
+    const payload: BriefCreateRequest = { fromReleaseName: 'r1', toReleaseName: 'r2', content: '# Drift\n' };
+    const res = await request(app).post('/api/briefs').send(payload);
+
+    expect(res.status).toBe(200);
+    const data: BriefResponse = res.body.data;
+    // The response DTO's fields, all of them and nothing else (no bare thread id).
+    expect(Object.keys(data).sort()).toEqual(['body', 'content', 'frontmatter', 'hash', 'path', 'threads']);
+    expect(data.body).toBe('# Drift\n');
+    expect(data.frontmatter).toMatchObject({ type: 'brief', from_release: 'r1', to_release: 'r2', implemented: false });
+
+    // The initial thread: one brief thread, top-level, and nothing said in it.
+    const rows = db
+      .prepare('SELECT id, context_type, parent_thread_id FROM chat_thread WHERE brief_path = ?')
+      .all(data.path) as Array<{ id: string; context_type: string; parent_thread_id: string | null }>;
+    expect(rows).toHaveLength(1);
+    const initial = rows[0]!;
+    expect(initial).toMatchObject({ context_type: 'brief', parent_thread_id: null });
+    expect(data.threads.map((t) => t.id)).toEqual([initial.id]);
+    expect(data.threads[0]?.contextType).toBe('brief');
+    expect(
+      (db.prepare('SELECT COUNT(*) AS n FROM chat_message WHERE thread_id = ?').get(initial.id) as { n: number }).n,
+    ).toBe(0);
+
+    // Re-created under the same path, the NEW initial thread leads the list.
+    await fs.rm(path.join(cwd, 'briefs', data.path));
+    const again = await request(app).post('/api/briefs').send(payload);
+    expect(again.status).toBe(200);
+    const againData: BriefResponse = again.body.data;
+    expect(againData.path).toBe(data.path);
+    expect(againData.threads).toHaveLength(2);
+    expect(againData.threads[0]?.id).not.toBe(initial.id);
+    expect(againData.threads[1]?.id).toBe(initial.id);
+
+    for (const [body, code] of [
+      [{ fromReleaseName: null, toReleaseName: null }, 'VALIDATION'],
+      [{ content: '  \n' }, 'VALIDATION'],
+      [{ fromReleaseName: 'r1', toReleaseName: 'r1' }, 'BRIEF_SAME_RELEASE'],
+    ] as Array<[BriefCreateRequest, string]>) {
+      const bad = await request(app).post('/api/briefs').send(body);
+      expect(bad.status, JSON.stringify(body)).toBe(400);
+      expect(bad.body.error.code).toBe(code);
+    }
   });
 
   it('rejects from === to with BRIEF_SAME_RELEASE', async () => {

@@ -1,4 +1,5 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
+import type { BriefCreateRequest, BriefResponse } from '../../shared/entities.js';
 import type { BriefService } from '../services/brief.js';
 import type { ChatService, ArtifactThreadColumn } from '../services/chat.js';
 import { artifactEntry } from '../services/artifact-registry.js';
@@ -11,122 +12,136 @@ import { DomainError } from '../services/tags.js';
  * generalize). Everything else (list/detail/versions/content/frontmatter/
  * threads) moved to `GET/PUT/PATCH/POST /api/artifacts/brief/*` — see
  * `routes/artifacts.ts`.
+ *
+ * 2.1.27 — `post-api-briefs` (tag `m21`) carries its DTOs structurally: the
+ * request is `BriefCreateRequest` (`brief-create-request`), the 200 response
+ * is `BriefResponse` (`brief-response`), both typed on the handler below.
+ * The route is also where the initial thread comes from: `create_brief`
+ * (`BriefService.createBrief`) writes the brief file only and opens no thread,
+ * so this route composes the file write with `createThreadForBrief` — a
+ * top-level thread (no parent), with no turn started (M21 `47opytlw`).
  */
 export function briefsRouter(briefs: BriefService, chat: ChatService): Router {
   const router = Router();
 
   // POST /api/briefs — create
-  router.post('/', async (req, res, next) => {
-    try {
-      const body = (req.body ?? {}) as {
-        fromReleaseName?: string | null;
-        toReleaseName?: string | null;
-        content?: string;
-        additionalPrompt?: string;
-        suffix?: string;
-        roots?: string[];
-      };
-      // 0.2.64: no provenance selector on the wire. The payload says which end
-      // of the window is open and nothing else, so it cannot contradict itself:
-      // `fromReleaseName === null` ⇒ open at the start (no previous release),
-      // `toReleaseName === null`   ⇒ open to the current state.
-      const fromIsValid =
-        body.fromReleaseName === null ||
-        body.fromReleaseName === undefined ||
-        typeof body.fromReleaseName === 'string';
-      const toIsValid =
-        body.toReleaseName === null ||
-        body.toReleaseName === undefined ||
-        typeof body.toReleaseName === 'string';
-      if (!fromIsValid || !toIsValid) {
-        throw new DomainError(
-          'VALIDATION',
-          'fromReleaseName/toReleaseName must be a string or null',
-        );
-      }
-      // 0.2.94: the body, when the caller already has one. Only its TYPE is
-      // checked here — the "non-empty after trim" refusal lives in
-      // `createBrief`, next to the write it has to happen before, so an
-      // in-process caller cannot bypass it (same split as `roots`).
-      if (body.content !== undefined && typeof body.content !== 'string') {
-        throw new DomainError('VALIDATION', 'content must be a string');
-      }
-      // Forwarded VERBATIM — `undefined` and `null` are different windows here
-      // (`undefined` ⇒ the latest release, `null` ⇒ open at the start), so
-      // collapsing them with `?? null` would silently rewrite the request.
-      const fromName = body.fromReleaseName;
-      const toName = body.toReleaseName;
-      // 0.1.96 (M21/L13) brief scope: an array of root ids the brief covers.
-      // Absent / empty ⇒ whole-release (createBrief omits the `roots` frontmatter
-      // + slug segment). A non-array or non-string entry is a client bug → 400.
-      let roots: string[] | undefined;
-      if (body.roots !== undefined) {
-        if (!Array.isArray(body.roots) || body.roots.some((r) => typeof r !== 'string')) {
-          throw new DomainError('VALIDATION', 'roots must be an array of root id strings');
+  router.post(
+    '/',
+    async (
+      req: Request<Record<string, string>, { data: BriefResponse }, BriefCreateRequest | undefined>,
+      res: Response<{ data: BriefResponse }>,
+      next,
+    ) => {
+      try {
+        // Typed as the request DTO, but read defensively: the wire is untrusted,
+        // so every field's runtime type is checked below before it is used.
+        const body: BriefCreateRequest = req.body ?? {};
+        // 0.2.64: no provenance selector on the wire. The payload says which end
+        // of the window is open and nothing else, so it cannot contradict itself:
+        // `fromReleaseName === null` ⇒ open at the start (no previous release),
+        // `toReleaseName === null`   ⇒ open to the current state.
+        const fromIsValid =
+          body.fromReleaseName === null ||
+          body.fromReleaseName === undefined ||
+          typeof body.fromReleaseName === 'string';
+        const toIsValid =
+          body.toReleaseName === null ||
+          body.toReleaseName === undefined ||
+          typeof body.toReleaseName === 'string';
+        if (!fromIsValid || !toIsValid) {
+          throw new DomainError(
+            'VALIDATION',
+            'fromReleaseName/toReleaseName must be a string or null',
+          );
         }
-        roots = body.roots.length > 0 ? body.roots : undefined;
+        // 0.2.94: the body, when the caller already has one. Only its TYPE is
+        // checked here — the "non-empty after trim" refusal lives in
+        // `createBrief`, next to the write it has to happen before, so an
+        // in-process caller cannot bypass it (same split as `roots`).
+        if (body.content !== undefined && typeof body.content !== 'string') {
+          throw new DomainError('VALIDATION', 'content must be a string');
+        }
+        // Forwarded VERBATIM — `undefined` and `null` are different windows here
+        // (`undefined` ⇒ the latest release, `null` ⇒ open at the start), so
+        // collapsing them with `?? null` would silently rewrite the request.
+        const fromName = body.fromReleaseName;
+        const toName = body.toReleaseName;
+        // 0.1.96 (M21/L13) brief scope: an array of root ids the brief covers.
+        // Absent / empty ⇒ whole-release (createBrief omits the `roots` frontmatter
+        // + slug segment). A non-array or non-string entry is a client bug → 400.
+        let roots: string[] | undefined;
+        if (body.roots !== undefined) {
+          if (!Array.isArray(body.roots) || body.roots.some((r) => typeof r !== 'string')) {
+            throw new DomainError('VALIDATION', 'roots must be an array of root id strings');
+          }
+          roots = body.roots.length > 0 ? body.roots : undefined;
+        }
+        // roots is a dead field once the window's `to` end is open — enforced
+        // inside `createBrief` itself (shared by this route and any in-process
+        // caller), not duplicated here.
+        // 0.1.69 / 2.1.27: `createBrief` is file-only — it opens no thread — and
+        // this route composes it with `createThreadForBrief`, so the UI "New
+        // brief" action and `c4s create-brief` still get their initial thread.
+        // `additionalPrompt` is a client concern (appended to the first user message after redirect), not
+        // persisted server-side.
+        // `resolvedFromName` may differ from `fromName` — `createBrief` expands an
+        // OMITTED `fromReleaseName` to the latest release.
+        const {
+          briefPath,
+          fromReleaseName: resolvedFromName,
+          toReleaseName: resolvedToName,
+        } = await briefs.createBrief({
+          fromReleaseName: fromName,
+          toReleaseName: toName,
+          // Verbatim, and `undefined` stays `undefined`: a missing body and an
+          // empty one are different requests, and only the first is legal.
+          content: body.content,
+          suffix: typeof body.suffix === 'string' ? body.suffix : undefined,
+          roots,
+        });
+        // The title names the window, since that is all the provenance there is.
+        const threadTitle =
+          resolvedToName === null
+            ? `Brief: ${resolvedFromName ?? 'HEAD'} → (unreleased)`
+            : resolvedFromName === null
+              ? `Initial brief: ${resolvedToName}`
+              : `Brief: ${resolvedFromName} → ${resolvedToName}`;
+        // 0.2.94: the initial thread is opened in BOTH variants, `content` or not
+        // — it is the anchor the `brief-detail` shell renders around, not a
+        // request to write anything. No turn is started here in either case.
+        // Top-level: no `parentThreadId`, so it is listed in the brief's threads
+        // and counters (a transagent banka is the other, parented shape).
+        const { threadId: initialThreadId } = briefs.createThreadForBrief({
+          path: briefPath,
+          name: threadTitle,
+        });
+        // Odpowiedz to pelny `BriefResponse` — ten sam ksztalt co detal briefu,
+        // plus `threads`. Watek zalozony wyzej jest top-level, wiec konsument
+        // (m.in. `runAgent` create-mode) bierze go jako `threads[0].id`; osobne
+        // pole na id watku nie istnieje.
+        const brief = await briefs.getBrief(briefPath);
+        const listed = chat.listThreadsByArtifact({
+          threadColumn: artifactEntry('brief').binding.threadColumn as ArtifactThreadColumn,
+          path: briefPath,
+          limit: 20,
+          offset: 0,
+        });
+        // Kolejnosc listy to `updated_at DESC, id DESC`, a `updated_at` ma
+        // rozdzielczosc sekundy — brief odtworzony pod ta sama sciezka (wiersze
+        // chat_thread przezywaja skasowany plik) moglby wystawic na threads[0]
+        // stary watek. Id z `createThreadForBrief` jest jednoznaczne, wiec ten
+        // watek wychodzi na czolo listy.
+        const threads = [
+          ...listed.filter((t) => t.id === initialThreadId),
+          ...listed.filter((t) => t.id !== initialThreadId),
+        ];
+        const data: BriefResponse = { ...brief, threads };
+        res.json({ data });
+      } catch (err) {
+        next(err);
       }
-      // roots is a dead field once the window's `to` end is open — enforced
-      // inside `createBrief` itself (shared by this route and any in-process
-      // caller), not duplicated here.
-      // 0.1.69: file-only createBrief + createThreadForBrief — the UI "New brief"
-      // action still gets its initial editorial thread. `additionalPrompt` is a
-      // client concern (appended to the first user message after redirect), not
-      // persisted server-side.
-      // `resolvedFromName` may differ from `fromName` — `createBrief` expands an
-      // OMITTED `fromReleaseName` to the latest release.
-      const {
-        briefPath,
-        fromReleaseName: resolvedFromName,
-        toReleaseName: resolvedToName,
-      } = await briefs.createBrief({
-        fromReleaseName: fromName,
-        toReleaseName: toName,
-        // Verbatim, and `undefined` stays `undefined`: a missing body and an
-        // empty one are different requests, and only the first is legal.
-        content: body.content,
-        suffix: typeof body.suffix === 'string' ? body.suffix : undefined,
-        roots,
-      });
-      // The title names the window, since that is all the provenance there is.
-      const threadTitle =
-        resolvedToName === null
-          ? `Brief: ${resolvedFromName ?? 'HEAD'} → (unreleased)`
-          : resolvedFromName === null
-            ? `Initial brief: ${resolvedToName}`
-            : `Brief: ${resolvedFromName} → ${resolvedToName}`;
-      // 0.2.94: the initial thread is opened in BOTH variants, `content` or not
-      // — it is the anchor the `brief-detail` shell renders around, not a
-      // request to write anything. No turn is started here in either case.
-      const { threadId: initialThreadId } = briefs.createThreadForBrief({
-        path: briefPath,
-        name: threadTitle,
-      });
-      // Odpowiedz to pelny `BriefResponse` — ten sam ksztalt co detal briefu,
-      // plus `threads`. Watek zalozony wyzej jest top-level, wiec konsument
-      // (m.in. `runAgent` create-mode) bierze go jako `threads[0].id`; osobne
-      // pole na id watku nie istnieje.
-      const brief = await briefs.getBrief(briefPath);
-      const listed = chat.listThreadsByArtifact({
-        threadColumn: artifactEntry('brief').binding.threadColumn as ArtifactThreadColumn,
-        path: briefPath,
-        limit: 20,
-        offset: 0,
-      });
-      // Kolejnosc listy to `updated_at DESC, id DESC`, a `updated_at` ma
-      // rozdzielczosc sekundy — brief odtworzony pod ta sama sciezka (wiersze
-      // chat_thread przezywaja skasowany plik) moglby wystawic na threads[0]
-      // stary watek. Id z `createThreadForBrief` jest jednoznaczne, wiec ten
-      // watek wychodzi na czolo listy.
-      const threads = [
-        ...listed.filter((t) => t.id === initialThreadId),
-        ...listed.filter((t) => t.id !== initialThreadId),
-      ];
-      res.json({ data: { ...brief, threads } });
-    } catch (err) {
-      next(err);
-    }
-  });
+    },
+  );
 
   return router;
 }

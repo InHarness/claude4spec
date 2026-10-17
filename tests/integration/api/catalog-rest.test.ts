@@ -341,7 +341,7 @@ describe('the plugin-tool proxy', () => {
   });
   afterEach(() => t.cleanup());
 
-  it('lists a type\'s declared operations from the same registry the host mounts MCP from', async () => {
+  it('[section:v0v4ku5d] lists a type\'s declared operations from the same registry the host mounts MCP from', async () => {
     const res = await request(t.app).get('/api/entities/diagram/tools').expect(200);
     const names = res.body.tools.map((x: { name: string }) => x.name);
     expect(names).toContain('validate_diagram');
@@ -356,7 +356,7 @@ describe('the plugin-tool proxy', () => {
     expect(res.body.tools).toEqual([]);
   });
 
-  it('executes an operation through the very handler the tool channel calls', async () => {
+  it('[section:v0v4ku5d] executes an operation through the very handler the tool channel calls', async () => {
     const res = await request(t.app)
       .post('/api/entities/diagram/tools/validate_diagram')
       .send({ source: 'graph TD;\n  A-->B;' })
@@ -366,7 +366,7 @@ describe('the plugin-tool proxy', () => {
     expect(Array.isArray(res.body.content)).toBe(true);
   });
 
-  it('refuses an unknown operation with NOT_FOUND naming the ones that exist', async () => {
+  it('[section:v0v4ku5d] refuses an unknown operation with NOT_FOUND naming the ones that exist', async () => {
     const res = await request(t.app)
       .post('/api/entities/diagram/tools/no_such_tool')
       .send({})
@@ -375,7 +375,7 @@ describe('the plugin-tool proxy', () => {
     expect(res.body.error.message).toMatch(/validate_diagram/);
   });
 
-  it('validates the body with the SAME schema the tool channel validates against', async () => {
+  it('[section:v0v4ku5d] input that does not match the tool schema is refused with VALIDATION — the SAME schema the tool channel validates against', async () => {
     const res = await request(t.app)
       .post('/api/entities/diagram/tools/validate_diagram')
       .send({ source: 12345 })
@@ -411,7 +411,7 @@ describe('the plugin-tool proxy', () => {
     }
   });
 
-  it('refuses an inactive type with INVALID_TYPE on both halves of the proxy', async () => {
+  it('[section:v0v4ku5d] refuses an inactive type with INVALID_TYPE on both halves of the proxy', async () => {
     const listed = await request(t.app).get('/api/entities/no-such-type/tools').expect(404);
     expect(listed.body.error.code).toBe('INVALID_TYPE');
     const called = await request(t.app)

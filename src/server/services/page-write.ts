@@ -14,7 +14,7 @@ import {
 } from '../fs/record-store.js';
 import { PROJECTION_IDS, type ProjectionStatusRegistry } from './projection-status.js';
 import { DomainError } from './tags.js';
-import { splitMarkdown } from './markdown-file-store.js';
+import { resolveSafe, splitMarkdown } from './markdown-file-store.js';
 import { parseSections } from '../../shared/section-parser.js';
 import { attributeDropped, composeSectionBatch } from './section-batch.js';
 import { applyTextEdits, type MatchRange, type PositionResolver, type TextEdit } from './text-edits.js';
@@ -576,6 +576,26 @@ function titleFromPath(relPath: string): string {
   return path.basename(relPath).replace(/\.mdx?$/i, '');
 }
 
+/**
+ * 2.1.27 — a path that leaves its root is `INVALID_ARGUMENT`, its own refusal
+ * beside the empty path's `VALIDATION` (the `create-page` / `update-page`
+ * records). Checked in the operation, before anything reads or writes, so every
+ * channel answers alike: before this the path reached the primitive, whose bare
+ * `Error` came back `500 INTERNAL` — "retry" for a request no retry can fix —
+ * and the guard's pre-read joined the path onto the root unchecked.
+ */
+function assertInsideRoot(target: PageWriteTarget, relPath: string): void {
+  try {
+    resolveSafe(target.pages.root, relPath);
+  } catch (err) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      (err as Error).message,
+      `a page path is relative to root '${target.pages.rootId}' and stays inside it, e.g. "guides/auth.md"`,
+    );
+  }
+}
+
 export async function createPage(
   target: PageWriteTarget,
   input: CreatePageInput,
@@ -583,6 +603,7 @@ export async function createPage(
 ): Promise<CreatePageResult> {
   const relPath = input.path;
   if (!relPath) throw new DomainError('VALIDATION', 'path required');
+  assertInsideRoot(target, relPath);
   if (await target.pages.exists(relPath)) {
     throw new DomainError(
       'PAGE_EXISTS',
@@ -649,6 +670,7 @@ export async function updatePage(
 ): Promise<UpdatePageResult> {
   const relPath = input.path;
   if (!relPath) throw new DomainError('VALIDATION', 'path required');
+  assertInsideRoot(target, relPath);
 
   /**
    * The disjunction, checked before anything else touches the disk.
@@ -994,6 +1016,12 @@ export async function movePage(
   input: { from: string; to: string; expectedHash: string },
   actor: WriteActor,
   renameSync?: (rootId: string, from: string, to: string, actor: WriteActor) => Promise<string[]>,
+  /**
+   * 2.1.27 — the roots with a facade, for the navigation of `NOT_FOUND` (the
+   * `move-page` record): a caller who missed the page may have missed the root.
+   * Optional for the hand-rolled rigs; every channel passes it.
+   */
+  facadeRootIds?: () => string[],
 ): Promise<MovePageResult> {
   const records = target.pages.records;
   if (!records) {
@@ -1049,7 +1077,13 @@ export async function movePage(
      * truth was that its first call had worked.
      */
     if (err instanceof RecordMissingError) {
-      throw new DomainError('NOT_FOUND', `no page at '${input.from}'`, 'a move is not idempotent — a replay finds the source already gone');
+      const roots = facadeRootIds?.() ?? [];
+      throw new DomainError(
+        'NOT_FOUND',
+        `no page at '${input.from}' in root '${rootId}'`,
+        'a move is not idempotent — a replay finds the source already gone' +
+          (roots.length ? `; roots in this project: ${roots.join(', ')}` : ''),
+      );
     }
     if (err instanceof RecordPathError) {
       throw new DomainError('INVALID_ARGUMENT', err.message, 'a move stays inside one source — it is not a write plus a delete');
@@ -1261,13 +1295,22 @@ async function assertNoUndeclaredAnchorLoss(args: {
   const onPage = new Set(sectionRanges(args.linesBefore).map((r) => r.anchor));
   const inScope = new Set(scope);
 
-  const stranger = args.declared.find((a) => (args.scope ? !inScope.has(a) : onPage.has(a) && !inScope.has(a)));
+  /**
+   * 2.1.27 — the `update-page` record: an anchor outside the touched scope is a
+   * stranger in BOTH modes, and an anchor this page does not have is outside it
+   * whichever mode asks — no matched fragment contains it. Until now the
+   * differential branch let an off-page anchor through silently, mirroring the
+   * section batch, whose own record does not say so.
+   */
+  const stranger = args.declared.find((a) => !inScope.has(a));
   if (stranger !== undefined) {
     throw new DomainError(
       'INVALID_ARGUMENT',
       args.scope
         ? `dropAnchors names '${stranger}', which this page does not have`
-        : `dropAnchors names '${stranger}', which none of this write's matched fragments contains`,
+        : onPage.has(stranger)
+          ? `dropAnchors names '${stranger}', which none of this write's matched fragments contains`
+          : `dropAnchors names '${stranger}', which this page does not have — none of this write's matched fragments contains it`,
       args.strangerHint,
     );
   }

@@ -1186,7 +1186,9 @@ export function registerCoreOperations(): void {
       { rootId: z.string(), path: z.string(), content: z.string().optional(), title: z.string().optional() },
       // A second call with the same address is PAGE_EXISTS, not a no-op.
       false,
-      ['PAGE_EXISTS', 'ROOT_NOT_FOUND', 'VALIDATION'],
+      // 2.1.27 — a path that leaves the root is INVALID_ARGUMENT, its own code
+      // beside the empty path's VALIDATION.
+      ['PAGE_EXISTS', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'VALIDATION'],
       // There is nothing on the page yet to substitute fragments of.
       'literal',
     ),
@@ -1208,7 +1210,7 @@ export function registerCoreOperations(): void {
   registerRow(
     pageWrite(
       'update_page',
-      'Write a page — create or replace: EITHER in full (`body` plus optional `frontmatter`, which replaces the page\'s frontmatter wholesale) OR differentially (`textEdits` — literal find/replaceWith substitutions over the whole file, frontmatter included). Exactly one of the two per call; both or neither is INVALID_ARGUMENT. The literal mode creates a page missing from a known root rather than answering NOT_FOUND (M02 `gj2vdsjm`) — which is how the editor saves a new page. The differential mode is NOT idempotent — replaying it answers FIND_NOT_FOUND. Both modes carry M06\'s ANCHOR_LOSS guard, overridable with `dropAnchors`; the returned `hash` is taken after the in-band anchor injection.',
+      'Write a page — create or replace: EITHER in full (`body` plus optional `frontmatter`, which replaces the page\'s frontmatter wholesale) OR differentially (`textEdits` — literal find/replaceWith substitutions over the whole file, frontmatter included). Exactly one of the two per call; both or neither is INVALID_ARGUMENT. The literal mode creates a page missing from a known root rather than answering NOT_FOUND (the `update-page` record) — which is how the editor saves a new page. The differential mode is NOT idempotent — replaying it answers FIND_NOT_FOUND. Both modes carry M06\'s ANCHOR_LOSS guard, overridable with `dropAnchors`; the returned `hash` is taken after the in-band anchor injection.',
       {
         rootId: z.string(),
         path: z.string(),
@@ -1221,7 +1223,7 @@ export function registerCoreOperations(): void {
       'conditional',
       // ASSUMPTION:dev-0101 — an unknown root is ROOT_NOT_FOUND (the row: NOT_FOUND).
       // ASSUMPTION:m02u-dev-0001 — the row's ROOT_NOT_WRITABLE has no producer in the page write path.
-      // No NOT_FOUND for a missing page: the literal mode creates it (M02 `gj2vdsjm`, 2.1.14).
+      // No NOT_FOUND for a missing page: the literal mode creates it (2.1.14; the record's `zachowanie` since 2.1.27).
       ['PAGE_CONFLICT', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'FIND_NOT_FOUND', 'MATCH_COUNT_MISMATCH', 'ANCHOR_LOSS', 'VALIDATION'],
       'literal+diff',
     ),
@@ -1272,9 +1274,9 @@ export function registerCoreOperations(): void {
       'Move a page to another path within the SAME root — one call covers both renaming a file and moving it to a different directory. The content is never read or re-serialized, so the hash is unchanged; citations of the old path are rewritten afterwards, each as its own write. NOT idempotent: a replay answers NOT_FOUND.',
       { rootId: z.string(), from: z.string(), to: z.string(), ...expectedHash },
       false,
-      // ASSUMPTION:dev-2605 — the record's `kodyBledow`, which does not list the
-      // NOT_IMPLEMENTED the tool's `logic` names for a root without a record store.
-      ['PAGE_CONFLICT', 'PAGE_EXISTS', 'NOT_FOUND', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'VALIDATION'],
+      // 2.1.27 — the record declares NOT_IMPLEMENTED (a root without a record
+      // store) and no longer VALIDATION: an empty `from`/`to` is INVALID_ARGUMENT.
+      ['PAGE_CONFLICT', 'PAGE_EXISTS', 'NOT_FOUND', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'NOT_IMPLEMENTED'],
       'n/a',
     ),
   );
@@ -1551,8 +1553,15 @@ export function registerCoreOperations(): void {
    * M39 window) and externally by `plan-tools · list_plans` on the threadless
    * mount, where the caller names the plan by `path` anyway. The thread mount of
    * `plan-tools` carries no list (M10 thread isolation). `rest` is
-   * `GET /api/artifacts/plan` (the `/plans` page). The record declares no codes
-   * (`n/d`).
+   * `GET /api/artifacts/plan` (the `/plans` page's list, M10 `m10api00`). The
+   * record declares no codes (`n/d`).
+   *
+   * 2.1.27 — the record's `zachowanie` states the behaviour of the core
+   * (`PlanService.listPlans({ order: 'created' })`): the `applied` filter (a
+   * plan with no key counts as `false`), `created_at` ascending — immutable in
+   * the plan's frontmatter (`q1txzrf0`) — ties by `path`, and the M39
+   * implicit-matrix window (`8suur17i`). The rest rendering answers in that
+   * order; the `/plans` page arranges the rows for display itself.
    *
    * Class `read`, as `list_briefs`: the gate matches by name and `chat` admits
    * no `brief`-like class for a read, and the operation never mutates. The input
@@ -1851,11 +1860,16 @@ export function registerCoreOperations(): void {
    * `01ytpznn` records the missing external tool as an open item). The
    * `internal` reason is the record's `powody.internal`, verbatim. The service
    * answers the path, the hash and both ends of the window as resolved.
+   *
+   * 2.1.27 — the record's `zachowanie` drops the initial thread and the thread
+   * list from the operation: `create_brief` writes the brief file only, and
+   * answers no thread list. The top-level initial thread is opened by the
+   * REST route that composes this write with `createThreadForBrief`.
    */
   registerRow({
     name: 'create_brief',
     summary:
-      'Mint a brief — with a ready-made body (`content`, stored verbatim), or empty for a release window. Never runs an agent turn. Answers `{ briefPath, hash, fromReleaseName, toReleaseName }`.',
+      'Mint a brief file — with a ready-made body (`content`, stored verbatim), or empty for a release window. Writes the file only: never runs an agent turn, opens no thread. Answers `{ briefPath, hash, fromReleaseName, toReleaseName }`.',
     scope: 'project',
     mediation: 'direct',
     opClass: 'brief',
@@ -1901,8 +1915,10 @@ export function registerCoreOperations(): void {
      * the operation is what brings the artifact into being.
      */
     contentInput: 'literal',
-    // Every call mints a NEW brief and opens its initial thread; `suffix` is how
-    // a caller settles the slug collision that follows.
+    // Every call mints a NEW brief file; `suffix` is how a caller settles the
+    // slug collision that follows. 2.1.27 — the operation opens no thread: the
+    // initial thread is the REST route's composition (`POST /api/briefs`,
+    // M21 `47opytlw`), not part of `create_brief`.
     idempotent: false,
     channels: {
       internal: na(
@@ -2307,9 +2323,11 @@ export function registerCoreOperations(): void {
    * (a repeated link or unlink is a no-op, not a refusal); unlink without a
    * statusCode removes every binding of the pair in that relation. Addressed by
    * `(endpoint, dto)` with the relation; no content input (`n/a`) — the binding
-   * is fully determined by the identifiers. `rest` is `via` the generic host
-   * proxy, with the record's reason; `internal` and `mcp` render through the
-   * plugin's `endpoint-tools` server (`narzedzia`).
+   * is fully determined by the identifiers. 2.1.27 — `rest` is `direct`: the
+   * endpoint plugin's own resource routes `POST|DELETE /api/endpoints/:slug/dtos`
+   * reach the same functions, so the generic proxy is not their only road;
+   * `internal` and `mcp` render through the plugin's `endpoint-tools` server
+   * (`narzedzia`).
    */
   const DTO_LINK_SHAPE = {
     endpointSlug: z.string(),
@@ -2317,15 +2335,13 @@ export function registerCoreOperations(): void {
     relation: z.enum(['request', 'response', 'error']),
     statusCode: z.number().optional(),
   };
-  const DTO_LINK_REST_REASON =
-    'via `call_type_tool` — ogólne proxy hosta dla narzędzi typów; plugin nie wnosi własnego routera';
   const dtoLinkOverrides = (tool: string) => ({
     contentInput: 'n/a' as const,
     channels: {
       internal: direct(),
       cli: direct(),
       mcp: direct(),
-      rest: via('call_type_tool', DTO_LINK_REST_REASON),
+      rest: direct(),
     },
     renderings: { internal: [`endpoint-tools.${tool}`], mcp: [`endpoint-tools.${tool}`] },
   });

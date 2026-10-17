@@ -199,7 +199,7 @@ export function createPageToolsServer(
    * 2.1.26 — the description is the record's (`page-tools-update-page`), verbatim,
    * the anchor guard of both modes and the shape of the answer included. A
    * literal write is create-or-replace — a page missing from a known root is
-   * created, never refused with NOT_FOUND (M02 `gj2vdsjm`). The four hints are
+   * created, never refused with NOT_FOUND (the `update-page` record). The four hints are
    * the record's and the only ones on this server: the other four page tools
    * declare none (2.1.26 withdrew theirs).
    */
@@ -346,6 +346,7 @@ export function createPageToolsServer(
             { from: String(args.from), to: String(args.to), expectedHash: String(args.expectedHash ?? '') },
             'agent',
             deps.propagateRename,
+            deps.rootIds,
           ),
           'move_page',
         );

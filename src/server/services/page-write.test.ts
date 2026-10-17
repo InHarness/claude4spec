@@ -1190,6 +1190,23 @@ describe('update_sections — the batch contract', () => {
     expect((await pages.read('doc.md')).body).toContain('ALPHA BODY');
   });
 
+  it('[entity:update-sections] the guard is REQUIRED, even for a one-element batch: absent → INVALID_ARGUMENT, mismatched → PAGE_CONFLICT carrying the current hash; neither writes', async () => {
+    await index('doc.md', page);
+    const before = (await pages.read('doc.md')).body;
+    const one = [{ anchor: anchorOf('Alpha'), action: 'replace' as const, content: 'x' }];
+
+    const missing = await updateSections(deps(), { edits: one } as never, 'agent').catch((e) => e);
+    expect(missing.code).toBe('INVALID_ARGUMENT');
+    expect(missing.message).toMatch(/expectedHash/);
+
+    const current = await hashOfPage('doc.md');
+    const stale = await updateSections(deps(), { expectedHash: 'f'.repeat(64), edits: one }, 'agent').catch((e) => e);
+    expect(stale.code).toBe('PAGE_CONFLICT');
+    expect(stale.currentHash).toBe(current);
+
+    expect((await pages.read('doc.md')).body).toBe(before);
+  });
+
   it('append adds to the section body; delete removes the heading and its anchor', async () => {
     await index('doc.md', page);
     const alpha = anchorOf('Alpha');
@@ -2639,6 +2656,61 @@ describe('differential writes — textEdits', () => {
     expect(err.message).toMatch(/expectedHash/);
   });
 
+  it('[entity:update-page] differential mode: a dropAnchors anchor this page does not have is outside every matched fragment → INVALID_ARGUMENT, file untouched', async () => {
+    await index('doc.md', nested);
+    const before = (await pages.read('doc.md')).body;
+    const err = await updatePage(
+      target,
+      {
+        path: 'doc.md',
+        textEdits: [{ find: 'SIBLING BODY', replaceWith: 'X' }],
+        dropAnchors: ['zzzzzzzz'],
+        expectedHash: await hashOfPage(),
+      },
+      'agent',
+      diffDeps(),
+    ).catch((e) => e);
+    expect(err.code).toBe('INVALID_ARGUMENT');
+    expect(err.message).toMatch(/does not have/);
+    expect((await pages.read('doc.md')).body).toBe(before);
+  });
+
+  it('[entity:update-page] two finds whose matches overlap → INVALID_ARGUMENT, file untouched', async () => {
+    await index('doc.md', nested);
+    const before = (await pages.read('doc.md')).body;
+    const err = await updatePage(
+      target,
+      {
+        path: 'doc.md',
+        textEdits: [
+          { find: 'CHILD ONE', replaceWith: 'A' },
+          { find: 'ONE BODY', replaceWith: 'B' },
+        ],
+        expectedHash: await hashOfPage(),
+      },
+      'agent',
+      diffDeps(),
+    ).catch((e) => e);
+    expect(err.code).toBe('INVALID_ARGUMENT');
+    expect(err.message).toMatch(/overlap/);
+    expect((await pages.read('doc.md')).body).toBe(before);
+  });
+
+  it('[entity:update-page] a page missing from a known root: the literal mode creates it, the differential mode has nothing to match → FIND_NOT_FOUND', async () => {
+    const diff = await updatePage(
+      target,
+      { path: 'fresh-diff.md', textEdits: [{ find: 'anything', replaceWith: 'x' }], expectedHash: 'a'.repeat(64) },
+      'agent',
+      diffDeps(),
+    ).catch((e) => e);
+    expect(diff.code).toBe('FIND_NOT_FOUND');
+    expect(await pages.exists('fresh-diff.md')).toBe(false);
+
+    const res = await updatePage(target, { path: 'fresh.md', body: '# Fresh\n', expectedHash: 'a'.repeat(64) }, 'agent', diffDeps());
+    expect(await pages.exists('fresh.md')).toBe(true);
+    expect(res.hash).toBe(await hashOfPage('fresh.md'));
+  });
+
   it('refuses a dropAnchors entry on a whole-body write that the page does not have (2.1.6)', async () => {
     await index('doc.md', nested);
     const err = await updatePage(
@@ -3367,5 +3439,147 @@ describe('movePage — the application\'s own move', () => {
     const created = await createPage(target, { path: 'a.md', content: '# A\n\nbody\n' }, 'user');
     const res = await movePage(target, 'pages', { from: 'a.md', to: 'moved.md', expectedHash: created.hash }, 'user');
     expect(res.hash).toBe(created.hash);
+  });
+});
+
+
+/**
+ * 2.1.27 — the four page writes refuse exactly as their records list it
+ * (`create-page`, `update-page`, `move-page`, `delete-page`). Each refusal is
+ * raised by the operation, so every channel inherits it; nothing a refusal
+ * touches is written.
+ */
+describe('page write refusals as the records list them (2.1.27)', () => {
+  let cwd: string;
+  let pages: PagesService;
+  let target: PageWriteTarget;
+
+  beforeEach(async () => {
+    cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-page-refusals-'));
+    // The rig's root is `<cwd>/pages`, so `../x.md` is a real place on disk: `<cwd>/x.md`.
+    pages = await rigPages(cwd);
+    target = { pages, writer: null };
+  });
+
+  afterEach(async () => {
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  const outside = (rel: string) => fs.access(path.join(cwd, rel)).then(() => true, () => false);
+
+  it('[entity:create-page] an empty path is VALIDATION; a path leaving the root is INVALID_ARGUMENT and writes nothing', async () => {
+    await expect(createPage(target, { path: '', content: '# X' }, 'user')).rejects.toMatchObject({ code: 'VALIDATION' });
+    const err = await createPage(target, { path: '../escaped.md', content: '# X' }, 'user').catch((e) => e);
+    expect(err).toBeInstanceOf(DomainError);
+    expect(err.code).toBe('INVALID_ARGUMENT');
+    expect(err.message).toMatch(/escapes/);
+    expect(await outside('escaped.md')).toBe(false);
+  });
+
+  it('[entity:create-page] an occupied path is PAGE_EXISTS, not an overwrite; no content gives the titled template', async () => {
+    await createPage(target, { path: 'a.md', content: '# A\n' }, 'user');
+    await expect(createPage(target, { path: 'a.md', content: '# B\n' }, 'user')).rejects.toMatchObject({ code: 'PAGE_EXISTS' });
+    const kept = await fs.readFile(path.join(pages.root, 'a.md'), 'utf-8');
+    expect(kept).toContain('# A');
+    expect(kept).not.toContain('# B');
+    const tpl = await createPage(target, { path: 'b.md', title: 'Bee' }, 'user');
+    expect(tpl.content).toMatch(/title: Bee/);
+  });
+
+  it('[entity:update-page] an empty path is VALIDATION; a path leaving the root is INVALID_ARGUMENT in both modes and writes nothing', async () => {
+    await expect(updatePage(target, { path: '', body: 'x', expectedHash: NO_PRIOR_STATE }, 'user')).rejects.toMatchObject({
+      code: 'VALIDATION',
+    });
+    await fs.writeFile(path.join(cwd, 'victim.md'), 'outside the root\n');
+    for (const input of [
+      { path: '../victim.md', body: 'overwritten', expectedHash: NO_PRIOR_STATE },
+      { path: '../victim.md', textEdits: [{ find: 'outside', replaceWith: 'inside' }], expectedHash: NO_PRIOR_STATE },
+    ]) {
+      const err = await updatePage(target, input, 'user').catch((e) => e);
+      expect(err.code).toBe('INVALID_ARGUMENT');
+    }
+    expect(await fs.readFile(path.join(cwd, 'victim.md'), 'utf-8')).toBe('outside the root\n');
+  });
+
+  it('[entity:update-page] missing expectedHash, body+textEdits, neither, frontmatter beside textEdits → INVALID_ARGUMENT; a mismatched hash → PAGE_CONFLICT carrying the current hash', async () => {
+    const created = await createPage(target, { path: 'a.md', content: '# A\n\nbody\n' }, 'user');
+    const codeOf = (input: Record<string, unknown>) =>
+      updatePage(target, { path: 'a.md', ...input } as never, 'user').then(() => 'OK', (e: { code: string }) => e.code);
+    expect(await codeOf({ body: 'x' })).toBe('INVALID_ARGUMENT');
+    expect(await codeOf({ body: 'x', textEdits: [{ find: 'body', replaceWith: 'b' }], expectedHash: created.hash })).toBe('INVALID_ARGUMENT');
+    expect(await codeOf({ expectedHash: created.hash })).toBe('INVALID_ARGUMENT');
+    expect(await codeOf({ textEdits: [{ find: 'body', replaceWith: 'b' }], frontmatter: { t: 1 }, expectedHash: created.hash })).toBe(
+      'INVALID_ARGUMENT',
+    );
+    const stale = await updatePage(target, { path: 'a.md', body: 'x', expectedHash: 'f'.repeat(64) }, 'user').catch((e) => e);
+    expect(stale.code).toBe('PAGE_CONFLICT');
+    expect(stale.currentHash).toBe(created.hash);
+    expect(await fs.readFile(path.join(pages.root, 'a.md'), 'utf-8')).toBe(created.content);
+  });
+
+  it('[entity:delete-page] an empty path is VALIDATION; a page already gone is a success with deleted: false', async () => {
+    await expect(deletePage(target, { path: '' }, 'user')).rejects.toMatchObject({ code: 'VALIDATION' });
+    expect(await deletePage(target, { path: 'never.md' }, 'user')).toEqual({ ok: true, deleted: false });
+  });
+
+  it('[entity:delete-page] PAGE_CONFLICT only when the caller passed a hash — the guard is optional', async () => {
+    const a = await createPage(target, { path: 'a.md', content: '# A\n' }, 'user');
+    const err = await deletePage(target, { path: 'a.md', expectedHash: 'f'.repeat(64) }, 'user').catch((e) => e);
+    expect(err.code).toBe('PAGE_CONFLICT');
+    expect(err.currentHash).toBe(a.hash);
+    expect(await pages.exists('a.md')).toBe(true);
+    // No hash at all: no guard, the delete goes through.
+    expect(await deletePage(target, { path: 'a.md' }, 'user')).toEqual({ ok: true, deleted: true });
+    expect(await pages.exists('a.md')).toBe(false);
+  });
+
+  it('[entity:move-page] outside the root and into another root → INVALID_ARGUMENT; empty from/to and a missing expectedHash → INVALID_ARGUMENT; nothing moves', async () => {
+    const a = await createPage(target, { path: 'a.md', content: '# A\n' }, 'user');
+    await fs.mkdir(path.join(cwd, 'other-root'), { recursive: true });
+    const codeOf = (input: { from: string; to: string; expectedHash: string }) =>
+      movePage(target, 'pages', input, 'user').then(() => 'OK', (e: { code: string }) => e.code);
+    expect(await codeOf({ from: 'a.md', to: '../escaped.md', expectedHash: a.hash })).toBe('INVALID_ARGUMENT');
+    expect(await codeOf({ from: '../outside.md', to: 'b.md', expectedHash: a.hash })).toBe('INVALID_ARGUMENT');
+    expect(await codeOf({ from: 'a.md', to: '../other-root/a.md', expectedHash: a.hash })).toBe('INVALID_ARGUMENT');
+    expect(await codeOf({ from: '', to: 'b.md', expectedHash: a.hash })).toBe('INVALID_ARGUMENT');
+    expect(await codeOf({ from: 'a.md', to: '', expectedHash: a.hash })).toBe('INVALID_ARGUMENT');
+    expect(await codeOf({ from: 'a.md', to: 'b.md', expectedHash: '' })).toBe('INVALID_ARGUMENT');
+    expect(await pages.exists('a.md')).toBe(true);
+    expect(await outside('escaped.md')).toBe(false);
+    expect(await outside('other-root/a.md')).toBe(false);
+  });
+
+  it('[entity:move-page] a root without a record store → NOT_IMPLEMENTED', async () => {
+    const storeless: PageWriteTarget = { pages: new PagesService(pages.root, 'pages', 'pages'), writer: null };
+    await expect(movePage(storeless, 'pages', { from: 'a.md', to: 'b.md', expectedHash: 'x' }, 'user')).rejects.toMatchObject({
+      code: 'NOT_IMPLEMENTED',
+    });
+  });
+
+  it('[entity:move-page] a stale source hash → PAGE_CONFLICT; an occupied destination → PAGE_EXISTS; both files untouched', async () => {
+    const a = await createPage(target, { path: 'a.md', content: '# A\n' }, 'user');
+    await createPage(target, { path: 'b.md', content: '# B\n' }, 'user');
+    await expect(movePage(target, 'pages', { from: 'a.md', to: 'c.md', expectedHash: 'f'.repeat(64) }, 'user')).rejects.toMatchObject({
+      code: 'PAGE_CONFLICT',
+      currentHash: a.hash,
+    });
+    await expect(movePage(target, 'pages', { from: 'a.md', to: 'b.md', expectedHash: a.hash }, 'user')).rejects.toMatchObject({
+      code: 'PAGE_EXISTS',
+    });
+    expect(await fs.readFile(path.join(pages.root, 'a.md'), 'utf-8')).toBe(a.content);
+    expect(await fs.readFile(path.join(pages.root, 'b.md'), 'utf-8')).toContain('# B');
+  });
+
+  it('[entity:move-page] a missing source → NOT_FOUND whose navigation lists the roots with a facade', async () => {
+    const err = await movePage(
+      target,
+      'pages',
+      { from: 'gone.md', to: 'b.md', expectedHash: 'f'.repeat(64) },
+      'user',
+      undefined,
+      () => ['pages', 'skills'],
+    ).catch((e) => e);
+    expect(err.code).toBe('NOT_FOUND');
+    expect(err.hint).toContain('roots in this project: pages, skills');
   });
 });

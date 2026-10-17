@@ -376,6 +376,7 @@ export function pagesRouter(
           },
           'user',
           writeDeps?.propagateRename,
+          rootIds,
         ),
       );
     } catch (err) {

@@ -77,7 +77,7 @@ async function rig() {
   return { client, call, abs, registry, tools: instance.tools };
 }
 
-describe('2.1.9 — page-tools address the roots with a facade (M02 o01s9mwl, gj2vdsjm)', () => {
+describe('2.1.9 — page-tools address the roots with a facade (M02 o01s9mwl)', () => {
   it('[entity:page-tools-create-page] create_page on page-tools: the 2.1.26 record\'s description and parameters (rootId + path required, title + content optional), no hints; answers { rootId, path, hash, version, content, anchors[] } with `content` the file AS IT SETTLED (the template when no content was sent); unknown root ROOT_NOT_FOUND with the roots in `hint`, empty path VALIDATION, an existing page PAGE_EXISTS pointing at update_page', async () => {
     const { client, call, abs, tools: declared } = await rig();
     expectToolMatchesWriteRecord(declared.find((t) => t.name === 'create_page'), 'page-tools-create-page');
@@ -126,6 +126,26 @@ describe('2.1.9 — page-tools address the roots with a facade (M02 o01s9mwl, gj
     // (2.1.9: `skills`, M52, is a root with a facade too.)
     expect(refused.body.hint).toBe('active roots: [pages, adr, skills]');
     expect(fs.existsSync(abs('briefs', 'b.md'))).toBe(false);
+  });
+
+  it('[section:o01s9mwl] [entity:move-page] a rootId outside the facade roots — unknown, or a registry root without a facade — is ROOT_NOT_FOUND in each of the four page writes, its navigation listing the facade roots; a move from a missing page is NOT_FOUND carrying the same list', async () => {
+    const { call } = await rig();
+    for (const id of ['nope', 'plans']) {
+      const attempts: Array<[string, Record<string, unknown>]> = [
+        ['create_page', { rootId: id, path: 'new.md', content: '# New\n' }],
+        ['update_page', { rootId: id, path: 'a.md', body: 'x', expectedHash: sha('') }],
+        ['delete_page', { rootId: id, path: 'a.md' }],
+        ['move_page', { rootId: id, from: 'a.md', to: 'b.md', expectedHash: sha('') }],
+      ];
+      for (const [tool, args] of attempts) {
+        const res = await call(tool, args);
+        expect(res.body.code, `${tool}@${id}`).toBe('ROOT_NOT_FOUND');
+        expect(res.body.hint, `${tool}@${id}`).toBe('active roots: [pages, adr, skills]');
+      }
+    }
+    const missing = await call('move_page', { rootId: 'pages', from: 'gone.md', to: 'b.md', expectedHash: sha('') });
+    expect(missing.body.code).toBe('NOT_FOUND');
+    expect(missing.body.hint).toContain('roots in this project: pages, adr, skills');
   });
 
   it('[ac:ac-zadna-operacja-rdzenia-nie-ma-parametru] no page operation — discovery or write — can address a brief, patch, plan or the entity catalog: discovery resolves only `kind: pages` roots, the writes only roots with a facade, and no input carries a directory or a kind', async () => {

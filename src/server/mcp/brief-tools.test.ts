@@ -31,10 +31,6 @@ import type { WsEmitter } from '../ws/project-emitter.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { BRIEF_TOOL_RECORDS } from '../../../tests/helpers/brief-tool-records.js';
 import { expectToolMatchesToolRecord } from '../../../tests/helpers/write-tool-records.js';
-import express from 'express';
-import request from 'supertest';
-import { briefsRouter } from '../routes/briefs.js';
-import { errorHandler } from '../routes/errors.js';
 import { getBriefCommand } from '../../bin/c4s/commands/get-brief.js';
 import { listBriefsCommand } from '../../bin/c4s/commands/list-briefs.js';
 import { markBriefImplementedCommand } from '../../bin/c4s/commands/mark-brief-implemented.js';
@@ -1709,7 +1705,7 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     await expect(service.getVersionAddressed('nope.md', 1)).rejects.toMatchObject({ code: 'BRIEF_NOT_FOUND' });
   });
 
-  it('[entity:create-brief] create_brief as its record declares it: project, direct, internal n/a with the record\'s reason, cli/mcp/rest direct, file+db+ui-notify, not idempotent, literal content, codes BRIEF_SAME_RELEASE, VALIDATION, no renderings — blank content, a window without ends, an empty end name, an unknown release or roots on an open window VALIDATION; the service answers path, hash and both ends; the REST rendering opens the initial thread and answers the brief file with that thread first', async () => {
+  it('[entity:create-brief] create_brief as its record declares it: project, direct, internal n/a with the record\'s reason, cli/mcp/rest direct, file+db+ui-notify, not idempotent, literal content, codes BRIEF_SAME_RELEASE, VALIDATION, no renderings — blank content, a window without ends, an empty end name, an unknown release or roots on an open window VALIDATION; the operation writes the brief file only and opens no thread (no thread row, no thread list in its answer); the service answers path, hash and both ends', async () => {
     const op = expectOperationRecord({
       nazwa: 'create_brief',
       channels: {
@@ -1732,8 +1728,18 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     expect(await mountedNames(internal)).not.toContain('create_brief');
     expect(await mountedNames(external)).not.toContain('create_brief');
 
+    // 2.1.27 — the operation writes the brief file only: no thread is opened,
+    // and its answer carries no thread list (the initial thread is the REST
+    // route's composition, pinned by `[entity:post-api-briefs]`).
+    const threadRows = () => (db.prepare('SELECT COUNT(*) AS n FROM chat_thread').get() as { n: number }).n;
+    const threadsBefore = threadRows();
     // The service answers the path, the hash and both ends of the window as resolved.
     const again = await service.createBrief({ toReleaseName: null, content: 'body\n' });
+    expect(threadRows()).toBe(threadsBefore);
+    expect(
+      chat.listThreadsByArtifact({ threadColumn: 'brief_path', path: again.briefPath, limit: 20, offset: 0 }),
+    ).toEqual([]);
+    expect(again).not.toHaveProperty('threads');
     expect(Object.keys(again).sort()).toEqual(['briefPath', 'fromReleaseName', 'hash', 'toReleaseName']);
     expect(again).toMatchObject({ fromReleaseName: 'v2', toReleaseName: null });
     expect(again.hash).toBe(sha256(await fileBytes(again.briefPath)));
@@ -1748,15 +1754,5 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     ]) {
       await expect(service.createBrief(opts), JSON.stringify(opts)).rejects.toMatchObject({ code: 'VALIDATION' });
     }
-
-    // The REST rendering: a new initial thread, first in the brief's thread list, even beside an older one.
-    const app = express().use(express.json()).use('/api/briefs', briefsRouter(service, chat)).use(errorHandler);
-    await fs.rm(path.join(briefsRoot, briefPath));
-    const res = await request(app).post('/api/briefs').send({ fromReleaseName: 'v1', toReleaseName: 'v2', content: '# Again\n' });
-    expect(res.status).toBe(200);
-    expect(res.body.data).toMatchObject({ path: briefPath, frontmatter: expect.objectContaining({ type: 'brief' }) });
-    expect(Object.keys(res.body.data)).toEqual(expect.arrayContaining(['path', 'frontmatter', 'content', 'hash', 'threads']));
-    expect(res.body.data.threads.length).toBe(2);
-    expect(res.body.data.threads[0].id).not.toBe(threadId);
   });
 });

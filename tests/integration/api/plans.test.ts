@@ -37,8 +37,8 @@ function seedThread(t: TestApp, id: string, opts: { planPath?: string; parentThr
 }
 
 // 0.1.127: plan listing moved to the generic M36 family (GET /api/plans is
-// gone, see brief 0-1-126-to-0-1-127) — no `total`/pagination (limit/offset)
-// on the generic list, matching brief/patch's own list endpoint. threadCount/
+// gone, see brief 0-1-126-to-0-1-127) — no `total` on the generic list; since
+// 2.1.27 it windows with limit/offset only when asked (as brief's). threadCount/
 // lastThreadId (ac-planservice-listplans-search-limit) are PlanService-level
 // concerns not surfaced on the generic wire shape — covered directly against
 // the service in tests/integration/db/plans.test.ts instead.
@@ -86,6 +86,58 @@ describe('GET /api/artifacts/plan', () => {
     const bogus = await request(t.app).get('/api/artifacts/plan').query({ applied: 'all' });
     expect(bogus.status).toBe(400);
     expect(bogus.body.error.code).toBe('VALIDATION');
+  });
+
+  // 2.1.27 — this route is `list_plans`' rest rendering (rest: direct) and the
+  // `/plans` page's list (M10 `m10api00`); the order is the operation's.
+  it('[entity:list-plans] rest rendering: GET /api/artifacts/plan filters by `applied`, orders by the immutable frontmatter `created_at` ascending with ties by path, and windows with limit / offset after the filter — rows carry no plan content', async () => {
+    // Written newest-created first, so the file / version order is the reverse of the expected one.
+    await seedPlan(t, 'zeta', 'Zeta', 'SECRET-BODY', { created_at: '2026-10-03T00:00:00.000Z', applied: false });
+    await seedPlan(t, 'beta', 'Beta', 'body', { created_at: '2026-10-02T00:00:00.000Z', applied: true });
+    await seedPlan(t, 'alpha', 'Alpha', 'body', { created_at: '2026-10-02T00:00:00.000Z' }); // no `applied` key → false
+    await seedPlan(t, 'omega', 'Omega', 'body', { created_at: '2026-10-01T00:00:00.000Z', applied: false });
+
+    const paths = (res: { body: { data: Array<{ path: string }> } }) => res.body.data.map((d) => d.path);
+
+    const all = await request(t.app).get('/api/artifacts/plan');
+    expect(all.status).toBe(200);
+    // created_at ascending; alpha / beta share a created_at → by path.
+    expect(paths(all)).toEqual(['omega.md', 'alpha.md', 'beta.md', 'zeta.md']);
+    expect(JSON.stringify(all.body)).not.toContain('SECRET-BODY');
+
+    const pending = await request(t.app).get('/api/artifacts/plan').query({ applied: 'false' });
+    expect(paths(pending)).toEqual(['omega.md', 'alpha.md', 'zeta.md']);
+    const applied = await request(t.app).get('/api/artifacts/plan').query({ applied: 'true' });
+    expect(paths(applied)).toEqual(['beta.md']);
+
+    // The window is taken over the filtered, ordered list.
+    const page = await request(t.app).get('/api/artifacts/plan').query({ applied: 'false', limit: '2', offset: '1' });
+    expect(paths(page)).toEqual(['alpha.md', 'zeta.md']);
+    const first = await request(t.app).get('/api/artifacts/plan').query({ limit: '1' });
+    expect(paths(first)).toEqual(['omega.md']);
+
+    // A repeat answers the same order (idempotent read, stable sort).
+    expect(paths(await request(t.app).get('/api/artifacts/plan'))).toEqual(paths(all));
+
+    const badWindow = await request(t.app).get('/api/artifacts/plan').query({ limit: '-1' });
+    expect(badWindow.status).toBe(400);
+    expect(badWindow.body.error.code).toBe('VALIDATION');
+  });
+
+  it('[entity:list-plans] the order is created_at, not the last change: editing a plan does not move it', async () => {
+    await seedPlan(t, 'early', 'Early', 'v1', { created_at: '2026-09-01T00:00:00.000Z' });
+    const late = await seedPlan(t, 'late', 'Late', 'v1', { created_at: '2026-09-02T00:00:00.000Z' });
+    // A newer version of the later-created plan — the most recently changed one,
+    // which a most-recently-changed order would list first.
+    await t.plansPages.write(late, {
+      frontmatter: { type: 'plan', title: 'Late', created_at: '2026-09-02T00:00:00.000Z', created_by: 'user' },
+      body: 'v2',
+    });
+    await t.frontmatterIndexer.indexPage(systemRootId('plans'), late);
+    await t.pageVersions.recordVersion(late, 'update', 'filesystem', undefined, t.plansSerializer, systemRootId('plans'));
+
+    const res = await request(t.app).get('/api/artifacts/plan');
+    expect(res.body.data.map((d: { path: string }) => d.path)).toEqual(['early.md', 'late.md']);
   });
 });
 

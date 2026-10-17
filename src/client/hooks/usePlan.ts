@@ -58,21 +58,48 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 export function usePlans(opts: { search?: string; applied?: boolean } = {}) {
   return useQuery({
     queryKey: keys.list(opts),
-    queryFn: async (): Promise<PlanListEntry[]> => {
-      const params = new URLSearchParams();
-      if (opts.search) params.set('search', opts.search);
-      // Omitting the parameter means "all" — there is no `any`/`all` literal.
-      if (opts.applied !== undefined) params.set('applied', String(opts.applied));
-      const qs = params.toString();
-      const url = qs ? `/api/artifacts/plan?${qs}` : `/api/artifacts/plan`;
-      const body = await fetchJson<Envelope<ArtifactListItem[]>>(url);
-      return body.data.map((item) => ({
-        path: item.path,
-        title: typeof item.frontmatter.title === 'string' ? item.frontmatter.title : null,
-        updatedAt: item.updatedAt,
-        applied: item.frontmatter.applied === true,
-      }));
-    },
+    queryFn: () => fetchPlanList(opts),
+  });
+}
+
+/**
+ * The `/plans` page's list: the generic artifact-family list
+ * `GET /api/artifacts/plan` (M10 `m10api00`), arranged for the page by
+ * {@link orderPlansForPage}.
+ */
+export async function fetchPlanList(opts: { search?: string; applied?: boolean } = {}): Promise<PlanListEntry[]> {
+  const params = new URLSearchParams();
+  if (opts.search) params.set('search', opts.search);
+  // Omitting the parameter means "all" — there is no `any`/`all` literal.
+  if (opts.applied !== undefined) params.set('applied', String(opts.applied));
+  const qs = params.toString();
+  const url = qs ? `/api/artifacts/plan?${qs}` : `/api/artifacts/plan`;
+  const body = await fetchJson<Envelope<ArtifactListItem[]>>(url);
+  return orderPlansForPage(
+    body.data.map((item) => ({
+      path: item.path,
+      title: typeof item.frontmatter.title === 'string' ? item.frontmatter.title : null,
+      updatedAt: item.updatedAt,
+      applied: item.frontmatter.applied === true,
+    })),
+  );
+}
+
+/**
+ * 2.1.27 (M10 `m10api00`) — the list behind `/plans` comes from the generic
+ * `GET /api/artifacts/plan`, which answers in the `list_plans` order
+ * (`created_at` ascending, ties by `path`). The page opens with the most
+ * recently changed plan first (`ac-planservice-listplans-search-limit`), so the
+ * page arranges the rows itself: `updatedAt` descending, a row with no date
+ * last, the server's order kept between equal dates (stable sort).
+ * ASSUMPTION:dev-2701 — the page order is a UI concern over the list_plans order.
+ */
+export function orderPlansForPage(rows: PlanListEntry[]): PlanListEntry[] {
+  return [...rows].sort((a, b) => {
+    if (a.updatedAt === b.updatedAt) return 0;
+    if (a.updatedAt === null) return 1;
+    if (b.updatedAt === null) return -1;
+    return b.updatedAt.localeCompare(a.updatedAt);
   });
 }
 

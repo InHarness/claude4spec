@@ -15,6 +15,9 @@ import { toolAdmittedByProfile } from '../operations/profile-gate.js';
 import { CATALOG } from '../operations/catalog.js';
 import { isMcpChannelProfile, MCP_CHANNEL_PROFILE_NAMES, MCP_CHANNEL_PROFILES } from '../operations/profiles.js';
 import { C4S_READER_TOOL_NAMES, createC4sReaderServer } from './c4s-reader.js';
+import { createReferenceToolsServer, type ReferenceToolsDeps } from './reference-tools.js';
+import { DiscoveryError } from '../discovery/errors.js';
+import { READ_TOOL_RECORDS } from '../../../tests/helpers/read-tool-records.js';
 import { MCP_CONFIG_SERVER_KEY } from './mcp-config.js';
 import { profileFromRequest } from './http-mount.js';
 import type { McpServerFactory } from '../../shared/plugin-host/mcp.js';
@@ -379,6 +382,55 @@ describe('surface memoization', () => {
  * host operation AND inherit its catalog class — so its own mutating handler was
  * admitted to the read-only `ask` profile.
  */
+/**
+ * 2.1.27 (M13 `v0v4ku5d`) — every rendering reads one registry. The host builds
+ * the `{type}-tools` server from the type's registry; the `internal` channel
+ * mounts it in the turn and the `mcp` channel merges it straight into the
+ * external surface beside the other source servers — the same tool schema in
+ * both, and no generic proxy tool on the `mcp` channel in any posture.
+ */
+describe('[section:v0v4ku5d] mcp channel: {type}-tools merged directly, no generic proxy', () => {
+  const PROXY_TOOL_NAMES = ['list_plugin_tools', 'call_plugin_tool', 'list_type_tools', 'call_type_tool'];
+
+  it('[section:v0v4ku5d] the {type}-tools server the host builds is merged into the external surface with the very declaration (same input schema) the internal mount gets, and no generic proxy tool exists in any profile', () => {
+    const linkShape = {
+      endpointSlug: z.string(),
+      dtoSlug: z.string(),
+      relation: z.enum(['request', 'response', 'error']),
+      statusCode: z.number().optional(),
+    };
+    const endpointTools = createMcpServer({
+      name: 'endpoint-tools',
+      tools: [
+        mcpTool('link_dto', 'link', linkShape, async () => ({ content: [] })),
+        mcpTool('unlink_dto', 'unlink', linkShape, async () => ({ content: [] })),
+      ],
+    });
+    const entry = { name: 'endpoint-tools', server: endpointTools as unknown as McpServerFactory };
+    const host = {
+      buildMcpServers: () => [entry],
+      listEntities: () => [{ type: 'endpoint' }],
+    } as unknown as ExternalSurfaceDeps['pluginHost'];
+
+    // The internal channel mounts what `buildMcpServers()` returns; the mcp
+    // channel composes from the same call — one registry, one declaration.
+    const internalDecl = endpointTools.tools!.find((t) => t.name === 'link_dto')!;
+    const surface = composeExternalSurface(stubDeps({ profile: 'chat', pluginHost: host }));
+    const external = surface.byName.get('link_dto');
+    expect(external).toBe(internalDecl);
+    expect(Object.keys(external!.inputSchema).sort()).toEqual(['dtoSlug', 'endpointSlug', 'relation', 'statusCode']);
+    expect(surface.toolNames).toContain('unlink_dto');
+
+    // Without a generic proxy: every profile of the closed table, every posture
+    // (project-bound and workspace-bound mounts compose through this same call).
+    for (const profile of MCP_CHANNEL_PROFILE_NAMES) {
+      __invalidateSurfaceCache(host);
+      const names = composeExternalSurface(stubDeps({ profile, pluginHost: host })).toolNames;
+      for (const proxy of PROXY_TOOL_NAMES) expect(names, `${profile}: ${proxy}`).not.toContain(proxy);
+    }
+  });
+});
+
 describe('plugin tools cannot shadow host operations', () => {
   const hostileHost = () =>
     pluginHostWith(
@@ -838,6 +890,115 @@ describe('M12 2.1.26 — one external read server and its profile table', () => 
       }
     } finally {
       await client.close();
+    }
+  });
+});
+
+/**
+ * 2.1.27 — M12 `m12mcp00` and M19 `m19mcp00`: the reader's own read tools render
+ * the sets of THREE owner cores — discovery M39, skill registry M37 and, newly,
+ * the reference graph M19 (`find_references`, `check_consistency`) — with the same
+ * contract as their internal renderings on `reference-tools`.
+ */
+describe('M12/M19 2.1.27 — the reference-graph operations on the external reader', () => {
+  const M19_OPERATIONS = ['find_references', 'check_consistency'] as const;
+  type Core = Partial<Record<'findReferences' | 'checkConsistency', (input: unknown) => unknown>>;
+  const readerWith = (discovery: Core) => ({
+    reader: {} as never,
+    db: {} as never,
+    projectDir: '/tmp/unused',
+    packageVersion: 'test',
+    discovery: discovery as never,
+  });
+  const parse = (res: unknown) => {
+    const r = res as { content: Array<{ text: string }>; isError?: boolean };
+    return { isError: r.isError === true, body: JSON.parse(r.content[0]!.text) as Record<string, unknown> };
+  };
+
+  it('[section:m12mcp00] [entity:c4s-reader-find-references] [entity:c4s-reader-check-consistency] c4s-reader renders the sets of three cores (M39, M37, M19): both M19 operations are on the external surface in every profile, declared by c4s-reader as their records state, over the core', async () => {
+    // The M19 set sits in the reader's own tool list beside the M39 reads…
+    for (const name of M19_OPERATIONS) expect(C4S_READER_TOOL_NAMES).toContain(name);
+    // …and each catalog row renders it in the `mcp` channel as c4s-reader's tool.
+    for (const name of M19_OPERATIONS) {
+      expect(CATALOG.get(name)!.renderings?.mcp, name).toEqual([`c4s-reader.${name}`]);
+    }
+
+    const seen: Array<[string, unknown]> = [];
+    const report = { summary: { total: 3, errors: 1, warnings: 2 }, truncated: true, brokenReferences: [] };
+    const refs = { references: [{ rootId: 'pages', pagePath: 'a.md', tagType: 'inline_mention', line: 3 }], total: 1, hasMore: false, truncated: false };
+    const core: Core = {
+      findReferences: (i) => (seen.push(['findReferences', i]), refs),
+      checkConsistency: (i) => (seen.push(['checkConsistency', i]), report),
+    };
+    // A host whose reference-tools also declares both names: the composed-first
+    // c4s-reader declaration is the one the external caller gets.
+    const host = pluginHostWith([{ name: 'reference-tools', tools: [...M19_OPERATIONS] }], []);
+    for (const profile of MCP_CHANNEL_PROFILE_NAMES) {
+      const surface = composeExternalSurface(stubDeps({ profile, reader: readerWith(core), pluginHost: host }));
+      // M37 and M39 sets on the same surface.
+      expect(surface.toolNames, profile).toEqual(expect.arrayContaining(['list_skills', 'load_skill_file', 'get_sections', 'list_entities']));
+      for (const name of M19_OPERATIONS) {
+        expect(surface.toolNames.filter((n) => n === name), `${profile}/${name}`).toHaveLength(1);
+        const decl = surface.byName.get(name)!;
+        expect(decl.description, `${profile}/${name}`).toBe(READ_TOOL_RECORDS[`c4s-reader-${name.replace('_', '-')}`]!.description);
+      }
+      expect(parse(await surface.byName.get('find_references')!.handler({ target: 'section', anchor: 'm19mcp00' }, {})).body).toEqual(refs);
+      expect(parse(await surface.byName.get('check_consistency')!.handler({ rule: 8, limit: 1 }, {})).body).toEqual(report);
+    }
+    expect(seen).toHaveLength(MCP_CHANNEL_PROFILE_NAMES.length * 2);
+    expect(seen[0]).toEqual(['findReferences', { target: 'section', anchor: 'm19mcp00', includeTagMatches: false }]);
+    expect(seen[1]).toEqual(['checkConsistency', { rule: 8, limit: 1 }]);
+  });
+
+  it('[section:m19mcp00] both M19 operations render in the agent channels as reference-tools (internal) and c4s-reader (external), with one contract: same core call, same collection envelope, same error navigation', async () => {
+    for (const name of M19_OPERATIONS) {
+      const row = CATALOG.get(name)!;
+      expect(row.renderings, name).toEqual({ internal: [`reference-tools.${name}`], mcp: [`c4s-reader.${name}`] });
+    }
+
+    const internalWith = (core: Core) => createReferenceToolsServer({ discovery: core } as unknown as ReferenceToolsDeps);
+    const externalWith = (core: Core) => createC4sReaderServer(readerWith(core));
+    const call = async (server: ReturnType<typeof internalWith>, name: string, args: Record<string, unknown>) =>
+      parse(await server.tools!.find((t) => t.name === name)!.handler(args, {}));
+
+    const cases: Array<{ name: (typeof M19_OPERATIONS)[number]; method: keyof Core; args: Record<string, unknown>; answer: unknown }> = [
+      {
+        name: 'find_references',
+        method: 'findReferences',
+        args: { target: 'entity', type: 'mcp-tool', slug: 'c4s-reader-find-references', includeTagMatches: true, limit: 1, offset: 0 },
+        // The collection budget: total / hasMore / truncated come from the core, untouched.
+        answer: { references: [{ rootId: 'pages', pagePath: 'modules/m19-references.md', anchor: 'm19mcp00', tagType: 'tagged_list', line: 9, via: ['m19'] }], total: 2, hasMore: true, truncated: false },
+      },
+      {
+        name: 'check_consistency',
+        method: 'checkConsistency',
+        args: { severity: 'error', rule: 'brokenReferences', limit: 1 },
+        answer: { summary: { total: 5, errors: 5, warnings: 0 }, truncated: true, brokenReferences: [{ reason: 'missing' }] },
+      },
+    ];
+
+    for (const c of cases) {
+      const seenInternal: unknown[] = [];
+      const seenExternal: unknown[] = [];
+      const internal = await call(internalWith({ [c.method]: (i: unknown) => (seenInternal.push(i), c.answer) }), c.name, c.args);
+      const external = await call(externalWith({ [c.method]: (i: unknown) => (seenExternal.push(i), c.answer) }), c.name, c.args);
+      expect(internal, c.name).toEqual({ isError: false, body: c.answer });
+      expect(external, c.name).toEqual(internal);
+      expect(seenExternal, c.name).toEqual(seenInternal);
+      expect(seenInternal, c.name).toHaveLength(1);
+
+      // Same parameters on both renderings (the descriptions differ by channel, the shape does not).
+      const internalKeys = Object.keys(internalWith({}).tools!.find((t) => t.name === c.name)!.inputSchema).sort();
+      const externalKeys = Object.keys(externalWith({}).tools!.find((t) => t.name === c.name)!.inputSchema).sort();
+      expect(externalKeys, c.name).toEqual(internalKeys);
+
+      // Error navigation from the core survives both renderings identically.
+      const refusal = new DiscoveryError('INVALID_ARGUMENT', 'refused by the core', 'the call that would have worked');
+      const thrower = { [c.method]: () => { throw refusal; } } as Core;
+      const refusedInternal = await call(internalWith(thrower), c.name, c.args);
+      const refusedExternal = await call(externalWith(thrower), c.name, c.args);
+      expect(refusedInternal).toEqual({ isError: true, body: { error: 'refused by the core', code: 'INVALID_ARGUMENT', hint: 'the call that would have worked' } });
+      expect(refusedExternal).toEqual(refusedInternal);
     }
   });
 });
