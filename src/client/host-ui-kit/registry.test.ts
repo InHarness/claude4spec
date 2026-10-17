@@ -332,7 +332,7 @@ const PRIMITIVE_RECORDS: Record<string, PrimitiveRecord> = {
 const CATALOG_NAMES = UI_KIT_CATALOG.map((c) => c.name);
 
 function expectEntryMatchesRecord(slug: string) {
-  const rec = (PRIMITIVE_RECORDS[slug] ?? M13_SCAFFOLD_RECORDS[slug])!;
+  const rec = (PRIMITIVE_RECORDS[slug] ?? M13_SCAFFOLD_RECORDS[slug] ?? KIT_DETAIL_HISTORY_RECORDS[slug])!;
   const e = UI_KIT_CATALOG.find((c) => c.name === rec.name);
   expect(e, slug).toBeDefined();
   expect(e?.group, slug).toBe(rec.group);
@@ -411,4 +411,65 @@ describe('Host UI Kit registry ↔ M13 detail scaffold records (M13/M34, L12, 2.
     }
   });
   it('[entity:field-row] registry entry matches the record (core, stable — on the versioned stable list —, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('field-row'));
+});
+
+/**
+ * 2.1.28 (unit kit-detail-history) — the detail-panel, history and picker
+ * records. `l11Surfaces` = the record's `dataSources` with usage
+ * `fetchedByComponent` (the two connected blocks); `feedsProps` sources
+ * (`lineDiffHunks`, `useReferences`, `useTags`/`tagsService`, `useVersions`/
+ * `useReleases` on VersionHistory) are a caller's business and stay out.
+ */
+const KIT_DETAIL_HISTORY_RECORDS: Record<string, PrimitiveRecord> = {
+  'diff-view': { name: 'DiffView', group: 'detail', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [['EmptyState', '../list/EmptyState.js']], file: 'detail/DiffView.tsx' },
+  'doc-editor': { name: 'DocEditor', group: 'detail', stability: 'experimental', binding: 'connected', fetchedByComponent: ['editorBridge', 'queryClient'], composes: [], file: 'detail/DocEditor.tsx' },
+  'entity-detail-toolbar': { name: 'EntityDetailToolbar', group: 'detail', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [['ActionButton', '../actions/ActionButton.js']], file: 'detail/EntityDetailToolbar.tsx' },
+  'entity-version-history-view': {
+    name: 'EntityVersionHistoryView',
+    group: 'detail',
+    stability: 'experimental',
+    binding: 'connected',
+    fetchedByComponent: ['useVersions', 'useVersionDetail', 'useRestoreVersion', 'useReleases'],
+    composes: [
+      ['LoadingState', '../actions/LoadingState.js'],
+      ['EmptyState', '../list/EmptyState.js'],
+      ['EntityDetailToolbar', './EntityDetailToolbar.js'],
+      ['VersionHistory', './VersionHistory.js'],
+      ['SegmentedControlTabs', './SegmentedControlTabs.js'],
+      ['DiffView', './DiffView.js'],
+    ],
+    file: 'detail/EntityVersionHistoryView.tsx',
+  },
+  'enum-badge-picker': { name: 'EnumBadgePicker', group: 'pickers', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [['Popover', '../overlay-feedback/Popover.js']], file: 'pickers/EnumBadgePicker.tsx' },
+  'grouped-relation-picker': { name: 'GroupedRelationPicker', group: 'pickers', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [['Popover', '../overlay-feedback/Popover.js']], file: 'pickers/GroupedRelationPicker.tsx' },
+  'references-list': { name: 'ReferencesList', group: 'detail', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [['LoadingState', '../actions/LoadingState.js'], ['EmptyState', '../list/EmptyState.js']], file: 'detail/ReferencesList.tsx' },
+  'rich-text-field': { name: 'RichTextField', group: 'detail', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'detail/RichTextField.tsx' },
+  'segmented-control-tabs': { name: 'SegmentedControlTabs', group: 'detail', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'detail/SegmentedControlTabs.tsx' },
+  'tag-picker': { name: 'TagPicker', group: 'detail', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [['Badge', '../actions/Badge.js'], ['Popover', '../overlay-feedback/Popover.js']], file: 'detail/TagPicker.tsx' },
+  'version-history': { name: 'VersionHistory', group: 'detail', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [['EmptyState', '../list/EmptyState.js']], file: 'detail/VersionHistory.tsx' },
+};
+
+describe('Host UI Kit registry ↔ detail, history and picker records (M34/L12, 2.1.28)', () => {
+  it('[entity:diff-view] registry entry matches the record (detail, experimental, presentational; lineDiffHunks only feeds props, so no L11 surface) and composes EmptyState', () => expectEntryMatchesRecord('diff-view'));
+  it('[entity:doc-editor] registry entry matches the record (detail, experimental, connected, L11 editorBridge + queryClient), composes nothing', () => expectEntryMatchesRecord('doc-editor'));
+  it('[entity:entity-detail-toolbar] registry entry matches the record (detail, experimental, presentational, no L11 surface) and composes ActionButton — no Dialog of its own', () => expectEntryMatchesRecord('entity-detail-toolbar'));
+  it('[entity:entity-version-history-view] registry entry matches the record (detail, experimental, connected, L11 useVersions/useVersionDetail/useRestoreVersion/useReleases) and composes LoadingState, EmptyState, EntityDetailToolbar, VersionHistory, SegmentedControlTabs, DiffView', () => expectEntryMatchesRecord('entity-version-history-view'));
+  it('[entity:enum-badge-picker] registry entry matches the record (pickers, experimental, presentational, no L11 surface) and composes Popover', () => expectEntryMatchesRecord('enum-badge-picker'));
+  it('[entity:grouped-relation-picker] registry entry matches the record (pickers, experimental, presentational, no L11 surface) and composes Popover', () => expectEntryMatchesRecord('grouped-relation-picker'));
+  it('[entity:references-list] registry entry matches the record (detail, experimental, presentational; useReferences only feeds props) and composes LoadingState and EmptyState', () => expectEntryMatchesRecord('references-list'));
+  it('[entity:rich-text-field] registry entry matches the record (detail, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('rich-text-field'));
+  it('[entity:segmented-control-tabs] registry entry matches the record (detail, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('segmented-control-tabs'));
+  it('[entity:tag-picker] registry entry matches the record (detail, experimental, presentational; useTags/tagsService only feed props) and composes Badge and Popover', () => expectEntryMatchesRecord('tag-picker'));
+  it('[entity:version-history] registry entry matches the record (detail, experimental, presentational; useVersions/useReleases only feed props) and composes EmptyState', () => expectEntryMatchesRecord('version-history'));
+
+  it('[section:m13l11sc] the history components render no useVersionDiff delta: none of them reaches useVersionDiff or EntityDiff — only the M17 release-diff formatter renders it', () => {
+    for (const slug of ['version-history', 'diff-view', 'entity-version-history-view']) {
+      const rec = KIT_DETAIL_HISTORY_RECORDS[slug]!;
+      const source = readFileSync(fileURLToPath(new URL(`./${rec.file}`, import.meta.url)), 'utf8');
+      // Code only — the doc comments may name the hook to say it is not used.
+      const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+      expect(code, slug).not.toMatch(/\buseVersionDiff\b/);
+      expect(code, slug).not.toMatch(/\bEntityDiff\b/);
+    }
+  });
 });

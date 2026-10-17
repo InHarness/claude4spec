@@ -1,0 +1,384 @@
+{
+ "role": "verifier",
+ "scope": {
+  "kind": "unit",
+  "id": "kit-detail-history"
+ },
+ "release": "2.1.28",
+ "rows": [
+  {
+   "slug": "diff-view",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/registry.test.ts:453 expectEntryMatchesRecord (detail/experimental/presentational, composes EmptyState); src/client/host-ui-kit/detail/DiffView.render.test.ts:73 Same<DiffViewProps|Published.DiffViewProps, RecordDiffViewProps> + DiffViewLine; :81 bridge tokens --c-green-soft/--c-red-soft"
+  },
+  {
+   "slug": "doc-editor",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/registry.test.ts:454 connected, l11Surfaces [editorBridge, queryClient]; src/client/host-ui-kit/detail/DocEditor.render.test.ts:269 Same props (host + /ui); :275 default placeholder \"Description…\""
+  },
+  {
+   "slug": "entity-detail-toolbar",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/registry.test.ts:455 composes ActionButton only; src/client/host-ui-kit/detail/EntityDetailToolbar.render.test.ts:48 Same props (no brokenRefs, removed from src/plugin-types/ui.ts too); :54 title/back/busy delete"
+  },
+  {
+   "slug": "entity-version-history-view",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/registry.test.ts:456 connected, l11Surfaces [useVersions,useVersionDetail,useRestoreVersion,useReleases], composes LoadingState/EmptyState/EntityDetailToolbar/VersionHistory/SegmentedControlTabs/DiffView; src/client/host-ui-kit/detail/EntityVersionHistoryView.render.test.ts:353 Same props; :248 failed restore -> \"Restore failed\"; :377 toolbar title only; :384 renderDiff replaces DiffView"
+  },
+  {
+   "slug": "enum-badge-picker",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/registry.test.ts:457 pickers, composes Popover; src/client/host-ui-kit/pickers/EnumBadgePicker.render.test.ts:55 Same props (host + /ui)"
+  },
+  {
+   "slug": "grouped-relation-picker",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/registry.test.ts:458 pickers, composes Popover; src/client/host-ui-kit/pickers/GroupedRelationPicker.render.test.ts:59 Same props (host + /ui)"
+  },
+  {
+   "slug": "references-list",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/registry.test.ts:459 composes LoadingState+EmptyState, useReferences feedsProps (no l11Surfaces); src/client/host-ui-kit/detail/ReferencesList.render.test.ts:53 Same props + ReferencesListItem; :61 loading -> 3 .skeleton, empty -> \"No references\""
+  },
+  {
+   "slug": "rich-text-field",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/registry.test.ts:460; src/client/host-ui-kit/detail/RichTextField.render.test.ts:76 Same props + RichTextFieldToolbarItem; :84 default toolbar [bold,italic,heading,list,table,code] + placeholder \"Write…\""
+  },
+  {
+   "slug": "segmented-control-tabs",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/registry.test.ts:461; src/client/host-ui-kit/detail/SegmentedControlTabs.render.test.ts:47 Same props (host + /ui)"
+  },
+  {
+   "slug": "tag-picker",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/registry.test.ts:462 composes Badge+Popover, useTags/tagsService feedsProps; src/client/host-ui-kit/detail/TagPicker.render.test.ts:72 Same props (host + /ui)"
+  },
+  {
+   "slug": "version-history",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/registry.test.ts:463 composes EmptyState; src/client/host-ui-kit/detail/VersionHistory.render.test.ts:67 Same props + VersionHistoryItem; :137 Compare to calls onCompare, marks compareVersion"
+  },
+  {
+   "slug": "ac-allowrestore-false-ukrywa-akcje-rest",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/EntityVersionHistoryView.render.test.ts:218 expect(buttons('Restore')).toEqual([]) with timeline + Compare to rendered"
+  },
+  {
+   "slug": "ac-badge-changedby-w-widoku-historii-ent",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/EntityVersionHistoryView.render.test.ts:428 agent badge style var(--c-blue…) vs user var(--c-green…), styles differ; src/client/host-ui-kit/detail/VersionHistory.test.ts:5"
+  },
+  {
+   "slug": "ac-diffview-bez-niepustych-hunks-z-podan-2",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/DiffView.render.test.ts:168,175 only before / only after -> \"No differences\", text absent, no [role=alert]; DiffView.tsx:50 requires both"
+  },
+  {
+   "slug": "ac-diffview-bez-niepustych-hunks-z-podan",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/DiffView.render.test.ts:142 two [data-diff-pane=text] in grid-cols-2 with verbatim lines [a,b]/[a,c], no add/del tints, no +/- markers; :160 empty hunks + pair, inline mode still 2 panes"
+  },
+  {
+   "slug": "ac-diffview-m34-experimental-renderuje-p",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/DiffView.render.test.ts:95 inline: one column, tints + markers; :112 split: two row-paired columns"
+  },
+  {
+   "slug": "ac-diffview-z-niepustymi-hunks-i-jednocz",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/DiffView.render.test.ts:131 hunks + pair -> \"from-hunks\" shown, pair texts absent, textPanes().length 0"
+  },
+  {
+   "slug": "ac-diffview-z-pustym-propsem-hunks-renderuj",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/DiffView.render.test.ts:184,190 no props and hunks:[] -> \"No differences\", no alert"
+  },
+  {
+   "slug": "ac-doceditor-m34-experimental-host-wired",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/registry.test.ts:126 DocEditor connected, l11Surfaces toEqual([editorBridge, queryClient]), both exported by plugin-runtime.ts"
+  },
+  {
+   "slug": "ac-doceditor-obsluguje-slash-commands",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/DocEditor.render.test.ts:196 \"/\" opens palette with command:mention, picking runs it (mention popover opened, \"/\" consumed)"
+  },
+  {
+   "slug": "ac-doceditor-pozwala-wstawic-odnosnik-do",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/DocEditor.render.test.ts:226 inline_mention {type:dto, slug:user-response} in doc; onChange markdown contains <inline_mention type=\"dto\" slug=\"user-response\"/>"
+  },
+  {
+   "slug": "ac-entitydetailtoolbar-przy-operacji-dele",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/EntityDetailToolbar.render.test.ts:69 after delete click: no [role=dialog], no Cancel button; EntityDetailToolbar.tsx:42 onClick={onDelete}"
+  },
+  {
+   "slug": "ac-entityversionhistoryview-bez-wybranej",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/EntityVersionHistoryView.render.test.ts:398 one version -> Diff tab \"Nothing to compare\", no alert, v1 still shown"
+  },
+  {
+   "slug": "ac-entityversionhistoryview-dla-encji-bez",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/EntityVersionHistoryView.render.test.ts:412 data [] -> \"No versions yet\", no alert/tablist; :420 custom emptyState rendered instead"
+  },
+  {
+   "slug": "ac-entityversionhistoryview-ma-stability",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/registry.test.ts:86 stability experimental, BROWSER_STABLE excludes it, HOST_API_VERSION 2.1.0"
+  },
+  {
+   "slug": "ac-entityversionhistoryview-otwarty-dla",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/EntityVersionHistoryView.render.test.ts:165 404 -> \"No versions yet\", no tablist/pre/alert/\"deleted\"; :178 caller emptyState"
+  },
+  {
+   "slug": "ac-entityversionhistoryview-pokazuje-w-z",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/EntityVersionHistoryView.render.test.ts:149 select v1, Snapshot tab -> pre textContent toBe(JSON.stringify(v1,null,2))"
+  },
+  {
+   "slug": "ac-entityversionhistoryview-przy-showrel",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/EntityVersionHistoryView.render.test.ts:308 group headings [\"Release 2.1.0\",\"Release 2.0.0\"]; fallback \"Release 7\" (false form: ASSUMPTION dev-2809, non-blocking)"
+  },
+  {
+   "slug": "ac-entityversionhistoryview-renderuje-kom",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/EntityVersionHistoryView.render.test.ts:359 type+slug only -> timeline group, Comparing 1, Restore 1, Diff tab selected with lineDiffHunks line \"email\" + \"+\" marker"
+  },
+  {
+   "slug": "ac-enumbadgepicker-grupa-pickers-m34-expe",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/pickers/EnumBadgePicker.render.test.ts:61 coloured badge, options in [role=dialog] Popover, onChange(\"DELETE\"), value stays prop, any enum; :83 imports Popover, no Badge, readOnly opens nothing"
+  },
+  {
+   "slug": "ac-groupedrelationpicker-grupa-pickers-m34",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/pickers/GroupedRelationPicker.render.test.ts:65 groups from props, onRemove(\"request\",\"user-in\") chip stays, onAdd(\"response\",\"err\"), no fetch"
+  },
+  {
+   "slug": "ac-groupedrelationpicker-z-zadanym-maxheigh",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/pickers/GroupedRelationPicker.render.test.ts:85 '+ link' per group opens its own popover with only that group's candidates, onGroupOpen per key"
+  },
+  {
+   "slug": "ac-komponent-entitydetailtoolbar-m34-e",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/EntityDetailToolbar.render.test.ts:79 onDelete called once with no args, fetch not called, title still rendered"
+  },
+  {
+   "slug": "ac-komponent-referenceslist-m34-experi",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/ReferencesList.render.test.ts:71 rows from references, onOpen(REFS[0]), fetch not called"
+  },
+  {
+   "slug": "ac-komponent-richtextfield-m34-experim",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/RichTextField.render.test.ts:93 value rendered, onChange last \"Hello there\", no fetch, no host-only imports in source"
+  },
+  {
+   "slug": "ac-komponent-segmentedcontroltabs-grupa",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/SegmentedControlTabs.render.test.ts:53 tablist from tabs/active, onChange(\"history\"), aria-selected stays prop-driven, no fetch"
+  },
+  {
+   "slug": "ac-komponent-tagpicker-m34-experimenta",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/TagPicker.render.test.ts:78 chips [Auth,Billing,Zażółć gęślą] via Badge, onToggle(\"billing\"); :95 onCreate(\"Payments\")"
+  },
+  {
+   "slug": "ac-komponent-versionhistory-m34-experi",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/VersionHistory.render.test.ts:75 versions from prop, onSelect(\"2\"), onRestore(\"1\"), Restore on non-active rows only, no fetch"
+  },
+  {
+   "slug": "ac-line-diff-w-c4s-ma-jedna-implementacje-r",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/lib/release-diff/to-diff-view.test.ts:5 keep/added/removed+content -> ctx/add/del+line; DiffView.tsx:18-24 legacy fallback gone; PageDiffCard.tsx:150 adapts via toDiffViewHunks"
+  },
+  {
+   "slug": "ac-lista-kandydatow-w-popoverze-grupy-gr",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/pickers/GroupedRelationPicker.render.test.ts:105 panel.style.maxHeight toBe(\"280px\"), inner .overflow-auto"
+  },
+  {
+   "slug": "ac-restore-w-entityversionhistoryview-pr",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/EntityVersionHistoryView.render.test.ts:227 click Restore -> useRestoreVersion().mutate called with {type:dto,slug:user-dto,version:2}; onRestored only on hook onSuccess"
+  },
+  {
+   "slug": "ac-richtextfield-m34-experimental-render",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/RichTextField.render.test.ts:110 h2/strong/em/ul>li x2/table/pre code in .ProseMirror, no textarea, contenteditable true -> readOnly false"
+  },
+  {
+   "slug": "ac-richtextfield-w-trybie-readonly-rend",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/RichTextField.render.test.ts:126 strong \"me\", contenteditable false, isEditable false, 0 buttons, onChange not called"
+  },
+  {
+   "slug": "ac-tagpicker-oncreate-dla-nazwy-dajacej-j",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/TagPicker.render.test.ts:104 Auth/auth/AUTH/zażółć gęślą -> onCreate not called (tagSlug); idempotentCreate passes only \"Billing v2\""
+  },
+  {
+   "slug": "ac-tagpicker-w-wariancie-collapsed-renderuj",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/TagPicker.render.test.ts:122 chips [Billing] + \"+2\"; Popover shows all chips + New tag… input; flat variant renders no Popover"
+  },
+  {
+   "slug": "ac-versionhistory-bez-podanego-variant-r",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/VersionHistory.render.test.ts:94 no variant -> 3 ul>li, no version-group-, no timeline dot, no Compare to"
+  },
+  {
+   "slug": "ac-versionhistory-w-wariancie-variant-time",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/VersionHistory.render.test.ts:104 each [data-timeline-row] has 2 children, rail with dot, connector within group, accent dot on active"
+  },
+  {
+   "slug": "ac-versionhistory-z-pustym-propsem-versi",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/VersionHistory.render.test.ts:147 versions [] -> \"No versions yet\" (flat and timeline), no alert"
+  },
+  {
+   "slug": "ac-versionhistory-z-variant-timeline-ren",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/VersionHistory.render.test.ts:121 groups [__unreleased__, release:Release 2.1.0], heading button text \"Release 2.1.0\", single label leaf"
+  },
+  {
+   "slug": "ac-w-wariancie-collapsed-tagpicker-odslania",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/TagPicker.render.test.ts:143 80 tags: panel maxHeight 240px, body overflow-auto with 80 chips, input only in footer sibling"
+  },
+  {
+   "slug": "ac-w-widoku-entityversionhistoryview-wers",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/detail/EntityVersionHistoryView.render.test.ts:282 groups [__unreleased__, Release 2.1.0, Release 2.0.0], v4 in Unreleased, no per-row pill; :326 showReleasePill=false keeps grouping"
+  },
+  {
+   "slug": "m13l11sc",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/registry.test.ts:465 VersionHistory/DiffView/EntityVersionHistoryView code has no useVersionDiff/EntityDiff; src/server/plugin-runtime/l11-surfaces.test.ts:92 lineDiffHunks returns {op:add|del|ctx; line}[]; EntityVersionHistoryView.tsx:138 lineDiffHunks over two useVersionDetail snapshots"
+  },
+  {
+   "slug": "goal:kit-detail-history",
+   "level": 2,
+   "status": "covered",
+   "evidence": "DiffView.tsx:49-73 hunks win, pair -> BeforeAfterPanes, else EmptyState; VersionHistory.tsx:87 variant=flat default, :95 timeline groupByRelease; EntityVersionHistoryView.tsx:173-178 restore via useRestoreVersion, :292 placeholder \"Nothing to compare\", :60 \"Release <id>\" group heading; EntityDetailToolbar.tsx:42 onDelete direct, Dialog+brokenRefs removed (also src/plugin-types/ui.ts); GroupedRelationPicker.tsx:120 one Popover per GroupRow, maxHeight 280; no useVersionDiff in history components (registry.test.ts:465)"
+  }
+ ],
+ "suite": {
+  "command": "npm run typecheck",
+  "exitCode": 0,
+  "summary": "tsc --noEmit across root and workspaces (incl. c4s-plugin-host-ui-kit-components) exit 0; tests read statically per build rules, none run locally"
+ }
+}

@@ -1,0 +1,19 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "kit-detail-history",
+    "base": "973a262f0bb0543044e4e06251ee77cdf1f026c0"
+  },
+  "findings": [
+    {
+      "id": "rev-0001",
+      "file": "src/client/host-ui-kit/detail/TagPicker.tsx",
+      "line": 155,
+      "blocking": true,
+      "reason": "idempotentCreate drops onCreate for every name whose slug is already in allTags, including tags that exist but are NOT selected. Six screens in this repo use the picker (ac, dto, endpoint, database-table, ui-view, design-system detail panels). Their handleCreateTag does not create a catalog tag. It adds tagSlug(name) to draft.tags and already guards against duplicates on its own. So before this diff, typing an existing tag's name into the inline-create input attached that tag to the entity. After it, the input clears, nothing is attached, and there is no feedback: a silent regression the user can see, and the unit's goal does not name it. The backend's auto-create-by-slug, the parity the record cites, still resolves to the existing tag and lets the caller apply it; it does not swallow the request. Fix: for an existing slug that is not selected, call onToggle(slug) (still no create); keep the no-op only for a slug that is already selected. Or leave onCreate alone and file a drift deviation. Then extend the [ac:ac-tagpicker-oncreate-dla-nazwy-dajacej-j] test to cover the case where the tag exists but is not selected.",
+      "portion": "kit-detail-history/p1-l11-l12"
+    }
+  ],
+  "deviations": []
+}

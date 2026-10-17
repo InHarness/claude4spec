@@ -1,0 +1,15 @@
+{
+ "role": "implementer",
+ "status": "progressed",
+ "release": "2.1.28",
+ "unit": "kit-detail-history",
+ "portion": "kit-detail-history/p1-l11-l12",
+ "claimed": [
+  "tag-picker",
+  "ac-tagpicker-oncreate-dla-nazwy-dajacej-j"
+ ],
+ "deviations": [],
+ "stubsOpened": [],
+ "stubsClosed": [],
+ "stoppedEarly": false
+}

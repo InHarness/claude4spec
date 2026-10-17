@@ -236,7 +236,7 @@ describe.skipIf(!BASE)('entity version history — EntityVersionHistoryView', ()
     await page.close();
   });
 
-  it('[ac:ac-entityversionhistoryview-dla-encji-bez] falls back to a placeholder, not an error, when there is nothing to compare against', async () => {
+  it('[ac:ac-entityversionhistoryview-bez-wybranej] falls back to a placeholder, not an error, when there is nothing to compare against', async () => {
     // A one-version entity is the real "no compare target" state: there is no
     // older version to default to, so the diff pane has nothing to render.
     const single = await endpointWithOneVersion(project.id);

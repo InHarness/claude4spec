@@ -41,7 +41,7 @@ export interface EntityVersionHistoryViewProps {
   allowRestore?: boolean;
   /** Show the "Compare to" selection and the diff panel. Default `true`. */
   allowCompare?: boolean;
-  /** Release GROUP heading: `true` (default) heads a group with the release name, `false` with the anonymous `Release <id>`. The version row carries no release pill either way. */
+  /** Switches the release GROUP heading to the form `Release <id>` (default `true`); `false` heads it with the bare release id. The version row carries no release pill either way. */
   showReleasePill?: boolean;
   /** Rendered instead of the default empty state when the entity has no versions at all. */
   emptyState?: ReactNode;
@@ -52,6 +52,14 @@ export interface EntityVersionHistoryViewProps {
 }
 
 type RightTab = 'diff' | 'snapshot';
+
+/**
+ * The release group heading: "Release <id>" with `showReleasePill` (default),
+ * the bare release identifier without it. Exported for its own test.
+ */
+export function releaseGroupHeading(releaseId: string, showReleasePill: boolean): string {
+  return showReleasePill ? `Release ${releaseId}` : releaseId;
+}
 
 /** Just enough of a version row for the selection maths below. */
 interface VersionLike {
@@ -139,16 +147,21 @@ function EntityVersionHistoryViewImpl({
     /**
      * 2.1.20 — the kit item carries no `releaseId`; `releaseLabel` is the
      * timeline's group heading AND grouping key, so a released version ALWAYS
-     * gets one: without it every version would fall into "Unreleased" and
-     * `showReleasePill: false` would silently turn the release axis into a flat
-     * list. `showReleasePill: false` hides the release NAME, not the axis — the
-     * group is then headed by the anonymous `Release <id>`.
+     * gets one: without it every version would fall into "Unreleased".
+     *
+     * 2.1.28 (record `entity-version-history-view`): `showReleasePill` switches
+     * the group heading to the form "Release <id>". A release is addressed by
+     * its name (2.1.11), so `<id>` is the release name, with the numeric id only
+     * when the name is not loaded yet. ASSUMPTION:dev-2809 — `false` heads the
+     * group with the bare release identifier, without the "Release" prefix;
+     * the version row carries no release pill either way.
      */
     ...(v.releaseId != null
       ? {
-          releaseLabel: showReleasePill
-            ? (releaseNameById.get(v.releaseId) ?? `Release ${v.releaseId}`)
-            : `Release ${v.releaseId}`,
+          releaseLabel: releaseGroupHeading(
+            releaseNameById.get(v.releaseId) ?? String(v.releaseId),
+            showReleasePill,
+          ),
         }
       : {}),
   }));

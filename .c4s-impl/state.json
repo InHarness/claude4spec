@@ -1099,13 +1099,80 @@
           "why": "powierzchnie L11 komponentów `connected` w rejestrze."
         }
       ],
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "kit-detail-history/p1-l11-l12",
+          "layers": [
+            "L11",
+            "L12"
+          ],
+          "slugs": [
+            "m13l11sc",
+            "diff-view",
+            "doc-editor",
+            "entity-detail-toolbar",
+            "entity-version-history-view",
+            "enum-badge-picker",
+            "grouped-relation-picker",
+            "references-list",
+            "rich-text-field",
+            "segmented-control-tabs",
+            "tag-picker",
+            "version-history",
+            "ac-allowrestore-false-ukrywa-akcje-rest",
+            "ac-badge-changedby-w-widoku-historii-ent",
+            "ac-diffview-bez-niepustych-hunks-z-podan-2",
+            "ac-diffview-bez-niepustych-hunks-z-podan",
+            "ac-diffview-m34-experimental-renderuje-p",
+            "ac-diffview-z-niepustymi-hunks-i-jednocz",
+            "ac-diffview-z-pustym-propsem-hunks-renderuj",
+            "ac-doceditor-m34-experimental-host-wired",
+            "ac-doceditor-obsluguje-slash-commands",
+            "ac-doceditor-pozwala-wstawic-odnosnik-do",
+            "ac-entitydetailtoolbar-przy-operacji-dele",
+            "ac-entityversionhistoryview-bez-wybranej",
+            "ac-entityversionhistoryview-dla-encji-bez",
+            "ac-entityversionhistoryview-ma-stability",
+            "ac-entityversionhistoryview-otwarty-dla",
+            "ac-entityversionhistoryview-pokazuje-w-z",
+            "ac-entityversionhistoryview-przy-showrel",
+            "ac-entityversionhistoryview-renderuje-kom",
+            "ac-enumbadgepicker-grupa-pickers-m34-expe",
+            "ac-groupedrelationpicker-grupa-pickers-m34",
+            "ac-groupedrelationpicker-z-zadanym-maxheigh",
+            "ac-komponent-entitydetailtoolbar-m34-e",
+            "ac-komponent-referenceslist-m34-experi",
+            "ac-komponent-richtextfield-m34-experim",
+            "ac-komponent-segmentedcontroltabs-grupa",
+            "ac-komponent-tagpicker-m34-experimenta",
+            "ac-komponent-versionhistory-m34-experi",
+            "ac-line-diff-w-c4s-ma-jedna-implementacje-r",
+            "ac-lista-kandydatow-w-popoverze-grupy-gr",
+            "ac-restore-w-entityversionhistoryview-pr",
+            "ac-richtextfield-m34-experimental-render",
+            "ac-richtextfield-w-trybie-readonly-rend",
+            "ac-tagpicker-oncreate-dla-nazwy-dajacej-j",
+            "ac-tagpicker-w-wariancie-collapsed-renderuj",
+            "ac-versionhistory-bez-podanego-variant-r",
+            "ac-versionhistory-w-wariancie-variant-time",
+            "ac-versionhistory-z-pustym-propsem-versi",
+            "ac-versionhistory-z-variant-timeline-ren",
+            "ac-w-wariancie-collapsed-tagpicker-odslania",
+            "ac-w-widoku-entityversionhistoryview-wers"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "53d8b76a2a6306933942891fafe7b50da1032301",
+      "baseCommit": "973a262f0bb0543044e4e06251ee77cdf1f026c0",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
       "jobs": [],
       "wave": 3
@@ -1379,7 +1446,7 @@
         "kit-detail-history",
         "m19-list-header"
       ],
-      "startCommit": null
+      "startCommit": "973a262f0bb0543044e4e06251ee77cdf1f026c0"
     },
     {
       "n": 4,

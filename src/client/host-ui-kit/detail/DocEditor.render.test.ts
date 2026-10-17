@@ -58,7 +58,8 @@ vi.mock('@tiptap/react', async (importOriginal) => {
   };
 });
 
-import { DocEditor } from './DocEditor.js';
+import { DocEditor, type DocEditorProps } from './DocEditor.js';
+import type * as Published from '../../../plugin-types/ui.js';
 import type { PopoverRequest } from '../../ui/events.js';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -249,5 +250,35 @@ describe('DocEditor (M34, connected) — slash-commands and links to other entit
 
     // …and the panel receives it as the reference tag in the description markdown.
     expect(changes.at(-1)).toContain('See <inline_mention type="dto" slug="user-response"/>');
+  });
+});
+
+/** Mutual assignability + the same key set: the record's prop list, no more, no less. */
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? ([keyof A] extends [keyof B] ? ([keyof B] extends [keyof A] ? true : false) : false) : false) : false;
+
+/** The record's `props` (`doc-editor`, 2.1.28). */
+interface RecordDocEditorProps {
+  value: string;
+  onChange: (md: string) => void;
+  onBlur?: () => void;
+  readOnly?: boolean;
+  placeholder?: string;
+}
+
+describe('DocEditor ↔ record `doc-editor` (M34/L12, 2.1.28)', () => {
+  it('[entity:doc-editor] takes exactly the record props (host and published /ui alike)', () => {
+    const a: Same<DocEditorProps, RecordDocEditorProps> = true;
+    const b: Same<Published.DocEditorProps, RecordDocEditorProps> = true;
+    expect([a, b]).toEqual([true, true]);
+  });
+
+  it('[entity:doc-editor] binds the live host QueryClient and renders the value, with the record default placeholder "Description…"', async () => {
+    const editor = await mountDocEditor('Hello world');
+    expect(editor.getText()).toBe('Hello world');
+    await act(async () => {
+      editor.commands.setContent('', false);
+    });
+    await flush();
+    expect(host.innerHTML).toContain('Description…');
   });
 });
