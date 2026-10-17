@@ -16,7 +16,9 @@ export interface DetailBreadcrumb {
  * of rebuilding the toolbar/breadcrumb per plugin.
  *
  * Pure-presentational: breadcrumb hops, actions and content are all props. No
- * router or host access — the caller wires navigation via `onClick`.
+ * router or host access — the caller wires navigation via `onClick`. The
+ * detail header is the LAST breadcrumb hop (no `title` prop), and there are no
+ * dedicated Edit/Delete slots — the contract is the `detail-panel-shell` record.
  */
 export interface DetailPanelShellProps {
   /** Breadcrumb hops, left → right. The last is the current entity. */
@@ -53,13 +55,21 @@ function DetailPanelShellImpl({ breadcrumb, actions, children }: DetailPanelShel
                   >
                     {crumb.label}
                   </button>
-                ) : (
+                ) : last ? (
+                  // The last hop is the detail header of the current entity —
+                  // there is no separate `title` prop (record `detail-panel-shell`).
                   <span
+                    role="heading"
+                    aria-level={1}
+                    aria-current="page"
+                    data-detail-header=""
                     className="flex items-center gap-1.5"
-                    style={last ? { color: 'var(--c-ink)', fontWeight: 600 } : undefined}
+                    style={{ color: 'var(--c-ink)', fontWeight: 600 }}
                   >
                     {crumb.label}
                   </span>
+                ) : (
+                  <span className="flex items-center gap-1.5">{crumb.label}</span>
                 )}
               </span>
             );

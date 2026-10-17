@@ -42,3 +42,8 @@
 - popover → src/client/host-ui-kit/overlay-feedback/Popover.tsx, src/client/host-ui-kit/registry.ts (tests: src/client/host-ui-kit/registry.test.ts, src/client/host-ui-kit/overlay-feedback/Popover.render.test.ts)
 - tag-filter-bar → src/client/host-ui-kit/list/TagFilterBar.tsx, src/client/host-ui-kit/registry.ts (tests: src/client/host-ui-kit/registry.test.ts, src/client/host-ui-kit/list/TagFilterBar.render.test.ts)
 - toast-viewport → src/client/host-ui-kit/overlay-feedback/ToastViewport.tsx, src/client/host-ui-kit/registry.ts (tests: src/client/host-ui-kit/registry.test.ts, src/client/host-ui-kit/overlay-feedback/ToastViewport.render.test.ts)
+- detail-panel-shell → src/client/host-ui-kit/core/DetailPanelShell.tsx, src/client/host-ui-kit/registry.ts (tests: src/client/host-ui-kit/registry.test.ts, src/client/host-ui-kit/core/DetailPanelShell.render.test.ts)
+- document-body → src/client/host-ui-kit/detail/DocumentBody.tsx, src/client/host-ui-kit/registry.ts (tests: src/client/host-ui-kit/registry.test.ts, src/client/host-ui-kit/detail/DocumentBody.render.test.ts)
+- field-grid → src/client/host-ui-kit/core/FieldGrid.tsx, src/client/host-ui-kit/registry.ts (tests: src/client/host-ui-kit/registry.test.ts, src/client/host-ui-kit/core/FieldGrid.render.test.ts)
+- field-row → src/client/host-ui-kit/core/FieldRow.tsx, src/client/host-ui-kit/registry.ts (tests: src/client/host-ui-kit/registry.test.ts, src/client/host-ui-kit/core/FieldRow.render.test.ts)
+- section:m13l12sc → src/client/host-ui-kit/registry.ts, src/shared/plugin-host/ui-kit-surface.ts, src/shared/plugin-host/host-api.ts (test: src/client/host-ui-kit/registry.test.ts)

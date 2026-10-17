@@ -1,0 +1,16 @@
+{
+  "id": "dev-2808",
+  "kind": "clarification",
+  "blocking": false,
+  "address": "m13-detail-scaffold/document-body",
+  "slugs": [
+    "document-body",
+    "ac-documentbody-kontrybuowany-przez-m13-e"
+  ],
+  "text": "The document-body record's anatomy styles the content with the bridge styles `lede` and `body` (and the AC repeats heading-1/lede/body), but DocumentBody takes only `title`, `children` and `maxWidth`, so the record does not say which part of the children is `lede`. The code before this window used `body` only. Assumed the host's own `.prose-spec p.lede` convention: the content is `body`, and a paragraph the consumer marks `<p className=\"lede\">` takes the `lede` style (font `--font-heading`, size `--text-lede`, weight `--weight-lede`, italic), via a rule scoped to the DocumentBody content. Needs: the record to say how `lede` is selected (a marked paragraph, the first paragraph, or a prop).",
+  "assumption": "ASSUMPTION:dev-2808 — content is `body`; a paragraph the consumer marks `<p className=\"lede\">` takes the `lede` style (the host's `.prose-spec p.lede` convention).",
+  "unit": "m13-detail-scaffold",
+  "portion": "m13-detail-scaffold/p1-l12",
+  "sent": true,
+  "patchPath": "2-1-27-to-2-1-28-m13-detail-scaffold-document-body-the-document-body-record-s-anatomy-styles-the-.md"
+}

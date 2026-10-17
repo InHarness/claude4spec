@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { UI_KIT_CATALOG, UI_KIT_STABLE_COMPONENTS as BROWSER_STABLE } from './registry.js';
 import { UI_KIT_STABLE_COMPONENTS } from '../../shared/plugin-host/ui-kit-surface.js';
 import { HOST_API_VERSION } from '../../shared/plugin-host/manifest.js';
+import { VERSIONED_UI_KIT_COMPONENTS } from '../../shared/plugin-host/host-api.js';
 import { PLUGIN_RUNTIME_UI_EXPORT_NAMES } from '../../shared/plugin-host/frontend-manifest.js';
 import { pluginRuntimeLegOf } from '../../shared/plugin-host/runtime-legs.js';
 // The backend half of `@c4s/plugin-runtime/ui` (what a plugin backend links against).
@@ -331,7 +332,7 @@ const PRIMITIVE_RECORDS: Record<string, PrimitiveRecord> = {
 const CATALOG_NAMES = UI_KIT_CATALOG.map((c) => c.name);
 
 function expectEntryMatchesRecord(slug: string) {
-  const rec = PRIMITIVE_RECORDS[slug]!;
+  const rec = (PRIMITIVE_RECORDS[slug] ?? M13_SCAFFOLD_RECORDS[slug])!;
   const e = UI_KIT_CATALOG.find((c) => c.name === rec.name);
   expect(e, slug).toBeDefined();
   expect(e?.group, slug).toBe(rec.group);
@@ -375,4 +376,39 @@ describe('Host UI Kit registry ↔ catalog primitives records (M34/L12, 2.1.28)'
   it('[entity:popover] registry entry matches the record (feedback, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('popover'));
   it('[entity:tag-filter-bar] registry entry matches the record (list, experimental, presentational; useTags only feeds props, so no L11 surface) and composes Badge', () => expectEntryMatchesRecord('tag-filter-bar'));
   it('[entity:toast-viewport] registry entry matches the record (feedback, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('toast-viewport'));
+});
+
+/**
+ * 2.1.28 (unit m13-detail-scaffold) — the detail scaffold M13 contributes to
+ * the catalog (m13l12sc): `DetailPanelShell`, `FieldGrid`, `FieldRow` (core,
+ * stable — their `props` count into hostApiVersion) and `DocumentBody`
+ * (detail, experimental). All presentational, no data sources, composing no
+ * other catalog component.
+ */
+const M13_SCAFFOLD_RECORDS: Record<string, PrimitiveRecord> = {
+  'detail-panel-shell': { name: 'DetailPanelShell', group: 'core', stability: 'stable', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'core/DetailPanelShell.tsx' },
+  'document-body': { name: 'DocumentBody', group: 'detail', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'detail/DocumentBody.tsx' },
+  'field-grid': { name: 'FieldGrid', group: 'core', stability: 'stable', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'core/FieldGrid.tsx' },
+  'field-row': { name: 'FieldRow', group: 'core', stability: 'stable', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'core/FieldRow.tsx' },
+};
+
+describe('Host UI Kit registry ↔ M13 detail scaffold records (M13/M34, L12, 2.1.28)', () => {
+  it('[entity:detail-panel-shell] registry entry matches the record (core, stable — on the versioned stable list —, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('detail-panel-shell'));
+  it('[entity:document-body] registry entry matches the record (detail, experimental — off the stable list —, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('document-body'));
+  it('[entity:field-grid] registry entry matches the record (core, stable — on the versioned stable list —, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('field-grid'));
+  it('[section:m13l12sc] M13 contributes the detail scaffold to /ui: shell, field row and two body layouts; only the stable props count into hostApiVersion, and DocumentBody carries the token-bridge typography', () => {
+    for (const rec of Object.values(M13_SCAFFOLD_RECORDS)) {
+      expect(uiBrowserSurface, rec.name).toHaveProperty(rec.name);
+      expect(PLUGIN_RUNTIME_UI_EXPORT_NAMES, rec.name).toContain(rec.name);
+    }
+    // Version surface: the stable records' props are versioned, the experimental one is not.
+    expect(VERSIONED_UI_KIT_COMPONENTS).toEqual(expect.arrayContaining(['DetailPanelShell', 'FieldGrid', 'FieldRow']));
+    expect(VERSIONED_UI_KIT_COMPONENTS as readonly string[]).not.toContain('DocumentBody');
+    // Token bridge: M13 reaches the typography class through DocumentBody.
+    const docBody = readFileSync(fileURLToPath(new URL('./detail/DocumentBody.tsx', import.meta.url)), 'utf8');
+    for (const v of ['--font-heading', '--text-h1', '--weight-heading', '--font-body', '--text-body', '--text-lede', '--weight-lede']) {
+      expect(docBody, v).toContain(`var(${v})`);
+    }
+  });
+  it('[entity:field-row] registry entry matches the record (core, stable — on the versioned stable list —, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('field-row'));
 });
