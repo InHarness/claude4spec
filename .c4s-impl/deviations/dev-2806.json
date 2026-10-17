@@ -1,0 +1,16 @@
+{
+  "id": "dev-2806",
+  "kind": "clarification",
+  "blocking": false,
+  "address": "plugin-ui-debts/jsejrh30",
+  "slugs": [
+    "jsejrh30",
+    "rgczgux0"
+  ],
+  "text": "At 2.1.28 the Host-local components of jsejrh30 list only CodeSnippetView (local) and DŁUG CodeSnippetFullscreen; the create/edit window form CodeSnippetPopover (31369549) is no longer named (likewise rgczgux0 no longer names DiagramPopover). DiagramForm.tsx is no gate finding, so its declaration was dropped to mirror the section. The code-snippets popover frame (frontend-kit/slash-create.tsx, a scrim twin on zIndex 1200 with own kit markup) is a gate (a) finding, so dropping its declaration would make the gate fail. Assumed: the CodeSnippetPopover `local` declaration stays. Needs: the entry restored in jsejrh30 (local, or DŁUG popover form like the other packages).",
+  "assumption": "ASSUMPTION:dev-2806 — CodeSnippetPopover stays declared local although jsejrh30 no longer lists it",
+  "unit": "plugin-ui-debts",
+  "portion": "plugin-ui-debts/p1-l5-l12",
+  "sent": true,
+  "patchPath": "2-1-27-to-2-1-28-plugin-ui-debts-jsejrh30-at-2-1-28-the-host-local-components-of-jsejrh30-list-on.md"
+}

@@ -440,8 +440,9 @@ describe('[section:mq3b803z] design-system Host UI Kit slice', () => {
 });
 
 describe('[section:yn1fk80a] ui-view Host UI Kit slice', () => {
-  it('[section:yn1fk80a] the check reads the ui-view DŁUG entries — EntityBreadcrumbBar, EntityNotFound, CountBadge, the popover form, ListPageLayout, RoutePane', () => {
+  it('[section:yn1fk80a] the check reads the ui-view entries — the local mockup preview frame, and the DŁUG EntityBreadcrumbBar, EntityNotFound, CountBadge, the popover form, ListPageLayout, RoutePane', () => {
     expect(entries('yn1fk80a')).toEqual([
+      { kind: 'local', components: ['UiViewPreview'], replacedBy: [] },
       debt(['EntityBreadcrumbBar'], ['DetailPanelShell']),
       debt(['EntityNotFound'], ['EmptyState']),
       debt(['CountBadge'], ['Badge']),
@@ -459,6 +460,20 @@ describe('[section:yn1fk80a] ui-view Host UI Kit slice', () => {
     expect(readSource(file)).toMatch(/<SegmentedControlTabs\b/);
   });
 
+  it('[section:yn1fk80a] the mockup preview frame is a bare <iframe> with a sandbox attribute, on the preview tab only, not wrapped in the HtmlViewer shell', () => {
+    const file = 'plugins/c4s-plugin-frontend-mockups/src/entity/ui-view/frontend/preview-page.tsx';
+    const code = stripComments(readSource(file));
+    expect(code).toMatch(/export function UiViewPreview\b/);
+    expect(code.match(/<iframe\b/g)).toHaveLength(1);
+    expect(code).toMatch(/<iframe[\s\S]*?\bsandbox=/);
+    expect(code).not.toMatch(/HtmlViewer/);
+    // Used in one place: the frame lives in this file and nowhere else in the package.
+    const frames = envelopeFiles().filter(
+      (f) => f.startsWith('plugins/c4s-plugin-frontend-mockups/src/') && /<iframe\b/.test(stripComments(readSource(f))),
+    );
+    expect(frames).toEqual([file]);
+  });
+
   it('[section:yn1fk80a] ListPageHeader / ListScrollArea are catalog-only compositions, and ListPageLayout / RoutePane are new debts with no catalog replacement', () => {
     assertListCompositionIsCatalogOnly();
     assertTrajectoryDebts('yn1fk80a', 'c4s-plugin-frontend-mockups');
@@ -468,9 +483,9 @@ describe('[section:yn1fk80a] ui-view Host UI Kit slice', () => {
 describe('[section:lg0e57j1] c4s-plugin-spreadsheets Host UI Kit slice', () => {
   const pkg = 'c4s-plugin-spreadsheets';
 
-  it('[section:lg0e57j1] the check reads two entries — SpreadsheetFullscreen as local, the popover form as DŁUG replaced by FormField', () => {
+  it('[section:lg0e57j1] the check reads two DŁUG entries — SpreadsheetFullscreen with no catalog replacement (trajectory candidate), the popover form replaced by FormField', () => {
     expect(entries('lg0e57j1')).toEqual([
-      { kind: 'local', components: ['SpreadsheetFullscreen'], replacedBy: [] },
+      debt(['SpreadsheetFullscreen']),
       debt(POPOVER_FORM, ['FormField']),
     ]);
   });
@@ -481,12 +496,62 @@ describe('[section:lg0e57j1] c4s-plugin-spreadsheets Host UI Kit slice', () => {
     for (const f of files) expect(readSource(f), f).not.toMatch(/@c4s\/plugin-runtime\/ui/);
   });
 
-  it('[section:lg0e57j1] the fullscreen overlay is a finding only the local entry excuses, and the popover form copy carries its DEBT header', () => {
+  it('[section:lg0e57j1] the fullscreen shell is a finding only its DŁUG entry excuses, both copies carry their DEBT header', () => {
     const fullscreen = 'plugins/c4s-plugin-spreadsheets/src/entity/spreadsheet/frontend/node-view.tsx';
     expect(readSource(fullscreen)).toMatch(/export const SpreadsheetFullscreen\b/);
+    expect(readSource(fullscreen).match(DEBT_MARKER)?.[0]).toContain('lg0e57j1');
+    expect(readSource(fullscreen)).toMatch(/fullscreen-overlay/);
     expect(violationsWithout('lg0e57j1', fullscreen)).toEqual([{ file: fullscreen, detector: 'anatomy:Dialog' }]);
     const form = kit(pkg, 'popover-form.tsx');
     expect(readSource(form).match(DEBT_MARKER)?.[0]).toContain(pkg);
     for (const n of POPOVER_FORM) expect(readSource(form)).toMatch(new RegExp(`export (const|function) ${n}\\b`));
+  });
+});
+
+/** The three fullscreen shells the 2.1.28 slices record as one debt (trajectory `fullscreen-overlay`). */
+function assertFullscreenShellDebt(section: string, component: string, file: string): void {
+  const d = declarationsOf(section).find((x) => x.components.includes(component));
+  expect(d, `${section} declares ${component}`).toBeDefined();
+  expect(d!.kind).toBe('debt');
+  expect(d!.components).toEqual([component]);
+  expect(d!.replacedBy).toEqual([]);
+  expect(d!.files).toEqual([file]);
+  const src = readSource(file);
+  expect(src.match(DEBT_MARKER)?.[0], `${file} DEBT header`).toContain(section);
+  expect(src).toMatch(/fullscreen-overlay/);
+}
+
+describe('[section:jsejrh30] c4s-plugin-code-snippets Host UI Kit slice', () => {
+  const view = 'plugins/c4s-plugin-code-snippets/src/entity/code-snippet/frontend/view.tsx';
+  const fullscreen = 'plugins/c4s-plugin-code-snippets/src/entity/code-snippet/frontend/fullscreen.tsx';
+
+  it('[section:jsejrh30] CodeSnippetView is local, CodeSnippetFullscreen is a DŁUG shell with no catalog replacement, and the card / chip are not host-local', () => {
+    expect(entries('jsejrh30').slice(0, 2)).toEqual([
+      { kind: 'local', components: ['CodeSnippetView'], replacedBy: [] },
+      debt(['CodeSnippetFullscreen']),
+    ]);
+    assertFullscreenShellDebt('jsejrh30', 'CodeSnippetFullscreen', fullscreen);
+    expect(readSource(view)).not.toMatch(DEBT_MARKER);
+    assertStruck('jsejrh30', ['CodeSnippetCard', 'CodeSnippetChip']);
+  });
+});
+
+describe('[section:rgczgux0] diagram Host UI Kit slice', () => {
+  it('[section:rgczgux0] DiagramView is local, DiagramFullscreen is a DŁUG shell with no catalog replacement (trajectory candidate fullscreen-overlay)', () => {
+    expect(entries('rgczgux0')).toEqual([
+      { kind: 'local', components: ['DiagramView'], replacedBy: [] },
+      debt(['DiagramFullscreen']),
+    ]);
+    assertFullscreenShellDebt('rgczgux0', 'DiagramFullscreen', 'src/client/components/DiagramFullscreen.tsx');
+    expect(readSource('src/client/entities/diagram/DiagramCard.tsx')).not.toMatch(DEBT_MARKER);
+  });
+
+  it('[section:dgmfull000] the diagram fullscreen sits on the design-system z-modal layer (1200), not on a literal toast-tier z-index', () => {
+    const src = readSource('src/client/components/DiagramFullscreen.tsx');
+    expect(src).toMatch(/export const DIAGRAM_FULLSCREEN_LAYER = 1200;/);
+    expect(src).toMatch(/zIndex: DIAGRAM_FULLSCREEN_LAYER,/);
+    expect(src).not.toMatch(/zIndex:\s*\d/);
+    // No longer reported as a Dialog twin by its z-index spelling.
+    expect(scanFindings().filter((f) => f.file === 'src/client/components/DiagramFullscreen.tsx')).toEqual([]);
   });
 });

@@ -1,0 +1,101 @@
+{
+  "role": "verifier",
+  "scope": {
+    "kind": "unit",
+    "id": "plugin-ui-debts"
+  },
+  "release": "2.1.28",
+  "rows": [
+    {
+      "slug": "rgczgux0",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/architecture/ui-kit-gate.test.ts:534 '[section:rgczgux0] DiagramView is local, DiagramFullscreen is a DŁUG shell…' — expect(entries('rgczgux0')).toEqual([{kind:'local',components:['DiagramView']…}, debt(['DiagramFullscreen'])]) + assertFullscreenShellDebt (DEBT header with rgczgux0, 'fullscreen-overlay'); declarations tests/integration/architecture/host-local-declarations.ts:307-323; DiagramPopover declaration dropped (DiagramForm.tsx no gate finding, gate (a) violations()==[]); DEBT header src/client/components/DiagramFullscreen.tsx:27; debtMarkedFiles==filesOfKind('debt') (ui-kit-gate.test.ts:109) stays consistent; read through: passes"
+    },
+    {
+      "slug": "dgmfull000",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/client/components/DiagramFullscreen.tsx:24 `export const DIAGRAM_FULLSCREEN_LAYER = 1200;` used at :164 `zIndex: DIAGRAM_FULLSCREEN_LAYER` (c4s-paper-terra z-modal; bridge has only --z-popover/--z-toast, src/client/host-ui-kit/tokens.ts:70-71 — ASSUMPTION dev-2804, non-blocking); tests: ui-kit-gate.test.ts:543 '[section:dgmfull000]…' expect(src).not.toMatch(/zIndex:\\s*\\d/) + scanFindings for the file == []; tests/integration/entities/hidden-type-envelopes.test.ts:322 expect(dialog.style.zIndex).toBe('1200'); read through: passes"
+    },
+    {
+      "slug": "jsejrh30",
+      "level": 2,
+      "status": "covered",
+      "evidence": "ui-kit-gate.test.ts:522 '[section:jsejrh30] CodeSnippetView is local, CodeSnippetFullscreen is a DŁUG shell…' — entries('jsejrh30').slice(0,2) toEqual [local CodeSnippetView, debt(['CodeSnippetFullscreen'])], assertFullscreenShellDebt, assertStruck(['CodeSnippetCard','CodeSnippetChip']); DEBT header plugins/c4s-plugin-code-snippets/src/entity/code-snippet/frontend/fullscreen.tsx:24; CodeSnippetPopover declaration kept although 2.1.28 entry drops it (dev-2806, gate finding) and the consumed list is not imported (dev-2807, pre-existing, unchanged by the window) — both non-blocking deviations; read through: passes"
+    },
+    {
+      "slug": "2i5ypc7q",
+      "level": 2,
+      "status": "test-not-verifying",
+      "evidence": "the only [section:2i5ypc7q] test, tests/integration/entities/hidden-type-envelopes.test.ts:366, asserts slug resolution and full content (`expect(snippetFetches).toEqual(['one'])`, `expect(codeOf(...fullscreen.tsx)).not.toMatch(/\\bentity\\b/)`), not the window's added sentence that two surfaces open it (BLOCK Maximize2 on the card and INLINE chip click); the two-surface open is asserted only under [section:c8sqlv76] (tests/integration/entities/hidden-type-expand.test.ts:123). The input difference ('ready record from the card') is not built (dev-2805, non-blocking)"
+    },
+    {
+      "slug": "s7ao66dy",
+      "level": 2,
+      "status": "test-fails",
+      "evidence": "plugins/c4s-plugin-spreadsheets/test/frontend/expand-window.test.ts:283 `expect(code).not.toMatch(/\\b(?:update|patch|set)Cells?\\(/)` fails against plugins/c4s-plugin-spreadsheets/src/entity/spreadsheet/frontend/node-view.tsx:73,82,86,91 (`setCells([])`, `setCells(rows)` — the useState setter of the windowed grid, node-view.tsx:45), so test '[section:s7ao66dy] the window content is SpreadsheetFullscreen: …no edit affordance' fails; the second test (:286, range windows: fetchShape(slug), fetchWindow(slug, windowRange.r1, 1, windowRange.r2, nCols), 'rows …of ${nRows}') reads through as passing"
+    },
+    {
+      "slug": "lg0e57j1",
+      "level": 2,
+      "status": "covered",
+      "evidence": "ui-kit-gate.test.ts:481 entries('lg0e57j1') toEqual [debt(['SpreadsheetFullscreen']), debt(POPOVER_FORM,['FormField'])]; :493 DEBT header contains 'lg0e57j1' and 'fullscreen-overlay' (node-view.tsx:336), violationsWithout == [{anatomy:Dialog}]; no '@c4s/plugin-runtime/ui' import in the package (consumed: none); host-local-declarations.ts:241-250; read through: passes"
+    },
+    {
+      "slug": "vnufk8nt",
+      "level": 2,
+      "status": "covered",
+      "evidence": "plugins/c4s-plugin-database-tables/test/frontend/database-table-views.render.test.ts:130 '[section:vnufk8nt] query keys stay outside the host refresh prefixes…Delete is confirmed by the kit Dialog' — hooks.ts:14-15 match `[DATABASE_TABLE_TYPE, 'list', q]` / `[DATABASE_TABLE_TYPE, 'detail', slug]`, no entity:changed/indexed in frontend/, detail-panel.tsx:1347 `<Dialog`, no confirmDestructive( ; recorded debts kept; read through: passes"
+    },
+    {
+      "slug": "uyu88bdw",
+      "level": 2,
+      "status": "covered",
+      "evidence": "database-table-views.render.test.ts:90 '[section:uyu88bdw] [section:5d3hfpij] colours come only from the host token bridge…' — expect(offenders).toEqual([]) over every package source (comments stripped) for var(--x, …) fallbacks and hex/rgb/hsl/white/black literals; grep of plugins/c4s-plugin-database-tables/src finds hits only in comments (render-chip.tsx:26, render-card.tsx:32); fixes popover-form.tsx:77,106,124, frontend-kit/slash-create.tsx:115; existing consumed/host-local test in the same describe; read through: passes"
+    },
+    {
+      "slug": "5d3hfpij",
+      "level": 2,
+      "status": "covered",
+      "evidence": "database-table-views.render.test.ts:90 (no colour literal / no token fallback, as above) and :120 '[section:5d3hfpij] a broken slug: only the chip and the card have a broken branch' — render-chip.tsx:40 and render-card.tsx:112 `if (!entity)`, renderRow/renderChip/renderCard defined (module.tsx:46-48); read through: passes"
+    },
+    {
+      "slug": "uvrender",
+      "level": 2,
+      "status": "covered",
+      "evidence": "plugins/c4s-plugin-frontend-mockups/test/frontend/ui-view-detail-and-list.render.test.ts:208 — detail-panel.tsx:13-14 `import { useTags } from '@c4s/plugin-runtime';` / `import { useReferences } from '@c4s/plugin-runtime';`, :106 `useTags()`, :108 `useReferences('ui-view', …)`; entity/ui-view/index.ts declares neither; read through: passes"
+    },
+    {
+      "slug": "yn1fk80a",
+      "level": 2,
+      "status": "covered",
+      "evidence": "ui-kit-gate.test.ts:449 entries('yn1fk80a') starts with {kind:'local',components:['UiViewPreview']} (host-local-declarations.ts:219-228); :459 '[section:yn1fk80a] the mockup preview frame is a bare <iframe> with a sandbox attribute…' — preview-page.tsx:208 `export function UiViewPreview`, single <iframe at :224 with sandbox= at :244, no HtmlViewer, only iframe in the package; read through: passes"
+    },
+    {
+      "slug": "wklad-do-edytora-entity-database-table#`/database-table`",
+      "type": "spreadsheet",
+      "level": 1,
+      "status": "covered",
+      "evidence": "plugins/c4s-plugin-database-tables/test/slash-command.test.ts:171 [entity:wklad-do-edytora-entity-database-table#`/database-table`] — one contributes.commands entry trigger 'database-table' (src/capabilities/commands.ts:20,24) with popoverKind 'database-table-create' (identity.ts:45), no editorExtensions slashCommand (module.tsx:54); read through: passes"
+    },
+    {
+      "slug": "wklad-do-edytora-entity-database-table#generyczne osadzenie `type: \"database-table\"` — popover `database-table-create`",
+      "type": "spreadsheet",
+      "level": 1,
+      "status": "covered",
+      "evidence": "slash-command.test.ts:181 — entity/database-table/frontend/slash-create.tsx:205 `mountSlashCreatePopover(DATABASE_TABLE_POPOVER_KIND`, :162 `data-plugin-popover={DATABASE_TABLE_POPOVER_KIND}`, no kit Dialog in it or frontend-kit/slash-create.tsx, :152 `columns: []`, databaseTableEmbedNode('orders').attrs toEqual {type:'database-table',slug:'orders'} (:70-75); read through: passes"
+    },
+    {
+      "slug": "goal:plugin-ui-debts",
+      "level": 2,
+      "status": "covered",
+      "evidence": "three fullscreen shells recorded as DŁUG with replacedBy [] and 'fullscreen-overlay' trajectory (host-local-declarations.ts DiagramFullscreen/CodeSnippetFullscreen/SpreadsheetFullscreen; DEBT headers DiagramFullscreen.tsx:27, fullscreen.tsx:24, node-view.tsx:336); diagram overlay off the literal 1300 onto the z-modal layer via DIAGRAM_FULLSCREEN_LAYER (DiagramFullscreen.tsx:24,164) — the bridge has no z-modal variable, so 'z mostu tokenów' rests on ASSUMPTION dev-2804 (non-blocking); spreadsheet-expand read-only and range-windowed (node-view.tsx:52,78,179); database-tables colours from the bridge with no fallbacks (popover-form.tsx, frontend-kit/slash-create.tsx); ui-view preview = local sandboxed iframe UiViewPreview (preview-page.tsx:208-244); runtime binding to useTags/useReferences (detail-panel.tsx:13-14)"
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck (whole suite env-runner only; static read of touched tests)",
+    "exitCode": 0,
+    "summary": "typecheck: EXIT 0, 0 'error TS'. Static read: expand-window.test.ts:283 fails (setCells in node-view.tsx) — reported as test-fails on s7ao66dy; other touched tests (ui-kit-gate.test.ts, hidden-type-envelopes.test.ts, hidden-type-expand.test.ts, database-table-views.render.test.ts, slash-command.test.ts, ui-view-detail-and-list.render.test.ts) read through as passing."
+  }
+}

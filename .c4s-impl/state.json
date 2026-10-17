@@ -654,13 +654,45 @@
         ]
       },
       "dependsOn": [],
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "plugin-ui-debts/p1-l5-l12",
+          "layers": [
+            "L5",
+            "L11",
+            "L12"
+          ],
+          "slugs": [
+            "rgczgux0",
+            "dgmfull000",
+            "jsejrh30",
+            "2i5ypc7q",
+            "s7ao66dy",
+            "lg0e57j1",
+            "vnufk8nt",
+            "uyu88bdw",
+            "5d3hfpij",
+            "uvrender",
+            "yn1fk80a",
+            "wklad-do-edytora-entity-database-table#`/database-table`",
+            "wklad-do-edytora-entity-database-table#generyczne osadzenie `type: \"database-table\"` — popover `database-table-create`"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [
+            "2i5ypc7q",
+            "s7ao66dy"
+          ],
+          "only": []
+        }
+      ],
+      "startCommit": "d723a77ab2c363427c58d3c0fd6b68460d1f4d10",
+      "baseCommit": "569f4d13fe34bbc1c8af8ec15895f3411f77f5cf",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
       "jobs": [],
       "wave": 1

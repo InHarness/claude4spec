@@ -2,7 +2,7 @@ import React from 'react';
 import { Check, Copy, Maximize2 } from 'lucide-react';
 import type { EntityCardProps } from '@c4s/plugin-runtime';
 import { DEFAULT_LANGUAGE } from '../../../identity.js';
-import { fetchCodeSnippet, useEntityChanged, type CodeSnippet } from './hooks.js';
+import { fetchCodeSnippet, handOffCodeSnippet, useEntityChanged, type CodeSnippet } from './hooks.js';
 import { CodeSnippetView } from './view.js';
 import { openEditPopover } from './popover.js';
 
@@ -156,13 +156,17 @@ export function CodeSnippetCard({ slug, entity, caption, onOpen }: EntityCardPro
           2.1.20 (M13 chipprops) — the `code-snippet-expand` window is opened by
           the HOST: its handler arrives as `onOpen` (the same path a chip click
           takes) and the card never opens the window itself. No handler (an
-          unresolvable reference) means no expand button.
+          unresolvable reference) means no expand button. `2i5ypc7q` — the
+          card's input to the fullscreen is the record it already holds, handed
+          over right before the host opens the window; the chip hands nothing,
+          so the fullscreen fetches by slug.
         */}
         {onOpen && (
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
+              if (record) handOffCodeSnippet(record);
               onOpen();
             }}
             aria-label="Open fullscreen"

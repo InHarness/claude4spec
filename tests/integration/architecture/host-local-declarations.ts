@@ -216,6 +216,16 @@ export const HOST_LOCAL_DECLARATIONS: readonly HostLocalDeclaration[] = [
   ...frontendMockupsDebts('mq3b803z', 'design-system'),
 
   // ui-view `yn1fk80a`
+  {
+    section: 'yn1fk80a',
+    consumer: 'ui-view',
+    kind: 'local',
+    // "ramka podglądu makiety" — the bare sandboxed `<iframe>` of the preview tab
+    // (the entry names no component; this is its code name).
+    components: ['UiViewPreview'],
+    replacedBy: [],
+    files: ['plugins/c4s-plugin-frontend-mockups/src/entity/ui-view/frontend/preview-page.tsx'],
+  },
   ...frontendMockupsDebts('yn1fk80a', 'ui-view', [
     {
       section: 'yn1fk80a',
@@ -231,14 +241,15 @@ export const HOST_LOCAL_DECLARATIONS: readonly HostLocalDeclaration[] = [
   {
     section: 'lg0e57j1',
     consumer: 'c4s-plugin-spreadsheets',
-    kind: 'local',
+    kind: 'debt',
+    // The fullscreen shell; no catalog replacement yet — trajectory candidate `fullscreen-overlay`.
     components: ['SpreadsheetFullscreen'],
     replacedBy: [],
     files: ['plugins/c4s-plugin-spreadsheets/src/entity/spreadsheet/frontend/node-view.tsx'],
   },
   { section: 'lg0e57j1', consumer: 'c4s-plugin-spreadsheets', kind: 'debt', components: [...POPOVER_FORM], replacedBy: ['FormField'], files: popoverFormFiles('c4s-plugin-spreadsheets') },
 
-  // ── Consumers whose L12 section this release did not change ─────────────────
+  // ── Further envelope consumers ──────────────────────────────────────────────
   // Mirrored because the check covers their sources too.
   // c4s-plugin-database-tables `uyu88bdw`
   { section: 'uyu88bdw', consumer: 'c4s-plugin-database-tables', kind: 'debt', components: [...POPOVER_FORM], replacedBy: ['FormField'], files: popoverFormFiles('c4s-plugin-database-tables') },
@@ -265,18 +276,26 @@ export const HOST_LOCAL_DECLARATIONS: readonly HostLocalDeclaration[] = [
     section: 'jsejrh30',
     consumer: 'c4s-plugin-code-snippets',
     kind: 'local',
-    components: ['CodeSnippetView', 'CodeSnippetFullscreen'],
+    components: ['CodeSnippetView'],
     replacedBy: [],
-    files: [
-      'plugins/c4s-plugin-code-snippets/src/entity/code-snippet/frontend/view.tsx',
-      'plugins/c4s-plugin-code-snippets/src/entity/code-snippet/frontend/fullscreen.tsx',
-    ],
+    files: ['plugins/c4s-plugin-code-snippets/src/entity/code-snippet/frontend/view.tsx'],
+  },
+  {
+    section: 'jsejrh30',
+    consumer: 'c4s-plugin-code-snippets',
+    kind: 'debt',
+    // The fullscreen shell; no catalog replacement yet — trajectory candidate `fullscreen-overlay`.
+    components: ['CodeSnippetFullscreen'],
+    replacedBy: [],
+    files: ['plugins/c4s-plugin-code-snippets/src/entity/code-snippet/frontend/fullscreen.tsx'],
   },
   {
     section: 'jsejrh30',
     consumer: 'c4s-plugin-code-snippets',
     kind: 'local',
     // The create/edit window form; ASSUMPTION:dev-2007 — with the `SlashPopoverShell` frame it sits in.
+    // ASSUMPTION:dev-2806 — the 2.1.28 entry no longer lists it, but its frame is a
+    // gate finding (scrim twin + own kit markup), so the declaration stays (`31369549`).
     components: ['CodeSnippetPopover'],
     replacedBy: [],
     files: [
@@ -289,17 +308,18 @@ export const HOST_LOCAL_DECLARATIONS: readonly HostLocalDeclaration[] = [
     section: 'rgczgux0',
     consumer: 'diagram',
     kind: 'local',
-    components: ['DiagramView', 'DiagramFullscreen'],
+    components: ['DiagramView'],
     replacedBy: [],
-    files: ['src/client/entities/diagram/DiagramCard.tsx', 'src/client/components/DiagramFullscreen.tsx'],
+    files: ['src/client/entities/diagram/DiagramCard.tsx'],
   },
   {
     section: 'rgczgux0',
     consumer: 'diagram',
-    kind: 'local',
-    components: ['DiagramPopover'],
+    kind: 'debt',
+    // The fullscreen shell; no catalog replacement yet — trajectory candidate `fullscreen-overlay`.
+    components: ['DiagramFullscreen'],
     replacedBy: [],
-    files: ['src/client/ui/popovers/DiagramForm.tsx'],
+    files: ['src/client/components/DiagramFullscreen.tsx'],
   },
 ];
 

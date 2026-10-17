@@ -1,0 +1,27 @@
+{
+  "role": "implementer",
+  "unit": "plugin-ui-debts",
+  "packetBytes": 199516,
+  "portions": [
+    {
+      "name": "plugin-ui-debts/p1-l5-l12",
+      "layers": ["L5", "L11", "L12"],
+      "slugs": [
+        "rgczgux0",
+        "dgmfull000",
+        "jsejrh30",
+        "2i5ypc7q",
+        "s7ao66dy",
+        "lg0e57j1",
+        "vnufk8nt",
+        "uyu88bdw",
+        "5d3hfpij",
+        "uvrender",
+        "yn1fk80a",
+        "wklad-do-edytora-entity-database-table#`/database-table`",
+        "wklad-do-edytora-entity-database-table#generyczne osadzenie `type: \"database-table\"` — popover `database-table-create`"
+      ]
+    }
+  ],
+  "deviations": []
+}

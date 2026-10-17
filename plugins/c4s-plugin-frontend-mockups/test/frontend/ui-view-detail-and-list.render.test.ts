@@ -546,3 +546,20 @@ describe('[entity:ui-view-list] /ui-views', () => {
     expect(container.textContent).not.toMatch(/clear filters|reset|Create your first view/i);
   });
 });
+
+describe('[section:uvrender] ui-view — runtime binding outside the envelope', () => {
+  it('[section:uvrender] the type binds at runtime to the host frontend services useTags and useReferences from @c4s/plugin-runtime, not through its envelope contribution', () => {
+    const SRC = join(import.meta.dirname, '../../src');
+    const detail = readFileSync(join(SRC, 'entity/ui-view/frontend/detail-panel.tsx'), 'utf-8');
+    // Imported from the L11 runtime surface (the root leg, not `/ui`)…
+    expect(detail).toMatch(/import \{ useTags \} from '@c4s\/plugin-runtime';/);
+    expect(detail).toMatch(/import \{ useReferences \} from '@c4s\/plugin-runtime';/);
+    // …and called by the screen for this type.
+    expect(detail).toMatch(/useTags\(\)/);
+    expect(detail).toMatch(/useReferences\('ui-view', /);
+    // The envelope's `ui-view` contribution declares neither: the binding is a runtime one.
+    const contribution = readFileSync(join(SRC, 'entity/ui-view/index.ts'), 'utf-8');
+    expect(contribution).not.toMatch(/useTags|useReferences/);
+    expect(typeof uiViewFrontendModule).toBe('object');
+  });
+});
