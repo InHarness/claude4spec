@@ -72,7 +72,8 @@ set, the profile and every error come from the server.
 Options:
   --url <url>   Mount point to bridge to. Required. One of:
                   http://127.0.0.1:<port>/api/projects/<projectId>/mcp
-                  http://127.0.0.1:<port>/api/workspace/mcp?project=<id>
+                  http://127.0.0.1:<port>/api/workspace/mcp
+                    (no project in the URL: each call passes \`project\`)
                 Append ?profile=chat|ask|brief|patch to pick a context profile
                 (default: chat). The profile is fixed for the connection.
   --help        Show this help

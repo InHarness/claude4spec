@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { SkillRegistry, SkillResolver } from '../services/skill-registry.js';
 import {
   __invalidateSurfaceCache,
+  bindProjectPerCall,
   buildExternalMcpSurface,
+  composeWorkspaceScopedSurface,
   composeExternalSurface,
   EXTERNAL_MCP_ERROR_CODES,
   EXTERNAL_MCP_SERVER_NAME,
@@ -1000,5 +1002,51 @@ describe('M12/M19 2.1.27 — the reference-graph operations on the external read
       expect(refusedInternal).toEqual({ isError: true, body: { error: 'refused by the core', code: 'INVALID_ARGUMENT', hint: 'the call that would have worked' } });
       expect(refusedExternal).toEqual(refusedInternal);
     }
+  });
+});
+
+/**
+ * 2.1.28 — the workspace-bound mount's rendering (M12 `np1dkobs`): scope comes
+ * from the host catalog, project-scoped tools take `project` per call.
+ */
+describe('scopeByName and bindProjectPerCall', () => {
+  it('only a host catalog row makes a tool workspace-scoped', () => {
+    const surface = composeExternalSurface(stubDeps({ profile: 'chat' }));
+    expect(surface.scopeByName.get('list_projects')).toBe('workspace');
+    expect(surface.scopeByName.get('overview')).toBe('project');
+    expect(surface.scopeByName.get('get_entities')).toBe('project');
+  });
+
+  it('the workspace-scoped surface carries no project-scoped tool', () => {
+    const surface = composeWorkspaceScopedSurface({
+      profile: 'chat',
+      listProjects: () => ({ workspace: 'default', projects: [] }),
+      workspaceName: 'default',
+    });
+    expect(surface.toolNames).toContain('list_projects');
+    expect([...surface.scopeByName.values()].every((s) => s === 'workspace')).toBe(true);
+  });
+
+  it('adds `project` to project-scoped schemas only, and routes each call to the named project', async () => {
+    const template = composeExternalSurface(stubDeps({ profile: 'chat' }));
+    const seen: Array<string | undefined> = [];
+    const bound = bindProjectPerCall(template, async (project) => {
+      seen.push(project);
+      return project === 'p1'
+        ? { ok: true, projectId: 'p1', surface: template }
+        : { ok: false, code: 'PROJECT_NOT_IN_WORKSPACE', message: 'available ids: p1' };
+    });
+    expect(Object.keys(bound.byName.get('overview')!.inputSchema)).toContain('project');
+    expect(Object.keys(bound.byName.get('list_projects')!.inputSchema)).not.toContain('project');
+    expect(bound.toolNames).toEqual(template.toolNames);
+
+    const refused = (await bound.byName.get('overview')!.handler({ project: 'Nope' }, {})) as {
+      isError: boolean;
+      content: Array<{ text: string }>;
+    };
+    expect(refused.isError).toBe(true);
+    expect(JSON.parse(refused.content[0]!.text).code).toBe('PROJECT_NOT_IN_WORKSPACE');
+    await bound.byName.get('overview')!.handler({}, {});
+    expect(seen).toEqual(['Nope', undefined]);
   });
 });

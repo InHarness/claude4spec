@@ -18,10 +18,10 @@ describe('renderMcpConfigVariants', () => {
     expect(server(0)).toEqual({ type: 'http', url: `http://localhost:3123${mcpMountPath('proj-7')}?profile=ask` });
   });
 
-  it('HTTP workspace-bound entry names the project through ?project=', () => {
+  it('HTTP workspace-bound entry carries no project — each call names its own', () => {
     expect(server(1)).toEqual({
       type: 'http',
-      url: 'http://localhost:3123/api/workspace/mcp?project=proj-7&profile=ask',
+      url: 'http://localhost:3123/api/workspace/mcp?profile=ask',
     });
   });
 
@@ -50,7 +50,7 @@ describe('renderMcpConfigVariants', () => {
       projectId: 'app-spec',
     }).map((v) => JSON.parse(v.snippet).mcpServers['c4s-reader']);
     expect(project.url).toBe('https://c4s.firma.dev/api/projects/app-spec/mcp?profile=ask');
-    expect(workspace.url).toBe('https://c4s.firma.dev/api/workspace/mcp?project=app-spec&profile=ask');
+    expect(workspace.url).toBe('https://c4s.firma.dev/api/workspace/mcp?profile=ask');
     expect(stdio.args.at(-1)).toBe('https://c4s.firma.dev/api/projects/app-spec/mcp?profile=ask');
   });
 

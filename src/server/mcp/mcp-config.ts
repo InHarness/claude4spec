@@ -50,8 +50,10 @@ function entry(server: Record<string, unknown>): string {
  * are the ones the file carried; only the delivery channel changed:
  *
  *   - `http-project` — the project-bound mount, project addressed by the URL.
- *   - `http-workspace` — the workspace-bound mount, project named by `?project=`
- *     (the registry id — `findProject` in `routes/mcp.ts` matches it first).
+ *   - `http-workspace` — the workspace-bound mount. No project in the URL: there
+ *     the parameter has no default, every project-scoped call names its project
+ *     (registry id). Until 2.1.28 this entry carried `?project=`, which the mount
+ *     still accepts as a compatibility default (`routes/mcp.ts`).
  *   - `stdio` — the `c4s-mcp` bridge, for clients that cannot speak HTTP. It
  *     relays to the project-bound mount; it never starts a server. 2.1.14
  *     (M11 m11pkg00): `c4s-mcp` is not the package's default bin, so a
@@ -74,8 +76,7 @@ export function renderMcpConfigVariants({
 }): McpConfigVariant[] {
   const origin = publicUrl.replace(/\/+$/, '');
   const projectUrl = `${origin}${mcpMountPath(projectId)}?profile=${GENERATED_MCP_PROFILE}`;
-  const workspaceUrl =
-    `${origin}/api/workspace/mcp?project=${encodeURIComponent(projectId)}&profile=${GENERATED_MCP_PROFILE}`;
+  const workspaceUrl = `${origin}/api/workspace/mcp?profile=${GENERATED_MCP_PROFILE}`;
   return [
     { id: 'http-project', label: 'HTTP · project', snippet: entry({ type: 'http', url: projectUrl }) },
     { id: 'http-workspace', label: 'HTTP · workspace', snippet: entry({ type: 'http', url: workspaceUrl }) },

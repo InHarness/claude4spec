@@ -146,9 +146,8 @@ describe('MCP mounts — M31 registry edge cases', () => {
   });
 
   it('[ac:ac-tools-call-na-polaczeniu-mcp-projektu-2] tools/call on a project MCP connection whose build failed returns PROJECT_BUILD_FAILED', async () => {
-    // Workspace-bound connection, opened while the project builds fine.
-    const wsUrl = `${base}/api/workspace/mcp?project=app-spec`;
-    const ws = await connect(wsUrl);
+    // Workspace-bound connection — no project in the URL; the call names it.
+    const ws = await connect(`${base}/api/workspace/mcp`);
     // Project-bound connection, same project.
     const projUrl = `${base}/api/projects/app-spec/mcp`;
     const proj = await connect(projUrl);
@@ -160,11 +159,16 @@ describe('MCP mounts — M31 registry edge cases', () => {
     failBuild = true;
     cache.invalidate('app-spec');
 
-    const viaWorkspace = await toolsCall(wsUrl, ws.transport.sessionId!);
-    expect(viaWorkspace.status).toBe(500);
-    const wsBody = (await viaWorkspace.json()) as { error: { message: string; data: { code: string } } };
-    expect(wsBody.error.data.code).toBe('PROJECT_BUILD_FAILED');
-    expect(wsBody.error.message).toContain('is broken');
+    // On the workspace mount the project is a per-call argument, so the failure
+    // is TOOL-level — the session survives to address another project.
+    const viaWorkspace = (await ws.client.callTool({ name: 'overview', arguments: { project: 'app-spec' } })) as {
+      isError?: boolean;
+      content: Array<{ text: string }>;
+    };
+    expect(viaWorkspace.isError).toBe(true);
+    const wsBody = JSON.parse(viaWorkspace.content[0]!.text) as { code: string; error: string };
+    expect(wsBody.code).toBe('PROJECT_BUILD_FAILED');
+    expect(wsBody.error).toContain('is broken');
 
     // Inside the ~15 s window the failure is served from the cache — even after
     // the cause is gone, the project-bound connection gets the same code.
@@ -172,5 +176,12 @@ describe('MCP mounts — M31 registry edge cases', () => {
     const viaProject = await toolsCall(projUrl, proj.transport.sessionId!);
     expect(viaProject.status).toBe(500);
     expect(((await viaProject.json()) as { error: { code: string } }).error.code).toBe('PROJECT_BUILD_FAILED');
+  });
+
+  it('a session opened on the project-bound mount cannot be replayed against the workspace mount', async () => {
+    const proj = await connect(`${base}/api/projects/app-spec/mcp`);
+    const replay = await toolsCall(`${base}/api/workspace/mcp`, proj.transport.sessionId!);
+    expect(replay.status).toBe(400);
+    expect(((await replay.json()) as { error: { data: { code: string } } }).error.data.code).toBe('VALIDATION');
   });
 });
