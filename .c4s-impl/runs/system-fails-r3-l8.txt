@@ -1,4 +1,0 @@
-editor L8 contexts page context derived from the root kind: a new user root gets the full page context and autosaves tags verbatim
-AssertionError: expected '<!-- anchor: nahvr4uf -->\n\n# Minima…' to contain 'Minimal root vlpq4hc'
-    at /work/c4s/tests/e2e/editor-l8-contexts.test.ts:464:20
-    at file:///work/c4s/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
