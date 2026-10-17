@@ -1,0 +1,39 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "unit", "id": "ui-kit-type-package" },
+  "release": "2.1.28",
+  "rows": [
+    {
+      "slug": "encje-pluginy#c4s-plugin-host-ui-kit-components",
+      "type": "spreadsheet",
+      "level": 1,
+      "status": "covered",
+      "evidence": "trace.md line present; plugins/c4s-plugin-host-ui-kit-components/src/manifest.ts:23 (contributes.entities = [uiKitComponentEntity], hostApiVersion '^2.1.0'), src/entity/ui-kit-component/index.ts:25 (backend.mcpServer only, pathPrefix '/ui-kit-components' mounted under /api); package discovered by builtin-envelopes.ts directory scan and added to build/test/typecheck:envelopes. Tests: test/manifest-shape.test.ts:12 `expect(manifest.contributes?.entities?.map((e) => e.type)).toEqual(['ui-kit-component'])`, `expect(Object.keys(uiKitComponentEntity.backend ?? {})).toEqual(['mcpServer'])`; test/live-type.test.ts:35 `expect(t.host.listEntities().map((m) => m.type)).toContain('ui-kit-component')`. Row Zakres (record fields, contentBearing anatomy, audit server with 4 rules, visible ELEMENTS tab, grouped list, detail route) matched in schema.ts, backend/audit.ts, frontend/module.tsx, frontend/routes.tsx."
+    },
+    {
+      "slug": "ac-kazdy-wpis-katalogu-host-ui-kit-deklaruj",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "schema.ts binding: { type: 'enum', values: UI_KIT_BINDINGS, required: true } with no default. test/live-type.test.ts:45 POST without binding `expect(missing.status).toBe(400)`, binding 'hybrid' `expect(wrong.status).toBe(400)`, `expect(list.body.data).toEqual([])`, and both presentational/connected `expect(ok.status).toBe(201)`; test/manifest-shape.test.ts:49 `expect(binding).not.toHaveProperty('default')`. Static read: passes against code as written."
+    },
+    {
+      "slug": "ac-komponent-o-binding-connected-jawni",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "schema.ts dataSources item {export: string required, usage: enum fetchedByComponent|feedsProps}; audit.ts rule connected-without-fetch. test/audit.test.ts:24 `expect(violations.map((v) => [v.rule, v.slugs])).toEqual([['connected-without-fetch', ['only-feeds']], ['connected-without-fetch', ['no-sources']]])` and version-view (fetchedByComponent) not reported; test/live-type.test.ts:67 through REST proxy `expect(payload.violations.map((v) => [v.rule, v.slugs])).toEqual([['connected-without-fetch', ['silent-view']]])`; test/manifest-shape.test.ts:56 usage enum asserted. entities-router.ts:126/462 proxy shape (content[0].text, isError→httpStatusForCode) consistent with assertions."
+    },
+    {
+      "slug": "goal:ui-kit-type-package",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Package plugins/c4s-plugin-host-ui-kit-components exists; entity type ui-kit-component with data model (src/entity/ui-kit-component/schema.ts), generated host CRUD under /api/ui-kit-components (no backend.routes, index.ts), ELEMENTS sidebarTab (frontend/module.tsx sidebarTab order 110), list grouped by group enum order (frontend/list-model.ts groupRecords, frontend/routes.tsx GroupedEntityList; test/frontend/list-model.test.ts:25), detail route (routes.tsx /ui-kit-components/$slug, detail-panel.tsx), tools server ui-kit-component-tools with audit_ui_kit_components covering cross-field and cross-record rules (backend/mcp.ts, backend/audit.ts; test/audit.test.ts), required group/stability/binding without defaults so an unclassified record is refused (test/live-type.test.ts:45 and [section:l12slice0] stability test). Non-blocking deviations dev-2801..2803 recorded."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "> @inharness-ai/c4s-plugin-host-ui-kit-components@2.1.28 typecheck\n> tsc --noEmit\nEXIT 0 (server, client, types and all envelopes). Tests not run per build rules; touched host tests (envelope-shipped, plugin-frontend-project-id, plugin-runtime-resolver.subprocess, operations/catalog, host-local-declarations) updated in the diff. No deletions in the change reads; stubs.json empty."
+  }
+}

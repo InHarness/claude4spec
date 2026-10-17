@@ -1,0 +1,17 @@
+{
+  "role": "implementer",
+  "unit": "ui-kit-type-package",
+  "packetBytes": 104187,
+  "portions": [
+    {
+      "name": "ui-kit-type-package/p1-l1-l12",
+      "layers": ["L1", "L2", "L3", "L4", "L5", "L11", "L12"],
+      "slugs": [
+        "encje-pluginy#c4s-plugin-host-ui-kit-components",
+        "ac-kazdy-wpis-katalogu-host-ui-kit-deklaruj",
+        "ac-komponent-o-binding-connected-jawni"
+      ]
+    }
+  ],
+  "deviations": []
+}

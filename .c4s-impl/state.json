@@ -119,13 +119,36 @@
         ]
       },
       "dependsOn": [],
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "ui-kit-type-package/p1-l1-l12",
+          "layers": [
+            "L1",
+            "L2",
+            "L3",
+            "L4",
+            "L5",
+            "L11",
+            "L12"
+          ],
+          "slugs": [
+            "encje-pluginy#c4s-plugin-host-ui-kit-components",
+            "ac-kazdy-wpis-katalogu-host-ui-kit-deklaruj",
+            "ac-komponent-o-binding-connected-jawni"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "a0e9da8362700a137400ef0a6d5058591fba6b4b",
+      "baseCommit": "a0e9da8362700a137400ef0a6d5058591fba6b4b",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": [],
       "wave": 1

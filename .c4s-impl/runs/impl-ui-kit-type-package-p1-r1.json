@@ -1,0 +1,16 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.28",
+  "unit": "ui-kit-type-package",
+  "portion": "ui-kit-type-package/p1-l1-l12",
+  "claimed": [
+    "encje-pluginy#c4s-plugin-host-ui-kit-components",
+    "ac-kazdy-wpis-katalogu-host-ui-kit-deklaruj",
+    "ac-komponent-o-binding-connected-jawni"
+  ],
+  "deviations": ["dev-2801", "dev-2802", "dev-2803"],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

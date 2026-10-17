@@ -231,6 +231,15 @@ export const HOST_LOCAL_DECLARATIONS: readonly HostLocalDeclaration[] = [
     replacedBy: [],
     files: ['plugins/c4s-plugin-database-tables/src/entity/database-table/frontend/detail-panel.tsx'],
   },
+  // c4s-plugin-host-ui-kit-components `pv2psgi6` — three LOCAL tables of the type's detail
+  {
+    section: 'pv2psgi6',
+    consumer: 'c4s-plugin-host-ui-kit-components',
+    kind: 'local',
+    components: ['PropsTable', 'TypesTable', 'DataSourcesTable'],
+    replacedBy: [],
+    files: ['plugins/c4s-plugin-host-ui-kit-components/src/entity/ui-kit-component/frontend/detail-panel.tsx'],
+  },
   // c4s-plugin-code-snippets `jsejrh30`
   {
     section: 'jsejrh30',

@@ -1792,6 +1792,7 @@ describe("the catalogue against the window's 78 records", () => {
   /** The rows the window carries no record for: plugin-contributed, declared for the profile gate. */
   const PLUGIN_ROWS_WITHOUT_RECORD = [
     'analyze_ac_against_entities',
+    'audit_ui_kit_components',
     'delete_column',
     'delete_row',
     'get_overview',

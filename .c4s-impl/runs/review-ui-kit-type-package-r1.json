@@ -1,0 +1,15 @@
+{
+  "role": "reviewer",
+  "scope": { "kind": "unit", "id": "ui-kit-type-package", "base": "a0e9da8362700a137400ef0a6d5058591fba6b4b" },
+  "findings": [
+    {
+      "id": "rev-0001",
+      "file": "src/server/operations/core-operations.ts",
+      "line": 2363,
+      "blocking": false,
+      "reason": "The `audit_ui_kit_components` row is registered through `typeOp(..., 'read', ...)`, which hard-codes `errorCodes: ['NOT_FOUND']` for read rows. The tool itself also refuses with `VALIDATION` for an unknown rule (`backend/audit.ts:175`, asserted as HTTP 400 in `test/live-type.test.ts`). So the catalogue declares an error surface narrower than the one the operation actually has. `typeOp`'s `overrides` cannot carry `errorCodes`, so the fix is either to widen the override set or to register this row with `registerRow` directly and declare `['NOT_FOUND', 'VALIDATION']`.",
+      "portion": "ui-kit-type-package/p1-l1-l12"
+    }
+  ],
+  "deviations": []
+}

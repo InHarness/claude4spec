@@ -1,0 +1,15 @@
+{
+  "id": "dev-2801",
+  "kind": "clarification",
+  "blocking": false,
+  "address": "ui-kit-type-package/spf7qirh",
+  "slugs": [
+    "encje-pluginy#c4s-plugin-host-ui-kit-components"
+  ],
+  "text": "The manifest section gives the type's labels in Polish (label „Komponent UI Kit”, labelPlural „Komponenty UI Kit”). Every user-visible label of the host is English (the other envelopes use English labels, e.g. 'Acceptance Criterion'), so the package uses 'UI Kit Component' / 'UI Kit Components'. The spec should state the English label or confirm the Polish text is descriptive only.",
+  "assumption": "ASSUMPTION:dev-2801 — the page names the labels in Polish; every user-visible label of this host is English, so they are rendered in English here.",
+  "unit": "ui-kit-type-package",
+  "portion": "ui-kit-type-package/p1-l1-l12",
+  "sent": true,
+  "patchPath": "2-1-27-to-2-1-28-ui-kit-type-package-spf7qirh-the-manifest-section-gives-the-type-s-labels-in-pol.md"
+}
