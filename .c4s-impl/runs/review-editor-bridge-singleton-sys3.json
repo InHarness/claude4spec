@@ -1,0 +1,27 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "editor-bridge-singleton",
+    "base": "c589678a"
+  },
+  "findings": [
+    {
+      "id": "rev-0301",
+      "file": "src/client/runtime/editor-bridge.ts",
+      "line": 88,
+      "blocking": false,
+      "reason": "The design depends on React DOM internals: the `__reactFiber$<random>` key, `fiber.return` and a provider fiber's `memoizedProps.value`. These are stable from React 17 through 19, and the repo pins react-dom 18.3.1. A public-API design is not available. A provider that adds no DOM node cannot listen to events or be checked with `element.contains`, and `contains` would also miss portals. So the choice is defensible. The file header and decisions.md say it 'degrades to the last-mounted fallback', which makes that failure sound harmless. It is not. Passive effects run child-first, so the last registered provider is the OUTER one of a nested pair. If the walk ever stops finding fibers, chips inside the inner provider silently reach the outer bridge, or whichever sibling pipeline (chat or page) mounted last. The nested, side-by-side and portal render tests use the real react-dom and would go red on such an upgrade, which is the real safeguard. A one-time dev `console.warn` would make a broken walk visible at runtime too: fire it when providers are mounted and no `__reactFiber$` key is found on any ancestor of an in-document target. Reword the 'degrades' claim to match.",
+      "portion": "editor-bridge-singleton/p1-l2-l12"
+    },
+    {
+      "id": "rev-0302",
+      "file": "src/client/runtime/editor-bridge.ts",
+      "line": 110,
+      "blocking": false,
+      "reason": "The document `keydown` capture listener runs on every keystroke in the app, including all typing in the ProseMirror editor and the chat composer. Each time it builds a new `Set` from `mounted`, calls `Object.keys` on DOM ancestors until it finds a fiber key, and walks the fiber chain. For a target outside every provider, that walk goes all the way to the root. The cost per event is small but it is paid on every keystroke. Two changes would cut it: keep the holder `Set` up to date in `register`/`unregister`, and for `keydown` act only on the chip-activating keys (Enter, Space)."
+      ,
+      "portion": "editor-bridge-singleton/p1-l2-l12"
+    }
+  ]
+}
