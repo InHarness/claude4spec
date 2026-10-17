@@ -26,7 +26,7 @@ function EntityDetailToolbarImpl({ title, onBack, onDelete, busy }: EntityDetail
       {onBack && (
         <button
           type="button"
-          onClick={onBack}
+          onClick={() => onBack()}
           aria-label="Back"
           className="rounded-md p-1 btn-ghost"
           style={{ color: 'var(--c-muted)' }}
@@ -39,7 +39,7 @@ function EntityDetailToolbarImpl({ title, onBack, onDelete, busy }: EntityDetail
       </div>
       <span className="flex-1" />
       {onDelete && (
-        <ActionButton label="Delete" icon={<Trash2 size={13} />} variant="ghost" disabled={busy} onClick={onDelete} />
+        <ActionButton label="Delete" icon={<Trash2 size={13} />} variant="ghost" disabled={busy} onClick={() => onDelete()} />
       )}
     </div>
   );

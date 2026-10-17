@@ -6,12 +6,18 @@
  * `Popover`; the badge itself is not the catalog `Badge`.
  */
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { EnumBadgePicker, type EnumBadgePickerProps } from './EnumBadgePicker.js';
 import type * as Published from '../../../plugin-types/ui.js';
+
+// Resolved with node:path from the module's own file path — under happy-dom the global `URL`
+// is the window's, so `new URL(rel, import.meta.url)` is not a `file:` URL that `fileURLToPath`
+// accepts (same pattern as tokens.render.test.ts).
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -81,7 +87,7 @@ describe('EnumBadgePicker ↔ record `enum-badge-picker` (M34/L12, 2.1.28)', () 
   });
 
   it('[ac:ac-enumbadgepicker-grupa-pickers-m34-expe] the dropdown is the published Popover and the badge is no catalog Badge; readOnly opens nothing', () => {
-    const src = readFileSync(fileURLToPath(new URL('./EnumBadgePicker.tsx', import.meta.url)), 'utf8');
+    const src = readFileSync(resolve(HERE, './EnumBadgePicker.tsx'), 'utf8');
     expect(src).toMatch(/import \{ Popover \} from '\.\.\/overlay-feedback\/Popover\.js'/);
     expect(src).toMatch(/<Popover\b/);
     expect(src).not.toMatch(/import \{[^}]*\bBadge\b[^}]*\} from/);

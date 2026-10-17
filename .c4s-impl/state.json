@@ -1103,7 +1103,7 @@
           "why": "powierzchnie L11 komponentów `connected` w rejestrze."
         }
       ],
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "kit-detail-history/p1-l11-l12",
@@ -1165,26 +1165,13 @@
             "ac-w-wariancie-collapsed-tagpicker-odslania",
             "ac-w-widoku-entityversionhistoryview-wers"
           ],
-          "status": "pending",
-          "rounds": 2,
+          "status": "implemented",
+          "rounds": 3,
           "partial": 0,
           "uncovered": [
             "regression"
           ],
-          "only": [
-            {
-              "finding": "regression:src/client/host-ui-kit/detail/EntityDetailToolbar.render.test.ts"
-            },
-            {
-              "finding": "regression:src/client/host-ui-kit/detail/RichTextField.render.test.ts"
-            },
-            {
-              "finding": "regression:src/client/host-ui-kit/detail/TagPicker.render.test.ts"
-            },
-            {
-              "finding": "regression:src/client/host-ui-kit/pickers/EnumBadgePicker.render.test.ts"
-            }
-          ]
+          "only": []
         }
       ],
       "startCommit": "5bab87b1af1de75c642d41fd5159122298acc7d4",
@@ -1277,7 +1264,7 @@
           "why": "wpis rejestru i tier `stable`."
         }
       ],
-      "status": "pending",
+      "status": "in-progress",
       "portions": [
         {
           "name": "m19-list-header/p1-l2-l12",

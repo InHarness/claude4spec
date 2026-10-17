@@ -6,6 +6,7 @@
  * `<textarea>` stub, with no host wiring; `readOnly` blocks editing.
  */
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement } from 'react';
@@ -13,6 +14,11 @@ import { createRoot, type Root } from 'react-dom/client';
 import type { Editor } from '@tiptap/core';
 import { RichTextField, type RichTextFieldProps, type RichTextFieldToolbarItem } from './RichTextField.js';
 import type * as Published from '../../../plugin-types/ui.js';
+
+// Resolved with node:path from the module's own file path — under happy-dom the global `URL`
+// is the window's, so `new URL(rel, import.meta.url)` is not a `file:` URL that `fileURLToPath`
+// accepts (same pattern as tokens.render.test.ts).
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -101,7 +107,7 @@ describe('RichTextField ↔ record `rich-text-field` (M34/L12, 2.1.28)', () => {
     expect(onChange).toHaveBeenCalled();
     expect(onChange.mock.calls.at(-1)![0]).toBe('Hello there');
     expect(fetchSpy).not.toHaveBeenCalled();
-    const src = readFileSync(fileURLToPath(new URL('./RichTextField.tsx', import.meta.url)), 'utf8');
+    const src = readFileSync(resolve(HERE, './RichTextField.tsx'), 'utf8');
     for (const hostOnly of ['useQueryClient', 'EditorBridge', 'editorBridge', 'getEditorExtensions', 'EditorFactory']) {
       expect(src.replace(/\/\*[\s\S]*?\*\//g, ''), hostOnly).not.toContain(hostOnly);
     }
