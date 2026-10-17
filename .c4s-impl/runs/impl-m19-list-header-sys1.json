@@ -1,0 +1,12 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.28",
+  "unit": "m19-list-header",
+  "portion": "m19-list-header/p1-l2-l12",
+  "claimed": ["entity-list-header", "ac-typ-lucideicon-w-stable-propsach-l12", "ac-plugin-renderuje-komponent-entitylisthea"],
+  "deviations": [],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

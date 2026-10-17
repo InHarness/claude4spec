@@ -93,15 +93,25 @@ function TagRow({
   modules: ReturnType<typeof clientPluginHost.listEntities>;
 }) {
   const update = useUpdateTag();
+  // The name last sent, until the refetch brings it back as `tag.name`:
+  // InlineEditField commits on Enter AND on the blur that follows as its input
+  // leaves the DOM, both with the same draft — the second must not PATCH again.
+  const sentName = useRef<string | null>(null);
 
   function commitName(next: string) {
     const trimmed = next.trim();
     // The slug is derived and immutable; an empty name would leave the row
     // unlabelled with no way back, so refuse rather than send it.
-    if (!trimmed || trimmed === tag.name) return;
+    if (!trimmed || trimmed === tag.name || trimmed === sentName.current) return;
+    sentName.current = trimmed;
     update.mutate(
       { slug: tag.slug, input: { name: trimmed } },
-      { onError: (err) => toast.error((err as Error).message ?? 'Failed to rename tag') },
+      {
+        onError: (err) => {
+          sentName.current = null;
+          toast.error((err as Error).message ?? 'Failed to rename tag');
+        },
+      },
     );
   }
 

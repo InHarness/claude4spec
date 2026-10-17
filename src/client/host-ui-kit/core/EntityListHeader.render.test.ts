@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { act, createElement, type ReactNode } from 'react';
@@ -124,7 +125,11 @@ function type(input: HTMLInputElement, value: string) {
   });
 }
 
-const repoFile = (rel: string) => readFileSync(fileURLToPath(new URL(`../../../../${rel}`, import.meta.url)), 'utf8');
+// Resolved with node:path from the module's own file path — under happy-dom the global `URL`
+// is the window's, so `new URL(rel, import.meta.url)` is not a `file:` URL that `fileURLToPath`
+// accepts (same pattern as ToastViewport.render.test.ts).
+const HERE = dirname(fileURLToPath(import.meta.url));
+const repoFile = (rel: string) => readFileSync(resolve(HERE, '../../../..', rel), 'utf8');
 
 describe('EntityListHeader ↔ record `entity-list-header` (M19/L12, 2.1.28)', () => {
   it('[entity:entity-list-header] takes exactly the record props, host and published /ui alike — no onCreate / createLabel', () => {
@@ -136,8 +141,20 @@ describe('EntityListHeader ↔ record `entity-list-header` (M19/L12, 2.1.28)', (
     const noCreate: Exact<Extract<Keys, 'onCreate' | 'createLabel'>, never> = true;
     expect(noCreate).toBe(true);
     // Stable, presentational, in the core group, on the versioned stable list.
-    expect(EntityListHeader).toMatchObject({ stability: 'stable', binding: 'presentational' });
+    // The component is a function carrying its catalog constants as static fields (withStability);
+    // toMatchObject refuses a function receiver, so read the fields off it and check the registry entry.
+    expect({ stability: EntityListHeader.stability, binding: EntityListHeader.binding }).toEqual({
+      stability: 'stable',
+      binding: 'presentational',
+    });
     expect((EntityListHeader as { l11Surfaces?: unknown }).l11Surfaces).toBeUndefined();
+    expect(UI_KIT_CATALOG.find((c) => c.name === 'EntityListHeader')).toEqual({
+      name: 'EntityListHeader',
+      group: 'core',
+      stability: 'stable',
+      binding: 'presentational',
+    });
+    expect(UI_KIT_STABLE_COMPONENTS as readonly string[]).toContain('EntityListHeader');
   });
 
   it('[entity:entity-list-header] renders the count as "N results"; without `count` no counter', () => {

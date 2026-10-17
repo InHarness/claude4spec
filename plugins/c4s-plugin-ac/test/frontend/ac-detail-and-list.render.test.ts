@@ -76,6 +76,25 @@ vi.mock('@c4s/plugin-runtime', async () => {
   };
 });
 
+// The kit's own `Badge` module is recorded, not only the `/ui` export: the kit
+// components that draw chips (`EntityListRow`, `TagPicker`, `TagFilterBar`)
+// import it from `../actions/Badge.js`, so a spy on the `/ui` re-export alone
+// would never see the tag chips they render through Badge.
+vi.mock('../../../../src/client/host-ui-kit/actions/Badge.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../../../src/client/host-ui-kit/actions/Badge.js')>();
+  const { createElement: h } = await import('react');
+  const Real = real.Badge as unknown as FC<Record<string, unknown>>;
+  // React's development build may call a function component with no props to
+  // build a component stack; only calls with props are recorded.
+  const Badge = (p?: Record<string, unknown>) => {
+    if (!p) return null;
+    state.badges.push(p as never);
+    return h(Real, p as never);
+  };
+  // Keep the catalog statics (`stability`, `binding`) of the real entry.
+  return { ...real, Badge: Object.assign(Badge, real.Badge) };
+});
+
 vi.mock('@c4s/plugin-runtime/ui', async () => {
   const { createElement: h } = await import('react');
   const [enumMod, grpMod, tagMod, badgeMod, rowMod, gridMod, btnMod, barMod, segMod, hdrMod, layoutMod, emptyMod, loadMod, listRowMod, tagBarMod, popMod] =
@@ -108,7 +127,8 @@ vi.mock('@c4s/plugin-runtime/ui', async () => {
     EnumBadgePicker: spy(enumMod.EnumBadgePicker, (p) => state.enumPickers.push(p as never)),
     GroupedRelationPicker: spy(grpMod.GroupedRelationPicker, (p) => state.relationPickers.push(p as never)),
     TagPicker: spy(tagMod.TagPicker, (p) => state.tagPickers.push(p as never)),
-    Badge: spy(badgeMod.Badge, (p) => state.badges.push(p as never)),
+    // Already recorded by the mock of the kit's Badge module above.
+    Badge: badgeMod.Badge,
     FieldRow: rowMod.FieldRow,
     FieldGrid: gridMod.FieldGrid,
     ActionButton: btnMod.ActionButton,

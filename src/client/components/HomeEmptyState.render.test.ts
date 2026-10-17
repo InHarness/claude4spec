@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement } from 'react';
@@ -50,8 +51,9 @@ import { HomeEmptyState, HOME_EMPTY_CTA, HOME_EMPTY_TITLE } from './HomeEmptySta
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const ROUTER_SRC = readFileSync(fileURLToPath(new URL('../router.tsx', import.meta.url)), 'utf-8');
-const HOME_SRC = readFileSync(fileURLToPath(new URL('./HomeEmptyState.tsx', import.meta.url)), 'utf-8');
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ROUTER_SRC = readFileSync(resolve(HERE, '../router.tsx'), 'utf-8');
+const HOME_SRC = readFileSync(resolve(HERE, './HomeEmptyState.tsx'), 'utf-8');
 
 let container: HTMLDivElement;
 let root: Root;

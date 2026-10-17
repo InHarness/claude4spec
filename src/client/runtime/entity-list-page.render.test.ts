@@ -8,7 +8,7 @@
  * `EntityListHeader` — none carries its own.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement, useState, type FormEvent, type ReactNode } from 'react';
@@ -24,7 +24,11 @@ import type * as Published from '../../plugin-types/ui.js';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const REPO = fileURLToPath(new URL('../../../', import.meta.url));
+// Resolved with node:path from the module's own file path — under happy-dom the global `URL`
+// is the window's, so `new URL(rel, import.meta.url)` is not a `file:` URL that `fileURLToPath`
+// accepts (same pattern as ToastViewport.render.test.ts).
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO = resolve(HERE, '../../..');
 const read = (rel: string) => readFileSync(join(REPO, rel), 'utf8');
 /** Source without comments — doc comments legitimately NAME the header. */
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');

@@ -1264,7 +1264,7 @@
           "why": "wpis rejestru i tier `stable`."
         }
       ],
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "m19-list-header/p1-l2-l12",
@@ -1281,20 +1281,13 @@
             "ac-plugin-renderuje-komponent-entitylisthea",
             "ac-typ-lucideicon-w-stable-propsach-l12"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [
             "regression"
           ],
-          "only": [
-            {
-              "finding": "regression:src/client/host-ui-kit/core/EntityListHeader.render.test.ts"
-            },
-            {
-              "finding": "regression:src/client/runtime/entity-list-page.render.test.ts"
-            }
-          ]
+          "only": []
         }
       ],
       "startCommit": "5bab87b1af1de75c642d41fd5159122298acc7d4",
@@ -1376,7 +1369,7 @@
           "why": "wejście pickera tagów."
         }
       ],
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "m18-tags-kit/p1-l2-l12",
@@ -1392,17 +1385,13 @@
             "tags-list",
             "ac-pozycja-o-ksztalcie-tag-list-item-jes"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [
             "regression"
           ],
-          "only": [
-            {
-              "finding": "regression:src/client/components/TagsList.render.test.ts"
-            }
-          ]
+          "only": []
         }
       ],
       "startCommit": "5bab87b1af1de75c642d41fd5159122298acc7d4",
@@ -1472,7 +1461,7 @@
           "why": "ekrany składają się z komponentów tych jednostek."
         }
       ],
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "entity-screens-kit/p1-l5-l12",
@@ -1498,23 +1487,13 @@
             "ui-view-history",
             "ui-view-list"
           ],
-          "status": "pending",
-          "rounds": 2,
+          "status": "implemented",
+          "rounds": 3,
           "partial": 0,
           "uncovered": [
             "regression"
           ],
-          "only": [
-            {
-              "finding": "regression:src/client/components/HomeEmptyState.render.test.ts"
-            },
-            {
-              "finding": "regression:plugins/c4s-plugin-ac/test/frontend/ac-detail-and-list.render.test.ts"
-            },
-            {
-              "finding": "regression:plugins/c4s-plugin-frontend-mockups/test/frontend/design-system-views.render.test.ts"
-            }
-          ]
+          "only": []
         }
       ],
       "startCommit": "5bab87b1af1de75c642d41fd5159122298acc7d4",

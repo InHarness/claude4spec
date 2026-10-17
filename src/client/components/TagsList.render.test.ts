@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement, isValidElement, type ReactElement, type ReactNode } from 'react';
@@ -91,10 +92,15 @@ vi.mock('../host-ui-kit/overlay-feedback/Popover.js', async (importOriginal) => 
 
 const { TagsList } = await import('./TagsList.js');
 
+// Resolved with node:path from the module's own file path — under happy-dom the global `URL`
+// is the window's, so `new URL(rel, import.meta.url)` is not a `file:` URL that `fileURLToPath`
+// accepts.
+const HERE = dirname(fileURLToPath(import.meta.url));
+
 const markupOf = (node: ReactNode) => renderToStaticMarkup(createElement('div', null, node));
 
 /** TagsList.tsx without comments — the doc comments legitimately NAME what is gone. */
-const screenCode = readFileSync(fileURLToPath(new URL('./TagsList.tsx', import.meta.url)), 'utf8')
+const screenCode = readFileSync(resolve(HERE, './TagsList.tsx'), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '');
 
@@ -226,10 +232,10 @@ describe('TagsList — ui-view `tags-list`', () => {
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     });
 
-    // One rename reaches the update mutation (Enter commits; a blur as the input
-    // leaves the DOM may commit the same draft again — never another value).
-    expect(mutate).toHaveBeenCalled();
-    for (const call of mutate.mock.calls) expect(call[0]).toEqual({ slug: 'auth', input: { name: 'Authn' } });
+    // Exactly one rename reaches the update mutation: Enter commits, and a blur
+    // as the input leaves the DOM must not send the same draft a second time.
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(mutate.mock.calls[0]![0]).toEqual({ slug: 'auth', input: { name: 'Authn' } });
     // Still the same view: the list is mounted, the input closed back to the value.
     expect(host.querySelector('input')).toBeNull();
     expect(host.textContent).toContain('2 endpoints · 1 DTO');
