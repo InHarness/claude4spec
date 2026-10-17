@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 /**
- * 2.1.16 (M34 L12 `d97023iq` — `EntityVersionHistoryView`): the view has Diff
+ * 2.1.16 (the `ui-kit-component` record `entity-version-history-view`): the view has Diff
  * and Snapshot tabs, Snapshot shows the selected version as formatted JSON, and
  * a deleted entity shows the empty history state (no tombstone view).
  *

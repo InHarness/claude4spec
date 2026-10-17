@@ -19,7 +19,7 @@
  *
  * `Tag` and `Stability` are dep-free and RE-EXPORTED from their canonical host
  * module, the catalog's React-free slice (single source of truth). `Tag` is the
- * kit's own minimal tag shape (2.1.25, M34 `hpw2opbb`), not the host's data
+ * kit's own minimal tag shape (2.1.25; the `Tag` type of the `ui-kit-component` record `tag-filter-bar`), not the host's data
  * record: a `TagListItem` from `useTags()` is assignable to it without a cast.
  */
 
@@ -338,7 +338,7 @@ export interface RichTextFieldProps {
 export declare const RichTextField: ComponentType<RichTextFieldProps>;
 
 export interface TagPickerProps {
-  /** Written inline — NOT the catalog's `Tag` type (2.1.26, `d97023iq`); a `useTags()` item is assignable as is. */
+  /** Written inline — NOT the catalog's `Tag` type (2.1.26, the `ui-kit-component` record `tag-picker`); a `useTags()` item is assignable as is. */
   allTags: { slug: string; name: string; color?: string | null }[];
   selected: string[];
   onToggle(slug: string): void;

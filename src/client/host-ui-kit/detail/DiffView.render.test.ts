@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 /**
- * 2.1.26 (M34 `m34l12sc` / L12 `d97023iq` — `DiffView`): non-empty `hunks` win
+ * 2.1.26 (M34 `m34l12sc` / the `ui-kit-component` record `diff-view`): non-empty `hunks` win
  * and render in `mode`; with no non-empty `hunks` a `before`/`after` pair
  * renders as two plain-text panes, with no add/del colours and no diffing;
  * with neither, the component renders its `EmptyState`, not an error.

@@ -29,8 +29,10 @@ import type { ApiError } from '../../lib/api-core.js';
  * the version row carries no release pill. The host's own history routes render this very block,
  * so host and plugin show an identical view.
  *
- * Consumed L11 surface: `useVersions`, `useVersionDetail`, `useRestoreVersion`,
- * `useReleases`, `lineDiffHunks` (transport via M33).
+ * Consumed L11 surface (fetched by the component): `useVersions`,
+ * `useVersionDetail`, `useRestoreVersion`, `useReleases` (transport via M33).
+ * It also calls the pure L11 util `lineDiffHunks`, which fetches nothing and so
+ * is not a data source of the component.
  */
 export interface EntityVersionHistoryViewProps {
   type: string;
@@ -299,5 +301,8 @@ export const EntityVersionHistoryView = withStability(
   EntityVersionHistoryViewImpl,
   'experimental',
   'connected',
-  ['useVersions', 'useVersionDetail', 'useRestoreVersion', 'useReleases', 'lineDiffHunks'],
+  // The record's `dataSources` with `usage: fetchedByComponent` (M34 `m34l12sc`).
+  // `lineDiffHunks` is a pure util that fetches nothing, so it is not a data
+  // source of the component and is not listed.
+  ['useVersions', 'useVersionDetail', 'useRestoreVersion', 'useReleases'],
 );

@@ -1,0 +1,3 @@
+- section:m34l12sc (registry ↔ ui-kit-component records, l11Surfaces = dataSources fetchedByComponent) → src/client/host-ui-kit/registry.ts, src/client/host-ui-kit/detail/EntityVersionHistoryView.tsx (test: src/client/host-ui-kit/registry.test.ts)
+- ac-autor-bierze-tier-experimental-za-bra → src/client/host-ui-kit/registry.test.ts
+- ac-overlay-czatu-m05-i-powierzchnia-edyto → tests/integration/architecture/ui-kit-gate.ts (test: tests/integration/architecture/ui-kit-gate.test.ts)

@@ -45,13 +45,35 @@
         ]
       },
       "dependsOn": [],
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "kit-catalog-m34/p1-l11-l12",
+          "layers": [
+            "L11",
+            "L12"
+          ],
+          "slugs": [
+            "ac-autor-bierze-tier-experimental-za-bra",
+            "ac-overlay-czatu-m05-i-powierzchnia-edyto",
+            "m34-requires-m13",
+            "m34-requires-m20",
+            "moduly-feature",
+            "warstwy",
+            "sub-drzewo-m34"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "decd0a9294d3157c02be00baf117fb1e19b77921",
+      "baseCommit": "decd0a9294d3157c02be00baf117fb1e19b77921",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": [],
       "wave": 1
@@ -1171,7 +1193,7 @@
         "host-kit-debts",
         "plugin-ui-debts"
       ],
-      "startCommit": null
+      "startCommit": "decd0a9294d3157c02be00baf117fb1e19b77921"
     },
     {
       "n": 2,

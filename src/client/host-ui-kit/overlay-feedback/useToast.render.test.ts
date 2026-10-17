@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 /**
- * 2.1.20 (M34 `m34l12sc`, `wbs9m5zj`, `l0i0c5wm`) — `useToast` from
+ * 2.1.20 (M34 `m34l12sc`, record `toast-viewport`) — `useToast` from
  * `@c4s/plugin-runtime/ui` is a thin layer over the shell's `toast` facade:
  * a call goes onto the host toast bus (`c4s:toast`) and the toast appears in
  * the host's ONE stack — the controlled `ToastViewport` that `ToastHost`
@@ -209,8 +209,8 @@ function kitSources(dir: string): Array<{ file: string; src: string }> {
   return out;
 }
 
-describe('[section:wbs9m5zj] ToastViewport is a controlled stack; useToast keeps no queue of its own', () => {
-  it('[section:wbs9m5zj] the viewport renders exactly the toasts it is given and reports a close through onDismiss without dropping the toast itself', async () => {
+describe('ToastViewport is a controlled stack; useToast keeps no queue of its own', () => {
+  it('the viewport renders exactly the toasts it is given and reports a close through onDismiss without dropping the toast itself', async () => {
     const onDismiss = vi.fn();
     const el = document.createElement('div');
     document.body.appendChild(el);
@@ -243,7 +243,7 @@ describe('[section:wbs9m5zj] ToastViewport is a controlled stack; useToast keeps
     }
   });
 
-  it('[section:wbs9m5zj] the kit has no toast bus, queue or timers of its own: the toast stack and its timers live only in ToastHost', () => {
+  it('[section:m34l12sc] the kit has no toast bus, queue or timers of its own: the toast stack and its timers live only in ToastHost', () => {
     const sources = kitSources(KIT_DIR);
     for (const { file, src } of sources) {
       expect(src, file).not.toMatch(/c4s-ui:toast/);
@@ -255,8 +255,8 @@ describe('[section:wbs9m5zj] ToastViewport is a controlled stack; useToast keeps
   });
 });
 
-describe('[section:l0i0c5wm] useToast contract — sent through the shell toast facade, no info, no duration', () => {
-  it('[section:l0i0c5wm] useToast sends via the shell toast facade (one bus), carries the action, and has no info kind and no duration', async () => {
+describe('[section:m34l12sc] useToast contract — sent through the shell toast facade, no info, no duration', () => {
+  it('[section:m34l12sc] useToast sends via the shell toast facade (one bus), carries the action, and has no info kind and no duration', async () => {
     const hook = readFileSync(join(HERE, 'useToast.ts'), 'utf8');
     expect(hook).toMatch(/import \{ toast \} from '\.\.\/\.\.\/ui\/events\.js'/);
 

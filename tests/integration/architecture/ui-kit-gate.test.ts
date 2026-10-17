@@ -127,6 +127,25 @@ describe('[section:hntah0r7] gate (a) — the automatic check over the host code
     expect(HOST_LOCAL_DECLARATIONS.flatMap((d) => d.files)).not.toContain('src/client/ui/modals/ToolJsonView.tsx');
   });
 
+  it('[ac:ac-overlay-czatu-m05-i-powierzchnia-edyto] the chat overlay (M05) and the editor surface (M20) render own markup legally and undeclared: the full-screen raw tool-JSON window is not reported as a catalog twin', () => {
+    const toolJson = 'src/client/ui/modals/ToolJsonView.tsx';
+    // It is own markup with the anatomy of a modal twin (a full-viewport scrim
+    // with a centred panel) — the Dialog detector would match it…
+    const dialog = ANATOMY_DETECTORS.find((d) => d.component === 'Dialog')!;
+    expect(dialog.pattern.test(readSource(toolJson))).toBe(true);
+    expect(ownsMarkup(toolJson)).toBe(true);
+    // …yet it is outside L12, so the check reports nothing for it and needs no declaration.
+    expect(isOutOfScope(toolJson)).toBe(true);
+    const findings = scanFindings();
+    expect(findings.filter((f) => f.file === toolJson)).toEqual([]);
+    expect(violations([]).filter((f) => f.file === toolJson)).toEqual([]);
+    // Nothing on the chat overlay or the editor surface is reported or declared.
+    const outside = (f: string) =>
+      f === toolJson || f.startsWith('src/client/chat/') || f.startsWith('src/client/tiptap/');
+    expect(findings.filter((f) => outside(f.file))).toEqual([]);
+    expect(HOST_LOCAL_DECLARATIONS.flatMap((d) => d.files).filter(outside)).toEqual([]);
+  });
+
   it('[section:hntah0r7] the undeclared twins the wider check found are collapsed: no standalone BriefScopeModal, the module-dependency window is the catalog Dialog', () => {
     const brief = readSource('src/client/components/briefs/BriefScopeModal.tsx');
     expect(brief).not.toMatch(/export function BriefScopeModal\b/);

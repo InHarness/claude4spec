@@ -15,13 +15,13 @@ import { Popover } from '../overlay-feedback/Popover.js';
  * "+N" reveal control; the full tag list and inline-create input surface
  * inside a published `Popover` instead of always being visible inline.
  */
-/** One selectable tag — `{ slug; name; color? }`, written inline per `d97023iq`. */
+/** One selectable tag — `{ slug; name; color? }`, written inline per its `ui-kit-component` record `tag-picker`. */
 type TagPickerTag = { slug: string; name: string; color?: string | null };
 
 export interface TagPickerProps {
   /**
-   * 2.1.26 (`d97023iq`): the item shape is written INLINE and is not the
-   * catalog's `Tag` type (`hpw2opbb`) — the picker reads no `description`.
+   * 2.1.26 (record `tag-picker`): the item shape is written INLINE and is not the
+   * catalog's `Tag` type (record `tag-filter-bar`) — the picker reads no `description`.
    * `useTags()` items are still assignable to it as is.
    */
   allTags: TagPickerTag[];

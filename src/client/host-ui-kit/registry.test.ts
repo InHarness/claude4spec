@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { UI_KIT_CATALOG, UI_KIT_STABLE_COMPONENTS as BROWSER_STABLE } from './registry.js';
@@ -164,5 +165,122 @@ describe('Host UI Kit catalog registry (M34/L12)', () => {
       expect(c.l11Surfaces?.length ?? 0, c.name).toBeGreaterThan(0);
       for (const surface of c.l11Surfaces ?? []) expect(pluginRuntimeLegOf(surface), `${c.name} → ${surface}`).toBe('browser');
     }
+  });
+});
+
+/**
+ * 2.1.28 (M34 `m34l12sc`) — the `ui-kit-component` records at 2.1.28, registry
+ * fields only: `[name, group, stability, binding, dataSources with usage
+ * fetchedByComponent]`. `feedsProps` sources are a caller's business and stay
+ * out of the entry; a pure util (e.g. `lineDiffHunks`) fetches nothing and is
+ * not a data source.
+ */
+const RECORDS: ReadonlyArray<readonly [string, string, 'stable' | 'experimental', 'presentational' | 'connected', readonly string[]]> = [
+  ['ActionBar', 'actions', 'experimental', 'presentational', []],
+  ['ActionButton', 'actions', 'experimental', 'presentational', []],
+  ['Badge', 'actions', 'experimental', 'presentational', []],
+  ['DetailPanelShell', 'core', 'stable', 'presentational', []],
+  ['Dialog', 'overlay', 'experimental', 'presentational', []],
+  ['DiffView', 'detail', 'experimental', 'presentational', []],
+  ['DocEditor', 'detail', 'experimental', 'connected', ['editorBridge', 'queryClient']],
+  ['DocumentBody', 'detail', 'experimental', 'presentational', []],
+  ['EmptyState', 'list', 'experimental', 'presentational', []],
+  ['EntityDetailToolbar', 'detail', 'experimental', 'presentational', []],
+  ['EntityListHeader', 'core', 'stable', 'presentational', []],
+  ['EntityListLayout', 'list', 'experimental', 'presentational', []],
+  ['EntityListRow', 'list', 'experimental', 'presentational', []],
+  [
+    'EntityVersionHistoryView',
+    'detail',
+    'experimental',
+    'connected',
+    ['useVersions', 'useVersionDetail', 'useRestoreVersion', 'useReleases'],
+  ],
+  ['EnumBadgePicker', 'pickers', 'experimental', 'presentational', []],
+  ['FieldGrid', 'core', 'stable', 'presentational', []],
+  ['FieldRow', 'core', 'stable', 'presentational', []],
+  ['FormField', 'form', 'experimental', 'presentational', []],
+  ['FormShell', 'overlay', 'experimental', 'presentational', []],
+  ['GroupedEntityList', 'list', 'experimental', 'presentational', []],
+  ['GroupedRelationPicker', 'pickers', 'experimental', 'presentational', []],
+  ['InlineEditField', 'form', 'experimental', 'presentational', []],
+  ['LoadingState', 'actions', 'experimental', 'presentational', []],
+  ['Pagination', 'list', 'experimental', 'presentational', []],
+  ['Popover', 'feedback', 'experimental', 'presentational', []],
+  ['ReferencesList', 'detail', 'experimental', 'presentational', []],
+  ['RichTextField', 'detail', 'experimental', 'presentational', []],
+  ['SegmentedControlTabs', 'detail', 'experimental', 'presentational', []],
+  ['TagFilterBar', 'list', 'experimental', 'presentational', []],
+  ['TagPicker', 'detail', 'experimental', 'presentational', []],
+  ['ToastViewport', 'feedback', 'experimental', 'presentational', []],
+  ['VersionHistory', 'detail', 'experimental', 'presentational', []],
+];
+
+/** Every non-test TS/TSX source under `dir`. */
+function sourcesUnder(dir: string, out: string[] = []): string[] {
+  for (const name of readdirSync(dir)) {
+    const full = join(dir, name);
+    if (statSync(full).isDirectory()) {
+      if (name === 'node_modules' || name === 'dist') continue;
+      sourcesUnder(full, out);
+    } else if (/\.tsx?$/.test(name) && !/\.(test|d)\.tsx?$/.test(name)) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
+describe('Host UI Kit registry ↔ ui-kit-component records (M34/L12, 2.1.28)', () => {
+  it('[section:m34l12sc] the registry mirrors the ui-kit-component records: one entry per record with its name, group, stability, binding and, for connected ones, l11Surfaces = the dataSources fetched by the component', () => {
+    const byName = new Map(UI_KIT_CATALOG.map((e) => [e.name, e]));
+    expect([...byName.keys()].sort()).toEqual(RECORDS.map(([name]) => name).sort());
+    for (const [name, group, stability, binding, fetched] of RECORDS) {
+      const e = byName.get(name);
+      expect(e?.group, name).toBe(group);
+      expect(e?.stability, name).toBe(stability);
+      expect(e?.binding, name).toBe(binding);
+      if (fetched.length > 0) expect(e?.l11Surfaces, name).toEqual(fetched);
+      else expect(e?.l11Surfaces, name).toBeUndefined();
+    }
+    // The pure util the history block calls is not one of its data sources.
+    expect(byName.get('EntityVersionHistoryView')?.l11Surfaces).not.toContain('lineDiffHunks');
+    // The stable list both /ui legs carry is the stable records, derived from the registry.
+    const stableRecords = RECORDS.filter(([, , s]) => s === 'stable').map(([name]) => name);
+    expect([...BROWSER_STABLE].sort()).toEqual([...stableRecords].sort());
+    expect([...uiBackendLeg.UI_KIT_STABLE_COMPONENTS].sort()).toEqual([...stableRecords].sort());
+  });
+
+  it('[ac:ac-autor-bierze-tier-experimental-za-bra] the tier speaks only of hostApiVersion: every experimental entry ships on /ui like a stable one, and no plugin in this repo vendors a catalog component', () => {
+    const experimental = UI_KIT_CATALOG.filter((c) => c.stability === 'experimental');
+    expect(experimental.length).toBeGreaterThan(0);
+    // No consumption gate: an experimental component is exported by the same
+    // `/ui` subpath (browser leg and published export list) as a stable one…
+    for (const c of UI_KIT_CATALOG) {
+      expect(uiBrowserSurface, c.name).toHaveProperty(c.name);
+      expect(PLUGIN_RUNTIME_UI_EXPORT_NAMES, c.name).toContain(c.name);
+    }
+    // …and the tier decides only membership of the versioned list.
+    for (const c of experimental) {
+      expect(BROWSER_STABLE, c.name).not.toContain(c.name);
+      expect(uiBackendLeg.UI_KIT_STABLE_COMPONENTS as readonly string[], c.name).not.toContain(c.name);
+    }
+    // So there is no reason to vendor one: no plugin source defines a
+    // component under a catalog entry's name (a copy would miss the original's fixes).
+    const pluginsDir = fileURLToPath(new URL('../../../plugins/', import.meta.url));
+    const names = UI_KIT_CATALOG.map((c) => c.name).join('|');
+    const definition = new RegExp(`\\b(?:function|const|class)\\s+(${names})\\b`);
+    const files = readdirSync(pluginsDir)
+      .map((pkg) => join(pluginsDir, pkg, 'src'))
+      .filter((src) => {
+        try {
+          return statSync(src).isDirectory();
+        } catch {
+          return false;
+        }
+      })
+      .flatMap((src) => sourcesUnder(src));
+    expect(files.length).toBeGreaterThan(0);
+    const vendored = files.filter((f) => definition.test(readFileSync(f, 'utf8')));
+    expect(vendored).toEqual([]);
   });
 });

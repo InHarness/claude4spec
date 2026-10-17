@@ -131,8 +131,8 @@ function DatabaseTableListRoute(): JSX.Element {
   // Tag universe comes from the host's tag catalog narrowed to tags actually used
   // on `database-table` items (`counts[TYPE] > 0`) — the bar stays hidden (below)
   // when THIS list's entities carry no tags, not merely when the project has none.
-  // `useTags()`'s `TagListItem` is assignable to the kit's `Tag` as is (M34
-  // `hpw2opbb`): no adapter and no cast.
+  // `useTags()`'s `TagListItem` is assignable to the kit's `Tag` as is (the
+  // `Tag` type of the `ui-kit-component` record `tag-filter-bar`): no adapter and no cast.
   const tagCatalog = useTags();
   const tagUniverse = useMemo<Tag[]>(
     () => (tagCatalog.data ?? []).filter((t) => (t.counts[DATABASE_TABLE_TYPE] ?? 0) > 0),

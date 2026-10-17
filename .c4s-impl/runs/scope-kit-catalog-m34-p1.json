@@ -1,0 +1,67 @@
+{
+ "unit": {
+  "id": "kit-catalog-m34",
+  "goal": "Moduł M34 opisuje teraz jedna płaska strona, a katalog komponentów hosta to zbiór rekordów `ui-kit-component`. Rejestr katalogu w kodzie odzwierciedla te rekordy, także powierzchnie L11 konsumowane przez komponenty `connected`, a listę komponentów `stable` wyprowadza się z rejestru tak samo w przeglądarce i w backendzie. Usunięte są podstrony `modules/m34-host-ui-kit/` i arkusz sub-drzewa M34. Ich treść przeniesiono do strony modułu i do rekordów, więc system niczego nie traci.",
+  "recipe": {
+   "pages": [
+    {
+     "key": "pages/modules/m34-host-ui-kit.md",
+     "change": "all"
+    },
+    {
+     "key": "pages/modules/m34-host-ui-kit/m34-host-ui-kit.md",
+     "change": "all"
+    },
+    {
+     "key": "pages/modules/m34-host-ui-kit/L12-host-ui-kit.md",
+     "change": "all"
+    }
+   ],
+   "entities": [
+    {
+     "type": "module-dependency",
+     "slugs": [
+      "m34-requires-m13",
+      "m34-requires-m20"
+     ]
+    },
+    {
+     "type": "spreadsheet",
+     "slugs": [
+      "moduly-feature",
+      "warstwy",
+      "sub-drzewo-m34"
+     ]
+    },
+    {
+     "type": "ac",
+     "slugs": [
+      "ac-autor-bierze-tier-experimental-za-bra",
+      "ac-overlay-czatu-m05-i-powierzchnia-edyto"
+     ]
+    }
+   ]
+  },
+  "jobs": []
+ },
+ "stateDir": ".c4s-impl",
+ "portion": {
+  "name": "kit-catalog-m34/p1-l11-l12",
+  "layers": [
+   "L11",
+   "L12"
+  ],
+  "slugs": [
+   "ac-autor-bierze-tier-experimental-za-bra",
+   "ac-overlay-czatu-m05-i-powierzchnia-edyto",
+   "m34-requires-m13",
+   "m34-requires-m20",
+   "moduly-feature",
+   "warstwy",
+   "sub-drzewo-m34"
+  ],
+  "criteriaGroup": null,
+  "packet": ".c4s-impl/packets/kit-catalog-m34-p1-l11-l12.md"
+ },
+ "only": []
+}
