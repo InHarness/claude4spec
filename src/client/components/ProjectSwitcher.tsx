@@ -36,6 +36,7 @@ export function ProjectSwitcher({
   const [open, setOpen] = useState(false);
   const [workspace, setWorkspace] = useState<WorkspaceResponse | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -46,6 +47,14 @@ export function ProjectSwitcher({
         /* keep empty — switcher degrades to the static label */
       });
   }, [open]);
+
+  // Long workspaces scroll — bring the current project into view on open.
+  useEffect(() => {
+    if (!open || !workspace) return;
+    listRef.current
+      ?.querySelector<HTMLElement>('[aria-selected="true"]')
+      ?.scrollIntoView?.({ block: 'nearest' });
+  }, [open, workspace]);
 
   useEffect(() => {
     if (!open) return;
@@ -124,74 +133,81 @@ export function ProjectSwitcher({
       {open ? (
         <div
           role="listbox"
-          className="absolute left-0 top-full z-50 mt-1 w-64 rounded-md py-1 shadow-lg"
-          style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair-strong)' }}
+          className="absolute left-0 top-full z-50 mt-1 w-64 flex flex-col rounded-md py-1 shadow-lg"
+          style={{
+            background: 'var(--c-card)',
+            border: '1px solid var(--c-hair-strong)',
+            // Bounded so every project and "Add project…" stay reachable in large workspaces.
+            maxHeight: 'min(420px, calc(100vh - 80px))',
+          }}
         >
           <div
-            className="px-3 py-1 text-[10px] font-medium uppercase tracking-wide"
+            className="shrink-0 px-3 py-1 text-[10px] font-medium uppercase tracking-wide"
             style={{ color: 'var(--c-subtle)' }}
           >
             {workspace ? `Workspace · ${workspace.name}` : 'Workspace'}
           </div>
-          {!workspace
-            ? [0, 1, 2].map((i) => (
-                <div key={`sk-${i}`} className="flex items-center gap-2 px-3 py-1.5">
+          <div ref={listRef} data-testid="project-switcher-list" className="flex-1 min-h-0 overflow-y-auto">
+            {!workspace
+              ? [0, 1, 2].map((i) => (
+                  <div key={`sk-${i}`} className="flex items-center gap-2 px-3 py-1.5">
+                    <span className="flex-1 min-w-0">
+                      <Skeleton width="55%" height={11} />
+                      <Skeleton width="75%" height={9} className="mt-1.5" />
+                    </span>
+                  </div>
+                ))
+              : null}
+            {(workspace?.projects ?? []).map((p) => {
+              const current = p.id === PROJECT_ID;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  role="option"
+                  aria-selected={current}
+                  onClick={() => {
+                    if (current) {
+                      setOpen(false);
+                      return;
+                    }
+                    // Full reload — module-load constants must re-initialize.
+                    window.location.href = `/p/${p.id}/`;
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-left"
+                  style={{
+                    color: 'var(--c-ink)',
+                    background: current ? 'var(--c-hair)' : 'transparent',
+                  }}
+                >
                   <span className="flex-1 min-w-0">
-                    <Skeleton width="55%" height={11} />
-                    <Skeleton width="75%" height={9} className="mt-1.5" />
+                    <span className="block text-[12.5px] font-medium truncate">{p.name}</span>
+                    <span
+                      className="block text-[10.5px] font-mono truncate"
+                      style={{ color: 'var(--c-subtle)', direction: 'rtl', textAlign: 'left' }}
+                      title={p.cwd}
+                    >
+                      {p.cwd}
+                    </span>
                   </span>
-                </div>
-              ))
-            : null}
-          {(workspace?.projects ?? []).map((p) => {
-            const current = p.id === PROJECT_ID;
-            return (
-              <button
-                key={p.id}
-                type="button"
-                role="option"
-                aria-selected={current}
-                onClick={() => {
-                  if (current) {
-                    setOpen(false);
-                    return;
-                  }
-                  // Full reload — module-load constants must re-initialize.
-                  window.location.href = `/p/${p.id}/`;
-                }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-left"
-                style={{
-                  color: 'var(--c-ink)',
-                  background: current ? 'var(--c-hair)' : 'transparent',
-                }}
-              >
-                <span className="flex-1 min-w-0">
-                  <span className="block text-[12.5px] font-medium truncate">{p.name}</span>
-                  <span
-                    className="block text-[10.5px] font-mono truncate"
-                    style={{ color: 'var(--c-subtle)', direction: 'rtl', textAlign: 'left' }}
-                    title={p.cwd}
-                  >
-                    {p.cwd}
-                  </span>
-                </span>
-                {current ? <Check size={12} style={{ color: 'var(--c-accent)', flexShrink: 0 }} /> : null}
-              </button>
-            );
-          })}
-          {workspace && workspace.projects.length === 0 ? (
-            <div className="px-3 py-1.5 text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>
-              No projects registered.
-            </div>
-          ) : null}
-          <div className="my-1" style={{ borderTop: '1px solid var(--c-hair)' }} />
+                  {current ? <Check size={12} style={{ color: 'var(--c-accent)', flexShrink: 0 }} /> : null}
+                </button>
+              );
+            })}
+            {workspace && workspace.projects.length === 0 ? (
+              <div className="px-3 py-1.5 text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>
+                No projects registered.
+              </div>
+            ) : null}
+          </div>
+          <div className="shrink-0 my-1" style={{ borderTop: '1px solid var(--c-hair)' }} />
           <button
             type="button"
             onClick={() => {
               setOpen(false);
               void openModal('project-create', {});
             }}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12.5px]"
+            className="shrink-0 w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12.5px]"
             style={{ color: 'var(--c-muted)' }}
           >
             <Plus size={12} style={{ flexShrink: 0 }} />
