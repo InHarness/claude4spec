@@ -1361,13 +1361,34 @@
           "why": "wejście pickera tagów."
         }
       ],
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "m18-tags-kit/p1-l2-l12",
+          "layers": [
+            "L2",
+            "L11",
+            "L12"
+          ],
+          "slugs": [
+            "mn59j0le",
+            "xfkinig4",
+            "tag-list-item",
+            "tags-list",
+            "ac-pozycja-o-ksztalcie-tag-list-item-jes"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "aeba5db80f8625a331cddaa19675a7a0531cc93d",
+      "baseCommit": "aeba5db80f8625a331cddaa19675a7a0531cc93d",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": [],
       "wave": 4
@@ -1476,7 +1497,7 @@
         "m18-tags-kit",
         "entity-screens-kit"
       ],
-      "startCommit": null
+      "startCommit": "aeba5db80f8625a331cddaa19675a7a0531cc93d"
     }
   ],
   "conventions": [

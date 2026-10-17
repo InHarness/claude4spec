@@ -80,6 +80,30 @@ describe('the kit\'s one Tag type', () => {
     ).toBeGreaterThan(0);
   });
 
+  it('[section:mn59j0le] useTags().data items go to TagPicker.allTags, to the /ui Tag and into an EntityListRow tagLookup as they are', () => {
+    // 2.1.28: the item is assignable to `Tag` (record `tag-filter-bar`), the
+    // plugin builds `tagLookup` from the same list, and the item is also
+    // assignable to the `allTags` prop of the `experimental` TagPicker, whose
+    // narrower item shape is written inline.
+    const source = [
+      IMPORTS,
+      'export function useKitInputs() {',
+      '  const items = useTags().data ?? [];',
+      "  const allTags: TagPickerProps['allTags'] = items;",
+      '  const tags: Tag[] = items;',
+      "  const tagLookup: EntityListRowProps['tagLookup'] = new Map(items.map((t) => [t.slug, t]));",
+      '  return { allTags, tags, tagLookup };',
+      '}',
+    ].join('\n');
+    expect(source).not.toMatch(/\bas\b/);
+    expect(compileAuthorFile(source)).toEqual([]);
+
+    // Not vacuous: an item without `name` does not satisfy the picker.
+    expect(
+      compileAuthorFile(`${IMPORTS}\ndeclare const items: { slug: string }[];\nexport const allTags: TagPickerProps['allTags'] = items;`).length,
+    ).toBeGreaterThan(0);
+  });
+
   it('2.1.26: TagPicker.allTags is not a consumer of Tag — its item shape is inline, without description', () => {
     // The inline `{ slug; name; color? }` item takes a tag without a description.
     const ok = [

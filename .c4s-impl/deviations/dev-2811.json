@@ -1,0 +1,15 @@
+{
+  "id": "dev-2811",
+  "kind": "drift",
+  "blocking": false,
+  "address": "m18-tags-kit/xfkinig4",
+  "slugs": [
+    "tags-list"
+  ],
+  "text": "M18's L12 slice (2.1.28) lists `entity-list-header` and `empty-state` among the components consumed and declares no host-local component (the \"Host-local components — brak\" bullet was dropped; under l12slice0 an absent field means no departures). `TagsList` still draws its own page header (Tag icon + \"Tags\" heading + \"N tags\" counter) and its own empty box (\"No tags yet.\" / \"Tags auto-create when you add them to an endpoint.\") instead of EntityListHeader and EmptyState. The unit's goal names only the tag row and the inline edit, and swapping the header/empty state would change what the user sees, so they are left as they are. Needs: either a follow-up unit recomposing the header and empty state from the catalog, or a Host-local entry (DŁUG) in xfkinig4 naming them.",
+  "assumption": "ASSUMPTION:dev-2811 — the /tags page header and empty state stay bespoke markup in this window; only the row and the inline edit are catalog-composed.",
+  "unit": "m18-tags-kit",
+  "portion": "m18-tags-kit/p1-l2-l12",
+  "sent": true,
+  "patchPath": "2-1-27-to-2-1-28-m18-tags-kit-xfkinig4-m18-s-l12-slice-2-1-28-lists-entity-list-header-and-empty-.md"
+}

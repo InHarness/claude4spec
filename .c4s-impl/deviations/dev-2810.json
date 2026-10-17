@@ -1,0 +1,15 @@
+{
+  "id": "dev-2810",
+  "kind": "drift",
+  "blocking": false,
+  "address": "m18-tags-kit/xfkinig4",
+  "slugs": [
+    "tags-list"
+  ],
+  "text": "The ui-view `tags-list` (unchanged on this point in 2.1.28) says a click on a tag leads to the list of the first type of the `ELEMENTS` slot with `?tag=<slug>`, and that \"Show all [type]\" links beside the tag lead to each type's list with the same parameter. The code has never had either: `TagsList` passes no `onClick` to `EntityListRow` and renders no per-type links, because the row is an inline editing surface (name via InlineEditField, colour via Popover) and a row click would compete with the click that starts the name edit. The unit's goal names only the row composition and the inline edit, so the navigation is not built in this window. Built: rows without navigation, as before. Needs: the view to say whether the navigation still holds and, if so, which element of the editable row navigates (e.g. the per-type counters as links).",
+  "assumption": "ASSUMPTION:dev-2810 — /tags rows do not navigate (no row onClick, no \"Show all [type]\" links); the row stays an inline editing surface.",
+  "unit": "m18-tags-kit",
+  "portion": "m18-tags-kit/p1-l2-l12",
+  "sent": true,
+  "patchPath": "2-1-27-to-2-1-28-m18-tags-kit-xfkinig4-the-ui-view-tags-list-unchanged-on-this-point-in-2-1-28-sa.md"
+}

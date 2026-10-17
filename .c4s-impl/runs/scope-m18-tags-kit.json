@@ -1,0 +1,74 @@
+{
+ "unit": {
+  "id": "m18-tags-kit",
+  "goal": "Ekran tagów buduje wiersz tagu z katalogowego wiersza listy, a nazwę i kolor tagu edytuje inline przez katalogowe pole edycji i popover. Pozycję listy tagów da się przypisać zarówno do typu tagu z `/ui`, jak i do wejścia pickera tagów, bez rzutowania. DTO pozycji tagu dostaje tag modułu `m18`, a jego pola się nie zmieniają.",
+  "recipe": {
+   "pages": [
+    {
+     "key": "pages/modules/m18-tags.md",
+     "change": "all",
+     "context": {
+      "offset": 1,
+      "limit": 2,
+      "anchors": [
+       "m18cel00",
+       "m18dep00"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m18-tags.md",
+     "context": {
+      "offset": 4,
+      "limit": 1,
+      "anchors": [
+       "m18dom00"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m18-tags.md",
+     "context": {
+      "offset": 17,
+      "limit": 2,
+      "anchors": [
+       "mn59j0le",
+       "xfkinig4"
+      ]
+     }
+    }
+   ],
+   "entities": [
+    {
+     "type": "dto",
+     "slugs": [
+      "tag-list-item"
+     ]
+    },
+    {
+     "type": "ui-view",
+     "slugs": [
+      "tags-list"
+     ]
+    },
+    {
+     "type": "ac",
+     "slugs": [
+      "ac-pozycja-o-ksztalcie-tag-list-item-jes"
+     ]
+    }
+   ]
+  },
+  "jobs": [],
+  "portionSlugs": {
+   "m18-tags-kit/p1-l2-l12": [
+    "mn59j0le",
+    "xfkinig4",
+    "tag-list-item",
+    "tags-list",
+    "ac-pozycja-o-ksztalcie-tag-list-item-jes"
+   ]
+  }
+ },
+ "stateDir": ".c4s-impl"
+}

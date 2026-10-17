@@ -26,6 +26,15 @@ const PALETTE = [
 /** No tag row navigates anywhere — the row is an inline editing surface. */
 const NO_TAG_LOOKUP = new Map<string, Tag>();
 
+/**
+ * ui-view `tags-list` (M18, `/tags`): each tag row is the catalog
+ * `EntityListRow` (dot in `leading`, name in `children`, per-type counts in
+ * `trailing`); name and colour are edited inline through `InlineEditField` and
+ * `Popover`.
+ *
+ * ASSUMPTION:dev-2811 — the /tags page header and empty state stay bespoke
+ * markup in this window; only the row and the inline edit are catalog-composed.
+ */
 export function TagsList() {
   const { data: tags = [], isLoading } = useTags();
   const modules = clientPluginHost.listEntities();
@@ -114,6 +123,8 @@ function TagRow({
     <EntityListRow
       // No `onClick`: the row is an editing surface, not a link — every
       // affordance inside it (name, colour) is its own control.
+      // ASSUMPTION:dev-2810 — /tags rows do not navigate (no row onClick, no
+      // "Show all [type]" links); the row stays an inline editing surface.
       tagLookup={NO_TAG_LOOKUP}
       leading={<ColorSwatch color={tag.color} onPick={commitColor} />}
       trailing={

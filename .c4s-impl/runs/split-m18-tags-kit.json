@@ -1,0 +1,19 @@
+{
+  "role": "implementer",
+  "unit": "m18-tags-kit",
+  "packetBytes": 77682,
+  "portions": [
+    {
+      "name": "m18-tags-kit/p1-l2-l12",
+      "layers": ["L2", "L11", "L12"],
+      "slugs": [
+        "mn59j0le",
+        "xfkinig4",
+        "tag-list-item",
+        "tags-list",
+        "ac-pozycja-o-ksztalcie-tag-list-item-jes"
+      ]
+    }
+  ],
+  "deviations": []
+}

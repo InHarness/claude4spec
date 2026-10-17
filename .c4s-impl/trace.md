@@ -63,3 +63,7 @@
 - section:thm8a14c (list-page pattern from /ui) → src/client/runtime/plugin-runtime-ui.ts, src/client/host-ui-kit/index.ts (test: src/client/runtime/entity-list-page.render.test.ts)
 - section:9v3i7vs1 (create-from-list recipe, generic `actions` slot) → src/client/host-ui-kit/core/EntityListHeader.tsx, src/client/runtime/plugin-runtime-ui.ts (test: src/client/runtime/entity-list-page.render.test.ts)
 - section:m19l12sc (contributed stable header, consumed /ui components, version surface) → src/shared/plugin-host/ui-kit-surface.ts, src/shared/plugin-host/host-api.ts (tests: src/client/runtime/entity-list-page.render.test.ts, src/client/host-ui-kit/core/EntityListHeader.render.test.ts)
+- tag-list-item → src/shared/entities.ts (TagListItem), src/plugin-types/plugin-runtime.ts (TagListItem), src/server/routes/tags.ts (GET /api/tags) (tests: src/server/routes/tags.route.test.ts, src/client/runtime/tag-list-item.types.test.ts)
+- tags-list → src/client/components/TagsList.tsx (test: src/client/components/TagsList.render.test.ts)
+- section:xfkinig4 (components consumed by M18) → src/client/components/TagsList.tsx (test: src/client/components/TagsList.render.test.ts)
+- section:mn59j0le (useTags items → Tag / tagLookup / TagPicker allTags) → src/plugin-types/plugin-runtime.ts, src/plugin-types/ui.ts (tests: src/plugin-types/tag-type.test.ts, src/server/plugin-runtime/l11-surfaces.test.ts)

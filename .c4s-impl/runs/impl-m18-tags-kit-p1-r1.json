@@ -1,0 +1,18 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.28",
+  "unit": "m18-tags-kit",
+  "portion": "m18-tags-kit/p1-l2-l12",
+  "claimed": [
+    "mn59j0le",
+    "xfkinig4",
+    "tag-list-item",
+    "tags-list",
+    "ac-pozycja-o-ksztalcie-tag-list-item-jes"
+  ],
+  "deviations": ["dev-2810", "dev-2811"],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

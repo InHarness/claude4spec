@@ -1,0 +1,51 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "unit", "id": "m18-tags-kit" },
+  "release": "2.1.28",
+  "rows": [
+    {
+      "slug": "tag-list-item",
+      "type": "dto",
+      "level": 1,
+      "status": "covered",
+      "evidence": "Fields unchanged 2.1.27->2.1.28 (only tags m18-tags->m18, spec metadata). src/plugin-types/plugin-runtime.ts:877 TagListItem {slug:string; name:string; color:string|null; description:string|null; counts:Record<string,number>}; src/shared/entities.ts:267 TagListItem = Tag. Live payload: src/server/routes/tags.route.test.ts:502 '[entity:tag-list-item] every item carries slug, name, color, description and counts...' asserts types per item + toMatchObject({name:'Auth', color:null, description:null}). Type level: tags.route.test.ts:534 expectTypeOf<keyof TagListItem>().toEqualTypeOf<'slug'|'name'|'color'|'description'|'counts'>(), toMatchTypeOf<Tag>(), toMatchTypeOf<PickerItem>(); src/client/runtime/tag-list-item.types.test.ts:406 (compiled by typecheck) Same<TagListItem, TagListItemDto>, const tags: Tag[] = items; const allTags: TagPickerProps['allTags'] = items. npm run typecheck exit 0."
+    },
+    {
+      "slug": "tags-list",
+      "type": "ui-view",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/client/components/TagsList.tsx:123-147 row = <EntityListRow leading={<ColorSwatch/>} trailing={counts}> with name in children via InlineEditField (:138); colour via Popover (:187). Tests src/client/components/TagsList.render.test.ts:269 [entity:tags-list] expect(last.icon).toBeUndefined(); leading contains 'aria-label=\"Change tag color\"'; trailing '2 endpoints · 1 DTO'; :282 click name -> input, Enter -> mutate {slug:'auth', input:{name:'Authn'}}, input closed, list still mounted; :311 dot click -> Popover open, anchorRef.current === dot, palette click -> mutate {color:'#7d9a6d'}, closed; :331 screenCode not.toMatch(/<input\\b|<textarea\\b/), not position fixed/createPortal/role=dialog. Read against InlineEditField.tsx / Popover.tsx: passes. Row navigation (click -> ?tag=, 'Show all [type]') not built, pre-existing and unchanged in this window; recorded as non-blocking drift dev-2810 (beyond the goal's observable change, per build override)."
+    },
+    {
+      "slug": "ac-pozycja-o-ksztalcie-tag-list-item-jes",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/plugin-types/tag-type.test.ts:58 '[ac:ac-pozycja-o-ksztalcie-tag-list-item-jes] a tag-list-item is assignable to Tag from @c4s/plugin-runtime/ui without a cast' compiles an author file against published plugin-runtime.ts/ui.ts: 'export const one: Tag = items[0]!; export const all: Tag[] = items; export const bar: TagBarProps['tags'] = items;' (verifies tag-list-item + tag-filter-bar) -> expect(compileAuthorFile(source)).toEqual([]); expect(source).not.toMatch(/\\bas\\b|<Tag>.../); negative control {slug}[] -> diagnostics > 0."
+    },
+    {
+      "slug": "mn59j0le",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/plugin-types/tag-type.test.ts:437 '[section:mn59j0le] useTags().data items go to TagPicker.allTags, to the /ui Tag and into an EntityListRow tagLookup as they are': compiles \"const allTags: TagPickerProps['allTags'] = items; const tags: Tag[] = items; const tagLookup: EntityListRowProps['tagLookup'] = new Map(items.map((t) => [t.slug, t]))\" -> toEqual([]), no 'as'; negative control > 0."
+    },
+    {
+      "slug": "xfkinig4",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/client/components/TagsList.render.test.ts:217 [section:xfkinig4] rows through EntityListRow slots (rowProps toHaveLength(TAGS.length), icon undefined, dot in leading, name in children, counters in trailing, order dot<name<counts); :227 [section:xfkinig4] for (const mod of kitImports) expect(consumed.has(mod), mod).toBe(true) over the 11 consumed components incl. inline-edit-field. TagsList.tsx imports only list/EntityListRow, form/InlineEditField, overlay-feedback/Popover. Bespoke header/empty state left as non-blocking drift dev-2811."
+    },
+    {
+      "slug": "goal:m18-tags-kit",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Row from EntityListRow + inline name/colour edit via InlineEditField + Popover: src/client/components/TagsList.tsx:123-147,187. TagListItem assignable to /ui Tag and TagPicker allTags without cast: src/plugin-types/plugin-runtime.ts:877, tests tag-type.test.ts:58,437, tag-list-item.types.test.ts:406 (typecheck exit 0). DTO fields unchanged (release-diff before/after identical fields; tag m18 is spec metadata, no code counterpart)."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck (tests not run locally per build rules; read-through of TagsList.render.test.ts, tags.route.test.ts, tag-list-item.types.test.ts, tag-type.test.ts against the code)",
+    "exitCode": 0,
+    "summary": "> @inharness-ai/c4s-plugin-host-ui-kit-components@2.1.28 typecheck\n> tsc --noEmit\nEXIT 0"
+  }
+}
