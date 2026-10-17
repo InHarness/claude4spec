@@ -283,6 +283,23 @@ function registerOne(session: Session, decl: McpToolDeclaration): RegisteredTool
  * Streamable HTTP transport defines.
  */
 export function mcpRequestHandler(opts: McpMountOptions) {
+  const handle = mcpRequestHandlerUnguarded(opts);
+  /**
+   * Nothing thrown while serving one MCP request may leave this function.
+   * Express 4 does not catch a rejected async handler, so an escaped throw is an
+   * unhandled rejection and takes the whole server process down — one bad tool
+   * schema once turned a single `initialize` into an outage for every project.
+   */
+  return async (req: Request, res: Response): Promise<void> => {
+    try {
+      await handle(req, res);
+    } catch (err) {
+      if (!res.headersSent) jsonRpcError(res, 500, 'INTERNAL', err instanceof Error ? err.message : String(err));
+    }
+  };
+}
+
+function mcpRequestHandlerUnguarded(opts: McpMountOptions) {
   return async (req: Request, res: Response): Promise<void> => {
     const sessionId = req.headers['mcp-session-id'];
     const existing = typeof sessionId === 'string' ? SESSIONS.get(sessionId) : undefined;

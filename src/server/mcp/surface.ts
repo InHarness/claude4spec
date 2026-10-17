@@ -52,6 +52,7 @@
  */
 
 import { z } from 'zod';
+import { z as z3 } from 'zod/v3';
 import type { ChatContextType } from '../../shared/entities.js';
 import type { McpToolDeclaration } from '../../shared/plugin-host/mcp.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
@@ -432,6 +433,9 @@ export type ProjectCallTarget =
   | { ok: true; projectId: string; surface: ExternalSurface }
   | { ok: false; code: 'PROJECT_NOT_IN_WORKSPACE' | 'PROJECT_BUILD_FAILED'; message: string };
 
+const PROJECT_CALL_DESCRIPTION =
+  'Required on this connection: registry `id` of the project this call addresses, exactly as `list_projects` returns it. Not a name, not a path.';
+
 /**
  * The `project` argument every project-scoped tool takes on the workspace-bound
  * mount (M12 `np1dkobs`: there the parameter has NO default).
@@ -441,13 +445,36 @@ export type ProjectCallTarget =
  * the contract says a missing or wrong `project` answers
  * `PROJECT_NOT_IN_WORKSPACE` with the list of ids. So the handler is where it is
  * enforced, and the description is where it is stated.
+ *
+ * Built in the SAME zod flavour as the shape it joins. The SDK refuses a shape
+ * mixing v3 and v4 schemas (`Mixed Zod versions detected in object shape`), and
+ * a plugin's tools may be declared with its own zod 3 — a v4 field injected into
+ * such a shape threw out of `registerTool` on the first request.
  */
-export const PROJECT_CALL_ARGUMENT = z
-  .string()
-  .optional()
-  .describe(
-    'Required on this connection: registry `id` of the project this call addresses, exactly as `list_projects` returns it. Not a name, not a path.',
-  );
+export function projectCallArgumentFor(shape: Record<string, unknown>): unknown {
+  const values = Object.values(shape);
+  const isV3 = values.length > 0 && values.every((v) => !(v as { _zod?: unknown })._zod);
+  return isV3
+    ? z3.string().optional().describe(PROJECT_CALL_DESCRIPTION)
+    : z.string().optional().describe(PROJECT_CALL_DESCRIPTION);
+}
+
+/**
+ * A declaration's input as a RAW shape, whichever of the forms the SDK accepts
+ * it was declared in: a raw shape, or a whole `z.object(...)` (v4 keeps the
+ * shape on `_zod.def.shape`, v3 on `.shape`). Spreading an object SCHEMA copies
+ * its internals rather than its fields — the first build of this mount did that
+ * and the SDK threw on the result. `null` for a schema with no object shape.
+ */
+function rawShapeOf(input: Record<string, unknown>): Record<string, unknown> | null {
+  const v4 = (input as { _zod?: { def?: { shape?: unknown } } })._zod;
+  if (v4) return typeof v4.def?.shape === 'object' ? (v4.def.shape as Record<string, unknown>) : null;
+  if ((input as { _def?: unknown })._def) {
+    const shape = (input as { shape?: unknown }).shape;
+    return typeof shape === 'object' && shape !== null ? (shape as Record<string, unknown>) : null;
+  }
+  return input;
+}
 
 /**
  * Re-render a surface for the workspace-bound mount: every project-scoped tool
@@ -463,13 +490,16 @@ export const PROJECT_CALL_ARGUMENT = z
 export function bindProjectPerCall(
   surface: ExternalSurface,
   resolveTarget: (project: string | undefined) => Promise<ProjectCallTarget>,
+  workspaceScoped?: ExternalSurface,
 ): ExternalSurface {
   const tools: McpToolDeclaration[] = [];
   const byName = new Map<string, McpToolDeclaration>();
   for (const decl of surface.tools) {
+    // A workspace-scoped tool answers from the MOUNT's workspace when the caller
+    // supplies one, not from whatever the template project's context captured.
     const bound: McpToolDeclaration =
       surface.scopeByName.get(decl.name) === 'workspace'
-        ? decl
+        ? (workspaceScoped?.byName.get(decl.name) ?? decl)
         : bindOne(decl, resolveTarget);
     tools.push(bound);
     byName.set(bound.name, bound);
@@ -484,9 +514,12 @@ function bindOne(
   // Fields copied, `decl.handler` replaced: the bound declaration keeps no
   // reference to the template context's handler (see `registerOne`'s note).
   const name = decl.name;
+  // An input that is not an object (no shape to extend) cannot carry `project`
+  // as a field; such a tool keeps its schema and answers from the URL default.
+  const shape = rawShapeOf(decl.inputSchema);
   return {
     ...decl,
-    inputSchema: { project: PROJECT_CALL_ARGUMENT, ...decl.inputSchema },
+    inputSchema: shape ? { project: projectCallArgumentFor(shape), ...shape } : decl.inputSchema,
     handler: async (args: Record<string, unknown>, extra: unknown) => {
       const { project, ...rest } = args;
       const target = await resolveTarget(typeof project === 'string' ? project.trim() || undefined : undefined);

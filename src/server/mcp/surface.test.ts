@@ -24,6 +24,8 @@ import { MCP_CONFIG_SERVER_KEY } from './mcp-config.js';
 import { profileFromRequest } from './http-mount.js';
 import type { McpServerFactory } from '../../shared/plugin-host/mcp.js';
 import { z } from 'zod';
+import { z as z3 } from 'zod/v3';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
@@ -1049,4 +1051,39 @@ describe('scopeByName and bindProjectPerCall', () => {
     await bound.byName.get('overview')!.handler({}, {});
     expect(seen).toEqual(['Nope', undefined]);
   });
+});
+
+/**
+ * Regression: the first build of the workspace mount spread a tool's input into
+ * `{ project, ...input }`. For a tool declared with a whole `z.object(...)` that
+ * copied the schema's internals, and `McpServer.registerTool` threw `Mixed Zod
+ * versions detected in object shape` — out of an un-caught async handler, which
+ * took the server process down on the first `initialize`.
+ */
+describe('bindProjectPerCall — every input form the SDK accepts', () => {
+  const surfaceOf = (inputSchema: Record<string, unknown>) => {
+    const decl = { name: 'probe', description: 'probe', inputSchema, handler: async () => ({ content: [] }) };
+    return {
+      tools: [decl],
+      byName: new Map([['probe', decl]]),
+      toolNames: ['probe'],
+      scopeByName: new Map([['probe', 'project' as const]]),
+    };
+  };
+  const forms: Array<[string, Record<string, unknown>]> = [
+    ['v4 raw shape', { slug: z.string() }],
+    ['v4 z.object', z.object({ slug: z.string() }) as unknown as Record<string, unknown>],
+    ['v3 raw shape', { slug: z3.string() }],
+    ['v3 z.object', z3.object({ slug: z3.string() }) as unknown as Record<string, unknown>],
+    ['empty shape', {}],
+  ];
+  for (const [label, input] of forms) {
+    it(`${label}: registers on a real McpServer with \`project\` added`, () => {
+      const bound = bindProjectPerCall(surfaceOf(input), async () => ({ ok: false, code: 'PROJECT_NOT_IN_WORKSPACE', message: '' }));
+      const decl = bound.byName.get('probe')!;
+      expect(Object.keys(decl.inputSchema)).toContain('project');
+      const server = new McpServer({ name: 't', version: '0' });
+      expect(() => server.registerTool('probe', { description: 'p', inputSchema: decl.inputSchema as never }, (async () => ({ content: [] })) as never)).not.toThrow();
+    });
+  }
 });

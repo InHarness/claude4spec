@@ -150,8 +150,13 @@ export function workspaceMcpRouter(deps: WorkspaceMcpDeps): Router {
       // old config pointing at a migrated id fails loudly at the handshake
       // rather than on every call.
       if (fallback !== '' && !findProject(deps, fallback)) return null;
+      const workspaceScoped = composeWorkspaceScopedSurface({
+        profile,
+        listProjects: () => listProjects(freshWorkspace(deps)),
+        workspaceName: deps.workspace.name,
+      });
       const bind = (surface: ExternalSurface) =>
-        bindProjectPerCall(surface, (selector) => resolveTarget(selector, fallback, profile));
+        bindProjectPerCall(surface, (selector) => resolveTarget(selector, fallback, profile), workspaceScoped);
 
       /**
        * What the session ADVERTISES: the catalog of a template project — the
@@ -174,13 +179,7 @@ export function workspaceMcpRouter(deps: WorkspaceMcpDeps): Router {
           if (previous && previous.tools.length > 0) return previous;
         }
       }
-      return bind(
-        composeWorkspaceScopedSurface({
-          profile,
-          listProjects: () => listProjects(freshWorkspace(deps)),
-          workspaceName: deps.workspace.name,
-        }),
-      );
+      return workspaceScoped;
     },
     /**
      * The WORKSPACE, namespaced so it can never equal the project mount's
