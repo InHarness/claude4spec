@@ -433,9 +433,6 @@ export type ProjectCallTarget =
   | { ok: true; projectId: string; surface: ExternalSurface }
   | { ok: false; code: 'PROJECT_NOT_IN_WORKSPACE' | 'PROJECT_BUILD_FAILED'; message: string };
 
-const PROJECT_CALL_DESCRIPTION =
-  'Required on this connection: registry `id` of the project this call addresses, exactly as `list_projects` returns it. Not a name, not a path.';
-
 /**
  * The `project` argument every project-scoped tool takes on the workspace-bound
  * mount (M12 `np1dkobs`: there the parameter has NO default).
@@ -451,12 +448,19 @@ const PROJECT_CALL_DESCRIPTION =
  * a plugin's tools may be declared with its own zod 3 — a v4 field injected into
  * such a shape threw out of `registerTool` on the first request.
  */
+const PROJECT_CALL_ARGUMENT = z
+  .string()
+  .optional()
+  .describe('Required on this connection: registry `id` of the project this call addresses, exactly as `list_projects` returns it. Not a name, not a path.');
+const PROJECT_CALL_ARGUMENT_V3 = z3
+  .string()
+  .optional()
+  .describe('Required on this connection: registry `id` of the project this call addresses, exactly as `list_projects` returns it. Not a name, not a path.');
+
 export function projectCallArgumentFor(shape: Record<string, unknown>): unknown {
   const values = Object.values(shape);
   const isV3 = values.length > 0 && values.every((v) => !(v as { _zod?: unknown })._zod);
-  return isV3
-    ? z3.string().optional().describe(PROJECT_CALL_DESCRIPTION)
-    : z.string().optional().describe(PROJECT_CALL_DESCRIPTION);
+  return isV3 ? PROJECT_CALL_ARGUMENT_V3 : PROJECT_CALL_ARGUMENT;
 }
 
 /**
