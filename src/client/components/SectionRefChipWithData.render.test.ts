@@ -59,7 +59,7 @@ afterEach(() => {
 });
 
 function chipEl(): HTMLElement {
-  const el = host.querySelector<HTMLElement>('[data-editor-bridge-provider] [data-section-anchor="abc12345"]');
+  const el = host.querySelector<HTMLElement>('[data-section-anchor="abc12345"]');
   expect(el).not.toBeNull();
   return el!;
 }

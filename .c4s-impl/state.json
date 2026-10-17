@@ -295,7 +295,7 @@
         "entities": []
       },
       "dependsOn": [],
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "editor-bridge-singleton/p1-l2-l12",
@@ -313,15 +313,11 @@
             "chipprops",
             "xr8fs8dc"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [],
-          "only": [
-            {
-              "finding": "regression:tests/e2e/editor-l8-contexts.test.ts root kind"
-            }
-          ]
+          "only": []
         }
       ],
       "startCommit": "3c0add545d761c9188ab936f4669f7df7c4c7baa",
