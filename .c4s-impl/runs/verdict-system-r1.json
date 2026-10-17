@@ -1,0 +1,1275 @@
+{
+ "role": "verifier-system",
+ "scope": {
+  "kind": "system",
+  "id": "system"
+ },
+ "release": "2.1.28",
+ "rows": [
+  {
+   "slug": "goal:editor-bridge-singleton",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit editor-bridge-singleton, re-checked at system: slug-named test present, typecheck green] Singleton delegating to nearest provider: src/client/runtime/editor-bridge.ts:41-95 (registry register/update/unregister + capture-phase activate; resolve() = active ?? last mounted), registered by EditorBridgeProvider src/client/tiptap/EditorContext.tsx:24-60 (onClickCapture/onKeyDownCapture), exported src/client/runtime/plugin-runtime.ts:45 and declared src/plugin-types/plugin-runtime.ts:776. Chips via singleton: editor/xml-markup references shared.tsx:50, SingleElement.tsx:51, ElementList.tsx:54, TaggedList.tsx:84, TaggedListMixed.tsx:88, SectionRefChipWithData.tsx:53 (sections.tsx BridgedSectionRef/useEditorBridge removed); chat XmlChipDispatcher.tsx:32 inside ChatEditorBridgeProvider (ChatOverlay.tsx:515-919, ChatEditorBridge.tsx); plugins import editorBridge from '@c4s/plugin-runtime' (database-tables render-chip/render-card, host-ui-kit-components render/detail-panel). Hook host-only: grep useEditorBridge in code = EditorContext.tsx:68 (definition) + host-ui-kit/detail/DocEditor.tsx:188 only; no plugin, no published leg (l11-surfaces.test.ts:148-157 assertNotPublished('useEditorBridge')). Old singleton .set() publication removed (no remaining callers). Tests: editor-bridge.render.test.ts, editor-bridge-scope.test.ts, ChatEditorBridge.render.test.ts, SectionRefChipWithData.render.test.ts — read through, assertions match code. npm run typecheck exit 0."
+  },
+  {
+   "slug": "m20l11sc",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit editor-bridge-singleton, re-checked at system: slug-named test present, typecheck green] src/client/runtime/editor-bridge.render.test.ts:63 '[section:m20l11sc] ... same chip in the editor pipeline and in the chat pipeline calls each one's own bridge' — expect(calls).toEqual([['editor','endpoint','in-editor'],['chat','endpoint','in-chat']]); nested/portal cases :86,:104; editor-bridge-scope.test.ts:52 expect(users).toEqual(['src/client/host-ui-kit/detail/DocEditor.tsx','src/client/tiptap/EditorContext.tsx']) + expect(pluginRuntime).not.toHaveProperty('useEditorBridge')"
+  },
+  {
+   "slug": "nvc5wy2p",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit editor-bridge-singleton, re-checked at system: slug-named test present, typecheck green] src/client/runtime/editor-bridge.render.test.ts:123 openSection reaches provider bridge expect(calls).toEqual([['editor','guide/intro.md','abc12345']]); :130 fallback to last mounted provider, no-op with none; editor-bridge-scope.test.ts:58 host chip files import { editorBridge } from runtime/editor-bridge.js"
+  },
+  {
+   "slug": "rehyxchp",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit editor-bridge-singleton, re-checked at system: slug-named test present, typecheck green] src/client/chat/ChatEditorBridge.render.test.ts:74 chat chip via XmlChipDispatcher reaches chat-aware bridge, not sibling editor provider: expect(editorCalls).toEqual([]); expect(nav.calls).toEqual([{ to: '/endpoints/$slug', params: { slug: 'get-users' } }]); :95 chat-aware bridge only navigates (overlay untouched); :113 editorBridge.openSection inside chat provider"
+  },
+  {
+   "slug": "chipprops",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit editor-bridge-singleton, re-checked at system: slug-named test present, typecheck green] src/client/components/SectionRefChipWithData.render.test.ts:68 click -> expect(calls).toEqual([['section','guide/intro.md','abc12345']]); expect(nav.calls).toEqual([]); :77 alt+click no-op; :88 openEntityHandler -> editorBridge.openEntity spy toHaveBeenCalledWith('endpoint','get-users'); editor-bridge-scope.test.ts:72 plugin chips import editorBridge from '@c4s/plugin-runtime'"
+  },
+  {
+   "slug": "z7l89jhf",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit editor-bridge-singleton, re-checked at system: slug-named test present, typecheck green] src/client/runtime/editor-bridge-scope.test.ts:80 published EntityDetailProps fields toEqual(['slug','onDeleted','onRenamed','onBack']) + published toMatch(/export declare const editorBridge: EditorBridge;/); src/plugin-types/plugin-runtime.ts:584-590"
+  },
+  {
+   "slug": "xr8fs8dc",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit editor-bridge-singleton, re-checked at system: slug-named test present, typecheck green] src/client/runtime/editor-bridge-scope.test.ts:91 host EntityDetailProps fields toEqual(['slug','onDeleted','onRenamed','onBack']); body not.toMatch(/onOpenEntity|onOpenPage/); src/client/entities/registry.tsx:42-43"
+  },
+  {
+   "slug": "ac-detail",
+   "type": "ui-view",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit entity-screens-kit, re-checked at system: slug-named test present, typecheck green] plugins/c4s-plugin-ac/test/frontend/ac-detail-and-list.render.test.ts:259-550 — route /acs/$slug, breadcrumb/switcher/Delete via host confirm (ac-delete), EnumBadgePicker Kind/Status, GroupedRelationPicker verifies, dead target 'expect(broken)...' broken Badge (:419), collapsed TagPicker; trace line present; typecheck green"
+  },
+  {
+   "slug": "ac-list",
+   "type": "ui-view",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit entity-screens-kit, re-checked at system: slug-named test present, typecheck green] plugins/c4s-plugin-ac/test/frontend/ac-detail-and-list.render.test.ts:481 — 'expect(labels).toContain(\\'requirement\\')', 'expect(rowBadges[1]!.textContent).toContain(\\'deprecated\\')', tag chip 'm07' via Badge, ActionBar 'Analyze consistency'; :514 disabled + title 'No active AC to analyze'; code plugins/c4s-plugin-ac/src/entity/ac/frontend/list-page.tsx Badge kind/status; 40-char cut and 3-chip '+N more' not built — recorded non-blocking drift dev-2812 (goal keeps prior behaviour)"
+  },
+  {
+   "slug": "database-table-detail",
+   "type": "ui-view",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit entity-screens-kit, re-checked at system: slug-named test present, typecheck green] plugins/c4s-plugin-database-tables/test/frontend/database-table-views.render.test.ts:315-366 — DetailPanelShell (list label, slug), SegmentedControlTabs Details/History, Delete confirmed by kit Dialog in the panel (recorded divergence), LoadingState / 404 EmptyState states"
+  },
+  {
+   "slug": "database-table-list",
+   "type": "ui-view",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit entity-screens-kit, re-checked at system: slug-named test present, typecheck green] plugins/c4s-plugin-database-tables/test/frontend/database-table-views.render.test.ts:247-301 — kit list one row per table, six-line LoadingState, empty 'No database tables yet.' + hint, no-results for search and tag filter, no error state"
+  },
+  {
+   "slug": "design-system-detail",
+   "type": "ui-view",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit entity-screens-kit, re-checked at system: slug-named test present, typecheck green] plugins/c4s-plugin-frontend-mockups/test/frontend/design-system-views.render.test.ts:296-389 breadcrumb title/slug fallback, Details/History SegmentedControlTabs, Delete via design-system-delete confirm; :425 'expect(state.tagPickers.at(-1)!.variant).toBe(\\'collapsed\\')' + Badge chip 'Brand'"
+  },
+  {
+   "slug": "design-system-history",
+   "type": "ui-view",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit entity-screens-kit, re-checked at system: slug-named test present, typecheck green] plugins/c4s-plugin-frontend-mockups/test/frontend/design-system-views.render.test.ts:406 — 'expect(state.historyViews.at(-1)).toEqual({ type: \\'design-system\\', slug: \\'acme-tokens\\' })'; routes.tsx:92 <EntityVersionHistoryView type={DESIGN_SYSTEM_TYPE} slug={slug} />"
+  },
+  {
+   "slug": "design-system-list",
+   "type": "ui-view",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit entity-screens-kit, re-checked at system: slug-named test present, typecheck green] plugins/c4s-plugin-frontend-mockups/test/frontend/design-system-views.render.test.ts:436 — TagFilterBar/EntityListRow shims are bare /ui re-exports, tag chip via Badge, '3 groups'; :491 five-line LoadingState, :499 EmptyState + 'Create your first design system'; counter stays recorded CountBadge debt (dev-2813, override: recorded debt stays debt)"
+  },
+  {
+   "slug": "dto-detail",
+   "type": "ui-view",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit entity-screens-kit, re-checked at system: slug-named test present, typecheck green] plugins/c4s-plugin-api-contracts/test/frontend/dto-detail-and-list.render.test.ts:261-552 — breadcrumb/switcher/Delete (dto-delete), :288 'expect(state.tagPickers.at(-1)?.variant).toBe(\\'collapsed\\')', new tag goes to draft, examples read-only/edit/Save/invalid JSON, soft warning, drag reorder"
+  },
+  {
+   "slug": "dto-list",
+   "type": "ui-view",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit entity-screens-kit, re-checked at system: slug-named test present, typecheck green] plugins/c4s-plugin-api-contracts/test/frontend/dto-detail-and-list.render.test.ts:371-410 — EntityListHeader (title,count,search,New DTO), rows; list-page.tsx:99 trailing <Badge label={`${d.fields.length}f`} />; LoadingState; one EmptyState no filter reset"
+  },
+  {
+   "slug": "endpoint-detail",
+   "type": "ui-view",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit entity-screens-kit, re-checked at system: slug-named test present, typecheck green] plugins/c4s-plugin-api-contracts/test/frontend/endpoint-detail-history-list.render.test.ts:320-418 breadcrumb method+path, Delete endpoint-delete, tags draft; :470 'expect(state.relationPickers.at(-1)!.groups.map((g) => g.key)).toEqual([\\'request\\', \\'response\\', \\'error\\'])'"
+  },
+  {
+   "slug": "endpoint-history",
+   "type": "ui-view",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit entity-screens-kit, re-checked at system: slug-named test present, typecheck green] plugins/c4s-plugin-api-contracts/test/frontend/endpoint-detail-history-list.render.test.ts:426-455 — EntityVersionHistoryView with only type and slug; empty state for no versions and deleted entity (404)"
+  },
+  {
+   "slug": "endpoint-list",
+   "type": "ui-view",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit entity-screens-kit, re-checked at system: slug-named test present, typecheck green] plugins/c4s-plugin-api-contracts/test/frontend/endpoint-detail-history-list.render.test.ts:478 — 'expect(method!.mono).toBe(true)' for Badge 'GET' (MethodChip = /ui Badge, frontend-kit/atoms.tsx:38); :486-520 header, LoadingState, EmptyState"
+  },
+  {
+   "slug": "home-redirect-empty-state",
+   "type": "ui-view",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit entity-screens-kit, re-checked at system: slug-named test present, typecheck green] src/client/components/HomeEmptyState.render.test.ts:73 — catalog EmptyState title + ActionButton 'Create your first page' click → onNewPage; :96 bespoke card gone (no <button>/<h*>/hex); :105 IndexRoute resolveLandingTarget → Navigate /space/$rootId/$ else <HomeEmptyState/>; src/client/components/EmptyState.tsx deleted, no remaining importer"
+  },
+  {
+   "slug": "ui-view-detail",
+   "type": "ui-view",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit entity-screens-kit, re-checked at system: slug-named test present, typecheck green] plugins/c4s-plugin-frontend-mockups/test/frontend/ui-view-detail-and-list.render.test.ts:298-448 — three-tab SegmentedControlTabs, FieldRow Parameters grid sort/warning/'No parameters defined yet.', Find references 'Not referenced by any page.', Delete ui-view-delete, collapsed TagPicker draft"
+  },
+  {
+   "slug": "ui-view-history",
+   "type": "ui-view",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit entity-screens-kit, re-checked at system: slug-named test present, typecheck green] plugins/c4s-plugin-frontend-mockups/test/frontend/ui-view-detail-and-list.render.test.ts:491 — 'expect(state.historyViews.at(-1)).toEqual({ type: \\'ui-view\\', slug: \\'user-profile\\' })', tabs Details/Preview/History"
+  },
+  {
+   "slug": "ui-view-list",
+   "type": "ui-view",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit entity-screens-kit, re-checked at system: slug-named test present, typecheck green] plugins/c4s-plugin-frontend-mockups/test/frontend/ui-view-detail-and-list.render.test.ts:509 — Badges '/users/:id' and 'Mockup', presence-only 'match(/Mockup/g)).toHaveLength(1)'; :522-570 header, param count, LoadingState, EmptyState"
+  },
+  {
+   "slug": "goal:entity-screens-kit",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit entity-screens-kit, re-checked at system: slug-named test present, typecheck green] all 16 screens compose the catalog components their views name (rows above); every history route renders the host EntityVersionHistoryView with {type, slug}: ac routes.tsx:119, dto routes.tsx:107, endpoint routes.tsx:129, database-table detail-panel.tsx:600, ui-view routes.tsx:186, design-system routes.tsx:92; home empty state = src/client/components/HomeEmptyState.tsx (catalog EmptyState + ActionButton), bespoke EmptyState.tsx removed; e2e tests/e2e/welcome-routing.test.ts:165 heading targets /welcome (onboarding), unaffected"
+  },
+  {
+   "slug": "0dy3js11",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit host-kit-debts, re-checked at system: slug-named test present, typecheck green] src/client/components/PlanPage.tsx:374 <ActionBar status=… actions=[Discard,Save,Analyse plan,Run plan]> (import :3, no own sticky markup); DŁUG headers src/client/components/ArtifactThreadsPanel.tsx:1-9 (artifact-thread-list) and src/client/components/FileVersionHistory.tsx:1-11 (VersionHistory); declarations tests/integration/architecture/host-local-declarations.ts:113-132. Tests: src/client/components/PlanPage.render.test.ts '[section:0dy3js11] …' — expect(bar.actions.map((a) => a.label)).toEqual(['Analyse plan', 'Run plan']); expect(sticky!.contains(button('Run plan'))).toBe(true); toEqual(['Discard','Save','Analyse plan','Run plan']); expect(history!.getAttribute('data-kind')).toBe('plan'); tests/integration/architecture/ui-kit-gate.test.ts:164-194 — expect(entries('0dy3js11')).toEqual([debt(['ArtifactThreadsPanel']), debt(['FileVersionHistory'], ['VersionHistory'])]); filesOfKind dedups the shared FileVersionHistory file (ui-kit-gate.ts:158), M21 header check still contains 'M21'. Static read: passes."
+  },
+  {
+   "slug": "m33trst0",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit host-kit-debts, re-checked at system: slug-named test present, typecheck green] src/client/components/TrustPluginsModal.tsx:40-44 openModal('project-plugins-trust', …, { dismissible: false }), Dialog dismissible={false} (Dialog.tsx:208 scrim ignored, :143 Esc ignored, :246 ✕ only when dismissible); onClose({ trust }) with ModalMap result { trust: boolean } (src/client/ui/events.ts:325-328). Test src/client/components/TrustPluginsModal.render.test.ts '[section:m33trst0] …' — expect(host.querySelector('[aria-label=\"Close\"]')).toBeNull(); after scrim mousedown + Escape expect(onClose).not.toHaveBeenCalled(); expect(onClose).toHaveBeenCalledWith({ trust: true }) / ({ trust: false }) with setTrustPlugins recorded. Static read: passes."
+  },
+  {
+   "slug": "gox0ptn4",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit host-kit-debts, re-checked at system: slug-named test present, typecheck green] src/client/components/TrustPluginsModal.tsx:4,97-108 two catalog <ActionButton> (ghost \"Don't trust\", primary \"Trust & load\") in Dialog footer, no <button>. Tests: TrustPluginsModal.render.test.ts '[section:gox0ptn4] …' — expect(labels).toContainEqual([\"Don't trust\", 'ghost']); toContainEqual(['Trust & load', 'primary']); expect(buttons.map(...)).toEqual([\"Don't trust\", 'Trust & load']); footer.contains(b); src/client/host-ui-kit/one-implementation.test.ts:111-114 expect(src).not.toMatch(/<button\\b/). Static read: passes."
+  },
+  {
+   "slug": "goal:host-kit-debts",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit host-kit-debts, re-checked at system: slug-named test present, typecheck green] Plan-page footer = catalog ActionBar (src/client/components/PlanPage.tsx:3,374); trust gate = catalog Dialog dismissible={false} + catalog ActionButton footer (src/client/components/TrustPluginsModal.tsx:4-5,97-108); threads panel and plan file version history left unrebuilt, recorded as DŁUG (src/client/components/ArtifactThreadsPanel.tsx:1-9, src/client/components/FileVersionHistory.tsx:1-11, tests/integration/architecture/host-local-declarations.ts:113-132). No removals named. stubs.json: no stubs for this unit; no op:delete in the change read."
+  },
+  {
+   "slug": "ac-autor-bierze-tier-experimental-za-bra",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-catalog-m34, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/registry.test.ts:225 '[ac:ac-autor-bierze-tier-experimental-za-bra] ...': for every UI_KIT_CATALOG entry `expect(uiBrowserSurface, c.name).toHaveProperty(c.name); expect(PLUGIN_RUNTIME_UI_EXPORT_NAMES, c.name).toContain(c.name)` (no consumption gate); experimental entries `not.toContain` in BROWSER_STABLE and uiBackendLeg.UI_KIT_STABLE_COMPONENTS (tier = hostApiVersion list only); `expect(vendored).toEqual([])` over plugins/*/src. Static read-through: all 32 names in index.ts and frontend-manifest.ts export list; no plugin src defines a catalog name (grep of the same regex: 0 hits). typecheck exit 0."
+  },
+  {
+   "slug": "ac-overlay-czatu-m05-i-powierzchnia-edyto",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-catalog-m34, re-checked at system: slug-named test present, typecheck green] tests/integration/architecture/ui-kit-gate.test.ts:130 '[ac:ac-overlay-czatu-m05-i-powierzchnia-edyto] ...': `expect(dialog.pattern.test(readSource(toolJson))).toBe(true)` (ToolJsonView.tsx:42 zIndex: 1300 matches), `expect(ownsMarkup(toolJson)).toBe(true)`, `expect(isOutOfScope(toolJson)).toBe(true)`, `expect(findings.filter((f) => f.file === toolJson)).toEqual([])`, nothing under src/client/chat/ or src/client/tiptap/ in findings, and `expect(HOST_LOCAL_DECLARATIONS.flatMap((d) => d.files).filter(outside)).toEqual([])`. ui-kit-gate.ts:42 OUT_OF_L12_SCOPE lists chat/, ToolJsonView.tsx, tiptap/; host-local-declarations.ts names none of them. typecheck exit 0."
+  },
+  {
+   "slug": "pages/modules/m34-host-ui-kit/m34-host-ui-kit.md",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-catalog-m34, re-checked at system: slug-named test present, typecheck green] op: delete. `git grep 'm34-host-ui-kit/'` outside .c4s-impl: 0 hits; its anchors (m34l12sc, hntah0r7, m34l11sc, ...) live on in the flat page pages/modules/m34-host-ui-kit.md (create), so references to them stay valid."
+  },
+  {
+   "slug": "pages/modules/m34-host-ui-kit/L12-host-ui-kit.md",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-catalog-m34, re-checked at system: slug-named test present, typecheck green] op: delete. `git grep -E 'hpw2opbb|d97023iq|l0i0c5wm|wbs9m5zj|l5ppoanat|rxqin83v|l5pactbar|o6etg68k|88don9rv|w75z1nev|4u6q3d46|asq4yxmp|2l9kgnfo'` outside .c4s-impl: 0 hits; comments repointed to ui-kit-component records / m34l12sc (TagPicker.tsx, ui-kit-surface.ts, plugin-types/ui.ts, useToast.ts, ToastViewport.tsx, 3x useEntityListQuery.ts, database-table routes.tsx); test tags `[section:wbs9m5zj]`/`[section:l0i0c5wm]`/`[section:hpw2opbb]` removed or retagged to `[section:m34l12sc]` (useToast.render.test.ts:212-259, tag-type.test.ts:57,83)."
+  },
+  {
+   "slug": "sub-drzewo-m34",
+   "type": "spreadsheet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-catalog-m34, re-checked at system: slug-named test present, typecheck green] op: delete (spreadsheet). `git grep -E 'sub-drzewo'` outside .c4s-impl: 0 hits; no code, trace line or test names it."
+  },
+  {
+   "slug": "goal:kit-catalog-m34",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-catalog-m34, re-checked at system: slug-named test present, typecheck green] Registry mirrors the 32 ui-kit-component records read at 2.1.28 (name/group/stability/binding/fetchedByComponent dataSources match registry.test.ts:178 RECORDS, asserted at registry.test.ts:211); EntityVersionHistoryView.tsx:304 l11Surfaces = ['useVersions','useVersionDetail','useRestoreVersion','useReleases'] = record dataSources (lineDiffHunks dropped), DocEditor ['editorBridge','queryClient']; stable list derived from registry in browser (registry.ts:131) and backend leg (server/plugin-runtime/ui.ts:15 → shared ui-kit-surface.ts:39) held equal to the stable records by test (registry.test.ts:222-223), as m34l12sc states; deleted subpages and sub-drzewo-m34 leave no references in code."
+  },
+  {
+   "slug": "diff-view",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/registry.test.ts:453 expectEntryMatchesRecord (detail/experimental/presentational, composes EmptyState); src/client/host-ui-kit/detail/DiffView.render.test.ts:73 Same<DiffViewProps|Published.DiffViewProps, RecordDiffViewProps> + DiffViewLine; :81 bridge tokens --c-green-soft/--c-red-soft"
+  },
+  {
+   "slug": "doc-editor",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/registry.test.ts:454 connected, l11Surfaces [editorBridge, queryClient]; src/client/host-ui-kit/detail/DocEditor.render.test.ts:269 Same props (host + /ui); :275 default placeholder \"Description…\""
+  },
+  {
+   "slug": "entity-detail-toolbar",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/registry.test.ts:455 composes ActionButton only; src/client/host-ui-kit/detail/EntityDetailToolbar.render.test.ts:48 Same props (no brokenRefs, removed from src/plugin-types/ui.ts too); :54 title/back/busy delete"
+  },
+  {
+   "slug": "entity-version-history-view",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/registry.test.ts:456 connected, l11Surfaces [useVersions,useVersionDetail,useRestoreVersion,useReleases], composes LoadingState/EmptyState/EntityDetailToolbar/VersionHistory/SegmentedControlTabs/DiffView; src/client/host-ui-kit/detail/EntityVersionHistoryView.render.test.ts:353 Same props; :248 failed restore -> \"Restore failed\"; :377 toolbar title only; :384 renderDiff replaces DiffView"
+  },
+  {
+   "slug": "enum-badge-picker",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/registry.test.ts:457 pickers, composes Popover; src/client/host-ui-kit/pickers/EnumBadgePicker.render.test.ts:55 Same props (host + /ui)"
+  },
+  {
+   "slug": "grouped-relation-picker",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/registry.test.ts:458 pickers, composes Popover; src/client/host-ui-kit/pickers/GroupedRelationPicker.render.test.ts:59 Same props (host + /ui)"
+  },
+  {
+   "slug": "references-list",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/registry.test.ts:459 composes LoadingState+EmptyState, useReferences feedsProps (no l11Surfaces); src/client/host-ui-kit/detail/ReferencesList.render.test.ts:53 Same props + ReferencesListItem; :61 loading -> 3 .skeleton, empty -> \"No references\""
+  },
+  {
+   "slug": "rich-text-field",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/registry.test.ts:460; src/client/host-ui-kit/detail/RichTextField.render.test.ts:76 Same props + RichTextFieldToolbarItem; :84 default toolbar [bold,italic,heading,list,table,code] + placeholder \"Write…\""
+  },
+  {
+   "slug": "segmented-control-tabs",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/registry.test.ts:461; src/client/host-ui-kit/detail/SegmentedControlTabs.render.test.ts:47 Same props (host + /ui)"
+  },
+  {
+   "slug": "tag-picker",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/registry.test.ts:462 composes Badge+Popover, useTags/tagsService feedsProps; src/client/host-ui-kit/detail/TagPicker.render.test.ts:72 Same props (host + /ui); r2: idempotentCreate signature (allTags, selected, onToggle, onCreate) internal, not re-exported via index.ts/src/plugin-types/ui.ts; TagPickerProps unchanged vs record props"
+  },
+  {
+   "slug": "version-history",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/registry.test.ts:463 composes EmptyState; src/client/host-ui-kit/detail/VersionHistory.render.test.ts:67 Same props + VersionHistoryItem; :137 Compare to calls onCompare, marks compareVersion"
+  },
+  {
+   "slug": "ac-allowrestore-false-ukrywa-akcje-rest",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/EntityVersionHistoryView.render.test.ts:218 expect(buttons('Restore')).toEqual([]) with timeline + Compare to rendered"
+  },
+  {
+   "slug": "ac-badge-changedby-w-widoku-historii-ent",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/EntityVersionHistoryView.render.test.ts:428 agent badge style var(--c-blue…) vs user var(--c-green…), styles differ; src/client/host-ui-kit/detail/VersionHistory.test.ts:5"
+  },
+  {
+   "slug": "ac-diffview-bez-niepustych-hunks-z-podan-2",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/DiffView.render.test.ts:168,175 only before / only after -> \"No differences\", text absent, no [role=alert]; DiffView.tsx:50 requires both"
+  },
+  {
+   "slug": "ac-diffview-bez-niepustych-hunks-z-podan",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/DiffView.render.test.ts:142 two [data-diff-pane=text] in grid-cols-2 with verbatim lines [a,b]/[a,c], no add/del tints, no +/- markers; :160 empty hunks + pair, inline mode still 2 panes"
+  },
+  {
+   "slug": "ac-diffview-m34-experimental-renderuje-p",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/DiffView.render.test.ts:95 inline: one column, tints + markers; :112 split: two row-paired columns"
+  },
+  {
+   "slug": "ac-diffview-z-niepustymi-hunks-i-jednocz",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/DiffView.render.test.ts:131 hunks + pair -> \"from-hunks\" shown, pair texts absent, textPanes().length 0"
+  },
+  {
+   "slug": "ac-diffview-z-pustym-propsem-hunks-renderuj",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/DiffView.render.test.ts:184,190 no props and hunks:[] -> \"No differences\", no alert"
+  },
+  {
+   "slug": "ac-doceditor-m34-experimental-host-wired",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/registry.test.ts:126 DocEditor connected, l11Surfaces toEqual([editorBridge, queryClient]), both exported by plugin-runtime.ts"
+  },
+  {
+   "slug": "ac-doceditor-obsluguje-slash-commands",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/DocEditor.render.test.ts:196 \"/\" opens palette with command:mention, picking runs it (mention popover opened, \"/\" consumed)"
+  },
+  {
+   "slug": "ac-doceditor-pozwala-wstawic-odnosnik-do",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/DocEditor.render.test.ts:226 inline_mention {type:dto, slug:user-response} in doc; onChange markdown contains <inline_mention type=\"dto\" slug=\"user-response\"/>"
+  },
+  {
+   "slug": "ac-entitydetailtoolbar-przy-operacji-dele",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/EntityDetailToolbar.render.test.ts:69 after delete click: no [role=dialog], no Cancel button; EntityDetailToolbar.tsx:42 onClick={onDelete}"
+  },
+  {
+   "slug": "ac-entityversionhistoryview-bez-wybranej",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/EntityVersionHistoryView.render.test.ts:398 one version -> Diff tab \"Nothing to compare\", no alert, v1 still shown"
+  },
+  {
+   "slug": "ac-entityversionhistoryview-dla-encji-bez",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/EntityVersionHistoryView.render.test.ts:412 data [] -> \"No versions yet\", no alert/tablist; :420 custom emptyState rendered instead"
+  },
+  {
+   "slug": "ac-entityversionhistoryview-ma-stability",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/registry.test.ts:86 stability experimental, BROWSER_STABLE excludes it, HOST_API_VERSION 2.1.0"
+  },
+  {
+   "slug": "ac-entityversionhistoryview-otwarty-dla",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/EntityVersionHistoryView.render.test.ts:165 404 -> \"No versions yet\", no tablist/pre/alert/\"deleted\"; :178 caller emptyState"
+  },
+  {
+   "slug": "ac-entityversionhistoryview-pokazuje-w-z",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/EntityVersionHistoryView.render.test.ts:149 select v1, Snapshot tab -> pre textContent toBe(JSON.stringify(v1,null,2))"
+  },
+  {
+   "slug": "ac-entityversionhistoryview-przy-showrel",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/EntityVersionHistoryView.render.test.ts:308 group headings [\"Release 2.1.0\",\"Release 2.0.0\"]; fallback \"Release 7\" (false form: ASSUMPTION dev-2809, non-blocking)"
+  },
+  {
+   "slug": "ac-entityversionhistoryview-renderuje-kom",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/EntityVersionHistoryView.render.test.ts:359 type+slug only -> timeline group, Comparing 1, Restore 1, Diff tab selected with lineDiffHunks line \"email\" + \"+\" marker"
+  },
+  {
+   "slug": "ac-enumbadgepicker-grupa-pickers-m34-expe",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/pickers/EnumBadgePicker.render.test.ts:61 coloured badge, options in [role=dialog] Popover, onChange(\"DELETE\"), value stays prop, any enum; :83 imports Popover, no Badge, readOnly opens nothing"
+  },
+  {
+   "slug": "ac-groupedrelationpicker-grupa-pickers-m34",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/pickers/GroupedRelationPicker.render.test.ts:65 groups from props, onRemove(\"request\",\"user-in\") chip stays, onAdd(\"response\",\"err\"), no fetch"
+  },
+  {
+   "slug": "ac-groupedrelationpicker-z-zadanym-maxheigh",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/pickers/GroupedRelationPicker.render.test.ts:85 '+ link' per group opens its own popover with only that group's candidates, onGroupOpen per key"
+  },
+  {
+   "slug": "ac-komponent-entitydetailtoolbar-m34-e",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/EntityDetailToolbar.render.test.ts:79 onDelete called once with no args, fetch not called, title still rendered"
+  },
+  {
+   "slug": "ac-komponent-referenceslist-m34-experi",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/ReferencesList.render.test.ts:71 rows from references, onOpen(REFS[0]), fetch not called"
+  },
+  {
+   "slug": "ac-komponent-richtextfield-m34-experim",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/RichTextField.render.test.ts:93 value rendered, onChange last \"Hello there\", no fetch, no host-only imports in source"
+  },
+  {
+   "slug": "ac-komponent-segmentedcontroltabs-grupa",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/SegmentedControlTabs.render.test.ts:53 tablist from tabs/active, onChange(\"history\"), aria-selected stays prop-driven, no fetch"
+  },
+  {
+   "slug": "ac-komponent-tagpicker-m34-experimenta",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/TagPicker.render.test.ts:78 chips [Auth,Billing,Zażółć gęślą] via Badge, onToggle(\"billing\"); :95 onCreate(\"Payments\")"
+  },
+  {
+   "slug": "ac-komponent-versionhistory-m34-experi",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/VersionHistory.render.test.ts:75 versions from prop, onSelect(\"2\"), onRestore(\"1\"), Restore on non-active rows only, no fetch"
+  },
+  {
+   "slug": "ac-line-diff-w-c4s-ma-jedna-implementacje-r",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/lib/release-diff/to-diff-view.test.ts:5 keep/added/removed+content -> ctx/add/del+line; DiffView.tsx:18-24 legacy fallback gone; PageDiffCard.tsx:150 adapts via toDiffViewHunks"
+  },
+  {
+   "slug": "ac-lista-kandydatow-w-popoverze-grupy-gr",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/pickers/GroupedRelationPicker.render.test.ts:105 panel.style.maxHeight toBe(\"280px\"), inner .overflow-auto"
+  },
+  {
+   "slug": "ac-restore-w-entityversionhistoryview-pr",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/EntityVersionHistoryView.render.test.ts:227 click Restore -> useRestoreVersion().mutate called with {type:dto,slug:user-dto,version:2}; onRestored only on hook onSuccess"
+  },
+  {
+   "slug": "ac-richtextfield-m34-experimental-render",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/RichTextField.render.test.ts:110 h2/strong/em/ul>li x2/table/pre code in .ProseMirror, no textarea, contenteditable true -> readOnly false"
+  },
+  {
+   "slug": "ac-richtextfield-w-trybie-readonly-rend",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/RichTextField.render.test.ts:126 strong \"me\", contenteditable false, isEditable false, 0 buttons, onChange not called"
+  },
+  {
+   "slug": "ac-tagpicker-oncreate-dla-nazwy-dajacej-j",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/TagPicker.render.test.ts:104 Auth/auth/'  AUTH '/'zażółć  gęślą'/Billing/' billing ' -> expect(onCreate).not.toHaveBeenCalled(); onToggle only for existing unselected [['auth'],['auth'],['auth'],['zazolc-gesla']], selected 'billing' untouched; idempotentCreate(TAGS,['billing'],toggle,spy): spy.mock.calls toEqual([['Billing v2']]); TagPicker.tsx:153-168 existing slug never reaches onCreate (record: onCreate no-op), rev-0001 regression fixed"
+  },
+  {
+   "slug": "ac-tagpicker-w-wariancie-collapsed-renderuj",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/TagPicker.render.test.ts:122 chips [Billing] + \"+2\"; Popover shows all chips + New tag… input; flat variant renders no Popover"
+  },
+  {
+   "slug": "ac-versionhistory-bez-podanego-variant-r",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/VersionHistory.render.test.ts:94 no variant -> 3 ul>li, no version-group-, no timeline dot, no Compare to"
+  },
+  {
+   "slug": "ac-versionhistory-w-wariancie-variant-time",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/VersionHistory.render.test.ts:104 each [data-timeline-row] has 2 children, rail with dot, connector within group, accent dot on active"
+  },
+  {
+   "slug": "ac-versionhistory-z-pustym-propsem-versi",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/VersionHistory.render.test.ts:147 versions [] -> \"No versions yet\" (flat and timeline), no alert"
+  },
+  {
+   "slug": "ac-versionhistory-z-variant-timeline-ren",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/VersionHistory.render.test.ts:121 groups [__unreleased__, release:Release 2.1.0], heading button text \"Release 2.1.0\", single label leaf"
+  },
+  {
+   "slug": "ac-w-wariancie-collapsed-tagpicker-odslania",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/TagPicker.render.test.ts:143 80 tags: panel maxHeight 240px, body overflow-auto with 80 chips, input only in footer sibling"
+  },
+  {
+   "slug": "ac-w-widoku-entityversionhistoryview-wers",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/EntityVersionHistoryView.render.test.ts:282 groups [__unreleased__, Release 2.1.0, Release 2.0.0], v4 in Unreleased, no per-row pill; :326 showReleasePill=false keeps grouping"
+  },
+  {
+   "slug": "m13l11sc",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/registry.test.ts:465 VersionHistory/DiffView/EntityVersionHistoryView code has no useVersionDiff/EntityDiff; src/server/plugin-runtime/l11-surfaces.test.ts:92 lineDiffHunks returns {op:add|del|ctx; line}[]; EntityVersionHistoryView.tsx:138 lineDiffHunks over two useVersionDetail snapshots"
+  },
+  {
+   "slug": "goal:kit-detail-history",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-detail-history, re-checked at system: slug-named test present, typecheck green] DiffView.tsx:49-73 hunks win, pair -> BeforeAfterPanes, else EmptyState; VersionHistory.tsx:87 variant=flat default, :95 timeline groupByRelease; EntityVersionHistoryView.tsx:173-178 restore via useRestoreVersion, :292 placeholder \"Nothing to compare\", :60 \"Release <id>\" group heading; EntityDetailToolbar.tsx:42 onDelete direct, Dialog+brokenRefs removed (also src/plugin-types/ui.ts); GroupedRelationPicker.tsx:120 one Popover per GroupRow, maxHeight 280; no useVersionDiff in history components (registry.test.ts:465)"
+  },
+  {
+   "slug": "action-bar",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/actions/ActionBar.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('action-bar') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/actions/ActionBar.render.test.ts:51,62,100 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "action-button",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/actions/ActionButton.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('action-button') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/actions/ActionButton.render.test.ts:47,55,65,73 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "badge",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/actions/Badge.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('badge') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/actions/Badge.render.test.ts:62,68,76,87 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "dialog",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/overlay/Dialog.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('dialog') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/overlay/Dialog.render.test.ts:232,238,249 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "empty-state",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/list/EmptyState.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('empty-state') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/list/EmptyState.render.test.ts:61,66 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "entity-list-layout",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/list/EntityListLayout.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('entity-list-layout') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/list/EntityListLayout.render.test.ts:40,46,61 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "entity-list-row",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/list/EntityListRow.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('entity-list-row') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/list/EntityListRow.render.test.ts:54,61,75,80,91 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "form-field",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/form/FormField.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('form-field') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/form/FormField.render.test.ts:41,47,57 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "form-shell",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/overlay/FormShell.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('form-shell') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/overlay/FormShell.render.test.ts:70,76 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "grouped-entity-list",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/list/GroupedEntityList.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('grouped-entity-list') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/list/GroupedEntityList.render.test.ts:57,68,82 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "inline-edit-field",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/form/InlineEditField.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('inline-edit-field') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/form/InlineEditField.render.test.ts:54,60,73 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "loading-state",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/actions/LoadingState.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('loading-state') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/actions/LoadingState.render.test.ts:48,54,61 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "pagination",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/list/Pagination.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('pagination') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/list/Pagination.render.test.ts:44,50,59 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "popover",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/overlay-feedback/Popover.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('popover') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/overlay-feedback/Popover.render.test.ts:142,148,159 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "tag-filter-bar",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/list/TagFilterBar.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('tag-filter-bar') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/list/TagFilterBar.render.test.ts:72,80,92,105 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "toast-viewport",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/overlay-feedback/ToastViewport.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('toast-viewport') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/overlay-feedback/ToastViewport.render.test.ts:64,78,99,126 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "ac-badge-z-podanym-onclick-jest-osiagaln",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/actions/Badge.render.test.ts:96-110 expect(el.tabIndex).toBe(0); role='button'; focus() -> document.activeElement===el; without onClick no tabindex/role. Badge.tsx:73 spreads {role:'button',tabIndex:0,onKeyDown} when onClick"
+  },
+  {
+   "slug": "ac-badge-z-podanym-onclick-wywoluje-oncl",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/actions/Badge.render.test.ts:113-133 keydown Enter / ' ' -> expect(onClick).toHaveBeenCalledTimes(1); other keys and keys on nested remove button not. Badge.tsx onKeyDown handles Enter/Space with target===currentTarget"
+  },
+  {
+   "slug": "ac-badge-z-variant-broken-renderuje-wari",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/actions/Badge.test.ts:15-32 expect(html).toContain(`color:${RED}`); border red; expect(html).not.toContain(GIVEN) also when active"
+  },
+  {
+   "slug": "ac-dialog-grupa-overlay-create-jest-contr",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/overlay/Dialog.render.test.ts:78-153 registry overlay/experimental/presentational; scrim aria-modal fixed inset-0, panel background var(--c-card) + var(--c-hair-strong); onClose called 3x but scrim stays until consumer flips open; Tab trap; fetchSpy not called"
+  },
+  {
+   "slug": "ac-dialog-i-formshell-sa-w-tierze-experimen",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/overlay/FormShell.render.test.ts:131-148 both experimental and exported by uiBrowserSurface + published d.ts; not in UI_KIT_STABLE_COMPONENTS, BACKEND_STABLE, VERSIONED_UI_KIT_COMPONENTS nor recordedUiKitStableComponents()"
+  },
+  {
+   "slug": "ac-dialog-jest-odrebny-od-host-internal-con",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/overlay/Dialog.render.test.ts:415-432 kit source has no ui/events import, UI_EVENTS, confirmDestructive; ConfirmModal imports Dialog and uses UI_EVENTS.CONFIRM; /ui surface has Dialog, not ConfirmModal/ConfirmLayer"
+  },
+  {
+   "slug": "ac-dialog-przyjmuje-dismissible-boolean",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/overlay/Dialog.render.test.ts:278-346 default: scrim/Escape/✕ -> onClose x3; dismissible={false}: no Close button, onClose not called, scrim stays; only footer action closes; scrim/panel style identical and Tab trap holds"
+  },
+  {
+   "slug": "ac-dialog-przyjmuje-width-number-doklad",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/overlay/Dialog.render.test.ts:158-189 width 400 wins over tier (style.width '400px'); without width tier width; maxHeight equals DIALOG_SIZE_TIERS[size].maxHeight with width given"
+  },
+  {
+   "slug": "ac-dialog-renderuje-wiersz-naglowka-z-przyc",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/overlay/Dialog.render.test.ts:259-273 with title header + button[aria-label=Close] click -> onClose x1; without title part('header') null and no Close button"
+  },
+  {
+   "slug": "ac-dialog-scrolluje-wewnetrznie-cialo-przy",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/overlay/Dialog.render.test.ts:194-227 panel flex-col maxHeight tier; body overflowY auto, minHeight 0, flex-1; footer outside body, body.nextElementSibling===footer, flexShrink 0"
+  },
+  {
+   "slug": "ac-drawer-boczny-wariant-powloki-side-le",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/overlay/Dialog.render.test.ts:437-445 no /drawer/i catalog entry or /ui export, plugin-types/ui.ts has no Drawer, Dialog has no side prop (empty verifies: checked against its own text per build override)"
+  },
+  {
+   "slug": "ac-formshell-komponuje-atomy-formfield-inli",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/overlay/FormShell.render.test.ts:88-126 children FormField/InlineEditField rendered as given, source imports neither; busy -> fieldset.disabled; error rendered below fields; onSubmit called once, fetchSpy not called, no mutation imports"
+  },
+  {
+   "slug": "ac-groupedentitylist-jest-importowalny-z",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/runtime/plugin-runtime-ui.test.ts:16 PLUGIN_RUNTIME_UI_EXPORT_NAMES contains GroupedEntityList, typeof function, catalog entry; src/server/core/plugin-host/runtime-shims.test.ts:60 shim contains 'export const GroupedEntityList = __m[\"GroupedEntityList\"];'"
+  },
+  {
+   "slug": "ac-groupedentitylist-rysuje-tekst-pomocn",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/tokens.render.test.ts:243-265 used vars == ['--c-hair','--c-muted'], all in HOST_TOKEN_NAMES, resolved in both theme modes; expect(host.innerHTML).not.toMatch(/#[0-9a-f]{3,8}\\b|rgba?\\(|hsla?\\(/i)"
+  },
+  {
+   "slug": "ac-onclose-jest-wymagany-w-obu-wariantach-d",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/overlay/Dialog.render.test.ts:351-385 @ts-expect-error on missing onClose for both variants (typecheck green), one props shape; dismissible={false}: scrim/Escape give no onClose call, consumer closes via state"
+  },
+  {
+   "slug": "ac-panel-dialog-w-tierze-size-sm-ma-420px",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/overlay/Dialog.render.test.ts:390-410 sm panel style.width '420px'; ConfirmModal panel '400px', 400 not a tier width, ConfirmModal source matches /<Dialog[\\s\\S]*?width=\\{400\\}/ and no size="
+  },
+  {
+   "slug": "ac-popover-grupa-overlay-feedback-m34-exp",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/overlay-feedback/Popover.render.test.ts:77-137 entry feedback/experimental/presentational; renders only with open; outside click/Escape -> onClose x2 but stays open; no fetch; kit source has no ui/events/openPopover/UI_EVENTS, host facade imports catalog Popover"
+  },
+  {
+   "slug": "ac-popover-z-zadanym-maxheight-scrolluje-we",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/overlay-feedback/Popover.render.test.ts:171-200 maxHeight 240px, panel overflow hidden flex-col, body overflow-auto minHeight 0; footer outside body as last child; no cap without maxHeight"
+  },
+  {
+   "slug": "ac-toastviewport-usetoast-grupa-overlay",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/overlay-feedback/useToast.render.test.ts:159-193 ToastViewport feedback/experimental, useToast a /ui export not a catalog entry, neither stable; handle keys exactly ['error','success','warning'], each rendered in host stack, markup contains 'z-index:var(--z-toast)'"
+  },
+  {
+   "slug": "goal:kit-primitives",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit kit-primitives, re-checked at system: slug-named test present, typecheck green] New behaviour: src/client/host-ui-kit/actions/Badge.tsx:56-73 (tabIndex 0 + role button + Enter/Space -> onClick when onClick given); all 16 records' props/types match code (Same<> checks in *.render.test.ts, typecheck green) and registry entries checked in src/client/host-ui-kit/registry.test.ts:288-378; no other component code changed"
+  },
+  {
+   "slug": "detail-panel-shell",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit m13-detail-scaffold, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/core/DetailPanelShell.tsx (props breadcrumb/actions?/children, type DetailBreadcrumb {label; onClick?}, withStability 'stable'); registry.ts:84 entry('DetailPanelShell','core'); ui-kit-surface.ts:41 + host-api.ts:720 stable list; plugin-types/ui.ts:32-41. Tests: registry.test.ts '[entity:detail-panel-shell] registry entry matches the record' (core/stable/presentational/no L11/composes nothing); DetailPanelShell.render.test.ts '[entity:detail-panel-shell]' x2: `Same<DetailPanelShellProps, RecordDetailPanelShellProps>` host+published, `expect(VERSIONED_UI_KIT_COMPONENTS).toContain('DetailPanelShell')`, actions slot in bar above body, buttons ['Endpoints','Delete'] (no own Edit/Delete). typecheck exit 0."
+  },
+  {
+   "slug": "document-body",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit m13-detail-scaffold, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/DocumentBody.tsx (title?/children/maxWidth=1000, padding 16px 32px 48px, heading-1/lede/body bridge vars, withStability 'experimental'); registry.ts:108 entry('DocumentBody','detail'); not on stable list; plugin-types/ui.ts:362-367. Tests: registry.test.ts '[entity:document-body] registry entry matches the record'; DocumentBody.render.test.ts '[entity:document-body]' x2: `Same<DocumentBodyProps, RecordDocumentBodyProps>`, `not.toContain('DocumentBody')` in VERSIONED_UI_KIT_COMPONENTS, maxWidth '1000px'/'800px', padding '16px 32px 48px'. lede selection is ASSUMPTION:dev-2808 (non-blocking deviation filed). typecheck exit 0."
+  },
+  {
+   "slug": "field-grid",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit m13-detail-scaffold, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/core/FieldGrid.tsx (children, maxWidth=1000, padding 16px 32px 48px, flex-col, 'stable'); registry.ts:86; ui-kit-surface.ts:43; plugin-types/ui.ts:43-47. Tests: registry.test.ts '[entity:field-grid] registry entry matches the record'; FieldGrid.render.test.ts '[entity:field-grid]' x2: `Same<FieldGridProps, RecordFieldGridProps>`, `expect(grid.style.maxWidth).toBe('1000px')`, `expect(grid.style.padding).toBe('16px 32px 48px')`. typecheck exit 0."
+  },
+  {
+   "slug": "field-row",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit m13-detail-scaffold, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/core/FieldRow.tsx (label, children, align 'center'|'start' default center, label column width 140, 'stable'); registry.ts:85; ui-kit-surface.ts:42; plugin-types/ui.ts:49-54. Tests: registry.test.ts '[entity:field-row] registry entry matches the record'; FieldRow.render.test.ts '[entity:field-row]' x2: `Same<FieldRowProps, RecordFieldRowProps>` (no value prop), `expect(labelCol.style.width).toBe('140px')`, alignItems center / flex-start. typecheck exit 0."
+  },
+  {
+   "slug": "ac-detailpanelshell-renderuje-ostatni-cz",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit m13-detail-scaffold, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/core/DetailPanelShell.render.test.ts '[ac:ac-detailpanelshell-renderuje-ostatni-cz]': `expect(headers).toHaveLength(1)`; `expect(header.textContent).toBe('GET /users/:id')` (last hop); aria-level '1', aria-current 'page'; `expect(header.closest('button')).toBeNull()`. Code DetailPanelShell.tsx renders last hop as span role=heading aria-level=1 aria-current=page fontWeight 600 — passes when read through."
+  },
+  {
+   "slug": "ac-documentbody-kontrybuowany-przez-m13-e",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit m13-detail-scaffold, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/detail/DocumentBody.render.test.ts '[ac:ac-documentbody-kontrybuowany-przez-m13-e]': title input value/placeholder/readOnly false, `fontFamily 'var(--font-heading)'`, `fontSize 'var(--text-h1)'`, onChange called with 'Checkout v2'; content `var(--font-body)/var(--text-body)/var(--weight-body)`; CSS `/\\[data-c4s-document-body\\] p\\.lede\\{[^}]*font-family:var\\(--font-heading\\)/` + --text-lede/--weight-lede/italic; flex-col, `expect(host.querySelectorAll('[style*=\"140\"]')).toHaveLength(0)` (no FieldGrid grid). Matches code; lede via p.lede per ASSUMPTION:dev-2808."
+  },
+  {
+   "slug": "ac-fieldgrid-uklada-w-kolumne-wiersze-fi",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit m13-detail-scaffold, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/core/FieldGrid.render.test.ts '[ac:ac-fieldgrid-uklada-w-kolumne-wiersze-fi]': `expect(grid.className.split(/\\s+/)).toEqual(expect.arrayContaining(['flex','flex-col']))`; `expect([...grid.children].map((row) => row.textContent)).toEqual(['MethodGET','Path/users/:id'])`; with children null `toHaveLength(0)` (renders no rows itself). Matches FieldGrid.tsx."
+  },
+  {
+   "slug": "ac-fieldrow-renderuje-jeden-wiersz-pary",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit m13-detail-scaffold, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/core/FieldRow.render.test.ts '[ac:ac-fieldrow-renderuje-jeden-wiersz-pary]': `expect(row.children).toHaveLength(2)`; `expect(field!.textContent).toBe('Owner')`; value holds chip `'@alice'` and button 'Change' (arbitrary JSX children); `expect(field!.querySelector('[data-testid=\"chip\"]')).toBeNull()`. Matches FieldRow.tsx."
+  },
+  {
+   "slug": "goal:m13-detail-scaffold",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit m13-detail-scaffold, re-checked at system: slug-named test present, typecheck green] Header = last breadcrumb hop: core/DetailPanelShell.tsx (last ? span role=heading); grid lays rows in a column: core/FieldGrid.tsx flex-col children only; row label + children value: core/FieldRow.tsx; DocumentBody detail/DocumentBody.tsx experimental; stable props versioned: shared/plugin-host/host-api.ts:720 UI_KIT_STABLE_AT_2_0_0 ['EntityListHeader','DetailPanelShell','FieldRow','FieldGrid'], ui-kit-surface.ts:41-43; registry.test.ts '[section:m13l12sc]' asserts /ui exports + VERSIONED list (DocumentBody excluded). Other readers (plugin render tests, published-surface.test.ts, ui-kit-gate.test.ts) do not assert on the changed markup. No stubs (stubs.json empty), no deletions, no jobs."
+  },
+  {
+   "slug": "tag-list-item",
+   "type": "dto",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit m18-tags-kit, re-checked at system: slug-named test present, typecheck green] Fields unchanged 2.1.27->2.1.28 (only tags m18-tags->m18, spec metadata). src/plugin-types/plugin-runtime.ts:877 TagListItem {slug:string; name:string; color:string|null; description:string|null; counts:Record<string,number>}; src/shared/entities.ts:267 TagListItem = Tag. Live payload: src/server/routes/tags.route.test.ts:502 '[entity:tag-list-item] every item carries slug, name, color, description and counts...' asserts types per item + toMatchObject({name:'Auth', color:null, description:null}). Type level: tags.route.test.ts:534 expectTypeOf<keyof TagListItem>().toEqualTypeOf<'slug'|'name'|'color'|'description'|'counts'>(), toMatchTypeOf<Tag>(), toMatchTypeOf<PickerItem>(); src/client/runtime/tag-list-item.types.test.ts:406 (compiled by typecheck) Same<TagListItem, TagListItemDto>, const tags: Tag[] = items; const allTags: TagPickerProps['allTags'] = items. npm run typecheck exit 0."
+  },
+  {
+   "slug": "tags-list",
+   "type": "ui-view",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit m18-tags-kit, re-checked at system: slug-named test present, typecheck green] src/client/components/TagsList.tsx:123-147 row = <EntityListRow leading={<ColorSwatch/>} trailing={counts}> with name in children via InlineEditField (:138); colour via Popover (:187). Tests src/client/components/TagsList.render.test.ts:269 [entity:tags-list] expect(last.icon).toBeUndefined(); leading contains 'aria-label=\"Change tag color\"'; trailing '2 endpoints · 1 DTO'; :282 click name -> input, Enter -> mutate {slug:'auth', input:{name:'Authn'}}, input closed, list still mounted; :311 dot click -> Popover open, anchorRef.current === dot, palette click -> mutate {color:'#7d9a6d'}, closed; :331 screenCode not.toMatch(/<input\\b|<textarea\\b/), not position fixed/createPortal/role=dialog. Read against InlineEditField.tsx / Popover.tsx: passes. Row navigation (click -> ?tag=, 'Show all [type]') not built, pre-existing and unchanged in this window; recorded as non-blocking drift dev-2810 (beyond the goal's observable change, per build override)."
+  },
+  {
+   "slug": "ac-pozycja-o-ksztalcie-tag-list-item-jes",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit m18-tags-kit, re-checked at system: slug-named test present, typecheck green] src/plugin-types/tag-type.test.ts:58 '[ac:ac-pozycja-o-ksztalcie-tag-list-item-jes] a tag-list-item is assignable to Tag from @c4s/plugin-runtime/ui without a cast' compiles an author file against published plugin-runtime.ts/ui.ts: 'export const one: Tag = items[0]!; export const all: Tag[] = items; export const bar: TagBarProps['tags'] = items;' (verifies tag-list-item + tag-filter-bar) -> expect(compileAuthorFile(source)).toEqual([]); expect(source).not.toMatch(/\\bas\\b|<Tag>.../); negative control {slug}[] -> diagnostics > 0."
+  },
+  {
+   "slug": "mn59j0le",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit m18-tags-kit, re-checked at system: slug-named test present, typecheck green] src/plugin-types/tag-type.test.ts:437 '[section:mn59j0le] useTags().data items go to TagPicker.allTags, to the /ui Tag and into an EntityListRow tagLookup as they are': compiles \"const allTags: TagPickerProps['allTags'] = items; const tags: Tag[] = items; const tagLookup: EntityListRowProps['tagLookup'] = new Map(items.map((t) => [t.slug, t]))\" -> toEqual([]), no 'as'; negative control > 0."
+  },
+  {
+   "slug": "xfkinig4",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit m18-tags-kit, re-checked at system: slug-named test present, typecheck green] src/client/components/TagsList.render.test.ts:217 [section:xfkinig4] rows through EntityListRow slots (rowProps toHaveLength(TAGS.length), icon undefined, dot in leading, name in children, counters in trailing, order dot<name<counts); :227 [section:xfkinig4] for (const mod of kitImports) expect(consumed.has(mod), mod).toBe(true) over the 11 consumed components incl. inline-edit-field. TagsList.tsx imports only list/EntityListRow, form/InlineEditField, overlay-feedback/Popover. Bespoke header/empty state left as non-blocking drift dev-2811."
+  },
+  {
+   "slug": "goal:m18-tags-kit",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit m18-tags-kit, re-checked at system: slug-named test present, typecheck green] Row from EntityListRow + inline name/colour edit via InlineEditField + Popover: src/client/components/TagsList.tsx:123-147,187. TagListItem assignable to /ui Tag and TagPicker allTags without cast: src/plugin-types/plugin-runtime.ts:877, tests tag-type.test.ts:58,437, tag-list-item.types.test.ts:406 (typecheck exit 0). DTO fields unchanged (release-diff before/after identical fields; tag m18 is spec metadata, no code counterpart)."
+  },
+  {
+   "slug": "entity-list-header",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit m19-list-header, re-checked at system: slug-named test present, typecheck green] trace.md:62; src/client/host-ui-kit/core/EntityListHeader.tsx:20-34 props = record (icon?: LucideIcon, title, count?, search?, onSearchChange?(q), searchPlaceholder?, filters?, actions?), withStability(...,'stable'), presentational, search box width 280; registry.ts:83 entry('EntityListHeader','core',...); ui-kit-surface.ts:40 on stable list; plugin-types/ui.ts:56-67 published props. Tests: registry.test.ts:488 expectEntryMatchesRecord('entity-list-header') (core/stable/presentational/no l11Surfaces/composes []); EntityListHeader.render.test.ts:130 `Same<EntityListHeaderProps, EntityListHeaderRecordProps>` host+published, no onCreate/createLabel; :143 '7 results' / no counter; :151 no input without search, width '280px', onSearchChange('users'); :165 search < filters < actions (last); :189 no CountBadge"
+  },
+  {
+   "slug": "ac-entitylistrow-icon-experimental-m34",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit m19-list-header, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/core/EntityListHeader.render.test.ts:195 — `Exact<HeaderIcon, LucideIcon>, Exact<RowIcon, LucideIcon>, Exact<PubHeaderIcon, LucideIcon>, Exact<PubRowIcon, LucideIcon>, Exact<HeaderIcon, RowIcon>`; tier('EntityListHeader')='stable', tier('EntityListRow')='experimental'; one lucide List renders in both (2 svgs, same class). Code: EntityListRow.tsx:1,23 `icon?: LucideIcon`; EntityListHeader.tsx:1,22. Typecheck green."
+  },
+  {
+   "slug": "ac-plugin-renderuje-komponent-entitylisthea",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit m19-list-header, re-checked at system: slug-named test present, typecheck green] src/client/runtime/entity-list-page.render.test.ts:66 — `expect(ui.EntityListHeader).toBe(CatalogEntityListHeader)`; shared-runtime.ts:39 maps '@c4s/plugin-runtime/ui'; every plugin source naming EntityListHeader imports it from '@c4s/plugin-runtime/ui' (verified: ac, api-contracts dto/endpoint, database-tables routes, frontend-mockups ListPageHeader + ui-view list-page, host-ui-kit-components routes); listed screens render `<EntityListHeader`; every /ui-consuming plugin vite.config EXTERNAL has 'react' and '@c4s/plugin-runtime/ui' (ac, api-contracts, database-tables, frontend-mockups, host-ui-kit-components, layered-vertical-slices verified); `expect(definers).toEqual(['src/client/host-ui-kit/core/EntityListHeader.tsx'])` — grep confirms the only other definition is plugin-types/ui.ts:67 `declare const` (excluded)."
+  },
+  {
+   "slug": "ac-typ-lucideicon-w-stable-propsach-l12",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit m19-list-header, re-checked at system: slug-named test present, typecheck green] src/client/host-ui-kit/core/EntityListHeader.render.test.ts:228 — `Exact<NonNullable<Published.EntityListHeaderProps['icon']>, LucideIcon>`; plugin-types/ui.ts:27 `import type { LucideIcon } from 'lucide-react';` (no local alias), :58 `icon?: LucideIcon;`; SHARED_PEER_SPECIFIERS contains 'lucide-react' (frontend-manifest.ts:98); package.json dependencies lucide-react ^0.469.0, exports['./plugin-runtime/ui'].types = './dist/plugin-types/ui.d.ts'; on UI_KIT_STABLE_COMPONENTS + VERSIONED_UI_KIT_COMPONENTS; `expect(HOST_API_VERSION).toBe('2.1.0')` (manifest.ts:176, no bump)."
+  },
+  {
+   "slug": "goal:m19-list-header",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit m19-list-header, re-checked at system: slug-named test present, typecheck green] Header meets its record incl. LucideIcon from the lucide peer: EntityListHeader.tsx, registry.ts:83, ui-kit-surface.ts:40, plugin-types/ui.ts:27,56-67. Native list page + create-from-list composed from catalog: entity-list-page.render.test.ts:120 [section:thm8a14c] (EntityListLayout→EntityListHeader+search→TagFilterBar in filters→EntityListRow; LoadingState/EmptyState; '2 results'/'0 results'), :170 [section:9v3i7vs1] (ActionButton in actions→controlled Dialog→FormShell; mutate/invalidate/close/openEntity; no onCreate/createLabel), :247 [section:m19l12sc] consumed components all /ui exports and experimental. Host and plugin render the same header: :66 ui.EntityListHeader === catalog component, single definer. Nothing removed beyond prose (no op:delete in the change read; recipe anchors thm8a14c, 9v3i7vs1, m19l12sc match)."
+  },
+  {
+   "slug": "rgczgux0",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit plugin-ui-debts, re-checked at system: slug-named test present, typecheck green] tests/integration/architecture/ui-kit-gate.test.ts:534 '[section:rgczgux0] DiagramView is local, DiagramFullscreen is a DŁUG shell…' — expect(entries('rgczgux0')).toEqual([{kind:'local',components:['DiagramView']…}, debt(['DiagramFullscreen'])]) + assertFullscreenShellDebt (DEBT header with rgczgux0, 'fullscreen-overlay'); declarations tests/integration/architecture/host-local-declarations.ts:307-323; DiagramPopover declaration dropped (DiagramForm.tsx no gate finding, gate (a) violations()==[]); DEBT header src/client/components/DiagramFullscreen.tsx:27; debtMarkedFiles==filesOfKind('debt') (ui-kit-gate.test.ts:109) stays consistent; read through: passes"
+  },
+  {
+   "slug": "dgmfull000",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit plugin-ui-debts, re-checked at system: slug-named test present, typecheck green] src/client/components/DiagramFullscreen.tsx:24 `export const DIAGRAM_FULLSCREEN_LAYER = 1200;` used at :164 `zIndex: DIAGRAM_FULLSCREEN_LAYER` (c4s-paper-terra z-modal; bridge has only --z-popover/--z-toast, src/client/host-ui-kit/tokens.ts:70-71 — ASSUMPTION dev-2804, non-blocking); tests: ui-kit-gate.test.ts:543 '[section:dgmfull000]…' expect(src).not.toMatch(/zIndex:\\s*\\d/) + scanFindings for the file == []; tests/integration/entities/hidden-type-envelopes.test.ts:322 expect(dialog.style.zIndex).toBe('1200'); read through: passes"
+  },
+  {
+   "slug": "jsejrh30",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit plugin-ui-debts, re-checked at system: slug-named test present, typecheck green] ui-kit-gate.test.ts:528 '[section:jsejrh30] CodeSnippetView is local, CodeSnippetFullscreen is a DŁUG shell…' — entries('jsejrh30').slice(0,2) toEqual [local CodeSnippetView, debt(['CodeSnippetFullscreen'])], assertFullscreenShellDebt (DEBT header still at plugins/c4s-plugin-code-snippets/src/entity/code-snippet/frontend/fullscreen.tsx:25 with jsejrh30 + 'fullscreen-overlay', round-2 docblock edit kept it), assertStruck(['CodeSnippetCard','CodeSnippetChip']); read through: passes"
+  },
+  {
+   "slug": "2i5ypc7q",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit plugin-ui-debts, re-checked at system: slug-named test present, typecheck green] tests/integration/entities/hidden-type-envelopes.test.ts:368 '[section:2i5ypc7q] opened from the chip (INLINE)…' — expect(snippetFetches).toEqual(['one']), full code + filename, Escape → onClose once; :393 '[section:2i5ypc7q] opened from the card (BLOCK, Maximize2)…' — clicks button[aria-label=\"Open fullscreen\"] (card.tsx:169 handOffCodeSnippet(record) then onOpen()), mounts the same renderOverlay CodeSnippetFullscreen with {slug:'one'}: expect(snippetFetches).toEqual([]), textContent contains 'card/held.py'/'held by the card'; a following chip open: expect(snippetFetches).toEqual(['one']). Code: fullscreen.tsx:48 given ?? takeHandedOffCodeSnippet(slug), hooks.ts handOff slot (consumed once, same slug only); hooks mock spreads importOriginal so the real hand-off runs; read through: passes"
+  },
+  {
+   "slug": "s7ao66dy",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit plugin-ui-debts, re-checked at system: slug-named test present, typecheck green] plugins/c4s-plugin-spreadsheets/test/frontend/expand-window.test.ts (happy-dom, real render; hooks.js mocked with fetchShape/fetchWindow/useEntityChanged — the only exports node-view.tsx/module.tsx import): :92 renderOverlay===SpreadsheetFullscreen, querySelectorAll('input, textarea, select, [contenteditable=\"true\"]') length 0, buttons toEqual ['Close'], document keydown Escape → onClose once (listener on document, node-view.tsx:525); :113 windows toEqual [[1,1,50,2]] (ROW_WINDOW 50), box overflow 'auto', no R51; :123 scroll appends [51..100], [101..120], 120 <tr>, 'rows 1–120 of 120', no 4th read, each ≤50 rows; :145 refused window → 'Rows 1–50 could not be read.' and no retry. Code: SpreadsheetScrollGrid node-view.tsx:351 (fetchWindow(slug, r1, 1, r2, nCols) :397), mounted by SpreadsheetFullscreen :579; happy-dom clientHeight 0 keeps the fill-box effect idle so read counts hold; read through: passes. hidden-type-expand.test.ts:144 [section:s7ao66dy] unaffected (no render)"
+  },
+  {
+   "slug": "lg0e57j1",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit plugin-ui-debts, re-checked at system: slug-named test present, typecheck green] ui-kit-gate.test.ts:481 entries('lg0e57j1') toEqual [debt(['SpreadsheetFullscreen']), debt(POPOVER_FORM,['FormField'])]; :493 DEBT header contains 'lg0e57j1' and 'fullscreen-overlay' (node-view.tsx:336), violationsWithout == [{anatomy:Dialog}]; no '@c4s/plugin-runtime/ui' import in the package (consumed: none); host-local-declarations.ts:241-250; read through: passes"
+  },
+  {
+   "slug": "vnufk8nt",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit plugin-ui-debts, re-checked at system: slug-named test present, typecheck green] plugins/c4s-plugin-database-tables/test/frontend/database-table-views.render.test.ts:130 '[section:vnufk8nt] query keys stay outside the host refresh prefixes…Delete is confirmed by the kit Dialog' — hooks.ts:14-15 match `[DATABASE_TABLE_TYPE, 'list', q]` / `[DATABASE_TABLE_TYPE, 'detail', slug]`, no entity:changed/indexed in frontend/, detail-panel.tsx:1347 `<Dialog`, no confirmDestructive( ; recorded debts kept; read through: passes"
+  },
+  {
+   "slug": "uyu88bdw",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit plugin-ui-debts, re-checked at system: slug-named test present, typecheck green] database-table-views.render.test.ts:90 '[section:uyu88bdw] [section:5d3hfpij] colours come only from the host token bridge…' — expect(offenders).toEqual([]) over every package source (comments stripped) for var(--x, …) fallbacks and hex/rgb/hsl/white/black literals; grep of plugins/c4s-plugin-database-tables/src finds hits only in comments (render-chip.tsx:26, render-card.tsx:32); fixes popover-form.tsx:77,106,124, frontend-kit/slash-create.tsx:115; existing consumed/host-local test in the same describe; read through: passes"
+  },
+  {
+   "slug": "5d3hfpij",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit plugin-ui-debts, re-checked at system: slug-named test present, typecheck green] database-table-views.render.test.ts:90 (no colour literal / no token fallback, as above) and :120 '[section:5d3hfpij] a broken slug: only the chip and the card have a broken branch' — render-chip.tsx:40 and render-card.tsx:112 `if (!entity)`, renderRow/renderChip/renderCard defined (module.tsx:46-48); read through: passes"
+  },
+  {
+   "slug": "uvrender",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit plugin-ui-debts, re-checked at system: slug-named test present, typecheck green] plugins/c4s-plugin-frontend-mockups/test/frontend/ui-view-detail-and-list.render.test.ts:208 — detail-panel.tsx:13-14 `import { useTags } from '@c4s/plugin-runtime';` / `import { useReferences } from '@c4s/plugin-runtime';`, :106 `useTags()`, :108 `useReferences('ui-view', …)`; entity/ui-view/index.ts declares neither; read through: passes"
+  },
+  {
+   "slug": "yn1fk80a",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit plugin-ui-debts, re-checked at system: slug-named test present, typecheck green] ui-kit-gate.test.ts:449 entries('yn1fk80a') starts with {kind:'local',components:['UiViewPreview']} (host-local-declarations.ts:219-228); :459 '[section:yn1fk80a] the mockup preview frame is a bare <iframe> with a sandbox attribute…' — preview-page.tsx:208 `export function UiViewPreview`, single <iframe at :224 with sandbox= at :244, no HtmlViewer, only iframe in the package; read through: passes"
+  },
+  {
+   "slug": "wklad-do-edytora-entity-database-table#`/database-table`",
+   "type": "spreadsheet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit plugin-ui-debts, re-checked at system: slug-named test present, typecheck green] plugins/c4s-plugin-database-tables/test/slash-command.test.ts:171 [entity:wklad-do-edytora-entity-database-table#`/database-table`] — one contributes.commands entry trigger 'database-table' (src/capabilities/commands.ts:20,24) with popoverKind 'database-table-create' (identity.ts:45), no editorExtensions slashCommand (module.tsx:54); read through: passes"
+  },
+  {
+   "slug": "wklad-do-edytora-entity-database-table#generyczne osadzenie `type: \"database-table\"` — popover `database-table-create`",
+   "type": "spreadsheet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit plugin-ui-debts, re-checked at system: slug-named test present, typecheck green] slash-command.test.ts:181 — entity/database-table/frontend/slash-create.tsx:205 `mountSlashCreatePopover(DATABASE_TABLE_POPOVER_KIND`, :162 `data-plugin-popover={DATABASE_TABLE_POPOVER_KIND}`, no kit Dialog in it or frontend-kit/slash-create.tsx, :152 `columns: []`, databaseTableEmbedNode('orders').attrs toEqual {type:'database-table',slug:'orders'} (:70-75); read through: passes"
+  },
+  {
+   "slug": "goal:plugin-ui-debts",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit plugin-ui-debts, re-checked at system: slug-named test present, typecheck green] three fullscreen shells recorded as DŁUG with replacedBy [] and 'fullscreen-overlay' trajectory (host-local-declarations.ts DiagramFullscreen/CodeSnippetFullscreen/SpreadsheetFullscreen; DEBT headers DiagramFullscreen.tsx:27, fullscreen.tsx:24, node-view.tsx:336); diagram overlay off the literal 1300 onto the z-modal layer via DIAGRAM_FULLSCREEN_LAYER (DiagramFullscreen.tsx:24,164) — the bridge has no z-modal variable, so 'z mostu tokenów' rests on ASSUMPTION dev-2804 (non-blocking); spreadsheet-expand read-only, scrollable through the whole sheet, range-windowed (SpreadsheetScrollGrid node-view.tsx:351-397, mounted at :579); database-tables colours from the bridge with no fallbacks (popover-form.tsx, frontend-kit/slash-create.tsx); ui-view preview = local sandboxed iframe UiViewPreview (preview-page.tsx:208-244); runtime binding to useTags/useReferences (detail-panel.tsx:13-14)"
+  },
+  {
+   "slug": "encje-pluginy#c4s-plugin-host-ui-kit-components",
+   "type": "spreadsheet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "[unit ui-kit-type-package, re-checked at system: slug-named test present, typecheck green] trace.md line present; plugins/c4s-plugin-host-ui-kit-components/src/manifest.ts:23 (contributes.entities = [uiKitComponentEntity], hostApiVersion '^2.1.0'), src/entity/ui-kit-component/index.ts:25 (backend.mcpServer only, pathPrefix '/ui-kit-components' mounted under /api); package discovered by builtin-envelopes.ts directory scan and added to build/test/typecheck:envelopes. Tests: test/manifest-shape.test.ts:12 `expect(manifest.contributes?.entities?.map((e) => e.type)).toEqual(['ui-kit-component'])`, `expect(Object.keys(uiKitComponentEntity.backend ?? {})).toEqual(['mcpServer'])`; test/live-type.test.ts:35 `expect(t.host.listEntities().map((m) => m.type)).toContain('ui-kit-component')`. Row Zakres (record fields, contentBearing anatomy, audit server with 4 rules, visible ELEMENTS tab, grouped list, detail route) matched in schema.ts, backend/audit.ts, frontend/module.tsx, frontend/routes.tsx."
+  },
+  {
+   "slug": "ac-kazdy-wpis-katalogu-host-ui-kit-deklaruj",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit ui-kit-type-package, re-checked at system: slug-named test present, typecheck green] schema.ts binding: { type: 'enum', values: UI_KIT_BINDINGS, required: true } with no default. test/live-type.test.ts:45 POST without binding `expect(missing.status).toBe(400)`, binding 'hybrid' `expect(wrong.status).toBe(400)`, `expect(list.body.data).toEqual([])`, and both presentational/connected `expect(ok.status).toBe(201)`; test/manifest-shape.test.ts:49 `expect(binding).not.toHaveProperty('default')`. Static read: passes against code as written."
+  },
+  {
+   "slug": "ac-komponent-o-binding-connected-jawni",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit ui-kit-type-package, re-checked at system: slug-named test present, typecheck green] schema.ts dataSources item {export: string required, usage: enum fetchedByComponent|feedsProps}; audit.ts rule connected-without-fetch. test/audit.test.ts:24 `expect(violations.map((v) => [v.rule, v.slugs])).toEqual([['connected-without-fetch', ['only-feeds']], ['connected-without-fetch', ['no-sources']]])` and version-view (fetchedByComponent) not reported; test/live-type.test.ts:67 through REST proxy `expect(payload.violations.map((v) => [v.rule, v.slugs])).toEqual([['connected-without-fetch', ['silent-view']]])`; test/manifest-shape.test.ts:56 usage enum asserted. entities-router.ts:126/462 proxy shape (content[0].text, isError→httpStatusForCode) consistent with assertions."
+  },
+  {
+   "slug": "goal:ui-kit-type-package",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[unit ui-kit-type-package, re-checked at system: slug-named test present, typecheck green] Package plugins/c4s-plugin-host-ui-kit-components exists; entity type ui-kit-component with data model (src/entity/ui-kit-component/schema.ts), generated host CRUD under /api/ui-kit-components (no backend.routes, index.ts), ELEMENTS sidebarTab (frontend/module.tsx sidebarTab order 110), list grouped by group enum order (frontend/list-model.ts groupRecords, frontend/routes.tsx GroupedEntityList; test/frontend/list-model.test.ts:25), detail route (routes.tsx /ui-kit-components/$slug, detail-panel.tsx), tools server ui-kit-component-tools with audit_ui_kit_components covering cross-field and cross-record rules (backend/mcp.ts, backend/audit.ts; test/audit.test.ts), required group/stability/binding without defaults so an unclassified record is refused (test/live-type.test.ts:45 and [section:l12slice0] stability test). Non-blocking deviations dev-2801..2803 recorded."
+  },
+  {
+   "slug": "ac-wiersz-listy-endpointow-pokazuje-meto",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[not in any recipe; unchanged AC whose verifies points at a ui-view changed in 2.1.28 -> entity-screens-kit] plugins/c4s-plugin-api-contracts/test/frontend/endpoint-detail-history-list.render.test.ts:530 first row child is the method Badge 'PATCH', before the path (compareDocumentPosition FOLLOWING)"
+  },
+  {
+   "slug": "ac-wiersz-listy-endpointow-pokazuje-path",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[not in any recipe; unchanged AC whose verifies points at a ui-view changed in 2.1.28 -> entity-screens-kit] endpoint-detail-history-list.render.test.ts:546 main column firstElementChild.textContent toBe('/api/orders'), summary second line, slug last"
+  },
+  {
+   "slug": "ac-lista-endpointow-bez-zadnej-encji-i-l",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[not in any recipe; unchanged AC whose verifies points at a ui-view changed in 2.1.28 -> entity-screens-kit] endpoint-detail-history-list.render.test.ts:563 no endpoints and filtered-to-nothing: expect(noMatch).toEqual(none); same empty markup"
+  },
+  {
+   "slug": "ac-pole-detalu-endpointu-edytowane-lokal",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[not in any recipe; unchanged AC whose verifies points at a ui-view changed in 2.1.28 -> entity-screens-kit] endpoint-detail-history-list.render.test.ts:650 locally edited summary kept after external refetch; save carries path '/api/people' + user's summary"
+  },
+  {
+   "slug": "ac-pole-kind-na-stronie-detalu-ac-zmieni",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[not in any recipe; unchanged AC whose verifies points at a ui-view changed in 2.1.28 -> entity-screens-kit] plugins/c4s-plugin-ac/test/frontend/ac-detail-and-list.render.test.ts:329 EnumBadgePicker over ['requirement','edge-case'], no radio, autosave input.kind 'edge-case'"
+  },
+  {
+   "slug": "ac-pole-status-na-stronie-detalu-ac-zmie",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[not in any recipe; unchanged AC whose verifies points at a ui-view changed in 2.1.28 -> entity-screens-kit] ac-detail-and-list.render.test.ts:355 EnumBadgePicker over ['active','deprecated'], line-through title, autosave input.status 'deprecated'"
+  },
+  {
+   "slug": "ac-panel-verifies-na-stronie-detalu-ac-g",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "[not in any recipe; unchanged AC whose verifies points at a ui-view changed in 2.1.28 -> entity-screens-kit] ac-detail-and-list.render.test.ts:382 GroupedRelationPicker groups ['ac','endpoint','dto','ui-view'] in registry order, targets grouped by type"
+  },
+  {
+   "slug": "ac-gdy-zapamietana-strona-z-c4s-m02-last-p",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "Active AC (unchanged in window) whose verifies = ui-view home-redirect-empty-state (updated in 2.1.28, owned by unit entity-screens-kit); not in any recipe. git grep '[ac:ac-gdy-zapamietana-strona-z-c4s-m02-last-p]' -> 0 hits. The behaviour appears tested in src/client/lib/landing.test.ts:30-129 (resolveLandingTarget) and src/client/components/HomeEmptyState.render.test.ts:72-118, but under names without the [ac:] slug - rename/tag those tests (and confirm each AC's assertion)."
+  },
+  {
+   "slug": "ac-wejscie-na-przy-braku-klucza-c4s-m0",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "Active AC (unchanged in window) whose verifies = ui-view home-redirect-empty-state (updated in 2.1.28, owned by unit entity-screens-kit); not in any recipe. git grep '[ac:ac-wejscie-na-przy-braku-klucza-c4s-m0]' -> 0 hits. The behaviour appears tested in src/client/lib/landing.test.ts:30-129 (resolveLandingTarget) and src/client/components/HomeEmptyState.render.test.ts:72-118, but under names without the [ac:] slug - rename/tag those tests (and confirm each AC's assertion)."
+  },
+  {
+   "slug": "ac-wejscie-na-przy-braku-klucza-i-braku",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "Active AC (unchanged in window) whose verifies = ui-view home-redirect-empty-state (updated in 2.1.28, owned by unit entity-screens-kit); not in any recipe. git grep '[ac:ac-wejscie-na-przy-braku-klucza-i-braku]' -> 0 hits. The behaviour appears tested in src/client/lib/landing.test.ts:30-129 (resolveLandingTarget) and src/client/components/HomeEmptyState.render.test.ts:72-118, but under names without the [ac:] slug - rename/tag those tests (and confirm each AC's assertion)."
+  },
+  {
+   "slug": "ac-wejscie-na-przy-braku-klucza-index",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "Active AC (unchanged in window) whose verifies = ui-view home-redirect-empty-state (updated in 2.1.28, owned by unit entity-screens-kit); not in any recipe. git grep '[ac:ac-wejscie-na-przy-braku-klucza-index]' -> 0 hits. The behaviour appears tested in src/client/lib/landing.test.ts:30-129 (resolveLandingTarget) and src/client/components/HomeEmptyState.render.test.ts:72-118, but under names without the [ac:] slug - rename/tag those tests (and confirm each AC's assertion)."
+  },
+  {
+   "slug": "ac-wejscie-na-przy-istniejacym-c4s-m02",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "Active AC (unchanged in window) whose verifies = ui-view home-redirect-empty-state (updated in 2.1.28, owned by unit entity-screens-kit); not in any recipe. git grep '[ac:ac-wejscie-na-przy-istniejacym-c4s-m02]' -> 0 hits. The behaviour appears tested in src/client/lib/landing.test.ts:30-129 (resolveLandingTarget) and src/client/components/HomeEmptyState.render.test.ts:72-118, but under names without the [ac:] slug - rename/tag those tests (and confirm each AC's assertion)."
+  },
+  {
+   "slug": "ac-wejscie-na-przy-pustym-drzewie-stron",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "Active AC (unchanged in window) whose verifies = ui-view home-redirect-empty-state (updated in 2.1.28, owned by unit entity-screens-kit); not in any recipe. git grep '[ac:ac-wejscie-na-przy-pustym-drzewie-stron]' -> 0 hits. The behaviour appears tested in src/client/lib/landing.test.ts:30-129 (resolveLandingTarget) and src/client/components/HomeEmptyState.render.test.ts:72-118, but under names without the [ac:] slug - rename/tag those tests (and confirm each AC's assertion)."
+  },
+  {
+   "slug": "deviation:dev-2801",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-2801.json sent: True"
+  },
+  {
+   "slug": "deviation:dev-2802",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-2802.json sent: True"
+  },
+  {
+   "slug": "deviation:dev-2803",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-2803.json sent: True"
+  },
+  {
+   "slug": "deviation:dev-2804",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-2804.json sent: True"
+  },
+  {
+   "slug": "deviation:dev-2805",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-2805.json sent: True"
+  },
+  {
+   "slug": "deviation:dev-2806",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-2806.json sent: True"
+  },
+  {
+   "slug": "deviation:dev-2807",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-2807.json sent: True"
+  },
+  {
+   "slug": "deviation:dev-2808",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-2808.json sent: True"
+  },
+  {
+   "slug": "deviation:dev-2809",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-2809.json sent: True"
+  },
+  {
+   "slug": "deviation:dev-2810",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-2810.json sent: True"
+  },
+  {
+   "slug": "deviation:dev-2811",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-2811.json sent: True"
+  },
+  {
+   "slug": "deviation:dev-2812",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-2812.json sent: True"
+  },
+  {
+   "slug": "deviation:dev-2813",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-2813.json sent: True"
+  }
+ ],
+ "suite": {
+  "command": "npm run typecheck (full npm test + test:e2e run by the orchestrator in env-runner)",
+  "exitCode": 0,
+  "summary": "> tsc --noEmit -> exit 0. Static: stubs.json stubs [] (no open row); all 13 deviations sent:true; trace.md has a line for every created/updated built entity (32 ui-kit-component, 17 ui-view, 1 dto) and built part items, none for the deleted spreadsheet sub-drzewo-m34; user-jobs table absent at 2.1.28 (no job rows); no new .skip/.only/.todo in the diff."
+ }
+}

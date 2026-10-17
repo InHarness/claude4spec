@@ -38,6 +38,10 @@ const state = vi.hoisted(() => ({
   emptyStates: [] as Array<{ title: string; hint?: unknown; action?: unknown }>,
   loadingStates: [] as Array<{ lines?: number }>,
   segmented: [] as Array<{ active: string; tabs: Array<{ id: string; label: string }> }>,
+  historyViews: [] as Array<Record<string, unknown>>,
+  allTags: [] as Array<{ slug: string; name: string; color: string | null }>,
+  tagPickers: [] as Array<{ variant?: string }>,
+  badges: [] as Array<{ label: unknown }>,
 }));
 
 vi.mock('@tanstack/react-router', () => ({
@@ -67,7 +71,7 @@ vi.mock('@c4s/plugin-runtime', async () => {
       onRegistryChanged: () => () => undefined,
       registryVersion: () => 1,
     },
-    useTags: () => ({ data: [] }),
+    useTags: () => ({ data: state.allTags }),
     useReferences: () => ({ data: state.refs }),
     EditorBridgeProvider: ({ children }: { children: ReactNode }) => children,
     queryClient: null,
@@ -113,8 +117,8 @@ vi.mock('@c4s/plugin-runtime/ui', async () => {
     };
   const Passthrough = ({ children }: { children?: ReactNode }) => h('div', null, children);
   return {
-    TagPicker: tagMod.TagPicker,
-    Badge: badgeMod.Badge,
+    TagPicker: spy(tagMod.TagPicker, (p) => { if (p) state.tagPickers.push(p as never); }),
+    Badge: spy(badgeMod.Badge, (p) => { if (p) state.badges.push(p as never); }),
     FieldRow: rowMod.FieldRow,
     FieldGrid: gridMod.FieldGrid,
     ActionButton: btnMod.ActionButton,
@@ -128,8 +132,14 @@ vi.mock('@c4s/plugin-runtime/ui', async () => {
     SegmentedControlTabs: spy(segMod.SegmentedControlTabs, (p) => state.segmented.push(p as never)),
     // The description editor: a plain textarea stands in for the ProseMirror one.
     DocEditor: ({ value }: { value: string }) => h('textarea', { 'aria-label': 'Description', defaultValue: value }),
+    // The host history block: records exactly the props the route hands it.
+    // React's dev build may also call a component with no props (component
+    // stack); only calls with props are recorded.
+    EntityVersionHistoryView: (p?: Record<string, unknown>) => {
+      if (p) state.historyViews.push({ ...p });
+      return h('div', { 'data-testid': 'entity-version-history-view' });
+    },
     // Not rendered by these cases.
-    EntityVersionHistoryView: () => null,
     Dialog: Passthrough,
     FormShell: Passthrough,
     FormField: Passthrough,
@@ -244,6 +254,10 @@ beforeEach(() => {
   state.emptyStates = [];
   state.loadingStates = [];
   state.segmented = [];
+  state.historyViews = [];
+  state.allTags = [];
+  state.tagPickers = [];
+  state.badges = [];
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -388,7 +402,67 @@ describe('[entity:design-system-detail] /design-systems/:slug', () => {
   });
 });
 
+describe('[entity:design-system-history] /design-systems/:slug/history', () => {
+  it('[entity:design-system-history] is registered under /design-systems/$slug/history and renders the host EntityVersionHistoryView for type design-system with only type and slug — no history UI of its own', async () => {
+    const history = routeTable().get('/design-systems/$slug/history');
+    expect(history).toBeDefined();
+    await render(createElement(history!.component));
+
+    expect(state.historyViews.length).toBeGreaterThan(0);
+    // The same generic block as endpoint-history: type + slug, nothing type-specific.
+    expect(state.historyViews.at(-1)).toEqual({ type: 'design-system', slug: 'acme-tokens' });
+    expect(container.querySelectorAll('[data-testid="entity-version-history-view"]')).toHaveLength(1);
+    // The Details / History switcher over SegmentedControlTabs, History active.
+    const seg = state.segmented.at(-1)!;
+    expect(seg.active).toBe('history');
+    expect(seg.tabs.map((t) => t.label)).toEqual(['Details', 'History']);
+    // The detail panel is not rendered on the history route.
+    expect(buttons('Delete', container)).toHaveLength(0);
+  });
+});
+
+describe('[entity:design-system-detail] 2.1.28 composition', () => {
+  it('[entity:design-system-detail] tags are a collapsed kit TagPicker whose chips render through Badge', async () => {
+    state.allTags = [{ slug: 'brand', name: 'Brand', color: null }];
+    state.ds = sampleDs({ tags: ['brand'] } as Partial<DesignSystem>);
+    await render(createElement(routeTable().get('/design-systems/$slug')!.component));
+    expect(state.tagPickers.length).toBeGreaterThan(0);
+    expect(state.tagPickers.at(-1)!.variant).toBe('collapsed');
+    expect(state.badges.map((b) => String(b.label))).toContain('Brand');
+  });
+});
+
 describe('[entity:design-system-list] /design-systems', () => {
+  it('[entity:design-system-list] 2.1.28 composition — rows and the tag bar are the kit EntityListRow and TagFilterBar (the package files are bare re-exports of /ui); the groups/tokens counter stays the recorded CountBadge debt', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const kitDir = join(import.meta.dirname, '../../src/frontend-kit');
+    const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    // TagFilterBar shim: nothing but the /ui re-export.
+    expect(strip(readFileSync(join(kitDir, 'TagFilterBar.tsx'), 'utf-8')).trim()).toBe(
+      "export * from '@c4s/plugin-runtime/ui';",
+    );
+    // EntityListRow shim: the /ui re-export, plus the recorded CountBadge debt only.
+    const rowShim = readFileSync(join(kitDir, 'EntityListRow.tsx'), 'utf-8');
+    expect(rowShim).toMatch(/export \* from '@c4s\/plugin-runtime\/ui';/);
+    expect(rowShim).toMatch(/DEBT \([^)]*Host UI Kit[^)]*\): `CountBadge`/);
+    expect(strip(rowShim)).not.toMatch(/export function EntityListRow\b/);
+
+    state.list = [listItem({ tags: ['brand'] })];
+    await render(
+      createElement(DesignSystemsList, {
+        search: '',
+        tagFilter: [],
+        onSearchChange: () => undefined,
+        onTagToggle: () => undefined,
+        onSelect: () => undefined,
+      }),
+    );
+    // The row's tag chip comes from the kit row, through Badge.
+    expect(state.badges.map((b) => String(b.label))).toContain('brand');
+    expect(container.textContent).toContain('3 groups');
+  });
+
   it('[entity:design-system-list] is registered under /design-systems and renders the header (title, count, search, New Design System) and rows with the groups count, sorted by title', async () => {
     const list = routeTable().get('/design-systems');
     expect(list).toBeDefined();

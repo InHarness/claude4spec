@@ -1,0 +1,15 @@
+{
+  "id": "dev-2813",
+  "kind": "clarification",
+  "blocking": false,
+  "address": "entity-screens-kit/yn1fk80a",
+  "slugs": [
+    "design-system-list"
+  ],
+  "text": "ui-view `design-system-list` (2.1.28) names the kit `Badge` for the row's \"N groups / M tokens\" counter. The code draws it with the package-local `CountBadge` (plugins/c4s-plugin-frontend-mockups/src/frontend-kit/EntityListRow.tsx), which the specification records as a DŁUG replaced by `Badge` — but in the ui-view slice (`yn1fk80a`), while the only consumer is the design-system list and the design-system slice (`mq3b803z`) does not list it. Built as recorded debt (the override keeps recorded debt as debt): the counter stays `CountBadge`; rows and the tag bar are the kit `EntityListRow` / `TagFilterBar` (the package files are bare `/ui` re-exports). Needs: either move the CountBadge DŁUG entry to the design-system slice (and keep it), or retire it so a follow-up swaps the counter to `Badge`.",
+  "assumption": "ASSUMPTION:dev-2813 — the design-system list counter stays the recorded CountBadge debt in this window.",
+  "unit": "entity-screens-kit",
+  "portion": "entity-screens-kit/p1-l5-l12",
+  "sent": true,
+  "patchPath": "2-1-27-to-2-1-28-entity-screens-kit-yn1fk80a-ui-view-design-system-list-2-1-28-names-the-kit-badg.md"
+}

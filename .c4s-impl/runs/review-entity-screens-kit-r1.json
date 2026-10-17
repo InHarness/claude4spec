@@ -1,0 +1,10 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "entity-screens-kit",
+    "base": "066791901340a3a30e1a3c23015c2f263e230a40"
+  },
+  "findings": [],
+  "deviations": []
+}

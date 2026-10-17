@@ -1451,13 +1451,51 @@
           "why": "ekrany składają się z komponentów tych jednostek."
         }
       ],
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "entity-screens-kit/p1-l5-l12",
+          "layers": [
+            "L5",
+            "L12"
+          ],
+          "slugs": [
+            "ac-detail",
+            "ac-list",
+            "database-table-detail",
+            "database-table-list",
+            "design-system-detail",
+            "design-system-history",
+            "design-system-list",
+            "dto-detail",
+            "dto-list",
+            "endpoint-detail",
+            "endpoint-history",
+            "endpoint-list",
+            "home-redirect-empty-state",
+            "ui-view-detail",
+            "ui-view-history",
+            "ui-view-list"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [
+            "ac-gdy-zapamietana-strona-z-c4s-m02-last-p",
+            "ac-wejscie-na-przy-braku-klucza-c4s-m0",
+            "ac-wejscie-na-przy-braku-klucza-i-braku",
+            "ac-wejscie-na-przy-braku-klucza-index",
+            "ac-wejscie-na-przy-istniejacym-c4s-m02",
+            "ac-wejscie-na-przy-pustym-drzewie-stron"
+          ],
+          "only": []
+        }
+      ],
+      "startCommit": "30093b0ebebde666200551fd0be6bbca44d46d2d",
+      "baseCommit": "066791901340a3a30e1a3c23015c2f263e230a40",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
       "jobs": [],
       "wave": 4

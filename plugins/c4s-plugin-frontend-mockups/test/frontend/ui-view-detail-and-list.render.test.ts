@@ -44,6 +44,8 @@ const state = vi.hoisted(() => ({
   loadingStates: 0,
   segmented: [] as Array<{ active: string; tabs: Array<{ id: string; label: string }> }>,
   confirms: [] as Array<{ kind: string; title: string; body: string }>,
+  historyViews: [] as Array<Record<string, unknown>>,
+  badges: [] as Array<{ label: unknown }>,
 }));
 
 vi.mock('@tanstack/react-router', () => ({
@@ -122,7 +124,7 @@ vi.mock('@c4s/plugin-runtime/ui', async () => {
   const Passthrough = ({ children }: { children?: ReactNode }) => h('div', null, children);
   return {
     TagPicker: spy(tagMod.TagPicker, (p) => state.tagPickers.push(p as never)),
-    Badge: badgeMod.Badge,
+    Badge: spy(badgeMod.Badge, (p) => { if (p) state.badges.push(p as never); }),
     FieldRow: rowMod.FieldRow,
     FieldGrid: gridMod.FieldGrid,
     ActionButton: btnMod.ActionButton,
@@ -139,8 +141,13 @@ vi.mock('@c4s/plugin-runtime/ui', async () => {
     GroupedRelationPicker: relMod.GroupedRelationPicker,
     // The description editor: a plain textarea stands in for the ProseMirror one.
     DocEditor: ({ value }: { value: string }) => h('textarea', { 'aria-label': 'Description', defaultValue: value }),
+    // The host history block: records exactly the props the route hands it
+    // (calls without props — React dev's component-stack call — are skipped).
+    EntityVersionHistoryView: (p?: Record<string, unknown>) => {
+      if (p) state.historyViews.push({ ...p });
+      return h('div', { 'data-testid': 'entity-version-history-view' });
+    },
     // Not rendered by these cases.
-    EntityVersionHistoryView: () => null,
     Dialog: Passthrough,
     FormShell: Passthrough,
     FormField: Passthrough,
@@ -249,6 +256,8 @@ beforeEach(() => {
   state.emptyStates = [];
   state.loadingStates = 0;
   state.segmented = [];
+  state.historyViews = [];
+  state.badges = [];
   state.confirms = [];
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -478,7 +487,38 @@ describe('[entity:ui-view-detail] /ui-views/:slug', () => {
   });
 });
 
+describe('[entity:ui-view-history] /ui-views/:slug/history', () => {
+  it('[entity:ui-view-history] is registered under /ui-views/$slug/history and renders the host EntityVersionHistoryView for type ui-view with only type and slug — no history UI of its own', async () => {
+    const history = routeTable().get('/ui-views/$slug/history');
+    expect(history).toBeDefined();
+    await render(createElement(history!.component));
+
+    expect(state.historyViews.length).toBeGreaterThan(0);
+    expect(state.historyViews.at(-1)).toEqual({ type: 'ui-view', slug: 'user-profile' });
+    expect(container.querySelectorAll('[data-testid="entity-version-history-view"]')).toHaveLength(1);
+    // The three-tab switcher over SegmentedControlTabs, History active.
+    const seg = state.segmented.at(-1)!;
+    expect(seg.active).toBe('history');
+    expect(seg.tabs.map((t) => t.label)).toEqual(['Details', 'Preview', 'History']);
+    // The Details panel is not rendered on the history route.
+    expect(buttonByText('Add parameter', container)).toBeUndefined();
+  });
+});
+
 describe('[entity:ui-view-list] /ui-views', () => {
+  it('[entity:ui-view-list] 2.1.28 composition — the URL badge and the presence-only mockup chip are kit Badges; no mockup renders no chip', async () => {
+    state.views = [
+      listItem({ hasMockupHtml: false }),
+      listItem({ slug: 'settings', title: 'Settings', url: null, paramsCount: 0, hasMockupHtml: true }),
+    ];
+    await render(createElement(routeTable().get('/ui-views')!.component));
+    const labels = state.badges.map((b) => String(b.label));
+    expect(labels).toContain('/users/:id');
+    expect(labels).toContain('Mockup');
+    // presence-only: one mockup row → the chip text appears once in the markup
+    expect((container.textContent ?? '').match(/Mockup/g)).toHaveLength(1);
+  });
+
   it('[entity:ui-view-list] is registered under /ui-views and renders EntityListHeader (title, count, search, New View) with rows carrying the parameter count', async () => {
     const list = routeTable().get('/ui-views');
     expect(list).toBeDefined();

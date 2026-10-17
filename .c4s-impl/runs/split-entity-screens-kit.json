@@ -1,0 +1,30 @@
+{
+  "role": "implementer",
+  "unit": "entity-screens-kit",
+  "packetBytes": 108774,
+  "portions": [
+    {
+      "name": "entity-screens-kit/p1-l5-l12",
+      "layers": ["L5", "L12"],
+      "slugs": [
+        "ac-detail",
+        "ac-list",
+        "database-table-detail",
+        "database-table-list",
+        "design-system-detail",
+        "design-system-history",
+        "design-system-list",
+        "dto-detail",
+        "dto-list",
+        "endpoint-detail",
+        "endpoint-history",
+        "endpoint-list",
+        "home-redirect-empty-state",
+        "ui-view-detail",
+        "ui-view-history",
+        "ui-view-list"
+      ]
+    }
+  ],
+  "deviations": []
+}

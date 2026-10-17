@@ -15,7 +15,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { RootLayout } from './App.js';
 import { EditorToolbar } from './components/EditorToolbar.js';
-import { EmptyState } from './components/EmptyState.js';
+import { HomeEmptyState } from './components/HomeEmptyState.js';
 import { Editor } from './components/Editor.js';
 import { PageVersionHistory } from './components/PageVersionHistory.js';
 import { HtmlViewer } from './components/HtmlViewer.js';
@@ -409,7 +409,7 @@ function IndexRoute() {
   }
   return (
     <RoutePane>
-      <EmptyState onNewPage={promptNewPage} />
+      <HomeEmptyState onNewPage={promptNewPage} />
     </RoutePane>
   );
 }

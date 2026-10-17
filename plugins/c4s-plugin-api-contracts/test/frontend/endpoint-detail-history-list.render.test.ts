@@ -47,6 +47,8 @@ const state = vi.hoisted(() => ({
   historyViews: [] as Array<Record<string, unknown>>,
   versions: { data: [] as unknown[], isLoading: false, isError: false, error: undefined as unknown },
   confirms: [] as Array<{ kind: string; title: string; body: string }>,
+  relationPickers: [] as Array<{ groups: Array<{ key: string; label: string }> }>,
+  badges: [] as Array<{ label: unknown; mono?: boolean }>,
 }));
 
 vi.mock('@tanstack/react-router', () => ({
@@ -137,7 +139,7 @@ vi.mock('@c4s/plugin-runtime/ui', async () => {
   const Passthrough = ({ children }: { children?: ReactNode }) => h('div', null, children);
   return {
     TagPicker: spy(tagMod.TagPicker, (p) => state.tagPickers.push(p as never)),
-    Badge: badgeMod.Badge,
+    Badge: spy(badgeMod.Badge, (p) => { if (p) state.badges.push(p as never); }),
     FieldRow: rowMod.FieldRow,
     FieldGrid: gridMod.FieldGrid,
     ActionButton: btnMod.ActionButton,
@@ -152,7 +154,7 @@ vi.mock('@c4s/plugin-runtime/ui', async () => {
     TagFilterBar: tagBarMod.TagFilterBar,
     Popover: popMod.Popover,
     EnumBadgePicker: spy(enumMod.EnumBadgePicker, (p) => state.enumPickers.push(p as never)),
-    GroupedRelationPicker: relMod.GroupedRelationPicker,
+    GroupedRelationPicker: spy(relMod.GroupedRelationPicker, (p) => { if (p) state.relationPickers.push(p as never); }),
     EntityVersionHistoryView: spy(histMod.EntityVersionHistoryView, (p) =>
       state.historyViews.push(p as never),
     ),
@@ -239,6 +241,8 @@ let root: Root;
 let qc: QueryClient;
 
 beforeEach(() => {
+  state.relationPickers = [];
+  state.badges = [];
   state.endpoint = sampleEndpoint();
   state.endpoints = [];
   state.endpointsLoading = false;
@@ -462,7 +466,23 @@ describe('[entity:endpoint-history] /endpoints/:slug/history', () => {
   });
 });
 
+describe('[entity:endpoint-detail] 2.1.28 composition', () => {
+  it('[entity:endpoint-detail] Linked DTOs is a kit GroupedRelationPicker with one group per relation (request / response / error)', async () => {
+    await render(createElement(routeTable().get('/endpoints/$slug')!.component));
+    expect(state.relationPickers.length).toBeGreaterThan(0);
+    expect(state.relationPickers.at(-1)!.groups.map((g) => g.key)).toEqual(['request', 'response', 'error']);
+  });
+});
+
 describe('[entity:endpoint-list] /endpoints', () => {
+  it('[entity:endpoint-list] 2.1.28 composition — the row\'s leading method chip is a kit Badge', async () => {
+    state.endpoints = [sampleEndpoint()];
+    await render(createElement(routeTable().get('/endpoints')!.component));
+    const method = state.badges.find((b) => b.label === 'GET');
+    expect(method).toBeDefined();
+    expect(method!.mono).toBe(true);
+  });
+
   it('[entity:endpoint-list] is registered under /endpoints and renders EntityListHeader (title, count, search, New endpoint) with rows', async () => {
     const list = routeTable().get('/endpoints');
     expect(list).toBeDefined();

@@ -477,6 +477,56 @@ describe('[entity:ac-list] /acs', () => {
     expect(container.textContent).toContain(AC_LIST_EMPTY_TITLE);
     expect(container.textContent).not.toMatch(/clear filters|reset/i);
   });
+
+  it('[entity:ac-list] 2.1.28 composition — rows are kit EntityListRows whose kind badge, deprecated-only status badge and tag chips all render through Badge; the Analyze consistency action sits in the kit ActionBar', async () => {
+    state.acs = [
+      sampleAc({ slug: 'ac-one', title: 'Active one.', kind: 'requirement', tags: ['m07'] }),
+      sampleAc({ slug: 'ac-old', title: 'Old one.', kind: 'edge-case', status: 'deprecated', tags: [] }),
+    ];
+    await render(
+      createElement(AcsList, {
+        search: '',
+        tagFilter: [],
+        onSearchChange: () => undefined,
+        onTagToggle: () => undefined,
+        onSelect: () => undefined,
+      }),
+    );
+    const labels = state.badges.filter(Boolean).map((b) => String(b.label));
+    // kind badge on every row
+    expect(labels).toContain('requirement');
+    expect(labels).toContain('edge-case');
+    // status badge only for the deprecated criterion (per-row check below)
+    expect(labels).toContain('deprecated');
+    expect(labels).not.toContain('active');
+    // tag chip of the first row via Badge (EntityListRow draws it)
+    expect(labels).toContain('m07');
+    // the bespoke "· deprecated" text span is gone
+    expect(container.textContent).not.toContain('· deprecated');
+    const rowBadges = container.querySelectorAll('[data-testid="ac-row-badges"]');
+    expect(rowBadges).toHaveLength(2);
+    expect(rowBadges[0]!.textContent).not.toContain('deprecated');
+    expect(rowBadges[1]!.textContent).toContain('deprecated');
+    // ActionBar with the one action
+    expect(buttonByText('Analyze consistency', container)).toBeDefined();
+  });
+
+  it('[entity:ac-list] with no active AC the Analyze consistency action is disabled with the "No active AC to analyze" tooltip', async () => {
+    state.acs = [];
+    await render(
+      createElement(AcsList, {
+        search: '',
+        tagFilter: [],
+        onSearchChange: () => undefined,
+        onTagToggle: () => undefined,
+        onSelect: () => undefined,
+      }),
+    );
+    const btn = buttonByText('Analyze consistency', container)!;
+    expect(btn).toBeDefined();
+    expect(btn.disabled).toBe(true);
+    expect(btn.title).toBe('No active AC to analyze');
+  });
 });
 
 describe('[entity:ac-detail] create and edit windows', () => {
