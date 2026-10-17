@@ -30,6 +30,7 @@ import {
   ownsMarkup,
   readSource,
   scanFindings,
+  stripComments,
   violations,
 } from './ui-kit-gate.js';
 
@@ -157,6 +158,38 @@ describe('[section:hntah0r7] gate (a) — the automatic check over the host code
     expect(overlay).toMatch(/<Dialog\b/);
     expect(overlay).not.toMatch(/fixed inset-0/);
     expect(declarationsOf('tiavwkux')).toEqual([]);
+  });
+});
+
+describe('[section:0dy3js11] M10 Host UI Kit slice — ActionBar consumed, two DŁUG entries on plan-page', () => {
+  it('[section:0dy3js11] the check reads exactly two DŁUG entries for M10: the threads panel (no catalog replacement yet) and FileVersionHistory (replaced by VersionHistory)', () => {
+    expect(entries('0dy3js11')).toEqual([debt(['ArtifactThreadsPanel']), debt(['FileVersionHistory'], ['VersionHistory'])]);
+    expect(declarationsOf('0dy3js11').flatMap((d) => d.files)).toEqual([
+      'src/client/components/ArtifactThreadsPanel.tsx',
+      'src/client/components/FileVersionHistory.tsx',
+    ]);
+  });
+
+  it('[section:0dy3js11] each DŁUG file carries a DEBT header naming M10 and its replacement (VersionHistory) or trajectory candidate (artifact-thread-list)', () => {
+    const threads = readSource('src/client/components/ArtifactThreadsPanel.tsx');
+    expect(threads.match(DEBT_MARKER)?.[0]).toContain('M10');
+    expect(threads).toContain('`artifact-thread-list`');
+    const history = readSource('src/client/components/FileVersionHistory.tsx');
+    expect(history.match(DEBT_MARKER)?.[0]).toContain('M10');
+    expect(history).toContain('`VersionHistory`');
+  });
+
+  it('[section:0dy3js11] the plan page footer is the catalog ActionBar, and the two DŁUG components are the ones plan-page and brief-page share', () => {
+    const plan = readSource('src/client/components/PlanPage.tsx');
+    expect(plan).toMatch(/from '\.\.\/host-ui-kit\/actions\/ActionBar\.js'/);
+    expect(plan).toMatch(/<ActionBar\b/);
+    // No sticky footer of its own next to the catalog's.
+    expect(stripComments(plan)).not.toMatch(/position:\s*'sticky'/);
+    expect(plan).toMatch(/<ArtifactThreadsPanel\b/);
+    expect(plan).toMatch(/<FileVersionHistory\b/);
+    const brief = readSource('src/client/components/BriefDetail.tsx');
+    expect(brief).toMatch(/<ArtifactThreadsPanel\b/);
+    expect(brief).toMatch(/<FileVersionHistory\b/);
   });
 });
 

@@ -110,6 +110,26 @@ function frontendMockupsDebts(section: string, consumer: string, extra: HostLoca
 
 export const HOST_LOCAL_DECLARATIONS: readonly HostLocalDeclaration[] = [
   // ── Host modules ────────────────────────────────────────────────────────────
+  // M10 `0dy3js11` — two DŁUG entries on plan-page; both fail locality
+  // condition (1), each also stands on other pages.
+  {
+    section: '0dy3js11',
+    consumer: 'M10',
+    kind: 'debt',
+    // "Panel wątków" — shared with brief-page; no catalog component replaces it
+    // yet, its successor is the trajectory candidate `artifact-thread-list`.
+    components: ['ArtifactThreadsPanel'],
+    replacedBy: [],
+    files: ['src/client/components/ArtifactThreadsPanel.tsx'],
+  },
+  {
+    section: '0dy3js11',
+    consumer: 'M10',
+    kind: 'debt',
+    components: ['FileVersionHistory'],
+    replacedBy: ['VersionHistory'],
+    files: ['src/client/components/FileVersionHistory.tsx'],
+  },
   // M17 `v05js8rl`
   {
     section: 'v05js8rl',

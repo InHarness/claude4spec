@@ -1,0 +1,92 @@
+{
+ "unit": {
+  "id": "host-kit-debts",
+  "goal": "Stopka strony planu korzysta z katalogowego paska akcji. Formularz bramki zaufania dla pluginów project-local korzysta z katalogowego okna i przycisków stopki. Panel wątków strony planu i historia wersji pliku planu to zapisany dług wobec katalogu i w tym oknie nie wymagają przebudowy.",
+  "recipe": {
+   "pages": [
+    {
+     "key": "pages/modules/m10-plans.md",
+     "change": "all",
+     "context": {
+      "offset": 1,
+      "limit": 3,
+      "anchors": [
+       "m10cel00",
+       "m10dep00",
+       "m10dom00"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m10-plans.md",
+     "context": {
+      "offset": 32,
+      "limit": 1,
+      "anchors": [
+       "0dy3js11"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+     "context": {
+      "offset": 1,
+      "limit": 2,
+      "anchors": [
+       "m33purp01",
+       "m33deps01"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+     "context": {
+      "offset": 9,
+      "limit": 1,
+      "anchors": [
+       "m33trst0"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+     "context": {
+      "offset": 23,
+      "limit": 1,
+      "anchors": [
+       "gox0ptn4"
+      ]
+     }
+    }
+   ],
+   "entities": [
+    {
+     "type": "module-dependency",
+     "slugs": [
+      "m10-requires-m34",
+      "m33-requires-m34"
+     ]
+    }
+   ]
+  },
+  "jobs": []
+ },
+ "stateDir": ".c4s-impl",
+ "portion": {
+  "name": "host-kit-debts/p1-l5-l12",
+  "layers": [
+   "L5",
+   "L12"
+  ],
+  "slugs": [
+   "0dy3js11",
+   "gox0ptn4",
+   "m33trst0",
+   "m10-requires-m34",
+   "m33-requires-m34"
+  ],
+  "criteriaGroup": null,
+  "packet": ".c4s-impl/packets/host-kit-debts-p1-l5-l12.md"
+ },
+ "only": []
+}

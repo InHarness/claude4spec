@@ -1,0 +1,19 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "host-kit-debts",
+    "base": "ef52b16296b5e616d67daca06d8f411b2ad3d410"
+  },
+  "findings": [
+    {
+      "id": "rev-0001",
+      "file": "src/client/components/TrustPluginsModal.render.test.ts",
+      "line": 105,
+      "blocking": false,
+      "reason": "The 'neither a scrim click nor Escape closes it' test cannot fail: TrustPluginsModal passes `onClose={() => {}}` to the catalog Dialog, so even if `dismissible={false}` were dropped, a scrim mousedown or Escape would call the no-op and the asserted ModalHost `onClose` would still not be called. The test proves the facade is not resolved, not that the Dialog is non-dismissible (only the static regex in one-implementation.test.ts covers that). Spy on the Dialog's props (assert `dismissible === false`) or check that the gate's Dialog never invokes its onClose, so the behavioural test actually guards the m33trst0 rule.",
+      "portion": "host-kit-debts/p1-l5-l12"
+    }
+  ],
+  "deviations": []
+}

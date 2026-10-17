@@ -398,13 +398,33 @@
         ]
       },
       "dependsOn": [],
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "host-kit-debts/p1-l5-l12",
+          "layers": [
+            "L5",
+            "L12"
+          ],
+          "slugs": [
+            "0dy3js11",
+            "gox0ptn4",
+            "m33trst0",
+            "m10-requires-m34",
+            "m33-requires-m34"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "ef52b16296b5e616d67daca06d8f411b2ad3d410",
+      "baseCommit": "ef52b16296b5e616d67daca06d8f411b2ad3d410",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": [],
       "wave": 1
