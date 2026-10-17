@@ -1,0 +1,120 @@
+{
+ "unit": {
+  "id": "kit-primitives",
+  "goal": "Prymitywy katalogu oraz komponenty list, akcji, formularzy, overlay i feedbacku spełniają kontrakty swoich rekordów. Nowe zachowanie jest jedno: chip z obsługą kliknięcia jest osiągalny klawiaturą i aktywuje się z klawiatury. Pozostałe kontrakty się nie zmieniły, ale są teraz sprawdzane względem rekordów.",
+  "recipe": {
+   "pages": [
+    {
+     "key": "pages/modules/m34-host-ui-kit.md",
+     "context": {
+      "offset": 1,
+      "limit": 3,
+      "anchors": [
+       "m34purp01",
+       "m34deps01",
+       "fs3obztl"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m34-host-ui-kit.md",
+     "context": {
+      "offset": 10,
+      "limit": 1,
+      "anchors": [
+       "m34l12sc"
+      ]
+     }
+    }
+   ],
+   "entities": [
+    {
+     "type": "ui-kit-component",
+     "slugs": [
+      "action-bar",
+      "action-button",
+      "badge",
+      "dialog",
+      "empty-state",
+      "entity-list-layout",
+      "entity-list-row",
+      "form-field",
+      "form-shell",
+      "grouped-entity-list",
+      "inline-edit-field",
+      "loading-state",
+      "pagination",
+      "popover",
+      "tag-filter-bar",
+      "toast-viewport"
+     ]
+    },
+    {
+     "type": "ac",
+     "slugs": [
+      "ac-badge-z-podanym-onclick-jest-osiagaln",
+      "ac-badge-z-podanym-onclick-wywoluje-oncl",
+      "ac-badge-z-variant-broken-renderuje-wari",
+      "ac-dialog-grupa-overlay-create-jest-contr",
+      "ac-dialog-i-formshell-sa-w-tierze-experimen",
+      "ac-dialog-jest-odrebny-od-host-internal-con",
+      "ac-dialog-przyjmuje-dismissible-boolean",
+      "ac-dialog-przyjmuje-width-number-doklad",
+      "ac-dialog-renderuje-wiersz-naglowka-z-przyc",
+      "ac-dialog-scrolluje-wewnetrznie-cialo-przy",
+      "ac-drawer-boczny-wariant-powloki-side-le",
+      "ac-formshell-komponuje-atomy-formfield-inli",
+      "ac-groupedentitylist-jest-importowalny-z",
+      "ac-groupedentitylist-rysuje-tekst-pomocn",
+      "ac-onclose-jest-wymagany-w-obu-wariantach-d",
+      "ac-panel-dialog-w-tierze-size-sm-ma-420px",
+      "ac-popover-grupa-overlay-feedback-m34-exp",
+      "ac-popover-z-zadanym-maxheight-scrolluje-we",
+      "ac-toastviewport-usetoast-grupa-overlay"
+     ]
+    }
+   ]
+  },
+  "jobs": [],
+  "portionSlugs": {
+   "kit-primitives/p1-l12": [
+    "action-bar",
+    "action-button",
+    "badge",
+    "dialog",
+    "empty-state",
+    "entity-list-layout",
+    "entity-list-row",
+    "form-field",
+    "form-shell",
+    "grouped-entity-list",
+    "inline-edit-field",
+    "loading-state",
+    "pagination",
+    "popover",
+    "tag-filter-bar",
+    "toast-viewport",
+    "ac-badge-z-podanym-onclick-jest-osiagaln",
+    "ac-badge-z-podanym-onclick-wywoluje-oncl",
+    "ac-badge-z-variant-broken-renderuje-wari",
+    "ac-dialog-grupa-overlay-create-jest-contr",
+    "ac-dialog-i-formshell-sa-w-tierze-experimen",
+    "ac-dialog-jest-odrebny-od-host-internal-con",
+    "ac-dialog-przyjmuje-dismissible-boolean",
+    "ac-dialog-przyjmuje-width-number-doklad",
+    "ac-dialog-renderuje-wiersz-naglowka-z-przyc",
+    "ac-dialog-scrolluje-wewnetrznie-cialo-przy",
+    "ac-drawer-boczny-wariant-powloki-side-le",
+    "ac-formshell-komponuje-atomy-formfield-inli",
+    "ac-groupedentitylist-jest-importowalny-z",
+    "ac-groupedentitylist-rysuje-tekst-pomocn",
+    "ac-onclose-jest-wymagany-w-obu-wariantach-d",
+    "ac-panel-dialog-w-tierze-size-sm-ma-420px",
+    "ac-popover-grupa-overlay-feedback-m34-exp",
+    "ac-popover-z-zadanym-maxheight-scrolluje-we",
+    "ac-toastviewport-usetoast-grupa-overlay"
+   ]
+  }
+ },
+ "stateDir": ".c4s-impl"
+}

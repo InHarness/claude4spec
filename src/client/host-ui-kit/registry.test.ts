@@ -284,3 +284,95 @@ describe('Host UI Kit registry ↔ ui-kit-component records (M34/L12, 2.1.28)', 
     expect(vendored).toEqual([]);
   });
 });
+
+/**
+ * 2.1.28 (unit kit-primitives) — one `[entity:<slug>]` check per
+ * `ui-kit-component` record of the catalog primitives, list, actions, form,
+ * overlay and feedback components: the registry entry carries the record's
+ * `group`, `stability`, `binding` and L11 surfaces (`dataSources` with usage
+ * `fetchedByComponent` — `feedsProps` sources such as `useTags` are a caller's
+ * business and stay out of the entry), and the record's `composes` holds in code:
+ * the component's module imports and renders each composed catalog component.
+ * The registry entry shape is `{ name; group; stability; binding; l11Surfaces? }`
+ * (m34l12sc), so `composes` is read off the implementation, not the entry.
+ */
+interface PrimitiveRecord {
+  name: string;
+  group: string;
+  stability: 'stable' | 'experimental';
+  binding: 'presentational' | 'connected';
+  fetchedByComponent: readonly string[];
+  /** `[catalog name, module path relative to host-ui-kit/]` per `composes` entry. */
+  composes: ReadonlyArray<readonly [string, string]>;
+  /** The component's module, relative to `host-ui-kit/`. */
+  file: string;
+}
+
+const PRIMITIVE_RECORDS: Record<string, PrimitiveRecord> = {
+  'action-bar': { name: 'ActionBar', group: 'actions', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [['ActionButton', './ActionButton.js']], file: 'actions/ActionBar.tsx' },
+  'action-button': { name: 'ActionButton', group: 'actions', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'actions/ActionButton.tsx' },
+  badge: { name: 'Badge', group: 'actions', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'actions/Badge.tsx' },
+  dialog: { name: 'Dialog', group: 'overlay', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'overlay/Dialog.tsx' },
+  'empty-state': { name: 'EmptyState', group: 'list', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'list/EmptyState.tsx' },
+  'entity-list-layout': { name: 'EntityListLayout', group: 'list', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'list/EntityListLayout.tsx' },
+  'entity-list-row': { name: 'EntityListRow', group: 'list', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [['Badge', '../actions/Badge.js']], file: 'list/EntityListRow.tsx' },
+  'form-field': { name: 'FormField', group: 'form', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'form/FormField.tsx' },
+  'form-shell': { name: 'FormShell', group: 'overlay', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'overlay/FormShell.tsx' },
+  'grouped-entity-list': { name: 'GroupedEntityList', group: 'list', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'list/GroupedEntityList.tsx' },
+  'inline-edit-field': { name: 'InlineEditField', group: 'form', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'form/InlineEditField.tsx' },
+  'loading-state': { name: 'LoadingState', group: 'actions', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'actions/LoadingState.tsx' },
+  pagination: { name: 'Pagination', group: 'list', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'list/Pagination.tsx' },
+  popover: { name: 'Popover', group: 'feedback', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'overlay-feedback/Popover.tsx' },
+  'tag-filter-bar': { name: 'TagFilterBar', group: 'list', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [['Badge', '../actions/Badge.js']], file: 'list/TagFilterBar.tsx' },
+  'toast-viewport': { name: 'ToastViewport', group: 'feedback', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'overlay-feedback/ToastViewport.tsx' },
+};
+
+/** Every catalog component name, for the "composes nothing else" half. */
+const CATALOG_NAMES = UI_KIT_CATALOG.map((c) => c.name);
+
+function expectEntryMatchesRecord(slug: string) {
+  const rec = PRIMITIVE_RECORDS[slug]!;
+  const e = UI_KIT_CATALOG.find((c) => c.name === rec.name);
+  expect(e, slug).toBeDefined();
+  expect(e?.group, slug).toBe(rec.group);
+  expect(e?.stability, slug).toBe(rec.stability);
+  expect(e?.binding, slug).toBe(rec.binding);
+  if (rec.fetchedByComponent.length > 0) expect(e?.l11Surfaces, slug).toEqual(rec.fetchedByComponent);
+  else expect(e?.l11Surfaces, slug).toBeUndefined();
+  // Experimental records stay off the versioned stable list (both /ui legs).
+  expect(BROWSER_STABLE.includes(rec.name), slug).toBe(rec.stability === 'stable');
+  expect((UI_KIT_STABLE_COMPONENTS as readonly string[]).includes(rec.name), slug).toBe(rec.stability === 'stable');
+
+  // `composes`: the module imports each composed catalog component and renders it as JSX…
+  const source = readFileSync(fileURLToPath(new URL(`./${rec.file}`, import.meta.url)), 'utf8');
+  for (const [composed, from] of rec.composes) {
+    expect(source, `${slug} imports ${composed}`).toMatch(
+      new RegExp(`import \\{[^}]*\\b${composed}\\b[^}]*\\} from '${from.replace(/[.]/g, '\\.')}'`),
+    );
+    expect(source, `${slug} renders <${composed}>`).toMatch(new RegExp(`<${composed}\\b`));
+  }
+  // …and no other catalog component than the ones the record names.
+  const imported = [...source.matchAll(/import \{([^}]*)\} from '\.\.?\/[^']*'/g)]
+    .flatMap((m) => m[1]!.split(',').map((s) => s.trim().replace(/^type\s+/, '')))
+    .filter((n) => CATALOG_NAMES.includes(n) && n !== rec.name);
+  expect([...new Set(imported)].sort(), `${slug} composes`).toEqual(rec.composes.map(([n]) => n).sort());
+}
+
+describe('Host UI Kit registry ↔ catalog primitives records (M34/L12, 2.1.28)', () => {
+  it('[entity:action-bar] registry entry matches the record (actions, experimental, presentational, no L11 surface) and composes ActionButton', () => expectEntryMatchesRecord('action-bar'));
+  it('[entity:action-button] registry entry matches the record (actions, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('action-button'));
+  it('[entity:badge] registry entry matches the record (actions, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('badge'));
+  it('[entity:dialog] registry entry matches the record (overlay, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('dialog'));
+  it('[entity:empty-state] registry entry matches the record (list, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('empty-state'));
+  it('[entity:entity-list-layout] registry entry matches the record (list, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('entity-list-layout'));
+  it('[entity:entity-list-row] registry entry matches the record (list, experimental, presentational; useTags only feeds props, so no L11 surface) and composes Badge', () => expectEntryMatchesRecord('entity-list-row'));
+  it('[entity:form-field] registry entry matches the record (form, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('form-field'));
+  it('[entity:form-shell] registry entry matches the record (overlay, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('form-shell'));
+  it('[entity:grouped-entity-list] registry entry matches the record (list, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('grouped-entity-list'));
+  it('[entity:inline-edit-field] registry entry matches the record (form, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('inline-edit-field'));
+  it('[entity:loading-state] registry entry matches the record (actions, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('loading-state'));
+  it('[entity:pagination] registry entry matches the record (list, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('pagination'));
+  it('[entity:popover] registry entry matches the record (feedback, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('popover'));
+  it('[entity:tag-filter-bar] registry entry matches the record (list, experimental, presentational; useTags only feeds props, so no L11 surface) and composes Badge', () => expectEntryMatchesRecord('tag-filter-bar'));
+  it('[entity:toast-viewport] registry entry matches the record (feedback, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('toast-viewport'));
+});

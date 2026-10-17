@@ -1,7 +1,16 @@
 import { describe, it, expect, expectTypeOf } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import type { ReactNode } from 'react';
 import { EmptyState, type EmptyStateProps } from './EmptyState.js';
+import type { EmptyStateProps as PublishedEmptyStateProps } from '../../../plugin-types/ui.js';
+
+/** The `empty-state` record's `props`, as written (2.1.28). */
+interface EmptyStateRecordProps {
+  title: string;
+  hint?: ReactNode;
+  action?: ReactNode;
+}
 
 /**
  * M19 `m19l12sc` (2.1.19) — `EmptyState` covers both cases of an empty entity
@@ -45,5 +54,20 @@ describe('EmptyState — both empty-list cases (M19 m19l12sc)', () => {
     const html = render({ title: 'No results' });
     expect(html).toContain('No results');
     expect(html).not.toContain('<button');
+  });
+});
+
+describe('EmptyState ↔ record `empty-state` (M34/L12, 2.1.28)', () => {
+  it('[entity:empty-state] takes exactly the record props (host and published /ui alike)', () => {
+    expectTypeOf<EmptyStateProps>().toEqualTypeOf<EmptyStateRecordProps>();
+    expectTypeOf<PublishedEmptyStateProps>().toEqualTypeOf<EmptyStateRecordProps>();
+  });
+
+  it('[entity:empty-state] renders the title, the optional hint and the action slot — and no error variant', () => {
+    const html = render({ title: 'No ACs yet', hint: 'Create one', action: createElement('button', null, 'New AC') });
+    expect(html).toContain('No ACs yet');
+    expect(html).toContain('Create one');
+    expect(html).toContain('<button>New AC</button>');
+    expect(html).not.toMatch(/role="alert"|--c-red/);
   });
 });

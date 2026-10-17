@@ -1,0 +1,266 @@
+{
+ "role": "verifier",
+ "scope": {
+  "kind": "unit",
+  "id": "kit-primitives"
+ },
+ "release": "2.1.28",
+ "rows": [
+  {
+   "slug": "action-bar",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/actions/ActionBar.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('action-bar') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/actions/ActionBar.render.test.ts:51,62,100 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "action-button",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/actions/ActionButton.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('action-button') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/actions/ActionButton.render.test.ts:47,55,65,73 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "badge",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/actions/Badge.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('badge') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/actions/Badge.render.test.ts:62,68,76,87 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "dialog",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/overlay/Dialog.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('dialog') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/overlay/Dialog.render.test.ts:232,238,249 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "empty-state",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/list/EmptyState.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('empty-state') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/list/EmptyState.render.test.ts:61,66 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "entity-list-layout",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/list/EntityListLayout.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('entity-list-layout') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/list/EntityListLayout.render.test.ts:40,46,61 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "entity-list-row",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/list/EntityListRow.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('entity-list-row') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/list/EntityListRow.render.test.ts:54,61,75,80,91 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "form-field",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/form/FormField.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('form-field') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/form/FormField.render.test.ts:41,47,57 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "form-shell",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/overlay/FormShell.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('form-shell') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/overlay/FormShell.render.test.ts:70,76 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "grouped-entity-list",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/list/GroupedEntityList.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('grouped-entity-list') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/list/GroupedEntityList.render.test.ts:57,68,82 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "inline-edit-field",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/form/InlineEditField.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('inline-edit-field') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/form/InlineEditField.render.test.ts:54,60,73 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "loading-state",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/actions/LoadingState.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('loading-state') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/actions/LoadingState.render.test.ts:48,54,61 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "pagination",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/list/Pagination.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('pagination') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/list/Pagination.render.test.ts:44,50,59 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "popover",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/overlay-feedback/Popover.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('popover') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/overlay-feedback/Popover.render.test.ts:142,148,159 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "tag-filter-bar",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/list/TagFilterBar.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('tag-filter-bar') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/list/TagFilterBar.render.test.ts:72,80,92,105 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "toast-viewport",
+   "type": "ui-kit-component",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/overlay-feedback/ToastViewport.tsx props interface matches record props/types field by field; src/client/host-ui-kit/registry.test.ts:333-378 expectEntryMatchesRecord('toast-viewport') asserts group/stability/binding/l11Surfaces/composes + off UI_KIT_STABLE_COMPONENTS; src/client/host-ui-kit/overlay-feedback/ToastViewport.render.test.ts:64,78,99,126 assert Same<Props, RecordProps> for host and published /ui types (checked by typecheck) and the record behavior; trace.md line present"
+  },
+  {
+   "slug": "ac-badge-z-podanym-onclick-jest-osiagaln",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/actions/Badge.render.test.ts:96-110 expect(el.tabIndex).toBe(0); role='button'; focus() -> document.activeElement===el; without onClick no tabindex/role. Badge.tsx:73 spreads {role:'button',tabIndex:0,onKeyDown} when onClick"
+  },
+  {
+   "slug": "ac-badge-z-podanym-onclick-wywoluje-oncl",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/actions/Badge.render.test.ts:113-133 keydown Enter / ' ' -> expect(onClick).toHaveBeenCalledTimes(1); other keys and keys on nested remove button not. Badge.tsx onKeyDown handles Enter/Space with target===currentTarget"
+  },
+  {
+   "slug": "ac-badge-z-variant-broken-renderuje-wari",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/actions/Badge.test.ts:15-32 expect(html).toContain(`color:${RED}`); border red; expect(html).not.toContain(GIVEN) also when active"
+  },
+  {
+   "slug": "ac-dialog-grupa-overlay-create-jest-contr",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/overlay/Dialog.render.test.ts:78-153 registry overlay/experimental/presentational; scrim aria-modal fixed inset-0, panel background var(--c-card) + var(--c-hair-strong); onClose called 3x but scrim stays until consumer flips open; Tab trap; fetchSpy not called"
+  },
+  {
+   "slug": "ac-dialog-i-formshell-sa-w-tierze-experimen",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/overlay/FormShell.render.test.ts:131-148 both experimental and exported by uiBrowserSurface + published d.ts; not in UI_KIT_STABLE_COMPONENTS, BACKEND_STABLE, VERSIONED_UI_KIT_COMPONENTS nor recordedUiKitStableComponents()"
+  },
+  {
+   "slug": "ac-dialog-jest-odrebny-od-host-internal-con",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/overlay/Dialog.render.test.ts:415-432 kit source has no ui/events import, UI_EVENTS, confirmDestructive; ConfirmModal imports Dialog and uses UI_EVENTS.CONFIRM; /ui surface has Dialog, not ConfirmModal/ConfirmLayer"
+  },
+  {
+   "slug": "ac-dialog-przyjmuje-dismissible-boolean",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/overlay/Dialog.render.test.ts:278-346 default: scrim/Escape/✕ -> onClose x3; dismissible={false}: no Close button, onClose not called, scrim stays; only footer action closes; scrim/panel style identical and Tab trap holds"
+  },
+  {
+   "slug": "ac-dialog-przyjmuje-width-number-doklad",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/overlay/Dialog.render.test.ts:158-189 width 400 wins over tier (style.width '400px'); without width tier width; maxHeight equals DIALOG_SIZE_TIERS[size].maxHeight with width given"
+  },
+  {
+   "slug": "ac-dialog-renderuje-wiersz-naglowka-z-przyc",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/overlay/Dialog.render.test.ts:259-273 with title header + button[aria-label=Close] click -> onClose x1; without title part('header') null and no Close button"
+  },
+  {
+   "slug": "ac-dialog-scrolluje-wewnetrznie-cialo-przy",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/overlay/Dialog.render.test.ts:194-227 panel flex-col maxHeight tier; body overflowY auto, minHeight 0, flex-1; footer outside body, body.nextElementSibling===footer, flexShrink 0"
+  },
+  {
+   "slug": "ac-drawer-boczny-wariant-powloki-side-le",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/overlay/Dialog.render.test.ts:437-445 no /drawer/i catalog entry or /ui export, plugin-types/ui.ts has no Drawer, Dialog has no side prop (empty verifies: checked against its own text per build override)"
+  },
+  {
+   "slug": "ac-formshell-komponuje-atomy-formfield-inli",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/overlay/FormShell.render.test.ts:88-126 children FormField/InlineEditField rendered as given, source imports neither; busy -> fieldset.disabled; error rendered below fields; onSubmit called once, fetchSpy not called, no mutation imports"
+  },
+  {
+   "slug": "ac-groupedentitylist-jest-importowalny-z",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/runtime/plugin-runtime-ui.test.ts:16 PLUGIN_RUNTIME_UI_EXPORT_NAMES contains GroupedEntityList, typeof function, catalog entry; src/server/core/plugin-host/runtime-shims.test.ts:60 shim contains 'export const GroupedEntityList = __m[\"GroupedEntityList\"];'"
+  },
+  {
+   "slug": "ac-groupedentitylist-rysuje-tekst-pomocn",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/tokens.render.test.ts:243-265 used vars == ['--c-hair','--c-muted'], all in HOST_TOKEN_NAMES, resolved in both theme modes; expect(host.innerHTML).not.toMatch(/#[0-9a-f]{3,8}\\b|rgba?\\(|hsla?\\(/i)"
+  },
+  {
+   "slug": "ac-onclose-jest-wymagany-w-obu-wariantach-d",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/overlay/Dialog.render.test.ts:351-385 @ts-expect-error on missing onClose for both variants (typecheck green), one props shape; dismissible={false}: scrim/Escape give no onClose call, consumer closes via state"
+  },
+  {
+   "slug": "ac-panel-dialog-w-tierze-size-sm-ma-420px",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/overlay/Dialog.render.test.ts:390-410 sm panel style.width '420px'; ConfirmModal panel '400px', 400 not a tier width, ConfirmModal source matches /<Dialog[\\s\\S]*?width=\\{400\\}/ and no size="
+  },
+  {
+   "slug": "ac-popover-grupa-overlay-feedback-m34-exp",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/overlay-feedback/Popover.render.test.ts:77-137 entry feedback/experimental/presentational; renders only with open; outside click/Escape -> onClose x2 but stays open; no fetch; kit source has no ui/events/openPopover/UI_EVENTS, host facade imports catalog Popover"
+  },
+  {
+   "slug": "ac-popover-z-zadanym-maxheight-scrolluje-we",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/overlay-feedback/Popover.render.test.ts:171-200 maxHeight 240px, panel overflow hidden flex-col, body overflow-auto minHeight 0; footer outside body as last child; no cap without maxHeight"
+  },
+  {
+   "slug": "ac-toastviewport-usetoast-grupa-overlay",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/host-ui-kit/overlay-feedback/useToast.render.test.ts:159-193 ToastViewport feedback/experimental, useToast a /ui export not a catalog entry, neither stable; handle keys exactly ['error','success','warning'], each rendered in host stack, markup contains 'z-index:var(--z-toast)'"
+  },
+  {
+   "slug": "goal:kit-primitives",
+   "level": 2,
+   "status": "covered",
+   "evidence": "New behaviour: src/client/host-ui-kit/actions/Badge.tsx:56-73 (tabIndex 0 + role button + Enter/Space -> onClick when onClick given); all 16 records' props/types match code (Same<> checks in *.render.test.ts, typecheck green) and registry entries checked in src/client/host-ui-kit/registry.test.ts:288-378; no other component code changed"
+  }
+ ],
+ "suite": {
+  "command": "npm run typecheck",
+  "exitCode": 0,
+  "summary": "all workspaces tsc --noEmit, 0 'error TS'; tests not run locally per build rules (env-runner only); tests touching Badge read: TagFilterBar.render.test.ts selects span[role=\"button\"] chips, consistent with the change"
+ }
+}
