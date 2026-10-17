@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Hash } from 'lucide-react';
-import { useSection, useSectionsAutocomplete } from '../../hooks/useSection.js';
-import { useEditorBridge } from '../../tiptap/EditorContext.js';
-import { SectionRefChip, type SectionRefChipState } from '../../components/SectionRefChip.js';
+import { useSectionsAutocomplete } from '../../hooks/useSection.js';
 import { SectionRefChipWithData } from '../../components/SectionRefChipWithData.js';
 import { FieldLabel, TextInput } from '../../ui/Popover.js';
 import type { SectionIndexEntry } from '../../../shared/entities.js';
@@ -13,45 +11,13 @@ import { registerTagPopoverFields, type TagFieldsProps } from '../popover-fields
  * M06 — Sections, browser side: `SectionRefChip` as the render of
  * `<section_ref anchor/>` — the heading text from the section index, a `Hash`
  * icon, a `{page_path} > {heading_text}` tooltip, and `[broken: anchor]` in red
- * when the anchor is not in the index. Inside an editor it navigates through
- * the editor bridge; outside one (chat) the self-contained chip resolves
- * page-first, then plan.
+ * when the anchor is not in the index. The same chip serves the editor and chat:
+ * it navigates through the `editorBridge` singleton (2.1.28, M13 chipprops),
+ * which reaches the nearest provider's bridge, so the chip never asks which
+ * pipeline it is in.
  */
 function SectionRefRender({ attrs }: TagRenderProps) {
-  const bridge = useEditorBridge();
-  const anchor = String(attrs.anchor ?? '');
-  if (!bridge) return <SectionRefChipWithData anchor={anchor} />;
-  return <BridgedSectionRef anchor={anchor} openSection={bridge.openSection} />;
-}
-
-function BridgedSectionRef({
-  anchor,
-  openSection,
-}: {
-  anchor: string;
-  openSection: (pagePath: string, anchor: string) => void;
-}) {
-  const { data, isLoading } = useSection(anchor || null);
-  const state: SectionRefChipState = !anchor
-    ? 'broken'
-    : isLoading && data === undefined
-      ? 'loading'
-      : data
-        ? 'normal'
-        : 'broken';
-  return (
-    <SectionRefChip
-      anchor={anchor}
-      pagePath={data?.pagePath}
-      headingText={data?.headingText}
-      state={state}
-      onClick={(e) => {
-        // Alt+click belongs to the edit-popover convention of the host surface.
-        if (e.altKey) return;
-        if (data) openSection(data.pagePath, anchor);
-      }}
-    />
-  );
+  return <SectionRefChipWithData anchor={String(attrs.anchor ?? '')} />;
 }
 
 /** The anchor picker: search the section index by heading, page or anchor. */

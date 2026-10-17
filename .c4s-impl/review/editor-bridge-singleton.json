@@ -1,0 +1,43 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "editor-bridge-singleton",
+    "base": "e744475f84912596ada694a7faf6292f615f0888"
+  },
+  "findings": [
+    {
+      "id": "rev-0001",
+      "file": "src/client/chat/ChatEditorBridge.tsx",
+      "line": 30,
+      "blocking": false,
+      "reason": "createChatAwareBridge copies navigateToEntity (getEntity -> `${pathPrefix}/$slug`) and navigateToSection (`/space/$rootId/$` + `anchor-` hash) from router.tsx line by line, because importing router.tsx would be circular. The two copies will drift. Moving both helpers into a leaf module (e.g. src/client/navigation.ts) that router.tsx and ChatEditorBridge.tsx both import would remove the cycle and the duplicate code.",
+      "portion": "editor-bridge-singleton/p1-l2-l12"
+    },
+    {
+      "id": "rev-0002",
+      "file": "src/client/entities/openEntity.ts",
+      "line": 44,
+      "blocking": false,
+      "reason": "Every caller now passes the always-defined `editorBridge` singleton, so the `if (!editorBridge) return undefined` guard is dead and the nullable `editorBridge` parameter has no remaining use. There is also a behaviour change. Before, a chip with no bridge got no `onOpen` and did not look clickable. Now it always gets a handler, and when no provider is mounted the click silently does nothing (`resolve()` returns null). Either tighten the parameter type and drop the dead branch, or let the handler check `editorBridgeRegistry.current()` so the old 'not clickable' state survives.",
+      "portion": "editor-bridge-singleton/p1-l2-l12"
+    },
+    {
+      "id": "rev-0003",
+      "file": "src/client/components/SectionRefChipWithData.tsx",
+      "line": 31,
+      "blocking": false,
+      "reason": "Removing BridgedSectionRef also changes the editor pipeline beyond the goal. A `<section_ref>` in a page whose anchor is not a page section used to render `broken` in the editor. Now it runs an extra `usePlanByAnchor` query per chip, and on a plan hit it renders a plan chip that navigates to /plans. The editor's broken-ref reporting (BrokenRefsBar / section index) does not do that fallback, so the chip and the broken-refs count can now disagree for the same anchor. This should be confirmed as intended, or the plan fallback kept to the chat pipeline only.",
+      "portion": "editor-bridge-singleton/p1-l2-l12"
+    },
+    {
+      "id": "rev-0004",
+      "file": "src/client/tiptap/EditorContext.tsx",
+      "line": 52,
+      "blocking": false,
+      "reason": "EditorBridgeProvider is a published @c4s/plugin-runtime export, and it now renders a real `<div style=\"display: contents\">` where it used to be a context-only wrapper. Placed inside inline or table content (`<p>`, `<span>`, `<tbody>`), the DOM nesting becomes invalid. Parent selectors that use the child combinator (`> *`, Tailwind `space-y-*` / `divide-*`, `:first-child`) also stop matching the wrapped children, and margins on the contents box are dropped. The in-repo call sites (Editor, PageRouteBody, PlanRoute, DocEditor, ChatOverlay, the plugin route-shells) look safe. The published d.ts comment for EditorBridgeProvider should still state that it adds a DOM element.",
+      "portion": "editor-bridge-singleton/p1-l2-l12"
+    }
+  ],
+  "deviations": []
+}

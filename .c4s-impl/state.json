@@ -293,13 +293,36 @@
         "entities": []
       },
       "dependsOn": [],
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "editor-bridge-singleton/p1-l2-l12",
+          "layers": [
+            "L2",
+            "L8",
+            "L11",
+            "L12"
+          ],
+          "slugs": [
+            "nvc5wy2p",
+            "m20l11sc",
+            "rehyxchp",
+            "z7l89jhf",
+            "chipprops",
+            "xr8fs8dc"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "e744475f84912596ada694a7faf6292f615f0888",
+      "baseCommit": "e744475f84912596ada694a7faf6292f615f0888",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": [],
       "wave": 1

@@ -3,7 +3,7 @@ import { getEntityDef } from '../../../entities/registry.js';
 import { ChipResolver } from '../../../entities/ChipResolver.js';
 import { categoriseBrokenChip } from '../../../core/plugin-host/host.js';
 import { openEntityHandler } from '../../../entities/openEntity.js';
-import { useEditorBridge } from '../../../tiptap/EditorContext.js';
+import { editorBridge } from '../../../runtime/editor-bridge.js';
 import { InlineBrokenChip } from '../../../tiptap/extensions/views/BrokenChip.js';
 import type { TagRenderProps } from '../../renders.js';
 
@@ -32,7 +32,8 @@ export function useBrokenReport(
 /**
  * One entity as an inline chip: the type's `renderChip` slot, or the broken
  * chip when the type resolves to no active module. A hidden type opens its
- * overlay, a normal one navigates — through the bridge only.
+ * overlay, a normal one navigates — through the `editorBridge` singleton only
+ * (2.1.28, M13 chipprops), never the host-internal hook.
  */
 export function EntityChip({
   type,
@@ -46,8 +47,7 @@ export function EntityChip({
   onBroken?: (state: { unresolvedType: boolean; missingEntity: boolean }) => void;
 }) {
   const def = getEntityDef(type);
-  const bridge = useEditorBridge();
-  const open = openEntityHandler(type, slug, bridge, caption);
+  const open = openEntityHandler(type, slug, editorBridge, caption);
   const [missing, setMissing] = useState(false);
   const onMissing = useCallback((m: boolean) => setMissing(m), []);
   useBrokenReport(onBroken, !def, !!def && missing);

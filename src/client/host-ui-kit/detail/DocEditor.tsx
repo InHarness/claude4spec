@@ -28,9 +28,10 @@ import { withStability } from '../stability.js';
  * Concretely: it reads whichever real bridge is already ambient via
  * `useEditorBridge()` (every host built-in entity route already wraps itself
  * in a real, router-backed `EditorBridgeProvider` — see `router.tsx` — so
- * descendants like this get real navigation for free), and republishes that
- * onto the M33 process-wide singleton so chips rendered outside this
- * component's own React subtree can reach it too. Falls back to a safe no-op
+ * descendants like this get real navigation for free), and re-provides it to
+ * its own subtree, so the chips inside — which call the `editorBridge`
+ * singleton, delegating to the nearest provider (2.1.28, M20 m20l11sc) — reach
+ * that bridge. Host-internal use of the hook is the one the spec keeps. Falls back to a safe no-op
  * (not a proxy back to the singleton — that would recurse) when used with no
  * ambient bridge at all, e.g. standalone on a plugin's own unwired page.
  *

@@ -8,7 +8,9 @@ import { isRegisteredXmlTag } from '../../shared/xml-markup/registry.js';
  * editor and the chat read the same assigned component.
  *
  * Pure means: no editor instance, no editor commands. A component navigates
- * only through the editor bridge (`useEditorBridge`) and reports back through
+ * only through the `editorBridge` singleton (2.1.28 — `@c4s/plugin-runtime`, which
+ * delegates to the nearest `EditorBridgeProvider`; the `useEditorBridge` hook
+ * is host-internal) and reports back through
  * the callbacks below, which the host surface (editor node view, chat chip)
  * wires to whatever it owns.
  */

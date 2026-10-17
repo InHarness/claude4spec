@@ -3,7 +3,7 @@ import { getEntityDef } from '../../../entities/registry.js';
 import { openEntityHandler } from '../../../entities/openEntity.js';
 import { categoriseBrokenChip } from '../../../core/plugin-host/host.js';
 import { useRegistryVersion } from '../../../core/plugin-host/useRegistryVersion.js';
-import { useEditorBridge } from '../../../tiptap/EditorContext.js';
+import { editorBridge } from '../../../runtime/editor-bridge.js';
 import { BlockBrokenChip } from '../../../tiptap/extensions/views/BrokenChip.js';
 import { isMissingEntity } from '../../../state/brokenRefs.js';
 import type { TagRenderProps } from '../../renders.js';
@@ -48,8 +48,7 @@ function SingleElementCard({
   onBrokenChange: TagRenderProps['onBrokenChange'];
 }) {
   const def = getEntityDef(type);
-  const bridge = useEditorBridge();
-  const open = openEntityHandler(type, slug, bridge, caption);
+  const open = openEntityHandler(type, slug, editorBridge, caption);
   const [missing, setMissing] = useState(false);
   const onMissing = useCallback((m: boolean) => setMissing(m), []);
   useBrokenReport(onBrokenChange, !def, !!def && missing);
