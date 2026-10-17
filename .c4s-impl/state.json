@@ -1,0 +1,1348 @@
+{
+  "iteration": 0,
+  "units": [
+    {
+      "id": "kit-catalog-m34",
+      "goal": "Moduł M34 opisuje teraz jedna płaska strona, a katalog komponentów hosta to zbiór rekordów `ui-kit-component`. Rejestr katalogu w kodzie odzwierciedla te rekordy, także powierzchnie L11 konsumowane przez komponenty `connected`, a listę komponentów `stable` wyprowadza się z rejestru tak samo w przeglądarce i w backendzie. Usunięte są podstrony `modules/m34-host-ui-kit/` i arkusz sub-drzewa M34. Ich treść przeniesiono do strony modułu i do rekordów, więc system niczego nie traci.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m34-host-ui-kit.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m34-host-ui-kit/m34-host-ui-kit.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m34-host-ui-kit/L12-host-ui-kit.md",
+            "change": "all"
+          }
+        ],
+        "entities": [
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m34-requires-m13",
+              "m34-requires-m20"
+            ]
+          },
+          {
+            "type": "spreadsheet",
+            "slugs": [
+              "moduly-feature",
+              "warstwy",
+              "sub-drzewo-m34"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-autor-bierze-tier-experimental-za-bra",
+              "ac-overlay-czatu-m05-i-powierzchnia-edyto"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": [],
+      "wave": 1
+    },
+    {
+      "id": "ui-kit-type-package",
+      "goal": "Powstaje pakiet pluginu `c4s-plugin-host-ui-kit-components`. Wnosi typ encji `ui-kit-component`, czyli jeden rekord na każdy eksport `@c4s/plugin-runtime/ui`, wraz z modelem danych, generowanym CRUD, zakładką w ELEMENTS z listą grupowaną po grupie komponentu i trasą detalu. Do tego dochodzi serwer narzędzi z audytem reguł obejmujących wiele pól i wiele rekordów. Rekord bez wymaganej klasyfikacji (tier, wiązanie) nie powstaje.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "plugins/modules/c4s-plugin-host-ui-kit-components.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/layers/L12-host-ui-kit.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m34-host-ui-kit.md",
+            "context": {
+              "offset": 10,
+              "limit": 1,
+              "anchors": [
+                "m34l12sc"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "spreadsheet",
+            "slugs": [
+              "encje-pluginy"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-kazdy-wpis-katalogu-host-ui-kit-deklaruj",
+              "ac-komponent-o-binding-connected-jawni"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": [],
+      "wave": 1
+    },
+    {
+      "id": "editor-bridge-singleton",
+      "goal": "`@c4s/plugin-runtime` wystawia singleton mostu edytora, który deleguje do mostu najbliższego providera. Chipy w edytorze, w czacie i w pluginach nawigują więc do encji i sekcji przez ten singleton, a nie przez hook. Hook mostu jest używany wyłącznie wewnątrz hosta.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m20-editor-tiptap.md",
+            "change": {
+              "offset": 0,
+              "limit": 2,
+              "anchors": [
+                "nvc5wy2p",
+                "m20l11sc"
+              ]
+            },
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "m20cel00",
+                "m20dep00",
+                "8f8ku0gd"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m20-editor-tiptap.md",
+            "context": {
+              "offset": 19,
+              "limit": 1,
+              "anchors": [
+                "m20edt00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m20-editor-tiptap.md",
+            "context": {
+              "offset": 28,
+              "limit": 1,
+              "anchors": [
+                "nvc5wy2p"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m20-editor-tiptap.md",
+            "context": {
+              "offset": 37,
+              "limit": 1,
+              "anchors": [
+                "m20l11sc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m05-chat-agent/chat-component/chat-component.md",
+            "change": "all",
+            "context": {
+              "offset": 10,
+              "limit": 2,
+              "anchors": [
+                "vzt4un27",
+                "rehyxchp"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/L2-domain.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "z7l89jhf"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/L2-domain.md",
+            "context": {
+              "offset": 6,
+              "limit": 1,
+              "anchors": [
+                "chipprops"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "change": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "xr8fs8dc"
+              ]
+            },
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m13cel00",
+                "m13dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 14,
+              "limit": 1,
+              "anchors": [
+                "z5jthgfh"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 16,
+              "limit": 1,
+              "anchors": [
+                "xr8fs8dc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "context": {
+              "offset": 7,
+              "limit": 1,
+              "anchors": [
+                "m33rt001"
+              ]
+            }
+          }
+        ],
+        "entities": []
+      },
+      "dependsOn": [],
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": [],
+      "wave": 1
+    },
+    {
+      "id": "host-kit-debts",
+      "goal": "Stopka strony planu korzysta z katalogowego paska akcji. Formularz bramki zaufania dla pluginów project-local korzysta z katalogowego okna i przycisków stopki. Panel wątków strony planu i historia wersji pliku planu to zapisany dług wobec katalogu i w tym oknie nie wymagają przebudowy.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m10-plans.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "m10cel00",
+                "m10dep00",
+                "m10dom00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m10-plans.md",
+            "context": {
+              "offset": 32,
+              "limit": 1,
+              "anchors": [
+                "0dy3js11"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m33purp01",
+                "m33deps01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "context": {
+              "offset": 9,
+              "limit": 1,
+              "anchors": [
+                "m33trst0"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "context": {
+              "offset": 23,
+              "limit": 1,
+              "anchors": [
+                "gox0ptn4"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m10-requires-m34",
+              "m33-requires-m34"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": [],
+      "wave": 1
+    },
+    {
+      "id": "plugin-ui-debts",
+      "goal": "Okna pełnoekranowe diagramu, fragmentu kodu i arkusza to zapisany dług wobec katalogu: czekają na wspólną powłokę overlay. Overlay diagramu leży na warstwie modalnej z mostu tokenów, a nie na literalnym z-indexie. Okno rozwinięcia arkusza jest tylko do odczytu i pobiera siatkę oknami zakresu. Tabele bazy danych biorą kolory z mostu tokenów bez wartości zapasowych. Podgląd makiety ui-view to lokalna ramka iframe hosta, a typ ui-view wiąże się w runtime z serwisami tagów i referencji.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "plugins/modules/c4s-plugin-diagram.md",
+            "change": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "rgczgux0",
+                "dgmfull000"
+              ]
+            },
+            "context": {
+              "offset": 4,
+              "limit": 2,
+              "anchors": [
+                "dgmcel00",
+                "dgmdep00"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-diagram.md",
+            "context": {
+              "offset": 19,
+              "limit": 3,
+              "anchors": [
+                "rgczgux0",
+                "dgmview000",
+                "dgmfull000"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-code-snippets.md",
+            "change": {
+              "offset": 2,
+              "limit": 2,
+              "anchors": [
+                "jsejrh30",
+                "2i5ypc7q"
+              ]
+            },
+            "context": {
+              "offset": 4,
+              "limit": 1,
+              "anchors": [
+                "nulyx140"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-code-snippets.md",
+            "context": {
+              "offset": 6,
+              "limit": 1,
+              "anchors": [
+                "io8apf7i"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-code-snippets.md",
+            "context": {
+              "offset": 17,
+              "limit": 4,
+              "anchors": [
+                "jsejrh30",
+                "vump3vo2",
+                "2i5ypc7q",
+                "31369549"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-spreadsheets.md",
+            "change": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "s7ao66dy"
+              ]
+            },
+            "context": {
+              "offset": 3,
+              "limit": 2,
+              "anchors": [
+                "ffnk1l1o",
+                "w91galmw"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-spreadsheets.md",
+            "change": {
+              "offset": 2,
+              "limit": 1,
+              "anchors": [
+                "lg0e57j1"
+              ]
+            },
+            "context": {
+              "offset": 9,
+              "limit": 1,
+              "anchors": [
+                "s7ao66dy"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-spreadsheets.md",
+            "context": {
+              "offset": 12,
+              "limit": 1,
+              "anchors": [
+                "lg0e57j1"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-database-tables.md",
+            "change": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "vnufk8nt"
+              ]
+            },
+            "context": {
+              "offset": 3,
+              "limit": 2,
+              "anchors": [
+                "iqydvmh5",
+                "ovajlwnd"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-database-tables.md",
+            "change": {
+              "offset": 2,
+              "limit": 2,
+              "anchors": [
+                "uyu88bdw",
+                "5d3hfpij"
+              ]
+            },
+            "context": {
+              "offset": 8,
+              "limit": 1,
+              "anchors": [
+                "vnufk8nt"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-database-tables.md",
+            "context": {
+              "offset": 11,
+              "limit": 2,
+              "anchors": [
+                "uyu88bdw",
+                "5d3hfpij"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-frontend-mockups/ui-view/ui-view.md",
+            "change": {
+              "offset": 2,
+              "limit": 1,
+              "anchors": [
+                "uvrender"
+              ]
+            },
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "uvcel000",
+                "uvdep000"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-frontend-mockups/ui-view/ui-view.md",
+            "change": {
+              "offset": 4,
+              "limit": 1,
+              "anchors": [
+                "yn1fk80a"
+              ]
+            },
+            "context": {
+              "offset": 23,
+              "limit": 1,
+              "anchors": [
+                "uvrender"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-frontend-mockups/ui-view/ui-view.md",
+            "context": {
+              "offset": 27,
+              "limit": 1,
+              "anchors": [
+                "yn1fk80a"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "spreadsheet",
+            "slugs": [
+              "wklad-do-edytora-entity-database-table"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": [],
+      "wave": 1
+    },
+    {
+      "id": "kit-primitives",
+      "goal": "Prymitywy katalogu oraz komponenty list, akcji, formularzy, overlay i feedbacku spełniają kontrakty swoich rekordów. Nowe zachowanie jest jedno: chip z obsługą kliknięcia jest osiągalny klawiaturą i aktywuje się z klawiatury. Pozostałe kontrakty się nie zmieniły, ale są teraz sprawdzane względem rekordów.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m34-host-ui-kit.md",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "m34purp01",
+                "m34deps01",
+                "fs3obztl"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m34-host-ui-kit.md",
+            "context": {
+              "offset": 10,
+              "limit": 1,
+              "anchors": [
+                "m34l12sc"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ui-kit-component",
+            "slugs": [
+              "action-bar",
+              "action-button",
+              "badge",
+              "dialog",
+              "empty-state",
+              "entity-list-layout",
+              "entity-list-row",
+              "form-field",
+              "form-shell",
+              "grouped-entity-list",
+              "inline-edit-field",
+              "loading-state",
+              "pagination",
+              "popover",
+              "tag-filter-bar",
+              "toast-viewport"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-badge-z-podanym-onclick-jest-osiagaln",
+              "ac-badge-z-podanym-onclick-wywoluje-oncl",
+              "ac-badge-z-variant-broken-renderuje-wari",
+              "ac-dialog-grupa-overlay-create-jest-contr",
+              "ac-dialog-i-formshell-sa-w-tierze-experimen",
+              "ac-dialog-jest-odrebny-od-host-internal-con",
+              "ac-dialog-przyjmuje-dismissible-boolean",
+              "ac-dialog-przyjmuje-width-number-doklad",
+              "ac-dialog-renderuje-wiersz-naglowka-z-przyc",
+              "ac-dialog-scrolluje-wewnetrznie-cialo-przy",
+              "ac-drawer-boczny-wariant-powloki-side-le",
+              "ac-formshell-komponuje-atomy-formfield-inli",
+              "ac-groupedentitylist-jest-importowalny-z",
+              "ac-groupedentitylist-rysuje-tekst-pomocn",
+              "ac-onclose-jest-wymagany-w-obu-wariantach-d",
+              "ac-panel-dialog-w-tierze-size-sm-ma-420px",
+              "ac-popover-grupa-overlay-feedback-m34-exp",
+              "ac-popover-z-zadanym-maxheight-scrolluje-we",
+              "ac-toastviewport-usetoast-grupa-overlay"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "kit-catalog-m34",
+          "why": "wpisy rejestru i tiery tych komponentów pochodzą z rejestru katalogu."
+        }
+      ],
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": [],
+      "wave": 2
+    },
+    {
+      "id": "m13-detail-scaffold",
+      "goal": "Scaffold detalu wnoszony przez M13 (powłoka, siatka pól, wiersz pole–wartość, layout dokumentu) spełnia kontrakty swoich rekordów. Nagłówkiem detalu jest ostatni człon ścieżki okruszków, siatka układa wiersze w kolumnę, a wiersz pokazuje etykietę i wartość podaną jako dzieci. Propsy komponentów `stable` liczą się do wersji Host API.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "change": {
+              "offset": 4,
+              "limit": 1,
+              "anchors": [
+                "m13l12sc"
+              ]
+            },
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m13cel00",
+                "m13dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 14,
+              "limit": 2,
+              "anchors": [
+                "z5jthgfh",
+                "za3zsw0w"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 26,
+              "limit": 1,
+              "anchors": [
+                "m13l12sc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m34-host-ui-kit.md",
+            "context": {
+              "offset": 10,
+              "limit": 1,
+              "anchors": [
+                "m34l12sc"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ui-kit-component",
+            "slugs": [
+              "detail-panel-shell",
+              "document-body",
+              "field-grid",
+              "field-row"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-detailpanelshell-renderuje-ostatni-cz",
+              "ac-documentbody-kontrybuowany-przez-m13-e",
+              "ac-fieldgrid-uklada-w-kolumne-wiersze-fi",
+              "ac-fieldrow-renderuje-jeden-wiersz-pary"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "kit-catalog-m34",
+          "why": "wpisy rejestru i tier `stable` tych komponentów."
+        }
+      ],
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": [],
+      "wave": 2
+    },
+    {
+      "id": "kit-detail-history",
+      "goal": "Komponenty panelu detalu, historii i pickery spełniają kontrakty swoich rekordów i mają nowe zachowania:\n- widok diffu bez policzonych hunków pokazuje parę before/after jako dwa panele tekstu, a hunki mają przed tą parą pierwszeństwo;\n- lista wersji jest domyślnie płaska, a w trybie timeline grupuje wersje pod etykietą release;\n- blok historii encji przywraca wersję hookiem hosta, ma placeholder diffu i nagłówki grup release;\n- toolbar detalu przy usuwaniu tylko woła callback, bez własnego potwierdzenia;\n- picker relacji otwiera osobny popover z kandydatami dla każdej grupy.\n\nKomponenty historii nie renderują delty semantycznej, bo robi to wyłącznie formatter release-diffu M17.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "change": {
+              "offset": 3,
+              "limit": 1,
+              "anchors": [
+                "m13l11sc"
+              ]
+            },
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m13cel00",
+                "m13dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 25,
+              "limit": 1,
+              "anchors": [
+                "m13l11sc"
+              ]
+            }
+          },
+          {
+            "key": "pages/layers/L12-host-ui-kit.md",
+            "context": {
+              "offset": 2,
+              "limit": 1,
+              "anchors": [
+                "l12slice0"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m34-host-ui-kit.md",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "m34purp01",
+                "m34deps01",
+                "fs3obztl"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m34-host-ui-kit.md",
+            "context": {
+              "offset": 10,
+              "limit": 1,
+              "anchors": [
+                "m34l12sc"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ui-kit-component",
+            "slugs": [
+              "diff-view",
+              "doc-editor",
+              "entity-detail-toolbar",
+              "entity-version-history-view",
+              "enum-badge-picker",
+              "grouped-relation-picker",
+              "references-list",
+              "rich-text-field",
+              "segmented-control-tabs",
+              "tag-picker",
+              "version-history"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-allowrestore-false-ukrywa-akcje-rest",
+              "ac-badge-changedby-w-widoku-historii-ent",
+              "ac-diffview-bez-niepustych-hunks-z-podan-2",
+              "ac-diffview-bez-niepustych-hunks-z-podan",
+              "ac-diffview-m34-experimental-renderuje-p",
+              "ac-diffview-z-niepustymi-hunks-i-jednocz",
+              "ac-diffview-z-pustym-propsem-hunks-renderuj",
+              "ac-doceditor-m34-experimental-host-wired",
+              "ac-doceditor-obsluguje-slash-commands",
+              "ac-doceditor-pozwala-wstawic-odnosnik-do",
+              "ac-entitydetailtoolbar-przy-operacji-dele",
+              "ac-entityversionhistoryview-bez-wybranej",
+              "ac-entityversionhistoryview-dla-encji-bez",
+              "ac-entityversionhistoryview-ma-stability",
+              "ac-entityversionhistoryview-otwarty-dla",
+              "ac-entityversionhistoryview-pokazuje-w-z",
+              "ac-entityversionhistoryview-przy-showrel",
+              "ac-entityversionhistoryview-renderuje-kom",
+              "ac-enumbadgepicker-grupa-pickers-m34-expe",
+              "ac-groupedrelationpicker-grupa-pickers-m34",
+              "ac-groupedrelationpicker-z-zadanym-maxheigh",
+              "ac-komponent-entitydetailtoolbar-m34-e",
+              "ac-komponent-referenceslist-m34-experi",
+              "ac-komponent-richtextfield-m34-experim",
+              "ac-komponent-segmentedcontroltabs-grupa",
+              "ac-komponent-tagpicker-m34-experimenta",
+              "ac-komponent-versionhistory-m34-experi",
+              "ac-line-diff-w-c4s-ma-jedna-implementacje-r",
+              "ac-lista-kandydatow-w-popoverze-grupy-gr",
+              "ac-restore-w-entityversionhistoryview-pr",
+              "ac-richtextfield-m34-experimental-render",
+              "ac-richtextfield-w-trybie-readonly-rend",
+              "ac-tagpicker-oncreate-dla-nazwy-dajacej-j",
+              "ac-tagpicker-w-wariancie-collapsed-renderuj",
+              "ac-versionhistory-bez-podanego-variant-r",
+              "ac-versionhistory-w-wariancie-variant-time",
+              "ac-versionhistory-z-pustym-propsem-versi",
+              "ac-versionhistory-z-variant-timeline-ren",
+              "ac-w-wariancie-collapsed-tagpicker-odslania",
+              "ac-w-widoku-entityversionhistoryview-wers"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "kit-primitives",
+          "why": "te komponenty składają się z chipa, popovera, stanów pustego i ładowania oraz przycisku akcji"
+        },
+        {
+          "unit": "editor-bridge-singleton",
+          "why": "pełny edytor opisu konsumuje singleton mostu"
+        },
+        {
+          "unit": "kit-catalog-m34",
+          "why": "powierzchnie L11 komponentów `connected` w rejestrze."
+        }
+      ],
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": [],
+      "wave": 3
+    },
+    {
+      "id": "m19-list-header",
+      "goal": "Nagłówek listy encji, komponent `stable` wnoszony przez M19, spełnia kontrakt swojego rekordu, łącznie z typem ikony pochodzącym z peera lucide. Natywna strona listy i tworzenie encji z listy składają się z komponentów katalogu tak jak dotąd, a host i plugin renderują ten sam nagłówek.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m19-references.md",
+            "change": {
+              "offset": 0,
+              "limit": 2,
+              "anchors": [
+                "thm8a14c",
+                "9v3i7vs1"
+              ]
+            },
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "m19cel00",
+                "m19dep00",
+                "eja05viu"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m19-references.md",
+            "change": {
+              "offset": 5,
+              "limit": 1,
+              "anchors": [
+                "m19l12sc"
+              ]
+            },
+            "context": {
+              "offset": 30,
+              "limit": 2,
+              "anchors": [
+                "thm8a14c",
+                "9v3i7vs1"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m19-references.md",
+            "context": {
+              "offset": 38,
+              "limit": 1,
+              "anchors": [
+                "m19l12sc"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ui-kit-component",
+            "slugs": [
+              "entity-list-header"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-entitylistrow-icon-experimental-m34",
+              "ac-plugin-renderuje-komponent-entitylisthea",
+              "ac-typ-lucideicon-w-stable-propsach-l12"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "kit-primitives",
+          "why": "wzorzec listy składa się z layoutu, wiersza, paska filtrów, stanów i okna z tej jednostki"
+        },
+        {
+          "unit": "kit-catalog-m34",
+          "why": "wpis rejestru i tier `stable`."
+        }
+      ],
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": [],
+      "wave": 3
+    },
+    {
+      "id": "m18-tags-kit",
+      "goal": "Ekran tagów buduje wiersz tagu z katalogowego wiersza listy, a nazwę i kolor tagu edytuje inline przez katalogowe pole edycji i popover. Pozycję listy tagów da się przypisać zarówno do typu tagu z `/ui`, jak i do wejścia pickera tagów, bez rzutowania. DTO pozycji tagu dostaje tag modułu `m18`, a jego pola się nie zmieniają.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m18-tags.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m18cel00",
+                "m18dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m18-tags.md",
+            "context": {
+              "offset": 4,
+              "limit": 1,
+              "anchors": [
+                "m18dom00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m18-tags.md",
+            "context": {
+              "offset": 17,
+              "limit": 2,
+              "anchors": [
+                "mn59j0le",
+                "xfkinig4"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "dto",
+            "slugs": [
+              "tag-list-item"
+            ]
+          },
+          {
+            "type": "ui-view",
+            "slugs": [
+              "tags-list"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-pozycja-o-ksztalcie-tag-list-item-jes"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "kit-primitives",
+          "why": "typ tagu, wiersz listy, pole edycji inline i popover"
+        },
+        {
+          "unit": "kit-detail-history",
+          "why": "wejście pickera tagów."
+        }
+      ],
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": [],
+      "wave": 4
+    },
+    {
+      "id": "entity-screens-kit",
+      "goal": "Ekrany list, detali i historii typów encji (kryterium akceptacji, tabela bazy danych, design system, DTO, endpoint, ui-view) oraz pusty stan strony startowej składają się z komponentów katalogu, które wskazują ich widoki. Historię każdego typu pokazuje ten sam blok historii encji hosta. Ekrany zachowują się tak jak dotąd, poza zmianami, które wnoszą zmienione komponenty.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m02-pages.md",
+            "context": {
+              "offset": 8,
+              "limit": 1,
+              "anchors": [
+                "4dcvgivu"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ui-view",
+            "slugs": [
+              "ac-detail",
+              "ac-list",
+              "database-table-detail",
+              "database-table-list",
+              "design-system-detail",
+              "design-system-history",
+              "design-system-list",
+              "dto-detail",
+              "dto-list",
+              "endpoint-detail",
+              "endpoint-history",
+              "endpoint-list",
+              "home-redirect-empty-state",
+              "ui-view-detail",
+              "ui-view-history",
+              "ui-view-list"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "kit-primitives",
+          "why": "ekrany składają się z komponentów tych jednostek."
+        },
+        {
+          "unit": "kit-detail-history",
+          "why": "ekrany składają się z komponentów tych jednostek."
+        },
+        {
+          "unit": "m13-detail-scaffold",
+          "why": "ekrany składają się z komponentów tych jednostek."
+        },
+        {
+          "unit": "m19-list-header",
+          "why": "ekrany składają się z komponentów tych jednostek."
+        }
+      ],
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": [],
+      "wave": 4
+    }
+  ],
+  "waves": [
+    {
+      "n": 1,
+      "units": [
+        "kit-catalog-m34",
+        "ui-kit-type-package",
+        "editor-bridge-singleton",
+        "host-kit-debts",
+        "plugin-ui-debts"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 2,
+      "units": [
+        "kit-primitives",
+        "m13-detail-scaffold"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 3,
+      "units": [
+        "kit-detail-history",
+        "m19-list-header"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 4,
+      "units": [
+        "m18-tags-kit",
+        "entity-screens-kit"
+      ],
+      "startCommit": null
+    }
+  ],
+  "conventions": [
+    {
+      "label": "L12 (Host UI Kit) — implementor M34",
+      "key": "pages/modules/m34-host-ui-kit.md",
+      "offset": 10,
+      "anchor": "m34l12sc"
+    },
+    {
+      "label": "L12 — schemat wycinka modułu",
+      "key": "pages/layers/L12-host-ui-kit.md",
+      "offset": 2,
+      "anchor": "l12slice0"
+    },
+    {
+      "label": "L11 (Plugin Runtime Surface) — implementor M33",
+      "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+      "offset": 18,
+      "anchor": "m33l11sc"
+    },
+    {
+      "label": "User jobs table, for the system verifier",
+      "key": "pages/SKILL.md",
+      "offset": 13,
+      "anchor": "oq23nb0j"
+    }
+  ],
+  "entityTypes": [
+    {
+      "type": "ac",
+      "role": "criteria",
+      "checks": "verifies",
+      "links": [
+        "verifies"
+      ],
+      "observedIn": "unit",
+      "inactive": "status = deprecated",
+      "version": 3
+    },
+    {
+      "type": "ui-kit-component",
+      "role": "built",
+      "inCode": "the catalog component exported from @c4s/plugin-runtime/ui (src/client/host-ui-kit/<group>/…, re-exported via src/client/host-ui-kit/index.ts and src/plugin-types/ui.ts) plus its entry in the catalog registry src/client/host-ui-kit/registry.ts: `name`, `group`, `stability`, `binding`, `l11Surfaces` = the record's `dataSources` (fetchedByComponent for connected), `composes`; its props/types exactly as the record's `props`/`types`; behaviour as `behavior` states; a `stable` one also in UI_KIT_STABLE_COMPONENTS (src/shared/plugin-host/ui-kit-surface.ts)",
+      "verify": "a vitest test in src/client/host-ui-kit/registry.test.ts named with [entity:<slug>] asserting the registry entry matches the record (group, stability, binding, L11 surfaces, composes), plus a happy-dom render test colocated with the component (<Component>.render.test.ts) named with [entity:<slug>] for the props and the behaviour `behavior` states",
+      "links": [
+        "composes"
+      ],
+      "version": 1
+    },
+    {
+      "type": "ui-view",
+      "role": "built",
+      "inCode": "the React screen component that renders the view (route per `url`, params, alternative `states`), composed from the catalog components the view names (src/client/components/** for host screens, plugins/<pkg>/frontend/** for plugin-contributed screens)",
+      "verify": "a happy-dom render test next to the screen component named with [entity:<slug>] asserting the composition the view states (which catalog components render, the states) and the absence of replaced bespoke parts",
+      "links": [],
+      "version": 4
+    },
+    {
+      "type": "dto",
+      "role": "built",
+      "inCode": "the TypeScript type TagListItem (M18, src/shared/** / the tags route) — field names, types and nullability exactly as the DTO's `fields`, assignable without a cast to the /ui Tag type and to the TagPicker input",
+      "verify": "a vitest test next to the tags route / type named with [entity:tag-list-item] asserting the live payload has every field with its type, plus a type-level assignability check (expectTypeOf, checked by npm run typecheck) to the /ui Tag and the TagPicker item",
+      "links": [],
+      "version": 2
+    },
+    {
+      "type": "module-dependency",
+      "role": "context",
+      "links": [],
+      "version": 1
+    },
+    {
+      "type": "spreadsheet",
+      "role": "per-entity",
+      "links": [],
+      "version": 3
+    }
+  ],
+  "entityParts": [
+    {
+      "slug": "moduly-feature",
+      "type": "spreadsheet",
+      "why": "Indeks modułów specyfikacji (#, moduł, warstwy, zakres, plik strony); w oknie zmienia się tylko wiersz M34 (plik strony po spłaszczeniu i opis zakresu) — nic w kodzie mu nie odpowiada.",
+      "parts": [
+        {
+          "role": "context",
+          "items": "all"
+        }
+      ]
+    },
+    {
+      "slug": "warstwy",
+      "type": "spreadsheet",
+      "why": "Indeks warstw (warstwa, plik, co opisuje); w oknie zmienia się opis L12 — opis specyfikacji, bez odpowiednika w kodzie.",
+      "parts": [
+        {
+          "role": "context",
+          "items": "all"
+        }
+      ]
+    },
+    {
+      "slug": "sub-drzewo-m34",
+      "type": "spreadsheet",
+      "why": "Arkusz usunięty w oknie (op: delete): spis podstron modules/m34-host-ui-kit/ — struktura specyfikacji; w kodzie do usunięcia są najwyżej odwołania do tych ścieżek stron.",
+      "parts": [
+        {
+          "role": "context",
+          "items": "all"
+        }
+      ]
+    },
+    {
+      "slug": "encje-pluginy",
+      "type": "spreadsheet",
+      "why": "Tabela pakietów pluginów i wnoszonych typów; nowy wiersz c4s-plugin-host-ui-kit-components z „Pakiet w kodzie: tak” to coś, co system ma — pakiet w plugins/ wnoszący typ ui-kit-component. Pozostałe wiersze tylko się przesunęły i są kontekstem.",
+      "parts": [
+        {
+          "role": "built",
+          "items": "the row whose Pakiet is **c4s-plugin-host-ui-kit-components**",
+          "key": "Pakiet",
+          "inCode": "the plugin package plugins/c4s-plugin-host-ui-kit-components (envelope contributing entity type `ui-kit-component`, as the row's Zakres states)",
+          "verify": "a vitest test in the package named with [entity:encje-pluginy#c4s-plugin-host-ui-kit-components] asserting the package manifest declares the `ui-kit-component` type"
+        },
+        {
+          "role": "context",
+          "items": "all other rows"
+        }
+      ]
+    },
+    {
+      "slug": "wklad-do-edytora-entity-database-table",
+      "type": "spreadsheet",
+      "why": "Wkład pakietu database-tables do edytora: wiersze to rzeczy, które pakiet rejestruje (komenda slash, popover); w oknie zmienia się tylko Uwagi wiersza popovera (wzmianka o katalogowym Dialog jako osobnej powierzchni) — rejestracje istnieją i zostają bez zmian.",
+      "parts": [
+        {
+          "role": "built",
+          "items": "rows 2–3 (each contribution)",
+          "key": "Nazwa",
+          "inCode": "the contribution registered by plugins/c4s-plugin-database-tables (contributes.commands `/database-table`; the `database-table-create` popover drawn by the package, not by the kit Dialog)",
+          "verify": "the package's manifest/popover tests (plugins/c4s-plugin-database-tables/**.test.ts) named with [entity:wklad-do-edytora-entity-database-table#<Nazwa>] asserting the command and the popover discriminator"
+        }
+      ]
+    }
+  ],
+  "baselineGreen": true,
+  "systemVerified": false,
+  "errors": 0
+}
