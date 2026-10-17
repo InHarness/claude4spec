@@ -119,7 +119,7 @@
         ]
       },
       "dependsOn": [],
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "ui-kit-type-package/p1-l1-l12",
@@ -137,26 +137,13 @@
             "ac-kazdy-wpis-katalogu-host-ui-kit-deklaruj",
             "ac-komponent-o-binding-connected-jawni"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [
             "regression"
           ],
-          "only": [
-            {
-              "finding": "regression:plugins/c4s-plugin-host-ui-kit-components/test/live-type.test.ts"
-            },
-            {
-              "finding": "regression:plugins/c4s-plugin-host-ui-kit-components/test/backend-entry-is-react-free.test.ts"
-            },
-            {
-              "finding": "regression:src/server/operations/catalog.test.ts"
-            },
-            {
-              "finding": "regression:src/server/core/plugin-host/plugin-runtime-resolver.subprocess.test.ts"
-            }
-          ]
+          "only": []
         }
       ],
       "startCommit": "5bab87b1af1de75c642d41fd5159122298acc7d4",
@@ -794,7 +781,7 @@
           "why": "wpisy rejestru i tiery tych komponentów pochodzą z rejestru katalogu."
         }
       ],
-      "status": "pending",
+      "status": "in-progress",
       "portions": [
         {
           "name": "kit-primitives/p1-l12",

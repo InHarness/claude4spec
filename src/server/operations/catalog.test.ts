@@ -1858,9 +1858,15 @@ describe("the catalogue against the window's 78 records", () => {
     'spreadsheet-tools': ['plugins/c4s-plugin-spreadsheets/src/entity/spreadsheet/mcp.ts'],
     'ac-tools': ['plugins/c4s-plugin-ac/src/entity/ac/backend/mcp.ts'],
     'diagram-tools': ['src/server/entities/diagram/mcp-server.ts'],
+    // The server and tool names are constants in the package's `identity.ts`
+    // (`UI_KIT_TOOLS_SERVER`, `UI_KIT_AUDIT_TOOL`), which `mcp.ts` registers by name.
+    'ui-kit-component-tools': [
+      'plugins/c4s-plugin-host-ui-kit-components/src/entity/ui-kit-component/backend/mcp.ts',
+      'plugins/c4s-plugin-host-ui-kit-components/src/identity.ts',
+    ],
   };
   /** The plugin `${type}-tools` servers whose tools the record-less plugin rows name. */
-  const PLUGIN_TYPE_SERVERS = ['endpoint-tools', 'spreadsheet-tools', 'ac-tools', 'diagram-tools'];
+  const PLUGIN_TYPE_SERVERS = ['endpoint-tools', 'spreadsheet-tools', 'ac-tools', 'diagram-tools', 'ui-kit-component-tools'];
   const sourceOf = (server: string): string | undefined => {
     const files = SERVER_SOURCES[server];
     return files?.map((f) => fs.readFileSync(path.join(repoRoot, f), 'utf-8')).join('\n');
@@ -1870,7 +1876,11 @@ describe("the catalogue against the window's 78 records", () => {
     const [server, tool] = rendering.split('.') as [string, string];
     const src = sourceOf(server);
     if (!src || !src.includes(`'${server}'`)) return false;
-    return new RegExp(`\\(\\s*'${tool}'`).test(src);
+    if (new RegExp(`\\(\\s*'${tool}'`).test(src)) return true;
+    // Registered through a named constant: `const X = '<tool>'` in the server's
+    // sources, and `X` passed as the first argument of a registration call.
+    const constants = [...src.matchAll(new RegExp(`\\b([A-Z][A-Z0-9_]*)\\s*=\\s*'${tool}'`, 'g'))].map((m) => m[1]!);
+    return constants.some((name) => new RegExp(`\\(\\s*${name}\\s*,`).test(src));
   };
 
   const byName = new Map(SPEC_OPERATION_RECORDS.map((r) => [r.nazwa, r]));

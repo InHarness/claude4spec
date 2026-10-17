@@ -40,6 +40,9 @@ export const uiKitComponentData: DataDeclaration = {
       type: 'enum',
       values: UI_KIT_GROUPS,
       required: true,
+      // `group` is a reserved SQL word and the generated DDL emits columns
+      // unquoted, so the record field keeps its spec name and the column does not.
+      column: 'component_group',
       description: 'Catalog group. The value order is the group order of the type list.',
     },
     stability: {

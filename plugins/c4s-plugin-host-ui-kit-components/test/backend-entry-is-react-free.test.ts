@@ -15,11 +15,10 @@
  * `PLUGIN_IMPORT_FAILED`, and a failed envelope means `ui-kit-component` silently does not
  * exist — no sidebar tab, no `/ui-kit-components` routes, no `ui-kit-component-tools`.
  *
- * This package is squarely in range of that mistake, and further in than most:
- * `AC_POPOVER_KIND` lives in `identity.ts`, which is `.ts` and React-free
- * precisely so `capabilities/commands.ts` can import it without dragging
- * `slash-create.tsx` onto the server's load path — and `identity.ts` also holds
- * `shortLabel`, which the RENDERERS use, so the pull is in both directions.
+ * This package is in range of that mistake: `identity.ts` (the type name, the
+ * enums, the tools-server and audit-tool names) is `.ts` and React-free
+ * precisely so the backend can import it, while the frontend renderers import
+ * the same names from the same place — so the pull is in both directions.
  *
  * A source-graph walk rather than a check on `dist/`, so it needs no build and
  * names the offending EDGE instead of the bundled result.
@@ -85,6 +84,25 @@ describe('the backend entry graph', () => {
 
   it('actually traversed the graph (the walk itself must not silently no-op)', () => {
     walk(ENTRY, []);
-    expect(visited.size).toBeGreaterThan(10);
+    // The backend graph of this package is small (ten modules today), so a bare
+    // count threshold copied from a larger sibling proves nothing. Name instead
+    // every module the server side is wired through — entry → manifest → the
+    // entity contribution → its schema, system prompt and the
+    // `ui-kit-component-tools` server with the audit — and require the walk to
+    // have reached each one.
+    const reached = new Set([...visited].map((f) => path.relative(SRC, f).split(path.sep).join('/')));
+    for (const mod of [
+      'index.ts',
+      'manifest.ts',
+      'identity.ts',
+      'entity/ui-kit-component/index.ts',
+      'entity/ui-kit-component/schema.ts',
+      'entity/ui-kit-component/system-prompt.ts',
+      'entity/ui-kit-component/backend/mcp.ts',
+      'entity/ui-kit-component/backend/audit.ts',
+      'entity/ui-kit-component/backend/read-records.ts',
+    ]) {
+      expect(reached, `walk did not reach ${mod}`).toContain(mod);
+    }
   });
 });
