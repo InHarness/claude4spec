@@ -65,7 +65,15 @@ describe.skipIf(!BASE)('settings — External Integrations (0.2.93)', () => {
 
   it('the route answers three server-rendered variants in presentation order', () => {
     expect(config.variants.map((v) => v.id)).toEqual(['http-project', 'http-workspace', 'stdio']);
-    for (const v of config.variants) expect(v.snippet).toContain(projectId);
+    for (const v of config.variants) {
+      // The workspace-bound entry carries no project: each call names its own.
+      if (v.id === 'http-workspace') {
+        expect(v.snippet).toContain('/api/workspace/mcp?profile=');
+        expect(v.snippet).not.toContain('project=');
+      } else {
+        expect(v.snippet).toContain(projectId);
+      }
+    }
   });
 
   it('the card is renamed and sits between Entities and Plugin pool', async () => {
