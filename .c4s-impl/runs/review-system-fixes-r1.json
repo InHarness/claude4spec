@@ -1,0 +1,27 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "wave",
+    "id": "system-fixes-r1",
+    "base": "549ee6f5"
+  },
+  "findings": [
+    {
+      "id": "rev-0201",
+      "file": "src/client/components/TagsList.tsx",
+      "line": 105,
+      "blocking": false,
+      "reason": "`sentName` is reset only in `onError`, never after success, so it outlives the PATCH it was meant to de-duplicate. Once a rename to X succeeds, the guard silently refuses a later rename to X whenever `tag.name` is no longer X. That happens if the tag was renamed back elsewhere (another tab, an agent or MCP tool, or a version restore), or if the server stores a different name. The user's commit does nothing and shows no toast. The blur that follows Enter fires synchronously, so clearing the ref in `onSettled`, or when `tag.name` changes, keeps the de-duplication and removes the stale state.",
+      "portion": "m18-tags-kit/p1-l2-l12"
+    },
+    {
+      "id": "rev-0202",
+      "file": "src/client/host-ui-kit/form/InlineEditField.tsx",
+      "line": 33,
+      "blocking": false,
+      "reason": "The duplicate commit has its cause in the kit, and the consumer-side guard in TagsList covers only one path. When the input unmounts, the blur calls `commit()` from the last render's closure. After Enter this sends the same draft again, which every other `InlineEditField` consumer still receives twice. After Escape, the closure still holds the edited draft (the `setDraft(value)` reset has not reached it), so the 'revert' can commit the edit. The `sentName` guard does not catch that, because the draft is neither `tag.name` nor the last sent name. A one-shot `committedRef` or `cancelledRef` inside `InlineEditField` fixes both paths for all consumers, and the TagsList ref can then go.",
+      "portion": "kit-primitives/p1-l12"
+    }
+  ],
+  "deviations": []
+}
