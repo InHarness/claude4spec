@@ -271,9 +271,10 @@ function TimelineRows({ versions, activeVersion, onSelect, onRestore, compareVer
         const isCompareTarget = v.id === compareVersion;
         const isLast = i === versions.length - 1;
         return (
-          <li key={v.id} className="flex gap-2.5">
-            <div className="flex flex-col items-center" style={{ width: 12, flexShrink: 0 }}>
+          <li key={v.id} className="flex gap-2.5" data-timeline-row={v.id}>
+            <div className="flex flex-col items-center" data-timeline-rail style={{ width: 12, flexShrink: 0 }}>
               <div
+                data-timeline-dot
                 className="rounded-full"
                 style={{
                   width: 8,
@@ -283,7 +284,7 @@ function TimelineRows({ versions, activeVersion, onSelect, onRestore, compareVer
                   flexShrink: 0,
                 }}
               />
-              {!isLast && <div style={{ width: 1, flex: 1, background: 'var(--c-hair)' }} />}
+              {!isLast && <div data-timeline-connector style={{ width: 1, flex: 1, background: 'var(--c-hair)' }} />}
             </div>
             <div
               className="flex-1 min-w-0 rounded-md px-2.5 py-1.5 mb-1"

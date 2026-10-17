@@ -7,7 +7,7 @@ import type { ToastAction } from './ToastViewport.js';
  * components), and the `/ui` declarative doctrine's one deliberate imperative
  * exception (feedback is inherently imperative, not props-in).
  *
- * 2.1.20 (M34 `l0i0c5wm`): a thin layer over the shell's `toast` facade
+ * 2.1.20 (M34 `m34l12sc`): a thin layer over the shell's `toast` facade
  * (M50 `tbeatf5z`). A call goes onto the host toast bus, so the toast lands in
  * the host's one stack — the controlled `ToastViewport` that `ToastHost`
  * renders. The hook has no queue, no timers and no bus of its own, and a

@@ -74,7 +74,7 @@ export const SelectInput = forwardRef<
 export function InlineError({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <div className="text-[11.5px] mt-1" style={{ color: 'var(--c-red, #c45a3b)' }}>
+    <div className="text-[11.5px] mt-1" style={{ color: 'var(--c-red)' }}>
       {message}
     </div>
   );
@@ -103,7 +103,7 @@ export function PopoverFooter({
         <button
           onClick={onRemove}
           className="text-[12px] px-2 py-1 rounded mr-auto"
-          style={{ color: 'var(--c-red, #c45a3b)' }}
+          style={{ color: 'var(--c-red)' }}
         >
           {removeLabel}
         </button>
@@ -121,7 +121,7 @@ export function PopoverFooter({
         className="text-[12px] px-3 py-1 rounded font-medium"
         style={{
           background: 'var(--c-accent)',
-          color: '#fff',
+          color: 'var(--c-card)',
           opacity: busy || disabled ? 0.55 : 1,
         }}
       >

@@ -71,7 +71,7 @@ export interface ToastViewportProps {
  * a close through `onDismiss`. The host's `ToastHost` renders it this way and
  * holds the host's one toast stack (queue, timers, the `c4s:toast` bus);
  * `useToast()` sends onto that bus, so no second stack exists (2.1.20,
- * `l0i0c5wm` / `wbs9m5zj`).
+ * M34 `m34l12sc`, record `toast-viewport`).
  */
 function ToastViewportImpl({ toasts, onDismiss, onPause, onResume }: ToastViewportProps) {
   const stack = toasts ?? [];

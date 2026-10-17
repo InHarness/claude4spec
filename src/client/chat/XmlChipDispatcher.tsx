@@ -2,7 +2,7 @@ import { getEntityDef } from '../entities/registry.js';
 import { ChipResolver } from '../entities/ChipResolver.js';
 import { categoriseBrokenChip } from '../core/plugin-host/host.js';
 import { InlineBrokenChip } from '../tiptap/extensions/views/BrokenChip.js';
-import { useEditorBridge } from '../tiptap/EditorContext.js';
+import { editorBridge } from '../runtime/editor-bridge.js';
 import { openEntityHandler } from '../entities/openEntity.js';
 import { getTagRender } from '../xml-markup/renders.js';
 import type { SanitizedChip } from './xml-chip-preprocess.js';
@@ -26,10 +26,10 @@ export function XmlChipDispatcher({ chip }: { chip: SanitizedChip }) {
 
 function TypeChip({ type, slug }: { type: string; slug: string }) {
   const def = getEntityDef(type);
-  const bridge = useEditorBridge();
-  // A hidden type opens its fullscreen overlay, a normal one navigates. In chat
-  // there is often no `EditorBridge` at all, and a diagram chip still has to open.
-  const open = openEntityHandler(type, slug, bridge);
+  // A hidden type opens its fullscreen overlay, a normal one navigates through
+  // the `editorBridge` singleton (2.1.28, M05 rehyxchp) — which delegates to the
+  // chat-aware bridge of the provider around the message tree.
+  const open = openEntityHandler(type, slug, editorBridge);
   if (!def) {
     const category = categoriseBrokenChip(type) ?? 'unknown-type';
     return <InlineBrokenChip category={category} type={type} slug={slug} />;

@@ -46,14 +46,11 @@ export { editorBridge } from './editor-bridge.js';
 /**
  * 0.2.2 — a plugin that owns page ROUTES needs this, not just the singleton.
  *
- * The singleton below is the read side, for a plugin rendering outside the React
- * tree. `EditorBridgeProvider` is the write side, and until a type could
- * contribute its own detail route only the host had any reason to mount one. Now
- * a plugin route renders a `DocEditor` for its entity's description, and an
- * entity chip inside that description resolves the bridge from React context: no
- * provider means `DocEditor` falls back to a no-op, every chip click silently
- * does nothing, and — because `DocEditor` publishes whatever bridge it has into
- * the process-wide singleton — chips elsewhere on the page stop navigating too.
+ * `editorBridge` (above) is the read side every chip calls; `EditorBridgeProvider`
+ * is the write side. 2.1.28 (M20 m20l11sc): the singleton delegates to the
+ * NEAREST provider around the calling chip, so a plugin route that renders a
+ * `DocEditor` for its entity's description wraps it in its own provider — with
+ * none, `DocEditor` falls back to a no-op and chip clicks inside it do nothing.
  */
 export { EditorBridgeProvider } from '../tiptap/EditorContext.js';
 

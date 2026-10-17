@@ -25,6 +25,31 @@ export async function fetchCodeSnippet(slug: string): Promise<CodeSnippet | null
   return unwrap<CodeSnippet>(res);
 }
 
+/**
+ * The card → fullscreen hand-off (`2i5ypc7q`): `CodeSnippetFullscreen` is ONE
+ * component opened from two surfaces, and only its input differs — the card
+ * hands over the record it already holds, the chip leaves the fullscreen to
+ * fetch it by `slug`.
+ *
+ * Both clicks still open the HOST's `code-snippet-expand` window, whose payload
+ * is `{ slug }` (M13 chipprops): the host carries no record, so the card parks
+ * its record here right before calling the host's `onOpen`, and the window's
+ * content takes it on mount. One slot, consumed once and only for the same
+ * slug — a stale hand-off can never leak into a later chip open of another
+ * snippet, and a later chip open of the same one fetches afresh.
+ */
+let handedOff: CodeSnippet | null = null;
+
+export function handOffCodeSnippet(record: CodeSnippet): void {
+  handedOff = record;
+}
+
+export function takeHandedOffCodeSnippet(slug: string): CodeSnippet | null {
+  const record = handedOff;
+  handedOff = null;
+  return record && record.slug === slug ? record : null;
+}
+
 export interface CodeSnippetInput {
   title: string;
   language?: string;

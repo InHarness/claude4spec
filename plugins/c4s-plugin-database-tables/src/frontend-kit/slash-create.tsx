@@ -111,7 +111,8 @@ const SHELL_STYLE: CSSProperties = {
   border: '1px solid var(--c-hair)',
   background: 'var(--c-panel)',
   color: 'var(--c-ink)',
-  boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+  // Colour only from the token bridge (`5d3hfpij`): the shadow is the ink token, thinned.
+  boxShadow: '0 8px 24px color-mix(in srgb, var(--c-ink) 18%, transparent)',
 };
 
 /**

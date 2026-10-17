@@ -2,6 +2,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useSection } from '../hooks/useSection.js';
 import { usePlanByAnchor } from '../hooks/usePlanByAnchor.js';
 import { SectionRefChip, type SectionRefChipState } from './SectionRefChip.js';
+import { editorBridge } from '../runtime/editor-bridge.js';
 import type { MouseEvent } from 'react';
 
 interface Props {
@@ -9,8 +10,12 @@ interface Props {
 }
 
 /**
- * Self-contained chip for cross-pipeline use (chat UI / non-tiptap consumers).
- * Pulls section metadata via TanStack Query and navigates on click. The pure
+ * Self-contained `<section_ref>` chip for BOTH pipelines (editor and chat — M13
+ * chipprops, 2.1.28). Pulls section metadata via TanStack Query; a click on a
+ * page section calls `editorBridge.openSection(page_path, anchor)`, the
+ * `@c4s/plugin-runtime` singleton that delegates to the nearest
+ * `EditorBridgeProvider` (editor: navigate + scroll + pulse; chat: navigate under
+ * the open overlay). The chip knows neither pipeline. The pure
  * `<SectionRefChip />` stays presentational — this wrapper owns the data + click.
  *
  * Resolution is page-first: a page-section hit wins outright. Only when the page
@@ -39,17 +44,17 @@ export function SectionRefChipWithData({ anchor }: Props) {
             : 'broken';
 
   const onClick = (e: MouseEvent<HTMLSpanElement>) => {
+    // Alt+click belongs to the node view's edit popover (M20 nvc5wy2p), not the chip.
+    if (e.altKey) return;
     if (!section && !plan) return;
     e.preventDefault();
     e.stopPropagation();
     if (section) {
-      void navigate({
-        to: '/space/$rootId/$',
-        params: { rootId: section.rootId, _splat: section.pagePath },
-        hash: `anchor-${anchor}`,
-      } as never);
+      editorBridge.openSection(section.pagePath, anchor);
       return;
     }
+    // A plan anchor is not a page section, so it is not a bridge target: the
+    // plan route is the only place it can open.
     if (plan) {
       void navigate({
         to: '/plans/$planPath',

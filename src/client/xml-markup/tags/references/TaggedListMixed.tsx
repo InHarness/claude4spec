@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { clientPluginHost } from '../../../core/plugin-host/host.js';
 import { useRegistryVersion } from '../../../core/plugin-host/useRegistryVersion.js';
 import { openEntityHandler } from '../../../entities/openEntity.js';
-import { useEditorBridge } from '../../../tiptap/EditorContext.js';
+import { editorBridge } from '../../../runtime/editor-bridge.js';
 import type { TagRenderProps } from '../../renders.js';
 import { attr, csv, TaggedPill } from './shared.js';
 
@@ -20,7 +20,6 @@ export function TaggedListMixedRender({ attrs, variant }: TagRenderProps) {
   useRegistryVersion();
   const filter: 'and' | 'or' = attrs.filter === 'or' ? 'or' : 'and';
   const tags = csv(attr(attrs, 'tags'));
-  const bridge = useEditorBridge();
 
   const activeModules = clientPluginHost.listEntities();
   const { data: grouped, isLoading } = useQuery<Grouped>({
@@ -86,7 +85,7 @@ export function TaggedListMixedRender({ attrs, variant }: TagRenderProps) {
                     <RowComp
                       slug={entity.slug}
                       entity={entity as never}
-                      onOpen={openEntityHandler(mod.type, entity.slug, bridge)}
+                      onOpen={openEntityHandler(mod.type, entity.slug, editorBridge)}
                     />
                   </li>
                 ))}

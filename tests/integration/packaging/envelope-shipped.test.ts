@@ -34,6 +34,8 @@ const ENVELOPES = [
   // contributed no entity type and emitted no `frontend.js`, so it could not be
   // held to the same two-entry rule as the rest.
   'c4s-plugin-layered-vertical-slices',
+  // 2.1.28: the `ui-kit-component` type (backend + frontend bundles).
+  'c4s-plugin-host-ui-kit-components',
 ];
 
 describe('npm package contents', () => {

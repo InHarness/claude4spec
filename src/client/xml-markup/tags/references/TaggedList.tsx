@@ -3,7 +3,7 @@ import { getEntityDef } from '../../../entities/registry.js';
 import { clientPluginHost, categoriseBrokenChip } from '../../../core/plugin-host/host.js';
 import { useRegistryVersion } from '../../../core/plugin-host/useRegistryVersion.js';
 import { openEntityHandler } from '../../../entities/openEntity.js';
-import { useEditorBridge } from '../../../tiptap/EditorContext.js';
+import { editorBridge } from '../../../runtime/editor-bridge.js';
 import { BlockBrokenChip } from '../../../tiptap/extensions/views/BrokenChip.js';
 import { NotListable } from '../../../tiptap/extensions/views/NotListable.js';
 import type { TagRenderProps } from '../../renders.js';
@@ -23,7 +23,6 @@ export function TaggedListRender({ attrs, variant }: TagRenderProps) {
   const filter: 'and' | 'or' = attrs.filter === 'or' ? 'or' : 'and';
   const tags = csv(attr(attrs, 'tags'));
   const def = getEntityDef(type);
-  const bridge = useEditorBridge();
 
   const mod = clientPluginHost.getEntity(type);
   // Keyed under `['entities']`: every entity / tag change already invalidates
@@ -75,14 +74,14 @@ export function TaggedListRender({ attrs, variant }: TagRenderProps) {
         {results.map((entity) => (
           <li key={entity.slug}>
             {/*
-              Through `openEntityHandler`, not straight to `bridge.openEntity`:
+              Through `openEntityHandler`, not straight to `editorBridge.openEntity`:
               a type may declare `renderRow` and still have no detail route, and
               then it must open its overlay rather than navigate into nowhere.
             */}
             <RowComp
               slug={entity.slug}
               entity={entity as never}
-              onOpen={openEntityHandler(type, entity.slug, bridge)}
+              onOpen={openEntityHandler(type, entity.slug, editorBridge)}
             />
           </li>
         ))}

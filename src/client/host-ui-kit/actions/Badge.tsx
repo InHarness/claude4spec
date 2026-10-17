@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import { withStability } from '../stability.js';
 
 /**
@@ -8,6 +8,11 @@ import { withStability } from '../stability.js';
  *
  * Pure-presentational: label, color and handlers are props. The host's
  * data-resolving tag chips (M13/M19) stay separate — this is the styling shell.
+ *
+ * 2.1.28 (record `badge`): with an `onClick` the chip is a keyboard target —
+ * reachable with Tab (`tabIndex=0`, `role="button"`) and activated by Enter or
+ * Space, which call `onClick`. Without `onClick` it stays a plain, unfocusable
+ * span. A key pressed on the nested remove button is that button's own.
  */
 export interface BadgeProps {
   label: ReactNode;
@@ -48,6 +53,16 @@ function BadgeImpl({
   variant = 'default',
 }: BadgeProps) {
   const broken = variant === 'broken';
+  const onKeyDown = onClick
+    ? (e: KeyboardEvent<HTMLSpanElement>) => {
+        // Only the chip itself: Enter/Space on the nested remove button belongs to it.
+        if (e.target !== e.currentTarget) return;
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+          e.preventDefault();
+          onClick();
+        }
+      }
+    : undefined;
   const dotColor = broken ? 'var(--c-red, #c45a3b)' : (color ?? 'var(--c-muted)');
   const textColor = broken
     ? 'var(--c-red, #c45a3b)'
@@ -55,6 +70,7 @@ function BadgeImpl({
   return (
     <span
       onClick={onClick}
+      {...(onClick ? { role: 'button', tabIndex: 0, onKeyDown } : null)}
       className={`inline-flex items-center gap-1.5 rounded-full chip-hover transition${mono ? ' font-mono font-semibold tracking-wide' : ''}${minWidth ? ' justify-center' : ''}`}
       style={{
         padding: small ? '1px 7px' : '2px 8px',

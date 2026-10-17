@@ -453,4 +453,55 @@ describe('[section:uyu88bdw] Host UI Kit slice', () => {
       expect(popoverForm).toMatch(new RegExp(`export (const|function) ${local}\\b`));
     }
   });
+
+  it('[section:uyu88bdw] [section:5d3hfpij] colours come only from the host token bridge: no colour literal and no fallback value at a token, anywhere in the package sources', () => {
+    const PKG_SRC = join(import.meta.dirname, '../../src');
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, name.name);
+        if (name.isDirectory()) walk(full);
+        else if (/\.(tsx?|css)$/.test(name.name)) files.push(full);
+      }
+    };
+    walk(PKG_SRC);
+    expect(files.length).toBeGreaterThan(10);
+    const stripComments = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
+    const offenders: string[] = [];
+    let tokenUses = 0;
+    for (const file of files) {
+      const code = stripComments(readFileSync(file, 'utf-8'));
+      // A fallback at a token pins the light-mode colour in dark mode.
+      for (const m of code.matchAll(/var\(--[\w-]+\s*,[^)]*\)/g)) offenders.push(`${file}: ${m[0]}`);
+      // Colour literals: hex, rgb()/rgba(), hsl()/hsla(), and the named white/black.
+      for (const m of code.matchAll(/(?<![\w&])#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\(|['"](?:white|black)['"]/g)) {
+        offenders.push(`${file}: ${m[0]}`);
+      }
+      tokenUses += [...code.matchAll(/var\(--c-[\w-]+\)/g)].length;
+    }
+    expect(offenders).toEqual([]);
+    // …and the package does draw with the bridge's colour tokens.
+    expect(tokenUses).toBeGreaterThan(0);
+  });
+
+  it('[section:5d3hfpij] a broken slug: only the chip and the card have a broken branch; renderRow takes a resolved entity', () => {
+    expect(read(FRONTEND_SRC, 'render-chip.tsx')).toMatch(/if \(!entity\)/);
+    expect(read(FRONTEND_SRC, 'render-card.tsx')).toMatch(/if \(!entity\)/);
+    expect(databaseTableFrontendModule.renderRow).toBeDefined();
+    expect(databaseTableFrontendModule.renderChip).toBeDefined();
+    expect(databaseTableFrontendModule.renderCard).toBeDefined();
+  });
+});
+
+describe('[section:vnufk8nt] UI (L5) — the two recorded debts stay as recorded', () => {
+  it('[section:vnufk8nt] query keys stay outside the host refresh prefixes (no own WS subscription), and Delete is confirmed by the kit Dialog in the panel, not confirmDestructive', () => {
+    const hooksSrc = read(FRONTEND_SRC, 'hooks.ts');
+    expect(hooksSrc).toMatch(/list: \(q: DatabaseTableListQuery\) => \[DATABASE_TABLE_TYPE, 'list', q\]/);
+    expect(hooksSrc).toMatch(/detail: \(slug: string\) => \[DATABASE_TABLE_TYPE, 'detail', slug\]/);
+    const all = readdirSync(FRONTEND_SRC).map((f) => read(FRONTEND_SRC, f)).join('\n');
+    expect(all).not.toMatch(/entity:changed|entity:indexed|useEntityChanged/);
+    const detail = read(FRONTEND_SRC, 'detail-panel.tsx');
+    expect(detail).toMatch(/<Dialog\b/);
+    expect(detail).not.toMatch(/confirmDestructive\(/);
+  });
 });

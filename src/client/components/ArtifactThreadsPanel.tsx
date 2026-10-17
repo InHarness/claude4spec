@@ -1,3 +1,12 @@
+/**
+ * DEBT (2.1.28, Host UI Kit slice of M10 `0dy3js11`): the plan page's threads
+ * panel — the list of threads that reference the file, with its counter, the
+ * "Open last thread" shortcut and the "New conversation" affordance — is this
+ * host component from outside the catalog. It fails locality condition (1): it
+ * also stands on brief-page (and the patch page). The catalog has no component
+ * to replace it; its successor is the catalog-trajectory candidate
+ * `artifact-thread-list` (M34 `m34traj0`). Recorded, not rebuilt here.
+ */
 import { History, MessageSquare, MessageSquarePlus } from 'lucide-react';
 import type { ArtifactThreadListItem } from '../../shared/entities.js';
 

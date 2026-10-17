@@ -1,7 +1,7 @@
 import React from 'react';
 import { Check, Copy, X } from 'lucide-react';
 import { DEFAULT_LANGUAGE } from '../../../identity.js';
-import { fetchCodeSnippet, type CodeSnippet } from './hooks.js';
+import { fetchCodeSnippet, takeHandedOffCodeSnippet, type CodeSnippet } from './hooks.js';
 import { CodeSnippetView } from './view.js';
 
 /**
@@ -11,34 +11,49 @@ import { CodeSnippetView } from './view.js';
  * or on the card's maximise button, is routed by the HOST to that window (M13
  * chipprops, 2.1.20); neither the chip nor the card opens this component itself.
  *
- * ONE entrance, and it carries a slug: the window hands its content
- * `{ slug, caption?, onClose }` and nothing else, whichever surface the click
- * came from. So the record is resolved here, by `slug`, on open — there is no
- * "record already in hand" variant any more (2.1.20 removed the card's own
- * route into this surface, and with it the prefetched-record prop).
+ * ONE component, TWO inputs (`2i5ypc7q`): the window is opened from BLOCK
+ * (`Maximize2` on the card) and from INLINE (a chip click). The host's window
+ * hands its content `{ slug, caption?, onClose }` either way; what differs is
+ * the record — from the card it is the ready record the card already holds
+ * (handed over through `handOffCodeSnippet`, or passed as `record`), from the
+ * chip there is none and it is fetched here, by `slug`, on open.
  *
  * ALWAYS FULL CONTENT: `alwaysExpanded` is passed unconditionally. The card's
  * collapse threshold is about not letting one embed swallow a page; a surface
  * whose entire job is "show me all of it" has no business collapsing.
  *
- * Not the kit's `Dialog`, for the same reason `DiagramFullscreen` is not: this
- * is an immersive read surface rather than a modal asking for a decision, and
- * the host's one-implementation guard already records that exception.
+ * DEBT (c4s-plugin-code-snippets, Host UI Kit jsejrh30) — the fullscreen SHELL
+ * of the `code-snippet-expand` window (scrim, panel pinned to the whole
+ * viewport, close, layer) fails locality condition (1): each of the three
+ * plugin packages (diagram, code-snippets, spreadsheets) keeps the same shell on
+ * its own, and in this package two surfaces open it (BLOCK `Maximize2` on the
+ * card, INLINE chip click). The catalog has no component that replaces it; it is
+ * a candidate of the catalog trajectory `fullscreen-overlay` (M34 `m34traj0`).
+ * The full snippet content the shell wraps stays the package's content.
  */
 export function CodeSnippetFullscreen({
   slug,
   caption,
   onClose,
+  record: given,
 }: {
   slug: string;
   caption?: string;
   onClose: () => void;
+  /** The ready record (card input). Absent ⇒ the hand-off slot, then a fetch by `slug` (chip input). */
+  record?: CodeSnippet | null;
 }) {
-  const [record, setRecord] = React.useState<CodeSnippet | null>(null);
-  const [loading, setLoading] = React.useState(true);
+  // Read once, on mount: the hand-off slot is consumed by this read.
+  const [ready] = React.useState<CodeSnippet | null>(() =>
+    given && given.slug === slug ? given : takeHandedOffCodeSnippet(slug),
+  );
+  const [record, setRecord] = React.useState<CodeSnippet | null>(ready);
+  const [loading, setLoading] = React.useState(ready === null);
   const [copied, setCopied] = React.useState(false);
 
   React.useEffect(() => {
+    // The card's record is already the answer: nothing to fetch.
+    if (ready && ready.slug === slug) return;
     let live = true;
     setLoading(true);
     void fetchCodeSnippet(slug).then((next) => {
@@ -49,7 +64,7 @@ export function CodeSnippetFullscreen({
     return () => {
       live = false;
     };
-  }, [slug]);
+  }, [slug, ready]);
 
   const code = record?.code ?? '';
 
