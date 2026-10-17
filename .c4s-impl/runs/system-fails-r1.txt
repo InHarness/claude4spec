@@ -1,0 +1,70 @@
+## plugins/c4s-plugin-host-ui-kit-components/test/backend-entry-is-react-free.test.ts 1 failed / 2
+  - the backend entry graph actually traversed the graph (the walk itself must not silently no-op)
+     AssertionError: expected 10 to be greater than 10     at /work/c4s/plugins/c4s-plugin-host-ui-kit-components/test/backend-entry-is-react-free.test.ts:88:26     at file:///work/c4s/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11     at file:///work/c4s/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26     at file:///work/c4s/node_
+## plugins/c4s-plugin-host-ui-kit-components/test/live-type.test.ts 6 failed / 6
+  - ui-kit-component — the shipped type [entity:encje-pluginy#c4s-plugin-host-ui-kit-components] is registered from the package manifest and active
+     PluginManifestError: entity type "ui-kit-component" — data.schema: column for field "group" "group" is a reserved SQL word. Generated DDL emits it unquoted, which would be a syntax error at CREATE TABLE time — rename the field or declare an explicit `column`     at fail (/work/c4s/src/server/core/plugin-host/data-schema-validation.ts:109:9)     at 
+  - ui-kit-component — the shipped type [section:spf7qirh] the slug is name in kebab-case and title defaults to name
+     PluginManifestError: entity type "ui-kit-component" — data.schema: column for field "group" "group" is a reserved SQL word. Generated DDL emits it unquoted, which would be a syntax error at CREATE TABLE time — rename the field or declare an explicit `column`     at fail (/work/c4s/src/server/core/plugin-host/data-schema-validation.ts:109:9)     at 
+  - ui-kit-component — the shipped type [ac:ac-kazdy-wpis-katalogu-host-ui-kit-deklaruj] a record without binding, or with a binding outside presentational | connected, is not created
+     PluginManifestError: entity type "ui-kit-component" — data.schema: column for field "group" "group" is a reserved SQL word. Generated DDL emits it unquoted, which would be a syntax error at CREATE TABLE time — rename the field or declare an explicit `column`     at fail (/work/c4s/src/server/core/plugin-host/data-schema-validation.ts:109:9)     at 
+  - ui-kit-component — the shipped type [section:l12slice0] a record without stability is not created either
+     PluginManifestError: entity type "ui-kit-component" — data.schema: column for field "group" "group" is a reserved SQL word. Generated DDL emits it unquoted, which would be a syntax error at CREATE TABLE time — rename the field or declare an explicit `column`     at fail (/work/c4s/src/server/core/plugin-host/data-schema-validation.ts:109:9)     at 
+  - ui-kit-component — the shipped type [ac:ac-komponent-o-binding-connected-jawni] the audit reports a connected record that names no fetchedByComponent dataSources entry, and passes 
+     PluginManifestError: entity type "ui-kit-component" — data.schema: column for field "group" "group" is a reserved SQL word. Generated DDL emits it unquoted, which would be a syntax error at CREATE TABLE time — rename the field or declare an explicit `column`     at fail (/work/c4s/src/server/core/plugin-host/data-schema-validation.ts:109:9)     at 
+  - ui-kit-component — the shipped type [section:6o1rfh21] the audit refuses an unknown slug or rule through the proxy, with no partial result
+     PluginManifestError: entity type "ui-kit-component" — data.schema: column for field "group" "group" is a reserved SQL word. Generated DDL emits it unquoted, which would be a syntax error at CREATE TABLE time — rename the field or declare an explicit `column`     at fail (/work/c4s/src/server/core/plugin-host/data-schema-validation.ts:109:9)     at 
+## src/client/components/HomeEmptyState.render.test.ts 0 failed / 0
+   SUITE: The URL must be of scheme file
+## src/client/components/TagsList.render.test.ts 0 failed / 0
+   SUITE: The URL must be of scheme file
+## src/client/runtime/entity-list-page.render.test.ts 0 failed / 0
+   SUITE: The URL must be of scheme file
+## src/server/operations/catalog.test.ts 1 failed / 94
+  - the catalogue against the window's 78 records [ac:ac-wiersz-katalogu-operacji-o-wartosci-d] every row with `direct` in `internal` or `mcp` points in `renderings` at a tool renderin
+     AssertionError: audit_ui_kit_components: no plugin type server registers it: expected +0 to be 1 // Object.is equality     at /work/c4s/src/server/operations/catalog.test.ts:2011:82     at file:///work/c4s/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11     at file:///work/c4s/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26    
+## plugins/c4s-plugin-ac/test/frontend/ac-detail-and-list.render.test.ts 1 failed / 22
+  - [entity:ac-list] /acs [entity:ac-list] 2.1.28 composition — rows are kit EntityListRows whose kind badge, deprecated-only status badge and tag chips all render through Badge; the A
+     AssertionError: expected [ 'requirement', 'edge-case', …(1) ] to include 'm07'     at Proxy.<anonymous> (file:///work/c4s/node_modules/@vitest/expect/dist/index.js:1319:15)     at Proxy.<anonymous> (file:///work/c4s/node_modules/@vitest/expect/dist/index.js:1156:15)     at Proxy.methodWrapper (file:///work/c4s/node_modules/chai/index.js:1700:25)   
+## src/client/host-ui-kit/actions/ActionBar.render.test.ts 1 failed / 3
+  - ActionBar ↔ record `action-bar` (M34/L12, 2.1.28) [entity:action-bar] renders every action through ActionButton — same markup as the catalog button
+     AssertionError: expected [ …(3) ] to deeply equal [ …(3) ]     at /work/c4s/src/client/host-ui-kit/actions/ActionBar.render.test.ts:91:45     at file:///work/c4s/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11     at file:///work/c4s/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26     at file:///work/c4s/node_modules/@vitest/ru
+## src/client/host-ui-kit/actions/ActionButton.render.test.ts 1 failed / 4
+  - ActionButton ↔ record `action-button` (M34/L12, 2.1.28) [entity:action-button] the three variants draw primary filled accent, secondary panel, ghost transparent muted
+     AssertionError: expected 'var(--c-accent)' to be 'transparent' // Object.is equality     at /work/c4s/src/client/host-ui-kit/actions/ActionButton.render.test.ts:69:39     at file:///work/c4s/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11     at file:///work/c4s/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26     at file:///wor
+## src/client/host-ui-kit/core/EntityListHeader.render.test.ts 2 failed / 11
+  - EntityListHeader ↔ record `entity-list-header` (M19/L12, 2.1.28) [entity:entity-list-header] takes exactly the record props, host and published /ui alike — no onCreate / createLabe
+     AssertionError: expected [Function EntityListHeaderImpl] to match object { stability: 'stable', …(1) }     at Proxy.<anonymous> (file:///work/c4s/node_modules/@vitest/expect/dist/index.js:1283:10)     at Proxy.<anonymous> (file:///work/c4s/node_modules/@vitest/expect/dist/index.js:1156:15)     at Proxy.methodWrapper (file:///work/c4s/node_modules/c
+  - LucideIcon in the stable props (L12/L11, 2.1.28) [ac:ac-typ-lucideicon-w-stable-propsach-l12] EntityListHeader.icon resolves to the declared lucide-react peer and is part of the pu
+     Error: ENOENT: no such file or directory, open '/work/c4s/src/client/host-ui-kit/core/undefined'     at readFileSync (node:fs:440:20)     at repoFile (/work/c4s/src/client/host-ui-kit/core/EntityListHeader.render.test.ts:127:35)     at /work/c4s/src/client/host-ui-kit/core/EntityListHeader.render.test.ts:232:23     at file:///work/c4s/node_modules/
+## src/client/host-ui-kit/detail/EntityDetailToolbar.render.test.ts 1 failed / 5
+  - EntityDetailToolbar ↔ record `entity-detail-toolbar` (M34/L12, 2.1.28) [ac:ac-komponent-entitydetailtoolbar-m34-e] a click on delete calls onDelete once, and the toolbar itself del
+     AssertionError: expected "vi.fn()" to be called with arguments: []  Received:    1st vi.fn() call:  - [] + [ +   SyntheticBaseEvent { +     "_reactName": "onClick", +     "_targetInst": null, +     "altKey": false, +     "bubbles": true, +     "button": 0, +     "buttons": 0, +     "cancelable": false, +     "clientX": 0, +     "clientY": 0, +     
+## src/client/host-ui-kit/detail/RichTextField.render.test.ts 1 failed / 5
+  - RichTextField ↔ record `rich-text-field` (M34/L12, 2.1.28) [ac:ac-komponent-richtextfield-m34-experim] renders the description editor from value and reports edits through onChange 
+     TypeError: The URL must be of scheme file     at fileURLToPath (node:internal/url:1607:11)     at /work/c4s/src/client/host-ui-kit/detail/RichTextField.render.test.ts:104:30     at file:///work/c4s/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+## src/client/host-ui-kit/detail/TagPicker.render.test.ts 2 failed / 6
+  - TagPicker ↔ record `tag-picker` (M34/L12, 2.1.28) [ac:ac-komponent-tagpicker-m34-experimenta] renders a multi-select of allTags (flat by default), toggling through onToggle, each c
+     TypeError: The URL must be of scheme file     at fileURLToPath (node:internal/url:1607:11)     at /work/c4s/src/client/host-ui-kit/detail/TagPicker.render.test.ts:90:30     at file:///work/c4s/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11     at file:///work/c4s/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26     at file:///w
+  - TagPicker ↔ record `tag-picker` (M34/L12, 2.1.28) [ac:ac-tagpicker-w-wariancie-collapsed-renderuj] collapsed renders chips for the selected tags only + a "+N" reveal control, and r
+     TypeError: The URL must be of scheme file     at fileURLToPath (node:internal/url:1607:11)     at /work/c4s/src/client/host-ui-kit/detail/TagPicker.render.test.ts:144:30     at file:///work/c4s/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11     at file:///work/c4s/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26     at file:///
+## src/client/host-ui-kit/form/FormField.render.test.ts 1 failed / 3
+  - FormField ↔ record `form-field` (M34/L12, 2.1.28) [entity:form-field] renders the label above the control it wraps, and the error below it
+     AssertionError: the given combination of arguments (null and string) is invalid for this assertion. You can use an array, a map, an object, a set, a string, or a weakset instead of a string     at Proxy.<anonymous> (file:///work/c4s/node_modules/@vitest/expect/dist/index.js:1319:15)     at Proxy.<anonymous> (file:///work/c4s/node_modules/@vitest/ex
+## src/client/host-ui-kit/overlay-feedback/ToastViewport.render.test.ts 1 failed / 4
+  - ToastViewport ↔ record `toast-viewport` (M34/L12, 2.1.28) [entity:toast-viewport] holds no queue or timers of its own — a toast stays until the consumer drops it
+     TypeError: The URL must be of scheme file     at fileURLToPath (node:internal/url:1607:11)     at /work/c4s/src/client/host-ui-kit/overlay-feedback/ToastViewport.render.test.ts:137:30     at file:///work/c4s/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11     at file:///work/c4s/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26  
+## src/client/host-ui-kit/overlay/FormShell.render.test.ts 1 failed / 8
+  - Dialog and FormShell — the experimental tier (M34/L12) [ac:ac-dialog-i-formshell-sa-w-tierze-experimen] both are experimental entries shipped by @c4s/plugin-runtime/ui (runtime and
+     TypeError: The URL must be of scheme file     at fileURLToPath (node:internal/url:1607:11)     at /work/c4s/src/client/host-ui-kit/overlay/FormShell.render.test.ts:136:36     at file:///work/c4s/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11     at file:///work/c4s/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26     at file://
+## src/client/host-ui-kit/pickers/EnumBadgePicker.render.test.ts 1 failed / 3
+  - EnumBadgePicker ↔ record `enum-badge-picker` (M34/L12, 2.1.28) [ac:ac-enumbadgepicker-grupa-pickers-m34-expe] the dropdown is the published Popover and the badge is no catalog Badg
+     TypeError: The URL must be of scheme file     at fileURLToPath (node:internal/url:1607:11)     at /work/c4s/src/client/host-ui-kit/pickers/EnumBadgePicker.render.test.ts:84:30     at file:///work/c4s/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11     at file:///work/c4s/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26     at fi
+## src/server/core/plugin-host/plugin-runtime-resolver.subprocess.test.ts 1 failed / 7
+  - builtin envelope — real load path registers every envelope’s types through the loader, not through a test alias
+     AssertionError: expected [ Array(1) ] to deeply equal []     at /work/c4s/src/server/core/plugin-host/plugin-runtime-resolver.subprocess.test.ts:234:44     at file:///work/c4s/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11     at file:///work/c4s/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26     at file:///work/c4s/node_modu
+## plugins/c4s-plugin-frontend-mockups/test/frontend/design-system-views.render.test.ts 2 failed / 11
+  - [entity:design-system-detail] 2.1.28 composition [entity:design-system-detail] tags are a collapsed kit TagPicker whose chips render through Badge
+     AssertionError: expected [] to include 'Brand'     at Proxy.<anonymous> (file:///work/c4s/node_modules/@vitest/expect/dist/index.js:1319:15)     at Proxy.<anonymous> (file:///work/c4s/node_modules/@vitest/expect/dist/index.js:1156:15)     at Proxy.methodWrapper (file:///work/c4s/node_modules/chai/index.js:1700:25)     at /work/c4s/plugins/c4s-plugi
+  - [entity:design-system-list] /design-systems [entity:design-system-list] 2.1.28 composition — rows and the tag bar are the kit EntityListRow and TagFilterBar (the package files are 
+     AssertionError: expected [] to include 'brand'     at Proxy.<anonymous> (file:///work/c4s/node_modules/@vitest/expect/dist/index.js:1319:15)     at Proxy.<anonymous> (file:///work/c4s/node_modules/@vitest/expect/dist/index.js:1156:15)     at Proxy.methodWrapper (file:///work/c4s/node_modules/chai/index.js:1700:25)     at /work/c4s/plugins/c4s-plugi

@@ -119,7 +119,7 @@
         ]
       },
       "dependsOn": [],
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "ui-kit-type-package/p1-l1-l12",
@@ -137,14 +137,29 @@
             "ac-kazdy-wpis-katalogu-host-ui-kit-deklaruj",
             "ac-komponent-o-binding-connected-jawni"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "regression"
+          ],
+          "only": [
+            {
+              "finding": "regression:plugins/c4s-plugin-host-ui-kit-components/test/live-type.test.ts"
+            },
+            {
+              "finding": "regression:plugins/c4s-plugin-host-ui-kit-components/test/backend-entry-is-react-free.test.ts"
+            },
+            {
+              "finding": "regression:src/server/operations/catalog.test.ts"
+            },
+            {
+              "finding": "regression:src/server/core/plugin-host/plugin-runtime-resolver.subprocess.test.ts"
+            }
+          ]
         }
       ],
-      "startCommit": "a0e9da8362700a137400ef0a6d5058591fba6b4b",
+      "startCommit": "5bab87b1af1de75c642d41fd5159122298acc7d4",
       "baseCommit": "a0e9da8362700a137400ef0a6d5058591fba6b4b",
       "rounds": {
         "review": 0,
@@ -779,7 +794,7 @@
           "why": "wpisy rejestru i tiery tych komponentów pochodzą z rejestru katalogu."
         }
       ],
-      "status": "verified",
+      "status": "pending",
       "portions": [
         {
           "name": "kit-primitives/p1-l12",
@@ -823,14 +838,32 @@
             "ac-popover-z-zadanym-maxheight-scrolluje-we",
             "ac-toastviewport-usetoast-grupa-overlay"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "regression"
+          ],
+          "only": [
+            {
+              "finding": "regression:src/client/host-ui-kit/actions/ActionBar.render.test.ts"
+            },
+            {
+              "finding": "regression:src/client/host-ui-kit/actions/ActionButton.render.test.ts"
+            },
+            {
+              "finding": "regression:src/client/host-ui-kit/form/FormField.render.test.ts"
+            },
+            {
+              "finding": "regression:src/client/host-ui-kit/overlay-feedback/ToastViewport.render.test.ts"
+            },
+            {
+              "finding": "regression:src/client/host-ui-kit/overlay/FormShell.render.test.ts"
+            }
+          ]
         }
       ],
-      "startCommit": "efed5b8ff4eb04b4cf44a4780244df37716017fd",
+      "startCommit": "5bab87b1af1de75c642d41fd5159122298acc7d4",
       "baseCommit": "efed5b8ff4eb04b4cf44a4780244df37716017fd",
       "rounds": {
         "review": 0,
@@ -1099,7 +1132,7 @@
           "why": "powierzchnie L11 komponentów `connected` w rejestrze."
         }
       ],
-      "status": "verified",
+      "status": "pending",
       "portions": [
         {
           "name": "kit-detail-history/p1-l11-l12",
@@ -1161,14 +1194,29 @@
             "ac-w-wariancie-collapsed-tagpicker-odslania",
             "ac-w-widoku-entityversionhistoryview-wers"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 2,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "regression"
+          ],
+          "only": [
+            {
+              "finding": "regression:src/client/host-ui-kit/detail/EntityDetailToolbar.render.test.ts"
+            },
+            {
+              "finding": "regression:src/client/host-ui-kit/detail/RichTextField.render.test.ts"
+            },
+            {
+              "finding": "regression:src/client/host-ui-kit/detail/TagPicker.render.test.ts"
+            },
+            {
+              "finding": "regression:src/client/host-ui-kit/pickers/EnumBadgePicker.render.test.ts"
+            }
+          ]
         }
       ],
-      "startCommit": "53d8b76a2a6306933942891fafe7b50da1032301",
+      "startCommit": "5bab87b1af1de75c642d41fd5159122298acc7d4",
       "baseCommit": "973a262f0bb0543044e4e06251ee77cdf1f026c0",
       "rounds": {
         "review": 0,
@@ -1258,7 +1306,7 @@
           "why": "wpis rejestru i tier `stable`."
         }
       ],
-      "status": "verified",
+      "status": "pending",
       "portions": [
         {
           "name": "m19-list-header/p1-l2-l12",
@@ -1275,14 +1323,23 @@
             "ac-plugin-renderuje-komponent-entitylisthea",
             "ac-typ-lucideicon-w-stable-propsach-l12"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "regression"
+          ],
+          "only": [
+            {
+              "finding": "regression:src/client/host-ui-kit/core/EntityListHeader.render.test.ts"
+            },
+            {
+              "finding": "regression:src/client/runtime/entity-list-page.render.test.ts"
+            }
+          ]
         }
       ],
-      "startCommit": "c7824f19629fc23991ddfb01ba8d922f54dc73e1",
+      "startCommit": "5bab87b1af1de75c642d41fd5159122298acc7d4",
       "baseCommit": "c7824f19629fc23991ddfb01ba8d922f54dc73e1",
       "rounds": {
         "review": 0,
@@ -1361,7 +1418,7 @@
           "why": "wejście pickera tagów."
         }
       ],
-      "status": "verified",
+      "status": "pending",
       "portions": [
         {
           "name": "m18-tags-kit/p1-l2-l12",
@@ -1377,14 +1434,20 @@
             "tags-list",
             "ac-pozycja-o-ksztalcie-tag-list-item-jes"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "regression"
+          ],
+          "only": [
+            {
+              "finding": "regression:src/client/components/TagsList.render.test.ts"
+            }
+          ]
         }
       ],
-      "startCommit": "aeba5db80f8625a331cddaa19675a7a0531cc93d",
+      "startCommit": "5bab87b1af1de75c642d41fd5159122298acc7d4",
       "baseCommit": "aeba5db80f8625a331cddaa19675a7a0531cc93d",
       "rounds": {
         "review": 0,
@@ -1451,7 +1514,7 @@
           "why": "ekrany składają się z komponentów tych jednostek."
         }
       ],
-      "status": "verified",
+      "status": "pending",
       "portions": [
         {
           "name": "entity-screens-kit/p1-l5-l12",
@@ -1477,21 +1540,26 @@
             "ui-view-history",
             "ui-view-list"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 2,
           "partial": 0,
           "uncovered": [
-            "ac-gdy-zapamietana-strona-z-c4s-m02-last-p",
-            "ac-wejscie-na-przy-braku-klucza-c4s-m0",
-            "ac-wejscie-na-przy-braku-klucza-i-braku",
-            "ac-wejscie-na-przy-braku-klucza-index",
-            "ac-wejscie-na-przy-istniejacym-c4s-m02",
-            "ac-wejscie-na-przy-pustym-drzewie-stron"
+            "regression"
           ],
-          "only": []
+          "only": [
+            {
+              "finding": "regression:src/client/components/HomeEmptyState.render.test.ts"
+            },
+            {
+              "finding": "regression:plugins/c4s-plugin-ac/test/frontend/ac-detail-and-list.render.test.ts"
+            },
+            {
+              "finding": "regression:plugins/c4s-plugin-frontend-mockups/test/frontend/design-system-views.render.test.ts"
+            }
+          ]
         }
       ],
-      "startCommit": "30093b0ebebde666200551fd0be6bbca44d46d2d",
+      "startCommit": "5bab87b1af1de75c642d41fd5159122298acc7d4",
       "baseCommit": "066791901340a3a30e1a3c23015c2f263e230a40",
       "rounds": {
         "review": 0,
