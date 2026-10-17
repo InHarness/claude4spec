@@ -22,6 +22,8 @@ import { act, createElement, type FC, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { DesignSystem } from '../../src/types.js';
+import { readdirSync as lsDir, readFileSync as readText, statSync as statPath } from 'node:fs';
+import { join as joinPath, relative as relPath } from 'node:path';
 
 const state = vi.hoisted(() => ({
   ds: null as unknown,
@@ -41,7 +43,6 @@ const state = vi.hoisted(() => ({
   historyViews: [] as Array<Record<string, unknown>>,
   allTags: [] as Array<{ slug: string; name: string; color: string | null }>,
   tagPickers: [] as Array<{ variant?: string }>,
-  badges: [] as Array<{ label: unknown }>,
 }));
 
 vi.mock('@tanstack/react-router', () => ({
@@ -76,25 +77,6 @@ vi.mock('@c4s/plugin-runtime', async () => {
     EditorBridgeProvider: ({ children }: { children: ReactNode }) => children,
     queryClient: null,
   };
-});
-
-// The kit's own `Badge` module is recorded, not only the `/ui` export: the kit
-// components that draw chips (`EntityListRow`, `TagPicker`, `TagFilterBar`)
-// import it from `../actions/Badge.js`, so a spy on the `/ui` re-export alone
-// would never see the tag chips they render through Badge.
-vi.mock('../../../../src/client/host-ui-kit/actions/Badge.js', async (importOriginal) => {
-  const real = await importOriginal<typeof import('../../../../src/client/host-ui-kit/actions/Badge.js')>();
-  const { createElement: h } = await import('react');
-  const Real = real.Badge as unknown as FC<Record<string, unknown>>;
-  // React's development build may call a function component with no props to
-  // build a component stack; only calls with props are recorded.
-  const Badge = (p?: Record<string, unknown>) => {
-    if (!p) return null;
-    state.badges.push(p as never);
-    return h(Real, p as never);
-  };
-  // Keep the catalog statics (`stability`, `binding`) of the real entry.
-  return { ...real, Badge: Object.assign(Badge, real.Badge) };
 });
 
 vi.mock('@c4s/plugin-runtime/ui', async () => {
@@ -137,7 +119,6 @@ vi.mock('@c4s/plugin-runtime/ui', async () => {
   const Passthrough = ({ children }: { children?: ReactNode }) => h('div', null, children);
   return {
     TagPicker: spy(tagMod.TagPicker, (p) => { if (p) state.tagPickers.push(p as never); }),
-    // Already recorded by the mock of the kit's Badge module above.
     Badge: badgeMod.Badge,
     FieldRow: rowMod.FieldRow,
     FieldGrid: gridMod.FieldGrid,
@@ -277,7 +258,6 @@ beforeEach(() => {
   state.historyViews = [];
   state.allTags = [];
   state.tagPickers = [];
-  state.badges = [];
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -297,6 +277,51 @@ async function render(node: ReactNode) {
   await act(async () => {
     await new Promise((r) => setTimeout(r, 20));
   });
+}
+
+const REPO_ROOT = joinPath(import.meta.dirname, '../../../..');
+const BADGE_MARKUP = 'chip-hover';
+
+/**
+ * Labels of every chip the kit `Badge` drew in `scope`, read from the rendered
+ * DOM: a Badge is a `<span>` carrying the `chip-hover` class, its text is the
+ * label (the colour dot is an empty span). Chips drawn inside kit components
+ * (`TagPicker`, `EntityListRow`) import `Badge` from `../actions/Badge.js`,
+ * which the module runner resolves to `Badge.tsx` — a `vi.mock` registered
+ * under the `.js` specifier never reaches them (system verification 2.1.28
+ * round 2), so the DOM is the observable.
+ */
+function kitBadgeLabels(scope: ParentNode): string[] {
+  return [...scope.querySelectorAll(`span.${BADGE_MARKUP}`)].map((el) => (el.textContent ?? '').trim());
+}
+
+/**
+ * `chip-hover` identifies the kit `Badge` only if no other component emits it:
+ * among the TSX sources of the host client and of every plugin, the kit's
+ * `actions/Badge.tsx` is the one that does.
+ */
+function expectBadgeMarkupIsBadgeOnly(): void {
+  const owners: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of lsDir(dir)) {
+      if (name === 'node_modules' || name === 'dist') continue;
+      const full = joinPath(dir, name);
+      if (statPath(full).isDirectory()) walk(full);
+      else if (name.endsWith('.tsx') && readText(full, 'utf-8').includes(BADGE_MARKUP)) {
+        owners.push(relPath(REPO_ROOT, full).split('\\').join('/'));
+      }
+    }
+  };
+  walk(joinPath(REPO_ROOT, 'src/client'));
+  for (const pkg of lsDir(joinPath(REPO_ROOT, 'plugins'))) {
+    const src = joinPath(REPO_ROOT, 'plugins', pkg, 'src');
+    try {
+      if (statPath(src).isDirectory()) walk(src);
+    } catch {
+      // a package without src/
+    }
+  }
+  expect(owners).toEqual(['src/client/host-ui-kit/actions/Badge.tsx']);
 }
 
 function routeTable() {
@@ -448,7 +473,10 @@ describe('[entity:design-system-detail] 2.1.28 composition', () => {
     await render(createElement(routeTable().get('/design-systems/$slug')!.component));
     expect(state.tagPickers.length).toBeGreaterThan(0);
     expect(state.tagPickers.at(-1)!.variant).toBe('collapsed');
-    expect(state.badges.map((b) => String(b.label))).toContain('Brand');
+    // The chip is drawn inside the kit TagPicker: read it from the DOM as the
+    // kit Badge's own markup (no module mock reaches the kit's internal import).
+    expectBadgeMarkupIsBadgeOnly();
+    expect(kitBadgeLabels(container)).toContain('Brand');
   });
 });
 
@@ -478,8 +506,9 @@ describe('[entity:design-system-list] /design-systems', () => {
         onSelect: () => undefined,
       }),
     );
-    // The row's tag chip comes from the kit row, through Badge.
-    expect(state.badges.map((b) => String(b.label))).toContain('brand');
+    // The row's tag chip comes from the kit row, through Badge (its markup in the DOM).
+    expectBadgeMarkupIsBadgeOnly();
+    expect(kitBadgeLabels(container)).toContain('brand');
     expect(container.textContent).toContain('3 groups');
   });
 

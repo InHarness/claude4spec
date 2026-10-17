@@ -1,0 +1,12 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.28",
+  "unit": "entity-screens-kit",
+  "portion": "entity-screens-kit/p1-l5-l12",
+  "claimed": ["ac-list", "design-system-detail", "design-system-list"],
+  "deviations": [],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

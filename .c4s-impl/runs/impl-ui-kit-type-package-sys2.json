@@ -1,0 +1,12 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.28",
+  "unit": "ui-kit-type-package",
+  "portion": "ui-kit-type-package/p1-l1-l12",
+  "claimed": ["encje-pluginy#c4s-plugin-host-ui-kit-components"],
+  "deviations": [],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

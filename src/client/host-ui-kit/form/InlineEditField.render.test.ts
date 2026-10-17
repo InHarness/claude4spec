@@ -45,9 +45,23 @@ function type(input: HTMLInputElement, value: string) {
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
+const keyEvent = (el: HTMLElement, k: string) =>
+  el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+/** React's `onBlur` listens to `focusout`. */
+const blurEvent = (el: HTMLElement) => el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
 const key = (el: HTMLElement, k: string) =>
   act(() => {
-    el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+    keyEvent(el, k);
+  });
+/**
+ * The key, then the blur the input fires as it leaves the DOM — in ONE act, so
+ * the blur runs the handler of the render before the key's update re-rendered
+ * (the stale closure a browser's removal-blur hits).
+ */
+const keyThenBlur = (el: HTMLElement, k: string) =>
+  act(() => {
+    keyEvent(el, k);
+    blurEvent(el);
   });
 
 describe('InlineEditField ↔ record `inline-edit-field` (M34/L12, 2.1.28)', () => {
@@ -79,5 +93,56 @@ describe('InlineEditField ↔ record `inline-edit-field` (M34/L12, 2.1.28)', () 
     key(host.querySelector('input')!, 'Enter');
     expect(onCommit).not.toHaveBeenCalled();
     expect(host.querySelector('button')!.textContent).toBe('a');
+  });
+
+  it('[entity:inline-edit-field] Enter then the unmount blur commits exactly once', () => {
+    const onCommit = vi.fn();
+    mount(createElement(InlineEditField, { value: 'a', onCommit }));
+    act(() => host.querySelector('button')!.click());
+    const input = host.querySelector('input')!;
+    type(input, 'b');
+    keyThenBlur(input, 'Enter');
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith('b');
+    // The input left the DOM; a stray blur on it reaches nothing either.
+    expect(host.querySelector('input')).toBeNull();
+    act(() => {
+      blurEvent(input);
+    });
+    expect(onCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it('[entity:inline-edit-field] Escape reverts: neither Escape nor the blur that follows it commits the edited draft', () => {
+    const onCommit = vi.fn();
+    mount(createElement(InlineEditField, { value: 'a', onCommit }));
+    act(() => host.querySelector('button')!.click());
+    const input = host.querySelector('input')!;
+    type(input, 'edited');
+    keyThenBlur(input, 'Escape');
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(host.querySelector('input')).toBeNull();
+    expect(host.querySelector('button')!.textContent).toBe('a');
+  });
+
+  it('[entity:inline-edit-field] a blur without Enter commits once; the next edit commits again', () => {
+    const onCommit = vi.fn();
+    mount(createElement(InlineEditField, { value: 'a', onCommit }));
+    act(() => host.querySelector('button')!.click());
+    const first = host.querySelector('input')!;
+    type(first, 'b');
+    act(() => {
+      blurEvent(first);
+    });
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenLastCalledWith('b');
+    expect(host.querySelector('input')).toBeNull();
+
+    // A new edit is a new settle: Enter commits it (once).
+    act(() => host.querySelector('button')!.click());
+    const second = host.querySelector('input')!;
+    type(second, 'c');
+    keyThenBlur(second, 'Enter');
+    expect(onCommit).toHaveBeenCalledTimes(2);
+    expect(onCommit).toHaveBeenLastCalledWith('c');
   });
 });

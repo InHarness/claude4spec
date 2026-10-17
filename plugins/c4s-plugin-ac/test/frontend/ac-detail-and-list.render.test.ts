@@ -76,10 +76,13 @@ vi.mock('@c4s/plugin-runtime', async () => {
   };
 });
 
-// The kit's own `Badge` module is recorded, not only the `/ui` export: the kit
-// components that draw chips (`EntityListRow`, `TagPicker`, `TagFilterBar`)
-// import it from `../actions/Badge.js`, so a spy on the `/ui` re-export alone
-// would never see the tag chips they render through Badge.
+// Records the `Badge`s the package itself renders through `/ui` (the factory
+// below hands this module's `Badge` out as the `/ui` export). It does NOT see
+// the chips drawn INSIDE kit components (`EntityListRow`, `TagPicker`): their
+// static `../actions/Badge.js` import is resolved by the module runner to
+// `Badge.tsx`, while this mock is registered under the `.js` specifier, so the
+// two never meet (system verification 2.1.28 round 2). Chips drawn by kit
+// components are asserted in the rendered DOM instead — see `kitBadgeLabels`.
 vi.mock('../../../../src/client/host-ui-kit/actions/Badge.js', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../../../src/client/host-ui-kit/actions/Badge.js')>();
   const { createElement: h } = await import('react');
@@ -189,6 +192,48 @@ const create = readFileSync(join(FRONTEND_SRC, 'create-dialog.tsx'), 'utf-8');
 const slash = readFileSync(join(FRONTEND_SRC, 'slash-create.tsx'), 'utf-8');
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const REPO_ROOT = join(import.meta.dirname, '../../../..');
+const BADGE_MARKUP = 'chip-hover';
+
+/**
+ * Labels of every chip the kit `Badge` drew in `scope`, read from the rendered
+ * DOM: a Badge is a `<span>` carrying the `chip-hover` class, its text is the
+ * label (the colour dot is an empty span). This sees chips drawn inside kit
+ * components, which no module mock of `Badge` reaches.
+ */
+function kitBadgeLabels(scope: ParentNode): string[] {
+  return [...scope.querySelectorAll(`span.${BADGE_MARKUP}`)].map((el) => (el.textContent ?? '').trim());
+}
+
+/**
+ * `chip-hover` identifies the kit `Badge` only if no other component emits it:
+ * among the TSX sources of the host client and of every plugin, the kit's
+ * `actions/Badge.tsx` is the one that does.
+ */
+function expectBadgeMarkupIsBadgeOnly(): void {
+  const owners: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      if (name === 'node_modules' || name === 'dist') continue;
+      const full = join(dir, name);
+      if (statSync(full).isDirectory()) walk(full);
+      else if (name.endsWith('.tsx') && readFileSync(full, 'utf-8').includes(BADGE_MARKUP)) {
+        owners.push(relative(REPO_ROOT, full).split('\\').join('/'));
+      }
+    }
+  };
+  walk(join(REPO_ROOT, 'src/client'));
+  for (const pkg of readdirSync(join(REPO_ROOT, 'plugins'))) {
+    const src = join(REPO_ROOT, 'plugins', pkg, 'src');
+    try {
+      if (statSync(src).isDirectory()) walk(src);
+    } catch {
+      // a package without src/
+    }
+  }
+  expect(owners).toEqual(['src/client/host-ui-kit/actions/Badge.tsx']);
+}
 
 function sampleAc(over: Partial<Ac> = {}): Ac {
   return {
@@ -512,7 +557,11 @@ describe('[entity:ac-list] /acs', () => {
         onSelect: () => undefined,
       }),
     );
-    const labels = state.badges.filter(Boolean).map((b) => String(b.label));
+    // Read from the DOM: the kind / status badges come from the package through
+    // `/ui`, the tag chip from inside the kit `EntityListRow` — both must be
+    // the kit `Badge`'s own markup.
+    expectBadgeMarkupIsBadgeOnly();
+    const labels = kitBadgeLabels(container);
     // kind badge on every row
     expect(labels).toContain('requirement');
     expect(labels).toContain('edge-case');

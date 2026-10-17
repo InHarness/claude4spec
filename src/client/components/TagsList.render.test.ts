@@ -241,6 +241,35 @@ describe('TagsList — ui-view `tags-list`', () => {
     expect(host.textContent).toContain('2 endpoints · 1 DTO');
   });
 
+  it('[entity:tags-list] a later rename to a name sent before still reaches the update mutation', () => {
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+    const rename = (to: string) => {
+      const nameButton = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Auth')!;
+      act(() => nameButton.click());
+      const input = host.querySelector('input')!;
+      act(() => {
+        setValue.call(input, to);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      // Enter, then the blur the input fires as it leaves the DOM, in one act.
+      act(() => {
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        input.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+      });
+    };
+
+    // The tag still reads `Auth` (e.g. renamed back elsewhere): renaming it to
+    // `Authn` a second time is a new rename, sent again — once per commit.
+    rename('Authn');
+    expect(mutate).toHaveBeenCalledTimes(1);
+    rename('Authn');
+    expect(mutate).toHaveBeenCalledTimes(2);
+    expect(mutate.mock.calls.map((c) => c[0])).toEqual([
+      { slug: 'auth', input: { name: 'Authn' } },
+      { slug: 'auth', input: { name: 'Authn' } },
+    ]);
+  });
+
   it('[entity:tags-list] the colour is edited inline through the catalog Popover, anchored on the dot', () => {
     // Closed until the dot is clicked; the consumer owns `open`.
     expect(popoverProps.at(-1)).toMatchObject({ open: false, title: 'Tag color' });
