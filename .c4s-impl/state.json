@@ -1258,13 +1258,35 @@
           "why": "wpis rejestru i tier `stable`."
         }
       ],
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "m19-list-header/p1-l2-l12",
+          "layers": [
+            "L2",
+            "L12"
+          ],
+          "slugs": [
+            "thm8a14c",
+            "9v3i7vs1",
+            "m19l12sc",
+            "entity-list-header",
+            "ac-entitylistrow-icon-experimental-m34",
+            "ac-plugin-renderuje-komponent-entitylisthea",
+            "ac-typ-lucideicon-w-stable-propsach-l12"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "c7824f19629fc23991ddfb01ba8d922f54dc73e1",
+      "baseCommit": "c7824f19629fc23991ddfb01ba8d922f54dc73e1",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": [],
       "wave": 3

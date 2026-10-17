@@ -1,0 +1,27 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "m19-list-header",
+    "base": "c7824f19629fc23991ddfb01ba8d922f54dc73e1"
+  },
+  "findings": [
+    {
+      "id": "rev-0001",
+      "file": "src/client/runtime/entity-list-page.render.test.ts",
+      "line": 120,
+      "blocking": false,
+      "reason": "The [section:thm8a14c] and [section:9v3i7vs1] tests build their own ListPage / ListWithCreate inside the test and assert that their own handlers ran (mutate/invalidate/openEntity are called by the test's own onSubmit). They prove the /ui components can be composed this way, not that the native list screens or any real create-from-list flow do. The goal names the existing native list page and create-from-list. A stronger check would render one real plugin list screen (e.g. plugins/c4s-plugin-api-contracts/src/entity/endpoint/frontend/list-page.tsx) or its create dialog.",
+      "portion": "m19-list-header/p1-l2-l12"
+    },
+    {
+      "id": "rev-0002",
+      "file": "src/client/runtime/entity-list-page.render.test.ts",
+      "line": 163,
+      "blocking": false,
+      "reason": "The loading branch only checks that 'No endpoints.' is absent. It never checks that LoadingState actually renders (e.g. its skeleton lines or role/aria-busy), so the test would still pass if the body rendered nothing while loading.",
+      "portion": "m19-list-header/p1-l2-l12"
+    }
+  ],
+  "deviations": []
+}

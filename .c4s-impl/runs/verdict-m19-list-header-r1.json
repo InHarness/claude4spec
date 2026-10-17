@@ -1,0 +1,46 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "unit", "id": "m19-list-header" },
+  "release": "2.1.28",
+  "rows": [
+    {
+      "slug": "entity-list-header",
+      "type": "ui-kit-component",
+      "level": 1,
+      "status": "covered",
+      "evidence": "trace.md:62; src/client/host-ui-kit/core/EntityListHeader.tsx:20-34 props = record (icon?: LucideIcon, title, count?, search?, onSearchChange?(q), searchPlaceholder?, filters?, actions?), withStability(...,'stable'), presentational, search box width 280; registry.ts:83 entry('EntityListHeader','core',...); ui-kit-surface.ts:40 on stable list; plugin-types/ui.ts:56-67 published props. Tests: registry.test.ts:488 expectEntryMatchesRecord('entity-list-header') (core/stable/presentational/no l11Surfaces/composes []); EntityListHeader.render.test.ts:130 `Same<EntityListHeaderProps, EntityListHeaderRecordProps>` host+published, no onCreate/createLabel; :143 '7 results' / no counter; :151 no input without search, width '280px', onSearchChange('users'); :165 search < filters < actions (last); :189 no CountBadge"
+    },
+    {
+      "slug": "ac-entitylistrow-icon-experimental-m34",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/client/host-ui-kit/core/EntityListHeader.render.test.ts:195 — `Exact<HeaderIcon, LucideIcon>, Exact<RowIcon, LucideIcon>, Exact<PubHeaderIcon, LucideIcon>, Exact<PubRowIcon, LucideIcon>, Exact<HeaderIcon, RowIcon>`; tier('EntityListHeader')='stable', tier('EntityListRow')='experimental'; one lucide List renders in both (2 svgs, same class). Code: EntityListRow.tsx:1,23 `icon?: LucideIcon`; EntityListHeader.tsx:1,22. Typecheck green."
+    },
+    {
+      "slug": "ac-plugin-renderuje-komponent-entitylisthea",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/client/runtime/entity-list-page.render.test.ts:66 — `expect(ui.EntityListHeader).toBe(CatalogEntityListHeader)`; shared-runtime.ts:39 maps '@c4s/plugin-runtime/ui'; every plugin source naming EntityListHeader imports it from '@c4s/plugin-runtime/ui' (verified: ac, api-contracts dto/endpoint, database-tables routes, frontend-mockups ListPageHeader + ui-view list-page, host-ui-kit-components routes); listed screens render `<EntityListHeader`; every /ui-consuming plugin vite.config EXTERNAL has 'react' and '@c4s/plugin-runtime/ui' (ac, api-contracts, database-tables, frontend-mockups, host-ui-kit-components, layered-vertical-slices verified); `expect(definers).toEqual(['src/client/host-ui-kit/core/EntityListHeader.tsx'])` — grep confirms the only other definition is plugin-types/ui.ts:67 `declare const` (excluded)."
+    },
+    {
+      "slug": "ac-typ-lucideicon-w-stable-propsach-l12",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/client/host-ui-kit/core/EntityListHeader.render.test.ts:228 — `Exact<NonNullable<Published.EntityListHeaderProps['icon']>, LucideIcon>`; plugin-types/ui.ts:27 `import type { LucideIcon } from 'lucide-react';` (no local alias), :58 `icon?: LucideIcon;`; SHARED_PEER_SPECIFIERS contains 'lucide-react' (frontend-manifest.ts:98); package.json dependencies lucide-react ^0.469.0, exports['./plugin-runtime/ui'].types = './dist/plugin-types/ui.d.ts'; on UI_KIT_STABLE_COMPONENTS + VERSIONED_UI_KIT_COMPONENTS; `expect(HOST_API_VERSION).toBe('2.1.0')` (manifest.ts:176, no bump)."
+    },
+    {
+      "slug": "goal:m19-list-header",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Header meets its record incl. LucideIcon from the lucide peer: EntityListHeader.tsx, registry.ts:83, ui-kit-surface.ts:40, plugin-types/ui.ts:27,56-67. Native list page + create-from-list composed from catalog: entity-list-page.render.test.ts:120 [section:thm8a14c] (EntityListLayout→EntityListHeader+search→TagFilterBar in filters→EntityListRow; LoadingState/EmptyState; '2 results'/'0 results'), :170 [section:9v3i7vs1] (ActionButton in actions→controlled Dialog→FormShell; mutate/invalidate/close/openEntity; no onCreate/createLabel), :247 [section:m19l12sc] consumed components all /ui exports and experimental. Host and plugin render the same header: :66 ui.EntityListHeader === catalog component, single definer. Nothing removed beyond prose (no op:delete in the change read; recipe anchors thm8a14c, 9v3i7vs1, m19l12sc match)."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "all workspaces `tsc --noEmit` passed (last: @inharness-ai/c4s-plugin-host-ui-kit-components@2.1.28 typecheck). Tests not run per build rules (env-runner only); tests touching the changed code read statically, no breakage found."
+  }
+}

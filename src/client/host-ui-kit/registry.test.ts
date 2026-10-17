@@ -332,7 +332,7 @@ const PRIMITIVE_RECORDS: Record<string, PrimitiveRecord> = {
 const CATALOG_NAMES = UI_KIT_CATALOG.map((c) => c.name);
 
 function expectEntryMatchesRecord(slug: string) {
-  const rec = (PRIMITIVE_RECORDS[slug] ?? M13_SCAFFOLD_RECORDS[slug] ?? KIT_DETAIL_HISTORY_RECORDS[slug])!;
+  const rec = (PRIMITIVE_RECORDS[slug] ?? M13_SCAFFOLD_RECORDS[slug] ?? KIT_DETAIL_HISTORY_RECORDS[slug] ?? M19_LIST_HEADER_RECORDS[slug])!;
   const e = UI_KIT_CATALOG.find((c) => c.name === rec.name);
   expect(e, slug).toBeDefined();
   expect(e?.group, slug).toBe(rec.group);
@@ -471,5 +471,24 @@ describe('Host UI Kit registry ↔ detail, history and picker records (M34/L12, 
       expect(code, slug).not.toMatch(/\buseVersionDiff\b/);
       expect(code, slug).not.toMatch(/\bEntityDiff\b/);
     }
+  });
+});
+
+/**
+ * 2.1.28 (unit m19-list-header) — the entity-list header M19 contributes to the
+ * catalog (m19l12sc): `EntityListHeader` (core, stable — its `props` count into
+ * hostApiVersion), presentational, no data sources, composing no other catalog
+ * component.
+ */
+const M19_LIST_HEADER_RECORDS: Record<string, PrimitiveRecord> = {
+  'entity-list-header': { name: 'EntityListHeader', group: 'core', stability: 'stable', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'core/EntityListHeader.tsx' },
+};
+
+describe('Host UI Kit registry ↔ M19 list header record (M19/M34, L12, 2.1.28)', () => {
+  it('[entity:entity-list-header] registry entry matches the record (core, stable — on the versioned stable list —, presentational, no L11 surface), composes nothing', () => {
+    expectEntryMatchesRecord('entity-list-header');
+    expect(VERSIONED_UI_KIT_COMPONENTS as readonly string[]).toContain('EntityListHeader');
+    expect(uiBrowserSurface).toHaveProperty('EntityListHeader');
+    expect(PLUGIN_RUNTIME_UI_EXPORT_NAMES).toContain('EntityListHeader');
   });
 });
