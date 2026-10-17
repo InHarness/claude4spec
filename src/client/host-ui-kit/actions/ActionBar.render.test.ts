@@ -71,9 +71,11 @@ describe('ActionBar ↔ record `action-bar` (M34/L12, 2.1.28)', () => {
     expect(buttons.map((b) => b.textContent)).toEqual(['Export', 'Save', 'Run']);
 
     // Each button is exactly what ActionButton draws for the same entry (default variant secondary).
-    const probe = document.createElement('div');
-    const probeRoot = createRoot(probe);
+    // A fresh root per probe: re-rendering one root patches the previous button in place
+    // (attribute order, happy-dom's stale shorthand longhands), which is not a first draw.
     const expected = actions.map((a) => {
+      const probe = document.createElement('div');
+      const probeRoot = createRoot(probe);
       act(() =>
         probeRoot.render(
           createElement(ActionButton, {
@@ -85,9 +87,10 @@ describe('ActionBar ↔ record `action-bar` (M34/L12, 2.1.28)', () => {
           }),
         ),
       );
-      return probe.innerHTML;
+      const html = probe.innerHTML;
+      act(() => probeRoot.unmount());
+      return html;
     });
-    act(() => probeRoot.unmount());
     expect(buttons.map((b) => b.outerHTML)).toEqual(expected);
 
     // disabled + tooltip come from the entry; a click is the consumer's callback.

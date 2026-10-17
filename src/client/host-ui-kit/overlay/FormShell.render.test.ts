@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FormEvent } from 'react';
 import { FormShell, type FormShellProps } from './FormShell.js';
@@ -49,8 +50,13 @@ interface RecordFormShellProps {
   error?: ReactNode;
 }
 
+// Resolved with node:path from the module's own file path — under happy-dom the global `URL`
+// is the window's, so `new URL(rel, import.meta.url)` is not a `file:` URL that `fileURLToPath`
+// accepts (same pattern as tokens.render.test.ts).
+const HERE = dirname(fileURLToPath(import.meta.url));
+
 const code = (rel: string) =>
-  readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
+  readFileSync(resolve(HERE, rel), 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '');
 
@@ -133,7 +139,7 @@ describe('Dialog and FormShell — the experimental tier (M34/L12)', () => {
       expect(UI_KIT_CATALOG.find((c) => c.name === name)?.stability, name).toBe('experimental');
       expect(typeof (uiBrowserSurface as Record<string, unknown>)[name], name).toBe('function');
     }
-    const published = readFileSync(fileURLToPath(new URL('../../../plugin-types/ui.ts', import.meta.url)), 'utf8');
+    const published = readFileSync(resolve(HERE, '../../../plugin-types/ui.ts'), 'utf8');
     expect(published).toMatch(/export declare const Dialog: /);
     expect(published).toMatch(/export declare const FormShell: /);
   });

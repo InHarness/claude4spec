@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   ToastViewport,
@@ -17,6 +18,11 @@ import {
   type ToastViewportProps,
 } from './ToastViewport.js';
 import type * as Published from '../../../plugin-types/ui.js';
+
+// Resolved with node:path from the module's own file path — under happy-dom the global `URL`
+// is the window's, so `new URL(rel, import.meta.url)` is not a `file:` URL that `fileURLToPath`
+// accepts (same pattern as tokens.render.test.ts).
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -134,7 +140,7 @@ describe('ToastViewport ↔ record `toast-viewport` (M34/L12, 2.1.28)', () => {
     } finally {
       vi.useRealTimers();
     }
-    const src = readFileSync(fileURLToPath(new URL('./ToastViewport.tsx', import.meta.url)), 'utf8')
+    const src = readFileSync(resolve(HERE, './ToastViewport.tsx'), 'utf8')
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/^\s*\/\/.*$/gm, '');
     expect(src).not.toMatch(/setTimeout|setInterval|useState|useReducer/);

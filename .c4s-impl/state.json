@@ -781,7 +781,7 @@
           "why": "wpisy rejestru i tiery tych komponentów pochodzą z rejestru katalogu."
         }
       ],
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "kit-primitives/p1-l12",
@@ -825,29 +825,13 @@
             "ac-popover-z-zadanym-maxheight-scrolluje-we",
             "ac-toastviewport-usetoast-grupa-overlay"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [
             "regression"
           ],
-          "only": [
-            {
-              "finding": "regression:src/client/host-ui-kit/actions/ActionBar.render.test.ts"
-            },
-            {
-              "finding": "regression:src/client/host-ui-kit/actions/ActionButton.render.test.ts"
-            },
-            {
-              "finding": "regression:src/client/host-ui-kit/form/FormField.render.test.ts"
-            },
-            {
-              "finding": "regression:src/client/host-ui-kit/overlay-feedback/ToastViewport.render.test.ts"
-            },
-            {
-              "finding": "regression:src/client/host-ui-kit/overlay/FormShell.render.test.ts"
-            }
-          ]
+          "only": []
         }
       ],
       "startCommit": "5bab87b1af1de75c642d41fd5159122298acc7d4",
@@ -1119,7 +1103,7 @@
           "why": "powierzchnie L11 komponentów `connected` w rejestrze."
         }
       ],
-      "status": "pending",
+      "status": "in-progress",
       "portions": [
         {
           "name": "kit-detail-history/p1-l11-l12",

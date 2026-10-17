@@ -1,0 +1,12 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.28",
+  "unit": "kit-primitives",
+  "portion": "kit-primitives/p1-l12",
+  "claimed": ["action-bar", "action-button", "form-field", "toast-viewport", "form-shell", "ac-dialog-i-formshell-sa-w-tierze-experimen"],
+  "deviations": [],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

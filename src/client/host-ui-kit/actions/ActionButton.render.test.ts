@@ -65,6 +65,14 @@ describe('ActionButton ↔ record `action-button` (M34/L12, 2.1.28)', () => {
   it('[entity:action-button] the three variants draw primary filled accent, secondary panel, ghost transparent muted', () => {
     mount(createElement(ActionButton, { label: 'A', variant: 'primary' }));
     expect(button().style.background).toBe('var(--c-accent)');
+    // Each variant is a first draw: a fresh root, not an in-place style patch of the previous one.
+    act(() => root.unmount());
+    root = createRoot(host);
+    mount(createElement(ActionButton, { label: 'A', variant: 'secondary' }));
+    expect(button().style.background).toBe('var(--c-panel)');
+    expect(button().style.color).toBe('var(--c-ink)');
+    act(() => root.unmount());
+    root = createRoot(host);
     mount(createElement(ActionButton, { label: 'A', variant: 'ghost' }));
     expect(button().style.background).toBe('transparent');
     expect(button().style.color).toBe('var(--c-muted)');

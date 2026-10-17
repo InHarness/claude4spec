@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { FormField, type FormFieldProps } from './FormField.js';
 import type * as Published from '../../../plugin-types/ui.js';
 
@@ -51,7 +52,12 @@ describe('FormField ↔ record `form-field` (M34/L12, 2.1.28)', () => {
     expect(label!.textContent).toBe('Slug');
     expect(control!.getAttribute('data-testid')).toBe('c');
     expect(error!.textContent).toBe('Slug taken');
-    expect(error!.getAttribute('style')).toContain('var(--c-red');
+    // The error line is drawn in the red token. happy-dom drops a `var(--x, fallback)` colour from
+    // the live style attribute, so the drawn style is read from React's own serialisation.
+    const markup = renderToStaticMarkup(
+      createElement(FormField, { label: 'Slug', error: 'Slug taken', children: createElement('input') }),
+    );
+    expect(markup).toMatch(/<div[^>]*style="color:var\(--c-red[^"]*"[^>]*>Slug taken<\/div>/);
   });
 
   it('[entity:form-field] no error line without an error (null or absent)', () => {
