@@ -119,7 +119,7 @@
         ]
       },
       "dependsOn": [],
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "ui-kit-type-package/p1-l1-l12",
@@ -137,16 +137,23 @@
             "ac-kazdy-wpis-katalogu-host-ui-kit-deklaruj",
             "ac-komponent-o-binding-connected-jawni"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 2,
           "partial": 0,
           "uncovered": [
             "regression"
           ],
-          "only": []
+          "only": [
+            {
+              "finding": "regression:tests/integration/db/baseline-identity.test.ts"
+            },
+            {
+              "finding": "regression:tests/integration/db/upgrade-adoption.test.ts"
+            }
+          ]
         }
       ],
-      "startCommit": "5bab87b1af1de75c642d41fd5159122298acc7d4",
+      "startCommit": "b86e73d2962c519ca7a542dbd765ea4dcfb1b118",
       "baseCommit": "a0e9da8362700a137400ef0a6d5058591fba6b4b",
       "rounds": {
         "review": 0,
@@ -781,7 +788,7 @@
           "why": "wpisy rejestru i tiery tych komponentów pochodzą z rejestru katalogu."
         }
       ],
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "kit-primitives/p1-l12",
@@ -825,16 +832,20 @@
             "ac-popover-z-zadanym-maxheight-scrolluje-we",
             "ac-toastviewport-usetoast-grupa-overlay"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 2,
           "partial": 0,
           "uncovered": [
             "regression"
           ],
-          "only": []
+          "only": [
+            {
+              "finding": "finding:rev-0202"
+            }
+          ]
         }
       ],
-      "startCommit": "5bab87b1af1de75c642d41fd5159122298acc7d4",
+      "startCommit": "b86e73d2962c519ca7a542dbd765ea4dcfb1b118",
       "baseCommit": "efed5b8ff4eb04b4cf44a4780244df37716017fd",
       "rounds": {
         "review": 0,
@@ -1369,7 +1380,7 @@
           "why": "wejście pickera tagów."
         }
       ],
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "m18-tags-kit/p1-l2-l12",
@@ -1385,16 +1396,20 @@
             "tags-list",
             "ac-pozycja-o-ksztalcie-tag-list-item-jes"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 2,
           "partial": 0,
           "uncovered": [
             "regression"
           ],
-          "only": []
+          "only": [
+            {
+              "finding": "finding:rev-0201"
+            }
+          ]
         }
       ],
-      "startCommit": "5bab87b1af1de75c642d41fd5159122298acc7d4",
+      "startCommit": "b86e73d2962c519ca7a542dbd765ea4dcfb1b118",
       "baseCommit": "aeba5db80f8625a331cddaa19675a7a0531cc93d",
       "rounds": {
         "review": 0,
@@ -1461,7 +1476,7 @@
           "why": "ekrany składają się z komponentów tych jednostek."
         }
       ],
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "entity-screens-kit/p1-l5-l12",
@@ -1487,16 +1502,23 @@
             "ui-view-history",
             "ui-view-list"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 3,
           "partial": 0,
           "uncovered": [
             "regression"
           ],
-          "only": []
+          "only": [
+            {
+              "finding": "regression:plugins/c4s-plugin-ac/test/frontend/ac-detail-and-list.render.test.ts"
+            },
+            {
+              "finding": "regression:plugins/c4s-plugin-frontend-mockups/test/frontend/design-system-views.render.test.ts"
+            }
+          ]
         }
       ],
-      "startCommit": "5bab87b1af1de75c642d41fd5159122298acc7d4",
+      "startCommit": "b86e73d2962c519ca7a542dbd765ea4dcfb1b118",
       "baseCommit": "066791901340a3a30e1a3c23015c2f263e230a40",
       "rounds": {
         "review": 0,
