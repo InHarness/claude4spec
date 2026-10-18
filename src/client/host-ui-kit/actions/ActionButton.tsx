@@ -6,6 +6,10 @@ import { withStability } from '../stability.js';
  * style, in three variants. Extracted from the host's `ActionBar` button.
  *
  * Pure-presentational: label, icon, variant and handler are props.
+ *
+ * 2.1.35: the label stays on one line — it never wraps and the button never
+ * shrinks below label + icon; in a narrower container the button overflows or
+ * pushes its neighbours instead (applies to every consumer).
  */
 export type ActionButtonVariant = 'primary' | 'secondary' | 'ghost';
 
@@ -47,7 +51,7 @@ function ActionButtonImpl({
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px] font-medium"
+      className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-[12.5px] font-medium"
       style={{
         ...VARIANT_STYLE[variant],
         opacity: disabled ? 0.4 : 1,

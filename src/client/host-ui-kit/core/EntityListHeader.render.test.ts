@@ -68,8 +68,8 @@ describe('EntityListHeader — prop contract (M19 m19l12sc)', () => {
     expect(iSearch).toBeGreaterThan(-1);
     expect(iSearch).toBeLessThan(iFilters);
     expect(iFilters).toBeLessThan(iActions);
-    // `actions` is the last thing in the header.
-    expect(html.slice(iActions)).toMatch(/^data-slot="actions"><\/span><\/div>$/);
+    // `actions` is the last thing in the header (inside its own non-shrinking slot wrapper, 2.1.35).
+    expect(html.slice(iActions)).toMatch(/^data-slot="actions"><\/span><\/div><\/div>$/);
   });
 
   it('[section:m19l12sc] the list catalog offers one empty state and no error state', () => {
@@ -117,6 +117,8 @@ afterEach(() => {
 });
 
 const mount = (el: ReactNode) => act(() => root.render(el));
+/** The row cell is the element itself or wraps it (slots sit in a wrapper since 2.1.35). */
+const holds = (cell: Element, sel: string) => cell.matches(sel) || cell.querySelector(sel) != null;
 
 function type(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
@@ -166,7 +168,7 @@ describe('EntityListHeader ↔ record `entity-list-header` (M19/L12, 2.1.28)', (
     expect(host.textContent).not.toMatch(/results?/);
   });
 
-  it('[entity:entity-list-header] omitting `search` hides the search field; with it the field (280 px wide) reports typing through onSearchChange', () => {
+  it('[entity:entity-list-header] omitting `search` hides the search field; with it the field (280 px basis) reports typing through onSearchChange', () => {
     mount(createElement(EntityListHeader, { title: 'Endpoints' }));
     expect(host.querySelector('input')).toBeNull();
 
@@ -175,7 +177,7 @@ describe('EntityListHeader ↔ record `entity-list-header` (M19/L12, 2.1.28)', (
     const input = host.querySelector('input')!;
     expect(input).not.toBeNull();
     expect(input.placeholder).toBe('Search…');
-    expect((input.parentElement as HTMLElement).style.width).toBe('280px');
+    expect((input.parentElement as HTMLElement).style.flexBasis).toBe('280px');
     type(input, 'users');
     expect(onSearchChange).toHaveBeenCalledWith('users');
   });
@@ -194,8 +196,8 @@ describe('EntityListHeader ↔ record `entity-list-header` (M19/L12, 2.1.28)', (
     const bar = host.firstElementChild as HTMLElement;
     const kids = Array.from(bar.children) as HTMLElement[];
     const iSearch = kids.findIndex((k) => k.querySelector('input'));
-    const iFilters = kids.findIndex((k) => k.dataset.slot === 'filters');
-    const iActions = kids.findIndex((k) => k.dataset.slot === 'actions');
+    const iFilters = kids.findIndex((k) => holds(k, '[data-slot="filters"]'));
+    const iActions = kids.findIndex((k) => holds(k, '[data-slot="actions"]'));
     expect(iSearch).toBeGreaterThan(-1);
     expect(iSearch).toBeLessThan(iFilters);
     expect(iFilters).toBeLessThan(iActions);
@@ -272,12 +274,13 @@ describe('EntityListHeader — the `filters` slot (record `entity-list-header`, 
     // One non-wrapping flex row…
     expect(row.className.split(/\s+/)).toEqual(expect.arrayContaining(['flex', 'items-center']));
     expect(row.className).not.toMatch(/flex-wrap|flex-col/);
-    // …whose direct children are the title, the search, the compact filter control and the actions.
+    // …whose cells are the title, the search, the compact filter control and the actions
+    // (each slot in its own non-shrinking wrapper since 2.1.35).
     const kids = Array.from(row.children) as HTMLElement[];
     const iTitle = kids.findIndex((k) => k.tagName === 'H2');
     const iSearch = kids.findIndex((k) => k.querySelector('input'));
-    const iFilters = kids.findIndex((k) => k.getAttribute('role') === 'tablist');
-    const iActions = kids.findIndex((k) => k.dataset.slot === 'actions');
+    const iFilters = kids.findIndex((k) => holds(k, '[role="tablist"]'));
+    const iActions = kids.findIndex((k) => holds(k, '[data-slot="actions"]'));
     expect([iTitle, iSearch, iFilters, iActions].every((i) => i > -1)).toBe(true);
     expect(iTitle).toBeLessThan(iSearch);
     expect(iSearch).toBeLessThan(iFilters);
@@ -371,5 +374,76 @@ describe('LucideIcon in the stable props (L12/L11, 2.1.28)', () => {
     expect(VERSIONED_UI_KIT_COMPONENTS as readonly string[]).toContain('EntityListHeader');
     // …added within the current baseline, without a bump.
     expect(HOST_API_VERSION).toBe('2.1.0');
+  });
+});
+
+// ── 2.1.35 — explicit shrink order in a narrow panel ──
+// happy-dom computes no layout, so these pin the classes and styles that force the behaviour.
+
+const classesOf = (el: Element | null | undefined) => (el?.getAttribute('class') ?? '').split(/\s+/);
+
+function mountFull(extra: Partial<EntityListHeaderProps> = {}) {
+  mount(
+    createElement(EntityListHeader, {
+      icon: List,
+      title: 'A rather long list title that may not fit',
+      count: 12,
+      search: '',
+      onSearchChange: () => {},
+      filters: createElement('span', { 'data-slot': 'filters' }, 'All'),
+      actions: createElement('button', { 'data-slot': 'actions' }, 'New'),
+      ...extra,
+    }),
+  );
+  const row = host.firstElementChild as HTMLElement;
+  return {
+    row,
+    title: row.querySelector('h2') as HTMLElement,
+    searchBox: (row.querySelector('input')?.parentElement ?? null) as HTMLElement | null,
+    counter: Array.from(row.children).find((k) => /\bresults?\b/.test(k.textContent ?? '')) as HTMLElement,
+    cell: (sel: string) => Array.from(row.children).find((k) => holds(k, sel)) as HTMLElement,
+  };
+}
+
+describe('EntityListHeader — shrink order (record `entity-list-header`, 2.1.35)', () => {
+  it('[ac:ac-przy-zwezaniu-panelu-pole-wyszukiwani] the search box narrows from 280 px to 160 px before the title truncates', () => {
+    const { title, searchBox } = mountFull();
+    expect(searchBox).not.toBeNull();
+    // Max 280 px (the basis, never grows), min 160 px; no rigid width any more.
+    expect(searchBox!.style.flexBasis).toBe('280px');
+    expect(searchBox!.style.flexGrow).toBe('0');
+    expect(searchBox!.style.minWidth).toBe('160px');
+    expect(searchBox!.style.width).toBe('');
+    // It takes the deficit first: its shrink factor dwarfs the title's default 1.
+    expect(Number(searchBox!.style.flexShrink)).toBeGreaterThanOrEqual(1000);
+    expect(classesOf(title).some((c) => /^shrink/.test(c))).toBe(false);
+    expect(title.style.flexShrink).toBe('');
+    // The input inside may narrow along with its box.
+    expect(classesOf(searchBox!.querySelector('input'))).toContain('min-w-0');
+  });
+
+  it('[ac:ac-gdy-pole-wyszukiwania-entitylistheade] once the search box is at 160 px or hidden, the title truncates with an ellipsis on one line', () => {
+    const withSearch = mountFull();
+    expect(classesOf(withSearch.title)).toEqual(expect.arrayContaining(['min-w-0', 'truncate']));
+
+    // Without `search` there is no search box at all — the title is the first to give way.
+    const noSearch = mountFull({ search: undefined, onSearchChange: undefined });
+    expect(noSearch.searchBox).toBeNull();
+    expect(noSearch.row.querySelector('input')).toBeNull();
+    expect(classesOf(noSearch.title)).toEqual(expect.arrayContaining(['min-w-0', 'truncate']));
+  });
+
+  it('[ac:ac-licznik-wynikow-oraz-zawartosc-slotow] the counter and the `filters` / `actions` slots keep their natural width on one line', () => {
+    const { row, counter, cell } = mountFull();
+    expect(classesOf(counter)).toEqual(expect.arrayContaining(['whitespace-nowrap', 'shrink-0']));
+    const filtersCell = cell('[data-slot="filters"]');
+    const actionsCell = cell('[data-slot="actions"]');
+    expect(classesOf(filtersCell)).toContain('shrink-0');
+    expect(classesOf(actionsCell)).toContain('shrink-0');
+    // The leading icon does not give way either.
+    expect((row.firstElementChild as SVGElement).style.flexShrink).toBe('0');
+    // The row itself never wraps.
+    expect(classesOf(row)).not.toContain('flex-wrap');
+    expect(row.style.flexWrap).toBe('');
   });
 });
