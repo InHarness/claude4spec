@@ -331,6 +331,27 @@ describe('diagram — L12 (DiagramFullscreen as the `diagram-expand` content)', 
     expect(onClose).toHaveBeenCalledTimes(1);
     await act(async () => r.unmount());
   });
+
+  it('[ac:ac-diagram-toast-nad-otwartym-fullscreenem] a toast shown while DiagramFullscreen is open renders above the overlay', async () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const r = createRoot(host);
+    await act(async () => {
+      r.render(createElement(DiagramOverlay, { slug: 'one', onClose: () => {} }));
+    });
+    await flush();
+    const overlayZ = Number((document.querySelector('[aria-label="Diagram fullscreen"]') as HTMLElement).style.zIndex);
+    // The toast viewport sits on the bridge's `--z-toast` tier; the popover tier is below the overlay.
+    const theme = readFileSync(root('src/client/styles/theme.css'), 'utf8');
+    const tier = (name: string) => Number(new RegExp(`--${name}:\\s*(\\d+)`).exec(theme)![1]);
+    expect(readFileSync(root('src/client/host-ui-kit/overlay-feedback/ToastViewport.tsx'), 'utf8')).toContain(
+      "zIndex: 'var(--z-toast)'",
+    );
+    expect(tier('z-toast')).toBeGreaterThan(overlayZ);
+    expect(overlayZ).toBeGreaterThan(tier('z-popover'));
+    await act(async () => r.unmount());
+    host.remove();
+  });
 });
 
 // ─── code-snippet ───────────────────────────────────────────────────────────
