@@ -1,5 +1,5 @@
 {
-  "iteration": 18,
+  "iteration": 19,
   "units": [
     {
       "id": "u1-m34-catalogue-behaviour",
@@ -312,6 +312,6 @@
   ],
   "entityParts": [],
   "baselineGreen": true,
-  "systemVerified": false,
+  "systemVerified": true,
   "errors": 0
 }
