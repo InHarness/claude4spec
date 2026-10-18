@@ -140,3 +140,17 @@ describe('ActionButton — onClick and type (M34/L12, 2.1.33)', () => {
     expect(onSubmit2).not.toHaveBeenCalled();
   });
 });
+
+describe('ActionButton — one-line label (M34/L12, 2.1.35)', () => {
+  it('[ac:ac-etykieta-actionbutton-zostaje-w-jedne] in every variant, with or without an icon, the label never wraps and the button never shrinks below it', () => {
+    for (const variant of ['primary', 'secondary', 'ghost'] as const) {
+      for (const icon of [undefined, createElement('i', { 'data-testid': 'icon' })]) {
+        act(() => root.unmount());
+        root = createRoot(host);
+        mount(createElement(ActionButton, { label: 'Analyze consistency', variant, icon }));
+        const classes = (button().getAttribute('class') ?? '').split(/\s+/);
+        expect(classes, `${variant}${icon ? ' + icon' : ''}`).toEqual(expect.arrayContaining(['whitespace-nowrap', 'shrink-0']));
+      }
+    }
+  });
+});

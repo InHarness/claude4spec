@@ -23,6 +23,14 @@ import { withStability } from '../stability.js';
  * select. The header has no place for `TagFilterBar`: a strip with a variable
  * number of chips would break the row, so the tag bar stands BELOW the header,
  * as its sibling in `EntityListLayout`'s `header` (M19 `thm8a14c`).
+ *
+ * 2.1.35 — explicit shrink order in a narrow panel; the row never wraps:
+ * 1. the search box gives way first, from 280 px down to 160 px (flex basis
+ *    280 px, min-width 160 px, a shrink factor far above the title's);
+ * 2. only then the title truncates with an ellipsis on one line (at once when
+ *    `search` is omitted);
+ * the icon, the counter and the `filters` / `actions` slots keep their natural
+ * width throughout.
  */
 export interface EntityListHeaderProps {
   /** Leading icon (e.g. a lucide icon component). */
@@ -59,12 +67,12 @@ function EntityListHeaderImpl({
       className="flex items-center gap-3 px-8 py-4"
       style={{ borderBottom: '1px solid var(--c-hair)' }}
     >
-      {Icon && <Icon size={18} style={{ color: 'var(--c-accent)' }} />}
-      <h2 className="text-[18px] font-semibold tracking-tight" style={{ color: 'var(--c-ink)' }}>
+      {Icon && <Icon size={18} style={{ color: 'var(--c-accent)', flexShrink: 0 }} />}
+      <h2 className="min-w-0 truncate text-[18px] font-semibold tracking-tight" style={{ color: 'var(--c-ink)' }}>
         {title}
       </h2>
       {count != null && (
-        <span className="font-mono text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>
+        <span className="shrink-0 whitespace-nowrap font-mono text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>
           {count} {count === 1 ? 'result' : 'results'}
         </span>
       )}
@@ -72,20 +80,26 @@ function EntityListHeaderImpl({
       {search != null && (
         <div
           className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5"
-          style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)', width: 280 }}
+          style={{
+            background: 'var(--c-card)',
+            border: '1px solid var(--c-hair)',
+            // Gives way first: 280 px → 160 px before the title starts to truncate.
+            flex: '0 1000 280px',
+            minWidth: 160,
+          }}
         >
           <Search size={13} style={{ color: 'var(--c-subtle)' }} />
           <input
             value={search}
             onChange={(e) => onSearchChange?.(e.target.value)}
-            className="bg-transparent flex-1 text-[13px] outline-none"
+            className="bg-transparent flex-1 min-w-0 text-[13px] outline-none"
             placeholder={searchPlaceholder}
             style={{ color: 'var(--c-ink)' }}
           />
         </div>
       )}
-      {filters}
-      {actions}
+      {filters ? <div className="flex shrink-0 items-center gap-3">{filters}</div> : null}
+      {actions ? <div className="flex shrink-0 items-center gap-3">{actions}</div> : null}
     </div>
   );
 }
