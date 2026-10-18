@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { createTestApp, type TestApp } from '../../helpers/test-app.js';
 import { systemRootId } from '../../../src/shared/root-kinds.js';
+import { M10_PROMPT_BLOCKS } from '../../../src/server/services/system-prompt/blocks/m10-plan.js';
+import type { PromptContext } from '../../../src/server/services/system-prompt/types.js';
 
 /** Writes a plan `.md` file + captures its file_version + indexes it — mirrors artifacts.test.ts's writeArtifact. */
 async function seedPlan(
@@ -435,5 +437,78 @@ describe('GET /api/plans/by-anchor/:anchor', () => {
     await seedPlan(t, 'some-plan', 'Some plan', '<!-- anchor: abcd1234 -->\n## S\n\nx');
     const res = await request(t.app).get('/api/plans/by-anchor/%25'); // decodes to "%"
     expect(res.status).toBe(404);
+  });
+});
+
+/**
+ * 2.1.29 (M11 → M10) — `c4s agent --plan <planPath>` founds its thread through
+ * the generic attach route with `:kind=plan`. These pin the server half of
+ * that contract; the CLI half (validation, prefix, run-turn) lives in
+ * `src/core/agent/run-agent.test.ts`.
+ */
+describe('POST /api/artifacts/plan/:path/threads (the `c4s agent --plan` attach)', () => {
+  let t: TestApp;
+
+  beforeEach(async () => {
+    t = await createTestApp();
+  });
+  afterEach(() => t.cleanup());
+
+  const attach = (planPath: string) =>
+    request(t.app).post(`/api/artifacts/plan/${encodeURIComponent(planPath)}/threads`).send({});
+
+  it('[ac:ac-c4s-agent-msg-plan-planpath-zwraca-th] founds an executor chat thread on the plan (plan_mode 0, plan_path set) that the plan threads list carries', async () => {
+    const planPath = await seedPlan(t, 'auth-refactor', 'Auth refactor', 'do it');
+
+    const res = await attach(planPath);
+    expect(res.status).toBe(200);
+    const threadId = res.body.data.threadId as string;
+    expect(threadId).toEqual(expect.any(String));
+
+    const row = t.db
+      .prepare(`SELECT context_type, plan_mode, plan_path, parent_thread_id FROM chat_thread WHERE id = ?`)
+      .get(threadId);
+    expect(row).toEqual({ context_type: 'chat', plan_mode: 0, plan_path: planPath, parent_thread_id: null });
+
+    const list = await request(t.app).get(`/api/artifacts/plan/${encodeURIComponent(planPath)}/threads`);
+    expect(list.body.data.map((x: { id: string }) => x.id)).toContain(threadId);
+  });
+
+  it('[ac:ac-plan-ze-sciezka-nieistniejacego-planu] 404s for a path naming no plan, founding no thread', async () => {
+    const before = (t.db.prepare(`SELECT COUNT(*) AS n FROM chat_thread`).get() as { n: number }).n;
+    const res = await attach('does-not-exist.md');
+    expect(res.status).toBe(404);
+    expect((t.db.prepare(`SELECT COUNT(*) AS n FROM chat_thread`).get() as { n: number }).n).toBe(before);
+  });
+
+  it('[ac:ac-plan-na-planie-z-applied-true-zaklada] founds a thread on an applied plan without refusing it', async () => {
+    const planPath = await seedPlan(t, 'done-plan', 'Done plan', 'body', { applied: true });
+    const res = await attach(planPath);
+    expect(res.status).toBe(200);
+    expect(res.body.data.threadId).toEqual(expect.any(String));
+  });
+
+  it('[ac:ac-prompt-systemowy-pierwszej-tury-watku] the founded thread resolves to its plan, which renders as <current_plan path="<planPath>">', async () => {
+    const planPath = await seedPlan(t, 'prompt-plan', 'Prompt plan', 'body');
+    const threadId = (await attach(planPath)).body.data.threadId as string;
+
+    // The turn runtime asks exactly this (`agent-turn.ts`: planService.getByThread)
+    // and hands the result to M10's block.
+    const plan = await t.mcpSurfaceDeps('chat').planService.getByThread(threadId);
+    expect(plan?.path).toBe(planPath);
+    const block = M10_PROMPT_BLOCKS.find((b) => b.name === 'current_plan')!;
+    const rendered = block.render({ currentPlan: plan } as unknown as PromptContext);
+    expect(rendered).toContain(`<current_plan path="${planPath}"`);
+  });
+
+  it('[ac:ac-mark-plan-applied-wywolane-w-watku-z] mark_plan_applied in the founded thread sets applied: true on that plan', async () => {
+    const planPath = await seedPlan(t, 'close-plan', 'Close plan', 'body');
+    const threadId = (await attach(planPath)).body.data.threadId as string;
+
+    const planService = t.mcpSurfaceDeps('chat').planService;
+    // `mark_plan_applied` is a thin wrapper over this call (plan-tools.ts).
+    const res = await planService.setAppliedByThread(threadId, { applied: true });
+    expect(res.path).toBe(planPath);
+    expect((await planService.getByPath(planPath)).frontmatter.applied).toBe(true);
   });
 });

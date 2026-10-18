@@ -19,6 +19,7 @@ import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registr
  * parsowanie flag, mapowanie kodow bledow na `CliError`, formatowanie outputu.
  *
  *   c4s agent "<msg>" --ct chat
+ *   c4s agent "<msg>" --plan <planPath>        # new executor thread on an existing plan (—ct not needed)
  *   c4s agent "<msg>" --ct ask                 # read-only peer consult
  *   c4s agent "<msg>" --ct brief --brief <path>       # attach-mode
  *   c4s agent "<msg>" --ct brief                      # create-mode, window open to the current state
@@ -45,6 +46,10 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
   if (args.flags.has('brief') && briefPath === undefined) {
     throw new CliError('INVALID_ARGS', '--brief needs a path (got an empty value)');
   }
+  const planPath = optionalString(args, 'plan');
+  if (args.flags.has('plan') && planPath === undefined) {
+    throw new CliError('INVALID_ARGS', '--plan needs a path (got an empty value)');
+  }
   const server = optionalString(args, 'server');
   const effort = optionalString(args, 'effort');
   const model = parseModelFlag(args);
@@ -59,7 +64,23 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
   const rootsFlag = optionalStringList(args, 'roots');
   const suffixFlag = optionalString(args, 'suffix');
 
-  if (!threadId) {
+  if (planPath !== undefined) {
+    // Plan mode always creates a NEW chat thread, so continuation, a brief or
+    // another context make no sense with it. `runAgent` re-checks the same
+    // (it is the shared library); here only for the CLI-worded messages.
+    if (threadId) {
+      throw new CliError(
+        'INVALID_ARGS',
+        '--plan does not go with --thread; continue a plan thread with c4s agent "<msg>" --thread <id>',
+      );
+    }
+    if (briefPath !== undefined) {
+      throw new CliError('INVALID_ARGS', '--plan does not go with --brief');
+    }
+    if (ct !== undefined && ct !== 'chat') {
+      throw new CliError('INVALID_ARGS', `--plan opens a chat thread; --ct ${ct} does not go with it`);
+    }
+  } else if (!threadId) {
     // Early CLI-level validation (livelier hints) ograniczona do samego `--ct`.
     // Predykat trybu (attach vs create) ORAZ mapowanie flag okna na cialo
     // requestu naleza do `runAgent` — wspolnej biblioteki obu transportow —
@@ -88,6 +109,7 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
       contextType: ct as AgentContextType | undefined,
       threadId,
       briefPath,
+      planPath,
       // Create-payload przekazywany plasko, dokladnie tak jak `effort`.
       fromReleaseName: fromFlag,
       toReleaseName: toFlag,
@@ -99,7 +121,7 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
     });
   } catch (err) {
     if (err instanceof AgentError) {
-      throw new CliError(err.code as CliErrorCode, err.message, err.hint);
+      throw new CliError(err.code as CliErrorCode, err.message, err.hint, err.details);
     }
     throw err;
   }

@@ -166,7 +166,7 @@ describe('buildC4sToolsServer — ask addressing (2.1.0)', () => {
     expect(hoisted.calls).toHaveLength(0);
   });
 
-  it('declares `project` required and has no projectSlug/projectPath/contextType/brief input', async () => {
+  it('declares `project` required and has no projectSlug/projectPath/contextType/brief/plan input', async () => {
     const client = await connectClient();
     const { tools } = await client.listTools();
     const schema = tools.find((t) => t.name === 'ask')!.inputSchema as {
@@ -174,7 +174,8 @@ describe('buildC4sToolsServer — ask addressing (2.1.0)', () => {
       properties: Record<string, unknown>;
     };
     expect(schema.required).toEqual(expect.arrayContaining(['message', 'project']));
-    for (const gone of ['projectSlug', 'projectPath', 'contextType', 'brief']) {
+    // 2.1.29: plan attach (`planPath`) is a CLI-only surface of `runAgent`.
+    for (const gone of ['projectSlug', 'projectPath', 'contextType', 'brief', 'plan', 'planPath']) {
       expect(schema.properties).not.toHaveProperty(gone);
     }
   });

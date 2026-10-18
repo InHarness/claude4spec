@@ -131,6 +131,10 @@ Utility:
 Agent:
   agent "<msg>" --ct <chat|brief|patch|ask>   generic turn; verbose (all messages + reasoning)
   agent "<msg>" --ct brief --brief <path>     attach a turn to an existing brief
+  agent "<msg>" --plan <planPath>             new executor thread on an existing plan, then turn on it
+                                              (<planPath> relative to the plans dir, a leading
+                                              .claude4spec/plans/ is stripped; --ct not needed,
+                                              no --thread/--brief; unknown plan is NOT_FOUND)
   agent "<msg>" --ct brief [--from <r>] [--to <r>] [--roots <a,b>] [--suffix <s>]
                                               create the brief first, then turn on it
                                               (no window flag goes with --brief)
@@ -268,7 +272,8 @@ Plans (M10 — server-delegating; the one plan command, the rest are agent/UI op
                                     founds a plan (slug = slugify(title), immutable) with its
                                     first version and a top-level carrier thread; no agent turn
                                     runs. A taken slug is PLAN_ALREADY_EXISTS (exit 24), never
-                                    suffixed. Prints planPath + hash
+                                    suffixed. Prints { planPath, hash, threads: [<carrier threadId>] }
+                                    — continue with agent --thread <threads[0]> or --plan <planPath>
 
 Skills registry (M37 — server-delegating; the project's skills, served from memory, never a disk path):
   list-skills [--context-type chat|brief|patch|ask]

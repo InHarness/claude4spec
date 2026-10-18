@@ -76,6 +76,8 @@ export class AgentError extends Error {
     public code: string,
     message: string,
     public hint?: string,
+    /** Extra fields for the stderr envelope (e.g. `threadId` of a thread created before the failure). */
+    public details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'AgentError';
