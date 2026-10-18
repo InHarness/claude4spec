@@ -149,12 +149,11 @@ function EntityVersionHistoryViewImpl({
      * timeline's group heading AND grouping key, so a released version ALWAYS
      * gets one: without it every version would fall into "Unreleased".
      *
-     * 2.1.28 (record `entity-version-history-view`): `showReleasePill` switches
-     * the group heading to the form "Release <id>". A release is addressed by
-     * its name (2.1.11), so `<id>` is the release name, with the numeric id only
-     * when the name is not loaded yet. ASSUMPTION:dev-2809 — `false` heads the
-     * group with the bare release identifier, without the "Release" prefix;
-     * the version row carries no release pill either way.
+     * 2.1.30 (record `entity-version-history-view`): `showReleasePill` switches
+     * the group heading to the form "Release <release name>"; `false` heads the
+     * group with the bare release name. Until `useReleases` delivers the name,
+     * the numeric release id stands in its place. The version row carries no
+     * release pill either way.
      */
     ...(v.releaseId != null
       ? {

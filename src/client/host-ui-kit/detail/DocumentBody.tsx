@@ -9,9 +9,10 @@ import { withStability } from '../stability.js';
  * `lede` and `body` for content (record `document-body`, 2.1.28) — so it
  * matches the host's own `.prose-spec` scale. Contributed by M13.
  *
- * ASSUMPTION:dev-2808 — content is `body`; a paragraph the consumer marks
- * `<p className="lede">` takes the `lede` style (the host's `.prose-spec
- * p.lede` convention). The record does not say how `lede` is selected.
+ * 2.1.30 — content is `body`; a paragraph the consumer marks
+ * `<p className="lede">` takes the `lede` style. The component never picks the
+ * lead itself (no `lede` prop, the first paragraph is not promoted), and the
+ * rule is scoped to this content, independent of the editor prose class.
  */
 
 /** Scope attribute the content styles below hang on. */

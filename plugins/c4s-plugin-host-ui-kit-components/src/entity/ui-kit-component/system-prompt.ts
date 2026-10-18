@@ -8,7 +8,7 @@ import { UI_KIT_AUDIT_TOOL, UI_KIT_TOOLS_SERVER } from '../../identity.js';
  * English like every other type's block.
  */
 export const uiKitComponentSystemPrompt: SystemPromptContribution = {
-  roleNoun: 'UI Kit components',
+  roleNoun: 'UI Kit Components',
   mcpToolsLine: `${UI_KIT_TOOLS_SERVER}: ${UI_KIT_AUDIT_TOOL}`,
   narrativeBlock:
     'A `ui-kit-component` record is one export of `@c4s/plugin-runtime/ui`. ' +

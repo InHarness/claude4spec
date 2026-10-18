@@ -106,8 +106,8 @@ function TagRow({
     <EntityListRow
       // No `onClick`: the row is an editing surface, not a link — every
       // affordance inside it (name, colour) is its own control.
-      // ASSUMPTION:dev-2810 — /tags rows do not navigate (no row onClick, no
-      // "Show all [type]" links); the row stays an inline editing surface.
+      // 2.1.30 — /tags rows do not navigate (no row onClick, no "Show all
+      // [type]" links); the per-type counters are plain text.
       tagLookup={NO_TAG_LOOKUP}
       leading={<ColorSwatch color={tag.color} onPick={commitColor} />}
       trailing={

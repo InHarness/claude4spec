@@ -170,7 +170,7 @@ export function AcsList({ search, tagFilter, onSearchChange, onTagToggle, onSele
                   2.1.28 (ui-view `ac-list`): the `kind` badge and the status
                   badge (only for `deprecated`) are catalog `Badge`s, like the
                   tag chips `EntityListRow` draws. The title keeps its one-line
-                  clamp and every tag chip shows (ASSUMPTION:dev-2812).
+                  clamp (no ~40-character cut) and every tag chip shows, no "+N more" (2.1.30).
                 */}
                 <div
                   className="mt-1 flex items-center gap-2 text-[10.5px] font-mono uppercase tracking-wider"

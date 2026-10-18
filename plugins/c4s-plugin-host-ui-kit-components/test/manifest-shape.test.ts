@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { manifest } from '../src/manifest.js';
 import { uiKitComponentEntity } from '../src/entity/ui-kit-component/index.js';
 import { uiKitComponentData } from '../src/entity/ui-kit-component/schema.js';
+import { UI_KIT_COMPONENT_SIDEBAR_ORDER } from '../src/identity.js';
 
 describe('c4s-plugin-host-ui-kit-components manifest', () => {
   it('[entity:encje-pluginy#c4s-plugin-host-ui-kit-components] the package manifest declares the ui-kit-component entity type, with the ui-kit-component-tools server as its only backend slot', () => {
@@ -17,7 +18,14 @@ describe('c4s-plugin-host-ui-kit-components manifest', () => {
     // One `contributes.entities[]` entry and nothing else.
     expect(Object.keys(manifest.contributes ?? {})).toEqual(['entities']);
     // Identity and the generated CRUD prefix (mounted under /api by the host).
-    expect(uiKitComponentEntity.label).toBeTruthy();
+    expect(uiKitComponentEntity.label).toBe('UI Kit Component');
+    expect(uiKitComponentEntity.labelPlural).toBe('UI Kit Components');
+    expect(uiKitComponentEntity.systemPrompt?.roleNoun).toBe('UI Kit Components');
+    // Initial payload shape, empty upgrade chain.
+    expect(uiKitComponentEntity.payloadVersion).toBe(1);
+    expect(uiKitComponentEntity.payloadUpgrades).toEqual([]);
+    // The ELEMENTS tab sits after every existing one.
+    expect(UI_KIT_COMPONENT_SIDEBAR_ORDER).toBe(110);
     expect(uiKitComponentEntity.pathPrefix).toBe('/ui-kit-components');
     // Backend: only `mcpServer`, no `routes` / `service`.
     expect(Object.keys(uiKitComponentEntity.backend ?? {})).toEqual(['mcpServer']);

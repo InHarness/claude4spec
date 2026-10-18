@@ -63,5 +63,16 @@ describe('audit_ui_kit_components', () => {
   it('[section:6o1rfh21] refuses the whole call for an unknown slug or an unknown rule', () => {
     expect(() => auditUiKitComponents(RECORDS, { slugs: ['badge', 'nope'] })).toThrow(/nope/);
     expect(() => auditUiKitComponents(RECORDS, { rules: ['no-such-rule'] })).toThrow(/no-such-rule/);
+    // Codes from the host entity error taxonomy — the package defines none of its own.
+    const codeOf = (fn: () => unknown): string | undefined => {
+      try {
+        fn();
+      } catch (err) {
+        return (err as { code?: string }).code;
+      }
+      return undefined;
+    };
+    expect(codeOf(() => auditUiKitComponents(RECORDS, { slugs: ['badge', 'nope'] }))).toBe('NOT_FOUND');
+    expect(codeOf(() => auditUiKitComponents(RECORDS, { rules: ['no-such-rule'] }))).toBe('VALIDATION');
   });
 });
