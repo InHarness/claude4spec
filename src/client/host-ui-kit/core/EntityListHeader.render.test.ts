@@ -472,8 +472,8 @@ function stubWidths() {
     const box = (width: number) => ({ width, height: 20, x: 0, y: 0, top: 0, left: 0, right: width, bottom: 20, toJSON() {} }) as DOMRect;
     const el = this as HTMLElement;
     if (el.matches('[data-line="1"]')) return box(panel);
-    if (el.tagName === 'SPAN' && el.closest('[aria-hidden]')) {
-      const text = el.textContent ?? '';
+    if (el.hasAttribute('data-measure')) {
+      const text = el.getAttribute('data-measure')!;
       if (/results?$/.test(text)) return box(W.count);
       if (text.endsWith('…')) return box(W.titleMin);
       return box(text === PHASE_TITLE ? W.titleFull : 30);
@@ -517,15 +517,18 @@ describe('EntityListHeader — shrink phases (record `entity-list-header`, 2.1.3
   it('[ac:ac-tytul-entitylistheader-nie-zweza-sie] the title never narrows below ~4 characters with an ellipsis', () => {
     const { title } = mountAt(LOWER_THRESHOLD);
     // The minimum is the natural width of the first 4 characters + "…".
-    const minCopy = Array.from(host.querySelectorAll('[aria-hidden] span')).find((s) => s.textContent!.endsWith('…'));
-    expect(minCopy?.textContent).toBe('Acce…');
+    const minCopy = Array.from(host.querySelectorAll('[data-measure]')).find((s) => s.getAttribute('data-measure')!.endsWith('…'));
+    expect(minCopy?.getAttribute('data-measure')).toBe('Acce…');
     expect(title.style.minWidth).toBe(`${W.titleMin}px`);
     expect(title.textContent).toBe(PHASE_TITLE);
     expect(classesOf(title)).toContain('truncate');
     // A title no longer than the minimum keeps its own width (no padding, no ellipsis copy).
     mountAt(LOWER_THRESHOLD, { title: 'API' });
-    expect(Array.from(host.querySelectorAll('[aria-hidden] span')).some((s) => s.textContent!.endsWith('…'))).toBe(false);
+    expect(Array.from(host.querySelectorAll('[data-measure]')).some((s) => s.getAttribute('data-measure')!.endsWith('…'))).toBe(false);
     expect(firstLine().querySelector('h2')!.style.minWidth).toBe('30px');
+    // The measuring copies stay out of the header's text: the title and the count read once.
+    mountAt(1200);
+    expect(host.textContent).toBe(`${PHASE_TITLE}12 resultsAll · ActiveNew AC`);
   });
 
   it('[ac:ac-gdy-pole-wyszukiwania-entitylistheade] with the search box at 160 px or hidden, the title truncates on one line down to its minimum width at most', () => {

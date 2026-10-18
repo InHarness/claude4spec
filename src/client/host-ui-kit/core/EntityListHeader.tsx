@@ -84,6 +84,8 @@ const SEARCH_MIN = 160;
 const TITLE_MIN_CHARS = 4;
 const TITLE_TYPE = 'text-[18px] font-semibold tracking-tight';
 const COUNT_TYPE = 'font-mono text-[11.5px]';
+/** Renders the `data-measure` attribute as generated content (not part of `textContent`). */
+const MEASURE_TEXT = 'before:content-[attr(data-measure)]';
 const MEASURE_LAYER: CSSProperties = { position: 'absolute', left: 0, top: 0, visibility: 'hidden' };
 const MEASURE_ITEM: CSSProperties = { position: 'absolute', left: 0, top: 0 };
 
@@ -175,18 +177,13 @@ function EntityListHeaderImpl({
 
   return (
     <div className="relative overflow-hidden px-8 py-4" style={{ borderBottom: '1px solid var(--c-hair)' }}>
-      {/* Off-screen copies at natural width — the title in full and at its minimum, the counter. */}
+      {/* Off-screen copies at natural width — the title in full and at its minimum, the counter.
+          The text sits in a ::before (attr), so it stays out of the header's text content. */}
       <div aria-hidden className="pointer-events-none whitespace-nowrap" style={MEASURE_LAYER}>
-        <span ref={titleFullRef} className={TITLE_TYPE} style={MEASURE_ITEM}>
-          {title}
-        </span>
-        <span ref={titleMinRef} className={TITLE_TYPE} style={MEASURE_ITEM}>
-          {minTitle(title)}
-        </span>
+        <span ref={titleFullRef} data-measure={title} className={`${MEASURE_TEXT} ${TITLE_TYPE}`} style={MEASURE_ITEM} />
+        <span ref={titleMinRef} data-measure={minTitle(title)} className={`${MEASURE_TEXT} ${TITLE_TYPE}`} style={MEASURE_ITEM} />
         {hasCount && (
-          <span ref={countRef} className={COUNT_TYPE} style={MEASURE_ITEM}>
-            {countLabel(count)}
-          </span>
+          <span ref={countRef} data-measure={countLabel(count)} className={`${MEASURE_TEXT} ${COUNT_TYPE}`} style={MEASURE_ITEM} />
         )}
       </div>
       <div ref={lineRef} data-line="1" className="flex items-center gap-3">
