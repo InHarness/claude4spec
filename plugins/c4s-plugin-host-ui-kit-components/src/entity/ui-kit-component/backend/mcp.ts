@@ -13,7 +13,8 @@ import { readAllRecords } from './read-records.js';
  * the host's generic proxy `POST /api/entities/ui-kit-component/tools/audit_ui_kit_components`.
  *
  * The audit is realised by the server itself — the type declares no
- * `backend.service` (the page leaves that open; ASSUMPTION:dev-2802).
+ * `backend.service` (2.1.30). Refusals carry the host entity error taxonomy:
+ * `NOT_FOUND` for an unknown slug, `VALIDATION` for an unknown rule.
  */
 export function createUiKitComponentToolsServer(ops: ReadOps): McpServerFactory {
   const ok = (payload: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(payload) }] });

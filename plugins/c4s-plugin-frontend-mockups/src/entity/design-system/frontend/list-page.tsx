@@ -37,7 +37,7 @@ interface Props {
  *
  * 2.1.28 (ui-view `design-system-list`): `EntityListRow` and `TagFilterBar` are
  * the kit's (the package files re-export `/ui`); the groups/tokens counter is
- * still the recorded `CountBadge` debt, not `Badge` (ASSUMPTION:dev-2813).
+ * still the package-local `CountBadge` debt, to be replaced by `Badge` (2.1.30).
  */
 export function DesignSystemsList({
   search,

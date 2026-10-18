@@ -13,7 +13,7 @@ interface Props {
 /**
  * The `z-modal` layer of the design system `c4s-paper-terra` (Layering, 1200):
  * above the `--z-popover` tier (1100), below the `--z-toast` tier (1300).
- * ASSUMPTION:dev-2804 — the host token bridge is a closed dictionary with two
+ * 2.1.30 — the host token bridge is a closed dictionary with two
  * layering names (`--z-popover`, `--z-toast`) and no variable for this layer
  * (catalog record `dialog`), so the overlay takes the layer by its design-system
  * name here rather than through a bridge variable; the catalog `Dialog` sits on

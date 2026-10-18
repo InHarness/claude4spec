@@ -1,7 +1,7 @@
 import React from 'react';
 import { Check, Copy, X } from 'lucide-react';
 import { DEFAULT_LANGUAGE } from '../../../identity.js';
-import { fetchCodeSnippet, takeHandedOffCodeSnippet, type CodeSnippet } from './hooks.js';
+import { fetchCodeSnippet, type CodeSnippet } from './hooks.js';
 import { CodeSnippetView } from './view.js';
 
 /**
@@ -11,12 +11,12 @@ import { CodeSnippetView } from './view.js';
  * or on the card's maximise button, is routed by the HOST to that window (M13
  * chipprops, 2.1.20); neither the chip nor the card opens this component itself.
  *
- * ONE component, TWO inputs (`2i5ypc7q`): the window is opened from BLOCK
- * (`Maximize2` on the card) and from INLINE (a chip click). The host's window
- * hands its content `{ slug, caption?, onClose }` either way; what differs is
- * the record — from the card it is the ready record the card already holds
- * (handed over through `handOffCodeSnippet`, or passed as `record`), from the
- * chip there is none and it is fetched here, by `slug`, on open.
+ * ONE component, ONE input (`2i5ypc7q`, 2.1.30): the window is opened from
+ * BLOCK (`Maximize2` on the card) and from INLINE (a chip click), and both
+ * open `code-snippet-expand` with the payload `{ slug }`. The host's window
+ * hands its content `{ slug, caption?, onClose }` either way, and the record is
+ * always resolved here, by `slug`, on open — the card does not pass the record
+ * it already fetched.
  *
  * ALWAYS FULL CONTENT: `alwaysExpanded` is passed unconditionally. The card's
  * collapse threshold is about not letting one embed swallow a page; a surface
@@ -35,25 +35,16 @@ export function CodeSnippetFullscreen({
   slug,
   caption,
   onClose,
-  record: given,
 }: {
   slug: string;
   caption?: string;
   onClose: () => void;
-  /** The ready record (card input). Absent ⇒ the hand-off slot, then a fetch by `slug` (chip input). */
-  record?: CodeSnippet | null;
 }) {
-  // Read once, on mount: the hand-off slot is consumed by this read.
-  const [ready] = React.useState<CodeSnippet | null>(() =>
-    given && given.slug === slug ? given : takeHandedOffCodeSnippet(slug),
-  );
-  const [record, setRecord] = React.useState<CodeSnippet | null>(ready);
-  const [loading, setLoading] = React.useState(ready === null);
+  const [record, setRecord] = React.useState<CodeSnippet | null>(null);
+  const [loading, setLoading] = React.useState(true);
   const [copied, setCopied] = React.useState(false);
 
   React.useEffect(() => {
-    // The card's record is already the answer: nothing to fetch.
-    if (ready && ready.slug === slug) return;
     let live = true;
     setLoading(true);
     void fetchCodeSnippet(slug).then((next) => {
@@ -64,7 +55,7 @@ export function CodeSnippetFullscreen({
     return () => {
       live = false;
     };
-  }, [slug, ready]);
+  }, [slug]);
 
   const code = record?.code ?? '';
 

@@ -3,7 +3,10 @@ import { Tag as TagIcon } from 'lucide-react';
 import type { Tag } from '../../shared/entities.js';
 import { useTags, useUpdateTag } from '../hooks/useTags.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
+import { useRegistryVersion } from '../core/plugin-host/useRegistryVersion.js';
+import { EntityListHeader } from '../host-ui-kit/core/EntityListHeader.js';
 import { EntityListRow } from '../host-ui-kit/list/EntityListRow.js';
+import { EmptyState } from '../host-ui-kit/list/EmptyState.js';
 import { InlineEditField } from '../host-ui-kit/form/InlineEditField.js';
 import { Popover } from '../host-ui-kit/overlay-feedback/Popover.js';
 import { toast } from '../ui/events.js';
@@ -27,32 +30,24 @@ const PALETTE = [
 const NO_TAG_LOOKUP = new Map<string, Tag>();
 
 /**
- * ui-view `tags-list` (M18, `/tags`): each tag row is the catalog
+ * ui-view `tags-list` (M18, `/tags`): the page header is the catalog
+ * `EntityListHeader` (tag icon, "Tags", tag count — no search, no actions) and
+ * the `empty` state the catalog `EmptyState`. Each tag row is the catalog
  * `EntityListRow` (dot in `leading`, name in `children`, per-type counts in
  * `trailing`); name and colour are edited inline through `InlineEditField` and
  * `Popover`.
- *
- * ASSUMPTION:dev-2811 — the /tags page header and empty state stay bespoke
- * markup in this window; only the row and the inline edit are catalog-composed.
  */
 export function TagsList() {
   const { data: tags = [], isLoading } = useTags();
+  // Re-read the registry once plugin frontends finish booting: on a cold load
+  // of /tags the first render sees only the built-in types, and the per-type
+  // counters would stay that short forever.
+  useRegistryVersion();
   const modules = clientPluginHost.listEntities();
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-      <div
-        className="flex items-center gap-3 px-8 py-4"
-        style={{ borderBottom: '1px solid var(--c-hair)' }}
-      >
-        <TagIcon size={18} style={{ color: 'var(--c-accent)' }} />
-        <h2 className="text-[18px] font-semibold tracking-tight" style={{ color: 'var(--c-ink)' }}>
-          Tags
-        </h2>
-        <span className="font-mono text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>
-          {tags.length} {tags.length === 1 ? 'tag' : 'tags'}
-        </span>
-      </div>
+      <EntityListHeader icon={TagIcon} title="Tags" count={tags.length} />
 
       <div className="flex-1 overflow-auto nice-scroll">
         <div className="mx-auto" style={{ maxWidth: 720, padding: '24px 32px 48px' }}>
@@ -62,19 +57,10 @@ export function TagsList() {
             </div>
           )}
           {!isLoading && tags.length === 0 && (
-            <div
-              className="text-center py-20 rounded-lg"
-              style={{
-                background: 'var(--c-card)',
-                border: '1px dashed var(--c-hair-strong)',
-                color: 'var(--c-subtle)',
-              }}
-            >
-              <div className="text-[14px]">No tags yet.</div>
-              <div className="text-[12px] mt-1">
-                Tags auto-create when you add them to an endpoint.
-              </div>
-            </div>
+            <EmptyState
+              title="No tags yet"
+              hint="A tag is created automatically the first time it is assigned to an entity of any active type."
+            />
           )}
           {tags.map((t) => (
             <TagRow key={t.slug} tag={t} modules={modules} />
@@ -114,23 +100,30 @@ function TagRow({
     );
   }
 
-  const counts = modules
-    .map((m) => {
-      const c = tag.counts[m.type] ?? 0;
-      return `${c} ${c === 1 ? m.label : m.labelPlural}`;
-    })
-    .join(' · ');
+  // One counter per active type the tag is assigned to. The counts map holds
+  // only types with at least one assignment, so a zero is never listed — with
+  // a dozen active types (hidden ones included) a full row of "0 …" would
+  // crowd the name off the row.
+  const counts =
+    modules
+      .map((m) => ({ m, c: tag.counts[m.type] ?? 0 }))
+      .filter(({ c }) => c > 0)
+      .map(({ m, c }) => `${c} ${c === 1 ? m.label : m.labelPlural}`)
+      .join(' · ') || 'No entities';
 
   return (
     <EntityListRow
       // No `onClick`: the row is an editing surface, not a link — every
       // affordance inside it (name, colour) is its own control.
-      // ASSUMPTION:dev-2810 — /tags rows do not navigate (no row onClick, no
-      // "Show all [type]" links); the row stays an inline editing surface.
+      // 2.1.30 — /tags rows do not navigate (no row onClick, no "Show all
+      // [type]" links); the per-type counters are plain text.
       tagLookup={NO_TAG_LOOKUP}
       leading={<ColorSwatch color={tag.color} onPick={commitColor} />}
       trailing={
-        <span className="font-mono text-[11px]" style={{ color: 'var(--c-subtle)' }}>
+        <span
+          className="font-mono text-[11px] text-right"
+          style={{ color: 'var(--c-subtle)', maxWidth: '50%' }}
+        >
           {counts}
         </span>
       }

@@ -580,6 +580,40 @@ describe('[entity:ac-list] /acs', () => {
     expect(buttonByText('Analyze consistency', container)).toBeDefined();
   });
 
+  it('[ac:ac-wiersz-na-liscie-ac-pokazuje-title-be] a row on the AC list shows the title without the ~40-character cut', async () => {
+    const long = 'A criterion whose title runs well past the forty characters a chip keeps.';
+    state.acs = [sampleAc({ slug: 'ac-long', title: long })];
+    await render(
+      createElement(AcsList, {
+        search: '',
+        tagFilter: [],
+        onSearchChange: () => undefined,
+        onTagToggle: () => undefined,
+        onSelect: () => undefined,
+      }),
+    );
+    expect(long.length).toBeGreaterThan(40);
+    expect(container.textContent).toContain(long);
+    expect(container.textContent).not.toContain('…');
+  });
+
+  it('[ac:ac-wiersz-na-liscie-ac-pokazuje-wszystki] a row on the AC list shows every tag chip of the criterion, with no "+N more" fold', async () => {
+    const tags = ['t1', 't2', 't3', 't4', 't5'];
+    state.acs = [sampleAc({ slug: 'ac-tagged', title: 'Tagged.', tags })];
+    await render(
+      createElement(AcsList, {
+        search: '',
+        tagFilter: [],
+        onSearchChange: () => undefined,
+        onTagToggle: () => undefined,
+        onSelect: () => undefined,
+      }),
+    );
+    const labels = kitBadgeLabels(container);
+    for (const t of tags) expect(labels).toContain(t);
+    expect(container.textContent).not.toMatch(/\+\d+ more/);
+  });
+
   it('[entity:ac-list] with no active AC the Analyze consistency action is disabled with the "No active AC to analyze" tooltip', async () => {
     state.acs = [];
     await render(

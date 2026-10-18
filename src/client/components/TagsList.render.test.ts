@@ -35,7 +35,8 @@ const TAGS: Tag[] = [
   },
 ];
 
-const { mutate, rowProps, editProps, popoverProps } = vi.hoisted(() => ({
+const { mutate, rowProps, editProps, popoverProps, tagsState } = vi.hoisted(() => ({
+  tagsState: { data: null as Tag[] | null },
   mutate: vi.fn(),
   rowProps: [] as EntityListRowProps[],
   editProps: [] as InlineEditFieldProps[],
@@ -43,11 +44,13 @@ const { mutate, rowProps, editProps, popoverProps } = vi.hoisted(() => ({
 }));
 
 vi.mock('../hooks/useTags.js', () => ({
-  useTags: () => ({ data: TAGS, isLoading: false }),
+  useTags: () => ({ data: tagsState.data ?? TAGS, isLoading: false }),
   useUpdateTag: () => ({ mutate }),
 }));
 vi.mock('../core/plugin-host/host.js', () => ({
   clientPluginHost: {
+    onRegistryChanged: () => () => {},
+    registryVersion: () => 0,
     listEntities: () => [
       { type: 'endpoint', label: 'endpoint', labelPlural: 'endpoints' },
       { type: 'dto', label: 'DTO', labelPlural: 'DTOs' },
@@ -108,6 +111,7 @@ const screenCode = readFileSync(resolve(HERE, './TagsList.tsx'), 'utf8')
 const kitImports = [...screenCode.matchAll(/from '\.\.\/host-ui-kit\/([^']+)'/g)].map((m) => m[1]!);
 
 beforeEach(() => {
+  tagsState.data = null;
   mutate.mockReset();
   rowProps.length = 0;
   editProps.length = 0;
@@ -300,5 +304,54 @@ describe('TagsList — ui-view `tags-list`', () => {
     expect(kitImports).toEqual(
       expect.arrayContaining(['list/EntityListRow.js', 'form/InlineEditField.js', 'overlay-feedback/Popover.js']),
     );
+  });
+
+  it('[entity:tags-list] the page header is the catalog EntityListHeader — tag icon, "Tags", the tag count; no search, no actions', () => {
+    expect(screenCode).toMatch(/<EntityListHeader icon=\{TagIcon\} title="Tags" count=\{tags\.length\} \/>/);
+    expect(kitImports).toContain('core/EntityListHeader.js');
+    const h2 = host.querySelector('h2')!;
+    expect(h2.textContent).toBe('Tags');
+    expect(h2.parentElement!.textContent).toContain(`${TAGS.length}`);
+    // No search box in the header (the only input on the page is InlineEditField's, closed here).
+    expect(host.querySelector('input')).toBeNull();
+  });
+
+  it('[entity:tags-list] a tag row does not navigate — no row onClick, no "Show all" links, counters are plain text', () => {
+    for (const props of rowProps) expect(props.onClick).toBeUndefined();
+    expect(host.querySelector('a')).toBeNull();
+    expect(host.textContent).not.toMatch(/Show all/);
+    expect(screenCode).not.toMatch(/\?tag=|navigate\(|useNavigate|<Link\b/);
+  });
+});
+
+describe('TagsList — per-type counters', () => {
+  it('[entity:tags-list] lists only the types the tag is assigned to; a tag assigned to nothing reads "No entities"', () => {
+    tagsState.data = [
+      { ...TAGS[0]!, slug: 'one-type', name: 'One type', counts: { endpoint: 3 } },
+      { ...TAGS[0]!, slug: 'unused', name: 'Unused', counts: {} },
+    ];
+    const html = renderToStaticMarkup(createElement(TagsList));
+    expect(html).toContain('3 endpoints');
+    expect(html).not.toContain('0 DTOs');
+    expect(html).toContain('No entities');
+  });
+});
+
+describe('TagsList — state `empty`', () => {
+  it('[entity:tags-list] with no tags the catalog EmptyState says so and hints that a tag is created on first assignment', () => {
+    tagsState.data = [];
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    act(() => root.render(createElement(TagsList)));
+    try {
+      expect(kitImports).toContain('list/EmptyState.js');
+      expect(host.textContent).toContain('No tags yet');
+      expect(host.textContent).toMatch(/created automatically the first time it is assigned to an entity/);
+      expect(rowProps).toHaveLength(0);
+    } finally {
+      act(() => root.unmount());
+      host.remove();
+    }
   });
 });

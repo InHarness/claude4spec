@@ -17,18 +17,14 @@ export const UI_KIT_COMPONENT_TYPE = 'ui-kit-component';
  */
 export const UI_KIT_COMPONENT_PATH_PREFIX = '/ui-kit-components';
 
-/**
- * ASSUMPTION:dev-2801 — the page names the labels in Polish
- * („Komponent UI Kit” / „Komponenty UI Kit”); every user-visible label of this
- * host is English, so they are rendered in English here.
- */
+/** The manifest labels (2.1.30), English like every user-visible label of this host. */
 export const UI_KIT_COMPONENT_LABEL = 'UI Kit Component';
 export const UI_KIT_COMPONENT_LABEL_PLURAL = 'UI Kit Components';
 
 /**
- * The ELEMENTS tab's `sidebarTab.order`. The page leaves the position open
- * ("kolejność wpisu nieustalona"); 110 puts the tab after every existing one
- * (the highest, `database-table`, is 100).
+ * The ELEMENTS tab's `sidebarTab.order` (2.1.30): 110 — the type joined the
+ * section as one of the last, after every existing tab (the highest,
+ * `database-table`, is 100).
  */
 export const UI_KIT_COMPONENT_SIDEBAR_ORDER = 110;
 
@@ -49,10 +45,7 @@ export type UiKitBinding = (typeof UI_KIT_BINDINGS)[number];
 export const UI_KIT_DATA_SOURCE_USAGES = ['fetchedByComponent', 'feedsProps'] as const;
 export type UiKitDataSourceUsage = (typeof UI_KIT_DATA_SOURCE_USAGES)[number];
 
-/**
- * ASSUMPTION:dev-2803 — the page leaves `payloadVersion` open
- * (todo in `yhej76w5`); 1 is the initial shape, no `payloadUpgrades`.
- */
+/** `payloadVersion: 1` (2.1.30) — the initial shape, empty changelog, empty `payloadUpgrades` chain. */
 export const UI_KIT_COMPONENT_PAYLOAD_VERSION = 1;
 
 /** The MCP server and its one tool (`6o1rfh21`). */

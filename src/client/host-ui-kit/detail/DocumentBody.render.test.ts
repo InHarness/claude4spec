@@ -104,4 +104,24 @@ describe('DocumentBody ↔ record `document-body` (M13/M34, 2.1.28)', () => {
     expect(host.innerHTML).not.toMatch(/width:\s*140px/);
     expect(host.querySelectorAll('[style*="140"]')).toHaveLength(0);
   });
+  it('[ac:ac-akapit-tresci-documentbody-oznaczony] a content paragraph the consumer marks with class `lede` takes the lede style; nothing is promoted to lede on its own', () => {
+    mount({
+      title: { value: 'Doc' },
+      children: [
+        createElement('p', { key: 'a' }, 'First paragraph, unmarked'),
+        createElement('p', { key: 'l', className: 'lede' }, 'Marked lead'),
+      ],
+    });
+    const content = host.querySelector('[data-c4s-document-body]') as HTMLElement;
+    const [first, marked] = Array.from(content.querySelectorAll('p'));
+    // Only the consumer's marking selects the lead — the first paragraph stays `body`.
+    expect(first!.className).toBe('');
+    expect(marked!.className).toBe('lede');
+    expect(marked!.matches('[data-c4s-document-body] p.lede')).toBe(true);
+    expect(first!.matches('[data-c4s-document-body] p.lede')).toBe(false);
+    // The rule is scoped to the DocumentBody content, not to the editor prose class.
+    const css = [...host.querySelectorAll('style')].map((s) => s.textContent).join('');
+    expect(css).toMatch(/\[data-c4s-document-body\] p\.lede\{font-family:var\(--font-heading\);font-size:var\(--text-lede\);font-weight:var\(--weight-lede\);font-style:italic\}/);
+    expect(css).not.toContain('prose');
+  });
 });

@@ -396,7 +396,7 @@ export interface EntityVersionHistoryViewProps {
   allowRestore?: boolean;
   /** Show the "Compare to" selection and the diff panel. Default `true`. */
   allowCompare?: boolean;
-  /** Switches the release GROUP heading to the form `Release <id>` (default `true`); `false` heads it with the bare release id. No per-row pill either way. */
+  /** Switches the release GROUP heading to the form `Release <release name>` (default `true`); `false` heads it with the bare release name. Until `useReleases` delivers the name, the numeric release id stands in its place. No per-row pill either way. */
   showReleasePill?: boolean;
   /** Rendered instead of the default empty state when the entity has no versions. */
   emptyState?: ReactNode;
