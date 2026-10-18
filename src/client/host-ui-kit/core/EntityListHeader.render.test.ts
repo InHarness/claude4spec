@@ -68,8 +68,9 @@ describe('EntityListHeader — prop contract (M19 m19l12sc)', () => {
     expect(iSearch).toBeGreaterThan(-1);
     expect(iSearch).toBeLessThan(iFilters);
     expect(iFilters).toBeLessThan(iActions);
-    // `actions` is the last thing in the header (inside its own non-shrinking slot wrapper, 2.1.35).
-    expect(html.slice(iActions)).toMatch(/^data-slot="actions"><\/span><\/div><\/div>$/);
+    // `actions` is the last thing in the header (inside its own non-shrinking slot wrapper, 2.1.35;
+    // the first line sits in the header box since 2.1.37).
+    expect(html.slice(iActions)).toMatch(/^data-slot="actions"><\/span><\/div><\/div><\/div>$/);
   });
 
   it('[section:m19l12sc] the list catalog offers one empty state and no error state', () => {
@@ -117,6 +118,8 @@ afterEach(() => {
 });
 
 const mount = (el: ReactNode) => act(() => root.render(el));
+/** The header's first line (2.1.37: the header box may hold a second one). */
+const firstLine = () => host.querySelector('[data-line="1"]') as HTMLElement;
 /** The row cell is the element itself or wraps it (slots sit in a wrapper since 2.1.35). */
 const holds = (cell: Element, sel: string) => cell.matches(sel) || cell.querySelector(sel) != null;
 
@@ -193,7 +196,7 @@ describe('EntityListHeader ↔ record `entity-list-header` (M19/L12, 2.1.28)', (
         actions: createElement('button', { 'data-slot': 'actions' }, 'New'),
       }),
     );
-    const bar = host.firstElementChild as HTMLElement;
+    const bar = firstLine();
     const kids = Array.from(bar.children) as HTMLElement[];
     const iSearch = kids.findIndex((k) => k.querySelector('input'));
     const iFilters = kids.findIndex((k) => holds(k, '[data-slot="filters"]'));
@@ -270,7 +273,7 @@ describe('EntityListHeader — the `filters` slot (record `entity-list-header`, 
         actions: createElement('button', { 'data-slot': 'actions' }, 'New AC'),
       }),
     );
-    const row = host.firstElementChild as HTMLElement;
+    const row = firstLine();
     // One non-wrapping flex row…
     expect(row.className.split(/\s+/)).toEqual(expect.arrayContaining(['flex', 'items-center']));
     expect(row.className).not.toMatch(/flex-wrap|flex-col/);
@@ -395,7 +398,7 @@ function mountFull(extra: Partial<EntityListHeaderProps> = {}) {
       ...extra,
     }),
   );
-  const row = host.firstElementChild as HTMLElement;
+  const row = firstLine();
   return {
     row,
     title: row.querySelector('h2') as HTMLElement,
@@ -445,5 +448,181 @@ describe('EntityListHeader — shrink order (record `entity-list-header`, 2.1.35
     // The row itself never wraps.
     expect(classesOf(row)).not.toContain('flex-wrap');
     expect(row.style.flexWrap).toBe('');
+  });
+});
+
+// ── 2.1.37 — shrink phases 1–4: title minimum, `filters` on a second line, the counter hides ──
+// happy-dom computes no layout, so element widths are stubbed: the panel (first line), the
+// off-screen natural-width copies of the title / counter, and the slot areas. The current
+// widths of the title and the search box are deliberately noise — the phases must not read them.
+
+const W = { icon: 18, titleFull: 300, titleMin: 50, count: 70, search: 160, filters: 260, actions: 80, gap: 12 };
+/** First line with everything at the minimum values: icon, title min, count, spacer, search, filters, actions. */
+const ONE_LINE_MIN = W.icon + W.titleMin + W.count + 0 + W.search + W.filters + W.actions + 6 * W.gap; // 710
+/** …without the `filters` area. */
+const NO_FILTERS_MIN = W.icon + W.titleMin + W.count + 0 + W.search + W.actions + 5 * W.gap; // 438
+/** Lower threshold: icon, title min, spacer, search 160, actions. */
+const LOWER_THRESHOLD = W.icon + W.titleMin + 0 + W.search + W.actions + 4 * W.gap; // 356
+
+const PHASE_TITLE = 'Acceptance criteria';
+let panel = 1000;
+
+function stubWidths() {
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+    const box = (width: number) => ({ width, height: 20, x: 0, y: 0, top: 0, left: 0, right: width, bottom: 20, toJSON() {} }) as DOMRect;
+    const el = this as HTMLElement;
+    if (el.matches('[data-line="1"]')) return box(panel);
+    if (el.tagName === 'SPAN' && el.closest('[aria-hidden]')) {
+      const text = el.textContent ?? '';
+      if (/results?$/.test(text)) return box(W.count);
+      if (text.endsWith('…')) return box(W.titleMin);
+      return box(text === PHASE_TITLE ? W.titleFull : 30);
+    }
+    if (el.classList.contains('shrink-0') && el.querySelector('[data-slot="filters"]')) return box(W.filters);
+    if (el.classList.contains('shrink-0') && el.querySelector('[data-slot="actions"]')) return box(W.actions);
+    // Current widths of the title / search box: arbitrary, must not matter.
+    return box(Math.random() * 400);
+  });
+}
+
+function mountAt(width: number, extra: Partial<EntityListHeaderProps> = {}) {
+  panel = width;
+  mount(
+    createElement(EntityListHeader, {
+      icon: List,
+      title: PHASE_TITLE,
+      count: 12,
+      search: '',
+      onSearchChange: () => {},
+      filters: createElement('span', { 'data-slot': 'filters' }, 'All · Active'),
+      actions: createElement('button', { 'data-slot': 'actions' }, 'New AC'),
+      ...extra,
+    }),
+  );
+  const line1 = firstLine();
+  const line2 = host.querySelector('[data-line="2"]') as HTMLElement | null;
+  return {
+    line1,
+    line2,
+    title: line1.querySelector('h2') as HTMLElement,
+    counterShown: Array.from(line1.children).some((k) => /\bresults?\b/.test(k.textContent ?? '')),
+    filtersOn: (line: HTMLElement | null) => line?.querySelector('[data-slot="filters"]') != null,
+    actionsOnLine1: line1.querySelector('[data-slot="actions"]') != null,
+  };
+}
+
+describe('EntityListHeader — shrink phases (record `entity-list-header`, 2.1.37)', () => {
+  beforeEach(stubWidths);
+
+  it('[ac:ac-tytul-entitylistheader-nie-zweza-sie] the title never narrows below ~4 characters with an ellipsis', () => {
+    const { title } = mountAt(LOWER_THRESHOLD);
+    // The minimum is the natural width of the first 4 characters + "…".
+    const minCopy = Array.from(host.querySelectorAll('[aria-hidden] span')).find((s) => s.textContent!.endsWith('…'));
+    expect(minCopy?.textContent).toBe('Acce…');
+    expect(title.style.minWidth).toBe(`${W.titleMin}px`);
+    expect(title.textContent).toBe(PHASE_TITLE);
+    expect(classesOf(title)).toContain('truncate');
+    // A title no longer than the minimum keeps its own width (no padding, no ellipsis copy).
+    mountAt(LOWER_THRESHOLD, { title: 'API' });
+    expect(Array.from(host.querySelectorAll('[aria-hidden] span')).some((s) => s.textContent!.endsWith('…'))).toBe(false);
+    expect(firstLine().querySelector('h2')!.style.minWidth).toBe('30px');
+  });
+
+  it('[ac:ac-gdy-pole-wyszukiwania-entitylistheade] with the search box at 160 px or hidden, the title truncates on one line down to its minimum width at most', () => {
+    const withSearch = mountAt(NO_FILTERS_MIN);
+    expect(classesOf(withSearch.title)).toEqual(expect.arrayContaining(['truncate']));
+    expect(withSearch.title.style.minWidth).toBe(`${W.titleMin}px`);
+    const noSearch = mountAt(NO_FILTERS_MIN - W.search, { search: undefined, onSearchChange: undefined });
+    expect(noSearch.line1.querySelector('input')).toBeNull();
+    expect(classesOf(noSearch.title)).toEqual(expect.arrayContaining(['truncate']));
+    expect(noSearch.title.style.minWidth).toBe(`${W.titleMin}px`);
+  });
+
+  it('[ac:ac-gdy-pierwsza-linia-entitylistheader-n] when the first line does not fit at search 160 px and the minimum title, the whole `filters` area moves to a second line', () => {
+    const wide = mountAt(ONE_LINE_MIN);
+    expect(wide.line2).toBeNull();
+    expect(wide.filtersOn(wide.line1)).toBe(true);
+
+    const narrow = mountAt(ONE_LINE_MIN - 1);
+    expect(narrow.filtersOn(narrow.line1)).toBe(false);
+    expect(narrow.filtersOn(narrow.line2)).toBe(true);
+    // The area moves whole, in its own non-shrinking wrapper…
+    expect(narrow.line2!.querySelectorAll('[data-slot="filters"]')).toHaveLength(1);
+    expect(classesOf(narrow.line2!.firstElementChild)).toContain('shrink-0');
+    // …aligned with the title text (past the 18 px icon + 12 px gap), not with the icon.
+    expect(narrow.line2!.style.paddingLeft).toBe(`${W.icon + W.gap}px`);
+    // `actions` and the counter stay on the first line.
+    expect(narrow.actionsOnLine1).toBe(true);
+    expect(narrow.counterShown).toBe(true);
+    // Without an icon the second line starts at the title's left edge.
+    const noIcon = mountAt(ONE_LINE_MIN - 1 - W.icon - W.gap, { icon: undefined });
+    expect(noIcon.line2!.style.paddingLeft).toBe('0px');
+  });
+
+  it('[ac:ac-gdy-pierwsza-linia-entitylistheader-n-2] when the first line does not fit even without `filters`, the counter hides as the last step', () => {
+    const fits = mountAt(NO_FILTERS_MIN);
+    expect(fits.counterShown).toBe(true);
+    expect(fits.filtersOn(fits.line2)).toBe(true);
+
+    const tight = mountAt(NO_FILTERS_MIN - 1);
+    expect(tight.counterShown).toBe(false);
+    expect(tight.filtersOn(tight.line2)).toBe(true);
+    expect(tight.actionsOnLine1).toBe(true);
+    expect(tight.title.textContent).toBe(PHASE_TITLE);
+
+    // An empty `filters` slot: phase 3 brings nothing, the counter goes when the line does not fit.
+    const noFilters = { filters: undefined };
+    expect(mountAt(NO_FILTERS_MIN, noFilters).counterShown).toBe(true);
+    const bare = mountAt(NO_FILTERS_MIN - 1, noFilters);
+    expect(bare.counterShown).toBe(false);
+    expect(bare.line2).toBeNull();
+    expect(bare.actionsOnLine1).toBe(true);
+  });
+
+  it('[ac:ac-entitylistheader-wraca-do-ukladu-jedn] returns to one line once the panel fits the first line with `filters` at the minimum values', () => {
+    expect(mountAt(NO_FILTERS_MIN - 1).counterShown).toBe(false);
+    const back3 = mountAt(NO_FILTERS_MIN);
+    expect(back3.counterShown).toBe(true);
+    expect(back3.filtersOn(back3.line2)).toBe(true);
+    const back1 = mountAt(ONE_LINE_MIN);
+    expect(back1.line2).toBeNull();
+    expect(back1.filtersOn(back1.line1)).toBe(true);
+    expect(back1.counterShown).toBe(true);
+  });
+
+  it('[ac:ac-przy-stalej-szerokosci-panelu-entityl] at a fixed panel width the header does not switch between one and two lines', () => {
+    // Right at the boundary, from either side, with the current widths of the title and the
+    // search box changing on every measurement (stub noise) — the layout is a function of the width.
+    for (const width of [ONE_LINE_MIN - 1, ONE_LINE_MIN]) {
+      mountAt(width);
+      const seen = new Set<boolean>();
+      for (let i = 0; i < 10; i++) {
+        mountAt(width); // every render re-measures
+        seen.add(host.querySelector('[data-line="2"]') != null);
+      }
+      expect([...seen]).toEqual([width < ONE_LINE_MIN]);
+    }
+    // Moving `filters` out of the first line does not change the decision for that line.
+    const a = mountAt(ONE_LINE_MIN - 1);
+    expect(a.line2).not.toBeNull();
+    expect(mountAt(ONE_LINE_MIN - 1).line2).not.toBeNull();
+  });
+
+  it('[ac:ac-przy-szerokosci-panelu-nie-mniejszej] at or above the lower threshold the `actions` content is whole on the first line; below it the row is clipped at the header edge', () => {
+    for (const width of [LOWER_THRESHOLD, NO_FILTERS_MIN, ONE_LINE_MIN, 1200]) {
+      const h = mountAt(width);
+      expect(h.actionsOnLine1).toBe(true);
+      // Nothing beyond the threshold's own sum competes with `actions` on the first line.
+      const line1Sum =
+        W.icon + W.titleMin + W.search + W.actions + (h.counterShown ? W.count : 0) + (h.filtersOn(h.line1) ? W.filters : 0);
+      const items = 5 + (h.counterShown ? 1 : 0) + (h.filtersOn(h.line1) ? 1 : 0);
+      expect(line1Sum + (items - 1) * W.gap).toBeLessThanOrEqual(width);
+      // The actions wrapper never shrinks.
+      expect(classesOf(h.line1.querySelector('[data-slot="actions"]')!.parentElement)).toContain('shrink-0');
+    }
+    // Below the threshold there is no further phase: the header clips at its right edge.
+    const below = mountAt(LOWER_THRESHOLD - 40);
+    expect(below.actionsOnLine1).toBe(true);
+    expect(classesOf(host.firstElementChild)).toContain('overflow-hidden');
   });
 });

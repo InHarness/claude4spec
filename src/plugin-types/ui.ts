@@ -70,8 +70,9 @@ export interface EntityListHeaderProps {
   onSearchChange?: (q: string) => void;
   searchPlaceholder?: string;
   /**
-   * Between search and actions, in the header's one row — for compact controls
-   * that fit it (segmented tabs, a select). `TagFilterBar` does not go here: it
+   * Between search and actions — for compact fixed-width controls (segmented
+   * tabs, a select). In a narrow panel the whole area moves to a second header
+   * line; it never collapses into a menu. `TagFilterBar` does not go here: it
    * stands under the header, as its sibling in `EntityListLayout.header`.
    */
   filters?: ReactNode;
