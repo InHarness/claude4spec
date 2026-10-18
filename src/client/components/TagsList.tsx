@@ -100,12 +100,16 @@ function TagRow({
     );
   }
 
-  const counts = modules
-    .map((m) => {
-      const c = tag.counts[m.type] ?? 0;
-      return `${c} ${c === 1 ? m.label : m.labelPlural}`;
-    })
-    .join(' · ');
+  // One counter per active type the tag is assigned to. The counts map holds
+  // only types with at least one assignment, so a zero is never listed — with
+  // a dozen active types (hidden ones included) a full row of "0 …" would
+  // crowd the name off the row.
+  const counts =
+    modules
+      .map((m) => ({ m, c: tag.counts[m.type] ?? 0 }))
+      .filter(({ c }) => c > 0)
+      .map(({ m, c }) => `${c} ${c === 1 ? m.label : m.labelPlural}`)
+      .join(' · ') || 'No entities';
 
   return (
     <EntityListRow
@@ -116,7 +120,10 @@ function TagRow({
       tagLookup={NO_TAG_LOOKUP}
       leading={<ColorSwatch color={tag.color} onPick={commitColor} />}
       trailing={
-        <span className="font-mono text-[11px]" style={{ color: 'var(--c-subtle)' }}>
+        <span
+          className="font-mono text-[11px] text-right"
+          style={{ color: 'var(--c-subtle)', maxWidth: '50%' }}
+        >
           {counts}
         </span>
       }

@@ -324,6 +324,19 @@ describe('TagsList — ui-view `tags-list`', () => {
   });
 });
 
+describe('TagsList — per-type counters', () => {
+  it('[entity:tags-list] lists only the types the tag is assigned to; a tag assigned to nothing reads "No entities"', () => {
+    tagsState.data = [
+      { ...TAGS[0]!, slug: 'one-type', name: 'One type', counts: { endpoint: 3 } },
+      { ...TAGS[0]!, slug: 'unused', name: 'Unused', counts: {} },
+    ];
+    const html = renderToStaticMarkup(createElement(TagsList));
+    expect(html).toContain('3 endpoints');
+    expect(html).not.toContain('0 DTOs');
+    expect(html).toContain('No entities');
+  });
+});
+
 describe('TagsList — state `empty`', () => {
   it('[entity:tags-list] with no tags the catalog EmptyState says so and hints that a tag is created on first assignment', () => {
     tagsState.data = [];
