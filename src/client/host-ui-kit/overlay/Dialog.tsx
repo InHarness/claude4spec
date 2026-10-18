@@ -18,28 +18,33 @@ import { withStability } from '../stability.js';
  * props-in. Same visual anatomy, different contract.
  */
 export interface DialogProps {
-  /** Controlled visibility. When false the component renders nothing. */
+  /** Open state, controlled by the consumer; with `false` the component renders nothing. */
   open: boolean;
-  /** Requested close — scrim mousedown, header ✕, or Escape. */
+  /**
+   * Requested close — scrim mousedown, header ✕, or Escape. Required for both
+   * `dismissible` variants; with `dismissible={false}` the consumer passes a no-op.
+   */
   onClose: () => void;
   /** Optional header title; when set, a header row with a ✕ button is rendered. */
   title?: ReactNode;
-  /** Optional footer slot (e.g. Save/Cancel), pinned bottom-right. */
+  /** Optional footer slot (e.g. Save/Cancel), pinned under the scrollable body. */
   footer?: ReactNode;
+  /** The dialog body; scrollable. */
   children: ReactNode;
   /**
-   * Panel tier. Defaults to `md`. The tier closes the panel's box: its width
-   * (unless `width` is given) AND its height cap. There is no `maxHeight` prop —
-   * a body taller than the tier's cap scrolls inside the panel, under a pinned
-   * footer.
+   * Width tier: `sm` 420 px, `md` 560 px, `lg` 760 px. Defaults to `md`. It sets
+   * the width only — the height cap is one for every tier
+   * (`DIALOG_MAX_HEIGHT`). There is no `maxHeight` prop — a body taller than
+   * the cap scrolls inside the panel, under a pinned footer.
    */
   size?: 'sm' | 'md' | 'lg';
   /**
-   * Exact panel width in px, overriding `size` for the WIDTH only. For a variant
+   * Exact panel width in px, taking precedence over `size`. For a variant
    * whose width is specified independently of the tiers (the host's
    * destructive-confirm is pinned at 400px) — so honouring it does not require
-   * retuning a tier every other call site shares. The height cap still comes
-   * from `size`.
+   * retuning a tier every other call site shares.
+   * `width` does not touch the overflow contract: the height cap is the same
+   * with or without it.
    */
   width?: number;
   /**
@@ -59,29 +64,32 @@ export interface DialogProps {
    */
   ariaLabel?: string;
   /**
-   * Stacking order of the scrim, defaulting to 1200 (above `Popover` 1100,
-   * below `z-toast` 1300). An escape hatch for a dialog that must outrank every
-   * other overlay — a blocking gate has to stay clickable even if another modal
-   * opens behind it.
+   * Overlay layer, written into the scrim's style; overrides the default 1200
+   * (above `Popover` 1100, below `z-toast` 1300). 1200 is the `z-modal` token
+   * of the design system, but the token bridge exposes no `--z-modal`
+   * variable, so the component uses the number, not a variable.
    */
   zIndex?: number;
 }
 
 /**
- * The tier box. `width` is the tier's panel width (`sm` = 420px per the L12
- * anatomy); `maxHeight` is the tier's height cap, past which the body scrolls.
- * All three tiers currently share the viewport-relative cap — the anatomy pins
- * no per-tier height — but the cap is read from the tier, never from `width`,
- * so an exact `width` cannot change how tall the panel may grow.
+ * The width tiers: `sm` 420 px, `md` 560 px, `lg` 760 px. A tier sets the panel
+ * WIDTH only; an exact `width` prop takes precedence over it.
  */
-export const DIALOG_SIZE_TIERS: Record<
-  NonNullable<DialogProps['size']>,
-  { width: number; maxHeight: string }
-> = {
-  sm: { width: 420, maxHeight: 'calc(100vh - 48px)' },
-  md: { width: 560, maxHeight: 'calc(100vh - 48px)' },
-  lg: { width: 760, maxHeight: 'calc(100vh - 48px)' },
+export const DIALOG_SIZE_TIERS: Record<NonNullable<DialogProps['size']>, { width: number }> = {
+  sm: { width: 420 },
+  md: { width: 560 },
+  lg: { width: 760 },
 };
+
+/**
+ * The panel's height cap — one for every tier, and untouched by `width`. Past
+ * it the body scrolls inside the panel, under the pinned footer.
+ */
+export const DIALOG_MAX_HEIGHT = 'calc(100vh - 48px)';
+
+/** The panel's width cap — one for every tier. */
+export const DIALOG_MAX_WIDTH = 'calc(100vw - 32px)';
 
 const FOCUSABLE =
   'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
@@ -191,8 +199,6 @@ function DialogImpl({
 
   if (!open) return null;
 
-  const tier = DIALOG_SIZE_TIERS[size];
-
   return (
     <div
       role="dialog"
@@ -220,10 +226,10 @@ function DialogImpl({
         data-dialog-part="panel"
         className="rounded-lg outline-none flex flex-col"
         style={{
-          // `width` wins over the tier for the width; the height cap is the tier's.
-          width: width ?? tier.width,
-          maxWidth: 'calc(100vw - 32px)',
-          maxHeight: tier.maxHeight,
+          // `width` takes precedence over the tier; both caps are shared by every tier.
+          width: width ?? DIALOG_SIZE_TIERS[size].width,
+          maxWidth: DIALOG_MAX_WIDTH,
+          maxHeight: DIALOG_MAX_HEIGHT,
           background: 'var(--c-card)',
           border: '1px solid var(--c-hair-strong)',
           boxShadow: '0 12px 40px rgba(0,0,0,0.18)',

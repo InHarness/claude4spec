@@ -153,3 +153,51 @@ describe('VersionHistory ↔ record `version-history` (M34/L12, 2.1.28)', () => 
     expect(host.querySelector('[data-testid^="version-group-"]')).toBeNull();
   });
 });
+
+describe('VersionHistory — restore, "Unreleased" and no release mapping (M34/L12, 2.1.33)', () => {
+  it('[entity:version-history] with onRestore every row except activeVersion gets a restore button, in flat and in timeline', () => {
+    const onRestore = vi.fn();
+    for (const variant of ['flat', 'timeline'] as const) {
+      act(() => root.unmount());
+      root = createRoot(host);
+      mount({ versions: VERSIONS, activeVersion: '3', onRestore, variant });
+      // Timeline groups: open them all so every row is visible.
+      for (const g of Array.from(host.querySelectorAll<HTMLElement>('[data-open="false"] > button'))) click(g);
+      expect(buttons('Restore')).toHaveLength(2);
+      click(buttons('Restore')[0]!);
+      expect(onRestore).toHaveBeenLastCalledWith('2');
+    }
+    // Without onRestore no row has one.
+    mount({ versions: VERSIONS, activeVersion: '3', variant: 'flat' });
+    expect(buttons('Restore')).toHaveLength(0);
+  });
+
+  it('[entity:version-history] an item without releaseLabel or with an empty one goes to "Unreleased", pinned on top', () => {
+    mount({
+      variant: 'timeline',
+      versions: [
+        { id: '4', label: 'v4', createdAt: '2026-10-04', releaseLabel: 'Release 2.1.1' },
+        { id: '3', label: 'v3', createdAt: '2026-10-03', releaseLabel: '' },
+        { id: '2', label: 'v2', createdAt: '2026-10-02' },
+      ],
+    });
+    const groups = Array.from(host.querySelectorAll('[data-testid^="version-group-"]'));
+    expect(groups[0]!.getAttribute('data-testid')).toBe('version-group-__unreleased__');
+    expect(groups[0]!.textContent).toContain('v3');
+    expect(groups[0]!.textContent).toContain('v2');
+    expect(groups[1]!.getAttribute('data-testid')).toBe('version-group-release:Release 2.1.1');
+  });
+
+  it('[entity:version-history] maps nothing: VersionHistoryItem has no releaseId, the releaseLabel the consumer gives is the group heading verbatim', () => {
+    const noReleaseId: 'releaseId' extends keyof VersionHistoryItem ? false : true = true;
+    expect(noReleaseId).toBe(true);
+    mount({
+      variant: 'timeline',
+      activeVersion: '1',
+      versions: [{ id: '1', label: 'v1', createdAt: '2026-10-01', releaseLabel: 'Whatever the consumer says' }],
+    });
+    expect(host.querySelector('[data-testid="version-group-release:Whatever the consumer says"]')!.textContent).toContain(
+      'Whatever the consumer says',
+    );
+  });
+});

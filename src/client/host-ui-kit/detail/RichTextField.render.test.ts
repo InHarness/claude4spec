@@ -143,3 +143,21 @@ describe('RichTextField ↔ record `rich-text-field` (M34/L12, 2.1.28)', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 });
+
+describe('RichTextField — onChange with markdown (M34/L12, 2.1.33)', () => {
+  it('[entity:rich-text-field] onChange fires on every content change, each time with the markdown of the document', async () => {
+    const onChange = vi.fn();
+    const editor = await mount({ value: 'Hello', onChange });
+    await act(async () => {
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, '!');
+    });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0]![0]).toBe('Hello!');
+    await act(async () => {
+      editor.chain().selectAll().toggleBold().run();
+    });
+    expect(onChange).toHaveBeenCalledTimes(2);
+    // Markdown, not HTML.
+    expect(onChange.mock.calls[1]![0]).toBe('**Hello!**');
+  });
+});

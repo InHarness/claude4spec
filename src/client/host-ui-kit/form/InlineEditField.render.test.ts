@@ -146,3 +146,17 @@ describe('InlineEditField ↔ record `inline-edit-field` (M34/L12, 2.1.28)', () 
     expect(onCommit).toHaveBeenLastCalledWith('c');
   });
 });
+
+describe('InlineEditField — mono in both states (M34/L12, 2.1.33)', () => {
+  it('[entity:inline-edit-field] mono sets the monospace face on the value and on the input; without it neither is monospace', () => {
+    mount(createElement(InlineEditField, { value: 'users-get', onCommit: () => {}, mono: true }));
+    expect(host.querySelector('button')!.className).toContain('font-mono');
+    act(() => host.querySelector('button')!.click());
+    expect(host.querySelector('input')!.className).toContain('font-mono');
+
+    act(() => root.unmount());
+    root = createRoot(host);
+    mount(createElement(InlineEditField, { value: 'Users', onCommit: () => {} }));
+    expect(host.querySelector('button')!.className).not.toContain('font-mono');
+  });
+});

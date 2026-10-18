@@ -171,6 +171,7 @@ export interface ActionBarAction {
   label: string;
   icon?: ReactNode;
   onClick(): void;
+  /** Defaults to `'secondary'`. */
   variant?: ActionBarVariant;
   disabled?: boolean;
   /** Native tooltip — useful to explain a disabled state. */
@@ -230,14 +231,19 @@ export declare const InlineEditField: ComponentType<InlineEditFieldProps>;
 
 // ── Overlay (group `overlay`, experimental) ──
 export interface DialogProps {
+  /** Open state, controlled by the consumer; with `false` the component renders nothing. */
   open: boolean;
+  /** Required for both `dismissible` variants; with `dismissible={false}` the consumer passes a no-op. */
   onClose: () => void;
+  /** Setting it implies a header row with a ✕ button. */
   title?: ReactNode;
+  /** Slot pinned under the scrollable body. */
   footer?: ReactNode;
+  /** The dialog body; scrollable. */
   children: ReactNode;
-  /** Panel tier; it also closes the panel height (there is no `maxHeight` prop — a taller body scrolls under a pinned footer). */
+  /** Width tier: `sm` 420 px, `md` 560 px, `lg` 760 px. Defaults to `md`. The height cap, `calc(100vh - 48px)`, is one for every tier (there is no `maxHeight` prop — a taller body scrolls under a pinned footer). */
   size?: 'sm' | 'md' | 'lg';
-  /** Exact panel width in px, overriding `size` for the width; the height is still closed by `size`. */
+  /** Exact panel width in px, taking precedence over `size`. It does not touch the overflow contract — the height cap is the same with or without it. */
   width?: number;
   /**
    * Defaults to `true`. With `false` the scrim click, `Escape` and the header ✕
@@ -247,7 +253,7 @@ export interface DialogProps {
   dismissible?: boolean;
   /** Accessible name when there is no `title` to derive one from. */
   ariaLabel?: string;
-  /** Scrim stacking order; defaults to 1200. Raise it for a blocking gate. */
+  /** Overlay layer; overrides the default 1200 (a number — the token bridge exposes no `--z-modal` variable). */
   zIndex?: number;
 }
 export declare const Dialog: ComponentType<DialogProps>;

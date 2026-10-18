@@ -448,3 +448,53 @@ describe('EntityVersionHistoryView ↔ record `entity-version-history-view` (M34
     expect(agent.getAttribute('style')).not.toBe(user.getAttribute('style'));
   });
 });
+
+describe('EntityVersionHistoryView — toolbar, empty default and "Unreleased" (M34/L12, 2.1.33)', () => {
+  beforeEach(() => {
+    setList({
+      data: [
+        { version: 3, releaseId: null, changedBy: 'agent', changeSummary: null, createdAt: '2026-10-03T10:00:00Z' },
+        { version: 2, releaseId: 7, changedBy: 'user', changeSummary: null, createdAt: '2026-10-02T10:00:00Z' },
+        { version: 1, releaseId: null, changedBy: 'user', changeSummary: null, createdAt: '2026-10-01T10:00:00Z' },
+      ],
+      isLoading: false,
+      isError: false,
+    });
+    state.snapshots = { 1: { a: 1 }, 2: { a: 2 }, 3: { a: 3 } };
+    state.releases = new Map([[7, '2.1.0']]);
+  });
+
+  it('[entity:entity-version-history-view] the toolbar title is "<type> · <slug>" and stands outside the scrolling area; the grid under it scrolls', async () => {
+    await render({ type: 'endpoint', slug: 'get-users' });
+    const title = byText('endpoint · get-users');
+    expect(title.closest('.overflow-auto')).toBeNull();
+    const row = host.querySelector('[data-timeline-row]')!;
+    expect(row).not.toBeNull();
+    expect(row.closest('.overflow-auto')).not.toBeNull();
+  });
+
+  it('[entity:entity-version-history-view] every version with releaseId null lands in the "Unreleased" group on top', async () => {
+    await render();
+    const groups = Array.from(host.querySelectorAll('[data-testid^="version-group-"]'));
+    expect(groups[0]!.getAttribute('data-testid')).toBe('version-group-__unreleased__');
+    const unreleased = groups[0]!;
+    expect(unreleased.textContent).toContain('v3');
+    expect(unreleased.textContent).toContain('v1');
+    expect(unreleased.textContent).not.toContain('v2');
+    expect(groups[1]!.getAttribute('data-testid')).toBe('version-group-release:Release 2.1.0');
+  });
+
+  it('[entity:entity-version-history-view] with no versions and no emptyState it renders EmptyState "No versions yet"', async () => {
+    setList({ data: [], isLoading: false, isError: false });
+    await render();
+    expect(host.textContent).toContain('No versions yet');
+    expect(host.querySelector('[data-timeline-row]')).toBeNull();
+  });
+
+  it('[entity:entity-version-history-view] while the list loads it renders LoadingState', async () => {
+    setList({ data: undefined, isLoading: true, isError: false });
+    await render();
+    expect(host.querySelectorAll('.skeleton').length).toBeGreaterThan(0);
+    expect(host.textContent).not.toContain('No versions yet');
+  });
+});

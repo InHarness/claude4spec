@@ -89,3 +89,28 @@ describe('EntityDetailToolbar ↔ record `entity-detail-toolbar` (M34/L12, 2.1.2
     expect(host.textContent).toContain('User DTO');
   });
 });
+
+describe('EntityDetailToolbar — conditional controls and busy (M34/L12, 2.1.33)', () => {
+  it('[entity:entity-detail-toolbar] the back arrow renders only with onBack, the delete button only with onDelete', () => {
+    mount({ title: 'T', onDelete: () => {} });
+    expect(host.querySelector('[aria-label="Back"]')).toBeNull();
+    expect(deleteButton()).toBeDefined();
+
+    mount({ title: 'T', onBack: () => {} });
+    expect(host.querySelector('[aria-label="Back"]')).not.toBeNull();
+    expect(deleteButton()).toBeUndefined();
+  });
+
+  it('[entity:entity-detail-toolbar] busy disables only the Delete button — the back arrow stays usable', () => {
+    const onBack = vi.fn();
+    const onDelete = vi.fn();
+    mount({ title: 'T', onBack, onDelete, busy: true });
+    const back = host.querySelector<HTMLButtonElement>('[aria-label="Back"]')!;
+    expect(back.disabled).toBe(false);
+    expect(deleteButton()!.disabled).toBe(true);
+    click(back);
+    click(deleteButton()!);
+    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(onDelete).not.toHaveBeenCalled();
+  });
+});
