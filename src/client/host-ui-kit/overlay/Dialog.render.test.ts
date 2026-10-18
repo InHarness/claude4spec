@@ -2,16 +2,17 @@
 /**
  * M34/L12 — `Dialog` (group `overlay`, `experimental`) rendered for real.
  *
- * 2.1.20: the `maxHeight` prop is gone — the panel's height is closed by the
- * `size` tier, `width` overrides the tier for the width only, and the body is
- * the one scroll container under a pinned footer.
+ * 2.1.20: the `maxHeight` prop is gone. 2.1.33: `size` is a width tier only —
+ * the panel's height cap is one for every tier — `width` takes precedence over
+ * the tier and does not touch the overflow contract, and the body is the one
+ * scroll container under a pinned footer.
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { Dialog, DIALOG_SIZE_TIERS, type DialogProps } from './Dialog.js';
+import { Dialog, DIALOG_MAX_HEIGHT, DIALOG_SIZE_TIERS, type DialogProps } from './Dialog.js';
 import { UI_KIT_CATALOG } from '../registry.js';
 import * as uiBrowserSurface from '../index.js';
 import { ConfirmLayer } from '../../ui/ConfirmModal.js';
@@ -171,13 +172,13 @@ describe('Dialog — width and the size tier (M34/L12)', () => {
     expect(part('panel')!.style.width).toBe(`${DIALOG_SIZE_TIERS.lg.width}px`);
   });
 
-  it('[ac:ac-dialog-przyjmuje-width-number-doklad] the height is still closed by the `size` tier when `width` is given', () => {
+  it('[ac:ac-dialog-przyjmuje-width-number-doklad] `width` does not touch the overflow contract — the height cap is the same with or without it', () => {
     for (const size of ['sm', 'md', 'lg'] as const) {
       render({ open: true, size, width: 400 });
       const withWidth = part('panel')!.style.maxHeight;
       render({ open: true, size });
       const tierOnly = part('panel')!.style.maxHeight;
-      expect(withWidth).toBe(DIALOG_SIZE_TIERS[size].maxHeight);
+      expect(withWidth).toBe(DIALOG_MAX_HEIGHT);
       expect(withWidth).toBe(tierOnly);
     }
   });
@@ -186,18 +187,18 @@ describe('Dialog — width and the size tier (M34/L12)', () => {
     // @ts-expect-error — 2.1.20 removed `maxHeight` from `DialogProps`.
     const props: DialogProps = { open: true, onClose: () => {}, children: 'x', size: 'md', maxHeight: 120 };
     act(() => root.render(createElement(Dialog, props)));
-    expect(part('panel')!.style.maxHeight).toBe(DIALOG_SIZE_TIERS.md.maxHeight);
+    expect(part('panel')!.style.maxHeight).toBe(DIALOG_MAX_HEIGHT);
   });
 });
 
 describe('Dialog — overflow contract (M34/L12)', () => {
-  it('[ac:ac-dialog-scrolluje-wewnetrznie-cialo-przy] the body scrolls inside the tier-capped panel', () => {
+  it('[ac:ac-dialog-scrolluje-wewnetrznie-cialo-przy] the body scrolls inside the height-capped panel', () => {
     render({ open: true, size: 'sm', title: 'Long', footer: createElement('button', null, 'Save') });
     const panel = part('panel')!;
     const body = part('body')!;
-    // Panel: a flex column whose height is capped by the tier.
+    // Panel: a flex column whose height is capped (one cap for every tier).
     expect(panel.className).toContain('flex-col');
-    expect(panel.style.maxHeight).toBe(DIALOG_SIZE_TIERS.sm.maxHeight);
+    expect(panel.style.maxHeight).toBe(DIALOG_MAX_HEIGHT);
     // Body: the scroll container, allowed to shrink below its content.
     expect(body.style.overflowY).toBe('auto');
     expect(body.style.minHeight).toBe('0');
@@ -443,5 +444,64 @@ describe('Drawer — not in catalog v1 (M34/L12)', () => {
     const sideless: 'side' extends keyof DialogProps ? false : true = true;
     expect(sideless).toBe(true);
     expect(code('./Dialog.tsx')).not.toMatch(/\bside\b/);
+  });
+});
+
+describe('Dialog — open, tiers and the layer constant (M34/L12, 2.1.33)', () => {
+  it('[entity:dialog] with open={false} the component renders nothing at all', () => {
+    render({ open: false, title: 'Hidden', footer: createElement('button', null, 'OK') });
+    expect(host.innerHTML).toBe('');
+    expect(document.querySelector('[data-dialog-part]')).toBeNull();
+  });
+
+  it('[entity:dialog] size tiers set the panel width: sm 420 px, md 560 px, lg 760 px', () => {
+    const widths = (['sm', 'md', 'lg'] as const).map((size) => {
+      render({ open: true, size });
+      return part('panel')!.style.width;
+    });
+    expect(widths).toEqual(['420px', '560px', '760px']);
+  });
+
+  it('[entity:dialog] maxHeight calc(100vh - 48px) and maxWidth calc(100vw - 32px) are the same for every tier', () => {
+    for (const size of ['sm', 'md', 'lg'] as const) {
+      render({ open: true, size });
+      expect(part('panel')!.style.maxHeight).toBe('calc(100vh - 48px)');
+      expect(part('panel')!.style.maxWidth).toBe('calc(100vw - 32px)');
+    }
+    // One cap, not a per-tier one: a tier carries a width and nothing else.
+    expect(DIALOG_MAX_HEIGHT).toBe('calc(100vh - 48px)');
+    for (const tier of Object.values(DIALOG_SIZE_TIERS)) expect(Object.keys(tier)).toEqual(['width']);
+  });
+
+  it('[entity:dialog] the published types say what the record says: size is a width tier, width does not touch the height, zIndex overrides 1200', () => {
+    // The published `DialogProps` doc comments (src/plugin-types/ui.ts) and the
+    // kit's own must not describe a height closed by the `size` tier.
+    const published = src('../../../plugin-types/ui.ts');
+    const block = published.slice(published.indexOf('export interface DialogProps'), published.indexOf('export declare const Dialog:'));
+    const kit = src('./Dialog.tsx');
+    for (const text of [block, kit]) {
+      expect(text).not.toMatch(/height is (still )?closed by `size`/);
+      expect(text).not.toMatch(/height cap is the tier'?s/i);
+      expect(text).toMatch(/`sm` 420 px, `md` 560 px, `lg` 760 px/);
+      expect(text).toMatch(/with `false` the component renders nothing/);
+      expect(text).toMatch(/does not touch the overflow contract/);
+      expect(text).toMatch(/overrides the default 1200/);
+    }
+  });
+
+  it('[entity:dialog] the scrim carries the layer as a number — 1200 by default (z-modal), the zIndex prop overrides it — never a bridge variable', () => {
+    render({ open: true });
+    const s = scrim()!;
+    expect(s.style.zIndex).toBe('1200');
+    expect(s.style.position === 'fixed' || s.className.includes('fixed')).toBe(true);
+    expect(s.style.background).toMatch(/rgba\(0,\s*0,\s*0,\s*0\.4\)/);
+    expect(s.getAttribute('style')).not.toMatch(/var\(--z-/);
+    // Rendered in place: the overlay is inside the mount node, no portal.
+    expect(host.contains(s)).toBe(true);
+
+    render({ open: true, zIndex: 2000 });
+    expect(scrim()!.style.zIndex).toBe('2000');
+    // The source names no `--z-modal` bridge variable.
+    expect(code('./Dialog.tsx')).not.toContain('--z-modal');
   });
 });

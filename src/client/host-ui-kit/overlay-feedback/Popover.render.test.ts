@@ -200,3 +200,67 @@ describe('Popover — maxHeight overflow contract (M34/L12)', () => {
     expect(body.className).not.toContain('overflow-auto');
   });
 });
+
+describe('Popover — dismiss and positioning (M34/L12, 2.1.33)', () => {
+  it('[entity:popover] onClose fires on a document mousedown outside the panel and the anchor — not on click, not inside the panel or the anchor', () => {
+    const onClose = vi.fn();
+    render({ open: true, onClose, children: createElement('button', { 'data-testid': 'inside' }, 'in') });
+
+    // A click outside without a mousedown does not dismiss: the trigger is mousedown.
+    act(() => {
+      document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(onClose).not.toHaveBeenCalled();
+
+    act(() => {
+      host.querySelector('[data-testid="inside"]')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    });
+    act(() => {
+      anchor.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    });
+    expect(onClose).not.toHaveBeenCalled();
+
+    act(() => {
+      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('[entity:popover] Escape calls onClose with preventDefault; there is no focus trap', () => {
+    const onClose = vi.fn();
+    render({ open: true, onClose });
+    const esc = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true, bubbles: true });
+    act(() => {
+      document.dispatchEvent(esc);
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(esc.defaultPrevented).toBe(true);
+    // Tab is left alone — no trap.
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', cancelable: true, bubbles: true });
+    act(() => {
+      document.dispatchEvent(tab);
+    });
+    expect(tab.defaultPrevented).toBe(false);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('[entity:popover] `at` takes precedence over anchorRef; without `at` the panel is positioned against the anchor', () => {
+    render({ at: { x: 40, y: 50 } });
+    expect(panel()!.style.left).toBe('40px');
+    expect(panel()!.style.top).toBe('50px');
+
+    // The anchor alone (happy-dom: a zero rect) puts it at the viewport padding, not at 40/50.
+    act(() => root.unmount());
+    root = createRoot(host);
+    render({});
+    expect(panel()!.style.left).not.toBe('40px');
+    expect(panel()!.style.top).not.toBe('50px');
+  });
+
+  it('[entity:popover] width is the panel width in px', () => {
+    for (const width of [280, 320, 360]) {
+      render({ width });
+      expect(panel()!.style.width).toBe(`${width}px`);
+    }
+  });
+});

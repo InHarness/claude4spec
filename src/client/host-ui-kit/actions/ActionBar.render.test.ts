@@ -110,3 +110,56 @@ describe('ActionBar ↔ record `action-bar` (M34/L12, 2.1.28)', () => {
     expect(host.textContent).toBe('Go');
   });
 });
+
+describe('ActionBar — layer and entry defaults (M34/L12, 2.1.33)', () => {
+  it('[entity:action-bar] carries its layer as the numeric constant 900 (token z-actionbar), not a bridge variable', () => {
+    mount(createElement(ActionBar, { actions: [{ label: 'Go', onClick: () => {} }] }));
+    const bar = host.firstElementChild as HTMLElement;
+    expect(bar.style.zIndex).toBe('900');
+    // The bridge exposes no `--z-actionbar`: the value is a number, never a var().
+    expect(bar.getAttribute('style')).not.toMatch(/var\(--z-/);
+    expect(bar.style.background).toBe('var(--c-card)');
+    expect(bar.style.borderTop).toContain('var(--c-hair)');
+  });
+
+  it('[entity:action-bar] an entry without `variant` renders as secondary, and without `key` is keyed by its label', () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mount(
+      createElement(ActionBar, {
+        actions: [
+          { label: 'Export', onClick: () => {} },
+          { label: 'Save', onClick: () => {}, variant: 'primary' },
+        ],
+      }),
+    );
+    const [exportBtn, saveBtn] = Array.from(host.querySelectorAll('button'));
+    // secondary = panel background; primary = accent.
+    expect(exportBtn!.style.background).toBe('var(--c-panel)');
+    expect(saveBtn!.style.background).toBe('var(--c-accent)');
+    expect(errors).not.toHaveBeenCalled();
+
+    // Two entries with the same label and no key collide: the key IS the label.
+    mount(
+      createElement(ActionBar, {
+        actions: [
+          { label: 'Dup', onClick: () => {} },
+          { label: 'Dup', onClick: () => {} },
+        ],
+      }),
+    );
+    expect(errors.mock.calls.some((c) => String(c[0]).includes('same key'))).toBe(true);
+    errors.mockClear();
+    // An explicit key wins over the label.
+    act(() => root.unmount());
+    root = createRoot(host);
+    mount(
+      createElement(ActionBar, {
+        actions: [
+          { key: 'a', label: 'Dup', onClick: () => {} },
+          { key: 'b', label: 'Dup', onClick: () => {} },
+        ],
+      }),
+    );
+    expect(errors.mock.calls.some((c) => String(c[0]).includes('same key'))).toBe(false);
+  });
+});

@@ -171,20 +171,17 @@ function DatabaseTableListRoute(): JSX.Element {
               // Host ships no CREATE button — compose it from `ActionButton`.
               actions={<ActionButton label="Create" variant="primary" onClick={() => setCreateOpen(true)} />}
             />
-            {/* A sibling row below the header, not the header's `filters` slot —
-                `TagFilterBar` is a full self-bordered strip (host's own list
-                pages stack it the same way), not a compact inline control.
-                ASSUMPTION:dev-0001 — M19 names `filters` as TagFilterBar's slot. */}
-            {tagUniverse.length > 0 && (
-              <TagFilterBar
-                tags={tagUniverse}
-                tagFilter={selectedTags}
-                onTagToggle={toggleTag}
-                tagMode={tagMode}
-                onToggleMode={toggleMode}
-                onClear={clearTags}
-              />
-            )}
+            {/* M19 `thm8a14c` (2.1.33): the tag bar stands under the header,
+                full width, as its sibling in the layout's `header` — not in the
+                header's `filters` slot. It renders nothing for an empty tag set. */}
+            <TagFilterBar
+              tags={tagUniverse}
+              tagFilter={selectedTags}
+              onTagToggle={toggleTag}
+              tagMode={tagMode}
+              onToggleMode={toggleMode}
+              onClear={clearTags}
+            />
           </>
         }
       >

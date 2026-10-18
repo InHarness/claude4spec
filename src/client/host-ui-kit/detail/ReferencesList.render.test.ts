@@ -79,3 +79,20 @@ describe('ReferencesList ↔ record `references-list` (M34/L12, 2.1.28)', () => 
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
+
+describe('ReferencesList — loading and empty states (M34/L12, 2.1.33)', () => {
+  it('[entity:references-list] while loading renders three LoadingState bars of 28 px each', () => {
+    mount({ references: [], loading: true });
+    const bars = Array.from(host.querySelectorAll<HTMLElement>('.skeleton'));
+    expect(bars).toHaveLength(3);
+    expect(bars.map((b) => b.style.height)).toEqual(['28px', '28px', '28px']);
+    expect(host.textContent).not.toContain('No references');
+  });
+
+  it('[entity:references-list] an empty list renders EmptyState titled "No references" with the hint "Pages mentioning this entity will appear here."', () => {
+    mount({ references: [] });
+    expect(host.textContent).toContain('No references');
+    expect(host.textContent).toContain('Pages mentioning this entity will appear here.');
+    expect(host.querySelector('li')).toBeNull();
+  });
+});

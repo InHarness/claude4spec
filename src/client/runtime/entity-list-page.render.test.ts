@@ -46,6 +46,22 @@ function sourcesUnder(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+/**
+ * Index of the `>` / `/>` that closes the JSX element opened at `from`, skipping
+ * `{…}` attribute expressions (which may hold JSX of their own, e.g. `actions={<ActionButton … />}`).
+ */
+function closingOfOpenTag(src: string, from: number): number {
+  let depth = 0;
+  for (let i = from + 1; i < src.length; i++) {
+    const ch = src[i]!;
+    if (ch === '{') depth++;
+    else if (ch === '}') depth--;
+    else if (depth === 0 && ch === '/' && src[i + 1] === '>') return i;
+    else if (depth === 0 && ch === '>') return i;
+  }
+  return -1;
+}
+
 const PLUGIN_DIRS = readdirSync(join(REPO, 'plugins')).filter((d) => existsSync(join(REPO, 'plugins', d, 'src')));
 const pluginSources = () => PLUGIN_DIRS.flatMap((d) => sourcesUnder(join(REPO, 'plugins', d, 'src')));
 
@@ -121,26 +137,30 @@ describe('one EntityListHeader for host and plugins (M19/L12, 2.1.28)', () => {
 });
 
 describe('M19 list-page pattern (2.1.28)', () => {
-  it('[section:thm8a14c] the full native list is composed only from /ui: EntityListLayout → EntityListHeader with search in its header → TagFilterBar in `filters` → EntityListRow per row; LoadingState while loading, EmptyState when there are no rows; the count prop covers "N results"', () => {
+  it('[section:thm8a14c] the full native list is composed only from /ui: EntityListLayout → in its `header` EntityListHeader with search and, under it as its sibling in that slot, TagFilterBar at full width → EntityListRow per row; LoadingState while loading, EmptyState when there are no rows; the count prop covers "N results"', () => {
     const tags: Published.Tag[] = [{ slug: 'm19', name: 'M19', color: '#336699' }];
     const tagLookup = new Map(tags.map((t) => [t.slug, t]));
-    function ListPage({ rows, loading }: { rows: string[]; loading: boolean }) {
+    function ListPage({ rows, loading, tagSet = tags }: { rows: string[]; loading: boolean; tagSet?: Published.Tag[] }) {
       const [search, setSearch] = useState('');
-      const header = createElement(ui.EntityListHeader, {
-        icon: List,
-        title: 'Endpoints',
-        count: rows.length,
-        search,
-        onSearchChange: setSearch,
-        filters: createElement(ui.TagFilterBar, {
-          tags,
+      const header = createElement(
+        'div',
+        { 'data-testid': 'layout-header' },
+        createElement(ui.EntityListHeader, {
+          icon: List,
+          title: 'Endpoints',
+          count: rows.length,
+          search,
+          onSearchChange: setSearch,
+        }),
+        createElement(ui.TagFilterBar, {
+          tags: tagSet,
           tagFilter: [],
           onTagToggle: () => {},
           tagMode: 'and',
           onToggleMode: () => {},
           onClear: () => {},
         }),
-      });
+      );
       const body = loading
         ? createElement(ui.LoadingState, { lines: 3 })
         : rows.length === 0
@@ -156,9 +176,18 @@ describe('M19 list-page pattern (2.1.28)', () => {
     expect(host.textContent).toContain('Filter by tag:');
     expect(host.textContent).toContain('GET /a');
     expect(host.textContent).toContain('GET /b');
-    // TagFilterBar stands in the header's `filters` slot (inside the header bar, after search).
+    // The tag bar stands UNDER the header bar, as its sibling in the layout's `header` slot —
+    // not inside the header row (its `filters` slot), which it would break.
+    const slot = host.querySelector<HTMLElement>('[data-testid="layout-header"]')!;
     const headerBar = host.querySelector('h2')!.parentElement!;
-    expect(headerBar.textContent).toContain('Filter by tag:');
+    expect(headerBar.parentElement).toBe(slot);
+    expect(headerBar.textContent).not.toContain('Filter by tag:');
+    const tagStrip = headerBar.nextElementSibling as HTMLElement;
+    expect(tagStrip.textContent).toContain('Filter by tag:');
+    // Full width: no width cap of its own; the layout header is outside the scroll region.
+    expect(tagStrip.style.width).toBe('');
+    expect(tagStrip.style.maxWidth).toBe('');
+    expect(slot.closest('.overflow-auto')).toBeNull();
 
     mount(createElement(ListPage, { rows: [], loading: false }));
     expect(host.textContent).toContain('No endpoints.');
@@ -167,8 +196,36 @@ describe('M19 list-page pattern (2.1.28)', () => {
     mount(createElement(ListPage, { rows: [], loading: true }));
     expect(host.textContent).not.toContain('No endpoints.');
 
+    // An empty tag set: no bar at all, the header bar alone in the slot.
+    mount(createElement(ListPage, { rows: ['GET /a'], loading: false, tagSet: [] }));
+    expect(host.textContent).not.toContain('Filter by tag:');
+    expect(host.querySelector('[data-testid="layout-header"]')!.children).toHaveLength(1);
+
     // No separate counter component exists — the count prop covers it.
     expect(PLUGIN_RUNTIME_UI_EXPORT_NAMES as readonly string[]).not.toContain('CountBadge');
+  });
+
+  it('[section:thm8a14c] every plugin list page composes the tag bar under the header, never in its `filters` slot', () => {
+    const pages = [
+      'plugins/c4s-plugin-ac/src/entity/ac/frontend/list-page.tsx',
+      'plugins/c4s-plugin-api-contracts/src/entity/dto/frontend/list-page.tsx',
+      'plugins/c4s-plugin-api-contracts/src/entity/endpoint/frontend/list-page.tsx',
+      'plugins/c4s-plugin-database-tables/src/entity/database-table/frontend/routes.tsx',
+      'plugins/c4s-plugin-frontend-mockups/src/entity/ui-view/frontend/list-page.tsx',
+      'plugins/c4s-plugin-frontend-mockups/src/entity/design-system/frontend/list-page.tsx',
+    ];
+    for (const page of pages) {
+      const src = code(read(page));
+      const iTagBar = src.search(/<TagFilterBar\b/);
+      expect(iTagBar, page).toBeGreaterThan(-1);
+      // The tag bar follows the header element as a sibling: it opens after the header closes.
+      const iHeader = src.search(/<(?:EntityListHeader|ListPageHeader)\b/);
+      expect(iHeader, page).toBeGreaterThan(-1);
+      const headerEnd = closingOfOpenTag(src, iHeader);
+      expect(iTagBar, page).toBeGreaterThan(headerEnd);
+      // Nothing passes it through a `filters` prop.
+      expect(src, page).not.toMatch(/\bfilters=\{\s*<TagFilterBar\b/);
+    }
   });
 
   it('[section:9v3i7vs1] create from the list: ActionButton in the header `actions` slot opens a controlled Dialog with a FormShell; submit runs the author mutation, invalidates the list and closes the window — the header stays generic (no onCreate / createLabel)', async () => {

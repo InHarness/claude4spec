@@ -29,9 +29,10 @@ export interface GroupedRelationPickerProps {
    */
   onSearch?(q: string, groupKey?: string): void;
   /**
-   * Fired when a group's link popover opens. Lets a consumer defer loading
-   * that group's candidates until they can actually be seen, instead of
-   * fetching every group's full collection on mount.
+   * Fired with the group key on EVERY opening of a group's link popover via
+   * "+ link", not only the first. Lets a consumer defer loading that group's
+   * candidates until they can actually be seen, instead of fetching every
+   * group's full collection on mount.
    */
   onGroupOpen?(groupKey: string): void;
   /**
@@ -105,10 +106,10 @@ function GroupRow({
             ref={anchorRef}
             type="button"
             onClick={() => {
-              setOpen((v) => {
-                if (!v) onGroupOpen?.();
-                return !v;
-              });
+              // Every opening fires `onGroupOpen`, not just the first. Called
+              // here, not inside a state updater, so it runs once per click.
+              if (!open) onGroupOpen?.();
+              setOpen(!open);
             }}
             className="text-[11.5px] px-2 py-0.5 rounded-full"
             style={{ color: 'var(--c-subtle)', border: '1px dashed var(--c-hair-strong)' }}

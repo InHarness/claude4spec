@@ -133,3 +133,81 @@ describe('Badge — keyboard activation (M34/L12, 2.1.28)', () => {
     expect(onClick).not.toHaveBeenCalled();
   });
 });
+
+describe('Badge — colours, defaults and the dot (M34/L12, 2.1.33)', () => {
+  const dotEl = () => chip().querySelector<HTMLElement>('span.rounded-full');
+  /**
+   * Each case on a fresh root: happy-dom keeps a stale `background` shorthand
+   * when a `var()` value is patched to a literal, and rejects a
+   * `var(--x, fallback)` colour, so a re-render would read the previous chip.
+   */
+  const render = (props: BadgeProps) => {
+    act(() => root.unmount());
+    root = createRoot(host);
+    act(() => root.render(createElement(Badge, props)));
+  };
+
+  it('[entity:badge] color defaults to var(--c-muted) and paints the dot; with active it fills background and border', () => {
+    render({ label: 'm34' });
+    expect(dotEl()!.style.background).toBe('var(--c-muted)');
+    expect(chip().style.background).toBe('var(--c-panel)');
+
+    render({ label: 'm34', color: '#123456' });
+    expect(dotEl()!.style.background).toBe('#123456');
+
+    render({ label: 'm34', color: '#123456', active: true });
+    expect(chip().style.background).toBe('#123456');
+    expect(chip().getAttribute('style')).toMatch(/border[^;]*#123456/);
+  });
+
+  it('[entity:badge] text is #fff when active and var(--c-ink) otherwise; foreground overrides both; broken always wins with --c-red', () => {
+    render({ label: 'x', active: true, color: '#123456' });
+    expect(chip().style.color).toBe('#fff');
+    // Active: the dot takes the text colour (default #fff).
+    expect(dotEl()!.style.background).toBe('#fff');
+
+    render({ label: 'x' });
+    expect(chip().style.color).toBe('var(--c-ink)');
+
+    render({ label: 'x', foreground: '#abcdef' });
+    expect(chip().style.color).toBe('#abcdef');
+    render({ label: 'x', foreground: '#abcdef', active: true, color: '#123456' });
+    expect(chip().style.color).toBe('#abcdef');
+    expect(dotEl()!.style.background).toBe('#abcdef');
+
+    render({ label: 'x', foreground: '#abcdef', variant: 'broken' });
+    expect(chip().getAttribute('style')).toContain('var(--c-red');
+    expect(chip().getAttribute('style')).not.toContain('#abcdef');
+  });
+
+  it('[entity:badge] with variant="broken" the ⚠ replaces the dot', () => {
+    render({ label: 'gone', variant: 'broken' });
+    expect(dotEl()).toBeNull();
+    expect(chip().firstElementChild!.textContent).toBe('⚠');
+  });
+
+  it('[entity:badge] the remove button carries aria-label="remove" and its click does not reach the chip onClick', () => {
+    const onClick = vi.fn();
+    render({ label: 'm34', onClick, onRemove: () => {} });
+    const remove = chip().querySelector<HTMLButtonElement>('button')!;
+    expect(remove.getAttribute('aria-label')).toBe('remove');
+    expect(remove.textContent).toBe('×');
+    act(() => remove.click());
+    expect(onClick).not.toHaveBeenCalled();
+    render({ label: 'm34' });
+    expect(chip().querySelector('button')).toBeNull();
+  });
+
+  it('[entity:badge] mono sets monospace, semibold, tracked type; minWidth fixes a minimum width and centres the text', () => {
+    render({ label: '200', mono: true, minWidth: 48 });
+    expect(chip().className).toContain('font-mono');
+    expect(chip().className).toContain('font-semibold');
+    expect(chip().className).toContain('tracking-wide');
+    expect(chip().style.minWidth).toBe('48px');
+    expect(chip().className).toContain('justify-center');
+    render({ label: '200' });
+    expect(chip().className).not.toContain('font-mono');
+    expect(chip().className).not.toContain('justify-center');
+    expect(chip().style.minWidth).toBe('');
+  });
+});

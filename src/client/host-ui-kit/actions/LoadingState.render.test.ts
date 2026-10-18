@@ -72,3 +72,37 @@ describe('LoadingState ↔ record `loading-state` (M34/L12, 2.1.28)', () => {
     expect(bars()[0]!.style.opacity).toBe('0.5');
   });
 });
+
+describe('LoadingState — dimensions, radius, circle and lines (M34/L12, 2.1.33)', () => {
+  it('[entity:loading-state] width and height: a number means pixels, a string goes to CSS unchanged', () => {
+    mount(createElement(LoadingState, { width: 120, height: 20 }));
+    expect(bars()[0]!.style.width).toBe('120px');
+    expect(bars()[0]!.style.height).toBe('20px');
+    mount(createElement(LoadingState, { width: '60%', height: '2em' }));
+    expect(bars()[0]!.style.width).toBe('60%');
+    expect(bars()[0]!.style.height).toBe('2em');
+  });
+
+  it('[entity:loading-state] radius: a number means pixels; without it no inline radius, so the .skeleton rule\'s 4 px applies', () => {
+    mount(createElement(LoadingState, { radius: 6 }));
+    expect(bars()[0]!.style.borderRadius).toBe('6px');
+    mount(createElement(LoadingState, {}));
+    expect(bars()[0]!.style.borderRadius).toBe('');
+    expect(bars()[0]!.className).toContain('skeleton');
+  });
+
+  it('[entity:loading-state] circle draws border-radius 999px and wins over radius', () => {
+    mount(createElement(LoadingState, { circle: true, radius: 6 }));
+    expect(bars()[0]!.style.borderRadius).toBe('999px');
+  });
+
+  it('[entity:loading-state] lines stacks that many bars one under another with gap-2; the default is one', () => {
+    mount(createElement(LoadingState, {}));
+    expect(bars()).toHaveLength(1);
+    mount(createElement(LoadingState, { lines: 3 }));
+    expect(bars()).toHaveLength(3);
+    const stack = host.firstElementChild as HTMLElement;
+    expect(stack.className).toContain('flex-col');
+    expect(stack.className).toContain('gap-2');
+  });
+});

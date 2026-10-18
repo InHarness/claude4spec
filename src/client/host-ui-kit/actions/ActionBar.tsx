@@ -7,7 +7,9 @@ import { ActionButton, type ActionButtonVariant } from './ActionButton.js';
  * container pinned to the bottom of a list or page holding 1..N actions that
  * act on the whole view, plus optional left-side status text. Not floating, no
  * scrim — it sits *below* the interaction primitives (Toast 1300, Dialog 1200,
- * Popover 1100) at zIndex 900.
+ * Popover 1100) at zIndex 900. 900 is the `z-actionbar` token of the
+ * design system; the token bridge exposes no variable for that layer, so the
+ * value is a hard-coded number (record `action-bar`, anatomy, 2.1.33).
  *
  * Promoted out of L5-B into the catalog in 0.1.144: it has more than one
  * consumer (the `ac` list and M10's plan footer), so the host-local gate —
@@ -23,6 +25,7 @@ export interface ActionBarAction {
   label: string;
   icon?: ReactNode;
   onClick(): void;
+  /** Defaults to `'secondary'`. */
   variant?: ActionBarVariant;
   disabled?: boolean;
   /** Native tooltip — useful to explain a disabled state. */

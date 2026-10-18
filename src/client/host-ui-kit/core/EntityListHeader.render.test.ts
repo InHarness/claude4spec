@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { act, createElement, type ReactNode } from 'react';
@@ -9,6 +9,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { List, type LucideIcon } from 'lucide-react';
 import { EntityListHeader, type EntityListHeaderProps } from './EntityListHeader.js';
 import { EntityListRow, type EntityListRowProps } from '../list/EntityListRow.js';
+import { SegmentedControlTabs } from '../detail/SegmentedControlTabs.js';
 import { UI_KIT_CATALOG } from '../registry.js';
 import { UI_KIT_STABLE_COMPONENTS } from '../../../shared/plugin-host/ui-kit-surface.js';
 import { VERSIONED_UI_KIT_COMPONENTS } from '../../../shared/plugin-host/host-api.js';
@@ -205,6 +206,115 @@ describe('EntityListHeader ↔ record `entity-list-header` (M19/L12, 2.1.28)', (
 
   it('[entity:entity-list-header] there is no separate CountBadge component in the catalog', () => {
     expect(UI_KIT_CATALOG.map((c) => c.name)).not.toContain('CountBadge');
+  });
+});
+
+// ── 2.1.33 — the `filters` slot is for compact one-row controls; no place for TagFilterBar ──
+
+const REPO = resolve(HERE, '../../../..');
+/** Source without comments (`://` in strings survives). */
+const stripComments = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+
+function sourcesUnder(dir: string, out: string[] = []): string[] {
+  for (const name of readdirSync(dir)) {
+    const full = join(dir, name);
+    if (statSync(full).isDirectory()) {
+      if (name === 'node_modules' || name === 'dist') continue;
+      sourcesUnder(full, out);
+    } else if (/\.tsx?$/.test(name) && !/\.(test|d)\.tsx?$/.test(name)) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
+/** Every expression passed as `filters` — JSX `filters={…}` or an object/createElement `filters: …`. */
+function filtersExpressions(src: string): string[] {
+  const out: string[] = [];
+  const re = /\bfilters\s*(=\s*\{|:)/g;
+  for (let m = re.exec(src); m; m = re.exec(src)) {
+    const jsx = m[1]!.startsWith('=');
+    let depth = jsx ? 1 : 0;
+    let i = re.lastIndex;
+    for (; i < src.length; i++) {
+      const ch = src[i]!;
+      if ('({['.includes(ch)) depth++;
+      else if (')}]'.includes(ch)) {
+        depth--;
+        if (depth < 0 || (jsx && depth === 0)) break;
+      } else if (!jsx && depth === 0 && (ch === ',' || ch === ';')) break;
+    }
+    out.push(src.slice(re.lastIndex, i));
+  }
+  return out;
+}
+
+describe('EntityListHeader — the `filters` slot (record `entity-list-header`, 2.1.33)', () => {
+  it('[entity:entity-list-header] `filters` shares the one header row with title, search and actions and holds compact controls such as SegmentedControlTabs', () => {
+    mount(
+      createElement(EntityListHeader, {
+        title: 'Acceptance criteria',
+        count: 3,
+        search: '',
+        onSearchChange: () => {},
+        filters: createElement(SegmentedControlTabs, {
+          tabs: [
+            { id: 'all', label: 'All' },
+            { id: 'active', label: 'Active' },
+          ],
+          active: 'all',
+          onChange: () => {},
+        }),
+        actions: createElement('button', { 'data-slot': 'actions' }, 'New AC'),
+      }),
+    );
+    const row = host.firstElementChild as HTMLElement;
+    // One non-wrapping flex row…
+    expect(row.className.split(/\s+/)).toEqual(expect.arrayContaining(['flex', 'items-center']));
+    expect(row.className).not.toMatch(/flex-wrap|flex-col/);
+    // …whose direct children are the title, the search, the compact filter control and the actions.
+    const kids = Array.from(row.children) as HTMLElement[];
+    const iTitle = kids.findIndex((k) => k.tagName === 'H2');
+    const iSearch = kids.findIndex((k) => k.querySelector('input'));
+    const iFilters = kids.findIndex((k) => k.getAttribute('role') === 'tablist');
+    const iActions = kids.findIndex((k) => k.dataset.slot === 'actions');
+    expect([iTitle, iSearch, iFilters, iActions].every((i) => i > -1)).toBe(true);
+    expect(iTitle).toBeLessThan(iSearch);
+    expect(iSearch).toBeLessThan(iFilters);
+    expect(iFilters).toBeLessThan(iActions);
+  });
+
+  it('[entity:entity-list-header] has no place for TagFilterBar — no host or plugin source passes it in the `filters` slot (removed without alias); it stands under the header in EntityListLayout.header', () => {
+    const files = [
+      ...sourcesUnder(join(REPO, 'src/client')),
+      ...readdirSync(join(REPO, 'plugins'))
+        .map((d) => join(REPO, 'plugins', d, 'src'))
+        .filter((d) => {
+          try {
+            return statSync(d).isDirectory();
+          } catch {
+            return false;
+          }
+        })
+        .flatMap((d) => sourcesUnder(d)),
+    ];
+    const offenders: string[] = [];
+    let tagBarUsers = 0;
+    for (const file of files) {
+      const src = stripComments(readFileSync(file, 'utf8'));
+      if (/<TagFilterBar\b|createElement\(\s*(?:ui\.)?TagFilterBar\b/.test(src)) tagBarUsers++;
+      if (filtersExpressions(src).some((e) => /\bTagFilterBar\b/.test(e))) offenders.push(relative(REPO, file));
+    }
+    expect(offenders).toEqual([]);
+    // The scan is not vacuous: the plugin list pages do render the tag bar.
+    expect(tagBarUsers).toBeGreaterThan(0);
+    // The extractor itself catches both spellings of the old composition.
+    expect(filtersExpressions('<EntityListHeader title="x" filters={<TagFilterBar {...bar} />} />')[0]).toMatch(/TagFilterBar/);
+    expect(filtersExpressions('createElement(H, { filters: createElement(ui.TagFilterBar, p), actions })')[0]).toMatch(/TagFilterBar/);
+    // The header itself carries no tag-bar prop: its props are exactly the record's (no tags/tagFilter).
+    type Keys = keyof EntityListHeaderProps;
+    const noTagProps: Exact<Extract<Keys, 'tags' | 'tagFilter' | 'onTagToggle'>, never> = true;
+    expect(noTagProps).toBe(true);
   });
 });
 

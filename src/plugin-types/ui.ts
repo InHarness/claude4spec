@@ -31,15 +31,22 @@ export type { Tag, Stability } from '../shared/plugin-host/ui-kit-surface.js';
 // ── Core (stable) — part of the versioned `hostApiVersion` surface ──
 export interface DetailBreadcrumb {
   label: ReactNode;
+  /** Ignored on the last crumb: it is the page heading, never a link. */
   onClick?: () => void;
 }
+/**
+ * The breadcrumb bar (with `actions`) stands outside the scroll region; the
+ * content (`children`) scrolls under it.
+ */
 export interface DetailPanelShellProps {
+  /** Hops left → right; the last is the current entity, rendered as the page heading. */
   breadcrumb: DetailBreadcrumb[];
   actions?: ReactNode;
   children: ReactNode;
 }
 export declare const DetailPanelShell: ComponentType<DetailPanelShellProps>;
 
+/** No scrolling of its own: sets no `overflow`, the parent scrolls it. */
 export interface FieldGridProps {
   children: ReactNode;
   maxWidth?: number;
@@ -49,6 +56,7 @@ export declare const FieldGrid: ComponentType<FieldGridProps>;
 export interface FieldRowProps {
   label: ReactNode;
   children: ReactNode;
+  /** Default `'center'`; `'start'` drops the label (2 px `padding-top`) to the value's first line. */
   align?: 'center' | 'start';
 }
 export declare const FieldRow: ComponentType<FieldRowProps>;
@@ -61,6 +69,11 @@ export interface EntityListHeaderProps {
   search?: string;
   onSearchChange?: (q: string) => void;
   searchPlaceholder?: string;
+  /**
+   * Between search and actions, in the header's one row — for compact controls
+   * that fit it (segmented tabs, a select). `TagFilterBar` does not go here: it
+   * stands under the header, as its sibling in `EntityListLayout.header`.
+   */
   filters?: ReactNode;
   actions?: ReactNode;
 }
@@ -70,6 +83,7 @@ export declare const EntityListHeader: ComponentType<EntityListHeaderProps>;
 import type { Tag } from '../shared/plugin-host/ui-kit-surface.js';
 
 export interface EntityListLayoutProps {
+  /** Stands outside the scroll region; the body under it scrolls. */
   header?: ReactNode;
   children: ReactNode;
 }
@@ -99,10 +113,11 @@ export interface EntityListRowProps {
   leading?: ReactNode;
   /** Leading icon — the same `LucideIcon` type as `EntityListHeader.icon`. */
   icon?: LucideIcon;
-  /** Makes the whole row a click target. Omit for rows that are editing surfaces, not links. */
+  /** With it the whole row is a `<button>`; without it a `<div>` container for the row's own controls. */
   onClick?: () => void;
   /** Tag slugs to render as chips; resolved through `tagLookup`. */
   tags?: string[];
+  /** slug → `Tag`; a tag missing from the map shows its slug in the default colour. */
   tagLookup: Map<string, Tag>;
   trailing?: ReactNode;
   align?: 'center' | 'start';
@@ -138,6 +153,12 @@ export interface GroupedEntityListProps<T> {
 }
 export declare const GroupedEntityList: <T>(props: GroupedEntityListProps<T>) => ReactNode;
 
+/**
+ * Stands under `EntityListHeader`, full width, as its sibling in
+ * `EntityListLayout.header` — not in the header's `filters` slot. Renders
+ * nothing when `tags` is empty. (Named `TagBarProps`, against the
+ * `<Component>Props` convention.)
+ */
 export interface TagBarProps {
   tags: Tag[];
   tagFilter: string[];
@@ -171,6 +192,7 @@ export interface ActionBarAction {
   label: string;
   icon?: ReactNode;
   onClick(): void;
+  /** Defaults to `'secondary'`. */
   variant?: ActionBarVariant;
   disabled?: boolean;
   /** Native tooltip — useful to explain a disabled state. */
@@ -230,14 +252,19 @@ export declare const InlineEditField: ComponentType<InlineEditFieldProps>;
 
 // ── Overlay (group `overlay`, experimental) ──
 export interface DialogProps {
+  /** Open state, controlled by the consumer; with `false` the component renders nothing. */
   open: boolean;
+  /** Required for both `dismissible` variants; with `dismissible={false}` the consumer passes a no-op. */
   onClose: () => void;
+  /** Setting it implies a header row with a ✕ button. */
   title?: ReactNode;
+  /** Slot pinned under the scrollable body. */
   footer?: ReactNode;
+  /** The dialog body; scrollable. */
   children: ReactNode;
-  /** Panel tier; it also closes the panel height (there is no `maxHeight` prop — a taller body scrolls under a pinned footer). */
+  /** Width tier: `sm` 420 px, `md` 560 px, `lg` 760 px. Defaults to `md`. The height cap, `calc(100vh - 48px)`, is one for every tier (there is no `maxHeight` prop — a taller body scrolls under a pinned footer). */
   size?: 'sm' | 'md' | 'lg';
-  /** Exact panel width in px, overriding `size` for the width; the height is still closed by `size`. */
+  /** Exact panel width in px, taking precedence over `size`. It does not touch the overflow contract — the height cap is the same with or without it. */
   width?: number;
   /**
    * Defaults to `true`. With `false` the scrim click, `Escape` and the header ✕
@@ -247,7 +274,7 @@ export interface DialogProps {
   dismissible?: boolean;
   /** Accessible name when there is no `title` to derive one from. */
   ariaLabel?: string;
-  /** Scrim stacking order; defaults to 1200. Raise it for a blocking gate. */
+  /** Overlay layer; overrides the default 1200 (a number — the token bridge exposes no `--z-modal` variable). */
   zIndex?: number;
 }
 export declare const Dialog: ComponentType<DialogProps>;
@@ -359,7 +386,9 @@ export interface ReferencesListProps {
 }
 export declare const ReferencesList: ComponentType<ReferencesListProps>;
 
+/** A centred column with no scrolling of its own; the parent scrolls it. */
 export interface DocumentBodyProps {
+  /** Large inline-editable title; read-only without `onChange`. */
   title?: { value: string; onChange?(v: string): void; placeholder?: string };
   children: ReactNode;
   maxWidth?: number;

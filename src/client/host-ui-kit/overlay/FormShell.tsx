@@ -19,7 +19,7 @@ export interface FormShellProps {
   children: ReactNode;
   /** Save/Cancel slot, rendered as a right-aligned row below the error. */
   actions?: ReactNode;
-  /** Disables the fields while a submit is in flight. */
+  /** Disables, through `<fieldset disabled>`, every field while a submit is in flight — the buttons in `actions` too. */
   busy?: boolean;
   /** Form-level error message, rendered below the fields. */
   error?: ReactNode;

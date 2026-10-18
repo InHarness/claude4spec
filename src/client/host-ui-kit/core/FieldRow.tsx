@@ -11,7 +11,11 @@ import { withStability } from '../stability.js';
 export interface FieldRowProps {
   label: ReactNode;
   children: ReactNode;
-  /** Align the label to the top (for multi-line values). Defaults to center. */
+  /**
+   * Defaults to `'center'`. `'start'` (for multi-line values): the row is
+   * `align-items: flex-start` and the label gets a 2 px `padding-top`, so it
+   * sits on the line of the value's first row.
+   */
   align?: 'center' | 'start';
 }
 

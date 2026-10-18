@@ -111,3 +111,57 @@ describe('GroupedRelationPicker ↔ record `grouped-relation-picker` (M34/L12, 2
     expect(panel.querySelector('.overflow-auto')).not.toBeNull();
   });
 });
+
+function typeInto(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+  act(() => {
+    setter.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
+describe('GroupedRelationPicker — onGroupOpen, onSearch and maxHeight (M34/L12, 2.1.33)', () => {
+  it('[entity:grouped-relation-picker] onGroupOpen fires with the group key on every opening via "+ link", not only the first', () => {
+    const onGroupOpen = vi.fn();
+    mount(props({ onGroupOpen }));
+    click(linkButtons()[0]!); // open
+    click(linkButtons()[0]!); // close
+    expect(popovers()).toEqual([]);
+    click(linkButtons()[0]!); // open again
+    expect(popovers().length).toBe(1);
+    expect(onGroupOpen.mock.calls).toEqual([['request'], ['request']]);
+  });
+
+  it('[entity:grouped-relation-picker] the search in a group popover reports its groupKey; the widget-wide search reports none', () => {
+    const onSearch = vi.fn();
+    mount(props({ onSearch, maxHeight: 200 }));
+    click(linkButtons()[1]!);
+    const groupSearch = popovers()[0]!.querySelector<HTMLInputElement>('input')!;
+    typeInto(groupSearch, 'us');
+    expect(onSearch).toHaveBeenLastCalledWith('us', 'response');
+
+    const widgetSearch = Array.from(host.querySelectorAll<HTMLInputElement>('input')).find((i) => i.placeholder === 'Search all…')!;
+    expect(widgetSearch).toBeDefined();
+    typeInto(widgetSearch, 'err');
+    expect(onSearch.mock.calls[onSearch.mock.calls.length - 1]).toEqual(['err']);
+  });
+
+  it('[entity:grouped-relation-picker] maxHeight caps the scrolling groups list; with onSearch it adds the widget-wide search pinned below that list', () => {
+    mount(props({ onSearch: () => {}, maxHeight: 200 }));
+    const widget = host.firstElementChild as HTMLElement;
+    expect(widget.style.maxHeight).toBe('200px');
+    const [list, pinned] = Array.from(widget.children) as HTMLElement[];
+    expect(list!.className).toContain('overflow-auto');
+    expect(list!.textContent).toContain('Request');
+    expect(pinned!.querySelector('input')!.placeholder).toBe('Search all…');
+    expect(list!.contains(pinned!)).toBe(false);
+
+    // maxHeight without onSearch: capped, but no widget search.
+    mount(props({ maxHeight: 200 }));
+    expect(host.querySelector('input')).toBeNull();
+    // onSearch without maxHeight: no widget search either (only the per-group one, in a popover).
+    mount(props({ onSearch: () => {} }));
+    expect(host.querySelector('input')).toBeNull();
+    expect((host.firstElementChild as HTMLElement).style.maxHeight).toBe('');
+  });
+});

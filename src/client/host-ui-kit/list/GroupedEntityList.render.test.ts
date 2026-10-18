@@ -93,3 +93,45 @@ describe('GroupedEntityList ↔ record `grouped-entity-list` (M34/L12, 2.1.28)',
     expect(host.textContent).toBe('Nothing here');
   });
 });
+
+describe('GroupedEntityList — empty states, key and no grouping of its own (M34/L12, 2.1.33)', () => {
+  it('[entity:grouped-entity-list] with no visible group and no emptyState it draws nothing; emptyState renders when every group is empty', () => {
+    const empty: GroupedEntityListGroup<Item>[] = [{ key: 'a', label: 'A', items: [] }];
+    mount(createElement(GroupedEntityList<Item>, { groups: empty, renderRow: row }));
+    expect(host.innerHTML).toBe('');
+    mount(createElement(GroupedEntityList<Item>, { groups: [], renderRow: row }));
+    expect(host.innerHTML).toBe('');
+    mount(createElement(GroupedEntityList<Item>, { groups: empty, renderRow: row, emptyState: 'Nothing here' }));
+    expect(host.textContent).toBe('Nothing here');
+  });
+
+  it('[entity:grouped-entity-list] emptyGroupState is the content of an empty group, under its heading', () => {
+    const groups: GroupedEntityListGroup<Item>[] = [{ key: 'srv', label: 'Server', items: [] }];
+    mount(createElement(GroupedEntityList<Item>, { groups, renderRow: row, emptyGroupState: 'No tools yet' }));
+    const section = host.querySelector('section')!;
+    expect(section.querySelector('h2')!.textContent).toBe('Server');
+    expect(section.textContent).toBe('ServerNo tools yet');
+    expect(section.querySelector('[data-row]')).toBeNull();
+  });
+
+  it('[entity:grouped-entity-list] a group key is only the React key — the heading shows the label, the key is never displayed', () => {
+    const groups: GroupedEntityListGroup<Item>[] = [{ key: 'internal-key-42', label: 'Shown label', items: [{ id: 'x' }] }];
+    mount(createElement(GroupedEntityList<Item>, { groups, renderRow: row }));
+    expect(host.textContent).toContain('Shown label');
+    expect(host.innerHTML).not.toContain('internal-key-42');
+  });
+
+  it('[entity:grouped-entity-list] does not group by itself and has no flat mode: the groups are the consumer\'s, rendered as given', () => {
+    type Keys = keyof GroupedEntityListProps<Item>;
+    const noGroupBy: 'groupBy' extends Keys ? false : true = true;
+    const noFlat: 'flat' extends Keys ? false : true = true;
+    expect([noGroupBy, noFlat]).toEqual([true, true]);
+    // Items in the consumer's order and grouping — nothing re-sorted or re-grouped.
+    const groups: GroupedEntityListGroup<Item>[] = [
+      { key: 'b', label: 'B', items: [{ id: 'z' }, { id: 'a' }] },
+      { key: 'a', label: 'A', items: [{ id: 'm' }] },
+    ];
+    mount(createElement(GroupedEntityList<Item>, { groups, renderRow: row }));
+    expect(Array.from(host.querySelectorAll('[data-row]')).map((r) => r.getAttribute('data-row'))).toEqual(['z@0', 'a@1', 'm@0']);
+  });
+});

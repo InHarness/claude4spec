@@ -99,3 +99,44 @@ describe('ActionButton ↔ record `action-button` (M34/L12, 2.1.28)', () => {
     expect(onClick).not.toHaveBeenCalled();
   });
 });
+
+describe('ActionButton — onClick and type (M34/L12, 2.1.33)', () => {
+  const inForm = (onSubmit: () => void, button: ReactNode) =>
+    mount(
+      createElement(
+        'form',
+        {
+          onSubmit: (e: { preventDefault(): void }) => {
+            e.preventDefault();
+            onSubmit();
+          },
+        },
+        button,
+      ),
+    );
+
+  it('[entity:action-button] onClick is always wired — with type="submit" a given onClick fires on top of the form\'s onSubmit', () => {
+    const onClick = vi.fn();
+    const onSubmit = vi.fn();
+    inForm(onSubmit, createElement(ActionButton, { label: 'Save', type: 'submit', onClick }));
+    act(() => button().click());
+    // The double the record warns about: both run once.
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it('[entity:action-button] type is passed to the native <button type>; submit without onClick is the form\'s default action', () => {
+    const onSubmit = vi.fn();
+    inForm(onSubmit, createElement(ActionButton, { label: 'Save', type: 'submit' }));
+    expect(button().getAttribute('type')).toBe('submit');
+    act(() => button().click());
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+
+    // The default 'button' type submits nothing.
+    const onSubmit2 = vi.fn();
+    inForm(onSubmit2, createElement(ActionButton, { label: 'Cancel' }));
+    expect(button().getAttribute('type')).toBe('button');
+    act(() => button().click());
+    expect(onSubmit2).not.toHaveBeenCalled();
+  });
+});

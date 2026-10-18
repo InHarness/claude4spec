@@ -76,4 +76,18 @@ describe('FieldRow ↔ record `field-row` (M13/M34, 2.1.28)', () => {
     expect(value!.querySelector('button')?.textContent).toBe('Change');
     expect(field!.querySelector('[data-testid="chip"]')).toBeNull();
   });
+
+  it('[entity:field-row] align="start" sets the row to align-items flex-start and drops the label by a 2 px padding-top to the first line of the value; default is center without it', () => {
+    mount({ label: 'Description', children: 'line one\nline two\nline three', align: 'start' });
+    const row = host.firstElementChild as HTMLElement;
+    const labelCol = row.children[0] as HTMLElement;
+    expect(row.style.alignItems).toBe('flex-start');
+    expect(labelCol.style.paddingTop).toBe('2px');
+    expect(labelCol.textContent).toBe('Description');
+    // Default: center, the label is not lowered.
+    mount({ label: 'Status', children: 'draft' });
+    const centred = host.firstElementChild as HTMLElement;
+    expect(centred.style.alignItems).toBe('center');
+    expect((centred.children[0] as HTMLElement).style.paddingTop).not.toBe('2px');
+  });
 });

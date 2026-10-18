@@ -153,3 +153,28 @@ describe('Dialog and FormShell — the experimental tier (M34/L12)', () => {
     }
   });
 });
+
+describe('FormShell — anatomy and busy (M34/L12, 2.1.33)', () => {
+  it('[entity:form-shell] renders a <form>; fields and the actions row sit in one <fieldset>, error under the fields, actions under the error, right-aligned', () => {
+    shell({ error: 'Slug taken', actions: createElement('button', { type: 'submit', 'data-testid': 'save' }, 'Save') });
+    const form = host.firstElementChild!;
+    expect(form.tagName).toBe('FORM');
+    expect(form.querySelectorAll('fieldset')).toHaveLength(1);
+    const fieldset = form.querySelector('fieldset')!;
+    const [fields, error, actions] = Array.from(fieldset.children) as HTMLElement[];
+    expect(fields!.querySelector('[data-testid="slug"]')).not.toBeNull();
+    expect(error!.textContent).toBe('Slug taken');
+    expect(actions!.contains(host.querySelector('[data-testid="save"]'))).toBe(true);
+    expect(actions!.className).toContain('justify-end');
+  });
+
+  it('[entity:form-shell] busy disables every field through <fieldset disabled>, the buttons in `actions` included', () => {
+    shell({ busy: true, actions: createElement('button', { type: 'submit', 'data-testid': 'save' }, 'Save') });
+    const fieldset = host.querySelector('fieldset')!;
+    expect(fieldset.disabled).toBe(true);
+    // The actions row is inside the disabled fieldset, so its buttons are disabled with the fields.
+    expect(fieldset.contains(host.querySelector('[data-testid="save"]'))).toBe(true);
+    expect(fieldset.contains(host.querySelector('[data-testid="slug"]'))).toBe(true);
+    expect(code('./FormShell.tsx')).toMatch(/<fieldset disabled=\{busy\}/);
+  });
+});
