@@ -4,7 +4,12 @@ import { withStability } from '../stability.js';
 
 /**
  * `TagFilterBar` (List, `experimental`) — the tag-filter strip above an entity
- * list. Pure-presentational: tags, current filter and handlers are props. The
+ * list. It stands UNDER `EntityListHeader`, full width, as its sibling in
+ * `EntityListLayout`'s `header` — never in the header's `filters` slot, whose
+ * one row a variable number of chips would break (record `tag-filter-bar`,
+ * 2.1.33; M19 `thm8a14c`). With an empty `tags` it renders nothing, so a
+ * consumer needs no guard of its own. Its props type is exported as
+ * `TagBarProps`, against the `<Component>Props` convention. Pure-presentational: tags, current filter and handlers are props. The
  * data side (`useTags` / `useEntityListQuery`) stays in the host app, which
  * builds `TagBarProps` and passes it in.
  *

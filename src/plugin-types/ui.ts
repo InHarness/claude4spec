@@ -61,6 +61,11 @@ export interface EntityListHeaderProps {
   search?: string;
   onSearchChange?: (q: string) => void;
   searchPlaceholder?: string;
+  /**
+   * Between search and actions, in the header's one row — for compact controls
+   * that fit it (segmented tabs, a select). `TagFilterBar` does not go here: it
+   * stands under the header, as its sibling in `EntityListLayout.header`.
+   */
   filters?: ReactNode;
   actions?: ReactNode;
 }
@@ -70,6 +75,7 @@ export declare const EntityListHeader: ComponentType<EntityListHeaderProps>;
 import type { Tag } from '../shared/plugin-host/ui-kit-surface.js';
 
 export interface EntityListLayoutProps {
+  /** Stands outside the scroll region; the body under it scrolls. */
   header?: ReactNode;
   children: ReactNode;
 }
@@ -99,10 +105,11 @@ export interface EntityListRowProps {
   leading?: ReactNode;
   /** Leading icon — the same `LucideIcon` type as `EntityListHeader.icon`. */
   icon?: LucideIcon;
-  /** Makes the whole row a click target. Omit for rows that are editing surfaces, not links. */
+  /** With it the whole row is a `<button>`; without it a `<div>` container for the row's own controls. */
   onClick?: () => void;
   /** Tag slugs to render as chips; resolved through `tagLookup`. */
   tags?: string[];
+  /** slug → `Tag`; a tag missing from the map shows its slug in the default colour. */
   tagLookup: Map<string, Tag>;
   trailing?: ReactNode;
   align?: 'center' | 'start';
@@ -138,6 +145,12 @@ export interface GroupedEntityListProps<T> {
 }
 export declare const GroupedEntityList: <T>(props: GroupedEntityListProps<T>) => ReactNode;
 
+/**
+ * Stands under `EntityListHeader`, full width, as its sibling in
+ * `EntityListLayout.header` — not in the header's `filters` slot. Renders
+ * nothing when `tags` is empty. (Named `TagBarProps`, against the
+ * `<Component>Props` convention.)
+ */
 export interface TagBarProps {
   tags: Tag[];
   tagFilter: string[];

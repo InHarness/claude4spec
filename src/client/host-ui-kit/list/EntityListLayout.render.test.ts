@@ -62,4 +62,29 @@ describe('EntityListLayout ↔ record `entity-list-layout` (M34/L12, 2.1.28)', (
     mount(createElement(EntityListLayout, { children: 'only rows' }));
     expect(host.textContent).toBe('only rows');
   });
+
+  it('[entity:entity-list-layout] the header stands outside the scroll region; only the body under it scrolls (2.1.33)', () => {
+    mount(
+      createElement(EntityListLayout, {
+        header: createElement('header', { 'data-testid': 'h' }, 'Endpoints'),
+        children: createElement('ul', { 'data-testid': 'rows' }),
+      }),
+    );
+    const outer = host.firstElementChild as HTMLElement;
+    const h = host.querySelector<HTMLElement>('[data-testid="h"]')!;
+    const rows = host.querySelector<HTMLElement>('[data-testid="rows"]')!;
+    // The page itself does not scroll: a clipped flex column.
+    expect(outer.className.split(/\s+/)).toEqual(expect.arrayContaining(['flex', 'flex-col', 'overflow-hidden']));
+    // The header is a direct child of that column, not inside any scroll container.
+    expect(h.parentElement).toBe(outer);
+    for (let el: HTMLElement | null = h; el && el !== host; el = el.parentElement) {
+      expect(el.className).not.toMatch(/overflow-(auto|scroll)/);
+    }
+    // The body sits in the one scroll region, a sibling AFTER the header.
+    const scroller = rows.closest<HTMLElement>('.overflow-auto')!;
+    expect(scroller).not.toBeNull();
+    expect(scroller.parentElement).toBe(outer);
+    expect(scroller.contains(h)).toBe(false);
+    expect(h.compareDocumentPosition(scroller) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });

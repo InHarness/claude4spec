@@ -7,7 +7,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { TagFilterBar, type TagBarProps } from './TagFilterBar.js';
+import { EntityListHeader } from '../core/EntityListHeader.js';
+import { EntityListLayout } from './EntityListLayout.js';
+import * as kit from '../index.js';
 import type { Tag } from '../../../shared/plugin-host/ui-kit-surface.js';
 import type * as Published from '../../../plugin-types/ui.js';
 
@@ -102,8 +108,57 @@ describe('TagFilterBar ↔ record `tag-filter-bar` (M34/L12, 2.1.28)', () => {
     expect(onToggleMode).toHaveBeenCalledTimes(1);
   });
 
-  it('[entity:tag-filter-bar] draws nothing without tags', () => {
+  it('[entity:tag-filter-bar] with an empty `tags` it renders nothing', () => {
     bar({ tags: [] });
     expect(host.innerHTML).toBe('');
+  });
+
+  it('[entity:tag-filter-bar] stands under EntityListHeader, full width, as its sibling in EntityListLayout `header` — not in the header `filters` slot (2.1.33)', () => {
+    const tagBar: TagBarProps = {
+      tags: TAGS,
+      tagFilter: [],
+      onTagToggle: () => {},
+      tagMode: 'and',
+      onToggleMode: () => {},
+      onClear: () => {},
+    };
+    mount(
+      createElement(EntityListLayout, {
+        header: createElement(
+          'div',
+          { 'data-testid': 'header-slot' },
+          createElement(EntityListHeader, { title: 'Endpoints', search: '', onSearchChange: () => {} }),
+          createElement(TagFilterBar, tagBar),
+        ),
+        children: 'rows',
+      }),
+    );
+    const slot = host.querySelector<HTMLElement>('[data-testid="header-slot"]')!;
+    const [headerBar, tagStrip] = Array.from(slot.children) as HTMLElement[];
+    // Header row first, the tag strip right under it — siblings in the layout header.
+    expect(headerBar!.querySelector('h2')?.textContent).toBe('Endpoints');
+    expect(tagStrip!.textContent).toContain('Filter by tag:');
+    expect(headerBar!.contains(tagStrip!)).toBe(false);
+    expect(headerBar!.textContent).not.toContain('Filter by tag:');
+    // Full width: a block-level strip with no width cap of its own, wrapping its chips.
+    expect(tagStrip!.tagName).toBe('DIV');
+    expect(tagStrip!.style.width).toBe('');
+    expect(tagStrip!.style.maxWidth).toBe('');
+    expect(tagStrip!.className).not.toMatch(/inline-flex|\bw-\[|max-w-/);
+    expect(tagStrip!.className).toContain('flex-wrap');
+    // Outside the scroll region, like the header.
+    expect(tagStrip!.closest('.overflow-auto')).toBeNull();
+  });
+
+  it('[entity:tag-filter-bar] its props type is exported as TagBarProps (kit index and published /ui), against the <Component>Props convention', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const index = readFileSync(resolve(here, '../index.ts'), 'utf8');
+    const published = readFileSync(resolve(here, '../../../plugin-types/ui.ts'), 'utf8');
+    expect(index).toMatch(/export \{ TagFilterBar, type TagBarProps \} from '\.\/list\/TagFilterBar\.js';/);
+    expect(published).toMatch(/export interface TagBarProps \{/);
+    expect(published).toMatch(/export declare const TagFilterBar: ComponentType<TagBarProps>;/);
+    expect(index).not.toMatch(/\bTagFilterBarProps\b/);
+    expect(published).not.toMatch(/\bTagFilterBarProps\b/);
+    expect(kit.TagFilterBar).toBe(TagFilterBar);
   });
 });

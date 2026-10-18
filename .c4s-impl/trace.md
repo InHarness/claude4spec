@@ -14,3 +14,7 @@ popover → src/client/host-ui-kit/overlay-feedback/Popover.tsx
 references-list → src/client/host-ui-kit/detail/ReferencesList.tsx
 rich-text-field → src/client/host-ui-kit/detail/RichTextField.tsx
 version-history → src/client/host-ui-kit/detail/VersionHistory.tsx
+entity-list-header → src/client/host-ui-kit/core/EntityListHeader.tsx
+entity-list-layout → src/client/host-ui-kit/list/EntityListLayout.tsx
+entity-list-row → src/client/host-ui-kit/list/EntityListRow.tsx
+tag-filter-bar → src/client/host-ui-kit/list/TagFilterBar.tsx

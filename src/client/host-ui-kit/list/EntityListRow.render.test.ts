@@ -110,4 +110,55 @@ describe('EntityListRow ↔ record `entity-list-row` (M34/L12, 2.1.28)', () => {
     expect(row.className).toContain('items-start');
     expect(row.style.marginBottom).toBe('0px');
   });
+
+  it('[entity:entity-list-row] a tag missing from tagLookup shows its slug in the default colour (2.1.33)', () => {
+    mount(createElement(EntityListRow, { tags: ['ghost'], tagLookup: lookup, children: 'row' }));
+    const chip = host.querySelector('.flex-wrap')!.firstElementChild as HTMLElement;
+    expect(chip.textContent).toBe('ghost');
+    // Exactly Badge's small chip with no colour, i.e. Badge's default (var(--c-muted)) dot.
+    const probe = document.createElement('div');
+    const probeRoot = createRoot(probe);
+    act(() => probeRoot.render(createElement(Badge, { label: 'ghost', small: true })));
+    expect(chip.outerHTML).toBe(probe.innerHTML);
+    act(() => probeRoot.unmount());
+    expect(chip.outerHTML).toContain('var(--c-muted)');
+  });
+
+  it('[entity:entity-list-row] anatomy: the icon is 16 px in var(--c-accent), and the leading slot stands after it (2.1.33)', () => {
+    mount(
+      createElement(EntityListRow, {
+        tagLookup: lookup,
+        icon: TagIcon,
+        leading: createElement('i', { 'data-testid': 'lead' }),
+        children: 'row',
+      }),
+    );
+    const row = host.firstElementChild as HTMLElement;
+    const svg = row.firstElementChild as SVGElement;
+    expect(svg.tagName.toLowerCase()).toBe('svg');
+    expect(svg.getAttribute('width')).toBe('16');
+    expect(svg.getAttribute('height')).toBe('16');
+    expect(svg.getAttribute('style')).toMatch(/color:\s*var\(--c-accent\)/);
+    expect((svg.nextElementSibling as HTMLElement).dataset.testid).toBe('lead');
+  });
+
+  it('[entity:entity-list-row] `onClick` makes the whole row a <button>; without it the row is a <div> container whose own slot controls are not nested in a button (2.1.33)', () => {
+    mount(
+      createElement(EntityListRow, {
+        tagLookup: lookup,
+        trailing: createElement('button', { 'data-testid': 'own' }, 'edit'),
+        children: 'row',
+      }),
+    );
+    const row = host.firstElementChild as HTMLElement;
+    expect(row.tagName).toBe('DIV');
+    const own = row.querySelector('[data-testid="own"]')!;
+    expect(own.parentElement!.closest('button')).toBeNull();
+    const onClick = vi.fn();
+    mount(createElement(EntityListRow, { tagLookup: lookup, onClick, children: 'row' }));
+    const btnRow = host.firstElementChild as HTMLElement;
+    expect(btnRow.tagName).toBe('BUTTON');
+    act(() => (btnRow.querySelector('.flex-1') as HTMLElement).click());
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
 });

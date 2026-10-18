@@ -9,7 +9,10 @@ import { withStability } from '../stability.js';
  * it renders tags from the supplied `tagLookup` map and never calls `useTags`
  * itself, so the host app owns the data side and passes the lookup in.
  *
- * Tag chips render via the kit's `Badge` (the single chip implementation).
+ * Tag chips render via the kit's `Badge` (the single chip implementation). A tag
+ * slug missing from `tagLookup` still renders, as its slug in Badge's default
+ * colour. Anatomy (2.1.33): the `icon` is 16 px in `var(--c-accent)`, and the
+ * `leading` slot follows it.
  */
 export interface EntityListRowProps {
   /** General-purpose leading slot; use `icon` instead for the common plain-icon case. */
@@ -22,12 +25,14 @@ export interface EntityListRowProps {
    */
   icon?: LucideIcon;
   /**
-   * Makes the whole row a click target. Omit it when the row is an editing
+   * With `onClick` the whole row is a `<button>`; without it a `<div>`
+   * container for the row's own controls in its slots. Omit it when the row is an editing
    * surface rather than a link (e.g. `/tags`): the row then renders as a plain
    * container, so its own controls aren't nested inside a button.
    */
   onClick?: () => void;
   tags?: string[];
+  /** slug → `Tag` for the chips; a tag missing from the map shows its slug in the default colour. */
   tagLookup: Map<string, Tag>;
   trailing?: React.ReactNode;
   align?: 'center' | 'start';

@@ -16,6 +16,13 @@ import { withStability } from '../stability.js';
  * are optional. Omitting `search` hides the search box. Slot order, left to
  * right: icon, title, count, search, `filters` (between search and actions),
  * `actions` (trailing edge, e.g. a create button).
+ *
+ * 2.1.33 (record `entity-list-header`): `filters` shares the one header row with
+ * title, search and actions, so it holds compact controls that fit that row —
+ * e.g. `SegmentedControlTabs` (the AC list's status and kind switches) or a
+ * select. The header has no place for `TagFilterBar`: a strip with a variable
+ * number of chips would break the row, so the tag bar stands BELOW the header,
+ * as its sibling in `EntityListLayout`'s `header` (M19 `thm8a14c`).
  */
 export interface EntityListHeaderProps {
   /** Leading icon (e.g. a lucide icon component). */
@@ -27,7 +34,11 @@ export interface EntityListHeaderProps {
   search?: string;
   onSearchChange?: (q: string) => void;
   searchPlaceholder?: string;
-  /** Filter slot, rendered between search and actions. */
+  /**
+   * Filter slot, rendered between search and actions in the same row — for
+   * compact one-row controls (segmented tabs, a select). Not for `TagFilterBar`,
+   * which stands under the header as its sibling in `EntityListLayout.header`.
+   */
   filters?: ReactNode;
   /** Action slot (e.g. a create button), rendered at the trailing edge. */
   actions?: ReactNode;
