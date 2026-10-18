@@ -1,0 +1,7 @@
+- 2026-10-18 — baseline (startMode resume): tests never run locally. main @ c38297c2 = PR #283 merge, tree identical to 5a20986f, system-verified in env-runner: vitest 6434/6434, e2e only known empty-seed/interference failures. baselineGreen = true on that evidence. The full suite runs once in env-runner at system verification.
+- 2026-10-18 — window order: 2-1-30-to-2-1-33 is the newest pending workflow brief; no pending brief has from_release 2.1.33 → no "next window" gate.
+- 2026-10-18 — jobs: the user-jobs convention (pages/SKILL.md §12–13 `45yst8co`, `oq23nb0j`) holds the module index sheet `moduly-feature` at 2.1.33, not a user-jobs table. No unit gets a job.
+- 2026-10-18 — entity types: only `ui-kit-component`, built (catalog registry entry + /ui component; links composes) — carried over from the 2.1.27→2.1.28 loop. No per-entity type → no entityParts. Settings reused from that loop. User-approved (plan).
+- 2026-10-18 — recipes: every section anchor checked against 2.1.33 (all match). Multi-range reads are one entry per range; `change: all` pairs with the first context range.
+- 2026-10-18 — unit order: wave 1 runs u1 → u2 → u3 sequentially (parallelUnits off); u2/u3 touch kit components only u1 does not, so no ordering dependency beyond the shared tree.
+- 2026-10-18 — worktree: `node_modules` is a symlink to the main checkout's (git-excluded).
