@@ -49,6 +49,8 @@ vi.mock('../hooks/useTags.js', () => ({
 }));
 vi.mock('../core/plugin-host/host.js', () => ({
   clientPluginHost: {
+    onRegistryChanged: () => () => {},
+    registryVersion: () => 0,
     listEntities: () => [
       { type: 'endpoint', label: 'endpoint', labelPlural: 'endpoints' },
       { type: 'dto', label: 'DTO', labelPlural: 'DTOs' },

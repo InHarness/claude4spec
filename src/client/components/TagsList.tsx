@@ -3,6 +3,7 @@ import { Tag as TagIcon } from 'lucide-react';
 import type { Tag } from '../../shared/entities.js';
 import { useTags, useUpdateTag } from '../hooks/useTags.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
+import { useRegistryVersion } from '../core/plugin-host/useRegistryVersion.js';
 import { EntityListHeader } from '../host-ui-kit/core/EntityListHeader.js';
 import { EntityListRow } from '../host-ui-kit/list/EntityListRow.js';
 import { EmptyState } from '../host-ui-kit/list/EmptyState.js';
@@ -38,6 +39,10 @@ const NO_TAG_LOOKUP = new Map<string, Tag>();
  */
 export function TagsList() {
   const { data: tags = [], isLoading } = useTags();
+  // Re-read the registry once plugin frontends finish booting: on a cold load
+  // of /tags the first render sees only the built-in types, and the per-type
+  // counters would stay that short forever.
+  useRegistryVersion();
   const modules = clientPluginHost.listEntities();
 
   return (
