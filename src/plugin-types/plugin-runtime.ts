@@ -584,7 +584,9 @@ export interface EntityRowProps<T = unknown> {
 /**
  * Props of the `detailPanel` slot — all four fields REQUIRED (2.1.16). Declared,
  * never rendered by the host: the plugin's own detail route passes them to its
- * panel, and the host calls none of the callbacks. `onBack` is unused.
+ * panel, and the host calls none of the callbacks. `onBack` is unused. There is
+ * no `onOpenEntity` / `onOpenPage`: a panel navigates to a related entity or page
+ * through `editorBridge.openEntity(type, slug)` / `editorBridge.openSection(...)`.
  */
 export interface EntityDetailProps {
   slug: string;
@@ -686,15 +688,14 @@ export interface EditorBridge {
 }
 
 /**
- * Supplies the bridge to everything rendered beneath it — and publishes it into
- * the process-wide singleton for the lifetime of the mount.
+ * Supplies one pipeline's bridge to everything rendered beneath it. While it is
+ * mounted, `editorBridge` calls made from inside its subtree (a chip's click)
+ * reach THIS bridge — the singleton delegates to the nearest provider.
  *
  * A plugin that contributes page ROUTES must wrap any route body containing a
  * `DocEditor` (i.e. any entity detail with a rich-text field) in one of these.
- * `DocEditor` resolves the bridge from React context and falls back to a no-op
- * when there is none, so the failure is silent: entity chips inside the body
- * stop navigating, and since the fallback is also published to the singleton,
- * chips rendered outside the tree stop navigating while that page is mounted.
+ * `DocEditor` falls back to a no-op bridge when no provider surrounds it, so
+ * the failure is silent: entity chips inside the body stop navigating.
  */
 export declare function EditorBridgeProvider(props: {
   bridge: EditorBridge;
@@ -765,6 +766,13 @@ export declare const clientPluginHost: {
 };
 export declare function registerFrontendModule(module: FrontendModule): void;
 export declare const queryClient: unknown;
+/**
+ * The chip navigation bridge (M20 m20l11sc). A chip calls
+ * `editorBridge.openEntity(type, slug)` / `editorBridge.openSection(pagePath,
+ * anchor)`; the singleton delegates to the bridge of the nearest
+ * `EditorBridgeProvider` (the editor's or the chat's), so the same chip behaves
+ * per pipeline without knowing either.
+ */
 export declare const editorBridge: EditorBridge;
 
 // ── M34/L11 frontend data-service singletons + hooks ──

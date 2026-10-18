@@ -20,7 +20,7 @@ const DEFAULT_DURATION: Record<ToastVariant, number> = TOAST_DURATION_MS;
  * queue, and the expiry timers (including the per-call `durationMs` override
  * that `toast.*` accepts). Every toast lands here — the shell's `toast` facade,
  * the same facade on the plugin browser leg, and `/ui`'s `useToast()`, which is
- * a thin layer over that facade (2.1.20, M34 `l0i0c5wm`).
+ * a thin layer over that facade (2.1.20, M34 `m34l12sc`).
  *
  * `toast.success/error/warning/info` are unchanged; 0.2.110 renamed the payload's
  * `kind` to `variant` (`c4s:toast { variant, message, action? }`).

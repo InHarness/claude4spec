@@ -240,7 +240,7 @@ describe('GroupedEntityList colours (M34/L12)', () => {
     return [...names].sort();
   }
 
-  it('[ac:ac-groupedentitylist-rysuje-tekst-pomocn] draws helper text and rules with bridge colours only, resolved in both theme modes', async () => {
+  it('[ac:ac-groupedentitylist-rysuje-tekst-pomocn] draws all its colours with bridge variables only (helper text, headings, rules), resolved in both theme modes', async () => {
     await act(async () => {
       root.render(
         createElement(StringGroupedList, {
@@ -258,6 +258,8 @@ describe('GroupedEntityList colours (M34/L12)', () => {
     // Heading text + empty-group helper text in `--c-muted`, the heading rule in `--c-hair`.
     expect(used).toEqual(['--c-hair', '--c-muted']);
     for (const name of used) expect(HOST_TOKEN_NAMES as readonly string[]).toContain(name);
+    // No colour of its own: every colour in the rendered markup is a bridge variable.
+    expect(host.innerHTML).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i);
 
     const heading = host.querySelector<HTMLElement>('h2')!;
     expect(heading.style.color).toBe('var(--c-muted)');

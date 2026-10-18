@@ -26,6 +26,7 @@ const ENVELOPES_WITH_KIT = [
   'c4s-plugin-code-snippets',
   'c4s-plugin-database-tables',
   'c4s-plugin-frontend-mockups',
+  'c4s-plugin-host-ui-kit-components',
   'c4s-plugin-layered-vertical-slices',
   'c4s-plugin-spreadsheets',
 ];

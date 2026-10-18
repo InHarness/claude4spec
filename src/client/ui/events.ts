@@ -317,10 +317,14 @@ export type ModalMap = {
   'page-reload': { props: { rootId: string; path: string }; result: 'reload' | 'keep' };
   'onboarding-skip': { props: NoProps; result: true };
   'release-push': { props: { releaseName: string; projectName: string }; result: true };
-  /** M33 — opened with `dismissible: false`: only its two buttons close it. */
+  /**
+   * M33 `m33trst0` — opened with `dismissible: false`: only its two buttons
+   * close it, and the result is the branch the user picked (trust and load /
+   * stay on the base pool), never an unanswered close.
+   */
   'project-plugins-trust': {
     props: { packages: Array<{ package: string; origin?: string; layer?: string }> };
-    result: true;
+    result: { trust: boolean };
   };
   /** `<type>-expand` for hidden entity types (diagram, spreadsheet, code-snippet…). */
   [expand: `${string}-expand`]: {

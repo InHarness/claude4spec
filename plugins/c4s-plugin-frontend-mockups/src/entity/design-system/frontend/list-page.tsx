@@ -34,6 +34,10 @@ interface Props {
  * The header and the loading/empty composition go through the package's
  * `ListPageHeader` / `ListScrollArea` — local compositions of catalog
  * components only, not host-local (2.1.20).
+ *
+ * 2.1.28 (ui-view `design-system-list`): `EntityListRow` and `TagFilterBar` are
+ * the kit's (the package files re-export `/ui`); the groups/tokens counter is
+ * still the recorded `CountBadge` debt, not `Badge` (ASSUMPTION:dev-2813).
  */
 export function DesignSystemsList({
   search,

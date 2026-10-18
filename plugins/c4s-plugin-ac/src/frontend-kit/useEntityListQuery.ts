@@ -39,7 +39,7 @@ export function useEntityListQuery(type: string, opts: Options) {
     [search, tagFilter, tagMode, extraKey],
   );
 
-  // `useTags()` items are assignable to the kit's `Tag` as is (M34 `hpw2opbb`):
+  // `useTags()` items are assignable to the kit's `Tag` as is (the `Tag` type of the `ui-kit-component` record `tag-filter-bar`):
   // no adapter and no cast.
   const tagLookup = useMemo(() => new Map<string, Tag>(tags.map((t) => [t.slug, t])), [tags]);
 

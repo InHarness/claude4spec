@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { clientPluginHost } from '../core/plugin-host/host.js';
+import { ActionButton } from '../host-ui-kit/actions/ActionButton.js';
 import { Dialog } from '../host-ui-kit/overlay/Dialog.js';
 import { ApiError, metaApi } from '../lib/api.js';
 import { openModal, toast } from '../ui/events.js';
@@ -17,8 +18,9 @@ import type { ModalFormProps } from '../ui/ModalHost.js';
  * `ProjectContext` (no process restart); we refetch the activation partition so
  * newly-trusted overlay types wake without a full reload.
  *
- * Rendered as the catalog `Dialog` with `dismissible={false}`: the two footer
- * buttons are the only ways out, so an accidental click beside the panel cannot
+ * Rendered as the catalog `Dialog` with `dismissible={false}` (M33 `m33trst0`):
+ * no scrim click, no Escape, no header ✕ — the two footer buttons, catalog
+ * `ActionButton`s (`gox0ptn4`), are the only ways out, so an accidental click beside the panel cannot
  * start running foreign code. An unresolved gate simply comes back on the next
  * context build.
  *
@@ -66,7 +68,8 @@ export function TrustPluginsModal({ request, onClose }: ModalFormProps<'project-
       }
       await qc.invalidateQueries();
       toast.success(trust ? 'Project plugins trusted' : 'Project plugins refused');
-      onClose(true);
+      // The facade resolves with the branch the user chose.
+      onClose({ trust });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Failed to save trust decision');
     } finally {
@@ -89,34 +92,20 @@ export function TrustPluginsModal({ request, onClose }: ModalFormProps<'project-
       title="Trust this project's plugins?"
       footer={
         <>
-          <button
-            onClick={() => decide(false)}
+          {/* 2.1.28 (M33 `gox0ptn4`): the two answers are catalog `ActionButton`s —
+              the only ways out of the gate, so neither is a plain "close". */}
+          <ActionButton
+            label="Don't trust"
+            variant="ghost"
             disabled={busy}
-            style={{
-              fontSize: 12,
-              padding: '6px 12px',
-              borderRadius: 4,
-              color: 'var(--c-muted)',
-              cursor: busy ? 'not-allowed' : 'pointer',
-            }}
-          >
-            Don't trust
-          </button>
-          <button
-            onClick={() => decide(true)}
+            onClick={() => void decide(false)}
+          />
+          <ActionButton
+            label="Trust & load"
+            variant="primary"
             disabled={busy}
-            style={{
-              fontSize: 12,
-              padding: '6px 14px',
-              borderRadius: 4,
-              fontWeight: 500,
-              background: 'var(--c-accent)',
-              color: '#fff',
-              cursor: busy ? 'not-allowed' : 'pointer',
-            }}
-          >
-            Trust &amp; load
-          </button>
+            onClick={() => void decide(true)}
+          />
         </>
       }
     >

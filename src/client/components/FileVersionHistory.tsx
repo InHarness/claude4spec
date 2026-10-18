@@ -1,8 +1,13 @@
 /**
- * DEBT (2.1.20, Host UI Kit slice of M21): the brief's version history is this
- * host `FileVersionHistory` from outside the catalog. It fails locality
- * condition 2 — it is universal across entity types. Its catalog replacements
- * are `VersionHistory` and `DiffView`. Recorded, not fixed here.
+ * DEBT (2.1.20 M21, 2.1.28 M10 — Host UI Kit slices of M21 and M10): the brief's
+ * version history is this host `FileVersionHistory` from outside the catalog.
+ * It fails locality condition 2 — it is universal across entity types. Its
+ * catalog replacements are `VersionHistory` and `DiffView`. Recorded, not fixed
+ * here.
+ *
+ * M10 (`0dy3js11`) records the same component as DŁUG on plan-page: it fails
+ * locality condition (1) — one host panel for pages, plans, briefs and
+ * patches. Catalog replacement: `VersionHistory`. Not rebuilt in 2.1.28.
  */
 import { Clock } from 'lucide-react';
 import { useArtifactVersions } from '../hooks/useArtifactVersions.js';

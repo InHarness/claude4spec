@@ -202,6 +202,10 @@ const NEW_SINCE_LEGACY = new Set([
   // `c4s-plugin-layered-vertical-slices` when that envelope stopped being a
   // capability and became a coupling.
   'module_dependency',
+  // 2.1.28 — `ui-kit-component`, contributed by the builtin envelope
+  // `c4s-plugin-host-ui-kit-components` (one record per `/ui` export). Its
+  // collections are embedded values, so the type adds exactly one table.
+  'ui_kit_component',
 ]);
 
 const withoutNewTables = (schema: Record<string, TableShape>): Record<string, TableShape> =>

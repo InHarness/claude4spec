@@ -55,7 +55,6 @@ vi.mock('../../../core/plugin-host/host.js', () => ({
   clientPluginHost: { getEntity: () => null, onRegistryChanged: () => () => {} },
 }));
 vi.mock('../../../entities/openEntity.js', () => ({ openEntityHandler: () => undefined }));
-vi.mock('../../../tiptap/EditorContext.js', () => ({ useEditorBridge: () => null }));
 // ElementList → shared → ChipResolver → state/brokenRefs reads the plugins-ready
 // signal (`runtime/plugin-boot-signal`). Report the boot as settled, so an
 // unresolved type counts as broken here as it does after the boot.

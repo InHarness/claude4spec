@@ -19,7 +19,7 @@
  *
  * `Tag` and `Stability` are dep-free and RE-EXPORTED from their canonical host
  * module, the catalog's React-free slice (single source of truth). `Tag` is the
- * kit's own minimal tag shape (2.1.25, M34 `hpw2opbb`), not the host's data
+ * kit's own minimal tag shape (2.1.25; the `Tag` type of the `ui-kit-component` record `tag-filter-bar`), not the host's data
  * record: a `TagListItem` from `useTags()` is assignable to it without a cast.
  */
 
@@ -321,8 +321,8 @@ export declare const DiffView: ComponentType<DiffViewProps>;
 export interface EntityDetailToolbarProps {
   title: string;
   onBack?(): void;
+  /** Called on the delete click, with no dialog in between — confirming (and warning about broken references) is the consumer's `confirmDestructive` call. */
   onDelete?(): void;
-  brokenRefs?: { type: string; slug: string }[];
   busy?: boolean;
 }
 export declare const EntityDetailToolbar: ComponentType<EntityDetailToolbarProps>;
@@ -338,7 +338,7 @@ export interface RichTextFieldProps {
 export declare const RichTextField: ComponentType<RichTextFieldProps>;
 
 export interface TagPickerProps {
-  /** Written inline — NOT the catalog's `Tag` type (2.1.26, `d97023iq`); a `useTags()` item is assignable as is. */
+  /** Written inline — NOT the catalog's `Tag` type (2.1.26, the `ui-kit-component` record `tag-picker`); a `useTags()` item is assignable as is. */
   allTags: { slug: string; name: string; color?: string | null }[];
   selected: string[];
   onToggle(slug: string): void;
@@ -396,7 +396,7 @@ export interface EntityVersionHistoryViewProps {
   allowRestore?: boolean;
   /** Show the "Compare to" selection and the diff panel. Default `true`. */
   allowCompare?: boolean;
-  /** Release GROUP heading: `true` (default) heads a group with the release name, `false` with the anonymous `Release <id>`. No per-row pill either way. */
+  /** Switches the release GROUP heading to the form `Release <id>` (default `true`); `false` heads it with the bare release id. No per-row pill either way. */
   showReleasePill?: boolean;
   /** Rendered instead of the default empty state when the entity has no versions. */
   emptyState?: ReactNode;

@@ -76,6 +76,28 @@ vi.mock('@c4s/plugin-runtime', async () => {
   };
 });
 
+// Records the `Badge`s the package itself renders through `/ui` (the factory
+// below hands this module's `Badge` out as the `/ui` export). It does NOT see
+// the chips drawn INSIDE kit components (`EntityListRow`, `TagPicker`): their
+// static `../actions/Badge.js` import is resolved by the module runner to
+// `Badge.tsx`, while this mock is registered under the `.js` specifier, so the
+// two never meet (system verification 2.1.28 round 2). Chips drawn by kit
+// components are asserted in the rendered DOM instead — see `kitBadgeLabels`.
+vi.mock('../../../../src/client/host-ui-kit/actions/Badge.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../../../src/client/host-ui-kit/actions/Badge.js')>();
+  const { createElement: h } = await import('react');
+  const Real = real.Badge as unknown as FC<Record<string, unknown>>;
+  // React's development build may call a function component with no props to
+  // build a component stack; only calls with props are recorded.
+  const Badge = (p?: Record<string, unknown>) => {
+    if (!p) return null;
+    state.badges.push(p as never);
+    return h(Real, p as never);
+  };
+  // Keep the catalog statics (`stability`, `binding`) of the real entry.
+  return { ...real, Badge: Object.assign(Badge, real.Badge) };
+});
+
 vi.mock('@c4s/plugin-runtime/ui', async () => {
   const { createElement: h } = await import('react');
   const [enumMod, grpMod, tagMod, badgeMod, rowMod, gridMod, btnMod, barMod, segMod, hdrMod, layoutMod, emptyMod, loadMod, listRowMod, tagBarMod, popMod] =
@@ -108,7 +130,8 @@ vi.mock('@c4s/plugin-runtime/ui', async () => {
     EnumBadgePicker: spy(enumMod.EnumBadgePicker, (p) => state.enumPickers.push(p as never)),
     GroupedRelationPicker: spy(grpMod.GroupedRelationPicker, (p) => state.relationPickers.push(p as never)),
     TagPicker: spy(tagMod.TagPicker, (p) => state.tagPickers.push(p as never)),
-    Badge: spy(badgeMod.Badge, (p) => state.badges.push(p as never)),
+    // Already recorded by the mock of the kit's Badge module above.
+    Badge: badgeMod.Badge,
     FieldRow: rowMod.FieldRow,
     FieldGrid: gridMod.FieldGrid,
     ActionButton: btnMod.ActionButton,
@@ -169,6 +192,48 @@ const create = readFileSync(join(FRONTEND_SRC, 'create-dialog.tsx'), 'utf-8');
 const slash = readFileSync(join(FRONTEND_SRC, 'slash-create.tsx'), 'utf-8');
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const REPO_ROOT = join(import.meta.dirname, '../../../..');
+const BADGE_MARKUP = 'chip-hover';
+
+/**
+ * Labels of every chip the kit `Badge` drew in `scope`, read from the rendered
+ * DOM: a Badge is a `<span>` carrying the `chip-hover` class, its text is the
+ * label (the colour dot is an empty span). This sees chips drawn inside kit
+ * components, which no module mock of `Badge` reaches.
+ */
+function kitBadgeLabels(scope: ParentNode): string[] {
+  return [...scope.querySelectorAll(`span.${BADGE_MARKUP}`)].map((el) => (el.textContent ?? '').trim());
+}
+
+/**
+ * `chip-hover` identifies the kit `Badge` only if no other component emits it:
+ * among the TSX sources of the host client and of every plugin, the kit's
+ * `actions/Badge.tsx` is the one that does.
+ */
+function expectBadgeMarkupIsBadgeOnly(): void {
+  const owners: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      if (name === 'node_modules' || name === 'dist') continue;
+      const full = join(dir, name);
+      if (statSync(full).isDirectory()) walk(full);
+      else if (name.endsWith('.tsx') && readFileSync(full, 'utf-8').includes(BADGE_MARKUP)) {
+        owners.push(relative(REPO_ROOT, full).split('\\').join('/'));
+      }
+    }
+  };
+  walk(join(REPO_ROOT, 'src/client'));
+  for (const pkg of readdirSync(join(REPO_ROOT, 'plugins'))) {
+    const src = join(REPO_ROOT, 'plugins', pkg, 'src');
+    try {
+      if (statSync(src).isDirectory()) walk(src);
+    } catch {
+      // a package without src/
+    }
+  }
+  expect(owners).toEqual(['src/client/host-ui-kit/actions/Badge.tsx']);
+}
 
 function sampleAc(over: Partial<Ac> = {}): Ac {
   return {
@@ -476,6 +541,60 @@ describe('[entity:ac-list] /acs', () => {
     expect(empty.action).toBeUndefined();
     expect(container.textContent).toContain(AC_LIST_EMPTY_TITLE);
     expect(container.textContent).not.toMatch(/clear filters|reset/i);
+  });
+
+  it('[entity:ac-list] 2.1.28 composition — rows are kit EntityListRows whose kind badge, deprecated-only status badge and tag chips all render through Badge; the Analyze consistency action sits in the kit ActionBar', async () => {
+    state.acs = [
+      sampleAc({ slug: 'ac-one', title: 'Active one.', kind: 'requirement', tags: ['m07'] }),
+      sampleAc({ slug: 'ac-old', title: 'Old one.', kind: 'edge-case', status: 'deprecated', tags: [] }),
+    ];
+    await render(
+      createElement(AcsList, {
+        search: '',
+        tagFilter: [],
+        onSearchChange: () => undefined,
+        onTagToggle: () => undefined,
+        onSelect: () => undefined,
+      }),
+    );
+    // Read from the DOM: the kind / status badges come from the package through
+    // `/ui`, the tag chip from inside the kit `EntityListRow` — both must be
+    // the kit `Badge`'s own markup.
+    expectBadgeMarkupIsBadgeOnly();
+    const labels = kitBadgeLabels(container);
+    // kind badge on every row
+    expect(labels).toContain('requirement');
+    expect(labels).toContain('edge-case');
+    // status badge only for the deprecated criterion (per-row check below)
+    expect(labels).toContain('deprecated');
+    expect(labels).not.toContain('active');
+    // tag chip of the first row via Badge (EntityListRow draws it)
+    expect(labels).toContain('m07');
+    // the bespoke "· deprecated" text span is gone
+    expect(container.textContent).not.toContain('· deprecated');
+    const rowBadges = container.querySelectorAll('[data-testid="ac-row-badges"]');
+    expect(rowBadges).toHaveLength(2);
+    expect(rowBadges[0]!.textContent).not.toContain('deprecated');
+    expect(rowBadges[1]!.textContent).toContain('deprecated');
+    // ActionBar with the one action
+    expect(buttonByText('Analyze consistency', container)).toBeDefined();
+  });
+
+  it('[entity:ac-list] with no active AC the Analyze consistency action is disabled with the "No active AC to analyze" tooltip', async () => {
+    state.acs = [];
+    await render(
+      createElement(AcsList, {
+        search: '',
+        tagFilter: [],
+        onSearchChange: () => undefined,
+        onTagToggle: () => undefined,
+        onSelect: () => undefined,
+      }),
+    );
+    const btn = buttonByText('Analyze consistency', container)!;
+    expect(btn).toBeDefined();
+    expect(btn.disabled).toBe(true);
+    expect(btn.title).toBe('No active AC to analyze');
   });
 });
 

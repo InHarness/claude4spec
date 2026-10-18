@@ -50,6 +50,12 @@ const ANALYSE_PLAN_PROMPT = 'Analyse the plan 3 times';
  * answers the same question — what changed, and when — and the spec had already
  * dropped Compare (D1) before this release.
  */
+/*
+ * 2.1.28 (M10 Host UI Kit slice `0dy3js11`): the footer is the catalog
+ * `ActionBar` — M10 passes action descriptions, never bar markup. The threads
+ * panel (`ArtifactThreadsPanel`) and the version history (`FileVersionHistory`)
+ * are the slice's two recorded DŁUG entries, not rebuilt in this window.
+ */
 type PlanView = 'plan' | 'threads' | 'history';
 
 export function PlanPage({ planPath }: Props) {

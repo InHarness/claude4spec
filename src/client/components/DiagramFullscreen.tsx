@@ -11,12 +11,32 @@ interface Props {
 }
 
 /**
- * The read-only pan+zoom fullscreen (`position:fixed; inset:0; zIndex:1300`) —
- * the form of the `diagram-expand` window's content. 2.1.20 (c4s-plugin-diagram
- * L12, M13 chipprops): it is rendered ONLY through the diagram's
- * `renderOverlay` slot (`DiagramOverlay`, which resolves the record by slug and
- * renders the SVG once, on open); the window's name and the way it opens are
- * the host's. Neither the card nor the chip mounts it directly.
+ * The `z-modal` layer of the design system `c4s-paper-terra` (Layering, 1200):
+ * above the `--z-popover` tier (1100), below the `--z-toast` tier (1300).
+ * ASSUMPTION:dev-2804 — the host token bridge is a closed dictionary with two
+ * layering names (`--z-popover`, `--z-toast`) and no variable for this layer
+ * (catalog record `dialog`), so the overlay takes the layer by its design-system
+ * name here rather than through a bridge variable; the catalog `Dialog` sits on
+ * the same layer by default.
+ */
+export const DIAGRAM_FULLSCREEN_LAYER = 1200;
+
+/**
+ * DEBT (diagram, Host UI Kit rgczgux0) — the fullscreen SHELL of the
+ * `diagram-expand` window (scrim, panel pinned to the whole viewport, close,
+ * layer) fails locality condition (1): each of the three plugin packages
+ * (diagram, code-snippets, spreadsheets) keeps the same shell on its own. The
+ * catalog has no component that replaces it; it is a candidate of the catalog
+ * trajectory `fullscreen-overlay` (M34 `m34traj0`). The pan+zoom canvas with its
+ * shortcuts that the shell wraps stays the package's content.
+ *
+ * The read-only pan+zoom fullscreen (`position:fixed; inset:0`, on the
+ * design-system `z-modal` layer — `dgmfull000`) — the form of the
+ * `diagram-expand` window's content. 2.1.20 (c4s-plugin-diagram L12, M13
+ * chipprops): it is rendered ONLY through the diagram's `renderOverlay` slot
+ * (`DiagramOverlay`, which resolves the record by slug and renders the SVG
+ * once, on open); the window's name and the way it opens are the host's.
+ * Neither the card nor the chip mounts it directly.
  *
  * Wheel → zoom around the cursor, drag → pan, fit-to-screen on open; keys `Esc`
  * close, `+`/`=` and `-`/`_` zoom, `0` reset, `F` fit; scale clamped to [0.1, 12].
@@ -141,7 +161,7 @@ export function DiagramFullscreen({ svg, caption, onClose }: Props) {
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 1300,
+        zIndex: DIAGRAM_FULLSCREEN_LAYER,
         background: 'rgba(47, 42, 37, 0.55)',
         display: 'flex',
         flexDirection: 'column',

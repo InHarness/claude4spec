@@ -10,6 +10,7 @@ import { ResizeHandle } from '../components/ResizeHandle.js';
 import { useChat, holdEndingLabel } from './useChat.js';
 import { useThreadListContext } from './ThreadListContext.js';
 import { BlockRenderer, QueuedMessageBubble } from './BlockRenderer.js';
+import { ChatEditorBridgeProvider } from './ChatEditorBridge.js';
 import { AnnotationPanel } from './AnnotationPanel.js';
 import { CurrentTodoList } from './CurrentTodoList.js';
 import { UsageBadge } from './UsageBadge.js';
@@ -509,6 +510,9 @@ export function ChatOverlay() {
         className="flex-1 flex flex-col min-w-0 min-h-0 relative"
         style={{ background: 'var(--c-bg)' }}
       >
+        {/* 2.1.28 (M05 rehyxchp): the chat-aware EditorBridge — chips in the
+            message tree call the editorBridge singleton, which reaches it. */}
+        <ChatEditorBridgeProvider>
         {/* Header */}
         <div
           className="flex items-center gap-1 px-2.5 py-2 relative"
@@ -912,6 +916,7 @@ export function ChatOverlay() {
           )}
         </div>
         )}
+        </ChatEditorBridgeProvider>
       </aside>
     </div>
   );

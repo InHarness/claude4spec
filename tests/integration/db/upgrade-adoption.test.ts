@@ -92,8 +92,8 @@ describe('upgrading a pre-0.2.2 database', () => {
       //
       //    `created` is not empty, and must not be: a type this database predates
       //    has no table to adopt, so creating one is the correct outcome rather
-      //    than a rebuild. `spreadsheet`, `code_snippet` and `module_dependency`
-      //    all shipped after this legacy schema was frozen.
+      //    than a rebuild. `spreadsheet`, `code_snippet`, `module_dependency` and
+      //    `ui_kit_component` all shipped after this legacy schema was frozen.
       //    What matters is that nothing the legacy chain DID write is in the list.
       //
       //    Compared as a SET: `created` follows module registration order, which
@@ -106,6 +106,9 @@ describe('upgrading a pre-0.2.2 database', () => {
         // 0.2.70 — `c4s-plugin-layered-vertical-slices` grew an entity type.
         'module_dependency',
         'spreadsheet',
+        // 2.1.28 — the builtin `c4s-plugin-host-ui-kit-components` envelope
+        // contributes `ui-kit-component`.
+        'ui_kit_component',
       ]);
       /**
        * 0.2.22 — the adopted tables gain the reserved `title` column, and that

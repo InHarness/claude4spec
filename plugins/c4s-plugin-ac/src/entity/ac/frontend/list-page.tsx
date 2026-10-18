@@ -6,6 +6,7 @@ import { toast } from '@c4s/plugin-runtime';
 import {
   ActionBar,
   ActionButton,
+  Badge,
   EmptyState,
   EntityListHeader,
   EntityListLayout,
@@ -165,13 +166,20 @@ export function AcsList({ search, tagFilter, onSearchChange, onTagToggle, onSele
                 >
                   {a.title}
                 </div>
+                {/*
+                  2.1.28 (ui-view `ac-list`): the `kind` badge and the status
+                  badge (only for `deprecated`) are catalog `Badge`s, like the
+                  tag chips `EntityListRow` draws. The title keeps its one-line
+                  clamp and every tag chip shows (ASSUMPTION:dev-2812).
+                */}
                 <div
                   className="mt-1 flex items-center gap-2 text-[10.5px] font-mono uppercase tracking-wider"
                   style={{ color: 'var(--c-subtle)' }}
+                  data-testid="ac-row-badges"
                 >
-                  <span>{a.kind}</span>
-                  {deprecated && <span>· deprecated</span>}
-                  {a.verifies.length > 0 && <span>· verifies {a.verifies.length}</span>}
+                  <Badge label={a.kind} small dot={false} mono />
+                  {deprecated && <Badge label="deprecated" small dot={false} mono />}
+                  {a.verifies.length > 0 && <span>verifies {a.verifies.length}</span>}
                 </div>
               </EntityListRow>
             );

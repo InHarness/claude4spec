@@ -16,47 +16,22 @@ export interface DiffViewLine {
 type DiffLine = DiffViewLine;
 
 /**
- * The shape `hunks` had BEFORE 0.1.143 — the host-internal `LineDiffLite` line,
- * which a plugin compiled against the old `.d.ts` still passes at runtime.
+ * 2.1.28 (record `diff-view`): `{ op: 'add' | 'del' | 'ctx'; line }` is the ONLY
+ * hunk vocabulary the contract accepts ("Innego słownika hunków kontrakt nie
+ * przyjmuje"). The pre-0.1.143 `{ op: keep|added|removed, content }` fallback is
+ * gone: a producer with another shape adapts on its way in (the M17 page-diff
+ * path does so in `toDiffViewHunks`).
  */
-interface LegacyDiffLine {
-  op: 'keep' | 'added' | 'removed';
-  content: string;
-}
-
-const LEGACY_OPS = { keep: 'ctx', added: 'add', removed: 'del' } as const;
-let warnedLegacyHunks = false;
 
 /**
- * Accept the pre-0.1.143 hunk shape for one release instead of rendering
- * nonsense. Left untranslated, a legacy line falls through `pairRows` as a
- * change (its `op` is never `'ctx'`) and `line` is `undefined`, so an unchanged
- * file renders as a block of blank green additions — a plausible-looking but
- * entirely wrong diff, with nothing in the console to explain it.
- *
- * Exported for unit tests; not part of the published surface.
- */
-export function normalizeHunks(hunks: readonly (DiffLine | LegacyDiffLine)[]): DiffLine[] {
-  return hunks.map((h) => {
-    if (!('content' in h)) return h;
-    if (!warnedLegacyHunks) {
-      warnedLegacyHunks = true;
-      console.warn(
-        '[c4s] DiffView: `hunks` uses the pre-0.1.143 `{ op: keep|added|removed, content }` shape. ' +
-          'Migrate to `{ op: add|del|ctx, line }` (see `lineDiffHunks` in @c4s/plugin-runtime) — ' +
-          'this fallback will be removed.',
-      );
-    }
-    return { op: LEGACY_OPS[h.op], line: h.content };
-  });
-}
-
-/**
- * `DiffView` (Panel detalu, `experimental`) — the plugin-facing parallel of
- * the host-internal `LineDiffViewer` (M17/L5, not published to plugins).
- * Strictly props-in: it renders an already-computed diff, never computes one
- * itself. Typical data source is the `lineDiffHunks()` util over two version
- * snapshots, or an author-supplied `before`/`after` pair.
+ * `DiffView` (Panel detalu, `experimental`, record `diff-view`) — the one
+ * line-diff renderer of the catalog's consumers. Strictly props-in: it renders
+ * an already-computed diff, never computes one itself. Non-empty `hunks` win and
+ * render in `mode`; without them a full `before`/`after` pair renders as two
+ * plain-text panes side by side (no comparison, no add/del colours, `mode` does
+ * not apply); with neither — half a pair is not a pair — it renders `EmptyState`.
+ * `hunks` come from `lineDiffHunks()`, the host's page-diff adapter or the
+ * author; `useVersionDiff` (a semantic delta, not text lines) is never a source.
  */
 export interface DiffViewProps {
   /** Precomputed line hunks. Wins over `before`/`after` if both are given. */
@@ -73,12 +48,15 @@ export interface DiffViewProps {
 function DiffViewImpl({ hunks, before, after, title, mode = 'inline' }: DiffViewProps) {
   const hasHunks = Boolean(hunks && hunks.length > 0);
   const hasBeforeAfter = !hasHunks && before !== undefined && after !== undefined;
-  const lines = hasHunks ? normalizeHunks(hunks as DiffLine[]) : [];
+  const lines = hasHunks ? (hunks as DiffLine[]) : [];
 
   return (
     <div className="flex flex-col gap-1.5">
       {title && (
-        <div className="text-[12.5px] font-medium" style={{ color: 'var(--c-ink)', fontFamily: 'var(--font-heading)' }}>
+        <div
+          className="font-medium"
+          style={{ color: 'var(--c-ink)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-body)' }}
+        >
           {title}
         </div>
       )}
@@ -100,8 +78,8 @@ function DiffViewImpl({ hunks, before, after, title, mode = 'inline' }: DiffView
 function InlineHunks({ hunks }: { hunks: DiffLine[] }) {
   return (
     <div
-      className="font-mono text-[11.5px] leading-snug rounded overflow-hidden"
-      style={{ background: 'var(--c-panel)', border: '1px solid var(--c-hair)' }}
+      className="leading-snug rounded overflow-hidden"
+      style={{ ...CODE_TYPE, background: 'var(--c-panel)', border: '1px solid var(--c-hair)' }}
     >
       {hunks.map((line, i) => (
         <HunkRow key={i} line={line} />
@@ -155,7 +133,7 @@ export function pairRows(hunks: DiffLine[]): PairedRow[] {
 function SplitHunks({ hunks }: { hunks: DiffLine[] }) {
   const rows = pairRows(hunks);
   return (
-    <div className="grid grid-cols-2 gap-px rounded overflow-hidden" style={{ background: 'var(--c-hair)' }}>
+    <div className="grid grid-cols-2 gap-px rounded overflow-hidden" style={{ ...CODE_TYPE, background: 'var(--c-hair)' }}>
       <div>{rows.map((r, i) => <HunkRow key={i} line={r.left} />)}</div>
       <div>{rows.map((r, i) => <HunkRow key={i} line={r.right} />)}</div>
     </div>
@@ -187,8 +165,9 @@ function BeforeAfterPanes({ before, after }: { before: string; after: string }) 
 function TextPane({ content }: { content: string }) {
   return (
     <div
-      className="font-mono text-[11.5px] leading-snug overflow-hidden"
-      style={{ background: 'var(--c-panel)', color: 'var(--c-muted)' }}
+      data-diff-pane="text"
+      className="leading-snug overflow-hidden"
+      style={{ ...CODE_TYPE, background: 'var(--c-panel)', color: 'var(--c-muted)' }}
     >
       {content.split('\n').map((line, i) => (
         <div key={i} className="whitespace-pre-wrap break-words" style={{ paddingLeft: 6, paddingRight: 8 }}>
@@ -199,6 +178,9 @@ function TextPane({ content }: { content: string }) {
   );
 }
 
+/** The bridge's `code` typography tokens (anatomy of record `diff-view`). */
+const CODE_TYPE = { fontFamily: 'var(--font-mono)', fontSize: 'var(--text-code)' } as const;
+
 function prefixOf(op: DiffLine['op']): string {
   if (op === 'add') return '+';
   if (op === 'del') return '−';
@@ -206,8 +188,9 @@ function prefixOf(op: DiffLine['op']): string {
 }
 
 function stylesFor(op: DiffLine['op']): { bg: string; fg: string } {
-  if (op === 'add') return { bg: 'rgba(16,185,129,0.10)', fg: 'var(--c-ink)' };
-  if (op === 'del') return { bg: 'rgba(220,38,38,0.10)', fg: 'var(--c-ink)' };
+  // Anatomy of record `diff-view`: add on the bridge token `--c-green-soft`, del on `--c-red-soft`.
+  if (op === 'add') return { bg: 'var(--c-green-soft)', fg: 'var(--c-ink)' };
+  if (op === 'del') return { bg: 'var(--c-red-soft)', fg: 'var(--c-ink)' };
   return { bg: 'transparent', fg: 'var(--c-muted)' };
 }
 

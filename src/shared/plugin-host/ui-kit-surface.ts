@@ -46,9 +46,9 @@ export const UI_KIT_STABLE_COMPONENTS = [
 export type StableUiKitComponent = (typeof UI_KIT_STABLE_COMPONENTS)[number];
 
 /**
- * 2.1.25 (M34 `hpw2opbb`) — the catalog's one tag type. `TagFilterBar.tags`
+ * 2.1.25 (the `Tag` type of the `ui-kit-component` record `tag-filter-bar`) — the catalog's one tag type. `TagFilterBar.tags`
  * and `EntityListRow.tagLookup` take it (2.1.26: `TagPicker.allTags` no longer
- * does — its item shape is written inline, `d97023iq`).
+ * does — its item shape is written inline, record `tag-picker`).
  *
  * It is a minimal STRUCTURAL shape, tied to no data source: the kit reads only
  * these four fields. A richer record — the M18 `TagListItem` from `useTags()`

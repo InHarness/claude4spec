@@ -16,8 +16,10 @@
  *     content is the type's `renderOverlay` — the chip (and the card) opens
  *     nothing itself;
  *   - the fullscreen forms (`DiagramFullscreen` behind `DiagramOverlay`,
- *     `CodeSnippetFullscreen`) are that window's content and resolve their
- *     record by `slug`, on open — nothing is handed over by a card any more.
+ *     `CodeSnippetFullscreen`) are that window's content; `DiagramFullscreen`
+ *     resolves its record by `slug`, on open, while `CodeSnippetFullscreen` is
+ *     one component with two inputs (`2i5ypc7q`): the card's ready record, or
+ *     a fetch by `slug` when opened from the chip.
  *
  * ASSUMPTION:dev-2005 — `code-snippet`'s `/code-snippet` trigger stays declared
  * once, in `contributes.commands` (as dev-2004 does for the visible package
@@ -317,7 +319,9 @@ describe('diagram — L12 (DiagramFullscreen as the `diagram-expand` content)', 
     expect(renderCalls.count).toBe(1);
     const dialog = document.querySelector('[aria-label="Diagram fullscreen"]') as HTMLElement;
     expect(dialog.style.position).toBe('fixed');
-    expect(dialog.style.zIndex).toBe('1300');
+    // On the design-system `z-modal` layer (1200) — above popovers (1100), below
+    // toasts (1300) — not on the toast tier it used to share with a literal 1300.
+    expect(dialog.style.zIndex).toBe('1200');
     expect(dialog.querySelector('[data-testid="dgm-svg"]')).not.toBeNull();
     expect(dialog.textContent).toContain('Checkout');
 
@@ -361,7 +365,7 @@ describe('code-snippet — L11 envelope', () => {
 });
 
 describe('code-snippet — L12 (CodeSnippetFullscreen as the `code-snippet-expand` content)', () => {
-  it('[section:2i5ypc7q] the window content resolves its record by slug, shows the full code with filename and language; Esc closes', async () => {
+  it('[section:2i5ypc7q] opened from the chip (INLINE): the window content fetches its record by slug and shows the full code with filename and language; Esc closes', async () => {
     snippetFetches.length = 0;
     const onClose = vi.fn();
     const host = document.createElement('div');
@@ -377,14 +381,72 @@ describe('code-snippet — L12 (CodeSnippetFullscreen as the `code-snippet-expan
     expect(dialog.style.position).toBe('fixed');
     expect(dialog.textContent).toContain('src/manifest.ts');
     expect(dialog.textContent).toContain('export const manifest');
-    // No prefetched-record entrance: the slot's props are the window's own.
-    expect(codeOf('plugins/c4s-plugin-code-snippets/src/entity/code-snippet/frontend/fullscreen.tsx')).not.toMatch(/\bentity\b/);
 
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     });
     expect(onClose).toHaveBeenCalledTimes(1);
     await act(async () => r.unmount());
+    host.remove();
+  });
+
+  it('[section:2i5ypc7q] opened from the card (BLOCK, Maximize2): the same component takes the card\'s ready record and fetches nothing; a later chip open fetches by slug again', async () => {
+    const record = {
+      slug: 'one',
+      title: 'From the card',
+      language: 'py',
+      filename: 'card/held.py',
+      code: 'print("held by the card")',
+    };
+    // The card: its Maximize2 button hands over the record it holds, then calls the host's onOpen.
+    const cardHost = document.createElement('div');
+    document.body.appendChild(cardHost);
+    const cardRoot = createRoot(cardHost);
+    const onOpen = vi.fn();
+    await act(async () => {
+      cardRoot.render(
+        createElement(codeSnippetFrontendModule.renderCard as never, { slug: 'one', entity: record, onOpen }),
+      );
+    });
+    await flush();
+    const maximize = cardHost.querySelector('button[aria-label="Open fullscreen"]') as HTMLButtonElement;
+    expect(maximize).not.toBeNull();
+    snippetFetches.length = 0;
+    await act(async () => {
+      maximize.click();
+    });
+    expect(onOpen).toHaveBeenCalledTimes(1);
+
+    // The window content the host then mounts — the same renderOverlay component, same props as from a chip.
+    expect(codeSnippetFrontendModule.renderOverlay).toBe(CodeSnippetFullscreen);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const r = createRoot(host);
+    await act(async () => {
+      r.render(createElement(CodeSnippetFullscreen, { slug: 'one', onClose: () => {} }));
+    });
+    await flush();
+    expect(snippetFetches).toEqual([]);
+    const dialog = host.querySelector('[data-testid="code-snippet-fullscreen"]') as HTMLElement;
+    expect(dialog.textContent).toContain('card/held.py');
+    expect(dialog.textContent).toContain('held by the card');
+    expect(dialog.textContent).not.toContain('export const manifest');
+    await act(async () => r.unmount());
+
+    // The hand-off is consumed once: a following chip open of the same slug fetches.
+    const host2 = document.createElement('div');
+    document.body.appendChild(host2);
+    const r2 = createRoot(host2);
+    await act(async () => {
+      r2.render(createElement(CodeSnippetFullscreen, { slug: 'one', onClose: () => {} }));
+    });
+    await flush();
+    expect(snippetFetches).toEqual(['one']);
+    await act(async () => r2.unmount());
+    await act(async () => cardRoot.unmount());
+    host.remove();
+    host2.remove();
+    cardHost.remove();
   });
 });
 

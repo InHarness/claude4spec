@@ -108,6 +108,10 @@ describe('M34/L12 — one implementation rule', () => {
     expect(src).toMatch(/'project-plugins-trust',[\s\S]*?\{ dismissible: false \}/);
     // A gate another overlay can paint over cannot be answered.
     expect(src).toMatch(/zIndex=\{1300\}/);
+    // 2.1.28 (M33 `gox0ptn4`): the two answers are catalog ActionButtons, not
+    // hand-styled <button>s.
+    expect(src).toMatch(/host-ui-kit\/actions\/ActionButton\.js/);
+    expect(src).not.toMatch(/<button\b/);
 
     const dialog = readFileSync(join(KIT_DIR, 'overlay/Dialog.tsx'), 'utf8');
     expect(dialog, 'dismissible must default to true').toMatch(/dismissible = true/);

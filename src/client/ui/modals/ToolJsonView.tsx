@@ -10,7 +10,9 @@ export type { ToolJsonItem } from '../events.js';
  * 0.2.110 M05 — the `tool-json-view` window (`openModal('tool-json-view', …)`),
  * replacing the per-card `ToolJsonModal` component. Request/Response `<pre>`
  * panels, no copy action. Keeps its own 1100px panel (wider than `Dialog`'s
- * size tiers — a declared exception of the one-implementation rule).
+ * size tiers). It belongs to the chat overlay (M05), which is outside L12, so
+ * the one-implementation rule does not reach it and it needs no `Host-local
+ * components` declaration (M34 `hntah0r7`).
  */
 export function ToolJsonView({ request, onClose: close }: ModalFormProps<'tool-json-view'>) {
   const { title, items } = request.props;

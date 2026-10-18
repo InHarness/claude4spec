@@ -2353,6 +2353,30 @@ export function registerCoreOperations(): void {
   typeOp('analyze_ac_against_entities', 'Analyse acceptance criteria against the entity graph. Unanalysable input lands in `skipped_reasons[]`, not in an error.', 'read', true);
   typeOp('validate_diagram', 'Validate diagram source. Pure; bad syntax is a warning, not an error.', 'read', true);
 
+  /**
+   * 2.1.28 (c4s-plugin-host-ui-kit-components `6o1rfh21`) — the one operation of
+   * `ui-kit-component`. Read-only and idempotent: it reports violations of the
+   * cross-field and cross-record rules and writes nothing. `cli` is n/a — a
+   * type-specific surface with no sense in the command surface; `rest` reaches
+   * it through the generic host proxy.
+   */
+  typeOp(
+    'audit_ui_kit_components',
+    'Check ui-kit-component records against the cross-field and cross-record rules the schema cannot express. Reports, never fixes.',
+    'read',
+    true,
+    { slugs: z.array(z.string()).optional(), rules: z.array(z.string()).optional() },
+    {
+      contentInput: 'n/a',
+      channels: {
+        internal: direct(),
+        cli: na('powierzchnia typo-specyficzna, brak sensu w powierzchni komendowej'),
+        mcp: direct(),
+        rest: via('call_type_tool', 'generic host proxy — the plugin contributes no router'),
+      },
+    },
+  );
+
   // ── M05 Agent turn ────────────────────────────────────────────────────────
 
   /**

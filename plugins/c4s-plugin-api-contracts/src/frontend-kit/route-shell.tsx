@@ -51,9 +51,8 @@ export const Pane: FC<{ children: ReactNode }> = ({ children }) => (
  *
  * Without it `DocEditor` resolves no bridge from context and falls back to its
  * internal no-op, so clicking an entity chip inside the description does
- * nothing. It is worse than local: `DocEditor` publishes whatever bridge it has
- * into the process-wide singleton for as long as it is mounted, so that no-op
- * also disables chips rendered outside this React tree.
+ * nothing: chips call the `editorBridge` singleton, which delegates to the
+ * nearest `EditorBridgeProvider` around them — here, that no-op.
  *
  * `openEntity` goes through the host's navigation helper rather than a local
  * route push, because the target is any entity type — including ones this

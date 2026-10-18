@@ -258,7 +258,11 @@ describe('builtin envelope — real load path', () => {
     //
     // Later shrank BOTH by one, to NINE: `c4s-plugin-mcp-tools` left the host
     // repo — `mcp-tool` is now a project plugin, not a built-in envelope.
+    //
+    // 2.1.28 grew BOTH by one, to TEN: `c4s-plugin-host-ui-kit-components` is a
+    // new package contributing a new type, `ui-kit-component`.
     expect(parsed.statuses).toEqual([
+      'loaded',
       'loaded',
       'loaded',
       'loaded',
@@ -278,6 +282,7 @@ describe('builtin envelope — real load path', () => {
       'endpoint',
       'module-dependency',
       'spreadsheet',
+      'ui-kit-component',
       'ui-view',
     ]);
   });

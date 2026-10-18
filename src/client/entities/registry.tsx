@@ -38,7 +38,10 @@ export interface EntityCardProps<T> extends EntityChipProps<T> {
 /**
  * `detailPanel` props — four REQUIRED fields (2.1.16). The host never renders the
  * slot and calls none of the callbacks; the plugin's detail route passes them to
- * its own panel. `onBack` is unused.
+ * its own panel. `onBack` is unused. No `onOpenEntity` / `onOpenPage`: navigation
+ * to a related entity or page goes through `editorBridge.openEntity(type, slug)` /
+ * `editorBridge.openSection(...)` (re-exported from `@c4s/plugin-runtime`, M13
+ * xr8fs8dc / z7l89jhf, 2.1.28), not through the slot's props.
  */
 export interface EntityDetailProps {
   slug: string;

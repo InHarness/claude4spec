@@ -2,7 +2,7 @@ import { getEntityDef } from '../../../entities/registry.js';
 import { categoriseBrokenChip } from '../../../core/plugin-host/host.js';
 import { useRegistryVersion } from '../../../core/plugin-host/useRegistryVersion.js';
 import { openEntityHandler } from '../../../entities/openEntity.js';
-import { useEditorBridge } from '../../../tiptap/EditorContext.js';
+import { editorBridge } from '../../../runtime/editor-bridge.js';
 import { BlockBrokenChip } from '../../../tiptap/extensions/views/BrokenChip.js';
 import { NotListable } from '../../../tiptap/extensions/views/NotListable.js';
 import type { TagRenderProps } from '../../renders.js';
@@ -21,7 +21,6 @@ export function ElementListRender({ attrs, variant }: TagRenderProps) {
   const type = attr(attrs, 'type');
   const slugs = csv(attr(attrs, 'slugs'));
   const def = getEntityDef(type);
-  const bridge = useEditorBridge();
 
   if (variant === 'inline') {
     return (
@@ -52,7 +51,7 @@ export function ElementListRender({ attrs, variant }: TagRenderProps) {
       </div>
       <ul className="p-1">
         {slugs.map((slug) => (
-          <Row key={slug} type={type} slug={slug} onOpen={openEntityHandler(type, slug, bridge)} />
+          <Row key={slug} type={type} slug={slug} onOpen={openEntityHandler(type, slug, editorBridge)} />
         ))}
         {slugs.length === 0 && (
           <li className="px-3 py-2 text-[12px] italic" style={{ color: 'var(--c-subtle)' }}>

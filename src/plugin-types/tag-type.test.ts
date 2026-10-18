@@ -1,5 +1,5 @@
 /**
- * 2.1.25 (M34 `hpw2opbb`, M18 `mn59j0le`) — the Host UI Kit's one tag type, as a
+ * 2.1.25 (the `Tag` type of the `ui-kit-component` record `tag-filter-bar`, M18 `mn59j0le`) — the Host UI Kit's one tag type, as a
  * plugin author's compiler sees it.
  *
  * Each compile is an author's browser-leg file: the browser ambient leg as the
@@ -54,12 +54,12 @@ const IMPORTS = [
   "import type { Tag, TagBarProps, EntityListRowProps, TagPickerProps } from '@c4s/plugin-runtime/ui';",
 ].join('\n');
 
-describe('[section:hpw2opbb] the kit\'s one Tag type', () => {
+describe('the kit\'s one Tag type', () => {
   it('[ac:ac-pozycja-o-ksztalcie-tag-list-item-jes] a tag-list-item is assignable to Tag from @c4s/plugin-runtime/ui without a cast', () => {
     // A plugin hands `useTags()` items straight to every kit slot that takes a
     // tag: the one `Tag`, `TagFilterBar.tags`, `EntityListRow.tagLookup` (a map
     // the plugin builds from the same list) — and to `TagPicker.allTags`, whose
-    // inline item shape (2.1.26, `d97023iq`) the same items also satisfy.
+    // inline item shape (2.1.26, record `tag-picker`) the same items also satisfy.
     const source = [
       IMPORTS,
       'declare const items: TagListItem[];',
@@ -80,7 +80,31 @@ describe('[section:hpw2opbb] the kit\'s one Tag type', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('[section:hpw2opbb] 2.1.26: TagPicker.allTags is not a consumer of Tag — its item shape is inline, without description', () => {
+  it('[section:mn59j0le] useTags().data items go to TagPicker.allTags, to the /ui Tag and into an EntityListRow tagLookup as they are', () => {
+    // 2.1.28: the item is assignable to `Tag` (record `tag-filter-bar`), the
+    // plugin builds `tagLookup` from the same list, and the item is also
+    // assignable to the `allTags` prop of the `experimental` TagPicker, whose
+    // narrower item shape is written inline.
+    const source = [
+      IMPORTS,
+      'export function useKitInputs() {',
+      '  const items = useTags().data ?? [];',
+      "  const allTags: TagPickerProps['allTags'] = items;",
+      '  const tags: Tag[] = items;',
+      "  const tagLookup: EntityListRowProps['tagLookup'] = new Map(items.map((t) => [t.slug, t]));",
+      '  return { allTags, tags, tagLookup };',
+      '}',
+    ].join('\n');
+    expect(source).not.toMatch(/\bas\b/);
+    expect(compileAuthorFile(source)).toEqual([]);
+
+    // Not vacuous: an item without `name` does not satisfy the picker.
+    expect(
+      compileAuthorFile(`${IMPORTS}\ndeclare const items: { slug: string }[];\nexport const allTags: TagPickerProps['allTags'] = items;`).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('2.1.26: TagPicker.allTags is not a consumer of Tag — its item shape is inline, without description', () => {
     // The inline `{ slug; name; color? }` item takes a tag without a description.
     const ok = [
       IMPORTS,
