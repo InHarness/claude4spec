@@ -446,3 +446,112 @@ describe('runAgent — RESUME_CONFIG_LOCKED from the peer', () => {
     expect(urls.at(-1)).toContain('/threads/T-old/ask');
   });
 });
+
+/**
+ * 2.1.29 (M11) — `planPath` attach: a new chat thread on an existing plan via
+ * the generic artifact-attach route (`kind=plan`), then the run-turn on it.
+ */
+describe('runAgent — plan attach (planPath)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  type Reply = { status: number; body: unknown };
+  function stubPlanFlow(opts: { attach?: Reply; ask?: Reply } = {}): { calls: Array<{ url: string; body: unknown }> } {
+    const calls: Array<{ url: string; body: unknown }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: { body?: string }) => {
+        calls.push({ url: String(url), body: init?.body ? JSON.parse(init.body) : undefined });
+        const reply = (r: Reply) => ({ status: r.status, ok: r.status < 400, json: async () => r.body });
+        if (String(url).endsWith('/config')) return reply({ status: 200, body: VALID_CONFIG });
+        if (String(url).endsWith('/threads')) {
+          return reply(opts.attach ?? { status: 200, body: { data: { threadId: 'T-plan' } } });
+        }
+        return reply(opts.ask ?? { status: 200, body: { threadId: 'T-plan', answer: 'done' } });
+      }),
+    );
+    return { calls };
+  }
+
+  it('[ac:ac-c4s-agent-msg-plan-planpath-zwraca-th] attaches through /artifacts/plan/<planPath>/threads and returns that threadId', async () => {
+    const { calls } = stubPlanFlow();
+    const result = await runAgent({ ...BASE, message: 'Wykonaj plan', planPath: 'auth-refactor.md' });
+    expect(result.threadId).toBe('T-plan');
+    const create = calls.find((c) => c.url.endsWith('/threads'));
+    expect(create?.url).toMatch(/\/api\/projects\/[^/]+\/artifacts\/plan\/auth-refactor\.md\/threads$/);
+    // The attach route takes neither a context nor a planning mode.
+    expect(create?.body).toEqual({});
+  });
+
+  it('[ac:ac-tura-uruchomiona-przez-c4s-agent-plan] runs the turn in the thread the attach created', async () => {
+    const { calls } = stubPlanFlow();
+    await runAgent({ ...BASE, message: 'Wykonaj plan', planPath: 'auth-refactor.md' });
+    const ask = calls.find((c) => c.url.endsWith('/ask'));
+    expect(ask?.url).toMatch(/\/threads\/T-plan\/ask$/);
+    expect((ask?.body as { message: string }).message).toBe('Wykonaj plan');
+  });
+
+  it('[ac:ac-plan-z-przedrostkiem-claude4spec-plan] strips a leading .claude4spec/plans/ — both spellings attach the same plan', async () => {
+    const urls: string[] = [];
+    for (const planPath of ['nested/auth-refactor.md', '.claude4spec/plans/nested/auth-refactor.md']) {
+      const { calls } = stubPlanFlow();
+      await runAgent({ ...BASE, message: 'go', planPath });
+      urls.push(calls.find((c) => c.url.endsWith('/threads'))!.url);
+      vi.unstubAllGlobals();
+    }
+    expect(urls[0]).toMatch(/\/artifacts\/plan\/nested\/auth-refactor\.md\/threads$/);
+    expect(urls[1]).toBe(urls[0]);
+  });
+
+  it.each([
+    ['ac-plan-razem-z-thread-konczy-sie-invali', { threadId: 'T-old' }],
+    ['ac-plan-razem-z-brief-konczy-sie-invalid', { briefPath: 'b.md' }],
+    ['ac-plan-razem-z-ct-innym-niz-chat-konczy', { contextType: 'brief' as const }],
+    ['ac-plan-razem-z-ct-innym-niz-chat-konczy', { contextType: 'ask' as const }],
+  ])('[ac:%s] rejects planPath with %o locally — INVALID_ARGS, no request', async (_slug, extra) => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const err = await runAgent({ ...BASE, message: 'go', planPath: 'p.md', ...extra }).catch((e) => e);
+    expect(err).toBeInstanceOf(AgentError);
+    expect((err as AgentError).code).toBe('INVALID_ARGS');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('accepts contextType chat together with planPath', async () => {
+    const { calls } = stubPlanFlow();
+    await runAgent({ ...BASE, message: 'go', planPath: 'p.md', contextType: 'chat' });
+    expect(calls.some((c) => /\/artifacts\/plan\/p\.md\/threads$/.test(c.url))).toBe(true);
+  });
+
+  it('refuses a traversing planPath before any thread call', async () => {
+    const { calls } = stubPlanFlow();
+    const err = await runAgent({ ...BASE, message: 'go', planPath: '../outside.md' }).catch((e) => e);
+    expect((err as AgentError).code).toBe('INVALID_ARGS');
+    expect(calls.some((c) => c.url.endsWith('/threads'))).toBe(false);
+  });
+
+  it('[ac:ac-plan-ze-sciezka-nieistniejacego-planu] a 404 PLAN_NOT_FOUND from the attach route surfaces as NOT_FOUND, no turn', async () => {
+    const { calls } = stubPlanFlow({
+      attach: {
+        status: 404,
+        body: { error: { code: 'PLAN_NOT_FOUND', message: "plan 'nope.md' not found", hint: 'plans: a.md' } },
+      },
+    });
+    const err = await runAgent({ ...BASE, message: 'go', planPath: 'nope.md' }).catch((e) => e);
+    expect(err).toBeInstanceOf(AgentError);
+    expect((err as AgentError).code).toBe('NOT_FOUND');
+    expect((err as AgentError).message).toContain('nope.md');
+    expect((err as AgentError).hint).toBe('plans: a.md');
+    expect(calls.some((c) => c.url.endsWith('/ask'))).toBe(false);
+  });
+
+  it('[ac:ac-blad-run-turn-po-dowiazaniu-watku-prz] a run-turn failure after the attach carries the created threadId and a --thread resume hint', async () => {
+    stubPlanFlow({
+      ask: { status: 409, body: { error: { code: 'STREAM_IN_PROGRESS', message: 'a turn is already streaming' } } },
+    });
+    const err = await runAgent({ ...BASE, message: 'go', planPath: 'p.md' }).catch((e) => e);
+    expect(err).toBeInstanceOf(AgentError);
+    expect((err as AgentError).code).toBe('STREAM_IN_PROGRESS');
+    expect((err as AgentError).details).toEqual({ threadId: 'T-plan' });
+    expect((err as AgentError).hint).toContain('--thread T-plan');
+  });
+});

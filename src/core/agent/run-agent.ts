@@ -40,6 +40,7 @@ export type { AgentErrorCode } from './http.js';
  *   await runAgent({ message: '...', server: 'http://other:4501', threadId: '...' })
  *   await runAgent({ message: '...', contextType: 'brief', briefPath: '...' })   // attach-mode
  *   await runAgent({ message: '...', contextType: 'brief' })                     // create-mode
+ *   await runAgent({ message: '...', planPath: 'auth-refactor.md' })             // attach planu
  *
  * Dla `contextType='brief'` tryb rozstrzyga `briefPath`: podany → attach, brak
  * → create. Plik briefu powstaje w kroku 3, PRZED tura: `runAgent` nie startuje
@@ -80,6 +81,9 @@ export interface AgentParams {
    * briefie; jego OBECNOSC rozstrzyga tryb (podany → attach, brak → create).
    */
   briefPath?: string;
+  planPath?: string; // attach planu (`--plan`): nowy watek chat na istniejacym planie;
+                     // wyklucza threadId, briefPath i contextType inny niz 'chat';
+                     // zamkniete dla narzedzia MCP c4s-tools.ask
 
   /**
    * Create-payload — wylacznie dla `contextType='brief'`. W CALOSCI opcjonalny,
@@ -152,6 +156,37 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
   /** Cialo `POST /api/briefs` policzone z gory — tu zyje walidacja okna. */
   let briefCreateBody: Record<string, unknown> | undefined;
   let briefAttach = false;
+  /** Sciezka planu wzgledem `plansDir`, juz zakodowana pod segment URL. */
+  let planEncoded: string | undefined;
+  if (params.planPath !== undefined) {
+    // Tryb planu ZAWSZE zaklada nowy watek `chat` — kontynuacja, brief ani inny
+    // kontekst nie maja z nim sensu. Sprawdzane przed galezia `threadId`, bo ta
+    // po cichu wygrywa z reszta argumentow.
+    if (params.threadId) {
+      throw new AgentError('INVALID_ARGS', 'planPath does not go with threadId (a plan attach always creates a new thread)');
+    }
+    if (params.briefPath) {
+      throw new AgentError('INVALID_ARGS', 'planPath does not go with briefPath');
+    }
+    if (params.contextType && params.contextType !== 'chat') {
+      throw new AgentError(
+        'INVALID_ARGS',
+        `planPath creates a chat thread; contextType '${params.contextType}' does not go with it`,
+      );
+    }
+    const windowFlags = briefWindowFlagsPresent(params);
+    if (windowFlags.length > 0) {
+      throw new AgentError(
+        'INVALID_ARGS',
+        `planPath does not go with the brief window arguments (${windowFlags.join('/')})`,
+      );
+    }
+    const normalized = params.planPath.replace(/^(\.\/)?\.claude4spec\/plans\//, '');
+    if (!normalized.trim()) {
+      throw new AgentError('INVALID_ARGS', 'planPath is required (got an empty value)');
+    }
+    planEncoded = encodeArtifactPath(normalized);
+  }
   if (!params.threadId) {
     if (ct !== 'chat' && ct !== 'brief' && ct !== 'patch' && ct !== 'ask') {
       throw new AgentError(
@@ -198,6 +233,7 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
   // --- create-thread (context-specific) — pomijany dla threadId ----------
   let threadId: string;
   let mintedBriefPath: string | undefined;
+  let planThreadCreated = false;
   if (params.threadId) {
     threadId = params.threadId;
   } else if (briefCreateBody) {
@@ -212,6 +248,23 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
     const encoded = encodeArtifactPath(params.briefPath as string);
     const created = await postJson(`${apiBase}/artifacts/brief/${encoded}/threads`, {});
     threadId = pickThreadId(created);
+  } else if (planEncoded !== undefined) {
+    // Ta sama generyczna trasa dowiazania co brief; dla `kind=plan` serwer
+    // zaklada watek `chat` (plan_mode = 0) z `plan_path`. Plan `applied: true`
+    // nie jest odrzucany.
+    let created: Record<string, unknown>;
+    try {
+      created = await postJson(`${apiBase}/artifacts/plan/${planEncoded}/threads`, {});
+    } catch (err) {
+      // 404 z trasy dowiazania (serwer mowi `PLAN_NOT_FOUND`) → `NOT_FOUND`,
+      // jedyny kod tej rodziny dla nieznanego adresu.
+      if (err instanceof AgentError && (err.code === 'PLAN_NOT_FOUND' || err.code === 'NOT_FOUND')) {
+        throw new AgentError('NOT_FOUND', err.message, err.hint);
+      }
+      throw err;
+    }
+    threadId = pickThreadId(created);
+    planThreadCreated = true;
   } else {
     // 'chat' + 'ask' share the generic create-thread route; the server
     // validates `context_type` (only 'chat'/'ask' accepted on this path).
@@ -222,11 +275,26 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
   // --- run-turn (generyczny po context_type) ------------------------------
   // Long peer turns are legitimate — this is the one postJson call that must
   // not be bounded by undici's default 300s headers/body timeout.
-  const result = await postJson(
-    `${apiBase}/threads/${encodeURIComponent(threadId)}/ask`,
-    { message, model, effort },
-    { dispatcher: runTurnDispatcher },
-  );
+  let result: Record<string, unknown>;
+  try {
+    result = await postJson(
+      `${apiBase}/threads/${encodeURIComponent(threadId)}/ask`,
+      { message, model, effort },
+      { dispatcher: runTurnDispatcher },
+    );
+  } catch (err) {
+    // Watek na planie juz istnieje — wznowienie to `--thread`, nie kolejne
+    // `--plan` (to dolozyloby nastepny watek na planie).
+    if (planThreadCreated && err instanceof AgentError) {
+      throw new AgentError(
+        err.code,
+        err.message,
+        `the plan thread was created; resume it with: c4s agent "<msg>" --thread ${threadId}`,
+        { threadId },
+      );
+    }
+    throw err;
+  }
   const answer = typeof result.answer === 'string' ? result.answer : '';
   const outThreadId = typeof result.threadId === 'string' ? result.threadId : threadId;
   const out: AgentResult = { threadId: outThreadId, answer };

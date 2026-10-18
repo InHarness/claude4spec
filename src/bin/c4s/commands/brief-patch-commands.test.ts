@@ -291,7 +291,7 @@ describe('[ac:ac-rodzina-brief-patch-list-briefs-read] the brief/patch family de
       return bodyPath();
     };
 
-    it('posts title + the file`s bytes to /plans and prints planPath + hash', async () => {
+    it('[ac:ac-wyjscie-c4s-create-plan-niesie-w-thre] posts title + the file`s bytes to /plans and prints the server reply untransformed — planPath, hash, threads: [carrier]', async () => {
       reply = { data: { planPath: 'auth-rollout.md', hash: 'h1', threads: ['t-9'] } };
       const body = '## Step\n\n`backticks` and "quotes" survive\n';
       await runCreatePlan(args('create-plan', '--title', 'Auth rollout', '--body-file', writeBody(body)));
@@ -300,7 +300,7 @@ describe('[ac:ac-rodzina-brief-patch-list-briefs-read] the brief/patch family de
       expect(seen[0]!.method).toBe('POST');
       expect(seen[0]!.url).toMatch(/\/plans$/);
       expect(JSON.parse(seen[0]!.body)).toEqual({ title: 'Auth rollout', content: body });
-      expect(printed()).toEqual({ planPath: 'auth-rollout.md', hash: 'h1' });
+      expect(printed()).toEqual({ planPath: 'auth-rollout.md', hash: 'h1', threads: ['t-9'] });
     });
 
     it('requires both flags, and refuses an unreadable --body-file locally with the resolved path', async () => {

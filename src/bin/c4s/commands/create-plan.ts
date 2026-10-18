@@ -53,14 +53,11 @@ export async function runCreatePlan(args: ParsedArgs): Promise<void> {
     );
   }
 
-  const created = (await delegatePost(args, '/plans', { title, content })) as {
-    planPath: string;
-    hash: string;
-    threads: string[];
-  };
-
-  // `hash` rides along because it arms the first `update_plan` without a read.
-  writeOutput({ planPath: created.planPath, hash: created.hash }, args);
+  // The server's `{ planPath, hash, threads }` goes out untransformed: `hash`
+  // arms the first `update_plan` without a read, `threads[0]` is the carrier
+  // thread to continue with `c4s agent --thread`.
+  const created = await delegatePost(args, '/plans', { title, content });
+  writeOutput(created, args);
 }
 
 export const createPlanCommand: CliCommandContribution = {
