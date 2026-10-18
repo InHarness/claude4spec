@@ -305,7 +305,7 @@ describe('EntityVersionHistoryView release grouping (M34)', () => {
     expect(host.textContent).not.toContain('(unreleased)');
   });
 
-  it('[ac:ac-entityversionhistoryview-przy-showrel] with showReleasePill (default) each release group is headed "Release <id>"', async () => {
+  it('[ac:ac-entityversionhistoryview-przy-showrel] with showReleasePill (default) each release group is headed "Release <release name>"', async () => {
     await render();
     // The heading label of each release group, in axis order.
     const headings = Array.from(host.querySelectorAll('[data-testid^="version-group-release:"] > button > span')).map(
@@ -313,7 +313,9 @@ describe('EntityVersionHistoryView release grouping (M34)', () => {
     );
     expect(headings.filter((t) => t?.startsWith('Release'))).toEqual(['Release 2.1.0', 'Release 2.0.0']);
     expect(releaseGroupHeading('2.1.0', true)).toBe('Release 2.1.0');
-    // A release whose name is not loaded yet still gets a "Release <id>" heading.
+  });
+
+  it('[ac:ac-entityversionhistoryview-dopoki-usere] until useReleases delivers the name, the numeric release id stands in its place', async () => {
     state.releases = new Map();
     await render({ showReleasePill: true });
     expect(groupIds()).toEqual([
@@ -321,9 +323,11 @@ describe('EntityVersionHistoryView release grouping (M34)', () => {
       'version-group-release:Release 7',
       'version-group-release:Release 5',
     ]);
+    await render({ showReleasePill: false });
+    expect(groupIds()).toEqual(['version-group-__unreleased__', 'version-group-release:7', 'version-group-release:5']);
   });
 
-  it('[ac:ac-w-widoku-entityversionhistoryview-wers] showReleasePill={false} keeps the grouping, "Unreleased" on top, headed by the bare release id', async () => {
+  it('[ac:ac-w-widoku-entityversionhistoryview-wers] showReleasePill={false} keeps the grouping, "Unreleased" on top, headed by the bare release name', async () => {
     await render({ showReleasePill: false });
     expect(groupIds()).toEqual([
       'version-group-__unreleased__',
@@ -331,6 +335,16 @@ describe('EntityVersionHistoryView release grouping (M34)', () => {
       'version-group-release:2.0.0',
     ]);
     expect(host.textContent).not.toContain('Release 2.1.0');
+  });
+
+  it('[ac:ac-entityversionhistoryview-przy-showrel-2] with showReleasePill={false} the release group heading is the bare release name', async () => {
+    await render({ showReleasePill: false });
+    const headings = Array.from(host.querySelectorAll('[data-testid^="version-group-release:"] > button > span')).map(
+      (b) => b.textContent,
+    );
+    expect(headings).toContain('2.1.0');
+    expect(headings).toContain('2.0.0');
+    expect(releaseGroupHeading('2.1.0', false)).toBe('2.1.0');
   });
 });
 
