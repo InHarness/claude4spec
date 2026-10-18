@@ -97,4 +97,52 @@ describe('DetailPanelShell ↔ record `detail-panel-shell` (M13/M34, 2.1.28)', (
     // The earlier hop is not a header.
     expect(host.querySelector('button')?.getAttribute('role')).toBeNull();
   });
+
+  it('[entity:detail-panel-shell] the last crumb is never a link, even with onClick: it renders as the page heading (role=heading, aria-level 1, aria-current=page)', () => {
+    const onCurrent = vi.fn();
+    // A lone crumb with onClick is the last one too.
+    mount({ breadcrumb: [{ label: 'get-user', onClick: onCurrent }], children: createElement('p', null, 'x') });
+    expect(host.querySelectorAll('button')).toHaveLength(0);
+    expect(host.querySelectorAll('a')).toHaveLength(0);
+    const heading = host.querySelector('[role="heading"]') as HTMLElement;
+    expect(heading.textContent).toBe('get-user');
+    expect(heading.getAttribute('aria-level')).toBe('1');
+    expect(heading.getAttribute('aria-current')).toBe('page');
+    act(() => heading.click());
+    expect(onCurrent).not.toHaveBeenCalled();
+    // With an earlier hop: only that hop is a button, the last one is the heading.
+    mount({
+      breadcrumb: [{ label: 'Endpoints', onClick: () => {} }, { label: 'get-user', onClick: onCurrent }],
+      children: createElement('p', null, 'x'),
+    });
+    expect([...host.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Endpoints']);
+    const last = host.querySelector('[role="heading"]') as HTMLElement;
+    expect(last.textContent).toBe('get-user');
+    expect(last.closest('button, a')).toBeNull();
+    act(() => last.click());
+    expect(onCurrent).not.toHaveBeenCalled();
+  });
+
+  it('[entity:detail-panel-shell] the bar stands outside the scroll region; the content scrolls under it', () => {
+    mount({
+      breadcrumb: [{ label: 'Endpoints', onClick: () => {} }, { label: 'get-user' }],
+      actions: createElement('button', { 'data-testid': 'delete' }, 'Delete'),
+      children: createElement('div', { 'data-testid': 'body' }, 'Body content'),
+    });
+    const shell = host.firstElementChild as HTMLElement;
+    // The shell itself does not scroll: a column that clips, with two regions.
+    expect(shell.className.split(/\s+/)).toEqual(expect.arrayContaining(['flex', 'flex-col', 'overflow-hidden', 'min-h-0']));
+    expect(shell.children).toHaveLength(2);
+    const [bar, scroller] = [...shell.children] as HTMLElement[];
+    // The bar (breadcrumb + actions) is not a scroll container and sits outside the one that is.
+    expect(bar!.querySelector('[role="heading"]')).not.toBeNull();
+    expect(bar!.querySelector('[data-testid="delete"]')).not.toBeNull();
+    expect(bar!.className).not.toMatch(/overflow-(auto|scroll)/);
+    expect(bar!.closest('.overflow-auto')).toBeNull();
+    // The content is inside the only scroll region, below the bar.
+    expect(scroller!.className.split(/\s+/)).toEqual(expect.arrayContaining(['flex-1', 'overflow-auto']));
+    expect(scroller!.querySelector('[data-testid="body"]')?.textContent).toBe('Body content');
+    expect(scroller!.querySelector('[role="heading"]')).toBeNull();
+    expect(host.querySelectorAll('.overflow-auto')).toHaveLength(1);
+  });
 });

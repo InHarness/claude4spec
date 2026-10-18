@@ -18,3 +18,7 @@ entity-list-header → src/client/host-ui-kit/core/EntityListHeader.tsx
 entity-list-layout → src/client/host-ui-kit/list/EntityListLayout.tsx
 entity-list-row → src/client/host-ui-kit/list/EntityListRow.tsx
 tag-filter-bar → src/client/host-ui-kit/list/TagFilterBar.tsx
+detail-panel-shell → src/client/host-ui-kit/core/DetailPanelShell.tsx
+document-body → src/client/host-ui-kit/detail/DocumentBody.tsx
+field-grid → src/client/host-ui-kit/core/FieldGrid.tsx
+field-row → src/client/host-ui-kit/core/FieldRow.tsx

@@ -124,4 +124,19 @@ describe('DocumentBody ↔ record `document-body` (M13/M34, 2.1.28)', () => {
     expect(css).toMatch(/\[data-c4s-document-body\] p\.lede\{font-family:var\(--font-heading\);font-size:var\(--text-lede\);font-weight:var\(--weight-lede\);font-style:italic\}/);
     expect(css).not.toContain('prose');
   });
+
+  it('[entity:document-body] is a centred column (margin-inline auto) with no scrolling of its own; the parent scrolls it', () => {
+    mount({ title: { value: 'Doc' }, children: createElement('p', null, 'Text') });
+    const body = host.firstElementChild as HTMLElement;
+    // Centred column: horizontal auto margins, capped width.
+    expect(body.className.split(/\s+/)).toContain('mx-auto');
+    expect(body.style.maxWidth).toBe('1000px');
+    // No element of the component scrolls or caps its height.
+    for (const el of [body, ...body.querySelectorAll<HTMLElement>('*')]) {
+      expect(el.style.overflow).toBe('');
+      expect(el.style.overflowY).toBe('');
+      expect(el.style.maxHeight).toBe('');
+      expect(typeof el.className === 'string' ? el.className : '').not.toMatch(/overflow/);
+    }
+  });
 });

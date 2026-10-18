@@ -7,7 +7,9 @@ import { withStability } from '../stability.js';
  * (2.1.26 — `FieldGrid` renders no rows itself). Provides consistent vertical
  * rhythm and an optional max width matching the host's detail body.
  *
- * Pure-presentational: children only.
+ * Pure-presentational: children only. No scrolling of its own (2.1.33): the
+ * container sets no `overflow`, the parent (e.g. `DetailPanelShell`'s content
+ * region) scrolls it.
  */
 export interface FieldGridProps {
   children: ReactNode;

@@ -31,15 +31,22 @@ export type { Tag, Stability } from '../shared/plugin-host/ui-kit-surface.js';
 // ── Core (stable) — part of the versioned `hostApiVersion` surface ──
 export interface DetailBreadcrumb {
   label: ReactNode;
+  /** Ignored on the last crumb: it is the page heading, never a link. */
   onClick?: () => void;
 }
+/**
+ * The breadcrumb bar (with `actions`) stands outside the scroll region; the
+ * content (`children`) scrolls under it.
+ */
 export interface DetailPanelShellProps {
+  /** Hops left → right; the last is the current entity, rendered as the page heading. */
   breadcrumb: DetailBreadcrumb[];
   actions?: ReactNode;
   children: ReactNode;
 }
 export declare const DetailPanelShell: ComponentType<DetailPanelShellProps>;
 
+/** No scrolling of its own: sets no `overflow`, the parent scrolls it. */
 export interface FieldGridProps {
   children: ReactNode;
   maxWidth?: number;
@@ -49,6 +56,7 @@ export declare const FieldGrid: ComponentType<FieldGridProps>;
 export interface FieldRowProps {
   label: ReactNode;
   children: ReactNode;
+  /** Default `'center'`; `'start'` drops the label (2 px `padding-top`) to the value's first line. */
   align?: 'center' | 'start';
 }
 export declare const FieldRow: ComponentType<FieldRowProps>;
@@ -378,7 +386,9 @@ export interface ReferencesListProps {
 }
 export declare const ReferencesList: ComponentType<ReferencesListProps>;
 
+/** A centred column with no scrolling of its own; the parent scrolls it. */
 export interface DocumentBodyProps {
+  /** Large inline-editable title; read-only without `onChange`. */
   title?: { value: string; onChange?(v: string): void; placeholder?: string };
   children: ReactNode;
   maxWidth?: number;

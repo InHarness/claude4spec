@@ -71,4 +71,21 @@ describe('FieldGrid ↔ record `field-grid` (M13/M34, 2.1.28)', () => {
     mount({ children: null });
     expect((host.firstElementChild as HTMLElement).children).toHaveLength(0);
   });
+
+  it('[entity:field-grid] has no scrolling of its own: the container sets no overflow, the parent scrolls it', () => {
+    mount({
+      children: [
+        createElement(FieldRow, { key: 'm', label: 'Method', children: 'GET' }),
+        createElement(FieldRow, { key: 'p', label: 'Path', children: '/users/:id' }),
+      ],
+    });
+    const grid = host.firstElementChild as HTMLElement;
+    expect(grid.style.overflow).toBe('');
+    expect(grid.style.overflowY).toBe('');
+    expect(grid.style.overflowX).toBe('');
+    expect(grid.className).not.toMatch(/overflow/);
+    // A height cap would make a scroll box of it; there is none.
+    expect(grid.style.height).toBe('');
+    expect(grid.style.maxHeight).toBe('');
+  });
 });

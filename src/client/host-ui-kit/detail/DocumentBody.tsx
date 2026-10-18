@@ -13,6 +13,9 @@ import { withStability } from '../stability.js';
  * `<p className="lede">` takes the `lede` style. The component never picks the
  * lead itself (no `lede` prop, the first paragraph is not promoted), and the
  * rule is scoped to this content, independent of the editor prose class.
+ *
+ * 2.1.33 — a centred column (`margin-inline: auto`) with no scrolling of its
+ * own: it sets no `overflow`, the parent scrolls it.
  */
 
 /** Scope attribute the content styles below hang on. */
@@ -25,6 +28,7 @@ const CONTENT_ATTR = 'data-c4s-document-body';
  */
 const LEDE_CSS = `[${CONTENT_ATTR}] p.lede{font-family:var(--font-heading);font-size:var(--text-lede);font-weight:var(--weight-lede);font-style:italic}`;
 export interface DocumentBodyProps {
+  /** Large inline-editable title; read-only without `onChange`. */
   title?: { value: string; onChange?(v: string): void; placeholder?: string };
   children: ReactNode;
   maxWidth?: number;

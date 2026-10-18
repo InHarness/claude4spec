@@ -1,5 +1,5 @@
 {
-  "iteration": 13,
+  "iteration": 18,
   "units": [
     {
       "id": "u1-m34-catalogue-behaviour",
@@ -238,13 +238,31 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u3-m13-detail-scaffold/p1-l12-l12",
+          "layers": [
+            "L12"
+          ],
+          "slugs": [
+            "detail-panel-shell",
+            "document-body",
+            "field-grid",
+            "field-row"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "932cdf2483007c6c9f072ff983163bfaa662e763",
+      "baseCommit": "932cdf2483007c6c9f072ff983163bfaa662e763",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     }
