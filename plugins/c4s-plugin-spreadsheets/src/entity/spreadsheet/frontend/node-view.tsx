@@ -2,6 +2,7 @@ import { createElement, useCallback, useEffect, useMemo, useRef, useState, type 
 import { fetchShape, fetchWindow, useEntityChanged, type SpreadsheetShape } from './hooks.js';
 import { renderInlineMarkdown } from './inline-markdown.js';
 import { MAX_WINDOW_CELLS } from '../../../identity.js';
+import { Badge } from '@c4s/plugin-runtime/ui';
 
 /**
  * The grid — the type's primary surface.
@@ -289,23 +290,17 @@ export const SpreadsheetChip: FC<{ slug: string; entity: unknown; onOpen?: () =>
   entity,
   onOpen,
 }) => {
+  // 2.1.40 (M13): a deleted sheet is the catalog's broken `Badge` with the
+  // slug — not clickable, so a click never opens `SpreadsheetFullscreen`.
   if (entity === null) {
     return createElement(
       'span',
       {
         className: 'c4s-spreadsheet-chip c4s-spreadsheet-chip--broken',
         title: `broken reference: spreadsheet '${slug}'`,
-        style: {
-          fontSize: 11,
-          fontFamily: 'var(--font-mono)',
-          padding: '1px 6px',
-          borderRadius: 3,
-          background: 'var(--c-red-soft, rgba(196,90,59,0.14))',
-          color: 'var(--c-red, #c45a3b)',
-          border: '1px solid var(--c-red, #c45a3b)',
-        },
+        style: { display: 'inline-flex', verticalAlign: 'baseline' },
       },
-      `⚠ ${slug}`,
+      createElement(Badge, { variant: 'broken', label: slug }),
     );
   }
   const shape = entity as SpreadsheetShape | undefined;

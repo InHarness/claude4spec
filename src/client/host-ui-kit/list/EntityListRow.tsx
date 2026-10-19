@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import type { Tag } from '../../../shared/plugin-host/ui-kit-surface.js';
+import type { Tag } from '../../../shared/plugin-host/tag.js';
 import { TagChip } from '../actions/TagChip.js';
 import { withStability } from '../stability.js';
 
@@ -32,8 +32,13 @@ export interface EntityListRowProps {
    */
   onClick?: () => void;
   tags?: string[];
-  /** slug → `Tag` for the chips; a tag missing from the map shows its slug in the default colour. */
-  tagLookup: Map<string, Tag>;
+  /**
+   * slug → `Tag` for the chips; a tag missing from the map shows its slug in the
+   * default colour. 2.1.40: read-only. Inside a `renderRow` slot it is the
+   * `tagLookup` the host hands the slot, passed on — never one built from
+   * `useTags`; on a plugin's own list screen, a map the plugin builds from `useTags`.
+   */
+  tagLookup: ReadonlyMap<string, Tag>;
   trailing?: React.ReactNode;
   align?: 'center' | 'start';
   style?: React.CSSProperties;

@@ -9,6 +9,7 @@ import { useArtifactThreads } from '../hooks/useArtifactThreads.js';
 import { PatchEditor } from './PatchEditor.js';
 import { ArtifactThreadsPanel } from './ArtifactThreadsPanel.js';
 import { AppliedBadge } from './AppliedBadge.js';
+import { Badge } from '../host-ui-kit/actions/Badge.js';
 
 interface Props {
   patchPath: string;
@@ -78,7 +79,8 @@ export function PatchDetail({ patchPath }: Props) {
           >
             {patch.title}
           </span>
-          <Badge>{String(fm.patch_kind ?? 'patch')}</Badge>
+          {/* 2.1.40: `patch_kind` is a value — the catalog `Badge`. */}
+          <Badge label={String(fm.patch_kind ?? 'patch')} mono small foreground="var(--c-muted)" />
           <AppliedBadge applied={applied} />
         </div>
         <span className="flex-1" />
@@ -200,16 +202,3 @@ export function PatchDetail({ patchPath }: Props) {
     </div>
   );
 }
-
-function Badge({ children, title }: { children: React.ReactNode; title?: string }) {
-  return (
-    <span
-      className="font-mono text-[10.5px] px-1.5 py-0.5 rounded inline-flex items-center"
-      style={{ background: 'var(--c-hair)', color: 'var(--c-muted)' }}
-      title={title}
-    >
-      {children}
-    </span>
-  );
-}
-

@@ -7,6 +7,7 @@ import type { EntityCardProps, EntityChipProps } from '../registry.js';
 import { clientPluginHost } from '../../core/plugin-host/host.js';
 import type { FrontendModule } from '../../core/plugin-host/types.js';
 import { DiagramCard, DiagramOverlay } from './DiagramCard.js';
+import { Badge } from '../../host-ui-kit/actions/Badge.js';
 
 /**
  * 0.2.15 — what is left of the diagram's editor presence after `DiagramNode`
@@ -33,24 +34,10 @@ export const diagramAuthoringExtension = {
   },
 };
 
-function BrokenChip({ slug }: { slug: string }) {
-  return (
-    <span
-      title={`broken reference: diagram '${slug}'`}
-      className="inline-flex items-center gap-1 align-middle rounded px-1.5 py-[1px] text-[11px] font-mono"
-      style={{
-        background: 'var(--c-red-soft, rgba(196,90,59,0.14))',
-        color: 'var(--c-red, #c45a3b)',
-        border: '1px solid var(--c-red, #c45a3b)',
-      }}
-    >
-      ⚠ {slug}
-    </span>
-  );
-}
-
 function DiagramChip({ slug, entity, onOpen }: EntityChipProps<Diagram>) {
-  if (!entity) return <BrokenChip slug={slug} />;
+  // 2.1.40 (M13): a deleted diagram is the catalog's broken `Badge` with the
+  // slug — not clickable, `onOpen` is not wired in this branch.
+  if (!entity) return <Badge variant="broken" label={slug} />;
   return (
     <button
       onClick={onOpen}

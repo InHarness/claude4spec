@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
-import { useTags } from '@c4s/plugin-runtime';
+import { useTags, type Tag } from '@c4s/plugin-runtime';
 import type { EntityType } from '../types.js';
-// `TagBarProps` is owned by the Host UI Kit's `TagFilterBar` (M34/L12); the app
+// `TagFilterBarProps` is owned by the Host UI Kit's `TagFilterBar` (M34/L12); the app
 // still builds the value and passes it into the kit component.
-import type { Tag, TagBarProps } from '@c4s/plugin-runtime/ui';
+import type { TagFilterBarProps } from '@c4s/plugin-runtime/ui';
 
 interface Options {
   search: string;
@@ -29,11 +29,12 @@ export function useEntityListQuery(type: EntityType, opts: Options) {
     [search, tagFilter, tagMode, extraKey],
   );
 
-  // `useTags()` items are assignable to the kit's `Tag` as is (the `Tag` type of the `ui-kit-component` record `tag-filter-bar`):
-  // no adapter and no cast.
+  // `useTags()` items are assignable to the M18 `Tag` as is: no adapter and no
+  // cast. This is the plugin's OWN list screen — the one place a map comes from
+  // `useTags`; a `renderRow` slot gets the host's `tagLookup` instead.
   const tagLookup = useMemo(() => new Map<string, Tag>(tags.map((t) => [t.slug, t])), [tags]);
 
-  const tagBar: TagBarProps = {
+  const tagBar: TagFilterBarProps = {
     tags: tags.filter((t) => (t.counts[type] ?? 0) > 0),
     tagFilter,
     onTagToggle,

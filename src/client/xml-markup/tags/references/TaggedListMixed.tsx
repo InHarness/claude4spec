@@ -3,6 +3,7 @@ import { clientPluginHost } from '../../../core/plugin-host/host.js';
 import { useRegistryVersion } from '../../../core/plugin-host/useRegistryVersion.js';
 import { openEntityHandler } from '../../../entities/openEntity.js';
 import { editorBridge } from '../../../runtime/editor-bridge.js';
+import { useListTagLookup } from '../../../entities/useListTagLookup.js';
 import type { TagRenderProps } from '../../renders.js';
 import { attr, csv, TaggedPill } from './shared.js';
 
@@ -13,6 +14,8 @@ type Grouped = Record<string, Entity[]>;
  * `<tagged_list_mixed tags filter?/>` — `renderRow` grouped by type, over the
  * ACTIVE types only: a type whose package goes inactive drops out of the
  * groups without any edit to the page. Inline: a pill.
+ * 2.1.40: every row of every group gets the same `tagLookup`, from one
+ * `['tags']` query for the whole list.
  */
 export function TaggedListMixedRender({ attrs, variant }: TagRenderProps) {
   // This view lists EVERY active type, so a late registration silently shortens
@@ -20,6 +23,7 @@ export function TaggedListMixedRender({ attrs, variant }: TagRenderProps) {
   useRegistryVersion();
   const filter: 'and' | 'or' = attrs.filter === 'or' ? 'or' : 'and';
   const tags = csv(attr(attrs, 'tags'));
+  const tagLookup = useListTagLookup();
 
   const activeModules = clientPluginHost.listEntities();
   const { data: grouped, isLoading } = useQuery<Grouped>({
@@ -86,6 +90,7 @@ export function TaggedListMixedRender({ attrs, variant }: TagRenderProps) {
                       slug={entity.slug}
                       entity={entity as never}
                       onOpen={openEntityHandler(mod.type, entity.slug, editorBridge)}
+                      tagLookup={tagLookup}
                     />
                   </li>
                 ))}

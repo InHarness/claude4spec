@@ -1,6 +1,6 @@
 import { ArrowRightLeft, ChevronRight } from 'lucide-react';
 import type { Endpoint } from '../../../types.js';
-import { MethodChip } from '../../../frontend-kit/atoms.js';
+import { MethodChip, RowTagChips } from '../../../frontend-kit/atoms.js';
 import { useEndpoint } from './hooks.js';
 import { endpointsApi } from './api.js';
 import { endpointData, endpointSlugPattern } from '../schema.js';
@@ -17,10 +17,11 @@ import { ENDPOINT_NO_SUMMARY } from './list-page.js';
 
 /**
  * 2.1.16 (endpoint.md › Renderowanie, row in `element_list` / `tagged_list`):
- * method chip, `path` as the main content, `summary` or "— no summary —" on
- * the second line, the slug at the end of the row.
+ * the method `Badge` (method ink, no fill), `path` as the main content,
+ * `summary` or "— no summary —" on the second line, the record's tags
+ * (2.1.40, coloured through the host's `tagLookup`), the slug at the end of the row.
  */
-export function EndpointRow({ entity, active, onOpen }: EntityRowProps<Endpoint>) {
+export function EndpointRow({ entity, active, onOpen, tagLookup }: EntityRowProps<Endpoint>) {
   return (
     <button
       onClick={onOpen}
@@ -45,6 +46,7 @@ export function EndpointRow({ entity, active, onOpen }: EntityRowProps<Endpoint>
           {entity.summary || ENDPOINT_NO_SUMMARY}
         </span>
       </span>
+      <RowTagChips tags={entity.tags ?? []} tagLookup={tagLookup} />
       <span className="shrink-0 font-mono text-[10.5px]" style={{ color: 'var(--c-subtle)' }}>
         {entity.slug}
       </span>

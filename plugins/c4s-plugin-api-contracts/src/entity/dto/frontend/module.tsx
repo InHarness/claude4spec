@@ -10,10 +10,15 @@ import type {
   FrontendModule,
 } from '@c4s/plugin-runtime';
 import { Badge } from '@c4s/plugin-runtime/ui';
+import { RowTagChips } from '../../../frontend-kit/atoms.js';
 import { DtoDetail } from './detail-panel.js';
 import { dtoRoutes } from './routes.js';
 
-function DtoRow({ entity, active, onOpen }: EntityRowProps<Dto>) {
+/**
+ * Row in `element_list` / `tagged_list`: `title`, the compact `description`
+ * and (2.1.40) the record's tags, coloured through the host's `tagLookup`.
+ */
+function DtoRow({ entity, active, onOpen, tagLookup }: EntityRowProps<Dto>) {
   return (
     <button
       onClick={onOpen}
@@ -37,12 +42,9 @@ function DtoRow({ entity, active, onOpen }: EntityRowProps<Dto>) {
           </span>
         )}
       </span>
-      <span
-        className="font-mono text-[10.5px] px-1.5 py-0.5 rounded"
-        style={{ background: 'var(--c-panel)', color: 'var(--c-muted)' }}
-      >
-        {entity.fields.length}f
-      </span>
+      <RowTagChips tags={entity.tags ?? []} tagLookup={tagLookup} />
+      {/* A count is a value: the catalog `Badge`, not a hand-drawn pill. */}
+      <Badge label={`${entity.fields.length}f`} small mono />
     </button>
   );
 }

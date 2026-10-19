@@ -518,8 +518,11 @@ function ParamRow({
 /**
  * The ui-view → design-system relation through the catalog's
  * `GroupedRelationPicker`: one group, single-select. A value that no longer
- * resolves keeps its chip and marks it with a `broken` `Badge` — the column
- * stays on the server, so clearing it is the user's explicit act (the chip's ×).
+ * resolves is drawn as a `broken` `Badge` with the slug (2.1.40), not
+ * clickable, beside the clear action (the chip's ×) — the column stays on the
+ * server, so clearing it is the user's explicit act; saving is never blocked
+ * (`onMissing: 'warn'`). The link to a live system is a ghost `ActionButton`
+ * "open", reachable with Tab.
  */
 function DesignSystemSelect({
   value,
@@ -541,14 +544,7 @@ function DesignSystemSelect({
     ...(onOpen
       ? {
           badge: (
-            <button
-              onClick={() => onOpen(o.slug)}
-              title="Open design system"
-              className="font-mono text-[9.5px] px-1 rounded uppercase"
-              style={{ background: 'var(--c-panel)', color: 'var(--c-accent)' }}
-            >
-              DS
-            </button>
+            <ActionButton variant="ghost" label="open" title="Open design system" onClick={() => onOpen(o.slug)} />
           ),
         }
       : null),
@@ -557,8 +553,10 @@ function DesignSystemSelect({
   if (dangling) {
     items.push({
       id: value as string,
-      label: value as string,
-      badge: <Badge label="missing" variant="broken" small />,
+      // The slug lives in the badge itself; an empty label keeps the picker
+      // from printing it a second time in front of it.
+      label: '',
+      badge: <Badge label={value as string} variant="broken" small />,
     });
   }
 

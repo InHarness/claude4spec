@@ -1,6 +1,7 @@
 import React from 'react';
 import { Code2 } from 'lucide-react';
 import type { EntityChipProps } from '@c4s/plugin-runtime';
+import { Badge } from '@c4s/plugin-runtime/ui';
 import type { CodeSnippet } from './hooks.js';
 
 /**
@@ -40,21 +41,18 @@ export function CodeSnippetChip({ slug, entity, onOpen }: EntityChipProps<unknow
    * case coded here.
    */
   if (record === null) {
+    // 2.1.40 (M13): the catalog's broken `Badge` with the slug (⚠ prefix, red
+    // ink) — the shape every built-in type's broken chip shares. The wrapper
+    // only carries the identifiers; `Badge` forwards nothing it does not declare.
     return (
       <span
         data-testid="code-snippet-chip"
         data-broken-ref={slug}
         data-slug={slug}
         title="This code snippet no longer exists."
-        className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 align-baseline font-mono text-[11.5px]"
-        style={{
-          background: 'var(--c-red-soft)',
-          border: '1px dashed var(--c-red)',
-          color: 'var(--c-red)',
-        }}
+        className="inline-flex align-baseline"
       >
-        <Code2 size={11} />
-        {`broken code-snippet: ${slug}`}
+        <Badge variant="broken" label={slug} />
       </span>
     );
   }

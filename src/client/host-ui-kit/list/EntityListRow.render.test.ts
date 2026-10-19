@@ -41,7 +41,8 @@ interface RecordEntityListRowProps {
   icon?: LucideIcon;
   onClick?: () => void;
   tags?: string[];
-  tagLookup: Map<string, Published.Tag>;
+  /** 2.1.40: read-only (`Map` before). */
+  tagLookup: ReadonlyMap<string, Published.Tag>;
   trailing?: ReactNode;
   align?: 'center' | 'start';
   style?: CSSProperties;

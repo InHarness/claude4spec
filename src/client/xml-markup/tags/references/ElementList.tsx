@@ -5,6 +5,8 @@ import { openEntityHandler } from '../../../entities/openEntity.js';
 import { editorBridge } from '../../../runtime/editor-bridge.js';
 import { BlockBrokenChip } from '../../../tiptap/extensions/views/BrokenChip.js';
 import { NotListable } from '../../../tiptap/extensions/views/NotListable.js';
+import { useListTagLookup } from '../../../entities/useListTagLookup.js';
+import type { Tag } from '../../../../shared/plugin-host/tag.js';
 import type { TagRenderProps } from '../../renders.js';
 import { attr, csv, EntityChip } from './shared.js';
 
@@ -15,9 +17,13 @@ import { attr, csv, EntityChip } from './shared.js';
  * resolved entity, so the slot has no `null` branch (M19 `m19broken`, 2.1.16;
  * the consistency check reports the slug). A type without a row slot (hidden
  * types) cannot be listed. Inline: one chip per slug.
+ *
+ * 2.1.40: every row gets the same `tagLookup`, from one `['tags']` query made
+ * here, once for the whole list.
  */
 export function ElementListRender({ attrs, variant }: TagRenderProps) {
   useRegistryVersion();
+  const tagLookup = useListTagLookup();
   const type = attr(attrs, 'type');
   const slugs = csv(attr(attrs, 'slugs'));
   const def = getEntityDef(type);
@@ -51,7 +57,13 @@ export function ElementListRender({ attrs, variant }: TagRenderProps) {
       </div>
       <ul className="p-1">
         {slugs.map((slug) => (
-          <Row key={slug} type={type} slug={slug} onOpen={openEntityHandler(type, slug, editorBridge)} />
+          <Row
+            key={slug}
+            type={type}
+            slug={slug}
+            tagLookup={tagLookup}
+            onOpen={openEntityHandler(type, slug, editorBridge)}
+          />
         ))}
         {slugs.length === 0 && (
           <li className="px-3 py-2 text-[12px] italic" style={{ color: 'var(--c-subtle)' }}>
@@ -63,7 +75,17 @@ export function ElementListRender({ attrs, variant }: TagRenderProps) {
   );
 }
 
-function Row({ type, slug, onOpen }: { type: string; slug: string; onOpen?: () => void }) {
+function Row({
+  type,
+  slug,
+  tagLookup,
+  onOpen,
+}: {
+  type: string;
+  slug: string;
+  tagLookup: ReadonlyMap<string, Tag>;
+  onOpen?: () => void;
+}) {
   const def = getEntityDef(type)!;
   const { data, isLoading } = def.useGetBySlug(slug);
   if (isLoading && data === undefined) {
@@ -81,7 +103,7 @@ function Row({ type, slug, onOpen }: { type: string; slug: string; onOpen?: () =
   const RowComp = def.renderRow!;
   return (
     <li>
-      <RowComp slug={slug} entity={data} onOpen={onOpen} />
+      <RowComp slug={slug} entity={data} onOpen={onOpen} tagLookup={tagLookup} />
     </li>
   );
 }

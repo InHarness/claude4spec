@@ -487,10 +487,13 @@ describe('[section:lg0e57j1] c4s-plugin-spreadsheets Host UI Kit slice', () => {
     ]);
   });
 
-  it('[section:lg0e57j1] the package consumes no catalog component — nothing in it imports @c4s/plugin-runtime/ui', () => {
+  it('[section:lg0e57j1] the package consumes one catalog component — the broken-chip Badge (2.1.40); nothing else from @c4s/plugin-runtime/ui', () => {
     const files = envelopeFiles().filter((f) => f.startsWith(`plugins/${pkg}/src/`));
     expect(files.length).toBeGreaterThan(0);
-    for (const f of files) expect(readSource(f), f).not.toMatch(/@c4s\/plugin-runtime\/ui/);
+    const imports = files.flatMap((f) =>
+      [...readSource(f).matchAll(/import\s*\{([^}]*)\}\s*from\s*'@c4s\/plugin-runtime\/ui'/g)].map((m) => m[1]!.trim()),
+    );
+    expect(imports).toEqual(['Badge']);
   });
 
   it('[section:lg0e57j1] the fullscreen shell is a finding only its DŁUG entry excuses, both copies carry their DEBT header', () => {

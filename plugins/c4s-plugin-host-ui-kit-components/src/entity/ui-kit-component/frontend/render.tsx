@@ -105,8 +105,8 @@ export const UiKitComponentCard: FC<EntityCardProps<UiKitComponent>> = ({ slug, 
   );
 };
 
-/** Embedded rows carry no tag chips — the host embed passes no tag context. */
-const EMPTY_TAG_LOOKUP = new Map<string, Tag>();
+/** The type's own list screen passes no map when it has no tags to show. */
+const EMPTY_TAG_LOOKUP: ReadonlyMap<string, Tag> = new Map();
 
 /** The row body, shared by the `renderRow` slot and the type's own list screen. */
 export const UiKitComponentListRow: FC<{
@@ -114,7 +114,7 @@ export const UiKitComponentListRow: FC<{
   onOpen?: () => void;
   active?: boolean;
   tags?: string[];
-  tagLookup?: Map<string, Tag>;
+  tagLookup?: ReadonlyMap<string, Tag>;
 }> = ({ entity, onOpen, active, tags, tagLookup }) => (
   <EntityListRow
     icon={UiKitComponentIcon}
@@ -138,6 +138,7 @@ export const UiKitComponentListRow: FC<{
   </EntityListRow>
 );
 
-export const UiKitComponentRow: FC<EntityRowProps<UiKitComponent>> = ({ entity, active, onOpen }) => (
-  <UiKitComponentListRow entity={entity} active={active} onOpen={onOpen} />
+// 2.1.40: the slot passes the host's `tagLookup` on rather than building one.
+export const UiKitComponentRow: FC<EntityRowProps<UiKitComponent>> = ({ entity, active, onOpen, tagLookup }) => (
+  <UiKitComponentListRow entity={entity} active={active} onOpen={onOpen} tagLookup={tagLookup} />
 );

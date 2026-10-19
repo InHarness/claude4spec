@@ -9,6 +9,9 @@ import { stem } from '../lib/artifact-path.js';
 import { useChatStore } from '../state/chat.js';
 import { usePersistedState, projectKey } from '../state/persisted.js';
 import { SegmentedControl } from './SegmentedControl.js';
+import { AppliedBadge } from './AppliedBadge.js';
+import { TitledBadge } from './TitledBadge.js';
+import { Badge } from '../host-ui-kit/actions/Badge.js';
 
 type ImplementedFilter = 'all' | 'done' | 'pending';
 
@@ -326,56 +329,36 @@ function PatchRow({ patch }: { patch: PatchListItemView }) {
  * so they run one step smaller than the badge on a detail header.
  */
 function PatchAppliedBadge({ applied }: { applied: boolean }) {
-  return (
-    <span
-      className="font-mono text-[9.5px] px-1.5 py-0.5 rounded"
-      style={
-        applied
-          ? { background: 'var(--c-green-soft)', color: 'var(--c-green)' }
-          : { background: 'var(--c-yellow)', color: 'var(--c-yellow-ink)' }
-      }
-      title={applied ? 'Applied to the specification' : 'Not applied yet'}
-    >
-      {applied ? 'applied ✅' : 'pending ⏳'}
-    </span>
-  );
+  return <AppliedBadge applied={applied} small />;
 }
 
+/*
+ * 2.1.40 (M34): every marker below is a VALUE — a release name, a window's
+ * provenance, a state — so each is the catalog `Badge` (ink colour, no fill),
+ * never a hand-drawn tinted pill.
+ */
 function ReleaseBadge({ label }: { label: string }) {
-  return (
-    <span
-      className="font-mono text-[11px] px-1.5 py-0.5 rounded"
-      style={{
-        background: 'var(--c-hair)',
-        color: 'var(--c-ink)',
-      }}
-    >
-      {label}
-    </span>
-  );
+  return <Badge label={label} mono small />;
 }
 
-/** Exported for reuse on `/releases` cards' Briefs section (0.1.119, M17). */
+/** Exported for reuse on `/releases` cards' Briefs section (0.1.119, M17) and the brief page. */
 export function ImplementedBadge({ implemented }: { implemented: boolean }) {
-  if (implemented) {
-    return (
-      <span
-        className="inline-flex items-center font-mono text-[10px] px-1.5 py-0.5 rounded"
-        style={{ background: 'var(--c-green-soft)', color: 'var(--c-green)' }}
-        title="Brief implemented (declared by implementer-agent or user)"
-      >
-        implemented
-      </span>
-    );
-  }
-  return (
-    <span
-      className="inline-flex items-center font-mono text-[10px] px-1.5 py-0.5 rounded"
-      style={{ background: 'var(--c-yellow)', color: 'var(--c-yellow-ink)' }}
+  return implemented ? (
+    <TitledBadge
+      label="implemented"
+      mono
+      small
+      foreground="var(--c-green)"
+      title="Brief implemented (declared by implementer-agent or user)"
+    />
+  ) : (
+    <TitledBadge
+      label="pending"
+      mono
+      small
+      foreground="var(--c-yellow-ink)"
       title="Brief pending — not yet implemented"
-    >
-      pending
-    </span>
+    />
   );
 }
 
@@ -401,50 +384,38 @@ function WindowBadge({
         ? 'Window open at the start — the first brief of the project'
         : 'Closed window — self-contained, grounded in a release diff';
   return (
-    <span
-      className="font-mono text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded"
-      style={
-        open !== null
-          ? { background: 'var(--c-accent-soft)', color: 'var(--c-accent)' }
-          : { background: 'var(--c-hair)', color: 'var(--c-muted)' }
-      }
+    <TitledBadge
+      label={label}
+      mono
+      small
+      foreground={open !== null ? 'var(--c-accent)' : 'var(--c-muted)'}
       title={title}
-    >
-      {label}
-    </span>
+    />
   );
 }
 
 /** The `to` end of the window is open — no release, state is the current one. */
 function UnreleasedBadge() {
   return (
-    <span
-      className="font-mono text-[11px] px-1.5 py-0.5 rounded"
-      style={{
-        background: 'transparent',
-        color: 'var(--c-muted)',
-        border: '1px dashed var(--c-hair-strong)',
-      }}
+    <TitledBadge
+      label="(unreleased)"
+      mono
+      small
+      foreground="var(--c-muted)"
       title="Window open to the current state — no target release"
-    >
-      (unreleased)
-    </span>
+    />
   );
 }
 
 function InitialBadge() {
   return (
-    <span
-      className="font-mono text-[11px] uppercase tracking-wider px-1.5 py-0.5 rounded"
-      style={{
-        background: 'transparent',
-        color: 'var(--c-muted)',
-        border: '1px dashed var(--c-hair-strong)',
-      }}
+    <TitledBadge
+      label="initial"
+      mono
+      small
+      foreground="var(--c-muted)"
       title="Initial brief — comparing against an empty baseline (no previous release)"
-    >
-      initial
-    </span>
+    />
   );
 }
 

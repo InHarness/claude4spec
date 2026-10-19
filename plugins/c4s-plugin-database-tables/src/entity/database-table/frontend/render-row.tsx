@@ -23,23 +23,20 @@
 
 import type { FC } from 'react';
 import { EntityListRow } from '@c4s/plugin-runtime/ui';
-import type { Tag } from '@c4s/plugin-runtime/ui';
 import type { EntityRowProps } from '@c4s/plugin-runtime';
 import { DatabaseTableIcon } from './icon.js';
 import { countsOf, shapeSummary } from './render-card.js';
 import type { DatabaseTable } from '../types.js';
 
-/** Embedded rows carry no tag chips — the host embed passes no tag context. */
-const EMPTY_TAG_LOOKUP = new Map<string, Tag>();
-
-export const DatabaseTableRow: FC<EntityRowProps<DatabaseTable>> = ({ entity, active, onOpen }) => (
+/** Embedded rows draw no tag chips; the map is the host's `tagLookup` (2.1.40), passed on. */
+export const DatabaseTableRow: FC<EntityRowProps<DatabaseTable>> = ({ entity, active, onOpen, tagLookup }) => (
   <EntityListRow
     // Same shared icon reference as the sidebar tab and the list header.
     leading={<DatabaseTableIcon size={16} style={{ color: 'var(--c-accent)' }} />}
     onClick={onOpen ?? (() => {})}
     style={active ? { background: 'var(--c-accent-soft)' } : undefined}
     tags={[]}
-    tagLookup={EMPTY_TAG_LOOKUP}
+    tagLookup={tagLookup}
     // Paper-scale slug badge — 10.5px `font-mono`, panel/muted tokens.
     trailing={
       <span

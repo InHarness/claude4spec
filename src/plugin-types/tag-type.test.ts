@@ -51,7 +51,7 @@ function compileAuthorFile(source: string): string[] {
 
 const IMPORTS = [
   "import { useTags, type TagListItem } from '@c4s/plugin-runtime';",
-  "import type { Tag, TagBarProps, EntityListRowProps, TagPickerProps } from '@c4s/plugin-runtime/ui';",
+  "import type { Tag, TagFilterBarProps, EntityListRowProps, TagPickerProps } from '@c4s/plugin-runtime/ui';",
 ].join('\n');
 
 describe('the kit\'s one Tag type', () => {
@@ -65,7 +65,7 @@ describe('the kit\'s one Tag type', () => {
       'declare const items: TagListItem[];',
       'export const one: Tag = items[0]!;',
       'export const all: Tag[] = items;',
-      "export const bar: TagBarProps['tags'] = items;",
+      "export const bar: TagFilterBarProps['tags'] = items;",
       "export const lookup: EntityListRowProps['tagLookup'] = new Map(items.map((t) => [t.slug, t]));",
       "export const picker: TagPickerProps['allTags'] = items;",
       'export function useCatalog(): Tag[] { return useTags().data ?? []; }',
@@ -130,5 +130,58 @@ describe('the kit\'s one Tag type', () => {
     const diagnostics = compileAuthorFile(withDescription);
     expect(diagnostics.length).toBeGreaterThan(0);
     expect(diagnostics.join('\n')).toMatch(/description/);
+  });
+});
+
+describe('2.1.40 — Tag from the root of @c4s/plugin-runtime (M18) and the row slot\'s tagLookup (M13)', () => {
+  const ROOT_IMPORTS = [
+    "import { useTags, type Tag, type TagListItem, type EntityRowProps } from '@c4s/plugin-runtime';",
+    "import type { Tag as UiTag, EntityListRowProps } from '@c4s/plugin-runtime/ui';",
+  ].join('\n');
+
+  it('the package root exports Tag; a TagListItem is assignable to it without a cast; /ui names the same type', () => {
+    const source = [
+      ROOT_IMPORTS,
+      'declare const items: TagListItem[];',
+      'export const one: Tag = items[0]!;',
+      'export const all: Tag[] = items;',
+      'export function useCatalog(): Tag[] { return useTags().data ?? []; }',
+      // The same type under both names, in both directions.
+      'export const viaUi: UiTag = one;',
+      'export const back: Tag = viaUi;',
+    ].join('\n');
+    // No cast in the body (the import alias `Tag as UiTag` is not one).
+    expect(source.slice(ROOT_IMPORTS.length)).not.toMatch(/\bas\b/);
+    expect(compileAuthorFile(source)).toEqual([]);
+  });
+
+  it('Tag carries no counts', () => {
+    const diagnostics = compileAuthorFile(
+      `${ROOT_IMPORTS}\nexport const t: Tag = { slug: 'a', name: 'A', counts: {} };`,
+    );
+    expect(diagnostics.join('\n')).toMatch(/counts/);
+  });
+
+  it('EntityRowProps requires a read-only tagLookup the slot passes on to EntityListRow', () => {
+    const ok = [
+      ROOT_IMPORTS,
+      "export function rowLookup(p: EntityRowProps<{ tags: string[] }>): EntityListRowProps['tagLookup'] {",
+      '  return p.tagLookup;',
+      '}',
+      "export const props: EntityRowProps<{ tags: string[] }> = { slug: 's', entity: { tags: [] }, tagLookup: new Map<string, Tag>() };",
+    ].join('\n');
+    expect(compileAuthorFile(ok)).toEqual([]);
+
+    // Required: a row props value without it does not compile.
+    const missing = compileAuthorFile(
+      `${ROOT_IMPORTS}\nexport const props: EntityRowProps<number> = { slug: 's', entity: 1 };`,
+    );
+    expect(missing.join('\n')).toMatch(/tagLookup/);
+
+    // Read-only: the slot cannot mutate the host's shared map.
+    const mutate = compileAuthorFile(
+      `${ROOT_IMPORTS}\nexport function f(p: EntityRowProps<number>) { p.tagLookup.set('x', { slug: 'x', name: 'X' }); }`,
+    );
+    expect(mutate.join('\n')).toMatch(/set/);
   });
 });

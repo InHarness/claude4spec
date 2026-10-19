@@ -2,12 +2,18 @@ import type { ComponentType } from 'react';
 import type { EntityType } from '../../shared/entities.js';
 import { legacyRegisterClientEntity } from '../core/plugin-host/legacy-adapter.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
+import type { Tag } from '../../shared/plugin-host/tag.js';
 
 export interface EntityRowProps<T> {
   slug: string;
   entity: T;
   active?: boolean;
   onOpen?: () => void;
+  /**
+   * 2.1.40 — the project's tags, slug → `Tag`, from ONE host `['tags']` query
+   * per list (`useListTagLookup`); the same instance for every row of a list.
+   */
+  tagLookup: ReadonlyMap<string, Tag>;
 }
 
 export interface EntityChipProps<T> {

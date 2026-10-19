@@ -134,6 +134,13 @@ export type {
 export type { SlugPattern, SlugStep } from '../shared/plugin-host/slug-pattern.js';
 export type { ValidatorKind, ValidatorFailure } from '../shared/plugin-host/named-validators.js';
 
+// ── M18 — the public tag type (2.1.40) ──
+// No counts: a `TagListItem` (`Tag` + `counts`) is assignable to it as is. The
+// `tagLookup` a `renderRow` slot receives and the kit's `TagFilterBar` /
+// `EntityListRow` all take this one type; `/ui` re-exports it.
+import type { Tag } from '../shared/plugin-host/tag.js';
+export type { Tag };
+
 // ── Backend mount context ──
 // Host-provided dependencies are loosely typed: the real types (express Router,
 // better-sqlite3 Database, the cross-cutting *Service classes) live deep in the
@@ -575,11 +582,26 @@ export interface EntityCardProps<T = unknown> extends EntityChipProps<T> {
    */
   caption?: string;
 }
+/**
+ * Props of the `renderRow` slot. `entity` is always resolved: for a missing
+ * entity the list draws no row at all.
+ */
 export interface EntityRowProps<T = unknown> {
   slug: string;
   entity: T;
   active?: boolean;
   onOpen?: () => void;
+  /**
+   * 2.1.40 — every tag of the project, slug → `Tag`. The host fetches the tag
+   * list ONCE per list (host query key `['tags']`) and hands the same map
+   * instance to every row of it; always present, empty when the project has no
+   * tags, and a fresh map when `['tags']` is invalidated (a tag recoloured or
+   * renamed). A slot never fetches on its own — not `useGetBySlug`, not
+   * `useQuery`, not `useTags` nor any other data hook of this package: what it
+   * needs beyond the entity, the host passes in. Pass it on to
+   * `EntityListRow.tagLookup` / `TagChip` colours.
+   */
+  tagLookup: ReadonlyMap<string, Tag>;
 }
 /**
  * Props of the `detailPanel` slot — all four fields REQUIRED (2.1.16). Declared,
@@ -643,7 +665,8 @@ export interface FrontendModule extends EntityModuleManifest {
   renderCard: ComponentType<EntityCardProps<unknown>>;
   /**
    * Optional. Without it the type is not rendered by `<element_list/>` or
-   * `<tagged_list/>` — unsupported by contract, not by accident.
+   * `<tagged_list/>` — unsupported by contract, not by accident. Receives
+   * `EntityRowProps`, `tagLookup` included.
    */
   renderRow?: ComponentType<EntityRowProps<unknown>>;
   /**

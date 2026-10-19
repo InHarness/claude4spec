@@ -21,19 +21,16 @@
 
 import type { FC } from 'react';
 import { EntityListRow } from '@c4s/plugin-runtime/ui';
-import type { Tag } from '@c4s/plugin-runtime/ui';
 import type { EntityRowProps } from '@c4s/plugin-runtime';
 import { DependencySentence } from './sentence.js';
 import type { ModuleDependency } from './types.js';
-
-/** Embedded rows carry no tag chips — the host embed passes no tag context. */
-const EMPTY_TAG_LOOKUP = new Map<string, Tag>();
 
 export const ModuleDependencyRow: FC<EntityRowProps<ModuleDependency>> = ({
   slug,
   entity,
   active,
   onOpen,
+  tagLookup,
 }) => (
   /*
    * The wrapper exists to carry the identifiers — `EntityListRow` renders a
@@ -54,8 +51,9 @@ export const ModuleDependencyRow: FC<EntityRowProps<ModuleDependency>> = ({
        */
       {...(onOpen ? { onClick: onOpen } : {})}
       style={active ? { background: 'var(--c-accent-soft)' } : undefined}
+      // No tag chips on an edge row; the map is the host's `tagLookup` (2.1.40), passed on.
       tags={[]}
-      tagLookup={EMPTY_TAG_LOOKUP}
+      tagLookup={tagLookup}
       align="start"
     >
       <DependencySentence dependent={entity.dependent} provider={entity.provider} />

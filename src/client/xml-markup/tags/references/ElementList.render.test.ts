@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 /**
  * M19 `m19broken` (2.1.16) — a deleted entity on an element list: the host
@@ -19,11 +20,11 @@ const ENTITIES: Record<string, Row> = {
   'kept-b': { slug: 'kept-b', title: 'Kept B' },
 };
 
-const rowCalls: Array<{ slug: string; entity: unknown }> = [];
+const rowCalls: Array<{ slug: string; entity: unknown; tagLookup: ReadonlyMap<string, unknown> }> = [];
 const chipCalls: string[] = [];
 
-function RenderRow({ slug, entity }: { slug: string; entity: Row }) {
-  rowCalls.push({ slug, entity });
+function RenderRow({ slug, entity, tagLookup }: { slug: string; entity: Row; tagLookup: ReadonlyMap<string, unknown> }) {
+  rowCalls.push({ slug, entity, tagLookup });
   return createElement('span', { 'data-row': slug }, entity.title);
 }
 
@@ -66,14 +67,27 @@ vi.mock('../../../runtime/plugin-boot-signal.js', () => ({
 
 const { ElementListRender } = await import('./ElementList.js');
 
-const render = (slugs: string) =>
-  renderToStaticMarkup(
-    createElement(ElementListRender, {
-      name: 'element_list',
-      attrs: { type: 'endpoint', slugs },
-      variant: 'block',
-    }),
+const TAGS = [
+  { slug: 'm13', name: 'M13', color: '#336699', description: null, counts: {} },
+  { slug: 'm18', name: 'M18', color: null, description: null, counts: {} },
+];
+
+/** The project's tags are whatever sits in the host's `['tags']` cache. */
+const render = (slugs: string, tags: unknown[] | null = TAGS) => {
+  const qc = new QueryClient();
+  if (tags) qc.setQueryData(['tags'], tags);
+  return renderToStaticMarkup(
+    createElement(
+      QueryClientProvider,
+      { client: qc },
+      createElement(ElementListRender, {
+        name: 'element_list',
+        attrs: { type: 'endpoint', slugs },
+        variant: 'block',
+      }),
+    ),
   );
+};
 
 beforeEach(() => {
   rowCalls.length = 0;
@@ -104,5 +118,29 @@ describe('element_list — slug of a deleted entity (M19 m19broken)', () => {
     expect(html.match(/<li[\s>]/g) ?? []).toHaveLength(0);
     expect(rowCalls).toEqual([]);
     expect(chipCalls).toEqual([]);
+  });
+});
+
+describe('element_list — the host hands renderRow the project tag map (2.1.40, M13 ← M18)', () => {
+  it('every row receives tagLookup: slug → Tag of every project tag, from the host ["tags"] query', () => {
+    render('kept-a,kept-b');
+    expect(rowCalls).toHaveLength(2);
+    const lookup = rowCalls[0]!.tagLookup;
+    expect([...lookup.keys()]).toEqual(['m13', 'm18']);
+    expect(lookup.get('m13')).toMatchObject({ slug: 'm13', name: 'M13', color: '#336699' });
+  });
+
+  it('all rows of one list share the SAME map instance', () => {
+    render('kept-a,kept-b');
+    expect(rowCalls[0]!.tagLookup).toBe(rowCalls[1]!.tagLookup);
+  });
+
+  it('the map is always present — empty when the project has no tags or the query has no data yet', () => {
+    render('kept-a', []);
+    expect(rowCalls.at(-1)!.tagLookup.size).toBe(0);
+    // `null`: nothing in the `['tags']` cache — the query has no data yet.
+    render('kept-b', null);
+    expect(rowCalls.at(-1)!.tagLookup).toBeInstanceOf(Map);
+    expect(rowCalls.at(-1)!.tagLookup.size).toBe(0);
   });
 });

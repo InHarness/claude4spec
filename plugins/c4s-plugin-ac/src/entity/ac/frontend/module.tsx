@@ -5,7 +5,7 @@ import type {
   EntityRowProps,
   FrontendModule,
 } from '@c4s/plugin-runtime';
-import { Badge } from '@c4s/plugin-runtime/ui';
+import { Badge, TagChip } from '@c4s/plugin-runtime/ui';
 import type { Ac } from '../../../types.js';
 import {
   AC_SIDEBAR_ORDER,
@@ -22,7 +22,14 @@ import { acRoutes } from './routes.js';
 import { acEditGesture } from './edit-popover.js';
 import { acData, acSlugPattern } from '../schema.js';
 
-function AcRow({ entity, active, onOpen }: EntityRowProps<Ac>) {
+/**
+ * Row in `element_list` / `tagged_list`: the `title` cut to ~40 characters, the
+ * `kind` badge and — 2.1.40 — EVERY tag of the criterion as a `TagChip`, no
+ * limit and no "+N more", coloured through the `tagLookup` the host hands the
+ * slot (the slot never calls `useTags`). The only value markers are the `kind`
+ * badge and `(dep)`.
+ */
+function AcRow({ entity, active, onOpen, tagLookup }: EntityRowProps<Ac>) {
   const deprecated = entity.status === 'deprecated';
   return (
     <button
@@ -50,15 +57,19 @@ function AcRow({ entity, active, onOpen }: EntityRowProps<Ac>) {
         >
           {shortLabel(entity.title)}
         </span>
-        <span className="block text-[10.5px] font-mono uppercase tracking-wider" style={{ color: 'var(--c-subtle)' }}>
-          {entity.kind}
-          {deprecated && ' · deprecated'}
+        <span className="mt-1 flex items-center gap-1 flex-wrap" data-testid="ac-row-markers">
+          <Badge label={entity.kind} small mono />
+          {deprecated && <Badge label="(dep)" small mono />}
+          {entity.tags.map((ts) => {
+            const tag = tagLookup.get(ts);
+            return <TagChip key={ts} label={tag?.name ?? ts} color={tag?.color ?? undefined} small />;
+          })}
         </span>
       </span>
       {entity.verifies.length > 0 && (
         <span
-          className="font-mono text-[10.5px] px-1.5 py-0.5 rounded"
-          style={{ background: 'var(--c-panel)', color: 'var(--c-muted)' }}
+          className="shrink-0 font-mono text-[10.5px]"
+          style={{ color: 'var(--c-subtle)' }}
           title={`Verifies ${entity.verifies.length} entity reference(s)`}
         >
           ↪{entity.verifies.length}
