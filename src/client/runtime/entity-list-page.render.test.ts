@@ -179,7 +179,8 @@ describe('M19 list-page pattern (2.1.28)', () => {
     // The tag bar stands UNDER the header bar, as its sibling in the layout's `header` slot —
     // not inside the header row (its `filters` slot), which it would break.
     const slot = host.querySelector<HTMLElement>('[data-testid="layout-header"]')!;
-    const headerBar = host.querySelector('h2')!.parentElement!;
+    // The header box (2.1.37: holds the first line and, in a narrow panel, the `filters` line).
+    const headerBar = host.querySelector('h2')!.closest('[data-line="1"]')!.parentElement!;
     expect(headerBar.parentElement).toBe(slot);
     expect(headerBar.textContent).not.toContain('Filter by tag:');
     const tagStrip = headerBar.nextElementSibling as HTMLElement;
