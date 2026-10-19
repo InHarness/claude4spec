@@ -13,6 +13,9 @@ import { useArtifactThreads } from '../hooks/useArtifactThreads.js';
 import { BriefEditor } from './BriefEditor.js';
 import { ArtifactThreadsPanel } from './ArtifactThreadsPanel.js';
 import { FileVersionHistory } from './FileVersionHistory.js';
+import { ImplementedBadge } from './BriefsList.js';
+import { TitledBadge } from './TitledBadge.js';
+import { Badge } from '../host-ui-kit/actions/Badge.js';
 
 interface Props {
   briefPath: string;
@@ -85,30 +88,21 @@ export function BriefDetail({ briefPath }: Props) {
           >
             {briefPath}
           </span>
+          {/* 2.1.40: the provenance markers are values — catalog `Badge`s. */}
           {fm.from_release === null ? (
-            <Badge initial>initial</Badge>
+            <TitledBadge
+              label="initial"
+              mono
+              small
+              foreground="var(--c-muted)"
+              title="Initial brief — no previous release; comparing against an empty baseline."
+            />
           ) : (
-            <Badge accent>{fm.from_release}</Badge>
+            <Badge label={fm.from_release} mono small foreground="var(--c-accent)" />
           )}
           <span style={{ color: 'var(--c-subtle)', fontSize: 11 }}>→</span>
-          <Badge accent>{fm.to_release}</Badge>
-          {fm.implemented ? (
-            <span
-              className="font-mono text-[10.5px] px-1.5 py-0.5 rounded inline-flex items-center"
-              style={{ background: 'var(--c-green-soft)', color: 'var(--c-green)' }}
-              title="Brief implemented (declared by implementer-agent or user)"
-            >
-              implemented
-            </span>
-          ) : (
-            <span
-              className="font-mono text-[10.5px] px-1.5 py-0.5 rounded inline-flex items-center"
-              style={{ background: 'var(--c-yellow)', color: 'var(--c-yellow-ink)' }}
-              title="Brief pending — not yet implemented"
-            >
-              pending
-            </span>
-          )}
+          <Badge label={fm.to_release} mono small foreground="var(--c-accent)" />
+          <ImplementedBadge implemented={fm.implemented === true} />
         </div>
         <span className="flex-1" />
         <SegmentedControl
@@ -209,44 +203,3 @@ export function BriefDetail({ briefPath }: Props) {
     </div>
   );
 }
-
-function Badge({
-  children,
-  accent,
-  initial,
-  title,
-}: {
-  children: React.ReactNode;
-  accent?: boolean;
-  initial?: boolean;
-  title?: string;
-}) {
-  if (initial) {
-    return (
-      <span
-        className="font-mono text-[10.5px] uppercase tracking-wider px-1.5 py-0.5 rounded inline-flex items-center"
-        style={{
-          background: 'transparent',
-          color: 'var(--c-muted)',
-          border: '1px dashed var(--c-hair-strong)',
-        }}
-        title={title ?? 'Initial brief — no previous release; comparing against an empty baseline.'}
-      >
-        {children}
-      </span>
-    );
-  }
-  return (
-    <span
-      className="font-mono text-[10.5px] px-1.5 py-0.5 rounded inline-flex items-center"
-      style={{
-        background: accent ? 'var(--c-accent)' : 'var(--c-hair)',
-        color: accent ? '#fff' : 'var(--c-muted)',
-      }}
-      title={title}
-    >
-      {children}
-    </span>
-  );
-}
-

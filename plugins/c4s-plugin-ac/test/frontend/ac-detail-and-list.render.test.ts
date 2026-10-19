@@ -483,8 +483,12 @@ describe('[ac:ac-panel-verifies-na-stronie-detalu-ac-g] verifies panel on the AC
     });
     const text = container.textContent ?? '';
     for (const label of ['Acceptance Criterion', 'Endpoint', 'DTO', 'UI View']) expect(text).toContain(label);
-    // Valid targets get the ↗ open button, not a broken badge.
-    expect(buttonByText('↗', container)).toBeDefined();
+    // Valid targets get the "open" link — a ghost `ActionButton`, a real
+    // Tab-reachable button (2.1.40) — not a broken badge.
+    const open = buttonByText('open', container);
+    expect(open).toBeDefined();
+    expect(open!.tagName).toBe('BUTTON');
+    expect(open!.tabIndex).toBe(0);
     expect(state.badges.filter((b) => b.variant === 'broken')).toHaveLength(0);
   });
 

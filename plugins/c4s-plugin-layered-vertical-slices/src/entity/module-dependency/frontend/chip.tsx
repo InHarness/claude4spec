@@ -16,6 +16,7 @@
 
 import React from 'react';
 import type { EntityChipProps } from '@c4s/plugin-runtime';
+import { Badge } from '@c4s/plugin-runtime/ui';
 import type { ModuleDependency } from './types.js';
 
 export function ModuleDependencyChip({ slug, entity, onOpen }: EntityChipProps<unknown>) {
@@ -23,20 +24,18 @@ export function ModuleDependencyChip({ slug, entity, onOpen }: EntityChipProps<u
   const interactive = typeof onOpen === 'function';
 
   if (record === null) {
+    // 2.1.40 (M13): a deleted edge of this registered type is drawn by this
+    // slot — the catalog's broken `Badge` with the slug, not clickable. The
+    // host's `[broken: …]` chip is only for an unknown or inactive type.
     return (
       <span
         data-testid="module-dependency-chip"
         data-broken-ref={slug}
         data-slug={slug}
         title="This module dependency no longer exists."
-        className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 align-baseline font-mono text-[11.5px]"
-        style={{
-          background: 'var(--c-red-soft)',
-          border: '1px dashed var(--c-red)',
-          color: 'var(--c-red)',
-        }}
+        className="inline-flex align-baseline"
       >
-        {`broken module-dependency: ${slug}`}
+        <Badge variant="broken" label={slug} />
       </span>
     );
   }

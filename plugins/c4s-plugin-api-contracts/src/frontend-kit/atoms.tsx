@@ -8,7 +8,8 @@
  * component under a catalog name. Tag chips come from `@c4s/plugin-runtime/ui`.
  */
 import type { HttpMethod } from '../types.js';
-import { Badge } from '@c4s/plugin-runtime/ui';
+import type { Tag } from '@c4s/plugin-runtime';
+import { Badge, TagChip } from '@c4s/plugin-runtime/ui';
 
 export const METHOD_STYLE: Record<
   HttpMethod,
@@ -35,4 +36,22 @@ interface MethodChipProps {
 export function MethodChip({ method, large = false }: MethodChipProps) {
   const s = METHOD_STYLE[method] ?? METHOD_STYLE.GET;
   return <Badge label={s.label} foreground={s.fg} mono small={!large} minWidth={large ? 56 : 42} />;
+}
+
+/**
+ * 2.1.40 — a `renderRow` slot's tag strip: the record's tags as catalog
+ * `TagChip`s in the colours of the `tagLookup` the host handed the slot (never
+ * one built from `useTags` — a slot does not fetch). A tag missing from the map
+ * shows its slug in the default colour.
+ */
+export function RowTagChips({ tags, tagLookup }: { tags: string[]; tagLookup: ReadonlyMap<string, Tag> }) {
+  if (tags.length === 0) return null;
+  return (
+    <span className="shrink-0 flex items-center gap-1 flex-wrap" data-testid="row-tags">
+      {tags.map((ts) => {
+        const tag = tagLookup.get(ts);
+        return <TagChip key={ts} label={tag?.name ?? ts} color={tag?.color ?? undefined} small />;
+      })}
+    </span>
+  );
 }

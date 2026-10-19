@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import { CheckSquare } from 'lucide-react';
 import {
+  ActionButton,
   Badge,
   EnumBadgePicker,
   FieldGrid,
@@ -390,18 +391,18 @@ function VerifiesPanel({
           label: slug,
           // The chip's own slot carries both the dangling marker and the
           // jump-to-entity affordance the old panel had on the slug itself.
+          // 2.1.40: the link to the record is a ghost `ActionButton` "open" —
+          // a real button, reachable with Tab — not a `Badge` in a button.
           badge: (
             <>
               {reason && <Badge label={reason} variant="broken" small />}
               {!reason && mod && onOpenEntity && (
-                <button
-                  onClick={() => onOpenEntity(type, slug)}
+                <ActionButton
+                  variant="ghost"
+                  label="open"
                   title={`Open ${type} ${slug}`}
-                  className="opacity-70 hover:opacity-100 text-[11px]"
-                  style={{ color: 'var(--c-accent)' }}
-                >
-                  ↗
-                </button>
+                  onClick={() => onOpenEntity(type, slug)}
+                />
               )}
             </>
           ),

@@ -583,14 +583,21 @@ describe('endpoint-list criteria', () => {
 });
 
 describe('[section:109mdc2m] manifest renderRow (element_list / tagged_list row)', () => {
-  type RowFC = FC<{ entity: Endpoint; active?: boolean; onOpen: () => void }>;
+  type RowFC = FC<{
+    entity: Endpoint;
+    active?: boolean;
+    onOpen: () => void;
+    tagLookup: ReadonlyMap<string, { slug: string; name: string; color?: string | null }>;
+  }>;
   const Row = endpointFrontendModule.renderRow as unknown as RowFC;
+  const NO_TAGS = new Map();
 
   it('[section:109mdc2m] the manifest row shows method chip, path as main content, summary on the second line and the slug at the end', async () => {
     await render(
       createElement(Row, {
         entity: sampleEndpoint({ slug: 'get-api-orders', path: '/api/orders', summary: 'Orders' }),
         onOpen: () => undefined,
+        tagLookup: NO_TAGS,
       }),
     );
     const row = container.querySelector('button')!;
@@ -611,6 +618,7 @@ describe('[section:109mdc2m] manifest renderRow (element_list / tagged_list row)
       createElement(Row, {
         entity: sampleEndpoint({ slug: 'delete-api-users-id', method: 'DELETE', path: '/api/users/:id', summary: '' }),
         onOpen: () => undefined,
+        tagLookup: NO_TAGS,
       }),
     );
     const row = container.querySelector('button')!;
@@ -619,6 +627,29 @@ describe('[section:109mdc2m] manifest renderRow (element_list / tagged_list row)
     expect((main.children[1] as HTMLElement).textContent).toBe(ENDPOINT_NO_SUMMARY);
     expect(ENDPOINT_NO_SUMMARY).toBe('— no summary —');
     expect(row.lastElementChild!.textContent).toBe('delete-api-users-id');
+  });
+
+  it('[section:109mdc2m] 2.1.40: the row shows the record tags as TagChips coloured from the slot tagLookup, before the slug; the method is a Badge with no fill', async () => {
+    const lookup = new Map([['auth', { slug: 'auth', name: 'Auth', color: 'rgb(51, 102, 153)' }]]);
+    await render(
+      createElement(Row, {
+        entity: sampleEndpoint({ slug: 'get-api-orders', path: '/api/orders', tags: ['auth', 'ghost'] }),
+        onOpen: () => undefined,
+        tagLookup: lookup,
+      }),
+    );
+    const row = container.querySelector('button')!;
+    const chips = Array.from(row.querySelectorAll<HTMLElement>('.tag-chip'));
+    // Every tag of the record; one missing from the map shows its slug.
+    expect(chips.map((c) => c.textContent)).toEqual(['Auth', 'ghost']);
+    // The dot takes the project colour from the lookup.
+    expect((chips[0]!.firstElementChild as HTMLElement).style.background).toBe('rgb(51, 102, 153)');
+    // Tags sit before the slug, which stays last.
+    expect(row.lastElementChild!.textContent).toBe('get-api-orders');
+    // The method marker is a value `Badge` — `value-badge`, ink only.
+    const method = row.firstElementChild as HTMLElement;
+    expect(method.className).toContain('value-badge');
+    expect(method.style.color).not.toBe('');
   });
 });
 

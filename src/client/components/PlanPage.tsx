@@ -24,6 +24,7 @@ import { useOutlineStore } from '../state/outline.js';
 import { stem } from '../lib/artifact-path.js';
 import { withFrontmatterOf } from '../lib/artifact-frontmatter.js';
 import { AppliedBadge } from './AppliedBadge.js';
+import { Badge } from '../host-ui-kit/actions/Badge.js';
 import { useUnsavedEditsSource } from '../tiptap/unsavedEdits.js';
 
 interface Props {
@@ -70,9 +71,9 @@ export function PlanPage({ planPath }: Props) {
   const { data: lastThreadId = null } = usePlanLastThread(planPath);
   // currentVersion isn't part of the generic artifact detail response (no
   // stored column backs it anymore) — derive it from the version log's most
-  // recent entry (listVersions sorts DESC).
+  // recent entry (listVersions sorts DESC). A fresh plan with no entry yet is `v1`.
   const { data: versionsData } = usePlanVersions(planPath);
-  const currentVersion = versionsData?.versions[0]?.version ?? 0;
+  const currentVersion = versionsData?.versions[0]?.version ?? 1;
   const editor = useOutlineStore((s) => s.editor);
   const setChatThreadId = useChatStore((s) => s.setChatThreadId);
   const setChatOpen = useChatStore((s) => s.setChatOpen);
@@ -305,15 +306,8 @@ export function PlanPage({ planPath }: Props) {
               <Pencil size={10} style={{ color: 'var(--c-subtle)' }} />
             </button>
           )}
-          <span
-            className="font-mono text-[11px] px-1.5 py-0.5 rounded"
-            style={{
-              background: 'var(--c-hair)',
-              color: 'var(--c-muted)',
-            }}
-          >
-            Plan v{currentVersion}
-          </span>
+          {/* 2.1.40: a read-only value — the catalog `Badge` (`v1` for a fresh plan). */}
+          <Badge label={`Plan v${currentVersion}`} mono small foreground="var(--c-muted)" />
           {/* 0.2.14: the plan's execution flag. The agent that ran the plan sets
               it through `mark_plan_applied`; this toggle is the ONLY way back to
               `pending`, which is why it lives here and not in the tiptap. */}
