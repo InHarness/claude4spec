@@ -386,8 +386,8 @@ export interface RichTextFieldProps {
 export declare const RichTextField: ComponentType<RichTextFieldProps>;
 
 export interface TagPickerProps {
-  /** Written inline — NOT the catalog's `Tag` type (2.1.26, the `ui-kit-component` record `tag-picker`); a `useTags()` item is assignable as is. */
-  allTags: { slug: string; name: string; color?: string | null }[];
+  /** Every tag of the project — the public `Tag` from `@c4s/plugin-runtime` (2.1.41); `useTags()` items go in as is. */
+  allTags: Tag[];
   selected: string[];
   onToggle(slug: string): void;
   onCreate?(name: string): void;
