@@ -445,7 +445,7 @@ describe('[entity:ui-view-detail] /ui-views/:slug', () => {
     expect('emptyState' in uiViewFrontendModule.sidebarTab!).toBe(false);
   });
 
-  it('[entity:ui-view-detail] deleted entity: chip is a clickable "⚠ {slug}" button with Alt gestures off; card is a non-clickable broken frame', async () => {
+  it('[entity:ui-view-detail] deleted entity: chip is the broken Badge with the slug, not clickable and with Alt gestures off (2.1.39, M13); card is a non-clickable broken frame', async () => {
     const Chip = uiViewFrontendModule.renderChip as unknown as FC<{ slug: string; entity: null; onOpen: () => void }>;
     const Card = uiViewFrontendModule.renderCard as unknown as FC<{ slug: string; entity: null; onOpen: () => void }>;
     const opened: string[] = [];
@@ -461,20 +461,20 @@ describe('[entity:ui-view-detail] /ui-views/:slug', () => {
           createElement(Card, { slug: 'view-gone', entity: null, onOpen: () => opened.push('card') }),
         ),
       );
-      const chip = buttonByText('⚠ view-gone', container);
-      expect(chip).toBeDefined();
-      await act(async () => chip!.click());
-      expect(opened).toEqual(['chip']);
-      // Alt+click and Shift+Alt+click: no edit popover, no delete confirmation —
-      // the click just opens, like a plain one.
+      // The chip is the catalog's broken Badge with the slug — no button, no onOpen.
+      const chip = container.querySelector<HTMLElement>('span.value-badge')!;
+      expect(chip.textContent).toBe('⚠view-gone');
+      expect(chip.closest('button')).toBeNull();
+      await act(async () => chip.click());
+      // Alt+click and Shift+Alt+click: no edit popover, no delete confirmation, no open.
       await act(async () => {
-        chip!.dispatchEvent(new MouseEvent('click', { bubbles: true, altKey: true }));
-        chip!.dispatchEvent(new MouseEvent('click', { bubbles: true, altKey: true, shiftKey: true }));
+        chip.dispatchEvent(new MouseEvent('click', { bubbles: true, altKey: true }));
+        chip.dispatchEvent(new MouseEvent('click', { bubbles: true, altKey: true, shiftKey: true }));
         await new Promise((r) => setTimeout(r, 20));
       });
       expect(confirms).toHaveLength(0);
       expect(document.body.textContent).not.toContain('Edit UI view');
-      expect(opened).toEqual(['chip', 'chip', 'chip']);
+      expect(opened).toEqual([]);
       // Card: the broken frame, not a button.
       expect(container.textContent).toContain('⚠ broken: ui-view "view-gone"');
       const frames = Array.from(container.querySelectorAll('button')).filter((b) =>

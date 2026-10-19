@@ -1,5 +1,5 @@
 import type { Tag } from '../../../shared/plugin-host/ui-kit-surface.js';
-import { Badge } from '../actions/Badge.js';
+import { TagChip } from '../actions/TagChip.js';
 import { withStability } from '../stability.js';
 
 /**
@@ -13,7 +13,7 @@ import { withStability } from '../stability.js';
  * data side (`useTags` / `useEntityListQuery`) stays in the host app, which
  * builds `TagBarProps` and passes it in.
  *
- * Tag chips render via the kit's `Badge` (the single chip implementation).
+ * Tag chips render via the kit's `TagChip` (the single tag chip implementation).
  */
 export interface TagBarProps {
   tags: Tag[];
@@ -46,7 +46,7 @@ function TagFilterBarImpl({
         Filter by tag:
       </span>
       {tags.map((tag) => (
-        <Badge
+        <TagChip
           key={tag.slug}
           label={tag.name}
           color={tag.color ?? undefined}

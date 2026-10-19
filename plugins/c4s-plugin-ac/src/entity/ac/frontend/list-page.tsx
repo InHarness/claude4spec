@@ -177,8 +177,8 @@ export function AcsList({ search, tagFilter, onSearchChange, onTagToggle, onSele
                   style={{ color: 'var(--c-subtle)' }}
                   data-testid="ac-row-badges"
                 >
-                  <Badge label={a.kind} small dot={false} mono />
-                  {deprecated && <Badge label="deprecated" small dot={false} mono />}
+                  <Badge label={a.kind} small mono />
+                  {deprecated && <Badge label="deprecated" small mono />}
                   {a.verifies.length > 0 && <span>verifies {a.verifies.length}</span>}
                 </div>
               </EntityListRow>

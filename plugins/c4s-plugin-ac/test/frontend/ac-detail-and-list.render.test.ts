@@ -194,31 +194,38 @@ const slash = readFileSync(join(FRONTEND_SRC, 'slash-create.tsx'), 'utf-8');
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const REPO_ROOT = join(import.meta.dirname, '../../../..');
-const BADGE_MARKUP = 'chip-hover';
+// 2.1.39: the value marker and the tag chip are two components, each with its own class.
+const BADGE_MARKUP = 'value-badge';
+const TAG_CHIP_MARKUP = 'tag-chip';
 
 /**
- * Labels of every chip the kit `Badge` drew in `scope`, read from the rendered
- * DOM: a Badge is a `<span>` carrying the `chip-hover` class, its text is the
- * label (the colour dot is an empty span). This sees chips drawn inside kit
- * components, which no module mock of `Badge` reaches.
+ * Labels of every value marker the kit `Badge` drew in `scope`, read from the
+ * rendered DOM: a Badge is a `<span>` carrying the `value-badge` class, its
+ * text is the label. This sees badges drawn inside kit components, which no
+ * module mock of `Badge` reaches.
  */
 function kitBadgeLabels(scope: ParentNode): string[] {
   return [...scope.querySelectorAll(`span.${BADGE_MARKUP}`)].map((el) => (el.textContent ?? '').trim());
 }
 
+/** Labels of every tag chip the kit `TagChip` drew in `scope` (the `tag-chip` class; the dot is an empty span). */
+function kitTagChipLabels(scope: ParentNode): string[] {
+  return [...scope.querySelectorAll(`span.${TAG_CHIP_MARKUP}`)].map((el) => (el.textContent ?? '').trim());
+}
+
 /**
- * `chip-hover` identifies the kit `Badge` only if no other component emits it:
- * among the TSX sources of the host client and of every plugin, the kit's
- * `actions/Badge.tsx` is the one that does.
+ * A marker class identifies its kit component only if no other component
+ * emits it: among the TSX sources of the host client and of every plugin, the
+ * kit's own file is the one that does.
  */
-function expectBadgeMarkupIsBadgeOnly(): void {
+function expectMarkupOwnedOnlyBy(marker: string, owner: string): void {
   const owners: string[] = [];
   const walk = (dir: string) => {
     for (const name of readdirSync(dir)) {
       if (name === 'node_modules' || name === 'dist') continue;
       const full = join(dir, name);
       if (statSync(full).isDirectory()) walk(full);
-      else if (name.endsWith('.tsx') && readFileSync(full, 'utf-8').includes(BADGE_MARKUP)) {
+      else if (name.endsWith('.tsx') && readFileSync(full, 'utf-8').includes(marker)) {
         owners.push(relative(REPO_ROOT, full).split('\\').join('/'));
       }
     }
@@ -232,7 +239,7 @@ function expectBadgeMarkupIsBadgeOnly(): void {
       // a package without src/
     }
   }
-  expect(owners).toEqual(['src/client/host-ui-kit/actions/Badge.tsx']);
+  expect(owners).toEqual([owner]);
 }
 
 function sampleAc(over: Partial<Ac> = {}): Ac {
@@ -543,7 +550,7 @@ describe('[entity:ac-list] /acs', () => {
     expect(container.textContent).not.toMatch(/clear filters|reset/i);
   });
 
-  it('[entity:ac-list] 2.1.28 composition — rows are kit EntityListRows whose kind badge, deprecated-only status badge and tag chips all render through Badge; the Analyze consistency action sits in the kit ActionBar', async () => {
+  it('[entity:ac-list] 2.1.28 composition — rows are kit EntityListRows whose kind badge and deprecated-only status badge render through Badge and whose tag chips render through TagChip (2.1.39); the Analyze consistency action sits in the kit ActionBar', async () => {
     state.acs = [
       sampleAc({ slug: 'ac-one', title: 'Active one.', kind: 'requirement', tags: ['m07'] }),
       sampleAc({ slug: 'ac-old', title: 'Old one.', kind: 'edge-case', status: 'deprecated', tags: [] }),
@@ -558,9 +565,10 @@ describe('[entity:ac-list] /acs', () => {
       }),
     );
     // Read from the DOM: the kind / status badges come from the package through
-    // `/ui`, the tag chip from inside the kit `EntityListRow` — both must be
-    // the kit `Badge`'s own markup.
-    expectBadgeMarkupIsBadgeOnly();
+    // `/ui` as the kit `Badge`'s markup, the tag chip from inside the kit
+    // `EntityListRow` as the kit `TagChip`'s markup.
+    expectMarkupOwnedOnlyBy(BADGE_MARKUP, 'src/client/host-ui-kit/actions/Badge.tsx');
+    expectMarkupOwnedOnlyBy(TAG_CHIP_MARKUP, 'src/client/host-ui-kit/actions/TagChip.tsx');
     const labels = kitBadgeLabels(container);
     // kind badge on every row
     expect(labels).toContain('requirement');
@@ -568,8 +576,9 @@ describe('[entity:ac-list] /acs', () => {
     // status badge only for the deprecated criterion (per-row check below)
     expect(labels).toContain('deprecated');
     expect(labels).not.toContain('active');
-    // tag chip of the first row via Badge (EntityListRow draws it)
-    expect(labels).toContain('m07');
+    // tag chip of the first row via TagChip (EntityListRow draws it), not a Badge
+    expect(kitTagChipLabels(container)).toEqual(['m07']);
+    expect(labels).not.toContain('m07');
     // the bespoke "· deprecated" text span is gone
     expect(container.textContent).not.toContain('· deprecated');
     const rowBadges = container.querySelectorAll('[data-testid="ac-row-badges"]');
@@ -609,7 +618,7 @@ describe('[entity:ac-list] /acs', () => {
         onSelect: () => undefined,
       }),
     );
-    const labels = kitBadgeLabels(container);
+    const labels = kitTagChipLabels(container);
     for (const t of tags) expect(labels).toContain(t);
     expect(container.textContent).not.toMatch(/\+\d+ more/);
   });
@@ -650,7 +659,7 @@ describe('[entity:ac-detail] create and edit windows', () => {
 });
 
 describe('[entity:ac-detail] chip and card — own deleted-entity branch', () => {
-  it('[entity:ac-detail] chip: a clickable "⚠ {slug}" button; card: a non-clickable broken frame', async () => {
+  it('[entity:ac-detail] chip: the broken Badge with the slug, not clickable (2.1.39, M13); card: a non-clickable broken frame', async () => {
     const Chip = acFrontendModule.renderChip as unknown as FC<{ slug: string; entity: null; onOpen: () => void }>;
     const Card = acFrontendModule.renderCard as unknown as FC<{ slug: string; entity: null; onOpen: () => void }>;
     const opened: string[] = [];
@@ -660,18 +669,20 @@ describe('[entity:ac-detail] chip and card — own deleted-entity branch', () =>
         createElement(Card, { slug: 'ac-gone', entity: null, onOpen: () => opened.push('card') }),
       ),
     );
-    const chip = buttonByText('⚠ ac-gone', container);
-    expect(chip).toBeDefined();
-    await act(async () => chip!.click());
-    expect(opened).toEqual(['chip']);
+    // The chip is the catalog's broken Badge with the slug — no button, no onOpen.
+    expect(state.badges.filter((b) => b.variant === 'broken').map((b) => b.label)).toEqual(['ac-gone']);
+    const chip = container.querySelector<HTMLElement>(`span.${BADGE_MARKUP}`)!;
+    expect(chip.textContent).toBe('⚠ac-gone');
+    expect(chip.closest('button')).toBeNull();
+    expect(chip.hasAttribute('tabindex')).toBe(false);
+    await act(async () => chip.click());
+    expect(opened).toEqual([]);
     expect(container.textContent).toContain('⚠ broken: ac "ac-gone"');
     // The card's broken frame is not a button.
     const frames = Array.from(container.querySelectorAll('button')).filter((b) =>
       b.textContent?.includes('broken: ac'),
     );
     expect(frames).toHaveLength(0);
-    // `Badge variant='broken'` is not used in the chip slot.
-    expect(state.badges.filter((b) => b.variant === 'broken')).toHaveLength(0);
   });
 });
 

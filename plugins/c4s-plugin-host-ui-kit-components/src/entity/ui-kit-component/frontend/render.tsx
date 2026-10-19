@@ -3,9 +3,9 @@
  * `ctpko3bp`, "Render w treści"):
  *
  * - chip — the type icon, `name` and a `Badge` with `stability`; a broken chip
- *   is a `Badge` in the `broken` variant carrying the slug;
+ *   is a `Badge` in the `broken` variant carrying the slug, not clickable (2.1.39);
  * - card — `name`, badges for `group`, `stability` and `binding`, the number of
- *   props, `composes` chips and the tags;
+ *   props, `composes` chips and the tags as `TagChip`s;
  * - row — `EntityListRow` with the subtitle "<n> props · <binding>" and the
  *   badges in the meta (trailing) slot.
  *
@@ -18,7 +18,7 @@ import type { FC } from 'react';
 import { Blocks } from 'lucide-react';
 import { editorBridge } from '@c4s/plugin-runtime';
 import type { EntityCardProps, EntityChipProps, EntityRowProps } from '@c4s/plugin-runtime';
-import { Badge, EntityListRow } from '@c4s/plugin-runtime/ui';
+import { Badge, EntityListRow, TagChip } from '@c4s/plugin-runtime/ui';
 import type { Tag } from '@c4s/plugin-runtime/ui';
 import { UI_KIT_COMPONENT_TYPE } from '../../../identity.js';
 import type { UiKitComponent } from '../../../types.js';
@@ -29,9 +29,7 @@ export const UiKitComponentIcon = Blocks;
 
 export const UiKitComponentChip: FC<EntityChipProps<UiKitComponent>> = ({ slug, entity, onOpen }) => {
   const open = () => (onOpen ? onOpen() : editorBridge.openEntity(UI_KIT_COMPONENT_TYPE, slug));
-  if (!entity) {
-    return <Badge variant="broken" small mono label={slug} onClick={open} />;
-  }
+  if (!entity) return <Badge variant="broken" label={slug} />;
   return (
     <button
       type="button"
@@ -49,9 +47,8 @@ export const UiKitComponentChip: FC<EntityChipProps<UiKitComponent>> = ({ slug, 
 
 export const UiKitComponentCard: FC<EntityCardProps<UiKitComponent>> = ({ slug, entity, onOpen, caption }) => {
   const open = () => (onOpen ? onOpen() : editorBridge.openEntity(UI_KIT_COMPONENT_TYPE, slug));
-  if (!entity) {
-    return <Badge variant="broken" mono label={slug} onClick={open} />;
-  }
+  // The card stays the type's markup; its broken branch is the same non-clickable broken Badge.
+  if (!entity) return <Badge variant="broken" label={slug} />;
   const n = entity.props?.length ?? 0;
   return (
     <div
@@ -80,20 +77,22 @@ export const UiKitComponentCard: FC<EntityCardProps<UiKitComponent>> = ({ slug, 
       {(entity.composes?.length ?? 0) > 0 && (
         <div className="flex flex-wrap items-center gap-1 mt-1" data-testid="ui-kit-component-card-composes">
           {entity.composes.map((c) => (
-            <Badge
+            // 2.1.39: `Badge` is a value marker with no click — the link is a button around it.
+            <button
               key={c.component}
-              small
-              mono
-              label={c.component}
+              type="button"
+              className="inline-flex"
               onClick={() => editorBridge.openEntity(UI_KIT_COMPONENT_TYPE, c.component)}
-            />
+            >
+              <Badge small mono label={c.component} />
+            </button>
           ))}
         </div>
       )}
       {(entity.tags?.length ?? 0) > 0 && (
         <div className="flex flex-wrap items-center gap-1 mt-1" data-testid="ui-kit-component-card-tags">
           {entity.tags.map((t) => (
-            <Badge key={t} small label={t} />
+            <TagChip key={t} small label={t} />
           ))}
         </div>
       )}

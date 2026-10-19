@@ -113,6 +113,7 @@ vi.mock('@c4s/plugin-runtime/ui', async () => {
     enumMod,
     relMod,
     histMod,
+    tagChipMod,
   ] = await Promise.all([
     import('../../../../src/client/host-ui-kit/detail/TagPicker.js'),
     import('../../../../src/client/host-ui-kit/actions/Badge.js'),
@@ -129,6 +130,7 @@ vi.mock('@c4s/plugin-runtime/ui', async () => {
     import('../../../../src/client/host-ui-kit/pickers/EnumBadgePicker.js'),
     import('../../../../src/client/host-ui-kit/pickers/GroupedRelationPicker.js'),
     import('../../../../src/client/host-ui-kit/detail/EntityVersionHistoryView.js'),
+    import('../../../../src/client/host-ui-kit/actions/TagChip.js'),
   ]);
   const spy =
     <P,>(Real: FC<P>, sink: (p: P) => void): FC<P> =>
@@ -140,6 +142,7 @@ vi.mock('@c4s/plugin-runtime/ui', async () => {
   return {
     TagPicker: spy(tagMod.TagPicker, (p) => state.tagPickers.push(p as never)),
     Badge: spy(badgeMod.Badge, (p) => { if (p) state.badges.push(p as never); }),
+    TagChip: tagChipMod.TagChip,
     FieldRow: rowMod.FieldRow,
     FieldGrid: gridMod.FieldGrid,
     ActionButton: btnMod.ActionButton,
@@ -762,7 +765,6 @@ describe('[section:dhh869qt] endpoint Host UI Kit slice', () => {
       ['EntityViewSwitcher.tsx', ['EntityViewSwitcher'], 'SegmentedControlTabs'],
       ['SegmentedControl.tsx', ['SegmentedControl'], 'SegmentedControlTabs'],
       ['ButtonGroup.tsx', ['ButtonGroup', 'SegmentButton'], 'SegmentedControlTabs'],
-      ['atoms.tsx', ['TagChip'], 'Badge'],
       ['popover-form.tsx', ['FieldLabel', 'TextInput', 'SelectInput', 'InlineError', 'PopoverFooter'], 'FormField'],
       ['ListPageLayout.tsx', ['ListPageLayout'], null],
       // `RoutePane` — the package's copy of the host's route pane, exported as `Pane`.
@@ -786,7 +788,9 @@ describe('[section:dhh869qt] endpoint Host UI Kit slice', () => {
     expect(readFileSync(join(FRONTEND_SRC, 'list-page.tsx'), 'utf-8')).toMatch(/<MethodChip\b/);
     expect(readFileSync(join(KIT_SRC, 'EntityBreadcrumbBar.tsx'), 'utf-8')).toMatch(/<MethodChip\b/);
     const atoms = readFileSync(join(KIT_SRC, 'atoms.tsx'), 'utf-8');
-    expect(atoms.slice(0, atoms.indexOf('Recorded, not fixed here'))).not.toContain('`MethodChip`');
+    // 2.1.39: the file carries no debt any more (the local TagChip is gone).
+    expect(atoms).not.toMatch(/DEBT \(/);
+    expect(atoms).not.toMatch(/export function TagChip\b/);
     expect(atoms).toMatch(/export function MethodChip[\s\S]*?<Badge\b/);
   });
 

@@ -91,7 +91,7 @@ function apiContractsDeclarations(section: string, consumer: string): HostLocalD
     { section, consumer, kind: 'debt', components: ['EntityViewSwitcher'], replacedBy: ['SegmentedControlTabs'], files: [kit(pkg, 'EntityViewSwitcher.tsx')] },
     { section, consumer, kind: 'debt', components: ['SegmentedControl'], replacedBy: ['SegmentedControlTabs'], files: [kit(pkg, 'SegmentedControl.tsx')] },
     { section, consumer, kind: 'debt', components: ['ButtonGroup', 'SegmentButton'], replacedBy: ['SegmentedControlTabs'], files: [kit(pkg, 'ButtonGroup.tsx')] },
-    { section, consumer, kind: 'debt', components: ['TagChip'], replacedBy: ['Badge'], files: [kit(pkg, 'atoms.tsx')] },
+    // 2.1.39: the local `TagChip` debt is gone — the catalog's own `TagChip` replaces it.
     { section, consumer, kind: 'debt', components: [...POPOVER_FORM], replacedBy: ['FormField'], files: popoverFormFiles(pkg) },
     ...trajectoryDebts(section, consumer, pkg),
   ];

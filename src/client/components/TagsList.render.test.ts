@@ -162,11 +162,11 @@ describe('TagsList — rows through EntityListRow slots', () => {
   });
 
   it('[section:xfkinig4] the screen composes only catalog components the M18 slice lists as consumed — EntityListRow, InlineEditField, Popover among them', () => {
-    // `Components consumed` (2.1.28): badge, tag-picker, tag-filter-bar, popover,
+    // `Components consumed` (2.1.28; 2.1.39 swaps badge for tag-chip): tag-chip, tag-picker, tag-filter-bar, popover,
     // entity-list-row, entity-list-header, empty-state, dialog, form-field,
     // action-button, inline-edit-field — no host-local component is declared.
     const consumed = new Set([
-      'actions/Badge.js',
+      'actions/TagChip.js',
       'detail/TagPicker.js',
       'list/TagFilterBar.js',
       'overlay-feedback/Popover.js',

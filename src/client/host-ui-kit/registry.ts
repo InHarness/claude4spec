@@ -22,6 +22,7 @@ import { GroupedEntityList } from './list/GroupedEntityList.js';
 import { ActionButton } from './actions/ActionButton.js';
 import { ActionBar } from './actions/ActionBar.js';
 import { Badge } from './actions/Badge.js';
+import { TagChip } from './actions/TagChip.js';
 import { LoadingState } from './actions/LoadingState.js';
 import { FormField } from './form/FormField.js';
 import { InlineEditField } from './form/InlineEditField.js';
@@ -93,6 +94,7 @@ export const UI_KIT_CATALOG: UiKitComponentEntry[] = [
   entry('ActionButton', 'actions', ActionButton),
   entry('ActionBar', 'actions', ActionBar),
   entry('Badge', 'actions', Badge),
+  entry('TagChip', 'actions', TagChip),
   entry('LoadingState', 'actions', LoadingState),
   entry('FormField', 'form', FormField),
   entry('InlineEditField', 'form', InlineEditField),

@@ -558,7 +558,7 @@ function DesignSystemSelect({
     items.push({
       id: value as string,
       label: value as string,
-      badge: <Badge label="missing" variant="broken" small dot={false} />,
+      badge: <Badge label="missing" variant="broken" small />,
     });
   }
 

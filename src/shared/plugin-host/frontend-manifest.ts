@@ -209,6 +209,7 @@ export const PLUGIN_RUNTIME_UI_EXPORT_NAMES = [
   'ActionButton',
   'ActionBar',
   'Badge',
+  'TagChip',
   'LoadingState',
   // Form (experimental)
   'FormField',

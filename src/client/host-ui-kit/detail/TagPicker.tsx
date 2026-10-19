@@ -1,20 +1,20 @@
 import { useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { withStability } from '../stability.js';
-import { Badge } from '../actions/Badge.js';
+import { TagChip } from '../actions/TagChip.js';
+import { ActionButton } from '../actions/ActionButton.js';
 import { Popover } from '../overlay-feedback/Popover.js';
 import { tagSlug } from '../../../shared/slug.js';
 
 /**
  * `TagPicker` (Panel detalu, `experimental`) — multi-select tags with an
- * optional inline create. Chips reuse the existing `Badge` component (no new
- * atom). `onCreate` for a name resolving to an existing slug creates nothing,
+ * optional inline create. Each chip is the catalog `TagChip` (2.1.39). `onCreate` for a name resolving to an existing slug creates nothing,
  * parity with the backend's auto-create-by-slug behavior — checked here
  * (`idempotentCreate`; an existing unselected tag is selected via `onToggle`)
  * and again by `tagsService`, which feeds `onCreate`.
  *
  * `variant: 'collapsed'` (host parity) shows chips only for `selected` + a
- * "+N" reveal control; the full tag list and inline-create input surface
+ * "+N" reveal control (a ghost `ActionButton`); the full tag list and inline-create input surface
  * inside a published `Popover` instead of always being visible inline.
  */
 /** One selectable tag — `{ slug; name; color? }`, written inline per its `ui-kit-component` record `tag-picker`. */
@@ -81,7 +81,7 @@ function FlatTagPicker({ allTags, selected, onToggle, onCreate }: Omit<TagPicker
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap gap-1.5">
         {allTags.map((tag) => (
-          <Badge
+          <TagChip
             key={tag.slug}
             label={tag.name}
             color={tag.color ?? undefined}
@@ -97,7 +97,7 @@ function FlatTagPicker({ allTags, selected, onToggle, onCreate }: Omit<TagPicker
 
 function CollapsedTagPicker({ allTags, selected, onToggle, onCreate }: Omit<TagPickerProps, 'variant'>) {
   const [open, setOpen] = useState(false);
-  const anchorRef = useRef<HTMLButtonElement>(null);
+  const anchorRef = useRef<HTMLSpanElement>(null);
   const selectedSet = new Set(selected);
   const selectedTags = allTags.filter((t) => selectedSet.has(t.slug));
   const restCount = allTags.length - selectedTags.length;
@@ -105,17 +105,16 @@ function CollapsedTagPicker({ allTags, selected, onToggle, onCreate }: Omit<TagP
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {selectedTags.map((tag) => (
-        <Badge key={tag.slug} label={tag.name} color={tag.color ?? undefined} active onClick={() => onToggle(tag.slug)} />
+        <TagChip key={tag.slug} label={tag.name} color={tag.color ?? undefined} active onClick={() => onToggle(tag.slug)} />
       ))}
-      <button
-        ref={anchorRef}
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="text-[11.5px] px-2 py-0.5 rounded-full"
-        style={{ color: 'var(--c-subtle)', border: '1px dashed var(--c-hair-strong)' }}
-      >
-        {restCount > 0 ? `+${restCount}` : '+ tag'}
-      </button>
+      {/* ActionButton takes no ref, so the Popover anchors on this wrapper. */}
+      <span ref={anchorRef} className="inline-flex">
+        <ActionButton
+          variant="ghost"
+          label={restCount > 0 ? `+${restCount}` : '+ tag'}
+          onClick={() => setOpen((v) => !v)}
+        />
+      </span>
       <Popover
         open={open}
         onClose={() => setOpen(false)}
@@ -126,7 +125,7 @@ function CollapsedTagPicker({ allTags, selected, onToggle, onCreate }: Omit<TagP
       >
         <div className="flex flex-wrap gap-1.5" style={{ minWidth: 200, maxWidth: 280 }}>
           {allTags.map((tag) => (
-            <Badge
+            <TagChip
               key={tag.slug}
               label={tag.name}
               color={tag.color ?? undefined}

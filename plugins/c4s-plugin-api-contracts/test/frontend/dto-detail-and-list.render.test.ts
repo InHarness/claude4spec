@@ -76,7 +76,7 @@ vi.mock('@c4s/plugin-runtime', async () => {
 
 vi.mock('@c4s/plugin-runtime/ui', async () => {
   const { createElement: h } = await import('react');
-  const [tagMod, badgeMod, rowMod, gridMod, btnMod, hdrMod, layoutMod, emptyMod, loadMod, listRowMod, tagBarMod, popMod] =
+  const [tagMod, badgeMod, rowMod, gridMod, btnMod, hdrMod, layoutMod, emptyMod, loadMod, listRowMod, tagBarMod, popMod, tagChipMod] =
     await Promise.all([
       import('../../../../src/client/host-ui-kit/detail/TagPicker.js'),
       import('../../../../src/client/host-ui-kit/actions/Badge.js'),
@@ -90,6 +90,7 @@ vi.mock('@c4s/plugin-runtime/ui', async () => {
       import('../../../../src/client/host-ui-kit/list/EntityListRow.js'),
       import('../../../../src/client/host-ui-kit/list/TagFilterBar.js'),
       import('../../../../src/client/host-ui-kit/overlay-feedback/Popover.js'),
+      import('../../../../src/client/host-ui-kit/actions/TagChip.js'),
     ]);
   const spy =
     <P,>(Real: FC<P>, sink: (p: P) => void): FC<P> =>
@@ -101,6 +102,7 @@ vi.mock('@c4s/plugin-runtime/ui', async () => {
   return {
     TagPicker: spy(tagMod.TagPicker, (p) => state.tagPickers.push(p as never)),
     Badge: badgeMod.Badge,
+    TagChip: tagChipMod.TagChip,
     FieldRow: rowMod.FieldRow,
     FieldGrid: gridMod.FieldGrid,
     ActionButton: btnMod.ActionButton,
@@ -346,7 +348,7 @@ describe('[entity:dto-detail] /dtos/:slug', () => {
     expect('emptyState' in dtoFrontendModule.sidebarTab!).toBe(false);
   });
 
-  it('[entity:dto-detail] chip: a clickable "⚠ {slug}" button; card: a non-clickable broken frame', async () => {
+  it('[entity:dto-detail] chip: the broken Badge with the slug, not clickable (2.1.39, M13); card: a non-clickable broken frame', async () => {
     const Chip = dtoFrontendModule.renderChip as unknown as FC<{ slug: string; entity: null; onOpen: () => void }>;
     const Card = dtoFrontendModule.renderCard as unknown as FC<{ slug: string; entity: null; onOpen: () => void }>;
     const opened: string[] = [];
@@ -356,10 +358,12 @@ describe('[entity:dto-detail] /dtos/:slug', () => {
         createElement(Card, { slug: 'dto-gone', entity: null, onOpen: () => opened.push('card') }),
       ),
     );
-    const chip = buttonByText('⚠ dto-gone', container);
-    expect(chip).toBeDefined();
-    await act(async () => chip!.click());
-    expect(opened).toEqual(['chip']);
+    // The chip is the catalog's broken Badge with the slug — no button, no onOpen.
+    const chip = container.querySelector<HTMLElement>('span.value-badge')!;
+    expect(chip.textContent).toBe('⚠dto-gone');
+    expect(chip.closest('button')).toBeNull();
+    await act(async () => chip.click());
+    expect(opened).toEqual([]);
     expect(container.textContent).toContain('⚠ broken: dto "dto-gone"');
     const frames = Array.from(container.querySelectorAll('button')).filter((b) =>
       b.textContent?.includes('broken: dto'),
@@ -664,7 +668,6 @@ describe('[section:9hz21ysc] dto Host UI Kit slice', () => {
       ['EntityViewSwitcher.tsx', ['EntityViewSwitcher'], 'SegmentedControlTabs'],
       ['SegmentedControl.tsx', ['SegmentedControl'], 'SegmentedControlTabs'],
       ['ButtonGroup.tsx', ['ButtonGroup', 'SegmentButton'], 'SegmentedControlTabs'],
-      ['atoms.tsx', ['TagChip'], 'Badge'],
       ['popover-form.tsx', ['FieldLabel', 'TextInput', 'SelectInput', 'InlineError', 'PopoverFooter'], 'FormField'],
       ['ListPageLayout.tsx', ['ListPageLayout'], null],
       // `RoutePane` — the package's copy of the host's route pane, exported as `Pane`.

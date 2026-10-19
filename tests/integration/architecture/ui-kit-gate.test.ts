@@ -345,13 +345,12 @@ describe('[section:yrzqclyz] c4s-plugin-ac Host UI Kit slice', () => {
 function apiContractsCase(section: string, type: string): void {
   const pkg = 'c4s-plugin-api-contracts';
 
-  it(`[section:${section}] the check reads the ${type} DŁUG entries — EntityBreadcrumbBar, EntityViewSwitcher, SegmentedControl, ButtonGroup + SegmentButton, TagChip, the popover form, ListPageLayout, RoutePane`, () => {
+  it(`[section:${section}] the check reads the ${type} DŁUG entries — EntityBreadcrumbBar, EntityViewSwitcher, SegmentedControl, ButtonGroup + SegmentButton, the popover form, ListPageLayout, RoutePane (TagChip retired in 2.1.39)`, () => {
     expect(entries(section)).toEqual([
       debt(['EntityBreadcrumbBar'], ['DetailPanelShell']),
       debt(['EntityViewSwitcher'], ['SegmentedControlTabs']),
       debt(['SegmentedControl'], ['SegmentedControlTabs']),
       debt(['ButtonGroup', 'SegmentButton'], ['SegmentedControlTabs']),
-      debt(['TagChip'], ['Badge']),
       debt(POPOVER_FORM, ['FormField']),
       debt(['ListPageLayout']),
       debt(['RoutePane']),
@@ -371,14 +370,12 @@ function apiContractsCase(section: string, type: string): void {
     assertTrajectoryDebts(section, pkg);
   });
 
-  it(`[section:${section}] ListPageHeader, ListScrollArea and MethodChip are struck: not declared, and MethodChip only binds the catalog Badge`, () => {
-    assertStruck(section, ['ListPageHeader', 'ListScrollArea', 'MethodChip']);
+  it(`[section:${section}] ListPageHeader, ListScrollArea, MethodChip and (2.1.39) the local TagChip are struck: not declared, and MethodChip only binds the catalog Badge`, () => {
+    assertStruck(section, ['ListPageHeader', 'ListScrollArea', 'MethodChip', 'TagChip']);
     const atoms = readSource(kit(pkg, 'atoms.tsx'));
-    const header = atoms.match(DEBT_MARKER);
-    expect(header).not.toBeNull();
-    const debtText = atoms.slice(0, atoms.indexOf('Recorded, not fixed here'));
-    expect(debtText).toContain('`TagChip`');
-    expect(debtText).not.toContain('`MethodChip`');
+    // No debt is left in the file, and no component under the catalog name `TagChip`.
+    expect(atoms.match(DEBT_MARKER)).toBeNull();
+    expect(atoms).not.toMatch(/export function TagChip\b/);
     expect(ownsMarkup(kit(pkg, 'atoms.tsx'))).toBe(false);
     expect(atoms).toMatch(/export function MethodChip[\s\S]*?<Badge\b/);
   });

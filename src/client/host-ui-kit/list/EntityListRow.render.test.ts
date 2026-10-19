@@ -2,7 +2,7 @@
 /**
  * M34/L12 — `EntityListRow` (group `list`, `experimental`) against its
  * `ui-kit-component` record `entity-list-row` (2.1.28): tag chips drawn by
- * `Badge` in its `small` variant, slugs resolved through `tagLookup`.
+ * `TagChip` (2.1.39; `Badge` before) in its `small` variant, slugs resolved through `tagLookup`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement, type ReactNode } from 'react';
@@ -11,7 +11,7 @@ import type { CSSProperties } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { Tag as TagIcon } from 'lucide-react';
 import { EntityListRow, type EntityListRowProps } from './EntityListRow.js';
-import { Badge } from '../actions/Badge.js';
+import { TagChip } from '../actions/TagChip.js';
 import type * as Published from '../../../plugin-types/ui.js';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -58,16 +58,16 @@ describe('EntityListRow ↔ record `entity-list-row` (M34/L12, 2.1.28)', () => {
     expect([a, b, c]).toEqual([true, true, true]);
   });
 
-  it('[entity:entity-list-row] renders tag chips through Badge (small), resolving slugs via tagLookup', () => {
+  it('[entity:entity-list-row] renders tag chips through TagChip (small), resolving slugs via tagLookup', () => {
     mount(createElement(EntityListRow, { tags: ['m34', 'unknown'], tagLookup: lookup, children: 'GET /api/users' }));
     const strip = host.querySelector('.flex-wrap')!;
     const chips = Array.from(strip.children) as HTMLElement[];
     expect(chips.map((c) => c.textContent)).toEqual(['M34', 'unknown']);
 
-    // Exactly Badge's small chip for the same tag.
+    // Exactly TagChip's small chip for the same tag.
     const probe = document.createElement('div');
     const probeRoot = createRoot(probe);
-    act(() => probeRoot.render(createElement(Badge, { label: 'M34', color: '#336699', small: true })));
+    act(() => probeRoot.render(createElement(TagChip, { label: 'M34', color: '#336699', small: true })));
     expect(chips[0]!.outerHTML).toBe(probe.innerHTML);
     act(() => probeRoot.unmount());
   });
@@ -115,10 +115,10 @@ describe('EntityListRow ↔ record `entity-list-row` (M34/L12, 2.1.28)', () => {
     mount(createElement(EntityListRow, { tags: ['ghost'], tagLookup: lookup, children: 'row' }));
     const chip = host.querySelector('.flex-wrap')!.firstElementChild as HTMLElement;
     expect(chip.textContent).toBe('ghost');
-    // Exactly Badge's small chip with no colour, i.e. Badge's default (var(--c-muted)) dot.
+    // Exactly TagChip's small chip with no colour, i.e. TagChip's default (var(--c-muted)) dot — no broken chip for tags.
     const probe = document.createElement('div');
     const probeRoot = createRoot(probe);
-    act(() => probeRoot.render(createElement(Badge, { label: 'ghost', small: true })));
+    act(() => probeRoot.render(createElement(TagChip, { label: 'ghost', small: true })));
     expect(chip.outerHTML).toBe(probe.innerHTML);
     act(() => probeRoot.unmount());
     expect(chip.outerHTML).toContain('var(--c-muted)');
