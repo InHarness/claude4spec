@@ -51,6 +51,9 @@ describe('token bridge — one name set in code (M34/L12)', () => {
     const constant = [...HOST_TOKEN_NAMES].sort();
     // No duplicates in the constant, so its set is its list.
     expect(new Set(constant).size).toBe(constant.length);
+    // 2.1.38 — 38 names, the UI text sizes among them, in all three.
+    expect(constant).toHaveLength(38);
+    expect(constant).toEqual(expect.arrayContaining(['--text-sm', '--text-xs', '--text-2xs']));
     expect([...publishedUnionNames()].sort()).toEqual(constant);
     expect([...themeStylesheetNames()].sort()).toEqual(constant);
     expect(unionsAreSame).toBe(true);

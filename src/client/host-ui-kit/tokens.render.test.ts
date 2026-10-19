@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 /**
  * M34/L12 — the token bridge of `@c4s/plugin-runtime/ui`: the closed list of
- * host token names (21 colour + 12 typography + 2 layering), the one-shot
+ * host token names (21 colour + 15 typography + 2 layering), the one-shot
  * `readHostTokens()` and the `useHostTokens()` hook that re-reads on a theme
  * mode switch — plus the bridge-only colouring of `GroupedEntityList`.
  *
@@ -50,6 +50,7 @@ const COLOR = [
 const TYPOGRAPHY = [
   '--font-heading', '--font-body', '--font-mono',
   '--text-h1', '--text-h2', '--text-h3', '--text-body', '--text-lede', '--text-code',
+  '--text-sm', '--text-xs', '--text-2xs',
   '--weight-heading', '--weight-body', '--weight-lede',
 ];
 const LAYERING = ['--z-popover', '--z-toast'];
@@ -87,9 +88,10 @@ async function setDark(on: boolean) {
 }
 
 describe('token bridge — closed name list (M34/L12)', () => {
-  it('[ac:ac-most-tokenow-c4s-plugin-runtime-ui-eksp] HOST_TOKEN_NAMES is exactly 21 colour + 12 typography + 2 layering names', () => {
+  it('[ac:ac-most-tokenow-c4s-plugin-runtime-ui-eksp] HOST_TOKEN_NAMES is exactly 21 colour + 15 typography + 2 layering names', () => {
     expect([...HOST_TOKEN_NAMES]).toEqual([...COLOR, ...TYPOGRAPHY, ...LAYERING]);
-    expect(HOST_TOKEN_NAMES).toHaveLength(35);
+    expect(TYPOGRAPHY).toHaveLength(15);
+    expect(HOST_TOKEN_NAMES).toHaveLength(38);
   });
 
   it('[ac:ac-most-tokenow-c4s-plugin-runtime-ui-eksp] the bridge is exported from @c4s/plugin-runtime/ui', () => {
@@ -123,6 +125,9 @@ describe('token bridge — closed name list (M34/L12)', () => {
     expect(t['--text-body']).toBe('15.5px');
     expect(t['--text-lede']).toBe('17px');
     expect(t['--text-code']).toBe('13px');
+    expect(t['--text-sm']).toBe('13.5px');
+    expect(t['--text-xs']).toBe('12px');
+    expect(t['--text-2xs']).toBe('11px');
     expect(t['--weight-heading']).toBe('600');
     expect(t['--weight-body']).toBe('400');
     expect(t['--weight-lede']).toBe('400');
@@ -131,6 +136,18 @@ describe('token bridge — closed name list (M34/L12)', () => {
     expect(t['--z-toast']).toBe('1300');
     // Every name resolves to something.
     for (const name of HOST_TOKEN_NAMES) expect(t[name], name).not.toBe('');
+  });
+
+  it('[ac:ac-zmienne-typografii-mostu-tokenow-maja] every one of the 15 typography variables resolves to the same value in Base and dark mode', async () => {
+    const typography = TYPOGRAPHY as HostTokenName[];
+    expect(typography).toEqual(expect.arrayContaining(['--text-sm', '--text-xs', '--text-2xs']));
+    const base = readHostTokens();
+    await setDark(true);
+    const dark = readHostTokens();
+    for (const name of typography) {
+      expect(base[name], name).not.toBe('');
+      expect(dark[name], `${name} (dark)`).toBe(base[name]);
+    }
   });
 });
 
@@ -174,6 +191,9 @@ const PAPER_TERRA: ReadonlyArray<[HostTokenName, string, string, string?]> = [
   ['--text-body', 'text-body', '15.5px'],
   ['--text-lede', 'text-lede', '17px'],
   ['--text-code', 'text-code', '13px'],
+  ['--text-sm', 'text-sm', '13.5px'],
+  ['--text-xs', 'text-xs', '12px'],
+  ['--text-2xs', 'text-2xs', '11px'],
   ['--weight-heading', 'weight-semibold', '600'],
   ['--weight-body', 'weight-regular', '400'],
   ['--weight-lede', 'weight-regular', '400'],
@@ -185,6 +205,13 @@ const PAPER_TERRA: ReadonlyArray<[HostTokenName, string, string, string?]> = [
 const normalise = (v: string) => v.replace(/["']/g, '').replace(/\s*,\s*/g, ', ').trim();
 
 describe('token bridge — identity with c4s-paper-terra (M34/L12)', () => {
+  it('[ac:ac-most-tokenow-wystawia-rozmiary-interf] the UI text sizes --text-sm / --text-xs / --text-2xs carry the c4s-paper-terra text-sm / text-xs / text-2xs values (the manual entity check, written down)', () => {
+    const t = pluginRuntimeUi.readHostTokens();
+    expect(t['--text-sm']).toBe('13.5px');
+    expect(t['--text-xs']).toBe('12px');
+    expect(t['--text-2xs']).toBe('11px');
+  });
+
   it('[ac:ac-tokeny-wystawiane-przez-c4s-plugin-runt] every token exposed by @c4s/plugin-runtime/ui resolves to its c4s-paper-terra value, in Base and dark mode', async () => {
     // The table covers exactly the exposed names.
     expect(PAPER_TERRA.map(([n]) => n)).toEqual([...pluginRuntimeUi.HOST_TOKEN_NAMES]);

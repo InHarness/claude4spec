@@ -709,6 +709,20 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       'retirement (2.1.12): `HOST_API_VERSION` is unchanged and there is no `migrations[]` ' +
       'descriptor.',
   },
+  {
+    release: '2.1.38',
+    slot: '@c4s/plugin-runtime/ui: HOST_TOKEN_NAMES / HostTokenName (--text-sm, --text-xs, --text-2xs)',
+    kind: 'slot-added',
+    summary:
+      'The token bridge gains three UI text sizes — `--text-sm`, `--text-xs`, `--text-2xs` — ' +
+      'in `HOST_TOKEN_NAMES` and the `HostTokenName` union, so the dictionary grows from 35 ' +
+      'to 38 names. They carry the `text-sm` / `text-xs` / `text-2xs` tokens of ' +
+      '`c4s-paper-terra` for lists, labels and counters, not entity text styles, and like ' +
+      'all typography they have one value in both theme modes. `readHostTokens()` and ' +
+      '`useHostTokens()` keep their signatures; the returned record has three more keys. ' +
+      'New names beside the existing ones: additive within the current baseline, ' +
+      '`HOST_API_VERSION` stays `2.1.0`. The `stable` list is unchanged.',
+  },
 ];
 
 /**
