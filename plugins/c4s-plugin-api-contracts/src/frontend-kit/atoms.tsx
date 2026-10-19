@@ -42,16 +42,16 @@ export function MethodChip({ method, large = false }: MethodChipProps) {
  * 2.1.40 — a `renderRow` slot's tag strip: the record's tags as catalog
  * `TagChip`s in the colours of the `tagLookup` the host handed the slot (never
  * one built from `useTags` — a slot does not fetch). A tag missing from the map
- * shows its slug in the default colour.
+ * shows its slug in the default colour. Catalog components only — no markup of
+ * its own (a `frontend-kit` file draws none): the chips land in the row's flex.
  */
 export function RowTagChips({ tags, tagLookup }: { tags: string[]; tagLookup: ReadonlyMap<string, Tag> }) {
-  if (tags.length === 0) return null;
   return (
-    <span className="shrink-0 flex items-center gap-1 flex-wrap" data-testid="row-tags">
+    <>
       {tags.map((ts) => {
         const tag = tagLookup.get(ts);
         return <TagChip key={ts} label={tag?.name ?? ts} color={tag?.color ?? undefined} small />;
       })}
-    </span>
+    </>
   );
 }

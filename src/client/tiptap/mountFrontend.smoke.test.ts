@@ -138,7 +138,9 @@ describe('mountFrontend — a renderChip rejected by the smoke test', () => {
     const broken = host.querySelector('[data-broken-category]');
     expect(broken).not.toBeNull();
     expect(broken!.getAttribute('data-broken-category')).toBe('rejected-slot');
-    expect(broken!.textContent).toBe('[broken: one]');
+    // 2.1.40: the host chip is `Badge variant="broken"`, which adds the ⚠ prefix.
+    expect(broken!.textContent).toBe('⚠[broken: one]');
+    expect(broken!.querySelector('.value-badge')).not.toBeNull();
     expect(host.querySelector('[data-type-chip]')).toBeNull();
     expect(host.textContent).not.toContain('TYPE-CHIP');
   });

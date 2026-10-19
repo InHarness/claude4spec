@@ -73,7 +73,7 @@ const TAGS = [
 ];
 
 /** The project's tags are whatever sits in the host's `['tags']` cache. */
-const render = (slugs: string, tags: unknown[] | undefined = TAGS) => {
+const render = (slugs: string, tags: unknown[] | null = TAGS) => {
   const qc = new QueryClient();
   if (tags) qc.setQueryData(['tags'], tags);
   return renderToStaticMarkup(
@@ -138,7 +138,8 @@ describe('element_list — the host hands renderRow the project tag map (2.1.40,
   it('the map is always present — empty when the project has no tags or the query has no data yet', () => {
     render('kept-a', []);
     expect(rowCalls.at(-1)!.tagLookup.size).toBe(0);
-    render('kept-b', undefined);
+    // `null`: nothing in the `['tags']` cache — the query has no data yet.
+    render('kept-b', null);
     expect(rowCalls.at(-1)!.tagLookup).toBeInstanceOf(Map);
     expect(rowCalls.at(-1)!.tagLookup.size).toBe(0);
   });

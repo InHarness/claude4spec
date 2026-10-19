@@ -150,7 +150,8 @@ describe('2.1.40 — Tag from the root of @c4s/plugin-runtime (M18) and the row 
       'export const viaUi: UiTag = one;',
       'export const back: Tag = viaUi;',
     ].join('\n');
-    expect(source).not.toMatch(/\bas\b/);
+    // No cast in the body (the import alias `Tag as UiTag` is not one).
+    expect(source.slice(ROOT_IMPORTS.length)).not.toMatch(/\bas\b/);
     expect(compileAuthorFile(source)).toEqual([]);
   });
 

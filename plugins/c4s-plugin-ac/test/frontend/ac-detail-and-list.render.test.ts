@@ -775,6 +775,8 @@ describe('[section:yrzqclyz] Host UI Kit slice', () => {
         'FormShell',
         'FormField',
         'ActionButton',
+        // 2.1.40: the renderRow slot draws the criterion's tags as TagChips.
+        'TagChip',
       ].sort(),
     );
     for (const dropped of ['DetailPanelShell', 'InlineEditField', 'Pagination', 'EntityDetailToolbar', 'Popover']) {
