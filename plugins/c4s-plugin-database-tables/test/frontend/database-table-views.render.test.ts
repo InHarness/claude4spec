@@ -449,6 +449,8 @@ describe('[section:uyu88bdw] Host UI Kit slice', () => {
         'FormShell',
         'FormField',
         'ActionButton',
+        // 2.1.39 (M13): the chip's broken branch is the catalog's broken Badge.
+        'Badge',
       ].sort(),
     );
     // DEBT: the popover form stays a package-local copy in `frontend-kit/`.

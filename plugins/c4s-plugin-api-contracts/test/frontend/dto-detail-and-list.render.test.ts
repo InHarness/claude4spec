@@ -668,7 +668,6 @@ describe('[section:9hz21ysc] dto Host UI Kit slice', () => {
       ['EntityViewSwitcher.tsx', ['EntityViewSwitcher'], 'SegmentedControlTabs'],
       ['SegmentedControl.tsx', ['SegmentedControl'], 'SegmentedControlTabs'],
       ['ButtonGroup.tsx', ['ButtonGroup', 'SegmentButton'], 'SegmentedControlTabs'],
-      ['atoms.tsx', ['TagChip'], 'TagChip'],
       ['popover-form.tsx', ['FieldLabel', 'TextInput', 'SelectInput', 'InlineError', 'PopoverFooter'], 'FormField'],
       ['ListPageLayout.tsx', ['ListPageLayout'], null],
       // `RoutePane` — the package's copy of the host's route pane, exported as `Pane`.

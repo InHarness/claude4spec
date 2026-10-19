@@ -1,15 +1,14 @@
 /**
- * DEBT (2.1.19, Host UI Kit slice of `c4s-plugin-api-contracts`, endpoint + dto): `TagChip`
- * — a tag chip is common to every entity type (fails condition 2). Its catalog
- * replacement is `TagChip` (2.1.39; it was `Badge` before the split). Recorded, not fixed here.
- *
  * `MethodChip` is no longer a debt entry (struck in 2.1.20): it binds the
  * method → colour/label mapping to the catalog's `Badge` (a value marker) and
  * draws nothing of its own.
+ *
+ * 2.1.39: the package's local tag chip (recorded as debt in 2.1.19) is gone —
+ * the catalog now has a `TagChip` of its own, and a plugin must not define a
+ * component under a catalog name. Tag chips come from `@c4s/plugin-runtime/ui`.
  */
 import type { HttpMethod } from '../types.js';
-import type { Tag } from '@c4s/plugin-runtime/ui';
-import { Badge, TagChip as CatalogTagChip } from '@c4s/plugin-runtime/ui';
+import { Badge } from '@c4s/plugin-runtime/ui';
 
 export const METHOD_STYLE: Record<
   HttpMethod,
@@ -35,32 +34,5 @@ interface MethodChipProps {
  */
 export function MethodChip({ method, large = false }: MethodChipProps) {
   const s = METHOD_STYLE[method] ?? METHOD_STYLE.GET;
-  return (
-    <Badge label={s.label} foreground={s.fg} mono small={!large} minWidth={large ? 56 : 42} />
-  );
-}
-
-interface TagChipProps {
-  tag: Pick<Tag, 'slug' | 'name' | 'color'>;
-  active?: boolean;
-  small?: boolean;
-  onClick?: () => void;
-  onRemove?: () => void;
-}
-
-/**
- * Tag chip. Delegates to the Host UI Kit's `TagChip` (M34/L12, `experimental`),
- * which owns the pill styling; this binds the host's `Tag` shape to it.
- */
-export function TagChip({ tag, active, small, onClick, onRemove }: TagChipProps) {
-  return (
-    <CatalogTagChip
-      label={tag.name}
-      color={tag.color ?? undefined}
-      active={active}
-      small={small}
-      onClick={onClick}
-      onRemove={onRemove}
-    />
-  );
+  return <Badge label={s.label} foreground={s.fg} mono small={!large} minWidth={large ? 56 : 42} />;
 }

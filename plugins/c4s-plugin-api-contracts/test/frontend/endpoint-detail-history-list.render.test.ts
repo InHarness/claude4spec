@@ -765,7 +765,6 @@ describe('[section:dhh869qt] endpoint Host UI Kit slice', () => {
       ['EntityViewSwitcher.tsx', ['EntityViewSwitcher'], 'SegmentedControlTabs'],
       ['SegmentedControl.tsx', ['SegmentedControl'], 'SegmentedControlTabs'],
       ['ButtonGroup.tsx', ['ButtonGroup', 'SegmentButton'], 'SegmentedControlTabs'],
-      ['atoms.tsx', ['TagChip'], 'TagChip'],
       ['popover-form.tsx', ['FieldLabel', 'TextInput', 'SelectInput', 'InlineError', 'PopoverFooter'], 'FormField'],
       ['ListPageLayout.tsx', ['ListPageLayout'], null],
       // `RoutePane` — the package's copy of the host's route pane, exported as `Pane`.
@@ -789,7 +788,9 @@ describe('[section:dhh869qt] endpoint Host UI Kit slice', () => {
     expect(readFileSync(join(FRONTEND_SRC, 'list-page.tsx'), 'utf-8')).toMatch(/<MethodChip\b/);
     expect(readFileSync(join(KIT_SRC, 'EntityBreadcrumbBar.tsx'), 'utf-8')).toMatch(/<MethodChip\b/);
     const atoms = readFileSync(join(KIT_SRC, 'atoms.tsx'), 'utf-8');
-    expect(atoms.slice(0, atoms.indexOf('Recorded, not fixed here'))).not.toContain('`MethodChip`');
+    // 2.1.39: the file carries no debt any more (the local TagChip is gone).
+    expect(atoms).not.toMatch(/DEBT \(/);
+    expect(atoms).not.toMatch(/export function TagChip\b/);
     expect(atoms).toMatch(/export function MethodChip[\s\S]*?<Badge\b/);
   });
 

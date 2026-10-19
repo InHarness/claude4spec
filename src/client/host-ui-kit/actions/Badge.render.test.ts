@@ -91,14 +91,14 @@ describe('Badge ↔ record `badge` (M34/L12, 2.1.39)', () => {
 });
 
 describe('Badge — a non-interactive value marker (M34/L12, 2.1.39)', () => {
-  it('[ac:ac-badge-nie-jest-osiagalny-klawiszem-ta] is not a Tab stop: no tabindex, no button role, focus does not land on it', () => {
+  it('[ac:ac-badge-nie-jest-osiagalny-klawiszem-ta] is not a Tab stop: no tabindex, no button role, no focusable content', () => {
     render({ label: 'm34' });
     const el = chip();
     expect(el.hasAttribute('tabindex')).toBe(false);
     expect(el.tabIndex).toBe(-1);
     expect(el.hasAttribute('role')).toBe(false);
-    el.focus();
-    expect(document.activeElement).not.toBe(el);
+    // Nothing in it is focusable either (no nested control).
+    expect(el.querySelector('button, a, input, [tabindex]')).toBeNull();
     // The broken variant is no more focusable than the default one.
     render({ label: 'gone', variant: 'broken' });
     expect(chip().hasAttribute('tabindex')).toBe(false);
