@@ -61,6 +61,10 @@
   --text-body: 15.5px;
   --text-lede: 17px;
   --text-code: 13px;
+  /* UI text (lists, labels, counters) — not entity text styles. */
+  --text-sm: 13.5px;
+  --text-xs: 12px;
+  --text-2xs: 11px;
 
   --weight-heading: 600;
   --weight-body: 400;

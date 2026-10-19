@@ -280,6 +280,18 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
     expect(JSON.stringify(migrationsBetween(0, Number.MAX_SAFE_INTEGER))).not.toMatch(/displayOrder/);
   });
 
+  it('[section:m33load01] the 2.1.38 UI text sizes of the token bridge are an unversioned addition, with no bump and no stable-list delta', () => {
+    const added = HOST_API_UNVERSIONED_CHANGES.filter((c) => c.release === '2.1.38');
+    expect(added).toHaveLength(1);
+    expect(added[0]!.kind).toBe('slot-added');
+    for (const name of ['HOST_TOKEN_NAMES', 'HostTokenName', '--text-sm', '--text-xs', '--text-2xs']) {
+      expect(added[0]!.slot).toContain(name);
+    }
+    expect(added[0]!.uiKitStable).toBeUndefined();
+    expect(HOST_API_VERSION).toBe('2.1.0');
+    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0']);
+  });
+
   it('[section:m33load01] the composition of UI_KIT_STABLE_COMPONENTS is exactly what the registries record', () => {
     expect(sorted(recordedUiKitStableComponents())).toEqual(sorted(UI_KIT_STABLE_COMPONENTS));
   });
