@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import { BriefUpdateCard } from './BriefUpdateCard.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
+import { useListTagLookup } from '../entities/useListTagLookup.js';
 
 export interface ToolRenderer {
   summary(input: unknown, result?: unknown): string;
@@ -212,6 +213,8 @@ function ItemBadgeList({ items }: { items: unknown[] }) {
 
 function EntityRows({ type, items }: { type: string; items: unknown[] }) {
   const mod = clientPluginHost.getEntity(type);
+  // One `['tags']` query for the whole result list, the same map for every row (2.1.40).
+  const tagLookup = useListTagLookup();
   if (items.length === 0) return <span style={{ color: 'var(--c-subtle)' }}>(no results)</span>;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -219,7 +222,7 @@ function EntityRows({ type, items }: { type: string; items: unknown[] }) {
         const slug = String((entity as { slug?: unknown })?.slug ?? '?');
         if (mod?.renderRow) {
           const Row = mod.renderRow;
-          return <Row key={i} slug={slug} entity={entity} />;
+          return <Row key={i} slug={slug} entity={entity} tagLookup={tagLookup} />;
         }
         return (
           <div key={i} className="font-mono text-[12px]" style={{ color: 'var(--c-ink)' }}>

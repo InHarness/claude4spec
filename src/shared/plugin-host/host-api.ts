@@ -723,6 +723,19 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       'New names beside the existing ones: additive within the current baseline, ' +
       '`HOST_API_VERSION` stays `2.1.0`. The `stable` list is unchanged.',
   },
+  {
+    release: '2.1.40',
+    slot: 'EntityRowProps.tagLookup (RowProps) + @c4s/plugin-runtime: Tag',
+    kind: 'slot-added',
+    summary:
+      'The `renderRow` slot receives `tagLookup: ReadonlyMap<string, Tag>` — every tag of ' +
+      'the project, from one host `[\'tags\']` query per list, the same map instance for ' +
+      'every row — so a row draws its tag chips in the project colours without fetching ' +
+      'anything itself. The root of `@c4s/plugin-runtime` exports the M18 `Tag` type ' +
+      '(`slug`, `name`, `color?`, `description?`, no counts); `/ui` re-exports the same ' +
+      'type. Additive under rule (2): an existing slot may ignore the new prop and the ' +
+      'type is a new name beside the existing ones. `HOST_API_VERSION` stays `2.1.0`.',
+  },
 ];
 
 /**

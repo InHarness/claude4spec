@@ -46,18 +46,10 @@ export const UI_KIT_STABLE_COMPONENTS = [
 export type StableUiKitComponent = (typeof UI_KIT_STABLE_COMPONENTS)[number];
 
 /**
- * 2.1.25 (the `Tag` type of the `ui-kit-component` record `tag-filter-bar`) — the catalog's one tag type. `TagFilterBar.tags`
- * and `EntityListRow.tagLookup` take it (2.1.26: `TagPicker.allTags` no longer
- * does — its item shape is written inline, record `tag-picker`).
- *
- * It is a minimal STRUCTURAL shape, tied to no data source: the kit reads only
- * these four fields. A richer record — the M18 `TagListItem` from `useTags()`
- * (`counts`) or the host's own `Tag` (`counts`, timestamps) — is assignable to
- * it as is, with no adapter and no cast.
+ * The catalog's one tag type. `TagFilterBar.tags` and `EntityListRow.tagLookup`
+ * take it (2.1.26: `TagPicker.allTags` no longer does — its item shape is
+ * written inline, record `tag-picker`). 2.1.40: the shape is owned by the tags
+ * module (M18) and published from the root of `@c4s/plugin-runtime`; the kit
+ * re-exports it rather than declaring one of its own.
  */
-export interface Tag {
-  slug: string;
-  name: string;
-  color?: string | null;
-  description?: string | null;
-}
+export type { Tag } from './tag.js';

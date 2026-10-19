@@ -95,7 +95,7 @@ function GroupRow({
                   onClick={() => onRemove(id)}
                   className="opacity-70 hover:opacity-100"
                   style={{ color: 'var(--c-subtle)' }}
-                  aria-label={`unlink ${item?.label ?? id}`}
+                  aria-label={`unlink ${item?.label || id}`}
                 >
                   ×
                 </button>

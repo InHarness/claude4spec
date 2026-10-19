@@ -17,16 +17,20 @@
  * `published-surface.test.ts` asserts the real `stable` prop interfaces stay
  * assignable to these published shapes (drift guard).
  *
- * `Tag` and `Stability` are dep-free and RE-EXPORTED from their canonical host
- * module, the catalog's React-free slice (single source of truth). `Tag` is the
- * kit's own minimal tag shape (2.1.25; the `Tag` type of the `ui-kit-component` record `tag-filter-bar`), not the host's data
- * record: a `TagListItem` from `useTags()` is assignable to it without a cast.
+ * `Stability` is dep-free and RE-EXPORTED from its canonical host module, the
+ * catalog's React-free slice (single source of truth). `Tag` (2.1.40) is the
+ * M18 type published from the ROOT of `@c4s/plugin-runtime`; this subpath
+ * imports it from there and keeps re-exporting the same type, so an import from
+ * `/ui` still names the one `Tag`. A `TagListItem` from `useTags()` is
+ * assignable to it without a cast.
  */
 
 import type { ComponentType, ReactNode, CSSProperties, FormEvent } from 'react';
 import type { LucideIcon } from 'lucide-react';
+import type { Tag } from './plugin-runtime.js';
 
-export type { Tag, Stability } from '../shared/plugin-host/ui-kit-surface.js';
+export type { Tag };
+export type { Stability } from '../shared/plugin-host/ui-kit-surface.js';
 
 // ── Core (stable) — part of the versioned `hostApiVersion` surface ──
 export interface DetailBreadcrumb {
@@ -81,7 +85,6 @@ export interface EntityListHeaderProps {
 export declare const EntityListHeader: ComponentType<EntityListHeaderProps>;
 
 // ── List (experimental) — OUTSIDE the version guarantee ──
-import type { Tag } from '../shared/plugin-host/ui-kit-surface.js';
 
 export interface EntityListLayoutProps {
   /** Stands outside the scroll region; the body under it scrolls. */
@@ -118,8 +121,13 @@ export interface EntityListRowProps {
   onClick?: () => void;
   /** Tag slugs to render as chips; resolved through `tagLookup`. */
   tags?: string[];
-  /** slug → `Tag`; a tag missing from the map shows its slug in the default colour. */
-  tagLookup: Map<string, Tag>;
+  /**
+   * slug → `Tag`; a tag missing from the map shows its slug in the default
+   * colour. In a `renderRow` slot: the slot's own `tagLookup` prop, passed on —
+   * never one built from `useTags`. On a plugin's own list screen: a map built
+   * from `useTags`.
+   */
+  tagLookup: ReadonlyMap<string, Tag>;
   trailing?: ReactNode;
   align?: 'center' | 'start';
   style?: CSSProperties;
@@ -157,10 +165,10 @@ export declare const GroupedEntityList: <T>(props: GroupedEntityListProps<T>) =>
 /**
  * Stands under `EntityListHeader`, full width, as its sibling in
  * `EntityListLayout.header` — not in the header's `filters` slot. Renders
- * nothing when `tags` is empty. (Named `TagBarProps`, against the
- * `<Component>Props` convention.)
+ * nothing when `tags` is empty. Each tag is a `TagChip`, a selected one
+ * `active`. (2.1.40: named after the `<Component>Props` convention.)
  */
-export interface TagBarProps {
+export interface TagFilterBarProps {
   tags: Tag[];
   tagFilter: string[];
   onTagToggle: (slug: string) => void;
@@ -168,7 +176,7 @@ export interface TagBarProps {
   onToggleMode: () => void;
   onClear: () => void;
 }
-export declare const TagFilterBar: ComponentType<TagBarProps>;
+export declare const TagFilterBar: ComponentType<TagFilterBarProps>;
 
 // ── Actions & states (experimental) ──
 export type ActionButtonVariant = 'primary' | 'secondary' | 'ghost';

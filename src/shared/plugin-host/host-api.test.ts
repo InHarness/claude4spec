@@ -292,6 +292,19 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
     expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0']);
   });
 
+  it('[section:m33load01] 2.1.40: tagLookup in RowProps and the runtime Tag type are an unversioned addition, with no bump', () => {
+    const added = HOST_API_UNVERSIONED_CHANGES.filter((c) => c.release === '2.1.40');
+    expect(added).toHaveLength(1);
+    expect(added[0]!.kind).toBe('slot-added');
+    for (const name of ['EntityRowProps.tagLookup', 'RowProps', '@c4s/plugin-runtime', 'Tag']) {
+      expect(added[0]!.slot).toContain(name);
+    }
+    expect(added[0]!.summary).toMatch(/additive/i);
+    expect(added[0]!.uiKitStable).toBeUndefined();
+    expect(HOST_API_VERSION).toBe('2.1.0');
+    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0']);
+  });
+
   it('[section:m33load01] the composition of UI_KIT_STABLE_COMPONENTS is exactly what the registries record', () => {
     expect(sorted(recordedUiKitStableComponents())).toEqual(sorted(UI_KIT_STABLE_COMPONENTS));
   });

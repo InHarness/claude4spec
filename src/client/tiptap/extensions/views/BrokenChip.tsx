@@ -1,4 +1,5 @@
 import type { ChipBrokenCategory } from '../../../core/plugin-host/host.js';
+import { Badge } from '../../../host-ui-kit/actions/Badge.js';
 
 /**
  * `rejected-slot` (0.2.88): the plugin is active and the entity may well exist,
@@ -7,11 +8,12 @@ import type { ChipBrokenCategory } from '../../../core/plugin-host/host.js';
  */
 export type BrokenChipCategory = ChipBrokenCategory | 'broken-reference' | 'rejected-slot';
 
+/** The cause, as the tooltip names it (2.1.40, M19/M20). */
 const CATEGORY_LABEL: Record<BrokenChipCategory, string> = {
-  'inactive-plugin': 'inactive plugin',
+  'inactive-plugin': 'inactive package',
   'unknown-type': 'unknown type',
-  'broken-reference': 'broken reference',
-  'rejected-slot': 'broken',
+  'broken-reference': 'missing entity',
+  'rejected-slot': 'rejected slot',
 };
 
 const CATEGORY_HINT: Record<BrokenChipCategory, string> = {
@@ -33,25 +35,22 @@ interface InlineBrokenChipProps {
 }
 
 /**
- * Compact inline chip — the broken state of an inline entity chip (M51 §2):
- * red, reading `[broken: slug]`, or `[broken: type]` where no slug applies
- * (a chat chip whose type has no module). Why it is broken — unknown type,
- * inactive plugin, missing entity, rejected slot — is in the tooltip.
+ * Compact inline chip — the broken state of an inline entity chip (M51 §2).
+ * 2.1.40 (M19/M20): the catalog's `Badge variant="broken"` (red ink and
+ * hairline, ⚠ prefix) reading `[broken: slug]`, or `[broken: type]` where no
+ * slug applies (a chat chip whose type has no module). Not clickable: no
+ * handler, no button role. Why it is broken — unknown type, inactive package,
+ * missing entity, rejected slot — is in the tooltip. In the Tiptap editor the
+ * node view still adds the ProseMirror broken decoration around it.
  */
 export function InlineBrokenChip({ category, type, slug, hint }: InlineBrokenChipProps) {
-  const text = `[broken: ${slug || type || '?'}]`;
   return (
     <span
-      className="inline-flex items-center gap-1 rounded px-1.5 py-[1px] text-[11px] font-mono"
-      style={{
-        background: 'var(--c-red-soft, rgba(196,90,59,0.14))',
-        color: 'var(--c-red, #c45a3b)',
-        border: '1px solid var(--c-red, #c45a3b)',
-      }}
+      className="inline-flex align-middle"
       title={brokenTitle(category, type, slug, hint)}
       data-broken-category={category}
     >
-      {text}
+      <Badge variant="broken" small mono label={brokenLabel(type, slug)} />
     </span>
   );
 }
@@ -62,32 +61,27 @@ interface BlockBrokenChipProps {
   slug?: string;
 }
 
+function brokenLabel(type: string, slug?: string): string {
+  return `[broken: ${slug || type || '?'}]`;
+}
+
 /** The tooltip both host chips carry: WHY it is broken, which the label does not say. */
 function brokenTitle(category: BrokenChipCategory, type: string, slug?: string, hint?: string): string {
   return `${CATEGORY_LABEL[category]}: ${type || '?'}${slug ? `/${slug}` : ''} — ${hint ?? CATEGORY_HINT[category]}`;
 }
 
 /**
- * Block-level dashed card — the host's broken state of the block entity tags
- * (2.1.7, M19/M20): the same `[broken: <slug>]` label as the inline chip
- * (`[broken: <type>]` for a tag without a slug), red, with the cause in the
- * tooltip. The host draws it only when no type slot can — an inactive plugin,
- * an unknown type or a rejected slot; a deleted entity of an active type is
- * drawn by that type's own `null` branch.
+ * The host's broken state of the block entity tags (2.1.7, M19/M20): the same
+ * `[broken: <slug>]` `Badge variant="broken"` as the inline chip
+ * (`[broken: <type>]` for a tag without a slug), on a line of its own, with the
+ * cause in the tooltip and no click. The host draws it only when no type slot
+ * can — an inactive package, an unknown type or a rejected slot; a deleted
+ * entity of an active type is drawn by that type's own `null` branch.
  */
 export function BlockBrokenChip({ category, type, slug }: BlockBrokenChipProps) {
   return (
-    <div
-      className="rounded-md px-3 py-2 text-[12px] font-mono"
-      style={{
-        border: '1px dashed var(--c-red, #c45a3b)',
-        background: 'var(--c-red-soft, rgba(196,90,59,0.14))',
-        color: 'var(--c-red, #c45a3b)',
-      }}
-      title={brokenTitle(category, type, slug)}
-      data-broken-category={category}
-    >
-      {`[broken: ${slug || type || '?'}]`}
+    <div className="py-1" title={brokenTitle(category, type, slug)} data-broken-category={category}>
+      <Badge variant="broken" mono label={brokenLabel(type, slug)} />
     </div>
   );
 }

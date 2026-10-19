@@ -6,6 +6,7 @@ import { openEntityHandler } from '../../../entities/openEntity.js';
 import { editorBridge } from '../../../runtime/editor-bridge.js';
 import { BlockBrokenChip } from '../../../tiptap/extensions/views/BrokenChip.js';
 import { NotListable } from '../../../tiptap/extensions/views/NotListable.js';
+import { useListTagLookup } from '../../../entities/useListTagLookup.js';
 import type { TagRenderProps } from '../../renders.js';
 import { attr, csv, TaggedPill } from './shared.js';
 
@@ -15,6 +16,7 @@ type Listed = { slug: string };
  * `<tagged_list type tags filter?/>` — a dynamic list: `renderRow` of every
  * entity of `type` carrying the tags, with the tag badges. No match, or a tag
  * that does not exist, is an empty list with a message. Inline: a pill.
+ * 2.1.40: every row gets the same `tagLookup`, from one `['tags']` query per list.
  */
 export function TaggedListRender({ attrs, variant }: TagRenderProps) {
   // Re-read the registry when a plugin frontend registers late.
@@ -23,6 +25,7 @@ export function TaggedListRender({ attrs, variant }: TagRenderProps) {
   const filter: 'and' | 'or' = attrs.filter === 'or' ? 'or' : 'and';
   const tags = csv(attr(attrs, 'tags'));
   const def = getEntityDef(type);
+  const tagLookup = useListTagLookup();
 
   const mod = clientPluginHost.getEntity(type);
   // Keyed under `['entities']`: every entity / tag change already invalidates
@@ -82,6 +85,7 @@ export function TaggedListRender({ attrs, variant }: TagRenderProps) {
               slug={entity.slug}
               entity={entity as never}
               onOpen={openEntityHandler(type, entity.slug, editorBridge)}
+              tagLookup={tagLookup}
             />
           </li>
         ))}

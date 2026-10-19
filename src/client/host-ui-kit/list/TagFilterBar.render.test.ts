@@ -10,12 +10,13 @@ import { createRoot, type Root } from 'react-dom/client';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { TagFilterBar, type TagBarProps } from './TagFilterBar.js';
+import { TagFilterBar, type TagFilterBarProps } from './TagFilterBar.js';
 import { EntityListHeader } from '../core/EntityListHeader.js';
 import { EntityListLayout } from './EntityListLayout.js';
 import * as kit from '../index.js';
-import type { Tag } from '../../../shared/plugin-host/ui-kit-surface.js';
+import type { Tag } from '../../../shared/plugin-host/tag.js';
 import type * as Published from '../../../plugin-types/ui.js';
+import type * as PublishedRoot from '../../../plugin-types/plugin-runtime.js';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -59,8 +60,8 @@ const TAGS: Tag[] = [
   { slug: 'l12', name: 'L12' },
 ];
 
-function bar(over: Partial<TagBarProps> = {}) {
-  const props: TagBarProps = {
+function bar(over: Partial<TagFilterBarProps> = {}) {
+  const props: TagFilterBarProps = {
     tags: TAGS,
     tagFilter: [],
     onTagToggle: () => {},
@@ -75,12 +76,13 @@ const chips = () => Array.from(host.querySelectorAll<HTMLElement>('span.rounded-
 const btn = (text: string) => Array.from(host.querySelectorAll('button')).find((b) => b.textContent?.startsWith(text));
 
 describe('TagFilterBar ↔ record `tag-filter-bar` (M34/L12, 2.1.28)', () => {
-  it('[entity:tag-filter-bar] takes exactly the record props; Tag is the one structural tag type (host, published /ui)', () => {
-    const a: Same<TagBarProps, RecordTagFilterBarProps> = true;
-    const b: Same<Published.TagBarProps, RecordTagFilterBarProps> = true;
+  it('[entity:tag-filter-bar] takes exactly the record props; Tag is the one structural tag type (host, published root and /ui)', () => {
+    const a: Same<TagFilterBarProps, RecordTagFilterBarProps> = true;
+    const b: Same<Published.TagFilterBarProps, RecordTagFilterBarProps> = true;
     const c: Same<Tag, RecordTag> = true;
     const d: Same<Published.Tag, RecordTag> = true;
-    expect([a, b, c, d]).toEqual([true, true, true, true]);
+    const e: Same<PublishedRoot.Tag, RecordTag> = true;
+    expect([a, b, c, d, e]).toEqual([true, true, true, true, true]);
   });
 
   it('[entity:tag-filter-bar] renders every tag as a TagChip and toggles a tag by its slug', () => {
@@ -114,7 +116,7 @@ describe('TagFilterBar ↔ record `tag-filter-bar` (M34/L12, 2.1.28)', () => {
   });
 
   it('[entity:tag-filter-bar] stands under EntityListHeader, full width, as its sibling in EntityListLayout `header` — not in the header `filters` slot (2.1.33)', () => {
-    const tagBar: TagBarProps = {
+    const tagBar: TagFilterBarProps = {
       tags: TAGS,
       tagFilter: [],
       onTagToggle: () => {},
@@ -150,15 +152,18 @@ describe('TagFilterBar ↔ record `tag-filter-bar` (M34/L12, 2.1.28)', () => {
     expect(tagStrip!.closest('.overflow-auto')).toBeNull();
   });
 
-  it('[entity:tag-filter-bar] its props type is exported as TagBarProps (kit index and published /ui), against the <Component>Props convention', () => {
+  it('[entity:tag-filter-bar] its props type is exported as TagFilterBarProps (kit index and published /ui), following the <Component>Props convention (2.1.40)', () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const index = readFileSync(resolve(here, '../index.ts'), 'utf8');
     const published = readFileSync(resolve(here, '../../../plugin-types/ui.ts'), 'utf8');
-    expect(index).toMatch(/export \{ TagFilterBar, type TagBarProps \} from '\.\/list\/TagFilterBar\.js';/);
-    expect(published).toMatch(/export interface TagBarProps \{/);
-    expect(published).toMatch(/export declare const TagFilterBar: ComponentType<TagBarProps>;/);
-    expect(index).not.toMatch(/\bTagFilterBarProps\b/);
-    expect(published).not.toMatch(/\bTagFilterBarProps\b/);
+    const source = readFileSync(resolve(here, './TagFilterBar.tsx'), 'utf8');
+    expect(index).toMatch(/export \{ TagFilterBar, type TagFilterBarProps \} from '\.\/list\/TagFilterBar\.js';/);
+    expect(published).toMatch(/export interface TagFilterBarProps \{/);
+    expect(published).toMatch(/export declare const TagFilterBar: ComponentType<TagFilterBarProps>;/);
+    expect(index).not.toMatch(/\bTagBarProps\b/);
+    expect(published).not.toMatch(/\bTagBarProps\b/);
+    // No local types: `Tag` is imported (the M18 type), not declared here.
+    expect(source).not.toMatch(/(interface|type)\s+Tag\b/);
     expect(kit.TagFilterBar).toBe(TagFilterBar);
   });
 });

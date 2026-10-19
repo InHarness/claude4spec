@@ -1,4 +1,4 @@
-import type { Tag } from '../../../shared/plugin-host/ui-kit-surface.js';
+import type { Tag } from '../../../shared/plugin-host/tag.js';
 import { TagChip } from '../actions/TagChip.js';
 import { withStability } from '../stability.js';
 
@@ -9,13 +9,16 @@ import { withStability } from '../stability.js';
  * one row a variable number of chips would break (record `tag-filter-bar`,
  * 2.1.33; M19 `thm8a14c`). With an empty `tags` it renders nothing, so a
  * consumer needs no guard of its own. Its props type is exported as
- * `TagBarProps`, against the `<Component>Props` convention. Pure-presentational: tags, current filter and handlers are props. The
- * data side (`useTags` / `useEntityListQuery`) stays in the host app, which
- * builds `TagBarProps` and passes it in.
+ * `TagFilterBarProps` (2.1.40; `TagBarProps` before, against the
+ * `<Component>Props` convention). Pure-presentational: tags, current filter and
+ * handlers are props, and it declares no types of its own — `Tag` is the M18
+ * type from the root of `@c4s/plugin-runtime`. The data side (`useTags` /
+ * `useEntityListQuery`) stays in the host app, which builds
+ * `TagFilterBarProps` and passes it in.
  *
  * Tag chips render via the kit's `TagChip` (the single tag chip implementation).
  */
-export interface TagBarProps {
+export interface TagFilterBarProps {
   tags: Tag[];
   tagFilter: string[];
   onTagToggle: (slug: string) => void;
@@ -31,7 +34,7 @@ function TagFilterBarImpl({
   tagMode,
   onToggleMode,
   onClear,
-}: TagBarProps) {
+}: TagFilterBarProps) {
   if (tags.length === 0) return null;
 
   return (
