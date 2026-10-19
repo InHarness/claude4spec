@@ -1,6 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import type { Tag } from '../../../shared/plugin-host/ui-kit-surface.js';
-import { Badge } from '../actions/Badge.js';
+import { TagChip } from '../actions/TagChip.js';
 import { withStability } from '../stability.js';
 
 /**
@@ -9,9 +9,9 @@ import { withStability } from '../stability.js';
  * it renders tags from the supplied `tagLookup` map and never calls `useTags`
  * itself, so the host app owns the data side and passes the lookup in.
  *
- * Tag chips render via the kit's `Badge` (the single chip implementation). A tag
- * slug missing from `tagLookup` still renders, as its slug in Badge's default
- * colour. Anatomy (2.1.33): the `icon` is 16 px in `var(--c-accent)`, and the
+ * Tag chips render via the kit's `TagChip` (the single tag chip implementation),
+ * `small`. A tag slug missing from `tagLookup` still renders, as its slug in
+ * TagChip's default colour — there is no broken chip for tags. Anatomy (2.1.33): the `icon` is 16 px in `var(--c-accent)`, and the
  * `leading` slot follows it.
  */
 export interface EntityListRowProps {
@@ -72,7 +72,7 @@ function EntityListRowImpl({
             {tags.map((ts) => {
               const tag = tagLookup.get(ts);
               return (
-                <Badge key={ts} label={tag?.name ?? ts} color={tag?.color ?? undefined} small />
+                <TagChip key={ts} label={tag?.name ?? ts} color={tag?.color ?? undefined} small />
               );
             })}
           </div>

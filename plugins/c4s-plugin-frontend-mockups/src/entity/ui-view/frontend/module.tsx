@@ -10,6 +10,7 @@ import type {
   EntityRowProps,
   FrontendModule,
 } from '@c4s/plugin-runtime';
+import { Badge } from '@c4s/plugin-runtime/ui';
 import {
   UI_VIEW_SIDEBAR_ORDER,
   UI_VIEW_LABEL,
@@ -101,22 +102,8 @@ function UiViewRow({ entity, active, onOpen }: EntityRowProps<UiView>) {
 }
 
 function UiViewChip({ slug, entity, onOpen }: EntityChipProps<UiView>) {
-  if (!entity) {
-    return (
-      <button
-        onClick={onOpen}
-        title={`broken reference: ui-view '${slug}'`}
-        className="inline-flex items-center gap-1 align-middle rounded px-1.5 py-[1px] text-[11px] font-mono"
-        style={{
-          background: 'var(--c-red-soft, rgba(196,90,59,0.14))',
-          color: 'var(--c-red, #c45a3b)',
-          border: '1px solid var(--c-red, #c45a3b)',
-        }}
-      >
-        ⚠ {slug}
-      </button>
-    );
-  }
+  // 2.1.39 (M13): a broken chip is the catalog's broken `Badge` with the slug — not clickable.
+  if (!entity) return <Badge variant="broken" label={slug} />;
   const gestures = entityGestures(entity);
   return (
     <button

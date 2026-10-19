@@ -14,8 +14,8 @@ import * as uiBackendLeg from '../../server/plugin-runtime/ui.js';
 import * as uiBrowserSurface from './index.js';
 
 describe('Host UI Kit catalog registry (M34/L12)', () => {
-  it('catalogs all 32 components across the eight groups', () => {
-    expect(UI_KIT_CATALOG).toHaveLength(32);
+  it('catalogs all 33 components across the eight groups', () => {
+    expect(UI_KIT_CATALOG).toHaveLength(33);
     const byGroup = (g: string) => UI_KIT_CATALOG.filter((c) => c.group === g).map((c) => c.name);
     expect(byGroup('core')).toEqual(['EntityListHeader', 'DetailPanelShell', 'FieldRow', 'FieldGrid']);
     expect(byGroup('list')).toEqual([
@@ -26,7 +26,7 @@ describe('Host UI Kit catalog registry (M34/L12)', () => {
       'EntityListRow',
       'GroupedEntityList',
     ]);
-    expect(byGroup('actions')).toEqual(['ActionButton', 'ActionBar', 'Badge', 'LoadingState']);
+    expect(byGroup('actions')).toEqual(['ActionButton', 'ActionBar', 'Badge', 'TagChip', 'LoadingState']);
     expect(byGroup('form')).toEqual(['FormField', 'InlineEditField']);
     expect(byGroup('overlay')).toEqual(['Dialog', 'FormShell']);
     expect(byGroup('detail')).toEqual([
@@ -49,7 +49,7 @@ describe('Host UI Kit catalog registry (M34/L12)', () => {
     const stable = UI_KIT_CATALOG.filter((c) => c.stability === 'stable').map((c) => c.name);
     const experimental = UI_KIT_CATALOG.filter((c) => c.stability === 'experimental');
     expect(stable).toEqual(['EntityListHeader', 'DetailPanelShell', 'FieldRow', 'FieldGrid']);
-    expect(experimental).toHaveLength(28);
+    expect(experimental).toHaveLength(29);
     // Every Core component is stable; no other group is.
     for (const c of UI_KIT_CATALOG) {
       expect(c.stability).toBe(c.group === 'core' ? 'stable' : 'experimental');
@@ -211,6 +211,7 @@ const RECORDS: ReadonlyArray<readonly [string, string, 'stable' | 'experimental'
   ['ReferencesList', 'detail', 'experimental', 'presentational', []],
   ['RichTextField', 'detail', 'experimental', 'presentational', []],
   ['SegmentedControlTabs', 'detail', 'experimental', 'presentational', []],
+  ['TagChip', 'actions', 'experimental', 'presentational', []],
   ['TagFilterBar', 'list', 'experimental', 'presentational', []],
   ['TagPicker', 'detail', 'experimental', 'presentational', []],
   ['ToastViewport', 'feedback', 'experimental', 'presentational', []],
@@ -313,10 +314,11 @@ const PRIMITIVE_RECORDS: Record<string, PrimitiveRecord> = {
   'action-bar': { name: 'ActionBar', group: 'actions', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [['ActionButton', './ActionButton.js']], file: 'actions/ActionBar.tsx' },
   'action-button': { name: 'ActionButton', group: 'actions', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'actions/ActionButton.tsx' },
   badge: { name: 'Badge', group: 'actions', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'actions/Badge.tsx' },
+  'tag-chip': { name: 'TagChip', group: 'actions', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'actions/TagChip.tsx' },
   dialog: { name: 'Dialog', group: 'overlay', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'overlay/Dialog.tsx' },
   'empty-state': { name: 'EmptyState', group: 'list', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'list/EmptyState.tsx' },
   'entity-list-layout': { name: 'EntityListLayout', group: 'list', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'list/EntityListLayout.tsx' },
-  'entity-list-row': { name: 'EntityListRow', group: 'list', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [['Badge', '../actions/Badge.js']], file: 'list/EntityListRow.tsx' },
+  'entity-list-row': { name: 'EntityListRow', group: 'list', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [['TagChip', '../actions/TagChip.js']], file: 'list/EntityListRow.tsx' },
   'form-field': { name: 'FormField', group: 'form', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'form/FormField.tsx' },
   'form-shell': { name: 'FormShell', group: 'overlay', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'overlay/FormShell.tsx' },
   'grouped-entity-list': { name: 'GroupedEntityList', group: 'list', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'list/GroupedEntityList.tsx' },
@@ -324,7 +326,7 @@ const PRIMITIVE_RECORDS: Record<string, PrimitiveRecord> = {
   'loading-state': { name: 'LoadingState', group: 'actions', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'actions/LoadingState.tsx' },
   pagination: { name: 'Pagination', group: 'list', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'list/Pagination.tsx' },
   popover: { name: 'Popover', group: 'feedback', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'overlay-feedback/Popover.tsx' },
-  'tag-filter-bar': { name: 'TagFilterBar', group: 'list', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [['Badge', '../actions/Badge.js']], file: 'list/TagFilterBar.tsx' },
+  'tag-filter-bar': { name: 'TagFilterBar', group: 'list', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [['TagChip', '../actions/TagChip.js']], file: 'list/TagFilterBar.tsx' },
   'toast-viewport': { name: 'ToastViewport', group: 'feedback', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'overlay-feedback/ToastViewport.tsx' },
 };
 
@@ -363,10 +365,11 @@ describe('Host UI Kit registry ↔ catalog primitives records (M34/L12, 2.1.28)'
   it('[entity:action-bar] registry entry matches the record (actions, experimental, presentational, no L11 surface) and composes ActionButton', () => expectEntryMatchesRecord('action-bar'));
   it('[entity:action-button] registry entry matches the record (actions, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('action-button'));
   it('[entity:badge] registry entry matches the record (actions, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('badge'));
+  it('[entity:tag-chip] registry entry matches the record (actions, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('tag-chip'));
   it('[entity:dialog] registry entry matches the record (overlay, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('dialog'));
   it('[entity:empty-state] registry entry matches the record (list, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('empty-state'));
   it('[entity:entity-list-layout] registry entry matches the record (list, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('entity-list-layout'));
-  it('[entity:entity-list-row] registry entry matches the record (list, experimental, presentational; useTags only feeds props, so no L11 surface) and composes Badge', () => expectEntryMatchesRecord('entity-list-row'));
+  it('[entity:entity-list-row] registry entry matches the record (list, experimental, presentational; useTags only feeds props, so no L11 surface) and composes TagChip', () => expectEntryMatchesRecord('entity-list-row'));
   it('[entity:form-field] registry entry matches the record (form, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('form-field'));
   it('[entity:form-shell] registry entry matches the record (overlay, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('form-shell'));
   it('[entity:grouped-entity-list] registry entry matches the record (list, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('grouped-entity-list'));
@@ -374,7 +377,7 @@ describe('Host UI Kit registry ↔ catalog primitives records (M34/L12, 2.1.28)'
   it('[entity:loading-state] registry entry matches the record (actions, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('loading-state'));
   it('[entity:pagination] registry entry matches the record (list, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('pagination'));
   it('[entity:popover] registry entry matches the record (feedback, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('popover'));
-  it('[entity:tag-filter-bar] registry entry matches the record (list, experimental, presentational; useTags only feeds props, so no L11 surface) and composes Badge', () => expectEntryMatchesRecord('tag-filter-bar'));
+  it('[entity:tag-filter-bar] registry entry matches the record (list, experimental, presentational; useTags only feeds props, so no L11 surface) and composes TagChip', () => expectEntryMatchesRecord('tag-filter-bar'));
   it('[entity:toast-viewport] registry entry matches the record (feedback, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('toast-viewport'));
 });
 
@@ -445,7 +448,7 @@ const KIT_DETAIL_HISTORY_RECORDS: Record<string, PrimitiveRecord> = {
   'references-list': { name: 'ReferencesList', group: 'detail', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [['LoadingState', '../actions/LoadingState.js'], ['EmptyState', '../list/EmptyState.js']], file: 'detail/ReferencesList.tsx' },
   'rich-text-field': { name: 'RichTextField', group: 'detail', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'detail/RichTextField.tsx' },
   'segmented-control-tabs': { name: 'SegmentedControlTabs', group: 'detail', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'detail/SegmentedControlTabs.tsx' },
-  'tag-picker': { name: 'TagPicker', group: 'detail', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [['Badge', '../actions/Badge.js'], ['Popover', '../overlay-feedback/Popover.js']], file: 'detail/TagPicker.tsx' },
+  'tag-picker': { name: 'TagPicker', group: 'detail', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [['TagChip', '../actions/TagChip.js'], ['ActionButton', '../actions/ActionButton.js'], ['Popover', '../overlay-feedback/Popover.js']], file: 'detail/TagPicker.tsx' },
   'version-history': { name: 'VersionHistory', group: 'detail', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [['EmptyState', '../list/EmptyState.js']], file: 'detail/VersionHistory.tsx' },
 };
 
@@ -459,7 +462,7 @@ describe('Host UI Kit registry ↔ detail, history and picker records (M34/L12, 
   it('[entity:references-list] registry entry matches the record (detail, experimental, presentational; useReferences only feeds props) and composes LoadingState and EmptyState', () => expectEntryMatchesRecord('references-list'));
   it('[entity:rich-text-field] registry entry matches the record (detail, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('rich-text-field'));
   it('[entity:segmented-control-tabs] registry entry matches the record (detail, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('segmented-control-tabs'));
-  it('[entity:tag-picker] registry entry matches the record (detail, experimental, presentational; useTags/tagsService only feed props) and composes Badge and Popover', () => expectEntryMatchesRecord('tag-picker'));
+  it('[entity:tag-picker] registry entry matches the record (detail, experimental, presentational; useTags/tagsService only feed props) and composes TagChip, ActionButton and Popover', () => expectEntryMatchesRecord('tag-picker'));
   it('[entity:version-history] registry entry matches the record (detail, experimental, presentational; useVersions/useReleases only feed props) and composes EmptyState', () => expectEntryMatchesRecord('version-history'));
 
   it('[section:m13l11sc] the history components render no useVersionDiff delta: none of them reaches useVersionDiff or EntityDiff — only the M17 release-diff formatter renders it', () => {

@@ -207,22 +207,34 @@ export interface ActionBarProps {
 }
 export declare const ActionBar: ComponentType<ActionBarProps>;
 
+/**
+ * A non-interactive value marker (enum value, count, state). 2.1.39: no dot,
+ * no click, never a Tab stop — tag chips are `TagChip`.
+ */
 export interface BadgeProps {
   label: ReactNode;
+  small?: boolean;
+  /** Text color; defaults to `var(--c-ink)`. */
+  foreground?: string;
+  mono?: boolean;
+  minWidth?: number;
+  /** `'broken'` marks a dangling reference (red ink, ⚠ prefix); wins over `foreground`. */
+  variant?: 'default' | 'broken';
+}
+export declare const Badge: ComponentType<BadgeProps>;
+
+/** The catalog's one tag chip (2.1.39): a leading dot in `color`, optionally clickable and removable. */
+export interface TagChipProps {
+  label: string;
+  /** Dot colour; with `active` also the fill and border. Defaults to `var(--c-muted)`. */
   color?: string;
   active?: boolean;
   small?: boolean;
   onClick?: () => void;
+  /** Adds a "×" remove button (`aria-label="remove"`). */
   onRemove?: () => void;
-  /** Explicit text color; overrides the default active/inactive ink color. */
-  foreground?: string;
-  mono?: boolean;
-  dot?: boolean;
-  minWidth?: number;
-  /** `'broken'` marks a dangling reference (red ink, ⚠ prefix). */
-  variant?: 'default' | 'broken';
 }
-export declare const Badge: ComponentType<BadgeProps>;
+export declare const TagChip: ComponentType<TagChipProps>;
 
 export interface LoadingStateProps {
   width?: number | string;

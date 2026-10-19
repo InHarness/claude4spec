@@ -1,111 +1,50 @@
-import type { KeyboardEvent, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { withStability } from '../stability.js';
 
 /**
- * `Badge` (Actions, `experimental`) — a pill chip, typically a tag, with an
- * optional colored dot and remove affordance. Extracted from the host's
- * `TagChip`.
+ * `Badge` (Actions, `experimental`) — a non-interactive value marker (an enum
+ * value, a count, a state), anatomy `value-badge`.
  *
- * Pure-presentational: label, color and handlers are props. The host's
- * data-resolving tag chips (M13/M19) stay separate — this is the styling shell.
- *
- * 2.1.28 (record `badge`): with an `onClick` the chip is a keyboard target —
- * reachable with Tab (`tabIndex=0`, `role="button"`) and activated by Enter or
- * Space, which call `onClick`. Without `onClick` it stays a plain, unfocusable
- * span. A key pressed on the nested remove button is that button's own.
+ * Pure-presentational. 2.1.39 (record `badge`): the tag chip role moved to
+ * `TagChip`, so `Badge` lost `color`, `active`, `onClick`, `onRemove` and
+ * `dot` — it draws no dot, has no button role and is never a Tab stop. An
+ * editable value is `EnumBadgePicker`, an action `ActionButton`.
  */
 export interface BadgeProps {
   label: ReactNode;
-  /** Dot / active color. Defaults to a muted token. */
-  color?: string;
-  /** Filled (active) style. */
-  active?: boolean;
   small?: boolean;
-  onClick?: () => void;
-  onRemove?: () => void;
-  /** Explicit text color; overrides the default active/inactive ink color. */
+  /** Text color; defaults to `var(--c-ink)`. */
   foreground?: string;
   /** Render the label in monospace, bold, tracked-out type (e.g. status codes). */
   mono?: boolean;
-  /** Show the leading color dot. Defaults to true. */
-  dot?: boolean;
   /** Minimum width in px, so badges with different label lengths (e.g. HTTP methods) align to a common column width in a list. Centers the label when set. */
   minWidth?: number;
   /**
    * `'broken'` marks a dangling reference — a slug whose target no longer
-   * resolves. It reads as an error (red ink and hairline, ⚠ prefix) and wins
-   * over `color`/`active`, since a broken link's identity beats its styling.
+   * resolves. It reads as an error (red ink and hairline, ⚠ prefix — colour
+   * alone is not enough for colour-blind readers) and wins over `foreground`.
    */
   variant?: 'default' | 'broken';
 }
 
-function BadgeImpl({
-  label,
-  color,
-  active,
-  small,
-  onClick,
-  onRemove,
-  foreground,
-  mono,
-  dot = true,
-  minWidth,
-  variant = 'default',
-}: BadgeProps) {
+const RED = 'var(--c-red, #c45a3b)';
+
+function BadgeImpl({ label, small, foreground, mono, minWidth, variant = 'default' }: BadgeProps) {
   const broken = variant === 'broken';
-  const onKeyDown = onClick
-    ? (e: KeyboardEvent<HTMLSpanElement>) => {
-        // Only the chip itself: Enter/Space on the nested remove button belongs to it.
-        if (e.target !== e.currentTarget) return;
-        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
-          e.preventDefault();
-          onClick();
-        }
-      }
-    : undefined;
-  const dotColor = broken ? 'var(--c-red, #c45a3b)' : (color ?? 'var(--c-muted)');
-  const textColor = broken
-    ? 'var(--c-red, #c45a3b)'
-    : (foreground ?? (active ? '#fff' : 'var(--c-ink)'));
   return (
     <span
-      onClick={onClick}
-      {...(onClick ? { role: 'button', tabIndex: 0, onKeyDown } : null)}
-      className={`inline-flex items-center gap-1.5 rounded-full chip-hover transition${mono ? ' font-mono font-semibold tracking-wide' : ''}${minWidth ? ' justify-center' : ''}`}
+      className={`value-badge inline-flex items-center gap-1.5 rounded-full${mono ? ' font-mono font-semibold tracking-wide' : ''}${minWidth ? ' justify-center' : ''}`}
       style={{
         padding: small ? '1px 7px' : '2px 8px',
         fontSize: small ? 10.5 : 11.5,
-        background: active && !broken ? dotColor : 'var(--c-panel)',
-        color: textColor,
-        border: `1px solid ${broken ? 'var(--c-red, #c45a3b)' : active ? dotColor : 'var(--c-hair)'}`,
-        cursor: onClick ? 'pointer' : 'default',
+        background: 'var(--c-panel)',
+        color: broken ? RED : (foreground ?? 'var(--c-ink)'),
+        border: `1px solid ${broken ? RED : 'var(--c-hair)'}`,
         minWidth,
       }}
     >
-      {broken ? (
-        <span aria-hidden>⚠</span>
-      ) : (
-        dot && (
-          <span
-            className="rounded-full"
-            style={{ width: 6, height: 6, background: active ? textColor : dotColor }}
-          />
-        )
-      )}
+      {broken && <span aria-hidden>⚠</span>}
       {label}
-      {onRemove && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
-          className="opacity-70 hover:opacity-100"
-          style={{ marginLeft: 2 }}
-          aria-label="remove"
-        >
-          ×
-        </button>
-      )}
     </span>
   );
 }

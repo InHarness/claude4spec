@@ -10,6 +10,7 @@ import type {
   EntityRowProps,
   FrontendModule,
 } from '@c4s/plugin-runtime';
+import { Badge } from '@c4s/plugin-runtime/ui';
 import {
   DESIGN_SYSTEM_SIDEBAR_ORDER,
   DESIGN_SYSTEM_LABEL,
@@ -73,22 +74,8 @@ function DesignSystemRow({ entity, active, onOpen }: EntityRowProps<DesignSystem
 }
 
 function DesignSystemChip({ slug, entity, onOpen }: EntityChipProps<DesignSystem>) {
-  if (!entity) {
-    return (
-      <button
-        onClick={onOpen}
-        title={`broken reference: design-system '${slug}'`}
-        className="inline-flex items-center gap-1 align-middle rounded px-1.5 py-[1px] text-[11px] font-mono"
-        style={{
-          background: 'var(--c-red-soft, rgba(196,90,59,0.14))',
-          color: 'var(--c-red, #c45a3b)',
-          border: '1px solid var(--c-red, #c45a3b)',
-        }}
-      >
-        ⚠ {slug}
-      </button>
-    );
-  }
+  // 2.1.39 (M13): a broken chip is the catalog's broken `Badge` with the slug — not clickable.
+  if (!entity) return <Badge variant="broken" label={slug} />;
   return (
     <button
       onClick={onOpen}

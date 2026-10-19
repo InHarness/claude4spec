@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 /**
  * M34/L12 — `TagFilterBar` (group `list`, `experimental`) against its
- * `ui-kit-component` record `tag-filter-bar` (2.1.28): each tag a `Badge`
- * chip, selection state and the `and|or` mode.
+ * `ui-kit-component` record `tag-filter-bar` (2.1.28): each tag a `TagChip`
+ * chip (2.1.39; `Badge` before), selection state and the `and|or` mode.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement, type ReactNode } from 'react';
@@ -83,7 +83,7 @@ describe('TagFilterBar ↔ record `tag-filter-bar` (M34/L12, 2.1.28)', () => {
     expect([a, b, c, d]).toEqual([true, true, true, true]);
   });
 
-  it('[entity:tag-filter-bar] renders every tag as a Badge chip and toggles a tag by its slug', () => {
+  it('[entity:tag-filter-bar] renders every tag as a TagChip and toggles a tag by its slug', () => {
     const onTagToggle = vi.fn();
     bar({ onTagToggle, tagFilter: ['m34'] });
     expect(chips().map((c) => c.textContent)).toEqual(['M34', 'L12']);

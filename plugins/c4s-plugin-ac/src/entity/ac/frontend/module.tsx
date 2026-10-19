@@ -5,6 +5,7 @@ import type {
   EntityRowProps,
   FrontendModule,
 } from '@c4s/plugin-runtime';
+import { Badge } from '@c4s/plugin-runtime/ui';
 import type { Ac } from '../../../types.js';
 import {
   AC_SIDEBAR_ORDER,
@@ -69,28 +70,14 @@ function AcRow({ entity, active, onOpen }: EntityRowProps<Ac>) {
 
 /**
  * 2.1.16 — a deleted entity reaches the slot as `entity: null` and gets this
- * type's OWN branch: the chip is a clickable "⚠ {slug}" button (`onOpen`), the
- * card a red dashed, non-clickable "⚠ broken: ac \"{slug}\"" frame. A
- * `broken` `Badge` is NOT used here — only for dead `verifies` targets on the
- * detail page. Alt+click on a live chip or card opens `ac-edit`.
+ * type's OWN branch: the card a red dashed, non-clickable "⚠ broken: ac
+ * \"{slug}\"" frame. 2.1.39 (M13): the chip is the catalog's `broken` `Badge`
+ * with the slug and is not clickable — `onOpen` is not wired in that branch.
+ * Alt+click on a live chip or card opens `ac-edit`.
  */
 function AcChip({ slug, entity, onOpen }: EntityChipProps<Ac>) {
-  if (!entity) {
-    return (
-      <button
-        onClick={onOpen}
-        title={`broken reference: ac '${slug}'`}
-        className="inline-flex items-center gap-1 align-middle rounded px-1.5 py-[1px] text-[11px] font-mono"
-        style={{
-          background: 'var(--c-red-soft, rgba(196,90,59,0.14))',
-          color: 'var(--c-red, #c45a3b)',
-          border: '1px solid var(--c-red, #c45a3b)',
-        }}
-      >
-        ⚠ {slug}
-      </button>
-    );
-  }
+  // 2.1.39 (M13): a broken chip is the catalog's broken `Badge` with the slug — not clickable.
+  if (!entity) return <Badge variant="broken" label={slug} />;
   const deprecated = entity.status === 'deprecated';
   return (
     <button

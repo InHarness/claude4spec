@@ -55,6 +55,7 @@ export {
   type ActionBarVariant,
 } from './actions/ActionBar.js';
 export { Badge, type BadgeProps } from './actions/Badge.js';
+export { TagChip, type TagChipProps } from './actions/TagChip.js';
 export { LoadingState, type LoadingStateProps } from './actions/LoadingState.js';
 
 // Form (experimental)

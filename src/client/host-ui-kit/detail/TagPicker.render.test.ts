@@ -2,8 +2,8 @@
 /**
  * M34/L12 — `TagPicker` (group `detail`, `experimental`) against its
  * `ui-kit-component` record `tag-picker` (2.1.28): multi-select tags from
- * props, chips through the catalog `Badge`; `collapsed` shows the selected
- * chips + "+N" and reveals the full list and the inline create in the
+ * props, chips through the catalog `TagChip` (2.1.39; `Badge` before); `collapsed`
+ * shows the selected chips + a ghost `ActionButton` "+N" and reveals the full list and the inline create in the
  * published `Popover` (scrolling list, create pinned in the footer); `onCreate`
  * for an existing slug is a no-op.
  */
@@ -51,7 +51,7 @@ afterEach(() => {
 
 const mount = (props: TagPickerProps) => act(() => root.render(createElement(TagPicker, props)));
 const click = (el: Element) => act(() => (el as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true })));
-/** Badge chips: the clickable `role="button"` spans. */
+/** TagChip chips: the clickable `role="button"` spans. */
 const chips = (scope: ParentNode = host) =>
   Array.from(scope.querySelectorAll<HTMLElement>('span[role="button"]')).map((c) => c.textContent);
 const popover = () => host.querySelector<HTMLElement>('[role="dialog"]');
@@ -81,21 +81,24 @@ describe('TagPicker ↔ record `tag-picker` (M34/L12, 2.1.28)', () => {
     expect([a, b]).toEqual([true, true]);
   });
 
-  it('[ac:ac-komponent-tagpicker-m34-experimenta] renders a multi-select of allTags (flat by default), toggling through onToggle, each chip the existing Badge', () => {
+  it('[ac:ac-komponent-tagpicker-m34-experimenta] renders a multi-select of allTags (flat by default), toggling through onToggle, each chip the catalog TagChip (2.1.39)', () => {
     const onToggle = vi.fn();
     mount({ allTags: TAGS, selected: ['auth'], onToggle });
     expect(chips()).toEqual(['Auth', 'Billing', 'Zażółć gęślą']);
-    // Selected = the active Badge (filled with its colour).
+    // Selected = the active TagChip (filled with its colour).
     const auth = Array.from(host.querySelectorAll<HTMLElement>('span[role="button"]'))[0]!;
     expect(auth.getAttribute('style')).toContain('background: var(--c-blue)');
     click(Array.from(host.querySelectorAll('span[role="button"]'))[1]!);
     expect(onToggle).toHaveBeenCalledWith('billing');
     // No create input without onCreate.
     expect(host.querySelector('input')).toBeNull();
-    // The chip is the catalog Badge, not an atom of its own.
+    // The chip is the catalog TagChip — not Badge, not an atom of its own.
     const src = readFileSync(resolve(HERE, './TagPicker.tsx'), 'utf8');
-    expect(src).toMatch(/import \{ Badge \} from '\.\.\/actions\/Badge\.js'/);
-    expect(src).toMatch(/<Badge\b/);
+    expect(src).toMatch(/import \{ TagChip \} from '\.\.\/actions\/TagChip\.js'/);
+    expect(src).toMatch(/<TagChip\b/);
+    expect(src).not.toMatch(/<Badge\b/);
+    // Each chip carries the TagChip's own class.
+    expect(host.querySelectorAll('span.tag-chip')).toHaveLength(3);
   });
 
   it('[ac:ac-komponent-tagpicker-m34-experimenta] with onCreate, the inline create hands a new name to onCreate', () => {
@@ -141,6 +144,8 @@ describe('TagPicker ↔ record `tag-picker` (M34/L12, 2.1.28)', () => {
 
     const reveal = Array.from(host.querySelectorAll('button')).find((b) => b.textContent === '+2')!;
     expect(reveal).toBeDefined();
+    // 2.1.39: the "+N" control is a ghost ActionButton.
+    expect(readFileSync(resolve(HERE, './TagPicker.tsx'), 'utf8')).toMatch(/<ActionButton\s+variant="ghost"/);
     click(reveal);
     const panel = popover()!;
     expect(panel).not.toBeNull();

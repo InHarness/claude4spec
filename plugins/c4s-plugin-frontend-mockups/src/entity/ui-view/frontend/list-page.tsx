@@ -95,7 +95,7 @@ export function UiViewsList({
                 tagLookup={tagLookup}
                 trailing={
                   <span title={`${paramCount} parameter${paramCount === 1 ? '' : 's'}`}>
-                    <Badge label={`${paramCount}p`} mono small dot={false} />
+                    <Badge label={`${paramCount}p`} mono small />
                   </span>
                 }
               >
@@ -103,7 +103,7 @@ export function UiViewsList({
                   <span className="text-[13.5px]" style={{ color: 'var(--c-ink)', fontWeight: 500 }}>
                     {v.title}
                   </span>
-                  {v.url && <Badge label={v.url} mono small dot={false} />}
+                  {v.url && <Badge label={v.url} mono small />}
                   {/*
                     The mockup chip — PRESENCE-ONLY, by the same convention the URL
                     badge above already follows: no mockup renders NOTHING here, not
@@ -115,7 +115,7 @@ export function UiViewsList({
                     mockup itself, nor for `mockupHtmlBytes` — the size stays with the
                     `Details` descriptor.
                   */}
-                  {v.hasMockupHtml === true && <Badge label="Mockup" small dot={false} />}
+                  {v.hasMockupHtml === true && <Badge label="Mockup" small />}
                 </div>
                 {v.description && (
                   <div className="text-[12.5px] truncate mt-0.5" style={{ color: 'var(--c-muted)' }}>

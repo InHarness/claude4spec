@@ -91,6 +91,7 @@ vi.mock('@c4s/plugin-runtime/ui', async () => {
     dialogMod,
     formShellMod,
     formFieldMod,
+    badgeMod,
   ] = await Promise.all([
     import('../../../../src/client/host-ui-kit/actions/ActionButton.js'),
     import('../../../../src/client/host-ui-kit/core/EntityListHeader.js'),
@@ -105,6 +106,7 @@ vi.mock('@c4s/plugin-runtime/ui', async () => {
     import('../../../../src/client/host-ui-kit/overlay/Dialog.js'),
     import('../../../../src/client/host-ui-kit/overlay/FormShell.js'),
     import('../../../../src/client/host-ui-kit/form/FormField.js'),
+    import('../../../../src/client/host-ui-kit/actions/Badge.js'),
   ]);
   const spy =
     <P,>(Real: FC<P>, sink: (p: P) => void): FC<P> =>
@@ -114,6 +116,8 @@ vi.mock('@c4s/plugin-runtime/ui', async () => {
     };
   return {
     ActionButton: btnMod.ActionButton,
+    // 2.1.39 — the chip's broken branch is the catalog's broken Badge.
+    Badge: badgeMod.Badge,
     EntityListHeader: hdrMod.EntityListHeader,
     EntityListLayout: layoutMod.EntityListLayout,
     EmptyState: spy(emptyMod.EmptyState, (p) => state.emptyStates.push(p as never)),

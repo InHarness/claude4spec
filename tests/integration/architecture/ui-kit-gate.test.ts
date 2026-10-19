@@ -351,7 +351,7 @@ function apiContractsCase(section: string, type: string): void {
       debt(['EntityViewSwitcher'], ['SegmentedControlTabs']),
       debt(['SegmentedControl'], ['SegmentedControlTabs']),
       debt(['ButtonGroup', 'SegmentButton'], ['SegmentedControlTabs']),
-      debt(['TagChip'], ['Badge']),
+      debt(['TagChip'], ['TagChip']),
       debt(POPOVER_FORM, ['FormField']),
       debt(['ListPageLayout']),
       debt(['RoutePane']),

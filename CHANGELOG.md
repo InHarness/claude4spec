@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING (plugin authors, `@c4s/plugin-runtime/ui`): `Badge` is a value marker only; tag chips are the new `TagChip`.**
+  - `Badge` loses the props `color`, `active`, `onClick`, `onRemove` and `dot`, and is no longer reachable with Tab: it has no button role, no dot and no click. Its text defaults to `var(--c-ink)`; `foreground`, `mono`, `minWidth`, `small` and `variant` stay.
+  - Move tag chips to the new catalog component `TagChip` (`label`, `color`, `active`, `small`, `onClick`, `onRemove`; group `actions`, `experimental`, `presentational`). It draws the leading dot in `color`, is a Tab stop with Enter/Space activation when it has `onClick`, and its "×" (`aria-label="remove"`) never reaches `onClick`.
+  - Read-only values (an enum value, a count, a state) stay on `Badge` without the removed props — a former `color` of a marker moves to `foreground`. Editable values go to `EnumBadgePicker`, actions to `ActionButton`.
+  - `Badge variant='broken'` puts ⚠ before the label (red ink and hairline, winning over `foreground`).
+  - A broken entity chip (`renderChip` with `entity === null`) is `<Badge variant="broken" label={slug} />` and is not clickable — `onOpen` stays in `EntityChipProps` but is not wired in that branch.
+  - `TagFilterBar`, `TagPicker` and `EntityListRow` draw their chips with `TagChip`; their props are unchanged. `TagPicker`'s collapsed "+N" control is a ghost `ActionButton`.
+  - `hostApiVersion` is unchanged: both components are `experimental`.
+
 ## [2.1.11] - 2026-10-09
 
 ### Changed

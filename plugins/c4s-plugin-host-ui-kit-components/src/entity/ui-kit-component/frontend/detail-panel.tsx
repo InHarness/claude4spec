@@ -4,7 +4,7 @@
  * `ctpko3bp`, `pv2psgi6`).
  *
  * Composed from catalog components (`DetailPanelShell`, `FieldGrid`,
- * `FieldRow`, `Badge`, `LoadingState`, `EmptyState`) plus the three
+ * `FieldRow`, `Badge`, `TagChip`, `LoadingState`, `EmptyState`) plus the three
  * host-local components the page declares LOCAL (`pv2psgi6`): `PropsTable`,
  * `TypesTable` and `DataSourcesTable`. Each is used in this one place and is
  * not universal across entity types — its columns are the fields of one
@@ -17,7 +17,7 @@
 import type { FC, ReactNode } from 'react';
 import { editorBridge } from '@c4s/plugin-runtime';
 import type { EntityDetailProps } from '@c4s/plugin-runtime';
-import { Badge, DetailPanelShell, EmptyState, FieldGrid, FieldRow, LoadingState } from '@c4s/plugin-runtime/ui';
+import { Badge, TagChip, DetailPanelShell, EmptyState, FieldGrid, FieldRow, LoadingState } from '@c4s/plugin-runtime/ui';
 import { UI_KIT_COMPONENT_LABEL_PLURAL, UI_KIT_COMPONENT_TYPE } from '../../../identity.js';
 import type { UiKitComponent, UiKitDataSource, UiKitProp, UiKitType } from '../../../types.js';
 import { useGetBySlug } from './hooks.js';
@@ -117,13 +117,15 @@ export const UiKitComponentView: FC<{ entity: UiKitComponent; onBack: () => void
         <FieldRow label="Composes">
           <span className="inline-flex flex-wrap gap-1">
             {entity.composes.map((c) => (
-              <Badge
+              // 2.1.39: `Badge` is a value marker with no click — the link is a button around it.
+              <button
                 key={c.component}
-                small
-                mono
-                label={c.component}
+                type="button"
+                className="inline-flex"
                 onClick={() => editorBridge.openEntity(UI_KIT_COMPONENT_TYPE, c.component)}
-              />
+              >
+                <Badge small mono label={c.component} />
+              </button>
             ))}
           </span>
         </FieldRow>
@@ -139,7 +141,7 @@ export const UiKitComponentView: FC<{ entity: UiKitComponent; onBack: () => void
         <FieldRow label="Tags">
           <span className="inline-flex flex-wrap gap-1">
             {entity.tags.map((t) => (
-              <Badge key={t} small label={t} />
+              <TagChip key={t} small label={t} />
             ))}
           </span>
         </FieldRow>

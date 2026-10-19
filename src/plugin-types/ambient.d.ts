@@ -83,6 +83,7 @@ declare module '@c4s/plugin-runtime/ui' {
     ActionButton,
     ActionBar,
     Badge,
+    TagChip,
     LoadingState,
     FormField,
     InlineEditField,

@@ -96,7 +96,7 @@ export function DtosList({
               onClick={() => onSelect(d.slug)}
               tags={d.tags}
               tagLookup={tagLookup}
-              trailing={<Badge label={`${d.fields.length}f`} mono small dot={false} />}
+              trailing={<Badge label={`${d.fields.length}f`} mono small />}
             >
               <div className="flex items-center gap-2">
                 <span className="text-[14px]" style={{ color: 'var(--c-ink)', fontWeight: 500 }}>

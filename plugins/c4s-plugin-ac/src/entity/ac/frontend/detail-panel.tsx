@@ -190,7 +190,7 @@ export function AcDetail({
         </div>
         {/* Slug: read-only, a badge under the title. */}
         <div className="mb-3 ml-[30px]" data-testid="ac-slug">
-          <Badge label={ac.slug} small mono dot={false} />
+          <Badge label={ac.slug} small mono />
         </div>
         {/* The detail page is where the criterion is NOT abbreviated — the chip
             and the row cut to 40 characters, this shows all 500 and grows to
@@ -392,7 +392,7 @@ function VerifiesPanel({
           // jump-to-entity affordance the old panel had on the slug itself.
           badge: (
             <>
-              {reason && <Badge label={reason} variant="broken" small dot={false} />}
+              {reason && <Badge label={reason} variant="broken" small />}
               {!reason && mod && onOpenEntity && (
                 <button
                   onClick={() => onOpenEntity(type, slug)}

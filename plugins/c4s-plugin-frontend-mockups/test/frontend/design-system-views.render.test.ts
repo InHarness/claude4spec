@@ -280,34 +280,35 @@ async function render(node: ReactNode) {
 }
 
 const REPO_ROOT = joinPath(import.meta.dirname, '../../../..');
-const BADGE_MARKUP = 'chip-hover';
+// 2.1.39: tag chips are the kit `TagChip` (no longer `Badge`), marked by its own class.
+const TAG_CHIP_MARKUP = 'tag-chip';
 
 /**
- * Labels of every chip the kit `Badge` drew in `scope`, read from the rendered
- * DOM: a Badge is a `<span>` carrying the `chip-hover` class, its text is the
+ * Labels of every chip the kit `TagChip` drew in `scope`, read from the rendered
+ * DOM: a TagChip is a `<span>` carrying the `tag-chip` class, its text is the
  * label (the colour dot is an empty span). Chips drawn inside kit components
- * (`TagPicker`, `EntityListRow`) import `Badge` from `../actions/Badge.js`,
+ * (`TagPicker`, `EntityListRow`) import `TagChip` from `../actions/TagChip.js`,
  * which the module runner resolves to `Badge.tsx` — a `vi.mock` registered
  * under the `.js` specifier never reaches them (system verification 2.1.28
  * round 2), so the DOM is the observable.
  */
-function kitBadgeLabels(scope: ParentNode): string[] {
-  return [...scope.querySelectorAll(`span.${BADGE_MARKUP}`)].map((el) => (el.textContent ?? '').trim());
+function kitTagChipLabels(scope: ParentNode): string[] {
+  return [...scope.querySelectorAll(`span.${TAG_CHIP_MARKUP}`)].map((el) => (el.textContent ?? '').trim());
 }
 
 /**
- * `chip-hover` identifies the kit `Badge` only if no other component emits it:
+ * `tag-chip` identifies the kit `TagChip` only if no other component emits it:
  * among the TSX sources of the host client and of every plugin, the kit's
- * `actions/Badge.tsx` is the one that does.
+ * `actions/TagChip.tsx` is the one that does.
  */
-function expectBadgeMarkupIsBadgeOnly(): void {
+function expectTagChipMarkupIsTagChipOnly(): void {
   const owners: string[] = [];
   const walk = (dir: string) => {
     for (const name of lsDir(dir)) {
       if (name === 'node_modules' || name === 'dist') continue;
       const full = joinPath(dir, name);
       if (statPath(full).isDirectory()) walk(full);
-      else if (name.endsWith('.tsx') && readText(full, 'utf-8').includes(BADGE_MARKUP)) {
+      else if (name.endsWith('.tsx') && readText(full, 'utf-8').includes(TAG_CHIP_MARKUP)) {
         owners.push(relPath(REPO_ROOT, full).split('\\').join('/'));
       }
     }
@@ -321,7 +322,7 @@ function expectBadgeMarkupIsBadgeOnly(): void {
       // a package without src/
     }
   }
-  expect(owners).toEqual(['src/client/host-ui-kit/actions/Badge.tsx']);
+  expect(owners).toEqual(['src/client/host-ui-kit/actions/TagChip.tsx']);
 }
 
 function routeTable() {
@@ -467,16 +468,16 @@ describe('[entity:design-system-history] /design-systems/:slug/history', () => {
 });
 
 describe('[entity:design-system-detail] 2.1.28 composition', () => {
-  it('[entity:design-system-detail] tags are a collapsed kit TagPicker whose chips render through Badge', async () => {
+  it('[entity:design-system-detail] tags are a collapsed kit TagPicker whose chips render through TagChip', async () => {
     state.allTags = [{ slug: 'brand', name: 'Brand', color: null }];
     state.ds = sampleDs({ tags: ['brand'] } as Partial<DesignSystem>);
     await render(createElement(routeTable().get('/design-systems/$slug')!.component));
     expect(state.tagPickers.length).toBeGreaterThan(0);
     expect(state.tagPickers.at(-1)!.variant).toBe('collapsed');
     // The chip is drawn inside the kit TagPicker: read it from the DOM as the
-    // kit Badge's own markup (no module mock reaches the kit's internal import).
-    expectBadgeMarkupIsBadgeOnly();
-    expect(kitBadgeLabels(container)).toContain('Brand');
+    // kit TagChip's own markup (no module mock reaches the kit's internal import).
+    expectTagChipMarkupIsTagChipOnly();
+    expect(kitTagChipLabels(container)).toContain('Brand');
   });
 });
 
@@ -506,9 +507,9 @@ describe('[entity:design-system-list] /design-systems', () => {
         onSelect: () => undefined,
       }),
     );
-    // The row's tag chip comes from the kit row, through Badge (its markup in the DOM).
-    expectBadgeMarkupIsBadgeOnly();
-    expect(kitBadgeLabels(container)).toContain('brand');
+    // The row's tag chip comes from the kit row, through TagChip (its markup in the DOM).
+    expectTagChipMarkupIsTagChipOnly();
+    expect(kitTagChipLabels(container)).toContain('brand');
     expect(container.textContent).toContain('3 groups');
   });
 

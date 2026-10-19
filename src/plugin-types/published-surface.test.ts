@@ -87,6 +87,7 @@ const PUBLISHED_PLUGIN_RUNTIME_UI_NAMES = [
   'ActionButton',
   'ActionBar',
   'Badge',
+  'TagChip',
   'LoadingState',
   'FormField',
   'InlineEditField',
