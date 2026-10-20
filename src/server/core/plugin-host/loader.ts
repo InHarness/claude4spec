@@ -69,6 +69,13 @@ export interface PluginLoadRecord {
    * Host API version, applicable migration descriptors, shim availability).
    */
   migration?: PluginMigrationInfo;
+  /**
+   * 2.1.41 (M13) — registration warnings for the types this package contributed:
+   * a `ref` flag in a forbidden place, or a `ref` naming a type no registered
+   * package contributes. The package is `loaded` regardless; `c4s plugins doctor`
+   * prints these lines.
+   */
+  warnings?: string[];
 }
 
 export interface PluginLoadResult {

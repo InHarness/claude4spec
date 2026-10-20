@@ -292,6 +292,14 @@ describe('buildMcpServers — one malformed plugin must not kill the turn', () =
     expect(host.buildMcpServers()).toHaveLength(2);
   });
 
+  it('refuses a server registered under a key the Claude Code CLI reserves', () => {
+    const host = baseRegistry('endpoint').consolidate({});
+    expect(() => host.registerMcpServer('workspace', () => validInstance('workspace') as never)).toThrow(
+      /"workspace" is reserved/,
+    );
+    expect(host.buildMcpServers()).toEqual([]);
+  });
+
   it('passes a well-formed McpServerInstance through untouched', () => {
     const instance = validInstance('ok-tools');
     const host = hostWith({ 'ok-tools': () => instance });

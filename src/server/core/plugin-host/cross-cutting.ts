@@ -12,6 +12,7 @@ import { Router } from 'express';
 import { HOST_API_VERSION } from '../../../shared/plugin-host/manifest.js';
 import type { PluginHost } from './types.js';
 import type { PluginLoadRecord } from './loader.js';
+import { overlayRefWarnings, withRefWarnings } from './ref-warnings.js';
 import type { WorkspaceRegistry } from '../../workspace/registry.js';
 import type { WorkspaceRecord } from '../../workspace/types.js';
 import type { ContextInvalidation } from '../../../shared/types.js';
@@ -82,6 +83,9 @@ export function pluginHostRouter(deps: PluginHostRouterDeps): Router {
     res.json({ commands: host.listCommands() });
   });
 
+  const overlayWithWarnings = (): PluginLoadRecord[] =>
+    withRefWarnings(overlayRecords, overlayRefWarnings(host.listAvailable(), overlayRecords));
+
   router.get('/_meta/plugins', (_req, res) => {
     const baseOriginForType = (type: string): string =>
       basePackages.find((p) => p.contributedTypes?.includes(type))?.package ?? '@c4s/builtin';
@@ -94,7 +98,8 @@ export function pluginHostRouter(deps: PluginHostRouterDeps): Router {
       hostApiVersion: HOST_API_VERSION,
       localPluginsPresent,
       trust,
-      packages: [...basePackages, ...overlayRecords],
+      // 2.1.41 — an overlay type's ref warnings are judged against base ∪ overlay.
+      packages: [...basePackages, ...overlayWithWarnings()],
       shadowed,
     };
     res.json(response);

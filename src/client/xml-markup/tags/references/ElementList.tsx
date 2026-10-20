@@ -6,6 +6,8 @@ import { editorBridge } from '../../../runtime/editor-bridge.js';
 import { BlockBrokenChip } from '../../../tiptap/extensions/views/BrokenChip.js';
 import { NotListable } from '../../../tiptap/extensions/views/NotListable.js';
 import { useListTagLookup } from '../../../entities/useListTagLookup.js';
+import { useListRefLookup } from '../../../entities/useRefLookup.js';
+import type { RefLookupEntry } from '../../../host-ui-kit/actions/EntityRefValue.js';
 import type { Tag } from '../../../../shared/plugin-host/tag.js';
 import type { TagRenderProps } from '../../renders.js';
 import { attr, csv, EntityChip } from './shared.js';
@@ -19,13 +21,16 @@ import { attr, csv, EntityChip } from './shared.js';
  * types) cannot be listed. Inline: one chip per slug.
  *
  * 2.1.40: every row gets the same `tagLookup`, from one `['tags']` query made
- * here, once for the whole list.
+ * here, once for the whole list. 2.1.41: and the same `refLookup`, built once
+ * per list from the rows' reference fields (`useListRefLookup`).
  */
 export function ElementListRender({ attrs, variant }: TagRenderProps) {
   useRegistryVersion();
   const tagLookup = useListTagLookup();
   const type = attr(attrs, 'type');
   const slugs = csv(attr(attrs, 'slugs'));
+  // 2.1.41 — one refLookup for the whole list, like tagLookup.
+  const refLookup = useListRefLookup(variant === 'inline' ? [] : slugs.map((slug) => ({ type, slug })));
   const def = getEntityDef(type);
 
   if (variant === 'inline') {
@@ -62,6 +67,7 @@ export function ElementListRender({ attrs, variant }: TagRenderProps) {
             type={type}
             slug={slug}
             tagLookup={tagLookup}
+            refLookup={refLookup}
             onOpen={openEntityHandler(type, slug, editorBridge)}
           />
         ))}
@@ -79,11 +85,13 @@ function Row({
   type,
   slug,
   tagLookup,
+  refLookup,
   onOpen,
 }: {
   type: string;
   slug: string;
   tagLookup: ReadonlyMap<string, Tag>;
+  refLookup: ReadonlyMap<string, RefLookupEntry>;
   onOpen?: () => void;
 }) {
   const def = getEntityDef(type)!;
@@ -103,7 +111,7 @@ function Row({
   const RowComp = def.renderRow!;
   return (
     <li>
-      <RowComp slug={slug} entity={data} onOpen={onOpen} tagLookup={tagLookup} />
+      <RowComp slug={slug} entity={data} onOpen={onOpen} tagLookup={tagLookup} refLookup={refLookup} />
     </li>
   );
 }

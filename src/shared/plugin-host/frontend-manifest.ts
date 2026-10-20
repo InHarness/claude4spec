@@ -137,6 +137,8 @@ export const PLUGIN_RUNTIME_EXPORT_NAMES = [
   'useCreateTag',
   'useReferences',
   'useReleases',
+  // 2.1.41 (M13) — the `refLookup` map outside a slot (detail panel, own screen); experimental.
+  'useRefLookup',
   /**
    * M05/0.2.80 — the published equivalent of a host-only facade.
    *
@@ -210,6 +212,8 @@ export const PLUGIN_RUNTIME_UI_EXPORT_NAMES = [
   'ActionBar',
   'Badge',
   'TagChip',
+  // 2.1.41 (M34) — a field value that is a link to a record.
+  'EntityRefValue',
   'LoadingState',
   // Form (experimental)
   'FormField',

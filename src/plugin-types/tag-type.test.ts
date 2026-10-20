@@ -168,7 +168,7 @@ describe('2.1.40 — Tag from the root of @c4s/plugin-runtime (M18) and the row 
       "export function rowLookup(p: EntityRowProps<{ tags: string[] }>): EntityListRowProps['tagLookup'] {",
       '  return p.tagLookup;',
       '}',
-      "export const props: EntityRowProps<{ tags: string[] }> = { slug: 's', entity: { tags: [] }, tagLookup: new Map<string, Tag>() };",
+      "export const props: EntityRowProps<{ tags: string[] }> = { slug: 's', entity: { tags: [] }, tagLookup: new Map<string, Tag>(), refLookup: new Map() };",
     ].join('\n');
     expect(compileAuthorFile(ok)).toEqual([]);
 

@@ -58,10 +58,10 @@ const route: ProjectableModule = {
 };
 
 /**
- * The shapes that carry a `ref` on a node with NO FIELD NAME of its own — a
- * collection item and a record value — plus one nested two levels down. Each is
- * admitted by `declaresRefs`, so each has to be rewritable, or a rename reports
- * success having changed nothing.
+ * 2.1.41 — the three shapes whose `ref` sits in a FORBIDDEN place: a scalar
+ * collection element, a record value, and an object nested outside any
+ * collection. The schema walk (`collectRefFields`) does not honour them, so the
+ * type registers with a warning and a rename leaves them as they are.
  */
 const roster: ProjectableModule = {
   type: 'roster',
@@ -234,10 +234,8 @@ describe('rewriteRefsForRename', () => {
     }
   });
 
-  it('rewrites a ref carried by a collection ITEM, which has no field name', () => {
-    // `declaresRefs` admits this shape, so the listener runs — and a walker that
-    // only looks at an object's named fields finds nothing to change and reports
-    // success. The reference then rots permanently.
+  it('leaves a ref in a forbidden place (scalar item, record value, object outside a collection) as written', () => {
+    // 2.1.41 — a misplaced flag is not a reference for anybody: no rename propagation.
     const db = projectDb([shape, roster]);
     try {
       db.prepare("INSERT INTO shape (slug, title) VALUES ('user', 'User')").run();
@@ -249,16 +247,16 @@ describe('rewriteRefsForRename', () => {
         JSON.stringify({ owner: { shape: 'user' } }),
       );
 
-      expect(rewriteRefsForRename(db, roster, 'shape', 'user', 'account')).toEqual(['r1']);
+      expect(rewriteRefsForRename(db, roster, 'shape', 'user', 'account')).toEqual([]);
 
       const row = db.prepare('SELECT members, by_role, meta FROM roster WHERE slug = ?').get('r1') as {
         members: string;
         by_role: string;
         meta: string;
       };
-      expect(JSON.parse(row.members)).toEqual(['account', 'other']);
-      expect(JSON.parse(row.by_role)).toEqual({ primary: 'account' });
-      expect(JSON.parse(row.meta)).toEqual({ owner: { shape: 'account' } });
+      expect(JSON.parse(row.members)).toEqual(['user', 'other']);
+      expect(JSON.parse(row.by_role)).toEqual({ primary: 'user' });
+      expect(JSON.parse(row.meta)).toEqual({ owner: { shape: 'user' } });
     } finally {
       db.close();
     }
@@ -276,11 +274,11 @@ describe('rewriteRefsForRename', () => {
 });
 
 describe('declaresRefs', () => {
-  it('is true for a ref at any depth, and false for a schema with none', () => {
+  it('is true for a ref in an allowed place, and false for a schema with none or only misplaced ones', () => {
     expect(declaresRefs(viewer)).toBe(true); // scalar, top level
     expect(declaresRefs(route)).toBe(true); // inside a collection item
     expect(declaresRefs(criterion)).toBe(true); // `$type`, inside a collection item
-    expect(declaresRefs(roster)).toBe(true); // on a collection item / record value
+    expect(declaresRefs(roster)).toBe(false); // 2.1.41 — every flag misplaced
     expect(declaresRefs(theme)).toBe(false);
     expect(declaresRefs({ type: 'schemaless' })).toBe(false);
   });

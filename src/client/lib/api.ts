@@ -411,6 +411,36 @@ export const writingStylesApi = {
   },
 };
 
+/** One row of `GET /api/entities/:type/get` — `entity: null` for a slug naming nothing. */
+export interface EntityBySlugRow {
+  slug: string;
+  entity: Record<string, unknown> | null;
+  truncated?: boolean;
+}
+
+/** The core operation refuses more than this many slugs in one call. */
+const GET_BY_SLUGS_MAX = 50;
+
+export const entitiesApi = {
+  /**
+   * 2.1.41 — the core "read by slugs" (`get_entities`), batched over its 50-slug
+   * cap. `select` defaults to `[]`, the identity skeleton (`slug`, `title`, …)
+   * a chip, a row or a `refLookup` entry needs.
+   */
+  async getBySlugs(type: string, slugs: readonly string[], select: readonly string[] = []): Promise<EntityBySlugRow[]> {
+    const out: EntityBySlugRow[] = [];
+    for (let i = 0; i < slugs.length; i += GET_BY_SLUGS_MAX) {
+      const chunk = slugs.slice(i, i + GET_BY_SLUGS_MAX);
+      const params = new URLSearchParams({ slugs: chunk.join(','), select: select.join(',') });
+      const data = await handle<{ results: EntityBySlugRow[] }>(
+        await apiFetch(`/api/entities/${encodeURIComponent(type)}/get?${params.toString()}`),
+      );
+      out.push(...data.results);
+    }
+    return out;
+  },
+};
+
 export const tagsApi = {
   async list(): Promise<Tag[]> {
     const data = await handle<{ tags: Tag[] }>(await apiFetch('/api/tags'));

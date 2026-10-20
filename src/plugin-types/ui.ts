@@ -217,7 +217,9 @@ export declare const ActionBar: ComponentType<ActionBarProps>;
 
 /**
  * A non-interactive value marker (enum value, count, state). 2.1.39: no dot,
- * no click, never a Tab stop — tag chips are `TagChip`.
+ * no click, never a Tab stop — tag chips are `TagChip`. Never a link: a link to
+ * a record (e.g. "open" in a picker) is `EntityRefValue`; a ghost `ActionButton`
+ * is for actions and links WITHOUT a record identity ("+N") only (2.1.41).
  */
 export interface BadgeProps {
   label: ReactNode;
@@ -243,6 +245,43 @@ export interface TagChipProps {
   onRemove?: () => void;
 }
 export declare const TagChip: ComponentType<TagChipProps>;
+
+/**
+ * 2.1.41 (M13) — one entry of a `refLookup` map, keyed `${type}:${slug}` of the
+ * TARGET record. Declared here, beside `EntityRefValue`; the root of
+ * `@c4s/plugin-runtime` re-exports this same type because `useRefLookup`
+ * returns it.
+ */
+export interface RefLookupEntry {
+  /** The target record's display name (its slug in a broken entry). */
+  title: string;
+  /** The target type's icon from the host's type registry. */
+  icon: LucideIcon;
+  /** deleted entity | inactive package | unknown type. */
+  broken?: 'deleted' | 'inactive' | 'unknown';
+}
+
+/**
+ * 2.1.41 (M34, `experimental`) — a field value that is a link to a record: the
+ * target type's icon and the record's display name. Click opens the target
+ * (`editorBridge.openEntity`; a hidden type opens its `<type>-expand` window),
+ * then calls `onOpen`; propagation is stopped, so it never opens a list row.
+ * Broken (`refEntry` absent or `refEntry.broken`): a non-clickable broken
+ * `Badge` with the slug and the cause in its tooltip. Fetches nothing.
+ */
+export interface EntityRefValueProps {
+  /** Label before the value (inline, in a list row); a detail field row passes none. */
+  label?: string;
+  type: string;
+  slug: string;
+  /**
+   * The `refLookup` entry under `${type}:${slug}` — required, `undefined` for none.
+   * Named `refEntry`: React 18 does not pass a `ref` prop to a function component.
+   */
+  refEntry: RefLookupEntry | undefined;
+  onOpen?: () => void;
+}
+export declare const EntityRefValue: ComponentType<EntityRefValueProps>;
 
 export interface LoadingStateProps {
   width?: number | string;

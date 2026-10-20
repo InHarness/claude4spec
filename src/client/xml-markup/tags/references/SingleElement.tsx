@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getEntityDef } from '../../../entities/registry.js';
 import { openEntityHandler } from '../../../entities/openEntity.js';
+import { HostCard } from '../../../entities/HostCard.js';
 import { categoriseBrokenChip } from '../../../core/plugin-host/host.js';
 import { useRegistryVersion } from '../../../core/plugin-host/useRegistryVersion.js';
 import { editorBridge } from '../../../runtime/editor-bridge.js';
@@ -101,9 +102,10 @@ function CardResolver({
       </div>
     );
   }
-  const Card = def.renderCard;
   return (
-    <Card
+    <HostCard
+      type={type}
+      card={def.renderCard}
       slug={slug}
       entity={data ?? null}
       {...(caption ? { caption } : {})}

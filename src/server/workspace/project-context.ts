@@ -149,6 +149,7 @@ import { SerializationEngine } from '../core/plugin-host/serialization-engine.js
 import { pluginHostRouter } from '../core/plugin-host/cross-cutting.js';
 import { projectPluginsDir, type PluginImporter } from '../core/plugin-host/overlay-loader.js';
 import { buildBasePluginPackages } from '../routes/plugins.js';
+import { logRefRegistrationWarnings, overlayRefWarnings } from '../core/plugin-host/ref-warnings.js';
 import { projectPluginsFrontendRouter } from '../routes/plugins-project.js';
 import { loadedRecordKeys, type WorkspaceRootResolver } from '../core/plugin-host/frontend-assets.js';
 import type { BuiltinEnvelope } from '../core/plugin-host/builtin-envelopes.js';
@@ -470,6 +471,9 @@ async function buildInner(
   // context instance — released by `dispose`, and by the partial-build cleanup
   // (reverse acquisition order) when the build fails after this point.
   cleanup.push(() => pluginHost.clearMcpFactories());
+  // 2.1.41 (M13) — the overlay's ref warnings (the base pool's were logged at
+  // bootstrap), judged against base ∪ overlay.
+  logRefRegistrationWarnings(overlayRefWarnings(pluginHost.listAvailable(), overlayRecords));
   const hostState = pluginHost.partition();
   console.log(
     `[plugin-host] active: [${hostState.active.join(', ') || '∅'}]` +

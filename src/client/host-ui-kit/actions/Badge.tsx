@@ -9,6 +9,11 @@ import { withStability } from '../stability.js';
  * `TagChip`, so `Badge` lost `color`, `active`, `onClick`, `onRemove` and
  * `dot` — it draws no dot, has no button role and is never a Tab stop. An
  * editable value is `EnumBadgePicker`, an action `ActionButton`.
+ *
+ * Alternatives (2.1.41): `Badge` is never a link. A link to a record (e.g.
+ * "open" in a picker) is `EntityRefValue`; a ghost `ActionButton` stays only for
+ * actions and links WITHOUT a record identity ("+N"). A row has no separate
+ * "open" link — the row itself links to the record.
  */
 export interface BadgeProps {
   label: ReactNode;

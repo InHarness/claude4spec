@@ -140,6 +140,10 @@ export type { ValidatorKind, ValidatorFailure } from '../shared/plugin-host/name
 // `EntityListRow` all take this one type; `/ui` re-exports it.
 import type { Tag } from '../shared/plugin-host/tag.js';
 export type { Tag };
+// 2.1.41 (M13) — declared once in `/ui`, beside `EntityRefValue`; re-exported from
+// the root because `useRefLookup` (and the `refLookup` slot prop) carry it.
+import type { RefLookupEntry } from './ui.js';
+export type { RefLookupEntry };
 
 // ── Backend mount context ──
 // Host-provided dependencies are loosely typed: the real types (express Router,
@@ -581,6 +585,12 @@ export interface EntityCardProps<T = unknown> extends EntityChipProps<T> {
    * synced back and is absent whenever the tag omitted it.
    */
   caption?: string;
+  /**
+   * 2.1.41 — `${type}:${slug}` of a TARGET record → its `RefLookupEntry`, built by
+   * the host for this card's one entity; always present, empty when nothing
+   * resolves. Draw a value with `EntityRefValue`.
+   */
+  refLookup: ReadonlyMap<string, RefLookupEntry>;
 }
 /**
  * Props of the `renderRow` slot. `entity` is always resolved: for a missing
@@ -602,6 +612,15 @@ export interface EntityRowProps<T = unknown> {
    * `EntityListRow.tagLookup` / `TagChip` colours.
    */
   tagLookup: ReadonlyMap<string, Tag>;
+  /**
+   * 2.1.41 — the resolutions of this type's `ref` field values across the WHOLE
+   * list: `${type}:${slug}` of the target record → `RefLookupEntry` (title, the
+   * target type's host icon, `broken` for a deleted record / an inactive package /
+   * an unknown type). Computed once per list, the same map for every row;
+   * always present, empty when there is nothing to resolve. Draw a value with
+   * `EntityRefValue` from `/ui`; never fetch targets yourself.
+   */
+  refLookup: ReadonlyMap<string, RefLookupEntry>;
 }
 /**
  * Props of the `detailPanel` slot — all four fields REQUIRED (2.1.16). Declared,
@@ -952,6 +971,16 @@ export declare const releasesService: {
  * row carries no release pill.
  */
 export declare function useReleases(): Map<number, string>;
+/**
+ * 2.1.41 (M13, `experimental`) — the `refLookup` map for entities handed in
+ * directly: on a detail panel or a plugin's own screen, where no host slot
+ * hands it in. Same schema walk and same query keys (`['refLookup', <targetType>]`)
+ * as the host's row/card resolver, so the cache is shared with lists.
+ *
+ * @param type the type whose `data.schema` declares the reference fields
+ * @param entities payloads of that type
+ */
+export declare function useRefLookup<T>(type: string, entities: readonly T[]): ReadonlyMap<string, RefLookupEntry>;
 
 // ── M13/L11 line-diff util ──
 /**

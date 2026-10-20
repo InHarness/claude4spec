@@ -77,6 +77,8 @@ vi.mock('@c4s/plugin-runtime', async () => {
     },
     useTags: () => ({ data: [] }),
     useReferences: () => ({ data: state.refs }),
+    // 2.1.41 — the detail panel resolves designSystemSlug through the host hook.
+    useRefLookup: () => new Map(),
     EditorBridgeProvider: ({ children }: { children: ReactNode }) => children,
     queryClient: null,
   };

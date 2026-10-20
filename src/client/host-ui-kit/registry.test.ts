@@ -14,8 +14,8 @@ import * as uiBackendLeg from '../../server/plugin-runtime/ui.js';
 import * as uiBrowserSurface from './index.js';
 
 describe('Host UI Kit catalog registry (M34/L12)', () => {
-  it('catalogs all 33 components across the eight groups', () => {
-    expect(UI_KIT_CATALOG).toHaveLength(33);
+  it('catalogs all 34 components across the eight groups', () => {
+    expect(UI_KIT_CATALOG).toHaveLength(34);
     const byGroup = (g: string) => UI_KIT_CATALOG.filter((c) => c.group === g).map((c) => c.name);
     expect(byGroup('core')).toEqual(['EntityListHeader', 'DetailPanelShell', 'FieldRow', 'FieldGrid']);
     expect(byGroup('list')).toEqual([
@@ -26,7 +26,7 @@ describe('Host UI Kit catalog registry (M34/L12)', () => {
       'EntityListRow',
       'GroupedEntityList',
     ]);
-    expect(byGroup('actions')).toEqual(['ActionButton', 'ActionBar', 'Badge', 'TagChip', 'LoadingState']);
+    expect(byGroup('actions')).toEqual(['ActionButton', 'ActionBar', 'Badge', 'TagChip', 'EntityRefValue', 'LoadingState']);
     expect(byGroup('form')).toEqual(['FormField', 'InlineEditField']);
     expect(byGroup('overlay')).toEqual(['Dialog', 'FormShell']);
     expect(byGroup('detail')).toEqual([
@@ -49,7 +49,7 @@ describe('Host UI Kit catalog registry (M34/L12)', () => {
     const stable = UI_KIT_CATALOG.filter((c) => c.stability === 'stable').map((c) => c.name);
     const experimental = UI_KIT_CATALOG.filter((c) => c.stability === 'experimental');
     expect(stable).toEqual(['EntityListHeader', 'DetailPanelShell', 'FieldRow', 'FieldGrid']);
-    expect(experimental).toHaveLength(29);
+    expect(experimental).toHaveLength(30);
     // Every Core component is stable; no other group is.
     for (const c of UI_KIT_CATALOG) {
       expect(c.stability).toBe(c.group === 'core' ? 'stable' : 'experimental');
@@ -190,6 +190,8 @@ const RECORDS: ReadonlyArray<readonly [string, string, 'stable' | 'experimental'
   ['EntityListHeader', 'core', 'stable', 'presentational', []],
   ['EntityListLayout', 'list', 'experimental', 'presentational', []],
   ['EntityListRow', 'list', 'experimental', 'presentational', []],
+  // 2.1.41 — record `entity-ref-value`.
+  ['EntityRefValue', 'actions', 'experimental', 'presentational', []],
   [
     'EntityVersionHistoryView',
     'detail',

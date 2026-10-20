@@ -11,6 +11,7 @@
 
 import type { PluginRegistry } from './types.js';
 import type { PluginLoadRecord } from './loader.js';
+import { refRegistrationWarnings, withRefWarnings } from './ref-warnings.js';
 
 export const SYNTHETIC_BUILTIN_PACKAGE = '@c4s/builtin';
 
@@ -31,5 +32,9 @@ export function buildBasePluginPackages(
     layer: 'base',
     contributedTypes: builtinTypes,
   };
-  return [builtinRecord, ...pluginRecords.map((r) => ({ ...r, layer: r.layer ?? 'base' }))];
+  // 2.1.41 — ref registration warnings, judged against the whole base pool.
+  return withRefWarnings(
+    [builtinRecord, ...pluginRecords.map((r) => ({ ...r, layer: r.layer ?? 'base' }))],
+    refRegistrationWarnings(pluginRegistry.listAvailable()),
+  );
 }

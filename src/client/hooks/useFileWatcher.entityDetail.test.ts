@@ -175,11 +175,13 @@ describe('host entity invalidation — open detail follows an external change', 
     expect(calls.list).toBe(2);
   });
 
-  it('the host map is list, detail and aggregate keys — versions are not on it', () => {
+  it('the host map is list, detail, aggregate and refLookup keys — versions are not on it', () => {
     expect(entityChangeKeys('endpoint', 'get-users')).toEqual([
       ['endpoints'],
       ['endpoint', 'get-users'],
       ['entities'],
+      // 2.1.41 — every refLookup resolution reading endpoints, like ['tags'] for tagLookup.
+      ['refLookup', 'endpoint'],
     ]);
     // Unknown type (before plugin boot settles): list falls back to the aggregate key.
     expect(entityChangeKeys('nope', 'x')[0]).toEqual(['entities']);

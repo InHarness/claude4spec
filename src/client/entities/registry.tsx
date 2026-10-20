@@ -3,6 +3,7 @@ import type { EntityType } from '../../shared/entities.js';
 import { legacyRegisterClientEntity } from '../core/plugin-host/legacy-adapter.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
 import type { Tag } from '../../shared/plugin-host/tag.js';
+import type { RefLookupEntry } from '../host-ui-kit/actions/EntityRefValue.js';
 
 export interface EntityRowProps<T> {
   slug: string;
@@ -14,6 +15,13 @@ export interface EntityRowProps<T> {
    * per list (`useListTagLookup`); the same instance for every row of a list.
    */
   tagLookup: ReadonlyMap<string, Tag>;
+  /**
+   * 2.1.41 — `${type}:${slug}` of a TARGET record → its `RefLookupEntry`, for every
+   * value of this type's `ref` fields across the whole list (`useListRefLookup`):
+   * one map per list, the same instance for every row, empty when there is
+   * nothing to resolve. Draw a value with `EntityRefValue`.
+   */
+  refLookup: ReadonlyMap<string, RefLookupEntry>;
 }
 
 export interface EntityChipProps<T> {
@@ -39,6 +47,8 @@ export interface EntityCardProps<T> extends EntityChipProps<T> {
    * the serializer from emitting `caption=""` on the round-trip.
    */
   onCaptionChange?: (caption: string | null) => void;
+  /** 2.1.41 — the `refLookup` built for this card's one entity (`useRefLookup`); empty when nothing resolves. */
+  refLookup: ReadonlyMap<string, RefLookupEntry>;
 }
 
 /**
