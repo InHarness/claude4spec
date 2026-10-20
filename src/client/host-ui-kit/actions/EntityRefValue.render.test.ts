@@ -8,16 +8,21 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Database } from 'lucide-react';
 
-const { openEntity, getEntity, openEntityOverlay } = vi.hoisted(() => ({
+const { openEntity, openEntityOverlay } = vi.hoisted(() => ({
   openEntity: vi.fn(),
-  getEntity: vi.fn(),
   openEntityOverlay: vi.fn(),
 }));
-vi.mock('../../ui/events.js', () => ({ openEntityOverlay }));
+vi.mock('../../ui/events.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../ui/events.js')>()),
+  openEntityOverlay,
+}));
 vi.mock('../../runtime/editor-bridge.js', () => ({ editorBridge: { openEntity } }));
-vi.mock('../../core/plugin-host/host.js', () => ({ clientPluginHost: { getEntity } }));
 
+import { clientPluginHost } from '../../core/plugin-host/host.js';
 import { EntityRefValue, type RefLookupEntry } from './EntityRefValue.js';
+
+// The real client host, with only the lookup the click path reads stubbed.
+const getEntity = vi.spyOn(clientPluginHost, 'getEntity');
 import { UI_KIT_CATALOG, UI_KIT_STABLE_COMPONENTS } from '../registry.js';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -32,7 +37,7 @@ beforeEach(() => {
   openEntity.mockReset();
   openEntityOverlay.mockReset();
   // An active type WITH a detail route: a click navigates through the bridge.
-  getEntity.mockReset().mockReturnValue({ type: 'endpoint', routes: {}, detailPanel: () => null });
+  getEntity.mockReset().mockReturnValue({ type: 'endpoint', routes: {}, detailPanel: () => null } as never);
 });
 
 afterEach(() => {
@@ -109,7 +114,7 @@ describe('EntityRefValue', () => {
   });
 
   it('opens a hidden type in its <type>-expand window rather than navigating', () => {
-    getEntity.mockReturnValue({ type: 'diagram' });
+    getEntity.mockReturnValue({ type: 'diagram' } as never);
     render(createElement(EntityRefValue, { type: 'diagram', slug: 'flow', refEntry: resolved }));
     act(() => host.querySelector('button')!.click());
     expect(openEntityOverlay).toHaveBeenCalledWith({ type: 'diagram', slug: 'flow' });

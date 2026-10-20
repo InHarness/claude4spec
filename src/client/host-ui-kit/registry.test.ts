@@ -14,8 +14,8 @@ import * as uiBackendLeg from '../../server/plugin-runtime/ui.js';
 import * as uiBrowserSurface from './index.js';
 
 describe('Host UI Kit catalog registry (M34/L12)', () => {
-  it('catalogs all 33 components across the eight groups', () => {
-    expect(UI_KIT_CATALOG).toHaveLength(33);
+  it('catalogs all 34 components across the eight groups', () => {
+    expect(UI_KIT_CATALOG).toHaveLength(34);
     const byGroup = (g: string) => UI_KIT_CATALOG.filter((c) => c.group === g).map((c) => c.name);
     expect(byGroup('core')).toEqual(['EntityListHeader', 'DetailPanelShell', 'FieldRow', 'FieldGrid']);
     expect(byGroup('list')).toEqual([
