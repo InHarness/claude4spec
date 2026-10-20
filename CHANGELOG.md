@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A broken entity chip (`renderChip` with `entity === null`) is `<Badge variant="broken" label={slug} />` and is not clickable — `onOpen` stays in `EntityChipProps` but is not wired in that branch.
   - `TagFilterBar`, `TagPicker` and `EntityListRow` draw their chips with `TagChip`; their props are unchanged. `TagPicker`'s collapsed "+N" control is a ghost `ActionButton`.
   - `hostApiVersion` is unchanged: both components are `experimental`.
+- **`@inharness-ai/agent-adapters` 0.9.13 → 0.10.0** (one copy, forced via `overrides` so `agent-chat` shares it).
+  - The scheduling tools (`ScheduleWakeup`, `CronCreate`, `CronList`, `CronDelete`) are no longer listed in the system prompt's built-in inventory or plan mode's "Available" line — the adapter always suppresses them, so the prompt no longer advertises tools the model can never call.
+  - MCP tools are callable under soft path-scope (no OS sandbox) without "don't ask mode" refusals; shell and web stay withheld.
+  - A plugin registering an MCP server under the CLI-reserved key `workspace` is refused at registration with an explicit error.
 
 ## [2.1.11] - 2026-10-09
 

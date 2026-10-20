@@ -1,5 +1,9 @@
 import { PLAN_MODE_DENY_GROUPS, type ToolGroup } from '@inharness-ai/agent-adapters';
-import { buildClaudeCodeToolPolicy, claudeCodeKnownBuiltins } from '@inharness-ai/agent-adapters/claude-code';
+import {
+  buildClaudeCodeToolPolicy,
+  CLAUDE_CODE_SUPPRESSED_HARNESS_TOOLS,
+  claudeCodeKnownBuiltins,
+} from '@inharness-ai/agent-adapters/claude-code';
 import type { Root } from '../../../../shared/types.js';
 import type { ProjectPluginHost } from '../../../core/plugin-host/types.js';
 import { CATALOG } from '../../../operations/catalog.js';
@@ -379,7 +383,22 @@ End your response with a concrete, numbered plan the user can review and approve
 // full catalog directly, so this no longer has to be reconstructed as a union of
 // the two plan-mode halves (which omitted BashOutput / KillShell / MultiEdit /
 // NotebookRead).
-export const CLAUDE_CODE_ALL_BUILTINS = claudeCodeKnownBuiltins();
+//
+// Minus the scheduling family (`ScheduleWakeup`, `Cron*`): agent-adapters 0.10.0
+// always puts it in `disallowedTools` — subagents included, no gate to re-enable
+// it — yet `claudeCodeKnownBuiltins()` still lists it as "known". The prompt must
+// not advertise a tool the model can never call. This is the ONLY list that needs
+// the filter: `buildClaudeCodeToolPolicy().allow` (plan mode's "Available" line,
+// the gated `<tooling>` line) never carries the suppressed names — the adapter's
+// documented contract. Render-side only: the policy itself stays the adapter's.
+export const CLAUDE_CODE_ALL_BUILTINS = claudeCodeKnownBuiltins().filter(
+  (t) => !CLAUDE_CODE_SUPPRESSED_HARNESS_TOOLS.includes(t),
+);
+
+/** The `<tooling>` built-in line with "Block direct file access" on: constant for the
+ *  process (the deny groups are), so derived once rather than on every prompt build. */
+const CLAUDE_CODE_GATED_BUILTINS =
+  buildClaudeCodeToolPolicy(DIRECT_FILESYSTEM_DENY_GROUPS as ToolGroup[])?.allow ?? [];
 
 /**
  * 0.2.50 — `<tooling>` is DERIVED from the servers this turn actually mounted,
@@ -442,9 +461,7 @@ function buildTooling(inventory: readonly McpInventoryEntry[], builtinsEnabled: 
    * note above bought. The flag is a different kind of fact — the tools are
    * absent for the thread's whole life — so it belongs in the inventory.
    */
-  const builtins = builtinsEnabled
-    ? CLAUDE_CODE_ALL_BUILTINS
-    : (buildClaudeCodeToolPolicy(DIRECT_FILESYSTEM_DENY_GROUPS as ToolGroup[])?.allow ?? []);
+  const builtins = builtinsEnabled ? CLAUDE_CODE_ALL_BUILTINS : CLAUDE_CODE_GATED_BUILTINS;
   const lines: string[] = [
     `<tooling>`,
     `  <builtin note="what the adapter knows; other blocks in this prompt narrow it">${builtins.join(', ')}</builtin>`,

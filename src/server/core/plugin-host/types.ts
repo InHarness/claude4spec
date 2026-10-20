@@ -660,6 +660,9 @@ export interface ProjectPluginHost {
    * concurrent turns nor successive queries of ONE turn may share an instance
    * (see the MountContext note). "Per turn" is precisely the granularity error
    * that let brief `0-2-23-to-next` survive; do not restate it that way.
+   *
+   * Throws for a name in `CLAUDE_CODE_RESERVED_MCP_SERVER_KEYS` (`workspace`):
+   * the CLI reserves it, and agent-adapters 0.10.0 would drop such a server.
    */
   registerMcpServer(name: string, factory: () => McpServerFactory): void;
 
