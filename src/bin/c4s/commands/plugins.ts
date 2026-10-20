@@ -131,6 +131,15 @@ export async function runPlugins(args: ParsedArgs): Promise<void> {
          */
         migrations: p.migration?.migrations ?? [],
       })),
+      /**
+       * 2.1.41 (M13) — registration warnings: a `ref` flag in a forbidden place,
+       * or a `ref` naming a type no registered package contributes. Reported, never
+       * fatal — every package listed here loaded, so they do not affect `ok` or
+       * the exit code.
+       */
+      warnings: diag.packages.flatMap((p) =>
+        (p.warnings ?? []).map((message) => ({ package: p.package, tier: p.layer ?? 'base', message })),
+      ),
       ok: incompatible.length === 0,
     },
     args,

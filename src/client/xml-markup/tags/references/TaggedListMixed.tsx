@@ -4,6 +4,7 @@ import { useRegistryVersion } from '../../../core/plugin-host/useRegistryVersion
 import { openEntityHandler } from '../../../entities/openEntity.js';
 import { editorBridge } from '../../../runtime/editor-bridge.js';
 import { useListTagLookup } from '../../../entities/useListTagLookup.js';
+import { useListRefLookup } from '../../../entities/useRefLookup.js';
 import type { TagRenderProps } from '../../renders.js';
 import { attr, csv, TaggedPill } from './shared.js';
 
@@ -38,6 +39,11 @@ export function TaggedListMixedRender({ attrs, variant }: TagRenderProps) {
     },
     enabled: variant === 'block' && tags.length > 0,
   });
+
+  // 2.1.41 — one refLookup for every row of every group, like tagLookup.
+  const refLookup = useListRefLookup(
+    Object.entries(grouped ?? {}).flatMap(([type, list]) => list.map((e) => ({ type, slug: e.slug }))),
+  );
 
   if (variant === 'inline') return <TaggedPill tags={attr(attrs, 'tags')} filter={filter} typeLabel="mixed" />;
 
@@ -91,6 +97,7 @@ export function TaggedListMixedRender({ attrs, variant }: TagRenderProps) {
                       entity={entity as never}
                       onOpen={openEntityHandler(mod.type, entity.slug, editorBridge)}
                       tagLookup={tagLookup}
+                      refLookup={refLookup}
                     />
                   </li>
                 ))}

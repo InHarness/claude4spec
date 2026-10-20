@@ -23,6 +23,7 @@ import { ActionButton } from './actions/ActionButton.js';
 import { ActionBar } from './actions/ActionBar.js';
 import { Badge } from './actions/Badge.js';
 import { TagChip } from './actions/TagChip.js';
+import { EntityRefValue } from './actions/EntityRefValue.js';
 import { LoadingState } from './actions/LoadingState.js';
 import { FormField } from './form/FormField.js';
 import { InlineEditField } from './form/InlineEditField.js';
@@ -95,6 +96,7 @@ export const UI_KIT_CATALOG: UiKitComponentEntry[] = [
   entry('ActionBar', 'actions', ActionBar),
   entry('Badge', 'actions', Badge),
   entry('TagChip', 'actions', TagChip),
+  entry('EntityRefValue', 'actions', EntityRefValue),
   entry('LoadingState', 'actions', LoadingState),
   entry('FormField', 'form', FormField),
   entry('InlineEditField', 'form', InlineEditField),

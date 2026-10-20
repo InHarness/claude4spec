@@ -1098,3 +1098,54 @@ describe('dangling refs — polymorphic refs are excluded', () => {
     ).toEqual(["aclike/a1: owner references aclike 'ghost', which does not exist (dangling)"]);
   });
 });
+
+/**
+ * 2.1.41 (M13) — a `ref` whose TARGET TYPE is not active in this project (no
+ * table), or that sits in a forbidden place.
+ */
+describe('refs to an inactive type, and misplaced refs', () => {
+  const pointy: WritableModule = {
+    type: 'pointy',
+    payloadVersion: 1,
+    data: {
+      schema: {
+        title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+        label: { type: 'string', required: true },
+        // `endpoint` is not projected in this database: its package is inactive here.
+        viaEndpoint: {
+          type: 'string',
+          column: 'via_endpoint',
+          ref: 'endpoint',
+          onMissing: 'warn',
+          onDelete: 'leave-dangling',
+        },
+        // Misplaced: a ref on a scalar collection element is not a reference.
+        aliases: {
+          type: 'collection',
+          collection: 'value',
+          item: { type: 'string', ref: 'pointy', onMissing: 'warn', onDelete: 'leave-dangling' },
+        },
+        createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+        updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+      },
+    },
+  };
+
+  it('[ac:ac-wartosc-pola-ref-wskazujaca-typ-nieak] keeps the value of a ref pointing at a type inactive in the project', () => {
+    const db = projected(pointy);
+    const payload = { label: 'P', viaEndpoint: 'get-users', aliases: [] };
+    upsertProjectionRow({ db, versions: null }, pointy, 'p1', payload, 'user', WRITE_OPTS);
+    const row = db.prepare('SELECT via_endpoint FROM pointy WHERE slug = ?').get('p1') as { via_endpoint: string | null };
+    // Not zeroed, not rejected: the slug reads back as written.
+    expect(row.via_endpoint).toBe('get-users');
+    // `onMissing: 'warn'` applies, and the warning names the cause.
+    expect(danglingScalarRefs(db, pointy, 'p1', payload)).toEqual([
+      "pointy/p1: viaEndpoint references endpoint 'get-users', whose type is not active in this project (kept as written)",
+    ]);
+  });
+
+  it('does not validate a misplaced ref — it is a plain value', () => {
+    const db = projected(pointy);
+    expect(danglingScalarRefs(db, pointy, 'p1', { label: 'P', aliases: ['nowhere'] })).toEqual([]);
+  });
+});

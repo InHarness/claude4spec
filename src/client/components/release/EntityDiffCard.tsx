@@ -1,5 +1,6 @@
 import type { RawDeltaEntityChange, SpecSnapshot } from '../../../shared/entities.js';
 import { getEntityDef } from '../../entities/registry.js';
+import { HostCard } from '../../entities/HostCard.js';
 import { entityDiffToBullets } from '../../lib/release-diff/entity-diff-bullets.js';
 import { colorForOp, labelForOp } from '../../lib/release-diff/colors.js';
 import { snapshotToEntity } from '../../lib/release-diff/snapshot-to-entity.js';
@@ -100,8 +101,7 @@ function EntityCardWrap({ type, slug }: { type: string; slug: string }) {
       </div>
     );
   }
-  const Card = def.renderCard;
-  return <Card slug={slug} entity={data} />;
+  return <HostCard type={type} card={def.renderCard} slug={slug} entity={data} />;
 }
 
 function DeletedEntityRender({
@@ -141,7 +141,6 @@ function DeletedEntityRender({
       </div>
     );
   }
-  const Card = def.renderCard;
   return (
     <div>
       <div
@@ -150,7 +149,7 @@ function DeletedEntityRender({
       >
         Snapshot from previous release
       </div>
-      <Card slug={change.slug} entity={entityShape} />
+      <HostCard type={change.type} card={def.renderCard} slug={change.slug} entity={entityShape} />
     </div>
   );
 }

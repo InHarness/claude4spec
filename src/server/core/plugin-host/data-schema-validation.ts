@@ -1033,11 +1033,6 @@ export function validateDataDeclaration(
  * enforced, and it is the half that mattered.
  */
 
-/** Every `ref` flag in a schema → the payload path carrying it. Consumed by rename propagation (tier D). */
-export function refFieldsOf(schema: DataDeclaration['schema']): Array<{ path: string; node: FieldNode }> {
-  const out: Array<{ path: string; node: FieldNode }> = [];
-  walkSchema(schema, (path, node) => {
-    if (node.ref) out.push({ path, node });
-  });
-  return out;
-}
+// 2.1.41 — `refFieldsOf` is gone: which `ref` flags count is decided by ONE walk,
+// `collectRefFields` in `shared/plugin-host/ref-fields.ts`, read by write validation,
+// rename propagation and the UI resolver alike.

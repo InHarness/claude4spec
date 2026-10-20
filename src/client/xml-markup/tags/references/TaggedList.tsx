@@ -7,6 +7,7 @@ import { editorBridge } from '../../../runtime/editor-bridge.js';
 import { BlockBrokenChip } from '../../../tiptap/extensions/views/BrokenChip.js';
 import { NotListable } from '../../../tiptap/extensions/views/NotListable.js';
 import { useListTagLookup } from '../../../entities/useListTagLookup.js';
+import { useListRefLookup } from '../../../entities/useRefLookup.js';
 import type { TagRenderProps } from '../../renders.js';
 import { attr, csv, TaggedPill } from './shared.js';
 
@@ -35,6 +36,8 @@ export function TaggedListRender({ attrs, variant }: TagRenderProps) {
     queryFn: async () => (mod ? ((await mod.listByTags({ tags, filter })) as Listed[]) : []),
     enabled: variant === 'block' && tags.length > 0 && Boolean(mod),
   });
+  // 2.1.41 — one refLookup for the whole list, like tagLookup.
+  const refLookup = useListRefLookup(results.map((r) => ({ type, slug: r.slug })));
 
   if (variant === 'inline') return <TaggedPill tags={attr(attrs, 'tags')} filter={filter} typeLabel={type} />;
 
@@ -86,6 +89,7 @@ export function TaggedListRender({ attrs, variant }: TagRenderProps) {
               entity={entity as never}
               onOpen={openEntityHandler(type, entity.slug, editorBridge)}
               tagLookup={tagLookup}
+              refLookup={refLookup}
             />
           </li>
         ))}

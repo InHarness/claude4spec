@@ -736,6 +736,22 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       'type. Additive under rule (2): an existing slot may ignore the new prop and the ' +
       'type is a new name beside the existing ones. `HOST_API_VERSION` stays `2.1.0`.',
   },
+  {
+    release: '2.1.41',
+    slot: 'EntityRowProps.refLookup / EntityCardProps.refLookup + @c4s/plugin-runtime: useRefLookup, RefLookupEntry + data.schema ref placement',
+    kind: 'slot-added',
+    summary:
+      '`refLookup` in `RowProps` / `CardProps`, the `useRefLookup` hook, the placement of the `ref` flag — ' +
+      'additive within the current baseline. The `renderRow` and `renderCard` slots receive from the ' +
+      'host a map resolving the values of `ref`-flagged fields in the new `refLookup` prop, and the ' +
+      'browser leg of `@c4s/plugin-runtime` gains the `useRefLookup` hook and the `RefLookupEntry` type. ' +
+      'A prop added to what the host hands a slot does not break an existing slot — the `tagLookup` ' +
+      'precedent — and the hook is a new name beside the existing ones. The placement rule for the `ref` ' +
+      'flag closes the domain of an existing flag without a new vocabulary entry: a flag anywhere else is a ' +
+      'registration warning, so no manifest valid today is rejected. The `EntityRefValue` component is ' +
+      '`experimental`, so the composition of the `stable` list does not change. The change is purely ' +
+      'additive (rule (2)) and fits within the current baseline, with no bump. `HOST_API_VERSION` stays `2.1.0`.',
+  },
 ];
 
 /**

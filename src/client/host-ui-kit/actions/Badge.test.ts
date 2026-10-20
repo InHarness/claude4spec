@@ -33,3 +33,46 @@ describe('Badge variant broken (M34)', () => {
     expect(html).not.toContain('⚠');
   });
 });
+
+/**
+ * 2.1.41 (M34) — `Badge` is never a link: a link to a record is `EntityRefValue`,
+ * an action or a link without a record identity is a ghost `ActionButton`.
+ * Checked over every catalog component's source: no `<Badge>` carries an
+ * `onClick` / `href`, and none sits inside an `<a>`.
+ */
+describe('Badge is never a link (M34, 2.1.41)', () => {
+  it('[ac:ac-badge-nie-renderuje-sie-jako-link-w-z] no catalog component renders Badge as a link', async () => {
+    const { readdirSync, readFileSync, statSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const kit = fileURLToPath(new URL('..', import.meta.url));
+    const files: string[] = [];
+    const walk = (dir: string): void => {
+      for (const name of readdirSync(dir)) {
+        const full = join(dir, name);
+        if (statSync(full).isDirectory()) walk(full);
+        else if (name.endsWith('.tsx') && !name.includes('.test.')) files.push(full);
+      }
+    };
+    walk(kit);
+    expect(files.length).toBeGreaterThan(20);
+
+    const offenders: string[] = [];
+    for (const file of files) {
+      const src = readFileSync(file, 'utf8');
+      // Every `<Badge … />` / `<Badge …>` opening tag, props included.
+      for (const m of src.matchAll(/<Badge\b([^>]*?)\/?>/gs)) {
+        if (/\b(onClick|href|onKeyDown|role)\s*=/.test(m[1]!)) offenders.push(`${file}: ${m[0]}`);
+      }
+      // A Badge nested in an anchor.
+      for (const m of src.matchAll(/<a\b[^>]*>((?:(?!<\/a>).)*)<\/a>/gs)) {
+        if (/<Badge\b/.test(m[1]!)) offenders.push(`${file}: <a> around Badge`);
+      }
+    }
+    expect(offenders).toEqual([]);
+
+    // And the component itself offers no way to become one.
+    const html = renderToStaticMarkup(createElement(Badge, { label: 'x', onClick: () => {} } as never));
+    expect(html).not.toMatch(/<a\b|<button\b|role="button"|tabindex/);
+  });
+});

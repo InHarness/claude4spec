@@ -57,6 +57,7 @@ const PUBLISHED_PLUGIN_RUNTIME_NAMES = [
   'useCreateTag',
   'useReferences',
   'useReleases',
+  'useRefLookup',
   // 0.2.80 — the published equivalent of the host-only chat facade, added with
   // `c4s-plugin-ac`, whose list screen is specified to seed a thread.
   'startSeededThread',
@@ -88,6 +89,7 @@ const PUBLISHED_PLUGIN_RUNTIME_UI_NAMES = [
   'ActionBar',
   'Badge',
   'TagChip',
+  'EntityRefValue',
   'LoadingState',
   'FormField',
   'InlineEditField',

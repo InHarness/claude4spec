@@ -1,17 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { AlertTriangle, Monitor, Plus } from 'lucide-react';
 import { DocEditor } from '@c4s/plugin-runtime/ui';
 import { TagPicker } from '@c4s/plugin-runtime/ui';
 import { FieldGrid } from '@c4s/plugin-runtime/ui';
 import { FieldRow } from '@c4s/plugin-runtime/ui';
 import { ActionButton } from '@c4s/plugin-runtime/ui';
-import { Badge } from '@c4s/plugin-runtime/ui';
+import { EntityRefValue, type RefLookupEntry } from '@c4s/plugin-runtime/ui';
 import { GroupedRelationPicker } from '@c4s/plugin-runtime/ui';
 import { useEntityDraftEditor } from '../../../frontend-kit/useEntityDraftEditor.js';
 import { useUiView, useUpdateUiView } from './hooks.js';
 import { useDesignSystems } from '../../design-system/frontend/hooks.js';
 import { useTags } from '@c4s/plugin-runtime';
 import { useReferences } from '@c4s/plugin-runtime';
+import { useRefLookup } from '@c4s/plugin-runtime';
 import { slugify } from '../../../identity.js';
 import { computeWarnings } from '../lint.js';
 import type {
@@ -30,6 +31,7 @@ interface Props {
    */
   onDeleted?: () => void;
   onRenamed: (newSlug: string) => void;
+  /** 2.1.41 — not used: the linked design system is an `EntityRefValue`, which opens through `editorBridge`. */
   onOpenEntity?: (type: EntityType, slug: string) => void;
   onOpenPage?: (rootId: string, path: string) => void;
 }
@@ -98,7 +100,6 @@ function paramHasIssue(p: UiViewParam, idx: number, all: UiViewParam[], url: str
 export function UiViewDetail({
   slug,
   onRenamed,
-  onOpenEntity,
   onOpenPage,
 }: Props) {
   const { data: view, isLoading, error } = useUiView(slug);
@@ -137,6 +138,10 @@ export function UiViewDetail({
         update.mutateAsync({ slug: entity.slug, input: { description: description || null } }),
     },
   });
+
+  // 2.1.41 — `designSystemSlug` is a `ref` field; its value resolves through the
+  // host's `useRefLookup`, over the DRAFT so a just-picked system resolves too.
+  const refLookup = useRefLookup('ui-view', draft ? [draft] : []);
 
   function toggleTag(tagSlug: string) {
     if (!draft) return;
@@ -250,7 +255,7 @@ export function UiViewDetail({
             value={draft.designSystemSlug}
             options={designSystems.map((d) => ({ slug: d.slug, name: d.title }))}
             onChange={(next) => patch({ designSystemSlug: next })}
-            onOpen={onOpenEntity ? (s) => onOpenEntity('design-system', s) : undefined}
+            refEntry={draft.designSystemSlug ? refLookup.get(`design-system:${draft.designSystemSlug}`) : undefined}
           />
         </FieldRow>
 
@@ -517,47 +522,44 @@ function ParamRow({
 
 /**
  * The ui-view → design-system relation through the catalog's
- * `GroupedRelationPicker`: one group, single-select. A value that no longer
- * resolves is drawn as a `broken` `Badge` with the slug (2.1.40), not
- * clickable, beside the clear action (the chip's ×) — the column stays on the
- * server, so clearing it is the user's explicit act; saving is never blocked
- * (`onMissing: 'warn'`). The link to a live system is a ghost `ActionButton`
- * "open", reachable with Tab.
+ * `GroupedRelationPicker`: one group, single-select. The linked value is an
+ * `EntityRefValue` (2.1.41): the system's icon and name, a link to the record —
+ * or, when it no longer resolves, a non-clickable broken `Badge` with the slug,
+ * beside the clear action (the chip's ×). The column stays on the server, so
+ * clearing it is the user's explicit act; saving is never blocked
+ * (`onMissing: 'warn'`).
  */
 function DesignSystemSelect({
   value,
   options,
   onChange,
-  onOpen,
+  refEntry,
 }: {
   value: string | null;
   options: Array<{ slug: string; name: string }>;
   onChange: (next: string | null) => void;
-  onOpen?: (slug: string) => void;
+  /** The `refLookup` entry of `value`; `undefined` until resolved. */
+  refEntry: RefLookupEntry | undefined;
 }) {
   const resolved = value ? options.find((o) => o.slug === value) : null;
-  const dangling = Boolean(value) && !resolved;
 
-  const items = options.map((o) => ({
-    id: o.slug,
-    label: o.name,
-    ...(onOpen
-      ? {
-          badge: (
-            <ActionButton variant="ghost" label="open" title="Open design system" onClick={() => onOpen(o.slug)} />
-          ),
-        }
-      : null),
-  }));
+  const items = options
+    .filter((o) => o.slug !== value)
+    .map((o) => ({ id: o.slug, label: o.name }) as { id: string; label: string; badge?: ReactNode });
 
-  if (dangling) {
-    items.push({
-      id: value as string,
-      // The slug lives in the badge itself; an empty label keeps the picker
-      // from printing it a second time in front of it.
-      label: '',
-      badge: <Badge label={value as string} variant="broken" small />,
-    });
+  if (value) {
+    items.push(
+      // Not resolved yet but known locally: show the name, not a broken flash.
+      !refEntry && resolved
+        ? { id: value, label: resolved.name }
+        : {
+            id: value,
+            // The value draws itself (name or slug); an empty label keeps the
+            // picker from printing it a second time in front of it.
+            label: '',
+            badge: <EntityRefValue type="design-system" slug={value} refEntry={refEntry} />,
+          },
+    );
   }
 
   return (

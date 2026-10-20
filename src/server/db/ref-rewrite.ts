@@ -38,6 +38,7 @@ import {
   type CollectionNode,
   type FieldNode,
 } from '../../shared/plugin-host/data-schema.js';
+import { honouredRefNodes } from '../../shared/plugin-host/ref-fields.js';
 import { bindingColumnOf, mainTableOf, projectionTableOf, type ProjectableModule } from './projection.js';
 
 /** The sibling field a `ref: '$type'` reads its target type from. */
@@ -47,6 +48,13 @@ interface Rename {
   renamedType: string;
   oldSlug: string;
   newSlug: string;
+  /**
+   * 2.1.41 — the nodes whose `ref` the schema walk honours (`collectRefFields`).
+   * A flag in a forbidden place (a record, a scalar collection element, an object
+   * nested outside a collection, a keyed collection) is not a reference, so a
+   * rename never rewrites it.
+   */
+  honoured: ReadonlySet<FieldNode>;
 }
 
 /**
@@ -57,8 +65,9 @@ interface Rename {
  * unmatched. Silently rewriting an unresolvable polymorphic ref would repoint
  * `{type: 'diagram', slug: 'login'}` on a rename of `ac/login`.
  */
-function refMatches(node: FieldNode, renamedType: string, siblingType: unknown): boolean {
-  if (!node.ref) return false;
+function refMatches(node: FieldNode, rename: Rename, siblingType: unknown): boolean {
+  if (!node.ref || !rename.honoured.has(node)) return false;
+  const { renamedType } = rename;
   if (node.ref === '$type') return siblingType === renamedType;
   return node.ref === renamedType;
 }
@@ -71,12 +80,12 @@ function refMatches(node: FieldNode, renamedType: string, siblingType: unknown):
  * only place a `$type` sibling is in scope, and threading it through dotted paths
  * would mean re-resolving the parent on every leaf.
  *
- * The ref test happens on the node ITSELF, before any recursion, so it is reached
- * wherever a `ref` can be declared and not only on an object's named fields — a
- * collection of bare slugs (`item: {type: 'string', ref:'dto'}`) and a record whose
- * VALUES are slugs both carry the flag on a node that has no field name at all.
- * `subtreeHasRef` admits those, so anything it admits has to be rewritable here or
- * the rename reports success having changed nothing.
+ * The ref test happens on the node ITSELF, before any recursion, and only for a
+ * node the schema walk honours (`collectRefFields`, 2.1.41). A collection of
+ * bare slugs (`item: {type: 'string', ref: 'dto'}`) or a record whose keys or
+ * values are slugs still parses, but its flag is misplaced — reported at
+ * registration and never rewritten here. `subtreeHasRef` applies the same gate,
+ * so whatever it admits is rewritable here.
  *
  * `siblingType` flows DOWN from the nearest enclosing object, because that is
  * where a `$type` discriminator lives: in `{type, slugs: [...]}` the collection's
@@ -88,7 +97,7 @@ function rewriteValue(
   rename: Rename,
   siblingType?: unknown,
 ): { value: unknown; changed: boolean } {
-  if (refMatches(node, rename.renamedType, siblingType)) {
+  if (refMatches(node, rename, siblingType)) {
     if (value === rename.oldSlug) return { value: rename.newSlug, changed: true };
     // A ref node is a scalar; there is nothing below it to recurse into.
     return { value, changed: false };
@@ -112,7 +121,7 @@ function rewriteValue(
     // A ref on the KEY renames the property itself: the map is keyed BY the slug,
     // so leaving the key while rewriting the value would strand the entry under a
     // name that no longer resolves.
-    const keyIsRef = refMatches(node.key, rename.renamedType, siblingType);
+    const keyIsRef = refMatches(node.key, rename, siblingType);
     for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
       const result = rewriteValue(node.value, entry, rename, siblingType);
       if (result.changed) changed = true;
@@ -189,12 +198,16 @@ function rewriteJsonColumn(
 }
 
 /** True when any node in this subtree satisfies `pred` — the cheap prefilter before touching SQL. */
-function subtreeHasRef(node: FieldNode, pred: (ref: string) => boolean): boolean {
-  if (node.ref && pred(node.ref)) return true;
-  if (node.type === 'collection') return subtreeHasRef(node.item, pred);
-  if (node.type === 'record') return subtreeHasRef(node.value, pred);
+function subtreeHasRef(
+  node: FieldNode,
+  pred: (ref: string) => boolean,
+  honoured: ReadonlySet<FieldNode>,
+): boolean {
+  if (node.ref && honoured.has(node) && pred(node.ref)) return true;
+  if (node.type === 'collection') return subtreeHasRef(node.item, pred, honoured);
+  if (node.type === 'record') return subtreeHasRef(node.value, pred, honoured);
   if (node.type === 'object') {
-    return Object.values(node.fields).some((child) => subtreeHasRef(child, pred));
+    return Object.values(node.fields).some((child) => subtreeHasRef(child, pred, honoured));
   }
   return false;
 }
@@ -219,7 +232,8 @@ export function rewriteRefsForRename(
 ): string[] {
   const schema = module.data?.schema;
   if (!schema || oldSlug === newSlug) return [];
-  const rename: Rename = { renamedType, oldSlug, newSlug };
+  const honoured = honouredRefNodes(schema);
+  const rename: Rename = { renamedType, oldSlug, newSlug, honoured };
 
   const mainTable = mainTableOf(module);
   const affected = new Set<string>();
@@ -232,7 +246,7 @@ export function rewriteRefsForRename(
     topLevelType && isEmbedded(topLevelType) ? columnOf(TYPE_DISCRIMINATOR, topLevelType) : null;
 
   for (const [name, node] of Object.entries(schema)) {
-    if (!subtreeHasRef(node, targets(renamedType))) continue;
+    if (!subtreeHasRef(node, targets(renamedType), honoured)) continue;
 
     // (1) The ref is a column in a projection table of its own. The generated FK
     // carries ON UPDATE CASCADE, so by the time this runs the column may already
@@ -259,8 +273,8 @@ export function rewriteRefsForRename(
         // An item field that is itself a container is a JSON column ON the
         // projection row, so a ref nested below it needs the same walk the entity
         // row's JSON columns get — not the `continue` that used to drop it.
-        if (!itemNode.ref) {
-          if (!subtreeHasRef(itemNode, targets(renamedType))) continue;
+        if (!itemNode.ref || !honoured.has(itemNode)) {
+          if (!subtreeHasRef(itemNode, targets(renamedType), honoured)) continue;
           for (const parent of rewriteJsonColumn(db, table, binding, column, itemNode, rename)) {
             affected.add(parent);
           }
@@ -330,5 +344,6 @@ export function rewriteRefsForRename(
 export function declaresRefs(module: ProjectableModule): boolean {
   const schema = module.data?.schema;
   if (!schema) return false;
-  return Object.values(schema).some((node) => subtreeHasRef(node, () => true));
+  const honoured = honouredRefNodes(schema);
+  return Object.values(schema).some((node) => subtreeHasRef(node, () => true, honoured));
 }

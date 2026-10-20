@@ -66,6 +66,11 @@ export { useVersions, useVersionDetail, useRestoreVersion, useVersionDiff } from
 export { useTags, useEntityTags, useAssignTags, useRemoveEntityTag, useCreateTag } from '../hooks/useTags.js';
 export { useReferences } from '../hooks/useReferences.js';
 export { useReleases } from '../hooks/useReleases.js';
+// 2.1.41 (M13, experimental) — the `refLookup` a slot gets from the host, built
+// for entities handed in directly. `RefLookupEntry` is declared once, beside
+// `EntityRefValue` in `/ui`; re-exported here because the hook returns it.
+export { useRefLookup } from '../entities/useRefLookup.js';
+export type { RefLookupEntry } from '../host-ui-kit/actions/EntityRefValue.js';
 
 /**
  * 0.2.79 — the published equivalent of a host-only facade.
