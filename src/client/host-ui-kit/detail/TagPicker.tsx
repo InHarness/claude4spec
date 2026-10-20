@@ -19,7 +19,7 @@ import type { Tag } from '../../../shared/plugin-host/tag.js';
  * inside a published `Popover` instead of always being visible inline.
  */
 export interface TagPickerProps {
-  /** Every tag of the project — the public `Tag` type (2.1.41); `useTags()` items go in as is. */
+  /** Every tag of the project — the public `Tag` type (2.1.42); `useTags()` items go in as is. */
   allTags: Tag[];
   selected: string[];
   onToggle(slug: string): void;

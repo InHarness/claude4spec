@@ -47,7 +47,7 @@ export type StableUiKitComponent = (typeof UI_KIT_STABLE_COMPONENTS)[number];
 
 /**
  * The catalog's one tag type. `TagFilterBar.tags`, `EntityListRow.tagLookup`
- * and `TagPicker.allTags` (2.1.41) take it. 2.1.40: the shape is owned by the tags
+ * and `TagPicker.allTags` (2.1.42) take it. 2.1.40: the shape is owned by the tags
  * module (M18) and published from the root of `@c4s/plugin-runtime`; the kit
  * re-exports it rather than declaring one of its own.
  */

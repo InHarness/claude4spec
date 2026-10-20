@@ -64,7 +64,7 @@ describe('GET /api/tags — the tag-list-item DTO', () => {
 
   it('[entity:tag-list-item] the type is assignable without a cast to the /ui Tag and to the TagPicker allTags item', () => {
     type PickerItem = TagPickerProps['allTags'][number];
-    // 2.1.41 — `allTags` is the public `Tag[]`, not an inline shape.
+    // 2.1.42 — `allTags` is the public `Tag[]`, not an inline shape.
     expectTypeOf<TagPickerProps['allTags']>().toEqualTypeOf<Tag[]>();
 
     // Field set and types, as the DTO states them.
@@ -92,7 +92,7 @@ describe('GET /api/tags — the tag-list-item DTO', () => {
 });
 
 /**
- * 2.1.41 (M18) — the REST tag-definition mutations broadcast `tag:changed` to
+ * 2.1.42 (M18) — the REST tag-definition mutations broadcast `tag:changed` to
  * the project room, the same event the MCP tools emit; a refusal emits nothing.
  */
 describe('POST/PATCH/DELETE /api/tags — tag:changed broadcast', () => {

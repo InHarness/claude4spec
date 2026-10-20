@@ -84,7 +84,7 @@ describe('the kit\'s one Tag type', () => {
     // 2.1.28: the item is assignable to `Tag` (record `tag-filter-bar`), the
     // plugin builds `tagLookup` from the same list, and the item is also
     // assignable to the `allTags` prop of the `experimental` TagPicker, typed
-    // `Tag[]` since 2.1.41.
+    // `Tag[]` since 2.1.42.
     const source = [
       IMPORTS,
       'export function useKitInputs() {',
@@ -104,9 +104,9 @@ describe('the kit\'s one Tag type', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('2.1.41: TagPicker.allTags is typed Tag[] — a literal with description is accepted', () => {
+  it('2.1.42: TagPicker.allTags is typed Tag[] — a literal with description is accepted', () => {
     // 2.1.26–2.1.40 typed the item inline as `{ slug; name; color? }`, so a fresh
-    // literal carrying `description` was an excess property. Since 2.1.41 the
+    // literal carrying `description` was an excess property. Since 2.1.42 the
     // prop is the public `Tag[]`, and `description` is part of the item.
     const withDescription = [
       IMPORTS,

@@ -103,7 +103,7 @@ export function tagsRouter(
   });
 
   /**
-   * 2.1.41 — the three tag-definition mutations broadcast `tag:changed` to the
+   * 2.1.42 — the three tag-definition mutations broadcast `tag:changed` to the
    * project room after a successful write, the same event the MCP
    * `create_tag` / `update_tag` / `delete_tag` tools emit
    * (`src/server/mcp/reference-tools.ts`), so other open tabs refresh their
