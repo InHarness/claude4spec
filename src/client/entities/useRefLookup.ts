@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import { clientPluginHost } from '../core/plugin-host/host.js';
+import { useRegistryVersion } from '../core/plugin-host/useRegistryVersion.js';
 import { entitiesApi, type EntityBySlugRow } from '../lib/api.js';
 import {
   collectRefFields,
@@ -57,6 +58,9 @@ function useResolveRefTargets(targets: readonly RefTarget[]): ReadonlyMap<string
   // Keyed by content, not by array identity: a caller handing `[entity]` inline
   // must not rebuild the map on every render.
   const targetsKey = targets.map((t) => refLookupKey(t.type, t.slug)).join('|');
+  // Activation and the type registry decide active / inactive / unknown, so the
+  // map is rebuilt when the plugin boot settles or a type is (de)activated.
+  const registryVersion = useRegistryVersion();
   const byType = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const t of targets) map.set(t.type, [...(map.get(t.type) ?? []), t.slug]);
@@ -107,7 +111,7 @@ function useResolveRefTargets(targets: readonly RefTarget[]): ReadonlyMap<string
     return out;
     // `stamp` stands for `results`, whose array identity changes every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [byType, stamp]);
+  }, [byType, stamp, registryVersion]);
 }
 
 /**
@@ -118,6 +122,8 @@ function useResolveRefTargets(targets: readonly RefTarget[]): ReadonlyMap<string
  * @param entities payloads of that type
  */
 export function useRefLookup<T>(type: string, entities: readonly T[]): ReadonlyMap<string, RefLookupEntry> {
+  // Re-read on a registry change: before the plugin boot settles the type has no schema yet.
+  useRegistryVersion();
   const schema = schemaOf(type);
   const targets = useMemo(() => refTargetsOf(schema, entities), [schema, entities]);
   return useResolveRefTargets(targets);
@@ -132,6 +138,9 @@ export function useRefLookup<T>(type: string, entities: readonly T[]): ReadonlyM
  */
 export function useListRefLookup(rows: ReadonlyArray<{ type: string; slug: string }>): ReadonlyMap<string, RefLookupEntry> {
   const rowsKey = rows.map((r) => refLookupKey(r.type, r.slug)).join('|');
+  // A list rendered before the plugin boot settles has no schema for its rows'
+  // type yet; the groups are rebuilt once the registry changes.
+  const registryVersion = useRegistryVersion();
   const groups = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const r of rows) map.set(r.type, [...(map.get(r.type) ?? []), r.slug]);
@@ -143,7 +152,7 @@ export function useListRefLookup(rows: ReadonlyArray<{ type: string; slug: strin
       })
       .filter((g) => g.select.length > 0 && clientPluginHost.getEntity(g.type));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowsKey]);
+  }, [rowsKey, registryVersion]);
 
   const sources = useQueries({
     queries: groups.map((g) => ({
