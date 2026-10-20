@@ -4,6 +4,7 @@
  * is scoped to ONE ProjectContext — N projects in one process never share it.
  */
 
+import { CLAUDE_CODE_RESERVED_MCP_SERVER_KEYS } from '@inharness-ai/agent-adapters/claude-code';
 import type { McpServerFactory, McpToolDeclaration } from '../../../shared/plugin-host/mcp.js';
 import type {
   BackendModule,
@@ -188,7 +189,19 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
     for (const m of this.listEntities()) m.backend?.mount?.(ctx);
   }
 
+  /**
+   * agent-adapters 0.10.0 never passes a server keyed by one of the CLI's own
+   * (`workspace`) to the SDK — it drops it with a single `warning`, so a plugin
+   * mounting there would just lose its tools mid-turn. Refused here instead, at
+   * registration, where the error names the server and the project fails to build
+   * loudly (M31) rather than every turn quietly missing a server.
+   */
   registerMcpServer(name: string, factory: () => McpServerFactory): void {
+    if (CLAUDE_CODE_RESERVED_MCP_SERVER_KEYS.includes(name)) {
+      throw new Error(
+        `MCP server name "${name}" is reserved by the Claude Code CLI — register the server under a different name`,
+      );
+    }
     this.mcpServerFactories.set(name, factory);
   }
 

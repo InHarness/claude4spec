@@ -1,5 +1,9 @@
 import { PLAN_MODE_DENY_GROUPS, type ToolGroup } from '@inharness-ai/agent-adapters';
-import { buildClaudeCodeToolPolicy, claudeCodeKnownBuiltins } from '@inharness-ai/agent-adapters/claude-code';
+import {
+  buildClaudeCodeToolPolicy,
+  CLAUDE_CODE_SUPPRESSED_HARNESS_TOOLS,
+  claudeCodeKnownBuiltins,
+} from '@inharness-ai/agent-adapters/claude-code';
 import type { Root } from '../../../../shared/types.js';
 import type { ProjectPluginHost } from '../../../core/plugin-host/types.js';
 import { CATALOG } from '../../../operations/catalog.js';
@@ -284,6 +288,19 @@ if (!PLAN_MODE_TOOL_POLICY_OR_NULL) {
 const PLAN_MODE_TOOL_POLICY = PLAN_MODE_TOOL_POLICY_OR_NULL;
 
 /**
+ * agent-adapters 0.10.0 always puts the scheduling family (`ScheduleWakeup`,
+ * `Cron*`) in `disallowedTools` — subagents included, no gate to re-enable it —
+ * yet `claudeCodeKnownBuiltins()` still lists it as "known". The prompt must not
+ * advertise a tool the model can never call (the spec's contract: the scheduling
+ * family never reaches the stream), so every built-in list rendered below passes
+ * through here. Render-side only: the policy itself stays the adapter's.
+ */
+const SUPPRESSED_HARNESS_TOOLS = new Set(CLAUDE_CODE_SUPPRESSED_HARNESS_TOOLS);
+function withoutSuppressed(tools: readonly string[]): string[] {
+  return tools.filter((t) => !SUPPRESSED_HARNESS_TOOLS.has(t));
+}
+
+/**
  * 0.2.50 — the MCP half of this block is reframed, and the reframing is the fix.
  *
  * It used to head a list of MCP tools "Forbidden (mutating)", beside the
@@ -364,7 +381,7 @@ The plan you draft must conform to the writing style referenced in <project_writ
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
   - Denied: ${PLAN_MODE_TOOL_POLICY.deny.join(', ')}
-  - Available: ${PLAN_MODE_TOOL_POLICY.allow.join(', ')}
+  - Available: ${withoutSuppressed(PLAN_MODE_TOOL_POLICY.allow).join(', ')}
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ${mutating.length > 0 ? mutating.join(', ') : '(none mounted this turn)'}
@@ -378,8 +395,9 @@ End your response with a concrete, numbered plan the user can review and approve
 // than a hand-maintained one (see 0-1-125-to-next follow-up). 0.9.6 exports the
 // full catalog directly, so this no longer has to be reconstructed as a union of
 // the two plan-mode halves (which omitted BashOutput / KillShell / MultiEdit /
-// NotebookRead).
-export const CLAUDE_CODE_ALL_BUILTINS = claudeCodeKnownBuiltins();
+// NotebookRead). Minus the scheduling family the adapter always suppresses
+// (0.10.0) — see `withoutSuppressed` above.
+export const CLAUDE_CODE_ALL_BUILTINS = withoutSuppressed(claudeCodeKnownBuiltins());
 
 /**
  * 0.2.50 — `<tooling>` is DERIVED from the servers this turn actually mounted,
@@ -444,7 +462,7 @@ function buildTooling(inventory: readonly McpInventoryEntry[], builtinsEnabled: 
    */
   const builtins = builtinsEnabled
     ? CLAUDE_CODE_ALL_BUILTINS
-    : (buildClaudeCodeToolPolicy(DIRECT_FILESYSTEM_DENY_GROUPS as ToolGroup[])?.allow ?? []);
+    : withoutSuppressed(buildClaudeCodeToolPolicy(DIRECT_FILESYSTEM_DENY_GROUPS as ToolGroup[])?.allow ?? []);
   const lines: string[] = [
     `<tooling>`,
     `  <builtin note="what the adapter knows; other blocks in this prompt narrow it">${builtins.join(', ')}</builtin>`,
