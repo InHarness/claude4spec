@@ -53,7 +53,7 @@ vi.mock('../../../entities/registry.js', () => ({
 vi.mock('../../../core/plugin-host/useRegistryVersion.js', () => ({ useRegistryVersion: () => 0 }));
 vi.mock('../../../core/plugin-host/host.js', () => ({
   categoriseBrokenChip: () => 'unknown-type',
-  clientPluginHost: { getEntity: () => null, onRegistryChanged: () => () => {} },
+  clientPluginHost: { getEntity: () => null, getAvailable: () => null, onRegistryChanged: () => () => {} },
 }));
 vi.mock('../../../entities/openEntity.js', () => ({ openEntityHandler: () => undefined }));
 // ElementList → shared → ChipResolver → state/brokenRefs reads the plugins-ready

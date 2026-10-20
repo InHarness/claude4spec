@@ -47,10 +47,10 @@ function fixture(type: string, data: DataDeclaration): BackendModule {
   } as BackendModule);
 }
 
-function mountWith(modules: BackendModule[]) {
+function mountWith(modules: BackendModule[], activeTypes?: string[]) {
   const registry = new PluginRegistryImpl();
   for (const m of modules) registry.registerEntityModule(m);
-  const host = registry.consolidate(null);
+  const host = registry.consolidate(activeTypes ? { entities: activeTypes } : null);
   const db = createTestDb();
   applyProjection(db, modules);
   // The generated listener re-persists the files of whatever it changed; these
@@ -74,6 +74,25 @@ function mountWith(modules: BackendModule[]) {
 }
 
 describe('rename listeners', () => {
+  it('[ac:ac-rename-encji-docelowej-gdy-typ-ze-wsk] a rename of the target, while the type holding the ref field is inactive, leaves the old value in that field', () => {
+    // 2.1.41 — propagation walks ACTIVE types only. The old value is not repaired
+    // on reactivation either: it simply no longer finds its record, so its
+    // refLookup entry is `broken: 'deleted'` (or absent) and it draws broken.
+    const dto = fixture('dto', FIXTURE_DATA);
+    const widget = fixture('widget', REFERENCING_DATA);
+    const { host, db } = mountWith([dto, widget], ['dto']);
+    try {
+      expect(host.isActive('widget')).toBe(false);
+      db.prepare('INSERT INTO widget (slug, title, dto_slug) VALUES (?, ?, ?)').run('w1', 'W', 'user-dto');
+
+      for (const fn of host.listRenameListeners()) fn({ type: 'dto', oldSlug: 'user-dto', newSlug: 'account-dto' });
+
+      expect(db.prepare('SELECT dto_slug FROM widget WHERE slug = ?').get('w1')).toEqual({ dto_slug: 'user-dto' });
+    } finally {
+      db.close();
+    }
+  });
+
   it('generates a listener for a module that declares a ref, and repoints it', () => {
     const { host, db } = mountWith([fixture('widget', REFERENCING_DATA)]);
     try {

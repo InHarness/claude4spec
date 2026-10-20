@@ -46,6 +46,7 @@ import {
 } from '../../shared/plugin-host/data-schema.js';
 import type { ChangedBy } from '../../shared/entities.js';
 import { typeTablePrefix } from '../../shared/plugin-host/composition.js';
+import { honouredRefNodes } from '../../shared/plugin-host/ref-fields.js';
 import type { WriteOpts } from '../core/plugin-host/types.js';
 import type { UpsertResult } from '../serialization/writer.js';
 import {
@@ -586,8 +587,17 @@ export function removeProjectionRow(
  * A ref node is a scalar, so there is nothing below it to descend into — the
  * early return after reporting is not an optimisation.
  */
-function walkRefs(db: Database, node: FieldNode, value: unknown, path: string, out: string[]): void {
-  if (node.ref && node.onMissing === 'warn') {
+function walkRefs(
+  db: Database,
+  honoured: ReadonlySet<FieldNode>,
+  node: FieldNode,
+  value: unknown,
+  path: string,
+  out: string[],
+): void {
+  // 2.1.41 — only a flag the schema walk honours is a reference; a misplaced one
+  // was reported at registration and is a plain value here.
+  if (node.ref && honoured.has(node) && node.onMissing === 'warn') {
     /**
      * A POLYMORPHIC ref is not checked, and that is deliberate.
      *
@@ -606,21 +616,28 @@ function walkRefs(db: Database, node: FieldNode, value: unknown, path: string, o
      */
     if (node.ref === '$type') return;
     if (typeof value !== 'string' || !value) return;
-    if (rowExists(db, typeTablePrefix(node.ref), value)) return;
-    out.push(`${path} references ${node.ref} '${value}', which does not exist (dangling)`);
+    const state = refTargetState(db, typeTablePrefix(node.ref), value);
+    if (state === 'present') return;
+    // 2.1.41 — a target type that is not active here (or not registered at all)
+    // keeps the value exactly as written: `onMissing` applies, the write goes on.
+    out.push(
+      state === 'unprojected'
+        ? `${path} references ${node.ref} '${value}', whose type is not active in this project (kept as written)`
+        : `${path} references ${node.ref} '${value}', which does not exist (dangling)`,
+    );
     return;
   }
 
   if (node.type === 'collection') {
     if (!Array.isArray(value)) return;
-    value.forEach((item, i) => walkRefs(db, node.item, item, `${path}[${i}]`, out));
+    value.forEach((item, i) => walkRefs(db, honoured, node.item, item, `${path}[${i}]`, out));
     return;
   }
 
   if (node.type === 'record') {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return;
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      walkRefs(db, node.value, v, `${path}.${k}`, out);
+      walkRefs(db, honoured, node.value, v, `${path}.${k}`, out);
     }
     return;
   }
@@ -629,7 +646,7 @@ function walkRefs(db: Database, node: FieldNode, value: unknown, path: string, o
     if (!value || typeof value !== 'object' || Array.isArray(value)) return;
     const record = value as Record<string, unknown>;
     for (const [name, child] of Object.entries(node.fields)) {
-      walkRefs(db, child, record[name], `${path}.${name}`, out);
+      walkRefs(db, honoured, child, record[name], `${path}.${name}`, out);
     }
   }
 }
@@ -661,6 +678,7 @@ export function danglingScalarRefs(
   if (!schema || payload === null || typeof payload !== 'object') return [];
   const input = payload as Record<string, unknown>;
 
+  const honoured = honouredRefNodes(schema);
   const warnings: string[] = [];
   for (const [name, node] of Object.entries(schema)) {
     /**
@@ -669,7 +687,7 @@ export function danglingScalarRefs(
      * double-report and then contradict itself.
      */
     if (hasProjectionTable(node)) continue;
-    walkRefs(db, node, input[name], `${module.type}/${slug}: ${name}`, warnings);
+    walkRefs(db, honoured, node, input[name], `${module.type}/${slug}: ${name}`, warnings);
   }
   return warnings;
 }
@@ -826,8 +844,9 @@ function syncProjectionTable(
    * FK's hard failure, which is the type asking for it.
    */
   const warnings: string[] = [];
+  const honoured = honouredRefNodes(module.data?.schema);
   const refFields = itemFields.filter(
-    ([, n]) => n.ref && n.ref !== '$type' && n.onMissing === 'warn',
+    ([, n]) => n.ref && n.ref !== '$type' && honoured.has(n) && n.onMissing === 'warn',
   );
 
   /**
@@ -1676,6 +1695,18 @@ export function projectionRowExists(
 }
 
 /** Does a row with this slug exist in a generated table? Tolerates a missing table. */
+/**
+ * 2.1.41 — where a ref's target stands: the row is there, the row is not, or
+ * the target type has no table in this project (inactive, or never registered).
+ */
+function refTargetState(db: Database, table: string, slug: string): 'present' | 'missing' | 'unprojected' {
+  try {
+    return db.prepare(`SELECT 1 FROM ${table} WHERE slug = ?`).get(slug) !== undefined ? 'present' : 'missing';
+  } catch {
+    return 'unprojected';
+  }
+}
+
 function rowExists(db: Database, table: string, slug: string): boolean {
   try {
     return db.prepare(`SELECT 1 FROM ${table} WHERE slug = ?`).get(slug) !== undefined;

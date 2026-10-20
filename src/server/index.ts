@@ -23,6 +23,7 @@ import type { WorkspaceRecord } from './workspace/types.js';
 import { resolveSpaRoute } from './workspace/spa-route.js';
 import { PluginRegistryImpl } from './core/plugin-host/registry.js';
 import { registerAllPlugins } from './core/plugin-host/register-builtins.js';
+import { logRefRegistrationWarnings, refRegistrationWarnings } from './core/plugin-host/ref-warnings.js';
 import {
   loadBuiltinEnvelopes,
   loadWorkspacePlugins,
@@ -305,6 +306,9 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   }
   const pluginLoad = await loadWorkspacePlugins(pluginRegistry, resolvePluginPackages(workspace));
   pluginLoad.records.unshift(...envelopeLoad.records);
+  // 2.1.41 (M13) — ref placement / unknown-target warnings, once the whole base
+  // pool has registered (a plugin may load before the envelope it points at).
+  logRefRegistrationWarnings(refRegistrationWarnings(pluginRegistry.listAvailable()));
 
   const httpServer = createHttpServer(app);
   // Membership is re-read per upgrade (`getProject` re-resolves the workspace

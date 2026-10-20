@@ -64,6 +64,8 @@ export const PLUGIN_RUNTIME_LEGS: readonly PluginRuntimeLegRow[] = [
       'useRestoreVersion',
       'useVersionDiff',
       'lineDiffHunks',
+      // 2.1.41 — experimental.
+      'useRefLookup',
     ],
     leg: 'browser',
     contract: { module: 'M13', anchor: 'm13l11sc' },

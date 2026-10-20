@@ -103,6 +103,26 @@ describe('c4s plugins reports the server host\'s loader', () => {
     expect(rows[0]!.status).toBe('skipped');
   });
 
+  it('doctor lists ref registration warnings without failing (2.1.41)', async () => {
+    reply = {
+      hostApiVersion: '2.1.0',
+      packages: [
+        {
+          package: '@acme/c4s-plugin-ops',
+          status: 'loaded',
+          layer: 'base',
+          contributedTypes: ['op'],
+          warnings: ['op: data.schema field "aliases[]" declares ref: \'op\' in a scalar element of a collection — …'],
+        },
+      ],
+    };
+    await runPlugins(args('plugins', 'doctor'));
+    expect(printed().ok).toBe(true);
+    expect(printed().warnings).toEqual([
+      { package: '@acme/c4s-plugin-ops', tier: 'base', message: expect.stringContaining('aliases[]') },
+    ]);
+  });
+
   it('doctor reports an engines miss, which the status filter used to drop', async () => {
     /**
      * The regression this closes. `gateManifest` records an `engines.node` miss

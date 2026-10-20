@@ -14,7 +14,9 @@ import { clientPluginHost } from '../core/plugin-host/host.js';
  *   type's `pathPrefix`);
  * - `[<type>, slug]` — the single entity: chip resolver and the plugin's detail
  *   route;
- * - `['entities']` — the aggregate key.
+ * - `['entities']` — the aggregate key;
+ * - `['refLookup', <type>]` (2.1.41) — every `refLookup` resolution reading
+ *   entities of that type, as a target or as a list's source rows.
  *
  * A plugin whose query keys follow this convention gets its open list and open
  * detail refreshed after an external change (agent, another tab) without a
@@ -40,7 +42,7 @@ export function entityListKey(type: string): string {
 
 /** The keys an `entity:changed` / `entity:indexed { type, slug }` invalidates. */
 export function entityChangeKeys(type: string, slug: string): QueryKey[] {
-  return [[entityListKey(type)], [type, slug], ['entities']];
+  return [[entityListKey(type)], [type, slug], ['entities'], ['refLookup', type]];
 }
 
 /** The keys a `tag:changed` invalidates: every active type's list (lists filter by tag). */
