@@ -311,7 +311,7 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
       }),
     ),
   );
-  router.use('/tags', tagsRouter(tagsService, referencesService, discovery));
+  router.use('/tags', tagsRouter(tagsService, referencesService, discovery, ws));
   // The harness has no page roots (`roots: []`), so a narrowed root list is the
   // same empty list — the factory is here so the route's shape matches
   // production, not so the override can be exercised without page fixtures.

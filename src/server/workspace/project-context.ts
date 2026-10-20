@@ -1422,7 +1422,7 @@ async function buildInner(
   router.use('/static/:rootId', staticRouter(resolveStatic, () => [...rootById.keys()]));
   // 2.1.9 — the sidebar's accordion array of every root; no `:rootId` segment.
   router.use('/sidebar-accordions', sidebarAccordionsRouter(sidebarAccordions));
-  router.use('/tags', tagsRouter(tagsService, referencesService, discovery));
+  router.use('/tags', tagsRouter(tagsService, referencesService, discovery, ws));
   router.use('/references', referencesRouter(pluginHost, referencesService, discovery, discoveryForRoots));
   router.use('/entities', entitiesRouter(pluginHost, tagsService, versionService, entityStore, rawReader, discovery, ws));
 

@@ -83,8 +83,8 @@ describe('the kit\'s one Tag type', () => {
   it('[section:mn59j0le] useTags().data items go to TagPicker.allTags, to the /ui Tag and into an EntityListRow tagLookup as they are', () => {
     // 2.1.28: the item is assignable to `Tag` (record `tag-filter-bar`), the
     // plugin builds `tagLookup` from the same list, and the item is also
-    // assignable to the `allTags` prop of the `experimental` TagPicker, whose
-    // narrower item shape is written inline.
+    // assignable to the `allTags` prop of the `experimental` TagPicker, typed
+    // `Tag[]` since 2.1.42.
     const source = [
       IMPORTS,
       'export function useKitInputs() {',
@@ -104,32 +104,32 @@ describe('the kit\'s one Tag type', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('2.1.26: TagPicker.allTags is not a consumer of Tag — its item shape is inline, without description', () => {
-    // The inline `{ slug; name; color? }` item takes a tag without a description.
-    const ok = [
-      IMPORTS,
-      'export const props: TagPickerProps = {',
-      "  allTags: [{ slug: 'billing', name: 'Billing', color: null }],",
-      '  selected: [],',
-      '  onToggle() {},',
-      '};',
-      "export const minimal: Tag = { slug: 'billing', name: 'Billing', description: 'Payment flows' };",
-    ].join('\n');
-    expect(compileAuthorFile(ok)).toEqual([]);
-
-    // `description` belongs to `Tag`, not to the picker item: a fresh literal
-    // carrying it is an excess property, so `allTags` is NOT typed as `Tag[]`.
+  it('2.1.42: TagPicker.allTags is typed Tag[] — a literal with description is accepted', () => {
+    // 2.1.26–2.1.40 typed the item inline as `{ slug; name; color? }`, so a fresh
+    // literal carrying `description` was an excess property. Since 2.1.42 the
+    // prop is the public `Tag[]`, and `description` is part of the item.
     const withDescription = [
       IMPORTS,
       'export const props: TagPickerProps = {',
-      "  allTags: [{ slug: 'billing', name: 'Billing', description: 'Payment flows' }],",
+      "  allTags: [{ slug: 'billing', name: 'Billing', color: null, description: 'Payment flows' }],",
+      '  selected: [],',
+      '  onToggle() {},',
+      '};',
+      "export const asTags: Tag[] = props.allTags;",
+      "export const back: TagPickerProps['allTags'] = asTags;",
+    ].join('\n');
+    expect(compileAuthorFile(withDescription)).toEqual([]);
+
+    // Still a real check: a key `Tag` does not declare is an excess property.
+    const unknownKey = [
+      IMPORTS,
+      'export const props: TagPickerProps = {',
+      "  allTags: [{ slug: 'billing', name: 'Billing', counts: 3 }],",
       '  selected: [],',
       '  onToggle() {},',
       '};',
     ].join('\n');
-    const diagnostics = compileAuthorFile(withDescription);
-    expect(diagnostics.length).toBeGreaterThan(0);
-    expect(diagnostics.join('\n')).toMatch(/description/);
+    expect(compileAuthorFile(unknownKey).length).toBeGreaterThan(0);
   });
 });
 

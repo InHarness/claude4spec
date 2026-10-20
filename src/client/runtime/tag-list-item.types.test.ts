@@ -37,7 +37,9 @@ describe('tag-list-item — the type a plugin gets from useTags()', () => {
     // `/ui` Tag (record `tag-filter-bar`) — one type, host and published.
     expectTypeOf<TagListItem>().toMatchTypeOf<Tag>();
     expectTypeOf<HostTagListItem>().toMatchTypeOf<HostKitTag>();
-    // TagPicker `allTags` item (record `tag-picker`, inline shape).
+    // TagPicker `allTags` item — the public `Tag` since 2.1.42.
+    expectTypeOf<TagPickerProps['allTags']>().toEqualTypeOf<Tag[]>();
+    expectTypeOf<HostTagPickerProps['allTags']>().toEqualTypeOf<HostKitTag[]>();
     expectTypeOf<TagListItem>().toMatchTypeOf<TagPickerProps['allTags'][number]>();
     expectTypeOf<HostTagListItem>().toMatchTypeOf<HostTagPickerProps['allTags'][number]>();
 

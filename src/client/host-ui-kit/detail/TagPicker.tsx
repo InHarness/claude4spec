@@ -5,6 +5,7 @@ import { TagChip } from '../actions/TagChip.js';
 import { ActionButton } from '../actions/ActionButton.js';
 import { Popover } from '../overlay-feedback/Popover.js';
 import { tagSlug } from '../../../shared/slug.js';
+import type { Tag } from '../../../shared/plugin-host/tag.js';
 
 /**
  * `TagPicker` (Panel detalu, `experimental`) — multi-select tags with an
@@ -17,16 +18,9 @@ import { tagSlug } from '../../../shared/slug.js';
  * "+N" reveal control (a ghost `ActionButton`); the full tag list and inline-create input surface
  * inside a published `Popover` instead of always being visible inline.
  */
-/** One selectable tag — `{ slug; name; color? }`, written inline per its `ui-kit-component` record `tag-picker`. */
-type TagPickerTag = { slug: string; name: string; color?: string | null };
-
 export interface TagPickerProps {
-  /**
-   * 2.1.26 (record `tag-picker`): the item shape is written INLINE and is not the
-   * catalog's `Tag` type (record `tag-filter-bar`) — the picker reads no `description`.
-   * `useTags()` items are still assignable to it as is.
-   */
-  allTags: TagPickerTag[];
+  /** Every tag of the project — the public `Tag` type (2.1.42); `useTags()` items go in as is. */
+  allTags: Tag[];
   selected: string[];
   onToggle(slug: string): void;
   onCreate?(name: string): void;
@@ -150,7 +144,7 @@ function CollapsedTagPicker({ allTags, selected, onToggle, onCreate }: Omit<TagP
  * is left as is (a full no-op).
  */
 export function idempotentCreate(
-  allTags: readonly TagPickerTag[],
+  allTags: readonly Tag[],
   selected: readonly string[],
   onToggle: (slug: string) => void,
   onCreate: ((name: string) => void) | undefined,

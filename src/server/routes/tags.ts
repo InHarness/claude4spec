@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { TagsService } from '../services/tags.js';
 import type { ReferencesService } from '../services/references.js';
 import type { DiscoveryCore } from '../discovery/types.js';
+import type { WsEmitter } from '../ws/project-emitter.js';
 import { errorHandler } from './errors.js';
 import { boolFlag, nonNegativeInt, positiveInt } from './query-params.js';
 
@@ -9,6 +10,7 @@ export function tagsRouter(
   tags: TagsService,
   references: ReferencesService,
   discovery: DiscoveryCore,
+  ws: WsEmitter,
 ): Router {
   const router = Router();
 
@@ -100,9 +102,20 @@ export function tagsRouter(
     }
   });
 
+  /**
+   * 2.1.42 — the three tag-definition mutations broadcast `tag:changed` to the
+   * project room after a successful write, the same event the MCP
+   * `create_tag` / `update_tag` / `delete_tag` tools emit
+   * (`src/server/mcp/reference-tools.ts`), so other open tabs refresh their
+   * `['tags']` query. `slug` is the slug AFTER the write (a rename that changes
+   * the slug announces the new one). A refusal (`SLUG_CONFLICT`, `NOT_FOUND`,
+   * `VALIDATION`) throws before the broadcast and emits nothing.
+   */
   router.post('/', (req, res, next) => {
     try {
-      res.status(201).json(tags.create(req.body));
+      const created = tags.create(req.body);
+      ws.broadcast({ kind: 'tag:changed', slug: created.slug, action: 'create' });
+      res.status(201).json(created);
     } catch (err) {
       next(err);
     }
@@ -125,6 +138,7 @@ export function tagsRouter(
       if (updated.slug !== previousSlug) {
         await references.propagateTagSlugChange(previousSlug, updated.slug);
       }
+      ws.broadcast({ kind: 'tag:changed', slug: updated.slug, action: 'update' });
       res.json(updated);
     } catch (err) {
       next(err);
@@ -133,7 +147,9 @@ export function tagsRouter(
 
   router.delete('/:slug', (req, res, next) => {
     try {
-      res.json(tags.remove(req.params.slug));
+      const result = tags.remove(req.params.slug);
+      ws.broadcast({ kind: 'tag:changed', slug: req.params.slug, action: 'delete' });
+      res.json(result);
     } catch (err) {
       next(err);
     }
