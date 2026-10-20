@@ -417,16 +417,21 @@ describe('page-tools', () => {
     expect(await pages.exists('legacy.md')).toBe(false);
   });
 
-  it('[entity:katalog-operacji-m02#update_page] the row: project, direct in all four channels, file+db+ui-notify, `(rootId, relPath)`, `body` (+ `frontmatter`) or `textEdits` disjointly, mandatory expectedHash guard, the rules it can show (echo-free, destructive-declared, replacements-returned, diff-field-names) and its error codes; a literal write to a page missing from a known root creates it — no NOT_FOUND', async () => {
+  it('[entity:katalog-operacji-m02#update_page] the row: project, direct in internal/mcp/rest and cli n/a, file+db+ui-notify, `(rootId, relPath)`, `body` (+ `frontmatter`) or `textEdits` disjointly, mandatory expectedHash guard, the rules it can show (echo-free, destructive-declared, replacements-returned, diff-field-names) and its error codes; a literal write to a page missing from a known root creates it — no NOT_FOUND', async () => {
     registerCoreOperations();
     const op = CATALOG.require('update_page');
     // nazwa — `update_page` — zapis strony (utwórz albo zastąp)
     expect(op.summary).toMatch(/create or replace/i);
     expect(op.scope).toBe('project');
     expect(op.mediation).toBe('direct');
-    for (const channel of ['internal', 'cli', 'mcp', 'rest'] as const) {
+    for (const channel of ['internal', 'mcp', 'rest'] as const) {
       expect(op.channels[channel].kind, channel).toBe('direct');
     }
+    // 2.1.43 — no `c4s` command writes a page.
+    expect(op.channels.cli).toEqual({
+      kind: 'na',
+      reason: 'Komendy nie zaprojektowano: rejestr komend `c4s` nie ma kontrybucji zapisu stron.',
+    });
     expect([...op.sideEffects].sort()).toEqual(['db', 'file', 'ui-notify']);
     // opis treści — `obydwa`: `body` (z opcjonalnym `frontmatter`) albo `textEdits`, rozłącznie.
     expect(op.contentInput).toBe('literal+diff');

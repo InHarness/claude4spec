@@ -32,6 +32,15 @@ import { createEndpointToolsServer } from '../../../plugins/c4s-plugin-api-contr
 import { createPageToolsServer, type PageToolsDeps } from '../mcp/page-tools.js';
 import type { LinkDtoDeps } from '../../../plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/link-dto.js';
 
+/**
+ * 2.1.43 — the `cli` reasons of the operations no `c4s` command renders, as the
+ * records carry them (compared literally, backticks and Polish characters included).
+ */
+const CLI_NA_ENTITY = 'Komendy nie zaprojektowano: generyczne komendy encji `c4s` są wyłącznie odczytem.';
+const CLI_NA_PAGES = 'Komendy nie zaprojektowano: rejestr komend `c4s` nie ma kontrybucji zapisu stron.';
+const CLI_NA_TAGS = 'Komendy nie zaprojektowano: rejestr komend `c4s` nie ma kontrybucji zapisu tagów.';
+const CLI_NA_SECTION = 'Komendy punktowej edycji sekcji nie zaprojektowano; rejestr komend jej nie zna.';
+
 registerCoreOperations();
 
 const CHANNELS: ChannelName[] = ['internal', 'cli', 'mcp', 'rest'];
@@ -1043,7 +1052,7 @@ describe('the M13 mutation rows as their 2.1.26 records declare them', () => {
     expectRecordRow({
       nazwa: 'create_entities',
       mediacja: 'direct',
-      channels: { internal: D, cli: D, mcp: D, rest: D },
+      channels: { internal: D, cli: { kind: 'na', reason: CLI_NA_ENTITY }, mcp: D, rest: D },
       idempotencja: false,
       opisTresci: 'literal',
       kodyBledow: ['INVALID_TYPE', 'SLUG_CONFLICT', 'VALIDATION'],
@@ -1055,7 +1064,7 @@ describe('the M13 mutation rows as their 2.1.26 records declare them', () => {
     expectRecordRow({
       nazwa: 'update_entities',
       mediacja: 'direct',
-      channels: { internal: D, cli: D, mcp: D, rest: D },
+      channels: { internal: D, cli: { kind: 'na', reason: CLI_NA_ENTITY }, mcp: D, rest: D },
       idempotencja: true,
       opisTresci: 'literal',
       kodyBledow: ['INVALID_TYPE', 'ENTITY_NOT_FOUND', 'VALIDATION'],
@@ -1070,7 +1079,7 @@ describe('the M13 mutation rows as their 2.1.26 records declare them', () => {
     expectRecordRow({
       nazwa: 'delete_entities',
       mediacja: 'direct',
-      channels: { internal: D, cli: D, mcp: D, rest: D },
+      channels: { internal: D, cli: { kind: 'na', reason: CLI_NA_ENTITY }, mcp: D, rest: D },
       idempotencja: false,
       opisTresci: 'n/a',
       kodyBledow: ['INVALID_TYPE', 'ENTITY_NOT_FOUND', 'VALIDATION'],
@@ -1082,7 +1091,7 @@ describe('the M13 mutation rows as their 2.1.26 records declare them', () => {
     expectRecordRow({
       nazwa: 'link_dto',
       mediacja: 'direct',
-      channels: { internal: D, cli: D, mcp: D, rest: D },
+      channels: { internal: D, cli: { kind: 'na', reason: CLI_NA_ENTITY }, mcp: D, rest: D },
       idempotencja: true,
       opisTresci: 'n/a',
       kodyBledow: ['NOT_FOUND', 'VALIDATION'],
@@ -1098,7 +1107,7 @@ describe('the M13 mutation rows as their 2.1.26 records declare them', () => {
     expectRecordRow({
       nazwa: 'unlink_dto',
       mediacja: 'direct',
-      channels: { internal: D, cli: D, mcp: D, rest: D },
+      channels: { internal: D, cli: { kind: 'na', reason: CLI_NA_ENTITY }, mcp: D, rest: D },
       idempotencja: true,
       opisTresci: 'n/a',
       kodyBledow: ['NOT_FOUND', 'VALIDATION'],
@@ -1153,7 +1162,7 @@ describe('the page, TODO, page-link and static-file rows as their 2.1.26 records
     narzedzia: Partial<Record<'internal' | 'mcp', string[]>>;
   }
   const D: Cell = { kind: 'direct' };
-  const ALL_DIRECT = { internal: D, cli: D, mcp: D, rest: D };
+  const NO_CLI = (reason: string): Record<ChannelName, Cell> => ({ internal: D, cli: { kind: 'na', reason }, mcp: D, rest: D });
   const PAGE_EFFECTS = ['file', 'db', 'ui-notify'];
 
   const pageTools = new Set(
@@ -1207,7 +1216,7 @@ describe('the page, TODO, page-link and static-file rows as their 2.1.26 records
     expectRecordRow({
       nazwa: 'create_page',
       opClass: 'write',
-      channels: ALL_DIRECT,
+      channels: NO_CLI(CLI_NA_PAGES),
       efekty: PAGE_EFFECTS,
       idempotencja: false,
       opisTresci: 'literal',
@@ -1224,7 +1233,7 @@ describe('the page, TODO, page-link and static-file rows as their 2.1.26 records
     expectRecordRow({
       nazwa: 'update_page',
       opClass: 'write',
-      channels: ALL_DIRECT,
+      channels: NO_CLI(CLI_NA_PAGES),
       efekty: PAGE_EFFECTS,
       idempotencja: 'conditional',
       opisTresci: 'literal+diff',
@@ -1241,7 +1250,7 @@ describe('the page, TODO, page-link and static-file rows as their 2.1.26 records
     expectRecordRow({
       nazwa: 'delete_page',
       opClass: 'write',
-      channels: ALL_DIRECT,
+      channels: NO_CLI(CLI_NA_PAGES),
       efekty: PAGE_EFFECTS,
       idempotencja: true,
       opisTresci: 'n/a',
@@ -1257,7 +1266,7 @@ describe('the page, TODO, page-link and static-file rows as their 2.1.26 records
     expectRecordRow({
       nazwa: 'move_page',
       opClass: 'write',
-      channels: ALL_DIRECT,
+      channels: NO_CLI(CLI_NA_PAGES),
       efekty: PAGE_EFFECTS,
       idempotencja: false,
       opisTresci: 'n/a',
@@ -1272,7 +1281,7 @@ describe('the page, TODO, page-link and static-file rows as their 2.1.26 records
     expectRecordRow({
       nazwa: 'update_sections',
       opClass: 'write',
-      channels: ALL_DIRECT,
+      channels: NO_CLI(CLI_NA_SECTION),
       efekty: PAGE_EFFECTS,
       idempotencja: 'conditional',
       opisTresci: 'literal+diff',
@@ -1365,14 +1374,14 @@ describe('the page, TODO, page-link and static-file rows as their 2.1.26 records
   it('[entity:search-link-targets] search_link_targets: project, direct, internal/cli/mcp via search_pages with the record\'s reasons, rest direct, no effects, idempotent, no codes, no renderings, at most 50 candidates', () => {
     const viaSearch = (reason: string): Cell => ({ kind: 'via', operation: 'search_pages', reason });
     const agentReason =
-      'via `search_pages` — podpowiadanie pod kursor jest potrzebą edytora, a agent adresuje strony pełną ścieżką i sięga po `pathInclude`';
+      'podpowiadanie pod kursor jest potrzebą edytora, a agent adresuje strony pełną ścieżką i sięga po `pathInclude`';
     expectRecordRow({
       nazwa: 'search_link_targets',
       opClass: 'read',
       channels: {
         internal: viaSearch(agentReason),
         cli: viaSearch(
-          'via `search_pages` — podpowiadanie pod kursor jest potrzebą edytora; w terminalu stronę znajduje się wyszukiwaniem stron zawężonym po ścieżce (`pathInclude`)',
+          'podpowiadanie pod kursor jest potrzebą edytora; w terminalu stronę znajduje się wyszukiwaniem stron zawężonym po ścieżce (`pathInclude`)',
         ),
         mcp: viaSearch(agentReason),
         rest: D,
@@ -1570,16 +1579,16 @@ describe('the turn and thread rows as their 2.1.26 records declare them', () => 
     expect(shape.safeParse({ message: 'q', project: 'p', effort: 'max' }).success).toBe(false);
   });
 
-  it('[entity:abort-turn] abort_turn: project, direct, all four channels direct, db/ui-notify, idempotent, no content input, codes THREAD_NOT_FOUND and VALIDATION, addressed by threadId or the request id, no rendering', () => {
-    // Not through the shared matcher: the record declares the agentic cells
-    // `direct` with an empty `narzedzia` (ASSUMPTION:dev-2612), which the
-    // matcher's direct-names-a-rendering rule refuses. Every other field is
+  it('[entity:abort-turn] abort_turn: project, direct, internal/cli/mcp n/a (rest is the only rendering), rest direct, db/ui-notify, idempotent, no content input, codes THREAD_NOT_FOUND and VALIDATION, addressed by threadId or the request id, no rendering', () => {
+    // Not through the shared matcher: the record's `opisTresci` is `n/d` on a row
+    // with no `file` effect, which the row leaves undeclared. Every other field is
     // asserted the way the matcher asserts it.
     const op = CATALOG.require('abort_turn');
     expect(op.name).toBe('abort_turn');
     expect(op.scope).toBe('project');
     expect(op.mediation).toBe('direct');
-    for (const channel of CHANNELS) expect(op.channels[channel], channel).toEqual(D);
+    expect(op.channels.rest).toEqual(D);
+    for (const channel of ['internal', 'cli', 'mcp'] as const) expect(op.channels[channel].kind, channel).toBe('na');
     expect([...op.sideEffects].sort()).toEqual(['db', 'ui-notify']);
     expect(op.idempotent).toBe(true);
     expect(op.contentInput).toBeUndefined();
@@ -1657,7 +1666,7 @@ describe('the turn and thread rows as their 2.1.26 records declare them', () => 
             kind: 'via',
             operation: 'spawn_child_turn',
             reason:
-              'via `spawn_child_turn` — agent wbudowany osiąga bieg tury wyłącznie zakładając wątek podrzędny; tury najwyższego poziomu z wnętrza własnej tury nie zleca',
+              'agent wbudowany osiąga bieg tury wyłącznie zakładając wątek podrzędny; tury najwyższego poziomu z wnętrza własnej tury nie zleca',
           },
           cli: { kind: 'na', reason: 'brak powierzchni CLI — turę-dziecko zakłada się wyłącznie z wnętrza tury' },
           mcp: {
@@ -1725,13 +1734,13 @@ describe('the turn and thread rows as their 2.1.26 records declare them', () => 
  */
 describe('the M18 tag write rows as their 2.1.26 records declare them', () => {
   const D = { kind: 'direct' } as const;
-  const ALL_DIRECT = { internal: D, cli: D, mcp: D, rest: D };
+  const TAG_CHANNELS = { internal: D, cli: { kind: 'na', reason: CLI_NA_TAGS }, mcp: D, rest: D } as const;
   const keys = (name: string) => Object.keys(CATALOG.require(name).inputSchema).sort();
   const tagRow = (nazwa: string, slug: string, idempotencja: boolean, kodyBledow: string[]) =>
     expectOperationMatchesRecord(
       {
         nazwa,
-        channels: ALL_DIRECT,
+        channels: TAG_CHANNELS,
         efekty: ['file', 'db', 'ui-notify'],
         idempotencja,
         opisTresci: 'n/a',
@@ -1825,18 +1834,12 @@ describe("the catalogue against the window's 78 records", () => {
     'one-action-per-anchor',
   ];
   /**
-   * The agentic `direct` cells whose own record names no tool in that channel —
-   * the record breaks L3 `g8adono9` (`direct-without-tool`) and the row follows
-   * the record. ASSUMPTION:dev-2612 (abort_turn) and ASSUMPTION:dev-2614 (the
-   * three brief operations' `mcp`): the specification fixes these records.
+   * The agentic `direct` cells whose own record names no tool in that channel.
+   * 2.1.43 closes the list: the four records that broke L3 `g8adono9`
+   * (`direct-without-tool`) are `n/a` now, so every agentic `direct` cell points
+   * at a tool.
    */
-  const RECORD_DIRECT_WITHOUT_TOOL = [
-    'abort_turn.internal',
-    'abort_turn.mcp',
-    'create_brief.mcp',
-    'list_briefs.mcp',
-    'mark_brief_implemented.mcp',
-  ];
+  const RECORD_DIRECT_WITHOUT_TOOL: string[] = [];
 
   /** Source files whose tool registrations make up each server a rendering may name. */
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -1906,6 +1909,13 @@ describe("the catalogue against the window's 78 records", () => {
         const cell = op.channels[channel];
         expect(RECORD_CHANNEL[cell.kind], `${record.nazwa}.${channel}`).toBe(record[channel]);
         if (cell.kind !== 'direct') expect(cell.reason, `${record.nazwa}.${channel} reason`).toBe(record.powody[channel]);
+        // 2.1.43 — the target of a `via` is its own field, and the reason never opens with "via X —".
+        if (cell.kind === 'via') {
+          expect(cell.operation, `${record.nazwa}.${channel} target`).toBe(record[`${channel}Via` as const]);
+          expect(cell.reason, `${record.nazwa}.${channel} reason prefix`).not.toMatch(/^via\s/);
+        } else {
+          expect(record[`${channel}Via` as const], `${record.nazwa}.${channel} has a target without a via`).toBeUndefined();
+        }
       }
       expect([...op.sideEffects].sort(), record.nazwa).toEqual(record.efekty.map((e) => EFFECT[e]).sort());
       expect(op.idempotent, record.nazwa).toBe(IDEMPOTENCE[record.idempotencja]);
@@ -2052,6 +2062,109 @@ describe("the catalogue against the window's 78 records", () => {
         });
       }
       expect(op.renderings ?? {}, record.nazwa).toEqual(expected);
+    }
+  });
+});
+
+/**
+ * 2.1.43 — the data wave of the `spec-operation` records: the `cli` cells no
+ * command renders, the brief and turn operations the external server does not
+ * carry, the patch reads that gained their own REST rendering, and the `via`
+ * reasons that no longer repeat their target. The whole-catalogue test above
+ * holds every row against the record; this block pins the changed rows by value.
+ */
+describe('the 2.1.43 catalogue wave', () => {
+  const CLI_NA_BRIEF = 'Komendy nie zaprojektowano: komendy briefu tworzą, czytają i oznaczają brief, ale go nie edytują.';
+  const CLI_NA_PROJ = "Komendy nie zaprojektowano; `c4s list-workspaces` czyta rejestr workspace'ów, a nie listę projektów serwera.";
+  const CLI_NA_ABORT = 'Komendy nie zaprojektowano: przerwanie tury z terminala nie ma kontrybucji w rejestrze komend.';
+  const kinds = (name: string) => {
+    const c = CATALOG.require(name).channels;
+    return [c.internal.kind, c.cli.kind, c.mcp.kind, c.rest.kind].map((k) => ({ direct: 'D', via: 'V', na: 'N' })[k]).join('/');
+  };
+
+  it.each([
+    ['create_entities', CLI_NA_ENTITY],
+    ['delete_entities', CLI_NA_ENTITY],
+    ['update_entities', CLI_NA_ENTITY],
+    ['link_dto', CLI_NA_ENTITY],
+    ['unlink_dto', CLI_NA_ENTITY],
+    ['create_page', CLI_NA_PAGES],
+    ['delete_page', CLI_NA_PAGES],
+    ['update_page', CLI_NA_PAGES],
+    ['move_page', CLI_NA_PAGES],
+    ['create_tag', CLI_NA_TAGS],
+    ['delete_tag', CLI_NA_TAGS],
+    ['update_tag', CLI_NA_TAGS],
+    ['tag_entity', CLI_NA_TAGS],
+    ['untag_entity', CLI_NA_TAGS],
+    ['update_brief', CLI_NA_BRIEF],
+    ['update_sections', CLI_NA_SECTION],
+    ['list_projects', CLI_NA_PROJ],
+  ])('%s: cli is n/a with the record\'s reason, the other channels direct', (name, reason) => {
+    registerCoreOperations();
+    expect(CATALOG.require(name).channels.cli).toEqual(na(reason));
+    expect(kinds(name)).toBe(name === 'list_projects' ? 'D/N/D/N' : 'D/N/D/D');
+  });
+
+  it('abort_turn: rest is the only rendering, every other channel n/a with the record\'s reason', () => {
+    registerCoreOperations();
+    const c = CATALOG.require('abort_turn').channels;
+    expect(kinds('abort_turn')).toBe('N/N/N/D');
+    expect(c.internal).toEqual(
+      na('moduł tury nie wnosi narzędzia agentowego: przerwanie zleca wołający spoza tury, który zna jej adres (UI albo klient trasy REST), a nie agent wewnątrz biegnącej tury'),
+    );
+    expect(c.cli).toEqual(na(CLI_NA_ABORT));
+    expect(c.mcp).toEqual(
+      na('moduł tury nie wnosi narzędzia MCP; przerwanie z zewnątrz renderuje wyłącznie trasa REST, którą woła klient zlecający turę'),
+    );
+  });
+
+  it('create_brief, list_briefs, mark_brief_implemented: the external server carries none of them', () => {
+    registerCoreOperations();
+    expect(kinds('create_brief')).toBe('N/D/N/D');
+    expect(kinds('list_briefs')).toBe('D/D/N/D');
+    expect(kinds('mark_brief_implemented')).toBe('N/D/N/D');
+    expect(CATALOG.require('create_brief').channels.mcp).toEqual(
+      na('serwer zewnętrzny nie niesie narzędzia: powołanie briefu jest powierzchnią użytkownika (UI, `c4s create-brief`, trasa REST), a połączenie zewnętrzne w profilu `brief` widzi tylko operacje na istniejącym briefie'),
+    );
+    expect(CATALOG.require('list_briefs').channels.mcp).toEqual(
+      na('serwer zewnętrzny nie niesie narzędzia: lista briefów jest powierzchnią użytkownika (UI, `c4s list-briefs`, trasa REST), a agentowo renderuje ją wyłącznie `transagent-tools` orkiestratora wątku `chat`'),
+    );
+    expect(CATALOG.require('mark_brief_implemented').channels.internal).toEqual(
+      na('operacja deklaruje fakt o kodzie w repozytorium docelowym, którego wątek nie widzi, więc serwer briefu celowo jej nie niesie; znacznik ustawia implementer w terminalu albo użytkownik w UI'),
+    );
+    expect(CATALOG.require('mark_brief_implemented').channels.mcp).toEqual(
+      na('serwer zewnętrzny nie niesie narzędzia: znacznik ustawia implementer w terminalu (`c4s mark-brief-implemented`) albo użytkownik w UI, a połączenie zewnętrzne w profilu `brief` widzi tylko odczyt, edycję i wersje briefu'),
+    );
+  });
+
+  it('get_patch and mark_patch_applied: rest is direct, with no reason and no via', () => {
+    registerCoreOperations();
+    for (const name of ['get_patch', 'mark_patch_applied']) {
+      expect(kinds(name), name).toBe('D/N/N/D');
+      expect(CATALOG.require(name).channels.rest, name).toEqual({ kind: 'direct' });
+    }
+  });
+
+  it('run_turn and search_link_targets: the via target is its own field and the reason does not open with "via"', () => {
+    registerCoreOperations();
+    const run = CATALOG.require('run_turn').channels.internal;
+    expect(run).toMatchObject({ kind: 'via', operation: 'spawn_child_turn' });
+    const search = CATALOG.require('search_link_targets').channels;
+    for (const channel of ['internal', 'cli', 'mcp'] as const) {
+      expect(search[channel], channel).toMatchObject({ kind: 'via', operation: 'search_pages' });
+    }
+    expect(kinds('run_turn')).toBe('V/N/N/N');
+    expect(kinds('search_link_targets')).toBe('V/V/V/D');
+  });
+
+  it('no via reason in the catalogue opens with "via <operation> —"', () => {
+    registerCoreOperations();
+    for (const op of CATALOG.list()) {
+      for (const channel of CHANNELS) {
+        const cell = op.channels[channel];
+        if (cell.kind === 'via') expect(cell.reason, `${op.name}.${channel}`).not.toMatch(/^via\s/);
+      }
     }
   });
 });

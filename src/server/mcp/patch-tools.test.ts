@@ -298,14 +298,14 @@ describe('patch-tools (thread-bound)', () => {
     await expect(createPatch(deps, { ...input, patchKind: 'typo' }, 'rest')).rejects.toMatchObject({ code: 'VALIDATION' });
   });
 
-  it('[entity:get-patch] get_patch as its record declares it: project, direct, internal direct, cli/mcp n/a and rest via get_artifact with the record\'s reasons, no effects, idempotent, `path` + window `range`, codes PATCH_NOT_FOUND, INVALID_ARGUMENT, PATCH_INVALID_FRONTMATTER, rendered by patch-tools · get_patch (internal) — content, frontmatter and hash; an unknown path PATCH_NOT_FOUND, a window past the end INVALID_ARGUMENT, a non-patch file PATCH_INVALID_FRONTMATTER', async () => {
+  it('[entity:get-patch] get_patch as its record declares it: project, direct, internal direct, cli/mcp n/a and rest direct with the record\'s reasons, no effects, idempotent, `path` + window `range`, codes PATCH_NOT_FOUND, INVALID_ARGUMENT, PATCH_INVALID_FRONTMATTER, rendered by patch-tools · get_patch (internal) — content, frontmatter and hash; an unknown path PATCH_NOT_FOUND, a window past the end INVALID_ARGUMENT, a non-patch file PATCH_INVALID_FRONTMATTER', async () => {
     const op = expectPatchOperationRecord({
       nazwa: 'get_patch',
       channels: {
         internal: { kind: 'direct' },
         cli: { kind: 'na', reason: 'żadna komenda `c4s` nie renderuje jeszcze odczytu patcha' },
         mcp: { kind: 'na', reason: 'odczyt patcha istnieje dla wątku, który ten patch stosuje; kanał `mcp` nie ma wątku zakotwiczonego w patchu' },
-        rest: { kind: 'via', operation: 'get_artifact', reason: 'via `get_artifact` — uogólniona trasa odczytu rodziny artefaktów' },
+        rest: { kind: 'direct' },
       },
       efekty: ['none'],
       idempotencja: true,
@@ -336,18 +336,14 @@ describe('patch-tools (thread-bound)', () => {
     expect(invalid.raw.error?.code ?? invalid.raw.code).toBe('PATCH_INVALID_FRONTMATTER');
   });
 
-  it('[entity:mark-patch-applied] mark_patch_applied as its record declares it: project, direct, internal direct, cli/mcp n/a and rest via update_artifact_frontmatter with the record\'s reasons, file+db+ui-notify, idempotent, no content, addressed by `path`, codes PATCH_NOT_FOUND, INVALID_ARGUMENT, PATCH_INVALID_FRONTMATTER, rendered by patch-tools · mark_patch_applied (internal) — frontmatter only, through version capture, a repeat a no-op, an unknown path PATCH_NOT_FOUND, `false` INVALID_ARGUMENT, a non-patch file PATCH_INVALID_FRONTMATTER', async () => {
+  it('[entity:mark-patch-applied] mark_patch_applied as its record declares it: project, direct, internal direct, cli/mcp n/a and rest direct with the record\'s reasons, file+db+ui-notify, idempotent, no content, addressed by `path`, codes PATCH_NOT_FOUND, INVALID_ARGUMENT, PATCH_INVALID_FRONTMATTER, rendered by patch-tools · mark_patch_applied (internal) — frontmatter only, through version capture, a repeat a no-op, an unknown path PATCH_NOT_FOUND, `false` INVALID_ARGUMENT, a non-patch file PATCH_INVALID_FRONTMATTER', async () => {
     const op = expectPatchOperationRecord({
       nazwa: 'mark_patch_applied',
       channels: {
         internal: { kind: 'direct' },
         cli: { kind: 'na', reason: 'jedyny realny wołający kończy wdrożenie patcha w wątku, nie w terminalu' },
         mcp: { kind: 'na', reason: 'deklarację wdrożenia składa wątek, który patch stosuje; kanał `mcp` nie ma wątku zakotwiczonego w patchu' },
-        rest: {
-          kind: 'via',
-          operation: 'update_artifact_frontmatter',
-          reason: 'via `update_artifact_frontmatter` — uogólniona trasa frontmatteru rodziny artefaktów, dwukierunkowa i prowadzona przez użytkownika',
-        },
+        rest: { kind: 'direct' },
       },
       efekty: ['file', 'db', 'ui-notify'],
       idempotencja: true,
