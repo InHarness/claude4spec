@@ -136,6 +136,19 @@ const fullParity = () => ({
   rest: direct(),
 });
 
+/**
+ * 2.1.43 — the `cli` cell of operations no `c4s` command renders. The reasons are
+ * the records' `powody.cli`, verbatim (backticks and Polish characters included):
+ * the catalog test compares them literally.
+ */
+const CLI_NA_ENTITY = 'Komendy nie zaprojektowano: generyczne komendy encji `c4s` są wyłącznie odczytem.';
+const CLI_NA_PAGES = 'Komendy nie zaprojektowano: rejestr komend `c4s` nie ma kontrybucji zapisu stron.';
+const CLI_NA_TAGS = 'Komendy nie zaprojektowano: rejestr komend `c4s` nie ma kontrybucji zapisu tagów.';
+const CLI_NA_BRIEF = 'Komendy nie zaprojektowano: komendy briefu tworzą, czytają i oznaczają brief, ale go nie edytują.';
+const CLI_NA_SECTION = 'Komendy punktowej edycji sekcji nie zaprojektowano; rejestr komend jej nie zna.';
+const CLI_NA_PROJ = "Komendy nie zaprojektowano; `c4s list-workspaces` czyta rejestr workspace'ów, a nie listę projektów serwera.";
+const CLI_NA_ABORT = 'Komendy nie zaprojektowano: przerwanie tury z terminala nie ma kontrybucji w rejestrze komend.';
+
 /** A read operation of the M39 core: project scope, direct, no side effects, idempotent. */
 function coreRead(
   name: string,
@@ -513,7 +526,7 @@ export function registerCoreOperations(): void {
     idempotent: true,
     channels: {
       internal: direct(),
-      cli: direct(),
+      cli: na(CLI_NA_PROJ),
       mcp: direct(),
       // 2.1.26 — the reason is the record's `powody.rest`, verbatim.
       rest: na('odłożone do fazy 2 — trasy tej operacji jeszcze nie zbudowano'),
@@ -786,7 +799,7 @@ export function registerCoreOperations(): void {
       // 2.1.26 — the record's `powody`, verbatim. `rest` is GET /api/artifacts/patch/:path.
       cli: na('żadna komenda `c4s` nie renderuje jeszcze odczytu patcha'),
       mcp: na('odczyt patcha istnieje dla wątku, który ten patch stosuje; kanał `mcp` nie ma wątku zakotwiczonego w patchu'),
-      rest: via('get_artifact', 'via `get_artifact` — uogólniona trasa odczytu rodziny artefaktów'),
+      rest: direct(),
     },
     // 2.1.26 — the record's `narzedzia`: `patch-tools-get-patch` (internal).
     renderings: { internal: ['patch-tools.get_patch'] },
@@ -822,10 +835,7 @@ export function registerCoreOperations(): void {
       // PATCH /api/artifacts/patch/:path/frontmatter with { applied }.
       cli: na('jedyny realny wołający kończy wdrożenie patcha w wątku, nie w terminalu'),
       mcp: na('deklarację wdrożenia składa wątek, który patch stosuje; kanał `mcp` nie ma wątku zakotwiczonego w patchu'),
-      rest: via(
-        'update_artifact_frontmatter',
-        'via `update_artifact_frontmatter` — uogólniona trasa frontmatteru rodziny artefaktów, dwukierunkowa i prowadzona przez użytkownika',
-      ),
+      rest: direct(),
     },
     // 2.1.26 — the record's `narzedzia`: `patch-tools-mark-patch-applied` (internal).
     renderings: { internal: ['patch-tools.mark_patch_applied'] },
@@ -931,7 +941,7 @@ export function registerCoreOperations(): void {
      */
     contentInput,
     idempotent,
-    channels: fullParity(),
+    channels: { ...fullParity(), cli: na(CLI_NA_ENTITY) },
     renderings: { internal: [`entity-tools.${name}`], mcp: [`entity-tools.${name}`] },
   });
 
@@ -1064,7 +1074,7 @@ export function registerCoreOperations(): void {
       // A tag is a name and a colour; there is no content to describe either way.
       contentInput: 'n/a',
       idempotent,
-      channels: fullParity(),
+      channels: { ...fullParity(), cli: na(CLI_NA_TAGS) },
       renderings: { internal: [`reference-tools.${name}`], mcp: [`reference-tools.${name}`] },
     });
 
@@ -1138,7 +1148,7 @@ export function registerCoreOperations(): void {
     sideEffects: ['file', 'db', 'ui-notify'],
     contentInput,
     idempotent,
-    channels: fullParity(),
+    channels: { ...fullParity(), cli: na(name === 'update_sections' ? CLI_NA_SECTION : CLI_NA_PAGES) },
     renderings: { internal: [`page-tools.${name}`], mcp: [`page-tools.${name}`] },
   });
 
@@ -1427,9 +1437,9 @@ export function registerCoreOperations(): void {
       [],
     ),
     channels: {
-      internal: via('search_pages', 'via `search_pages` — podpowiadanie pod kursor jest potrzebą edytora, a agent adresuje strony pełną ścieżką i sięga po `pathInclude`'),
-      cli: via('search_pages', 'via `search_pages` — podpowiadanie pod kursor jest potrzebą edytora; w terminalu stronę znajduje się wyszukiwaniem stron zawężonym po ścieżce (`pathInclude`)'),
-      mcp: via('search_pages', 'via `search_pages` — podpowiadanie pod kursor jest potrzebą edytora, a agent adresuje strony pełną ścieżką i sięga po `pathInclude`'),
+      internal: via('search_pages', 'podpowiadanie pod kursor jest potrzebą edytora, a agent adresuje strony pełną ścieżką i sięga po `pathInclude`'),
+      cli: via('search_pages', 'podpowiadanie pod kursor jest potrzebą edytora; w terminalu stronę znajduje się wyszukiwaniem stron zawężonym po ścieżce (`pathInclude`)'),
+      mcp: via('search_pages', 'podpowiadanie pod kursor jest potrzebą edytora, a agent adresuje strony pełną ścieżką i sięga po `pathInclude`'),
       rest: direct(),
     },
   });
@@ -1925,7 +1935,9 @@ export function registerCoreOperations(): void {
         'tura wątku `brief` jest zakotwiczona w jednym artefakcie i pisze jego treść; powołanie kolejnego briefu nie jest czynnością autora briefu',
       ),
       cli: direct(),
-      mcp: direct(),
+      mcp: na(
+        'serwer zewnętrzny nie niesie narzędzia: powołanie briefu jest powierzchnią użytkownika (UI, `c4s create-brief`, trasa REST), a połączenie zewnętrzne w profilu `brief` widzi tylko operacje na istniejącym briefie',
+      ),
       rest: direct(),
     },
   });
@@ -1982,7 +1994,9 @@ export function registerCoreOperations(): void {
     channels: {
       internal: direct(),
       cli: direct(),
-      mcp: direct(),
+      mcp: na(
+        'serwer zewnętrzny nie niesie narzędzia: lista briefów jest powierzchnią użytkownika (UI, `c4s list-briefs`, trasa REST), a agentowo renderuje ją wyłącznie `transagent-tools` orkiestratora wątku `chat`',
+      ),
       rest: direct(),
     },
     renderings: { internal: ['transagent-tools.list_briefs'] },
@@ -2088,7 +2102,7 @@ export function registerCoreOperations(): void {
      * by content; `append`, `insert_after_section` and `textEdits` are not.
      */
     idempotent: 'conditional',
-    channels: fullParity(),
+    channels: { ...fullParity(), cli: na(CLI_NA_BRIEF) },
     renderings: { internal: ['brief-tools.update_brief'], mcp: ['brief-tools.update_brief'] },
   });
 
@@ -2136,7 +2150,9 @@ export function registerCoreOperations(): void {
         'operacja deklaruje fakt o kodzie w repozytorium docelowym, którego wątek nie widzi, więc serwer briefu celowo jej nie niesie; znacznik ustawia implementer w terminalu albo użytkownik w UI',
       ),
       cli: direct(),
-      mcp: direct(),
+      mcp: na(
+        'serwer zewnętrzny nie niesie narzędzia: znacznik ustawia implementer w terminalu (`c4s mark-brief-implemented`) albo użytkownik w UI, a połączenie zewnętrzne w profilu `brief` widzi tylko odczyt, edycję i wersje briefu',
+      ),
       rest: direct(),
     },
   });
@@ -2339,7 +2355,7 @@ export function registerCoreOperations(): void {
     contentInput: 'n/a' as const,
     channels: {
       internal: direct(),
-      cli: direct(),
+      cli: na(CLI_NA_ENTITY),
       mcp: direct(),
       rest: direct(),
     },
@@ -2451,7 +2467,7 @@ export function registerCoreOperations(): void {
     channels: {
       internal: via(
         'spawn_child_turn',
-        'via `spawn_child_turn` — agent wbudowany osiąga bieg tury wyłącznie zakładając wątek podrzędny; tury najwyższego poziomu z wnętrza własnej tury nie zleca',
+        'agent wbudowany osiąga bieg tury wyłącznie zakładając wątek podrzędny; tury najwyższego poziomu z wnętrza własnej tury nie zleca',
       ),
       cli: na('brak powierzchni CLI — turę-dziecko zakłada się wyłącznie z wnętrza tury'),
       mcp: na(
@@ -2531,10 +2547,10 @@ export function registerCoreOperations(): void {
    * cascades to child turns and clears the thread's queue, and the answer is a
    * confirmation — `aborted` plus `clearedTexts` — not the thread's state.
    *
-   * ASSUMPTION:dev-2612 — the record declares all four cells `direct` with an
-   * empty `narzedzia`, so the agentic `direct` cells point at no rendering (L3
-   * `g8adono9` requires one); M05 `jivl7fxv` records that gap as its own open
-   * item. The row follows the record and names no rendering.
+   * 2.1.43 — the record resolves the gap the earlier `direct` cells left (an
+   * agentic `direct` with no rendering): only `rest` renders the operation
+   * (`POST /api/chat/abort`, `POST /api/chat/abort/:threadId`); the three other
+   * cells are `n/a` with the record's reasons. The row names no rendering.
    */
   registerRow({
     name: 'abort_turn',
@@ -2550,7 +2566,16 @@ export function registerCoreOperations(): void {
     errorCodes: ['THREAD_NOT_FOUND', 'VALIDATION'],
     sideEffects: ['db', 'ui-notify'],
     idempotent: true,
-    channels: fullParity(),
+    channels: {
+      internal: na(
+        'moduł tury nie wnosi narzędzia agentowego: przerwanie zleca wołający spoza tury, który zna jej adres (UI albo klient trasy REST), a nie agent wewnątrz biegnącej tury',
+      ),
+      cli: na(CLI_NA_ABORT),
+      mcp: na(
+        'moduł tury nie wnosi narzędzia MCP; przerwanie z zewnątrz renderuje wyłącznie trasa REST, którą woła klient zlecający turę',
+      ),
+      rest: direct(),
+    },
   });
 
   /**

@@ -1527,10 +1527,19 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     expect(Object.keys(ok.body).sort()).toEqual(['body', 'content', 'frontmatter', 'hash', 'path']);
   });
 
-  it('[entity:list-briefs] list_briefs as its record declares it: project, direct, all four channels direct, no effects, idempotent, filter `implemented` + paging `limit`/`offset`, code VALIDATION, rendered by transagent-tools · list_briefs in internal only (never by brief-tools) — the list on the release axis', async () => {
+  it('[entity:list-briefs] list_briefs as its record declares it: project, direct, mcp n/a with the record\'s reason, the rest direct, no effects, idempotent, filter `implemented` + paging `limit`/`offset`, code VALIDATION, rendered by transagent-tools · list_briefs in internal only (never by brief-tools) — the list on the release axis', async () => {
     const op = expectOperationRecord({
       nazwa: 'list_briefs',
-      channels: { internal: D, cli: D, mcp: D, rest: D },
+      channels: {
+        internal: D,
+        cli: D,
+        mcp: {
+          kind: 'na',
+          reason:
+            'serwer zewnętrzny nie niesie narzędzia: lista briefów jest powierzchnią użytkownika (UI, `c4s list-briefs`, trasa REST), a agentowo renderuje ją wyłącznie `transagent-tools` orkiestratora wątku `chat`',
+        },
+        rest: D,
+      },
       efekty: ['none'],
       idempotencja: true,
       opisTresci: undefined,
@@ -1555,10 +1564,15 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     expect(service.listBriefs({ implemented: false }).map((b) => b.path).sort()).toEqual(['v1-to-v2-big.md', 'v2-to-next.md']);
   });
 
-  it('[entity:update-brief] update_brief as its record declares it: project, direct, all four channels direct, file+db+ui-notify, conditionally idempotent, content described both ways, required guard, codes BRIEF_NOT_FOUND, BRIEF_CONFLICT, VALIDATION, INVALID_ARGUMENT, IMMUTABLE_FIELD, MISSING_TARGET, FIND_NOT_FOUND, MATCH_COUNT_MISMATCH, BRIEF_INVALID_FRONTMATTER, rendered by brief-tools · update_brief (internal thread mount, mcp explicit) — exactly one shape, a missing hash VALIDATION, `replace` idempotent by content while `append` is not, an immutable frontmatter field IMMUTABLE_FIELD, `implemented` immutable for the agent', async () => {
+  it('[entity:update-brief] update_brief as its record declares it: project, direct, cli n/a with the record\'s reason, the rest direct, file+db+ui-notify, conditionally idempotent, content described both ways, required guard, codes BRIEF_NOT_FOUND, BRIEF_CONFLICT, VALIDATION, INVALID_ARGUMENT, IMMUTABLE_FIELD, MISSING_TARGET, FIND_NOT_FOUND, MATCH_COUNT_MISMATCH, BRIEF_INVALID_FRONTMATTER, rendered by brief-tools · update_brief (internal thread mount, mcp explicit) — exactly one shape, a missing hash VALIDATION, `replace` idempotent by content while `append` is not, an immutable frontmatter field IMMUTABLE_FIELD, `implemented` immutable for the agent', async () => {
     const op = expectOperationRecord({
       nazwa: 'update_brief',
-      channels: { internal: D, cli: D, mcp: D, rest: D },
+      channels: {
+        internal: D,
+        cli: { kind: 'na', reason: 'Komendy nie zaprojektowano: komendy briefu tworzą, czytają i oznaczają brief, ale go nie edytują.' },
+        mcp: D,
+        rest: D,
+      },
       efekty: ['file', 'db', 'ui-notify'],
       idempotencja: 'conditional',
       opisTresci: 'literal+diff',
@@ -1615,7 +1629,7 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     expect((await call(external, 'update_brief', { path: 'nope.md', action: 'append', content: 'x', expectedHash: 'h' })).body.code).toBe('BRIEF_NOT_FOUND');
   });
 
-  it('[entity:mark-brief-implemented] mark_brief_implemented as its record declares it: project, direct, internal n/a with the record\'s reason (no brief-tools tool), cli/mcp/rest direct, file+db+ui-notify, idempotent, no content input, `path`, codes BRIEF_NOT_FOUND, IMMUTABLE_FIELD, BRIEF_INVALID_FRONTMATTER, no renderings — only the flag changes, a repeat is a no-op without a version, a non-brief file BRIEF_INVALID_FRONTMATTER, an unknown path BRIEF_NOT_FOUND', async () => {
+  it('[entity:mark-brief-implemented] mark_brief_implemented as its record declares it: project, direct, internal n/a with the record\'s reason (no brief-tools tool), cli/rest direct, mcp n/a, file+db+ui-notify, idempotent, no content input, `path`, codes BRIEF_NOT_FOUND, IMMUTABLE_FIELD, BRIEF_INVALID_FRONTMATTER, no renderings — only the flag changes, a repeat is a no-op without a version, a non-brief file BRIEF_INVALID_FRONTMATTER, an unknown path BRIEF_NOT_FOUND', async () => {
     const op = expectOperationRecord({
       nazwa: 'mark_brief_implemented',
       channels: {
@@ -1625,7 +1639,11 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
             'operacja deklaruje fakt o kodzie w repozytorium docelowym, którego wątek nie widzi, więc serwer briefu celowo jej nie niesie; znacznik ustawia implementer w terminalu albo użytkownik w UI',
         },
         cli: D,
-        mcp: D,
+        mcp: {
+          kind: 'na',
+          reason:
+            'serwer zewnętrzny nie niesie narzędzia: znacznik ustawia implementer w terminalu (`c4s mark-brief-implemented`) albo użytkownik w UI, a połączenie zewnętrzne w profilu `brief` widzi tylko odczyt, edycję i wersje briefu',
+        },
         rest: D,
       },
       efekty: ['file', 'db', 'ui-notify'],
@@ -1705,7 +1723,7 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     await expect(service.getVersionAddressed('nope.md', 1)).rejects.toMatchObject({ code: 'BRIEF_NOT_FOUND' });
   });
 
-  it('[entity:create-brief] create_brief as its record declares it: project, direct, internal n/a with the record\'s reason, cli/mcp/rest direct, file+db+ui-notify, not idempotent, literal content, codes BRIEF_SAME_RELEASE, VALIDATION, no renderings — blank content, a window without ends, an empty end name, an unknown release or roots on an open window VALIDATION; the operation writes the brief file only and opens no thread (no thread row, no thread list in its answer); the service answers path, hash and both ends', async () => {
+  it('[entity:create-brief] create_brief as its record declares it: project, direct, internal and mcp n/a with the record\'s reasons, cli/rest direct, file+db+ui-notify, not idempotent, literal content, codes BRIEF_SAME_RELEASE, VALIDATION, no renderings — blank content, a window without ends, an empty end name, an unknown release or roots on an open window VALIDATION; the operation writes the brief file only and opens no thread (no thread row, no thread list in its answer); the service answers path, hash and both ends', async () => {
     const op = expectOperationRecord({
       nazwa: 'create_brief',
       channels: {
@@ -1715,7 +1733,11 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
             'tura wątku `brief` jest zakotwiczona w jednym artefakcie i pisze jego treść; powołanie kolejnego briefu nie jest czynnością autora briefu',
         },
         cli: D,
-        mcp: D,
+        mcp: {
+          kind: 'na',
+          reason:
+            'serwer zewnętrzny nie niesie narzędzia: powołanie briefu jest powierzchnią użytkownika (UI, `c4s create-brief`, trasa REST), a połączenie zewnętrzne w profilu `brief` widzi tylko operacje na istniejącym briefie',
+        },
         rest: D,
       },
       efekty: ['file', 'db', 'ui-notify'],

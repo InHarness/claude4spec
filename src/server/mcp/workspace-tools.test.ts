@@ -121,14 +121,17 @@ describe('workspace-tools', () => {
       expect(text).not.toContain(broken);
     });
 
-    it('[entity:list-projects] list_projects: workspace, direct, internal/cli/mcp direct, rest n/a with the record\'s reason, no effects, idempotent, no codes, rendered by workspace-tools · list_projects in internal and mcp, addressed by the server\'s workspace (no input)', () => {
+    it('[entity:list-projects] list_projects: workspace, direct, internal/mcp direct, cli n/a and rest n/a with the record\'s reason, no effects, idempotent, no codes, rendered by workspace-tools · list_projects in internal and mcp, addressed by the server\'s workspace (no input)', () => {
       const op = expectOperationMatchesRecord(
         {
           nazwa: 'list_projects',
           zasieg: 'workspace',
           channels: {
             internal: { kind: 'direct' },
-            cli: { kind: 'direct' },
+            cli: {
+              kind: 'na',
+              reason: "Komendy nie zaprojektowano; `c4s list-workspaces` czyta rejestr workspace'ów, a nie listę projektów serwera.",
+            },
             mcp: { kind: 'direct' },
             rest: { kind: 'na', reason: 'odłożone do fazy 2 — trasy tej operacji jeszcze nie zbudowano' },
           },
