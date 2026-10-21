@@ -221,6 +221,16 @@ export interface UiKitStableDelta {
  */
 export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] = [
   {
+    release: '2.1.44',
+    slot: '@c4s/plugin-runtime/ui: TagFilterBar',
+    kind: 'slot-added',
+    summary:
+      '`TagFilterBar.variant` (`\'collapsed\' | \'wrap\'`, default `\'collapsed\'`) and ' +
+      '`TagFilterBar.entityType` (optional); `tags` accepts items with an optional ' +
+      '`counts`. Additive, no bump; the default layout changes the look of the bar ' +
+      'for all consumers.',
+  },
+  {
     release: '2.1.25',
     slot: '@c4s/plugin-runtime: VersionListItem.releaseId (EntityVersionMeta)',
     kind: 'behaviour-changed',

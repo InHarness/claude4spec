@@ -169,12 +169,17 @@ export declare const GroupedEntityList: <T>(props: GroupedEntityListProps<T>) =>
  * `active`. (2.1.40: named after the `<Component>Props` convention.)
  */
 export interface TagFilterBarProps {
-  tags: Tag[];
+  /** `Tag` items, optionally with `counts` like `useTags()` items. */
+  tags: Array<Tag & { counts?: Record<string, number> }>;
   tagFilter: string[];
   onTagToggle: (slug: string) => void;
   tagMode: 'and' | 'or';
   onToggleMode: () => void;
   onClear: () => void;
+  /** `'collapsed'` (default): one line, overflow behind "+N"; `'wrap'`: multi-line. */
+  variant?: 'collapsed' | 'wrap';
+  /** The list's entity type: with `counts`, drops zero-count tags and sorts by that count. */
+  entityType?: string;
 }
 export declare const TagFilterBar: ComponentType<TagFilterBarProps>;
 
