@@ -151,6 +151,13 @@ describe('TagFilterBar entityType + counts (2.1.44)', () => {
     expect(rowChips()).toEqual(['Mmm', 'Zzz', 'Bbb', 'Aaa']);
   });
 
+  it('renders nothing when entityType narrowing leaves no tags and none is selected', () => {
+    bar({ tags: counted, entityType: 'nonexistent' });
+    expect(host.innerHTML).toBe('');
+    bar({ tags: counted, entityType: 'nonexistent', variant: 'wrap' });
+    expect(host.innerHTML).toBe('');
+  });
+
   it('keeps the input order without entityType', () => {
     bar({ tags: counted });
     expect(rowChips()).toEqual(['Aaa', 'Zzz', 'None', 'Mmm', 'Bbb']);

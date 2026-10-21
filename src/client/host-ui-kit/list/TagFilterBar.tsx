@@ -202,7 +202,8 @@ function TagFilterBarImpl({
 }: TagFilterBarProps) {
   const selected = useMemo(() => new Set(tagFilter), [tagFilter]);
   const shown = useMemo(() => narrowByCounts([...tags], entityType, selected), [tags, entityType, selected]);
-  if (tags.length === 0) return null;
+  // Nothing to show — an empty `tags`, or `entityType` narrowing left none (and none selected).
+  if (shown.length === 0) return null;
 
   return (
     <div
