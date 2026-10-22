@@ -47,12 +47,14 @@ interface RecordTag {
   description?: string | null;
 }
 interface RecordTagFilterBarProps {
-  tags: RecordTag[];
+  tags: Array<RecordTag & { counts?: Record<string, number> }>;
   tagFilter: string[];
   onTagToggle: (slug: string) => void;
   tagMode: 'and' | 'or';
   onToggleMode: () => void;
   onClear: () => void;
+  variant?: 'collapsed' | 'wrap';
+  entityType?: string;
 }
 
 const TAGS: Tag[] = [
@@ -130,7 +132,7 @@ describe('TagFilterBar ↔ record `tag-filter-bar` (M34/L12, 2.1.28)', () => {
           'div',
           { 'data-testid': 'header-slot' },
           createElement(EntityListHeader, { title: 'Endpoints', search: '', onSearchChange: () => {} }),
-          createElement(TagFilterBar, tagBar),
+          createElement(TagFilterBar, { ...tagBar, variant: 'wrap' }),
         ),
         children: 'rows',
       }),

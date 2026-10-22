@@ -328,7 +328,7 @@ const PRIMITIVE_RECORDS: Record<string, PrimitiveRecord> = {
   'loading-state': { name: 'LoadingState', group: 'actions', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'actions/LoadingState.tsx' },
   pagination: { name: 'Pagination', group: 'list', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'list/Pagination.tsx' },
   popover: { name: 'Popover', group: 'feedback', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'overlay-feedback/Popover.tsx' },
-  'tag-filter-bar': { name: 'TagFilterBar', group: 'list', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [['TagChip', '../actions/TagChip.js']], file: 'list/TagFilterBar.tsx' },
+  'tag-filter-bar': { name: 'TagFilterBar', group: 'list', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [['TagChip', '../actions/TagChip.js'], ['ActionButton', '../actions/ActionButton.js'], ['Popover', '../overlay-feedback/Popover.js']], file: 'list/TagFilterBar.tsx' },
   'toast-viewport': { name: 'ToastViewport', group: 'feedback', stability: 'experimental', binding: 'presentational', fetchedByComponent: [], composes: [], file: 'overlay-feedback/ToastViewport.tsx' },
 };
 
@@ -379,7 +379,7 @@ describe('Host UI Kit registry ↔ catalog primitives records (M34/L12, 2.1.28)'
   it('[entity:loading-state] registry entry matches the record (actions, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('loading-state'));
   it('[entity:pagination] registry entry matches the record (list, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('pagination'));
   it('[entity:popover] registry entry matches the record (feedback, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('popover'));
-  it('[entity:tag-filter-bar] registry entry matches the record (list, experimental, presentational; useTags only feeds props, so no L11 surface) and composes TagChip', () => expectEntryMatchesRecord('tag-filter-bar'));
+  it('[entity:tag-filter-bar] registry entry matches the record (list, experimental, presentational; useTags only feeds props, so no L11 surface) and composes TagChip, ActionButton and Popover (2.1.44)', () => expectEntryMatchesRecord('tag-filter-bar'));
   it('[entity:toast-viewport] registry entry matches the record (feedback, experimental, presentational, no L11 surface), composes nothing', () => expectEntryMatchesRecord('toast-viewport'));
 });
 
