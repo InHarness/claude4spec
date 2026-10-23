@@ -258,7 +258,7 @@ describe('/releases screen (M17 releases-list, 2.1.45)', () => {
     await mount();
 
     // The M25 banner over the list shows the count but carries no deep link.
-    expect(host.textContent).toContain('You have 5 unreleased changes not in any release.');
+    expect(host.querySelector('[data-testid="unreleased-banner"]')?.textContent).toContain('You have 5 unreleased changes');
     const links = Array.from(host.querySelectorAll('a'));
     expect(links.filter((a) => a.getAttribute('data-to') === '/releases')).toEqual([]);
     expect(links.filter((a) => (a.getAttribute('data-search') ?? '').includes('compare'))).toEqual([]);
@@ -268,6 +268,44 @@ describe('/releases screen (M17 releases-list, 2.1.45)', () => {
     expect(router).not.toMatch(/releasesSearchSchema/);
     expect(router).not.toMatch(/tab: z\.enum\(\['list', 'compare'\]\)/);
     expect(router).not.toMatch(/search: \(prev\) => \(\{ \.\.\.prev, tab:/);
+  });
+
+  it('[ac:ac-baner-you-have-n-unreleased-changes-p] the banner "You have N unreleased changes" stands over the release list on /releases while the unreleased counter is above 0, N being that counter', async () => {
+    summaryTotal = { entities: 4, pages: 3 };
+    await mount();
+
+    const banner = host.querySelector<HTMLElement>('[data-testid="unreleased-banner"]');
+    expect(banner?.textContent).toBe(
+      'You have 7 unreleased changes — they will NOT be included in this push. Pull them into this release or create a new one.',
+    );
+    // Over the list: before the first release card, inside the List tab.
+    const firstCard = host.querySelector('a[data-to="/releases/$name"]')!;
+    expect(banner!.compareDocumentPosition(firstCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(panel('list').contains(banner!)).toBe(true);
+    // N is the shared counter — the same number as the Compare tab label, one request for both.
+    expect(compareTab().textContent).toBe('Changes (7)');
+    expect(counterRequests()).toHaveLength(1);
+  });
+
+  it('[ac:ac-baner-you-have-n-unreleased-changes-p] no banner over the list while the unreleased counter is 0, nor without any release', async () => {
+    summaryTotal = { entities: 0, pages: 0 };
+    await mount();
+    expect(host.querySelectorAll('a[data-to="/releases/$name"]')).toHaveLength(2);
+    expect(host.querySelector('[data-testid="unreleased-banner"]')).toBeNull();
+    expect(host.textContent).not.toContain('unreleased change');
+
+    act(() => root.unmount());
+    root = createRoot(host);
+    releaseList = [];
+    summaryTotal = { entities: 4, pages: 3 };
+    qc.clear();
+    // The second half asserts only its own requests: drop the first mount's
+    // counter request (the implementation stays, only the recorded calls go).
+    fetchMock.mockClear();
+    await mount();
+    expect(host.textContent).toContain('No releases yet.');
+    expect(host.querySelector('[data-testid="unreleased-banner"]')).toBeNull();
+    expect(counterRequests()).toEqual([]);
   });
 
   it("[ac:ac-etykieta-zakladki-compare-na-releases] the Compare tab label shows \"Changes (N)\" with N equal to the Compare header's global change counter for the newest release", async () => {
