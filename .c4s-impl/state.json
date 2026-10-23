@@ -1,5 +1,5 @@
 {
-  "iteration": 4,
+  "iteration": 6,
   "conventions": [
     {
       "label": "L5 (UI) — moduł implementujący wskazany w sekcji 0",
@@ -165,16 +165,16 @@
             "ac-zmiana-cofnieta-do-stanu-z-najnowszeg"
           ],
           "status": "implemented",
-          "rounds": 1,
+          "rounds": 3,
           "partial": 0,
           "only": []
         }
       ],
-      "startCommit": "66bb18393225bf415c706b8607da0525593df658",
+      "startCommit": "2c2618b55b2d9e9572cc9b190ea98e9eca530968",
       "baseCommit": "66bb18393225bf415c706b8607da0525593df658",
       "rounds": {
         "review": 0,
-        "unit": 1
+        "unit": 3
       },
       "jobs": [],
       "lastUncovered": 0,

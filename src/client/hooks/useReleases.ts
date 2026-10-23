@@ -48,7 +48,8 @@ export function useRelease(name: string | undefined) {
  * 2.1.45 (M17 L5 "Stan → Zapytania") — the key of the unreleased counter:
  * `['release-diff', <newest release>, 'current', { summaryOnly: true }]`. It
  * shares the `['release-diff', <from>, 'current']` prefix with the Compare
- * tab's diff, so one `['release-diff']` invalidation refreshes both.
+ * tab's diff, so one invalidation of the diffs against `current`
+ * (`release-diff-invalidation.ts`) refreshes both.
  */
 export function unreleasedCounterKey(latestReleaseName: string) {
   return ['release-diff', latestReleaseName, 'current', { summaryOnly: true }] as const;

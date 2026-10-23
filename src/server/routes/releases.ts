@@ -47,15 +47,6 @@ export function releasesRouter(
     }
   });
 
-  // Literal path — MUST be declared before the `/:name` catch-all.
-  router.get('/unreleased-count', (_req, res, next) => {
-    try {
-      res.json({ count: releases.countUnreleased() });
-    } catch (err) {
-      next(err);
-    }
-  });
-
   router.post('/', async (req, res, next) => {
     try {
       const body = (req.body ?? {}) as { name?: string; description?: string };

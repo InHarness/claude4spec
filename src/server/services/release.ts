@@ -549,18 +549,6 @@ export class ReleaseService {
     return nodePath.join(this.releaseStore.root, `${row.slug}.json`);
   }
 
-  /**
-   * Count of captures still queued at HEAD — entity_version + file_version rows
-   * with `release_id IS NULL`. Drives the M25 "You have N unreleased changes"
-   * banner shown only on the latest (mutable) release card.
-   */
-  countUnreleased(): number {
-    const row = this.db
-      .prepare(`SELECT COUNT(*) AS n FROM entity_version WHERE release_id IS NULL`)
-      .get() as { n: number };
-    return row.n + this.pageVersions.countUnreleased(this.pagesKindRootIds);
-  }
-
   // ─── Mutations ───────────────────────────────────────────────────────────
 
   /**

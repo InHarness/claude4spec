@@ -5,6 +5,8 @@
  * { summaryOnly: true }]`, whose value is changed entities + changed pages of
  * the light `release_diff` newest → current; and it is refreshed by the same
  * WS events (and the same `['release-diff']` invalidation) as the Compare tab.
+ * Content events reach only the diffs against `current`; a frozen
+ * release → release diff is refetched by release lifecycle events alone.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement } from 'react';
@@ -20,7 +22,10 @@ vi.mock('../lib/project-reload.js', () => ({ reloadProjectRoute: () => {} }));
 
 import { useFileWatcher } from './useFileWatcher.js';
 import { unreleasedCounterKey, useReleaseDiff, useUnreleasedCount } from './useReleases.js';
-import { RELEASE_DIFF_INVALIDATING_EVENTS } from '../lib/release-diff-invalidation.js';
+import { RELEASE_DIFF_CONTENT_EVENTS, RELEASE_DIFF_LIFECYCLE_EVENTS } from '../lib/release-diff-invalidation.js';
+
+/** The whole M17 WS map: content events + release lifecycle events. */
+const RELEASE_DIFF_INVALIDATING_EVENTS = [...RELEASE_DIFF_CONTENT_EVENTS, ...RELEASE_DIFF_LIFECYCLE_EVENTS] as const;
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -59,14 +64,19 @@ const RAW_DIFF = { from: { id: 1, name: 'v1' }, to: { id: 0, name: 'current' }, 
 const urls = () => fetchMock.mock.calls.map(([url]) => String(url));
 const counterCalls = () => urls().filter((u) => u.includes('/diff/current?view=operation&summaryOnly=true'));
 const compareCalls = () => urls().filter((u) => u.endsWith('/api/releases/v1/diff/current'));
+const pairCalls = () => urls().filter((u) => u.endsWith('/api/releases/v1/diff/v2'));
 
 let counterValue: number | undefined;
 
-function Probe(props: { watch: boolean; compare: boolean }) {
+type ProbeProps = { watch: boolean; compare: boolean; pair?: boolean };
+
+function Probe(props: ProbeProps) {
   if (props.watch) useFileWatcher();
   counterValue = useUnreleasedCount().data;
   // The Compare tab's own diff query (`['release-diff', <from>, 'current']`).
   useReleaseDiff(props.compare ? 'v1' : undefined, props.compare ? 'current' : undefined);
+  // A frozen release → release diff (`['release-diff', 'v1', 'v2']`).
+  useReleaseDiff(props.pair ? 'v1' : undefined, props.pair ? 'v2' : undefined);
   return null;
 }
 
@@ -76,7 +86,7 @@ async function settle(ms = 0) {
   });
 }
 
-async function mount(props: { watch: boolean; compare: boolean }) {
+async function mount(props: ProbeProps) {
   qc = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
   await act(async () => {
     root.render(createElement(QueryClientProvider, { client: qc }, createElement(Probe, props)));
@@ -98,6 +108,7 @@ beforeEach(() => {
       return new Response(JSON.stringify({ data: SUMMARY }), { status: 200 });
     }
     if (url.endsWith('/diff/current')) return new Response(JSON.stringify(RAW_DIFF), { status: 200 });
+    if (url.endsWith('/diff/v2')) return new Response(JSON.stringify(RAW_DIFF), { status: 200 });
     return new Response(JSON.stringify({}), { status: 200 });
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -165,6 +176,80 @@ describe('unreleased counter — refreshed by the Compare tab events', () => {
       expect({ kind, counter: counterCalls().length }).toEqual({ kind, counter: counterBefore + 1 });
       expect({ kind, compare: compareCalls().length }).toEqual({ kind, compare: compareBefore + 1 });
     }
+  });
+
+  it('a content event refetches only the diffs against current — a release → release diff stays cached; a release lifecycle event refetches it', async () => {
+    await mount({ watch: true, compare: true, pair: true });
+    expect(pairCalls()).toHaveLength(1);
+
+    const samples: Record<(typeof RELEASE_DIFF_CONTENT_EVENTS)[number], unknown> = {
+      'file:changed': { kind: 'file:changed', event: 'change', path: 'a.md', rootId: 'pages', origin: 'server' },
+      'entity:changed': { kind: 'entity:changed', entityType: 'endpoint', slug: 'e1', action: 'updated' },
+      'tag:changed': { kind: 'tag:changed', slug: 't1', action: 'updated' },
+      'page:renamed': { kind: 'page:renamed', from: 'a.md', to: 'b.md' },
+      'pages:frontmatter-changed': { kind: 'pages:frontmatter-changed', path: 'a.md', rootId: 'pages' },
+      'git:status-changed': { kind: 'git:status-changed', headChanged: false },
+    };
+    expect(Object.keys(samples).sort()).toEqual([...RELEASE_DIFF_CONTENT_EVENTS].sort());
+
+    for (const kind of RELEASE_DIFF_CONTENT_EVENTS) {
+      const counterBefore = counterCalls().length;
+      const compareBefore = compareCalls().length;
+      act(() => FakeSocket.last!.emit(samples[kind]));
+      await settle(500);
+      await settle();
+      expect({ kind, counter: counterCalls().length }).toEqual({ kind, counter: counterBefore + 1 });
+      expect({ kind, compare: compareCalls().length }).toEqual({ kind, compare: compareBefore + 1 });
+      expect({ kind, pair: pairCalls().length }).toEqual({ kind, pair: 1 });
+      expect({ kind, invalidated: qc.getQueryState(['release-diff', 'v1', 'v2'])?.isInvalidated }).toEqual({
+        kind,
+        invalidated: false,
+      });
+    }
+
+    for (const kind of RELEASE_DIFF_LIFECYCLE_EVENTS) {
+      const pairBefore = pairCalls().length;
+      act(() => FakeSocket.last!.emit({ kind, releaseId: 2, name: 'v2' }));
+      await settle(500);
+      await settle();
+      expect({ kind, pair: pairCalls().length }).toEqual({ kind, pair: pairBefore + 1 });
+    }
+  });
+
+  it('a lifecycle and content events in one batch window refetch the counter and the Compare diff once each', async () => {
+    await mount({ watch: true, compare: true });
+    const counterBefore = counterCalls().length;
+    const compareBefore = compareCalls().length;
+
+    // Creating a release: its lifecycle event, its record file, a git status change.
+    act(() => {
+      FakeSocket.last!.emit({ kind: 'release:created', releaseId: 3, name: 'v3' });
+      FakeSocket.last!.emit({ kind: 'file:changed', event: 'add', path: 'v3.json', rootId: 'releases', origin: 'server' });
+      FakeSocket.last!.emit({ kind: 'git:status-changed', headChanged: false });
+      FakeSocket.last!.emit({ kind: 'file:changed', event: 'change', path: 'a.md', rootId: 'pages', origin: 'server' });
+    });
+    await settle(500);
+    await settle();
+    await settle();
+
+    expect(counterCalls().length).toBe(counterBefore + 1);
+    expect(compareCalls().length).toBe(compareBefore + 1);
+  });
+
+  it('a file change in a system root without a facade (briefs) leaves the counter and the Compare diff alone', async () => {
+    await mount({ watch: true, compare: true });
+    const counterBefore = counterCalls().length;
+    const compareBefore = compareCalls().length;
+
+    act(() =>
+      FakeSocket.last!.emit({ kind: 'file:changed', event: 'change', path: 'b1.md', rootId: 'briefs', origin: 'server' }),
+    );
+    await settle(500);
+    await settle();
+
+    expect(counterCalls().length).toBe(counterBefore);
+    expect(compareCalls().length).toBe(compareBefore);
+    expect(qc.getQueryState(['release-diff', 'v1', 'current'])?.isInvalidated).toBe(false);
   });
 
   it('an event outside the map leaves the counter alone', async () => {

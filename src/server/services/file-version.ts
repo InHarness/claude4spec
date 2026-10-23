@@ -279,27 +279,6 @@ export class FileVersionService {
   }
 
   /**
-   * Count file captures with `release_id IS NULL` (waiting to be picked up by
-   * next release), restricted to the given roots — the roots of kind `pages`
-   * (2.1.8). System roots (`briefs`/`patches`/`plans`) fall out structurally.
-   */
-  countUnreleased(pagesKindRootIds: string[]): number {
-    if (pagesKindRootIds.length === 0) return 0;
-    // 0.2.101: each `pages` root brings its retired identifiers along —
-    // otherwise versions written before a rename would silently fall out of the
-    // next release's scope.
-    pagesKindRootIds = this.expandRoots(pagesKindRootIds);
-    const placeholders = pagesKindRootIds.map(() => '?').join(', ');
-    const row = this.db
-      .prepare(
-        `SELECT COUNT(*) AS n FROM file_version
-          WHERE release_id IS NULL AND rootId IN (${placeholders})`
-      )
-      .get(...pagesKindRootIds) as { n: number };
-    return row.n;
-  }
-
-  /**
    * Atomic: assign all unreleased file_version rows in the given roots — the
    * roots of kind `pages` (2.1.8, M17 L1 `rootId IN (korzenie kind: pages)`) — to
    * a release. Returns the count of rows updated. Rows of the system roots
