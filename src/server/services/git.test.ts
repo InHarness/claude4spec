@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GitService } from './git.js';
+import { GitService, SHADOW_SCAN_CONCURRENCY, supportsTrialMerge } from './git.js';
 
 const pexec = promisify(execFile);
 
@@ -1730,5 +1730,293 @@ describe('GitService — gated entry vs execution (2.1.14)', () => {
       // @ts-expect-error resolveDefaultBranch is a private method of GitService
       svc.resolveDefaultBranch(dir);
     expect(typeof callsPrivate).toBe('function');
+  });
+});
+
+/**
+ * 2.1.46 (M28 eu1rffp6 / dadc3w49, tech-stack row Git) — the shadow layer of
+ * the git service against a real temporary repository: `listShadows`,
+ * `resolveShadow`, `mergeBase`, `mergeTree` (trial merge), `showFile` on a
+ * tree, `isAncestorOfHead` and `diffRefs` with a tree on the right side. Every
+ * one of them is read-only: the repository state (refs, HEAD, index, working
+ * tree, merge state) is the same before and after.
+ */
+describe('GitService — 2.1.46 shadow layer', () => {
+  let dir: string;
+  let n = 0;
+
+  async function commit(files: Record<string, string>, message: string): Promise<string> {
+    for (const [rel, content] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+      fs.writeFileSync(path.join(dir, rel), content);
+      await git(['add', '--', rel], dir);
+    }
+    await git(['commit', '-q', '-m', message], dir);
+    return (await git(['rev-parse', 'HEAD'], dir)).trim();
+  }
+
+  /** A `refs/runs/<id>` ref: one commit with `files` on top of `from`; HEAD stays on `main`. */
+  async function shadow(id: string, from: string, files: Record<string, string>, subject = `shadow ${id}`): Promise<string> {
+    const tmp = `tmp-shadow-${++n}`;
+    await git(['checkout', '-q', '-b', tmp, from], dir);
+    const tip = await commit(files, subject);
+    await git(['update-ref', `refs/runs/${id}`, tip], dir);
+    await git(['checkout', '-q', 'main'], dir);
+    await git(['branch', '-q', '-D', tmp], dir);
+    return tip;
+  }
+
+  /** The repository as a value — read without optional locks, the index read first. */
+  async function repoState(): Promise<Record<string, unknown>> {
+    const index = fs.readFileSync(path.join(dir, '.git', 'index')).toString('base64');
+    return {
+      index,
+      head: (await git(['rev-parse', 'HEAD'], dir)).trim(),
+      symbolicHead: (await git(['symbolic-ref', '-q', 'HEAD'], dir)).trim(),
+      refs: await git(['for-each-ref', '--format=%(refname) %(objectname)'], dir),
+      status: await git(['--no-optional-locks', 'status', '--porcelain'], dir),
+      files: Object.fromEntries(
+        ['spec.md', 'other.md'].map((f) => [f, fs.existsSync(path.join(dir, f)) ? fs.readFileSync(path.join(dir, f), 'utf8') : null]),
+      ),
+      mergeInProgress: fs.existsSync(path.join(dir, '.git', 'MERGE_HEAD')),
+    };
+  }
+
+  let first: string;
+  let second: string;
+
+  beforeEach(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-git-shadow-'));
+    await initRepo(dir);
+    writeConfigJson(dir, { enabled: true });
+    first = await commit({ 'spec.md': '# spec v1\n', 'other.md': '# other v1\n' }, 'first');
+    second = await commit({ 'other.md': '# other v2 (main)\n' }, 'second');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('[entity:tech-stack#Git] the trial merge needs git ≥ 2.38 — 2.38 and newer are supported, older is reported unsupported (version injected, not read from the host)', async () => {
+    expect(supportsTrialMerge('git version 2.38.0')).toBe(true);
+    expect(supportsTrialMerge('git version 2.39.3 (Apple Git-145)')).toBe(true);
+    expect(supportsTrialMerge('git version 2.50.1')).toBe(true);
+    expect(supportsTrialMerge('git version 3.0.0')).toBe(true);
+    expect(supportsTrialMerge('git version 2.37.9')).toBe(false);
+    expect(supportsTrialMerge('git version 1.9.5')).toBe(false);
+    expect(supportsTrialMerge('not a version')).toBe(false);
+
+    const tip = await shadow('run-1/spec', first, { 'spec.md': '# spec (shadow)\n' });
+    const svc = new GitService(dir, [dir]);
+    const version = vi.spyOn(GitService.prototype as unknown as { gitVersion(): Promise<string | null> }, 'gitVersion');
+
+    version.mockResolvedValue('git version 2.37.1');
+    expect(await svc.mergeTree(second, tip)).toEqual({ status: 'unsupported' });
+
+    version.mockResolvedValue('git version 2.38.0');
+    const supported = await svc.mergeTree(second, tip);
+    expect(supported?.status).toBe('clean');
+  });
+
+  it('[section:eu1rffp6] mergeTree: a clean trial merge returns the result tree; showFile reads it; diffRefs takes it as the right side — all read-only', async () => {
+    const tip = await shadow('run-1/spec', first, { 'spec.md': '# spec (shadow)\n' });
+    const svc = new GitService(dir, [dir]);
+    const before = await repoState();
+
+    const merged = await svc.mergeTree(second, tip);
+    expect(merged?.status).toBe('clean');
+    const tree = merged?.status === 'clean' ? merged.tree : '';
+    expect(tree).toMatch(/^[0-9a-f]{40}$/);
+    expect((await git(['cat-file', '-t', tree], dir)).trim()).toBe('tree');
+
+    expect(await svc.showFile(tree, path.join(dir, 'spec.md'))).toBe('# spec (shadow)\n');
+    expect(await svc.showFile(tree, path.join(dir, 'other.md'))).toBe('# other v2 (main)\n');
+    expect(await svc.showFile(tree, path.join(dir, 'missing.md'))).toBeNull();
+
+    const diff = await svc.diffRefs(second, tree, [dir]);
+    expect(diff?.files).toEqual([{ path: path.join(fs.realpathSync(dir), 'spec.md'), status: 'M' }]);
+
+    expect(await repoState()).toEqual(before);
+  });
+
+  it('[section:eu1rffp6] mergeTree: a conflicting trial merge returns the conflicted paths and leaves no merge state behind', async () => {
+    const tip = await shadow('run-2/spec', first, { 'other.md': '# other (shadow)\n' });
+    const svc = new GitService(dir, [dir]);
+    const before = await repoState();
+
+    expect(await svc.mergeTree(second, tip)).toEqual({ status: 'conflicts', paths: ['other.md'] });
+    expect(await svc.mergeTree(second, 'not-a-ref')).toEqual({ status: 'error' });
+
+    expect(await repoState()).toEqual(before);
+  });
+
+  it('[section:eu1rffp6] mergeBase / isAncestorOfHead / resolveShadow answer from the commit graph — read-only', async () => {
+    const tip = await shadow('run-1/spec', first, { 'spec.md': '# spec (shadow)\n' });
+    await git(['update-ref', 'refs/runs/contained', first], dir);
+    await git(['checkout', '-q', '--orphan', 'unrelated'], dir);
+    await git(['rm', '-q', '-rf', '--cached', '.'], dir);
+    fs.writeFileSync(path.join(dir, 'lonely.md'), '# lonely\n');
+    await git(['add', 'lonely.md'], dir);
+    await git(['commit', '-q', '-m', 'unrelated root'], dir);
+    const unrelated = (await git(['rev-parse', 'HEAD'], dir)).trim();
+    await git(['update-ref', 'refs/runs/unrelated', unrelated], dir);
+    fs.rmSync(path.join(dir, 'lonely.md'));
+    await git(['checkout', '-q', '-f', 'main'], dir);
+    await git(['branch', '-q', '-D', 'unrelated'], dir);
+
+    const svc = new GitService(dir, [dir]);
+    const before = await repoState();
+
+    expect(await svc.mergeBase(second, tip)).toBe(first);
+    expect(await svc.mergeBase(second, unrelated)).toBeNull();
+
+    expect(await svc.isAncestorOfHead(first)).toBe(true);
+    expect(await svc.isAncestorOfHead(tip)).toBe(false);
+
+    expect(await svc.resolveShadow('run-1/spec')).toEqual({ id: 'run-1/spec', tipSha: tip, baseSha: first, masterAhead: 1 });
+    expect(await svc.resolveShadow('contained')).toBeNull(); // already an ancestor of HEAD
+    expect(await svc.resolveShadow('unrelated')).toBeNull(); // no common ancestor
+    expect(await svc.resolveShadow('missing')).toBeNull();
+
+    expect(await repoState()).toEqual(before);
+  });
+
+  it('[section:dadc3w49] listShadows keeps only refs/runs/* refs that share an ancestor with HEAD, are not its ancestors and change a release-flag root (not the releases root) — read-only, no lock', async () => {
+    const listed = await shadow('run-1/spec', first, { 'spec.md': '# spec (shadow)\n' }, 'Shadow turn 1');
+    await git(['update-ref', 'refs/runs/contained', first], dir);
+    await shadow('releases-only', first, { '.claude4spec/releases/v9.json': '{}\n' });
+    await git(['update-ref', 'refs/heads/not-a-shadow', listed], dir);
+
+    const svc = new GitService(dir, [dir]);
+    const before = await repoState();
+    const shadows = await svc.listShadows();
+    expect(shadows).toEqual([
+      {
+        id: 'run-1/spec',
+        tipSha: listed,
+        tipCommittedAt: (await git(['log', '-1', '--format=%cI', listed], dir)).trim(),
+        tipSubject: 'Shadow turn 1',
+      },
+    ]);
+    expect(Object.keys(shadows![0]!).sort()).toEqual(['id', 'tipCommittedAt', 'tipSha', 'tipSubject']);
+    expect(await repoState()).toEqual(before);
+  });
+
+  type GitRunner = { git(args: string[], dir: string, ...rest: unknown[]): Promise<{ stdout: string; stderr: string }> };
+
+  it('[review:rev-0001] listShadows checks at most SHADOW_SCAN_CONCURRENCY shadows at once, and ancestors of HEAD cost no per-ref subprocess', async () => {
+    const tip = await shadow('run-1/spec', first, { 'spec.md': '# spec (shadow)\n' });
+    const ids = ['run-1/spec'];
+    for (let i = 0; i < 11; i++) {
+      const id = `extra-${String(i).padStart(2, '0')}`;
+      await git(['update-ref', `refs/runs/${id}`, tip], dir);
+      ids.push(id);
+    }
+    for (let i = 0; i < 5; i++) await git(['update-ref', `refs/runs/contained-${i}`, first], dir);
+
+    const proto = GitService.prototype as unknown as GitRunner;
+    const original = proto.git;
+    let inFlight = 0;
+    let peak = 0;
+    let mergeBases = 0;
+    vi.spyOn(proto, 'git').mockImplementation(async function (this: unknown, ...args: Parameters<GitRunner['git']>) {
+      const perRef = args[0][0] === 'merge-base' || args[0][0] === 'diff';
+      if (args[0][0] === 'merge-base') mergeBases++;
+      if (perRef) peak = Math.max(peak, ++inFlight);
+      try {
+        return await original.apply(this, args);
+      } finally {
+        if (perRef) inFlight--;
+      }
+    });
+
+    const svc = new GitService(dir, [dir]);
+    const before = await repoState();
+    const shadows = await svc.listShadows();
+    expect(shadows?.map((s) => s.id).sort()).toEqual([...ids].sort());
+    expect(peak).toBeLessThanOrEqual(SHADOW_SCAN_CONCURRENCY);
+    expect(peak).toBeGreaterThan(1); // still parallel, only bounded
+    expect(mergeBases).toBe(ids.length); // the five contained refs were dropped by for-each-ref --no-merged
+    expect(await repoState()).toEqual(before);
+  });
+
+  it('[review:rev-0001] a failed git command is told apart from "no common ancestor" — logged as a failure, never as a missing ancestor', async () => {
+    const listed = await shadow('run-1/spec', first, { 'spec.md': '# spec (shadow)\n' });
+    const mbBroken = await shadow('mb-broken', first, { 'spec.md': '# spec (mb)\n' });
+    const diffBroken = await shadow('diff-broken', first, { 'spec.md': '# spec (diff)\n' });
+    await git(['checkout', '-q', '--orphan', 'unrelated'], dir);
+    await git(['rm', '-q', '-rf', '--cached', '.'], dir);
+    fs.writeFileSync(path.join(dir, 'lonely.md'), '# lonely\n');
+    await git(['add', 'lonely.md'], dir);
+    await git(['commit', '-q', '-m', 'unrelated root'], dir);
+    await git(['update-ref', 'refs/runs/unrelated', (await git(['rev-parse', 'HEAD'], dir)).trim()], dir);
+    fs.rmSync(path.join(dir, 'lonely.md'));
+    await git(['checkout', '-q', '-f', 'main'], dir);
+    await git(['branch', '-q', '-D', 'unrelated'], dir);
+
+    const proto = GitService.prototype as unknown as GitRunner;
+    const original = proto.git;
+    const spawnFailure = (): Error => Object.assign(new Error('spawn git EAGAIN'), { code: 'EAGAIN' });
+    vi.spyOn(proto, 'git').mockImplementation(async function (this: unknown, ...args: Parameters<GitRunner['git']>) {
+      const [argv] = args;
+      if (argv[0] === 'merge-base' && argv.includes(mbBroken)) throw spawnFailure();
+      if (argv[0] === 'diff' && argv.includes(diffBroken)) throw spawnFailure();
+      return original.apply(this, args);
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const warned = (): string[] => warn.mock.calls.map((c) => c.map(String).join(' '));
+
+    const svc = new GitService(dir, [dir]);
+    expect((await svc.listShadows())?.map((s) => s.id)).toEqual(['run-1/spec']);
+    const lines = warned();
+    expect(lines.some((l) => l.includes('mb-broken') && l.includes('merge-base failed') && l.includes('EAGAIN'))).toBe(true);
+    expect(lines.some((l) => l.includes('mb-broken') && l.includes('no common ancestor'))).toBe(false);
+    expect(lines.some((l) => l.includes('diff-broken') && l.includes('diff failed') && l.includes('EAGAIN'))).toBe(true);
+    expect(lines.some((l) => l.includes('unrelated') && l.includes('no common ancestor'))).toBe(true);
+
+    warn.mockClear();
+    expect(await svc.mergeBase(second, mbBroken)).toBeNull(); // never throws
+    expect(warned().some((l) => l.includes('merge-base failed'))).toBe(true);
+    expect(await svc.resolveShadow('mb-broken')).toBeNull();
+    expect(await svc.mergeBase(second, listed)).toBe(first);
+  });
+
+  it('[review:rev-0002] resolveShadow names a ref exactly — a revision suffix never resolves to a commit that is not a shadow tip', async () => {
+    const inner = await shadow('tmp-inner', first, { 'spec.md': '# spec (shadow 1)\n' });
+    const tip = await shadow('run-1/spec', inner, { 'spec.md': '# spec (shadow 2)\n' });
+    await git(['update-ref', '-d', 'refs/runs/tmp-inner'], dir);
+    await git(['update-ref', 'refs/runs/run-1/spec-sibling', tip], dir);
+
+    const svc = new GitService(dir, [dir]);
+    const before = await repoState();
+    expect(await svc.resolveShadow('run-1/spec')).toEqual({ id: 'run-1/spec', tipSha: tip, baseSha: first, masterAhead: 1 });
+    // `run-1/spec~1` / `^` would name `inner` — not the tip of any shadow ref.
+    for (const id of ['run-1/spec~1', 'run-1/spec^', 'run-1/spec^1', 'run-1/spec^{commit}', 'run-1/spec@{0}', 'run-1/spec@{1}', 'run-1', 'run-1/*', 'run-1/spec*', '', '../heads/main', inner]) {
+      expect(await svc.resolveShadow(id)).toBeNull();
+    }
+    expect(await repoState()).toEqual(before);
+  });
+
+  it('[section:eu1rffp6] the shadow layer is gated on config.git.enabled and a repository — null, never a throw', async () => {
+    const tip = await shadow('run-1/spec', first, { 'spec.md': '# spec (shadow)\n' });
+    writeConfigJson(dir, { enabled: false });
+    const off = new GitService(dir, [dir]);
+    expect(await off.listShadows()).toBeNull();
+    expect(await off.resolveShadow('run-1/spec')).toBeNull();
+    expect(await off.mergeBase(second, tip)).toBeNull();
+    expect(await off.mergeTree(second, tip)).toBeNull();
+
+    const noRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-git-norepo-'));
+    try {
+      writeConfigJson(noRepo, { enabled: true });
+      const svc = new GitService(noRepo, [noRepo]);
+      expect(await svc.listShadows()).toBeNull();
+      expect(await svc.resolveShadow('run-1/spec')).toBeNull();
+      expect(await svc.mergeBase('HEAD', 'HEAD')).toBeNull();
+      expect(await svc.mergeTree('HEAD', 'HEAD')).toBeNull();
+    } finally {
+      fs.rmSync(noRepo, { recursive: true, force: true });
+    }
   });
 });

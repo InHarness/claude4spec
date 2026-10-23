@@ -1,0 +1,12 @@
+{
+  "unit": {
+    "id": "u2-shadow-git-plumbing",
+    "goal": "M28 zyskuje warstwę cieni. Fetch i sync dociągają przestrzeń cieni osobnym pobraniem z wymuszonym nadpisaniem, a prune obejmuje tylko tę przestrzeń. Serwis gita dostaje odczyty: listę cieni z filtrem kwalifikacji, rozstrzyganie cienia, merge-base, próbne scalenie bez dotykania drzewa roboczego, indeksu, HEAD i refów, odczyt pliku z commita, test przodka HEAD oraz diff refów z drzewem po prawej. Nowa trasa REST zwraca listę cieni. Stos wymaga gita w wersji, która umie próbne scalenie, a na starszym zgłasza brak wsparcia. Nic nie jest usuwane."
+  },
+  "diff": "git diff 3a2561cc3b9ba8e9a4ad3fda95f79fbf6544a065..HEAD",
+  "previousReview": ".c4s-impl/review/u2-shadow-git-plumbing.json (round 1 findings rev-0001, rev-0002 — check they are fixed)",
+  "portions": [
+    "u2-shadow-git-plumbing/p1-l4-l4"
+  ],
+  "stateDir": ".c4s-impl/"
+}

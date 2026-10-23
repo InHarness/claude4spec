@@ -19,7 +19,7 @@
  * error recovery).
  */
 
-import { SYSTEM_ROOTS } from '../../shared/root-kinds.js';
+import { KIND_DECLARATIONS, SYSTEM_ROOTS } from '../../shared/root-kinds.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
@@ -33,6 +33,8 @@ import type {
   GitCommitResult,
   GitErrorRecovery,
   GitFetchResponse,
+  GitMergeTreeResult,
+  GitShadow,
   GitSyncResponse,
   GitPushResult,
   GitRefDiff,
@@ -117,8 +119,62 @@ function lockForKey(key: string): GitRepoLock {
 
 const BUSY_MESSAGE = 'A background task is running — try again in a moment.';
 
-/** 2.1.46 (M28): the shadow-ref namespace — excluded from the release-marker search. */
-const SHADOW_REF_PATTERN = 'refs/runs/*';
+/**
+ * 2.1.46 (M28 eu1rffp6 / dadc3w49 / 5eyq89gb): the shadow-ref namespace —
+ * someone else's not-yet-accepted versions of the specification. Excluded from
+ * the release-marker search, fetched by its own forced refspec, listed by
+ * `listShadows()`.
+ */
+const SHADOW_REF_PREFIX = 'refs/runs/';
+const SHADOW_REF_PATTERN = `${SHADOW_REF_PREFIX}*`;
+/** Forced (`+`) — a shadow is rewritten now and then; `--prune` with it touches only this namespace. */
+const SHADOW_REFSPEC = `+${SHADOW_REF_PATTERN}:${SHADOW_REF_PATTERN}`;
+
+/**
+ * 2.1.46 (M28 dadc3w49, review rev-0001): at most this many shadow refs are
+ * checked at once by `listShadows()` (each check = up to two git
+ * subprocesses), so a namespace with hundreds of shadows never fans out into
+ * hundreds of concurrent spawns.
+ */
+export const SHADOW_SCAN_CONCURRENCY = 4;
+
+/** `fn` over `items` with at most `limit` calls in flight; results in input order. */
+async function mapBounded<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]!);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+/**
+ * 2.1.46 (tech-stack row Git): the trial merge `git merge-tree --write-tree`
+ * needs git ≥ 2.38. Older git → `mergeTree()` answers `unsupported` and the
+ * shadow preview falls back to `shadow-only`.
+ */
+const TRIAL_MERGE_MIN_GIT_VERSION = { major: 2, minor: 38 } as const;
+
+/**
+ * Does the git that printed `versionOutput` (`git --version`, e.g.
+ * `git version 2.39.3 (Apple Git-145)`) support the trial merge? An unreadable
+ * version is not a supported one. Pure — the version is injected.
+ */
+export function supportsTrialMerge(versionOutput: string): boolean {
+  const m = versionOutput.match(/(\d+)\.(\d+)/);
+  if (!m) return false;
+  const major = Number(m[1]);
+  const minor = Number(m[2]);
+  const min = TRIAL_MERGE_MIN_GIT_VERSION;
+  return major > min.major || (major === min.major && minor >= min.minor);
+}
+
+/** `git --version` output, read once per process (the binary does not change under a running server). */
+let gitVersionOutput: Promise<string | null> | null = null;
 
 /**
  * 0.1.125: is `name` a valid git ref (branch) name (`git check-ref-format
@@ -1152,7 +1208,10 @@ export class GitService {
    * category (release-flag root dirs + the `releases` root, or single page
    * files, per the caller). Uses
    * `--name-status` (not the brief's literal `git diff <a>..<b>`, which
-   * alone does not produce a parseable `{path, status}` shape). Never throws
+   * alone does not produce a parseable `{path, status}` shape). 2.1.46 (M28
+   * eu1rffp6): the two sides go as two arguments (`git diff <a> <b>`, the same
+   * diff as the `<a>..<b>` range for two commits), so the right side may also
+   * be a TREE SHA — a `mergeTree()` result — which a range does not accept. Never throws
    * — `null` when git is disabled or no repo is detected; an empty
    * `{files: []}` when none of `pathspecs` resolve inside the repo.
    */
@@ -1173,7 +1232,7 @@ export class GitService {
       // comments are in Polish. The naive tab-split below needs raw UTF-8
       // paths to produce a usable `{path, status}` pair.
       const { stdout } = await this.git(
-        ['-c', 'core.quotePath=false', 'diff', '--name-status', `${shaA}..${shaB}`, '--', ...targets],
+        ['-c', 'core.quotePath=false', 'diff', '--name-status', shaA, shaB, '--', ...targets],
         root,
       );
       return { files: this.parseNameStatus(stdout, root) };
@@ -1259,7 +1318,7 @@ export class GitService {
 
   /**
    * 0.1.124 read-only: a file's content at a specific commit (`git show
-   * <sha>:<path>`). `status.rootPath` (from `detect()`, via `git rev-parse
+   * <sha>:<path>`; 2.1.46: `sha` may also be a tree SHA, e.g. a `mergeTree()` result). `status.rootPath` (from `detect()`, via `git rev-parse
    * --show-toplevel`) is always symlink-resolved, so `absPath` is realpath'd
    * first — same reasoning as `diffRefs`'s own per-target realpath loop —
    * tolerating a missing file (it may not exist in the CURRENT working tree
@@ -1388,8 +1447,9 @@ export class GitService {
    *      otherwise `skipped` (also detached/unborn HEAD).
    *   2. `no-upstream` — the current branch has no upstream.
    *   3. `busy` — the repository lock is taken by another git operation.
-   *   4. `git fetch <remote>` (non-interactive, time-limited) → `fetched` with
-   *      ahead/behind; a failure → `error` with git's message.
+   *   4. `git fetch <remote>` (non-interactive, time-limited), then the
+   *      shadow namespace (`fetchShadows`) → `fetched` with ahead/behind; a
+   *      failure of either → `error` with git's message.
    * An agent turn or modified files do NOT block it: a fetch changes neither
    * HEAD nor the working tree, so it never triggers the reload contract. After
    * `fetched`, `git:status-changed { headChanged: false }`. Never throws.
@@ -1414,6 +1474,7 @@ export class GitService {
     const run = lockForKey(root).tryRun(async (): Promise<GitFetchResponse> => {
       try {
         await this.gitNetwork(['fetch', remote], root);
+        await this.fetchShadows(root, remote);
       } catch (err) {
         return { status: 'error', ahead: null, behind: null, message: errMessage(err) };
       }
@@ -1425,6 +1486,19 @@ export class GitService {
     const result = await run;
     if (result.status === 'fetched') this.emitStatusChanged(false);
     return result;
+  }
+
+  /**
+   * 2.1.46 (M28 5eyq89gb): the SEPARATE fetch of the shadow namespace from the
+   * upstream's remote — `git fetch --prune <remote> +refs/runs/*:refs/runs/*`.
+   * Forced, because a shadow is rewritten now and then; pruned, so a
+   * `refs/runs/*` ref deleted on the remote disappears locally. Separate,
+   * because a refspec given on the command line replaces the configured ones
+   * and `--prune` acts on the command-line refspec only — so no ref outside
+   * `refs/runs/` is ever pruned. Throws on failure (callers map it to `error`).
+   */
+  private async fetchShadows(root: string, remote: string): Promise<void> {
+    await this.gitNetwork(['fetch', '--prune', remote, SHADOW_REFSPEC], root);
   }
 
   /**
@@ -1451,8 +1525,9 @@ export class GitService {
    *   1. gate (as `fetch()`) → `skipped` (also detached/unborn HEAD);
    *   2. `no-upstream`;
    *   3. `busy` — the repository lock is taken;
-   *   4. fetch of the upstream's remote (non-interactive, time-limited) —
-   *      a failure → `error` with git's message;
+   *   4. fetch of the upstream's remote (non-interactive, time-limited),
+   *      together with the separate fetch of the shadow namespace
+   *      (`fetchShadows`) — a failure → `error` with git's message;
    *   5. `behind = 0` → `up-to-date`, also when `ahead > 0` (sending is push's job);
    *   6. `busy` — an agent turn mutating disk, checked right before HEAD moves;
    *   7. `ahead = 0` → fast-forward; 8. otherwise → merge on divergence.
@@ -1503,6 +1578,7 @@ export class GitService {
     const unchanged = (response: GitSyncResponse) => ({ response, headChanged: false });
     try {
       await this.gitNetwork(['fetch', remote], root);
+      await this.fetchShadows(root, remote);
     } catch (err) {
       return unchanged(syncResult('error', { message: errMessage(err) }));
     }
@@ -1590,25 +1666,12 @@ export class GitService {
       }
     }
 
-    let tree: string;
-    try {
-      const { stdout } = await this.git(
-        ['merge-tree', '--write-tree', '--name-only', '--no-messages', '-z', headSha, upstreamSha],
-        root,
-      );
-      tree = splitNul(stdout)[0] ?? '';
-    } catch (err) {
-      const e = err as { code?: unknown; stdout?: string };
-      if (e.code === 1 && typeof e.stdout === 'string') {
-        // Exit 1 = conflicts: `<tree>\0<path>\0<path>\0\0` — nothing was written to the worktree.
-        const [, ...rest] = e.stdout.split('\0');
-        const end = rest.indexOf('');
-        const conflicted = [...new Set(end === -1 ? rest : rest.slice(0, end))];
-        return unchanged(syncResult('diverged', { reason: 'conflicts', paths: conflicted }));
-      }
-      return unchanged(syncResult('error', { message: errMessage(err) }));
+    const merged = await this.trialMerge(root, headSha, upstreamSha);
+    if (merged.status === 'conflicts') {
+      return unchanged(syncResult('diverged', { reason: 'conflicts', paths: merged.paths }));
     }
-    if (!tree) return unchanged(syncResult('error', { message: 'git merge-tree returned no tree.' }));
+    if (merged.status === 'error') return unchanged(syncResult('error', { message: merged.message }));
+    const tree = merged.tree;
 
     let mergeSha: string;
     try {
@@ -1699,6 +1762,260 @@ export class GitService {
     const rel = path.relative(root, real);
     if (rel.startsWith('..') || path.isAbsolute(rel)) return null;
     return rel === '' ? '.' : rel.split(path.sep).join('/');
+  }
+
+  /**
+   * `git merge-tree --write-tree <ours> <theirs>` — the in-memory merge shared
+   * by `sync()` and `mergeTree()`. Writes objects to the object database only:
+   * no working tree, no index, no HEAD, no ref, no merge in progress.
+   * `clean` with the result tree; `conflicts` with the conflicted paths (exit
+   * 1: `<tree>\0<path>\0…\0\0`); `error` with git's message otherwise.
+   */
+  private async trialMerge(
+    root: string,
+    ours: string,
+    theirs: string,
+  ): Promise<{ status: 'clean'; tree: string } | { status: 'conflicts'; paths: string[] } | { status: 'error'; message: string }> {
+    try {
+      const { stdout } = await this.git(
+        ['merge-tree', '--write-tree', '--name-only', '--no-messages', '-z', ours, theirs],
+        root,
+      );
+      const tree = splitNul(stdout)[0] ?? '';
+      if (!tree) return { status: 'error', message: 'git merge-tree returned no tree.' };
+      return { status: 'clean', tree };
+    } catch (err) {
+      const e = err as { code?: unknown; stdout?: string };
+      if (e.code === 1 && typeof e.stdout === 'string') {
+        const [, ...rest] = e.stdout.split('\0');
+        const end = rest.indexOf('');
+        return { status: 'conflicts', paths: [...new Set(end === -1 ? rest : rest.slice(0, end))] };
+      }
+      return { status: 'error', message: errMessage(err) };
+    }
+  }
+
+  /**
+   * 2.1.46: the gate of the shadow layer — `config.git.enabled` and a detected
+   * repository; the worktree root, or `null`. Lighter than `detect()` (no
+   * remote/status probe). Never throws.
+   */
+  private async shadowLayerRoot(): Promise<string | null> {
+    let config: ReturnType<typeof readConfig>;
+    try {
+      config = readConfig(this.cwd);
+    } catch {
+      return null;
+    }
+    if (!config.git.enabled) return null;
+    return this.probeRoot();
+  }
+
+  /**
+   * `git merge-base <a> <b>` at `root`; `null` ONLY for a genuine "no common
+   * ancestor" (git's exit 1). Any other failure (a bad revision, a spawn error
+   * such as EAGAIN/EMFILE, a timeout) rejects — the callers tell the two apart.
+   */
+  private async mergeBaseAt(root: string, a: string, b: string): Promise<string | null> {
+    try {
+      return (await this.git(['merge-base', a, b], root)).stdout.trim() || null;
+    } catch (err) {
+      if ((err as { code?: unknown }).code === 1) return null;
+      throw err;
+    }
+  }
+
+  /** `git --version`, read once per process; `null` when it cannot be read (not cached, so a later call retries). */
+  private gitVersion(): Promise<string | null> {
+    gitVersionOutput ??= pexec('git', ['--version'])
+      .then((r) => r.stdout.trim())
+      .catch(() => {
+        gitVersionOutput = null;
+        return null;
+      });
+    return gitVersionOutput;
+  }
+
+  /**
+   * 2.1.46 (M28 dadc3w49): the shadow filter's pathspecs, repository-relative —
+   * the dirs of the roots whose KIND carries the `release` flag (the effective
+   * `pages` roots and the `entities` root today, read from the kind
+   * declarations), minus the `releases` root (a `:(exclude)` pathspec, for a
+   * page root that encloses it). Roots outside the worktree are left out;
+   * `[]` when none is inside.
+   */
+  private shadowPathspecs(root: string): string[] {
+    const releaseDirs = [
+      ...(KIND_DECLARATIONS.pages.flags.release ? this.pageRootDirs : []),
+      ...SYSTEM_ROOTS.filter((r) => KIND_DECLARATIONS[r.kind].flags.release).map((r) => path.resolve(this.cwd, r.dir)),
+    ];
+    const included = new Set<string>();
+    for (const dir of releaseDirs) {
+      const real = realpathOfNearestAncestor(dir);
+      if (!real) continue;
+      const rel = path.relative(root, real);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) continue;
+      included.add(rel === '' ? '.' : rel.split(path.sep).join('/'));
+    }
+    if (included.size === 0) return [];
+    const releases = this.releasesPathspec(root);
+    return releases === null ? [...included] : [...included, `:(exclude)${releases}`];
+  }
+
+  /**
+   * 2.1.46 (M28 dadc3w49, endpoint `get-api-git-shadows`): read-only list of
+   * the shadows — the local `refs/runs/*` refs (fetched by `fetch()`/`sync()`
+   * or created locally) that pass all three filter conditions:
+   *   - a common ancestor with HEAD (otherwise skipped, with a log line);
+   *   - not an ancestor of HEAD (merge-base === tip — already contained in HEAD);
+   *   - `git diff <merge-base> <tip>` touches the release-flag roots, the
+   *     `releases` root excluded (`shadowPathspecs`).
+   * No rejection or hiding beyond that; no `current` field. Gate:
+   * `config.git.enabled` + a detected repository, else `null`. No repository
+   * lock (a read, like the status read). Never throws. One `for-each-ref
+   * --no-merged=<HEAD>` for the namespace (drops the ancestors of HEAD in the
+   * same subprocess), then — per remaining ref, at most
+   * `SHADOW_SCAN_CONCURRENCY` at a time — one `merge-base` and one
+   * `diff --quiet`. A ref whose git command FAILED (as opposed to a genuine
+   * "no common ancestor") is left out with a warning naming the failure.
+   */
+  async listShadows(): Promise<GitShadow[] | null> {
+    const root = await this.shadowLayerRoot();
+    if (!root) return null;
+    const headSha = await this.git(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], root)
+      .then((r) => r.stdout.trim())
+      .catch(() => '');
+    if (!headSha) return []; // unborn HEAD — no ref can share an ancestor with it
+    const pathspecs = this.shadowPathspecs(root);
+    if (pathspecs.length === 0) return [];
+    const refs = await this.shadowRefs(root, SHADOW_REF_PREFIX, headSha);
+    if (refs.length === 0) return [];
+    const kept = await mapBounded(refs, SHADOW_SCAN_CONCURRENCY, async (shadow): Promise<GitShadow | null> => {
+      let base: string | null;
+      try {
+        base = await this.mergeBaseAt(root, headSha, shadow.tipSha);
+      } catch (err) {
+        console.warn(`[git] shadow ${shadow.id}: merge-base failed — not listed:`, errMessage(err));
+        return null;
+      }
+      if (!base) {
+        console.warn(`[git] shadow ${shadow.id} has no common ancestor with HEAD — not listed`);
+        return null;
+      }
+      return (await this.diffTouches(root, base, shadow.tipSha, pathspecs, shadow.id)) ? shadow : null;
+    });
+    return kept.filter((s): s is GitShadow => s !== null);
+  }
+
+  /**
+   * The commit-pointing refs `for-each-ref` matches with `pattern` (the whole
+   * namespace, or one `refs/runs/<id>` and the refs below it), in refname
+   * order; with `noMergedInto`, only those whose tip is NOT reachable from it.
+   * Never throws (a failure → `[]`, with a warning).
+   */
+  private async shadowRefs(root: string, pattern: string, noMergedInto?: string): Promise<GitShadow[]> {
+    const format = '%(objecttype)%00%(refname)%00%(objectname)%00%(committerdate:iso-strict)%00%(subject)';
+    const args = ['for-each-ref', `--format=${format}`, ...(noMergedInto ? [`--no-merged=${noMergedInto}`] : []), pattern];
+    const stdout = await this.git(args, root)
+      .then((r) => r.stdout)
+      .catch((err) => {
+        console.warn('[git] shadow ref listing failed:', errMessage(err));
+        return '';
+      });
+    const shadows: GitShadow[] = [];
+    for (const line of stdout.split('\n')) {
+      const [type, refname, tipSha, tipCommittedAt, tipSubject] = line.split('\0');
+      if (type !== 'commit' || !refname?.startsWith(SHADOW_REF_PREFIX) || !tipSha) continue;
+      shadows.push({
+        id: refname.slice(SHADOW_REF_PREFIX.length),
+        tipSha,
+        tipCommittedAt: tipCommittedAt ?? '',
+        tipSubject: tipSubject ?? '',
+      });
+    }
+    return shadows;
+  }
+
+  /**
+   * Does `git diff <from> <to> -- <pathspecs>` report any change? A failed
+   * command (anything but exit 0/1) → `false`, with a warning that names the
+   * shadow and the failure — never mistaken for "no change" silently.
+   */
+  private async diffTouches(root: string, from: string, to: string, pathspecs: string[], id: string): Promise<boolean> {
+    try {
+      await this.git(['diff', '--quiet', '--no-ext-diff', from, to, '--', ...pathspecs], root);
+      return false; // exit 0 — no difference
+    } catch (err) {
+      if ((err as { code?: unknown }).code === 1) return true; // exit 1 — differences
+      console.warn(`[git] shadow ${id}: diff failed — not listed:`, errMessage(err));
+      return false;
+    }
+  }
+
+  /**
+   * 2.1.46 (M28 eu1rffp6): resolve one shadow by id (the ref name without the
+   * `refs/runs/` prefix). `baseSha` = merge-base(HEAD, tip), `masterAhead` =
+   * commits in `base..HEAD`. `null` when the ref does not exist, has no common
+   * ancestor with HEAD or is already an ancestor of HEAD; also git off / no
+   * repository. Read-only, no lock, never throws. The id names a ref EXACTLY:
+   * it is never interpolated into a revision expression, so `run-1/spec~1`,
+   * `run-1/spec@{1}` or `run-1/spec^` (no ref has such a name) resolve to
+   * `null`, never to a commit that is not a shadow's tip. A git failure → `null`
+   * with a warning.
+   */
+  async resolveShadow(
+    id: string,
+  ): Promise<{ id: string; tipSha: string; baseSha: string; masterAhead: number } | null> {
+    const root = await this.shadowLayerRoot();
+    if (!root) return null;
+    const tipSha = (await this.shadowRefs(root, `${SHADOW_REF_PREFIX}${id}`)).find((s) => s.id === id)?.tipSha;
+    if (!tipSha) return null;
+    let baseSha: string | null;
+    try {
+      baseSha = await this.mergeBaseAt(root, 'HEAD', tipSha);
+    } catch (err) {
+      console.warn(`[git] resolveShadow ${id}: merge-base failed:`, errMessage(err));
+      return null;
+    }
+    if (!baseSha || baseSha === tipSha) return null;
+    const masterAhead = await this.git(['rev-list', '--count', `${baseSha}..HEAD`], root)
+      .then((r) => Number(r.stdout.trim()))
+      .catch(() => NaN);
+    if (!Number.isFinite(masterAhead)) return null;
+    return { id, tipSha, baseSha, masterAhead };
+  }
+
+  /** 2.1.46 (M28 eu1rffp6): `git merge-base <a> <b>`; `null` without a common ancestor, git off or no repository. Never throws. */
+  async mergeBase(a: string, b: string): Promise<string | null> {
+    const root = await this.shadowLayerRoot();
+    if (!root) return null;
+    return this.mergeBaseAt(root, a, b).catch((err) => {
+      console.warn('[git] merge-base failed:', errMessage(err));
+      return null;
+    });
+  }
+
+  /**
+   * 2.1.46 (M28 eu1rffp6, tech-stack row Git): trial merge —
+   * `git merge-tree --write-tree <ours> <theirs>`. Touches neither the working
+   * tree, HEAD, the index nor any ref; writes objects only (ordinary `gc`
+   * reclaims them). `unsupported` follows from reading git's version (< 2.38,
+   * `supportsTrialMerge`), not from a failing command; another failure (also an
+   * unreadable version) → `error`. `null` when git is off or no repository.
+   * No lock, never throws.
+   */
+  async mergeTree(ours: string, theirs: string): Promise<GitMergeTreeResult | null> {
+    const root = await this.shadowLayerRoot();
+    if (!root) return null;
+    const version = await this.gitVersion();
+    if (version === null) return { status: 'error' };
+    if (!supportsTrialMerge(version)) return { status: 'unsupported' };
+    const merged = await this.trialMerge(root, ours, theirs);
+    if (merged.status === 'error') {
+      console.warn('[git] mergeTree failed:', merged.message);
+      return { status: 'error' };
+    }
+    return merged;
   }
 
   /** Local branch names (`git branch --format=%(refname:short)`) at an already-detected `rootPath`. */
