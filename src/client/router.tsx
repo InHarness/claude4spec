@@ -4,7 +4,6 @@ import {
   createRootRouteWithContext,
   createRoute,
   useParams,
-  useSearch,
   useNavigate,
   useRouter,
   Navigate,
@@ -12,7 +11,6 @@ import {
   type AnyRoute,
 } from '@tanstack/react-router';
 import type { QueryClient } from '@tanstack/react-query';
-import { z } from 'zod';
 import { RootLayout } from './App.js';
 import { EditorToolbar } from './components/EditorToolbar.js';
 import { HomeEmptyState } from './components/HomeEmptyState.js';
@@ -90,12 +88,8 @@ export interface RouterContext {
   queryClient: QueryClient;
 }
 
-// 0.1.122: `/releases` gained a Compare tab (release vs. current unreleased
-// state) alongside the existing releases list — deep-linkable via `?tab=compare`
-// (the unreleased-changes counter links here, presetting `latest → current`).
-const releasesSearchSchema = z.object({
-  tab: z.enum(['list', 'compare']).optional(),
-});
+// 2.1.45: `/releases` takes no search params — its List / Compare tabs are
+// screen state (`ReleasesPage`), and the Compare deep link is gone.
 
 /**
  * M33 phase 3: the single host root route. Exported so a `RouteTreeFragment`
@@ -193,7 +187,6 @@ const settingsRoute = createRoute({
 const releasesIndexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/releases',
-  validateSearch: releasesSearchSchema,
   component: ReleasesIndexRoute,
 });
 
@@ -528,17 +521,9 @@ function LinksIndexRoute() {
 }
 
 function ReleasesIndexRoute() {
-  const search = useSearch({ from: '/releases' });
-  const navigate = useNavigate();
-  const tab = search.tab ?? 'list';
   return (
     <RoutePane>
-      <ReleasesPage
-        tab={tab}
-        onTabChange={(id) =>
-          navigate({ to: '/releases', search: (prev) => ({ ...prev, tab: id === 'list' ? undefined : 'compare' }) })
-        }
-      />
+      <ReleasesPage />
     </RoutePane>
   );
 }

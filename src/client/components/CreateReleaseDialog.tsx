@@ -7,7 +7,7 @@
  */
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { useCreateRelease } from '../hooks/useReleases.js';
+import { useCreateRelease, useUnreleasedCount } from '../hooks/useReleases.js';
 import { ApiError } from '../lib/api-core.js';
 import { surfaceGitSync } from '../ui/events.js';
 import { MAX_RELEASE_DESCRIPTION_LENGTH, releaseDescriptionLength } from '../../shared/entities.js';
@@ -25,6 +25,13 @@ export function CreateReleaseDialog({ onClose }: Props) {
   const tooLongMessage = `Description must be at most ${MAX_RELEASE_DESCRIPTION_LENGTH} characters — keep it a short statement of intent`;
   const navigate = useNavigate();
   const create = useCreateRelease();
+  // 2.1.45 (M17 d8871ce9 / hybasevj): an empty release — the shared unreleased
+  // counter equal to 0 — is allowed; the window only warns and never blocks.
+  // Without any release the counter does not exist (`undefined`): no warning.
+  // The window opens over `/releases`, which already holds the counter: read
+  // it, do not refetch it on open.
+  const { data: unreleasedCount } = useUnreleasedCount({ refetchOnMount: false });
+  const emptyRelease = unreleasedCount === 0;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -107,6 +114,16 @@ export function CreateReleaseDialog({ onClose }: Props) {
         </div>
 
         <div className="px-5 py-4 space-y-3">
+          {emptyRelease && (
+            <div
+              role="status"
+              data-testid="create-release-empty-warning"
+              className="text-[12px] rounded-md px-2.5 py-1.5"
+              style={{ background: 'var(--c-accent-soft)', color: 'var(--c-accent-ink)' }}
+            >
+              No changes since last release
+            </div>
+          )}
           <label className="block">
             <span
               className="block text-[11px] uppercase tracking-wider font-mono font-semibold mb-1"

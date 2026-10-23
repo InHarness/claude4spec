@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient, type QueryClient, type UseQueryOptions } from '@tanstack/react-query';
 import { releasesApi } from '../lib/releases-api.js';
+import { CURRENT_RELEASE_NAME } from '../../shared/entities.js';
+import { unreleasedCountOf } from '../../shared/unreleased-counter.js';
 import { releasesService } from '../runtime/releases-service.js';
 import { releasePushesKey } from './useReleasePushes.js';
 
@@ -9,10 +11,11 @@ import { releasePushesKey } from './useReleasePushes.js';
  * (`description`, `createdBy`, `createdAt`). Host-only: the plugin surface gets
  * the narrower label mirror below.
  */
-export function useReleaseList() {
+export function useReleaseList(opts: { refetchOnMount?: boolean } = {}) {
   return useQuery({
     queryKey: ['releases'],
     queryFn: () => releasesService.listReleases(),
+    ...(opts.refetchOnMount === false ? { refetchOnMount: false } : {}),
   });
 }
 
@@ -41,12 +44,51 @@ export function useRelease(name: string | undefined) {
   });
 }
 
-/** Count of unreleased captures at HEAD — for the "You have N unreleased changes" banner. */
-export function useUnreleasedCount() {
-  return useQuery({
-    queryKey: ['releases', 'unreleased-count'],
-    queryFn: () => releasesApi.unreleasedCount(),
-  });
+/**
+ * 2.1.45 (M17 L5 "Stan → Zapytania") — the key of the unreleased counter:
+ * `['release-diff', <newest release>, 'current', { summaryOnly: true }]`. It
+ * shares the `['release-diff', <from>, 'current']` prefix with the Compare
+ * tab's diff, so one invalidation of the diffs against `current`
+ * (`release-diff-invalidation.ts`) refreshes both.
+ */
+export function unreleasedCounterKey(latestReleaseName: string) {
+  return ['release-diff', latestReleaseName, 'current', { summaryOnly: true }] as const;
+}
+
+/**
+ * 2.1.45 (M17 L2 zbc9jdnr) — THE unreleased counter, the one shared frontend
+ * query every consumer reads (Compare tab label, create-release warning, M25
+ * banner): the size of the light `release_diff` delta from the newest release
+ * (the head of the newest-first `['releases']` list) to `current` — changed
+ * entities plus changed pages (`unreleasedCountOf`), not a count of versions.
+ * Without any release the counter does not exist: `data` is `undefined`.
+ *
+ * No query exists until the newest release's name is known: the counter is
+ * observed through `useQueries` with an empty list while `['releases']` is
+ * loading (or empty), so no placeholder entry such as
+ * `['release-diff', '', 'current', …]` is ever created in the cache — every
+ * mount before the list resolves would otherwise leave a junk, disabled query
+ * (and an observer re-bound on the key change) behind.
+ */
+export function useUnreleasedCount(opts: { refetchOnMount?: boolean } = {}): { data: number | undefined } {
+  const { data: releases } = useReleaseList(opts);
+  const latest = releases?.[0]?.name;
+  const queries: Array<UseQueryOptions<number, Error, number, ReturnType<typeof unreleasedCounterKey>>> =
+    latest == null
+      ? []
+      : [
+          {
+            queryKey: unreleasedCounterKey(latest),
+            queryFn: async () => unreleasedCountOf((await releasesApi.diffSummary(latest, CURRENT_RELEASE_NAME)).total),
+            // A consumer mounted under a screen that already observes the counter
+            // (the create-release window) passes `false`: it reads the cached
+            // value, kept fresh by the WS invalidation map, instead of refetching
+            // it on open. With nothing cached yet the query still loads.
+            ...(opts.refetchOnMount === false ? { refetchOnMount: false } : {}),
+          },
+        ];
+  const data = useQueries({ queries, combine: (results): number | undefined => results[0]?.data });
+  return { data };
 }
 
 export function useReleaseDiff(

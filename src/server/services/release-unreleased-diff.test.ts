@@ -19,6 +19,11 @@ import { readConfig } from '../config.js';
 import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import type { TagsService } from './tags.js';
 import type { PagesService } from './pages.js';
+import express from 'express';
+import request from 'supertest';
+import { releasesRouter } from '../routes/releases.js';
+import { errorHandler } from '../routes/errors.js';
+import { unreleasedCountOf } from '../../shared/unreleased-counter.js';
 
 // 0.1.122: `getCurrentSnapshot`/`getUnreleasedDiff` never touch git-anchoring,
 // readConfig, or the on-disk release store — an in-memory DB + these fakes is
@@ -414,6 +419,102 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       const res = await releaseDiffTool()({ fromReleaseName: null, toReleaseName: 'current' });
       expect(res.isError).toBe(true);
       expect(res.body.code).toBe('INVALID_DIFF_RANGE');
+    });
+  });
+
+  /**
+   * 2.1.45 (M17 L2 zbc9jdnr) — the unreleased counter is the size of the LIGHT
+   * delta newest release → `current`, read through the very route the client's
+   * shared counter query calls (`view=operation&summaryOnly=true`) and summed
+   * by the same function (`unreleasedCountOf`). A diff result, never a count of
+   * versions.
+   */
+  describe('unreleased counter — light delta newest release → current (2.1.45)', () => {
+    async function counter(latest: string) {
+      const app = express().use(express.json()).use('/api/releases', releasesRouter(releases)).use(errorHandler);
+      const res = await request(app).get(
+        `/api/releases/${encodeURIComponent(latest)}/diff/current?view=operation&summaryOnly=true`,
+      );
+      expect(res.status).toBe(200);
+      const data = res.body.data as {
+        total: { entities?: number; pages?: number };
+        entities: Array<Record<string, unknown>>;
+        pages: Array<Record<string, unknown>>;
+      };
+      return { count: unreleasedCountOf(data.total), data };
+    }
+
+    function unreleasedVersionRows(): number {
+      const e = db.prepare('SELECT COUNT(*) AS n FROM entity_version WHERE release_id IS NULL').get() as { n: number };
+      const p = db.prepare('SELECT COUNT(*) AS n FROM file_version WHERE release_id IS NULL').get() as { n: number };
+      return e.n + p.n;
+    }
+
+    it('[ac:ac-licznik-niezreleasowanych-zmian-rowna] the counter equals changed entities + changed pages of the light release_diff newest release → current', async () => {
+      const v1 = insertRelease('v1');
+      insertEntityVersion({ slug: 'e1', version: 1, data: { title: 'a' }, releaseId: v1 });
+      insertEntityVersion({ slug: 'e2', version: 1, data: { title: 'untouched' }, releaseId: v1 });
+      insertEntityVersion({ slug: 'e3', version: 1, data: { title: 'doomed' }, releaseId: v1 });
+      insertPageVersion({ path: 'a.md', version: 1, data: { content: 'a' }, releaseId: v1 });
+      insertPageVersion({ path: 'same.md', version: 1, data: { content: 's' }, releaseId: v1 });
+      // The NEWEST release on the axis is v2 — the counter is measured against it.
+      const v2 = insertRelease('v2');
+      insertEntityVersion({ slug: 'e1', version: 2, data: { title: 'a in v2' }, releaseId: v2, op: 'update' });
+      // Unreleased work: an edit, a deletion, a new entity, a page edit, a new page.
+      insertEntityVersion({ slug: 'e1', version: 3, data: { title: 'a after v2' }, releaseId: null, op: 'update' });
+      insertEntityVersion({ slug: 'e3', version: 2, data: null, releaseId: null, op: 'delete' });
+      insertEntityVersion({ slug: 'e4', version: 1, data: { title: 'new' }, releaseId: null });
+      insertPageVersion({ path: 'a.md', version: 2, data: { content: 'a edited' }, releaseId: null, op: 'update' });
+      insertPageVersion({ path: 'new.md', version: 1, data: { content: 'new page' }, releaseId: null });
+
+      const { count, data } = await counter('v2');
+
+      expect(data.total).toEqual({ entities: 3, pages: 2 });
+      expect(count).toBe(5);
+      // The light map is complete (windows ignored), so the counter is exactly its rows.
+      expect(data.entities.map((e) => [e.slug, e.op]).sort()).toEqual([
+        ['e1', 'update'],
+        ['e3', 'delete'],
+        ['e4', 'create'],
+      ]);
+      expect(data.pages.map((p) => `${p.rootId}/${p.path}`).sort()).toEqual(['pages/a.md', 'pages/new.md']);
+      expect(count).toBe(data.entities.length + data.pages.length);
+    });
+
+    it('[ac:ac-trzy-kolejne-edycje-jednej-encji-po-o] three successive edits of one entity after the last release give an unreleased counter of 1', async () => {
+      const v1 = insertRelease('v1');
+      insertEntityVersion({ slug: 'e1', version: 1, data: { title: 'released' }, releaseId: v1 });
+      insertEntityVersion({ slug: 'e1', version: 2, data: { title: 'edit 1' }, releaseId: null, op: 'update' });
+      insertEntityVersion({ slug: 'e1', version: 3, data: { title: 'edit 2' }, releaseId: null, op: 'update' });
+      insertEntityVersion({ slug: 'e1', version: 4, data: { title: 'edit 3' }, releaseId: null, op: 'update' });
+
+      const { count, data } = await counter('v1');
+
+      // Three unreleased versions …
+      expect(unreleasedVersionRows()).toBe(3);
+      // … are ONE change of one element.
+      expect(count).toBe(1);
+      expect(data.entities).toEqual([expect.objectContaining({ slug: 'e1', op: 'update' })]);
+    });
+
+    it('[ac:ac-zmiana-cofnieta-do-stanu-z-najnowszeg] a change reverted to the state of the newest release gives an unreleased counter of 0', async () => {
+      const v1 = insertRelease('v1');
+      insertEntityVersion({ slug: 'e1', version: 1, data: { title: 'released' }, releaseId: v1 });
+      insertPageVersion({ path: 'a.md', version: 1, data: { content: 'released' }, releaseId: v1 });
+      // Edited, then put back to exactly what v1 holds — entity and page alike.
+      insertEntityVersion({ slug: 'e1', version: 2, data: { title: 'changed' }, releaseId: null, op: 'update' });
+      insertEntityVersion({ slug: 'e1', version: 3, data: { title: 'released' }, releaseId: null, op: 'update' });
+      insertPageVersion({ path: 'a.md', version: 2, data: { content: 'changed' }, releaseId: null, op: 'update' });
+      insertPageVersion({ path: 'a.md', version: 3, data: { content: 'released' }, releaseId: null, op: 'update' });
+
+      const { count, data } = await counter('v1');
+
+      // Versions without a release exist, but nothing differs from the release.
+      expect(unreleasedVersionRows()).toBe(4);
+      expect(count).toBe(0);
+      expect(data.total).toEqual({ entities: 0, pages: 0 });
+      expect(data.entities).toEqual([]);
+      expect(data.pages).toEqual([]);
     });
   });
 

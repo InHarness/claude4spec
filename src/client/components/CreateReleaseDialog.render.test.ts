@@ -119,6 +119,10 @@ beforeEach(() => {
       if (path === '/api/releases' && method === 'POST') {
         return new Response(JSON.stringify(createResponse), { status: 201 });
       }
+      // 2.1.45: the dialog reads the shared unreleased counter, which first lists releases.
+      if (path === '/api/releases' && method === 'GET') {
+        return new Response(JSON.stringify({ releases: [] }), { status: 200 });
+      }
       return new Response(JSON.stringify({}), { status: 200 });
     }),
   );

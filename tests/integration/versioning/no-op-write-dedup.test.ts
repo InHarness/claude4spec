@@ -99,7 +99,7 @@ describe('a write that changes no content writes no version row', () => {
    * recreated with its pre-delete content compares equal to it. Withholding that
    * row would leave the log's head reading `delete` for something that exists —
    * and every consumer of the head reads that as "gone": release restore would
-   * delete the live file, and `countUnreleased` would see nothing to release.
+   * delete the live file, and the next release would see nothing to release.
    * Resurrection is a genuine change of state, so it always records.
    */
   it('records a row when a deleted page is recreated with its pre-delete content', async () => {

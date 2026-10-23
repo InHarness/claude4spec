@@ -171,7 +171,6 @@ describe('release tier across a root rename (0.2.101)', () => {
     insertPageVersion({ rootId: 'docs', path: 'b.md', version: 1, content: 'after', releaseId: null });
 
     const versions = new FileVersionService(db, fakeFileSerializer, (id) => rootIdChain(TRANSITIONS, id));
-    expect(versions.countUnreleased(['docs'])).toBe(2);
     const relId = insertRelease('r1');
     expect(versions.assignToRelease(relId, ['docs'])).toBe(2);
   });

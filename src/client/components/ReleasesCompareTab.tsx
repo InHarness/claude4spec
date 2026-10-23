@@ -6,14 +6,17 @@ import { DeltaSection } from './release/DeltaSection.js';
 import { ReleaseSelect } from './release/ReleaseSelect.js';
 
 /**
- * `/releases` Compare tab (0.1.122) — diff a chosen release against the live
- * unreleased spec state (`GET /api/releases/<release>/diff/current`).
- * Defaults to the latest release (`latestReleaseId` — the first element of the
- * newest-first `GET /api/releases`, i.e. the latest on the release axis), matching the
- * "latest → current" preset used by the unreleased-changes counter deep-link.
+ * `/releases` Compare tab (0.1.122) — the changes from a chosen release to the
+ * current state (`GET /api/releases/<release>/diff/current`), the only compare
+ * direction. Defaults to the latest release (`latestReleaseId` — the first
+ * element of the newest-first `GET /api/releases`, i.e. the latest on the
+ * release axis). Its diff key `['release-diff', <from>, 'current']` shares the
+ * prefix of the unreleased counter's key, so one invalidation refreshes both.
  */
 export function ReleasesCompareTab() {
-  const { data: releases = [], isLoading } = useReleaseList();
+  // Mounted under /releases, which already observes (and WS-invalidates) the
+  // release list: the first visit of the tab reads it from cache.
+  const { data: releases = [], isLoading } = useReleaseList({ refetchOnMount: false });
   const latest = releases[0] ?? null;
   const latestReleaseId = latest?.id ?? null;
   const [selectedName, setSelectedName] = useState<string | null>(null);
@@ -41,7 +44,7 @@ export function ReleasesCompareTab() {
       <div className="mx-auto" style={{ maxWidth: 920, padding: '24px 32px 48px' }}>
         <div className="flex items-center gap-2 mb-4 text-[12.5px]" style={{ color: 'var(--c-muted)' }}>
           <GitCompare size={14} style={{ color: 'var(--c-accent)' }} />
-          <span>Compare:</span>
+          <span>Compare current state to release:</span>
           <ReleaseSelect
             releases={releases}
             value={activeName ?? ''}

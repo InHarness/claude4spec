@@ -6,6 +6,7 @@ import type {
   SpecSnapshot,
   UpdateReleaseResponse,
 } from '../../shared/entities.js';
+import type { UnreleasedDeltaTotal } from '../../shared/unreleased-counter.js';
 import { handle, apiFetch } from './api-core.js';
 
 export interface RestoreEntityResponse {
@@ -32,10 +33,18 @@ export const releasesApi = {
     const data = await handle<{ releases: Release[] }>(await apiFetch('/api/releases'));
     return data.releases;
   },
-  /** Count of unreleased captures at HEAD (drives the M25 banner on the latest release). */
-  async unreleasedCount(): Promise<number> {
-    const data = await handle<{ count: number }>(await apiFetch('/api/releases/unreleased-count'));
-    return data.count;
+  /**
+   * 2.1.45 (M17 zbc9jdnr) — the LIGHT delta map (`view=operation&summaryOnly=true`)
+   * between two releases, or a release and `current`. Only `total` is typed: it
+   * is what the unreleased counter reads (`unreleasedCountOf`).
+   */
+  async diffSummary(from: string, to: string): Promise<{ total?: UnreleasedDeltaTotal }> {
+    const data = await handle<{ data: { total?: UnreleasedDeltaTotal } }>(
+      await apiFetch(
+        `/api/releases/${encodeURIComponent(from)}/diff/${encodeURIComponent(to)}?view=operation&summaryOnly=true`,
+      ),
+    );
+    return data.data;
   },
   async create(input: { name: string; description: string }): Promise<CreateReleaseResponse> {
     return handle<CreateReleaseResponse>(

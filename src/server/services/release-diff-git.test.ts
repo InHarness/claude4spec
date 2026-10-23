@@ -17,6 +17,11 @@ import type { FileVersionService } from './file-version.js';
 import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import type { TagsService } from './tags.js';
 import type { PagesService } from './pages.js';
+import express from 'express';
+import request from 'supertest';
+import { releasesRouter } from '../routes/releases.js';
+import { errorHandler } from '../routes/errors.js';
+import { unreleasedCountOf } from '../../shared/unreleased-counter.js';
 
 const pexec = promisify(execFile);
 
@@ -1096,6 +1101,121 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
       const tracked = (await git(['ls-tree', '-r', '--name-only', 'HEAD'], dir)).split('\n');
       expect(tracked).toContain('.claude4spec/releases/v1-renamed.json');
       expect(tracked).not.toContain('.claude4spec/releases/v1.json');
+    });
+  });
+
+  /**
+   * 2.1.45 (M17 L2 zbc9jdnr, d8871ce9; L5 m17ui001 "Stan") — with git ON the
+   * unreleased counter counts only uncommitted work. A git change made outside
+   * the app emits no event, so the `/releases` list shows it on its next fetch:
+   * these tests read the counter exactly as that fetch does — the newest release
+   * from `GET /api/releases` (head of the newest-first list), then the light
+   * delta `GET /api/releases/<newest>/diff/current?view=operation&summaryOnly=true`
+   * summed by `unreleasedCountOf`. The client half (a reopened list shows the
+   * fresh value) is in `src/client/components/ReleasesPage.render.test.ts`.
+   */
+  describe('unreleased counter after git changes made outside the app (2.1.45)', () => {
+    function insertReleaseRow(name: string, createdAt: string): number {
+      return Number(
+        db
+          .prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES (?, ?, ?, ?, ?)`)
+          .run(name, name, `Release ${name}`, 'user', createdAt).lastInsertRowid,
+      );
+    }
+
+    async function counterAsListFetchesIt(releaseService: ReleaseService): Promise<{ newest: string; count: number }> {
+      const app = express().use(express.json()).use('/api/releases', releasesRouter(releaseService)).use(errorHandler);
+      const list = await request(app).get('/api/releases');
+      expect(list.status).toBe(200);
+      const newest = (list.body.releases as Array<{ name: string }>)[0]!.name;
+      const res = await request(app).get(
+        `/api/releases/${encodeURIComponent(newest)}/diff/current?view=operation&summaryOnly=true`,
+      );
+      expect(res.status).toBe(200);
+      return { newest, count: unreleasedCountOf(res.body.data.total) };
+    }
+
+    it('[ac:ac-po-commicie-z-terminala-zmian-zrobion] committing from a terminal the changes made since the last release brings the counter the reopened list reads to 0', async () => {
+      const pagesDir = path.join(dir, 'pages');
+      fs.mkdirSync(pagesDir, { recursive: true });
+      const { releaseService, releaseStore } = buildReleaseService(pagesDir);
+
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v1');
+      insertReleaseRow('v1', '2026-01-01T00:00:00.000Z');
+      releaseStore.write('v1', {
+        name: 'v1',
+        slug: 'v1',
+        description: 'Release v1',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        createdBy: 'user',
+        roots: ['pages'],
+      });
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'v1'], dir);
+
+      // Work since the last release: one page edited, one page added.
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A edited after v1');
+      fs.writeFileSync(path.join(pagesDir, 'b.md'), '# B new after v1');
+      expect(await counterAsListFetchesIt(releaseService)).toEqual({ newest: 'v1', count: 2 });
+
+      // A plain commit from the terminal — no release, no app involvement.
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'terminal commit'], dir);
+
+      expect(await counterAsListFetchesIt(releaseService)).toEqual({ newest: 'v1', count: 0 });
+    });
+
+    it("[ac:ac-po-merge-u-gita-ktory-przyniosl-plik] a git merge that brings a release file which becomes the newest together with content changes leaves the counter the reopened list reads at 0", async () => {
+      const pagesDir = path.join(dir, 'pages');
+      fs.mkdirSync(pagesDir, { recursive: true });
+      const { releaseService, releaseStore } = buildReleaseService(pagesDir);
+
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v1');
+      fs.writeFileSync(path.join(pagesDir, 'c.md'), '# C v1');
+      insertReleaseRow('v1', '2026-01-01T00:00:00.000Z');
+      releaseStore.write('v1', {
+        name: 'v1',
+        slug: 'v1',
+        description: 'Release v1',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        createdBy: 'user',
+        roots: ['pages'],
+      });
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'v1'], dir);
+      const v1Sha = (await git(['rev-parse', 'HEAD'], dir)).trim();
+
+      // Another line of work: content changes plus release v2's file, newer on the axis.
+      await git(['checkout', '-b', 'feature'], dir);
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A changed on feature');
+      fs.writeFileSync(path.join(pagesDir, 'd.md'), '# D added on feature');
+      releaseStore.write('v2', {
+        name: 'v2',
+        slug: 'v2',
+        description: 'Release v2',
+        createdAt: '2026-02-01T00:00:00.000Z',
+        createdBy: 'user',
+        roots: ['pages'],
+      });
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'v2 with content'], dir);
+
+      // Meanwhile on main: an unrelated committed change, so the merge is a real merge commit.
+      await git(['checkout', 'main'], dir);
+      fs.writeFileSync(path.join(pagesDir, 'c.md'), '# C changed on main');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'main work'], dir);
+
+      await git(['merge', '--no-ff', '--no-edit', 'feature'], dir);
+      // The release-file indexer puts the pulled release on the axis (M29) — here
+      // directly as its cache row; it assigns it no versions.
+      insertReleaseRow('v2', '2026-02-01T00:00:00.000Z');
+
+      // The merge brought content changes alongside the release file…
+      const merged = (await git(['diff', '--name-only', v1Sha, 'HEAD'], dir)).split('\n');
+      expect(merged).toEqual(expect.arrayContaining(['pages/a.md', 'pages/d.md', '.claude4spec/releases/v2.json']));
+      // …and the pulled release is the newest: the counter reads 0.
+      expect(await counterAsListFetchesIt(releaseService)).toEqual({ newest: 'v2', count: 0 });
     });
   });
 });
