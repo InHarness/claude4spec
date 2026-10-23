@@ -1,0 +1,28 @@
+{
+  "scope": "system",
+  "round": 2,
+  "env": "2-1-44-to-2-1-45",
+  "sha": "70aea01a30d2997b703c3419aa9a5a56e27bfb0d",
+  "npmTest": {
+    "exit": 1,
+    "files": "1 failed | 555 passed",
+    "tests": "1 failed | 6611 passed",
+    "failed": [
+      "src/server/routes/chat.live-join.test.ts (15 s timeout) — not touched by the branch; 3/3 green run alone in the same container → flake"
+    ]
+  },
+  "e2e": {
+    "exit": 1,
+    "files": "5 failed | 35 passed",
+    "tests": "3 failed | 201 passed | 19 skipped",
+    "failed": [
+      "artifact-threads-panel, plan-footer, entity-version-history, envelope-entity-pages: 'seed one first' — known Dane: empty seed gaps",
+      "ac-envelope '/ac is offered once' — not touched by the branch; 3/3 green run alone → cross-file interference/flake"
+    ]
+  },
+  "fixedFromRound1": [
+    "ac-okno-tworzenia-release-u-ostrzega-no",
+    "ac-po-udanym-pull-in-unreleased-changes"
+  ],
+  "verdict": "green except known noise"
+}

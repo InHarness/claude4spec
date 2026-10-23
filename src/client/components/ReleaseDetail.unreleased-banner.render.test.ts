@@ -103,11 +103,46 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
-async function settle(ms = 0) {
+/**
+ * One step of the page: advance the fake clock inside `act`, which flushes
+ * React. A step is never shorter than 1 ms. React Query hands a result to its
+ * observers through notifyManager's `setTimeout(cb, 0)` — a FAKE timer here —
+ * and when that result lands while the fake clock is mid-tick (a refetch
+ * started by a fake timer, e.g. the watcher's 500 ms batcher), vitest's fake
+ * timers register the `0` delay as `now + 1`. A 0 ms step never reaches it, so
+ * the cache would hold the new value while the screen never re-renders.
+ */
+async function settle(ms = 1) {
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(ms);
+    await vi.advanceTimersByTimeAsync(Math.max(ms, 1));
   });
 }
+
+/**
+ * Step the page (one `settle()` per step) until `done()` holds — at most `max`
+ * steps. A fixed number of steps is not enough: a query result travels over
+ * event-loop turns and reaches the screen only through the notify timer above,
+ * run by a later step. Callers wait on what the user sees (the DOM), not on the
+ * cache: the cache can hold the new value before the screen shows it.
+ */
+async function settleUntil(done: () => boolean, what: string, max = 200) {
+  for (let i = 0; i < max && !done(); i += 1) await settle();
+  if (!done()) throw new Error(`still waiting for ${what} after ${max} steps`);
+}
+
+/**
+ * Wait until nothing is fetching or mutating, then run the observers'
+ * notification of the last result (a `setTimeout(0)` registered when the cache
+ * was written, due within 1 ms — each step advances at least that) so the DOM
+ * shows what the cache holds — as a user sees it once the page is idle.
+ */
+async function settleQueries() {
+  await settleUntil(() => qc.isFetching() === 0 && qc.isMutating() === 0, 'queries to settle');
+  await settle();
+  await settle();
+}
+
+const counterKey = (latest: string) => ['release-diff', latest, 'current', { summaryOnly: true }];
 
 /** The page as the app mounts it: under the app-wide WS watcher. */
 function Screen({ name }: { name: string }) {
@@ -119,8 +154,16 @@ async function mount(name: string) {
   await act(async () => {
     root.render(createElement(QueryClientProvider, { client: qc }, createElement(Screen, { name })));
   });
-  // release list → detail + counter (dependent query) → settled.
-  for (let i = 0; i < 5; i += 1) await settle();
+  // release list → detail + counter (dependent on the list) → settled. On the
+  // newest release the banner observes the counter, so wait until the screen
+  // shows its first answer: the banner is on screen exactly when N > 0.
+  const newest = releaseList[0]!.name;
+  const counterShown = () => {
+    const state = qc.getQueryState<number>(counterKey(newest));
+    return state?.status === 'success' && (banner() !== null) === ((state.data ?? 0) > 0);
+  };
+  await settleUntil(() => cardName() === name && (name !== newest || counterShown()), `the card of ${name}`);
+  await settleQueries();
 }
 
 /** The release on the card: an editable name on the newest release, plain text on older ones. */
@@ -197,7 +240,7 @@ describe('release card — M25 unreleased-changes banner (2.1.45)', () => {
     expect(counterRequests().map((r) => r.path)).toEqual([
       '/api/releases/v2/diff/current?view=operation&summaryOnly=true',
     ]);
-    expect(qc.getQueryData(['release-diff', 'v2', 'current', { summaryOnly: true }])).toBe(5);
+    expect(qc.getQueryData(counterKey('v2'))).toBe(5);
   });
 
   it('[ac:ac-ui-banner-you-have-n-unreleased-changes] no banner on the newest release while the unreleased counter is 0', async () => {
@@ -237,16 +280,23 @@ describe('release card — M25 unreleased-changes banner (2.1.45)', () => {
     await act(async () => {
       button('Pull in unreleased changes').click();
     });
-    for (let i = 0; i < 3; i += 1) await settle();
+    await settleUntil(
+      () => paths().some((r) => r.path === '/api/releases/v2' && r.method === 'PATCH'),
+      'the pull request',
+    );
+    await settleQueries();
     expect(paths()).toContainEqual({ path: '/api/releases/v2', method: 'PATCH' });
 
     // The server broadcasts the edit of the release; the watcher refreshes the
     // counter in its 500 ms batch window.
     act(() => FakeSocket.last!.emit({ kind: 'release:updated', releaseId: 2, name: 'v2' }));
     await settle(500);
-    for (let i = 0; i < 3; i += 1) await settle();
+    // …and the screen re-renders from the refetched counter: wait on what the
+    // user sees, not on the cache.
+    await settleUntil(() => banner() === null, 'the banner to go away');
+    await settleQueries();
 
-    expect(qc.getQueryData(['release-diff', 'v2', 'current', { summaryOnly: true }])).toBe(0);
+    expect(qc.getQueryData(counterKey('v2'))).toBe(0);
     expect(banner()).toBeNull();
     expect(host.textContent).not.toContain('unreleased change');
     // The pull ran on the newest release, which is still the card on screen.

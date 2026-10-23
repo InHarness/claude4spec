@@ -1,5 +1,5 @@
 {
-  "iteration": 8,
+  "iteration": 11,
   "conventions": [
     {
       "label": "L5 (UI) — moduł implementujący wskazany w sekcji 0",
@@ -304,16 +304,17 @@
             "ac-po-merge-u-gita-ktory-przyniosl-plik"
           ],
           "status": "implemented",
-          "rounds": 2,
+          "rounds": 3,
           "partial": 0,
-          "only": []
+          "only": [],
+          "uncovered": []
         }
       ],
-      "startCommit": "898d7bd1d20f8a762d250dd3b19388218f81f079",
+      "startCommit": "74bd4d2723d51f3848c555d8fa77b87d99da6e0b",
       "baseCommit": "7370720dd8e0d051544b80f5bbd2c644923f58dc",
       "rounds": {
         "review": 0,
-        "unit": 2
+        "unit": 3
       },
       "jobs": [],
       "lastUncovered": 0,
@@ -417,17 +418,17 @@
             "ac-ui-banner-you-have-n-unreleased-changes"
           ],
           "status": "implemented",
-          "rounds": 2,
+          "rounds": 4,
           "partial": 0,
           "only": [],
           "uncovered": []
         }
       ],
-      "startCommit": "bdd38a1e7c30e96e75e34e77976e059ef3c527d3",
+      "startCommit": "c43fee441cc1464b91ebb512c96e93e1d87106c8",
       "baseCommit": "8b20013d0dc08ff5907ff3266d4269555edd3544",
       "rounds": {
         "review": 0,
-        "unit": 2
+        "unit": 4
       },
       "jobs": [],
       "lastUncovered": 0,
@@ -461,5 +462,6 @@
       "version": 1
     }
   ],
-  "baselineGreen": true
+  "baselineGreen": true,
+  "systemVerified": false
 }

@@ -7,7 +7,7 @@ import { useUnreleasedCount } from '../../hooks/useReleases.js';
  * `ReleaseDetail`, renders it only there — older releases are frozen and get
  * no banner). It shows only while N > 0; N is the shared unreleased counter
  * (`useUnreleasedCount`, M17 zbc9jdnr), never a source of its own. Without any
- * release the counter query is disabled, so the banner stays hidden. After a
+ * release the counter does not exist (no query), so the banner stays hidden. After a
  * successful "Pull in unreleased changes" the `release:updated` WS event
  * refetches the counter (`release-diff-invalidation.ts`) and the banner goes.
  *
