@@ -903,7 +903,8 @@ export class ReleaseService {
    *   - `row` is frozen (has a next release) but that next release has no
    *     slug (legacy release, predates the identity-file feature) or its
    *     marker commit can't be resolved (e.g. it was created while
-   *     `git.enabled` was off — B3, a known open edge);
+   *     `git.enabled` was off — B3, a known open edge — or it exists only
+   *     in a shadow ref `refs/runs/*`, which the marker search excludes);
    *   - the resolved marker isn't an ancestor of current HEAD (e.g. an
    *     implicit-pull commit later rebased away) — trusting a marker outside
    *     HEAD's history would produce a nonsensical diff.

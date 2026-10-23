@@ -992,41 +992,46 @@ describe('GitService — 0.1.118 read-only methods', () => {
       expect(tracked).toContain('pages/index2.md');
     });
 
-    it('resolveReleaseCommit finds the marker via --all when its FIRST add is only reachable from a non-current branch', async () => {
+    it('[ac:ac-przy-switchafterrelease-off-z-commitem-n] switchAfterRelease=off with a commit to another branch: the release file and the spec text stay on disk, HEAD does not move, and resolveReleaseCommit — searching every ref outside refs/runs/* — finds the marker on the target branch', async () => {
       await initRepo(dir);
       fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
       await git(['add', '.'], dir);
       await git(['commit', '-m', 'seed'], dir);
       await git(['branch', 'release-target'], dir);
+      const headBefore = (await git(['rev-parse', 'HEAD'], dir)).trim();
 
-      // The release identity file is added FOR THE FIRST TIME by the
-      // commit-target commit itself, which lands on release-target — main
-      // (current HEAD) never has this path in its history at all, so a
-      // plain (non---all) `git log` from main would find nothing.
-      const filePath = path.join(dir, 'v1.json');
-      writeConfigJson(dir, { enabled: true, commitTarget: { mode: 'named', branch: 'release-target' } });
-      fs.writeFileSync(filePath, '{}');
+      // The release identity file and the spec text are written to disk
+      // before the commit hook (M17 m17reldisk), then committed — for the
+      // first time — onto release-target by the temp-index path; main
+      // (current HEAD) never has the file in its history.
+      const filePath = path.join(dir, '.claude4spec', 'releases', 'v1.json');
+      const pagePath = path.join(dir, 'spec.md');
+      writeConfigJson(dir, {
+        enabled: true,
+        commitTarget: { mode: 'named', branch: 'release-target' },
+        switchAfterRelease: false,
+      });
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, '{"name":"v1"}');
+      fs.writeFileSync(pagePath, '# spec at v1');
       const svc = new GitService(dir, [dir]);
-      const commitResult = await svc.commit({ name: 'v1', description: '' });
-      expect(commitResult.status).toBe('committed');
+      const commitResult = await svc.commitOnRelease({ name: 'v1', description: 'd' });
+      expect(commitResult?.status).toBe('committed');
+      expect(commitResult?.branch).toBe('release-target');
+      expect(commitResult?.switched ?? false).toBe(false); // `switched` is additive: absent = not switched
 
-      // Sanity check: a non---all log from current HEAD truly finds nothing.
-      const withoutAll = (
-        await pexec('git', ['log', '--diff-filter=A', '--format=%H', '--', filePath], { cwd: dir })
-      ).stdout.trim();
-      expect(withoutAll).toBe('');
+      // HEAD did not move (no ProjectContext reload is due) and the files the
+      // SQLite cache derives from are still on disk, byte for byte — the
+      // cache stays consistent with the disk.
+      expect((await git(['rev-parse', '--abbrev-ref', 'HEAD'], dir)).trim()).toBe('main');
+      expect((await git(['rev-parse', 'HEAD'], dir)).trim()).toBe(headBefore);
+      expect(fs.readFileSync(filePath, 'utf8')).toBe('{"name":"v1"}');
+      expect(fs.readFileSync(pagePath, 'utf8')).toBe('# spec at v1');
+      expect((await git(['log', '--diff-filter=A', '--format=%H', '--', filePath], dir)).trim()).toBe('');
 
-      // HEAD is still main — resolveReleaseCommit must use --all to find the
-      // marker on release-target.
-      const markerSha = await svc.resolveReleaseCommit(filePath);
-      expect(markerSha).toBeTruthy();
-      const shaOnTarget = (
-        await pexec('git', ['log', '--all', '--diff-filter=A', '--format=%H', '--', filePath], { cwd: dir })
-      ).stdout
-        .trim()
-        .split('\n')
-        .pop();
-      expect(markerSha).toBe(shaOnTarget);
+      // The marker is the release-target commit that introduced the file.
+      const targetTip = (await git(['rev-parse', 'release-target'], dir)).trim();
+      expect(await svc.resolveReleaseCommit(filePath)).toBe(targetTip);
     });
 
     it('branchContainingCommit finds the branch carrying a given sha, preferring current when ambiguous', async () => {
@@ -1251,7 +1256,12 @@ describe('GitService — 0.1.118 read-only methods', () => {
     });
   });
 
-  describe('resolveReleaseCommit --all fallback ordering (code review regression, 0.1.125)', () => {
+  /**
+   * 2.1.46 (M28 eu1rffp6 / aqys9dje / m28aug01): HEAD's history first, then
+   * every ref outside the shadow namespace `refs/runs/*`; the oldest add wins.
+   * A marker present only in a shadow ref resolves to `null`.
+   */
+  describe('resolveReleaseCommit search order (2.1.46)', () => {
     let dir2: string;
     beforeEach(() => {
       dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-git-svc-2-'));
@@ -1260,22 +1270,93 @@ describe('GitService — 0.1.118 read-only methods', () => {
       fs.rmSync(dir2, { recursive: true, force: true });
     });
 
-    it('prefers the HEAD-scoped search over --all when the marker is reachable from HEAD', async () => {
+    const rev = async (ref: string): Promise<string> => (await git(['rev-parse', ref], dir2)).trim();
+
+    /** Repo with a seed commit on main and git.enabled; config.json stays untracked. */
+    async function seedRepo(): Promise<GitService> {
       await initRepo(dir2);
+      fs.writeFileSync(path.join(dir2, 'seed.txt'), 'seed');
+      await git(['add', 'seed.txt'], dir2);
+      await git(['commit', '-m', 'seed'], dir2);
+      writeConfigJson(dir2, { enabled: true });
+      return new GitService(dir2, [dir2]);
+    }
+
+    let markerDay = 0;
+    /**
+     * Commit `v1.json` on a throw-away branch off main and return its sha; back
+     * on main afterwards. Each call is dated one day after the previous one, so
+     * "oldest add" does not hinge on commits made within the same second.
+     */
+    async function addMarkerOffMain(content: string): Promise<string> {
+      markerDay += 1;
+      const date = `2020-01-${String(markerDay).padStart(2, '0')}T12:00:00Z`;
+      await git(['checkout', '-q', '-b', 'tmp-marker', 'main'], dir2);
+      fs.writeFileSync(path.join(dir2, 'v1.json'), content);
+      await git(['add', 'v1.json'], dir2);
+      await pexec('git', ['commit', '-q', '-m', `marker ${content}`], {
+        cwd: dir2,
+        env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+      });
+      const sha = await rev('HEAD');
+      await git(['checkout', '-q', 'main'], dir2);
+      await git(['branch', '-q', '-D', 'tmp-marker'], dir2);
+      return sha;
+    }
+
+    it('[ac:ac-resolvereleasecommit-uzywa-git-log-all] searches HEAD history first: a marker reachable from HEAD wins over an older add of the same path on another branch', async () => {
+      const svc = await seedRepo();
       const filePath = path.join(dir2, 'v1.json');
-      fs.writeFileSync(filePath, '{}');
-      await pexec('git', ['add', '.'], { cwd: dir2 });
-      await pexec('git', ['commit', '-m', 'add marker'], { cwd: dir2 });
-      const dir2Config = path.join(dir2, '.claude4spec');
-      fs.mkdirSync(dir2Config, { recursive: true });
-      fs.writeFileSync(
-        path.join(dir2Config, 'config.json'),
-        JSON.stringify({ $schemaVersion: 4, name: 'test', git: { enabled: true } }, null, 2),
-      );
-      const svc = new GitService(dir2, [dir2]);
-      const sha = await svc.resolveReleaseCommit(filePath);
-      const headSha = (await pexec('git', ['rev-parse', 'HEAD'], { cwd: dir2 })).stdout.trim();
-      expect(sha).toBe(headSha);
+      // Older add, reachable only from `other`.
+      const olderOnOther = await addMarkerOffMain('{"on":"other"}');
+      await git(['branch', 'other', olderOnOther], dir2);
+      // Newer add on main (HEAD).
+      fs.writeFileSync(filePath, '{"on":"main"}');
+      await git(['add', 'v1.json'], dir2);
+      await git(['commit', '-q', '-m', 'marker on main'], dir2);
+      const onHead = await rev('HEAD');
+
+      expect(await svc.resolveReleaseCommit(filePath)).toBe(onHead);
+      expect(onHead).not.toBe(olderOnOther);
+    });
+
+    it('[ac:ac-resolvereleasecommit-uzywa-git-log-all] a marker outside HEAD history is found on another branch regardless of the current one; among the hits the oldest add wins', async () => {
+      const svc = await seedRepo();
+      const filePath = path.join(dir2, 'v1.json');
+      const oldest = await addMarkerOffMain('{"n":1}');
+      await git(['branch', 'release-a', oldest], dir2);
+      const newer = await addMarkerOffMain('{"n":2}');
+      await git(['branch', 'release-b', newer], dir2);
+      fs.writeFileSync(filePath, '{"n":1}'); // on disk, uncommitted on main
+
+      expect((await git(['log', '--diff-filter=A', '--format=%H', '--', filePath], dir2)).trim()).toBe('');
+      expect(await svc.resolveReleaseCommit(filePath)).toBe(oldest);
+      // On release-b the file is in HEAD's history, so that add is the answer.
+      fs.rmSync(filePath);
+      await git(['checkout', '-q', 'release-b'], dir2);
+      expect(await svc.resolveReleaseCommit(filePath)).toBe(newer);
+      // From a third, unrelated current branch the widened search answers again.
+      await git(['checkout', '-q', '-b', 'unrelated', 'main'], dir2);
+      fs.writeFileSync(filePath, '{"n":1}');
+      expect(await svc.resolveReleaseCommit(filePath)).toBe(oldest);
+    });
+
+    it('[ac:ac-resolvereleasecommit-uzywa-git-log-all] refs/runs/* are excluded: a marker only in a shadow ref resolves to null, and an older shadow add never beats a branch add', async () => {
+      const svc = await seedRepo();
+      const filePath = path.join(dir2, 'v1.json');
+      const inShadow = await addMarkerOffMain('{"shadow":true}');
+      await git(['update-ref', 'refs/runs/alice/1', inShadow], dir2);
+      fs.writeFileSync(filePath, '{"local":true}'); // on disk, uncommitted on main
+
+      // An unrestricted all-refs search would see it; the marker search must not.
+      expect((await git(['log', '--all', '--diff-filter=A', '--format=%H', '--', filePath], dir2)).trim()).toBe(inShadow);
+      expect(await svc.resolveReleaseCommit(filePath)).toBeNull();
+
+      // A later add on a regular branch is the marker, even though the shadow add is older.
+      const onBranch = await addMarkerOffMain('{"branch":true}');
+      await git(['branch', 'release-target', onBranch], dir2);
+      fs.writeFileSync(filePath, '{"local":true}');
+      expect(await svc.resolveReleaseCommit(filePath)).toBe(onBranch);
     });
   });
 });

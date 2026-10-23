@@ -117,6 +117,9 @@ function lockForKey(key: string): GitRepoLock {
 
 const BUSY_MESSAGE = 'A background task is running — try again in a moment.';
 
+/** 2.1.46 (M28): the shadow-ref namespace — excluded from the release-marker search. */
+const SHADOW_REF_PATTERN = 'refs/runs/*';
+
 /**
  * 0.1.125: is `name` a valid git ref (branch) name (`git check-ref-format
  * --branch <name>`)? Doesn't need a repo — git validates the syntax alone.
@@ -1029,15 +1032,18 @@ export class GitService {
    *
    * 0.1.125: a commit-target `'named'`/`'new'` commit may land on a branch
    * other than the current one, so the marker must be findable regardless
-   * of which branch it's actually reachable from now — but searching `--all`
-   * (every ref) unconditionally would risk resolving a same-slug marker on a
-   * totally unrelated branch (e.g. two independent long-lived commit-target
-   * branches that each happen to carry an identically-slugged release file).
-   * So: try the narrow, HEAD-scoped search FIRST (identical to pre-0.1.125
-   * behavior, unambiguous for the default `'current'` mode and any marker
-   * that's still reachable from HEAD) — only widen to `--all` when that
-   * comes up empty, which is exactly the new 0.1.125 need (a `'named'`/`'new'`
-   * marker that was never reachable from current HEAD to begin with).
+   * of which branch it's actually reachable from now. So: try the narrow,
+   * HEAD-scoped search FIRST (unambiguous for the default `'current'` mode
+   * and any marker still reachable from HEAD) — only widen when that comes
+   * up empty (a `'named'`/`'new'` marker never reachable from current HEAD).
+   *
+   * 2.1.46 (M28 eu1rffp6 / aqys9dje / m28aug01): the widened search covers
+   * every ref EXCEPT the shadow namespace `refs/runs/*` —
+   * `git log --exclude='refs/runs/*' --all …` (the exclusion must precede
+   * `--all`). Shadow refs carry other people's not-yet-accepted commits; a
+   * marker must never point at a commit nobody accepted, so a marker that
+   * exists only in a shadow ref resolves to `null` and M17 falls back to the
+   * SQLite version tables. There is no unrestricted all-refs search any more.
    */
   async resolveReleaseCommit(absPath: string): Promise<string | null> {
     const config = readConfig(this.cwd);
@@ -1052,20 +1058,21 @@ export class GitService {
     }
     const rel = path.relative(status.rootPath, real);
     if (rel.startsWith('..') || path.isAbsolute(rel)) return null;
-    const onHead = await this.findFirstAdd(status.rootPath, real, false);
+    const onHead = await this.findFirstAdd(status.rootPath, real, []);
     if (onHead) return onHead;
-    return this.findFirstAdd(status.rootPath, real, true);
+    return this.findFirstAdd(status.rootPath, real, [`--exclude=${SHADOW_REF_PATTERN}`, '--all']);
   }
 
   /**
-   * `git log [--all] --diff-filter=A -- <absPath>`, oldest add wins (see
+   * `git log [<refs>] --diff-filter=A -- <absPath>`, oldest add wins (see
    * `resolveReleaseCommit`'s doc comment for why NOT `-1` without `--reverse`).
-   * `null` on any failure (missing repo, git error, no add found).
+   * `refs` empty = HEAD's history. `null` on any failure (missing repo, git
+   * error, no add found).
    */
-  private async findFirstAdd(rootPath: string, absPath: string, all: boolean): Promise<string | null> {
+  private async findFirstAdd(rootPath: string, absPath: string, refs: string[]): Promise<string | null> {
     try {
       const { stdout } = await this.git(
-        ['log', ...(all ? ['--all'] : []), '--diff-filter=A', '--format=%H', '--', absPath],
+        ['log', ...refs, '--diff-filter=A', '--format=%H', '--', absPath],
         rootPath,
       );
       const shas = stdout

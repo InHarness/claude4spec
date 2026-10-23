@@ -1,5 +1,5 @@
 {
-  "iteration": 0,
+  "iteration": 4,
   "conventions": [
     {
       "label": "L3 (Spec Operations), implementor not stated",
@@ -68,7 +68,7 @@
       "units": [
         "u1-release-marker"
       ],
-      "startCommit": null
+      "startCommit": "597cde9f23d71e009fe04c4e2b46510af0c9db20"
     },
     {
       "n": 2,
@@ -240,15 +240,33 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u1-release-marker/p1-l2",
+          "layers": [
+            "L2"
+          ],
+          "slugs": [
+            "ac-resolvereleasecommit-uzywa-git-log-all",
+            "ac-przy-switchafterrelease-off-z-commitem-n"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "597cde9f23d71e009fe04c4e2b46510af0c9db20",
+      "baseCommit": "597cde9f23d71e009fe04c4e2b46510af0c9db20",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "u2-shadow-git-plumbing",
@@ -857,5 +875,6 @@
         }
       ]
     }
-  ]
+  ],
+  "baselineGreen": true
 }
