@@ -1,0 +1,11 @@
+{
+  "unit": {
+    "id": "u3-two-state-delta-core",
+    "goal": "M17 dostaje wspólny rdzeń toru git, który liczy strukturalną deltę encji i stron między dwoma stanami repozytorium (commit albo drzewo) nad pathspecami korzeni wydania. Rdzeń nie czyta drzewa roboczego, indeksu ani SQLite. Diff release'u z gita liczy się teraz tym rdzeniem, a nie bezpośrednim diffem refów. Usunięte zostaje bezpośrednie wołanie diffu refów w torze diffu release'u."
+  },
+  "diff": "git diff 61b2c95eb95148ce71f83f8ae295dcea483f9e4f..HEAD",
+  "portions": [
+    "u3-two-state-delta-core/p1-l2"
+  ],
+  "stateDir": ".c4s-impl/"
+}

@@ -139,7 +139,7 @@ const SHADOW_REFSPEC = `+${SHADOW_REF_PATTERN}:${SHADOW_REF_PATTERN}`;
 export const SHADOW_SCAN_CONCURRENCY = 4;
 
 /** `fn` over `items` with at most `limit` calls in flight; results in input order. */
-async function mapBounded<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+export async function mapBounded<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const results = new Array<R>(items.length);
   let next = 0;
   const worker = async (): Promise<void> => {
@@ -190,6 +190,13 @@ export async function isValidGitRefName(name: string): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * 2.1.46: the part of a `detect()` result the read-only primitives below
+ * (`diffRefs`, `diffRefToWorkingTree`, `showFile`) actually use — `probeRepo()`
+ * returns exactly this, and a full `detect()` result satisfies it too.
+ */
+export type GitRepoRoot = Pick<GitRepoInfo, 'detected' | 'rootPath'>;
 
 const NOT_DETECTED: GitRepoInfo = {
   detected: false,
@@ -357,6 +364,26 @@ export class GitService {
       if (exists) return candidate;
     }
     return this.currentBranch(root);
+  }
+
+  /**
+   * 2.1.46 read-only: the repository probe for a caller that reads many files
+   * at two states (the M17 two-state delta, the unreleased diff) — ONE
+   * `rev-parse --show-toplevel`, gated on `config.git.enabled` (so git off
+   * spawns nothing), instead of `detect()`'s full probe (remote, branch and a
+   * `status --porcelain` scan of the whole working tree) that none of those
+   * reads need. Pass the result as `precomputedStatus` to `diffRefs` /
+   * `diffRefToWorkingTree` / `showFile`. `null` when git is disabled, the
+   * config is unreadable, or no page root is inside a worktree. Never throws.
+   */
+  async probeRepo(): Promise<GitRepoRoot | null> {
+    try {
+      if (!readConfig(this.cwd).git.enabled) return null;
+    } catch {
+      return null;
+    }
+    const rootPath = await this.probeRoot();
+    return rootPath ? { detected: true, rootPath } : null;
   }
 
   /**
@@ -1214,11 +1241,18 @@ export class GitService {
    * be a TREE SHA — a `mergeTree()` result — which a range does not accept. Never throws
    * — `null` when git is disabled or no repo is detected; an empty
    * `{files: []}` when none of `pathspecs` resolve inside the repo.
+   * `precomputedStatus` (2.1.46): an already-taken probe (`probeRepo()`), so a
+   * caller that also reads files does not pay for a second one.
    */
-  async diffRefs(shaA: string, shaB: string, pathspecs: string[]): Promise<GitRefDiff | null> {
+  async diffRefs(
+    shaA: string,
+    shaB: string,
+    pathspecs: string[],
+    precomputedStatus?: GitRepoRoot,
+  ): Promise<GitRefDiff | null> {
     const config = readConfig(this.cwd);
     if (!config.git.enabled) return null;
-    const status = await this.detect();
+    const status = precomputedStatus ?? (await this.detect());
     if (!status.detected || !status.rootPath) return null;
     const root = status.rootPath;
 
@@ -1259,12 +1293,16 @@ export class GitService {
    * results in as `'A'` entries; no overlap with the tracked diff is
    * possible by construction (an untracked path can never also appear in
    * `git diff`'s tracked-only output). Same scoping/parsing/never-throws
-   * contract as `diffRefs` otherwise.
+   * contract as `diffRefs` otherwise, `precomputedStatus` included.
    */
-  async diffRefToWorkingTree(sha: string, pathspecs: string[]): Promise<GitRefDiff | null> {
+  async diffRefToWorkingTree(
+    sha: string,
+    pathspecs: string[],
+    precomputedStatus?: GitRepoRoot,
+  ): Promise<GitRefDiff | null> {
     const config = readConfig(this.cwd);
     if (!config.git.enabled) return null;
-    const status = await this.detect();
+    const status = precomputedStatus ?? (await this.detect());
     if (!status.detected || !status.rootPath) return null;
     const root = status.rootPath;
 
@@ -1330,15 +1368,15 @@ export class GitService {
    * config.json mid-run degrades to "can't tell", same as `statusAheadBehind`).
    *
    * `precomputedStatus` (0.1.124, same idea as `statusAheadBehind`'s): pass an
-   * already-fetched `detect()` result so a caller reading many files at the
-   * same two commits (e.g. `tryGitAnchoredDiff` diffing every changed page in
+   * already-fetched `detect()` / `probeRepo()` result so a caller reading many files at the
+   * same two commits (e.g. the M17 two-state delta diffing every changed page in
    * a release) doesn't pay for a repeated `detect()` probe — several git
    * subprocesses — per file.
    */
   async showFile(
     sha: string,
     absPath: string,
-    precomputedStatus?: GitRepoInfo,
+    precomputedStatus?: GitRepoRoot,
   ): Promise<string | null> {
     let config: ReturnType<typeof readConfig>;
     try {
@@ -1801,14 +1839,7 @@ export class GitService {
    * remote/status probe). Never throws.
    */
   private async shadowLayerRoot(): Promise<string | null> {
-    let config: ReturnType<typeof readConfig>;
-    try {
-      config = readConfig(this.cwd);
-    } catch {
-      return null;
-    }
-    if (!config.git.enabled) return null;
-    return this.probeRoot();
+    return (await this.probeRepo())?.rootPath ?? null;
   }
 
   /**

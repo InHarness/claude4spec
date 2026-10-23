@@ -1,3 +1,8 @@
 get-api-git-shadows → src/server/routes/git.ts (GET /shadows), src/server/services/git.ts (listShadows)
 git-shadows-response → src/shared/git.ts (GitShadowsResponse, GitShadow)
 tech-stack#Git → src/server/services/git.ts (supportsTrialMerge, mergeTree 'unsupported')
+section:0jsqpl74 → src/server/services/git-two-state-delta.ts (computeTwoStateDelta)
+section:22vm79i8 → src/server/services/git-two-state-delta.ts (computeTwoStateDelta: diffRefs + showFile at the two states only)
+section:87eua06x → src/server/services/git-two-state-delta.ts (classifyChangedFiles, diffChangedPages, diffChangedEntities)
+section:x2dmbhhk → src/server/services/git-two-state-delta.ts (TwoStateDelta)
+section:m17reldiff → src/server/services/release.ts (tryGitAnchoredDiff → computeTwoStateDelta on resolveReignRef states)
