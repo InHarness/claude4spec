@@ -11,6 +11,7 @@ import { isHtmlPreviewPath, useHtmlViewerStore } from '../state/htmlViewer.js';
 import { artifactVersionsKey } from './useArtifactVersions.js';
 import { reloadFrontendPlugins } from '../runtime/boot-plugins.js';
 import { entityChangeKeys, tagChangeKeys } from '../lib/entity-invalidation.js';
+import { releaseDiffKeysFor } from '../lib/release-diff-invalidation.js';
 
 /**
  * M33 phase 3: window event dispatched once a plugin reload has re-pinned the
@@ -37,6 +38,10 @@ export function useFileWatcher() {
       ws.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data) as WsEvent;
+          // 2.1.45 (M17 m17ui001): the release diff — Compare tab and the
+          // unreleased counter — refreshes on its own event list, before the
+          // per-kind branches below (some of its events have no branch there).
+          for (const key of releaseDiffKeysFor(data.kind)) batcher.queue(key);
           // 2.1.9: a system root WITH A FACADE (`skills`, M52) is a page tree like
           // any user root — it takes the page branch below, keyed by its rootId.
           const systemRootKind = data.kind === 'file:changed' ? systemRootKindOf(data.rootId) : undefined;

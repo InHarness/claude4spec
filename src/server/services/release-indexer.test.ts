@@ -270,4 +270,50 @@ describe('ReleaseIndexerService — upsert-by-slug id stability', () => {
     expect(all).toHaveLength(1);
     expect(all[0]!.slug).toBe('v1');
   });
+  /**
+   * 2.1.45 (M17 d8871ce9) — a release file and content changes pulled in by ONE
+   * git merge, the pulled release becoming the newest on the axis: the indexer
+   * adds the release to the axis and assigns it NO versions. The merged content
+   * is committed, so git counts it in the pulled release's reign (counter 0),
+   * while the cache keeps those captures as versions without a release.
+   */
+  it('[section:d8871ce9] a merged-in newest release file assigns no versions — captured content stays without a release', async () => {
+    store.write('v1', {
+      name: 'v1',
+      slug: 'v1',
+      description: 'Local',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      createdBy: 'user',
+      roots: ['pages'],
+    });
+    await indexer.indexAll();
+    // The merge's content changes, captured as versions without a release.
+    db.prepare(
+      `INSERT INTO entity_version (entity_type, entity_slug, version, data, changed_by, release_id, serializer_version, op)
+       VALUES ('endpoint', 'e1', 1, '{"title":"merged"}', 'user', NULL, 'v1', 'create')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO file_version (path, version, data, serializer_version, op, release_id, changed_by, rootId)
+       VALUES ('a.md', 1, '{"content":"merged"}', 'v1', 'create', NULL, 'user', 'pages')`,
+    ).run();
+    // The release file arriving with the same merge, newer on the axis.
+    store.write('v2', {
+      name: 'v2',
+      slug: 'v2',
+      description: 'Pulled by merge',
+      createdAt: '2026-02-01T00:00:00.000Z',
+      createdBy: 'user',
+      roots: ['pages'],
+    });
+    indexer.onChange('context:test', 'releases', 'v2.json');
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await indexer.indexAll();
+
+    const newest = db.prepare('SELECT slug FROM spec_release ORDER BY created_at DESC, id DESC LIMIT 1').get() as { slug: string };
+    expect(newest.slug).toBe('v2');
+    const assigned = (table: string) =>
+      (db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE release_id IS NOT NULL`).get() as { n: number }).n;
+    expect(assigned('entity_version')).toBe(0);
+    expect(assigned('file_version')).toBe(0);
+  });
 });

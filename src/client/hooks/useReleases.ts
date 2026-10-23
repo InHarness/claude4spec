@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { releasesApi } from '../lib/releases-api.js';
+import { CURRENT_RELEASE_NAME } from '../../shared/entities.js';
+import { unreleasedCountOf } from '../../shared/unreleased-counter.js';
 import { releasesService } from '../runtime/releases-service.js';
 import { releasePushesKey } from './useReleasePushes.js';
 
@@ -41,11 +43,32 @@ export function useRelease(name: string | undefined) {
   });
 }
 
-/** Count of unreleased captures at HEAD — for the "You have N unreleased changes" banner. */
+/**
+ * 2.1.45 (M17 L5 "Stan → Zapytania") — the key of the unreleased counter:
+ * `['release-diff', <newest release>, 'current', { summaryOnly: true }]`. It
+ * shares the `['release-diff', <from>, 'current']` prefix with the Compare
+ * tab's diff, so one `['release-diff']` invalidation refreshes both.
+ */
+export function unreleasedCounterKey(latestReleaseName: string) {
+  return ['release-diff', latestReleaseName, 'current', { summaryOnly: true }] as const;
+}
+
+/**
+ * 2.1.45 (M17 L2 zbc9jdnr) — THE unreleased counter, the one shared frontend
+ * query every consumer reads (Compare tab label, create-release warning, M25
+ * banner): the size of the light `release_diff` delta from the newest release
+ * (the head of the newest-first `['releases']` list) to `current` — changed
+ * entities plus changed pages (`unreleasedCountOf`), not a count of versions.
+ * Without any release the counter does not exist: the query stays disabled
+ * and `data` is `undefined`.
+ */
 export function useUnreleasedCount() {
+  const { data: releases } = useReleaseList();
+  const latest = releases?.[0]?.name;
   return useQuery({
-    queryKey: ['releases', 'unreleased-count'],
-    queryFn: () => releasesApi.unreleasedCount(),
+    queryKey: unreleasedCounterKey(latest ?? ''),
+    queryFn: async () => unreleasedCountOf((await releasesApi.diffSummary(latest!, CURRENT_RELEASE_NAME)).total),
+    enabled: latest != null,
   });
 }
 

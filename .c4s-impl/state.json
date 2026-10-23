@@ -1,5 +1,5 @@
 {
-  "iteration": 0,
+  "iteration": 1,
   "conventions": [
     {
       "label": "L5 (UI) — moduł implementujący wskazany w sekcji 0",
@@ -44,7 +44,7 @@
       "units": [
         "m17-unreleased-counter"
       ],
-      "startCommit": null
+      "startCommit": "66bb18393225bf415c706b8607da0525593df658"
     },
     {
       "n": 2,
@@ -151,15 +151,34 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "m17-unreleased-counter/p1-l2-l5",
+          "layers": [
+            "L2",
+            "L5"
+          ],
+          "slugs": [
+            "ac-licznik-niezreleasowanych-zmian-rowna",
+            "ac-trzy-kolejne-edycje-jednej-encji-po-o",
+            "ac-zmiana-cofnieta-do-stanu-z-najnowszeg"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "only": []
+        }
+      ],
+      "startCommit": "66bb18393225bf415c706b8607da0525593df658",
+      "baseCommit": "66bb18393225bf415c706b8607da0525593df658",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "m17-releases-list-ui",
@@ -169,7 +188,7 @@
           {
             "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
             "change": {
-              "offset": 0,
+              "offset": 1,
               "limit": 1,
               "anchors": [
                 "hybasevj"
@@ -267,7 +286,27 @@
       ],
       "wave": 2,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "m17-releases-list-ui/p1-l2-l5",
+          "layers": [
+            "L2",
+            "L5"
+          ],
+          "slugs": [
+            "releases-list",
+            "ac-etykieta-zakladki-compare-na-releases",
+            "ac-gdy-licznik-niezreleasowanych-zmian-w",
+            "ac-klik-w-licznik-niezreleasowanych-zmian-n",
+            "ac-strona-releases-ma-dwa-taby-lista-ist",
+            "ac-okno-tworzenia-release-u-ostrzega-no",
+            "ac-po-commicie-z-terminala-zmian-zrobion",
+            "ac-po-merge-u-gita-ktory-przyniosl-plik"
+          ],
+          "status": "pending",
+          "rounds": 0
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -360,7 +399,23 @@
       ],
       "wave": 2,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "m25-unreleased-banner/p1-l2-l5",
+          "layers": [
+            "L2",
+            "L5"
+          ],
+          "slugs": [
+            "ac-baner-you-have-n-unreleased-changes-p",
+            "ac-na-release-ie-starszym-niz-najnowszy",
+            "ac-po-udanym-pull-in-unreleased-changes",
+            "ac-ui-banner-you-have-n-unreleased-changes"
+          ],
+          "status": "pending",
+          "rounds": 0
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -396,5 +451,6 @@
       "links": [],
       "version": 1
     }
-  ]
+  ],
+  "baselineGreen": true
 }
