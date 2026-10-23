@@ -1,13 +1,12 @@
-import { Link } from '@tanstack/react-router';
 import { useUnreleasedCount } from '../../hooks/useReleases.js';
 
 /**
  * "You have N unreleased changes" — self-hides when there is nothing
- * unreleased. The trailing "View changes" link goes to the `/releases`
- * Compare tab (0.1.122), presetting `latest → current` (the tab's own
- * default). A plain `<div>` (not itself a link — see the code-review
- * follow-up), since nesting an `<a>` inside another `<a>` isn't valid HTML;
- * the explicit link makes the navigation affordance visible.
+ * unreleased. N is the shared unreleased counter (`useUnreleasedCount`).
+ *
+ * 2.1.45: no link to the Compare tab — the `/releases` Compare deep link
+ * (`?tab=compare`, preset latest → current) is removed, so the banner carries
+ * no deep link either.
  */
 export function UnreleasedBanner() {
   const { data: count = 0 } = useUnreleasedCount();
@@ -21,10 +20,7 @@ export function UnreleasedBanner() {
         color: 'var(--c-accent-ink)',
       }}
     >
-      You have {count} unreleased {count === 1 ? 'change' : 'changes'} not in any release.{' '}
-      <Link to="/releases" search={{ tab: 'compare' }} className="underline font-medium">
-        View changes
-      </Link>
+      You have {count} unreleased {count === 1 ? 'change' : 'changes'} not in any release.
     </div>
   );
 }

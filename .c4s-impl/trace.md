@@ -1,0 +1,1 @@
+releases-list → src/client/components/ReleasesPage.tsx (tabs + „Changes (N)” label; ReleasesList.tsx / ReleasesCompareTab.tsx; route without search params in src/client/router.tsx; create-release warning in CreateReleaseDialog.tsx)

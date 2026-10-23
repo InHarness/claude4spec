@@ -1,5 +1,5 @@
 {
-  "iteration": 1,
+  "iteration": 4,
   "conventions": [
     {
       "label": "L5 (UI) — moduł implementujący wskazany w sekcji 0",
@@ -52,7 +52,7 @@
         "m17-releases-list-ui",
         "m25-unreleased-banner"
       ],
-      "startCommit": null
+      "startCommit": "7370720dd8e0d051544b80f5bbd2c644923f58dc"
     }
   ],
   "units": [
@@ -285,7 +285,7 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "m17-releases-list-ui/p1-l2-l5",
@@ -303,17 +303,21 @@
             "ac-po-commicie-z-terminala-zmian-zrobion",
             "ac-po-merge-u-gita-ktory-przyniosl-plik"
           ],
-          "status": "pending",
-          "rounds": 0
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "898d7bd1d20f8a762d250dd3b19388218f81f079",
+      "baseCommit": "7370720dd8e0d051544b80f5bbd2c644923f58dc",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "m25-unreleased-banner",

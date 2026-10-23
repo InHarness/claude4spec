@@ -11,10 +11,11 @@ import { releasePushesKey } from './useReleasePushes.js';
  * (`description`, `createdBy`, `createdAt`). Host-only: the plugin surface gets
  * the narrower label mirror below.
  */
-export function useReleaseList() {
+export function useReleaseList(opts: { refetchOnMount?: boolean } = {}) {
   return useQuery({
     queryKey: ['releases'],
     queryFn: () => releasesService.listReleases(),
+    ...(opts.refetchOnMount === false ? { refetchOnMount: false } : {}),
   });
 }
 
@@ -62,13 +63,18 @@ export function unreleasedCounterKey(latestReleaseName: string) {
  * Without any release the counter does not exist: the query stays disabled
  * and `data` is `undefined`.
  */
-export function useUnreleasedCount() {
-  const { data: releases } = useReleaseList();
+export function useUnreleasedCount(opts: { refetchOnMount?: boolean } = {}) {
+  const { data: releases } = useReleaseList(opts);
   const latest = releases?.[0]?.name;
   return useQuery({
     queryKey: unreleasedCounterKey(latest ?? ''),
     queryFn: async () => unreleasedCountOf((await releasesApi.diffSummary(latest!, CURRENT_RELEASE_NAME)).total),
     enabled: latest != null,
+    // A consumer mounted under a screen that already observes the counter (the
+    // create-release window) passes `false`: it reads the cached value, kept
+    // fresh by the WS invalidation map, instead of refetching it on open. With
+    // nothing cached yet the query still loads.
+    ...(opts.refetchOnMount === false ? { refetchOnMount: false } : {}),
   });
 }
 
