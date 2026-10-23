@@ -1,0 +1,16 @@
+{
+  "id": "dev-4601",
+  "kind": "missing",
+  "blocking": false,
+  "address": "u4-shadow-diff/ce8plh8i",
+  "slugs": [
+    "shadow-diff",
+    "get-api-shadow-diff"
+  ],
+  "text": "M17 ce8plh8i names two causes of `shadow-only`: a conflicting trial merge and a git older than 2.38 (mergeTree 'unsupported'). M28 eu1rffp6 also lets mergeTree answer `{ status: 'error' }` (any other failure of `git merge-tree` on a supported git). The specification does not say what the shadow diff answers then, and the endpoint's refusals (VALIDATION, GIT_UNAVAILABLE, SHADOW_NOT_FOUND) do not cover it. Assumed: a failed trial merge (and a failed file list / commit list under a detected repository) is a server fault — 500 with the shared error envelope — not a silent fall to `shadow-only`, which would present a broken merge as a conflict-free 'what the shadow did'.",
+  "assumption": "ASSUMPTION:dev-4601 — a trial merge that fails on a supported git is a server fault (500), not a fall to shadow-only.",
+  "unit": "u4-shadow-diff",
+  "portion": "u4-shadow-diff/p1-l2-l4",
+  "sent": true,
+  "patchPath": "2-1-45-to-2-1-46-u4-shadow-diff-ce8plh8i-shadow-diff-answer-when-the-trial-merge-fails-on-a-suppo.md"
+}

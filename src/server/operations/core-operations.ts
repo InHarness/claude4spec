@@ -2857,6 +2857,34 @@ export function registerCoreOperations(): void {
     },
   });
 
+  /**
+   * 2.1.46 — `shadow_diff` (record `shadow-diff`, M17 `jssreefn`): the
+   * comparison of a shadow with the master, rendered only as the REST route
+   * `GET /api/shadow-diff` (its own M17 router) for the Shadows tab of the
+   * releases screen. Owning core: `ReleaseService.shadowDiff` →
+   * `computeShadowDiff` (`release-shadow-diff.ts`). Read-only, no repository
+   * lock, no budget; the `n/a` reasons are the record's `powody`, verbatim.
+   */
+  const SHADOW_DIFF_UI_ONLY = 'w tej iteracji wyłącznie podgląd w interfejsie; renderowanie agentowe odłożone (przegląd otwarty)';
+  registerRow({
+    name: 'shadow_diff',
+    summary:
+      "What the master's specification becomes once a shadow is accepted — the delta of the trial merge (`merge`), or `merge-base..tip` with the conflicted paths (`shadow-only`).",
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'read',
+    inputSchema: { ref: z.string().describe('The shadow id — the ref name without the refs/runs/ prefix, e.g. `<runId>/spec`.') },
+    errorCodes: ['SHADOW_NOT_FOUND', 'GIT_UNAVAILABLE', 'VALIDATION'],
+    sideEffects: ['none'],
+    idempotent: true,
+    channels: {
+      internal: na(SHADOW_DIFF_UI_ONLY),
+      cli: na(SHADOW_DIFF_UI_ONLY),
+      mcp: na(SHADOW_DIFF_UI_ONLY),
+      rest: direct(),
+    },
+  });
+
   // ── M25 Release Push ──────────────────────────────────────────────────────
 
   /**

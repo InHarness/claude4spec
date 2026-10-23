@@ -209,7 +209,7 @@ describe('the seeded catalog', () => {
    * (`describe_entity_type` renders `describe_types` internally), and the alias
    * is written down here rather than inferred.
    */
-  it('every internal/mcp `direct` cell of an M39 row has a tool registered on its server (the whole-catalogue check is in `the catalogue against the window\'s 78 records`)', () => {
+  it('every internal/mcp `direct` cell of an M39 row has a tool registered on its server (the whole-catalogue check is in `the catalogue against the window\'s 79 records`)', () => {
     const mcpDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../mcp');
     const declared = (file: string): Set<string> =>
       new Set(
@@ -1793,7 +1793,7 @@ describe('the M18 tag write rows as their 2.1.26 records declare them', () => {
  * a record; each row answers for the record's fields; and the four L3/M43
  * criteria on `reguly` and `narzedzia` hold for every row at once.
  */
-describe("the catalogue against the window's 78 records", () => {
+describe("the catalogue against the window's 79 records", () => {
   const RECORD_CHANNEL: Record<ChannelCell['kind'], string> = { direct: 'direct', via: 'via', na: 'n/a' };
   const EFFECT: Record<string, string> = { brak: 'none', plik: 'file', db: 'db', 'ui-notify': 'ui-notify' };
   const IDEMPOTENCE: Record<string, boolean | 'conditional'> = { tak: true, nie: false, warunkowa: 'conditional' };
@@ -1888,9 +1888,9 @@ describe("the catalogue against the window's 78 records", () => {
 
   const byName = new Map(SPEC_OPERATION_RECORDS.map((r) => [r.nazwa, r]));
 
-  it('every one of the 78 records has its row, and every other row is a plugin row the window has no record for', () => {
-    expect(SPEC_OPERATION_RECORDS).toHaveLength(78);
-    expect(byName.size).toBe(78);
+  it('every one of the 79 records has its row, and every other row is a plugin row the window has no record for', () => {
+    expect(SPEC_OPERATION_RECORDS).toHaveLength(79);
+    expect(byName.size).toBe(79);
     for (const record of SPEC_OPERATION_RECORDS) expect(CATALOG.has(record.nazwa), record.nazwa).toBe(true);
     const withoutRecord = CATALOG.list()
       .filter((op) => !byName.has(op.name))
@@ -2166,5 +2166,34 @@ describe('the 2.1.43 catalogue wave', () => {
         if (cell.kind === 'via') expect(cell.reason, `${op.name}.${channel}`).not.toMatch(/^via\s/);
       }
     }
+  });
+});
+
+/**
+ * 2.1.46 — the M17 shadow comparison (record `shadow-diff`): one row, rendered
+ * only by its REST route `GET /api/shadow-diff`. Its behaviour (modes, flags,
+ * refusals, read-only) is tested against a real repository next to the route
+ * (`src/server/routes/shadow-diff.test.ts`).
+ */
+describe('the 2.1.46 shadow_diff row', () => {
+  it('[entity:shadow-diff] shadow_diff: project, direct, internal/cli/mcp n/a with the record\'s reason, rest direct (GET /api/shadow-diff), no effects, idempotent, no content input, codes SHADOW_NOT_FOUND / GIT_UNAVAILABLE / VALIDATION once each, rules error-code-once + echo-free (nie mutuje), no renderings, addressed by the shadow id', () => {
+    registerCoreOperations();
+    const op = CATALOG.require('shadow_diff');
+    const reason = 'w tej iteracji wyłącznie podgląd w interfejsie; renderowanie agentowe odłożone (przegląd otwarty)';
+    expect(op.scope).toBe('project');
+    expect(op.mediation).toBe('direct');
+    expect(op.opClass).toBe('read');
+    expect(op.channels).toEqual({ internal: na(reason), cli: na(reason), mcp: na(reason), rest: direct() });
+    expect(op.sideEffects).toEqual(['none']);
+    expect(op.idempotent).toBe(true);
+    expect(op.contentInput).toBeUndefined();
+    expect([...op.errorCodes].sort()).toEqual(['GIT_UNAVAILABLE', 'SHADOW_NOT_FOUND', 'VALIDATION']);
+    expect(op.rules).toEqual([{ id: 'error-code-once' }, { id: 'echo-free', exclusion: 'nie mutuje' }]);
+    expect(op.renderings).toBeUndefined();
+    expect(Object.keys(op.inputSchema)).toEqual(['ref']);
+    // The REST rendering of its two own codes.
+    expect(httpStatusForCode('SHADOW_NOT_FOUND')).toBe(404);
+    expect(httpStatusForCode('GIT_UNAVAILABLE')).toBe(400);
+    expect(httpStatusForCode('VALIDATION')).toBe(400);
   });
 });

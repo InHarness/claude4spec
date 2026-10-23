@@ -6,3 +6,16 @@ section:22vm79i8 → src/server/services/git-two-state-delta.ts (computeTwoState
 section:87eua06x → src/server/services/git-two-state-delta.ts (classifyChangedFiles, diffChangedPages, diffChangedEntities)
 section:x2dmbhhk → src/server/services/git-two-state-delta.ts (TwoStateDelta)
 section:m17reldiff → src/server/services/release.ts (tryGitAnchoredDiff → computeTwoStateDelta on resolveReignRef states)
+shadow-diff → src/server/operations/core-operations.ts (registerRow 'shadow_diff'), src/server/operations/operation-rules.ts (shadow_diff), src/server/services/release-shadow-diff.ts (computeShadowDiff), src/server/services/release.ts (ReleaseService.shadowDiff)
+get-api-shadow-diff → src/server/routes/shadow-diff.ts (GET /), mounted at /api/shadow-diff in src/server/workspace/project-context.ts
+shadow-diff-response → src/shared/entities.ts (ShadowDiffResponse)
+section:jssreefn → src/server/services/release-shadow-diff.ts (computeShadowDiff: git only, two-state core, mode from mergeTree)
+section:pu2g4dms → src/server/services/release-shadow-diff.ts (merge: computeTwoStateDelta(HEAD, result tree))
+section:ce8plh8i → src/server/services/release-shadow-diff.ts (shadow-only: computeTwoStateDelta(base, tip) + conflicts; mergePreview false on 'unsupported')
+section:0xvhubti → src/server/services/git-two-state-delta.ts (TwoStateDeltaOptions.deletedBefore), src/server/services/release-shadow-diff.ts (before, base/shadow/head SHAs, masterAhead via GitService.resolveShadow)
+section:nemiv2qh → src/server/services/release-shadow-diff.ts (outsideSpecFiles, touchesReleases, conflicts, commits on base..tip), src/server/services/git.ts (listCommits)
+section:856sq0nw → src/server/services/release-shadow-diff.ts (shadow.tipSha, head.sha in the result)
+section:m17api001 → src/server/services/release.ts (ReleaseService.shadowDiff)
+section:22u3o5bx → src/server/services/release-shadow-diff.ts (SHADOW_NOT_FOUND, GIT_UNAVAILABLE), src/server/operations/error-codes.ts (404 / 400)
+section:xkpt256d → src/server/services/release-shadow-diff.ts (structural delta of a not-yet-accepted version)
+section:m17api401 → src/server/routes/shadow-diff.ts (own router /api/shadow-diff), src/server/workspace/project-context.ts

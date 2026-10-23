@@ -1,5 +1,5 @@
 /**
- * 2.1.26 — the window's 78 `spec-operation` records, as `release-diff --from
+ * 2.1.26 — the window's 78 `spec-operation` records (79 since 2.1.46 added `shadow-diff`), as `release-diff --from
  * initial --to 2.1.26` returns them, in the fields a catalog row answers for:
  * `nazwa`, scope, mediation, the four channel values with the channel entries of
  * `powody`, `efekty`, `idempotencja`, `opisTresci`, `reguly`, `kodyBledow` and
@@ -1191,6 +1191,28 @@ export const SPEC_OPERATION_RECORDS: readonly SpecOperationRecord[] = [
     reguly: [{ id: 'error-code-once' }, { id: 'echo-free', wykluczenie: 'nie mutuje' }],
     kodyBledow: ['INVALID_ARGUMENT', 'INDEX_STALE', 'SEARCH_BUDGET_EXCEEDED'],
     narzedzia: { internal: ['reference-tools-search-pages'], mcp: ['c4s-reader-search-pages'] },
+  },
+  // 2.1.46 — the window 2.1.45 → 2.1.46 adds the M17 shadow comparison.
+  {
+    slug: 'shadow-diff',
+    nazwa: 'shadow_diff',
+    zasieg: 'project',
+    mediacja: 'direct',
+    internal: 'n/a',
+    cli: 'n/a',
+    mcp: 'n/a',
+    rest: 'direct',
+    powody: {
+      internal: 'w tej iteracji wyłącznie podgląd w interfejsie; renderowanie agentowe odłożone (przegląd otwarty)',
+      cli: 'w tej iteracji wyłącznie podgląd w interfejsie; renderowanie agentowe odłożone (przegląd otwarty)',
+      mcp: 'w tej iteracji wyłącznie podgląd w interfejsie; renderowanie agentowe odłożone (przegląd otwarty)',
+    },
+    efekty: ['brak'],
+    idempotencja: 'tak',
+    opisTresci: 'n/d',
+    reguly: [{ id: 'error-code-once' }, { id: 'echo-free', wykluczenie: 'nie mutuje' }],
+    kodyBledow: ['SHADOW_NOT_FOUND', 'GIT_UNAVAILABLE', 'VALIDATION'],
+    narzedzia: {},
   },
   {
     slug: 'spawn-child-turn',

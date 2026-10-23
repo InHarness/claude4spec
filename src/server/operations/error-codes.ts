@@ -191,6 +191,11 @@ export const STATUS_FOR_CODE: Record<string, number> = {
   ACCOUNT_NOT_ACTIVE: 409,
   RELEASE_NOT_FOUND: 404,
   RELEASE_PUSH_NOT_FOUND: 404,
+  // M17 shadow diff (2.1.46, `22u3o5bx`) — the shadow is unknown, unrelated to
+  // HEAD or already accepted; the comparison is git-only, so git off / no
+  // repository refuses instead of answering an empty delta.
+  SHADOW_NOT_FOUND: 404,
+  GIT_UNAVAILABLE: 400,
   SESSION_EXPIRED: 502,
   PUSH_FAILED: 502,
   // M37 Skills registry (0.2.99)

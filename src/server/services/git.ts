@@ -1986,44 +1986,73 @@ export class GitService {
   /**
    * 2.1.46 (M28 eu1rffp6): resolve one shadow by id (the ref name without the
    * `refs/runs/` prefix). `baseSha` = merge-base(HEAD, tip), `masterAhead` =
-   * commits in `base..HEAD`. `null` when the ref does not exist, has no common
+   * commits in `base..HEAD`, `headSha` = the HEAD commit both were computed on
+   * (HEAD is read once, so the three answers belong to the same HEAD even if it
+   * moves meanwhile). `null` when the ref does not exist, has no common
    * ancestor with HEAD or is already an ancestor of HEAD; also git off / no
-   * repository. Read-only, no lock, never throws. The id names a ref EXACTLY:
-   * it is never interpolated into a revision expression, so `run-1/spec~1`,
-   * `run-1/spec@{1}` or `run-1/spec^` (no ref has such a name) resolve to
-   * `null`, never to a commit that is not a shadow's tip. A git failure → `null`
-   * with a warning.
+   * repository / an unborn HEAD. Read-only, no lock, never throws. The id names
+   * a ref EXACTLY: it is never interpolated into a revision expression, so
+   * `run-1/spec~1`, `run-1/spec@{1}` or `run-1/spec^` (no ref has such a name)
+   * resolve to `null`, never to a commit that is not a shadow's tip. A git
+   * failure → `null` with a warning. `precomputedStatus`: an already-taken
+   * `probeRepo()` (a caller that goes on reading the repository does not probe
+   * twice).
    */
   async resolveShadow(
     id: string,
-  ): Promise<{ id: string; tipSha: string; baseSha: string; masterAhead: number } | null> {
-    const root = await this.shadowLayerRoot();
+    precomputedStatus?: GitRepoRoot,
+  ): Promise<{ id: string; tipSha: string; baseSha: string; masterAhead: number; headSha: string } | null> {
+    const root = precomputedStatus ? precomputedStatus.rootPath : await this.shadowLayerRoot();
     if (!root) return null;
-    const tipSha = (await this.shadowRefs(root, `${SHADOW_REF_PREFIX}${id}`)).find((s) => s.id === id)?.tipSha;
-    if (!tipSha) return null;
+    const [refs, headSha] = await Promise.all([
+      this.shadowRefs(root, `${SHADOW_REF_PREFIX}${id}`),
+      this.git(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], root)
+        .then((r) => r.stdout.trim())
+        .catch(() => ''),
+    ]);
+    const tipSha = refs.find((s) => s.id === id)?.tipSha;
+    if (!tipSha || !headSha) return null;
     let baseSha: string | null;
     try {
-      baseSha = await this.mergeBaseAt(root, 'HEAD', tipSha);
+      baseSha = await this.mergeBaseAt(root, headSha, tipSha);
     } catch (err) {
       console.warn(`[git] resolveShadow ${id}: merge-base failed:`, errMessage(err));
       return null;
     }
     if (!baseSha || baseSha === tipSha) return null;
-    const masterAhead = await this.git(['rev-list', '--count', `${baseSha}..HEAD`], root)
+    const masterAhead = await this.git(['rev-list', '--count', `${baseSha}..${headSha}`], root)
       .then((r) => Number(r.stdout.trim()))
       .catch(() => NaN);
     if (!Number.isFinite(masterAhead)) return null;
-    return { id, tipSha, baseSha, masterAhead };
+    return { id, tipSha, baseSha, masterAhead, headSha };
   }
 
-  /** 2.1.46 (M28 eu1rffp6): `git merge-base <a> <b>`; `null` without a common ancestor, git off or no repository. Never throws. */
-  async mergeBase(a: string, b: string): Promise<string | null> {
-    const root = await this.shadowLayerRoot();
+  /**
+   * 2.1.46 (M17 nemiv2qh): the commits of `from..to` (`git log`, newest first) —
+   * sha, subject and body (the body trimmed; `''` when the message has none).
+   * Read-only, no lock, never throws: `null` when git is off, no repository is
+   * detected or `git log` fails. `precomputedStatus` as in `resolveShadow`.
+   */
+  async listCommits(
+    from: string,
+    to: string,
+    precomputedStatus?: GitRepoRoot,
+  ): Promise<Array<{ sha: string; subject: string; body: string }> | null> {
+    const root = precomputedStatus ? precomputedStatus.rootPath : await this.shadowLayerRoot();
     if (!root) return null;
-    return this.mergeBaseAt(root, a, b).catch((err) => {
-      console.warn('[git] merge-base failed:', errMessage(err));
+    try {
+      // NUL between the fields, RS (0x1e) after each commit — neither occurs in a commit message.
+      const { stdout } = await this.git(['log', '--format=%H%x00%s%x00%b%x1e', `${from}..${to}`], root);
+      const commits: Array<{ sha: string; subject: string; body: string }> = [];
+      for (const record of stdout.split('\x1e')) {
+        const [sha, subject, body] = record.replace(/^\n+/, '').split('\0');
+        if (sha) commits.push({ sha, subject: subject ?? '', body: (body ?? '').trim() });
+      }
+      return commits;
+    } catch (err) {
+      console.warn('[git] listCommits failed:', errMessage(err));
       return null;
-    });
+    }
   }
 
   /**
@@ -2033,10 +2062,10 @@ export class GitService {
    * reclaims them). `unsupported` follows from reading git's version (< 2.38,
    * `supportsTrialMerge`), not from a failing command; another failure (also an
    * unreadable version) → `error`. `null` when git is off or no repository.
-   * No lock, never throws.
+   * No lock, never throws. `precomputedStatus` as in `resolveShadow`.
    */
-  async mergeTree(ours: string, theirs: string): Promise<GitMergeTreeResult | null> {
-    const root = await this.shadowLayerRoot();
+  async mergeTree(ours: string, theirs: string, precomputedStatus?: GitRepoRoot): Promise<GitMergeTreeResult | null> {
+    const root = precomputedStatus ? precomputedStatus.rootPath : await this.shadowLayerRoot();
     if (!root) return null;
     const version = await this.gitVersion();
     if (version === null) return { status: 'error' };

@@ -8,7 +8,7 @@
  * `m17dom001`, `m17dcre01`).
  */
 
-import { systemRootDir } from '../../shared/root-kinds.js';
+import { SYSTEM_ROOTS, systemRootDir } from '../../shared/root-kinds.js';
 import nodeFs from 'node:fs';
 import nodeOs from 'node:os';
 import nodePath from 'node:path';
@@ -19,6 +19,7 @@ import type {
   RawDeltaEntityChange,
   Release,
   ReleaseCountBreakdown,
+  ShadowDiffResponse,
   ReleaseDetail,
   SpecSnapshot,
   SpecSnapshotEntityRow,
@@ -73,6 +74,7 @@ import {
   type DeltaRoots,
 } from './git-two-state-delta.js';
 import type { FileDiff, FileSnapshotData } from './file-serializer.js';
+import { computeShadowDiff, gitUnavailable, requireShadowRef, type ShadowDiffScope } from './release-shadow-diff.js';
 import {
   buildBundleArchive as buildBundleArchiveImpl,
   extractBundleStream,
@@ -1007,6 +1009,64 @@ export class ReleaseService {
       entities: await diffChangedEntities(entities, readOld, readWorkingTreeFile, this.host),
       pages: await diffChangedPages(pages, readOld, readWorkingTreeFile, this.pageSerializer, 'tryGitAnchoredUnreleasedDiff'),
     };
+  }
+
+  /**
+   * 2.1.46 (M17 `jssreefn`, spec-operation `shadow-diff`): the comparison of the
+   * shadow `ref` (its ref name without `refs/runs/`) with the master — what the
+   * master's specification becomes once the shadow is accepted. The git track
+   * only, never SQLite: no git service, git off or no repository is
+   * `GIT_UNAVAILABLE`. Read-only and takes no repository lock. The modes, flags
+   * and refusals are `computeShadowDiff`'s (`release-shadow-diff.ts`); this
+   * method hands it the git primitives and the roots of the delta — the same
+   * roots the release diff's git track uses. A missing release store is a
+   * wiring fault (500, `resolveShadowDiffScope`), never `GIT_UNAVAILABLE`.
+   */
+  async shadowDiff(ref: unknown): Promise<ShadowDiffResponse> {
+    const gitService = this.gitService;
+    if (!gitService) {
+      requireShadowRef(ref);
+      throw gitUnavailable();
+    }
+    return computeShadowDiff(
+      {
+        git: gitService,
+        pageSerializer: this.pageSerializer,
+        host: this.host,
+        scope: () => this.resolveShadowDiffScope(),
+      },
+      ref,
+    );
+  }
+
+  /**
+   * The roots of the shadow comparison: the release diff's `DeltaRoots`, every
+   * registry root dir, the `releases` root. No release store wired → a plain
+   * `Error` (500): the server was assembled without it — not a refusal of the
+   * request, and not a statement about git.
+   */
+  private resolveShadowDiffScope(): ShadowDiffScope {
+    if (!this.releaseStore) {
+      throw new Error('The shadow comparison failed: the release store is not wired (server misconfiguration).');
+    }
+    const realOrSelf = (p: string): string => {
+      try {
+        return nodeFs.realpathSync(p);
+      } catch {
+        return p;
+      }
+    };
+    const roots = this.resolveGitDiffScope();
+    const releasesDir = realOrSelf(this.releaseStore.root);
+    const registryDirs = [
+      ...new Set([
+        ...this.pagesKindRootDirs.map((d) => realOrSelf(nodePath.resolve(this.cwd, d))),
+        ...SYSTEM_ROOTS.map((r) => realOrSelf(nodePath.resolve(this.cwd, r.dir))),
+        roots.entities.dir,
+        releasesDir,
+      ]),
+    ];
+    return { roots, registryDirs, releasesDir };
   }
 
   /**

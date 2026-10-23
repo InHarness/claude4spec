@@ -1,5 +1,5 @@
 {
-  "iteration": 18,
+  "iteration": 25,
   "conventions": [
     {
       "label": "L3 (Spec Operations), implementor not stated",
@@ -89,7 +89,7 @@
       "units": [
         "u4-shadow-diff"
       ],
-      "startCommit": null
+      "startCommit": "1c63aea4e8cfc918a966717425e4f1b821966d81"
     },
     {
       "n": 5,
@@ -704,15 +704,60 @@
         }
       ],
       "wave": 4,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u4-shadow-diff/p1-l2-l4",
+          "layers": [
+            "L2",
+            "L3",
+            "L4"
+          ],
+          "slugs": [
+            "shadow-diff",
+            "get-api-shadow-diff",
+            "shadow-diff-response",
+            "m17-requires-m28",
+            "ac-bez-konfliktu-get-api-shadow-diff-zwr",
+            "ac-przy-konflikcie-get-api-shadow-diff-z",
+            "ac-przy-konflikcie-get-api-shadow-diff-z-2",
+            "ac-w-trybie-merge-delta-get-api-shadow-d",
+            "ac-w-trybie-merge-zmiana-mastera-zrobion",
+            "ac-niezacommitowana-zmiana-mastera-nie-p",
+            "ac-przy-gicie-starszym-niz-2-38-get-api",
+            "ac-get-api-shadow-diff-z-nieznanym-ref-z",
+            "ac-get-api-shadow-diff-z-refem-bedacym-p",
+            "ac-przy-git-off-get-api-shadow-diff-zwra",
+            "ac-probne-scalenie-nie-zmienia-head",
+            "ac-probne-scalenie-nie-zmienia-indeksu",
+            "ac-probne-scalenie-nie-zmienia-drzewa-ro",
+            "section:jssreefn",
+            "section:pu2g4dms",
+            "section:ce8plh8i",
+            "section:0xvhubti",
+            "section:nemiv2qh",
+            "section:856sq0nw",
+            "section:m17api001",
+            "section:22u3o5bx",
+            "section:xkpt256d",
+            "section:m17api401"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "ef5b82132666cfe3f83bea742299f1342967368a",
+      "baseCommit": "1c63aea4e8cfc918a966717425e4f1b821966d81",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "u5-shadows-ui",

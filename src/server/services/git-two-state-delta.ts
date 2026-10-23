@@ -40,7 +40,7 @@ import { readPayloadVersion, stripFileEnvelope, upgradeCapture } from '../serial
 import { toRawDeltaEntityChange } from '../serialization/snapshot.js';
 import type { SnapshotData } from '../serialization/types.js';
 import type { FileDiff, FileSerializer } from './file-serializer.js';
-import { mapBounded, type GitService } from './git.js';
+import { mapBounded, type GitRepoRoot, type GitService } from './git.js';
 
 /** A commit-ish or a tree SHA — anything `git diff <a> <b>` and `git show <state>:<path>` accept. */
 export type RepoState = string;
@@ -99,6 +99,24 @@ export interface DeltaDeps {
 export interface TwoStateDelta {
   entities: RawDeltaEntityChange[];
   pages: FileDiff[];
+}
+
+/**
+ * The "before" state of the entities a delta deletes, read off its LEFT side —
+ * `type → slug → payload` (envelope stripped, brought to the type's current
+ * shape, exactly what the entity diff compared). A commit has no SQLite snapshot,
+ * so a caller comparing commits gets a deleted entity's last content here.
+ */
+export type DeletedEntityPayloads = Record<string, Record<string, SnapshotData>>;
+
+export interface TwoStateDeltaOptions {
+  /** An already-taken `probeRepo()` — the core then probes nothing itself. */
+  repo?: GitRepoRoot;
+  /**
+   * Collect the left-side payload of every deleted entity into this map while the
+   * entity diff reads it — the same `git show`, no second read.
+   */
+  deletedBefore?: DeletedEntityPayloads;
 }
 
 export interface EntityCandidate {
@@ -229,6 +247,7 @@ export async function diffChangedEntities(
   readOld: SideReader,
   readNew: SideReader,
   host: DeltaDeps['host'],
+  deletedBefore?: DeletedEntityPayloads,
 ): Promise<RawDeltaEntityChange[]> {
   const payloadOf = (type: string, text: string): { data: SnapshotData; version: number } => {
     const raw = JSON.parse(text) as unknown;
@@ -252,6 +271,7 @@ export async function diffChangedEntities(
       const b = newText !== null ? payloadOf(c.type, newText) : null;
       const diff = host.diff(c.type, a?.data ?? null, b?.data ?? null);
       if (diff.op === 'noop') return null;
+      if (deletedBefore && diff.op === 'deleted' && a) (deletedBefore[c.type] ??= {})[c.slug] = a.data;
       const mismatch =
         a && b && a.version !== b.version ? { type: c.type, from: String(a.version), to: String(b.version) } : null;
       return toRawDeltaEntityChange(c.type, c.slug, diff, mismatch);
@@ -266,17 +286,20 @@ export async function diffChangedEntities(
  * The two-state delta between `stateA` (the left side) and `stateB` (the right
  * side) over `roots`. `null` when the M28 file list is unavailable (git off, no
  * repository, a failed `git diff`) — the caller decides what that means.
+ * `opts.repo` hands in a probe the caller already took; `opts.deletedBefore`
+ * collects the left-side payloads of the deleted entities (`DeletedEntityPayloads`).
  */
 export async function computeTwoStateDelta(
   deps: DeltaDeps,
   stateA: RepoState,
   stateB: RepoState,
   roots: DeltaRoots,
+  opts: TwoStateDeltaOptions = {},
 ): Promise<TwoStateDelta | null> {
   // ONE repository probe (a single `rev-parse`, nothing when git is off) shared
   // by the file list and every `showFile` below — each would otherwise run its
   // own full `detect()`, several git subprocesses and a working-tree scan.
-  const repo = await deps.git.probeRepo();
+  const repo = opts.repo ?? (await deps.git.probeRepo());
   if (!repo) return null;
   const changed = await deps.git.diffRefs(stateA, stateB, roots.pathspecs, repo);
   if (!changed) return null;
@@ -286,7 +309,7 @@ export async function computeTwoStateDelta(
   const readB: SideReader = (absPath) => deps.git.showFile(stateB, absPath, repo);
   // One after the other, not side by side: each is bounded on its own, and in
   // parallel the two bounds would add up.
-  const entityChanges = await diffChangedEntities(entities, readA, readB, deps.host);
+  const entityChanges = await diffChangedEntities(entities, readA, readB, deps.host, opts.deletedBefore);
   const pageChanges = await diffChangedPages(pages, readA, readB, deps.pageSerializer, 'two-state delta');
   return { entities: entityChanges, pages: pageChanges };
 }

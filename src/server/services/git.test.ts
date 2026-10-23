@@ -1736,7 +1736,7 @@ describe('GitService — gated entry vs execution (2.1.14)', () => {
 /**
  * 2.1.46 (M28 eu1rffp6 / dadc3w49, tech-stack row Git) — the shadow layer of
  * the git service against a real temporary repository: `listShadows`,
- * `resolveShadow`, `mergeBase`, `mergeTree` (trial merge), `showFile` on a
+ * `resolveShadow` (its `baseSha` is the merge-base), `mergeTree` (trial merge), `showFile` on a
  * tree, `isAncestorOfHead` and `diffRefs` with a tree on the right side. Every
  * one of them is read-only: the repository state (refs, HEAD, index, working
  * tree, merge state) is the same before and after.
@@ -1851,8 +1851,9 @@ describe('GitService — 2.1.46 shadow layer', () => {
     expect(await repoState()).toEqual(before);
   });
 
-  it('[section:eu1rffp6] mergeBase / isAncestorOfHead / resolveShadow answer from the commit graph — read-only', async () => {
+  it('[section:eu1rffp6] [review:rev-0002] isAncestorOfHead / resolveShadow (its baseSha = merge-base) answer from the commit graph — read-only', async () => {
     const tip = await shadow('run-1/spec', first, { 'spec.md': '# spec (shadow)\n' });
+    const onHead = await shadow('on-head', second, { 'spec.md': '# spec (on head)\n' });
     await git(['update-ref', 'refs/runs/contained', first], dir);
     await git(['checkout', '-q', '--orphan', 'unrelated'], dir);
     await git(['rm', '-q', '-rf', '--cached', '.'], dir);
@@ -1868,13 +1869,12 @@ describe('GitService — 2.1.46 shadow layer', () => {
     const svc = new GitService(dir, [dir]);
     const before = await repoState();
 
-    expect(await svc.mergeBase(second, tip)).toBe(first);
-    expect(await svc.mergeBase(second, unrelated)).toBeNull();
-
     expect(await svc.isAncestorOfHead(first)).toBe(true);
     expect(await svc.isAncestorOfHead(tip)).toBe(false);
 
-    expect(await svc.resolveShadow('run-1/spec')).toEqual({ id: 'run-1/spec', tipSha: tip, baseSha: first, masterAhead: 1 });
+    // The merge-base answer: the commit the shadow branched from.
+    expect(await svc.resolveShadow('run-1/spec')).toEqual({ id: 'run-1/spec', tipSha: tip, baseSha: first, masterAhead: 1, headSha: second });
+    expect(await svc.resolveShadow('on-head')).toEqual({ id: 'on-head', tipSha: onHead, baseSha: second, masterAhead: 0, headSha: second });
     expect(await svc.resolveShadow('contained')).toBeNull(); // already an ancestor of HEAD
     expect(await svc.resolveShadow('unrelated')).toBeNull(); // no common ancestor
     expect(await svc.resolveShadow('missing')).toBeNull();
@@ -1941,7 +1941,7 @@ describe('GitService — 2.1.46 shadow layer', () => {
     expect(await repoState()).toEqual(before);
   });
 
-  it('[review:rev-0001] a failed git command is told apart from "no common ancestor" — logged as a failure, never as a missing ancestor', async () => {
+  it('[review:rev-0001] [review:rev-0002] a failed git command is told apart from "no common ancestor" — logged as a failure, never as a missing ancestor', async () => {
     const listed = await shadow('run-1/spec', first, { 'spec.md': '# spec (shadow)\n' });
     const mbBroken = await shadow('mb-broken', first, { 'spec.md': '# spec (mb)\n' });
     const diffBroken = await shadow('diff-broken', first, { 'spec.md': '# spec (diff)\n' });
@@ -1976,10 +1976,9 @@ describe('GitService — 2.1.46 shadow layer', () => {
     expect(lines.some((l) => l.includes('unrelated') && l.includes('no common ancestor'))).toBe(true);
 
     warn.mockClear();
-    expect(await svc.mergeBase(second, mbBroken)).toBeNull(); // never throws
-    expect(warned().some((l) => l.includes('merge-base failed'))).toBe(true);
-    expect(await svc.resolveShadow('mb-broken')).toBeNull();
-    expect(await svc.mergeBase(second, listed)).toBe(first);
+    expect(await svc.resolveShadow('mb-broken')).toBeNull(); // never throws
+    expect(warned().some((l) => l.includes('mb-broken') && l.includes('merge-base failed') && l.includes('EAGAIN'))).toBe(true);
+    expect(await svc.resolveShadow('run-1/spec')).toMatchObject({ tipSha: listed, baseSha: first });
   });
 
   it('[review:rev-0002] resolveShadow names a ref exactly — a revision suffix never resolves to a commit that is not a shadow tip', async () => {
@@ -1990,7 +1989,7 @@ describe('GitService — 2.1.46 shadow layer', () => {
 
     const svc = new GitService(dir, [dir]);
     const before = await repoState();
-    expect(await svc.resolveShadow('run-1/spec')).toEqual({ id: 'run-1/spec', tipSha: tip, baseSha: first, masterAhead: 1 });
+    expect(await svc.resolveShadow('run-1/spec')).toEqual({ id: 'run-1/spec', tipSha: tip, baseSha: first, masterAhead: 1, headSha: second });
     // `run-1/spec~1` / `^` would name `inner` — not the tip of any shadow ref.
     for (const id of ['run-1/spec~1', 'run-1/spec^', 'run-1/spec^1', 'run-1/spec^{commit}', 'run-1/spec@{0}', 'run-1/spec@{1}', 'run-1', 'run-1/*', 'run-1/spec*', '', '../heads/main', inner]) {
       expect(await svc.resolveShadow(id)).toBeNull();
@@ -2004,7 +2003,6 @@ describe('GitService — 2.1.46 shadow layer', () => {
     const off = new GitService(dir, [dir]);
     expect(await off.listShadows()).toBeNull();
     expect(await off.resolveShadow('run-1/spec')).toBeNull();
-    expect(await off.mergeBase(second, tip)).toBeNull();
     expect(await off.mergeTree(second, tip)).toBeNull();
 
     const noRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-git-norepo-'));
@@ -2013,7 +2011,6 @@ describe('GitService — 2.1.46 shadow layer', () => {
       const svc = new GitService(noRepo, [noRepo]);
       expect(await svc.listShadows()).toBeNull();
       expect(await svc.resolveShadow('run-1/spec')).toBeNull();
-      expect(await svc.mergeBase('HEAD', 'HEAD')).toBeNull();
       expect(await svc.mergeTree('HEAD', 'HEAD')).toBeNull();
     } finally {
       fs.rmSync(noRepo, { recursive: true, force: true });
