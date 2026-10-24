@@ -1,5 +1,5 @@
 {
- "iteration": 38,
+ "iteration": 44,
  "conventions": [
   {
    "label": "L1 (DB) — implementor M41",
@@ -228,10 +228,7 @@
      "status": "implemented",
      "rounds": 2,
      "partial": 0,
-     "uncovered": [
-      "release-tools-release-create",
-      "release-tools-release-list"
-     ],
+     "uncovered": [],
      "only": []
     }
    ],
@@ -242,7 +239,8 @@
     "unit": 2
    },
    "jobs": [],
-   "lastUncovered": 0
+   "lastUncovered": 0,
+   "lastBlocking": 0
   },
   {
    "id": "u2-git-merge-primitives",
@@ -449,14 +447,14 @@
       "section:antfe82l"
      ],
      "status": "implemented",
-     "rounds": 1,
+     "rounds": 2,
      "partial": 0,
      "uncovered": [],
      "only": []
     }
    ],
-   "startCommit": "ba9afff29b73ed352cb310b6c3920f1ff6576ef9",
-   "baseCommit": "ba9afff29b73ed352cb310b6c3920f1ff6576ef9",
+   "startCommit": "3bc6030036bd8292caf1355deb13d648504844f6",
+   "baseCommit": "3bc6030036bd8292caf1355deb13d648504844f6",
    "rounds": {
     "review": 0,
     "unit": 1
@@ -784,14 +782,14 @@
       "ac-zmodyfikowany-plik-sledzony-w-korzeni"
      ],
      "status": "implemented",
-     "rounds": 2,
+     "rounds": 4,
      "partial": 0,
      "uncovered": [],
      "only": []
     }
    ],
-   "startCommit": "21d139ebee843e996545fdb4f6728394300da2db",
-   "baseCommit": "404dfe5f05002d5c761cfd19d6e208de0755d0ed",
+   "startCommit": "3bc6030036bd8292caf1355deb13d648504844f6",
+   "baseCommit": "3bc6030036bd8292caf1355deb13d648504844f6",
    "rounds": {
     "review": 0,
     "unit": 2
@@ -930,14 +928,14 @@
       "ac-przycisk-accept-jest-nieaktywny-gdy-p"
      ],
      "status": "implemented",
-     "rounds": 4,
+     "rounds": 5,
      "partial": 0,
      "uncovered": [],
      "only": []
     }
    ],
-   "startCommit": "f9ebda356e9cfb4cedcdae2e96833a1282500c62",
-   "baseCommit": "733dfa2e5f9fe400fb52dbb21672f47adf80b9ee",
+   "startCommit": "3bc6030036bd8292caf1355deb13d648504844f6",
+   "baseCommit": "3bc6030036bd8292caf1355deb13d648504844f6",
    "rounds": {
     "review": 0,
     "unit": 4
@@ -1009,5 +1007,6 @@
   }
  ],
  "entityParts": [],
- "baselineGreen": true
+ "baselineGreen": true,
+ "systemVerified": true
 }

@@ -1315,7 +1315,17 @@ export class GitService {
   /**
    * M28 es9w55mr — only with `MERGE_HEAD` present: stage `paths`, then
    * `git merge --abort`. Staging comes first, because changes written after
-   * the merge (e.g. anchors) would block `merge --abort`. No merge open →
+   * the merge (e.g. anchors) would block `merge --abort`. Staging is
+   * `update-index --add --remove`, not `add -A`: a path the shadow deleted is
+   * in neither the merged index nor the working tree, and `add -A -- <path>`
+   * refuses such a pathspec ("did not match any files", every git version),
+   * which used to fail every rollback of a shadow deleting a file;
+   * `update-index` treats it as already staged. A target that is a directory
+   * on disk is skipped: `update-index` refuses it ("is a directory - add
+   * individual files instead"), and a shadow turning file `p/x` into
+   * directory `p/x` lists the files inside (`p/x/y`) as paths of their own.
+   * The reverse (directory → file) needs nothing: `p/x/y` under the file
+   * `p/x` reads as missing and is staged as removed. No merge open →
    * nothing to undo → `aborted`. A failure → `error` with the repair context
    * `recovery.kind: 'merge-abort-failed'` (the merge stays open, no release).
    */
@@ -1326,8 +1336,8 @@ export class GitService {
     const run = this.underRepoLock(root, held?.lock, async (): Promise<GitAbortMergeResult> => {
       if (!(await this.mergeHeadOpen(root))) return { status: 'aborted' };
       try {
-        const targets = this.resolveDiffTargets(root, paths);
-        if (targets.length > 0) await this.git(['add', '-A', '--', ...targets], root);
+        const targets = this.resolveDiffTargets(root, paths).filter((t) => !isDirectoryOnDisk(t));
+        if (targets.length > 0) await this.git(['update-index', '--add', '--remove', '--', ...targets], root);
         await this.git(['merge', '--abort'], root);
         return { status: 'aborted' };
       } catch (err) {
@@ -2632,6 +2642,15 @@ function isNonFastForwardRejection(err: unknown): boolean {
 /** Raw stderr from an `execFile` rejection, or `''` when the failure carries none. */
 function rawStderr(err: unknown): string {
   return (err as { stderr?: string })?.stderr?.trim() ?? '';
+}
+
+/** `lstat` says directory; a missing path (or one under a file) is not one. */
+function isDirectoryOnDisk(p: string): boolean {
+  try {
+    return fs.lstatSync(p).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 /**

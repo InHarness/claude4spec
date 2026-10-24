@@ -310,6 +310,71 @@ describe('GitService — merge primitives of the shadow acceptance (2.1.47)', ()
       expect(fs.readFileSync(path.join(pages(), 'a.md'), 'utf8')).toBe('# a\n\nline 1\n');
     });
 
+    it('a path the shadow deleted (in neither the merged index nor the working tree) is staged without error and the abort brings it back, together with a path the shadow added', async () => {
+      await git(['checkout', '-q', '-b', 'shadow-src', 'main'], dir);
+      await git(['rm', '-q', 'pages/a.md'], dir);
+      fs.writeFileSync(path.join(pages(), 'c.md'), '# c\n');
+      await git(['add', 'pages/c.md'], dir);
+      await git(['commit', '-q', '-m', 'shadow turn'], dir);
+      const tip = await sha('HEAD');
+      await git(['checkout', '-q', 'main'], dir);
+      await git(['branch', '-q', '-D', 'shadow-src'], dir);
+      const headBefore = await sha('HEAD');
+      const changed = abs('pages/a.md', 'pages/c.md');
+      expect((await svc.mergeIntoIndex(tip, changed)).status).toBe('merged');
+      expect(fs.existsSync(path.join(pages(), 'a.md'))).toBe(false);
+
+      expect(await svc.abortMerge(changed)).toEqual({ status: 'aborted' });
+      expect(await mergeHead()).toBeNull();
+      expect(await sha('HEAD')).toBe(headBefore);
+      expect((await git(['status', '--porcelain', '--untracked-files=all'], dir)).trim()).toBe('');
+      expect(fs.readFileSync(path.join(pages(), 'a.md'), 'utf8')).toBe('# a\n\nline 1\n');
+      expect(fs.existsSync(path.join(pages(), 'c.md'))).toBe(false);
+    });
+
+    it('a shadow turning a file into a directory (and a directory into a file) — the directory on disk is not staged as a path, its files are, and the abort restores both', async () => {
+      // Master gains a directory the shadow will turn into a file.
+      fs.mkdirSync(path.join(pages(), 'sub'), { recursive: true });
+      fs.writeFileSync(path.join(pages(), 'sub', 'd.md'), '# d\n');
+      await git(['add', 'pages/sub/d.md'], dir);
+      await git(['commit', '-q', '-m', 'sub dir'], dir);
+
+      await git(['checkout', '-q', '-b', 'shadow-src', 'main'], dir);
+      // file → directory: pages/b.md becomes pages/b.md/inner.md
+      await git(['rm', '-q', 'pages/b.md'], dir);
+      fs.mkdirSync(path.join(pages(), 'b.md'));
+      fs.writeFileSync(path.join(pages(), 'b.md', 'inner.md'), '# inner\n');
+      // directory → file: pages/sub/d.md goes, pages/sub becomes a file
+      await git(['rm', '-q', 'pages/sub/d.md'], dir);
+      fs.writeFileSync(path.join(pages(), 'sub'), 'now a file\n');
+      await git(['add', 'pages/b.md/inner.md', 'pages/sub'], dir);
+      await git(['commit', '-q', '-m', 'shadow turn'], dir);
+      const tip = await sha('HEAD');
+      await git(['checkout', '-q', 'main'], dir);
+      await git(['branch', '-q', '-D', 'shadow-src'], dir);
+      const headBefore = await sha('HEAD');
+
+      // What `git diff merge-base..tip` lists: both sides of each swap.
+      const changed = abs('pages/b.md', 'pages/b.md/inner.md', 'pages/sub', 'pages/sub/d.md');
+      expect((await svc.mergeIntoIndex(tip, changed)).status).toBe('merged');
+      expect(fs.statSync(path.join(pages(), 'b.md')).isDirectory()).toBe(true);
+      expect(fs.statSync(path.join(pages(), 'sub')).isFile()).toBe(true);
+      // Changes written after the merge, not staged, on both sides of the swaps.
+      fs.writeFileSync(path.join(pages(), 'b.md', 'inner.md'), '# inner\n<!-- anchor -->\n');
+      fs.writeFileSync(path.join(pages(), 'sub'), 'now a file\n<!-- anchor -->\n');
+      // Staging the directory itself is what git refuses.
+      await expect(
+        pexec('git', ['update-index', '--add', '--remove', '--', 'pages/b.md'], { cwd: dir }),
+      ).rejects.toBeTruthy();
+
+      expect(await svc.abortMerge(changed)).toEqual({ status: 'aborted' });
+      expect(await mergeHead()).toBeNull();
+      expect(await sha('HEAD')).toBe(headBefore);
+      expect((await git(['status', '--porcelain', '--untracked-files=all'], dir)).trim()).toBe('');
+      expect(fs.readFileSync(path.join(pages(), 'b.md'), 'utf8')).toBe('# b\n');
+      expect(fs.readFileSync(path.join(pages(), 'sub', 'd.md'), 'utf8')).toBe('# d\n');
+    });
+
     it('a failed abort → error with the repair context merge-abort-failed (operation commit-on-release); the merge stays open', async () => {
       const tip = await shadowWith({ 'pages/c.md': '# c\n' });
       expect((await svc.mergeIntoIndex(tip, abs('pages/c.md'))).status).toBe('merged');

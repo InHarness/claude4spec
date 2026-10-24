@@ -258,7 +258,9 @@ describe('/releases Shadows tab — accepting a shadow (M17 releases-list, 2.1.4
     diffBody = shadowDiff();
     await mount();
     expect(acceptButton()!.disabled).toBe(false);
-    expect(q('[data-shadow-accept-reason]')!.getAttribute('title')).toBeNull();
+    // An active Accept carries no reason hint: no reason marker, no title on its wrapper.
+    expect(q('[data-shadow-accept-reason]')).toBeNull();
+    expect(acceptButton()!.parentElement!.hasAttribute('title')).toBe(false);
   });
 
   it('[entity:releases-list] Accept is inactive with files outside the specification or a change in the releases root, each with its reason; it stays active in "Shadows — no changes"', async () => {

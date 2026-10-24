@@ -1,0 +1,18 @@
+{
+ "role": "reviewer",
+ "scope": {
+  "kind": "wave",
+  "id": "system-r1",
+  "base": "3bc60300"
+ },
+ "findings": [
+  {
+   "id": "sys-0001",
+   "file": "src/server/services/git.ts",
+   "line": 1335,
+   "blocking": true,
+   "portion": "u4-accept-shadow/p1-l1-l10",
+   "reason": "(promoted to blocking by the orchestrator: a regression the system-r1 fix introduced) `git update-index --add --remove` refuses a path that is a directory on disk ('p/x: is a directory - add individual files instead', rc 128, git 2.38+). A shadow turning file p/x into directory p/x (diff lists p/x deleted, p/x/y added) makes abortMerge fail → ACCEPT_ABORT_FAILED, merge left open; `add -A` handled it. Fix: in abortMerge drop every target that is a directory on disk (lstat isDirectory) — the files inside are already listed in changedPaths. Add a primitives test for the file→directory shadow next to the deleted-path test."
+  }
+ ]
+}
