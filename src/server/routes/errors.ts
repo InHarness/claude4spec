@@ -136,5 +136,15 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
     return res.status(400).json({ error: { code: 'VALIDATION', message: (err as Error).message } });
   }
   console.error(err);
-  res.status(500).json({ error: { code: 'INTERNAL', message: (err as Error).message } });
+  // 2.1.47 — `gitSync` forwarded structurally, like `recovery` above: a failure
+  // past the acceptance's point of no return (`AcceptedReleaseCommittedError`)
+  // still landed its release commit, and the client must know whether HEAD moved.
+  const gitSync = (err as { gitSync?: unknown } | null)?.gitSync;
+  res.status(500).json({
+    error: {
+      code: 'INTERNAL',
+      message: (err as Error).message,
+      ...(gitSync && typeof gitSync === 'object' ? { gitSync } : {}),
+    },
+  });
 };

@@ -112,7 +112,7 @@ beforeEach(() => {
   closed = [];
   syncResult = { status: 'up-to-date', paths: null, reason: null, message: null };
   syncGate = null;
-  useGitOpsStore.setState({ pending: null });
+  useGitOpsStore.setState({ ops: [] });
   window.sessionStorage.clear();
   vi.stubGlobal(
     'fetch',
@@ -268,7 +268,7 @@ describe('git-sync-recover window (M28 u5vl07ch)', () => {
       expect(q('button[aria-label="Close"]')).not.toBeNull();
 
       await click(q('[data-git-recover-sync]'));
-      expect(useGitOpsStore.getState().pending).toBe('sync');
+      expect(useGitOpsStore.getState().ops.map((e) => e.op)).toEqual(['sync']);
       expect(q('[data-git-recover-sync]')?.textContent).toBe('Syncing…');
 
       const dismissBtn = q('[data-git-recover-dismiss]') as HTMLButtonElement;
@@ -290,7 +290,7 @@ describe('git-sync-recover window (M28 u5vl07ch)', () => {
       await finish();
       expect(toasts).toContainEqual(expect.objectContaining({ variant: 'success', message: 'Already up to date' }));
       expect(closed).toEqual([null]);
-      expect(useGitOpsStore.getState().pending).toBeNull();
+      expect(useGitOpsStore.getState().ops).toEqual([]);
     });
 
     it('a Sync that moved HEAD still reloads the project route after its window unmounted mid-flight — the parked toast and the reload are not lost', async () => {
@@ -298,7 +298,7 @@ describe('git-sync-recover window (M28 u5vl07ch)', () => {
       const finish = holdSync();
       await render(nonFastForward);
       await click(q('[data-git-recover-sync]'));
-      expect(useGitOpsStore.getState().pending).toBe('sync');
+      expect(useGitOpsStore.getState().ops.map((e) => e.op)).toEqual(['sync']);
 
       // The window goes off screen while the request is in flight (e.g. ModalHost
       // replaced it with another window).
@@ -310,7 +310,7 @@ describe('git-sync-recover window (M28 u5vl07ch)', () => {
       expect(takeGitFlashToast()).toEqual({ variant: 'success', message: 'Updated from the remote' });
       // The own-op mark is kept for the reload (it consumes it), not orphaned
       // without one.
-      expect(useGitOpsStore.getState().pending).toBe('sync');
+      expect(useGitOpsStore.getState().ops.map((e) => e.op)).toEqual(['sync']);
     });
 
     it('a refused Sync still shows its toast and clears the own-op mark after its window unmounted mid-flight', async () => {
@@ -327,7 +327,55 @@ describe('git-sync-recover window (M28 u5vl07ch)', () => {
         expect.objectContaining({ variant: 'warning', message: 'Commit your local changes to 2 files before syncing' }),
       );
       expect(reload.calls).toBe(0);
-      expect(useGitOpsStore.getState().pending).toBeNull();
+      expect(useGitOpsStore.getState().ops).toEqual([]);
+    });
+  });
+
+  describe('the shadow acceptance kinds (2.1.47, M28 u5vl07ch)', () => {
+    const mergeOpen: GitErrorRecovery = {
+      operation: 'commit-on-release',
+      kind: 'merge-open',
+      reason: 'the merge commit failed',
+      gitStderr: 'error: pre-commit hook failed',
+      intentPrompt: 'Conclude the open merge with ONE commit of everything staged plus the release file.',
+    };
+    const mergeAbortFailed: GitErrorRecovery = {
+      operation: 'commit-on-release',
+      kind: 'merge-abort-failed',
+      reason: 'git merge --abort failed',
+      gitStderr: 'fatal: could not reset index file',
+      intentPrompt: 'Abort the open merge and restore the registry roots to HEAD. Do not commit.',
+    };
+
+    it('[section:u5vl07ch] merge-open keeps the success framing (the release exists) and goes through Fix it with Agent, seeding the backend prompt', async () => {
+      await render(mergeOpen);
+      expect(host.textContent).toContain('Done — but git sync hit a problem');
+      expect(host.textContent).toContain(`Committing the release failed: ${mergeOpen.reason}`);
+      expect(q('[data-git-recover-kind-hint]')?.textContent).toBe(
+        'The release was created, but its merge commit failed — the merge is still open.',
+      );
+      expect(q('[data-git-recover-sync]')).toBeNull();
+      await click(q('[data-git-recover-agent]'));
+      expect(seeded.prompts).toEqual([mergeOpen.intentPrompt]);
+      expect(closed).toEqual([null]);
+    });
+
+    it('[section:u5vl07ch] merge-abort-failed is the exception to the success framing — the window says the shadow was not accepted — and goes through Fix it with Agent', async () => {
+      await render(mergeAbortFailed);
+      expect(host.textContent).toContain('The shadow was not accepted — its merge is still open');
+      expect(host.textContent).not.toContain('Done — but');
+      expect(host.textContent).toContain(`Undoing the shadow merge failed: ${mergeAbortFailed.reason}`);
+      expect(q('[data-git-recover-kind-hint]')?.textContent).toContain('Accepting the shadow failed');
+      expect(q('[data-git-recover-sync]')).toBeNull();
+      await click(q('[data-git-recover-agent]'));
+      expect(seeded.prompts).toEqual([mergeAbortFailed.intentPrompt]);
+    });
+
+    it('[section:u5vl07ch] both acceptance kinds need "Block direct file access" unchecked, like every other kind', async () => {
+      cfg.disableDirectFilesystemAccess = true;
+      await render(mergeAbortFailed);
+      expect(q('[data-git-recover-agent]')).toBeNull();
+      expect(host.textContent).toContain('Uncheck “Block direct file access” in Settings → Agent first.');
     });
   });
 });

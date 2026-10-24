@@ -23,6 +23,13 @@ export const GIT_SHADOWS_KEY = ['git-shadows'] as const;
  *   moved HEAD, its response handler reloads instead; an own sync parks the
  *   "Updated from the remote" toast first, because the server's context reload
  *   (`project:disposed`) may reload this tab before the response arrives.
+ *   2.1.47 — THIS client's own shadow acceptance (M17 L5 m17ui001) moves HEAD
+ *   with its release commit and does not reload at all: its success is the
+ *   toast and the List tab, and the acceptance itself invalidates what it
+ *   changed. The event may arrive before or after the acceptance's answer;
+ *   either way it is attributed to the acceptance (`claimHeadChange`), and
+ *   each own operation absorbs one HEAD event only — the next one is another
+ *   client's and reloads.
  */
 export function handleGitStatusChanged(
   event: { headChanged: boolean },
@@ -31,11 +38,22 @@ export function handleGitStatusChanged(
   deps.queue([...GIT_STATUS_KEY]);
   deps.queue([...GIT_SHADOWS_KEY]);
   if (!event.headChanged) return;
-  const own = useGitOpsStore.getState().pending;
+  const own = useGitOpsStore.getState().claimHeadChange();
   if (own === 'sync') {
     setGitFlashToast({ ...SYNC_UPDATED_TOAST });
     return;
   }
-  if (own === 'checkout') return;
-  reloadProjectRoute();
+  // An own checkout reloads from its response; an own acceptance stays.
+  if (own === null) reloadProjectRoute();
+}
+
+/**
+ * 2.1.47 (M28 8i5qf0xx) — the live-update socket reconnected after a drop.
+ * The server does not replay `git:status-changed`, so an own HEAD-moving
+ * operation that has its answer but not yet its event lost that event for
+ * good: its mark is dropped (`dropAnswered`), and the next HEAD move —
+ * another client's — reloads as the M31 contract says.
+ */
+export function handleLiveUpdateReconnected(): void {
+  useGitOpsStore.getState().dropAnswered();
 }

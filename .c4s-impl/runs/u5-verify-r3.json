@@ -1,0 +1,60 @@
+{
+ "role": "verifier",
+ "scope": {
+  "kind": "unit",
+  "id": "u5-accept-ui"
+ },
+ "release": "2.1.47",
+ "rows": [
+  {
+   "slug": "releases-list",
+   "level": 1,
+   "status": "covered",
+   "evidence": "see verifier hand-back (static, typecheck 0)",
+   "type": "ui-view"
+  },
+  {
+   "slug": "ac-przycisk-accept-jest-nieaktywny-gdy-p",
+   "level": 2,
+   "status": "covered",
+   "evidence": "see verifier hand-back (static, typecheck 0)",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-karta-wydania-przyjmujacego-cien-na-l",
+   "level": 2,
+   "status": "covered",
+   "evidence": "see verifier hand-back (static, typecheck 0)",
+   "type": "ac"
+  },
+  {
+   "slug": "section:m17ui001",
+   "level": 2,
+   "status": "covered",
+   "evidence": "see verifier hand-back (static, typecheck 0)"
+  },
+  {
+   "slug": "section:8i5qf0xx",
+   "level": 2,
+   "status": "covered",
+   "evidence": "see verifier hand-back (static, typecheck 0)"
+  },
+  {
+   "slug": "section:u5vl07ch",
+   "level": 2,
+   "status": "covered",
+   "evidence": "see verifier hand-back (static, typecheck 0)"
+  },
+  {
+   "slug": "goal:u5-accept-ui",
+   "level": 2,
+   "status": "covered",
+   "evidence": "see verifier hand-back (static, typecheck 0)"
+  }
+ ],
+ "suite": {
+  "command": "npm run typecheck (static)",
+  "exitCode": 0,
+  "summary": "typecheck 0; affected tests read, none broken"
+ }
+}

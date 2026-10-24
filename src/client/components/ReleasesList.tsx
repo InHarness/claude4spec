@@ -129,6 +129,16 @@ export function ReleasesList({ onCreateClick }: Props) {
                 >
                   {r.description}
                 </div>
+                {/* 2.1.47: the card of a release that accepted a shadow names it — `id @ sha7`. */}
+                {r.acceptedShadow ? (
+                  <div
+                    className="text-[11.5px] font-mono mt-1"
+                    style={{ color: 'var(--c-subtle)' }}
+                    data-accepted-shadow
+                  >
+                    Accepted shadow {r.acceptedShadow.id} @ {r.acceptedShadow.tipSha.slice(0, 7)}
+                  </div>
+                ) : null}
                 <ReleaseBriefsSection briefs={briefsByRelease.get(r.name)} />
               </div>
             </Link>

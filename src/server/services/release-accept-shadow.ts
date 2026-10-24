@@ -126,6 +126,13 @@ export interface AcceptShadowDeps<R extends { name: string; description: string 
  * acceptance lands its merge commit instead of rolling back.
  */
 export class AcceptedReleaseCommittedError extends Error {
+  /**
+   * The release commit's result, set once the acceptance has landed it. The
+   * error answer carries it (`error.gitSync`, `routes/errors.ts`): a client
+   * reads from it, as from a success, whether its own operation moved HEAD.
+   */
+  gitSync?: GitCommitResult | null;
+
   constructor(
     readonly release: { name: string; description: string },
     cause: unknown,
@@ -308,6 +315,7 @@ async function sequence<R extends { name: string; description: string }>(
         // merge commit lands; the failure to read it back is reported.
         const gitSync = await git.commitOnRelease(err.release, lock);
         if (gitSync?.status !== 'committed') git.notifyStatusChanged(false);
+        err.gitSync = gitSync;
         throw err;
       }
       await rollback(deps, paths, mark, held);

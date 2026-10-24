@@ -83,7 +83,7 @@ beforeEach(() => {
   reload.calls = 0;
   toasts = [];
   status = { ...baseStatus };
-  useGitOpsStore.setState({ pending: null });
+  useGitOpsStore.setState({ ops: [] });
   window.sessionStorage.clear();
   routes = {
     '/api/git/status': async () => status,

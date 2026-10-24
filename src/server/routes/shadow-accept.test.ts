@@ -70,7 +70,9 @@ const STAMP = { createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00
 const entityFile = (payload: Record<string, unknown>): string => JSON.stringify({ ...payload, ...STAMP }, null, 2) + '\n';
 
 type GitVersionHolder = { gitVersion(): Promise<string | null> };
-type ErrorBody = { error: { code: string; message: string; details?: string[]; recovery?: { kind?: string } } };
+type ErrorBody = {
+  error: { code: string; message: string; details?: string[]; recovery?: { kind?: string }; gitSync?: { status?: string } };
+};
 
 /** Files of the registry roots the scenarios touch — the working-tree state a rollback must restore. */
 const TRACKED = [
@@ -906,6 +908,8 @@ describe('M17 shadow acceptance — POST /api/shadow-accept (2.1.47)', () => {
     expect(res.status).toBe(500);
     expect((res.body as ErrorBody).error.message).toContain('injected read-back failure');
     expect((res.body as ErrorBody).error.code).not.toBe('ACCEPT_FAILED');
+    // The error answer says the release commit landed — HEAD moved (the client keeps its own-op mark).
+    expect((res.body as ErrorBody).error.gitSync?.status).toBe('committed');
 
     // The release file and its cache row stay.
     const file = JSON.parse(read('.claude4spec/releases/v1.json')!) as { acceptedShadow: { id: string; tipSha: string } };

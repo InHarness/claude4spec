@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { WsEvent } from '../../shared/types.js';
 import { createInvalidationBatcher } from '../lib/wsBatcher.js';
-import { handleGitStatusChanged } from '../lib/git-ws.js';
+import { handleGitStatusChanged, handleLiveUpdateReconnected } from '../lib/git-ws.js';
 import { handleProjectDisposed } from '../lib/project-disposed.js';
 import { PROJECT_ID } from '../lib/api-core.js';
 import { useFileEventsStore } from '../state/fileEvents.js';
@@ -33,8 +33,15 @@ export function useFileWatcher() {
     let reconnectTimer: number | null = null;
     let closed = false;
 
+    let opened = false;
+
     const connect = () => {
       ws = new WebSocket(url);
+      ws.onopen = () => {
+        // 2.1.47: frames broadcast while the socket was down are gone.
+        if (opened) handleLiveUpdateReconnected();
+        opened = true;
+      };
       ws.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data) as WsEvent;

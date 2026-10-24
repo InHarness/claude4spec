@@ -176,7 +176,7 @@ function expectShadowOpen(id: string) {
 }
 
 beforeEach(() => {
-  useGitOpsStore.setState({ pending: null });
+  useGitOpsStore.setState({ ops: [] });
   window.sessionStorage.clear();
   fetchMock = vi.fn(async (url: string) => {
     const path = String(url).replace(/^\/api\/projects\/[^/]+/, '/api');

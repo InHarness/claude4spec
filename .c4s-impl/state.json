@@ -1,5 +1,5 @@
 {
- "iteration": 25,
+ "iteration": 38,
  "conventions": [
   {
    "label": "L1 (DB) — implementor M41",
@@ -66,7 +66,7 @@
    "units": [
     "u5-accept-ui"
    ],
-   "startCommit": null
+   "startCommit": "733dfa2e5f9fe400fb52dbb21672f47adf80b9ee"
   }
  ],
  "units": [
@@ -917,15 +917,34 @@
     }
    ],
    "wave": 3,
-   "status": "pending",
-   "portions": [],
-   "startCommit": null,
-   "baseCommit": null,
+   "status": "verified",
+   "portions": [
+    {
+     "name": "u5-accept-ui/p1-l5-l5",
+     "layers": [
+      "L5"
+     ],
+     "slugs": [
+      "releases-list",
+      "ac-karta-wydania-przyjmujacego-cien-na-l",
+      "ac-przycisk-accept-jest-nieaktywny-gdy-p"
+     ],
+     "status": "implemented",
+     "rounds": 4,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
+   "startCommit": "f9ebda356e9cfb4cedcdae2e96833a1282500c62",
+   "baseCommit": "733dfa2e5f9fe400fb52dbb21672f47adf80b9ee",
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 4
    },
-   "jobs": []
+   "jobs": [],
+   "lastUncovered": 0,
+   "lastBlocking": 0
   }
  ],
  "entityTypes": [

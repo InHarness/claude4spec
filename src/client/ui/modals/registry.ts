@@ -3,6 +3,7 @@ import type { ModalFormProps } from '../ModalHost.js';
 import type { ModalKind } from '../events.js';
 import { ToolJsonView } from './ToolJsonView.js';
 import { GitSyncRecover } from './GitSyncRecover.js';
+import { ShadowAccept } from './ShadowAccept.js';
 import { PageChanged } from './PageChanged.js';
 import { ChoiceModal } from './ChoiceModal.js';
 import { ProjectCreate } from './ProjectCreate.js';
@@ -21,6 +22,7 @@ type RendererMap = { [K in HostModalKind]?: ComponentType<ModalFormProps<K>> };
 export const MODAL_RENDERERS: RendererMap = {
   'tool-json-view': ToolJsonView,
   'git-sync-recover': GitSyncRecover,
+  'shadow-accept': ShadowAccept,
   'page-resolve': PageChanged,
   'page-reload': PageChanged,
   'onboarding-skip': ChoiceModal,
