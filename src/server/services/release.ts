@@ -8,7 +8,7 @@
  * `m17dom001`, `m17dcre01`).
  */
 
-import { SYSTEM_ROOTS, systemRootDir } from '../../shared/root-kinds.js';
+import { PAGES_KIND, SYSTEM_ROOTS, systemRootDir, type RootKind } from '../../shared/root-kinds.js';
 import nodeFs from 'node:fs';
 import nodeOs from 'node:os';
 import nodePath from 'node:path';
@@ -1040,8 +1040,8 @@ export class ReleaseService {
   }
 
   /**
-   * The roots of the shadow comparison: the release diff's `DeltaRoots`, every
-   * registry root dir, the `releases` root. No release store wired → a plain
+   * The roots of the shadow comparison: the release diff's `DeltaRoots` and
+   * every registry root with its kind. No release store wired → a plain
    * `Error` (500): the server was assembled without it — not a refusal of the
    * request, and not a statement about git.
    */
@@ -1057,16 +1057,16 @@ export class ReleaseService {
       }
     };
     const roots = this.resolveGitDiffScope();
-    const releasesDir = realOrSelf(this.releaseStore.root);
-    const registryDirs = [
-      ...new Set([
-        ...this.pagesKindRootDirs.map((d) => realOrSelf(nodePath.resolve(this.cwd, d))),
-        ...SYSTEM_ROOTS.map((r) => realOrSelf(nodePath.resolve(this.cwd, r.dir))),
-        roots.entities.dir,
-        releasesDir,
-      ]),
+    // The system roots served by a store sit where that store is rooted.
+    const storeDirs: Partial<Record<RootKind, string>> = {
+      entities: roots.entities.dir,
+      releases: realOrSelf(this.releaseStore.root),
+    };
+    const registryRoots = [
+      ...this.pagesKindRootDirs.map((d) => ({ kind: PAGES_KIND, dir: realOrSelf(nodePath.resolve(this.cwd, d)) })),
+      ...SYSTEM_ROOTS.map((r) => ({ kind: r.kind, dir: storeDirs[r.kind] ?? realOrSelf(nodePath.resolve(this.cwd, r.dir)) })),
     ];
-    return { roots, registryDirs, releasesDir };
+    return { roots, registryRoots };
   }
 
   /**

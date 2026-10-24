@@ -28,6 +28,7 @@
 
 import nodePath from 'node:path';
 import type { ShadowDiffResponse } from '../../shared/entities.js';
+import type { RootKind } from '../../shared/root-kinds.js';
 import type { GitService } from './git.js';
 import {
   computeTwoStateDelta,
@@ -41,10 +42,12 @@ import { DomainError } from './tags.js';
 export interface ShadowDiffScope {
   /** The roots of the delta (the release-flag roots, the `releases` root excluded) — the same as the release diff's. */
   roots: DeltaRoots;
-  /** Absolute, realpath'd dirs of EVERY registry root (whatever its kind): a changed path outside all of them is `outsideSpecFiles`. */
-  registryDirs: readonly string[];
-  /** Absolute, realpath'd dir of the `releases` root. */
-  releasesDir: string;
+  /**
+   * EVERY registry root, with its kind and its absolute, realpath'd dir: a
+   * changed path outside all of them is `outsideSpecFiles`; one inside a root of
+   * kind `releases` sets `touchesReleases` — gated by the KIND (L13), never by a dir.
+   */
+  registryRoots: ReadonlyArray<{ kind: RootKind; dir: string }>;
 }
 
 export interface ShadowDiffDeps {
@@ -131,10 +134,9 @@ export async function computeShadowDiff(deps: ShadowDiffDeps, ref: unknown): Pro
   const outside = new Set<string>();
   let touchesReleases = false;
   for (const file of shadowFiles.files) {
-    if (isInsideOrEqual(scope.releasesDir, file.path)) touchesReleases = true;
-    if (!scope.registryDirs.some((dir) => isInsideOrEqual(dir, file.path))) {
-      outside.add(nodePath.relative(rootPath, file.path).split(nodePath.sep).join('/'));
-    }
+    const owners = scope.registryRoots.filter((root) => isInsideOrEqual(root.dir, file.path));
+    if (owners.length === 0) outside.add(nodePath.relative(rootPath, file.path).split(nodePath.sep).join('/'));
+    else if (owners.some((root) => root.kind === 'releases')) touchesReleases = true;
   }
 
   return {

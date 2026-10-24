@@ -414,14 +414,14 @@
             "ac-ref-refs-runs-przepisany-na-remote-ni",
             "ac-fetch-z-wynikiem-fetched-nie-usuwa-lo"
           ],
-          "status": "implemented",
-          "rounds": 2,
+          "status": "verified",
+          "rounds": 3,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": "3a2561cc3b9ba8e9a4ad3fda95f79fbf6544a065",
+      "startCommit": "946c3292b9c81343d584adb0de6b25044acbf7c1",
       "baseCommit": "e4fa8facaf2c2a311547c7d3ac4dc39ea09e27b9",
       "rounds": {
         "review": 0,
@@ -742,14 +742,14 @@
             "section:xkpt256d",
             "section:m17api401"
           ],
-          "status": "implemented",
-          "rounds": 2,
+          "status": "verified",
+          "rounds": 3,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": "ef5b82132666cfe3f83bea742299f1342967368a",
+      "startCommit": "946c3292b9c81343d584adb0de6b25044acbf7c1",
       "baseCommit": "1c63aea4e8cfc918a966717425e4f1b821966d81",
       "rounds": {
         "review": 0,
@@ -899,13 +899,13 @@
             "ac-klik-pozycji-w-sekcji-shadows-nie-zmi"
           ],
           "status": "verified",
-          "rounds": 5,
+          "rounds": 6,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": "01cde6470a4a372e065955a8e973b23c876ab529",
+      "startCommit": "946c3292b9c81343d584adb0de6b25044acbf7c1",
       "baseCommit": "36532636e24d52a8a0896ea5a8517417aa50e961",
       "rounds": {
         "review": 2,

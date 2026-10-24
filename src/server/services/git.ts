@@ -1824,10 +1824,15 @@ export class GitService {
       return { status: 'clean', tree };
     } catch (err) {
       const e = err as { code?: unknown; stdout?: string };
+      // Exit 1 is a conflict only when stdout opens with the result tree's OID:
+      // some git versions (2.39) also exit 1 on an unresolvable revision, with
+      // no tree in stdout — that is an error, not a conflict with no paths.
       if (e.code === 1 && typeof e.stdout === 'string') {
-        const [, ...rest] = e.stdout.split('\0');
-        const end = rest.indexOf('');
-        return { status: 'conflicts', paths: [...new Set(end === -1 ? rest : rest.slice(0, end))] };
+        const [tree, ...rest] = e.stdout.split('\0');
+        if (/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(tree ?? '')) {
+          const end = rest.indexOf('');
+          return { status: 'conflicts', paths: [...new Set(end === -1 ? rest : rest.slice(0, end))] };
+        }
       }
       return { status: 'error', message: errMessage(err) };
     }

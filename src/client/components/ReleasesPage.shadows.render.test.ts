@@ -27,10 +27,28 @@ vi.mock('../hooks/useConfig.js', () => ({
 vi.mock('@tanstack/react-router', async () => {
   const React = await import('react');
   return {
-    Link: ({ children, to, params, title }: { children?: unknown; to?: string; params?: unknown; title?: string }) =>
+    // Like the real `Link`, the remaining props (here `data-master-link`) land on the `<a>`.
+    Link: ({
+      children,
+      to,
+      params,
+      title,
+      'data-master-link': masterLink,
+    }: {
+      children?: unknown;
+      to?: string;
+      params?: unknown;
+      title?: string;
+      'data-master-link'?: boolean;
+    }) =>
       React.createElement(
         'a',
-        { 'data-to': to, 'data-params': params === undefined ? undefined : JSON.stringify(params), title },
+        {
+          'data-to': to,
+          'data-params': params === undefined ? undefined : JSON.stringify(params),
+          'data-master-link': masterLink,
+          title,
+        },
         children as never,
       ),
     useNavigate: () => () => {},

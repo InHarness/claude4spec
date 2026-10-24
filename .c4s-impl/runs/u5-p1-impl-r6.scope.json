@@ -1,0 +1,143 @@
+{
+  "unit": {
+    "id": "u5-shadows-ui",
+    "goal": "Rozwijana lista przełącznika gałęzi w nagłówku dostaje sekcję Shadows. Pokazuje się ona tylko przy włączonym gicie i niepustej liście cieni. Klik w pozycję cienia tylko nawiguje: nie robi checkoutu i nie zmienia HEAD. Prowadzi do nowej zakładki Shadows na ekranie wydań, która zawiera:\n  - picker cienia;\n  - nagłówek porównania i banery flag;\n  - render delty: w trybie `merge` jak w Compare, a w trybie `shadow-only` z listą konfliktów nad renderem;\n  - karty elementów: dodany element jest bez linku, zmieniony i usunięty linkują do wersji z mastera;\n  - stany: brak cieni, cień zniknął, brak zmian, błąd.\n\n  Zdarzenie zmiany statusu gita unieważnia teraz także listę cieni i deltę cienia. Nic nie jest usuwane.",
+    "recipe": {
+      "pages": [
+        {
+          "key": "pages/modules/m17-snapshots-releases/L5-ui.md",
+          "change": "all",
+          "context": {
+            "offset": 0,
+            "limit": 1,
+            "anchors": [
+              "m17ui001"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+          "change": {
+            "offset": 2,
+            "limit": 1,
+            "anchors": [
+              "m17ui002"
+            ]
+          },
+          "context": {
+            "offset": 19,
+            "limit": 1,
+            "anchors": [
+              "m17ui002"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+          "context": {
+            "offset": 25,
+            "limit": 1,
+            "anchors": [
+              "zvlon9bp"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m28-git-sync.md",
+          "change": {
+            "offset": 8,
+            "limit": 2,
+            "anchors": [
+              "8i5qf0xx",
+              "846dmtbu"
+            ]
+          },
+          "context": {
+            "offset": 25,
+            "limit": 1,
+            "anchors": [
+              "rhj0h9rl"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m28-git-sync.md",
+          "context": {
+            "offset": 27,
+            "limit": 1,
+            "anchors": [
+              "8i5qf0xx"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m28-git-sync.md",
+          "context": {
+            "offset": 29,
+            "limit": 1,
+            "anchors": [
+              "846dmtbu"
+            ]
+          }
+        }
+      ],
+      "entities": [
+        {
+          "type": "ui-view",
+          "slugs": [
+            "releases-list"
+          ]
+        },
+        {
+          "type": "module-dependency",
+          "slugs": [
+            "m28-requires-m17"
+          ]
+        },
+        {
+          "type": "ac",
+          "slugs": [
+            "ac-karta-elementu-added-w-zakladce-shado",
+            "ac-karta-encji-usunietej-w-zakladce-shad",
+            "ac-w-trybie-shadow-only-zakladka-shadows",
+            "ac-przy-masterahead-0-naglowek-zakladki",
+            "ac-zakladka-shadows-z-ref-cienia-ktorego",
+            "ac-przy-config-git-enabled-false-sekcji",
+            "ac-klik-pozycji-w-sekcji-shadows-nie-zmi"
+          ]
+        }
+      ]
+    },
+    "jobs": []
+  },
+  "mode": "build",
+  "portion": {
+    "name": "u5-shadows-ui/p1-l2-l5",
+    "layers": [
+      "L2",
+      "L5"
+    ],
+    "slugs": [
+      "releases-list",
+      "m28-requires-m17",
+      "ac-karta-elementu-added-w-zakladce-shado",
+      "ac-karta-encji-usunietej-w-zakladce-shad",
+      "ac-w-trybie-shadow-only-zakladka-shadows",
+      "ac-przy-masterahead-0-naglowek-zakladki",
+      "ac-zakladka-shadows-z-ref-cienia-ktorego",
+      "ac-przy-config-git-enabled-false-sekcji",
+      "ac-klik-pozycji-w-sekcji-shadows-nie-zmi"
+    ],
+    "packet": ".c4s-impl/packets/u5-shadows-ui/p1-l2-l5.md"
+  },
+  "only": [
+    {
+      "finding": {
+        "source": "system suite",
+        "slug": "ac-karta-elementu-added-w-zakladce-shado",
+        "failure": "env-runner full `npm test` (sha 946c3292): FAIL src/client/components/ReleasesPage.shadows.render.test.ts > [ac:ac-karta-elementu-added-w-zakladce-shado] [section:m17ui002] the card of an `added` element ... modified and deleted cards link to the master version — TypeError: Cannot read properties of null (reading 'getAttribute') at ReleasesPage.shadows.render.test.ts:400: `const modified = card('endpoint:get-changed')!.querySelector<HTMLA…` returned null; `expect(modified.getAttribute('data-to')).toBe('/endpoints/$slug')`."
+      }
+    }
+  ],
+  "stateDir": ".c4s-impl/"
+}

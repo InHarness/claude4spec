@@ -1,0 +1,216 @@
+{
+  "unit": {
+    "id": "u4-shadow-diff",
+    "goal": "M17 udostępnia porównanie cienia z masterem. To operacja tylko do odczytu i nie bierze blokady repozytorium. Działa w dwóch trybach:\n  - `merge` (domyślny): delta od HEAD do wyniku próbnego scalenia;\n  - `shadow-only`: delta od merge-base do tipa cienia z listą konfliktów; zapada przy konflikcie albo na starym gicie.\n\n  Wynik niesie dodatkowo nagłówek baza → cień z liczbą commitów mastera od bazy, flagi przyjęcia, stan „przed” usuniętych encji z lewej strony delty oraz SHA. Porównanie ma osobną trasę REST pod własnym prefiksem i nowe odmowy: nieznany albo już przyjęty cień oraz git niedostępny, bez fallbacku na SQLite. Nic nie jest usuwane.",
+    "recipe": {
+      "pages": [
+        {
+          "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+          "change": {
+            "offset": 4,
+            "limit": 7,
+            "anchors": [
+              "jssreefn",
+              "pu2g4dms",
+              "ce8plh8i",
+              "0xvhubti",
+              "nemiv2qh",
+              "856sq0nw",
+              "m17api001"
+            ]
+          },
+          "context": {
+            "offset": 1,
+            "limit": 1,
+            "anchors": [
+              "m17api001"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+          "context": {
+            "offset": 10,
+            "limit": 10,
+            "anchors": [
+              "0jsqpl74",
+              "856sq0nw"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+          "change": {
+            "offset": 0,
+            "limit": 2,
+            "anchors": [
+              "22u3o5bx",
+              "xkpt256d"
+            ]
+          },
+          "context": {
+            "offset": 1,
+            "limit": 3,
+            "anchors": [
+              "xkpt256d",
+              "m17zal001",
+              "y7fdm1jc"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+          "change": {
+            "offset": 3,
+            "limit": 1,
+            "anchors": [
+              "m17api401"
+            ]
+          },
+          "context": {
+            "offset": 9,
+            "limit": 1,
+            "anchors": [
+              "m17errtx1"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+          "context": {
+            "offset": 16,
+            "limit": 1,
+            "anchors": [
+              "22u3o5bx"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+          "context": {
+            "offset": 24,
+            "limit": 1,
+            "anchors": [
+              "m17api401"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m28-git-sync.md",
+          "context": {
+            "offset": 4,
+            "limit": 1,
+            "anchors": [
+              "eu1rffp6"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m28-git-sync.md",
+          "context": {
+            "offset": 24,
+            "limit": 1,
+            "anchors": [
+              "0u6ygyh7"
+            ]
+          }
+        }
+      ],
+      "entities": [
+        {
+          "type": "spec-operation",
+          "slugs": [
+            "shadow-diff"
+          ]
+        },
+        {
+          "type": "endpoint",
+          "slugs": [
+            "get-api-shadow-diff"
+          ]
+        },
+        {
+          "type": "dto",
+          "slugs": [
+            "shadow-diff-response"
+          ]
+        },
+        {
+          "type": "module-dependency",
+          "slugs": [
+            "m17-requires-m28"
+          ]
+        },
+        {
+          "type": "ac",
+          "slugs": [
+            "ac-bez-konfliktu-get-api-shadow-diff-zwr",
+            "ac-przy-konflikcie-get-api-shadow-diff-z",
+            "ac-przy-konflikcie-get-api-shadow-diff-z-2",
+            "ac-w-trybie-merge-delta-get-api-shadow-d",
+            "ac-w-trybie-merge-zmiana-mastera-zrobion",
+            "ac-niezacommitowana-zmiana-mastera-nie-p",
+            "ac-przy-gicie-starszym-niz-2-38-get-api",
+            "ac-get-api-shadow-diff-z-nieznanym-ref-z",
+            "ac-get-api-shadow-diff-z-refem-bedacym-p",
+            "ac-przy-git-off-get-api-shadow-diff-zwra",
+            "ac-probne-scalenie-nie-zmienia-head",
+            "ac-probne-scalenie-nie-zmienia-indeksu",
+            "ac-probne-scalenie-nie-zmienia-drzewa-ro"
+          ]
+        }
+      ]
+    },
+    "jobs": []
+  },
+  "mode": "build",
+  "portion": {
+    "name": "u4-shadow-diff/p1-l2-l4",
+    "layers": [
+      "L2",
+      "L3",
+      "L4"
+    ],
+    "slugs": [
+      "shadow-diff",
+      "get-api-shadow-diff",
+      "shadow-diff-response",
+      "m17-requires-m28",
+      "ac-bez-konfliktu-get-api-shadow-diff-zwr",
+      "ac-przy-konflikcie-get-api-shadow-diff-z",
+      "ac-przy-konflikcie-get-api-shadow-diff-z-2",
+      "ac-w-trybie-merge-delta-get-api-shadow-d",
+      "ac-w-trybie-merge-zmiana-mastera-zrobion",
+      "ac-niezacommitowana-zmiana-mastera-nie-p",
+      "ac-przy-gicie-starszym-niz-2-38-get-api",
+      "ac-get-api-shadow-diff-z-nieznanym-ref-z",
+      "ac-get-api-shadow-diff-z-refem-bedacym-p",
+      "ac-przy-git-off-get-api-shadow-diff-zwra",
+      "ac-probne-scalenie-nie-zmienia-head",
+      "ac-probne-scalenie-nie-zmienia-indeksu",
+      "ac-probne-scalenie-nie-zmienia-drzewa-ro",
+      "section:jssreefn",
+      "section:pu2g4dms",
+      "section:ce8plh8i",
+      "section:0xvhubti",
+      "section:nemiv2qh",
+      "section:856sq0nw",
+      "section:m17api001",
+      "section:22u3o5bx",
+      "section:xkpt256d",
+      "section:m17api401"
+    ],
+    "packet": ".c4s-impl/packets/u4-shadow-diff/p1-l2-l4.md"
+  },
+  "only": [
+    {
+      "finding": {
+        "source": "system suite",
+        "slug": "shadow-diff",
+        "failure": "env-runner full `npm test` (sha 946c3292): FAIL tests/integration/architecture/root-kind-gating.test.ts > 2.1.8 — L13: per-file behaviour is gated by kind or kind flag > [ac:ac-kazde-zachowanie-per-katalog-jest-bramko] gating follows the kind and its flags — never a directory or an identifier — offenders == [\"src/server/services/release-shadow-diff.ts:134: if (isInsideOrEqual(scope.releasesDir, file.path)) touchesReleases = true;\"], expected []. The L13 rule: per-file behaviour is gated by a flag of the root's kind or by the kind itself, never by a directory."
+      }
+    }
+  ],
+  "reviewFile": ".c4s-impl/review/u4-shadow-diff.json",
+  "stateDir": ".c4s-impl/"
+}
