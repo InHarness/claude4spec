@@ -171,6 +171,29 @@ describe('M40 — fs provider behaviour', () => {
     expect(seen).toEqual(['external']);
   });
 
+  it('[section:c38qf5p5] an operation suppression swallows the provider’s add, change and unlink of its paths', async () => {
+    const dir = tmp();
+    fs.writeFileSync(path.join(dir, 'b.md'), 'before the operation\n');
+    const r = runtime();
+    r.mountSource({ source: 'pages:pages', dir, scope: CTX });
+    const log: string[] = [];
+    r.subscribe(
+      'pages:pages',
+      { onChange: (_s, _src, p) => void log.push(p), onUnlink: (_s, _src, p) => void log.push(`${p}:unlink`) },
+      { id: 'm06-index', phase: 'projection', scope: CTX },
+    );
+
+    const op = r.scoped(CTX).suppressOperation([path.join(dir, 'a.md'), path.join(dir, 'b.md')]);
+    fs.writeFileSync(path.join(dir, 'a.md'), 'merged in\n');
+    fs.rmSync(path.join(dir, 'b.md'));
+    // The control: a path outside the operation dispatches as usual.
+    fs.writeFileSync(path.join(dir, 'c.md'), 'unrelated\n');
+    expect(await until(() => log.includes('c.md'))).toBe(true);
+    await new Promise((res) => setTimeout(res, 400)); // let any straggler past the debounce
+    expect(log).toEqual(['c.md']);
+    op.release();
+  });
+
   it('a server write whose own write-back rewrites the same file dispatches exactly once', async () => {
     // Regression: one dispatch legitimately produces TWO writes to the same path
     // — the server write (markOrigin) and, inside its own reaction chain, the M06

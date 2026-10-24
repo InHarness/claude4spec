@@ -1,0 +1,62 @@
+{
+ "unit": {
+  "id": "u3-operation-suppress",
+  "goal": "Runtime obserwacji plików dostaje tłumienie na czas operacji. Zakłada się je na listę ścieżek przed operacją zmieniającą wiele plików naraz; połyka zdarzenia tych ścieżek do jawnego zdjęcia, z karencją na echa, a po górnym limicie samo wygasa z ostrzeżeniem w logu. Wolno go używać tylko wołającemu, który sam uruchamia łańcuch reakcji dla tłumionych ścieżek. Nic nie jest usuwane.",
+  "recipe": {
+   "pages": [
+    {
+     "key": "pages/modules/m40-file-watch-runtime.md",
+     "change": "all",
+     "context": {
+      "offset": 1,
+      "limit": 2,
+      "anchors": [
+       "21j8a8rx",
+       "lezr5lgy"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m40-file-watch-runtime.md",
+     "context": {
+      "offset": 6,
+      "limit": 1,
+      "anchors": [
+       "t4euqrks"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m40-file-watch-runtime.md",
+     "context": {
+      "offset": 11,
+      "limit": 3,
+      "anchors": [
+       "l1h0puma",
+       "v90cvq22",
+       "j37qjvvh"
+      ]
+     }
+    }
+   ],
+   "entities": [
+    {
+     "type": "module-dependency",
+     "slugs": [
+      "m17-requires-m40"
+     ]
+    },
+    {
+     "type": "ac",
+     "slugs": [
+      "ac-tlumienie-na-czas-operacji-niezdjete",
+      "ac-zdarzenie-pliku-objetego-tlumieniem-n"
+     ]
+    }
+   ]
+  },
+  "jobs": []
+ },
+ "mode": "split",
+ "stateDir": ".c4s-impl"
+}

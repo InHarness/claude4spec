@@ -1,5 +1,5 @@
 {
- "iteration": 14,
+ "iteration": 18,
  "conventions": [
   {
    "label": "L1 (DB) — implementor M41",
@@ -434,15 +434,36 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "pending",
-   "portions": [],
-   "startCommit": null,
-   "baseCommit": null,
+   "status": "verified",
+   "portions": [
+    {
+     "name": "u3-operation-suppress/p1-l7-l7",
+     "layers": [
+      "L7"
+     ],
+     "slugs": [
+      "ac-tlumienie-na-czas-operacji-niezdjete",
+      "ac-zdarzenie-pliku-objetego-tlumieniem-n",
+      "m17-requires-m40",
+      "section:c38qf5p5",
+      "section:antfe82l"
+     ],
+     "status": "implemented",
+     "rounds": 1,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
+   "startCommit": "ba9afff29b73ed352cb310b6c3920f1ff6576ef9",
+   "baseCommit": "ba9afff29b73ed352cb310b6c3920f1ff6576ef9",
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 1
    },
-   "jobs": []
+   "jobs": [],
+   "lastUncovered": 0,
+   "lastBlocking": 0
   },
   {
    "id": "u4-accept-shadow",

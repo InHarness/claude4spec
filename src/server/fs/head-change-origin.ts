@@ -11,25 +11,12 @@
  * successor's key, which those events no longer concern. `suppress` is not
  * used: the chain has to run over the changed files.
  *
- * This maps absolute paths onto the context's mounted sources: a path inside
- * a mount's dir is labelled under that source with its mount-relative,
- * `/`-separated relPath (the same form the runtime derives from an fs event).
- * Paths and dirs are compared by realpath, so a symlinked dir (e.g. macOS
- * `/var` → `/private/var`) and git's real worktree root still match. A path
- * may not exist yet (added by the change) or any more (deleted) — its nearest
- * existing ancestor is resolved.
+ * Absolute paths are mapped onto the context's mounted sources by
+ * `mountRelPaths` (`mount-paths.ts`).
  */
 
-import fs from 'node:fs';
-import path from 'node:path';
 import type { WatchActor } from './watcher.js';
-
-export interface HeadChangeMount {
-  /** The source name the mount was registered under (e.g. `pages:pages`). */
-  source: string;
-  /** The mount's absolute dir. */
-  dir: string;
-}
+import { mountRelPaths, type MountedDir } from './mount-paths.js';
 
 /** The part of a scoped registrar this needs — the context's own `markOrigin`. */
 export interface OriginLabeller {
@@ -44,36 +31,12 @@ export interface OriginLabeller {
  */
 export function headChangeOriginMarker(
   registrar: OriginLabeller,
-  mounts: () => readonly HeadChangeMount[],
+  mounts: () => readonly MountedDir[],
   actor: WatchActor = 'user',
 ): (absPaths: string[]) => void {
   return (absPaths) => {
-    const resolved = mounts().map((m) => ({ source: m.source, dir: realpathOfNearestAncestor(m.dir) }));
-    for (const abs of absPaths) {
-      const real = realpathOfNearestAncestor(abs);
-      if (!real) continue;
-      for (const m of resolved) {
-        if (!m.dir) continue;
-        const rel = path.relative(m.dir, real);
-        if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) continue;
-        registrar.markOrigin(m.source, rel.split(path.sep).join('/'), actor);
-      }
+    for (const { source, relPath } of mountRelPaths(absPaths, mounts())) {
+      registrar.markOrigin(source, relPath, actor);
     }
   };
-}
-
-/** `realpath` of `p`, tolerating a missing tail (re-appended to the nearest existing ancestor). */
-function realpathOfNearestAncestor(p: string): string | null {
-  const tail: string[] = [];
-  let current = path.resolve(p);
-  for (;;) {
-    try {
-      return path.join(fs.realpathSync(current), ...tail);
-    } catch {
-      const parent = path.dirname(current);
-      if (parent === current) return null;
-      tail.unshift(path.basename(current));
-      current = parent;
-    }
-  }
 }
