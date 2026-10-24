@@ -1,1 +1,0 @@
-{"role":"reviewer","scope":{"kind":"unit","id":"u5-accept-ui","base":"4227f670"},"findings":[{"id":"rev-0008","file":"src/client/lib/git-ws.ts","line":57,"blocking":false,"portion":"u5-accept-ui/p1-l5-l5","reason":"Residual reconnect window for in-flight acceptances (see review/u5-accept-ui.md)."}]}
