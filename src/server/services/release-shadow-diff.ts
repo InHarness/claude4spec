@@ -62,6 +62,28 @@ function isInsideOrEqual(parent: string, child: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !nodePath.isAbsolute(rel));
 }
 
+/**
+ * The two content flags of the acceptance (`nemiv2qh`) over the ABSOLUTE paths
+ * a shadow changes (`merge-base..tip`): `outsideSpecFiles` — the paths under
+ * no registry root, repository-relative and sorted; `touchesReleases` — a path
+ * inside a root of kind `releases`. Shared by the comparison and by the
+ * acceptance's guards, so both read the same flags off the same paths.
+ */
+export function acceptanceFlags(
+  absPaths: readonly string[],
+  registryRoots: ShadowDiffScope['registryRoots'],
+  rootPath: string,
+): { outsideSpecFiles: string[]; touchesReleases: boolean } {
+  const outside = new Set<string>();
+  let touchesReleases = false;
+  for (const abs of absPaths) {
+    const owners = registryRoots.filter((root) => isInsideOrEqual(root.dir, abs));
+    if (owners.length === 0) outside.add(nodePath.relative(rootPath, abs).split(nodePath.sep).join('/'));
+    else if (owners.some((root) => root.kind === 'releases')) touchesReleases = true;
+  }
+  return { outsideSpecFiles: [...outside].sort(), touchesReleases };
+}
+
 /** `GIT_UNAVAILABLE` (400) — also raised by the release service when no git service is wired. */
 export function gitUnavailable(): DomainError {
   return new DomainError(
@@ -131,13 +153,11 @@ export async function computeShadowDiff(deps: ShadowDiffDeps, ref: unknown): Pro
   if (!shadowFiles) throw gitFailed('the files of the shadow could not be read');
   if (!commits) throw gitFailed('the commits of the shadow could not be read');
 
-  const outside = new Set<string>();
-  let touchesReleases = false;
-  for (const file of shadowFiles.files) {
-    const owners = scope.registryRoots.filter((root) => isInsideOrEqual(root.dir, file.path));
-    if (owners.length === 0) outside.add(nodePath.relative(rootPath, file.path).split(nodePath.sep).join('/'));
-    else if (owners.some((root) => root.kind === 'releases')) touchesReleases = true;
-  }
+  const { outsideSpecFiles, touchesReleases } = acceptanceFlags(
+    shadowFiles.files.map((f) => f.path),
+    scope.registryRoots,
+    rootPath,
+  );
 
   return {
     mode,
@@ -147,7 +167,7 @@ export async function computeShadowDiff(deps: ShadowDiffDeps, ref: unknown): Pro
     masterAhead,
     conflicts: merged.status === 'conflicts' ? merged.paths : [],
     mergePreview: merged.status !== 'unsupported',
-    outsideSpecFiles: [...outside].sort(),
+    outsideSpecFiles,
     touchesReleases,
     commits,
     entities: delta.entities,

@@ -15,7 +15,12 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-vi.mock('../lib/project-reload.js', () => ({ reloadProjectRoute: () => {} }));
+const reload = vi.hoisted(() => ({ calls: 0 }));
+vi.mock('../lib/project-reload.js', () => ({
+  reloadProjectRoute: () => {
+    reload.calls += 1;
+  },
+}));
 vi.mock('../runtime/boot-plugins.js', () => ({ reloadFrontendPlugins: () => Promise.resolve() }));
 vi.mock('../core/plugin-host/host.js', () => ({
   clientPluginHost: { getAvailable: () => undefined, listEntities: () => [] },
@@ -31,12 +36,21 @@ import { useGitOpsStore } from '../state/gitOps.js';
 /** Minimal WebSocket double: the test plays server events through `emit`. */
 class FakeSocket {
   static last: FakeSocket | null = null;
+  static created = 0;
+  onopen: (() => void) | null = null;
   onmessage: ((e: { data: string }) => void) | null = null;
   onclose: (() => void) | null = null;
   constructor(public url: string) {
     FakeSocket.last = this;
+    FakeSocket.created += 1;
   }
   close() {}
+  open() {
+    this.onopen?.();
+  }
+  drop() {
+    this.onclose?.();
+  }
   emit(event: unknown) {
     this.onmessage?.({ data: JSON.stringify(event) });
   }
@@ -72,7 +86,9 @@ async function mount() {
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
-  useGitOpsStore.setState({ pending: null });
+  useGitOpsStore.setState({ ops: [] });
+  reload.calls = 0;
+  FakeSocket.created = 0;
   fetchMock = vi.fn(async (url: string) => {
     const body = String(url).endsWith('/api/git/shadows') ? { shadows: [] } : { mode: 'merge', entities: [], pages: [] };
     return new Response(JSON.stringify(body), { status: 200 });
@@ -116,5 +132,45 @@ describe('shadow queries — WS invalidation', () => {
     await settle();
     expect(shadowDiffCalls()).toBe(2);
     expect(shadowListCalls()).toBe(2);
+  });
+});
+
+describe('own git operations — live-update socket reconnect', () => {
+  it('[section:8i5qf0xx] [section:m17ui001] a reconnect of the live-update socket drops an answered-but-unclaimed own operation (its frame was lost while the socket was down), so the next HEAD move of another client reloads; an operation still in flight keeps its mark', async () => {
+    await mount();
+    act(() => FakeSocket.last!.open());
+    // An acceptance answered "release commit landed", its HEAD frame not yet seen;
+    // a Sync is still in flight.
+    act(() =>
+      useGitOpsStore.setState({
+        ops: [
+          { op: 'accept', headSeen: false, answered: true },
+          { op: 'sync', headSeen: false, answered: false },
+        ],
+      }),
+    );
+
+    // The socket drops — the frame broadcast meanwhile is gone — and reconnects after 1 s.
+    act(() => FakeSocket.last!.drop());
+    await settle(1000);
+    expect(FakeSocket.created).toBe(2);
+    // The first open of the new socket is a reconnect: answered entries go, in-flight ones stay.
+    expect(useGitOpsStore.getState().ops).toHaveLength(2);
+    act(() => FakeSocket.last!.open());
+    expect(useGitOpsStore.getState().ops).toEqual([{ op: 'sync', headSeen: false, answered: false }]);
+
+    // The Sync's own HEAD event is still attributed to it (no reload) …
+    act(() => FakeSocket.last!.emit({ kind: 'git:status-changed', headChanged: true }));
+    expect(reload.calls).toBe(0);
+    // … and the dropped acceptance no longer swallows another client's HEAD move.
+    act(() => FakeSocket.last!.emit({ kind: 'git:status-changed', headChanged: true }));
+    expect(reload.calls).toBe(1);
+  });
+
+  it('[section:8i5qf0xx] the first open of the live-update socket is not a reconnect: an answered own operation keeps its mark', async () => {
+    act(() => useGitOpsStore.setState({ ops: [{ op: 'accept', headSeen: false, answered: true }] }));
+    await mount();
+    act(() => FakeSocket.last!.open());
+    expect(useGitOpsStore.getState().ops).toEqual([{ op: 'accept', headSeen: false, answered: true }]);
   });
 });

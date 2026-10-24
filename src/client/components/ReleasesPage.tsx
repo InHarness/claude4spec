@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
+import { useIsMutating } from '@tanstack/react-query';
 import { GitCommit, Plus } from 'lucide-react';
-import { useUnreleasedCount } from '../hooks/useReleases.js';
+import { SHADOW_ACCEPT_KEY, useUnreleasedCount } from '../hooks/useReleases.js';
 import { useConfig } from '../hooks/useConfig.js';
 import { useGitStatus } from '../hooks/useGitStatus.js';
 import { SegmentedControlTabs } from '../host-ui-kit/detail/SegmentedControlTabs.js';
@@ -39,6 +40,10 @@ function compareTabLabel(count: number | undefined): string {
  * that shadow again, and a visit without `tab` (e.g. browser Back from
  * `?tab=shadow&ref=<id>` to a plain `/releases`) lands on the list.
  *
+ * 2.1.47: the Shadows tab accepts a shadow; a success lands on the List tab,
+ * and while the acceptance runs (`shadow-accepting`) the tab switcher is
+ * locked.
+ *
  * A tab switch costs no request: every tab body stays mounted once shown and
  * the inactive one is only hidden, so their queries (release list, pushes,
  * briefs, the counter, the Compare diff, the shadow list and delta) are not
@@ -72,6 +77,9 @@ export function ReleasesPage({
     select(requestedTab ?? 'list');
   }
   const [showCreate, setShowCreate] = useState(false);
+  // 2.1.47 `shadow-accepting`: while a shadow acceptance runs the tab switcher
+  // is locked until the sequence ends (success, refusal or failure).
+  const accepting = useIsMutating({ mutationKey: SHADOW_ACCEPT_KEY }) > 0;
 
   function select(id: ReleasesTab) {
     setTab(id);
@@ -92,15 +100,23 @@ export function ReleasesPage({
           Releases
         </h2>
         <span className="flex-1" />
-        <SegmentedControlTabs
-          tabs={[
-            { id: 'list', label: 'Releases' },
-            { id: 'compare', label: compareTabLabel(unreleasedCount) },
-            ...(shadowsAvailable ? [{ id: 'shadow', label: 'Shadows' }] : []),
-          ]}
-          active={activeTab}
-          onChange={(id) => select(id as ReleasesTab)}
-        />
+        <div
+          aria-disabled={accepting || undefined}
+          data-tabs-locked={accepting || undefined}
+          style={accepting ? { opacity: 0.6, pointerEvents: 'none' } : undefined}
+        >
+          <SegmentedControlTabs
+            tabs={[
+              { id: 'list', label: 'Releases' },
+              { id: 'compare', label: compareTabLabel(unreleasedCount) },
+              ...(shadowsAvailable ? [{ id: 'shadow', label: 'Shadows' }] : []),
+            ]}
+            active={activeTab}
+            onChange={(id) => {
+              if (!accepting) select(id as ReleasesTab);
+            }}
+          />
+        </div>
         <button
           onClick={() => setShowCreate(true)}
           className="rounded-md flex items-center gap-1.5 px-2.5 py-1 text-[12.5px]"
@@ -121,7 +137,7 @@ export function ReleasesPage({
       )}
       {shadowsAvailable && shown.has('shadow') && (
         <TabPanel id="shadow" active={activeTab === 'shadow'}>
-          <ReleasesShadowsTab requestedRef={shadowRef} visit={visit} />
+          <ReleasesShadowsTab requestedRef={shadowRef} visit={visit} onAccepted={() => select('list')} />
         </TabPanel>
       )}
 

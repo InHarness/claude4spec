@@ -257,7 +257,9 @@ CREATE TABLE spec_release (
   created_by   TEXT NOT NULL,                                                     -- "user" | "agent"
   created_at   TEXT NOT NULL,                                                     -- 056: ISO 8601 UTC ms, no default
   slug         TEXT,
-  roots        TEXT
+  roots        TEXT,
+  accepted_shadow_id  TEXT,                                                       -- 058: NULL unless the release accepted a shadow
+  accepted_shadow_sha TEXT                                                        -- 058: tip SHA of that shadow; NULL with the id
 );
 CREATE TABLE tag (
   slug TEXT PRIMARY KEY,

@@ -2,7 +2,12 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { FileWatchRuntime, type WatchSubscriber, type WatchScope } from './watcher.js';
+import {
+  FileWatchRuntime,
+  OPERATION_SUPPRESS_LIMIT_MS,
+  type WatchSubscriber,
+  type WatchScope,
+} from './watcher.js';
 
 /**
  * M40 runtime tests. Two modes, deliberately:
@@ -613,4 +618,140 @@ describe('M40 — flush', () => {
     expect(log).toEqual(['proj']);
   });
 
+});
+
+describe('2.1.47 — suppression for the duration of an operation', () => {
+  /**
+   * Fake timers: the grace window and the upper limit are real `setTimeout`s,
+   * and none of them may outlive a test. `fsEvents: false` — events are driven
+   * through `flush()`, which takes the same suppression check as an fs event.
+   */
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  /** A mounted runtime with one projection subscriber and its absolute dir. */
+  function setup(): { r: FileWatchRuntime; dir: string; log: string[] } {
+    vi.useFakeTimers();
+    const r = runtime();
+    const dir = tmp();
+    r.mountSource({ source: 'pages:pages', dir, scope: CTX });
+    const log: string[] = [];
+    r.subscribe('pages:pages', recorder(log, 'proj'), { id: 'm06-index', phase: 'projection', scope: CTX });
+    return { r, dir, log };
+  }
+
+  it('[ac:ac-zdarzenie-pliku-objetego-tlumieniem-n] events of suppressed paths run no chain until the suppression is released', async () => {
+    const { r, dir, log } = setup();
+    const op = r.scoped(CTX).suppressOperation([path.join(dir, 'a.md'), path.join(dir, 'sub/b.md')]);
+
+    // Every kind of event, any number of them, on every suppressed path.
+    await r.flush(CTX, 'pages:pages', 'a.md', 'change');
+    await r.flush(CTX, 'pages:pages', 'a.md', 'unlink');
+    await r.flush(CTX, 'pages:pages', 'a.md', 'add');
+    await r.flush(CTX, 'pages:pages', 'sub/b.md', 'unlink');
+    expect(log).toEqual([]);
+
+    // No time window: far past a primitive's guard window it still swallows.
+    await vi.advanceTimersByTimeAsync(60_000);
+    await r.flush(CTX, 'pages:pages', 'a.md');
+    expect(log).toEqual([]);
+
+    // Only the suppressed paths: another file of the same source dispatches.
+    await r.flush(CTX, 'pages:pages', 'c.md');
+    expect(log).toEqual(['proj']);
+
+    // The caller runs the chain itself — runChain never consults the suppression.
+    await r.runChain(CTX, 'pages:pages', 'a.md', 'change', 'server');
+    expect(log).toEqual(['proj', 'proj']);
+
+    // After release, the echo grace: an event right after the operation is still swallowed…
+    op.release();
+    await r.flush(CTX, 'pages:pages', 'sub/b.md', 'unlink');
+    expect(log).toEqual(['proj', 'proj']);
+
+    // …and once it has run out, the paths are observed again.
+    await vi.advanceTimersByTimeAsync(2_000);
+    await r.flush(CTX, 'pages:pages', 'sub/b.md', 'unlink');
+    expect(log).toEqual(['proj', 'proj', 'proj:unlink']);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('[ac:ac-tlumienie-na-czas-operacji-niezdjete] a suppression its operation never released expires at the upper limit, with a warning in the log', async () => {
+    const { r, dir, log } = setup();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const op = r.scoped(CTX).suppressOperation([path.join(dir, 'a.md')]);
+
+    await vi.advanceTimersByTimeAsync(OPERATION_SUPPRESS_LIMIT_MS - 1);
+    await r.flush(CTX, 'pages:pages', 'a.md');
+    expect(log).toEqual([]);
+    expect(warn).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toMatch(/operation suppression of 1 path\(s\) in scope 'context:p1' was not released/);
+
+    // Expired: the path's events run the chain again, and nothing is left pending.
+    await r.flush(CTX, 'pages:pages', 'a.md');
+    expect(log).toEqual(['proj']);
+    expect(vi.getTimerCount()).toBe(0);
+
+    // A late release is a no-op — it neither re-arms nor warns again.
+    op.release();
+    await r.flush(CTX, 'pages:pages', 'a.md');
+    expect(log).toEqual(['proj', 'proj']);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('[section:antfe82l] an external write to a suppressed path during the operation is swallowed; the next one after it dispatches', async () => {
+    const { r, dir, log } = setup();
+    const op = r.scoped(CTX).suppressOperation([path.join(dir, 'a.md')]);
+    fs.writeFileSync(path.join(dir, 'a.md'), 'edited outside the app');
+    await r.flush(CTX, 'pages:pages', 'a.md');
+    expect(log).toEqual([]);
+
+    op.release();
+    op.release(); // idempotent: one guard window, not two
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(2_000);
+    fs.writeFileSync(path.join(dir, 'a.md'), 'edited again');
+    await r.flush(CTX, 'pages:pages', 'a.md');
+    expect(log).toEqual(['proj']);
+  });
+
+  it('[section:c38qf5p5] keys by (scope, source, relPath): paths outside every mount and other scopes are untouched', async () => {
+    const { r, dir, log } = setup();
+    const other: WatchScope = 'context:p2';
+    const otherDir = tmp();
+    r.mountSource({ source: 'pages:pages', dir: otherDir, scope: other });
+    const otherLog: string[] = [];
+    r.subscribe('pages:pages', recorder(otherLog, 'p2'), { id: 'm06-index', phase: 'projection', scope: other });
+
+    // Nothing of this scope lies under the paths: no suppression, no timer.
+    r.scoped(CTX).suppressOperation([path.join(otherDir, 'a.md'), path.join(os.tmpdir(), 'elsewhere.md')]);
+    expect(vi.getTimerCount()).toBe(0);
+    await r.flush(other, 'pages:pages', 'a.md');
+    expect(otherLog).toEqual(['p2']);
+
+    // The same relPath in project B is not masked by project A's operation.
+    r.scoped(CTX).suppressOperation([path.join(dir, 'a.md')]);
+    await r.flush(CTX, 'pages:pages', 'a.md');
+    await r.flush(other, 'pages:pages', 'a.md');
+    expect(log).toEqual([]);
+    expect(otherLog).toEqual(['p2', 'p2']);
+  });
+
+  it('dispose clears the scope’s operation suppressions and their timers', async () => {
+    const { r, dir } = setup();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    r.scoped(CTX).suppressOperation([path.join(dir, 'a.md')]);
+    expect(vi.getTimerCount()).toBe(1);
+
+    await r.disposeScope(CTX);
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(OPERATION_SUPPRESS_LIMIT_MS);
+    expect(warn).not.toHaveBeenCalled();
+  });
 });

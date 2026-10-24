@@ -326,12 +326,28 @@ export interface VersionDetail extends VersionListItem {
 
 // --- M17: Spec Snapshots & Releases ---
 
+/**
+ * 2.1.47 (M17 m17reldisk, dto `release` field `accepted_shadow`): the shadow a
+ * release accepted — the shadow `id` (its ref name without `refs/runs/`) and the
+ * `tipSha` that was previewed and merged.
+ */
+export interface AcceptedShadow {
+  id: string;
+  tipSha: string;
+}
+
 export interface Release {
   id: number;
   name: string;
   description: string;
   createdBy: ChangedBy;
   createdAt: string;
+  /**
+   * 2.1.47: the accepted shadow, `null` for every release that did not accept
+   * one — including one made by a plain `createRelease`. Additive: optional so a
+   * consumer from before the field (and a hand-built `Release`) stays valid.
+   */
+  acceptedShadow?: AcceptedShadow | null;
 }
 
 export interface ReleaseCountBreakdown {
@@ -355,6 +371,27 @@ export interface ReleaseDetail extends Release {
  */
 export interface CreateReleaseResponse extends ReleaseDetail {
   gitSync?: GitSyncField<GitCommitStatus>;
+}
+
+/**
+ * 2.1.47 (dto `shadow-accept-request`, M17 `aae2vgem`) — body of
+ * `POST /api/shadow-accept`: accept a shadow as a new release. `name` and
+ * `description` are validated as in `POST /api/releases` before anything
+ * touches the repository. Both SHAs come from the preview
+ * (`ShadowDiffResponse.shadow.tipSha` / `.head.sha`) and are required: either
+ * one differing from the current state is `409 ACCEPT_STALE`. The request
+ * never carries `acceptedShadow` nor the shadow's entity versions — only the
+ * operation sets them.
+ */
+export interface ShadowAcceptRequest {
+  /** The shadow id — the ref name without `refs/runs/`, e.g. `<runId>/spec`; in the body because it may contain `/`. */
+  ref: string;
+  name: string;
+  description: string;
+  /** The shadow tip SHA the preview was computed on — the SHA that is merged, not the ref's current value. */
+  expectedTipSha: string;
+  /** The HEAD SHA the preview was computed on. */
+  expectedHeadSha: string;
 }
 
 /**

@@ -171,6 +171,48 @@ describe('M40 — fs provider behaviour', () => {
     expect(seen).toEqual(['external']);
   });
 
+  it('[section:c38qf5p5] an operation suppression swallows the provider’s add, change and unlink of its paths', async () => {
+    const dir = tmp();
+    fs.writeFileSync(path.join(dir, 'b.md'), 'before the operation\n');
+    const r = runtime();
+    r.mountSource({ source: 'pages:pages', dir, scope: CTX });
+    const log: string[] = [];
+    r.subscribe(
+      'pages:pages',
+      { onChange: (_s, _src, p) => void log.push(p), onUnlink: (_s, _src, p) => void log.push(`${p}:unlink`) },
+      { id: 'm06-index', phase: 'projection', scope: CTX },
+    );
+
+    // Wait until the provider is live. The mount runs with `ignoreInitial`, so a
+    // file written before chokidar finishes its initial scan is folded into that
+    // scan and never reported — on Linux (inotify) the scan routinely outlasts a
+    // write issued right after `mountSource`, and the control below was lost
+    // that way. A probe rewritten until it dispatches proves the watcher sees
+    // writes (and knows `b.md`, so its unlink is reported) before the operation.
+    // Each rewrite waits out a full debounce + write-stabilisation window, so the
+    // rewrites themselves never keep re-arming the per-file debounce.
+    const probe = path.join(dir, 'probe.md');
+    let live = false;
+    for (let n = 0; n < 10 && !live; n++) {
+      fs.writeFileSync(probe, `probe ${n}\n`);
+      live = await until(() => log.includes('probe.md'), 1000);
+    }
+    expect(live).toBe(true);
+    // A late echo of an earlier probe write must not leak into the assertion below.
+    await new Promise((res) => setTimeout(res, 800));
+    log.length = 0;
+
+    const op = r.scoped(CTX).suppressOperation([path.join(dir, 'a.md'), path.join(dir, 'b.md')]);
+    fs.writeFileSync(path.join(dir, 'a.md'), 'merged in\n');
+    fs.rmSync(path.join(dir, 'b.md'));
+    // The control: a path outside the operation dispatches as usual.
+    fs.writeFileSync(path.join(dir, 'c.md'), 'unrelated\n');
+    expect(await until(() => log.includes('c.md'))).toBe(true);
+    await new Promise((res) => setTimeout(res, 400)); // let any straggler past the debounce
+    expect(log).toEqual(['c.md']);
+    op.release();
+  }, 30_000); // the readiness probe may take up to ~10 s on a slow provider
+
   it('a server write whose own write-back rewrites the same file dispatches exactly once', async () => {
     // Regression: one dispatch legitimately produces TWO writes to the same path
     // — the server write (markOrigin) and, inside its own reaction chain, the M06

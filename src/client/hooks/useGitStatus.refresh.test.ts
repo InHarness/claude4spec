@@ -83,7 +83,7 @@ async function settle(ms = 0) {
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
   reload.calls = 0;
-  useGitOpsStore.setState({ pending: null });
+  useGitOpsStore.setState({ ops: [] });
   window.sessionStorage.clear();
   fetchMock = vi.fn(async () => new Response(JSON.stringify(STATUS), { status: 200 }));
   vi.stubGlobal('fetch', fetchMock);
@@ -117,7 +117,7 @@ describe('git status refresh — WS event', () => {
 
   it('[ac:ac-klient-ktory-nie-inicjowal-operacji-p] a client that did not start the operation reloads the project route on git:status-changed with headChanged: true', async () => {
     await mount(true);
-    expect(useGitOpsStore.getState().pending).toBeNull();
+    expect(useGitOpsStore.getState().ops).toEqual([]);
 
     act(() => FakeSocket.last!.emit({ kind: 'git:status-changed', headChanged: true }));
     expect(reload.calls).toBe(1);

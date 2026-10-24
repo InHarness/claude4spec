@@ -209,7 +209,7 @@ describe('the seeded catalog', () => {
    * (`describe_entity_type` renders `describe_types` internally), and the alias
    * is written down here rather than inferred.
    */
-  it('every internal/mcp `direct` cell of an M39 row has a tool registered on its server (the whole-catalogue check is in `the catalogue against the window\'s 79 records`)', () => {
+  it('every internal/mcp `direct` cell of an M39 row has a tool registered on its server (the whole-catalogue check is in `the catalogue against the window\'s 80 records`)', () => {
     const mcpDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../mcp');
     const declared = (file: string): Set<string> =>
       new Set(
@@ -1793,7 +1793,7 @@ describe('the M18 tag write rows as their 2.1.26 records declare them', () => {
  * a record; each row answers for the record's fields; and the four L3/M43
  * criteria on `reguly` and `narzedzia` hold for every row at once.
  */
-describe("the catalogue against the window's 79 records", () => {
+describe("the catalogue against the window's 80 records", () => {
   const RECORD_CHANNEL: Record<ChannelCell['kind'], string> = { direct: 'direct', via: 'via', na: 'n/a' };
   const EFFECT: Record<string, string> = { brak: 'none', plik: 'file', db: 'db', 'ui-notify': 'ui-notify' };
   const IDEMPOTENCE: Record<string, boolean | 'conditional'> = { tak: true, nie: false, warunkowa: 'conditional' };
@@ -1888,9 +1888,9 @@ describe("the catalogue against the window's 79 records", () => {
 
   const byName = new Map(SPEC_OPERATION_RECORDS.map((r) => [r.nazwa, r]));
 
-  it('every one of the 79 records has its row, and every other row is a plugin row the window has no record for', () => {
-    expect(SPEC_OPERATION_RECORDS).toHaveLength(79);
-    expect(byName.size).toBe(79);
+  it('every one of the 80 records has its row, and every other row is a plugin row the window has no record for', () => {
+    expect(SPEC_OPERATION_RECORDS).toHaveLength(80);
+    expect(byName.size).toBe(80);
     for (const record of SPEC_OPERATION_RECORDS) expect(CATALOG.has(record.nazwa), record.nazwa).toBe(true);
     const withoutRecord = CATALOG.list()
       .filter((op) => !byName.has(op.name))
@@ -2195,5 +2195,56 @@ describe('the 2.1.46 shadow_diff row', () => {
     expect(httpStatusForCode('SHADOW_NOT_FOUND')).toBe(404);
     expect(httpStatusForCode('GIT_UNAVAILABLE')).toBe(400);
     expect(httpStatusForCode('VALIDATION')).toBe(400);
+  });
+});
+
+/**
+ * 2.1.47 — the M17 shadow acceptance (record `accept-shadow`): one row, rendered
+ * only by its REST route `POST /api/shadow-accept`. Its behaviour (guard order,
+ * rollback, the variant of `createRelease`) is tested against a real repository
+ * and DB next to the route (`src/server/routes/shadow-accept.test.ts`).
+ */
+describe('the 2.1.47 accept_shadow row', () => {
+  it('[entity:accept-shadow] accept_shadow: project, direct, write, internal/cli/mcp n/a with the record\'s reason, rest direct (POST /api/shadow-accept), effects file+db+ui-notify, not idempotent, content n/a, the record\'s 17 codes once each with their REST statuses, rules destructive-declared + operation-only-write (excluded) + error-code-once + echo-free, no renderings, input ref + name + description + both preview SHAs', () => {
+    registerCoreOperations();
+    const op = CATALOG.require('accept_shadow');
+    const reason = 'w tej iteracji wyłącznie interfejs; kanał agenta i wiersz poleceń odłożone (przegląd otwarty)';
+    expect(op.scope).toBe('project');
+    expect(op.mediation).toBe('direct');
+    expect(op.opClass).toBe('write');
+    expect(op.channels).toEqual({ internal: na(reason), cli: na(reason), mcp: na(reason), rest: direct() });
+    expect([...op.sideEffects].sort()).toEqual(['db', 'file', 'ui-notify']);
+    expect(op.idempotent).toBe(false);
+    expect(op.contentInput).toBe('n/a');
+    expect(op.renderings).toBeUndefined();
+    expect(Object.keys(op.inputSchema)).toEqual(['ref', 'name', 'description', 'expectedTipSha', 'expectedHeadSha']);
+    expect(op.rules).toEqual([
+      { id: 'destructive-declared' },
+      { id: 'operation-only-write', exclusion: 'pliki zmienia scalenie gita, nie zapis operacji; capture i reindeks domyka sekwencja in-band' },
+      { id: 'error-code-once' },
+      { id: 'echo-free' },
+    ]);
+    const statuses: Record<string, number> = {
+      VALIDATION: 400,
+      RELEASE_NAME_CONFLICT: 409,
+      RELEASE_NAME_RESERVED: 400,
+      RELEASE_DESCRIPTION_REQUIRED: 400,
+      RELEASE_DESCRIPTION_TOO_LONG: 400,
+      GIT_UNAVAILABLE: 400,
+      SHADOW_NOT_FOUND: 404,
+      ACCEPT_NO_BRANCH: 409,
+      ACCEPT_TARGET_NOT_CURRENT: 409,
+      ACCEPT_BUSY: 409,
+      ACCEPT_STALE: 409,
+      ACCEPT_DIRTY: 409,
+      ACCEPT_OUTSIDE_SPEC: 409,
+      ACCEPT_RELEASES_IN_SHADOW: 409,
+      ACCEPT_CONFLICTS: 409,
+      ACCEPT_FAILED: 500,
+      ACCEPT_ABORT_FAILED: 500,
+    };
+    expect([...op.errorCodes].sort()).toEqual(Object.keys(statuses).sort());
+    expect(new Set(op.errorCodes).size).toBe(op.errorCodes.length);
+    for (const [code, status] of Object.entries(statuses)) expect(httpStatusForCode(code), code).toBe(status);
   });
 });

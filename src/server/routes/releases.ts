@@ -50,18 +50,24 @@ export function releasesRouter(
   router.post('/', async (req, res, next) => {
     try {
       const body = (req.body ?? {}) as { name?: string; description?: string };
-      const release = releases.createRelease(
-        { name: body.name ?? '', description: body.description ?? '' },
-        'user',
-      );
-      ws?.broadcast({ kind: 'release:created', releaseId: release.id, name: release.name });
-      // M28: best-effort git commit AFTER the release is persisted. Non-fatal —
-      // gitSync rides this synchronous response and never blocks release
-      // creation. 2.1.14 (M17 hybasevj): `null` when the `commitOnRelease` gate
-      // did not let it through (git off, no repo, detached/unborn HEAD in
-      // `current` mode); the UI reacts only to `status: 'error'`.
-      const gitSync = gitService ? await gitService.commitOnRelease(release) : null;
-      res.status(201).json({ ...release, gitSync });
+      // 2.1.47 (M17 g4rsukyw): the release mutex covers the transaction AND the
+      // commit-on-release — a creation waits while a shadow acceptance (or
+      // another creation) holds it.
+      const created = await releases.withReleaseMutex(async () => {
+        const release = releases.createRelease(
+          { name: body.name ?? '', description: body.description ?? '' },
+          'user',
+        );
+        ws?.broadcast({ kind: 'release:created', releaseId: release.id, name: release.name });
+        // M28: best-effort git commit AFTER the release is persisted. Non-fatal —
+        // gitSync rides this synchronous response and never blocks release
+        // creation. 2.1.14 (M17 hybasevj): `null` when the `commitOnRelease` gate
+        // did not let it through (git off, no repo, detached/unborn HEAD in
+        // `current` mode); the UI reacts only to `status: 'error'`.
+        const gitSync = gitService ? await gitService.commitOnRelease(release) : null;
+        return { ...release, gitSync };
+      });
+      res.status(201).json(created);
     } catch (err) {
       next(err);
     }

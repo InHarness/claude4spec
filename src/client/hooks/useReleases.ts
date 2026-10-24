@@ -1,11 +1,14 @@
 import { useMemo } from 'react';
 import { useMutation, useQueries, useQuery, useQueryClient, type QueryClient, type UseQueryOptions } from '@tanstack/react-query';
 import { releasesApi } from '../lib/releases-api.js';
-import { CURRENT_RELEASE_NAME } from '../../shared/entities.js';
+import { CURRENT_RELEASE_NAME, type CreateReleaseResponse, type ShadowAcceptRequest } from '../../shared/entities.js';
 import { unreleasedCountOf } from '../../shared/unreleased-counter.js';
 import { releasesService } from '../runtime/releases-service.js';
 import { releasePushesKey } from './useReleasePushes.js';
-import { shadowDiffKey } from '../lib/release-diff-invalidation.js';
+import { SHADOW_DIFF_KEY, shadowDiffKey } from '../lib/release-diff-invalidation.js';
+import { GIT_SHADOWS_KEY } from '../lib/git-ws.js';
+import { useGitOpsStore } from '../state/gitOps.js';
+import { ApiError } from '../lib/api-core.js';
 
 /**
  * The full release list — everything the host's `/releases` UI needs
@@ -120,6 +123,66 @@ export function useShadowDiff(ref: string | null) {
     enabled: ref != null && ref.length > 0,
     retry: false,
   });
+}
+
+/**
+ * 2.1.47 — the key of the shadow acceptance mutation. While one is in flight
+ * the screen is in its `shadow-accepting` state (`useIsMutating` on this key):
+ * the Shadows tab shows a spinner and locks its picker, `ReleasesPage` locks
+ * the tab switcher.
+ */
+export const SHADOW_ACCEPT_KEY = ['shadow-accept'] as const;
+
+/**
+ * 2.1.47 (M17 L5 m17ui001, endpoint `post-api-shadow-accept`) — accept a
+ * shadow as a new release. A success invalidates the release list, the
+ * briefs list, `['git-shadows']` and `['shadow-diff']` at once, without
+ * waiting for the WS event. The acceptance is THIS client's own git operation
+ * (`useGitOpsStore`), so its release commit's `headChanged` event does not
+ * reload the route, whichever of the event and the answer arrives first: an
+ * answer whose release commit landed (`gitSync.status === 'committed'`) keeps
+ * the mark until the event has been attributed to it — a success body, or the
+ * error envelope of a failure past the point of no return (`error.gitSync`).
+ * The outcome handlers are mutation-level (they live on the mutation, not on
+ * one `mutate()` call), so a toast or a repair window is not lost when the
+ * screen unmounts mid-flight.
+ */
+export function useAcceptShadow(handlers: {
+  onSuccess: (release: CreateReleaseResponse, input: ShadowAcceptRequest) => void;
+  onError: (error: Error, input: ShadowAcceptRequest) => void;
+}) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationKey: SHADOW_ACCEPT_KEY,
+    mutationFn: (input: ShadowAcceptRequest) => releasesApi.acceptShadow(input),
+    // THIS client's own HEAD-moving operation: the WS map must not reload the
+    // route on the release commit's `git:status-changed { headChanged: true }`.
+    onMutate: () => useGitOpsStore.getState().begin('accept'),
+    onSuccess: (release, input) => {
+      void qc.invalidateQueries({ queryKey: ['releases'] });
+      // A release's rank places briefs on the release axis (server-computed).
+      void qc.invalidateQueries({ queryKey: ['briefs', 'list'] });
+      void qc.invalidateQueries({ queryKey: GIT_SHADOWS_KEY });
+      void qc.invalidateQueries({ queryKey: SHADOW_DIFF_KEY });
+      handlers.onSuccess(release, input);
+    },
+    onError: (error, input) => handlers.onError(error, input),
+    onSettled: (release, error) => {
+      const ops = useGitOpsStore.getState();
+      if (releaseCommitLanded(release, error)) ops.answeredWithHeadChange('accept');
+      else ops.end('accept');
+    },
+  });
+}
+
+/**
+ * Whether the acceptance's answer says its release commit landed (HEAD moved):
+ * `gitSync.status === 'committed'` on the success body, or on the error
+ * envelope of a failure past the point of no return (`error.gitSync`).
+ */
+function releaseCommitLanded(release: CreateReleaseResponse | undefined, error: Error | null): boolean {
+  const gitSync = error instanceof ApiError ? error.details?.gitSync : release?.gitSync;
+  return (gitSync as { status?: unknown } | null | undefined)?.status === 'committed';
 }
 
 export function useReleaseSnapshot(name: string | undefined) {

@@ -86,6 +86,7 @@ import type { ChatContextType } from '../../shared/entities.js';
 import { ReleaseService } from '../services/release.js';
 import { releasesRouter } from '../routes/releases.js';
 import { shadowDiffRouter } from '../routes/shadow-diff.js';
+import { shadowAcceptRouter } from '../routes/shadow-accept.js';
 import { ReleasePushService } from '../services/release-push.js';
 import { releasePushesRouter } from '../routes/release-pushes.js';
 import { ReleaseImportService, rollbackClone, snapshotRootFiles } from '../services/release-import.js';
@@ -106,11 +107,17 @@ import { registerCoreReactions, type CoreReactionContext } from './core-reaction
 import { mountRegistryRoots, bindRegistryReactions } from './root-registry-runtime.js';
 import { RootRegistry, rootDirAbs } from '../roots/registry.js';
 import { headChangeOriginMarker } from '../fs/head-change-origin.js';
+import { mountRelPaths } from '../fs/mount-paths.js';
 import { kindDeclaration, kindSelects, type RegistryRoot } from '../../shared/root-kinds.js';
 import { FileVersionCapture } from '../services/file-version-capture.js';
 import { EntityStore } from '../services/entity-store.js';
 import { EntityIndexerService } from '../services/entity-indexer.js';
-import { ReleaseFileStore, toReleaseFileData, type ReleaseFileData } from '../services/release-store.js';
+import {
+  ReleaseFileStore,
+  toReleaseFileData,
+  type AcceptedShadowColumns,
+  type ReleaseFileData,
+} from '../services/release-store.js';
 import { RecordStore } from '../fs/record-store.js';
 import type { SnapshotData } from '../serialization/types.js';
 import {
@@ -1167,7 +1174,7 @@ async function buildInner(
     .list()
     .flatMap((root) => {
       const source = sourceByRootId.get(root.id);
-      return source ? [{ source, dir: rootDirAbs(cwd, root) }] : [];
+      return source ? [{ source, dir: rootDirAbs(cwd, root), rootId: root.id }] : [];
     });
   const gitService = new GitService(
     cwd,
@@ -1178,6 +1185,26 @@ async function buildInner(
   );
   // 0.1.118: needed for the git-anchored getReleaseDiff branch.
   releaseService.setGitService(gitService);
+  // 2.1.47 (M17 aae2vgem / mghvzn0w, M40 c38qf5p5): the shadow acceptance's
+  // file-watch side, on THIS context's mounts (the registry roots) — the
+  // operation suppression of the merged paths, their chain run in-band as the
+  // agent's write (`changed_by = 'agent'`), and the `file_version` keys of a
+  // path for the rollback's clean-up. No context rebuild follows an acceptance.
+  releaseService.setAcceptShadowRuntime({
+    suppressOperation: (absPaths) => w.suppressOperation(absPaths),
+    runChain: async (absPath, event) => {
+      for (const { source, relPath } of mountRelPaths([absPath], headChangeMounts)) {
+        const result = await w.runChain(source, relPath, event, 'server', 'agent');
+        if (result.staleProjections.length > 0) {
+          throw new Error(`the reaction chain of ${relPath} failed (${result.staleProjections.join(', ')})`);
+        }
+      }
+    },
+    pageKeys: (absPath) =>
+      headChangeMounts.flatMap((mount) =>
+        mountRelPaths([absPath], [mount]).map(({ relPath }) => ({ rootId: mount.rootId, relPath })),
+      ),
+  });
   // M25 Release Push — coordinates M17 bundle build + M24 transport; owns release_push.
   const releasePushService = new ReleasePushService(
     db.handle,
@@ -1623,6 +1650,8 @@ async function buildInner(
   router.use('/releases', releasesRouter(releaseService, ws, gitService, () => rootRegistry.pages()));
   // 2.1.46 (M17 m17api401): the shadow comparison — M17's second own router, its own prefix.
   router.use('/shadow-diff', shadowDiffRouter(releaseService));
+  // 2.1.47 (M17 m17api401): the shadow acceptance — M17's third own router.
+  router.use('/shadow-accept', shadowAcceptRouter(releaseService, ws));
   router.use('/release-pushes', releasePushesRouter(releasePushService));
   // 0.1.123: on a successful checkout, reuse the same invalidate path as a
   // context-defining config change — no new M31 reload machinery needed.
@@ -1972,7 +2001,9 @@ async function buildInner(
   try {
     const legacyReleases = db.handle
       .prepare(`SELECT * FROM spec_release WHERE slug IS NULL`)
-      .all() as Array<{ id: number; name: string; description: string; created_by: string; created_at: string }>;
+      .all() as Array<
+        { id: number; name: string; description: string; created_by: string; created_at: string } & AcceptedShadowColumns
+      >;
     if (legacyReleases.length > 0) {
       console.log(`[m29] backfilling ${legacyReleases.length} release(s) DB→disk into ${releasesRootDir} ...`);
       backupDbBeforeMigration(dbSlotDir);

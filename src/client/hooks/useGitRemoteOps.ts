@@ -32,7 +32,8 @@ const headChanged = (r: GitSyncResponse | undefined) =>
  * drops once the component unmounts — they still fire when the caller is gone
  * (a `git-sync-recover` window replaced by another modal while Sync is in
  * flight): the reload after a HEAD change still happens, and with it the
- * `pending: 'sync'` mark is consumed instead of lingering.
+ * own-op entry of the sync (`useGitOpsStore`, `op: 'sync'`) is consumed
+ * instead of lingering.
  */
 export interface GitSyncHandlers {
   onSuccess?: (result: GitSyncResponse) => void;

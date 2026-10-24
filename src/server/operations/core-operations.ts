@@ -2885,6 +2885,61 @@ export function registerCoreOperations(): void {
     },
   });
 
+  /**
+   * 2.1.47 — `accept_shadow` (record `accept-shadow`, M17 `aae2vgem`): a shadow
+   * merged into the master and ended as a new release in one step, rendered
+   * only as the REST route `POST /api/shadow-accept` (M17's third own router)
+   * for the accept window of the Shadows tab. Owning core:
+   * `ReleaseService.acceptShadow` → `acceptShadow` (`release-accept-shadow.ts`).
+   * Not idempotent: a repeated call meets an accepted shadow (an ancestor of
+   * HEAD) or a moved HEAD and is refused. The `n/a` reasons are the record's
+   * `powody`, verbatim.
+   */
+  const ACCEPT_SHADOW_UI_ONLY = 'w tej iteracji wyłącznie interfejs; kanał agenta i wiersz poleceń odłożone (przegląd otwarty)';
+  registerRow({
+    name: 'accept_shadow',
+    summary:
+      'Accept a shadow into the master: merge the previewed tip SHA and end with a new release in one step — every failure before the release transaction commits rolls the repository and the version log back.',
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'write',
+    inputSchema: {
+      ref: z.string().describe('The shadow id — the ref name without the refs/runs/ prefix, e.g. `<runId>/spec`.'),
+      name: z.string().describe('The name of the release accepting the shadow — non-empty, unique, not reserved.'),
+      description: z.string().describe('The description of the release — non-empty, at most 500 characters after trim.'),
+      expectedTipSha: z.string().describe('The shadow tip SHA the preview was computed on — the SHA that is merged.'),
+      expectedHeadSha: z.string().describe('The HEAD SHA the preview was computed on.'),
+    },
+    errorCodes: [
+      'VALIDATION',
+      'RELEASE_NAME_CONFLICT',
+      'RELEASE_NAME_RESERVED',
+      'RELEASE_DESCRIPTION_REQUIRED',
+      'RELEASE_DESCRIPTION_TOO_LONG',
+      'GIT_UNAVAILABLE',
+      'SHADOW_NOT_FOUND',
+      'ACCEPT_NO_BRANCH',
+      'ACCEPT_TARGET_NOT_CURRENT',
+      'ACCEPT_BUSY',
+      'ACCEPT_STALE',
+      'ACCEPT_DIRTY',
+      'ACCEPT_OUTSIDE_SPEC',
+      'ACCEPT_RELEASES_IN_SHADOW',
+      'ACCEPT_CONFLICTS',
+      'ACCEPT_FAILED',
+      'ACCEPT_ABORT_FAILED',
+    ],
+    sideEffects: ['file', 'db', 'ui-notify'],
+    idempotent: false,
+    contentInput: 'n/a',
+    channels: {
+      internal: na(ACCEPT_SHADOW_UI_ONLY),
+      cli: na(ACCEPT_SHADOW_UI_ONLY),
+      mcp: na(ACCEPT_SHADOW_UI_ONLY),
+      rest: direct(),
+    },
+  });
+
   // ── M25 Release Push ──────────────────────────────────────────────────────
 
   /**

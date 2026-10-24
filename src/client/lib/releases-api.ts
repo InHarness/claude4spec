@@ -3,6 +3,7 @@ import type {
   RawDelta,
   Release,
   ReleaseDetail,
+  ShadowAcceptRequest,
   ShadowDiffResponse,
   SpecSnapshot,
   UpdateReleaseResponse,
@@ -94,6 +95,20 @@ export const releasesApi = {
    */
   async shadowDiff(ref: string): Promise<ShadowDiffResponse> {
     return handle<ShadowDiffResponse>(await apiFetch(`/api/shadow-diff?ref=${encodeURIComponent(ref)}`));
+  },
+  /**
+   * 2.1.47 (M17, endpoint `post-api-shadow-accept`) — accept a shadow as a new
+   * release. The shadow id travels in the body (it may contain `/`); the answer
+   * is the release (`acceptedShadow` set) with `gitSync`, like `create`.
+   */
+  async acceptShadow(input: ShadowAcceptRequest): Promise<CreateReleaseResponse> {
+    return handle<CreateReleaseResponse>(
+      await apiFetch('/api/shadow-accept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    );
   },
   async restoreEntity(
     releaseName: string,

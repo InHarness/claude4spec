@@ -21,12 +21,12 @@
  *
  * 0.2.2 (brief §8): with `roots` added (migration 049) the release METADATA set
  * the brief calls reconstructable — name, slug, description, createdAt, createdBy,
- * roots — is now fully rebuilt here. The genuinely unreconstructable runtime state
+ * roots — is now fully rebuilt here; 2.1.47 adds acceptedShadow (migration 058). The genuinely unreconstructable runtime state
  * is exactly `entity_version` / `file_version` and the `release_id` linkage.
  */
 
 import type Database from 'better-sqlite3';
-import type { ReleaseFileStore, ReleaseFileData } from './release-store.js';
+import { readAcceptedShadow, type ReleaseFileStore, type ReleaseFileData } from './release-store.js';
 import type { SelfWriteSuppressor } from '../fs/sources.js';
 import type { WatchSubscriber, WatchScope } from '../fs/watcher.js';
 
@@ -39,16 +39,74 @@ import type { WatchSubscriber, WatchScope } from '../fs/watcher.js';
  * JSON array from the file; `id` is still never referenced, so SQLite preserves the
  * surrogate key that `entity_version.release_id` / `file_version.release_id` point at.
  */
+/*
+ * 2.1.47 (migration 058): `accepted_shadow_id` / `accepted_shadow_sha` are rebuilt
+ * from the file's `acceptedShadow` like the rest of the metadata — a file without
+ * the field sets both to NULL.
+ */
 const UPSERT_SQL = `
-  INSERT INTO spec_release (name, slug, description, created_by, created_at, roots)
-  VALUES (?, ?, ?, ?, ?, ?)
+  INSERT INTO spec_release (name, slug, description, created_by, created_at, roots, accepted_shadow_id, accepted_shadow_sha)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(slug) DO UPDATE SET
     name = excluded.name,
     description = excluded.description,
     created_by = excluded.created_by,
     created_at = excluded.created_at,
-    roots = excluded.roots
+    roots = excluded.roots,
+    accepted_shadow_id = excluded.accepted_shadow_id,
+    accepted_shadow_sha = excluded.accepted_shadow_sha
 `;
+
+/**
+ * 2.1.47 (M17 `wh8x023p`) — the cache rebuild of ONE release file, in-band:
+ * the `spec_release` row upserted from `<slug>.json` exactly as the indexer
+ * does it from a watcher event. The acceptance variant of `createRelease`
+ * writes the file first and rebuilds its cache row through this, instead of
+ * INSERTing the row itself. `false` when the file cannot be read.
+ */
+export function indexReleaseFile(db: Database.Database, store: ReleaseFileStore, slug: string): boolean {
+  return upsertReleaseFile(db.prepare(UPSERT_SQL), store, slug);
+}
+
+/** The cache side of removing `<slug>.json` — its `spec_release` row goes too. */
+export function unindexReleaseFile(db: Database.Database, slug: string): void {
+  // No DB-level FK cascade exists (spec_release.id is only a loose
+  // app-level reference from entity_version/file_version.release_id) — this
+  // intentionally leaves those columns dangling for the removed release,
+  // matching the brief's accepted-risk framing for a deleted release file.
+  db.prepare(`DELETE FROM spec_release WHERE slug = ?`).run(slug);
+}
+
+/** Returns true if the release was (re)indexed; false if skipped (parse error). */
+function upsertReleaseFile(upsert: Database.Statement, store: ReleaseFileStore, slug: string): boolean {
+  let data: ReleaseFileData;
+  try {
+    data = store.read(slug);
+  } catch (err) {
+    console.warn(`[release-indexer] skip ${slug}: ${(err as Error).message}`);
+    return false;
+  }
+  // 2.1.23: no name filter. A release that already carries a reserved name
+  // (`current`, `initial`, `null`) — from before the reservation or from a file
+  // brought into the `releases` root — is kept and listed like any other row.
+  // It is unaddressable, because `findReleaseRow` refuses the literal before
+  // any lookup; the reserved-name guard lives only in create/updateRelease.
+  const acceptedShadow = readAcceptedShadow(data);
+  upsert.run(
+    data.name,
+    data.slug,
+    data.description,
+    data.createdBy,
+    data.createdAt,
+    // NULL rather than '[]' when the file records no roots: NULL means "not
+    // recorded, fall back to the current `pages` roots", which is different
+    // from "this release deliberately covered zero roots".
+    data.roots ? JSON.stringify(data.roots) : null,
+    acceptedShadow?.id ?? null,
+    acceptedShadow?.tipSha ?? null,
+  );
+  return true;
+}
 
 export class ReleaseIndexerService implements WatchSubscriber {
 
@@ -71,7 +129,7 @@ export class ReleaseIndexerService implements WatchSubscriber {
     // only skips that one file, mirroring EntityIndexerService's per-entity
     // isolation (m29edge1) instead of rolling back every release indexed
     // earlier in this same boot rebuild.
-    const upsertOneSavepoint = this.db.transaction((slug: string): boolean => this.upsertOne(upsert, slug));
+    const upsertOneSavepoint = this.db.transaction((slug: string): boolean => upsertReleaseFile(upsert, this.store, slug));
     this.db
       .transaction(() => {
         for (const slug of this.store.listSlugs()) {
@@ -100,47 +158,12 @@ export class ReleaseIndexerService implements WatchSubscriber {
   async handleUnlink(relPath: string): Promise<void> {
     const slug = this.store.parseRelPath(relPath);
     if (!slug) return;
-    // No DB-level FK cascade exists (spec_release.id is only a loose
-    // app-level reference from entity_version/file_version.release_id) — this
-    // intentionally leaves those columns dangling for the removed release,
-    // matching the brief's accepted-risk framing for a deleted release file.
-    this.db.prepare(`DELETE FROM spec_release WHERE slug = ?`).run(slug);
+    unindexReleaseFile(this.db, slug);
   }
 
   private indexFromWatch(relPath: string): void {
     const slug = this.store.parseRelPath(relPath);
     if (!slug) return;
-    const upsert = this.db.prepare(UPSERT_SQL);
-    this.upsertOne(upsert, slug);
-  }
-
-  // ─── single-release upsert ────────────────────────────────────────────────
-
-  /** Returns true if the release was (re)indexed; false if skipped (parse error). */
-  private upsertOne(upsert: Database.Statement, slug: string): boolean {
-    let data: ReleaseFileData;
-    try {
-      data = this.store.read(slug);
-    } catch (err) {
-      console.warn(`[release-indexer] skip ${slug}: ${(err as Error).message}`);
-      return false;
-    }
-    // 2.1.23: no name filter. A release that already carries a reserved name
-    // (`current`, `initial`, `null`) — from before the reservation or from a file
-    // brought into the `releases` root — is kept and listed like any other row.
-    // It is unaddressable, because `findReleaseRow` refuses the literal before
-    // any lookup; the reserved-name guard lives only in create/updateRelease.
-    upsert.run(
-      data.name,
-      data.slug,
-      data.description,
-      data.createdBy,
-      data.createdAt,
-      // NULL rather than '[]' when the file records no roots: NULL means "not
-      // recorded, fall back to the current `pages` roots", which is different
-      // from "this release deliberately covered zero roots".
-      data.roots ? JSON.stringify(data.roots) : null,
-    );
-    return true;
+    indexReleaseFile(this.db, this.store, slug);
   }
 }

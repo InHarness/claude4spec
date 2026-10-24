@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { WsEvent } from '../../shared/types.js';
 import { makeWatchIgnore } from './watch-ignore.js';
+import { mountRelPaths } from './mount-paths.js';
 import { globToRegExp } from '../../shared/root-kinds.js';
 
 /**
@@ -182,6 +183,38 @@ interface SuppressToken {
 const SUPPRESS_GUARD_MS = 300 + SELF_WRITE_WINDOW_MS;
 
 /**
+ * 2.1.47 — upper limit of an operation suppression (see
+ * {@link FileWatchRuntime.suppressOperation}). A suppression its issuer never
+ * released expires on its own after this, with a warning in the log: a token
+ * must not outlive the events it exists to swallow. Generous on purpose — it
+ * bounds a forgotten release, not the operation; a merge into the index plus
+ * the in-band chains of every changed file stays far below it.
+ */
+export const OPERATION_SUPPRESS_LIMIT_MS = 10 * 60_000;
+
+/**
+ * The handle of one operation suppression. Retired by its issuer through
+ * `release()` once the operation and its in-band chains are done.
+ */
+export interface OperationSuppression {
+  /**
+   * Retire the suppression — not at once: it keeps swallowing for the same
+   * guard window as a primitive's token, so echoes arriving just after the
+   * operation are still eaten. Idempotent; a no-op after the upper limit hit.
+   */
+  release(): void;
+}
+
+/** One live operation suppression: the keys it covers and its pending timer. */
+interface OperationToken {
+  scope: WatchScope;
+  keys: ReadonlySet<string>;
+  /** Upper-limit timer until `release()`, then the guard-window timer. */
+  timer: NodeJS.Timeout;
+  released: boolean;
+}
+
+/**
  * Debounce lives EXCLUSIVELY in the mount, independently per mount — rapid
  * writes in one directory never block reactions in another. The subscriber
  * contract contains no debounce of its own.
@@ -289,6 +322,13 @@ export interface ScopedWatchRegistrar {
   ): Promise<ChainResult>;
   /** Retire a `'primitive'` token once its chain has settled, after a guard window. */
   releaseSuppress(source: string, relPath: string): void;
+  /**
+   * 2.1.47 — suppress every event of a list of ABSOLUTE paths for the duration
+   * of an operation that changes many files at once. Arm 1 only: legal solely
+   * for a caller that runs the chain (`runChain`) itself for EVERY suppressed
+   * path. See {@link FileWatchRuntime.suppressOperation}.
+   */
+  suppressOperation(absPaths: readonly string[]): OperationSuppression;
   flush(source: string, relPath: string, event?: WatchEventKind): Promise<void>;
   broadcast(event: WsEvent): void;
   isMounted(source: string): boolean;
@@ -326,6 +366,8 @@ export class FileWatchRuntime {
   private readonly pendingSuppress = new Map<string, SuppressToken>();
   /** Pending guard-window timers for primitive-owned tokens, so dispose can clear them. */
   private readonly suppressTimers = new Map<string, NodeJS.Timeout>();
+  /** Live operation suppressions — see `suppressOperation`. Usually none or one. */
+  private readonly operations = new Set<OperationToken>();
   /**
    * The dispatch running on the current call stack.
    *
@@ -595,6 +637,81 @@ export class FileWatchRuntime {
   }
 
   /**
+   * 2.1.47 — suppression for the duration of an operation (a variant of arm 1).
+   *
+   * For an operation that changes many files at once and lasts longer than a
+   * primitive's guard window — the first user is the acceptance of a shadow
+   * (M17), which merges into the index and then runs the chain for every
+   * changed file itself:
+   *
+   * - issued on a LIST of paths before the operation changes them; each
+   *   absolute path is keyed `(scope, source, relPath)` under every mount of
+   *   this scope whose dir contains it (paths outside every mount are ignored);
+   * - swallows every event of those paths — `change`, `add` and `unlink`
+   *   alike, any number of them — until it is released, with no time window;
+   * - `release()` keeps it for the primitive's guard window, so echoes that
+   *   arrive just after the operation are still swallowed;
+   * - expires on its own after {@link OPERATION_SUPPRESS_LIMIT_MS}, with a
+   *   warning in the log, when its issuer never released it.
+   *
+   * Legal ONLY for a caller that runs the chain itself (`runChain`, which never
+   * consults a suppression) for EVERY suppressed path: the events it swallows
+   * are the only other way those changes would reach the reactions. After such
+   * a chain an echo with the same content is recognised by the content hash
+   * even without a token; an `unlink` echo has no hash and would run the chain
+   * a second time — that is why the suppression lasts the whole operation.
+   *
+   * Named cost: a genuinely external write to a suppressed path during the
+   * operation (bounded by the upper limit) is swallowed and runs no chain.
+   * State returns to agreement on the next write of that path, or on a full
+   * rebuild. Unrelated to `markOrigin`: a HEAD change (checkout, pull) must run
+   * the chain from the watcher and never suppresses.
+   */
+  suppressOperation(scope: WatchScope, absPaths: readonly string[]): OperationSuppression {
+    const mounts = [...this.mounts.values()].filter((m) => m.scope === scope);
+    const keys = new Set(
+      mountRelPaths(absPaths, mounts).map(({ source, relPath }) => writeKey(scope, source, relPath)),
+    );
+    // Nothing of this scope is observed under these paths: nothing to swallow.
+    if (keys.size === 0) return { release: () => {} };
+
+    const op: OperationToken = {
+      scope,
+      keys,
+      released: false,
+      timer: setTimeout(() => {
+        if (!this.operations.delete(op)) return;
+        console.warn(
+          `[m40] operation suppression of ${keys.size} path(s) in scope '${scope}' was not released ` +
+            `within ${OPERATION_SUPPRESS_LIMIT_MS} ms — expired on its own`,
+        );
+      }, OPERATION_SUPPRESS_LIMIT_MS),
+    };
+    // Never hold the process open for a suppression.
+    op.timer.unref?.();
+    this.operations.add(op);
+    return { release: () => this.releaseOperation(op) };
+  }
+
+  /** Start the guard window of a released operation suppression. */
+  private releaseOperation(op: OperationToken): void {
+    if (op.released || !this.operations.has(op)) return;
+    op.released = true;
+    clearTimeout(op.timer);
+    op.timer = setTimeout(() => this.operations.delete(op), SUPPRESS_GUARD_MS);
+    op.timer.unref?.();
+  }
+
+  /** Drop operation suppressions (all, or one scope's) together with their timers. */
+  private dropOperations(scope?: WatchScope): void {
+    for (const op of [...this.operations]) {
+      if (scope !== undefined && op.scope !== scope) continue;
+      clearTimeout(op.timer);
+      this.operations.delete(op);
+    }
+  }
+
+  /**
    * Give a suppress token back, for the write that never happened.
    *
    * `suppress()` is issued BEFORE the write, so a write that throws leaves a live
@@ -664,6 +781,8 @@ export class FileWatchRuntime {
    */
   private peekSuppress(scope: WatchScope, source: string, relPath: string): boolean {
     const key = writeKey(scope, source, relPath);
+    // 2.1.47 — a live operation suppression covers the path for as long as it lives.
+    for (const op of this.operations) if (op.keys.has(key)) return true;
     const token = this.pendingSuppress.get(key);
     if (token === undefined) return false;
     if (Date.now() < token.until) return true;
@@ -1020,6 +1139,7 @@ export class FileWatchRuntime {
       runChain: (source, relPath, event, origin, actor) =>
         this.runChain(scope, source, relPath, event, origin, actor),
       releaseSuppress: (source, relPath) => this.releaseSuppress(scope, source, relPath),
+      suppressOperation: (absPaths) => this.suppressOperation(scope, absPaths),
       flush: (source, relPath, event) => this.flush(scope, source, relPath, event),
       broadcast: (event) => this.broadcast(scope, event),
       isMounted: (source) => this.isMounted(source, scope),
@@ -1046,6 +1166,7 @@ export class FileWatchRuntime {
       clearTimeout(timer);
       this.suppressTimers.delete(key);
     }
+    this.dropOperations(scope);
     for (const m of [this.selfHash, this.pendingSuppress, this.originHint] as Array<Map<string, unknown>>) {
       for (const key of [...m.keys()]) if (key.startsWith(prefix)) m.delete(key);
     }
@@ -1061,6 +1182,7 @@ export class FileWatchRuntime {
     }
     for (const timer of this.suppressTimers.values()) clearTimeout(timer);
     this.suppressTimers.clear();
+    this.dropOperations();
     this.selfHash.clear();
     this.pendingSuppress.clear();
     this.originHint.clear();

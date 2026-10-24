@@ -106,7 +106,7 @@ async function loadPage() {
   const { RELEASES_TABS, ReleasesPage } = await import('./ReleasesPage.js');
   const { useGitOpsStore } = await import('../state/gitOps.js');
   const { act, createElement } = React;
-  useGitOpsStore.setState({ pending: null });
+  useGitOpsStore.setState({ ops: [] });
 
   function ReleasesRoute() {
     const { tab, ref } = TR.useSearch({ strict: false }) as { tab?: (typeof RELEASES_TABS)[number]; ref?: string };

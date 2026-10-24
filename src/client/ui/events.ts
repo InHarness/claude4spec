@@ -309,6 +309,22 @@ export interface ToolJsonItem {
 export type ModalMap = {
   'tool-json-view': { props: { title: string; items: ToolJsonItem[] }; result: void };
   'git-sync-recover': { props: { recovery: GitErrorRecovery }; result: void };
+  /**
+   * 2.1.47 (M17 L5 m17ui001) — the shadow acceptance window, opened by Accept
+   * on the Shadows tab of `/releases`. Payload: the shadow id plus `tipSha`,
+   * `headSha` and `commits` of the current preview answer. Result: the release
+   * name and description the user confirmed with „Accept & release”; the
+   * screen sends the request itself (and is `shadow-accepting` meanwhile).
+   */
+  'shadow-accept': {
+    props: {
+      shadowId: string;
+      tipSha: string;
+      headSha: string;
+      commits: Array<{ sha: string; subject: string; body: string }>;
+    };
+    result: { name: string; description: string };
+  };
   'project-create': { props: NoProps; result: { id: string } };
   'page-resolve': {
     props: { rootId: string; path: string; currentHash?: string; currentContent?: string };

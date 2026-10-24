@@ -140,8 +140,21 @@ export interface GitErrorRecovery {
    * 2.1.10 (M28 eu1rffp6/sw1u84nn): `'non-fast-forward'` — operation `push`,
    * the remote rejected the push because it has commits the local branch
    * lacks. The `git-sync-recover` window offers `Sync` instead of the agent.
+   *
+   * 2.1.47 (M28 eu1rffp6), both from the shadow acceptance, operation
+   * `commit-on-release`, a merge left open (`MERGE_HEAD`):
+   * `'merge-open'` — the release commit (the merge commit) failed, the
+   * release exists; `'merge-abort-failed'` — undoing the merge failed, no
+   * release exists.
    */
-  kind?: 'branch-missing' | 'base-missing' | 'switch-failed' | 'switch-dirty' | 'non-fast-forward';
+  kind?:
+    | 'branch-missing'
+    | 'base-missing'
+    | 'switch-failed'
+    | 'switch-dirty'
+    | 'non-fast-forward'
+    | 'merge-open'
+    | 'merge-abort-failed';
 }
 
 export interface GitCommitResult {
@@ -234,6 +247,39 @@ export type GitMergeTreeResult =
   | { status: 'conflicts'; paths: string[] }
   | { status: 'unsupported' }
   | { status: 'error' };
+
+/**
+ * 2.1.47 (M28 es9w55mr): the refusals shared by the merge primitives of the
+ * shadow acceptance (`pendingChanges`, `mergeIntoIndex`, `abortMerge`) —
+ * `skipped`: git off or no repository; `no-branch`: HEAD has no named branch;
+ * `busy`: the repository lock is taken and the caller passed no live handle
+ * of it. None of these results ever throws or rides a REST response.
+ */
+export type GitMergePrimitiveRefusal = { status: 'skipped' } | { status: 'no-branch' } | { status: 'busy' };
+
+/** `pendingChanges(pathspecs)` — `dirty` with the repository-relative paths, `clean` when none. */
+export type GitPendingChangesResult =
+  | GitMergePrimitiveRefusal
+  | { status: 'clean' }
+  | { status: 'dirty'; paths: string[] }
+  | { status: 'error'; message: string };
+
+/**
+ * `mergeIntoIndex(tipSha, changedPaths)` — `merged` leaves `MERGE_HEAD` open; `conflicts` was
+ * aborted already. `error` carries `recovery` (kind `merge-abort-failed`) only
+ * when aborting a conflicted merge failed and the merge stayed open.
+ */
+export type GitMergeIntoIndexResult =
+  | GitMergePrimitiveRefusal
+  | { status: 'merged'; changedPaths: string[] }
+  | { status: 'conflicts'; paths: string[] }
+  | { status: 'error'; message: string; recovery?: GitErrorRecovery };
+
+/** `abortMerge(paths)` — `error` carries the repair context `merge-abort-failed`. */
+export type GitAbortMergeResult =
+  | GitMergePrimitiveRefusal
+  | { status: 'aborted' }
+  | { status: 'error'; message: string; recovery: GitErrorRecovery };
 
 /**
  * 0.1.118: result of `gitService.statusAheadBehind()` — read-only HEAD status

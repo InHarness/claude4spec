@@ -27,6 +27,9 @@ const KIND_HINT: Record<NonNullable<GitErrorRecovery['kind']>, string> = {
   'switch-failed': 'The commit succeeded, but switching to the target branch failed.',
   // 2.1.10 (M28 u5vl07ch): the window offers Sync instead of the agent.
   'non-fast-forward': "The remote has commits you don't have yet.",
+  // 2.1.47 (M28 eu1rffp6): a shadow acceptance left a merge open.
+  'merge-open': 'The release was created, but its merge commit failed — the merge is still open.',
+  'merge-abort-failed': 'Accepting the shadow failed and undoing its merge failed too — the merge is still open.',
 };
 
 /**
@@ -40,6 +43,9 @@ const KIND_HINT: Record<NonNullable<GitErrorRecovery['kind']>, string> = {
  * `openModal('git-sync-recover', { recovery })`), rendered by `<ModalHost/>`.
  * 2.1.10: `kind: 'non-fast-forward'` (push) offers `Sync` instead of
  * "Fix it with Agent".
+ * 2.1.47: the shadow acceptance opens it too — `merge-open` (from a success
+ * whose `gitSync.status === 'error'`) and `merge-abort-failed` (from the
+ * refusal `ACCEPT_ABORT_FAILED`); both go through "Fix it with Agent".
  */
 export function GitSyncRecover({ request, onClose }: ModalFormProps<'git-sync-recover'>) {
   const { data: config } = useConfig();
@@ -51,6 +57,10 @@ export function GitSyncRecover({ request, onClose }: ModalFormProps<'git-sync-re
   // 2.1.10 (M28 u5vl07ch): a push the remote rejected as non-fast-forward is
   // repaired by pulling the remote commits in, not by the agent.
   const offersSync = recovery.kind === 'non-fast-forward';
+  // 2.1.47 (M28 u5vl07ch): the one exception to the success framing — with
+  // `merge-abort-failed` the shadow acceptance really did not happen (no
+  // release), so the window says so instead of "Done — but…".
+  const acceptFailed = recovery.kind === 'merge-abort-failed';
 
   /**
    * `Sync` calls `POST /api/git/sync`; its result is handled by the sync toasts
@@ -61,7 +71,7 @@ export function GitSyncRecover({ request, onClose }: ModalFormProps<'git-sync-re
    * The outcome is handled by mutation-level callbacks (`useGitSync(handlers)`),
    * not `mutate()` callbacks: those die with the component, and a sync whose
    * window was taken off screen mid-flight would lose its reload and leave
-   * `useGitOpsStore.pending` at `'sync'`. While Sync is in flight the window
+   * a `'sync'` entry in `useGitOpsStore`. While Sync is in flight the window
    * itself cannot be dismissed either (Dismiss, Esc, scrim, ✕).
    *
    * ASSUMPTION:dev-0002 `busy` (a hint at the header entry, not a toast) is
@@ -106,7 +116,7 @@ export function GitSyncRecover({ request, onClose }: ModalFormProps<'git-sync-re
       open
       onClose={dismiss}
       dismissible={!syncing}
-      title="Done — but git sync hit a problem"
+      title={acceptFailed ? 'The shadow was not accepted — its merge is still open' : 'Done — but git sync hit a problem'}
       size="md"
       footer={
         <>
@@ -182,7 +192,7 @@ export function GitSyncRecover({ request, onClose }: ModalFormProps<'git-sync-re
           marginBottom: recovery.kind ? 4 : 12,
         }}
       >
-        {OPERATION_LABEL[recovery.operation]} failed: {recovery.reason}
+        {acceptFailed ? 'Undoing the shadow merge' : OPERATION_LABEL[recovery.operation]} failed: {recovery.reason}
       </div>
 
       {recovery.kind && (

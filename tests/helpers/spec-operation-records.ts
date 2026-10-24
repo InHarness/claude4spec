@@ -1,5 +1,5 @@
 /**
- * 2.1.26 — the window's 78 `spec-operation` records (79 since 2.1.46 added `shadow-diff`), as `release-diff --from
+ * 2.1.26 — the window's 78 `spec-operation` records (79 since 2.1.46 added `shadow-diff`, 80 since 2.1.47 added `accept-shadow`), as `release-diff --from
  * initial --to 2.1.26` returns them, in the fields a catalog row answers for:
  * `nazwa`, scope, mediation, the four channel values with the channel entries of
  * `powody`, `efekty`, `idempotencja`, `opisTresci`, `reguly`, `kodyBledow` and
@@ -64,6 +64,51 @@ export const SPEC_OPERATION_RECORDS: readonly SpecOperationRecord[] = [
     opisTresci: 'n/d',
     reguly: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'explicit-addressing' }],
     kodyBledow: ['THREAD_NOT_FOUND', 'VALIDATION'],
+    narzedzia: {},
+  },
+  // 2.1.47 — the window 2.1.46 → 2.1.47 adds the M17 shadow acceptance.
+  {
+    slug: 'accept-shadow',
+    nazwa: 'accept_shadow',
+    zasieg: 'project',
+    mediacja: 'direct',
+    internal: 'n/a',
+    cli: 'n/a',
+    mcp: 'n/a',
+    rest: 'direct',
+    powody: {
+      internal: 'w tej iteracji wyłącznie interfejs; kanał agenta i wiersz poleceń odłożone (przegląd otwarty)',
+      cli: 'w tej iteracji wyłącznie interfejs; kanał agenta i wiersz poleceń odłożone (przegląd otwarty)',
+      mcp: 'w tej iteracji wyłącznie interfejs; kanał agenta i wiersz poleceń odłożone (przegląd otwarty)',
+    },
+    efekty: ['plik', 'db', 'ui-notify'],
+    idempotencja: 'nie',
+    opisTresci: 'n/d',
+    reguly: [
+      { id: 'destructive-declared' },
+      { id: 'operation-only-write', wykluczenie: 'pliki zmienia scalenie gita, nie zapis operacji; capture i reindeks domyka sekwencja in-band' },
+      { id: 'error-code-once' },
+      { id: 'echo-free' },
+    ],
+    kodyBledow: [
+      'VALIDATION',
+      'RELEASE_NAME_CONFLICT',
+      'RELEASE_NAME_RESERVED',
+      'RELEASE_DESCRIPTION_REQUIRED',
+      'RELEASE_DESCRIPTION_TOO_LONG',
+      'GIT_UNAVAILABLE',
+      'SHADOW_NOT_FOUND',
+      'ACCEPT_NO_BRANCH',
+      'ACCEPT_TARGET_NOT_CURRENT',
+      'ACCEPT_BUSY',
+      'ACCEPT_STALE',
+      'ACCEPT_DIRTY',
+      'ACCEPT_OUTSIDE_SPEC',
+      'ACCEPT_RELEASES_IN_SHADOW',
+      'ACCEPT_CONFLICTS',
+      'ACCEPT_FAILED',
+      'ACCEPT_ABORT_FAILED',
+    ],
     narzedzia: {},
   },
   {

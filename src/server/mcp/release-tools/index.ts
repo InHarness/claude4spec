@@ -28,7 +28,7 @@ import type { ReleaseService } from '../../services/release.js';
 import type { GitService } from '../../services/git.js';
 import type { WsEmitter } from '../../ws/project-emitter.js';
 import { DomainError } from '../../services/tags.js';
-import { MAX_RELEASE_DESCRIPTION_LENGTH } from '../../../shared/entities.js';
+import { MAX_RELEASE_DESCRIPTION_LENGTH, type Release } from '../../../shared/entities.js';
 import type { Root } from '../../../shared/types.js';
 import {
   INCLUDE_VALUES,
@@ -70,6 +70,18 @@ export interface ReleaseToolsDeps {
  * the same functions the REST routes call with `view=operation`.
  */
 
+/**
+ * 2.1.47: the release shape of the MCP tools. Their mcp-tool records
+ * (`release_create`, `release_list`, `release_update`) name the fields a release
+ * carries here — `id`, `name`, `description`, `createdBy`, `createdAt` (plus
+ * what each tool adds) — and `acceptedShadow` is not one of them: it belongs to
+ * the REST dto `release` only, so the tools project it out.
+ */
+function mcpRelease<T extends Release>(release: T): Omit<T, 'acceptedShadow'> {
+  const { acceptedShadow: _acceptedShadow, ...rest } = release;
+  return rest;
+}
+
 export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpServer {
   const ok = (payload: unknown) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(payload) }],
@@ -106,17 +118,21 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
     },
     async (args) => {
       try {
-        const release = deps.releaseService.createRelease(
-          { name: String(args.name), description: String(args.description) },
-          'agent',
-        );
-        deps.ws.broadcast({ kind: 'release:created', releaseId: release.id, name: release.name });
-        // M28: agent-surface parity — same best-effort git commit as the HTTP
-        // surface, with the outcome returned in `gitSync` (`null` when the
-        // `commitOnRelease` gate did not let it through — git off, no repo,
-        // detached/unborn HEAD in `current` mode).
-        const gitSync = await deps.gitService.commitOnRelease(release);
-        return ok({ ...release, gitSync });
+        // 2.1.47 (M17 g4rsukyw): under the release mutex, from the transaction
+        // to the end of the commit — waits while a shadow acceptance holds it.
+        const { release, gitSync } = await deps.releaseService.withReleaseMutex(async () => {
+          const created = deps.releaseService.createRelease(
+            { name: String(args.name), description: String(args.description) },
+            'agent',
+          );
+          deps.ws.broadcast({ kind: 'release:created', releaseId: created.id, name: created.name });
+          // M28: agent-surface parity — same best-effort git commit as the HTTP
+          // surface, with the outcome returned in `gitSync` (`null` when the
+          // `commitOnRelease` gate did not let it through — git off, no repo,
+          // detached/unborn HEAD in `current` mode).
+          return { release: created, gitSync: await deps.gitService.commitOnRelease(created) };
+        });
+        return ok({ ...mcpRelease(release), gitSync });
       } catch (err) {
         return fail(err);
       }
@@ -138,9 +154,11 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
     },
     async (args) => {
       try {
-        return ok(
-          releaseListOperation(deps, { limit: args.limit as number | undefined, offset: args.offset as number | undefined }),
-        );
+        const { releases, total } = releaseListOperation(deps, {
+          limit: args.limit as number | undefined,
+          offset: args.offset as number | undefined,
+        });
+        return ok({ releases: releases.map(mcpRelease), total });
       } catch (err) {
         return fail(err);
       }
@@ -332,7 +350,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
           assignUnreleased: args.assignUnreleased as boolean | undefined,
         });
         deps.ws.broadcast({ kind: 'release:updated', releaseId: release.id, name: release.name });
-        return ok(release);
+        return ok(mcpRelease(release));
       } catch (err) {
         return fail(err);
       }
