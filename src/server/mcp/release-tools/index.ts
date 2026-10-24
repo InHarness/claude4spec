@@ -118,16 +118,20 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
     },
     async (args) => {
       try {
-        const release = deps.releaseService.createRelease(
-          { name: String(args.name), description: String(args.description) },
-          'agent',
-        );
-        deps.ws.broadcast({ kind: 'release:created', releaseId: release.id, name: release.name });
-        // M28: agent-surface parity — same best-effort git commit as the HTTP
-        // surface, with the outcome returned in `gitSync` (`null` when the
-        // `commitOnRelease` gate did not let it through — git off, no repo,
-        // detached/unborn HEAD in `current` mode).
-        const gitSync = await deps.gitService.commitOnRelease(release);
+        // 2.1.47 (M17 g4rsukyw): under the release mutex, from the transaction
+        // to the end of the commit — waits while a shadow acceptance holds it.
+        const { release, gitSync } = await deps.releaseService.withReleaseMutex(async () => {
+          const created = deps.releaseService.createRelease(
+            { name: String(args.name), description: String(args.description) },
+            'agent',
+          );
+          deps.ws.broadcast({ kind: 'release:created', releaseId: created.id, name: created.name });
+          // M28: agent-surface parity — same best-effort git commit as the HTTP
+          // surface, with the outcome returned in `gitSync` (`null` when the
+          // `commitOnRelease` gate did not let it through — git off, no repo,
+          // detached/unborn HEAD in `current` mode).
+          return { release: created, gitSync: await deps.gitService.commitOnRelease(created) };
+        });
         return ok({ ...mcpRelease(release), gitSync });
       } catch (err) {
         return fail(err);

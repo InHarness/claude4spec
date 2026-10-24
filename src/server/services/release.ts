@@ -49,7 +49,7 @@ import type { SelfWriteMarker } from '../fs/sources.js';
 import { DomainError } from './tags.js';
 import { HostEntityWriter } from './entity-writer.js';
 import type { RestoreContext, RestoreResult } from '../serialization/types.js';
-import { canonicalize, toRawDeltaEntityChange } from '../serialization/snapshot.js';
+import { canonicalize, diffEntity, toRawDeltaEntityChange } from '../serialization/snapshot.js';
 import { samePayloadVersion } from '../serialization/payload-version.js';
 import { nowIso, readSystemFields, stripSystemFields } from '../serialization/system-fields.js';
 import {
@@ -75,6 +75,16 @@ import {
 } from './git-two-state-delta.js';
 import type { FileDiff, FileSnapshotData } from './file-serializer.js';
 import { computeShadowDiff, gitUnavailable, requireShadowRef, type ShadowDiffScope } from './release-shadow-diff.js';
+import {
+  acceptShadow as acceptShadowImpl,
+  AcceptedReleaseCommittedError,
+  parseShadowAcceptRequest,
+  type AcceptReleaseVariant,
+  type AcceptShadowRuntime,
+} from './release-accept-shadow.js';
+import { releaseMutexFor } from './release-mutex.js';
+import { indexReleaseFile, unindexReleaseFile } from './release-indexer.js';
+import type { GitCommitResult } from '../../shared/git.js';
 import {
   buildBundleArchive as buildBundleArchiveImpl,
   extractBundleStream,
@@ -136,6 +146,13 @@ function assertSafeBundlePath(rel: string): void {
   }
 }
 
+interface UpdateReleaseInput {
+  releaseName: string;
+  name?: string;
+  description?: string;
+  assignUnreleased?: boolean;
+}
+
 interface ReleaseRow {
   id: number;
   name: string;
@@ -156,6 +173,15 @@ interface ReleaseRow {
  * deliberately do NOT call this — a longer description saved before the limit
  * stays readable, untruncated.
  */
+/** `realpath` of `p`, or `p` itself when it does not resolve. */
+function realpathOrSelf(p: string): string {
+  try {
+    return nodeFs.realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
 function assertReleaseDescription(description: string): void {
   if (!description) throw new DomainError('RELEASE_DESCRIPTION_REQUIRED', 'release description is required');
   const length = releaseDescriptionLength(description);
@@ -529,15 +555,67 @@ export class ReleaseService {
   // ─── Mutations ───────────────────────────────────────────────────────────
 
   /**
+   * 2.1.47 (M17 `g4rsukyw`): run `fn` under the project's release mutex —
+   * waits while another operation assigning versions to a release holds it.
+   * `createRelease` callers take it around the creation AND its
+   * commit-on-release; `updateRelease` with `assignUnreleased` and the shadow
+   * acceptance take it themselves. Never nested: the mutex is not reentrant.
+   */
+  withReleaseMutex<T>(fn: () => Promise<T>): Promise<T> {
+    return releaseMutexFor(this.cwd).run(fn);
+  }
+
+  /**
+   * `createRelease`'s validation of the name and the description (`hybasevj`)
+   * — trimmed name non-empty, not reserved, unique (also as a slug);
+   * description non-empty and at most {@link MAX_RELEASE_DESCRIPTION_LENGTH}
+   * code points. Returns both trimmed. The acceptance runs it before anything
+   * touches the repository.
+   */
+  validateReleaseInput(rawName: string, rawDescription: string): { name: string; description: string } {
+    const name = (rawName ?? '').trim();
+    const description = (rawDescription ?? '').trim();
+    if (!name) throw new DomainError('VALIDATION', 'release name is required');
+    if (isReservedReleaseName(name)) throw new DomainError('RELEASE_NAME_RESERVED', `release name '${name}' is reserved`);
+    assertReleaseDescription(description);
+    this.assertNameFree(name, slugify(name));
+    return { name, description };
+  }
+
+  /** `RELEASE_NAME_CONFLICT` / `RELEASE_SLUG_CONFLICT` unless no release holds `name` or `slug`. */
+  private assertNameFree(name: string, slug: string): void {
+    const conflict = this.db.prepare(`SELECT 1 FROM spec_release WHERE name = ?`).get(name);
+    if (conflict) throw new DomainError('RELEASE_NAME_CONFLICT', `release name '${name}' already exists`);
+    // 0.1.118: two different names can slugify to the same string, which
+    // would collide on disk (`<slug>.json` in the `releases` root) even though the
+    // DB-unique `name` differs. Reject before insert, same posture as the
+    // name-uniqueness check above.
+    const slugConflict = this.db
+      .prepare(`SELECT name FROM spec_release WHERE slug = ?`)
+      .get(slug) as { name: string } | undefined;
+    if (slugConflict) {
+      throw new DomainError(
+        'RELEASE_SLUG_CONFLICT',
+        `release name '${name}' resolves to the same identifier as existing release '${slugConflict.name}'`,
+      );
+    }
+  }
+
+  /**
    * Manual release creation (decyzja 9: zero auto-trigger). Validates
    * non-empty + UNIQUE name and non-empty description of at most
    * {@link MAX_RELEASE_DESCRIPTION_LENGTH} code points; in a single
    * transaction inserts spec_release and assigns all unreleased
    * entity_version + file_version rows.
+   *
+   * 2.1.47 (M17 `wh8x023p`): `variant` — the acceptance variant, reachable
+   * ONLY from `acceptShadow` (no channel passes it): `acceptedShadow` and the
+   * shadow's entity versions, in the order file → cache → transaction.
    */
   createRelease(
     input: { name: string; description: string },
     actor: ChangedBy,
+    variant?: AcceptReleaseVariant,
   ): ReleaseDetail {
     const name = (input.name ?? '').trim();
     const description = (input.description ?? '').trim();
@@ -546,25 +624,10 @@ export class ReleaseService {
     assertReleaseDescription(description);
 
     const slug = slugify(name);
+    if (variant) return this.createAcceptingRelease(name, slug, description, actor, variant);
 
     const tx = this.db.transaction(() => {
-      const conflict = this.db
-        .prepare(`SELECT 1 FROM spec_release WHERE name = ?`)
-        .get(name);
-      if (conflict) throw new DomainError('RELEASE_NAME_CONFLICT', `release name '${name}' already exists`);
-      // 0.1.118: two different names can slugify to the same string, which
-      // would collide on disk (`<slug>.json` in the `releases` root) even though the
-      // DB-unique `name` differs. Reject before insert, same posture as the
-      // name-uniqueness check above.
-      const slugConflict = this.db
-        .prepare(`SELECT name FROM spec_release WHERE slug = ?`)
-        .get(slug) as { name: string } | undefined;
-      if (slugConflict) {
-        throw new DomainError(
-          'RELEASE_SLUG_CONFLICT',
-          `release name '${name}' resolves to the same identifier as existing release '${slugConflict.name}'`,
-        );
-      }
+      this.assertNameFree(name, slug);
 
       // 2.1.4: ONE ISO 8601 UTC ms stamp — the row's `created_at` and, through
       // the row read back below, the release file's `createdAt`. The column has
@@ -574,10 +637,7 @@ export class ReleaseService {
         .run(name, slug, description, actor, nowIso());
       const releaseId = Number(info.lastInsertRowid);
 
-      this.db
-        .prepare(`UPDATE entity_version SET release_id = ? WHERE release_id IS NULL`)
-        .run(releaseId);
-      this.pageVersions.assignToRelease(releaseId, this.pagesKindRootIds);
+      this.assignUnreleasedTo(releaseId);
 
       const row = this.db
         .prepare(`SELECT * FROM spec_release WHERE id = ?`)
@@ -598,6 +658,152 @@ export class ReleaseService {
     }
     const release = this.toRelease(releaseRow);
     return { ...release, countBreakdown: this.computeCountBreakdown(release.id) };
+  }
+
+  /** Steps 2–3 of the algorithm: every unreleased entity version and page version (pages roots) → `releaseId`. */
+  private assignUnreleasedTo(releaseId: number): void {
+    this.db.prepare(`UPDATE entity_version SET release_id = ? WHERE release_id IS NULL`).run(releaseId);
+    this.pageVersions.assignToRelease(releaseId, this.pagesKindRootIds);
+  }
+
+  /**
+   * 2.1.47 (M17 `wh8x023p`) — the acceptance variant, file → cache →
+   * transaction, the reverse of a plain release:
+   *   1. the release file with `acceptedShadow`, through the record primitive —
+   *      a failed write is a failure of the operation, not a log line;
+   *   2. its `spec_release` cache row rebuilt in-band from that file;
+   *   3. the transaction: the shadow's entity versions (`changed_by = 'agent'`)
+   *      and the assignment of the unreleased versions to the release.
+   * A refused transaction removes the file, and the removal takes the cache
+   * row with it. The commit of the transaction is the point of no return: a
+   * failure after it (reading the release back) leaves the release in place
+   * and throws {@link AcceptedReleaseCommittedError}.
+   */
+  private createAcceptingRelease(
+    name: string,
+    slug: string,
+    description: string,
+    actor: ChangedBy,
+    variant: AcceptReleaseVariant,
+  ): ReleaseDetail {
+    const store = this.releaseStore;
+    if (!store) throw new Error('the release store is not wired (server misconfiguration)');
+    this.assertNameFree(name, slug);
+    const { acceptedShadow, shadowEntityVersions } = variant;
+    store.write(
+      slug,
+      toReleaseFileData(
+        {
+          name,
+          description,
+          created_at: nowIso(),
+          created_by: actor,
+          accepted_shadow_id: acceptedShadow.id,
+          accepted_shadow_sha: acceptedShadow.tipSha,
+        },
+        slug,
+        this.pagesKindRootIds,
+      ),
+    );
+    let releaseRow: ReleaseRow;
+    try {
+      if (!indexReleaseFile(this.db, store, slug)) throw new Error(`the release file '${slug}.json' could not be indexed`);
+      releaseRow = this.db.transaction(() => {
+        const row = this.db.prepare(`SELECT * FROM spec_release WHERE slug = ?`).get(slug) as ReleaseRow | undefined;
+        if (!row) throw new Error(`the release '${name}' is missing from the cache`);
+        for (const v of shadowEntityVersions) {
+          this.versions.createVersion(v.type, v.slug, v.data, 'agent', 'Accepted from a shadow', v.op, v.serializerVersion);
+        }
+        this.assignUnreleasedTo(row.id);
+        return row;
+      })();
+    } catch (err) {
+      try {
+        store.remove(slug);
+      } finally {
+        unindexReleaseFile(this.db, slug);
+      }
+      throw err;
+    }
+    // The transaction committed — the point of no return. A failure from here
+    // on never removes the release: it is reported as committed, so the
+    // acceptance lands its merge commit instead of rolling back.
+    try {
+      return { ...this.toRelease(releaseRow), countBreakdown: this.computeCountBreakdown(releaseRow.id) };
+    } catch (err) {
+      throw new AcceptedReleaseCommittedError({ name, description }, err);
+    }
+  }
+
+  // ─── Shadow acceptance ───────────────────────────────────────────────────
+
+  /**
+   * 2.1.47: the file-watch side of the acceptance (suppression, in-band
+   * chains, page keys) — wired by the project context. Without it the
+   * acceptance is unavailable (500): it would merge files no chain captures.
+   */
+  private acceptRuntime: AcceptShadowRuntime | null = null;
+  setAcceptShadowRuntime(runtime: AcceptShadowRuntime): void {
+    this.acceptRuntime = runtime;
+  }
+
+  /**
+   * 2.1.47 (M17 `aae2vgem`, spec-operation `accept-shadow`): accept the shadow
+   * `body.ref` as a new release — `acceptShadow` in `release-accept-shadow.ts`
+   * over the M28 primitives, the M40 runtime and the acceptance variant of
+   * `createRelease`. Resolves to the release with `gitSync`.
+   */
+  async acceptShadow(body: unknown): Promise<ReleaseDetail & { gitSync: GitCommitResult | null }> {
+    const gitService = this.gitService;
+    const entityStore = this.entityStore;
+    const runtime = this.acceptRuntime;
+    if (!gitService) {
+      // Refuse the body first, as the comparison does — then git.
+      const request = parseShadowAcceptRequest(body);
+      this.validateReleaseInput(request.name, request.description);
+      throw gitUnavailable();
+    }
+    if (!runtime || !entityStore) {
+      throw new Error('Accepting the shadow failed: the file-watch runtime is not wired (server misconfiguration).');
+    }
+    return acceptShadowImpl(
+      {
+        db: this.db,
+        cwd: this.cwd,
+        git: gitService,
+        runtime,
+        scope: () => this.resolveShadowDiffScope(),
+        validate: (name, description) => this.validateReleaseInput(name, description),
+        withReleaseMutex: (fn) => this.withReleaseMutex(fn),
+        createRelease: (input, variant) => this.createRelease(input, 'user', variant),
+        entities: {
+          locate: (abs) => {
+            const rel = nodePath.relative(realpathOrSelf(entityStore.root), abs);
+            if (!rel || rel.startsWith('..') || nodePath.isAbsolute(rel)) return null;
+            const parsed = entityStore.parseRelPath(rel.split(nodePath.sep).join('/'));
+            return parsed && this.rawReader.hasTable(parsed.type) ? parsed : null;
+          },
+          snapshot: (type, slug) => {
+            const raw = this.rawReader.getEntity(type as RawEntityType, slug);
+            return raw ? this.host.snapshot(type, raw, this.rawReader) : null;
+          },
+          unchanged: (type, slug, snapshot) => {
+            const previous = this.versions.getLatestVersionForEntity(type, slug);
+            return (
+              !!previous &&
+              previous.op !== 'delete' &&
+              previous.data !== null &&
+              diffEntity(this.host, type, previous.data as SnapshotData, snapshot).op === 'noop'
+            );
+          },
+          payloadVersion: (type) => {
+            const version = this.host.getEntity(type)?.payloadVersion;
+            return version == null ? null : String(version);
+          },
+        },
+      },
+      body,
+    );
   }
 
   /**
@@ -645,12 +851,15 @@ export class ReleaseService {
    *    rare race is an acceptable trade for never corrupting the DB's
    *    release_id attribution.
    */
-  async updateRelease(input: {
-    releaseName: string;
-    name?: string;
-    description?: string;
-    assignUnreleased?: boolean;
-  }): Promise<UpdateReleaseResponse> {
+  async updateRelease(input: UpdateReleaseInput): Promise<UpdateReleaseResponse> {
+    // 2.1.47 (M17 `g4rsukyw`): an update that assigns versions takes the release
+    // mutex — from its "pull" commit through the assignment.
+    return input.assignUnreleased === true
+      ? this.withReleaseMutex(() => this.updateReleaseUnlocked(input))
+      : this.updateReleaseUnlocked(input);
+  }
+
+  private async updateReleaseUnlocked(input: UpdateReleaseInput): Promise<UpdateReleaseResponse> {
     const tx = this.db.transaction(() => {
       const row = this.findReleaseRow(input.releaseName);
       if (!row) throw new DomainError('RELEASE_NOT_FOUND', `release '${input.releaseName}' not found`);
@@ -757,10 +966,7 @@ export class ReleaseService {
         const row = this.findReleaseRowById(releaseId);
         if (!row) throw new DomainError('RELEASE_NOT_FOUND', `release #${releaseId} not found`);
         assertLatestMutable(this.db, row);
-        this.db
-          .prepare(`UPDATE entity_version SET release_id = ? WHERE release_id IS NULL`)
-          .run(releaseId);
-        this.pageVersions.assignToRelease(releaseId, this.pagesKindRootIds);
+        this.assignUnreleasedTo(releaseId);
       })();
     }
 
@@ -1052,22 +1258,15 @@ export class ReleaseService {
     if (!this.releaseStore) {
       throw new Error('The shadow comparison failed: the release store is not wired (server misconfiguration).');
     }
-    const realOrSelf = (p: string): string => {
-      try {
-        return nodeFs.realpathSync(p);
-      } catch {
-        return p;
-      }
-    };
     const roots = this.resolveGitDiffScope();
     // The system roots served by a store sit where that store is rooted.
     const storeDirs: Partial<Record<RootKind, string>> = {
       entities: roots.entities.dir,
-      releases: realOrSelf(this.releaseStore.root),
+      releases: realpathOrSelf(this.releaseStore.root),
     };
     const registryRoots = [
-      ...this.pagesKindRootDirs.map((d) => ({ kind: PAGES_KIND, dir: realOrSelf(nodePath.resolve(this.cwd, d)) })),
-      ...SYSTEM_ROOTS.map((r) => ({ kind: r.kind, dir: storeDirs[r.kind] ?? realOrSelf(nodePath.resolve(this.cwd, r.dir)) })),
+      ...this.pagesKindRootDirs.map((d) => ({ kind: PAGES_KIND, dir: realpathOrSelf(nodePath.resolve(this.cwd, d)) })),
+      ...SYSTEM_ROOTS.map((r) => ({ kind: r.kind, dir: storeDirs[r.kind] ?? realpathOrSelf(nodePath.resolve(this.cwd, r.dir)) })),
     ];
     return { roots, registryRoots };
   }
@@ -1095,33 +1294,26 @@ export class ReleaseService {
    * (falls back to the as-given path — that branch just then matches nothing).
    */
   private resolveGitDiffScope(opts?: PageScopeOpts): DeltaRoots {
-    const realOrSelf = (p: string): string => {
-      try {
-        return nodeFs.realpathSync(p);
-      } catch {
-        return p;
-      }
-    };
-    const entitiesAbs = realOrSelf(this.entityStore?.root ?? nodePath.resolve(this.cwd, systemRootDir('entities')));
-    const releasesAbs = realOrSelf(this.releaseStore!.root);
+    const entitiesAbs = realpathOrSelf(this.entityStore?.root ?? nodePath.resolve(this.cwd, systemRootDir('entities')));
+    const releasesAbs = realpathOrSelf(this.releaseStore!.root);
     // 2.1.8: the briefs/patches system roots sit at fixed dirs — the only way
     // their files reach a git diff is a stray pathspec, and they are excluded.
     // A dir equal to the project root itself would exclude everything; skip it.
-    const cwdAbs = realOrSelf(this.cwd);
+    const cwdAbs = realpathOrSelf(this.cwd);
     const excluded = [
       releasesAbs,
       ...[systemRootDir('briefs'), systemRootDir('patches')]
-        .map((d) => realOrSelf(nodePath.resolve(this.cwd, d)))
+        .map((d) => realpathOrSelf(nodePath.resolve(this.cwd, d)))
         .filter((d) => d !== cwdAbs),
     ];
     const rootDirsById = new Map(
-      this.pagesKindRootIds.map((id, i) => [id, realOrSelf(this.pagesKindRootDirs[i]!)]),
+      this.pagesKindRootIds.map((id, i) => [id, realpathOrSelf(this.pagesKindRootDirs[i]!)]),
     );
     // The release-flag roots that are NOT page roots (the `entities` root): the
     // `roots`/`paths` filters narrow pages only, so these always go in whole.
     const pageDirs = new Set(this.pagesKindRootDirs.map((d) => nodePath.resolve(d)));
     const otherReleaseDirs = this.releaseFlagRootDirs
-      ? this.releaseFlagRootDirs.filter((d) => !pageDirs.has(nodePath.resolve(d))).map(realOrSelf)
+      ? this.releaseFlagRootDirs.filter((d) => !pageDirs.has(nodePath.resolve(d))).map(realpathOrSelf)
       : [entitiesAbs];
     const entityStore = this.entityStore;
     const entities: DeltaRoots['entities'] = {

@@ -374,6 +374,27 @@ export interface CreateReleaseResponse extends ReleaseDetail {
 }
 
 /**
+ * 2.1.47 (dto `shadow-accept-request`, M17 `aae2vgem`) — body of
+ * `POST /api/shadow-accept`: accept a shadow as a new release. `name` and
+ * `description` are validated as in `POST /api/releases` before anything
+ * touches the repository. Both SHAs come from the preview
+ * (`ShadowDiffResponse.shadow.tipSha` / `.head.sha`) and are required: either
+ * one differing from the current state is `409 ACCEPT_STALE`. The request
+ * never carries `acceptedShadow` nor the shadow's entity versions — only the
+ * operation sets them.
+ */
+export interface ShadowAcceptRequest {
+  /** The shadow id — the ref name without `refs/runs/`, e.g. `<runId>/spec`; in the body because it may contain `/`. */
+  ref: string;
+  name: string;
+  description: string;
+  /** The shadow tip SHA the preview was computed on — the SHA that is merged, not the ref's current value. */
+  expectedTipSha: string;
+  /** The HEAD SHA the preview was computed on. */
+  expectedHeadSha: string;
+}
+
+/**
  * 0.1.124: body of `PATCH /api/releases/:name`. `ReleaseDetail` plus the
  * best-effort `git commit` outcome of `commitPull()` — populated ONLY when
  * the request set `assignUnreleased: true` (the only update path that

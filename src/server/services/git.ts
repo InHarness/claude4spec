@@ -142,6 +142,17 @@ export interface GitLockHandle {
   readonly [LOCK_HANDLE]: true;
 }
 
+/**
+ * 2.1.47: a repository whose merge-primitive gate the caller already read
+ * under the lock it holds — its root and the lock's live handle. The merge
+ * primitives take it to skip their own gate (root and branch cannot change
+ * while the lock is held); a handle that is no longer live is ignored.
+ */
+export interface GitHeldRepo {
+  root: string;
+  lock: GitLockHandle;
+}
+
 /** Locks keyed by repository (worktree root) — several projects in one repo share one. */
 const repoLocks = new Map<string, GitRepoLock>();
 
@@ -362,6 +373,23 @@ export class GitService {
     const lock = lockForKey(root);
     if (handle && lock.holds(handle)) return fn(handle);
     return lock.tryRun(fn);
+  }
+
+  /**
+   * 2.1.47 (M28 ezudoqef): is an agent turn mutating the disk right now? The
+   * shadow acceptance refuses `busy` on it, like `sync()` and `checkout()`.
+   */
+  agentTurnActive(): boolean {
+    return this.hasInFlightTurn();
+  }
+
+  /**
+   * 2.1.47 (M49 7xmafzkd): `git:status-changed` for an operation that drives
+   * the primitives itself — the shadow acceptance, after its rollback
+   * (`headChanged: false`) or after a merge commit that did not land.
+   */
+  notifyStatusChanged(headChanged: boolean): void {
+    this.emitStatusChanged(headChanged);
   }
 
   /** 2.1.10 (M49 7xmafzkd): `git:status-changed` to the project's room. */
@@ -1135,8 +1163,10 @@ export class GitService {
   /**
    * Gate of the merge primitives: `config.git.enabled` and a detected
    * repository (else `skipped`), HEAD on a named branch (else `no-branch`).
+   * Public for the acceptance, whose first two guards (git unavailable, no
+   * branch) are exactly this gate, read once under its lock.
    */
-  private async mergePrimitiveRoot(): Promise<{ root: string } | { refusal: GitMergePrimitiveRefusal }> {
+  async mergePrimitiveRoot(): Promise<{ root: string } | { refusal: GitMergePrimitiveRefusal }> {
     let enabled: boolean;
     try {
       enabled = readConfig(this.cwd).git.enabled;
@@ -1148,6 +1178,17 @@ export class GitService {
     if (!root) return { refusal: { status: 'skipped' } };
     if (!(await this.currentBranch(root))) return { refusal: { status: 'no-branch' } };
     return { root };
+  }
+
+  /**
+   * The root a merge primitive works in: `held.root` when the caller holds
+   * this repository's lock with `held.lock` — it read the gate under that lock
+   * (the acceptance does, as its first guards), and root and branch cannot
+   * change while the lock is held — else {@link mergePrimitiveRoot}.
+   */
+  private async primitiveRoot(held?: GitHeldRepo): Promise<{ root: string } | { refusal: GitMergePrimitiveRefusal }> {
+    if (held && lockForKey(held.root).holds(held.lock)) return { root: held.root };
+    return this.mergePrimitiveRoot();
   }
 
   /** Is a merge open (`MERGE_HEAD` present) in the repository at `root`? Never throws. */
@@ -1167,11 +1208,11 @@ export class GitService {
    * ignores untracked files. One `git status` for both sets. Paths are
    * repository-relative, sorted. Non-empty → `dirty { paths }`, empty → `clean`.
    */
-  async pendingChanges(pathspecs: string[], lockHandle?: GitLockHandle): Promise<GitPendingChangesResult> {
-    const gate = await this.mergePrimitiveRoot();
+  async pendingChanges(pathspecs: string[], held?: GitHeldRepo): Promise<GitPendingChangesResult> {
+    const gate = await this.primitiveRoot(held);
     if ('refusal' in gate) return gate.refusal;
     const { root } = gate;
-    const run = this.underRepoLock(root, lockHandle, async (): Promise<GitPendingChangesResult> => {
+    const run = this.underRepoLock(root, held?.lock, async (): Promise<GitPendingChangesResult> => {
       let stdout: string;
       try {
         ({ stdout } = await this.git(
@@ -1198,6 +1239,25 @@ export class GitService {
   }
 
   /**
+   * 2.1.47 (M17 aae2vgem): the files a shadow changes, `merge-base..tip`,
+   * without rename detection (a move is a deletion and an addition) — the
+   * same set `mergeIntoIndex` reports as `changedPaths`, known BEFORE the
+   * merge so the acceptance can suppress their events and read its content
+   * guards from it. ABSOLUTE paths; `null` when `git diff` fails. Read-only.
+   */
+  async shadowChangedPaths(baseSha: string, tipSha: string, repo: GitRepoRoot): Promise<string[] | null> {
+    if (!repo.rootPath) return null;
+    const root = repo.rootPath;
+    try {
+      const { stdout } = await this.git(['diff', '--name-only', '-z', '--no-renames', baseSha, tipSha], root);
+      return splitNul(stdout).map((p) => path.join(root, p));
+    } catch (err) {
+      console.warn('[git] shadowChangedPaths failed:', errMessage(err));
+      return null;
+    }
+  }
+
+  /**
    * M28 es9w55mr — `git merge --no-commit --no-ff <tipSha>`: merge into the
    * index and the working tree without a commit, `MERGE_HEAD` left open.
    * A conflict of the real merge → the merge is aborted here and
@@ -1208,12 +1268,20 @@ export class GitService {
    * Labels nothing itself. A tip already contained in HEAD leaves no merge
    * open → `error`. A conflict whose own abort fails → `error` with the
    * repair context `recovery.kind: 'merge-abort-failed'` (the merge stays open).
+   *
+   * `changedPaths` is an input: the caller reads the set BEFORE the merge with
+   * `shadowChangedPaths` (the acceptance needs it to suppress their events), so
+   * the primitive answers with it instead of re-deriving the same answer.
    */
-  async mergeIntoIndex(tipSha: string, lockHandle?: GitLockHandle): Promise<GitMergeIntoIndexResult> {
-    const gate = await this.mergePrimitiveRoot();
+  async mergeIntoIndex(
+    tipSha: string,
+    changedPaths: readonly string[],
+    held?: GitHeldRepo,
+  ): Promise<GitMergeIntoIndexResult> {
+    const gate = await this.primitiveRoot(held);
     if ('refusal' in gate) return gate.refusal;
     const { root } = gate;
-    const run = this.underRepoLock(root, lockHandle, async (): Promise<GitMergeIntoIndexResult> => {
+    const run = this.underRepoLock(root, held?.lock, async (): Promise<GitMergeIntoIndexResult> => {
       try {
         await this.git(['merge', '--no-commit', '--no-ff', tipSha], root, { ...process.env, LC_ALL: 'C', LANG: 'C' });
       } catch (err) {
@@ -1239,14 +1307,7 @@ export class GitService {
       if (!(await this.mergeHeadOpen(root))) {
         return { status: 'error', message: `Nothing to merge: ${tipSha} is already contained in HEAD.` };
       }
-      let base: string;
-      try {
-        base = (await this.git(['merge-base', 'HEAD', 'MERGE_HEAD'], root)).stdout.trim();
-      } catch (err) {
-        return { status: 'error', message: errMessage(err) };
-      }
-      const changed = await this.changedPaths(root, base, tipSha);
-      return { status: 'merged', changedPaths: changed.map((p) => path.join(root, p)) };
+      return { status: 'merged', changedPaths: [...changedPaths] };
     });
     return run ?? { status: 'busy' };
   }
@@ -1258,11 +1319,11 @@ export class GitService {
    * nothing to undo → `aborted`. A failure → `error` with the repair context
    * `recovery.kind: 'merge-abort-failed'` (the merge stays open, no release).
    */
-  async abortMerge(paths: string[], lockHandle?: GitLockHandle): Promise<GitAbortMergeResult> {
-    const gate = await this.mergePrimitiveRoot();
+  async abortMerge(paths: string[], held?: GitHeldRepo): Promise<GitAbortMergeResult> {
+    const gate = await this.primitiveRoot(held);
     if ('refusal' in gate) return gate.refusal;
     const { root } = gate;
-    const run = this.underRepoLock(root, lockHandle, async (): Promise<GitAbortMergeResult> => {
+    const run = this.underRepoLock(root, held?.lock, async (): Promise<GitAbortMergeResult> => {
       if (!(await this.mergeHeadOpen(root))) return { status: 'aborted' };
       try {
         const targets = this.resolveDiffTargets(root, paths);

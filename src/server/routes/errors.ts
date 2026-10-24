@@ -104,12 +104,16 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
     // a refusal that carries one (today `ANCHOR_LOSS`, with the anchors it would
     // break and who cites them) does not need a route of its own to render it.
     const details = (err as DomainError & { details?: unknown }).details;
+    // 2.1.47 — `recovery` the same way: the repair context a refusal carries
+    // (today `ACCEPT_ABORT_FAILED`, `kind: 'merge-abort-failed'`).
+    const recovery = (err as DomainError & { recovery?: unknown }).recovery;
     return res.status(status).json({
       error: {
         code: err.code,
         message: err.message,
         ...(err.hint ? { hint: err.hint } : {}),
         ...(Array.isArray(details) ? { details } : {}),
+        ...(recovery && typeof recovery === 'object' ? { recovery } : {}),
       },
     });
   }

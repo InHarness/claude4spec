@@ -21,6 +21,11 @@
  * already current before it returns. The `m29-release-cache` projection exists
  * for the INBOUND direction — a file edited outside the app, or arriving with a
  * git pull.
+ *
+ * 2.1.47 (M17 `wh8x023p`): the one exception is the acceptance variant of
+ * `createRelease` (accepting a shadow), whose order is file → cache →
+ * transaction — it writes the file first and rebuilds the row from it in-band
+ * with the indexer's own upsert (`indexReleaseFile`).
  */
 
 import fs from 'node:fs';

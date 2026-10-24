@@ -265,7 +265,7 @@ export type GitPendingChangesResult =
   | { status: 'error'; message: string };
 
 /**
- * `mergeIntoIndex(tipSha)` — `merged` leaves `MERGE_HEAD` open; `conflicts` was
+ * `mergeIntoIndex(tipSha, changedPaths)` — `merged` leaves `MERGE_HEAD` open; `conflicts` was
  * aborted already. `error` carries `recovery` (kind `merge-abort-failed`) only
  * when aborting a conflicted merge failed and the merge stayed open.
  */

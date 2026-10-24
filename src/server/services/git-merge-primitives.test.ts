@@ -88,6 +88,10 @@ describe('GitService — merge primitives of the shadow acceptance (2.1.47)', ()
   let dir: string;
   let svc: GitService;
   const pages = (): string => path.join(dir, 'pages');
+  /** The repository root as git reports it (a realpath — macOS tmpdir is a symlink). */
+  const root = (): string => fs.realpathSync(dir);
+  /** Repository-relative paths as ABSOLUTE ones against the root — the form `changedPaths` takes. */
+  const abs = (...rels: string[]): string[] => rels.map((p) => path.join(root(), p));
   const sha = async (ref: string): Promise<string> => (await git(['rev-parse', ref], dir)).trim();
   const mergeHead = async (): Promise<string | null> =>
     pexec('git', ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { cwd: dir })
@@ -165,17 +169,48 @@ describe('GitService — merge primitives of the shadow acceptance (2.1.47)', ()
 
       const inside = await svc.tryWithRepoLock(async (lock) => ({
         without: await svc.pendingChanges([pages()]),
-        withHandle: await svc.pendingChanges([pages()], lock),
+        withHandle: await svc.pendingChanges([pages()], { root: root(), lock }),
       }));
       expect(inside).toEqual({ without: { status: 'busy' }, withHandle: { status: 'clean' } });
 
       writeConfigJson(dir, { enabled: false });
       expect(await svc.pendingChanges([pages()])).toEqual({ status: 'skipped' });
     });
+
+    it('a caller holding the lock with the gate already read (root + live handle) is not gated again; a handle no longer live falls back to the gate', async () => {
+      const tip = await shadowWith({ 'pages/c.md': '# c\n' });
+      const gate = vi.spyOn(svc, 'mergePrimitiveRoot');
+      try {
+        const results = await svc.tryWithRepoLock(async (lock) => {
+          const held = { root: root(), lock };
+          const pending = await svc.pendingChanges([pages()], held);
+          const merged = await svc.mergeIntoIndex(tip, abs('pages/c.md'), held);
+          const aborted = await svc.abortMerge(abs('pages/c.md'), held);
+          return { pending, merged, aborted };
+        });
+        expect(results).toEqual({
+          pending: { status: 'clean' },
+          merged: { status: 'merged', changedPaths: abs('pages/c.md') },
+          aborted: { status: 'aborted' },
+        });
+        // No config read, no `rev-parse` of the root and the branch per primitive.
+        expect(gate).not.toHaveBeenCalled();
+
+        let stale!: GitLockHandle;
+        await svc.tryWithRepoLock(async (lock) => {
+          stale = lock;
+        });
+        await git(['checkout', '-q', '--detach'], dir);
+        expect(await svc.pendingChanges([pages()], { root: root(), lock: stale })).toEqual({ status: 'no-branch' });
+        expect(gate).toHaveBeenCalledTimes(1);
+      } finally {
+        gate.mockRestore();
+      }
+    });
   });
 
-  describe('[section:es9w55mr] mergeIntoIndex(tipSha)', () => {
-    it('merges into the index and working tree without a commit, MERGE_HEAD open; merged lists the base→tip paths (absolute, a move as delete + add)', async () => {
+  describe('[section:es9w55mr] mergeIntoIndex(tipSha, changedPaths)', () => {
+    it('merges into the index and working tree without a commit, MERGE_HEAD open; merged answers the base→tip paths the caller read before the merge (absolute, a move as delete + add)', async () => {
       const tip = await shadowWith({ 'pages/a.md': '# a\n\nline 1\nfrom shadow\n', 'pages/c.md': '# c\n' });
       // A move on the shadow too: b.md → moved/b.md.
       await git(['checkout', '-q', '-b', 'mv', tip], dir);
@@ -187,15 +222,13 @@ describe('GitService — merge primitives of the shadow acceptance (2.1.47)', ()
       fs.writeFileSync(path.join(dir, 'outside.txt'), 'outside 2\n');
       await git(['commit', '-q', '-am', 'master moved ahead'], dir);
       const headBefore = await sha('HEAD');
+      // The caller's read before the merge: `merge-base..tip`, no rename detection.
+      const base = (await git(['merge-base', 'HEAD', movedTip], dir)).trim();
+      const known = await svc.shadowChangedPaths(base, movedTip, { detected: true, rootPath: root() });
+      expect([...(known ?? [])].sort()).toEqual(abs('pages/a.md', 'pages/b.md', 'pages/c.md', 'pages/moved/b.md').sort());
 
-      const result = await svc.mergeIntoIndex(movedTip);
-      expect(result.status).toBe('merged');
-      const changed = result.status === 'merged' ? [...result.changedPaths].sort() : [];
-      // Absolute against the repository root git reports (a realpath — macOS tmpdir is a symlink).
-      const root = fs.realpathSync(dir);
-      expect(changed).toEqual(
-        ['pages/a.md', 'pages/b.md', 'pages/c.md', 'pages/moved/b.md'].map((p) => path.join(root, p)).sort(),
-      );
+      const result = await svc.mergeIntoIndex(movedTip, known!);
+      expect(result).toEqual({ status: 'merged', changedPaths: known });
       expect(await sha('HEAD')).toBe(headBefore); // no commit
       expect(await mergeHead()).toBe(movedTip);
       expect(fs.readFileSync(path.join(pages(), 'a.md'), 'utf8')).toContain('from shadow');
@@ -208,7 +241,7 @@ describe('GitService — merge primitives of the shadow acceptance (2.1.47)', ()
       await git(['commit', '-q', '-am', 'master edit'], dir);
       const headBefore = await sha('HEAD');
 
-      expect(await svc.mergeIntoIndex(tip)).toEqual({ status: 'conflicts', paths: ['pages/a.md'] });
+      expect(await svc.mergeIntoIndex(tip, abs('pages/a.md'))).toEqual({ status: 'conflicts', paths: ['pages/a.md'] });
       expect(await mergeHead()).toBeNull();
       expect(await sha('HEAD')).toBe(headBefore);
       expect((await git(['status', '--porcelain'], dir)).trim()).toBe('');
@@ -229,7 +262,7 @@ describe('GitService — merge primitives of the shadow acceptance (2.1.47)', ()
         return original(args, cwd, ...rest);
       });
       try {
-        const result = await svc.mergeIntoIndex(tip);
+        const result = await svc.mergeIntoIndex(tip, abs('pages/a.md'));
         expect(result.status).toBe('error');
         if (result.status !== 'error') return;
         expect(result.recovery?.kind).toBe('merge-abort-failed');
@@ -248,12 +281,12 @@ describe('GitService — merge primitives of the shadow acceptance (2.1.47)', ()
 
     it('a tip already contained in HEAD leaves no merge open → error; lock taken without the handle → busy', async () => {
       const head = await sha('HEAD');
-      const contained = await svc.mergeIntoIndex(head);
+      const contained = await svc.mergeIntoIndex(head, []);
       expect(contained.status).toBe('error');
       expect(await mergeHead()).toBeNull();
 
       const tip = await shadowWith({ 'pages/c.md': '# c\n' });
-      const busy = await svc.tryWithRepoLock(async () => svc.mergeIntoIndex(tip));
+      const busy = await svc.tryWithRepoLock(async () => svc.mergeIntoIndex(tip, abs('pages/c.md')));
       expect(busy).toEqual({ status: 'busy' });
       expect(await mergeHead()).toBeNull();
     });
@@ -263,7 +296,7 @@ describe('GitService — merge primitives of the shadow acceptance (2.1.47)', ()
     it('stages the paths first (changes written after the merge would block merge --abort), then aborts — the repository is back where it was', async () => {
       const tip = await shadowWith({ 'pages/a.md': '# a\n\nline 1\nfrom shadow\n' });
       const headBefore = await sha('HEAD');
-      expect((await svc.mergeIntoIndex(tip)).status).toBe('merged');
+      expect((await svc.mergeIntoIndex(tip, abs('pages/a.md'))).status).toBe('merged');
       // An anchor written into the merged page after the merge, not staged.
       fs.writeFileSync(path.join(pages(), 'a.md'), '# a\n\nline 1\nfrom shadow\n<!-- anchor -->\n');
       // Without staging first, git refuses to abort.
@@ -279,7 +312,7 @@ describe('GitService — merge primitives of the shadow acceptance (2.1.47)', ()
 
     it('a failed abort → error with the repair context merge-abort-failed (operation commit-on-release); the merge stays open', async () => {
       const tip = await shadowWith({ 'pages/c.md': '# c\n' });
-      expect((await svc.mergeIntoIndex(tip)).status).toBe('merged');
+      expect((await svc.mergeIntoIndex(tip, abs('pages/c.md'))).status).toBe('merged');
       // Inject the failure: another process holds the index lock.
       const indexLock = path.join(dir, '.git', 'index.lock');
       fs.writeFileSync(indexLock, '');
@@ -320,7 +353,7 @@ describe('GitService — merge primitives of the shadow acceptance (2.1.47)', ()
         writeConfigJson(dir, { enabled: true, commitTarget, switchAfterRelease: true });
         const headBefore = await sha('HEAD');
         const targetBefore = await sha('release-target');
-        expect((await svc.mergeIntoIndex(tip)).status).toBe('merged');
+        expect((await svc.mergeIntoIndex(tip, abs('pages/c.md'))).status).toBe('merged');
         const releaseFile = path.join(dir, '.claude4spec', 'releases', 'v1.json');
         fs.mkdirSync(path.dirname(releaseFile), { recursive: true });
         fs.writeFileSync(releaseFile, '{"name":"v1"}\n');
@@ -348,7 +381,7 @@ describe('GitService — merge primitives of the shadow acceptance (2.1.47)', ()
       const tip = await shadowWith({ 'pages/c.md': '# c\n' });
       const headBefore = await sha('HEAD');
       const result = await svc.tryWithRepoLock(async (lock) => {
-        const merged = await svc.mergeIntoIndex(tip, lock);
+        const merged = await svc.mergeIntoIndex(tip, abs('pages/c.md'), { root: root(), lock });
         expect(merged.status).toBe('merged');
         fs.mkdirSync(path.join(dir, '.claude4spec', 'releases'), { recursive: true });
         fs.writeFileSync(path.join(dir, '.claude4spec', 'releases', 'v1.json'), '{"name":"v1"}\n');
@@ -405,7 +438,7 @@ describe('GitService — merge primitives of the shadow acceptance (2.1.47)', ()
         mode: 0o755,
       });
       await git(['config', 'core.hooksPath', hooks], dir);
-      expect((await svc.mergeIntoIndex(tip)).status).toBe('merged');
+      expect((await svc.mergeIntoIndex(tip, abs('pages/c.md'))).status).toBe('merged');
 
       const result = await svc.commitOnRelease({ name: 'v1', description: 'd' });
       expect(result?.status).toBe('error');

@@ -196,6 +196,19 @@ export const STATUS_FOR_CODE: Record<string, number> = {
   // repository refuses instead of answering an empty delta.
   SHADOW_NOT_FOUND: 404,
   GIT_UNAVAILABLE: 400,
+  // M17 shadow acceptance (2.1.47, `rnwev4kg`) — a refusal before the merge
+  // leaves the repository untouched (409); a failure after it is rolled back
+  // (500), or — `ACCEPT_ABORT_FAILED` — leaves the merge open for repair.
+  ACCEPT_NO_BRANCH: 409,
+  ACCEPT_TARGET_NOT_CURRENT: 409,
+  ACCEPT_BUSY: 409,
+  ACCEPT_STALE: 409,
+  ACCEPT_DIRTY: 409,
+  ACCEPT_OUTSIDE_SPEC: 409,
+  ACCEPT_RELEASES_IN_SHADOW: 409,
+  ACCEPT_CONFLICTS: 409,
+  ACCEPT_FAILED: 500,
+  ACCEPT_ABORT_FAILED: 500,
   SESSION_EXPIRED: 502,
   PUSH_FAILED: 502,
   // M37 Skills registry (0.2.99)

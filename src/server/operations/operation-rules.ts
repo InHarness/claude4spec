@@ -3,7 +3,7 @@
  * `reguly` (identifiers of the M43 vocabulary; an exclusion carries the
  * record's `wykluczenie` verbatim). Keyed by canonical name and attached by
  * `registerCoreOperations()`; `register()` validates every list against
- * `rules.ts`. One entry per record of the window — 79 (2.1.46 adds `shadow_diff`) — and none for the plugin
+ * `rules.ts`. One entry per record of the window — 80 (2.1.46 adds `shadow_diff`, 2.1.47 `accept_shadow`) — and none for the plugin
  * rows the window has no record for.
  */
 
@@ -11,6 +11,12 @@ import type { RuleCitation } from './rules.js';
 
 export const OPERATION_RULES: Readonly<Record<string, readonly RuleCitation[]>> = {
   abort_turn: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'explicit-addressing' }],
+  accept_shadow: [
+    { id: 'destructive-declared' },
+    { id: 'operation-only-write', exclusion: 'pliki zmienia scalenie gita, nie zapis operacji; capture i reindeks domyka sekwencja in-band' },
+    { id: 'error-code-once' },
+    { id: 'echo-free' },
+  ],
   ask: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'explicit-addressing' }],
   check_consistency: [{ id: 'echo-free' }, { id: 'error-code-once' }],
   create_brief: [{ id: 'echo-free' }, { id: 'error-code-once' }],
