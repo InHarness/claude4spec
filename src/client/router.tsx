@@ -3,7 +3,9 @@ import {
   createRouter,
   createRootRouteWithContext,
   createRoute,
+  useLocation,
   useParams,
+  useSearch,
   useNavigate,
   useRouter,
   Navigate,
@@ -11,6 +13,7 @@ import {
   type AnyRoute,
 } from '@tanstack/react-router';
 import type { QueryClient } from '@tanstack/react-query';
+import { z } from 'zod';
 import { RootLayout } from './App.js';
 import { EditorToolbar } from './components/EditorToolbar.js';
 import { HomeEmptyState } from './components/HomeEmptyState.js';
@@ -22,7 +25,7 @@ import { TagsList } from './components/TagsList.js';
 import { TodosList } from './components/TodosList.js';
 import { PageLinksList } from './components/PageLinksList.js';
 import { PlanPage } from './components/PlanPage.js';
-import { ReleasesPage } from './components/ReleasesPage.js';
+import { RELEASES_TABS, ReleasesPage } from './components/ReleasesPage.js';
 import { PlansListPage } from './components/PlansListPage.js';
 import { ReleaseDetail } from './components/ReleaseDetail.js';
 import { BriefsList } from './components/BriefsList.js';
@@ -88,8 +91,14 @@ export interface RouterContext {
   queryClient: QueryClient;
 }
 
-// 2.1.45: `/releases` takes no search params — its List / Compare tabs are
-// screen state (`ReleasesPage`), and the Compare deep link is gone.
+// 2.1.46 (ui-view `releases-list` → params): `/releases?tab=list|compare|shadow&ref=<shadow id>`.
+// `tab` says which tab a visit lands on, `ref` presets the Shadows tab's shadow
+// (percent-encoded by the router — the id may contain `/`). An invalid value is
+// ignored, not an error. Clicks on the tabs stay screen state (`ReleasesPage`).
+const releasesSearch = z.object({
+  tab: z.enum(RELEASES_TABS).optional().catch(undefined),
+  ref: z.string().min(1).optional().catch(undefined),
+});
 
 /**
  * M33 phase 3: the single host root route. Exported so a `RouteTreeFragment`
@@ -187,6 +196,7 @@ const settingsRoute = createRoute({
 const releasesIndexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/releases',
+  validateSearch: releasesSearch,
   component: ReleasesIndexRoute,
 });
 
@@ -521,9 +531,13 @@ function LinksIndexRoute() {
 }
 
 function ReleasesIndexRoute() {
+  const { tab, ref } = useSearch({ from: '/releases' });
+  // Each history entry is a visit: a repeated header click on the same shadow
+  // pushes a new entry (GitStatusBadge), so the screen applies it again.
+  const visit = useLocation({ select: (l) => l.state.__TSR_key });
   return (
     <RoutePane>
-      <ReleasesPage />
+      <ReleasesPage tab={tab} shadowRef={ref} visit={visit} />
     </RoutePane>
   );
 }

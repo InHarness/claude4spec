@@ -1,0 +1,12 @@
+{
+  "unit": {
+    "id": "u5-shadows-ui",
+    "goal": "Rozwijana lista przełącznika gałęzi w nagłówku dostaje sekcję Shadows. Pokazuje się ona tylko przy włączonym gicie i niepustej liście cieni. Klik w pozycję cienia tylko nawiguje: nie robi checkoutu i nie zmienia HEAD. Prowadzi do nowej zakładki Shadows na ekranie wydań, która zawiera:\n  - picker cienia;\n  - nagłówek porównania i banery flag;\n  - render delty: w trybie `merge` jak w Compare, a w trybie `shadow-only` z listą konfliktów nad renderem;\n  - karty elementów: dodany element jest bez linku, zmieniony i usunięty linkują do wersji z mastera;\n  - stany: brak cieni, cień zniknął, brak zmian, błąd.\n\n  Zdarzenie zmiany statusu gita unieważnia teraz także listę cieni i deltę cienia. Nic nie jest usuwane."
+  },
+  "diff": "git diff 86b76453..HEAD",
+  "portions": [
+    "u5-shadows-ui/p1-l2-l5"
+  ],
+  "stateDir": ".c4s-impl/",
+  "previousReview": ".c4s-impl/review/u5-shadows-ui.json (round 1 finding rev-0001 — check it is fixed)"
+}

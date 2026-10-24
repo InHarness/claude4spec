@@ -1,5 +1,5 @@
 {
-  "iteration": 25,
+  "iteration": 35,
   "conventions": [
     {
       "label": "L3 (Spec Operations), implementor not stated",
@@ -96,7 +96,7 @@
       "units": [
         "u5-shadows-ui"
       ],
-      "startCommit": null
+      "startCommit": "36532636e24d52a8a0896ea5a8517417aa50e961"
     }
   ],
   "units": [
@@ -879,15 +879,41 @@
         }
       ],
       "wave": 5,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u5-shadows-ui/p1-l2-l5",
+          "layers": [
+            "L2",
+            "L5"
+          ],
+          "slugs": [
+            "releases-list",
+            "m28-requires-m17",
+            "ac-karta-elementu-added-w-zakladce-shado",
+            "ac-karta-encji-usunietej-w-zakladce-shad",
+            "ac-w-trybie-shadow-only-zakladka-shadows",
+            "ac-przy-masterahead-0-naglowek-zakladki",
+            "ac-zakladka-shadows-z-ref-cienia-ktorego",
+            "ac-przy-config-git-enabled-false-sekcji",
+            "ac-klik-pozycji-w-sekcji-shadows-nie-zmi"
+          ],
+          "status": "verified",
+          "rounds": 5,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "01cde6470a4a372e065955a8e973b23c876ab529",
+      "baseCommit": "36532636e24d52a8a0896ea5a8517417aa50e961",
       "rounds": {
-        "review": 0,
-        "unit": 0
+        "review": 2,
+        "unit": 5
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     }
   ],
   "entityTypes": [

@@ -68,3 +68,24 @@ export function releaseDiffInvalidationFor(kind: WsEvent['kind']): ReleaseDiffIn
   }
   return null;
 }
+
+/**
+ * 2.1.46 (M17 L5 m17ui001 "Stan → Zapytania") — the Shadows tab's delta
+ * `['shadow-diff', <ref>]` (`GET /api/shadow-diff`), `<ref>` being the shadow
+ * id. It moves with HEAD and with the shadow's ref, so its one invalidating
+ * event is `git:status-changed`, on the whole `['shadow-diff']` prefix.
+ */
+export const SHADOW_DIFF_KEY = ['shadow-diff'] as const;
+
+export function shadowDiffKey(ref: string) {
+  return [...SHADOW_DIFF_KEY, ref] as const;
+}
+
+export const SHADOW_DIFF_EVENTS = ['git:status-changed'] as const satisfies ReadonlyArray<WsEvent['kind']>;
+
+const SHADOW_DIFF: ReadonlySet<string> = new Set(SHADOW_DIFF_EVENTS);
+
+/** The shadow-diff key prefix a WS event invalidates, or `null`. */
+export function shadowDiffInvalidationFor(kind: WsEvent['kind']): readonly string[] | null {
+  return SHADOW_DIFF.has(kind) ? SHADOW_DIFF_KEY : null;
+}

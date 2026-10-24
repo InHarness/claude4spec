@@ -7,12 +7,17 @@ import { reloadProjectRoute } from './project-reload.js';
 /** React Query key of `GET /api/git/status` (M28 "Stan → Zapytania"). */
 export const GIT_STATUS_KEY = ['git-status'] as const;
 
+/** 2.1.46 — React Query key of `GET /api/git/shadows` (M28 8i5qf0xx "Stan → Zapytania"). */
+export const GIT_SHADOWS_KEY = ['git-shadows'] as const;
+
 /**
  * 2.1.10 (M28 8i5qf0xx "Stan", M31 ic35jwy6) — the module's map
  * "WS event → query key":
  *
  * - `git:status-changed` → invalidate `["git-status"]`, so the client reads
- *   `GET /api/git/status` again;
+ *   `GET /api/git/status` again, and (2.1.46) `["git-shadows"]` — an accepted
+ *   shadow leaves the list after the release commit, a shadow deleted on the
+ *   remote after a Fetch;
  * - the same event with `headChanged: true`, caused by ANOTHER client's
  *   operation → reload the project route. When THIS client's own sync/checkout
  *   moved HEAD, its response handler reloads instead; an own sync parks the
@@ -24,6 +29,7 @@ export function handleGitStatusChanged(
   deps: { queue(queryKey: QueryKey): void },
 ): void {
   deps.queue([...GIT_STATUS_KEY]);
+  deps.queue([...GIT_SHADOWS_KEY]);
   if (!event.headChanged) return;
   const own = useGitOpsStore.getState().pending;
   if (own === 'sync') {

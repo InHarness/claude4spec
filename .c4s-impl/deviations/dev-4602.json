@@ -1,0 +1,15 @@
+{
+  "id": "dev-4602",
+  "kind": "missing",
+  "blocking": false,
+  "address": "u5-shadows-ui/releases-list",
+  "slugs": [
+    "releases-list"
+  ],
+  "text": "ui-view releases-list (Shadows) says the picker „Compare shadow:” is preset from the `ref` param, but not what the tab selects when it is opened without `ref` (a click on the Shadows tab, or `/releases?tab=shadow`). Assumed: the first shadow of `GET /api/git/shadows` is preselected and compared, as the Compare tab presets the latest release; with an empty list the tab shows `shadow-none`.",
+  "assumption": "ASSUMPTION:dev-4602 — without a `ref` the first listed shadow is preselected, as Compare presets the latest release.",
+  "unit": "u5-shadows-ui",
+  "portion": "u5-shadows-ui/p1-l2-l5",
+  "sent": true,
+  "patchPath": "2-1-45-to-2-1-46-u5-shadows-ui-releases-list-shadows-tab-selection-when-opened-without-ref.md"
+}

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { Download, GitBranch, Loader2, RefreshCw, Settings } from 'lucide-react';
+import { Download, GitBranch, GitFork, Loader2, RefreshCw, Settings } from 'lucide-react';
 import { useConfig } from '../hooks/useConfig.js';
 import { useGitStatus } from '../hooks/useGitStatus.js';
 import { useGitBranches } from '../hooks/useGitBranches.js';
+import { useGitShadows } from '../hooks/useGitShadows.js';
 import { useGitCheckout } from '../hooks/useGitCheckout.js';
 import { useGitFetch, useGitSync } from '../hooks/useGitRemoteOps.js';
 import {
@@ -13,6 +14,7 @@ import {
   hasUpstream,
   syncCount,
   syncOutcome,
+  timeAgo,
   type GitUiOutcome,
 } from '../lib/git-results.js';
 import { setGitFlashToast, takeGitFlashToast } from '../lib/git-flash.js';
@@ -38,7 +40,21 @@ import { toast } from '../ui/events.js';
  * Results are toasts and hints (`lib/git-results.ts`); after a sync that moved
  * HEAD the route reloads and "Updated from the remote" is shown after it. The
  * tooltip carries the full ahead/behind counts and "Last fetched …".
+ *
+ * 2.1.46 (M28 8i5qf0xx / 846dmtbu): the dropdown has two sections — „Branches”
+ * and, when the shadow list (`GET /api/git/shadows`) is not empty, „Shadows”:
+ * set apart visually, never current, each item its id and the tip commit's
+ * time (the subject in the tooltip). Picking a shadow ONLY navigates to
+ * `/releases?tab=shadow&ref=<id>` (the router percent-encodes the id): no
+ * checkout, no dirty/busy guard, no lock, HEAD and the disk untouched.
  */
+
+declare module '@tanstack/history' {
+  interface HistoryState {
+    /** The header Shadows section's per-click token: the current entry's + 1 (see `onOpenShadow`). */
+    shadowVisit?: number;
+  }
+}
 
 export function GitStatusBadge() {
   const { data: config } = useConfig();
@@ -51,6 +67,7 @@ export function GitStatusBadge() {
   const anchorRef = useRef<HTMLButtonElement>(null);
   // Only fetch the branch list while the dropdown is actually open.
   const { data: branchesData } = useGitBranches({ enabled: open && config?.git?.enabled === true });
+  const { data: shadowsData } = useGitShadows({ enabled: open && config?.git?.enabled === true });
   const checkout = useGitCheckout();
   const fetchOp = useGitFetch();
   const syncOp = useGitSync();
@@ -95,6 +112,20 @@ export function GitStatusBadge() {
     checkout.mutate(branch, {
       onSuccess: (result) => apply(checkoutOutcome(result)),
       onError: () => toast.error('Branch switch failed.'),
+    });
+  }
+
+  function onOpenShadow(id: string) {
+    setOpen(false);
+    // Every click is a new history entry, even onto the URL already shown —
+    // the router drops a navigation to the same href with the same state as a
+    // no-op. The token is derived from the CURRENT entry's state (it lives in
+    // the history, so it survives a page reload; a module-scoped counter would
+    // restart and collide): the next entry's token always differs from it.
+    navigate({
+      to: '/releases',
+      search: { tab: 'shadow', ref: id },
+      state: (current) => ({ shadowVisit: (current.shadowVisit ?? 0) + 1 }),
     });
   }
 
@@ -235,6 +266,7 @@ export function GitStatusBadge() {
               {listHint}
             </span>
           ) : null}
+          <SectionLabel>Branches</SectionLabel>
           {(branchesData?.branches ?? []).map((branch) => {
             const isCurrent = branch === (branchesData?.current ?? status.branch);
             return (
@@ -263,8 +295,45 @@ export function GitStatusBadge() {
               No local branches
             </span>
           ) : null}
+          {shadowsData && shadowsData.shadows.length > 0 ? (
+            <div
+              className="flex flex-col mt-1 pt-1"
+              style={{ borderTop: '1px solid var(--c-hair)' }}
+              data-git-shadows
+            >
+              <SectionLabel>Shadows</SectionLabel>
+              {shadowsData.shadows.map((shadow) => (
+                <button
+                  key={shadow.id}
+                  type="button"
+                  onClick={() => onOpenShadow(shadow.id)}
+                  className="px-2 py-1 text-left rounded flex items-center gap-1.5 text-[11.5px]"
+                  style={{ color: 'var(--c-muted)', cursor: 'pointer' }}
+                  title={shadow.tipSubject}
+                  data-git-shadow={shadow.id}
+                >
+                  <GitFork size={11} style={{ flexShrink: 0 }} aria-hidden />
+                  <span className="flex-1 min-w-0 truncate font-mono italic">{shadow.id}</span>
+                  <span className="shrink-0 text-[10.5px]" style={{ color: 'var(--c-subtle)' }}>
+                    {timeAgo(shadow.tipCommittedAt) ?? ''}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       </Popover>
     </div>
+  );
+}
+
+function SectionLabel({ children }: { children: string }) {
+  return (
+    <span
+      className="px-2 pt-1 pb-0.5 text-[10px] uppercase tracking-wider font-semibold"
+      style={{ color: 'var(--c-subtle)' }}
+    >
+      {children}
+    </span>
   );
 }

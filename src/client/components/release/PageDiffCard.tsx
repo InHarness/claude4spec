@@ -5,9 +5,16 @@ import { DiffView } from '../../host-ui-kit/detail/DiffView.js';
 import { toDiffViewHunks } from '../../lib/release-diff/to-diff-view.js';
 import { FrontmatterDiffPanel } from './FrontmatterDiffPanel.js';
 import { XmlRefsDiffPanel } from './XmlRefsDiffPanel.js';
+import { MasterPageLink, ShadowOnlyLabel } from './ShadowCardParts.js';
 
 interface Props {
   change: FileDiff;
+  /**
+   * 2.1.46 (m17ui002): the card is part of a shadow comparison — an `added`
+   * page has no link and the label `shadow only`; a `modified` / `deleted` one
+   * links to the master's version of the page.
+   */
+  shadow?: boolean;
 }
 
 /**
@@ -23,7 +30,7 @@ interface Props {
  * (`headingPath`); a change above the first heading is a "Page preamble" row,
  * rendered before the section rows.
  */
-export function PageDiffCard({ change }: Props) {
+export function PageDiffCard({ change, shadow }: Props) {
   const op = colorForOp(change.op);
   // A page whose content could not be read on one side (the git-anchored path
   // degrades it to its file-level status) comes with empty section arrays and
@@ -41,6 +48,7 @@ export function PageDiffCard({ change }: Props) {
     <div
       className="rounded-md"
       style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
+      data-diff-card={`page:${change.rootId}/${change.path}`}
     >
       <div className="flex items-center gap-2 px-3 py-2">
         <span
@@ -55,6 +63,16 @@ export function PageDiffCard({ change }: Props) {
         <span className="text-[13px] font-mono" style={{ color: 'var(--c-ink)' }}>
           {change.path}
         </span>
+        {shadow && (
+          <>
+            <span className="flex-1" />
+            {change.op === 'created' ? (
+              <ShadowOnlyLabel />
+            ) : (
+              <MasterPageLink rootId={change.rootId} path={change.path} />
+            )}
+          </>
+        )}
       </div>
 
       <div className="px-3 pb-3 space-y-2">

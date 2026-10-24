@@ -19,3 +19,8 @@ section:m17api001 → src/server/services/release.ts (ReleaseService.shadowDiff)
 section:22u3o5bx → src/server/services/release-shadow-diff.ts (SHADOW_NOT_FOUND, GIT_UNAVAILABLE), src/server/operations/error-codes.ts (404 / 400)
 section:xkpt256d → src/server/services/release-shadow-diff.ts (structural delta of a not-yet-accepted version)
 section:m17api401 → src/server/routes/shadow-diff.ts (own router /api/shadow-diff), src/server/workspace/project-context.ts
+releases-list → src/client/components/ReleasesPage.tsx (tabs List / Compare / Shadows, params tab + ref), src/client/components/ReleasesShadowsTab.tsx (Shadows tab: picker, header, banners, conflicts, states), src/client/router.tsx (releasesSearch: tab, ref), src/client/components/release/ShadowCardParts.tsx + EntityDiffCard.tsx + PageDiffCard.tsx + DeltaSection.tsx (shadow card form)
+section:m17ui001 → src/client/lib/release-diff-invalidation.ts (SHADOW_DIFF_KEY, shadowDiffInvalidationFor), src/client/hooks/useReleases.ts (useShadowDiff ['shadow-diff', ref]), src/client/hooks/useFileWatcher.ts
+section:m17ui002 → src/client/components/release/ShadowCardParts.tsx (shadow only label, master links "Opens the master version"), src/client/components/release/EntityDiffCard.tsx (ShadowDeletedEntityRender from `before`)
+section:8i5qf0xx → src/client/components/GitStatusBadge.tsx (Branches / Shadows sections, shadow item navigates only), src/client/lib/git-ws.ts (GIT_SHADOWS_KEY invalidated on git:status-changed), src/client/hooks/useGitShadows.ts, src/client/lib/git-api.ts (shadows)
+section:846dmtbu → src/client/components/GitStatusBadge.tsx (onOpenShadow → /releases?tab=shadow&ref=<id>)

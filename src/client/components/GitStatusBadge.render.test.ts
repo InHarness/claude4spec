@@ -88,6 +88,8 @@ beforeEach(() => {
   routes = {
     '/api/git/status': async () => status,
     '/api/git/branches': async () => ({ current: 'main', branches: ['main', 'feature'] }),
+    // 2.1.46: the open dropdown also reads the shadow list (its own tests: GitStatusBadge.shadows.render.test.ts).
+    '/api/git/shadows': async () => ({ shadows: [] }),
   };
   vi.stubGlobal(
     'fetch',
