@@ -326,12 +326,28 @@ export interface VersionDetail extends VersionListItem {
 
 // --- M17: Spec Snapshots & Releases ---
 
+/**
+ * 2.1.47 (M17 m17reldisk, dto `release` field `accepted_shadow`): the shadow a
+ * release accepted — the shadow `id` (its ref name without `refs/runs/`) and the
+ * `tipSha` that was previewed and merged.
+ */
+export interface AcceptedShadow {
+  id: string;
+  tipSha: string;
+}
+
 export interface Release {
   id: number;
   name: string;
   description: string;
   createdBy: ChangedBy;
   createdAt: string;
+  /**
+   * 2.1.47: the accepted shadow, `null` for every release that did not accept
+   * one — including one made by a plain `createRelease`. Additive: optional so a
+   * consumer from before the field (and a hand-built `Release`) stays valid.
+   */
+  acceptedShadow?: AcceptedShadow | null;
 }
 
 export interface ReleaseCountBreakdown {

@@ -21,12 +21,12 @@
  *
  * 0.2.2 (brief §8): with `roots` added (migration 049) the release METADATA set
  * the brief calls reconstructable — name, slug, description, createdAt, createdBy,
- * roots — is now fully rebuilt here. The genuinely unreconstructable runtime state
+ * roots — is now fully rebuilt here; 2.1.47 adds acceptedShadow (migration 058). The genuinely unreconstructable runtime state
  * is exactly `entity_version` / `file_version` and the `release_id` linkage.
  */
 
 import type Database from 'better-sqlite3';
-import type { ReleaseFileStore, ReleaseFileData } from './release-store.js';
+import { readAcceptedShadow, type ReleaseFileStore, type ReleaseFileData } from './release-store.js';
 import type { SelfWriteSuppressor } from '../fs/sources.js';
 import type { WatchSubscriber, WatchScope } from '../fs/watcher.js';
 
@@ -39,15 +39,22 @@ import type { WatchSubscriber, WatchScope } from '../fs/watcher.js';
  * JSON array from the file; `id` is still never referenced, so SQLite preserves the
  * surrogate key that `entity_version.release_id` / `file_version.release_id` point at.
  */
+/*
+ * 2.1.47 (migration 058): `accepted_shadow_id` / `accepted_shadow_sha` are rebuilt
+ * from the file's `acceptedShadow` like the rest of the metadata — a file without
+ * the field sets both to NULL.
+ */
 const UPSERT_SQL = `
-  INSERT INTO spec_release (name, slug, description, created_by, created_at, roots)
-  VALUES (?, ?, ?, ?, ?, ?)
+  INSERT INTO spec_release (name, slug, description, created_by, created_at, roots, accepted_shadow_id, accepted_shadow_sha)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(slug) DO UPDATE SET
     name = excluded.name,
     description = excluded.description,
     created_by = excluded.created_by,
     created_at = excluded.created_at,
-    roots = excluded.roots
+    roots = excluded.roots,
+    accepted_shadow_id = excluded.accepted_shadow_id,
+    accepted_shadow_sha = excluded.accepted_shadow_sha
 `;
 
 export class ReleaseIndexerService implements WatchSubscriber {
@@ -130,6 +137,7 @@ export class ReleaseIndexerService implements WatchSubscriber {
     // brought into the `releases` root — is kept and listed like any other row.
     // It is unaddressable, because `findReleaseRow` refuses the literal before
     // any lookup; the reserved-name guard lives only in create/updateRelease.
+    const acceptedShadow = readAcceptedShadow(data);
     upsert.run(
       data.name,
       data.slug,
@@ -140,6 +148,8 @@ export class ReleaseIndexerService implements WatchSubscriber {
       // recorded, fall back to the current `pages` roots", which is different
       // from "this release deliberately covered zero roots".
       data.roots ? JSON.stringify(data.roots) : null,
+      acceptedShadow?.id ?? null,
+      acceptedShadow?.tipSha ?? null,
     );
     return true;
   }

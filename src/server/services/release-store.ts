@@ -3,7 +3,8 @@
  * git-committed text, mirroring `EntityStore` (M29).
  *
  * Each release = one JSON file `<slug>.json` in the `releases` root, IDENTITY ONLY
- * (`name`, `slug`, `description`, `createdAt`, `createdBy`, `roots`) — no
+ * (`name`, `slug`, `description`, `createdAt`, `createdBy`, `roots`, and —
+ * only for a release that accepted a shadow — `acceptedShadow`) — no
  * version content, no tree, no gitSha. `spec_release` (SQLite) is a derived
  * cache rebuilt from these files (see `ReleaseIndexerService`); release→version
  * links (`entity_version.release_id` / `file_version.release_id`) live
@@ -26,6 +27,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { SelfWriteSuppressor } from '../fs/sources.js';
 import type { RecordStore } from '../fs/record-store.js';
+import type { AcceptedShadow } from '../../shared/entities.js';
 
 export interface ReleaseFileData {
   name: string;
@@ -38,6 +40,37 @@ export interface ReleaseFileData {
   // the bundle's `manifest.roots` (`{id,name,dir}`): committed release files are
   // immutable git diff anchors, so this shape is frozen with them.
   roots: string[];
+  // 2.1.47 (M17 m17reldisk): the accepted shadow `{ id, tipSha }`. Additive and
+  // optional — the frozen shape covers the existing fields only. Set solely by
+  // creating a release through accepting a shadow; a file without it reads as
+  // `null` (see `readAcceptedShadow`). Never taken from a create caller.
+  acceptedShadow?: AcceptedShadow | null;
+}
+
+/**
+ * The `acceptedShadow` of a parsed release file, or `null` when the file has
+ * none (every file from before the field, every release not created by
+ * accepting a shadow) or carries something that is not `{ id, tipSha }` strings.
+ */
+export function readAcceptedShadow(data: object): AcceptedShadow | null {
+  const v = (data as { acceptedShadow?: unknown }).acceptedShadow;
+  if (!v || typeof v !== 'object') return null;
+  const { id, tipSha } = v as Record<string, unknown>;
+  if (typeof id !== 'string' || !id || typeof tipSha !== 'string' || !tipSha) return null;
+  return { id, tipSha };
+}
+
+/** The `spec_release` columns that hold the accepted shadow; `null` together. */
+export interface AcceptedShadowColumns {
+  accepted_shadow_id?: string | null;
+  accepted_shadow_sha?: string | null;
+}
+
+/** `spec_release` row → `acceptedShadow`; `null` unless both columns are set. */
+export function acceptedShadowFromRow(row: AcceptedShadowColumns): AcceptedShadow | null {
+  return row.accepted_shadow_id && row.accepted_shadow_sha
+    ? { id: row.accepted_shadow_id, tipSha: row.accepted_shadow_sha }
+    : null;
 }
 
 /**
@@ -49,11 +82,11 @@ export interface ReleaseFileData {
  * between call sites.
  */
 export function toReleaseFileData(
-  row: { name: string; description: string; created_at: string; created_by: string },
+  row: { name: string; description: string; created_at: string; created_by: string } & AcceptedShadowColumns,
   slug: string,
   roots: string[],
 ): ReleaseFileData {
-  return {
+  const data: ReleaseFileData = {
     name: row.name,
     slug,
     description: row.description,
@@ -61,6 +94,13 @@ export function toReleaseFileData(
     createdBy: row.created_by,
     roots,
   };
+  // 2.1.47: written only when the row carries an accepted shadow — a release
+  // that accepted none (and every row from before the field) gets no key, so
+  // its file stays byte-identical to the pre-2.1.47 shape. Rewriting the file
+  // (updateRelease, the M29 DB→disk backfill) keeps the field as the row holds it.
+  const acceptedShadow = acceptedShadowFromRow(row);
+  if (acceptedShadow) data.acceptedShadow = acceptedShadow;
+  return data;
 }
 
 export class ReleaseFileStore {

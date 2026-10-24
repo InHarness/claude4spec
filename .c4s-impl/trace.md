@@ -1,0 +1,2 @@
+spec-release → src/server/db/migrations/058_spec_release_accepted_shadow.sql (+ 000_baseline.sql; cache mapping src/server/services/release-indexer.ts, row mapping src/server/services/release.ts `ReleaseRow`/`toRelease`); test src/server/db/spec-release-accepted-shadow.migration.test.ts
+release → src/shared/entities.ts `Release.acceptedShadow` / `AcceptedShadow` (filled by src/server/services/release.ts `toRelease`); test src/server/routes/releases.accepted-shadow.test.ts

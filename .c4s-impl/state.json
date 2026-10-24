@@ -1,5 +1,5 @@
 {
- "iteration": 0,
+ "iteration": 7,
  "conventions": [
   {
    "label": "L1 (DB) — implementor M41",
@@ -52,7 +52,7 @@
     "u2-git-merge-primitives",
     "u3-operation-suppress"
    ],
-   "startCommit": null
+   "startCommit": "d2d342ccda6b79d321011e4e08f82d6381251087"
   },
   {
    "n": 2,
@@ -211,15 +211,38 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "pending",
-   "portions": [],
-   "startCommit": null,
-   "baseCommit": null,
+   "status": "verified",
+   "portions": [
+    {
+     "name": "u1-release-metadata/p1-l1-l4",
+     "layers": [
+      "L1",
+      "L2",
+      "L4"
+     ],
+     "slugs": [
+      "spec-release",
+      "release",
+      "ac-post-api-releases-nie-ustawia-accepte"
+     ],
+     "status": "implemented",
+     "rounds": 2,
+     "partial": 0,
+     "uncovered": [
+      "release-tools-release-create",
+      "release-tools-release-list"
+     ],
+     "only": []
+    }
+   ],
+   "startCommit": "632abd02f0b106c2a84cf2dc61785c5854d5d14e",
+   "baseCommit": "d2d342ccda6b79d321011e4e08f82d6381251087",
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 2
    },
-   "jobs": []
+   "jobs": [],
+   "lastUncovered": []
   },
   {
    "id": "u2-git-merge-primitives",
@@ -864,5 +887,6 @@
    "version": 1
   }
  ],
- "entityParts": []
+ "entityParts": [],
+ "baselineGreen": true
 }

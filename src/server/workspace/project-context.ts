@@ -110,7 +110,12 @@ import { kindDeclaration, kindSelects, type RegistryRoot } from '../../shared/ro
 import { FileVersionCapture } from '../services/file-version-capture.js';
 import { EntityStore } from '../services/entity-store.js';
 import { EntityIndexerService } from '../services/entity-indexer.js';
-import { ReleaseFileStore, toReleaseFileData, type ReleaseFileData } from '../services/release-store.js';
+import {
+  ReleaseFileStore,
+  toReleaseFileData,
+  type AcceptedShadowColumns,
+  type ReleaseFileData,
+} from '../services/release-store.js';
 import { RecordStore } from '../fs/record-store.js';
 import type { SnapshotData } from '../serialization/types.js';
 import {
@@ -1972,7 +1977,9 @@ async function buildInner(
   try {
     const legacyReleases = db.handle
       .prepare(`SELECT * FROM spec_release WHERE slug IS NULL`)
-      .all() as Array<{ id: number; name: string; description: string; created_by: string; created_at: string }>;
+      .all() as Array<
+        { id: number; name: string; description: string; created_by: string; created_at: string } & AcceptedShadowColumns
+      >;
     if (legacyReleases.length > 0) {
       console.log(`[m29] backfilling ${legacyReleases.length} release(s) DB→disk into ${releasesRootDir} ...`);
       backupDbBeforeMigration(dbSlotDir);

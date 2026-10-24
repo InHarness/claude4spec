@@ -62,7 +62,7 @@ import type { SnapshotData } from '../serialization/types.js';
 import { projectStamp } from './system-stamp-projection.js';
 import { readConfig, builtinPagesRoot } from '../config.js';
 import { slugify } from '../../shared/slug.js';
-import { toReleaseFileData, type ReleaseFileStore } from './release-store.js';
+import { acceptedShadowFromRow, toReleaseFileData, type ReleaseFileStore } from './release-store.js';
 import type { RecordStore } from '../fs/record-store.js';
 import type { MarkdownRecord } from '../fs/record-adapters.js';
 import type { GitService } from './git.js';
@@ -143,6 +143,9 @@ interface ReleaseRow {
   description: string;
   created_by: string;
   created_at: string;
+  /** 2.1.47 (058): NULL unless the release was created by accepting a shadow. */
+  accepted_shadow_id: string | null;
+  accepted_shadow_sha: string | null;
 }
 
 /**
@@ -2113,6 +2116,7 @@ export class ReleaseService {
       description: row.description,
       createdBy: row.created_by as ChangedBy,
       createdAt: row.created_at,
+      acceptedShadow: acceptedShadowFromRow(row),
     };
   }
 

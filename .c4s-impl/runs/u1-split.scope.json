@@ -1,0 +1,145 @@
+{
+ "unit": {
+  "id": "u1-release-metadata",
+  "goal": "Wydanie zapamiętuje, czy przyjęło cień i który (id cienia i SHA jego tipu): w pliku metadanych wydania, w odtwarzanej z niego tabeli-cache i w odpowiedzi REST wydania. Edycja ostatniego wydania i migracja DB→dysk zachowują tę informację, a zwykłe tworzenie wydania nigdy jej nie ustawia. Nic nie jest usuwane.",
+  "recipe": {
+   "pages": [
+    {
+     "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+     "change": {
+      "offset": 1,
+      "limit": 1,
+      "anchors": [
+       "m17db001"
+      ]
+     },
+     "context": {
+      "offset": 1,
+      "limit": 2,
+      "anchors": [
+       "xkpt256d",
+       "m17zal001"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m17-snapshots-releases/L1-db.md",
+     "change": "all",
+     "context": {
+      "offset": 0,
+      "limit": 4,
+      "anchors": [
+       "ljtrdqbo",
+       "34xy2eei",
+       "7yko4pyq",
+       "av75xfue"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+     "change": {
+      "offset": 9,
+      "limit": 1,
+      "anchors": [
+       "m17reldisk"
+      ]
+     },
+     "context": {
+      "offset": 0,
+      "limit": 1,
+      "anchors": [
+       "x62r1cd9"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+     "change": {
+      "offset": 11,
+      "limit": 1,
+      "anchors": [
+       "mbjdcls0"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m17-snapshots-releases/bundle-archive-format.md",
+     "change": "all",
+     "context": {
+      "offset": 0,
+      "limit": 2,
+      "anchors": [
+       "m17bnd001",
+       "m17trtr01"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m29-entity-store.md",
+     "change": "all",
+     "context": {
+      "offset": 1,
+      "limit": 2,
+      "anchors": [
+       "m29cel001",
+       "m29dep001"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m29-entity-store.md",
+     "context": {
+      "offset": 8,
+      "limit": 3,
+      "anchors": [
+       "m29db001",
+       "hfgqgms3",
+       "m29idx001"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m29-entity-store.md",
+     "context": {
+      "offset": 13,
+      "limit": 1,
+      "anchors": [
+       "m29mig001"
+      ]
+     }
+    }
+   ],
+   "entities": [
+    {
+     "type": "database-table",
+     "slugs": [
+      "spec-release"
+     ]
+    },
+    {
+     "type": "dto",
+     "slugs": [
+      "release"
+     ],
+     "deferred": [
+      {
+       "what": "nowe rodzaje kontekstu naprawy niesione w polu synchronizacji git odpowiedzi wydania",
+       "to": "u2-git-merge-primitives",
+       "why": "typ kontekstu naprawy rozszerza warstwa git"
+      }
+     ]
+    },
+    {
+     "type": "ac",
+     "slugs": [
+      "ac-post-api-releases-nie-ustawia-accepte"
+     ]
+    }
+   ]
+  },
+  "jobs": []
+ },
+ "mode": "split",
+ "stateDir": ".c4s-impl"
+}

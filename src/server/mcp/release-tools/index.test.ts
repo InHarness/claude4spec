@@ -831,6 +831,10 @@ describe('release-tools — the 2.1.26 mcp-tool records', () => {
     expect(renamed.body).toMatchObject({ id: v2.body.id, name: 'v2.1', description: 'sharper', gitSync: null });
     expect(renamed.body.countBreakdown).toEqual({ entities: {}, pages: 0, total: 0 });
     expect(renamed.body).not.toHaveProperty('count_breakdown');
+    // 2.1.47: `acceptedShadow` is REST dto `release` only — not in this tool's record.
+    expect(Object.keys(renamed.body).sort()).toEqual(
+      ['countBreakdown', 'createdAt', 'createdBy', 'description', 'gitSync', 'id', 'name'].sort(),
+    );
     // Without `assignUnreleased` nothing is committed.
     expect(h.gitCalls).toEqual([]);
     expect(h.broadcasts).toEqual([{ kind: 'release:updated', releaseId: v2.body.id, name: 'v2.1' }]);
