@@ -160,6 +160,20 @@ describe('POST /api/git/sync (2.1.10)', () => {
     expect(fs.readFileSync(path.join(work, 'remote-1.md'), 'utf8')).toBe('# remote 1\n');
   });
 
+  it('[section:e5l1zqxa] 2.1.46: the fetch of sync() also brings the shadow namespace refs/runs/* (forced, pruned only there)', async () => {
+    await git(['push', '-q', 'origin', 'HEAD:refs/runs/run-1/spec', 'HEAD:refs/runs/gone/spec'], other);
+    await git(['update-ref', 'refs/custom/keep', 'HEAD'], work);
+    const app = appFor(new GitService(work, [work]));
+    expect((await request(app).post('/api/git/sync')).body.status).toBe('up-to-date');
+    const runs = async () => (await git(['for-each-ref', '--format=%(refname)', 'refs/runs/'], work)).split('\n').filter(Boolean);
+    expect(await runs()).toEqual(['refs/runs/gone/spec', 'refs/runs/run-1/spec']);
+
+    await git(['push', '-q', 'origin', ':refs/runs/gone/spec'], other);
+    expect((await request(app).post('/api/git/sync')).body.status).toBe('up-to-date');
+    expect(await runs()).toEqual(['refs/runs/run-1/spec']);
+    expect((await git(['for-each-ref', '--format=%(refname)', 'refs/custom/'], work)).trim()).toBe('refs/custom/keep');
+  });
+
   it('[ac:ac-post-api-git-sync-przy-behind-0-i-ahe] behind 0 / ahead > 0 → up-to-date, nothing pushed or moved', async () => {
     await commitFiles(work, { 'local.md': '# local\n' }, 'local only');
     const before = await head(work);

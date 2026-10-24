@@ -3,6 +3,7 @@ import type {
   RawDelta,
   Release,
   ReleaseDetail,
+  ShadowDiffResponse,
   SpecSnapshot,
   UpdateReleaseResponse,
 } from '../../shared/entities.js';
@@ -85,6 +86,14 @@ export const releasesApi = {
         `/api/releases/${fromSegment}/diff/${encodeURIComponent(to)}`,
       ),
     );
+  },
+  /**
+   * 2.1.46 (M17, endpoint `get-api-shadow-diff`) — what accepting the shadow
+   * `ref` would change in the master's specification. The id may contain `/`,
+   * so it travels percent-encoded in the query, never in a path segment.
+   */
+  async shadowDiff(ref: string): Promise<ShadowDiffResponse> {
+    return handle<ShadowDiffResponse>(await apiFetch(`/api/shadow-diff?ref=${encodeURIComponent(ref)}`));
   },
   async restoreEntity(
     releaseName: string,

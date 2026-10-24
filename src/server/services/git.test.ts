@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GitService } from './git.js';
+import { GitService, SHADOW_SCAN_CONCURRENCY, supportsTrialMerge } from './git.js';
 
 const pexec = promisify(execFile);
 
@@ -992,41 +992,46 @@ describe('GitService — 0.1.118 read-only methods', () => {
       expect(tracked).toContain('pages/index2.md');
     });
 
-    it('resolveReleaseCommit finds the marker via --all when its FIRST add is only reachable from a non-current branch', async () => {
+    it('[ac:ac-przy-switchafterrelease-off-z-commitem-n] switchAfterRelease=off with a commit to another branch: the release file and the spec text stay on disk, HEAD does not move, and resolveReleaseCommit — searching every ref outside refs/runs/* — finds the marker on the target branch', async () => {
       await initRepo(dir);
       fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
       await git(['add', '.'], dir);
       await git(['commit', '-m', 'seed'], dir);
       await git(['branch', 'release-target'], dir);
+      const headBefore = (await git(['rev-parse', 'HEAD'], dir)).trim();
 
-      // The release identity file is added FOR THE FIRST TIME by the
-      // commit-target commit itself, which lands on release-target — main
-      // (current HEAD) never has this path in its history at all, so a
-      // plain (non---all) `git log` from main would find nothing.
-      const filePath = path.join(dir, 'v1.json');
-      writeConfigJson(dir, { enabled: true, commitTarget: { mode: 'named', branch: 'release-target' } });
-      fs.writeFileSync(filePath, '{}');
+      // The release identity file and the spec text are written to disk
+      // before the commit hook (M17 m17reldisk), then committed — for the
+      // first time — onto release-target by the temp-index path; main
+      // (current HEAD) never has the file in its history.
+      const filePath = path.join(dir, '.claude4spec', 'releases', 'v1.json');
+      const pagePath = path.join(dir, 'spec.md');
+      writeConfigJson(dir, {
+        enabled: true,
+        commitTarget: { mode: 'named', branch: 'release-target' },
+        switchAfterRelease: false,
+      });
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, '{"name":"v1"}');
+      fs.writeFileSync(pagePath, '# spec at v1');
       const svc = new GitService(dir, [dir]);
-      const commitResult = await svc.commit({ name: 'v1', description: '' });
-      expect(commitResult.status).toBe('committed');
+      const commitResult = await svc.commitOnRelease({ name: 'v1', description: 'd' });
+      expect(commitResult?.status).toBe('committed');
+      expect(commitResult?.branch).toBe('release-target');
+      expect(commitResult?.switched ?? false).toBe(false); // `switched` is additive: absent = not switched
 
-      // Sanity check: a non---all log from current HEAD truly finds nothing.
-      const withoutAll = (
-        await pexec('git', ['log', '--diff-filter=A', '--format=%H', '--', filePath], { cwd: dir })
-      ).stdout.trim();
-      expect(withoutAll).toBe('');
+      // HEAD did not move (no ProjectContext reload is due) and the files the
+      // SQLite cache derives from are still on disk, byte for byte — the
+      // cache stays consistent with the disk.
+      expect((await git(['rev-parse', '--abbrev-ref', 'HEAD'], dir)).trim()).toBe('main');
+      expect((await git(['rev-parse', 'HEAD'], dir)).trim()).toBe(headBefore);
+      expect(fs.readFileSync(filePath, 'utf8')).toBe('{"name":"v1"}');
+      expect(fs.readFileSync(pagePath, 'utf8')).toBe('# spec at v1');
+      expect((await git(['log', '--diff-filter=A', '--format=%H', '--', filePath], dir)).trim()).toBe('');
 
-      // HEAD is still main — resolveReleaseCommit must use --all to find the
-      // marker on release-target.
-      const markerSha = await svc.resolveReleaseCommit(filePath);
-      expect(markerSha).toBeTruthy();
-      const shaOnTarget = (
-        await pexec('git', ['log', '--all', '--diff-filter=A', '--format=%H', '--', filePath], { cwd: dir })
-      ).stdout
-        .trim()
-        .split('\n')
-        .pop();
-      expect(markerSha).toBe(shaOnTarget);
+      // The marker is the release-target commit that introduced the file.
+      const targetTip = (await git(['rev-parse', 'release-target'], dir)).trim();
+      expect(await svc.resolveReleaseCommit(filePath)).toBe(targetTip);
     });
 
     it('branchContainingCommit finds the branch carrying a given sha, preferring current when ambiguous', async () => {
@@ -1251,7 +1256,12 @@ describe('GitService — 0.1.118 read-only methods', () => {
     });
   });
 
-  describe('resolveReleaseCommit --all fallback ordering (code review regression, 0.1.125)', () => {
+  /**
+   * 2.1.46 (M28 eu1rffp6 / aqys9dje / m28aug01): HEAD's history first, then
+   * every ref outside the shadow namespace `refs/runs/*`; the oldest add wins.
+   * A marker present only in a shadow ref resolves to `null`.
+   */
+  describe('resolveReleaseCommit search order (2.1.46)', () => {
     let dir2: string;
     beforeEach(() => {
       dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-git-svc-2-'));
@@ -1260,22 +1270,93 @@ describe('GitService — 0.1.118 read-only methods', () => {
       fs.rmSync(dir2, { recursive: true, force: true });
     });
 
-    it('prefers the HEAD-scoped search over --all when the marker is reachable from HEAD', async () => {
+    const rev = async (ref: string): Promise<string> => (await git(['rev-parse', ref], dir2)).trim();
+
+    /** Repo with a seed commit on main and git.enabled; config.json stays untracked. */
+    async function seedRepo(): Promise<GitService> {
       await initRepo(dir2);
+      fs.writeFileSync(path.join(dir2, 'seed.txt'), 'seed');
+      await git(['add', 'seed.txt'], dir2);
+      await git(['commit', '-m', 'seed'], dir2);
+      writeConfigJson(dir2, { enabled: true });
+      return new GitService(dir2, [dir2]);
+    }
+
+    let markerDay = 0;
+    /**
+     * Commit `v1.json` on a throw-away branch off main and return its sha; back
+     * on main afterwards. Each call is dated one day after the previous one, so
+     * "oldest add" does not hinge on commits made within the same second.
+     */
+    async function addMarkerOffMain(content: string): Promise<string> {
+      markerDay += 1;
+      const date = `2020-01-${String(markerDay).padStart(2, '0')}T12:00:00Z`;
+      await git(['checkout', '-q', '-b', 'tmp-marker', 'main'], dir2);
+      fs.writeFileSync(path.join(dir2, 'v1.json'), content);
+      await git(['add', 'v1.json'], dir2);
+      await pexec('git', ['commit', '-q', '-m', `marker ${content}`], {
+        cwd: dir2,
+        env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+      });
+      const sha = await rev('HEAD');
+      await git(['checkout', '-q', 'main'], dir2);
+      await git(['branch', '-q', '-D', 'tmp-marker'], dir2);
+      return sha;
+    }
+
+    it('[ac:ac-resolvereleasecommit-uzywa-git-log-all] searches HEAD history first: a marker reachable from HEAD wins over an older add of the same path on another branch', async () => {
+      const svc = await seedRepo();
       const filePath = path.join(dir2, 'v1.json');
-      fs.writeFileSync(filePath, '{}');
-      await pexec('git', ['add', '.'], { cwd: dir2 });
-      await pexec('git', ['commit', '-m', 'add marker'], { cwd: dir2 });
-      const dir2Config = path.join(dir2, '.claude4spec');
-      fs.mkdirSync(dir2Config, { recursive: true });
-      fs.writeFileSync(
-        path.join(dir2Config, 'config.json'),
-        JSON.stringify({ $schemaVersion: 4, name: 'test', git: { enabled: true } }, null, 2),
-      );
-      const svc = new GitService(dir2, [dir2]);
-      const sha = await svc.resolveReleaseCommit(filePath);
-      const headSha = (await pexec('git', ['rev-parse', 'HEAD'], { cwd: dir2 })).stdout.trim();
-      expect(sha).toBe(headSha);
+      // Older add, reachable only from `other`.
+      const olderOnOther = await addMarkerOffMain('{"on":"other"}');
+      await git(['branch', 'other', olderOnOther], dir2);
+      // Newer add on main (HEAD).
+      fs.writeFileSync(filePath, '{"on":"main"}');
+      await git(['add', 'v1.json'], dir2);
+      await git(['commit', '-q', '-m', 'marker on main'], dir2);
+      const onHead = await rev('HEAD');
+
+      expect(await svc.resolveReleaseCommit(filePath)).toBe(onHead);
+      expect(onHead).not.toBe(olderOnOther);
+    });
+
+    it('[ac:ac-resolvereleasecommit-uzywa-git-log-all] a marker outside HEAD history is found on another branch regardless of the current one; among the hits the oldest add wins', async () => {
+      const svc = await seedRepo();
+      const filePath = path.join(dir2, 'v1.json');
+      const oldest = await addMarkerOffMain('{"n":1}');
+      await git(['branch', 'release-a', oldest], dir2);
+      const newer = await addMarkerOffMain('{"n":2}');
+      await git(['branch', 'release-b', newer], dir2);
+      fs.writeFileSync(filePath, '{"n":1}'); // on disk, uncommitted on main
+
+      expect((await git(['log', '--diff-filter=A', '--format=%H', '--', filePath], dir2)).trim()).toBe('');
+      expect(await svc.resolveReleaseCommit(filePath)).toBe(oldest);
+      // On release-b the file is in HEAD's history, so that add is the answer.
+      fs.rmSync(filePath);
+      await git(['checkout', '-q', 'release-b'], dir2);
+      expect(await svc.resolveReleaseCommit(filePath)).toBe(newer);
+      // From a third, unrelated current branch the widened search answers again.
+      await git(['checkout', '-q', '-b', 'unrelated', 'main'], dir2);
+      fs.writeFileSync(filePath, '{"n":1}');
+      expect(await svc.resolveReleaseCommit(filePath)).toBe(oldest);
+    });
+
+    it('[ac:ac-resolvereleasecommit-uzywa-git-log-all] refs/runs/* are excluded: a marker only in a shadow ref resolves to null, and an older shadow add never beats a branch add', async () => {
+      const svc = await seedRepo();
+      const filePath = path.join(dir2, 'v1.json');
+      const inShadow = await addMarkerOffMain('{"shadow":true}');
+      await git(['update-ref', 'refs/runs/alice/1', inShadow], dir2);
+      fs.writeFileSync(filePath, '{"local":true}'); // on disk, uncommitted on main
+
+      // An unrestricted all-refs search would see it; the marker search must not.
+      expect((await git(['log', '--all', '--diff-filter=A', '--format=%H', '--', filePath], dir2)).trim()).toBe(inShadow);
+      expect(await svc.resolveReleaseCommit(filePath)).toBeNull();
+
+      // A later add on a regular branch is the marker, even though the shadow add is older.
+      const onBranch = await addMarkerOffMain('{"branch":true}');
+      await git(['branch', 'release-target', onBranch], dir2);
+      fs.writeFileSync(filePath, '{"local":true}');
+      expect(await svc.resolveReleaseCommit(filePath)).toBe(onBranch);
     });
   });
 });
@@ -1649,5 +1730,290 @@ describe('GitService — gated entry vs execution (2.1.14)', () => {
       // @ts-expect-error resolveDefaultBranch is a private method of GitService
       svc.resolveDefaultBranch(dir);
     expect(typeof callsPrivate).toBe('function');
+  });
+});
+
+/**
+ * 2.1.46 (M28 eu1rffp6 / dadc3w49, tech-stack row Git) — the shadow layer of
+ * the git service against a real temporary repository: `listShadows`,
+ * `resolveShadow` (its `baseSha` is the merge-base), `mergeTree` (trial merge), `showFile` on a
+ * tree, `isAncestorOfHead` and `diffRefs` with a tree on the right side. Every
+ * one of them is read-only: the repository state (refs, HEAD, index, working
+ * tree, merge state) is the same before and after.
+ */
+describe('GitService — 2.1.46 shadow layer', () => {
+  let dir: string;
+  let n = 0;
+
+  async function commit(files: Record<string, string>, message: string): Promise<string> {
+    for (const [rel, content] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+      fs.writeFileSync(path.join(dir, rel), content);
+      await git(['add', '--', rel], dir);
+    }
+    await git(['commit', '-q', '-m', message], dir);
+    return (await git(['rev-parse', 'HEAD'], dir)).trim();
+  }
+
+  /** A `refs/runs/<id>` ref: one commit with `files` on top of `from`; HEAD stays on `main`. */
+  async function shadow(id: string, from: string, files: Record<string, string>, subject = `shadow ${id}`): Promise<string> {
+    const tmp = `tmp-shadow-${++n}`;
+    await git(['checkout', '-q', '-b', tmp, from], dir);
+    const tip = await commit(files, subject);
+    await git(['update-ref', `refs/runs/${id}`, tip], dir);
+    await git(['checkout', '-q', 'main'], dir);
+    await git(['branch', '-q', '-D', tmp], dir);
+    return tip;
+  }
+
+  /** The repository as a value — read without optional locks, the index read first. */
+  async function repoState(): Promise<Record<string, unknown>> {
+    const index = fs.readFileSync(path.join(dir, '.git', 'index')).toString('base64');
+    return {
+      index,
+      head: (await git(['rev-parse', 'HEAD'], dir)).trim(),
+      symbolicHead: (await git(['symbolic-ref', '-q', 'HEAD'], dir)).trim(),
+      refs: await git(['for-each-ref', '--format=%(refname) %(objectname)'], dir),
+      status: await git(['--no-optional-locks', 'status', '--porcelain'], dir),
+      files: Object.fromEntries(
+        ['spec.md', 'other.md'].map((f) => [f, fs.existsSync(path.join(dir, f)) ? fs.readFileSync(path.join(dir, f), 'utf8') : null]),
+      ),
+      mergeInProgress: fs.existsSync(path.join(dir, '.git', 'MERGE_HEAD')),
+    };
+  }
+
+  let first: string;
+  let second: string;
+
+  beforeEach(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-git-shadow-'));
+    await initRepo(dir);
+    writeConfigJson(dir, { enabled: true });
+    first = await commit({ 'spec.md': '# spec v1\n', 'other.md': '# other v1\n' }, 'first');
+    second = await commit({ 'other.md': '# other v2 (main)\n' }, 'second');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('[entity:tech-stack#Git] the trial merge needs git ≥ 2.38 — 2.38 and newer are supported, older is reported unsupported (version injected, not read from the host)', async () => {
+    expect(supportsTrialMerge('git version 2.38.0')).toBe(true);
+    expect(supportsTrialMerge('git version 2.39.3 (Apple Git-145)')).toBe(true);
+    expect(supportsTrialMerge('git version 2.50.1')).toBe(true);
+    expect(supportsTrialMerge('git version 3.0.0')).toBe(true);
+    expect(supportsTrialMerge('git version 2.37.9')).toBe(false);
+    expect(supportsTrialMerge('git version 1.9.5')).toBe(false);
+    expect(supportsTrialMerge('not a version')).toBe(false);
+
+    const tip = await shadow('run-1/spec', first, { 'spec.md': '# spec (shadow)\n' });
+    const svc = new GitService(dir, [dir]);
+    const version = vi.spyOn(GitService.prototype as unknown as { gitVersion(): Promise<string | null> }, 'gitVersion');
+
+    version.mockResolvedValue('git version 2.37.1');
+    expect(await svc.mergeTree(second, tip)).toEqual({ status: 'unsupported' });
+
+    version.mockResolvedValue('git version 2.38.0');
+    const supported = await svc.mergeTree(second, tip);
+    expect(supported?.status).toBe('clean');
+  });
+
+  it('[section:eu1rffp6] mergeTree: a clean trial merge returns the result tree; showFile reads it; diffRefs takes it as the right side — all read-only', async () => {
+    const tip = await shadow('run-1/spec', first, { 'spec.md': '# spec (shadow)\n' });
+    const svc = new GitService(dir, [dir]);
+    const before = await repoState();
+
+    const merged = await svc.mergeTree(second, tip);
+    expect(merged?.status).toBe('clean');
+    const tree = merged?.status === 'clean' ? merged.tree : '';
+    expect(tree).toMatch(/^[0-9a-f]{40}$/);
+    expect((await git(['cat-file', '-t', tree], dir)).trim()).toBe('tree');
+
+    expect(await svc.showFile(tree, path.join(dir, 'spec.md'))).toBe('# spec (shadow)\n');
+    expect(await svc.showFile(tree, path.join(dir, 'other.md'))).toBe('# other v2 (main)\n');
+    expect(await svc.showFile(tree, path.join(dir, 'missing.md'))).toBeNull();
+
+    const diff = await svc.diffRefs(second, tree, [dir]);
+    expect(diff?.files).toEqual([{ path: path.join(fs.realpathSync(dir), 'spec.md'), status: 'M' }]);
+
+    expect(await repoState()).toEqual(before);
+  });
+
+  it('[section:eu1rffp6] mergeTree: a conflicting trial merge returns the conflicted paths and leaves no merge state behind', async () => {
+    const tip = await shadow('run-2/spec', first, { 'other.md': '# other (shadow)\n' });
+    const svc = new GitService(dir, [dir]);
+    const before = await repoState();
+
+    expect(await svc.mergeTree(second, tip)).toEqual({ status: 'conflicts', paths: ['other.md'] });
+    expect(await svc.mergeTree(second, 'not-a-ref')).toEqual({ status: 'error' });
+
+    expect(await repoState()).toEqual(before);
+  });
+
+  it('[section:eu1rffp6] [review:rev-0002] isAncestorOfHead / resolveShadow (its baseSha = merge-base) answer from the commit graph — read-only', async () => {
+    const tip = await shadow('run-1/spec', first, { 'spec.md': '# spec (shadow)\n' });
+    const onHead = await shadow('on-head', second, { 'spec.md': '# spec (on head)\n' });
+    await git(['update-ref', 'refs/runs/contained', first], dir);
+    await git(['checkout', '-q', '--orphan', 'unrelated'], dir);
+    await git(['rm', '-q', '-rf', '--cached', '.'], dir);
+    fs.writeFileSync(path.join(dir, 'lonely.md'), '# lonely\n');
+    await git(['add', 'lonely.md'], dir);
+    await git(['commit', '-q', '-m', 'unrelated root'], dir);
+    const unrelated = (await git(['rev-parse', 'HEAD'], dir)).trim();
+    await git(['update-ref', 'refs/runs/unrelated', unrelated], dir);
+    fs.rmSync(path.join(dir, 'lonely.md'));
+    await git(['checkout', '-q', '-f', 'main'], dir);
+    await git(['branch', '-q', '-D', 'unrelated'], dir);
+
+    const svc = new GitService(dir, [dir]);
+    const before = await repoState();
+
+    expect(await svc.isAncestorOfHead(first)).toBe(true);
+    expect(await svc.isAncestorOfHead(tip)).toBe(false);
+
+    // The merge-base answer: the commit the shadow branched from.
+    expect(await svc.resolveShadow('run-1/spec')).toEqual({ id: 'run-1/spec', tipSha: tip, baseSha: first, masterAhead: 1, headSha: second });
+    expect(await svc.resolveShadow('on-head')).toEqual({ id: 'on-head', tipSha: onHead, baseSha: second, masterAhead: 0, headSha: second });
+    expect(await svc.resolveShadow('contained')).toBeNull(); // already an ancestor of HEAD
+    expect(await svc.resolveShadow('unrelated')).toBeNull(); // no common ancestor
+    expect(await svc.resolveShadow('missing')).toBeNull();
+
+    expect(await repoState()).toEqual(before);
+  });
+
+  it('[section:dadc3w49] listShadows keeps only refs/runs/* refs that share an ancestor with HEAD, are not its ancestors and change a release-flag root (not the releases root) — read-only, no lock', async () => {
+    const listed = await shadow('run-1/spec', first, { 'spec.md': '# spec (shadow)\n' }, 'Shadow turn 1');
+    await git(['update-ref', 'refs/runs/contained', first], dir);
+    await shadow('releases-only', first, { '.claude4spec/releases/v9.json': '{}\n' });
+    await git(['update-ref', 'refs/heads/not-a-shadow', listed], dir);
+
+    const svc = new GitService(dir, [dir]);
+    const before = await repoState();
+    const shadows = await svc.listShadows();
+    expect(shadows).toEqual([
+      {
+        id: 'run-1/spec',
+        tipSha: listed,
+        tipCommittedAt: (await git(['log', '-1', '--format=%cI', listed], dir)).trim(),
+        tipSubject: 'Shadow turn 1',
+      },
+    ]);
+    expect(Object.keys(shadows![0]!).sort()).toEqual(['id', 'tipCommittedAt', 'tipSha', 'tipSubject']);
+    expect(await repoState()).toEqual(before);
+  });
+
+  type GitRunner = { git(args: string[], dir: string, ...rest: unknown[]): Promise<{ stdout: string; stderr: string }> };
+
+  it('[review:rev-0001] listShadows checks at most SHADOW_SCAN_CONCURRENCY shadows at once, and ancestors of HEAD cost no per-ref subprocess', async () => {
+    const tip = await shadow('run-1/spec', first, { 'spec.md': '# spec (shadow)\n' });
+    const ids = ['run-1/spec'];
+    for (let i = 0; i < 11; i++) {
+      const id = `extra-${String(i).padStart(2, '0')}`;
+      await git(['update-ref', `refs/runs/${id}`, tip], dir);
+      ids.push(id);
+    }
+    for (let i = 0; i < 5; i++) await git(['update-ref', `refs/runs/contained-${i}`, first], dir);
+
+    const proto = GitService.prototype as unknown as GitRunner;
+    const original = proto.git;
+    let inFlight = 0;
+    let peak = 0;
+    let mergeBases = 0;
+    vi.spyOn(proto, 'git').mockImplementation(async function (this: unknown, ...args: Parameters<GitRunner['git']>) {
+      const perRef = args[0][0] === 'merge-base' || args[0][0] === 'diff';
+      if (args[0][0] === 'merge-base') mergeBases++;
+      if (perRef) peak = Math.max(peak, ++inFlight);
+      try {
+        return await original.apply(this, args);
+      } finally {
+        if (perRef) inFlight--;
+      }
+    });
+
+    const svc = new GitService(dir, [dir]);
+    const before = await repoState();
+    const shadows = await svc.listShadows();
+    expect(shadows?.map((s) => s.id).sort()).toEqual([...ids].sort());
+    expect(peak).toBeLessThanOrEqual(SHADOW_SCAN_CONCURRENCY);
+    expect(peak).toBeGreaterThan(1); // still parallel, only bounded
+    expect(mergeBases).toBe(ids.length); // the five contained refs were dropped by for-each-ref --no-merged
+    expect(await repoState()).toEqual(before);
+  });
+
+  it('[review:rev-0001] [review:rev-0002] a failed git command is told apart from "no common ancestor" — logged as a failure, never as a missing ancestor', async () => {
+    const listed = await shadow('run-1/spec', first, { 'spec.md': '# spec (shadow)\n' });
+    const mbBroken = await shadow('mb-broken', first, { 'spec.md': '# spec (mb)\n' });
+    const diffBroken = await shadow('diff-broken', first, { 'spec.md': '# spec (diff)\n' });
+    await git(['checkout', '-q', '--orphan', 'unrelated'], dir);
+    await git(['rm', '-q', '-rf', '--cached', '.'], dir);
+    fs.writeFileSync(path.join(dir, 'lonely.md'), '# lonely\n');
+    await git(['add', 'lonely.md'], dir);
+    await git(['commit', '-q', '-m', 'unrelated root'], dir);
+    await git(['update-ref', 'refs/runs/unrelated', (await git(['rev-parse', 'HEAD'], dir)).trim()], dir);
+    fs.rmSync(path.join(dir, 'lonely.md'));
+    await git(['checkout', '-q', '-f', 'main'], dir);
+    await git(['branch', '-q', '-D', 'unrelated'], dir);
+
+    const proto = GitService.prototype as unknown as GitRunner;
+    const original = proto.git;
+    const spawnFailure = (): Error => Object.assign(new Error('spawn git EAGAIN'), { code: 'EAGAIN' });
+    vi.spyOn(proto, 'git').mockImplementation(async function (this: unknown, ...args: Parameters<GitRunner['git']>) {
+      const [argv] = args;
+      if (argv[0] === 'merge-base' && argv.includes(mbBroken)) throw spawnFailure();
+      if (argv[0] === 'diff' && argv.includes(diffBroken)) throw spawnFailure();
+      return original.apply(this, args);
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const warned = (): string[] => warn.mock.calls.map((c) => c.map(String).join(' '));
+
+    const svc = new GitService(dir, [dir]);
+    expect((await svc.listShadows())?.map((s) => s.id)).toEqual(['run-1/spec']);
+    const lines = warned();
+    expect(lines.some((l) => l.includes('mb-broken') && l.includes('merge-base failed') && l.includes('EAGAIN'))).toBe(true);
+    expect(lines.some((l) => l.includes('mb-broken') && l.includes('no common ancestor'))).toBe(false);
+    expect(lines.some((l) => l.includes('diff-broken') && l.includes('diff failed') && l.includes('EAGAIN'))).toBe(true);
+    expect(lines.some((l) => l.includes('unrelated') && l.includes('no common ancestor'))).toBe(true);
+
+    warn.mockClear();
+    expect(await svc.resolveShadow('mb-broken')).toBeNull(); // never throws
+    expect(warned().some((l) => l.includes('mb-broken') && l.includes('merge-base failed') && l.includes('EAGAIN'))).toBe(true);
+    expect(await svc.resolveShadow('run-1/spec')).toMatchObject({ tipSha: listed, baseSha: first });
+  });
+
+  it('[review:rev-0002] resolveShadow names a ref exactly — a revision suffix never resolves to a commit that is not a shadow tip', async () => {
+    const inner = await shadow('tmp-inner', first, { 'spec.md': '# spec (shadow 1)\n' });
+    const tip = await shadow('run-1/spec', inner, { 'spec.md': '# spec (shadow 2)\n' });
+    await git(['update-ref', '-d', 'refs/runs/tmp-inner'], dir);
+    await git(['update-ref', 'refs/runs/run-1/spec-sibling', tip], dir);
+
+    const svc = new GitService(dir, [dir]);
+    const before = await repoState();
+    expect(await svc.resolveShadow('run-1/spec')).toEqual({ id: 'run-1/spec', tipSha: tip, baseSha: first, masterAhead: 1, headSha: second });
+    // `run-1/spec~1` / `^` would name `inner` — not the tip of any shadow ref.
+    for (const id of ['run-1/spec~1', 'run-1/spec^', 'run-1/spec^1', 'run-1/spec^{commit}', 'run-1/spec@{0}', 'run-1/spec@{1}', 'run-1', 'run-1/*', 'run-1/spec*', '', '../heads/main', inner]) {
+      expect(await svc.resolveShadow(id)).toBeNull();
+    }
+    expect(await repoState()).toEqual(before);
+  });
+
+  it('[section:eu1rffp6] the shadow layer is gated on config.git.enabled and a repository — null, never a throw', async () => {
+    const tip = await shadow('run-1/spec', first, { 'spec.md': '# spec (shadow)\n' });
+    writeConfigJson(dir, { enabled: false });
+    const off = new GitService(dir, [dir]);
+    expect(await off.listShadows()).toBeNull();
+    expect(await off.resolveShadow('run-1/spec')).toBeNull();
+    expect(await off.mergeTree(second, tip)).toBeNull();
+
+    const noRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-git-norepo-'));
+    try {
+      writeConfigJson(noRepo, { enabled: true });
+      const svc = new GitService(noRepo, [noRepo]);
+      expect(await svc.listShadows()).toBeNull();
+      expect(await svc.resolveShadow('run-1/spec')).toBeNull();
+      expect(await svc.mergeTree('HEAD', 'HEAD')).toBeNull();
+    } finally {
+      fs.rmSync(noRepo, { recursive: true, force: true });
+    }
   });
 });

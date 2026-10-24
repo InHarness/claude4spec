@@ -5,15 +5,14 @@
  * label is „Changes (N)”, N being the unreleased counter — the ONE shared query
  * `useUnreleasedCount` (light delta newest release → current); „Changes” at
  * N = 0 and without any release. A click on the label only switches the tab
- * (no deep link, no URL state). The create-release window warns „No changes
+ * (no navigation; the screen's `tab` param, 2.1.46, only says where a visit
+ * lands). The create-release window warns „No changes
  * since last release” at N = 0 and does not block creation.
  *
  * The screen, its hooks and the shared counter query are real; only the
  * network (`fetch`), the router's `Link`/`useNavigate`, the briefs/pushes lists
  * and the per-item diff cards are stubbed.
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -253,21 +252,27 @@ describe('/releases screen (M17 releases-list, 2.1.45)', () => {
     expect(host.textContent).toContain('No changes since v1.');
   });
 
-  it('[entity:releases-list] removed: no Compare deep link — the route takes no search params, the screen no tab prop, and nothing links to `?tab=compare`', async () => {
+  it('[entity:releases-list] without git the screen has two tabs; nothing on it links to `?tab=compare` — the `tab` param (2.1.46) only says where a visit lands', async () => {
     summaryTotal = { entities: 4, pages: 1 };
     await mount();
 
+    // Git is off here (no config): no Shadows tab.
+    expect(tabLabels()).toEqual(['Releases', 'Changes (5)']);
     // The M25 banner over the list shows the count but carries no deep link.
     expect(host.querySelector('[data-testid="unreleased-banner"]')?.textContent).toContain('You have 5 unreleased changes');
     const links = Array.from(host.querySelectorAll('a'));
     expect(links.filter((a) => a.getAttribute('data-to') === '/releases')).toEqual([]);
     expect(links.filter((a) => (a.getAttribute('data-search') ?? '').includes('compare'))).toEqual([]);
-    // The screen owns its tab: no props in, no URL out.
-    expect(ReleasesPage.length).toBe(0);
-    const router = readFileSync(join(process.cwd(), 'src/client/router.tsx'), 'utf8');
-    expect(router).not.toMatch(/releasesSearchSchema/);
-    expect(router).not.toMatch(/tab: z\.enum\(\['list', 'compare'\]\)/);
-    expect(router).not.toMatch(/search: \(prev\) => \(\{ \.\.\.prev, tab:/);
+
+    // A visit with `tab=compare` lands on Compare.
+    act(() => root.unmount());
+    root = createRoot(host);
+    await act(async () => {
+      root.render(createElement(QueryClientProvider, { client: qc }, createElement(ReleasesPage, { tab: 'compare' })));
+    });
+    await flush();
+    expect(compareTab().getAttribute('aria-selected')).toBe('true');
+    expect(host.textContent).toContain('Compare current state to release:');
   });
 
   it('[ac:ac-baner-you-have-n-unreleased-changes-p] the banner "You have N unreleased changes" stands over the release list on /releases while the unreleased counter is above 0, N being that counter', async () => {

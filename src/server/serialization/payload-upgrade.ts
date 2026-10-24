@@ -306,7 +306,7 @@ export function upgradeCapture(
  * `createdAt`/`updatedAt` and the payload marker.
  *
  * One definition, because two callers have to agree on it and a review found
- * they did not. `ReleaseService.dropStampOnlyEntityChanges` — the filter that
+ * they did not. `ReleaseService.dropStampOnlyEntityChanges` (2.1.46: `diffChangedEntities` in `git-two-state-delta.ts`) — the filter that
  * keeps the git-anchored diff from reporting the boot backfill as thousands of
  * edits — stripped only the timestamps, so once `persist` began writing
  * `payloadVersion` the marker read as a CONTENT change. The git-anchored path

@@ -984,6 +984,44 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
       expect(byPath.get('a.md')?.op).toBe('modified');
       expect(byPath.get('b.md')?.op).toBe('created');
     });
+
+    it('[review:rev-0001][section:0jsqpl74] getUnreleasedDiff git-anchored fast path probes the repository once for its file list and every old-side read — no second `detect()` inside `diffRefToWorkingTree`', async () => {
+      const pagesDir = path.join(dir, 'pages');
+      fs.mkdirSync(pagesDir, { recursive: true });
+      const { releaseService, releaseStore, gitService } = buildReleaseService(pagesDir);
+
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), 'A v1');
+      const info1 = db
+        .prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`)
+        .run('v1', 'v1', 'First', 'user');
+      const v1Id = Number(info1.lastInsertRowid);
+      releaseStore.write('v1', {
+        name: 'v1',
+        slug: 'v1',
+        description: 'First',
+        createdAt: new Date(0).toISOString(),
+        createdBy: 'user',
+        roots: ['pages'],
+      });
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'v1 (latest — reign extends to HEAD)'], dir);
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A working tree');
+
+      const probeRepo = vi.spyOn(gitService, 'probeRepo');
+      const diffRefToWorkingTree = vi.spyOn(gitService, 'diffRefToWorkingTree');
+      const showFile = vi.spyOn(gitService, 'showFile');
+
+      const delta = await releaseService.getUnreleasedDiff(v1Id);
+      expect(delta.pages.find((p) => p.path === 'a.md')?.op).toBe('modified');
+
+      expect(probeRepo).toHaveBeenCalledTimes(1);
+      const probe = await probeRepo.mock.results[0]!.value;
+      expect(probe).toMatchObject({ detected: true });
+      expect(diffRefToWorkingTree).toHaveBeenCalledTimes(1);
+      expect(diffRefToWorkingTree.mock.calls[0]![2]).toBe(probe);
+      expect(showFile.mock.calls.length).toBeGreaterThan(0);
+      for (const call of showFile.mock.calls) expect(call[2]).toBe(probe);
+    });
   });
 
   /**

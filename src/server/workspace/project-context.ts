@@ -85,6 +85,7 @@ import type { ExternalSurfaceDeps } from '../mcp/surface.js';
 import type { ChatContextType } from '../../shared/entities.js';
 import { ReleaseService } from '../services/release.js';
 import { releasesRouter } from '../routes/releases.js';
+import { shadowDiffRouter } from '../routes/shadow-diff.js';
 import { ReleasePushService } from '../services/release-push.js';
 import { releasePushesRouter } from '../routes/release-pushes.js';
 import { ReleaseImportService, rollbackClone, snapshotRootFiles } from '../services/release-import.js';
@@ -1620,6 +1621,8 @@ async function buildInner(
     }),
   );
   router.use('/releases', releasesRouter(releaseService, ws, gitService, () => rootRegistry.pages()));
+  // 2.1.46 (M17 m17api401): the shadow comparison — M17's second own router, its own prefix.
+  router.use('/shadow-diff', shadowDiffRouter(releaseService));
   router.use('/release-pushes', releasePushesRouter(releasePushService));
   // 0.1.123: on a successful checkout, reuse the same invalidate path as a
   // context-defining config change — no new M31 reload machinery needed.

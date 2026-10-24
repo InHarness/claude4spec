@@ -533,6 +533,47 @@ export interface RawDelta {
   pages: FileDiff[];
 }
 
+/**
+ * 2.1.46 (dto `shadow-diff-response`, M17 `jssreefn`) — `GET /api/shadow-diff`:
+ * what the master's specification becomes once the shadow is accepted, in the
+ * raw shape of the UI render. `entities` / `pages` have the shape of the
+ * `RawDelta` fields of those names; instead of a `from`/`to` release pair the
+ * response carries the SHAs it was computed on (it is not reproducible — it
+ * moves with HEAD and with a rewrite of the shadow, `856sq0nw`).
+ */
+export interface ShadowDiffResponse {
+  /** `merge` — delta `HEAD → trial-merge result`; `shadow-only` — delta `merge-base..tip` (the trial merge conflicted or is unavailable). */
+  mode: 'merge' | 'shadow-only';
+  /** The shadow id (ref name without `refs/runs/`) and the tip SHA the result was computed on. */
+  shadow: { id: string; tipSha: string };
+  /** The HEAD SHA the result was computed on. */
+  head: { sha: string };
+  /** `merge-base(HEAD, tip)`. */
+  base: { sha: string };
+  /** Commits in `base..HEAD` — header information, not a mode. */
+  masterAhead: number;
+  /** Paths (repository-relative) in conflict in the trial merge; `[]` in `merge` mode. */
+  conflicts: string[];
+  /** `false` when the trial merge is unavailable because git is older than 2.38 — `mode` is then `shadow-only`. */
+  mergePreview: boolean;
+  /** Paths (repository-relative) the shadow changes on `merge-base..tip` outside the pathspecs of the registry roots. */
+  outsideSpecFiles: string[];
+  /** Whether the shadow changes anything in the `releases` root on `merge-base..tip`. */
+  touchesReleases: boolean;
+  /** The shadow's commits on `merge-base..tip` (newest first) — the raw material of a description hint. */
+  commits: Array<{ sha: string; subject: string; body: string }>;
+  /** Entity deltas between the left and the right side, as `RawDelta.entities`. */
+  entities: RawDeltaEntityChange[];
+  /** One `FileDiff` per page, as `RawDelta.pages`. */
+  pages: FileDiff[];
+  /**
+   * The "before" state of the deleted entities, read off the LEFT side of the
+   * delta (HEAD in `merge` mode, the base in `shadow-only`): `type → slug → the
+   * entity file's payload`.
+   */
+  before: Record<string, Record<string, Record<string, unknown>>>;
+}
+
 // --- v0.1.13: Acceptance Criteria ---
 
 /**

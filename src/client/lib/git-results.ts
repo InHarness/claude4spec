@@ -119,18 +119,22 @@ export function syncCount(s: Pick<GitStatusResponse, 'ahead' | 'behind'>): numbe
   return hasUpstream(s) && (s.behind ?? 0) > 0 ? (s.behind as number) : null;
 }
 
+/** An ISO time as "just now" / "5 minutes ago" / "3 days ago"; `null` when unparseable. */
+export function timeAgo(iso: string, now: number = Date.now()): string | null {
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return null;
+  const sec = Math.max(0, Math.round((now - at) / 1000));
+  if (sec < 60) return 'just now';
+  if (sec < 3600) return `${plural(Math.floor(sec / 60), 'minute')} ago`;
+  if (sec < 86_400) return `${plural(Math.floor(sec / 3600), 'hour')} ago`;
+  return `${plural(Math.floor(sec / 86_400), 'day')} ago`;
+}
+
 /** "Last fetched …" line of the entry tooltip; `null` when the repo never fetched. */
 export function lastFetchedLine(lastFetchedAt: string | null, now: number = Date.now()): string | null {
   if (!lastFetchedAt) return null;
-  const at = Date.parse(lastFetchedAt);
-  if (Number.isNaN(at)) return null;
-  const sec = Math.max(0, Math.round((now - at) / 1000));
-  let rel: string;
-  if (sec < 60) rel = 'just now';
-  else if (sec < 3600) rel = `${plural(Math.floor(sec / 60), 'minute')} ago`;
-  else if (sec < 86_400) rel = `${plural(Math.floor(sec / 3600), 'hour')} ago`;
-  else rel = `${plural(Math.floor(sec / 86_400), 'day')} ago`;
-  return `Last fetched ${rel}`;
+  const rel = timeAgo(lastFetchedAt, now);
+  return rel === null ? null : `Last fetched ${rel}`;
 }
 
 /** Tooltip of the header entry: root, full ahead/behind counts, last fetch time. */

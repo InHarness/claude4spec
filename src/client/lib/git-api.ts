@@ -2,6 +2,7 @@ import type {
   GitBranchesResponse,
   GitCheckoutResponse,
   GitFetchResponse,
+  GitShadowsResponse,
   GitStatusResponse,
   GitSyncResponse,
 } from '../../shared/git.js';
@@ -15,6 +16,12 @@ export const gitApi = {
   /** 0.1.123: local branches for the interactive git badge dropdown. */
   async branches(): Promise<GitBranchesResponse> {
     return handle<GitBranchesResponse>(await apiFetch('/api/git/branches'));
+  },
+  /** 2.1.46 (M28 846dmtbu, endpoint `get-api-git-shadows`): the shadows for the
+   *  header's „Shadows” section and the Shadows tab's picker. Read-only; git off
+   *  or no repository answers an empty list. */
+  async shadows(): Promise<GitShadowsResponse> {
+    return handle<GitShadowsResponse>(await apiFetch('/api/git/shadows'));
   },
   /** 0.1.123: switch HEAD to an existing local branch. Never rejects on a
    *  domain outcome (dirty tree, unknown branch, busy) — see `status` on the

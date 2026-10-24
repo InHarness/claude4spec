@@ -8,7 +8,7 @@
  * `m17dom001`, `m17dcre01`).
  */
 
-import { systemRootDir } from '../../shared/root-kinds.js';
+import { PAGES_KIND, SYSTEM_ROOTS, systemRootDir, type RootKind } from '../../shared/root-kinds.js';
 import nodeFs from 'node:fs';
 import nodeOs from 'node:os';
 import nodePath from 'node:path';
@@ -19,6 +19,7 @@ import type {
   RawDeltaEntityChange,
   Release,
   ReleaseCountBreakdown,
+  ShadowDiffResponse,
   ReleaseDetail,
   SpecSnapshot,
   SpecSnapshotEntityRow,
@@ -53,7 +54,6 @@ import { samePayloadVersion } from '../serialization/payload-version.js';
 import { nowIso, readSystemFields, stripSystemFields } from '../serialization/system-fields.js';
 import {
   attachPayloadVersion,
-  stripFileEnvelope,
   stripPayloadVersion,
   upgradeCapture,
 } from '../serialization/payload-upgrade.js';
@@ -62,13 +62,19 @@ import type { SnapshotData } from '../serialization/types.js';
 import { projectStamp } from './system-stamp-projection.js';
 import { readConfig, builtinPagesRoot } from '../config.js';
 import { slugify } from '../../shared/slug.js';
-import { hasDotSegment } from '../../shared/page-files.js';
 import { toReleaseFileData, type ReleaseFileStore } from './release-store.js';
 import type { RecordStore } from '../fs/record-store.js';
 import type { MarkdownRecord } from '../fs/record-adapters.js';
 import type { GitService } from './git.js';
-import type { GitRefDiff } from '../../shared/git.js';
+import {
+  classifyChangedFiles,
+  computeTwoStateDelta,
+  diffChangedEntities,
+  diffChangedPages,
+  type DeltaRoots,
+} from './git-two-state-delta.js';
 import type { FileDiff, FileSnapshotData } from './file-serializer.js';
+import { computeShadowDiff, gitUnavailable, requireShadowRef, type ShadowDiffScope } from './release-shadow-diff.js';
 import {
   buildBundleArchive as buildBundleArchiveImpl,
   extractBundleStream,
@@ -82,30 +88,6 @@ import {
   type BundleRoot,
   type BundleTagInput,
 } from './release-bundle.js';
-
-/** Shared by `classifyGitDiffFiles`/`diffPageCandidates` — `diffRefs`/`diffRefToWorkingTree` already flatten renames (R) into a D(old)+A(new) pair. */
-const STATUS_TO_OP: Record<'A' | 'M' | 'D' | 'R', 'created' | 'modified' | 'deleted'> = {
-  A: 'created',
-  M: 'modified',
-  D: 'deleted',
-  R: 'created',
-};
-
-/**
- * The same git statuses, in the ENTITY vocabulary.
- *
- * 0.2.31 spells an entity's modified state `updated`, matching the `EntityDiff`
- * envelope the row carries; a page's stays `modified`, because that word belongs
- * to M02's `FileDiff` and a page has no logical schema to generate a delta from.
- * Two maps rather than one with a cast, so neither can be used for the other by
- * accident.
- */
-const STATUS_TO_ENTITY_OP: Record<'A' | 'M' | 'D' | 'R', 'created' | 'updated' | 'deleted'> = {
-  A: 'created',
-  M: 'updated',
-  D: 'deleted',
-  R: 'created',
-};
 
 /**
  * 0.1.122: release names reserved by the `:to`/`:from` diff-route sentinel
@@ -250,14 +232,6 @@ export function splitPageKey(key: string): { rootId: string; relPath: string } |
 /** `(rootId, path)` as one map key — the page identity in history. */
 function pageIdentityKey(rootId: string, path: string): string {
   return `${rootId}\u0000${path}`;
-}
-
-/** A changed page file from a git-anchored diff, attributed to its root. */
-interface PageCandidate {
-  rootId: string;
-  relPath: string;
-  absPath: string;
-  status: 'A' | 'M' | 'D' | 'R';
 }
 
 interface FileVersionRow {
@@ -903,7 +877,8 @@ export class ReleaseService {
    *   - `row` is frozen (has a next release) but that next release has no
    *     slug (legacy release, predates the identity-file feature) or its
    *     marker commit can't be resolved (e.g. it was created while
-   *     `git.enabled` was off — B3, a known open edge);
+   *     `git.enabled` was off — B3, a known open edge — or it exists only
+   *     in a shadow ref `refs/runs/*`, which the marker search excludes);
    *   - the resolved marker isn't an ancestor of current HEAD (e.g. an
    *     implicit-pull commit later rebased away) — trusting a marker outside
    *     HEAD's history would produce a nonsensical diff.
@@ -942,11 +917,11 @@ export class ReleaseService {
    * "reign" model — see its doc comment) rather than each release's own
    * marker commit directly.
    *
-   * 0.1.124: for each changed page, the old/new content is read directly from
-   * the two resolved refs (`GitService.showFile`) and run through
-   * `pageSerializer.diff`, the same section/line-diff algorithm `computeDelta`
-   * (the SQL path) uses — this path now produces the same section-level +
-   * `line_diff` fidelity as every other diff path, not a degraded subset.
+   * 2.1.46 (M17 `m17reldiff`): `release_diff(vA, vB)` is the two-state delta
+   * core (`computeTwoStateDelta`, M17 `0jsqpl74`) on `snapshot(vA)`,
+   * `snapshot(vB)` — this method only decides WHICH two states to compare and
+   * what they are to the user (the `from`/`to` release meta); the file list,
+   * the per-root classification and the page/entity diffs are the core's.
    */
   private async tryGitAnchoredDiff(
     fromRow: ReleaseRow,
@@ -954,7 +929,6 @@ export class ReleaseService {
     opts?: PageScopeOpts,
   ): Promise<RawDelta | null> {
     if (!this.gitService || !this.releaseStore) return null;
-    const gitService = this.gitService;
     const config = readConfig(this.cwd);
     if (!config.git?.enabled) return null;
 
@@ -964,58 +938,38 @@ export class ReleaseService {
     ]);
     if (!refA || !refB) return null;
     // Both releases resolved to the SAME reign boundary (e.g. two adjacent
-    // releases with no git-visible change between their markers).
-    // `diffRefs(ref, ref, ...)` would trivially return `{files: []}`, a
-    // non-null-but-empty result the caller would otherwise accept as "no
-    // changes" even though real content differs — decline so the caller
-    // falls back to the version-table-based SQL path, which is keyed on
-    // release ids, not commits, and always produces a correct diff
-    // regardless of commit shape.
+    // releases with no git-visible change between their markers). The delta of
+    // a state with itself is trivially empty, a non-null-but-empty result the
+    // caller would otherwise accept as "no changes" even though real content
+    // differs — decline so the caller falls back to the version-table-based SQL
+    // path, which is keyed on release ids, not commits.
     if (refA === refB) return null;
 
-    const scope = this.resolveGitDiffScope(config, opts);
-    const gitDiff = await gitService.diffRefs(refA, refB, scope.pathspecs);
-    if (!gitDiff) return null;
-
-    const { entities, entityPaths, pageCandidates } = this.classifyGitDiffFiles(gitDiff, scope);
-
-    // Read old/new content per changed page directly from the two resolved
-    // refs and run it through the same section/line-diff algorithm the SQL
-    // path (`computeDelta`) uses. `gitStatus` is probed once (rather than
-    // per-file inside `showFile`) since a release can touch many pages, each
-    // needing up to two `showFile` calls — `detect()` alone is several git
-    // subprocesses, so reusing one probe avoids fanning that out per file.
-    const gitStatus = await gitService.detect();
-    const pages = await this.diffPageCandidates(
-      pageCandidates,
-      (absPath) => gitService.showFile(refA, absPath, gitStatus),
-      (absPath) => gitService.showFile(refB, absPath, gitStatus),
-      'tryGitAnchoredDiff',
+    const delta = await computeTwoStateDelta(
+      { git: this.gitService, pageSerializer: this.pageSerializer, host: this.host },
+      refA,
+      refB,
+      this.resolveGitDiffScope(opts),
     );
+    if (!delta) return null;
 
     return {
       from: { id: fromRow.id, name: fromRow.name },
       to: { id: toRow.id, name: toRow.name },
-      entities: await this.dropStampOnlyEntityChanges(
-        entities,
-        entityPaths,
-        (absPath) => gitService.showFile(refA, absPath, gitStatus),
-        (absPath) => gitService.showFile(refB, absPath, gitStatus),
-      ),
-      pages,
+      entities: delta.entities,
+      pages: delta.pages,
     };
   }
 
   /**
    * 0.1.124 "reign" model git-anchored fast path for `getUnreleasedDiff`
-   * (`:to='current'`) — mirrors `tryGitAnchoredDiff` but the "to" side is the
-   * live working tree, not a second release: uses `diffRefToWorkingTree`
-   * instead of `diffRefs`, and reads NEW-side page content directly off disk
-   * (the working tree) rather than via `GitService.showFile` (which only
-   * reads committed content). OLD-side content still comes from `showFile`
-   * at the resolved `refA`. `null` ⇒ caller falls back to the SQL/
-   * version-table path (`getCurrentSnapshot`-based), same contract as
-   * `tryGitAnchoredDiff`.
+   * (`:to='current'`). The "to" side is the live working tree — not a state of
+   * the repository — so this is not the two-state core: it lists files with
+   * `diffRefToWorkingTree` and reads the NEW side straight off disk. It reuses
+   * the core's classification and per-file diffs, so both git paths classify and
+   * diff a changed file the same way. OLD-side content comes from `showFile` at
+   * the resolved `refA`. `null` ⇒ caller falls back to the SQL/version-table path
+   * (`getCurrentSnapshot`-based), same contract as `tryGitAnchoredDiff`.
    */
   private async tryGitAnchoredUnreleasedDiff(
     fromRow: ReleaseRow,
@@ -1029,18 +983,18 @@ export class ReleaseService {
     const refA = await this.resolveReignRef(fromRow);
     if (!refA) return null;
 
-    const scope = this.resolveGitDiffScope(config, opts);
-    // Probed ONCE, exactly as `tryGitAnchoredDiff` does. Without it every
-    // `showFile` below re-runs `detect()` and its four git spawns — and the
-    // motivating case for this branch is the boot backfill commit, which marks
-    // every entity file modified, so a few hundred entities would fan out into
-    // over a thousand concurrent `git` processes on one `GET /diff/current`.
-    const gitStatus = await gitService.detect();
-    const gitDiff = await gitService.diffRefToWorkingTree(refA, scope.pathspecs);
+    const roots = this.resolveGitDiffScope(opts);
+    // Probed ONCE (`probeRepo`: a single `rev-parse`), shared by the file list
+    // and every `showFile` below. Without it each would re-run `detect()` and its
+    // four git spawns — and the motivating case for this branch is the boot
+    // backfill commit, which marks every entity file modified.
+    const gitStatus = await gitService.probeRepo();
+    if (!gitStatus) return null;
+    const gitDiff = await gitService.diffRefToWorkingTree(refA, roots.pathspecs, gitStatus);
     if (!gitDiff) return null;
 
-    const { entities, entityPaths, pageCandidates } = this.classifyGitDiffFiles(gitDiff, scope);
-
+    const { entities, pages } = classifyChangedFiles(gitDiff.files, roots);
+    const readOld = (absPath: string): Promise<string | null> => gitService.showFile(refA, absPath, gitStatus);
     const readWorkingTreeFile = (absPath: string): Promise<string | null> => {
       try {
         return Promise.resolve(nodeFs.readFileSync(absPath, 'utf8'));
@@ -1048,66 +1002,96 @@ export class ReleaseService {
         return Promise.resolve(null);
       }
     };
-    const pages = await this.diffPageCandidates(
-      pageCandidates,
-      (absPath) => gitService.showFile(refA, absPath, gitStatus),
-      readWorkingTreeFile,
-      'tryGitAnchoredUnreleasedDiff',
-    );
 
     return {
       from: { id: fromRow.id, name: fromRow.name },
       to: { id: 0, name: CURRENT_RELEASE_NAME },
-      entities: await this.dropStampOnlyEntityChanges(
-        entities,
-        entityPaths,
-        (absPath) => gitService.showFile(refA, absPath, gitStatus),
-        readWorkingTreeFile,
-      ),
-      pages,
+      entities: await diffChangedEntities(entities, readOld, readWorkingTreeFile, this.host),
+      pages: await diffChangedPages(pages, readOld, readWorkingTreeFile, this.pageSerializer, 'tryGitAnchoredUnreleasedDiff'),
     };
   }
 
   /**
-   * Shared path-scoping for the git-anchored diff branches
-   * (`tryGitAnchoredDiff`/`tryGitAnchoredUnreleasedDiff`): realpath'd
-   * entities/releases/briefs/patches dirs plus the (optionally
-   * `opts.roots`-narrowed) `kind: pages` root dirs, keyed by rootId.
+   * 2.1.46 (M17 `jssreefn`, spec-operation `shadow-diff`): the comparison of the
+   * shadow `ref` (its ref name without `refs/runs/`) with the master — what the
+   * master's specification becomes once the shadow is accepted. The git track
+   * only, never SQLite: no git service, git off or no repository is
+   * `GIT_UNAVAILABLE`. Read-only and takes no repository lock. The modes, flags
+   * and refusals are `computeShadowDiff`'s (`release-shadow-diff.ts`); this
+   * method hands it the git primitives and the roots of the delta — the same
+   * roots the release diff's git track uses. A missing release store is a
+   * wiring fault (500, `resolveShadowDiffScope`), never `GIT_UNAVAILABLE`.
+   */
+  async shadowDiff(ref: unknown): Promise<ShadowDiffResponse> {
+    const gitService = this.gitService;
+    if (!gitService) {
+      requireShadowRef(ref);
+      throw gitUnavailable();
+    }
+    return computeShadowDiff(
+      {
+        git: gitService,
+        pageSerializer: this.pageSerializer,
+        host: this.host,
+        scope: () => this.resolveShadowDiffScope(),
+      },
+      ref,
+    );
+  }
+
+  /**
+   * The roots of the shadow comparison: the release diff's `DeltaRoots` and
+   * every registry root with its kind. No release store wired → a plain
+   * `Error` (500): the server was assembled without it — not a refusal of the
+   * request, and not a statement about git.
+   */
+  private resolveShadowDiffScope(): ShadowDiffScope {
+    if (!this.releaseStore) {
+      throw new Error('The shadow comparison failed: the release store is not wired (server misconfiguration).');
+    }
+    const realOrSelf = (p: string): string => {
+      try {
+        return nodeFs.realpathSync(p);
+      } catch {
+        return p;
+      }
+    };
+    const roots = this.resolveGitDiffScope();
+    // The system roots served by a store sit where that store is rooted.
+    const storeDirs: Partial<Record<RootKind, string>> = {
+      entities: roots.entities.dir,
+      releases: realOrSelf(this.releaseStore.root),
+    };
+    const registryRoots = [
+      ...this.pagesKindRootDirs.map((d) => ({ kind: PAGES_KIND, dir: realOrSelf(nodePath.resolve(this.cwd, d)) })),
+      ...SYSTEM_ROOTS.map((r) => ({ kind: r.kind, dir: storeDirs[r.kind] ?? realOrSelf(nodePath.resolve(this.cwd, r.dir)) })),
+    ];
+    return { roots, registryRoots };
+  }
+
+  /**
+   * The roots of the git track (`DeltaRoots`), shared by both git-anchored
+   * branches: realpath'd release-flag root dirs as pathspecs plus the
+   * `releases` root, the (optionally narrowed) `kind: pages` roots for page
+   * attribution, the `entities` root, and the dirs that are never delta
+   * content (`releases`; the briefs/patches system roots).
    *
    * 0.2.102: the page filter becomes a list of `pathspecs` for `diffRefs` —
    * a root in `opts.roots` → its `dir`, an element of `opts.paths` →
    * `<dir>/<relPath>`; no filter → every `kind: pages` root. `dir` comes from the
    * CURRENT root registry, not the configuration of the `from` release — a root whose
    * `dir` moved between releases falls out of scope here while the SQLite track
-   * (rootId pinned in the history row) keeps it. `pageKeys` narrows
+   * (rootId pinned in the history row) keeps it. `acceptsPage` narrows
    * classification to exactly the requested pages.
    *
-   * 0.1.118: `diffRefs`/`diffRefToWorkingTree` resolve their output paths
-   * from `git rev-parse --show-toplevel`, which is ALWAYS symlink-resolved —
-   * on macOS `cwd` itself is typically reached through `/var/folders` →
-   * `/private/var/…`, so a plain (non-realpath'd) comparison dir would
-   * silently never match any returned file (same class of bug
-   * `GitService.commit()`'s own staging-target resolution already guards
-   * against). Realpath every comparison target once, tolerating a missing
-   * dir (falls back to the as-given path — that branch just then matches
-   * nothing, not a crash).
+   * 0.1.118: the M28 primitives resolve their output paths from `git rev-parse
+   * --show-toplevel`, which is ALWAYS symlink-resolved — on macOS `cwd` itself
+   * is typically reached through `/var/folders` → `/private/var/…`, so a plain
+   * (non-realpath'd) comparison dir would silently never match any returned
+   * file. Realpath every comparison target once, tolerating a missing dir
+   * (falls back to the as-given path — that branch just then matches nothing).
    */
-  private resolveGitDiffScope(
-    config: ReturnType<typeof readConfig>,
-    opts?: PageScopeOpts,
-  ): {
-    entitiesAbs: string;
-    releasesAbs: string;
-    briefsAbs: string;
-    patchesAbs: string;
-    cwdAbs: string;
-    rootIds: string[];
-    rootDirsById: Map<string, string>;
-    pagePathspecs: string[];
-    /** Everything handed to `diffRefs` after `--`: page pathspecs, the other release-flag roots, the `releases` root. */
-    pathspecs: string[];
-    pageKeys: Set<string> | null;
-  } {
+  private resolveGitDiffScope(opts?: PageScopeOpts): DeltaRoots {
     const realOrSelf = (p: string): string => {
       try {
         return nodeFs.realpathSync(p);
@@ -1119,9 +1103,14 @@ export class ReleaseService {
     const releasesAbs = realOrSelf(this.releaseStore!.root);
     // 2.1.8: the briefs/patches system roots sit at fixed dirs — the only way
     // their files reach a git diff is a stray pathspec, and they are excluded.
+    // A dir equal to the project root itself would exclude everything; skip it.
     const cwdAbs = realOrSelf(this.cwd);
-    const briefsAbs = realOrSelf(nodePath.resolve(this.cwd, systemRootDir('briefs')));
-    const patchesAbs = realOrSelf(nodePath.resolve(this.cwd, systemRootDir('patches')));
+    const excluded = [
+      releasesAbs,
+      ...[systemRootDir('briefs'), systemRootDir('patches')]
+        .map((d) => realOrSelf(nodePath.resolve(this.cwd, d)))
+        .filter((d) => d !== cwdAbs),
+    ];
     const rootDirsById = new Map(
       this.pagesKindRootIds.map((id, i) => [id, realOrSelf(this.pagesKindRootDirs[i]!)]),
     );
@@ -1131,245 +1120,34 @@ export class ReleaseService {
     const otherReleaseDirs = this.releaseFlagRootDirs
       ? this.releaseFlagRootDirs.filter((d) => !pageDirs.has(nodePath.resolve(d))).map(realOrSelf)
       : [entitiesAbs];
+    const entityStore = this.entityStore;
+    const entities: DeltaRoots['entities'] = {
+      dir: entitiesAbs,
+      parseRelPath: (relPath) => entityStore?.parseRelPath(relPath) ?? null,
+    };
     const withFixed = (pagePathspecs: string[]): string[] => [...pagePathspecs, ...otherReleaseDirs, releasesAbs];
+
     const pageFilter = this.pagesKindPageKeys(opts?.paths);
     if (pageFilter) {
       const rootIds = [...new Set(pageFilter.map((k) => k.rootId))];
-      const pagePathspecs = pageFilter.map((k) => nodePath.join(rootDirsById.get(k.rootId)!, k.relPath));
       const pageKeys = new Set(pageFilter.map((k) => pageIdentityKey(k.rootId, k.relPath)));
       return {
-        entitiesAbs, releasesAbs, briefsAbs, patchesAbs, cwdAbs, rootIds, rootDirsById, pagePathspecs,
-        pathspecs: withFixed(pagePathspecs), pageKeys,
+        pathspecs: withFixed(pageFilter.map((k) => nodePath.join(rootDirsById.get(k.rootId)!, k.relPath))),
+        pageRoots: new Map(rootIds.map((id) => [id, rootDirsById.get(id)!])),
+        entities,
+        excluded,
+        acceptsPage: (rootId, relPath) => pageKeys.has(pageIdentityKey(rootId, relPath)),
       };
     }
-    const rootIds = (opts?.roots ?? this.pagesKindRootIds).filter((r) =>
-      this.pagesKindRootIds.includes(r),
+    const rootIds = (opts?.roots ?? this.pagesKindRootIds).filter(
+      (r) => this.pagesKindRootIds.includes(r) && rootDirsById.get(r),
     );
-    const pagePathspecs = rootIds.map((id) => rootDirsById.get(id)!).filter(Boolean);
     return {
-      entitiesAbs, releasesAbs, briefsAbs, patchesAbs, cwdAbs, rootIds, rootDirsById, pagePathspecs,
-      pathspecs: withFixed(pagePathspecs), pageKeys: null,
+      pathspecs: withFixed(rootIds.map((id) => rootDirsById.get(id)!)),
+      pageRoots: new Map(rootIds.map((id) => [id, rootDirsById.get(id)!])),
+      entities,
+      excluded,
     };
-  }
-
-  /**
-   * Shared `GitRefDiff.files` classification for the git-anchored diff
-   * branches: splits into entity changes (no content diffing needed — just
-   * `{type, slug, op}`, same as the SQL path's entity handling elsewhere)
-   * and page candidates (path attributed to a `pages` root, content
-   * diffed separately by the caller). Release-identity files and
-   * briefs/patches are never surfaced as spec content.
-   */
-  private classifyGitDiffFiles(
-    gitDiff: GitRefDiff,
-    scope: ReturnType<typeof this.resolveGitDiffScope>,
-  ): {
-    entities: RawDeltaEntityChange[];
-    /** Absolute path per entity change, same index — needed to re-read content for stamp-only filtering. */
-    entityPaths: string[];
-    pageCandidates: PageCandidate[];
-  } {
-    const isInside = (parent: string, child: string): boolean => {
-      const rel = nodePath.relative(parent, child);
-      return rel !== '' && !rel.startsWith('..') && !nodePath.isAbsolute(rel);
-    };
-    const { entitiesAbs, releasesAbs, briefsAbs, patchesAbs, cwdAbs, rootIds, rootDirsById, pageKeys } = scope;
-
-    const entities: RawDeltaEntityChange[] = [];
-    const entityPaths: string[] = [];
-    const pageCandidates: PageCandidate[] = [];
-
-    for (const file of gitDiff.files) {
-      // Release-identity files are metadata, not spec content — never surfaced.
-      if (isInside(releasesAbs, file.path)) continue;
-      // Briefs/patches are never page-kind release content (ac-korze-tar-bundle-a-zawiera-wy-cznie-ma).
-      if (
-        (briefsAbs !== cwdAbs && isInside(briefsAbs, file.path)) ||
-        (patchesAbs !== cwdAbs && isInside(patchesAbs, file.path))
-      ) {
-        continue;
-      }
-
-      if (isInside(entitiesAbs, file.path)) {
-        const relPath = nodePath.relative(entitiesAbs, file.path).replaceAll(nodePath.sep, '/');
-        const parsed = this.entityStore?.parseRelPath(relPath);
-        if (parsed) {
-          entities.push({
-            type: parsed.type,
-            slug: parsed.slug,
-            op: STATUS_TO_ENTITY_OP[file.status],
-            changes: [],
-          });
-          entityPaths.push(file.path);
-        }
-        continue;
-      }
-
-      for (const id of rootIds) {
-        const dir = rootDirsById.get(id);
-        if (!dir || !isInside(dir, file.path)) continue;
-        const relPath = nodePath.relative(dir, file.path).replaceAll(nodePath.sep, '/');
-        // General backstop: any other non-page file under `.claude4spec/` (config.json,
-        // future additions) — same convention the page walker applies. `continue`
-        // (not `break`): this root's dir just happens to contain a dot-prefixed subtree that
-        // ANOTHER, more specific root may legitimately own (e.g. a root at '.docs') — keep
-        // trying remaining roots instead of abandoning attribution for this file entirely.
-        if (hasDotSegment(relPath)) continue;
-        // `paths` filter: the file sits under a requested root but is not one of
-        // the requested pages (a pathspec is a prefix match for git) — drop it.
-        if (pageKeys && !pageKeys.has(pageIdentityKey(id, relPath))) break;
-        pageCandidates.push({ rootId: id, relPath, absPath: file.path, status: file.status });
-        break;
-      }
-    }
-    return { entities, entityPaths, pageCandidates };
-  }
-
-  /**
-   * 0.2.4 — drop entity changes whose only difference is the timestamp envelope.
-   *
-   * The git-anchored branches classify an entity as changed from git's file
-   * STATUS alone, with no content comparison. That was sound while an entity
-   * file held only content: a git-visible change was necessarily a real one.
-   * Since Tier B the file also carries `createdAt`/`updatedAt`, and three
-   * ordinary events rewrite it without changing anything a reader cares about —
-   * the one-time boot backfill (which rewrites EVERY pre-0.2.4 entity file), a
-   * re-persist, and the release-restore `noop` branch that realigns stamps.
-   *
-   * Left alone, the first commit of the backfill makes `GET /diff/current`
-   * report every entity in the project as `modified` — while the SQL path, which
-   * goes through `diffEntity` and strips the envelope, correctly reports `noop`
-   * for the same pair. Two diff paths for one release, disagreeing. This applies
-   * the same stripping rule the host applies everywhere else, so they agree.
-   *
-   * Only `modified` is filtered: a create or a delete is a real change no matter
-   * what the timestamps say. A read failure leaves the change in place — the
-   * safe direction is reporting a change that turns out to be cosmetic, never
-   * hiding one.
-   */
-  private async dropStampOnlyEntityChanges(
-    entities: RawDeltaEntityChange[],
-    entityPaths: string[],
-    readOld: (absPath: string) => Promise<string | null>,
-    readNew: (absPath: string) => Promise<string | null>,
-  ): Promise<RawDeltaEntityChange[]> {
-    const decide = async (change: RawDeltaEntityChange, i: number): Promise<boolean> => {
-      if (change.op !== 'updated') return true;
-      const absPath = entityPaths[i];
-      if (!absPath) return true;
-      const [oldText, newText] = await Promise.all([readOld(absPath), readNew(absPath)]);
-      if (oldText === null || newText === null) return true;
-      try {
-        /**
-         * 0.2.9 — `payloadVersion` comes off with the timestamps.
-         *
-         * It is envelope, not content: the file records the shape it was written
-         * under, and a rewrite that only adds or bumps that marker changed
-         * nothing a user wrote. Stripping only the timestamps let the marker read
-         * as a content edit here while `computeDelta` (which diffs marker-free
-         * captures) called the same entity `noop` — two diff paths for one
-         * release, disagreeing, which is exactly the class of regression this
-         * filter was added to close.
-         */
-        const strip = (text: string): unknown =>
-          canonicalize(stripFileEnvelope(JSON.parse(text) as unknown));
-        return JSON.stringify(strip(oldText)) !== JSON.stringify(strip(newText));
-      } catch {
-        return true; // unparseable on either side — report it rather than hide it
-      }
-    };
-
-    /**
-     * Bounded, not `Promise.all` over everything. `readOld` is a `git show`
-     * subprocess, and the case this method exists for — the boot backfill
-     * commit — marks EVERY entity file modified, so an unbounded fan-out puts
-     * one process per entity in flight at once on a single `GET /diff/current`.
-     */
-    const keep = new Array<boolean>(entities.length);
-    let next = 0;
-    const worker = async (): Promise<void> => {
-      for (let i = next++; i < entities.length; i = next++) {
-        keep[i] = await decide(entities[i]!, i);
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(8, entities.length) }, worker));
-    return entities.filter((_, i) => keep[i]);
-  }
-
-  /**
-   * Shared per-page content diffing for the git-anchored diff branches:
-   * reads old/new content via `readOld`/`readNew` for each candidate and
-   * runs it through the same section/line-diff algorithm the SQL path
-   * (`computeDelta`) uses. `tryGitAnchoredDiff` wires both to `showFile` at
-   * its two resolved refs; `tryGitAnchoredUnreleasedDiff` wires `readOld` to
-   * `showFile` at `refA` and `readNew` to a plain working-tree disk read.
-   *
-   * `op` for each page is git's own status letter (`STATUS_TO_OP`), not
-   * inferred from content presence: `pageSerializer.diff` reports
-   * `op:'created'` whenever the OLD side is `null`, but a content read can
-   * also return `null` on any unrelated failure (transient git error,
-   * resource limits, or — for the working-tree branch — a genuinely deleted
-   * file) — trusting that inference would silently relabel a modification as
-   * a creation, or (if both sides fail) drop the page entirely as a false
-   * noop. Content is only used for section-level fidelity; a side that
-   * should exist per git's status but still comes back `null`, or any error
-   * while parsing/diffing it (e.g. malformed historical frontmatter),
-   * degrades that single page to file-level-only detail rather than failing
-   * the whole request.
-   */
-  private async diffPageCandidates(
-    pageCandidates: PageCandidate[],
-    readOld: (absPath: string) => Promise<string | null>,
-    readNew: (absPath: string) => Promise<string | null>,
-    logLabel: string,
-  ): Promise<FileDiff[]> {
-    const degradedPageChange = (c: (typeof pageCandidates)[number], op: FileDiff['op']): FileDiff => ({
-      rootId: c.rootId,
-      path: c.relPath,
-      op,
-      added_sections: [],
-      removed_sections: [],
-      modified_sections: [],
-      moved_sections: [],
-      frontmatter_diff: null,
-      xml_refs_diff: null,
-    });
-
-    return (
-      await Promise.all(
-        pageCandidates.map(async (c): Promise<FileDiff | null> => {
-          const op = STATUS_TO_OP[c.status];
-          const wantOld = op !== 'created';
-          const wantNew = op !== 'deleted';
-          try {
-            const [oldContent, newContent] = await Promise.all([
-              wantOld ? readOld(c.absPath) : Promise.resolve(null),
-              wantNew ? readNew(c.absPath) : Promise.resolve(null),
-            ]);
-            if ((wantOld && oldContent == null) || (wantNew && newContent == null)) {
-              console.error(
-                `[release] ${logLabel}: could not read content for page '${c.relPath}' (status ${c.status}) — degrading to file-level status only`,
-              );
-              return degradedPageChange(c, op);
-            }
-            const aData = oldContent != null
-              ? this.pageSerializer.snapshotFromContent(c.relPath, oldContent)
-              : null;
-            const bData = newContent != null
-              ? this.pageSerializer.snapshotFromContent(c.relPath, newContent)
-              : null;
-            const diff = this.pageSerializer.diff(aData, bData, c.relPath, c.rootId);
-            return diff.op === 'noop' ? null : diff;
-          } catch (err) {
-            console.error(
-              `[release] ${logLabel}: failed to diff page '${c.relPath}' — degrading to file-level status only:`,
-              err instanceof Error ? err.message : String(err),
-            );
-            return degradedPageChange(c, op);
-          }
-        }),
-      )
-    ).filter((d): d is FileDiff => d !== null);
   }
 
   /**

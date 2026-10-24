@@ -5,6 +5,7 @@ import { CURRENT_RELEASE_NAME } from '../../shared/entities.js';
 import { unreleasedCountOf } from '../../shared/unreleased-counter.js';
 import { releasesService } from '../runtime/releases-service.js';
 import { releasePushesKey } from './useReleasePushes.js';
+import { shadowDiffKey } from '../lib/release-diff-invalidation.js';
 
 /**
  * The full release list — everything the host's `/releases` UI needs
@@ -103,6 +104,21 @@ export function useReleaseDiff(
     ],
     queryFn: () => releasesApi.diff(from as string | null, to!),
     enabled: to != null && (from === null || (from !== undefined && from !== to)),
+  });
+}
+
+/**
+ * 2.1.46 (M17 L5 m17ui001) — the Shadows tab's delta `['shadow-diff', <ref>]`
+ * from `GET /api/shadow-diff`, disabled until a shadow is chosen. A
+ * refusal (`SHADOW_NOT_FOUND`, `GIT_UNAVAILABLE`) is an answer, not a transient
+ * failure: it is not retried.
+ */
+export function useShadowDiff(ref: string | null) {
+  return useQuery({
+    queryKey: shadowDiffKey(ref ?? ''),
+    queryFn: () => releasesApi.shadowDiff(ref!),
+    enabled: ref != null && ref.length > 0,
+    retry: false,
   });
 }
 

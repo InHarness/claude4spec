@@ -3,7 +3,7 @@
  * `reguly` (identifiers of the M43 vocabulary; an exclusion carries the
  * record's `wykluczenie` verbatim). Keyed by canonical name and attached by
  * `registerCoreOperations()`; `register()` validates every list against
- * `rules.ts`. One entry per record of the window — 78 — and none for the plugin
+ * `rules.ts`. One entry per record of the window — 79 (2.1.46 adds `shadow_diff`) — and none for the plugin
  * rows the window has no record for.
  */
 
@@ -77,6 +77,7 @@ export const OPERATION_RULES: Readonly<Record<string, readonly RuleCitation[]>> 
   search_entities: [{ id: 'error-code-once' }, { id: 'echo-free', exclusion: 'nie mutuje' }],
   search_link_targets: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'explicit-addressing' }],
   search_pages: [{ id: 'error-code-once' }, { id: 'echo-free', exclusion: 'nie mutuje' }],
+  shadow_diff: [{ id: 'error-code-once' }, { id: 'echo-free', exclusion: 'nie mutuje' }],
   spawn_child_turn: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'explicit-addressing' }],
   tag_entity: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'explicit-addressing' }, { id: 'operation-only-write' }],
   unlink_dto: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'explicit-addressing' }, { id: 'operation-only-write' }],

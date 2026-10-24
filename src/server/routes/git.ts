@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import type { GitService } from '../services/git.js';
-import type { GitFetchResponse, GitStatusResponse, GitSyncResponse } from '../../shared/git.js';
+import type { GitFetchResponse, GitShadowsResponse, GitStatusResponse, GitSyncResponse } from '../../shared/git.js';
 
 /**
  * M28 — `/api/git/*`. Own prefix (exception to the L4 convention, analogous to
- * `/api/release-pushes/*` and `/api/remote-project/*`). `GET /status` and
- * `GET /branches` are read-only. `POST /checkout` and `POST /sync` (HEAD and
+ * `/api/release-pushes/*` and `/api/remote-project/*`). `GET /status`,
+ * `GET /branches` and `GET /shadows` are read-only. `POST /checkout` and `POST /sync` (HEAD and
  * working tree) and `POST /fetch` (remote-tracking refs) write to `.git` but — like the
  * others — never surface an HTTP error for a domain outcome
  * (dirty tree, unknown branch, busy, git failure): every result rides
@@ -54,6 +54,19 @@ export function gitRouter(
   router.get('/branches', async (_req, res, next) => {
     try {
       res.json(await gitService.listBranches());
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // GET /api/git/shadows — 2.1.46 (endpoint get-api-git-shadows, dto
+  // git-shadows-response, M28 dadc3w49): the shadows from `refs/runs/*` that
+  // pass the list filter. Read-only, no body, no repository lock, never throws;
+  // git off or no repository (`listShadows() === null`) → an empty list.
+  router.get('/shadows', async (_req, res, next) => {
+    try {
+      const body: GitShadowsResponse = { shadows: (await gitService.listShadows()) ?? [] };
+      res.json(body);
     } catch (err) {
       next(err);
     }

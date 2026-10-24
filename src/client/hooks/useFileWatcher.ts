@@ -11,7 +11,7 @@ import { isHtmlPreviewPath, useHtmlViewerStore } from '../state/htmlViewer.js';
 import { artifactVersionsKey } from './useArtifactVersions.js';
 import { reloadFrontendPlugins } from '../runtime/boot-plugins.js';
 import { entityChangeKeys, tagChangeKeys } from '../lib/entity-invalidation.js';
-import { releaseDiffInvalidationFor } from '../lib/release-diff-invalidation.js';
+import { releaseDiffInvalidationFor, shadowDiffInvalidationFor } from '../lib/release-diff-invalidation.js';
 
 /**
  * M33 phase 3: window event dispatched once a plugin reload has re-pinned the
@@ -50,6 +50,9 @@ export function useFileWatcher() {
           // `entity:changed`, releases their lifecycle events).
           const releaseDiff = systemKind ? null : releaseDiffInvalidationFor(data.kind);
           if (releaseDiff) batcher.queueFilters(releaseDiff.id, releaseDiff.filters);
+          // 2.1.46 (M17 m17ui001): the Shadows tab's delta moves with HEAD and the shadow refs.
+          const shadowDiff = shadowDiffInvalidationFor(data.kind);
+          if (shadowDiff) batcher.queue([...shadowDiff]);
           if (data.kind === 'file:changed' && systemKind) {
             // 2.1.8: the base `file:changed` fires for EVERY registry root. A
             // system root is routed by its KIND (asked of the registry), never

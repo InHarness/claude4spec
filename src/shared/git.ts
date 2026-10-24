@@ -188,7 +188,8 @@ export type GitSyncField<TStatus extends string> =
 
 /**
  * 0.1.118: result of `gitService.diffRefs()` — a file-level `git diff
- * --name-status <a>..<b>` between two release-anchor commits. Gated on
+ * --name-status <a> <b>` between two release-anchor commits (2.1.46: the right
+ * side may also be a tree SHA, e.g. a `mergeTree` result). Gated on
  * `config.git.enabled`; never throws (returns `null` on any failure). `path`
  * is an ABSOLUTE filesystem path (git reports repo-root-relative paths
  * internally, resolved here so callers never re-derive the repo root).
@@ -196,6 +197,43 @@ export type GitSyncField<TStatus extends string> =
 export interface GitRefDiff {
   files: Array<{ path: string; status: 'A' | 'M' | 'D' | 'R' }>;
 }
+
+/**
+ * 2.1.46 (M28 eu1rffp6 / dadc3w49): one entry of `gitService.listShadows()` — a
+ * shadow, i.e. someone else's not-yet-accepted version of the specification
+ * whose commits live in a ref of the `refs/runs/` namespace.
+ */
+export interface GitShadow {
+  /** The ref name without the `refs/runs/` prefix, e.g. `'<runId>/spec'`. */
+  id: string;
+  /** SHA of the commit the ref points at. */
+  tipSha: string;
+  /** ISO 8601 committer time of the tip commit. */
+  tipCommittedAt: string;
+  /** Subject line of the tip commit. */
+  tipSubject: string;
+}
+
+/**
+ * 2.1.46 (dto `git-shadows-response`) — `GET /api/git/shadows`: the result of
+ * `gitService.listShadows()` as a DTO. Git off or no repository
+ * (`listShadows() === null`) → an empty list.
+ */
+export interface GitShadowsResponse {
+  shadows: GitShadow[];
+}
+
+/**
+ * 2.1.46 (M28 eu1rffp6): result of `gitService.mergeTree()` — a trial merge
+ * (`git merge-tree --write-tree`) that touches neither the working tree, HEAD,
+ * the index nor any ref. `unsupported` comes from reading git's version
+ * (< 2.38), not from a failing command; any other failure is `error`.
+ */
+export type GitMergeTreeResult =
+  | { status: 'clean'; tree: string }
+  | { status: 'conflicts'; paths: string[] }
+  | { status: 'unsupported' }
+  | { status: 'error' };
 
 /**
  * 0.1.118: result of `gitService.statusAheadBehind()` — read-only HEAD status

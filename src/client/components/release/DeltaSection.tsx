@@ -3,6 +3,7 @@ import type { FileDiff, RawDeltaEntityChange, SpecSnapshot } from '../../../shar
 import { clientPluginHost } from '../../core/plugin-host/host.js';
 import { EntityDiffCard } from './EntityDiffCard.js';
 import { PageDiffCard } from './PageDiffCard.js';
+import type { ShadowCompare } from './ShadowCardParts.js';
 
 /**
  * Sections per entity type, in REGISTRY registration order (spec m17uidet01).
@@ -32,17 +33,22 @@ export function registrySectionOrder(): Array<{
  * "compare to" view and the `/releases` Compare tab (0.1.122). `emptyMessage`
  * lets each caller phrase the zero-changes state for its own direction
  * ("between these two releases" vs "since `<release>`").
+ *
+ * 2.1.46: also the Shadows tab's render (`shadow` set) — the same sections and
+ * counter, with the cards in their shadow form (m17ui002).
  */
 export function DeltaSection({
   entityChanges,
   pageChanges,
   fromSnapshot,
   emptyMessage = 'No changes between these two releases.',
+  shadow,
 }: {
   entityChanges: RawDeltaEntityChange[];
   pageChanges: FileDiff[];
   fromSnapshot?: SpecSnapshot;
   emptyMessage?: string;
+  shadow?: ShadowCompare;
 }) {
   const visiblePages = pageChanges.filter((c) => c.op !== 'noop');
   const entitiesByType = useMemo(() => groupByType(entityChanges), [entityChanges]);
@@ -86,7 +92,7 @@ export function DeltaSection({
           <SectionHeading label={`Pages (${visiblePages.length})`} />
           <div className="space-y-2">
             {visiblePages.map((c) => (
-              <PageDiffCard key={`${c.rootId}/${c.path}`} change={c} />
+              <PageDiffCard key={`${c.rootId}/${c.path}`} change={c} shadow={shadow !== undefined} />
             ))}
           </div>
         </section>
@@ -106,6 +112,7 @@ export function DeltaSection({
                   key={`${c.type}-${c.slug}`}
                   change={c}
                   fromSnapshot={fromSnapshot ?? undefined}
+                  shadow={shadow}
                 />
               ))}
             </div>
@@ -128,6 +135,7 @@ export function DeltaSection({
                     key={`${c.type}-${c.slug}`}
                     change={c}
                     fromSnapshot={fromSnapshot ?? undefined}
+                    shadow={shadow}
                   />
                 ))}
               </div>
