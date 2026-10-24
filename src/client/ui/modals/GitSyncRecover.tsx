@@ -27,6 +27,9 @@ const KIND_HINT: Record<NonNullable<GitErrorRecovery['kind']>, string> = {
   'switch-failed': 'The commit succeeded, but switching to the target branch failed.',
   // 2.1.10 (M28 u5vl07ch): the window offers Sync instead of the agent.
   'non-fast-forward': "The remote has commits you don't have yet.",
+  // 2.1.47 (M28 eu1rffp6): a shadow acceptance left a merge open.
+  'merge-open': 'The release was created, but its merge commit failed — the merge is still open.',
+  'merge-abort-failed': 'Accepting the shadow failed and undoing its merge failed too — the merge is still open.',
 };
 
 /**

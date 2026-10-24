@@ -266,6 +266,38 @@ describe('POST /api/releases — commit-on-release (M28)', () => {
 
   const commitSubjects = (): string[] => git('log', '--all', '--format=%s').split('\n').filter(Boolean);
 
+  it('[entity:release] 2.1.47: gitSync carries the repair context of an open merge — a release commit that fails while MERGE_HEAD is open answers gitSync { status: error, recovery.kind: merge-open, operation commit-on-release }; the release exists, the merge stays open', async () => {
+    // A shadow-like branch merged into the index without a commit (MERGE_HEAD open).
+    git('checkout', '-q', '-b', 'shadow');
+    fs.writeFileSync(path.join(cwd, 'pages', 'from-shadow.md'), '# shadow');
+    git('add', 'pages/from-shadow.md');
+    git('commit', '-q', '-m', 'shadow turn');
+    git('checkout', '-q', 'main');
+    git('merge', '--no-commit', '--no-ff', 'shadow');
+    // A local pre-commit hook refuses the release (merge) commit.
+    const hooks = path.join(cwd, 'test-hooks');
+    fs.mkdirSync(hooks);
+    fs.writeFileSync(path.join(hooks, 'pre-commit'), '#!/bin/sh\necho "pre-commit refused the commit" >&2\nexit 1\n', { mode: 0o755 });
+    git('config', 'core.hooksPath', hooks);
+    // Named target: an open merge still takes the `current` path, so the failure is merge-open, not a target error.
+    git('branch', 'release-target');
+    setGitConfig({ enabled: true, commitTarget: { mode: 'named', branch: 'release-target' } });
+
+    const res = await request(app).post('/api/releases').send({ name: 'v1', description: 'accepts a shadow' });
+    expect(res.status).toBe(201);
+    expect(res.body.name).toBe('v1');
+    expect(res.body.gitSync.status).toBe('error');
+    expect(typeof res.body.gitSync.message).toBe('string');
+    expect(res.body.gitSync.recovery.operation).toBe('commit-on-release');
+    expect(res.body.gitSync.recovery.kind).toBe('merge-open');
+    expect(res.body.gitSync.recovery.gitStderr).toContain('pre-commit refused the commit');
+    expect(res.body.gitSync.recovery.intentPrompt).toContain('merge is still open');
+    // The merge is still open and no commit landed on either branch.
+    expect(git('rev-parse', '-q', '--verify', 'MERGE_HEAD').trim()).toBe(git('rev-parse', 'shadow').trim());
+    expect(commitSubjects()).not.toContain('v1');
+    expect((await request(app).get('/api/releases/v1')).status).toBe(200);
+  });
+
   it('[ac:ac-commitforrelease-i-push-honoruja-master] [entity:release] with git.enabled=false commitOnRelease does not run — createRelease answers gitSync: null and makes no commit; no commit-on-release sub-toggle can switch it on', async () => {
     // A legacy sub-toggle left `true` is not a switch: `enabled` is the only gate.
     setGitConfig({ enabled: false, syncCommitOnRelease: true });

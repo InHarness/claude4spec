@@ -1,0 +1,71 @@
+{
+ "role": "verifier",
+ "scope": {
+  "kind": "unit",
+  "id": "u2-git-merge-primitives"
+ },
+ "release": "2.1.47",
+ "rows": [
+  {
+   "type": "dto",
+   "slug": "release",
+   "level": 1,
+   "status": "covered",
+   "evidence": "see verifier hand-back (static, typecheck 0)"
+  },
+  {
+   "type": "ac",
+   "slug": "ac-dla-pliku-wydania-wniesionego-przez-s",
+   "level": 2,
+   "status": "covered",
+   "evidence": "see verifier hand-back (static, typecheck 0)"
+  },
+  {
+   "slug": "section:es9w55mr",
+   "level": 2,
+   "status": "covered",
+   "evidence": "see verifier hand-back (static, typecheck 0)"
+  },
+  {
+   "slug": "section:ezudoqef",
+   "level": 2,
+   "status": "covered",
+   "evidence": "see verifier hand-back (static, typecheck 0)"
+  },
+  {
+   "slug": "section:aqys9dje",
+   "level": 2,
+   "status": "covered",
+   "evidence": "see verifier hand-back (static, typecheck 0)"
+  },
+  {
+   "slug": "section:eu1rffp6",
+   "level": 2,
+   "status": "covered",
+   "evidence": "see verifier hand-back (static, typecheck 0)"
+  },
+  {
+   "slug": "section:m28aug01",
+   "level": 2,
+   "status": "covered",
+   "evidence": "see verifier hand-back (static, typecheck 0)"
+  },
+  {
+   "slug": "section:m17reldiff",
+   "level": 2,
+   "status": "covered",
+   "evidence": "see verifier hand-back (static, typecheck 0)"
+  },
+  {
+   "slug": "goal:u2-git-merge-primitives",
+   "level": 2,
+   "status": "covered",
+   "evidence": "see verifier hand-back (static, typecheck 0)"
+  }
+ ],
+ "suite": {
+  "command": "npm run typecheck (static)",
+  "exitCode": 0,
+  "summary": "typecheck 0; affected tests read, none broken"
+ }
+}

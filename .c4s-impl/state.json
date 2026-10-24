@@ -1,5 +1,5 @@
 {
- "iteration": 7,
+ "iteration": 14,
  "conventions": [
   {
    "label": "L1 (DB) — implementor M41",
@@ -242,7 +242,7 @@
     "unit": 2
    },
    "jobs": [],
-   "lastUncovered": []
+   "lastUncovered": 0
   },
   {
    "id": "u2-git-merge-primitives",
@@ -347,15 +347,34 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "pending",
-   "portions": [],
-   "startCommit": null,
-   "baseCommit": null,
+   "status": "verified",
+   "portions": [
+    {
+     "name": "u2-git-merge-primitives/p1-l2-l4",
+     "layers": [
+      "L2",
+      "L4"
+     ],
+     "slugs": [
+      "release",
+      "ac-dla-pliku-wydania-wniesionego-przez-s"
+     ],
+     "status": "implemented",
+     "rounds": 2,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
+   "startCommit": "0344c8bd7cb2440e4e0f90d743a9e76502a616b8",
+   "baseCommit": "e2acb726fb3b1c4cf2b5a17dc9c06ecc942ea710",
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 2
    },
-   "jobs": []
+   "jobs": [],
+   "lastUncovered": 0,
+   "lastBlocking": 0
   },
   {
    "id": "u3-operation-suppress",

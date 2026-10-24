@@ -273,6 +273,61 @@ describe('POST /api/git/sync (2.1.10)', () => {
     expect(res.body.status).toBe('merged');
   });
 
+  /** In `other`: commit `rel` (dated `date`, if given) and push it; returns the commit's sha. */
+  async function teammateCommitsDated(rel: string, content: string, date?: string): Promise<string> {
+    fs.mkdirSync(path.dirname(path.join(other, rel)), { recursive: true });
+    fs.writeFileSync(path.join(other, rel), content);
+    await git(['add', rel], other);
+    const env = date ? { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } : process.env;
+    await pexec('git', ['commit', '-q', '-m', `add ${rel}`], { cwd: other, env });
+    await git(['push', '-q', 'origin', 'main'], other);
+    return head(other);
+  }
+
+  it('[ac:ac-dla-pliku-wydania-wniesionego-przez-s] for a release file brought in by sync() merged, resolveReleaseCommit returns the upstream commit, not the merge commit', async () => {
+    const rel = '.claude4spec/releases/v2.json';
+    // Dated far in the future: "oldest" must mean ancestor-before-descendant, not commit dates.
+    const upstreamCommit = await teammateCommitsDated(rel, '{"name":"v2"}\n', '2099-01-01T12:00:00Z');
+    await commitFiles(work, { 'local.md': '# local\n' }, 'local');
+    const svc = new GitService(work, [work]);
+
+    const res = await request(appFor(svc)).post('/api/git/sync');
+    expect(res.body.status).toBe('merged');
+    const mergeCommit = await head(work);
+    // The merge commit also introduces the file against its FIRST parent — the case the rule must see through.
+    expect((await git(['diff', '--name-only', '--diff-filter=A', `${mergeCommit}^1`, mergeCommit], work)).split('\n')).toContain(rel);
+
+    const marker = await svc.resolveReleaseCommit(path.join(work, rel));
+    expect(marker).toBe(upstreamCommit);
+    expect(marker).not.toBe(mergeCommit);
+  });
+
+  it('[section:aqys9dje] [section:m28aug01] sync() merged on a second clone whose upstream holds a shadow-acceptance commit: the acceptance merge commit is the marker, not the sync merge commit', async () => {
+    const rel = '.claude4spec/releases/v2.json';
+    // The teammate accepts a shadow: merge into the index, the release file enters only in the merge commit.
+    await git(['checkout', '-q', '-b', 'shadow'], other);
+    await commitFiles(other, { 'from-shadow.md': '# shadow\n' }, 'shadow turn');
+    await git(['checkout', '-q', 'main'], other);
+    await commitFiles(other, { 'mate.md': '# mate\n' }, 'mate');
+    await git(['merge', '-q', '--no-commit', '--no-ff', 'shadow'], other);
+    fs.mkdirSync(path.join(other, '.claude4spec', 'releases'), { recursive: true });
+    fs.writeFileSync(path.join(other, rel), '{"name":"v2"}\n');
+    await git(['add', rel], other);
+    await git(['commit', '-q', '-m', 'v2'], other);
+    const acceptance = await head(other);
+    expect((await git(['rev-list', '--parents', '-n', '1', acceptance], other)).trim().split(' ')).toHaveLength(3);
+    await git(['push', '-q', 'origin', 'main'], other);
+
+    await commitFiles(work, { 'local.md': '# local\n' }, 'local');
+    const svc = new GitService(work, [work]);
+    expect((await request(appFor(svc)).post('/api/git/sync')).body.status).toBe('merged');
+    const syncMerge = await head(work);
+
+    const marker = await svc.resolveReleaseCommit(path.join(work, rel));
+    expect(marker).toBe(acceptance);
+    expect(marker).not.toBe(syncMerge);
+  });
+
   it('[ac:ac-post-api-git-sync-przy-lokalnej-zmian] a local change to a file the incoming commits change → dirty-blocked with that path', async () => {
     await teammatePushes(other, { 'page.md': '# page — remote edit\n' });
     fs.writeFileSync(path.join(work, 'page.md'), '# page — unsaved local edit\n');

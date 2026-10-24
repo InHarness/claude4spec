@@ -27,6 +27,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { configPath, readConfig, type NormalizedGitCommitTargetConfig } from '../config.js';
 import type {
+  GitAbortMergeResult,
+  GitMergeIntoIndexResult,
+  GitMergePrimitiveRefusal,
+  GitPendingChangesResult,
   GitAheadBehindStatus,
   GitBranchesResponse,
   GitCheckoutResponse,
@@ -60,26 +64,46 @@ export const GIT_NETWORK_TIMEOUT_MS = 60_000;
  * (`tryRun`). Status reads never take it. The hand-off in `release()` keeps
  * the lock held while a waiter exists, so a `tryRun` can never slip in between
  * one holder and the next queued one.
+ *
+ * 2.1.47 (M28 ezudoqef): taking the lock hands out a HANDLE (`GitLockHandle`),
+ * passed to `fn`. The lock is not reentrant — an operation that holds it can
+ * never take it a second time — so the holder passes its handle on, and a
+ * primitive called with the live handle runs under the held lock instead of
+ * waiting for it (which would hang forever). A handle is live only while its
+ * holder runs: after the release it no longer opens anything.
  */
 export class GitRepoLock {
   private locked = false;
-  private readonly waiters: Array<() => void> = [];
+  private holder: GitLockHandle | null = null;
+  private readonly waiters: Array<(handle: GitLockHandle) => void> = [];
 
   get isHeld(): boolean {
     return this.locked;
   }
 
+  /** Is `handle` the live handle of this lock's current holder? */
+  holds(handle: GitLockHandle | undefined): boolean {
+    return handle !== undefined && handle === this.holder;
+  }
+
+  private grant(): GitLockHandle {
+    const handle: GitLockHandle = Object.freeze({ [LOCK_HANDLE]: true as const });
+    this.holder = handle;
+    return handle;
+  }
+
   private release(): void {
+    this.holder = null;
     // Hand-off: a waiter inherits the lock without it ever reading as free.
     const next = this.waiters.shift();
-    if (next) next();
+    if (next) next(this.grant());
     else this.locked = false;
   }
 
-  /** Run `fn` with the lock already held by the caller; release when it settles. */
-  private async runHeld<T>(fn: () => Promise<T>): Promise<T> {
+  /** Run `fn` with the lock already held through `handle`; release when it settles. */
+  private async runHeld<T>(handle: GitLockHandle, fn: (handle: GitLockHandle) => Promise<T>): Promise<T> {
     try {
-      return await fn();
+      return await fn(handle);
     } finally {
       this.release();
     }
@@ -89,20 +113,33 @@ export class GitRepoLock {
    * Wait for the lock, run `fn`, release. A free lock is taken and `fn` started
    * in the same tick (like `tryRun`) — no microtask gap before the holder runs.
    */
-  run<T>(fn: () => Promise<T>): Promise<T> {
+  run<T>(fn: (handle: GitLockHandle) => Promise<T>): Promise<T> {
     if (!this.locked) {
       this.locked = true;
-      return this.runHeld(fn);
+      return this.runHeld(this.grant(), fn);
     }
-    return new Promise<void>((resolve) => this.waiters.push(resolve)).then(() => this.runHeld(fn));
+    return new Promise<GitLockHandle>((resolve) => this.waiters.push(resolve)).then((handle) =>
+      this.runHeld(handle, fn),
+    );
   }
 
   /** Run `fn` under the lock if it is free right now; `null` (no call) when it is taken. */
-  tryRun<T>(fn: () => Promise<T>): Promise<T> | null {
+  tryRun<T>(fn: (handle: GitLockHandle) => Promise<T>): Promise<T> | null {
     if (this.locked) return null;
     this.locked = true;
-    return this.runHeld(fn);
+    return this.runHeld(this.grant(), fn);
   }
+}
+
+const LOCK_HANDLE: unique symbol = Symbol('git-lock-handle');
+
+/**
+ * 2.1.47 (M28 ezudoqef): the handle of a taken repository lock — opaque; the
+ * only way to work under a lock that is already taken. Obtained from
+ * `GitService.tryWithRepoLock` (or `GitRepoLock.run`/`tryRun`).
+ */
+export interface GitLockHandle {
+  readonly [LOCK_HANDLE]: true;
 }
 
 /** Locks keyed by repository (worktree root) — several projects in one repo share one. */
@@ -298,6 +335,35 @@ export class GitService {
     return lockForKey(root ?? `cwd:${path.resolve(this.cwd)}`);
   }
 
+  /**
+   * 2.1.47 (M28 ezudoqef): take this repository's lock if it is free right now
+   * and run `fn` with its handle — the handle `fn` passes on to the primitives
+   * it calls (`pendingChanges`, `mergeIntoIndex`, `abortMerge`, `commit`,
+   * `commitOnRelease`), which then run under the held lock instead of waiting
+   * for it. `null` (no call) when the lock is taken. The lock lives in the
+   * process, keyed by the repository root, so it outlives a rebuild of the
+   * project context.
+   */
+  async tryWithRepoLock<T>(fn: (lock: GitLockHandle) => Promise<T>): Promise<T | null> {
+    const run = (await this.repoLock()).tryRun(fn);
+    return run === null ? null : run;
+  }
+
+  /**
+   * 2.1.47: run `fn` under the repository lock of `root` for a merge
+   * primitive — directly when `handle` is the lock's live handle (the caller
+   * holds it), else only if the lock is free right now; `null` when it is taken.
+   */
+  private underRepoLock<T>(
+    root: string,
+    handle: GitLockHandle | undefined,
+    fn: (handle: GitLockHandle) => Promise<T>,
+  ): Promise<T> | null {
+    const lock = lockForKey(root);
+    if (handle && lock.holds(handle)) return fn(handle);
+    return lock.tryRun(fn);
+  }
+
   /** 2.1.10 (M49 7xmafzkd): `git:status-changed` to the project's room. */
   private emitStatusChanged(headChanged: boolean): void {
     try {
@@ -460,12 +526,14 @@ export class GitService {
    * Stage `resolveStagingTargets()` and commit with `message`. Assumes a repo
    * is detected (callers gate via `commitOnRelease`/`commitPull`). Returns
    * `'skipped'` on detached HEAD, `'nothing-to-commit'` when nothing is
-   * staged, `'error'` (with `recovery`) on any git failure.
+   * staged, `'error'` (with `recovery`) on any git failure. `failureKind`
+   * (2.1.47: `merge-open` while a merge is open) classifies that failure.
    */
   private async stageAndCommit(
     status: GitRepoInfo,
     message: string,
     operation: GitErrorRecovery['operation'],
+    failureKind?: GitErrorRecovery['kind'],
   ): Promise<GitCommitResult> {
     if (!status.detected || !status.rootPath) return { status: 'skipped' };
     if (!status.branch) return { status: 'skipped', message: 'detached HEAD' };
@@ -482,7 +550,7 @@ export class GitService {
     try {
       await this.git(['add', '--', ...targets], root);
     } catch (err) {
-      return { status: 'error', message: errMessage(err), recovery: this.buildRecovery(operation, err, root) };
+      return { status: 'error', message: errMessage(err), recovery: this.buildRecovery(operation, err, root, failureKind) };
     }
 
     // `git diff --cached --quiet` exits 0 when nothing is staged, 1 otherwise.
@@ -497,7 +565,7 @@ export class GitService {
       await this.git(['commit', '-m', message], root);
       return { status: 'committed' };
     } catch (err) {
-      return { status: 'error', message: errMessage(err), recovery: this.buildRecovery(operation, err, root) };
+      return { status: 'error', message: errMessage(err), recovery: this.buildRecovery(operation, err, root, failureKind) };
     }
   }
 
@@ -525,15 +593,22 @@ export class GitService {
    * reported as `status: 'error'` (with `recovery.kind`) while still
    * carrying `branch` — the caller can tell the commit landed even though
    * the switch didn't.
+   *
+   * 2.1.47 (M28 aqys9dje / ezudoqef): with an open merge (`MERGE_HEAD`, the
+   * shadow acceptance) every mode commits on the current HEAD — a merge commit
+   * with two parents (see `commitUnlocked`). Called with the live handle of the
+   * repository lock (`lockHandle`) the commit does not wait for the lock: it
+   * runs under the one its caller holds.
    */
-  async commit(opts: { name: string; description: string }): Promise<GitCommitResult> {
+  async commit(opts: { name: string; description: string }, lockHandle?: GitLockHandle): Promise<GitCommitResult> {
     // 2.1.10 (M28 ezudoqef): a release commit WAITS for the repository lock —
     // a release never loses to a sidebar click.
     const lock = await this.repoLock();
-    const { result, headBranch } = await lock.run(async () => {
+    const body = async () => {
       const status = await this.detect();
       return { result: await this.commitUnlocked(opts, status), headBranch: status.branch };
-    });
+    };
+    const { result, headBranch } = lock.holds(lockHandle) ? await body() : await lock.run(body);
     if (result.status === 'committed') {
       // HEAD of the current branch moved: a 'current'-mode commit (no `branch`),
       // a named target that IS the current branch, or a post-commit switch.
@@ -554,6 +629,18 @@ export class GitService {
     const config = readConfig(this.cwd);
     const commitTarget: NormalizedGitCommitTargetConfig = config.git.commitTarget;
     const mode = commitTarget.mode;
+
+    // 2.1.47 (M28 aqys9dje): an open merge (the shadow acceptance) — every mode
+    // takes the `current` path: `git commit` without pathspecs concludes the
+    // merge as a commit with two parents (HEAD + the merged shadow tip). A
+    // temp-index `commit-tree -p <tip>` would lose the second parent. `branch`
+    // = the current branch, never a switch; a failure is `merge-open`.
+    if (status.detected && status.rootPath && (await this.mergeHeadOpen(status.rootPath))) {
+      const result = await this.stageAndCommit(status, message, 'commit-on-release', 'merge-open');
+      return result.status === 'committed' && status.branch
+        ? { ...result, branch: status.branch, switched: false }
+        : result;
+    }
 
     let result: GitCommitResult;
     if (mode === 'named' && status.detected && status.rootPath && commitTarget.branch) {
@@ -1002,14 +1089,19 @@ export class GitService {
    * `status.branch` at all, so requiring one here would silently no-op the
    * very modes built to not need current HEAD on a branch.
    */
-  async commitOnRelease(release: { name: string; description: string }): Promise<GitCommitResult | null> {
+  async commitOnRelease(
+    release: { name: string; description: string },
+    lockHandle?: GitLockHandle,
+  ): Promise<GitCommitResult | null> {
     const config = readConfig(this.cwd);
     if (!config.git.enabled) return null;
     const status = await this.detect();
     if (!status.detected) return null;
     const mode = config.git.commitTarget.mode;
     if (mode === 'current' && !status.branch) return null;
-    return this.commit(release);
+    // 2.1.47 (M28 ezudoqef): with the caller's live lock handle the commit runs
+    // under the held lock instead of waiting for it.
+    return this.commit(release, lockHandle);
   }
 
   /**
@@ -1030,6 +1122,162 @@ export class GitService {
     const status = await this.detect();
     if (!status.detected || !status.branch) return null;
     return this.push(branch);
+  }
+
+  // --- 2.1.47 (M28 es9w55mr): merging into the index for the shadow acceptance ---
+  // No REST routes: called only by the M17 shadow acceptance, each with the
+  // handle of the repository lock it holds (`tryWithRepoLock`). Without a live
+  // handle a primitive runs only if the lock is free right now (`busy`
+  // otherwise). Results never throw. Content guards (files outside the
+  // specification, changes in the `releases` root) and the order of all the
+  // acceptance's guards belong to the acceptance, not here.
+
+  /**
+   * Gate of the merge primitives: `config.git.enabled` and a detected
+   * repository (else `skipped`), HEAD on a named branch (else `no-branch`).
+   */
+  private async mergePrimitiveRoot(): Promise<{ root: string } | { refusal: GitMergePrimitiveRefusal }> {
+    let enabled: boolean;
+    try {
+      enabled = readConfig(this.cwd).git.enabled;
+    } catch {
+      enabled = false;
+    }
+    if (!enabled) return { refusal: { status: 'skipped' } };
+    const root = await this.probeRoot();
+    if (!root) return { refusal: { status: 'skipped' } };
+    if (!(await this.currentBranch(root))) return { refusal: { status: 'no-branch' } };
+    return { root };
+  }
+
+  /** Is a merge open (`MERGE_HEAD` present) in the repository at `root`? Never throws. */
+  private async mergeHeadOpen(root: string): Promise<boolean> {
+    return this.git(['rev-parse', '-q', '--verify', 'MERGE_HEAD'], root)
+      .then(() => true)
+      .catch(() => false);
+  }
+
+  /**
+   * M28 es9w55mr — the strict test for pending changes before the acceptance:
+   * the paths pending inside `pathspecs` (the roots' dirs: a modified tracked
+   * file, a staged change, a new untracked file) plus the paths staged
+   * ANYWHERE in the repository — the merge commit takes the whole index (git
+   * allows no partial commit during a merge), so someone else's staged file
+   * would ride in the acceptance commit. Stricter than `checkout()`, which
+   * ignores untracked files. One `git status` for both sets. Paths are
+   * repository-relative, sorted. Non-empty → `dirty { paths }`, empty → `clean`.
+   */
+  async pendingChanges(pathspecs: string[], lockHandle?: GitLockHandle): Promise<GitPendingChangesResult> {
+    const gate = await this.mergePrimitiveRoot();
+    if ('refusal' in gate) return gate.refusal;
+    const { root } = gate;
+    const run = this.underRepoLock(root, lockHandle, async (): Promise<GitPendingChangesResult> => {
+      let stdout: string;
+      try {
+        ({ stdout } = await this.git(
+          ['--no-optional-locks', 'status', '--porcelain=v1', '-z', '--no-renames', '--untracked-files=all'],
+          root,
+        ));
+      } catch (err) {
+        return { status: 'error', message: errMessage(err) };
+      }
+      const scopes = this.resolveDiffTargets(root, pathspecs).map((abs) =>
+        path.relative(root, abs).split(path.sep).join('/'),
+      );
+      const inScope = (p: string): boolean => scopes.some((s) => s === '' || p === s || p.startsWith(`${s}/`));
+      const paths = new Set<string>();
+      for (const entry of splitNul(stdout)) {
+        // `XY <path>`: X = index status (' ' unstaged, '?' untracked), Y = working tree.
+        const staged = entry[0] !== ' ' && entry[0] !== '?';
+        const p = entry.slice(3);
+        if (staged || inScope(p)) paths.add(p);
+      }
+      return paths.size === 0 ? { status: 'clean' } : { status: 'dirty', paths: [...paths].sort() };
+    });
+    return run ?? { status: 'busy' };
+  }
+
+  /**
+   * M28 es9w55mr — `git merge --no-commit --no-ff <tipSha>`: merge into the
+   * index and the working tree without a commit, `MERGE_HEAD` left open.
+   * A conflict of the real merge → the merge is aborted here and
+   * `conflicts { paths }` (repository-relative) is returned. Success →
+   * `merged { changedPaths }`: the files differing between the merge base and
+   * the tip, without rename detection (a move is a deletion and an addition),
+   * as ABSOLUTE paths — what the acceptance hands to its watcher suppression.
+   * Labels nothing itself. A tip already contained in HEAD leaves no merge
+   * open → `error`. A conflict whose own abort fails → `error` with the
+   * repair context `recovery.kind: 'merge-abort-failed'` (the merge stays open).
+   */
+  async mergeIntoIndex(tipSha: string, lockHandle?: GitLockHandle): Promise<GitMergeIntoIndexResult> {
+    const gate = await this.mergePrimitiveRoot();
+    if ('refusal' in gate) return gate.refusal;
+    const { root } = gate;
+    const run = this.underRepoLock(root, lockHandle, async (): Promise<GitMergeIntoIndexResult> => {
+      try {
+        await this.git(['merge', '--no-commit', '--no-ff', tipSha], root, { ...process.env, LC_ALL: 'C', LANG: 'C' });
+      } catch (err) {
+        if (!(await this.mergeHeadOpen(root))) return { status: 'error', message: errMessage(err) };
+        const conflicted = await this.git(['diff', '--name-only', '-z', '--diff-filter=U'], root)
+          .then((r) => splitNul(r.stdout))
+          .catch(() => []);
+        try {
+          await this.git(['merge', '--abort'], root);
+        } catch (abortErr) {
+          // The conflicted merge stays open (MERGE_HEAD, conflict markers):
+          // the repair context the acceptance forwards.
+          return {
+            status: 'error',
+            message: errMessage(abortErr),
+            recovery: this.buildRecovery('commit-on-release', abortErr, root, 'merge-abort-failed'),
+          };
+        }
+        return conflicted.length > 0
+          ? { status: 'conflicts', paths: [...new Set(conflicted)] }
+          : { status: 'error', message: errMessage(err) };
+      }
+      if (!(await this.mergeHeadOpen(root))) {
+        return { status: 'error', message: `Nothing to merge: ${tipSha} is already contained in HEAD.` };
+      }
+      let base: string;
+      try {
+        base = (await this.git(['merge-base', 'HEAD', 'MERGE_HEAD'], root)).stdout.trim();
+      } catch (err) {
+        return { status: 'error', message: errMessage(err) };
+      }
+      const changed = await this.changedPaths(root, base, tipSha);
+      return { status: 'merged', changedPaths: changed.map((p) => path.join(root, p)) };
+    });
+    return run ?? { status: 'busy' };
+  }
+
+  /**
+   * M28 es9w55mr — only with `MERGE_HEAD` present: stage `paths`, then
+   * `git merge --abort`. Staging comes first, because changes written after
+   * the merge (e.g. anchors) would block `merge --abort`. No merge open →
+   * nothing to undo → `aborted`. A failure → `error` with the repair context
+   * `recovery.kind: 'merge-abort-failed'` (the merge stays open, no release).
+   */
+  async abortMerge(paths: string[], lockHandle?: GitLockHandle): Promise<GitAbortMergeResult> {
+    const gate = await this.mergePrimitiveRoot();
+    if ('refusal' in gate) return gate.refusal;
+    const { root } = gate;
+    const run = this.underRepoLock(root, lockHandle, async (): Promise<GitAbortMergeResult> => {
+      if (!(await this.mergeHeadOpen(root))) return { status: 'aborted' };
+      try {
+        const targets = this.resolveDiffTargets(root, paths);
+        if (targets.length > 0) await this.git(['add', '-A', '--', ...targets], root);
+        await this.git(['merge', '--abort'], root);
+        return { status: 'aborted' };
+      } catch (err) {
+        return {
+          status: 'error',
+          message: errMessage(err),
+          recovery: this.buildRecovery('commit-on-release', err, root, 'merge-abort-failed'),
+        };
+      }
+    });
+    return run ?? { status: 'busy' };
   }
 
   /**
@@ -1072,6 +1320,32 @@ export class GitService {
         intentPrompt,
         kind,
       };
+    }
+    if (kind === 'merge-open' || kind === 'merge-abort-failed') {
+      // 2.1.47 (M28 eu1rffp6): the shadow acceptance left a merge open
+      // (`MERGE_HEAD`). `merge-open`: the release exists, only its merge
+      // commit failed — conclude the merge. `merge-abort-failed`: the
+      // acceptance was rolled back, no release exists — abort the merge.
+      const state =
+        kind === 'merge-open'
+          ? 'the release was created, but committing it — the merge commit accepting a shadow — failed, ' +
+            'so the merge is still open (MERGE_HEAD).'
+          : 'accepting a shadow failed and undoing its merge failed too, so the merge is still open ' +
+            '(MERGE_HEAD) and no release was created.';
+      const ask =
+        kind === 'merge-open'
+          ? 'Please finish the merge safely: fix what blocked the commit, then conclude it with `git commit` ' +
+            '(the index already holds the merge and the release file).'
+          : 'Please end the merge safely: fix what blocked it, then run `git merge --abort`.';
+      const intentPrompt = [
+        `claude4spec's git sync left a merge open in the repository at ${rootPath}: ${state}`,
+        '',
+        `Git error:\n${gitStderr || errMessage(err)}`,
+        '',
+        `${ask} Never use \`--force\`, \`reset --hard\`, or anything else that could discard work. ` +
+          'Report back what you found and what you did.',
+      ].join('\n');
+      return { operation, reason: errMessage(err), gitStderr, intentPrompt, kind };
     }
     const reason = errMessage(err);
     const opLabel =
@@ -1147,22 +1421,42 @@ export class GitService {
   }
 
   /**
-   * `git log [<refs>] --diff-filter=A -- <absPath>`, oldest add wins (see
-   * `resolveReleaseCommit`'s doc comment for why NOT `-1` without `--reverse`).
-   * `refs` empty = HEAD's history. `null` on any failure (missing repo, git
-   * error, no add found).
+   * `git log [<refs>] --topo-order --diff-merges=first-parent --diff-filter=A
+   * --no-patch -- <absPath>`, oldest introduction wins (see `resolveReleaseCommit`'s doc
+   * comment for why NOT `-1` without `--reverse`). `refs` empty = HEAD's
+   * history. `null` on any failure (missing repo, git error, no add found).
+   *
+   * 2.1.47 (M28 eu1rffp6 / aqys9dje): a merge commit counts against its FIRST
+   * parent (`--diff-merges=first-parent`), so the shadow acceptance's merge
+   * commit — where the release file enters only in the merge itself — is
+   * found. "Oldest" means ancestor before descendant regardless of commit
+   * dates (`--topo-order` lists every child before its parents): a `sync()`
+   * merge commit also introduces the file against its first parent, but the
+   * real marker — the upstream commit, or the acceptance commit on a second
+   * clone — is its ancestor and wins.
    */
   private async findFirstAdd(rootPath: string, absPath: string, refs: string[]): Promise<string | null> {
     try {
       const { stdout } = await this.git(
-        ['log', ...refs, '--diff-filter=A', '--format=%H', '--', absPath],
+        [
+          'log',
+          ...refs,
+          '--topo-order',
+          '--diff-merges=first-parent',
+          '--diff-filter=A',
+          // `--diff-merges` turns the patch output on; the filter works without it.
+          '--no-patch',
+          '--format=%H',
+          '--',
+          absPath,
+        ],
         rootPath,
       );
       const shas = stdout
         .split('\n')
         .map((s) => s.trim())
         .filter(Boolean);
-      // Output is newest-first; the LAST line is the oldest — the first add.
+      // Children come before their parents; the LAST line is the oldest — the first introduction.
       return shas.length > 0 ? shas[shas.length - 1]! : null;
     } catch {
       return null;
