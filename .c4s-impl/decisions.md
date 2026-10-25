@@ -46,3 +46,4 @@
 - rev-0003: on `PLAN_CONFLICT` and on a successful Reload, PlanPage clears `error`.
 - The m36 leftover in `src/server/services/plan.ts` is now done: `PlanReadOpts` sits below the imports, the double blank line is gone, and `getByThread` takes `PlanReadOpts`.
 - orchestrator: m10 p1 round-2 implementer status lacked the required `release` field (otherwise complete, work in the repo); filled with the window's `2.1.48` instead of re-running the portion — the field is a constant of the build.
+- 2026-10-25: system round 1 (env-runner 2-1-47-to-2-1-48, sha ec889d57): npm test 2 failed / 6836 passed — both m10 route tests (PUT /api/artifacts/plan/big-plan.md/content answers 400). Reopened m10 for those two slugs; baseCommit = ec889d57 (fix lands as its own commit on top). e2e: 3 seed-only files + editor-l8 'root kind' as on 2.1.47; envelope-entity-pages and frontend-mockups-envelope → isolated reruns.

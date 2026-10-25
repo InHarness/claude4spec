@@ -1,5 +1,5 @@
 {
- "iteration": 31,
+ "iteration": 32,
  "conventions": [
   {
    "label": "L3 (Spec Operations) — implementor M43 — role of the layer",
@@ -337,7 +337,7 @@
     }
    ],
    "wave": 2,
-   "status": "verified",
+   "status": "in-progress",
    "portions": [
     {
      "name": "m10-plan-full-read-and-conflict/p1-l5-l5",
@@ -352,15 +352,25 @@
       "ac-po-save-planu-dluzszego-niz-budzet-od",
       "ac-save-planu-zmienionego-w-miedzyczasie"
      ],
-     "status": "implemented",
+     "status": "pending",
      "rounds": 2,
      "partial": 0,
-     "uncovered": [],
-     "only": []
+     "uncovered": [
+      "ac-po-save-planu-dluzszego-niz-budzet-od",
+      "ac-save-planu-zmienionego-w-miedzyczasie"
+     ],
+     "only": [
+      {
+       "slug": "ac-po-save-planu-dluzszego-niz-budzet-od"
+      },
+      {
+       "slug": "ac-save-planu-zmienionego-w-miedzyczasie"
+      }
+     ]
     }
    ],
-   "startCommit": "27a7ea6b1bc69d8c1a28fb428e36bece6ba55f86",
-   "baseCommit": "35b9639bac02f8df7df5c195697da6f620abe8f7",
+   "startCommit": "ec889d5728e7d85c2c8c457cf73b2de8e192f4ac",
+   "baseCommit": "ec889d5728e7d85c2c8c457cf73b2de8e192f4ac",
    "rounds": {
     "review": 0,
     "unit": 2
