@@ -1,4 +1,5 @@
 import os from 'node:os';
+import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
@@ -23,6 +24,7 @@ import { systemRootId } from '../../shared/root-kinds.js';
 import type { ReleaseService } from '../services/release.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import { expectPatchOperationRecord } from '../../../tests/helpers/patch-tool-records.js';
+import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 
 const fakeWs = { broadcast: () => {} } as unknown as WsEmitter;
 /** Release names in creation order (index = rank); tests that need ranks set it. */
@@ -39,6 +41,7 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
   let patchesSerializer: FileSerializer;
   let pageVersions: FileVersionService;
   let frontmatterIndexer: PagesFrontmatterIndexer;
+  let plans: PlanService;
 
   const briefsDir = 'briefs';
   const patchesDir = 'patches';
@@ -119,6 +122,7 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       frontmatterIndexer,
       ws: fakeWs,
     });
+    plans = planService;
 
     app = express()
       .use(express.json())
@@ -223,9 +227,9 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
         );
       });
 
-      it('[ac:ac-get-brief-ma-okno-odczytu-range-i-jaw] ?range narrows the content, and nothing gates it', async () => {
+      it('[ac:ac-get-brief-ma-okno-odczytu-range-i-jaw] ?view=operation&range narrows the content, and nothing gates it', async () => {
         const whole = await request(app).get('/api/artifacts/brief/long.md');
-        const windowed = await request(app).get('/api/artifacts/brief/long.md?range=1:4');
+        const windowed = await request(app).get('/api/artifacts/brief/long.md?view=operation&range=1-4');
 
         expect(windowed.status).toBe(200);
         expect(windowed.body.data.content.split('\n')).toHaveLength(4);
@@ -234,14 +238,14 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
 
       it('the hash stays the WHOLE file’s, so a windowed read still arms expectedHash', async () => {
         const whole = await request(app).get('/api/artifacts/brief/long.md');
-        const windowed = await request(app).get('/api/artifacts/brief/long.md?range=5:6');
+        const windowed = await request(app).get('/api/artifacts/brief/long.md?view=operation&range=5-6');
         // A hash of the window would fail every write made with it, and the
         // value itself would not say which of the two it is.
         expect(windowed.body.data.hash).toBe(whole.body.data.hash);
       });
 
       it('[ac:ac-rodzina-odczytu-artefaktu-wspolna-tak] a range past the end of the file refuses, stating the size', async () => {
-        const res = await request(app).get('/api/artifacts/brief/long.md?range=900:999');
+        const res = await request(app).get('/api/artifacts/brief/long.md?view=operation&range=900-999');
         expect(res.status).toBe(400);
         expect(JSON.stringify(res.body)).toContain('lines');
       });
@@ -267,7 +271,7 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
         // the frontmatter fences.
         const breakLine = whole.body.data.content.split('\n').lastIndexOf('---') + 1;
 
-        const res = await request(app).get(`/api/artifacts/brief/sep.md?range=${breakLine}:${breakLine + 3}`);
+        const res = await request(app).get(`/api/artifacts/brief/sep.md?view=operation&range=${breakLine}-${breakLine + 3}`);
         expect(res.status).toBe(200);
         expect(res.body.data.content.split('\n')[0]).toBe('---');
         // The body is the window itself — no line silently eaten as frontmatter.
@@ -277,11 +281,11 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       it('a malformed ?range is refused rather than ignored', async () => {
         // Ignoring it would answer with the whole file to a caller who asked
         // for a window precisely because the whole file is too much.
-        const res = await request(app).get('/api/artifacts/brief/long.md?range=nonsense');
+        const res = await request(app).get('/api/artifacts/brief/long.md?view=operation&range=nonsense');
         expect(res.status).toBe(400);
       });
 
-      it('omitting ?range returns the whole artifact, as it always did', async () => {
+      it('omitting ?view returns the whole artifact (the editor projection)', async () => {
         const res = await request(app).get('/api/artifacts/brief/long.md');
         expect(res.status).toBe(200);
         expect(res.body.data.content.split('\n').length).toBeGreaterThan(19);
@@ -530,14 +534,14 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
      * off the file).
      */
     describe('brief rows — REST renderings answer with the rows\' codes (2.1.13)', () => {
-      it('[entity:katalog-operacji-m21#get_brief] rest rendering: GET /api/artifacts/brief/<path> — an unknown path is 404 BRIEF_NOT_FOUND, a window past the end 400 INVALID_ARGUMENT', async () => {
+      it('[entity:katalog-operacji-m21#get_brief] rest rendering: GET /api/artifacts/brief/<path>?view=operation — an unknown path is 404 BRIEF_NOT_FOUND, a window past the end 400 INVALID_ARGUMENT', async () => {
         const unknown = await request(app).get('/api/artifacts/brief/no-such-brief.md');
         expect(unknown.status).toBe(404);
         expect(unknown.body.error.code).toBe('BRIEF_NOT_FOUND');
-        const past = await request(app).get('/api/artifacts/brief/v1-to-v2.md?range=900:999');
+        const past = await request(app).get('/api/artifacts/brief/v1-to-v2.md?view=operation&range=900-999');
         expect(past.status).toBe(400);
         expect(past.body.error.code).toBe('INVALID_ARGUMENT');
-        const ok = await request(app).get('/api/artifacts/brief/v1-to-v2.md?range=1:2');
+        const ok = await request(app).get('/api/artifacts/brief/v1-to-v2.md?view=operation&range=1-2');
         expect(ok.status).toBe(200);
         expect(ok.body.data.content.split('\n')).toHaveLength(2);
       });
@@ -790,6 +794,150 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe('IMMUTABLE_FIELD');
+    });
+  });
+
+  /**
+   * 2.1.48 (M36 `r2nekhf5`) — the detail route's two projections, for all three
+   * kinds at once (the route is shared). Every artifact here is LONGER than the
+   * response budget, so "the whole file" is proven by its last line.
+   */
+  describe('the detail route\'s two projections (2.1.48)', () => {
+    const LAST = 'LAST LINE OF THE FILE';
+    const bigBody =
+      Array.from({ length: Math.ceil(DEFAULT_BUDGET_CHARS / 30) }, (_, i) => `${i} ${'x'.repeat(60)}`).join('\n') +
+      `\n${LAST}\n`;
+    const sha256 = (text: string) => crypto.createHash('sha256').update(text, 'utf-8').digest('hex');
+    const KINDS = [
+      { kind: 'brief', file: path.join(briefsDir, 'big.md'), url: '/api/artifacts/brief/big.md' },
+      { kind: 'patch', file: path.join(patchesDir, 'big.md'), url: '/api/artifacts/patch/big.md' },
+      { kind: 'plan', file: path.join(plansDir, 'big-plan.md'), url: '/api/artifacts/plan/big-plan.md' },
+    ] as const;
+    const onDisk = (file: string) => fs.readFile(path.join(cwd, file), 'utf-8');
+
+    beforeEach(async () => {
+      await writeArtifact(
+        'brief',
+        'big.md',
+        { type: 'brief', from_release: null, to_release: null, generated_at: '2026-01-01T00:00:00.000Z', implemented: false },
+        bigBody,
+      );
+      await writeArtifact('patch', 'big.md', { type: 'patch', patch_kind: 'drift', brief: 'big.md', applied: false }, bigBody);
+      const made = await plans.create({ title: 'Big Plan', content: bigBody, changedBy: 'agent' });
+      expect(made.planPath).toBe('big-plan.md');
+    });
+
+    it('[entity:get-api-artifacts-kind-path] GET /api/artifacts/:kind/:path — default projection: the whole ArtifactResponse with no budget, window or truncated; view=operation: the get_<kind> payload with the line window and the budget; an unknown view or a range without view=operation is 400 INVALID_ARGUMENT', async () => {
+      for (const { kind, file, url } of KINDS) {
+        const bytes = await onDisk(file);
+        expect(bytes.length, kind).toBeGreaterThan(DEFAULT_BUDGET_CHARS);
+
+        // Default projection: { data: ArtifactResponse } — path, frontmatter, body, content, hash.
+        const editor = await request(app).get(url);
+        expect(editor.status, kind).toBe(200);
+        expect(Object.keys(editor.body.data).sort(), kind).toEqual(['body', 'content', 'frontmatter', 'hash', 'path']);
+        expect(typeof editor.body.data.path, kind).toBe('string');
+        expect(typeof editor.body.data.frontmatter, kind).toBe('object');
+        expect(editor.body.data.content, kind).toBe(bytes);
+        expect(editor.body.data.body, kind).toContain(LAST);
+        expect(editor.body.data.hash, kind).toBe(sha256(bytes));
+
+        // Operation projection: the same fields, cut at the budget and flagged.
+        const op = await request(app).get(`${url}?view=operation`);
+        expect(op.status, kind).toBe(200);
+        expect(Object.keys(op.body.data).sort(), kind).toEqual(
+          ['body', 'content', 'frontmatter', 'hash', 'path', 'truncated', 'truncationHint'],
+        );
+        expect(op.body.data.truncated, kind).toBe(true);
+        expect(op.body.data.hash, kind).toBe(sha256(bytes));
+        const windowed = await request(app).get(`${url}?view=operation&range=2-4`);
+        expect(windowed.status, kind).toBe(200);
+        expect(windowed.body.data.content, kind).toBe(bytes.split('\n').slice(1, 4).join('\n'));
+
+        // The refusals.
+        for (const bad of [`${url}?view=raw`, `${url}?range=1-4`]) {
+          const res = await request(app).get(bad);
+          expect(res.status, `${kind} ${bad}`).toBe(400);
+          expect(res.body.error.code, `${kind} ${bad}`).toBe('INVALID_ARGUMENT');
+        }
+      }
+    });
+
+    it('[ac:ac-get-api-artifacts-kind-path-bez-view] without view an artifact longer than the response budget comes back whole, its last line included', async () => {
+      for (const { kind, file, url } of KINDS) {
+        const bytes = await onDisk(file);
+        const res = await request(app).get(url);
+        expect(res.status, kind).toBe(200);
+        expect(res.body.data.content.length, kind).toBeGreaterThan(DEFAULT_BUDGET_CHARS);
+        expect(res.body.data.content.trimEnd().split('\n').at(-1), kind).toBe(LAST);
+        expect(res.body.data.content, kind).toBe(bytes);
+        expect(res.body.data.truncated, kind).toBeUndefined();
+        expect(res.body.data.truncationHint, kind).toBeUndefined();
+      }
+    });
+
+    it('[ac:ac-get-api-artifacts-kind-path-view-oper] view=operation for an artifact longer than the response budget answers truncated: true', async () => {
+      for (const { kind, file, url } of KINDS) {
+        const bytes = await onDisk(file);
+        const res = await request(app).get(`${url}?view=operation`);
+        expect(res.status, kind).toBe(200);
+        expect(res.body.data.truncated, kind).toBe(true);
+        expect(res.body.data.content.length, kind).toBeLessThan(bytes.length);
+        expect(res.body.data.content, kind).not.toContain(LAST);
+      }
+    });
+
+    it('[ac:ac-get-api-artifacts-kind-path-z-range-a] range without view=operation is a 400 whose message points at view=operation', async () => {
+      for (const { kind, url } of KINDS) {
+        for (const range of ['1-10', '1:10', '']) {
+          const res = await request(app).get(`${url}?range=${range}`);
+          expect(res.status, `${kind} range=${range}`).toBe(400);
+          expect(res.body.error.code, `${kind} range=${range}`).toBe('INVALID_ARGUMENT');
+          expect(res.body.error.message, `${kind} range=${range}`).toContain('view=operation');
+        }
+      }
+    });
+
+    it('[ac:ac-get-api-artifacts-kind-path-z-wartosc] a view other than operation is a 400, never a silent default projection', async () => {
+      for (const { kind, url } of KINDS) {
+        for (const view of ['editor', 'OPERATION', '', 'operation&view=operation']) {
+          const res = await request(app).get(`${url}?view=${view}`);
+          expect(res.status, `${kind} view=${view}`).toBe(400);
+          expect(res.body.error.code, `${kind} view=${view}`).toBe('INVALID_ARGUMENT');
+          expect(res.body.error.message, `${kind} view=${view}`).toContain('view=operation');
+          expect(res.body.data, `${kind} view=${view}`).toBeUndefined();
+        }
+      }
+    });
+
+    it('[ac:ac-hash-z-view-operation-z-oknem-range-j] the hash of view=operation with a range window equals the default projection\'s hash of the same file', async () => {
+      for (const { kind, url } of KINDS) {
+        const whole = await request(app).get(url);
+        const windowed = await request(app).get(`${url}?view=operation&range=3-7`);
+        expect(windowed.status, kind).toBe(200);
+        expect(windowed.body.data.content.split('\n'), kind).toHaveLength(5);
+        expect(windowed.body.data.hash, kind).toBe(whole.body.data.hash);
+        // The cut read (no window) carries the same whole-file hash too.
+        const cut = await request(app).get(`${url}?view=operation`);
+        expect(cut.body.data.hash, kind).toBe(whole.body.data.hash);
+      }
+    });
+
+    it('[ac:ac-truncationhint-z-view-operation-wskaz] the truncationHint of view=operation proposes a retry with range under the same view=operation, and that retry is served', async () => {
+      for (const { kind, file, url } of KINDS) {
+        const lines = (await onDisk(file)).split('\n');
+        const cut = await request(app).get(`${url}?view=operation`);
+        expect(cut.body.data.truncated, kind).toBe(true);
+        const hint: string = cut.body.data.truncationHint;
+        expect(hint, kind).toContain('?view=operation&range=');
+        // Not the tool channel's spelling — that call does not exist on this route.
+        expect(hint, kind).not.toContain('range: {');
+        const m = /\?view=operation&range=(\d+)-(\d+)/.exec(hint);
+        expect(m, kind).not.toBeNull();
+        const retry = await request(app).get(`${url}?view=operation&range=${m![1]}-${m![2]}`);
+        expect(retry.status, kind).toBe(200);
+        expect(retry.body.data.content.split('\n')[0], kind).toBe(lines[Number(m![1]) - 1]);
+      }
     });
   });
 });

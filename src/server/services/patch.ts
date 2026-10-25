@@ -34,7 +34,7 @@ import type { FileSerializer } from './file-serializer.js';
 import type { ChatService } from './chat.js';
 import type { PagesFrontmatterIndexer } from './pages-frontmatter-indexer.js';
 import { DomainError } from './tags.js';
-import { readArtifactWindow, windowBody, type ArtifactRange } from './artifact-read.js';
+import { readArtifactWindow, windowBody, type ArtifactRange, type ArtifactReadChannel } from './artifact-read.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 import { ConflictError } from './brief.js';
 
@@ -167,7 +167,10 @@ export class PatchService {
    *
    * `hash` stays the digest of the whole file — see `readArtifactWindow`.
    */
-  async getPatch(relPath: string, opts?: { range?: ArtifactRange; full?: boolean }): Promise<PatchDetail> {
+  async getPatch(
+    relPath: string,
+    opts?: { range?: ArtifactRange; full?: boolean; channel?: ArtifactReadChannel },
+  ): Promise<PatchDetail> {
     if (!(await this.deps.patchesPages.exists(relPath))) {
       // 2.1.4 (M23): the named wire code of the patch family, not a bare NOT_FOUND.
       throw new DomainError('PATCH_NOT_FOUND', `patch '${relPath}' not found`);
@@ -198,7 +201,7 @@ export class PatchService {
     const windowed = readArtifactWindow(
       content,
       opts?.range,
-      { kind: 'patch', path: relPath },
+      { kind: 'patch', path: relPath, channel: opts?.channel },
       Math.floor(DEFAULT_BUDGET_CHARS / 2),
     );
     const body =

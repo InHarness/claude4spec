@@ -774,7 +774,8 @@ export function registerCoreOperations(): void {
    */
   registerRow({
     name: 'get_patch',
-    summary: 'Read a patch: path, frontmatter (patch_kind, applied, brief), markdown content and sha256 hash.',
+    summary:
+      'Read a patch: path, frontmatter (patch_kind, applied, brief), markdown content and sha256 hash, optionally through a 1-based inclusive line window (`range`). A patch over the response budget comes back `truncated: true` with a `truncationHint` pointing at `range`.',
     scope: 'project',
     mediation: 'direct',
     opClass: 'read',
@@ -796,7 +797,9 @@ export function registerCoreOperations(): void {
     idempotent: true,
     channels: {
       internal: direct(),
-      // 2.1.26 — the record's `powody`, verbatim. `rest` is GET /api/artifacts/patch/:path.
+      // 2.1.26 — the record's `powody`, verbatim. 2.1.48: `rest` is direct, rendered
+      // by the artifact detail route with `view=operation`
+      // (GET /api/artifacts/patch/<path>?view=operation) — no reason, no `via`.
       cli: na('żadna komenda `c4s` nie renderuje jeszcze odczytu patcha'),
       mcp: na('odczyt patcha istnieje dla wątku, który ten patch stosuje; kanał `mcp` nie ma wątku zakotwiczonego w patchu'),
       rest: direct(),
@@ -1518,6 +1521,8 @@ export function registerCoreOperations(): void {
    * `list_plan_versions`, `get_plan_version`.
    */
   const PLAN_NO_CLI = 'jedynym realnym wołającym jest agent w wątku albo użytkownik w UI, nie człowiek w terminalu';
+  /** 2.1.48 — the `get-plan` record's own `powody.cli` (the UI reads the detail route's editor projection, not this operation). */
+  const GET_PLAN_NO_CLI = 'jedynym realnym wołającym jest agent w wątku, nie człowiek w terminalu';
   /** Both mounts of `plan-tools` render the operation under its own name. */
   const planRenderings = (tool: string) => ({ internal: [`plan-tools.${tool}`], mcp: [`plan-tools.${tool}`] });
 
@@ -1548,7 +1553,7 @@ export function registerCoreOperations(): void {
     idempotent: true,
     channels: {
       internal: direct(),
-      cli: na(PLAN_NO_CLI),
+      cli: na(GET_PLAN_NO_CLI),
       mcp: direct(),
       rest: direct(),
     },
@@ -2004,7 +2009,8 @@ export function registerCoreOperations(): void {
 
   registerRow({
     name: 'get_brief',
-    summary: 'Read a brief: frontmatter and body.',
+    summary:
+      'Read a brief: frontmatter, body and hash, optionally through a 1-based inclusive line window (`range`). A brief over the response budget comes back `truncated: true` with a `truncationHint` pointing at `range`.',
     scope: 'project',
     mediation: 'direct',
     opClass: 'brief',

@@ -298,7 +298,7 @@ describe('patch-tools (thread-bound)', () => {
     await expect(createPatch(deps, { ...input, patchKind: 'typo' }, 'rest')).rejects.toMatchObject({ code: 'VALIDATION' });
   });
 
-  it('[entity:get-patch] get_patch as its record declares it: project, direct, internal direct, cli/mcp n/a and rest direct with the record\'s reasons, no effects, idempotent, `path` + window `range`, codes PATCH_NOT_FOUND, INVALID_ARGUMENT, PATCH_INVALID_FRONTMATTER, rendered by patch-tools · get_patch (internal) — content, frontmatter and hash; an unknown path PATCH_NOT_FOUND, a window past the end INVALID_ARGUMENT, a non-patch file PATCH_INVALID_FRONTMATTER', async () => {
+  it('[entity:get-patch] get_patch as its record declares it: project, direct, internal direct, cli/mcp n/a and rest direct with the record\'s reasons, no effects, idempotent, `path` + window `range`, codes PATCH_NOT_FOUND, INVALID_ARGUMENT, PATCH_INVALID_FRONTMATTER, rendered by patch-tools · get_patch (internal) — content, frontmatter and hash; an unknown path PATCH_NOT_FOUND, a window past the end INVALID_ARGUMENT, a non-patch file PATCH_INVALID_FRONTMATTER, content over the response budget truncated: true with a truncationHint pointing at the line window', async () => {
     const op = expectPatchOperationRecord({
       nazwa: 'get_patch',
       channels: {
@@ -334,6 +334,16 @@ describe('patch-tools (thread-bound)', () => {
     const invalid = await call('get_patch', { path: 'plan-like.md' });
     expect(invalid.isError).toBe(true);
     expect(invalid.raw.error?.code ?? invalid.raw.code).toBe('PATCH_INVALID_FRONTMATTER');
+
+    // 2.1.48 — content over the response budget comes back cut, flagged
+    // `truncated: true`, with a `truncationHint` pointing at the line window.
+    const big = Array.from({ length: 20000 }, (_, i) => `line ${i} ${'x'.repeat(20)}`).join('\n') + '\nLAST LINE';
+    await fs.writeFile(path.join(cwd, 'patches', 'big-record.md'), patchFile(false, big), 'utf-8');
+    const cut = await call('get_patch', { path: 'big-record.md' });
+    expect(cut.isError).toBe(false);
+    expect(cut.body.truncated).toBe(true);
+    expect(cut.body.truncationHint).toMatch(/range: \{ start: \d+, end: \d+ \}/);
+    expect(cut.body.content).not.toContain('LAST LINE');
   });
 
   it('[entity:mark-patch-applied] mark_patch_applied as its record declares it: project, direct, internal direct, cli/mcp n/a and rest direct with the record\'s reasons, file+db+ui-notify, idempotent, no content, addressed by `path`, codes PATCH_NOT_FOUND, INVALID_ARGUMENT, PATCH_INVALID_FRONTMATTER, rendered by patch-tools · mark_patch_applied (internal) — frontmatter only, through version capture, a repeat a no-op, an unknown path PATCH_NOT_FOUND, `false` INVALID_ARGUMENT, a non-patch file PATCH_INVALID_FRONTMATTER', async () => {

@@ -1,5 +1,5 @@
 {
- "iteration": 0,
+ "iteration": 4,
  "conventions": [
   {
    "label": "L3 (Spec Operations) — implementor M43 — role of the layer",
@@ -38,7 +38,7 @@
    "units": [
     "m36-artifact-detail-projections"
    ],
-   "startCommit": null
+   "startCommit": "b25759f7ef46ecdf408dce6f94a9529827afa3a4"
   },
   {
    "n": 2,
@@ -112,13 +112,38 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "pending",
-   "portions": [],
-   "startCommit": null,
-   "baseCommit": null,
+   "status": "verified",
+   "portions": [
+    {
+     "name": "m36-artifact-detail-projections/p1-l3-l4",
+     "layers": [
+      "L3",
+      "L4"
+     ],
+     "slugs": [
+      "get-api-artifacts-kind-path",
+      "get-brief",
+      "get-patch",
+      "get-plan",
+      "ac-get-api-artifacts-kind-path-bez-view",
+      "ac-get-api-artifacts-kind-path-view-oper",
+      "ac-get-api-artifacts-kind-path-z-range-a",
+      "ac-get-api-artifacts-kind-path-z-wartosc",
+      "ac-hash-z-view-operation-z-oknem-range-j",
+      "ac-truncationhint-z-view-operation-wskaz"
+     ],
+     "status": "implemented",
+     "rounds": 1,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
+   "startCommit": "b25759f7ef46ecdf408dce6f94a9529827afa3a4",
+   "baseCommit": "b25759f7ef46ecdf408dce6f94a9529827afa3a4",
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 1
    },
    "jobs": []
   },
@@ -358,5 +383,6 @@
     }
    ]
   }
- ]
+ ],
+ "baselineGreen": true
 }

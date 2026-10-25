@@ -46,7 +46,16 @@ import type { FileSerializer } from './file-serializer.js';
 import type { ChatService } from './chat.js';
 import type { PagesFrontmatterIndexer } from './pages-frontmatter-indexer.js';
 import { DomainError } from './tags.js';
-import { readArtifactWindow, windowBody, type ArtifactRange } from './artifact-read.js';
+import { readArtifactWindow, windowBody, type ArtifactRange, type ArtifactReadChannel } from './artifact-read.js';
+
+/** How a plan is read: a window + the budget (default), or the whole file (`full`). */
+export interface PlanReadOpts {
+  range?: ArtifactRange;
+  /** The whole file: no window, no budget, never `truncated`. */
+  full?: boolean;
+  /** The rendering the budget's `truncationHint` is written for. */
+  channel?: ArtifactReadChannel;
+}
 import { bindingAddress } from './artifact-registry.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 import { ConflictError } from './brief.js';
@@ -293,12 +302,25 @@ export class PlanService {
    *
    * `hash` stays the digest of the whole file — see `readArtifactWindow`.
    */
-  async getByPath(planPath: string, opts?: { range?: ArtifactRange }): Promise<Plan> {
+  async getByPath(planPath: string, opts?: PlanReadOpts): Promise<Plan> {
     const { raw, parsed, frontmatter } = await this.loadFile(planPath);
+    const meta = {
+      currentVersion: this.currentVersionFor(planPath),
+      createdAt: toIso(frontmatter.created_at),
+      updatedAt:
+        this.deps.pageVersions.getLatestForPath(planPath, undefined, this.rootId)?.createdAt ??
+        toIso(frontmatter.created_at),
+    };
+    // `full` — the whole file, no window, no budget: every write path (see
+    // {@link readForWrite}) and the editor's default projection of the detail
+    // route (2.1.48, M36 `r2nekhf5`).
+    if (opts?.full === true) {
+      return { path: planPath, frontmatter, body: parsed.content, content: raw, hash: hashContent(raw), ...meta };
+    }
     const windowed = readArtifactWindow(
       raw,
       opts?.range,
-      { kind: 'plan', path: planPath },
+      { kind: 'plan', path: planPath, channel: opts?.channel },
       Math.floor(DEFAULT_BUDGET_CHARS / 2),
     );
     return {
@@ -313,9 +335,7 @@ export class PlanService {
       ...(windowed.truncated
         ? { truncated: windowed.truncated, truncationHint: windowed.truncationHint }
         : {}),
-      currentVersion: this.currentVersionFor(planPath),
-      createdAt: toIso(frontmatter.created_at),
-      updatedAt: this.deps.pageVersions.getLatestForPath(planPath, undefined, this.rootId)?.createdAt ?? toIso(frontmatter.created_at),
+      ...meta,
     };
   }
 
@@ -326,7 +346,7 @@ export class PlanService {
    * unknown `path`, and only for that. A thread with nothing pinned is not an
    * unknown address (see {@link getByThread}: `null`).
    */
-  async getByAddress(planPath: string, opts?: { range?: ArtifactRange }): Promise<Plan> {
+  async getByAddress(planPath: string, opts?: PlanReadOpts): Promise<Plan> {
     await this.assertAddressedPlan(planPath);
     return this.getByPath(planPath, opts);
   }
@@ -344,21 +364,10 @@ export class PlanService {
    * make partial writes the normal path, so this is not a corner: every path
    * that composes new bytes from the old ones reads through here.
    */
-  private async readForWrite(planPath: string): Promise<Plan> {
-    const { raw, parsed, frontmatter } = await this.loadFile(planPath);
-    return {
-      path: planPath,
-      frontmatter,
-      body: parsed.content,
-      content: raw,
-      hash: hashContent(raw),
-      currentVersion: this.currentVersionFor(planPath),
-      createdAt: toIso(frontmatter.created_at),
-      updatedAt:
-        this.deps.pageVersions.getLatestForPath(planPath, undefined, this.rootId)?.createdAt ??
-        toIso(frontmatter.created_at),
-    };
+  private readForWrite(planPath: string): Promise<Plan> {
+    return this.getByPath(planPath, { full: true });
   }
+
 
   /**
    * "Is this path a real, well-formed plan?" — the check for a caller that binds
