@@ -60,7 +60,10 @@ const ANALYSE_PLAN_PROMPT = 'Analyse the plan 3 times';
 type PlanView = 'plan' | 'threads' | 'history';
 
 export function PlanPage({ planPath }: Props) {
-  const { data: plan, isLoading } = usePlan(planPath);
+  // 2.1.48 (M36 `r2nekhf5`): the detail route's default projection — the WHOLE
+  // plan file whatever its length, no budget, no window, no `truncated`. Save
+  // replaces the whole file, so anything less would write a cut copy back.
+  const { data: plan, isLoading, refetch: refetchPlan } = usePlan(planPath);
   const savePlan = useSavePlan();
   const createThread = useCreateThreadFromPlan();
   const updateTitle = useUpdatePlanTitle();
@@ -86,6 +89,10 @@ export function PlanPage({ planPath }: Props) {
   useUnsavedEditsSource(() => dirtyContent !== null && dirtyContent !== plan?.body);
   const [view, setView] = useState<PlanView>('plan');
   const [error, setError] = useState<string | null>(null);
+  // 2.1.48 (M02 `m02octconc`): a `409 PLAN_CONFLICT` on Save — the file changed
+  // on disk since the edit began. An inline banner whose only action is
+  // "Reload"; there is no "Override" and nothing is written.
+  const [conflict, setConflict] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
 
@@ -127,7 +134,21 @@ export function PlanPage({ planPath }: Props) {
     baseHashRef.current = null;
     setDirtyContent(null);
     setError(null);
+    setConflict(false);
   }, []);
+  /** The conflict banner's "Reload": the latest file from disk replaces the buffer. */
+  const handleReload = useCallback(async () => {
+    const reloaded = await refetchPlan();
+    if (reloaded.isError) {
+      // The buffer stays: without the latest copy there is nothing to replace it with.
+      setError(reloaded.error instanceof Error ? reloaded.error.message : String(reloaded.error));
+      return;
+    }
+    baseHashRef.current = null;
+    setDirtyContent(null);
+    setError(null);
+    setConflict(false);
+  }, [refetchPlan]);
 
   const handleSave = useCallback(async () => {
     if (!plan || dirtyContent === null) return;
@@ -144,11 +165,12 @@ export function PlanPage({ planPath }: Props) {
       baseHashRef.current = null;
       setDirtyContent(null);
       setError(null);
+      setConflict(false);
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
-        setError(
-          'The plan changed since you started editing — discard your changes to load the latest version.',
-        );
+      if (err instanceof ApiError && err.code === 'PLAN_CONFLICT') {
+        // The banner is the only message: an earlier failure's text goes.
+        setError(null);
+        setConflict(true);
         return;
       }
       setError(err instanceof Error ? err.message : String(err));
@@ -341,6 +363,28 @@ export function PlanPage({ planPath }: Props) {
           </ButtonGroup>
         )}
       </header>
+
+      {conflict ? (
+        <div
+          role="alert"
+          data-testid="plan-conflict-banner"
+          className="px-5 py-2 text-[12px] flex items-center justify-between"
+          style={{
+            background: 'rgba(179, 58, 58, 0.08)',
+            color: '#b33a3a',
+            borderBottom: '1px solid var(--c-hair)',
+          }}
+        >
+          <span>Plan was modified elsewhere. Reload to see the latest content.</span>
+          <button
+            onClick={() => void handleReload()}
+            className="px-2 py-0.5 rounded text-[11.5px]"
+            style={{ background: '#b33a3a', color: '#fff' }}
+          >
+            Reload
+          </button>
+        </div>
+      ) : null}
 
       {error ? (
         <div

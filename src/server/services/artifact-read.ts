@@ -28,6 +28,30 @@ export interface ArtifactRange {
   end: number;
 }
 
+/**
+ * 2.1.48 (M36 `r2nekhf5`) — which rendering of `get_<kind>` a hint is written
+ * for. The window is the same in every channel; its SPELLING is not: a tool
+ * caller passes `range: { start, end }`, the `rest` rendering (the detail
+ * route's `view=operation` projection) retries with `?view=operation&range=a-b`.
+ * A hint in the other channel's spelling would propose a call this channel
+ * cannot make (`n9qp5ja7`).
+ */
+export type ArtifactReadChannel = 'tool' | 'rest';
+
+export interface ArtifactReadContext {
+  kind: ArtifactKind;
+  path: string;
+  /** Omitted = `tool`. */
+  channel?: ArtifactReadChannel;
+}
+
+/** The window `{ start, end }` written the way the caller's channel passes it. */
+function rangeSpelling(channel: ArtifactReadChannel | undefined, start: number, end: number): string {
+  return channel === 'rest'
+    ? `?view=operation&range=${start}-${end}`
+    : `range: { start: ${start}, end: ${end} }`;
+}
+
 export interface ArtifactWindowResult {
   content: string;
   truncated?: true;
@@ -58,7 +82,7 @@ export const ARTIFACT_FAMILY_ERROR_CODES = ['IMMUTABLE_FIELD', 'INVALID_ARGUMENT
 export function applyArtifactRange(
   content: string,
   range: ArtifactRange | undefined,
-  ctx: { kind: ArtifactKind; path: string },
+  ctx: ArtifactReadContext,
 ): string {
   if (!range) return content;
   const { start, end } = range;
@@ -67,14 +91,14 @@ export function applyArtifactRange(
     throw new DomainError(
       'INVALID_ARGUMENT',
       `invalid range { start: ${String(start)}, end: ${String(end)} } for ${ctx.kind} '${ctx.path}'`,
-      'range is 1-based and inclusive: { start: 1, end: 200 }',
+      `the window is 1-based and inclusive: ${rangeSpelling(ctx.channel, 1, 200)}`,
     );
   }
   if (start > lines.length) {
     throw new DomainError(
       'INVALID_ARGUMENT',
       `range starts at line ${start} but ${ctx.kind} '${ctx.path}' has ${lines.length} lines`,
-      `read the tail with range: { start: ${Math.max(lines.length - 199, 1)}, end: ${lines.length} }`,
+      `read the tail with ${rangeSpelling(ctx.channel, Math.max(lines.length - 199, 1), lines.length)}`,
     );
   }
   return lines.slice(start - 1, end).join('\n');
@@ -89,14 +113,14 @@ export function applyArtifactRange(
  */
 export function budgetArtifactContent(
   content: string,
-  ctx: { kind: ArtifactKind; path: string },
+  ctx: ArtifactReadContext,
   budgetChars = DEFAULT_BUDGET_CHARS,
 ): ArtifactWindowResult {
   const lineCount = content.split('\n').length;
   const budgeted = truncateText(
     content,
     `${ctx.kind} '${ctx.path}' was truncated by the response budget — read it in windows with ` +
-      `range: { start: 1, end: 400 } and advance (the file has ${lineCount} lines).`,
+      `${rangeSpelling(ctx.channel, 1, 400)} and advance (the file has ${lineCount} lines).`,
     budgetChars,
   );
   if (!budgeted.truncated) return { content: budgeted.text };
@@ -112,7 +136,7 @@ export function budgetArtifactContent(
 export function readArtifactWindow(
   content: string,
   range: ArtifactRange | undefined,
-  ctx: { kind: ArtifactKind; path: string },
+  ctx: ArtifactReadContext,
   budgetChars = DEFAULT_BUDGET_CHARS,
 ): ArtifactWindowResult {
   return budgetArtifactContent(applyArtifactRange(content, range, ctx), ctx, budgetChars);

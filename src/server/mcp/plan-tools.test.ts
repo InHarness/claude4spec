@@ -936,6 +936,8 @@ describe('plan-tools — M10 thread isolation, the plan tools and the plan opera
   type Cell = { kind: 'direct' } | { kind: 'na'; reason: string };
   const D: Cell = { kind: 'direct' };
   const PLAN_NO_CLI: Cell = { kind: 'na', reason: 'jedynym realnym wołającym jest agent w wątku albo użytkownik w UI, nie człowiek w terminalu' };
+  /** 2.1.48 — the `get-plan` record's own reason. */
+  const GET_PLAN_NO_CLI: Cell = { kind: 'na', reason: 'jedynym realnym wołającym jest agent w wątku, nie człowiek w terminalu' };
 
   function expectOperationRecord(record: {
     nazwa: string;
@@ -995,10 +997,10 @@ describe('plan-tools — M10 thread isolation, the plan tools and the plan opera
     expect(db.prepare(`SELECT COUNT(*) AS n FROM chat_message`).get()).toEqual({ n: 0 });
   });
 
-  it('[entity:get-plan] get_plan as its record declares it: project, direct, internal/mcp/rest direct, cli n/a with the record\'s reason, no effects, idempotent, `path` + window `range`, codes PLAN_NOT_FOUND, INVALID_ARGUMENT, NOT_FOUND, PLAN_INVALID_FRONTMATTER, rendered by plan-tools · get_plan (internal thread mount, mcp explicit) — an unknown explicit path PLAN_NOT_FOUND, a pinned file that is gone NOT_FOUND, a non-plan PLAN_INVALID_FRONTMATTER, a window past the end INVALID_ARGUMENT', async () => {
+  it('[entity:get-plan] get_plan as its record declares it: project, direct, internal/mcp/rest direct, cli n/a with the record\'s reason, no effects, idempotent, `path` + window `range`, codes PLAN_NOT_FOUND, INVALID_ARGUMENT, NOT_FOUND, PLAN_INVALID_FRONTMATTER, rendered by plan-tools · get_plan (internal thread mount, mcp explicit) — an unknown explicit path PLAN_NOT_FOUND, a pinned file that is gone NOT_FOUND, a non-plan PLAN_INVALID_FRONTMATTER, a window past the end INVALID_ARGUMENT, content over the response budget truncated: true with a truncationHint pointing at the line window', async () => {
     const op = expectOperationRecord({
       nazwa: 'get_plan',
-      channels: { internal: D, cli: PLAN_NO_CLI, mcp: D, rest: D },
+      channels: { internal: D, cli: GET_PLAN_NO_CLI, mcp: D, rest: D },
       efekty: ['none'],
       idempotencja: true,
       opisTresci: undefined,
@@ -1020,6 +1022,16 @@ describe('plan-tools — M10 thread isolation, the plan tools and the plan opera
     await expect(service.getByThread('t-1')).rejects.toMatchObject({ code: 'PLAN_INVALID_FRONTMATTER' });
     pinT1To('gone.md');
     await expect(service.getByThread('t-1')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+
+    // 2.1.48 — content over the response budget comes back cut, flagged
+    // `truncated: true`, with a `truncationHint` pointing at the line window.
+    const big = Array.from({ length: Math.ceil(DEFAULT_BUDGET_CHARS / 30) }, (_, i) => `${i} ${'x'.repeat(60)}`).join('\n');
+    const bigPlan = await service.create({ title: 'Big Read Plan', content: `${big}\nLAST LINE\n`, changedBy: 'agent' });
+    const cut = await call(external, 'get_plan', { path: bigPlan.planPath });
+    expect(cut.isError).toBe(false);
+    expect(cut.body.plan.truncated).toBe(true);
+    expect(cut.body.plan.truncationHint).toMatch(/range: \{ start: \d+, end: \d+ \}/);
+    expect(cut.body.plan.content).not.toContain('LAST LINE');
   });
 
   it('[entity:update-plan] update_plan as its record declares it: project, direct, internal/mcp/rest direct, cli n/a with the record\'s reason, file+db+ui-notify, conditionally idempotent, content both ways, a required guard, its thirteen codes, rendered by plan-tools · update_plan (internal thread mount, mcp explicit) — the guard over the whole plan, PLAN_CONFLICT for a stale hash, PLAN_NOT_FOUND for an unknown explicit path, SECTION_NOT_FOUND / FIND_NOT_FOUND / MATCH_COUNT_MISMATCH in the batch and the substitutions, `content` idempotent by content while `append` is not', async () => {

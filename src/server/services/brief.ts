@@ -32,7 +32,7 @@ import type { ChatService } from './chat.js';
 import type { ReleaseService } from './release.js';
 import type { PagesFrontmatterIndexer } from './pages-frontmatter-indexer.js';
 import { DomainError } from './tags.js';
-import { readArtifactWindow, windowBody, type ArtifactRange } from './artifact-read.js';
+import { readArtifactWindow, windowBody, type ArtifactRange, type ArtifactReadChannel } from './artifact-read.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 import { compareBriefsByReleaseAxis } from '../../core/briefs/release-axis.js';
 
@@ -236,7 +236,10 @@ export class BriefService {
    * frontmatter removed. That duplication predates this window; halving the
    * budget is what keeps the envelope inside it anyway.
    */
-  async getBrief(path: string, opts?: { range?: ArtifactRange; full?: boolean }): Promise<Brief> {
+  async getBrief(
+    path: string,
+    opts?: { range?: ArtifactRange; full?: boolean; channel?: ArtifactReadChannel },
+  ): Promise<Brief> {
     await this.assertBriefExists(path);
     const abs = this.absPath(path);
     const content = await fs.readFile(abs, 'utf-8');
@@ -268,7 +271,7 @@ export class BriefService {
     const windowed = readArtifactWindow(
       content,
       opts?.range,
-      { kind: 'brief', path },
+      { kind: 'brief', path, channel: opts?.channel },
       Math.floor(DEFAULT_BUDGET_CHARS / 2),
     );
     if (windowed.content === content) {

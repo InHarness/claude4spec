@@ -258,8 +258,10 @@ Brief/patch (M11 — server-delegating, like every read above):
                                     runs. The window always ends at the current state, so --to
                                     and --roots are refused. Prints briefPath + hash
   list-briefs [--limit N] [--offset M] [--status implemented|pending]
-  get-brief <brief-path> [--range <from>:<to>]
-                                    <brief-path> relative to the briefs root (.claude4spec/briefs); --range is a 1-based inclusive line window
+  get-brief <brief-path> [--range <start>-<end>]
+                                    <brief-path> relative to the briefs root (.claude4spec/briefs); --range is a 1-based
+                                    inclusive line window, sent as written — the server judges it. A cut answer carries
+                                    truncated + truncationHint, the hint a runnable get-brief call with --range
   create-patch --brief <brief-path> --desc <s> [--kind drift|missing|incorrect|clarification]
              [--body-file <f>]      body from --body-file or stdin; the SERVER writes the
                                     file under the patches root and mints its slug

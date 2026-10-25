@@ -12,6 +12,7 @@ import { artifactVersionsKey } from './useArtifactVersions.js';
 import { reloadFrontendPlugins } from '../runtime/boot-plugins.js';
 import { entityChangeKeys, tagChangeKeys } from '../lib/entity-invalidation.js';
 import { releaseDiffInvalidationFor, shadowDiffInvalidationFor } from '../lib/release-diff-invalidation.js';
+import { absorbOwnEcho, resetOwnWrites } from '../lib/own-writes.js';
 
 /**
  * M33 phase 3: window event dispatched once a plugin reload has re-pinned the
@@ -39,7 +40,11 @@ export function useFileWatcher() {
       ws = new WebSocket(url);
       ws.onopen = () => {
         // 2.1.47: frames broadcast while the socket was down are gone.
-        if (opened) handleLiveUpdateReconnected();
+        if (opened) {
+          handleLiveUpdateReconnected();
+          // 2.1.48: an own save's echo may have been among the lost frames.
+          resetOwnWrites();
+        }
         opened = true;
       };
       ws.onmessage = (e) => {
@@ -76,6 +81,10 @@ export function useFileWatcher() {
               batcher.queue(['plan', 'detail', data.path]);
               batcher.queue(artifactVersionsKey('plan', data.path));
             } else if (systemKind === 'patches') {
+              // 2.1.48: never an own save's echo — the record store writes a
+              // patch with `chain: false` under its suppress token, so this is
+              // another writer (an agent's tool, a chain-running service) and
+              // the open detail must refresh (see `lib/own-writes.ts`).
               batcher.queue(['patches', 'list']);
               batcher.queue(['patches', 'detail', data.path]);
             } else if (systemKind === 'releases') {
@@ -129,11 +138,22 @@ export function useFileWatcher() {
              * below is a cache keyed by thread, so it is refreshed only when the
              * event actually names one.
              */
-            batcher.queue(['plan', 'detail', data.planPath]);
-            batcher.queue(artifactVersionsKey('plan', data.planPath));
+            /*
+             * 2.1.48: the plan editor's own Save broadcasts this event with
+             * `threadId: null`. Its mutation owns every key that save moves: it
+             * wrote the whole-file detail cache and invalidates the versions,
+             * the plans list and the by-thread cache itself — so the absorbed
+             * echo queues nothing (`lib/own-writes.ts`). An event naming a
+             * thread is an agent's write and is never offered to the ledger.
+             */
+            const ownEcho = data.threadId === null && absorbOwnEcho('plans', data.planPath);
+            if (!ownEcho) {
+              batcher.queue(['plan', 'detail', data.planPath]);
+              batcher.queue(artifactVersionsKey('plan', data.planPath));
+              batcher.queue(['plans-list']);
+              batcher.queue(['threads']);
+            }
             if (data.threadId) batcher.queue(['plan', 'by-thread', data.threadId]);
-            batcher.queue(['plans-list']);
-            batcher.queue(['threads']);
           } else if (data.kind === 'index:status-changed') {
             /**
              * 0.2.77 — a projection changed freshness, in either direction.
@@ -168,8 +188,11 @@ export function useFileWatcher() {
                 // Agent / on-disk edit — route through externalChange so the open
                 // BriefEditor can reload (clean) or confirm (dirty), like pages.
                 useFileEventsStore.getState().notifyBriefExternalChange(data.path);
-              } else {
-                // Our own save (origin 'server' / undefined) — silently reconcile.
+              } else if (!absorbOwnEcho('briefs', data.path)) {
+                // Another non-external writer (another tab, a server write) —
+                // silently reconcile. 2.1.48: the echo of THIS tab's save is
+                // absorbed — its mutation already wrote the whole-file detail
+                // cache, and a refetch would re-download it (`lib/own-writes.ts`).
                 batcher.queue(['briefs', 'detail', data.path]);
               }
             }
@@ -178,8 +201,11 @@ export function useFileWatcher() {
             // (`mark_patch_applied`). The frontmatter projection broadcasts this
             // on every real change, so an open `/patches/:path` refreshes instead
             // of showing the old flag until something else refetches.
+            // 2.1.48: except the echo of THIS tab's own `applied` flip — its
+            // mutation already refetches the detail (`lib/own-writes.ts`). A
+            // content save broadcasts nothing, so it has no echo here.
             batcher.queue(['patches', 'list']);
-            if (data.path) batcher.queue(['patches', 'detail', data.path]);
+            if (data.path && !absorbOwnEcho('patches', data.path)) batcher.queue(['patches', 'detail', data.path]);
           } else if (data.kind === 'plans:changed') {
             // v0.1.129 fix: previously unhandled — parsed then silently
             // dropped, so a plan title/frontmatter change or an external edit

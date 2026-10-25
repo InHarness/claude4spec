@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { BriefCreateRequest } from '../../shared/entities.js';
-import { briefsApi } from '../lib/briefs-api.js';
+import { bodyOf } from '../lib/artifact-frontmatter.js';
+import { briefsApi, type BriefDetailResponse } from '../lib/briefs-api.js';
+import { beginOwnWrite } from '../lib/own-writes.js';
 import { artifactVersionsKey } from './useArtifactVersions.js';
 import { artifactThreadsKey } from './useArtifactThreads.js';
 
@@ -40,8 +42,33 @@ export function useUpdateBriefContent(briefPath: string) {
   return useMutation({
     mutationFn: (input: { content: string; expectedHash: string }) =>
       briefsApi.updateContent(briefPath, input),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: keys.detail(briefPath) });
+    // `BriefService.updateContent` always broadcasts `briefs:changed`
+    // (origin 'server') for this write: its own echo, absorbed by the watcher
+    // instead of refetching the whole file — also when it lands after the PUT
+    // answered (`lateEcho`, see `lib/own-writes.ts`).
+    onMutate: () => beginOwnWrite('briefs', briefPath, { lateEcho: true }),
+    onError: (_err, _input, own) => {
+      if (own?.failed()) qc.invalidateQueries({ queryKey: keys.detail(briefPath) });
+    },
+    onSuccess: (written, input, own) => {
+      own?.succeeded();
+      // 2.1.48: the detail read is the WHOLE brief file (the route's default
+      // projection), so refetching it after every debounced autosave would
+      // re-download the entire brief just to learn the new hash — and a second
+      // autosave fired during that long refetch would send the stale hash and
+      // hit a spurious 409. The client holds the content it just sent and the
+      // PUT answers hash + frontmatter: write the detail cache directly.
+      qc.setQueryData<BriefDetailResponse>(keys.detail(briefPath), (prev) =>
+        prev
+          ? {
+              ...prev,
+              content: input.content,
+              body: bodyOf(input.content),
+              hash: written.hash,
+              frontmatter: written.frontmatter,
+            }
+          : prev,
+      );
       qc.invalidateQueries({ queryKey: keys.versions(briefPath) });
     },
   });
@@ -76,7 +103,9 @@ export function useCreateBriefThread(briefPath: string) {
   return useMutation({
     mutationFn: (name?: string) => briefsApi.createThread(briefPath, name),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: keys.detail(briefPath) });
+      // 2.1.48: only the threads list changed. The detail read is the WHOLE
+      // brief file (the route's default projection), and a new thread does not
+      // touch it — refetching it here re-downloaded the brief for nothing.
       qc.invalidateQueries({ queryKey: artifactThreadsKey('brief', briefPath) });
     },
   });

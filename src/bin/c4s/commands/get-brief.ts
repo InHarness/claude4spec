@@ -7,7 +7,7 @@ import { optionalString } from '../args.js';
 import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registry.js';
 
 /**
- *   c4s get-brief <brief-path> [--range <from>:<to>] [--format json|text]
+ *   c4s get-brief <brief-path> [--range <start>-<end>] [--format json|text]
  *
  * `<brief-path>` is relative to the `briefs` root's dir — parity with the `--brief` argument
  * elsewhere.
@@ -18,6 +18,15 @@ import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registr
  * no longer has one — page reads resume through the outline). It is unconditionally available: a brief never enters
  * `section_index`, so a line window is the only way to read a large one through,
  * and there is no root kind for it to be gated on.
+ *
+ * 2.1.48 (M36 `r2nekhf5`) — the command is the `rest` rendering of `get_brief`,
+ * so it reads the detail route's OPERATION projection (`?view=operation`), not
+ * the editor's whole-file default. The window and the budget belong to that
+ * projection: the bin computes no budget, cuts nothing and does not validate
+ * `--range` — the raw value goes to the server, which judges it. When the
+ * budget cut the answer, `truncated` + `truncationHint` pass through, the hint
+ * rewritten from the route's query spelling into a runnable `c4s get-brief`
+ * call with `--range`.
  */
 export async function runGetBrief(args: ParsedArgs): Promise<void> {
   const briefPath = args.positional[0];
@@ -46,9 +55,10 @@ export async function runGetBrief(args: ParsedArgs): Promise<void> {
    */
   try {
     const encoded = encodeArtifactPath(briefPath);
-    const range = parseRange(optionalString(args, 'range'));
+    const range = optionalString(args, 'range');
     const brief = (await delegateGet(args, `/artifacts/brief/${encoded}`, {
-      ...(range ? { range: `${range.start}:${range.end}` } : {}),
+      view: 'operation',
+      ...(range !== undefined ? { range } : {}),
     })) as {
       frontmatter: unknown;
       body: string;
@@ -66,21 +76,14 @@ export async function runGetBrief(args: ParsedArgs): Promise<void> {
         body: brief.body,
         content: brief.content,
         ...(brief.truncated
-          ? { truncated: brief.truncated, truncationHint: brief.truncationHint }
+          ? { truncated: brief.truncated, truncationHint: toCliHint(brief.truncationHint, briefPath) }
           : {}),
       },
       args,
     );
-  } catch (err) {
-    // 2.1.13: the artifact route answers BRIEF_NOT_FOUND itself (the row's
-    // code), which passes through below unchanged. A server from before that
-    // still 404s as the generic NOT_FOUND; this command's entire domain is one
-    // brief path, so it is re-framed to the brief-specific code.
-    if ((err instanceof CliError || err instanceof AgentError) && err.code === 'NOT_FOUND') {
-      throw new CliError('BRIEF_NOT_FOUND', err.message, err.hint);
-    }
+  } catch (raw) {
     /**
-     * Any other `AgentError` becomes a `CliError` carrying the SAME code.
+     * Any `AgentError` becomes a `CliError` carrying the SAME code.
      *
      * `encodeArtifactPath` throws one, and it used to be thrown outside this
      * block — so the traversal refusal reached the bin's generic fallback and
@@ -88,25 +91,41 @@ export async function runGetBrief(args: ParsedArgs): Promise<void> {
      * exit status was not, which for a wrapper script is the same bug in a
      * different place: `INVALID_ARGS` is exit 4, and only the mapping says so.
      */
-    if (err instanceof AgentError) {
-      throw new CliError(err.code as CliErrorCode, err.message, err.hint);
-    }
-    throw err;
+    const err =
+      raw instanceof AgentError ? new CliError(raw.code as CliErrorCode, raw.message, raw.hint) : raw;
+    if (!(err instanceof CliError)) throw err;
+    // 2.1.13: the artifact route answers BRIEF_NOT_FOUND itself (the row's
+    // code), which passes through below unchanged. A server from before that
+    // still 404s as the generic NOT_FOUND; this command's entire domain is one
+    // brief path, so it is re-framed to the brief-specific code.
+    // A refused window's hint (`?view=operation&range=…`) is rewritten into a
+    // runnable command, like the truncation hint.
+    throw new CliError(
+      err.code === 'NOT_FOUND' ? 'BRIEF_NOT_FOUND' : err.code,
+      err.message,
+      toCliHint(err.hint, briefPath),
+      err.details,
+    );
   }
 }
 
-/** `--range 1:200` → `{ start: 1, end: 200 }`. 1-based and inclusive, like the core's. */
-function parseRange(raw: string | undefined): { start: number; end: number } | undefined {
-  if (raw === undefined) return undefined;
-  const m = /^(\d+):(\d+)$/.exec(raw);
-  if (!m) {
-    throw new CliError(
-      'INVALID_ARGS',
-      `--range must be '<from>:<to>', got '${raw}'`,
-      '--range 1:400 — 1-based and inclusive',
-    );
-  }
-  return { start: Number(m[1]), end: Number(m[2]) };
+/**
+ * The route writes its window as `?view=operation&range=<start>-<end>` — a call
+ * this channel cannot make. The same window as a `c4s get-brief` invocation is
+ * one the caller can run as written (`n9qp5ja7`: never propose a call the
+ * channel cannot make). Prose around it is left alone.
+ */
+function toCliHint(hint: string | undefined, briefPath: string): string | undefined {
+  if (hint === undefined) return undefined;
+  return hint.replace(
+    /\?view=operation&range=(\d+)-(\d+)/g,
+    (_whole, start: string, end: string) => `c4s get-brief ${shellWord(briefPath)} --range ${start}-${end}`,
+  );
+}
+
+/** A path as one shell word, so the hint runs as written even with a space in the name. */
+function shellWord(value: string): string {
+  return /^[A-Za-z0-9_./:@%+=,-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 export const getBriefCommand: CliCommandContribution = {

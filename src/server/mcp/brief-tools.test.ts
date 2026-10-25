@@ -1493,7 +1493,7 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     return op;
   }
 
-  it('[entity:get-brief] get_brief as its record declares it: project, direct, all four channels direct, no effects, idempotent, `path` + read window `range?`, codes BRIEF_NOT_FOUND, INVALID_ARGUMENT, BRIEF_INVALID_FRONTMATTER, rendered by brief-tools · get_brief (internal thread mount, mcp explicit) — a non-brief file BRIEF_INVALID_FRONTMATTER, a window past the end INVALID_ARGUMENT with the file size', async () => {
+  it('[entity:get-brief] get_brief as its record declares it: project, direct, all four channels direct, no effects, idempotent, `path` + read window `range?`, codes BRIEF_NOT_FOUND, INVALID_ARGUMENT, BRIEF_INVALID_FRONTMATTER, rendered by brief-tools · get_brief (internal thread mount, mcp explicit) — a non-brief file BRIEF_INVALID_FRONTMATTER, a window past the end INVALID_ARGUMENT with the file size, content over the response budget truncated: true with a truncationHint pointing at the line window', async () => {
     const op = expectOperationRecord({
       nazwa: 'get_brief',
       channels: { internal: D, cli: D, mcp: D, rest: D },
@@ -1525,6 +1525,18 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     // echo-free read: the answer is the brief, no envelope noise.
     const ok = await call(external, 'get_brief', { path: briefPath });
     expect(Object.keys(ok.body).sort()).toEqual(['body', 'content', 'frontmatter', 'hash', 'path']);
+
+    // 2.1.48 — content over the response budget comes back cut, flagged
+    // `truncated: true`, with a `truncationHint` pointing at the line window.
+    const big = await bigBrief();
+    const whole = await fileBytes(big);
+    const lastLine = whole.trimEnd().split('\n').at(-1)!;
+    const cut = await call(external, 'get_brief', { path: big });
+    expect(cut.isError).toBe(false);
+    expect(cut.body.truncated).toBe(true);
+    expect(cut.body.truncationHint).toMatch(/range: \{ start: \d+, end: \d+ \}/);
+    expect(cut.body.content).not.toContain(lastLine);
+    expect(cut.body.hash).toBe(sha256(whole));
   });
 
   it('[entity:list-briefs] list_briefs as its record declares it: project, direct, mcp n/a with the record\'s reason, the rest direct, no effects, idempotent, filter `implemented` + paging `limit`/`offset`, code VALIDATION, rendered by transagent-tools · list_briefs in internal only (never by brief-tools) — the list on the release axis', async () => {

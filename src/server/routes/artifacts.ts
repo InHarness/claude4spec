@@ -15,6 +15,16 @@ import { DomainError } from '../services/tags.js';
 import type { ArtifactRange } from '../services/artifact-read.js';
 
 /**
+ * 2.1.48 (M36 `r2nekhf5`) — what the detail route asks a kind's service for.
+ * The editor projection is `{ full: true }`; the operation projection is the
+ * `get_<kind>` read in the `rest` channel (window + budget, hint in the route's
+ * spelling). Passed to the services as is.
+ */
+type ArtifactDetailRead =
+  | { full: true }
+  | { range: ArtifactRange | undefined; channel: 'rest' };
+
+/**
  * M36 — generic REST family replacing the per-kind `/api/briefs/*`/`/api/patches/*`
  * routes (7 endpoints, parametrized by `:kind`). `BriefService`/`PatchService`/
  * `PlanService` stay the kind-specific implementations (each has its own
@@ -40,7 +50,8 @@ import type { ArtifactRange } from '../services/artifact-read.js';
  */
 interface ArtifactKindAdapter {
   list(query: Record<string, unknown>): ArtifactListItem[];
-  get(path: string, range?: ArtifactRange): Promise<ArtifactResponse>;
+  /** The detail route's read — see {@link parseDetailProjection} for the two projections. */
+  get(path: string, read: ArtifactDetailRead): Promise<ArtifactResponse>;
   updateContent(path: string, content: string, expectedHash: string): Promise<ArtifactWriteResponse>;
   updateFrontmatter(path: string, frontmatter: Record<string, unknown>): Promise<ArtifactWriteResponse>;
   createThread(path: string, name?: string | null): Promise<{ threadId: string }>;
@@ -114,8 +125,8 @@ function buildBriefAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
       });
       return rows.slice(offset, offset + limit);
     },
-    async get(path, range) {
-      const b = await briefs.getBrief(path, { range });
+    async get(path, read) {
+      const b = await briefs.getBrief(path, read);
       return {
         path: b.path,
         frontmatter: b.frontmatter,
@@ -175,8 +186,8 @@ function buildPatchAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
         updatedAt: item.lastModified,
       }));
     },
-    async get(path, range) {
-      const p = await patches.getPatch(path, { range });
+    async get(path, read) {
+      const p = await patches.getPatch(path, read);
       return {
         path: p.path,
         frontmatter: p.frontmatter,
@@ -247,9 +258,9 @@ function buildPlanAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
       });
       return rows.slice(offset, offset + limit);
     },
-    async get(path, range) {
+    async get(path, read) {
       // 2.1.13 — the rest rendering of `get_plan`: an unknown path is PLAN_NOT_FOUND.
-      const p = await plans.getByAddress(path, { range });
+      const p = await plans.getByAddress(path, read);
       return {
         path: p.path,
         frontmatter: p.frontmatter,
@@ -338,20 +349,58 @@ function extractPath(params: unknown): string {
 }
 
 /**
- * `?range=<start>:<end>` — the artifact read family's line window, in the same
- * `from:to` spelling `c4s get-page --range` already uses. Rejected loudly rather
- * than ignored: a window silently dropped would answer with the whole file, and
- * a caller asking for a window because the file is too big would get exactly the
- * response it was trying to avoid.
+ * 2.1.48 (M36 `r2nekhf5`, L4 `Widok`) — the detail route's two projections.
+ *
+ * - no `view` — the EDITOR's read: the whole file, no response budget, no
+ *   window, never `truncated`. The editor saves by full replacement guarded by
+ *   the whole file's `expectedHash`; content cut by the budget would pass that
+ *   guard and overwrite the file with its fragment.
+ * - `view=operation` — the `rest` rendering of `get_<kind>`: the line window
+ *   `range=<start>-<end>` (1-based, inclusive), the response budget and its
+ *   explicit degradation (`truncated` + a `truncationHint` retrying with
+ *   `range` under the same `view=operation`).
+ *
+ * Any other `view`, and a `range` without `view=operation`, is a 400
+ * INVALID_ARGUMENT naming `view=operation` — never a silent fall back to the
+ * default projection, which would hand a caller asking for a window the very
+ * whole file it was avoiding.
+ */
+function parseDetailProjection(query: Record<string, unknown>): ArtifactDetailRead {
+  const { view, range } = query;
+  if (view === undefined) {
+    if (range !== undefined) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        '?range is a parameter of the operation projection — pass it with ?view=operation',
+        'e.g. ?view=operation&range=1-400',
+      );
+    }
+    return { full: true };
+  }
+  if (view !== 'operation') {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      `unknown ?view ${JSON.stringify(view)} — the only view of this route is view=operation (omit it for the whole file)`,
+      'e.g. ?view=operation&range=1-400',
+    );
+  }
+  return { range: parseRangeQuery(range), channel: 'rest' };
+}
+
+/**
+ * `range=<start>-<end>` — the artifact read family's line window. Rejected
+ * loudly rather than ignored: a window silently dropped would answer with the
+ * whole file, and a caller asking for a window because the file is too big
+ * would get exactly the response it was trying to avoid.
  */
 function parseRangeQuery(raw: unknown): ArtifactRange | undefined {
-  if (raw === undefined || raw === '') return undefined;
-  const m = /^(\d+):(\d+)$/.exec(String(raw));
+  if (raw === undefined) return undefined;
+  const m = typeof raw === 'string' ? /^(\d+)-(\d+)$/.exec(raw) : null;
   if (!m) {
     throw new DomainError(
       'INVALID_ARGUMENT',
-      `?range must be '<start>:<end>' (1-based, inclusive), got ${JSON.stringify(String(raw))}`,
-      'e.g. ?range=1:400',
+      `?range must be '<start>-<end>' (1-based, inclusive), got ${JSON.stringify(raw)}`,
+      'e.g. ?view=operation&range=1-400',
     );
   }
   return { start: Number(m[1]), end: Number(m[2]) };
@@ -522,8 +571,9 @@ export function artifactsRouter(deps: ArtifactsRouterDeps): Router {
     }
   });
 
-  // GET /api/artifacts/:kind/<path> — detail (must be LAST so the more
-  // specific /versions, /content, /frontmatter, /threads routes match first).
+  // GET /api/artifacts/:kind/<path>[?view=operation[&range=a-b]] — detail, in
+  // two projections (2.1.48, see parseDetailProjection). Must be LAST so the
+  // more specific /versions, /content, /frontmatter, /threads routes match first.
   router.get('/:kind/*', async (req, res, next) => {
     try {
       const kind = req.params.kind as ArtifactKind;
@@ -533,7 +583,7 @@ export function artifactsRouter(deps: ArtifactsRouterDeps): Router {
       // call; they now all use `GET .../threads` (which pages properly), so
       // merging it meant a second chat_thread scan per detail fetch whose
       // result nothing read — and one silently capped at the default limit.
-      res.json({ data: await adapters[kind].get(path, parseRangeQuery(req.query.range)) });
+      res.json({ data: await adapters[kind].get(path, parseDetailProjection(req.query as Record<string, unknown>)) });
     } catch (err) {
       next(err);
     }

@@ -1,5 +1,5 @@
 /**
- * 2.1.26 — the window's 78 `spec-operation` records (79 since 2.1.46 added `shadow-diff`, 80 since 2.1.47 added `accept-shadow`), as `release-diff --from
+ * 2.1.26 — the window's 78 `spec-operation` records (79 since 2.1.46 added `shadow-diff`, 80 since 2.1.47 added `accept-shadow`; 2.1.48 changed `get-plan`'s `powody.cli`), as `release-diff --from
  * initial --to 2.1.26` returns them, in the fields a catalog row answers for:
  * `nazwa`, scope, mediation, the four channel values with the channel entries of
  * `powody`, `efekty`, `idempotencja`, `opisTresci`, `reguly`, `kodyBledow` and
@@ -545,7 +545,8 @@ export const SPEC_OPERATION_RECORDS: readonly SpecOperationRecord[] = [
     cli: 'n/a',
     mcp: 'direct',
     rest: 'direct',
-    powody: { cli: 'jedynym realnym wołającym jest agent w wątku albo użytkownik w UI, nie człowiek w terminalu' },
+    // 2.1.48 — the record dropped „albo użytkownik w UI” (the UI reads the detail route's editor projection).
+    powody: { cli: 'jedynym realnym wołającym jest agent w wątku, nie człowiek w terminalu' },
     efekty: ['brak'],
     idempotencja: 'tak',
     opisTresci: 'n/d',

@@ -1183,11 +1183,19 @@ export interface ArtifactResponse {
   /** Parsed YAML frontmatter — kind-specific fields (status/patch_kind/from_release/...) live here. */
   frontmatter: Record<string, unknown>;
   body: string;
-  /** Full file content (frontmatter + body, byte-faithful) — or the requested `?range=` window. */
+  /**
+   * Full file content (frontmatter + body, byte-faithful). 2.1.48: always the
+   * whole file in the default (editor) projection; only `?view=operation` may
+   * narrow it to a `range` window or cut it at the response budget.
+   */
   content: string;
-  /** sha256 hex of the WHOLE file — used for optimistic concurrency, unaffected by `?range=`. */
+  /** sha256 hex of the WHOLE file — used for optimistic concurrency, unaffected by `range` and by the budget. */
   hash: string;
-  /** 0.2.40 — present IFF `content` was cut by the response budget; the hint names the `range` to retry with. */
+  /**
+   * 0.2.40 — present IFF `content` was cut by the response budget, which only
+   * `?view=operation` applies (2.1.48); the hint retries with `range` under the
+   * same `view=operation`. Never present in the default projection.
+   */
   truncated?: true;
   truncationHint?: string;
 }
