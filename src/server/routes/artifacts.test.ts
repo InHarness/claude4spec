@@ -125,7 +125,10 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
     plans = planService;
 
     app = express()
-      .use(express.json())
+      // The production body limit (src/server/index.ts): the editor's Save sends
+      // the WHOLE file, and the 2.1.48 fixtures are longer than express's 100kb
+      // default — under it a Save would be a 400 `entity.too.large`, not the route.
+      .use(express.json({ limit: '2mb' }))
       .use(
         '/api/artifacts',
         artifactsRouter({ brief: briefService, patch: patchService, plan: planService, pageVersions, chat: chatService }),

@@ -1,5 +1,5 @@
 {
- "iteration": 32,
+ "iteration": 33,
  "conventions": [
   {
    "label": "L3 (Spec Operations) — implementor M43 — role of the layer",
@@ -352,21 +352,14 @@
       "ac-po-save-planu-dluzszego-niz-budzet-od",
       "ac-save-planu-zmienionego-w-miedzyczasie"
      ],
-     "status": "pending",
-     "rounds": 2,
+     "status": "implemented",
+     "rounds": 3,
      "partial": 0,
      "uncovered": [
       "ac-po-save-planu-dluzszego-niz-budzet-od",
       "ac-save-planu-zmienionego-w-miedzyczasie"
      ],
-     "only": [
-      {
-       "slug": "ac-po-save-planu-dluzszego-niz-budzet-od"
-      },
-      {
-       "slug": "ac-save-planu-zmienionego-w-miedzyczasie"
-      }
-     ]
+     "only": []
     }
    ],
    "startCommit": "ec889d5728e7d85c2c8c457cf73b2de8e192f4ac",
