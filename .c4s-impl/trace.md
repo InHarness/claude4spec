@@ -4,3 +4,4 @@ get-patch → src/server/operations/core-operations.ts (get_patch row; truncatio
 get-plan → src/server/operations/core-operations.ts (get_plan row; truncation via PlanService.getByPath; test src/server/mcp/plan-tools.test.ts)
 cli-command/get-brief → src/bin/c4s/commands/get-brief.ts (view=operation delegation, raw --range, hint rewritten to a get-brief call; test src/bin/c4s/commands/brief-patch-commands.test.ts)
 brief-page → src/client/components/BriefDetail.tsx + src/client/components/BriefEditor.tsx (whole file via briefsApi.get, the default projection; test src/client/components/BriefDetail.render.test.ts)
+patch-page → src/client/components/PatchDetail.tsx + src/client/components/PatchEditor.tsx (whole file via patchesApi.get, the default projection; cache written from the save in src/client/hooks/usePatches.ts; test src/client/components/PatchDetail.render.test.ts)

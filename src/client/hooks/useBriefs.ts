@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { BriefCreateRequest } from '../../shared/entities.js';
 import { bodyOf } from '../lib/artifact-frontmatter.js';
 import { briefsApi, type BriefDetailResponse } from '../lib/briefs-api.js';
+import { beginOwnWrite } from '../lib/own-writes.js';
 import { artifactVersionsKey } from './useArtifactVersions.js';
 import { artifactThreadsKey } from './useArtifactThreads.js';
 
@@ -41,7 +42,16 @@ export function useUpdateBriefContent(briefPath: string) {
   return useMutation({
     mutationFn: (input: { content: string; expectedHash: string }) =>
       briefsApi.updateContent(briefPath, input),
-    onSuccess: (written, input) => {
+    // `BriefService.updateContent` always broadcasts `briefs:changed`
+    // (origin 'server') for this write: its own echo, absorbed by the watcher
+    // instead of refetching the whole file — also when it lands after the PUT
+    // answered (`lateEcho`, see `lib/own-writes.ts`).
+    onMutate: () => beginOwnWrite('briefs', briefPath, { lateEcho: true }),
+    onError: (_err, _input, own) => {
+      if (own?.failed()) qc.invalidateQueries({ queryKey: keys.detail(briefPath) });
+    },
+    onSuccess: (written, input, own) => {
+      own?.succeeded();
       // 2.1.48: the detail read is the WHOLE brief file (the route's default
       // projection), so refetching it after every debounced autosave would
       // re-download the entire brief just to learn the new hash — and a second

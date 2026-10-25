@@ -1,0 +1,50 @@
+{
+ "unit": {
+  "id": "m23-patch-full-read",
+  "goal": "Strona patcha ładuje cały plik z domyślnej projekcji trasy detalu, bez względu na jego długość, więc autozapis nie gubi końca pliku.",
+  "recipe": {
+   "pages": [
+    {
+     "key": "pages/modules/m36-chat-artifacts/m36-chat-artifacts.md",
+     "context": {
+      "offset": 11,
+      "limit": 1,
+      "anchors": [
+       "r2nekhf5"
+      ]
+     }
+    }
+   ],
+   "entities": [
+    {
+     "type": "ui-view",
+     "slugs": [
+      "patch-page"
+     ]
+    },
+    {
+     "type": "ac",
+     "slugs": [
+      "ac-patch-dluzszy-niz-budzet-odpowiedzi-w",
+      "ac-po-autozapisie-patcha-dluzszego-niz-b"
+     ]
+    }
+   ]
+  },
+  "jobs": []
+ },
+ "portion": {
+  "name": "m23-patch-full-read/p1-l5-l5",
+  "layers": [
+   "L5"
+  ],
+  "slugs": [
+   "patch-page",
+   "ac-patch-dluzszy-niz-budzet-odpowiedzi-w",
+   "ac-po-autozapisie-patcha-dluzszego-niz-b"
+  ],
+  "packet": ".c4s-impl/packets/m23-patch-full-read.md"
+ },
+ "only": [],
+ "stateDir": ".c4s-impl/"
+}

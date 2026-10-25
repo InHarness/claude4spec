@@ -1,5 +1,5 @@
 {
- "iteration": 12,
+ "iteration": 23,
  "conventions": [
   {
    "label": "L3 (Spec Operations) — implementor M43 — role of the layer",
@@ -264,13 +264,30 @@
     }
    ],
    "wave": 2,
-   "status": "pending",
-   "portions": [],
-   "startCommit": null,
-   "baseCommit": null,
+   "status": "verified",
+   "portions": [
+    {
+     "name": "m23-patch-full-read/p1-l5-l5",
+     "layers": [
+      "L5"
+     ],
+     "slugs": [
+      "patch-page",
+      "ac-patch-dluzszy-niz-budzet-odpowiedzi-w",
+      "ac-po-autozapisie-patcha-dluzszego-niz-b"
+     ],
+     "status": "implemented",
+     "rounds": 3,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
+   "startCommit": "a2f565c17ed3fa1c579b5f723a70ab254c586870",
+   "baseCommit": "19e259cc10735a154615391ddb9784a5dab86809",
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 3
    },
    "jobs": []
   },

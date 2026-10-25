@@ -88,7 +88,7 @@ function toPatchListItemView(item: ArtifactListItem): PatchListItemView {
   };
 }
 
-function toPatchArtifactView(data: ArtifactResponse): PatchArtifactView {
+export function toPatchArtifactView(data: ArtifactResponse): PatchArtifactView {
   return { ...data, title: deriveTitle(data.path, data.frontmatter, data.body) };
 }
 
@@ -102,6 +102,12 @@ export const patchesApi = {
     return env.data.map(toPatchListItemView);
   },
 
+  /**
+   * 2.1.48 (M36 `r2nekhf5`) — the detail route's DEFAULT projection: the whole
+   * file, never budgeted, windowed or `truncated`. The editor saves by full
+   * replacement with the whole file's `expectedHash`, so a cut read would let
+   * autosave overwrite the patch with its own fragment. Never `view=operation`.
+   */
   async get(patchPath: string): Promise<PatchDetailResponse> {
     const env = await handle<Envelope<ArtifactResponse>>(
       await apiFetch(`/api/artifacts/patch/${encodePatchPath(patchPath)}`),
