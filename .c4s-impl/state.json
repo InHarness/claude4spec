@@ -1,5 +1,5 @@
 {
- "iteration": 23,
+ "iteration": 31,
  "conventions": [
   {
    "label": "L3 (Spec Operations) — implementor M43 — role of the layer",
@@ -337,13 +337,33 @@
     }
    ],
    "wave": 2,
-   "status": "pending",
-   "portions": [],
-   "startCommit": null,
-   "baseCommit": null,
+   "status": "verified",
+   "portions": [
+    {
+     "name": "m10-plan-full-read-and-conflict/p1-l5-l5",
+     "layers": [
+      "L5"
+     ],
+     "slugs": [
+      "plan-page",
+      "wklad-do-edytora-m10",
+      "wklad-do-edytora-m10#`plan`",
+      "ac-plan-dluzszy-niz-budzet-odpowiedzi-wy",
+      "ac-po-save-planu-dluzszego-niz-budzet-od",
+      "ac-save-planu-zmienionego-w-miedzyczasie"
+     ],
+     "status": "implemented",
+     "rounds": 2,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
+   "startCommit": "27a7ea6b1bc69d8c1a28fb428e36bece6ba55f86",
+   "baseCommit": "35b9639bac02f8df7df5c195697da6f620abe8f7",
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 2
    },
    "jobs": []
   }

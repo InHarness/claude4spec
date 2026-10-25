@@ -1,0 +1,64 @@
+{
+ "unit": {
+  "id": "m10-plan-full-read-and-conflict",
+  "goal": "Strona planu ładuje cały plik z domyślnej projekcji trasy detalu, więc „Save” nie gubi końca pliku. Konflikt hasha przy zapisie pokazuje inline baner z jedyną akcją przeładowania. Nie ma opcji nadpisania i plik na dysku nie jest nadpisywany.",
+  "recipe": {
+   "pages": [
+    {
+     "key": "pages/modules/m36-chat-artifacts/m36-chat-artifacts.md",
+     "context": {
+      "offset": 11,
+      "limit": 1,
+      "anchors": [
+       "r2nekhf5"
+      ]
+     }
+    }
+   ],
+   "entities": [
+    {
+     "type": "ui-view",
+     "slugs": [
+      "plan-page"
+     ]
+    },
+    {
+     "type": "spreadsheet",
+     "slugs": [
+      "wklad-do-edytora-m10"
+     ]
+    },
+    {
+     "type": "ac",
+     "slugs": [
+      "ac-plan-dluzszy-niz-budzet-odpowiedzi-wy",
+      "ac-po-save-planu-dluzszego-niz-budzet-od",
+      "ac-save-planu-zmienionego-w-miedzyczasie"
+     ]
+    }
+   ]
+  },
+  "jobs": []
+ },
+ "portion": {
+  "name": "m10-plan-full-read-and-conflict/p1-l5-l5",
+  "layers": [
+   "L5"
+  ],
+  "slugs": [
+   "plan-page",
+   "wklad-do-edytora-m10",
+   "wklad-do-edytora-m10#`plan`",
+   "ac-plan-dluzszy-niz-budzet-odpowiedzi-wy",
+   "ac-po-save-planu-dluzszego-niz-budzet-od",
+   "ac-save-planu-zmienionego-w-miedzyczasie"
+  ],
+  "packet": ".c4s-impl/packets/m10-plan-full-read-and-conflict.md"
+ },
+ "only": [],
+ "stateDir": ".c4s-impl/",
+ "orchestratorNotes": [
+  "Earlier units of this build added src/client/lib/own-writes.ts and an own-echo branch in src/client/hooks/useFileWatcher.ts for briefs and patches. Lessons from their reviews: (1) after a save, write the detail cache from the sent content + the PUT hash instead of re-fetching the whole file; (2) suppress a watcher echo ONLY if this save really produces one (check the server path: pages-frontmatter-indexer broadcasts the artifact event only when frontmatter changed; record-store writes may use chain:false), and never absorb another writer's server-origin event — agents/MCP and other tabs also write with origin 'server'.",
+  "Non-blocking leftover from unit m36's review (rev-0001), in a file this unit is likely to touch, src/server/services/plan.ts: `export interface PlanReadOpts` sits inside the import block (move it below the imports), a double blank line after `readForWrite`, and `getByThread` still takes inline `{ range?: ArtifactRange }` while `getByPath`/`getByAddress` take `PlanReadOpts`. Fix it if you touch plan.ts."
+ ]
+}

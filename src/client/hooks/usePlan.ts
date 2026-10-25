@@ -2,6 +2,8 @@ import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch, handle } from '../lib/api-core.js';
 import { encodeArtifactPath } from '../lib/artifact-path.js';
+import { bodyOf } from '../lib/artifact-frontmatter.js';
+import { beginOwnWrite } from '../lib/own-writes.js';
 import type { ArtifactWriteResponse, Plan, PlanFrontmatter } from '../../shared/entities.js';
 import {
   artifactVersionsKey,
@@ -175,6 +177,18 @@ export function usePlanVersions(planPath: string | null) {
  * `PUT /api/artifacts/plan/:path/content` — optimistic concurrency via
  * `expectedHash` (409 on conflict), same contract as briefs/patches. The old
  * `PUT /api/plans/:planId` (no hash required, always won) is gone.
+ *
+ * 2.1.48 (M10, M36 `r2nekhf5`): the detail read is the WHOLE plan file (the
+ * route's default projection), so a save does not refetch it just to learn the
+ * new hash: the client holds the content it sent and the PUT answers hash +
+ * frontmatter — the detail cache is written from those. `PlanService.updateContent`
+ * always broadcasts `plan:updated` (`threadId: null`) for this write: its own
+ * echo, absorbed by the watcher instead of re-downloading the file — also when
+ * it lands after the PUT answered (`lateEcho`, see `lib/own-writes.ts`).
+ * This mutation is the single owner of the keys an own Save moves (detail
+ * written, versions / plans list / by-thread invalidated once): the absorbed
+ * echo queues none of them, so nothing is fetched twice. A content save
+ * changes no thread, so the thread listings are left alone.
  */
 export function useSavePlan() {
   const qc = useQueryClient();
@@ -190,9 +204,31 @@ export function useSavePlan() {
       );
       return body.data;
     },
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: keys.detail(data.path) });
-      qc.invalidateQueries({ queryKey: keys.versions(data.path) });
+    onMutate: (input) => beginOwnWrite('plans', input.planPath, { lateEcho: true }),
+    onError: (_err, input, own) => {
+      // An event absorbed meanwhile may have been the foreign write that made
+      // this save fail — refetch exactly what the watcher skipped for it.
+      if (own?.failed()) {
+        qc.invalidateQueries({ queryKey: keys.detail(input.planPath) });
+        qc.invalidateQueries({ queryKey: keys.versions(input.planPath) });
+        qc.invalidateQueries({ queryKey: ['plans-list'] });
+        qc.invalidateQueries({ queryKey: ['threads'] });
+      }
+    },
+    onSuccess: (written, input, own) => {
+      own?.succeeded();
+      qc.setQueryData<PlanDetailResponse>(keys.detail(input.planPath), (prev) =>
+        prev
+          ? {
+              ...prev,
+              content: input.content,
+              body: bodyOf(input.content),
+              hash: written.hash,
+              frontmatter: written.frontmatter as PlanFrontmatter,
+            }
+          : prev,
+      );
+      qc.invalidateQueries({ queryKey: keys.versions(input.planPath) });
       qc.invalidateQueries({ queryKey: ['plan', 'by-thread'] });
       qc.invalidateQueries({ queryKey: ['plans-list'] });
     },
@@ -269,11 +305,12 @@ export function useCreateThreadFromPlan() {
       );
       return body.data;
     },
+    // 2.1.48: attaching a thread writes nothing into the plan file, so the
+    // whole-file detail and the plans list (path, title, date, applied) stay
+    // as they are — only the thread listings move.
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: keys.detail(vars.planPath) });
       qc.invalidateQueries({ queryKey: keys.threads(vars.planPath) });
       qc.invalidateQueries({ queryKey: keys.lastThread(vars.planPath) });
-      qc.invalidateQueries({ queryKey: ['plans-list'] });
       qc.invalidateQueries({ queryKey: ['threads'] });
     },
   });

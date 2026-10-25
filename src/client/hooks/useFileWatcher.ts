@@ -138,11 +138,22 @@ export function useFileWatcher() {
              * below is a cache keyed by thread, so it is refreshed only when the
              * event actually names one.
              */
-            batcher.queue(['plan', 'detail', data.planPath]);
-            batcher.queue(artifactVersionsKey('plan', data.planPath));
+            /*
+             * 2.1.48: the plan editor's own Save broadcasts this event with
+             * `threadId: null`. Its mutation owns every key that save moves: it
+             * wrote the whole-file detail cache and invalidates the versions,
+             * the plans list and the by-thread cache itself — so the absorbed
+             * echo queues nothing (`lib/own-writes.ts`). An event naming a
+             * thread is an agent's write and is never offered to the ledger.
+             */
+            const ownEcho = data.threadId === null && absorbOwnEcho('plans', data.planPath);
+            if (!ownEcho) {
+              batcher.queue(['plan', 'detail', data.planPath]);
+              batcher.queue(artifactVersionsKey('plan', data.planPath));
+              batcher.queue(['plans-list']);
+              batcher.queue(['threads']);
+            }
             if (data.threadId) batcher.queue(['plan', 'by-thread', data.threadId]);
-            batcher.queue(['plans-list']);
-            batcher.queue(['threads']);
           } else if (data.kind === 'index:status-changed') {
             /**
              * 0.2.77 — a projection changed freshness, in either direction.

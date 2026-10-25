@@ -1,0 +1,75 @@
+{
+ "unit": {
+  "id": "m10-plan-full-read-and-conflict",
+  "goal": "Strona planu ładuje cały plik z domyślnej projekcji trasy detalu, więc „Save” nie gubi końca pliku. Konflikt hasha przy zapisie pokazuje inline baner z jedyną akcją przeładowania. Nie ma opcji nadpisania i plik na dysku nie jest nadpisywany.",
+  "recipe": {
+   "pages": [
+    {
+     "key": "pages/modules/m36-chat-artifacts/m36-chat-artifacts.md",
+     "context": {
+      "offset": 11,
+      "limit": 1,
+      "anchors": [
+       "r2nekhf5"
+      ]
+     }
+    }
+   ],
+   "entities": [
+    {
+     "type": "ui-view",
+     "slugs": [
+      "plan-page"
+     ]
+    },
+    {
+     "type": "spreadsheet",
+     "slugs": [
+      "wklad-do-edytora-m10"
+     ]
+    },
+    {
+     "type": "ac",
+     "slugs": [
+      "ac-plan-dluzszy-niz-budzet-odpowiedzi-wy",
+      "ac-po-save-planu-dluzszego-niz-budzet-od",
+      "ac-save-planu-zmienionego-w-miedzyczasie"
+     ]
+    }
+   ]
+  },
+  "jobs": []
+ },
+ "portion": {
+  "name": "m10-plan-full-read-and-conflict/p1-l5-l5",
+  "layers": [
+   "L5"
+  ],
+  "slugs": [
+   "plan-page",
+   "wklad-do-edytora-m10",
+   "wklad-do-edytora-m10#`plan`",
+   "ac-plan-dluzszy-niz-budzet-odpowiedzi-wy",
+   "ac-po-save-planu-dluzszego-niz-budzet-od",
+   "ac-save-planu-zmienionego-w-miedzyczasie"
+  ],
+  "packet": ".c4s-impl/packets/m10-plan-full-read-and-conflict.md"
+ },
+ "only": [
+  {
+   "finding": "rev-0001"
+  },
+  {
+   "finding": "rev-0002"
+  },
+  {
+   "finding": "rev-0003"
+  }
+ ],
+ "stateDir": ".c4s-impl/",
+ "orchestratorNotes": [
+  "Fix all three findings in `.c4s-impl/review/m10-plan-full-read-and-conflict.json` (rev-0001 blocking; rev-0002 and rev-0003 non-blocking but cheap — fix them too).",
+  "Also, while in the plan code: the leftover non-blocking finding from unit m36 in src/server/services/plan.ts — move `export interface PlanReadOpts` below the import block, drop the double blank line after `readForWrite`, and make `getByThread` take `PlanReadOpts` like `getByPath`/`getByAddress`.",
+  "Standing rule: never absorb another writer's server-origin event; brief/patch branches stay as they are."
+ ]
+}

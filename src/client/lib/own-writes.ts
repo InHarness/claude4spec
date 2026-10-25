@@ -1,10 +1,10 @@
 /**
- * 2.1.48 (M21/M23) — this tab's own artifact writes, so the global watcher
+ * 2.1.48 (M21/M23/M10) — this tab's own artifact writes, so the global watcher
  * (`useFileWatcher`) can tell the WS echo of its own save from somebody else's
  * write of the same file.
  *
- * Why it exists: a brief's or patch's detail query holds the WHOLE file (the
- * artifact detail route's default projection), so the echo the server
+ * Why it exists: a brief's, patch's or plan's detail query holds the WHOLE file
+ * (the artifact detail route's default projection), so the echo the server
  * broadcasts for this tab's own write must not refetch it:
  *   - a brief content save (`briefs:changed`, `origin: 'server'`, always): the
  *     mutation writes the cache itself (sent content + the PUT's hash). A
@@ -12,6 +12,16 @@
  *     and if it started before a later save landed, its older answer would put
  *     the older hash back → the next autosave sends a stale `expectedHash` → a
  *     spurious 409;
+ *   - a plan Save (`plan:updated` with `threadId: null`, always:
+ *     `PlanService.updateContent`): the mutation writes the cache itself, as for
+ *     a brief. A `plan:updated` naming a thread is an agent's write, never this
+ *     echo, so the watcher does not offer it to the ledger. `threadId: null`
+ *     does NOT mean "own": the REST frontmatter PATCH (another tab renaming the
+ *     plan or flipping `applied`) and an explicitly addressed `update_plan`
+ *     broadcast it too. Taking such an event for the echo is still safe, because
+ *     every plan write holds the same per-path lock: a foreign write that lands
+ *     before this PUT makes it fail with 409 (and `failed()` hands the event
+ *     back), and one that lands after it is broadcast after this tab's echo;
  *   - a patch's `applied` flip (`patches:changed`): the mutation already
  *     refetches the detail once; the echo would add a second whole-file read.
  * A patch CONTENT save takes no token: the editor keeps the frontmatter block
@@ -24,12 +34,12 @@
  * event of its own path, and only one that can be its echo:
  *   - an event arriving while the write is in flight (the server broadcasts it
  *     before it answers the PUT);
- *   - for a write whose echo is guaranteed (`lateEcho` — a brief content save,
- *     `BriefService.updateContent` always broadcasts), the first event after
+ *   - for a write whose echo is guaranteed (`lateEcho` — a brief content save
+ *     or a plan Save, whose `updateContent` always broadcasts), the first event after
  *     the PUT answered, if none came during the flight: the WS frame and the
  *     HTTP response travel on different sockets.
- * The base `file:changed` is never absorbed: the record store writes briefs and
- * patches with `chain: false` under the primitive's suppress token, so an own
+ * The base `file:changed` is never absorbed: the record store writes briefs,
+ * patches and plans with `chain: false` under the primitive's suppress token, so an own
  * save broadcasts no `file:changed` — one that arrives is another writer.
  *
  * A failed write hands back whether it absorbed an event (`failed()` → true):
@@ -41,8 +51,8 @@
  * would otherwise swallow the next foreign event.
  */
 
-/** The system root whose artifact event (`briefs:changed` / `patches:changed`) carries the echo. */
-export type OwnWriteRoot = 'briefs' | 'patches';
+/** The system root whose artifact event (`briefs:changed` / `patches:changed` / `plan:updated`) carries the echo. */
+export type OwnWriteRoot = 'briefs' | 'patches' | 'plans';
 
 export interface OwnWrite {
   /** The PUT answered 2xx. */

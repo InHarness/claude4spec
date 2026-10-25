@@ -939,5 +939,47 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
         expect(retry.body.data.content.split('\n')[0], kind).toBe(lines[Number(m![1]) - 1]);
       }
     });
+
+    /*
+     * 2.1.48 (M10 `plan-page`) — the plan editor's Save over the whole file it
+     * read from the default projection. The client side (the screen, the
+     * banner) is in `src/client/components/PlanPage.render.test.ts`.
+     */
+    it('[ac:ac-po-save-planu-dluzszego-niz-budzet-od] a Save of the whole plan (longer than the response budget) leaves the file ending with its last line', async () => {
+      const url = '/api/artifacts/plan/big-plan.md';
+      const read = await request(app).get(url);
+      expect(read.body.data.content.length).toBeGreaterThan(DEFAULT_BUDGET_CHARS);
+      // What the editor sends: the frontmatter block it read + the edited body.
+      const edited = read.body.data.content.replace('0 xxx', '0 EDITED xxx');
+      const res = await request(app).put(`${url}/content`).send({ content: edited, expectedHash: read.body.data.hash });
+      expect(res.status).toBe(200);
+      const bytes = await onDisk(path.join(plansDir, 'big-plan.md'));
+      expect(bytes).toBe(edited);
+      expect(bytes).toContain('0 EDITED xxx');
+      expect(bytes.trimEnd().split('\n').at(-1)).toBe(LAST);
+      expect(res.body.data.hash).toBe(sha256(bytes));
+    });
+
+    it('[ac:ac-save-planu-zmienionego-w-miedzyczasie] a Save of a plan changed on disk meanwhile is refused 409 PLAN_CONFLICT and the file on disk stays byte-identical', async () => {
+      const url = '/api/artifacts/plan/big-plan.md';
+      const file = path.join(cwd, plansDir, 'big-plan.md');
+      const read = await request(app).get(url);
+      // Somebody else (vim, another tab) writes the plan after the editor read it.
+      const foreign = read.body.data.content.replace(LAST, `${LAST} — changed on disk`);
+      await fs.writeFile(file, foreign, 'utf-8');
+      const versionsBefore = (await request(app).get(`${url}/versions`)).body.data.length;
+
+      const res = await request(app)
+        .put(`${url}/content`)
+        .send({ content: read.body.data.content.replace('0 xxx', '0 MINE xxx'), expectedHash: read.body.data.hash });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe('PLAN_CONFLICT');
+      expect(res.body.currentHash).toBe(sha256(foreign));
+      expect(res.body.currentContent).toBe(foreign);
+      // Nothing was overwritten: same bytes, no new file_version row.
+      expect(await fs.readFile(file, 'utf-8')).toBe(foreign);
+      expect((await request(app).get(`${url}/versions`)).body.data.length).toBe(versionsBefore);
+    });
   });
 });

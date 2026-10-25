@@ -47,15 +47,6 @@ import type { ChatService } from './chat.js';
 import type { PagesFrontmatterIndexer } from './pages-frontmatter-indexer.js';
 import { DomainError } from './tags.js';
 import { readArtifactWindow, windowBody, type ArtifactRange, type ArtifactReadChannel } from './artifact-read.js';
-
-/** How a plan is read: a window + the budget (default), or the whole file (`full`). */
-export interface PlanReadOpts {
-  range?: ArtifactRange;
-  /** The whole file: no window, no budget, never `truncated`. */
-  full?: boolean;
-  /** The rendering the budget's `truncationHint` is written for. */
-  channel?: ArtifactReadChannel;
-}
 import { bindingAddress } from './artifact-registry.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 import { ConflictError } from './brief.js';
@@ -71,6 +62,15 @@ import {
 } from './plan-write.js';
 import { applyTextEdits, type TextEdit } from './text-edits.js';
 import { bodyPositionResolver } from './section-text.js';
+
+/** How a plan is read: a window + the budget (default), or the whole file (`full`). */
+export interface PlanReadOpts {
+  range?: ArtifactRange;
+  /** The whole file: no window, no budget, never `truncated`. */
+  full?: boolean;
+  /** The rendering the budget's `truncationHint` is written for. */
+  channel?: ArtifactReadChannel;
+}
 
 export interface PlanServiceDeps {
   plansPages: MarkdownFileStore;
@@ -368,7 +368,6 @@ export class PlanService {
     return this.getByPath(planPath, { full: true });
   }
 
-
   /**
    * "Is this path a real, well-formed plan?" — the check for a caller that binds
    * `plan_path` but has no use for the plan's CONTENT (the `runTransagent` chat
@@ -412,7 +411,7 @@ export class PlanService {
    * M10 thread isolation: no `path` in `internal`). Nothing pinned is a state of
    * the thread, not a wrong address, so it answers `null`, never PLAN_NOT_FOUND.
    */
-  async getByThread(threadId: string, opts?: { range?: ArtifactRange }): Promise<Plan | null> {
+  async getByThread(threadId: string, opts?: PlanReadOpts): Promise<Plan | null> {
     const planPath = this.pinnedPlanPath(threadId);
     if (!planPath) return null;
     return this.getByPath(planPath, opts);

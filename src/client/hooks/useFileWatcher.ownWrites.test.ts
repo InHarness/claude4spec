@@ -16,15 +16,22 @@
  * during it is another writer's and refetches. Only the `applied` flip's echo
  * is absorbed.
  *
- * The real `useFileWatcher`, `usePatches` / `useBriefs` hooks, `patchesApi` /
- * `briefsApi` and the own-write ledger run; the WebSocket and `fetch` (the
+ * A plan Save (M10) echoes as `plan:updated` with `threadId: null`; an event
+ * naming a thread is an agent's write and is never taken for the echo. A
+ * `threadId: null` event is not proof of an own write (a REST frontmatter
+ * PATCH from another tab broadcasts one too); the per-path write lock is what
+ * makes absorbing one safe — see `lib/own-writes.ts`. The absorbed echo queues
+ * no key at all: the Save's mutation owns the detail, versions and plans list.
+ *
+ * The real `useFileWatcher`, `usePatches` / `useBriefs` / `usePlan` hooks,
+ * `patchesApi` / `briefsApi` and the own-write ledger run; the WebSocket and `fetch` (the
  * server) are fakes. Patches are longer than the response budget, so the
  * cache written after a save is checked to still end with the file's last line.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { DEFAULT_BUDGET_CHARS } from '../../server/discovery/budget.js';
 
 vi.mock('../runtime/boot-plugins.js', () => ({ reloadFrontendPlugins: () => Promise.resolve() }));
@@ -35,6 +42,8 @@ vi.mock('../core/plugin-host/host.js', () => ({
 import { useFileWatcher } from './useFileWatcher.js';
 import { usePatch, useSetPatchApplied, useUpdatePatchContent } from './usePatches.js';
 import { useBrief, useUpdateBriefContent } from './useBriefs.js';
+import { usePlan, usePlans, useSavePlan } from './usePlan.js';
+import { useArtifactVersions } from './useArtifactVersions.js';
 import { resetOwnWrites } from '../lib/own-writes.js';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -63,10 +72,13 @@ const longBody = (head: string) =>
   `\n\n${LAST}\n`;
 
 /** The server: one file per kind; a PUT can be held in flight to play an echo during it. */
+type Kind = 'patch' | 'brief' | 'plan';
 const server = {
-  file: { patch: '', brief: '' } as Record<'patch' | 'brief', string>,
-  hash: { patch: 'h1', brief: 'b1' } as Record<'patch' | 'brief', string>,
-  reads: { patch: 0, brief: 0 } as Record<'patch' | 'brief', number>,
+  file: { patch: '', brief: '', plan: '' } as Record<Kind, string>,
+  hash: { patch: 'h1', brief: 'b1', plan: 'p1' } as Record<Kind, string>,
+  reads: { patch: 0, brief: 0, plan: 0 } as Record<Kind, number>,
+  /** GETs of the plan's version list, of the plans list and of a thread listing. */
+  planReads: { versions: 0, list: 0, threads: 0 },
   hold: null as null | { release: null | (() => void) },
   conflict: false,
 };
@@ -81,9 +93,17 @@ const json = (status: number, body: unknown) =>
 async function fakeFetch(input: unknown, init?: RequestInit): Promise<Response> {
   const url = String(input);
   const method = init?.method ?? 'GET';
-  const m = /\/artifacts\/(patch|brief)\/doc\.md(\/content|\/frontmatter)?$/.exec(url);
+  if (method === 'GET' && /\/artifacts\/plan\/doc\.md\/versions$/.test(url)) {
+    server.planReads.versions += 1;
+    return json(200, { data: [] });
+  }
+  if (method === 'GET' && /\/artifacts\/plan(\?.*)?$/.test(url)) {
+    server.planReads.list += 1;
+    return json(200, { data: [] });
+  }
+  const m = /\/artifacts\/(patch|brief|plan)\/doc\.md(\/content|\/frontmatter)?$/.exec(url);
   if (!m) return json(404, { error: { code: 'NOT_FOUND', message: url } });
-  const kind = m[1] as 'patch' | 'brief';
+  const kind = m[1] as Kind;
   if (method === 'GET' && !m[2]) {
     server.reads[kind] += 1;
     const content = server.file[kind];
@@ -94,7 +114,8 @@ async function fakeFetch(input: unknown, init?: RequestInit): Promise<Response> 
   if (method === 'PUT' && m[2] === '/content') {
     if (server.hold) await new Promise<void>((r) => (server.hold!.release = r));
     if (server.conflict) {
-      return json(409, { error: { code: 'PATCH_CONFLICT', message: 'hash mismatch', currentHash: 'other' } });
+      const code = kind === 'plan' ? 'PLAN_CONFLICT' : 'PATCH_CONFLICT';
+      return json(409, { error: { code, message: 'hash mismatch', currentHash: 'other' } });
     }
     const { content } = JSON.parse(String(init!.body)) as { content: string };
     server.file[kind] = content;
@@ -113,20 +134,36 @@ const h = {
   savePatch: null as null | ((content: string) => Promise<unknown>),
   setApplied: null as null | ((applied: boolean) => Promise<unknown>),
   saveBrief: null as null | ((content: string) => Promise<unknown>),
+  savePlan: null as null | ((content: string) => Promise<unknown>),
   patch: null as null | { content: string; hash: string },
   brief: null as null | { content: string; hash: string },
+  plan: null as null | { content: string; body: string; hash: string },
 };
 
-/** An open patch screen and an open brief screen under the global watcher. */
+/** An open patch, brief and plan screen under the global watcher. */
 function OpenScreens() {
   useFileWatcher();
   const patch = usePatch('doc.md');
   const brief = useBrief('doc.md');
+  const plan = usePlan('doc.md');
+  const savePlan = useSavePlan();
+  useArtifactVersions('plan', 'doc.md');
+  usePlans();
+  // Stands for any thread listing (`['threads', …]`) open beside the plan.
+  useQuery({
+    queryKey: ['threads', 'open'],
+    queryFn: async () => {
+      server.planReads.threads += 1;
+      return [];
+    },
+  });
   const updatePatch = useUpdatePatchContent('doc.md');
   const applied = useSetPatchApplied('doc.md');
   const updateBrief = useUpdateBriefContent('doc.md');
   h.patch = patch.data ?? null;
   h.brief = brief.data ?? null;
+  h.plan = plan.data ?? null;
+  h.savePlan = (content) => savePlan.mutateAsync({ planPath: 'doc.md', content, expectedHash: plan.data!.hash });
   h.savePatch = (content) => updatePatch.mutateAsync({ content, expectedHash: patch.data!.hash });
   h.setApplied = (v) => applied.mutateAsync(v);
   h.saveBrief = (content) => updateBrief.mutateAsync({ content, expectedHash: brief.data!.hash });
@@ -179,9 +216,10 @@ async function startHeldSave(run: () => Promise<unknown>) {
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
   resetOwnWrites();
-  server.file = { patch: FM + longBody('Patch'), brief: FM + longBody('Brief') };
-  server.hash = { patch: 'h1', brief: 'b1' };
-  server.reads = { patch: 0, brief: 0 };
+  server.file = { patch: FM + longBody('Patch'), brief: FM + longBody('Brief'), plan: FM + longBody('Plan') };
+  server.hash = { patch: 'h1', brief: 'b1', plan: 'p1' };
+  server.reads = { patch: 0, brief: 0, plan: 0 };
+  server.planReads = { versions: 0, list: 0, threads: 0 };
   server.hold = null;
   server.conflict = false;
   FakeSocket.instances = [];
@@ -293,5 +331,65 @@ describe('own-save echo vs. another writer — brief screen (same mechanism)', (
     act(() => socket().emit({ kind: 'briefs:changed', path: 'doc.md', origin: 'server' }));
     await pastBatchWindow();
     expect(server.reads.brief).toBe(2);
+  });
+});
+
+describe('own-save echo vs. another writer — plan screen (same mechanism, 2.1.48 M10)', () => {
+  it('[entity:plan-page] the plan:updated echo of this tab\'s Save (threadId null) does not refetch the whole plan, also after the PUT answered; the cache keeps the PUT\'s hash and the last line', async () => {
+    await mount();
+    expect(server.reads.plan).toBe(1);
+    const next = FM + longBody('Plan v2');
+    const answer = await startHeldSave(() => h.savePlan!(next));
+    await answer();
+    act(() => socket().emit({ kind: 'plan:updated', planPath: 'doc.md', threadId: null, version: 2, changedBy: 'user' }));
+    await pastBatchWindow();
+    expect(server.reads.plan).toBe(1);
+    expect(h.plan!.hash).toBe('p1+');
+    expect(h.plan!.content).toBe(next);
+    expect(h.plan!.body.trimEnd().endsWith(LAST)).toBe(true);
+
+    // Another tab saves the plan: same event, no own save pending → refetched.
+    act(() => socket().emit({ kind: 'plan:updated', planPath: 'doc.md', threadId: null, version: 3, changedBy: 'user' }));
+    await pastBatchWindow();
+    expect(server.reads.plan).toBe(2);
+  });
+
+  it('[entity:plan-page] an agent\'s plan:updated (it names a thread) during this tab\'s Save is never taken for the echo and refetches the plan', async () => {
+    await mount();
+    const answer = await startHeldSave(() => h.savePlan!(FM + longBody('Plan v2')));
+    act(() => socket().emit({ kind: 'plan:updated', planPath: 'doc.md', threadId: 't-agent', version: 2, changedBy: 'agent' }));
+    await answer();
+    await pastBatchWindow();
+    expect(server.reads.plan).toBe(2);
+  });
+
+  it('[entity:plan-page] a plan:updated absorbed during a Save that fails (409 PLAN_CONFLICT) is handed back: the plan is refetched', async () => {
+    await mount();
+    server.conflict = true;
+    const answer = await startHeldSave(() => h.savePlan!(FM + longBody('Plan v2')));
+    act(() => socket().emit({ kind: 'plan:updated', planPath: 'doc.md', threadId: null, version: 2, changedBy: 'user' }));
+    await answer();
+    await pastBatchWindow();
+    expect(server.reads.plan).toBe(2);
+    // Everything the watcher skipped for the absorbed event is refetched once.
+    expect(server.planReads).toEqual({ versions: 2, list: 2, threads: 2 });
+  });
+
+  it('[entity:plan-page] an own Save fetches the versions and the plans list once and no thread listing — the absorbed echo queues none of them; a foreign plan:updated refetches all', async () => {
+    await mount();
+    expect(server.planReads).toEqual({ versions: 1, list: 1, threads: 1 });
+    const answer = await startHeldSave(() => h.savePlan!(FM + longBody('Plan v2')));
+    await answer();
+    // The echo lands after the PUT answered (separate sockets).
+    act(() => socket().emit({ kind: 'plan:updated', planPath: 'doc.md', threadId: null, version: 2, changedBy: 'user' }));
+    await pastBatchWindow();
+    expect(server.reads.plan).toBe(1);
+    expect(server.planReads).toEqual({ versions: 2, list: 2, threads: 1 });
+
+    // Another writer's plan:updated: no own Save pending → every key refetched.
+    act(() => socket().emit({ kind: 'plan:updated', planPath: 'doc.md', threadId: null, version: 3, changedBy: 'user' }));
+    await pastBatchWindow();
+    expect(server.reads.plan).toBe(2);
+    expect(server.planReads).toEqual({ versions: 3, list: 3, threads: 2 });
   });
 });
