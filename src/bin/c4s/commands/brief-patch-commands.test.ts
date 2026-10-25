@@ -23,6 +23,8 @@ import { runGetBrief } from './get-brief.js';
 import { runCreatePatch } from './create-patch.js';
 import { runCreateBrief } from './create-brief.js';
 import { runCreatePlan } from './create-plan.js';
+import { createTestApp, type TestApp } from '../../../../tests/helpers/test-app.js';
+import { DEFAULT_BUDGET_CHARS } from '../../../server/discovery/budget.js';
 
 const CONFIG = {
   name: 'test-project',
@@ -42,8 +44,15 @@ describe('[ac:ac-rodzina-brief-patch-list-briefs-read] the brief/patch family de
   let seen: Array<{ method: string; url: string; body: string }>;
   let status: number;
   let reply: unknown;
+  /**
+   * 2.1.48 — when set, every request but the health check is answered by a real
+   * backend (the artifact detail route over a real brief file) instead of the
+   * canned `reply`, with `/api/projects/<id>` mapped onto its `/api`.
+   */
+  let forward: TestApp['app'] | null;
 
   beforeEach(async () => {
+    forward = null;
     registryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-bp-registry-'));
     projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-bp-project-'));
     prevHome = process.env.C4S_HOME;
@@ -60,6 +69,11 @@ describe('[ac:ac-rodzina-brief-patch-list-briefs-read] the brief/patch family de
       req.on('data', (c) => (body += c));
       req.on('end', () => {
         seen.push({ method: req.method ?? 'GET', url, body });
+        if (forward) {
+          req.url = url.replace(/^\/api\/projects\/[^/]+/, '/api');
+          forward(req, res);
+          return;
+        }
         res.statusCode = status;
         res.end(JSON.stringify(reply));
       });
@@ -172,7 +186,7 @@ describe('[ac:ac-rodzina-brief-patch-list-briefs-read] the brief/patch family de
     it('[ac:ac-c4s-read-brief-brief-path-zwraca] prints frontmatter, body and content — the three fields it always answered with', async () => {
       reply = { data: { path: 'x.md', frontmatter: { type: 'brief' }, body: 'B', content: 'C', hash: 'h' } };
       await runGetBrief(args('get-brief', 'sub/x.md'));
-      expect(seen[0]!.url).toMatch(/\/artifacts\/brief\/sub\/x\.md$/);
+      expect(seen[0]!.url).toMatch(/\/artifacts\/brief\/sub\/x\.md\?view=operation$/);
       // `hash` and `path` are dropped: a caller piping this into `jq '.body'`
       // must not have to change, and neither field was ever in the answer.
       expect(printed()).toEqual({ frontmatter: { type: 'brief' }, body: 'B', content: 'C' });
@@ -217,6 +231,107 @@ describe('[ac:ac-rodzina-brief-patch-list-briefs-read] the brief/patch family de
        * `code` passed the whole time.
        */
       expect(err).toBeInstanceOf(CliError);
+    });
+
+    it('[entity:cli-command/get-brief] reads the operation projection (view=operation), sends --range as written, cuts nothing and passes truncated + a runnable --range hint through', async () => {
+      // The bin validates no window: a value the server will refuse still
+      // reaches the server, untouched.
+      reply = { data: { path: 'sub/x.md', frontmatter: { type: 'brief' }, body: 'B', content: 'C', hash: 'h' } };
+      await runGetBrief(args('get-brief', 'sub/x.md', '--range', 'abc'));
+      expect(seen).toHaveLength(1);
+      expect(seen[0]!.method).toBe('GET');
+      expect(seen[0]!.url).toMatch(/\/artifacts\/brief\/sub\/x\.md\?view=operation&range=abc$/);
+
+      // The bin computes no budget: a content longer than it is printed whole
+      // when the server did not cut it.
+      const long = `${'y'.repeat(DEFAULT_BUDGET_CHARS + 500)}\nEND`;
+      reply = { data: { path: 'sub/x.md', frontmatter: { type: 'brief' }, body: long, content: long, hash: 'h' } };
+      stdout = '';
+      await runGetBrief(args('get-brief', 'sub/x.md'));
+      expect(printed()).toEqual({ frontmatter: { type: 'brief' }, body: long, content: long });
+
+      // A cut answer: `truncated` passes through, and the route's query spelling
+      // becomes a `c4s get-brief` call — the only call this channel can make.
+      reply = {
+        data: {
+          path: 'sub/x.md',
+          frontmatter: { type: 'brief' },
+          body: 'B',
+          content: 'C',
+          hash: 'h',
+          truncated: true,
+          truncationHint: "brief 'sub/x.md' was truncated by the response budget — read it in windows with ?view=operation&range=1-400 and advance (the file has 900 lines).",
+        },
+      };
+      stdout = '';
+      await runGetBrief(args('get-brief', 'sub/x.md'));
+      expect(printed().truncated).toBe(true);
+      expect(printed().truncationHint).toBe(
+        "brief 'sub/x.md' was truncated by the response budget — read it in windows with c4s get-brief sub/x.md --range 1-400 and advance (the file has 900 lines).",
+      );
+      expect(printed().content).toBe('C');
+    });
+  });
+
+  /**
+   * 2.1.48 — `c4s get-brief` against the REAL detail route: the budget and the
+   * window are the server's (the bin has neither), so the criteria are proven
+   * end to end over a real brief file.
+   */
+  describe('get-brief over the real artifact detail route (2.1.48)', () => {
+    let testApp: TestApp;
+    const LAST = 'LAST LINE OF THE BRIEF';
+    const frontmatter = '---\ntype: brief\nfrom_release: null\nto_release: null\ngenerated_at: 2026-01-01T00:00:00.000Z\nimplemented: false\n---\n';
+    const writeBrief = (rel: string, text: string) => fs.writeFileSync(path.join(testApp.cwd, 'briefs', rel), text, 'utf8');
+
+    beforeEach(async () => {
+      testApp = await createTestApp();
+      forward = testApp.app;
+    });
+    afterEach(() => {
+      testApp.cleanup();
+    });
+
+    it('[ac:ac-c4s-get-brief-dla-briefu-dluzszego-ni] a brief longer than the response budget comes back with truncated: true, and its hint runs as a get-brief call with --range', async () => {
+      // Short lines, so the hint's 400-line window fits the budget and the
+      // retry below is served whole.
+      const lines = Array.from({ length: Math.ceil(DEFAULT_BUDGET_CHARS / 30) }, (_, i) => `${i} ${'x'.repeat(30)}`);
+      const file = `${frontmatter}${lines.join('\n')}\n${LAST}\n`;
+      expect(file.length).toBeGreaterThan(DEFAULT_BUDGET_CHARS);
+      writeBrief('big.md', file);
+
+      await runGetBrief(args('get-brief', 'big.md'));
+      const cut = printed();
+      expect(cut.truncated).toBe(true);
+      expect(cut.content as string).not.toContain(LAST);
+      expect((cut.content as string).length).toBeLessThan(file.length);
+      const hint = cut.truncationHint as string;
+      expect(hint).not.toContain('?view=operation');
+      const m = /c4s get-brief big\.md --range (\d+)-(\d+)/.exec(hint);
+      expect(m).not.toBeNull();
+
+      // The hint is a call this channel can make: run it, and it is served.
+      stdout = '';
+      await runGetBrief(args('get-brief', 'big.md', '--range', `${m![1]}-${m![2]}`));
+      const retry = printed();
+      expect(retry.truncated).toBeUndefined();
+      expect(retry.content as string).toBe(
+        file.split('\n').slice(Number(m![1]) - 1, Number(m![2])).join('\n'),
+      );
+      expect(seen.at(-1)!.url).toMatch(/\/artifacts\/brief\/big\.md\?view=operation&range=\d+-\d+$/);
+    });
+
+    it('[ac:ac-c4s-get-brief-range-1-10-zwraca-wylac] --range 1-10 returns lines 1 to 10 of the brief and nothing else', async () => {
+      const lines = Array.from({ length: 40 }, (_, i) => `line ${i + 1} of the body`);
+      const file = `${frontmatter}${lines.join('\n')}\n`;
+      writeBrief('r.md', file);
+
+      await runGetBrief(args('get-brief', 'r.md', '--range', '1-10'));
+      const out = printed();
+      const content = out.content as string;
+      expect(content.split('\n')).toEqual(file.split('\n').slice(0, 10));
+      expect(content).not.toContain(file.split('\n')[10]!);
+      expect(out.truncated).toBeUndefined();
     });
   });
 

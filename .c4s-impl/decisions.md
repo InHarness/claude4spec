@@ -16,3 +16,10 @@
 - The budget's hints are written per channel (`ArtifactReadChannel`): tool channels keep `range: { start, end }`; the detail route's operation projection gets `?view=operation&range=a-b` (n9qp5ja7 — never propose a call the channel cannot make).
 - get_plan's `cli` n/a reason follows its own 2.1.48 record (`GET_PLAN_NO_CLI`); update_plan / list_plan_versions / get_plan_version keep the old shared text (their records did not change in this window).
 - PlanService.readForWrite now delegates to `getByPath(path, { full: true })` (one whole-file read path, shared with the editor projection).
+
+## m21-brief-full-read-and-cli / p1-l5-l14
+- `c4s get-brief` keeps printing `{ frontmatter, body, content }` (+ `truncated`/`truncationHint` when cut), not the whole `data`: the active `ac-c4s-read-brief-brief-path-zwraca` still names exactly those three fields, and they are the operation payload's fields minus `path`/`hash`.
+- The bin rewrites the route's hint spelling `?view=operation&range=a-b` into `c4s get-brief <path> --range a-b` (the record: "podpowiedź staje się wykonywalnym wywołaniem komendy z `--range`"). That is a rename of the spelling, not a budget or window computation. The same rewrite applies to the hint of a server refusal (e.g. a malformed `--range`), so the CLI never proposes a call it cannot make.
+- `--range` is sent as written; the local `<from>:<to>` parser is removed (no alias for the old `:` spelling — the route refuses it with 400).
+- `useCreateBriefThread` no longer invalidates the brief detail query: the detail is the whole file now, and a new thread does not change it (performance rule).
+- The brief page render test fakes only `fetch` and tiptap's React binding; the real BriefDetail/BriefEditor/useBriefs/briefsApi run, so the GET URL (no `view`, no `range`) and the PUT body are what the screen really sends.

@@ -100,6 +100,12 @@ export const briefsApi = {
     return env.data;
   },
 
+  /**
+   * 2.1.48 (M36 `r2nekhf5`) — the detail route's DEFAULT projection: the whole
+   * file, never budgeted, windowed or `truncated`. The editor saves by full
+   * replacement with the whole file's `expectedHash`, so a cut read would let
+   * autosave overwrite the brief with its own fragment. Never `view=operation`.
+   */
   async get(briefPath: string): Promise<BriefDetailResponse> {
     const env = await handle<Envelope<BriefDetailResponse>>(
       await apiFetch(`/api/artifacts/brief/${encodeBriefPath(briefPath)}`),

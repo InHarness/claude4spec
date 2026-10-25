@@ -1,5 +1,5 @@
 {
- "iteration": 4,
+ "iteration": 12,
  "conventions": [
   {
    "label": "L3 (Spec Operations) — implementor M43 — role of the layer",
@@ -47,7 +47,7 @@
     "m23-patch-full-read",
     "m10-plan-full-read-and-conflict"
    ],
-   "startCommit": null
+   "startCommit": "1caffcbf650044bb643c05da164fe0e0a1bf9e59"
   }
  ],
  "units": [
@@ -194,13 +194,34 @@
     }
    ],
    "wave": 2,
-   "status": "pending",
-   "portions": [],
-   "startCommit": null,
-   "baseCommit": null,
+   "status": "verified",
+   "portions": [
+    {
+     "name": "m21-brief-full-read-and-cli/p1-l5-l14",
+     "layers": [
+      "L5",
+      "L14"
+     ],
+     "slugs": [
+      "get-brief",
+      "brief-page",
+      "ac-brief-dluzszy-niz-budzet-odpowiedzi-w",
+      "ac-po-autozapisie-briefu-dluzszego-niz-b",
+      "ac-c4s-get-brief-dla-briefu-dluzszego-ni",
+      "ac-c4s-get-brief-range-1-10-zwraca-wylac"
+     ],
+     "status": "implemented",
+     "rounds": 2,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
+   "startCommit": "b5537522761eb34d9209756d76b42ce43b77fa38",
+   "baseCommit": "1caffcbf650044bb643c05da164fe0e0a1bf9e59",
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 2
    },
    "jobs": []
   },
