@@ -1,3 +1,0 @@
-# Review — m21-brief-full-read-and-cli (non-blocking)
-
-- **rev-0002** `src/client/components/BriefEditor.tsx:114` — rev-0001 is fixed. useUpdateBriefContent.onSuccess now writes the detail cache with setQueryData, using the sent content, bodyOf(content), and the PUT's hash and frontmatter. It invalidates only versions. The render test proves that no detail GET follows the PUT and that the second save carries hash h2. Typecheck is green. One leftover: the doSave comment still explains the dirty-flag guard by saying that `onSuccess` invalidates the detail query, and that is no longer true. The guard still matters, because setQueryData puts the just-saved body into `brief` and that triggers the hydrate effect. Reword the comment so it describes the cache write.
