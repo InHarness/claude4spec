@@ -1,5 +1,5 @@
 {
- "iteration": 34,
+ "iteration": 35,
  "conventions": [
   {
    "label": "L3 (Spec Operations) — implementor M43 — role of the layer",
@@ -337,7 +337,7 @@
     }
    ],
    "wave": 2,
-   "status": "in-progress",
+   "status": "verified",
    "portions": [
     {
      "name": "m10-plan-full-read-and-conflict/p1-l5-l5",
