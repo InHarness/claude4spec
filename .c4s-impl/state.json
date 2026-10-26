@@ -1,0 +1,702 @@
+{
+  "iteration": 0,
+  "conventions": [
+    {
+      "label": "L5 (UI) — implementor M50",
+      "key": "pages/layers/L5-ui.md",
+      "offset": 1,
+      "anchor": "42ewy1oy"
+    },
+    {
+      "label": "L5 (UI) — implementor M50",
+      "key": "pages/layers/L5-ui.md",
+      "offset": 2,
+      "anchor": "tehej2wz"
+    },
+    {
+      "label": "L17 (Project Settings) — implementor M26",
+      "key": "pages/layers/L17-project-settings.md",
+      "offset": 1,
+      "anchor": "mj2r93no"
+    },
+    {
+      "label": "L17 (Project Settings) — implementor M26",
+      "key": "pages/layers/L17-project-settings.md",
+      "offset": 2,
+      "anchor": "ata1r5sz"
+    },
+    {
+      "label": "Modules table, for the system verifier (no user-jobs table)",
+      "key": "pages/SKILL.md",
+      "offset": 12,
+      "anchor": "45yst8co"
+    },
+    {
+      "label": "Modules table, for the system verifier (no user-jobs table)",
+      "key": "pages/SKILL.md",
+      "offset": 13,
+      "anchor": "oq23nb0j"
+    },
+    {
+      "label": "Modules table, for the system verifier (no user-jobs table)",
+      "key": "pages/SKILL.md",
+      "offset": 14,
+      "anchor": "zpn3gaip"
+    }
+  ],
+  "waves": [
+    {
+      "n": 1,
+      "units": [
+        "u1-elements-menu-config",
+        "u3-sidebar-side-menu"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 2,
+      "units": [
+        "u2-elements-menu-bundle-clone",
+        "u4-elements-slot"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 3,
+      "units": [
+        "u5-sidebar-menu-editor"
+      ],
+      "startCommit": null
+    }
+  ],
+  "systemVerified": false,
+  "errors": 0,
+  "units": [
+    {
+      "id": "u1-elements-menu-config",
+      "goal": "Plik konfiguracyjny projektu, a z nim odczyt i zapis konfiguracji przez API, zna nowy opcjonalny klucz układu menu ELEMENTS. Zapis łamiący reguły walidacji jest odrzucany z błędem przypiętym do tego pola. Plik, który je łamie (np. po merge'u), wczytuje się z tolerancją, a zły kształt klucza pozostaje twardym błędem wczytania. Klucz jest commitowany razem z resztą wspólnej konfiguracji zespołu. Nic nie jest usuwane.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "change": {
+              "offset": 4,
+              "limit": 1,
+              "anchors": [
+                "5kkkih9i"
+              ]
+            },
+            "deferred": [
+              {
+                "what": "to, jak znormalizowane wpisy wyglądają w sidebarze (pierwsze wystąpienie zdublowanego typu, grupy bez widocznego członka, członkowie grup z pustą etykietą lub pustą listą typów na końcu)",
+                "to": "u4-elements-slot",
+                "why": "składanie slotu ELEMENTS należy do u4"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "change": {
+              "offset": 7,
+              "limit": 1,
+              "anchors": [
+                "o4ju2d7m"
+              ]
+            },
+            "deferred": [
+              {
+                "what": "walidacyjna reguła UI wyboru ikony grupy z zamkniętej listy",
+                "to": "u5-sidebar-menu-editor",
+                "why": "to ograniczenie edytora, nie API"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m13cel00",
+                "m13dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 19,
+              "limit": 5,
+              "anchors": [
+                "ca2v2bzw",
+                "8a4oxdg4",
+                "e8xcx6g7",
+                "8mwihe60",
+                "5kkkih9i"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 35,
+              "limit": 2,
+              "anchors": [
+                "79sw3wsb",
+                "o4ju2d7m"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "85hp4f2v",
+                "cri3lyli"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "context": {
+              "offset": 12,
+              "limit": 1,
+              "anchors": [
+                "cfg0gitw"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "context": {
+              "offset": 21,
+              "limit": 1,
+              "anchors": [
+                "kt5gesnm"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "dto",
+            "slugs": [
+              "app-config-response",
+              "patch-config-request"
+            ]
+          },
+          {
+            "type": "code-snippet",
+            "slugs": [
+              "config-json-shape"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-blad-odrzucenia-zapisu-elementsmenu-j",
+              "ac-zapis-dwoch-grup-menu-elements-o-tej",
+              "ac-zapis-elementsmenu-z-typem-obecnym-w",
+              "ac-zapis-grupy-menu-elements-bez-typow-j",
+              "ac-zapis-grupy-menu-elements-z-pusta-ety",
+              "ac-zapis-wpisu-grupy-menu-elements-z-pol",
+              "ac-plik-z-typem-obecnym-w-elementsmenu-d"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u3-sidebar-side-menu",
+      "goal": "Powłoka dostaje jeden mechanizm menu bocznego sidebara: menu zakotwiczone przy wpisie, otwierane klikiem lub najechaniem, najwyżej jedno otwarte naraz, pozycje-linki z obsługą Cmd/Ctrl+klik, obsługa klawiatury i focusu oraz semantyka dostępności. OTHERS przechodzi z dotychczasowego fly-outu na to menu, a aktywność wpisu ELEMENTS liczy się po prefiksach tras wszystkich typów, które wpis obejmuje. Dotychczasowy fly-out OTHERS zostaje usunięty.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m50-app-shell.md",
+            "change": "all",
+            "deferred": [
+              {
+                "what": "wpisy ELEMENTS, które otwierają menu boczne i obejmują kilka typów (grupy)",
+                "to": "u4-elements-slot",
+                "why": "ich skład deklaruje slot ELEMENTS w M13"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m50-app-shell.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "2gxohenh",
+                "bdmt5qsw"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m50-app-shell.md",
+            "context": {
+              "offset": 3,
+              "limit": 3,
+              "anchors": [
+                "pqxnmscd",
+                "sn7eu7b8",
+                "8h2a734u"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m50-app-shell.md",
+            "context": {
+              "offset": 9,
+              "limit": 3,
+              "anchors": [
+                "l5primv1",
+                "wkkqzeum",
+                "l5pkeysm"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-cmd-ctrl-klik-pozycji-menu-bocznego-o",
+              "ac-esc-zamyka-otwarte-menu-boczne-sideba",
+              "ac-klik-pozycji-menu-bocznego-sidebara-n",
+              "ac-klik-pozycji-menu-bocznego-sidebara-z",
+              "ac-otwarcie-menu-bocznego-sidebara-zamyk",
+              "ac-po-zamknieciu-menu-bocznego-klawiszem"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u2-elements-menu-bundle-clone",
+      "goal": "Sanityzacja konfiguracji do bundla wydania przepuszcza układ menu ELEMENTS na białej liście (wersja schematu bundla bez zmian), a klonowanie projektu z bundla utrwala go w konfiguracji klonu. Nic nie jest usuwane.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m17-snapshots-releases/bundle-archive-format.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m17-snapshots-releases/bundle-archive-format.md",
+            "context": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "m17bnd001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m17-snapshots-releases/bundle-archive-format.md",
+            "context": {
+              "offset": 4,
+              "limit": 1,
+              "anchors": [
+                "m17bndcf1"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m27-project-clone/m27-project-clone.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m27-project-clone/m27-project-clone.md",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "kih7l6ry",
+                "n4iqqtfg",
+                "ovugyzsk"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m27-project-clone/m27-project-clone.md",
+            "context": {
+              "offset": 6,
+              "limit": 2,
+              "anchors": [
+                "azsapwr4",
+                "64bmqf81"
+              ]
+            }
+          }
+        ],
+        "entities": []
+      },
+      "dependsOn": [
+        {
+          "unit": "u1-elements-menu-config",
+          "why": "klucz musi istnieć w schemacie i w loaderze konfiguracji, żeby sanityzacja i persist klonu mogły go przenieść"
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u4-elements-slot",
+      "goal": "Slot ELEMENTS składa się z układu zespołu: wpisy i grupy w kolejności z pliku, potem widoczne typy nieobecne w układzie wg kolejności domyślnej z manifestu typu. Wpis grupy ma ikonę z zamkniętej listy (z ikoną domyślną jako fallbackiem), etykietę i licznik będący sumą liczników członków, a klik otwiera menu boczne z pozycjami członków. Typy ukryte tracą tylko wpis i zachowują trasę. Normalizacja nieprawidłowego pliku jest widoczna w sidebarze. Kolejność z manifestu typu przestaje być jedynym źródłem kolejności i staje się kolejnością domyślną.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "change": {
+              "offset": 0,
+              "limit": 5,
+              "anchors": [
+                "ca2v2bzw",
+                "8a4oxdg4",
+                "e8xcx6g7",
+                "8mwihe60",
+                "5kkkih9i"
+              ]
+            },
+            "completes": [
+              {
+                "what": "to, jak znormalizowane wpisy wyglądają w sidebarze, w sekcji `5kkkih9i`",
+                "from": "u1-elements-menu-config"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "change": {
+              "offset": 6,
+              "limit": 1,
+              "anchors": [
+                "m13ui000"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m13cel00",
+                "m13dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 4,
+              "limit": 1,
+              "anchors": [
+                "fddg85o3"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 19,
+              "limit": 5,
+              "anchors": [
+                "ca2v2bzw",
+                "8a4oxdg4",
+                "e8xcx6g7",
+                "8mwihe60",
+                "5kkkih9i"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 28,
+              "limit": 1,
+              "anchors": [
+                "m13ui000"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 36,
+              "limit": 1,
+              "anchors": [
+                "o4ju2d7m"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/L2-domain.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/L2-domain.md",
+            "context": {
+              "offset": 0,
+              "limit": 2,
+              "anchors": [
+                "m13dom00",
+                "z7l89jhf"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m50-app-shell.md",
+            "change": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "8h2a734u"
+              ]
+            },
+            "completes": [
+              {
+                "what": "wpisy ELEMENTS, które otwierają menu boczne i obejmują kilka typów",
+                "from": "u3-sidebar-side-menu"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m50-app-shell.md",
+            "context": {
+              "offset": 4,
+              "limit": 2,
+              "anchors": [
+                "sn7eu7b8",
+                "8h2a734u"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-brak-klucza-elementsmenu-daje-wpisy-e",
+              "ac-grupa-bez-widocznego-czlonka-nie-ma-w",
+              "ac-grupa-typow-zajmuje-w-elements-jeden",
+              "ac-grupa-z-jednym-widocznym-czlonkiem-ma",
+              "ac-ikona-grupy-spoza-listy-ikon-grup-daj",
+              "ac-klik-wpisu-grupy-w-elements-otwiera-m",
+              "ac-licznik-wpisu-grupy-pokazuje-placehol",
+              "ac-licznik-wpisu-grupy-rowna-sie-sumie-l",
+              "ac-lista-encji-ukrytego-typu-otwiera-sie",
+              "ac-na-trasie-ukrytego-typu-zaden-wpis-el",
+              "ac-pozycje-menu-bocznego-grupy-stoja-w-k",
+              "ac-typ-nieaktywny-w-grupie-nie-ma-pozycj",
+              "ac-typ-ukryty-w-elementsmenu-nie-ma-wpis",
+              "ac-typ-zapisany-w-elementsmenu-dwa-razy",
+              "ac-typ-zgrupowany-nie-ma-wlasnego-wpisu",
+              "ac-typy-nieobecne-w-elementsmenu-stoja-w",
+              "ac-widoczny-typ-nieobecny-w-elementsmenu",
+              "ac-wpis-sidebara-obejmujacy-kilka-typow",
+              "ac-wpis-typu-nieaktywnego-w-elementsmenu",
+              "ac-wpis-typu-w-elements-moze-stac-przed",
+              "ac-wpisy-elements-stoja-w-kolejnosci-z-e",
+              "ac-wpisy-w-sekcji-elements-sidebara-derywow",
+              "ac-zmiana-elementsmenu-zapisana-w-innej"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u1-elements-menu-config",
+          "why": "slot czyta układ z odpowiedzi konfiguracji"
+        },
+        {
+          "unit": "u3-sidebar-side-menu",
+          "why": "wpis grupy otwiera menu boczne powłoki i jest aktywny na trasach wszystkich swoich typów"
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u5-sidebar-menu-editor",
+      "goal": "Karta `#entities` w ustawieniach projektu dostaje element Sidebar menu, umieszczony po Entity types. To edytor drzewa układu z listą ukrytych typów. Pozwala zmieniać kolejność, tworzyć, usuwać i nazywać grupy, wybierać ikonę, przenosić typy, ukrywać je i przywracać, usuwać wpisy nieaktywne oraz zresetować układ do kolejności domyślnej. Zapisuje się wspólnym Save karty, a efekt widać w sidebarze od razu. Nic nie jest usuwane.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "change": {
+              "offset": 5,
+              "limit": 1,
+              "anchors": [
+                "lbqrd6xh"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "change": {
+              "offset": 7,
+              "limit": 2,
+              "anchors": [
+                "o4ju2d7m",
+                "4ckqwi8t"
+              ]
+            },
+            "completes": [
+              {
+                "what": "walidacyjna reguła UI wyboru ikony grupy z zamkniętej listy, w sekcji `o4ju2d7m`",
+                "from": "u1-elements-menu-config"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m13cel00",
+                "m13dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 19,
+              "limit": 5,
+              "anchors": [
+                "ca2v2bzw",
+                "8a4oxdg4",
+                "e8xcx6g7",
+                "8mwihe60",
+                "5kkkih9i"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 35,
+              "limit": 4,
+              "anchors": [
+                "79sw3wsb",
+                "o4ju2d7m",
+                "4ckqwi8t",
+                "lbqrd6xh"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-po-zapisie-karty-entities-sidebar-pok",
+              "ac-przy-dwoch-zapisach-karty-entities-pl",
+              "ac-reset-to-default-order-usuwa-klucz-el",
+              "ac-slug-nieaktywnego-typu-zostaje-w-elem",
+              "ac-ukrycie-typu-zgrupowanego-w-edytorze",
+              "ac-usuniety-w-edytorze-sidebar-menu-wpis"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u1-elements-menu-config",
+          "why": "zapis i błędy walidacji idą przez API konfiguracji"
+        },
+        {
+          "unit": "u4-elements-slot",
+          "why": "sidebar musi składać nowy układ, żeby efekt zapisu był widoczny"
+        }
+      ],
+      "wave": 3,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    }
+  ],
+  "entityTypes": [
+    {
+      "type": "ac",
+      "role": "criteria",
+      "checks": "verifies",
+      "links": [
+        "verifies"
+      ],
+      "observedIn": "unit",
+      "inactive": "status = deprecated",
+      "version": 3
+    },
+    {
+      "type": "dto",
+      "role": "built",
+      "inCode": "the TypeScript type of the project config payload GET /api/projects/<id>/config returns (app-config-response) and PATCH accepts (patch-config-request) — src/server/routes/config.ts, its shared/server config types and the client mirror in src/client/lib/api.ts — field names, types and required/optional/nullability exactly as the DTO's `fields` (incl. the optional elementsMenu)",
+      "verify": "a supertest test in src/server/routes/config.route.test.ts named with [entity:<slug>] asserting the live payload/accepted body has every field with its type and no removed field",
+      "links": [],
+      "version": 2
+    },
+    {
+      "type": "code-snippet",
+      "role": "built",
+      "inCode": "config-json-shape → the shape of the project's committed config.json as the config schema/loader parses and writes it (incl. the elementsMenu key: entries and groups with label/icon/types, hidden types), shape-matched not verbatim",
+      "verify": "a trace.md line plus a vitest test next to the config loader/schema named with [entity:config-json-shape] asserting the snippet's shape round-trips through the loader",
+      "links": [],
+      "version": 1
+    }
+  ],
+  "entityParts": []
+}
