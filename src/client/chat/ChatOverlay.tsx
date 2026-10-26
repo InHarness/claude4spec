@@ -1264,10 +1264,11 @@ function ModelSettingsPopover({ models, defaultModel, model, setModel, thinking,
             confirmed BOTH preset deny-groups are enforceable here. Where they are
             not, `planMode: true` would make the next turn refuse to start
             (TOOL_POLICY_REFUSED), so a switch that only breaks the turn is worse
-            than no switch. */}
+            than no switch. Switching it OFF is always allowed: an unconfirmed
+            (or unenforceable) state must never trap a thread in plan mode. */}
         <button
-          onClick={() => { if (planModeEnforceable) setPlanMode(!planMode); }}
-          disabled={!planModeEnforceable}
+          onClick={() => { if (planModeEnforceable || planMode) setPlanMode(!planMode); }}
+          disabled={!planModeEnforceable && !planMode}
           title={
             planModeEnforceable
               ? undefined
@@ -1279,7 +1280,7 @@ function ModelSettingsPopover({ models, defaultModel, model, setModel, thinking,
           style={{
             background: planMode ? 'var(--c-accent-soft)' : 'var(--c-panel)',
             border: `1px solid ${planMode ? 'var(--c-accent)' : 'var(--c-hair)'}`,
-            opacity: planModeEnforceable ? 1 : 0.5,
+            opacity: planModeEnforceable || planMode ? 1 : 0.5,
           }}
         >
           <span

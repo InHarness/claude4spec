@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { buildTransagentToolsServer } from './transagent-tools.js';
-import { TransagentDispatcher } from '../services/transagent-dispatcher.js';
+import { ResumeConfigLockedError, TransagentDispatcher } from '../services/transagent-dispatcher.js';
 import type { AgentTurnDeps, AgentTurnInput } from '../routes/agent-turn.js';
 import { runMigrations } from '../db/migrate.js';
 import { ChatService } from '../services/chat.js';
@@ -128,7 +128,7 @@ describe('runTransagent — error taxonomy', () => {
   it('carries RESUME_CONFIG_LOCKED violations structured in the tool error', async () => {
     const violations = [{ path: 'model', reason: 'immutable on resume' }];
     const { body } = await callAndParse(
-      Object.assign(new DomainError('RESUME_CONFIG_LOCKED', 'config changed', 'Spawn a fresh banka'), { violations }),
+      new ResumeConfigLockedError('config changed', 'Spawn a fresh banka', violations as ResumeConfigLockedError['violations']),
     );
     expect(body.violations).toEqual(violations);
   });

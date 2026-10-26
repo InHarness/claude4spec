@@ -597,6 +597,9 @@ export async function runAgentTurn(
    */
   const REPLAY_BUDGET_BYTES = 4 * 1024 * 1024;
 
+  /** `tool_use` id → tool name, for the header of a degraded `tool_result`. */
+  const replayToolNames = new Map<string, string>();
+
   const sizeOf = (event: TurnEvent): number => {
     try {
       return JSON.stringify(event).length;
@@ -621,9 +624,6 @@ export async function runAgentTurn(
    * Oldest-first, because the newest results are the ones a joining client is
    * most likely to still care about.
    */
-  /** `tool_use` id → tool name, for the header of a degraded `tool_result`. */
-  const replayToolNames = new Map<string, string>();
-
   const degradeOldestToolResults = () => {
     for (const entry of replay.events) {
       if (replay.bytes <= REPLAY_BUDGET_BYTES) return;
@@ -1854,7 +1854,7 @@ export async function runAgentTurn(
       disallowedPaths: resolvedPathScope.disallowedPaths,
     };
     // Resume anchor threaded across turns of THIS request (merged dispatch resumes
-    // the just-finished session). `setLastSessionId` only writes the DB, so we
+    // the just-finished session). `chatService.recordSession` only writes the DB, so we
     // track the latest id in-memory too.
     let currentSessionId: string | undefined = thread.lastSessionId ?? undefined;
 

@@ -46,7 +46,23 @@ import type {
   Model,
 } from '../routes/agent-turn.js';
 import { DomainError } from './tags.js';
-import { checkResumeConfigLock, isSessionInFlight } from '../routes/resume-lock.js';
+import { checkResumeConfigLock, isSessionInFlight, type ResumeConfigLockError } from '../routes/resume-lock.js';
+
+/**
+ * `RESUME_CONFIG_LOCKED` for a banka continuation. `violations` rides along
+ * structured — the same `[{ path, reason }]` the two HTTP entry points put in
+ * their 409 body (`ResumeConfigLockError`).
+ */
+export class ResumeConfigLockedError extends DomainError {
+  constructor(
+    message: string,
+    hint: string,
+    readonly violations: ResumeConfigLockError['error']['violations'],
+  ) {
+    super('RESUME_CONFIG_LOCKED', message, hint);
+    this.name = 'ResumeConfigLockedError';
+  }
+}
 
 export interface TransagentRunInput {
   parentThreadId: string;
@@ -394,17 +410,12 @@ export class TransagentDispatcher {
     });
     if (lock) {
       const fields = lock.error.violations.map((v) => v.path).join(', ');
-      // `violations` rides along structured — the same `[{ path, reason }]` the
-      // two HTTP entry points put in their 409 body.
-      throw Object.assign(
-        new DomainError(
-          'RESUME_CONFIG_LOCKED',
-          // Not `lock.error.message`: that text tells a human to "start a new
-          // conversation"; the agent's remedy is the hint below.
-          `Model, reasoning and filesystem scope are locked for banka '${threadId}''s session. Changed: ${fields}.`,
-          'Spawn a fresh banka (omit `threadId`) to run this work with the current config.',
-        ),
-        { violations: lock.error.violations },
+      throw new ResumeConfigLockedError(
+        // Not `lock.error.message`: that text tells a human to "start a new
+        // conversation"; the agent's remedy is the hint below.
+        `Model, reasoning and filesystem scope are locked for banka '${threadId}''s session. Changed: ${fields}.`,
+        'Spawn a fresh banka (omit `threadId`) to run this work with the current config.',
+        lock.error.violations,
       );
     }
 

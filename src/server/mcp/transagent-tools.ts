@@ -48,7 +48,7 @@ import { toIso } from '../services/artifact-content.js';
 import type { BriefService } from '../services/brief.js';
 import type { PatchService } from '../services/patch.js';
 import type { PlanService } from '../services/plan.js';
-import type { TransagentDispatcher } from '../services/transagent-dispatcher.js';
+import { ResumeConfigLockedError, type TransagentDispatcher } from '../services/transagent-dispatcher.js';
 import { DomainError } from '../services/tags.js';
 import { AgentTurnError } from '../../shared/agent-turn.js';
 
@@ -449,12 +449,11 @@ function buildListPlansTool(plans: Pick<PlanService, 'listPlans'>, projectId: st
 function transagentErrorCode(err: unknown): { code: string; hint?: string; violations?: unknown[] } {
   if (err instanceof AgentTurnError) return { code: err.code };
   if (err instanceof DomainError) {
-    // `RESUME_CONFIG_LOCKED` carries its `[{ path, reason }]` list as the remedy.
-    const violations = (err as { violations?: unknown }).violations;
     return {
       code: err.code === 'VALIDATION' ? 'INVALID_ARGS' : err.code,
       hint: err.hint,
-      ...(Array.isArray(violations) ? { violations } : {}),
+      // `RESUME_CONFIG_LOCKED` carries its `[{ path, reason }]` list as the remedy.
+      ...(err instanceof ResumeConfigLockedError ? { violations: err.violations } : {}),
     };
   }
   // Default stays `AGENT_ERROR` rather than `INTERNAL`: a child turn that
