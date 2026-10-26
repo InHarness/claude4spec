@@ -175,8 +175,8 @@ describe.skipIf(!BASE)('chat turn-resume contract', () => {
 
     expect(res.status).toBe(200);
     const body = (await res.json()) as { planModeEnforceable?: boolean };
-    // A real boolean, not undefined: the client defaults a missing value to
-    // `true`, so an absent field would silently look like a working toggle.
+    // A real boolean, not undefined: the client reads a missing value as "not
+    // confirmed yet", so an absent field would leave the toggle checking forever.
     expect(typeof body.planModeEnforceable).toBe('boolean');
     // claude-code enforces every tool group (at `soft` strength).
     expect(body.planModeEnforceable).toBe(true);

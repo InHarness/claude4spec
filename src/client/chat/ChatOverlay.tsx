@@ -192,11 +192,11 @@ export function ChatOverlay() {
     (activeThreadMeta?.id === chatThreadId ? activeThreadMeta : null);
   const resumeConstraints = chatConfig?.sessionResumeConstraints ?? [];
   /**
-   * Default FALSE while the config is still loading: the toggle is offered as
-   * available only once the server has confirmed that every withheld group is
-   * enforceable — never on an assumption.
+   * `undefined` while the config is still loading — the toggle reads that as
+   * "checking", not as available: it is offered only once the server has
+   * confirmed that every withheld group is enforceable, never on an assumption.
    */
-  const planModeEnforceable = chatConfig?.planModeEnforceable ?? false;
+  const planModeEnforceable = chatConfig?.planModeEnforceable;
   // M21: dla brief context naglowek pokazuje "Brief: <filename>" zamiast title.
   // Pozwala na szybka identyfikacje ze rozmowa ma whitelisted toolset (brief-tools).
   const activeTitle = activeThread?.contextType === 'brief' && activeThread.briefPath
@@ -1088,7 +1088,8 @@ interface ModelSettingsPopoverProps {
   /** Locked fields declared by the adapter package (served via GET /api/chat/config). */
   resumeConstraints: SessionResumeConstraint[];
   /** Whether `probeToolGating` confirmed both plan-mode deny-groups are enforceable. */
-  planModeEnforceable: boolean;
+  /** `undefined` = enforceability not confirmed yet (config loading). */
+  planModeEnforceable: boolean | undefined;
   onClose(): void;
 }
 
@@ -1270,7 +1271,9 @@ function ModelSettingsPopover({ models, defaultModel, model, setModel, thinking,
           title={
             planModeEnforceable
               ? undefined
-              : 'This agent architecture cannot enforce the file-write and shell restrictions plan mode requires'
+              : planModeEnforceable === undefined
+                ? 'Checking whether plan mode can be enforced…'
+                : 'This agent architecture cannot enforce the file-write and shell restrictions plan mode requires'
           }
           className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-md disabled:cursor-not-allowed"
           style={{
@@ -1297,7 +1300,9 @@ function ModelSettingsPopover({ models, defaultModel, model, setModel, thinking,
             <div className="text-[10.5px]" style={{ color: 'var(--c-subtle)' }}>
               {planModeEnforceable
                 ? "Agent proposes, doesn't modify"
-                : 'Unavailable — not enforceable on this architecture'}
+                : planModeEnforceable === undefined
+                  ? 'Checking availability…'
+                  : 'Unavailable — not enforceable on this architecture'}
             </div>
           </span>
         </button>
