@@ -588,7 +588,7 @@ export class GitService {
     try {
       await this.git(['add', '--', ...targets], root);
     } catch (err) {
-      return { status: 'error', message: errMessage(err), recovery: this.buildRecovery(operation, err, root, failureKind) };
+      return { status: 'error', message: errMessage(err), recovery: this.buildRecovery(operation, err, root, failureKind, { commitMessage: message }) };
     }
 
     // `git diff --cached --quiet` exits 0 when nothing is staged, 1 otherwise.
@@ -603,7 +603,7 @@ export class GitService {
       await this.git(['commit', '-m', message], root);
       return { status: 'committed' };
     } catch (err) {
-      return { status: 'error', message: errMessage(err), recovery: this.buildRecovery(operation, err, root, failureKind) };
+      return { status: 'error', message: errMessage(err), recovery: this.buildRecovery(operation, err, root, failureKind, { commitMessage: message }) };
     }
   }
 
@@ -1314,14 +1314,10 @@ export class GitService {
     const { root } = gate;
     const run = this.underRepoLock(root, held?.lock, async (): Promise<GitMergeIntoIndexResult> => {
       try {
-        await this.git(['-c', 'core.quotePath=false', 'merge', '--no-commit', '--no-ff', tipSha], root, {
-          ...process.env,
-          LC_ALL: 'C',
-          LANG: 'C',
-        });
+        await this.git(['merge', '--no-commit', '--no-ff', tipSha], root, { ...process.env, LC_ALL: 'C', LANG: 'C' });
       } catch (err) {
         if (!(await this.mergeHeadOpen(root))) {
-          const blocked = overwrittenPaths(`${rawStderr(err)}\n${(err as { stdout?: string })?.stdout ?? ''}`);
+          const blocked = await this.mergeRefusalPaths(err, root);
           return blocked.length > 0
             ? { status: 'dirty', paths: blocked.sort() }
             : { status: 'error', message: errMessage(err) };
@@ -1350,6 +1346,21 @@ export class GitService {
       return { status: 'merged', changedPaths: [...changedPaths] };
     });
     return run ?? { status: 'busy' };
+  }
+
+  /**
+   * The paths of git's refusal to START a merge over local changes. The
+   * tab-indented lists of the working-tree refusals are parsed; a refusal over
+   * a staged change (the index differs from HEAD) names the staged files on
+   * one space-separated line instead, so those are read off the index.
+   */
+  private async mergeRefusalPaths(err: unknown, root: string): Promise<string[]> {
+    const listed = gitRefusalPaths(err);
+    if (listed.length > 0) return listed;
+    if (!/Your local changes to the following files would be overwritten/.test(rawStderr(err))) return [];
+    return this.git(['diff', '--cached', '--name-only', '-z', 'HEAD'], root)
+      .then((r) => splitNul(r.stdout))
+      .catch(() => []);
   }
 
   /**
@@ -1400,8 +1411,9 @@ export class GitService {
    * 2.1.52 (M28 eu1rffp6): the repair context of a merge the acceptance could
    * not abort — the shadow's paths (ABSOLUTE) named in the prompt, sorted by
    * what the shadow did to them: added (not in HEAD), deleted (in HEAD, not in
-   * MERGE_HEAD), modified (the rest). Read off the trees, never off the working
-   * tree; a failed read counts a path as modified (restored to HEAD).
+   * MERGE_HEAD), modified (the rest); a path in neither tree is not named.
+   * Read off the trees, never off the working tree; a failed read counts a
+   * path as modified (restored to HEAD).
    */
   private async mergeAbortFailedRecovery(
     err: unknown,
@@ -1422,11 +1434,15 @@ export class GitService {
     const [inHead, inTip] = await Promise.all([inTree('HEAD'), inTree('MERGE_HEAD')]);
     const shadowPaths: ShadowPathsByChange = { added: [], modified: [], deleted: [] };
     for (const rel of rels) {
-      if (inHead && !inHead.has(rel)) shadowPaths.added.push(rel);
-      else if (inHead && inTip && !inTip.has(rel)) shadowPaths.deleted.push(rel);
+      const head = inHead?.has(rel);
+      const tip = inTip?.has(rel);
+      // In neither tree (the master deleted it too): the merge left nothing to undo there.
+      if (head === false && tip === false) continue;
+      if (head === false) shadowPaths.added.push(rel);
+      else if (head && tip === false) shadowPaths.deleted.push(rel);
       else shadowPaths.modified.push(rel);
     }
-    return this.buildRecovery('commit-on-release', err, root, 'merge-abort-failed', shadowPaths);
+    return this.buildRecovery('commit-on-release', err, root, 'merge-abort-failed', { shadowPaths });
   }
 
   /**
@@ -1447,7 +1463,7 @@ export class GitService {
     err: unknown,
     rootPath: string,
     kind?: GitErrorRecovery['kind'],
-    shadowPaths?: ShadowPathsByChange,
+    context?: { shadowPaths?: ShadowPathsByChange; commitMessage?: string },
   ): GitErrorRecovery {
     const gitStderr = rawStderr(err);
     if (kind === 'non-fast-forward') {
@@ -1486,19 +1502,26 @@ export class GitService {
       // files of the roots without the `release` flag into the index before the
       // commit failed; they stay there. `merge-abort-failed` — only the shadow's
       // paths are undone, by name; every other working-tree change is left alone.
+      const shadowPaths = context?.shadowPaths;
+      const commitMessage = context?.commitMessage;
       const ask =
         kind === 'merge-open'
-          ? 'Please finish the merge safely: fix what blocked the commit, then conclude it with ONE `git commit` ' +
-            'of everything staged (the index already holds the merge and the release file, and may hold other ' +
-            'files staged before the failed commit — keep them staged, do not unstage them), with the release ' +
-            'message. Never run `git merge --abort` or any reset.'
+          ? [
+              'Please finish the merge safely: fix what blocked the commit, then conclude it with ONE `git commit` ' +
+                'of everything staged (the index already holds the merge and the release file, and may hold other ' +
+                'files staged before the failed commit — keep them staged, do not unstage them), with the release ' +
+                `message${commitMessage ? ' quoted below' : ''}. Never run \`git merge --abort\` or any reset.`,
+              ...(commitMessage ? ['The release message:', '```', commitMessage, '```'] : []),
+            ].join('\n')
           : [
               'Please end the merge safely, touching only the paths the shadow changed:',
               ...shadowPathLines('Delete the files the shadow added', shadowPaths?.added),
               ...shadowPathLines('Restore to their state in HEAD the files the shadow modified', shadowPaths?.modified),
               ...shadowPathLines('Restore to their state in HEAD the files the shadow deleted', shadowPaths?.deleted),
-              'Then close the merge without a commit (remove MERGE_HEAD, e.g. `git merge --quit`). Leave every ' +
-                'other change of the working tree untouched. Do not commit.',
+              'Undo them in the index as well as in the working tree, path by path (e.g. `git rm -f -- <added path>`, ' +
+                '`git checkout HEAD -- <modified or deleted path>`), so nothing of the shadow stays staged.',
+              'Then close the merge without a commit (remove MERGE_HEAD, e.g. `git merge --quit`, which keeps the ' +
+                'index as it is). Leave every other change of the working tree untouched. Do not commit.',
             ].join('\n');
       const intentPrompt = [
         `claude4spec's git sync left a merge open in the repository at ${rootPath}: ${state}`,
@@ -1637,8 +1660,9 @@ export class GitService {
    */
   private resolveDiffTargets(root: string, pathspecs: string[]): string[] {
     const targets: string[] = [];
+    const realDirs = new Map<string, string | null>();
     for (const p of pathspecs) {
-      const real = realpathOfNearestAncestor(p);
+      const real = realpathViaParent(p, realDirs);
       if (real === null) continue;
       const rel = path.relative(root, real);
       if (!rel.startsWith('..') && !path.isAbsolute(rel)) targets.push(real);
@@ -2185,7 +2209,7 @@ export class GitService {
     try {
       await this.git(['merge', '--ff-only', '--no-edit', target], root);
     } catch (err) {
-      const blocked = overwrittenPaths(`${rawStderr(err)}\n${(err as { stdout?: string })?.stdout ?? ''}`);
+      const blocked = gitRefusalPaths(err);
       if (blocked.length > 0) {
         return { response: syncResult('dirty-blocked', { paths: blocked }), headChanged: false };
       }
@@ -2693,14 +2717,14 @@ function splitNul(stdout: string): string[] {
 /**
  * The paths git lists when it refuses a merge/checkout because it would
  * overwrite local changes or untracked files ("…would be overwritten by
- * merge:" or "…would lose untracked files in them:", followed by
+ * merge:", "…would be removed by merge:" or "…would lose untracked files in them:", followed by
  * tab-indented paths).
  */
 function overwrittenPaths(output: string): string[] {
   const paths: string[] = [];
   let inList = false;
   for (const line of output.split('\n')) {
-    if (/would be overwritten by|would lose untracked files/.test(line)) {
+    if (/would be (?:overwritten|removed) by|would lose untracked files/.test(line)) {
       inList = true;
       continue;
     }
@@ -2712,6 +2736,11 @@ function overwrittenPaths(output: string): string[] {
     inList = false;
   }
   return [...new Set(paths)];
+}
+
+/** `overwrittenPaths` over a failed git command's stderr and stdout. */
+function gitRefusalPaths(err: unknown): string[] {
+  return overwrittenPaths(`${rawStderr(err)}\n${(err as { stdout?: string })?.stdout ?? ''}`);
 }
 
 function errMessage(err: unknown): string {
@@ -2752,6 +2781,29 @@ function isDirectoryOnDisk(p: string): boolean {
  * ancestor, realpaths it and re-appends the missing segments. `null` only when
  * nothing up to the filesystem root resolves.
  */
+/**
+ * `realpathOfNearestAncestor` with the parent directory's realpath memoized in
+ * `realDirs`: a shadow's thousands of files in a few directories cost one
+ * `lstat` each instead of a realpath walk each. A symlink in the last segment
+ * still resolves through it.
+ */
+function realpathViaParent(p: string, realDirs: Map<string, string | null>): string | null {
+  const abs = path.resolve(p);
+  const dir = path.dirname(abs);
+  if (dir === abs) return realpathOfNearestAncestor(abs);
+  try {
+    if (fs.lstatSync(abs).isSymbolicLink()) return realpathOfNearestAncestor(abs);
+  } catch {
+    // Missing: the nearest existing ancestor resolves it, as below.
+  }
+  let realDir = realDirs.get(dir);
+  if (realDir === undefined) {
+    realDir = realpathOfNearestAncestor(dir);
+    realDirs.set(dir, realDir);
+  }
+  return realDir === null ? null : path.join(realDir, path.basename(abs));
+}
+
 function realpathOfNearestAncestor(p: string): string | null {
   const tail: string[] = [];
   let current = path.resolve(p);
