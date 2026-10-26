@@ -1,4 +1,6 @@
 import type { FieldDeclaration } from '../../settings/field-registry.js';
+import { parseElementsMenu } from '../../config.js';
+import { elementsMenuSaveIssues, type ElementsMenuEntry } from '../../../shared/elements-menu.js';
 
 /**
  * 0.2.113 — `entities`, declared by the entity framework: axis A, the per-project
@@ -26,6 +28,33 @@ export function entitySettingsFields(knownEntityTypes?: () => string[]): FieldDe
       effect: 'context-rebuild',
       resumeLock: false,
       apiWritable: true,
+    },
+    {
+      // 2.1.50 (M13 `o4ju2d7m`): the ELEMENTS menu layout. Navigation only — it
+      // never rebuilds the context; the whole list is replaced (last save wins).
+      // `null` removes the key — Reset to default order (M13 `lbqrd6xh`).
+      // ASSUMPTION:dev-0001 — the DTO `patch-config-request` types the field as an
+      // array only; `null` is how the card's [Save] removes the key.
+      key: 'elementsMenu',
+      owner: 'entity-framework',
+      type: 'object',
+      default: undefined,
+      validate: (value) => {
+        let entries: ElementsMenuEntry[];
+        try {
+          entries = parseElementsMenu(value);
+        } catch (err) {
+          return { ok: false, error: (err as Error).message };
+        }
+        // The save rules (2–5) live in `shared/elements-menu.ts`, shared with the
+        // settings editor; the first issue refuses the whole save.
+        const [issue] = elementsMenuSaveIssues(entries);
+        return issue ? { ok: false, error: issue.message } : { ok: true, value: entries };
+      },
+      effect: 'per-operation',
+      resumeLock: false,
+      apiWritable: true,
+      nullRemovesKey: true,
     },
   ];
 }

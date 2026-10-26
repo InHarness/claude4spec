@@ -390,6 +390,10 @@ export function buildClonePatch(
   // presence decides — not its truthiness.
   if (bundleConfig.writingStyle !== undefined) patch.writingStyle = bundleConfig.writingStyle;
   if (bundleConfig.entities !== undefined) patch.entities = bundleConfig.entities;
+  // 2.1.50 (M27 `64bmqf81` step 8): the ELEMENTS menu layout travels as the
+  // bundle carries it. Absent key (older bundle, or a source on the flat list)
+  // leaves the clone on the default flat list.
+  if (bundleConfig.elementsMenu !== undefined) patch.elementsMenu = bundleConfig.elementsMenu;
   // Key-presence, per field — the two are independent, and a bundle predating
   // 0.2.53 carries only the first. An absent flag leaves the clone on the local
   // default (`true`), which is the same answer a fresh project gets.

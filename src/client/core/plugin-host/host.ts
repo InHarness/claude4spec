@@ -110,7 +110,8 @@ class ClientPluginHostImpl implements ClientPluginHost {
 
   listAvailable(): FrontendModule[] {
     // 2.1.26 — no ordering field on the identity: listed by `type`. The ELEMENTS
-    // order is `sidebarTab.order` alone (Sidebar.tsx).
+    // order is the team's layout over the default `sidebarTab.order`
+    // (`elements-menu.ts`).
     return Array.from(this.modules.values()).sort((a, b) => a.type.localeCompare(b.type));
   }
 

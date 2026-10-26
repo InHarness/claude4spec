@@ -774,6 +774,7 @@ describe('config — the config.json envelope (2.1.8)', () => {
     'writingStyle',
     'roots',
     'entities',
+    'elementsMenu',
     'agent',
     'git',
     'consistency',
@@ -803,6 +804,21 @@ describe('config — the config.json envelope (2.1.8)', () => {
     for (const key of Object.keys(after)) expect(ENVELOPE_KEYS, key).toContain(key);
     expect(after.$schemaVersion).toBe(4);
 
+    // 2.1.50: `elementsMenu` — type entries (visible or hidden) and groups with
+    // label/icon/types — round-trips through the loader as the file holds it.
+    const menu = [
+      { type: 'endpoint' },
+      { group: 'Data', icon: 'database', types: ['dto', 'db-table'] },
+      { group: 'Tests', types: ['ac'] },
+      { type: 'code-snippet', hidden: true },
+    ];
+    writeConfig(dir, { elementsMenu: menu } as never);
+    const withMenu = JSON.parse(fs.readFileSync(configPath(dir), 'utf8')) as Record<string, unknown>;
+    for (const key of Object.keys(withMenu)) expect(ENVELOPE_KEYS, key).toContain(key);
+    expect(withMenu.elementsMenu).toEqual(menu);
+    expect(readConfig(dir).elementsMenu).toEqual(menu);
+    expect(withMenu.$schemaVersion).toBe(4);
+
     // 2.1.21: `plugins` left the envelope — not scaffolded, and not a reserved key a write keeps.
     expect(ENVELOPE_KEYS).not.toContain('plugins');
     expect(raw).not.toHaveProperty('plugins');
@@ -829,5 +845,74 @@ describe('config — the config.json envelope (2.1.8)', () => {
       warn.mockRestore();
     }
     expect(fs.readFileSync(file, 'utf8')).toBe(text);
+  });
+});
+
+/**
+ * 2.1.50 (M13 `5kkkih9i`, `o4ju2d7m`) — `elementsMenu` on LOAD: the save rules
+ * (2–5) do not apply — a file breaking them (typically after a git merge) loads
+ * without an error and is not rewritten — while a bad SHAPE (rule 1: not an
+ * array, an entry with neither or both of `type`/`group`, `hidden` on a group)
+ * stays a hard load error, as for any key.
+ */
+describe('config — elementsMenu on load (2.1.50)', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-cfg-menu-'));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const write = (elementsMenu: unknown): string => {
+    const file = configPath(dir);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const text = JSON.stringify({ $schemaVersion: 4, name: 'X', elementsMenu });
+    fs.writeFileSync(file, text);
+    return text;
+  };
+
+  it('[ac:ac-plik-z-typem-obecnym-w-elementsmenu-d] a file with a type present twice in elementsMenu loads without an error and is not rewritten', () => {
+    const menu = [{ type: 'endpoint' }, { group: 'API', types: ['endpoint', 'dto'] }, { type: 'dto', hidden: true }];
+    const text = write(menu);
+    expect(() => readConfig(dir)).not.toThrow();
+    expect(readConfig(dir).elementsMenu).toEqual(menu);
+    expect(() => loadOrCreateConfig(dir, {})).not.toThrow();
+    expect(fs.readFileSync(configPath(dir), 'utf8')).toBe(text);
+  });
+
+  it('[section:5kkkih9i] empty, blank or duplicated group labels and a group without types load without an error', () => {
+    const menu = [
+      { group: '', types: ['endpoint'] },
+      { group: '   ', types: ['dto'] },
+      { group: 'Data', types: [] },
+      { group: 'API', types: ['ac'] },
+      { group: 'api', types: ['db-table'] },
+    ];
+    write(menu);
+    expect(readConfig(dir).elementsMenu).toEqual(menu);
+  });
+
+  it('[section:5kkkih9i] a bad shape of the key stays a hard load error', () => {
+    for (const bad of [
+      { menu: { type: 'endpoint' }, message: /elementsMenu must be an array/ },
+      { menu: 'endpoint', message: /elementsMenu must be an array/ },
+      { menu: [{ icon: 'folder' }], message: /elementsMenu\[0\] must have exactly one of 'type' and 'group'/ },
+      { menu: [{ type: 'a' }, { type: 'b', group: 'G', types: ['b'] }], message: /elementsMenu\[1\] must have exactly one/ },
+      { menu: [{ group: 'G', types: ['a'], hidden: true }], message: /elementsMenu\[0\]\.hidden is allowed only on a type entry/ },
+      { menu: [{ group: 'G', types: 'a' }], message: /elementsMenu\[0\]\.types must be string\[\]/ },
+      { menu: ['endpoint'], message: /elementsMenu\[0\] must be an object/ },
+    ]) {
+      write(bad.menu);
+      expect(() => readConfig(dir), JSON.stringify(bad.menu)).toThrow(bad.message);
+    }
+  });
+
+  it('an absent key stays absent — no default layout is materialized', () => {
+    const file = configPath(dir);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ $schemaVersion: 4, name: 'X' }));
+    expect('elementsMenu' in readConfig(dir)).toBe(false);
   });
 });

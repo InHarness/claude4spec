@@ -29,7 +29,7 @@ import { usePages, usePagesSearch, useSidebarAccordions } from '../hooks/usePage
 import { accordionCollapseToken, subtreeOf } from '../lib/sidebar-accordions.js';
 import { useMovePage } from '../hooks/usePage.js';
 import { api } from '../lib/api.js';
-import { useRoots } from '../hooks/useConfig.js';
+import { useElementsMenuLayout, useRoots } from '../hooks/useConfig.js';
 import { useNewPageAction } from '../hooks/useNewPage.js';
 import { usePersistedState, projectKey } from '../state/persisted.js';
 import { UserSection } from './UserSection.js';
@@ -37,6 +37,9 @@ import { GitStatusBadge } from './GitStatusBadge.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
 import { useRegistryVersion } from '../core/plugin-host/useRegistryVersion.js';
 import { Popover } from '../host-ui-kit/overlay-feedback/Popover.js';
+import { SidebarSideMenu } from './shell/SidebarSideMenu.js';
+import { composeElementsSlot, type ElementsSlotEntry } from '../core/plugin-host/elements-menu.js';
+import type { ElementsMenuEntry } from '../../shared/elements-menu.js';
 
 interface SidebarProps {
   width: number;
@@ -81,6 +84,7 @@ export function Sidebar({
 }: SidebarProps) {
   const navigate = useNavigate();
   const roots = useRoots();
+  const elementsMenu = useElementsMenuLayout();
   // 2.1.9 (M02): the page-tree slot is fed by `GET /api/sidebar-accordions` —
   // one accordion per element, in the route's order, whatever the root's kind.
   const { data: accordions = [], isSuccess: accordionsLoaded } = useSidebarAccordions();
@@ -227,10 +231,16 @@ export function Sidebar({
           )}
         </div>
 
-        <SidebarElements entityCounts={entityCounts} pathname={pathname} />
+        <SidebarElements
+          entityCounts={entityCounts}
+          pathname={pathname}
+          elementsMenu={elementsMenu.layout}
+          layoutPending={!elementsMenu.ready}
+        />
       </div>
 
-      <OthersTrigger
+      <OthersMenu
+        pathname={pathname}
         todoCount={todoCount}
         linkIssueCount={brokenLinkCount + unresolvedMentionCount}
         brokenLinkCount={brokenLinkCount}
@@ -240,8 +250,12 @@ export function Sidebar({
 }
 
 /**
- * ELEMENTS — the middle section of the sidebar: one tab per ACTIVE entity type
- * that declares a `sidebarTab`, in `sidebarTab.order`.
+ * ELEMENTS — the middle section of the sidebar, composed by M13 (`m13ui000`):
+ * the team's layout (`elementsMenu`) in file order, then the visible types it
+ * does not place, in `sidebarTab.order` — the default order, and the whole order
+ * when the key is absent (`composeElementsSlot`). A type entry is a link to the
+ * type's route; a group entry opens the shell's side menu (`SidebarSideMenu`)
+ * with its visible members in `types` order.
  *
  * Subscribed to the registry: plugin frontends register after the first paint
  * (non-blocking boot), and nothing else guarantees this component re-renders
@@ -252,50 +266,139 @@ export function Sidebar({
  * answer rebuilds the context in-process too, but reloads the project's tabs
  * (the overlay layer changed, not only activation). Nothing else re-applies it
  * — a change made in another browser tab or by hand in `config.json` shows
- * after a page reload (M50 `8h2a734u`).
+ * after a page reload (M50 `8h2a734u`); the layout follows the same rule
+ * (`useElementsMenuLayout`).
  *
- * 2.1.16: with no active type (`config.entities = []`) the section shows the
- * host's "No entity types configured." message. (2.1.20: `sidebarTab` carries
- * only `icon`, `label` and `order` — `emptyState` left the contract.)
+ * 2.1.16: with no active type that has a tab (`config.entities = []`) the
+ * section shows the host's "No entity types configured." message. A project
+ * whose visible types are all hidden by the layout shows an empty section — the
+ * types are configured. (2.1.20: `sidebarTab` carries only `icon`, `label` and
+ * `order` — `emptyState` left the contract.)
  */
 export function SidebarElements({
   entityCounts,
   pathname,
+  elementsMenu,
+  layoutPending = false,
 }: {
   entityCounts: Record<string, number>;
   pathname: string;
+  /** The team's layout; absent ⇒ the default order. */
+  elementsMenu?: readonly ElementsMenuEntry[];
+  /** The layout is still being read: no entries yet, so the default order never flashes. */
+  layoutPending?: boolean;
 }) {
   useRegistryVersion();
-  const entityTabs = clientPluginHost
-    .listEntities()
-    .filter((m) => m.sidebarTab !== undefined)
-    .sort((a, b) => (a.sidebarTab!.order ?? 999) - (b.sidebarTab!.order ?? 999));
+  const active = clientPluginHost.listEntities();
+  const anyTab = active.some((m) => m.sidebarTab !== undefined);
+  const entries = layoutPending ? [] : composeElementsSlot(active, elementsMenu);
   return (
     <>
       <SectionHeader label="Elements" />
-      <div className="px-1.5 pb-3 space-y-0.5">
-        {entityTabs.length > 0 ? (
-          entityTabs.map((m) => (
-            <NavLinkRow
-              key={m.type}
-              icon={m.sidebarTab!.icon}
-              label={m.sidebarTab!.label}
-              count={entityCounts[m.type] ?? 0}
-              active={pathname.startsWith(m.pathPrefix)}
-              to={m.pathPrefix}
-            />
-          ))
-        ) : (
+      <div className="px-1.5 pb-3 space-y-0.5" data-elements-list="">
+        {!anyTab ? (
           <div
             className="text-[11.5px] px-3 py-2 italic"
             style={{ color: 'var(--c-subtle)' }}
           >
             No entity types configured.
           </div>
+        ) : (
+          entries.map((entry, i) =>
+            entry.kind === 'type' ? (
+              <NavLinkRow
+                key={entry.module.type}
+                icon={entry.module.sidebarTab.icon}
+                label={entry.module.sidebarTab.label}
+                count={entityCounts[entry.module.type] ?? 0}
+                active={isElementsEntryActive(pathname, [entry.module.pathPrefix])}
+                to={entry.module.pathPrefix}
+              />
+            ) : (
+              <ElementsGroupEntry
+                // Duplicate group labels render both (`5kkkih9i`): the key is positional.
+                key={`group:${i}`}
+                entry={entry}
+                entityCounts={entityCounts}
+                pathname={pathname}
+              />
+            ),
+          )
         )}
       </div>
     </>
   );
+}
+
+/**
+ * A group entry of ELEMENTS (M13 `m13ui000`): its icon, its label and a counter
+ * equal to the sum of its visible members' counters — a placeholder until every
+ * member's counter has arrived. A click (or hover) opens the shell's side menu
+ * with one item per visible member, in the group's `types` order. The entry is
+ * active on the route of any of its members (M50 `8h2a734u`).
+ */
+function ElementsGroupEntry({
+  entry,
+  entityCounts,
+  pathname,
+}: {
+  entry: Extract<ElementsSlotEntry, { kind: 'group' }>;
+  entityCounts: Record<string, number>;
+  pathname: string;
+}) {
+  const active = isElementsEntryActive(
+    pathname,
+    entry.members.map((m) => m.pathPrefix),
+  );
+  const allCounted = entry.members.every((m) => Object.hasOwn(entityCounts, m.type));
+  const total = entry.members.reduce((sum, m) => sum + (entityCounts[m.type] ?? 0), 0);
+  const items = entry.members.map((m) => ({
+    to: m.pathPrefix,
+    icon: m.sidebarTab.icon,
+    label: m.sidebarTab.label,
+    active: isElementsEntryActive(pathname, [m.pathPrefix]),
+    extra: (
+      <span className="font-mono" style={{ fontSize: 10.5, color: 'var(--c-subtle)' }}>
+        {entityCounts[m.type] ?? 0}
+      </span>
+    ),
+  }));
+  const I = entry.icon;
+  return (
+    <SidebarSideMenu
+      label={entry.label}
+      items={items}
+      title={entry.label}
+      triggerClassName="w-full flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-md text-[13px] transition text-left"
+      triggerStyle={(open) => ({
+        background: active || open ? 'var(--c-accent-soft)' : 'transparent',
+        color: active ? 'var(--c-ink)' : 'var(--c-muted)',
+        fontWeight: active ? 600 : 500,
+        border: `1px solid ${active || open ? 'var(--c-hair-strong)' : 'transparent'}`,
+      })}
+    >
+      <I size={13} />
+      <span className="flex-1 truncate">{entry.label}</span>
+      <span
+        className="font-mono"
+        style={{ fontSize: 10.5, color: 'var(--c-subtle)' }}
+        data-count-pending={allCounted ? undefined : ''}
+      >
+        {allCounted ? total : '…'}
+      </span>
+    </SidebarSideMenu>
+  );
+}
+
+/**
+ * M50 `8h2a734u`: an ELEMENTS entry is active when the route path (without the
+ * project prefix) starts with the route prefix of ANY type the entry covers.
+ * The prefix matches on a segment boundary, so a type whose prefix merely
+ * begins another type's (`/ac` vs `/acs-x`) never lights that type's entry —
+ * on the route of a hidden type no entry is active (M13 `8mwihe60`).
+ */
+export function isElementsEntryActive(pathname: string, pathPrefixes: readonly string[]): boolean {
+  return pathPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
 function SectionHeader({ label, right }: { label: string; right?: ReactNode }) {
@@ -831,8 +934,7 @@ function PageRow({
             <MoreHorizontal size={12} />
           </button>
           {/*
-           * The published `Popover`, not a twin of it — same rule as the OTHERS
-           * flyout below: the primitive owns the z-tier, the viewport clamp and the
+           * The published `Popover`, not a twin of it: the primitive owns the z-tier, the viewport clamp and the
            * mousedown/Escape dismissal, and naming any of that here is the anatomy
            * the one-implementation scan looks for.
            */}
@@ -860,146 +962,108 @@ function PageRow({
   );
 }
 
-const OTHERS_PATHS = ['/plans', '/releases', '/todos', '/tags', '/links', '/briefs'];
+/**
+ * OTHERS (M50 `8h2a734u`) — a closed list of 6 items in a fixed order: Plans →
+ * Releases → TODOs → Tags → Links → Briefs. An item is active when the route is
+ * its own (or below it).
+ */
+const OTHERS_ITEMS: ReadonlyArray<{ to: string; icon: LucideIcon; label: string }> = [
+  { to: '/plans', icon: ClipboardList, label: 'Plans' },
+  { to: '/releases', icon: GitCommit, label: 'Releases' },
+  { to: '/todos', icon: StickyNote, label: 'TODOs' },
+  { to: '/tags', icon: Tag, label: 'Tags' },
+  { to: '/links', icon: Link2, label: 'Links' },
+  { to: '/briefs', icon: FileText, label: 'Briefs' },
+];
 
-function OthersTrigger({
+const isOnRoute = (pathname: string, to: string) => pathname === to || pathname.startsWith(`${to}/`);
+
+/**
+ * The OTHERS link at the bottom of the sidebar — it opens the shell's sidebar
+ * side menu (`SidebarSideMenu`), the same mechanism ELEMENTS entries use.
+ */
+function OthersMenu({
+  pathname,
   todoCount,
   linkIssueCount,
   brokenLinkCount,
 }: {
+  pathname: string;
   todoCount: number;
   linkIssueCount: number;
   brokenLinkCount: number;
 }) {
-  const pathname = stripBase(useRouterState({ select: (s) => s.location.pathname }));
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const [open, setOpen] = useState(false);
-  const inOthers = OTHERS_PATHS.some((p) => pathname.startsWith(p));
-
-  const closeMenu = useCallback(() => setOpen(false), []);
+  const extras: Record<string, ReactNode> = {
+    '/todos': todoCount > 0 ? <AmberBadge count={todoCount} /> : null,
+    '/links': (
+      <>
+        {brokenLinkCount > 0 ? <BrokenBadge count={brokenLinkCount} /> : null}
+        {linkIssueCount > 0 ? <AmberBadge count={linkIssueCount} /> : null}
+      </>
+    ),
+  };
+  const items = OTHERS_ITEMS.map((item) => ({
+    ...item,
+    active: isOnRoute(pathname, item.to),
+    extra: extras[item.to],
+  }));
+  const inOthers = items.some((item) => item.active);
 
   return (
-    <>
-      <div className="px-1.5 py-2" style={{ borderTop: '1px solid var(--c-hair)' }}>
-        <button
-          ref={triggerRef}
-          onClick={() => setOpen((v) => !v)}
-          className="w-full flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-md text-[13px] transition text-left"
-          style={{
-            background: inOthers || open ? 'var(--c-accent-soft)' : 'transparent',
-            color: inOthers ? 'var(--c-ink)' : 'var(--c-muted)',
-            fontWeight: inOthers ? 600 : 500,
-            border: `1px solid ${inOthers || open ? 'var(--c-hair-strong)' : 'transparent'}`,
-          }}
-          title="Others (Plans, Releases, TODOs, Tags, Links, Briefs)"
-        >
-          <MoreHorizontal size={13} />
-          <span className="flex-1 truncate">OTHERS</span>
-          <ChevronRight size={12} />
-        </button>
-      </div>
-
-      {/*
-       * M34/L12: the menu is the published `Popover`, not a twin of it. The
-       * primitive supplies the popover z-tier (1100) — which is what keeps the
-       * menu above the plan page's `ActionBar` (900) — plus viewport clamping
-       * and the mousedown/Escape dismissal this component used to hand-roll.
-       * The z-index is deliberately absent here: naming it, even in a comment,
-       * is the anatomy the one-implementation scan looks for.
-       *
-       * `placement="right"` anchors off the trigger's right edge; because the
-       * trigger sits at the bottom of the sidebar the clamp always pulls the
-       * panel up, so the menu still grows upward off the trigger — now without
-       * being able to run off the viewport edge, which the old flyout could.
-       */}
-      <Popover
-        open={open}
-        onClose={closeMenu}
-        anchorRef={triggerRef}
-        placement="right"
-        width={200}
+    <div className="px-1.5 py-2" style={{ borderTop: '1px solid var(--c-hair)' }}>
+      <SidebarSideMenu
+        label="Others"
+        items={items}
+        title="Others (Plans, Releases, TODOs, Tags, Links, Briefs)"
+        triggerClassName="w-full flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-md text-[13px] transition text-left"
+        triggerStyle={(open) => ({
+          background: inOthers || open ? 'var(--c-accent-soft)' : 'transparent',
+          color: inOthers ? 'var(--c-ink)' : 'var(--c-muted)',
+          fontWeight: inOthers ? 600 : 500,
+          border: `1px solid ${inOthers || open ? 'var(--c-hair-strong)' : 'transparent'}`,
+        })}
       >
-        <FlyoutLink to="/plans" icon={ClipboardList} label="Plans" onNavigate={closeMenu} />
-        <FlyoutLink to="/releases" icon={GitCommit} label="Releases" onNavigate={closeMenu} />
-        <FlyoutLink
-          to="/todos"
-          icon={StickyNote}
-          label="TODOs"
-          amberBadge={todoCount > 0 ? todoCount : null}
-          onNavigate={closeMenu}
-        />
-        <FlyoutLink to="/tags" icon={Tag} label="Tags" onNavigate={closeMenu} />
-        <FlyoutLink
-          to="/links"
-          icon={Link2}
-          label="Links"
-          amberBadge={linkIssueCount > 0 ? linkIssueCount : null}
-          brokenCount={brokenLinkCount}
-          onNavigate={closeMenu}
-        />
-        <FlyoutLink to="/briefs" icon={FileText} label="Briefs" onNavigate={closeMenu} />
-      </Popover>
-    </>
+        <MoreHorizontal size={13} />
+        <span className="flex-1 truncate">OTHERS</span>
+        <ChevronRight size={12} />
+      </SidebarSideMenu>
+    </div>
   );
 }
 
-function FlyoutLink({
-  to,
-  icon: I,
-  label,
-  amberBadge,
-  brokenCount,
-  onNavigate,
-}: {
-  to: string;
-  icon: LucideIcon;
-  label: string;
-  amberBadge?: number | null;
-  brokenCount?: number;
-  onNavigate: () => void;
-}) {
+function BrokenBadge({ count }: { count: number }) {
   return (
-    <Link
-      to={to}
-      onClick={onNavigate}
-      className="flex items-center gap-2 px-2 py-1.5 rounded text-[13px]"
-      style={{ color: 'var(--c-ink)', textDecoration: 'none' }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--c-panel)')}
-      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+    <span
+      className="font-mono"
+      style={{
+        fontSize: 9.5,
+        color: '#c45a3b',
+        border: '1px solid #c45a3b',
+        borderRadius: 999,
+        padding: '0 6px',
+        background: 'rgba(196, 90, 59, 0.18)',
+      }}
+      title={`${count} broken`}
     >
-      <I size={13} />
-      <span className="flex-1">{label}</span>
-      {brokenCount && brokenCount > 0 ? (
-        <span
-          className="font-mono"
-          style={{
-            fontSize: 9.5,
-            color: '#c45a3b',
-            border: '1px solid #c45a3b',
-            borderRadius: 999,
-            padding: '0 6px',
-            background: 'rgba(196, 90, 59, 0.18)',
-          }}
-          title={`${brokenCount} broken`}
-        >
-          {brokenCount}
-        </span>
-      ) : null}
-      {amberBadge != null && (
-        <span
-          className="font-mono"
-          style={{
-            fontSize: 9.5,
-            color: '#a87033',
-            border: '1px solid #c99467',
-            borderRadius: 999,
-            padding: '0 6px',
-            background: 'rgba(200, 150, 60, 0.2)',
-          }}
-        >
-          {amberBadge}
-        </span>
-      )}
-    </Link>
+      {count}
+    </span>
+  );
+}
+
+function AmberBadge({ count }: { count: number }) {
+  return (
+    <span
+      className="font-mono"
+      style={{
+        fontSize: 9.5,
+        color: '#a87033',
+        border: '1px solid #c99467',
+        borderRadius: 999,
+        padding: '0 6px',
+        background: 'rgba(200, 150, 60, 0.2)',
+      }}
+    >
+      {count}
+    </span>
   );
 }

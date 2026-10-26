@@ -99,8 +99,9 @@ export interface EntityModuleManifest {
   labelPlural: string;
 
   // 2.1.26 — the identity carries NO ordering field. `displayOrder` is retired:
-  // the order of ELEMENTS entries comes only from the frontend's
-  // `sidebarTab.order`, and a type without a sidebar tab declares no order.
+  // the DEFAULT order of ELEMENTS entries is the frontend's `sidebarTab.order`
+  // (2.1.50: the team's `elementsMenu` layout goes over it), and a type without
+  // a sidebar tab declares no order.
 
   /**
    * Derive a slug from a CreateInput payload.

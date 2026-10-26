@@ -497,6 +497,7 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
       description: 'pitch',
       roots: [base, adr],
       entities: ['endpoint'],
+      elementsMenu: [{ type: 'endpoint' }, { group: 'Data', icon: 'database', types: ['dto'] }, { type: 'ac', hidden: true }],
       consistency: { requireAcCoverage: 'warn' },
       // A legacy per-plugin namespace in the file is an unknown key: never echoed.
       plugins: { 'c4s-plugin-x': { flag: true } },
@@ -512,6 +513,12 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
     expect(body.writingStyleUnavailable).toBeNull();
     expect(body.language).toBeNull();
     expect(body.entities).toEqual(['endpoint']);
+    // 2.1.50: the optional ELEMENTS menu layout, as the file holds it.
+    expect(body.elementsMenu).toEqual([
+      { type: 'endpoint' },
+      { group: 'Data', icon: 'database', types: ['dto'] },
+      { type: 'ac', hidden: true },
+    ]);
     expect(body.agent).toMatchObject({
       claudeUsePreset: false,
       conversationalLanguage: null,
@@ -544,6 +551,7 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
         description: 'short pitch',
         roots: [base, adr],
         entities: ['endpoint'],
+        elementsMenu: [{ group: 'API', icon: 'globe', types: ['endpoint', 'dto'] }, { type: 'ac', hidden: true }],
         writingStyle: null,
         language: 'English',
         agent: { claudeUsePreset: true, conversationalLanguage: 'Polski', allowedPaths: ['/opt/x'], disallowedPaths: ['/opt/y'], disableDirectFilesystemAccess: false },
@@ -564,6 +572,7 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
       description: 'short pitch',
       roots: [base, adr],
       entities: ['endpoint'],
+      elementsMenu: [{ group: 'API', icon: 'globe', types: ['endpoint', 'dto'] }, { type: 'ac', hidden: true }],
       writingStyle: null,
       language: 'English',
       agent: { claudeUsePreset: true, conversationalLanguage: 'Polski', allowedPaths: ['/opt/x'], disallowedPaths: ['/opt/y'], disableDirectFilesystemAccess: false },
@@ -571,6 +580,7 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
       remoteProjectId: '11111111-2222-3333-4444-555555555555',
       onboardingCompleted: true,
     });
+    expect(res.body.elementsMenu).toEqual(file.elementsMenu);
     for (const k of ['plansDir', 'releasesDir', 'configHash', 'writingStyleUnavailable', 'plugins']) expect(k in file, k).toBe(false);
     expect('plugins' in res.body).toBe(false);
     // A roots[] entry missing one of its four fields is refused.
@@ -828,6 +838,147 @@ describe('PATCH /config — D4 root namespace overlap (2.1.8)', () => {
   });
 });
 
+
+/**
+ * 2.1.50 (M13 `o4ju2d7m`) — `elementsMenu` on SAVE: the shape rule (1) and the
+ * save rules (2–5) reject the whole PATCH with a 400 pinned to `elementsMenu`,
+ * and nothing is written; a slug outside the pool is saved (rule 6); a save
+ * replaces the list wholesale and does not rebuild the project context.
+ */
+describe('PATCH /config — elementsMenu save rules (2.1.50)', () => {
+  let dir: string;
+  let rebuilds: number;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-cfg-menu-'));
+    rebuilds = 0;
+    const file = configPath(dir);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ $schemaVersion: 4, name: 'X' }));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const app = () => {
+    const router = configRouter({
+      cwd: dir,
+      skillRegistry: {} as unknown as SkillRegistry,
+      knownEntityTypes: () => ['endpoint', 'dto', 'ac'],
+      onContextConfigChanged: () => {
+        rebuilds++;
+      },
+    });
+    return express().use(express.json()).use(router);
+  };
+  const onDisk = () => JSON.parse(fs.readFileSync(configPath(dir), 'utf8')) as Record<string, unknown>;
+  const save = (elementsMenu: unknown) => request(app()).patch('/config').send({ name: 'Y', elementsMenu });
+  /** A rejected save: 400 VALIDATION pinned to `elementsMenu`, and nothing of the body persisted. */
+  const expectRejected = (res: Awaited<ReturnType<typeof save>>, message: RegExp) => {
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+    expect(res.body.error.details).toEqual({ field: 'elementsMenu' });
+    expect(res.body.error.message).toMatch(message);
+    expect(onDisk()).toEqual({ $schemaVersion: 4, name: 'X' });
+  };
+
+  it('[ac:ac-blad-odrzucenia-zapisu-elementsmenu-j] a rejected elementsMenu save carries an error pinned to the elementsMenu field', async () => {
+    const res = await save([{ group: 'API', types: [] }]);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatchObject({ code: 'VALIDATION', details: { field: 'elementsMenu' } });
+    expect(res.body.error.message).toMatch(/^elementsMenu/);
+    // Every other refusal of the key is pinned the same way — the shape rule included.
+    for (const bad of ['endpoint', [{ icon: 'folder' }], [{ group: ' ', types: ['ac'] }], [{ type: 'ac' }, { type: 'ac' }]]) {
+      const r = await save(bad);
+      expect(r.status, JSON.stringify(bad)).toBe(400);
+      expect(r.body.error.details, JSON.stringify(bad)).toEqual({ field: 'elementsMenu' });
+    }
+    expect(onDisk()).toEqual({ $schemaVersion: 4, name: 'X' });
+  });
+
+  it('[ac:ac-zapis-dwoch-grup-menu-elements-o-tej] a save with two ELEMENTS groups of the same label is rejected — case-insensitively', async () => {
+    expectRejected(
+      await save([{ group: 'API', types: ['endpoint'] }, { group: 'API', types: ['dto'] }]),
+      /group label "API" is already used/,
+    );
+    expectRejected(
+      await save([{ group: 'Data', types: ['endpoint'] }, { group: ' data ', types: ['dto'] }]),
+      /group label "data" is already used/,
+    );
+  });
+
+  it('[ac:ac-zapis-elementsmenu-z-typem-obecnym-w] a save with a type present twice in the menu is rejected — type entries, hidden ones and group members counted together', async () => {
+    expectRejected(await save([{ type: 'endpoint' }, { type: 'endpoint' }]), /type "endpoint" appears more than once/);
+    expectRejected(
+      await save([{ type: 'dto', hidden: true }, { group: 'API', types: ['endpoint', 'dto'] }]),
+      /type "dto" appears more than once/,
+    );
+    expectRejected(
+      await save([{ group: 'A', types: ['ac'] }, { group: 'B', types: ['ac'] }]),
+      /type "ac" appears more than once/,
+    );
+    expectRejected(await save([{ group: 'A', types: ['ac', 'ac'] }]), /type "ac" appears more than once/);
+  });
+
+  it('[ac:ac-zapis-grupy-menu-elements-bez-typow-j] a save of an ELEMENTS group without types is rejected', async () => {
+    expectRejected(await save([{ group: 'Empty', types: [] }]), /group "Empty" must contain at least one type/);
+  });
+
+  it('[ac:ac-zapis-grupy-menu-elements-z-pusta-ety] a save of an ELEMENTS group with an empty label is rejected — blank after trimming included', async () => {
+    expectRejected(await save([{ group: '', types: ['endpoint'] }]), /a group label must not be empty/);
+    expectRejected(await save([{ group: '   ', types: ['endpoint'] }]), /a group label must not be empty/);
+  });
+
+  it('[ac:ac-zapis-wpisu-grupy-menu-elements-z-pol] a save of an ELEMENTS group entry carrying a hidden field is rejected', async () => {
+    expectRejected(
+      await save([{ group: 'API', types: ['endpoint'], hidden: true }]),
+      /elementsMenu\[0\]\.hidden is allowed only on a type entry/,
+    );
+  });
+
+  it('[section:o4ju2d7m] a valid layout is saved whole — unknown slugs included — replaces the previous list and rebuilds nothing', async () => {
+    const first = [{ group: 'API', icon: 'globe', types: ['endpoint', 'not-installed'] }, { type: 'ac', hidden: true }];
+    const res = await save(first);
+    expect(res.status).toBe(200);
+    expect(res.body.elementsMenu).toEqual(first);
+    expect(onDisk().elementsMenu).toEqual(first);
+    // Last save wins: the list is replaced, not merged.
+    const second = [{ type: 'dto' }];
+    const res2 = await save(second);
+    expect(res2.status).toBe(200);
+    expect(onDisk().elementsMenu).toEqual(second);
+    expect((await request(app()).get('/config')).body.elementsMenu).toEqual(second);
+    expect(rebuilds).toBe(0);
+  });
+
+  it('[ac:ac-reset-to-default-order-usuwa-klucz-el] the #entities card\'s save after Reset to default order (elementsMenu: null) removes the elementsMenu key from the file', async () => {
+    const layout = [{ group: 'API', icon: 'globe', types: ['endpoint'] }, { type: 'ac', hidden: true }];
+    expect((await request(app()).patch('/config').send({ elementsMenu: layout })).status).toBe(200);
+    expect(onDisk().elementsMenu).toEqual(layout);
+
+    // The card sends the reset as `null` — no type check, no save rule, the key goes.
+    const res = await request(app()).patch('/config').send({ elementsMenu: null });
+    expect(res.status).toBe(200);
+    expect('elementsMenu' in res.body).toBe(false);
+    expect('elementsMenu' in onDisk()).toBe(false);
+    // Only the key goes — the rest of the file stays.
+    expect(onDisk()).toMatchObject({ $schemaVersion: 4, name: 'X' });
+    expect('elementsMenu' in (await request(app()).get('/config')).body).toBe(false);
+    expect(rebuilds).toBe(0);
+  });
+
+  it('[ac:ac-przy-dwoch-zapisach-karty-entities-pl] after two saves of the #entities card the file carries the elementsMenu layout of the last one', async () => {
+    // Two editors (two tabs) each save the whole menu, as the card does; the
+    // second was opened before the first saved and knows nothing of its group.
+    const fromTabA = [{ group: 'API', types: ['endpoint', 'dto'] }, { type: 'ac' }];
+    const fromTabB = [{ type: 'ac' }, { type: 'dto', hidden: true }, { type: 'endpoint' }];
+    expect((await request(app()).patch('/config').send({ elementsMenu: fromTabA })).status).toBe(200);
+    expect((await request(app()).patch('/config').send({ elementsMenu: fromTabB })).status).toBe(200);
+    // The last save wins whole — nothing of the first is merged in.
+    expect(onDisk().elementsMenu).toEqual(fromTabB);
+    expect((await request(app()).get('/config')).body.elementsMenu).toEqual(fromTabB);
+  });
+});
 
 /**
  * 0.2.57 — `GET /writing-styles`, which had no test at all until the style it

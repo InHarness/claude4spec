@@ -485,4 +485,42 @@ describe('buildBundleArchive — sanitized config', () => {
       fs.rmSync(result.tarGzPath, { force: true });
     }
   });
+
+  /**
+   * 2.1.50 (M17 m17bndcf1): `elementsMenu` gets the verdict KEEP — the team's
+   * ELEMENTS menu layout travels with the bundle as the project file holds it
+   * (groups with label/icon/types, hidden type entries), and the change is
+   * additive: `bundleSchemaVersion` stays at 4. A project with no layout (the
+   * default flat list) publishes no key at all.
+   */
+  it('[section:m17bndcf1] keeps elementsMenu on the allow-list as the project holds it, without bumping bundleSchemaVersion', async () => {
+    const elementsMenu = [
+      { group: 'API', icon: 'plug', types: ['endpoint', 'dto'] },
+      { type: 'diagram', hidden: true },
+      { type: 'design-system' },
+    ];
+    const projectConfig = { ...(CONFIG as unknown as Record<string, unknown>), elementsMenu } as unknown as NormalizedConfig;
+    const result = await buildBundleArchive(snapshotWith(), RELEASE, projectConfig, [], [], null);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-bundle-test-'));
+    try {
+      await extractBundleStream(fs.createReadStream(result.tarGzPath), dir);
+      const config = JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8'));
+      expect(config.elementsMenu).toEqual(elementsMenu);
+      const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8')) as BundleManifest;
+      expect(manifest.bundleSchemaVersion).toBe(4);
+      expect(result.bundleSchemaVersion).toBe(4);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(result.tarGzPath, { force: true });
+    }
+
+    // No layout in the project file → no key in the bundle.
+    const { dir: plainDir, cleanup } = await build([]);
+    try {
+      const plain = JSON.parse(fs.readFileSync(path.join(plainDir, 'config.json'), 'utf8'));
+      expect(plain).not.toHaveProperty('elementsMenu');
+    } finally {
+      cleanup();
+    }
+  });
 });

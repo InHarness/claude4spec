@@ -27,8 +27,10 @@ export const DATABASE_TABLE_LABEL = 'Database Table';
 export const DATABASE_TABLE_LABEL_PLURAL = 'Database Tables';
 
 /**
- * The ELEMENTS tab's `sidebarTab.order` — since 2.1.26 the only ordering a type
- * declares (the identity has no `displayOrder`). Inherited from the retired
+ * The ELEMENTS tab's `sidebarTab.order` — the only ordering a type declares
+ * (the identity has no `displayOrder`). Since 2.1.50 it is the DEFAULT order:
+ * it holds when the project has no `elementsMenu` and for the types the team's
+ * layout does not place (M13 `e8xcx6g7`). Inherited from the retired
  * plugin so the tab does not move.
  */
 export const DATABASE_TABLE_SIDEBAR_ORDER = 100;

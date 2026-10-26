@@ -36,7 +36,11 @@ export interface SidebarTabSlot {
    * resolves to it directly, not to a copy bundled inside the plugin. */
   icon: LucideIcon;
   label: string;
-  /** Sort order — Pages = 1, Tags = 999, plugins live in between. */
+  /**
+   * The DEFAULT order of the ELEMENTS entries (2.1.50, M13 `e8xcx6g7`): it holds
+   * when the project has no `elementsMenu`, and for the visible types the layout
+   * does not place, which stand after its entries.
+   */
   order: number;
   // 2.1.20 — `emptyState` removed: the sidebar reads only `icon`, `label` and
   // `order`, and a type's list page carries its own empty text.

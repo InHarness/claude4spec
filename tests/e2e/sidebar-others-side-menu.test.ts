@@ -2,7 +2,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { chromium, type Browser, type Page } from 'playwright';
 
 /**
- * E2E: the sidebar OTHERS flyout stacks above the plan page's ActionBar.
+ * E2E: the sidebar side menu opened by OTHERS (M50 `8h2a734u`) stacks above
+ * the plan page's ActionBar.
  *
  * Runs against a LIVE app — normally an env-runner environment built from the
  * branch under test (`c4s-env-runner` skill) — pointed at by `C4S_E2E_BASE_URL`.
@@ -10,7 +11,7 @@ import { chromium, type Browser, type Page } from 'playwright';
  * anywhere.
  *
  * Structurally out of Vitest's reach, and out of `curl`'s too: the bug this
- * guards was a pure *stacking* one. The flyout was a hand-rolled Popover twin
+ * guards was a pure *stacking* one. The old OTHERS flyout was a hand-rolled Popover twin
  * pinned at `zIndex: 60`, while `ActionBar` sits at 900 — so the menu rendered
  * under the action bar and its lower items (Tags, Briefs, Links) swallowed
  * their clicks. Every request involved returned 200; only a real browser, and
@@ -47,7 +48,7 @@ async function firstProject(): Promise<WorkspaceProject> {
   return project;
 }
 
-describe.skipIf(!BASE)('sidebar OTHERS flyout', () => {
+describe.skipIf(!BASE)('sidebar OTHERS side menu', () => {
   let browser: Browser;
   let project: WorkspaceProject;
 
@@ -59,8 +60,8 @@ describe.skipIf(!BASE)('sidebar OTHERS flyout', () => {
     await browser?.close();
   });
 
-  /** Opens the AC list page and the flyout, collecting console/network failures. */
-  async function openFlyout(page: Page) {
+  /** Opens the AC list page and the OTHERS side menu, collecting console/network failures. */
+  async function openMenu(page: Page) {
     const consoleErrors: string[] = [];
     const badResponses: string[] = [];
     page.on('console', (m) => {
@@ -81,14 +82,14 @@ describe.skipIf(!BASE)('sidebar OTHERS flyout', () => {
 
   it('renders above the ActionBar, so its lower items are clickable', async () => {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-    const { consoleErrors, badResponses } = await openFlyout(page);
+    const { consoleErrors, badResponses } = await openMenu(page);
 
-    const panel = page.getByRole('dialog');
-    await expect.poll(() => panel.isVisible()).toBe(true);
+    const menu = page.getByRole('menu', { name: 'Others' });
+    await expect.poll(() => menu.isVisible()).toBe(true);
 
     // The primitive's tier (1100) beats the ActionBar's 900. A twin pinned at
-    // 60 — the bug — fails right here.
-    const z = await panel.evaluate((el) => getComputedStyle(el).zIndex);
+    // 60 — the bug — fails right here. The menu sits in the catalog Popover.
+    const z = await menu.evaluate((el) => getComputedStyle(el.closest('[role="dialog"]')!).zIndex);
     expect(z).toBe('1100');
 
     // The LAST menu item is the one genuinely buried in the action bar's band
@@ -96,7 +97,7 @@ describe.skipIf(!BASE)('sidebar OTHERS flyout', () => {
     // point Playwright clicks — stays clear and would pass even on the broken
     // build). Since 0.2.110 (M50) the order is … Tags → Links → Briefs, so the
     // last item is `Briefs`.
-    const item = panel.getByRole('link', { name: 'Briefs' });
+    const item = menu.getByRole('menuitem', { name: 'Briefs' });
     const itemBox = await item.boundingBox();
     const barBox = await page.evaluate(() => {
       for (const el of document.querySelectorAll('div')) {
@@ -133,12 +134,12 @@ describe.skipIf(!BASE)('sidebar OTHERS flyout', () => {
 
   it('keeps the menu inside the viewport (the twin had no clamping)', async () => {
     const page = await browser.newPage({ viewport: { width: 1440, height: 620 } });
-    await openFlyout(page);
+    await openMenu(page);
 
-    const panel = page.getByRole('dialog');
-    await expect.poll(() => panel.isVisible()).toBe(true);
+    const menu = page.getByRole('menu', { name: 'Others' });
+    await expect.poll(() => menu.isVisible()).toBe(true);
 
-    const box = await panel.boundingBox();
+    const box = await menu.boundingBox();
     expect(box).not.toBeNull();
     expect(box!.y).toBeGreaterThanOrEqual(0);
     expect(box!.y + box!.height).toBeLessThanOrEqual(620);

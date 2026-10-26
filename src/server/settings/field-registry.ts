@@ -100,6 +100,13 @@ export interface FieldDeclaration {
   resumeLock: boolean;
   /** `false` = hand-editable only; PATCH drops the key silently. */
   apiWritable: boolean;
+  /**
+   * `true`: a top-level field whose ABSENCE is a state of its own (its default),
+   * so a PATCH carrying `null` for it removes the key from the file instead of
+   * writing a value — no type check, no rule. 2.1.50: `elementsMenu` (Reset to
+   * default order).
+   */
+  nullRemovesKey?: boolean;
 }
 
 /**

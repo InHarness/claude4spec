@@ -22,25 +22,37 @@ import { PLUGIN_HOST_SETTINGS } from '../../core/plugin-host/pluginSettings.js';
  * 2.1.21 (M26 `7f76eszm`): this list IS the card and element registry — the
  * layer's `Karty`/`Elementy` tables plus the implementor's own cards (About,
  * Index status). No cards are generated for plugins.
+ *
+ * 2.1.50: a function, not a module-level array. `pluginSettings.ts` reaches
+ * this module back through `runtime/boot-plugins.ts` → `tiptap/mountFrontend.ts`
+ * → `router.tsx`, so when the graph is entered from that side (a test importing
+ * `pluginSettings.ts` first) an array literal built at load would capture
+ * `PLUGIN_HOST_SETTINGS` as `undefined`. Read at call time, every binding is live.
  */
-export const STATIC_SETTINGS_CONTRIBUTIONS: SettingsContribution[] = [
-  REMOTE_ACCOUNT_SETTINGS,
-  APPEARANCE_SETTINGS,
-  PROJECT_SETTINGS,
-  WRITING_STYLE_SETTINGS,
-  RELEASE_PUSH_SETTINGS,
-  GIT_SETTINGS,
-  PLUGIN_HOST_SETTINGS,
-  EXTERNAL_INTEGRATIONS_SETTINGS,
-  AGENT_SETTINGS,
-  SPEC_SKILLS_SETTINGS,
-  SETTINGS_MODULE_CARDS,
-  WORKSPACE_SETTINGS,
-];
+export function staticSettingsContributions(): SettingsContribution[] {
+  return [
+    REMOTE_ACCOUNT_SETTINGS,
+    APPEARANCE_SETTINGS,
+    PROJECT_SETTINGS,
+    WRITING_STYLE_SETTINGS,
+    RELEASE_PUSH_SETTINGS,
+    GIT_SETTINGS,
+    PLUGIN_HOST_SETTINGS,
+    EXTERNAL_INTEGRATIONS_SETTINGS,
+    AGENT_SETTINGS,
+    SPEC_SKILLS_SETTINGS,
+    SETTINGS_MODULE_CARDS,
+    WORKSPACE_SETTINGS,
+  ];
+}
 
-// Assembled once at module load: a collision among the declarants is a
-// registration error, and it fails loudly here rather than on some later render.
-const CARDS: AssembledCard[] = assembleSettings(STATIC_SETTINGS_CONTRIBUTIONS);
+// Assembled once, on the page's first render (not at module load — see
+// `staticSettingsContributions`). A collision among the declarants is still a
+// registration error that fails loudly; `catalog.test.ts` assembles the same list.
+let cards: AssembledCard[] | null = null;
+function settingsCards(): AssembledCard[] {
+  return (cards ??= assembleSettings(staticSettingsContributions()));
+}
 
 /**
  * M26 → 0.2.113 — the full-page Settings surface at `/settings`, ASSEMBLED from
@@ -50,7 +62,7 @@ const CARDS: AssembledCard[] = assembleSettings(STATIC_SETTINGS_CONTRIBUTIONS);
 export function SettingsPage() {
   const { data: config } = useConfig();
 
-  const visibleCards = config ? CARDS.filter((c) => !c.decl.visible || c.decl.visible(config)) : [];
+  const visibleCards = config ? settingsCards().filter((c) => !c.decl.visible || c.decl.visible(config)) : [];
 
   useEffect(() => {
     const scrollToHash = () => {
