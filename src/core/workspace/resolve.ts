@@ -66,11 +66,22 @@ export class WorkspaceResolveError extends Error {
  *   N>1 without --workspace → AMBIGUOUS_WORKSPACE
  *
  * No last-opened guessing — ambiguity is always explicit.
+ *
+ * 2.1.53 — the 0/1/N rule is the `cli` channel's alone: it is the one caller
+ * with no workspace of its own. `mcp` / `internal` callers run inside a server
+ * process, which belongs to exactly one workspace, so they resolve `project` in
+ * `workspace` (the serving workspace, or the one the caller named to reach
+ * elsewhere) and nowhere else. That path never raises PROJECT_NOT_FOUND or an
+ * AMBIGUOUS_* code: a workspace that is not registered holds no such id either,
+ * so both misses are PROJECT_ID_NOT_FOUND.
  */
 export function resolveWorkspaceProject(
-  opts: { project?: string; workspace?: string } = {},
+  opts: { project?: string; workspace?: string; channel?: 'cli' | 'mcp' | 'internal' } = {},
 ): ResolvedWorkspaceProject {
   const registry = new WorkspaceRegistry();
+  if (opts.channel !== undefined && opts.channel !== 'cli') {
+    return resolveInServingWorkspace(registry, opts.project ?? '', opts.workspace);
+  }
 
   let projectDir: string | null = null;
   let owners: WorkspaceRecord[] = [];
@@ -160,6 +171,26 @@ export function resolveWorkspaceProject(
   // Read the STORED id off the matched record — never derived from the path.
   const record = findProjectByCwd(workspace.projects, projectDir)!;
   return buildResolved(registry, workspace, record);
+}
+
+function resolveInServingWorkspace(
+  registry: WorkspaceRegistry,
+  project: string,
+  workspace: string | undefined,
+): ResolvedWorkspaceProject {
+  const ws = workspace ? registry.getWorkspace(workspace) : null;
+  const hit = ws?.projects.find((p) => p.id === project);
+  if (!ws || !hit) {
+    const available = ws?.projects.map((p) => p.id) ?? [];
+    throw new WorkspaceResolveError(
+      'PROJECT_ID_NOT_FOUND',
+      ws
+        ? `no project with id '${project}' in workspace '${ws.name}'; available ids: ${available.join(', ') || '(none)'}`
+        : `no project with id '${project}': workspace '${workspace ?? '(none)'}' is not registered`,
+      'pass `project` exactly as <workspace_projects/> lists it, and `workspace` only to reach a peer in another workspace',
+    );
+  }
+  return buildResolved(registry, ws, hit);
 }
 
 function buildResolved(

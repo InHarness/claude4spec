@@ -37,6 +37,7 @@ export const checkConsistencyCommand: CliCommandContribution = {
   name: 'check-consistency',
   operation: 'check_consistency',
   executionMode: 'server-delegating',
+  flags: ['rule', 'severity', 'limit', 'offset'],
   errorCodes: ['INVALID_ARGS', 'INVALID_ARGUMENT'],
   handler: runCheckConsistency,
 };

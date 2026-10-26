@@ -164,6 +164,7 @@ function trustLabel(p: PluginLoadRecord): string {
 export const pluginsCommand: CliCommandContribution = {
   name: 'plugins',
   executionMode: 'server-delegating',
+  flags: [],
   errorCodes: [...SERVER_DELEGATING_CODES, 'INVALID_ARGS', 'HOST_API_INCOMPATIBLE'],
   handler: runPlugins,
 };

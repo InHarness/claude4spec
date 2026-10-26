@@ -1,6 +1,6 @@
 import type { ParsedArgs } from '../args.js';
 import { requireString } from '../args.js';
-import { delegateGet } from '../delegate.js';
+import { delegateOperation } from '../delegate.js';
 import { writeOutput } from '../output.js';
 import type { CliCommandContribution } from '../registry.js';
 
@@ -26,20 +26,21 @@ import type { CliCommandContribution } from '../registry.js';
  * `children` only when it has any. `headingPath` is gone from the output: the
  * hierarchy is now the node's position in the tree.
  *
- * `server-delegating`, over `GET /api/pages/<rootId>/outline?path=…`. The outline is
- * keyed by a page, so it delegates through the PAGE family rather than through
- * `/sections`, whose two routes key nothing (a flat global listing) and an anchor.
+ * `server-delegating`. 2.1.53 — the operation has no REST channel, so it is
+ * called by name over the project's MCP mount (`delegateOperation`); the page
+ * router it used to borrow refused a bad root before the core could.
  */
 export async function runGetPageOutline(args: ParsedArgs): Promise<void> {
   const rootId = requireString(args, 'root-id');
   const path = requireString(args, 'path');
-  writeOutput(await delegateGet(args, `/pages/${encodeURIComponent(rootId)}/outline`, { path }), args);
+  writeOutput(await delegateOperation(args, 'get_page_outline', { rootId, path }), args);
 }
 
 export const getPageOutlineCommand: CliCommandContribution = {
   name: 'get-page-outline',
   operation: 'get_page_outline',
   executionMode: 'server-delegating',
-  errorCodes: ['INVALID_ARGS', 'INVALID_ARGUMENT', 'ROOT_NOT_FOUND', 'PAGE_NOT_FOUND'],
+  flags: ['root-id', 'path'],
+  errorCodes: ['INVALID_ARGS', 'INVALID_ARGUMENT', 'PAGE_NOT_FOUND'],
   handler: runGetPageOutline,
 };

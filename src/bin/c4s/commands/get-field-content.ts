@@ -36,6 +36,7 @@ export const getFieldContentCommand: CliCommandContribution = {
   name: 'get-field-content',
   operation: 'get_field_content',
   executionMode: 'server-delegating',
+  flags: ['type', 'slug', 'field', 'limit', 'offset'],
   errorCodes: ['INVALID_TYPE', 'INVALID_ARGS', 'INVALID_ARGUMENT', 'ENTITY_NOT_FOUND'],
   handler: runGetFieldContent,
 };

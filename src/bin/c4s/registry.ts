@@ -109,6 +109,15 @@ export interface CliCommandContribution {
    * rendered, not something any one of them declares.
    */
   output?: { unit: string; fields: readonly string[] };
+  /**
+   * 2.1.53 — every flag the command reads, without the shared ones
+   * (`GLOBAL_FLAGS`). The dispatcher refuses any other flag LOCALLY with
+   * `INVALID_ARGS`, before the server is called, whatever the execution mode.
+   * A flag the handler deliberately refuses with its own repair path (a
+   * `refuseFlags` entry, `get-page --range` forwarded to the core) belongs
+   * here: it is part of the command's contract, answered by the code it names.
+   */
+  flags: readonly string[];
   /** Error codes contributed to the `CliErrorCode` union by this command specifically. */
   errorCodes: readonly CliErrorCode[];
   /** Delegates to the owning module's server route; the bin itself carries no domain logic. */

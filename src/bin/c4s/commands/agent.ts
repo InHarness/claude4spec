@@ -182,6 +182,7 @@ function extractText(content: string): string {
 export const agentCommand: CliCommandContribution = {
   name: 'agent',
   executionMode: 'server-delegating',
+  flags: ['ct', 'brief', 'plan', 'thread', 'effort', 'model', 'from', 'to', 'roots', 'suffix'],
   errorCodes: [
     ...SERVER_DELEGATING_CODES,
     // 2.1.26 (M11 `g24dkd8t`) — the turn family's 409 for a `--thread`

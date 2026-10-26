@@ -404,6 +404,51 @@ describe('runAgent — 2.1.0: --server gives only the address and requires --pro
 });
 
 /**
+ * 2.1.53 — the `mcp` channel resolves `project` in the serving workspace: an id
+ * present there AND elsewhere addresses the serving workspace's server, with no
+ * AMBIGUOUS_*. A local SERVER_NOT_RUNNING names that workspace.
+ */
+describe('runAgent — 2.1.53: mcp channel resolves in the serving workspace', () => {
+  let dir: string;
+  let prevHome: string | undefined;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-run-agent-mcp-'));
+    prevHome = process.env.C4S_HOME;
+    process.env.C4S_HOME = dir;
+  });
+  afterEach(() => {
+    if (prevHome === undefined) delete process.env.C4S_HOME;
+    else process.env.C4S_HOME = prevHome;
+    fs.rmSync(dir, { recursive: true, force: true });
+    vi.unstubAllGlobals();
+  });
+
+  it('[section:m11dcore] ask over mcp without an explicit workspace consults the peer of the serving workspace', async () => {
+    const registry = new WorkspaceRegistry(dir);
+    registry.registerProject(registry.selectOrCreate({ name: 'ws-a', port: 4531 }), path.join(dir, 'a', 'shared'));
+    registry.registerProject(registry.selectOrCreate({ name: 'ws-b', port: 4532 }), path.join(dir, 'b', 'shared'));
+
+    const { calls } = stubFullFlow({ data: { threadId: 'T1', answer: 'pong' } });
+    await runAgent({ project: 'shared', workspace: 'ws-b', channel: 'mcp', contextType: 'ask', message: 'hi' }).catch(() => undefined);
+    expect(calls[0]?.url).toBe('http://localhost:4532/api/projects/shared/config');
+    expect(calls.every((c) => c.url.startsWith('http://localhost:4532/'))).toBe(true);
+  });
+
+  it('[section:m11dcore] SERVER_NOT_RUNNING names the workspace and its local address', async () => {
+    const registry = new WorkspaceRegistry(dir);
+    registry.registerProject(registry.selectOrCreate({ name: 'ws-a', port: 4533 }), path.join(dir, 'peer'));
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
+    }));
+    const err = await runAgent({ project: 'peer', workspace: 'ws-a', channel: 'mcp', message: 'hi' }).catch((e) => e);
+    expect((err as AgentError).code).toBe('SERVER_NOT_RUNNING');
+    expect((err as AgentError).message).toBe('no claude4spec server for workspace `ws-a` at `http://localhost:4533`');
+    expect((err as AgentError).hint).toContain('--server <url>');
+  });
+});
+
+/**
  * 2.1.26 (M11 `g24dkd8t` / `m11dcore`) — the fifteenth code of the turn family.
  * A `--thread` continuation whose session config differs from the thread's
  * first turn is refused by the peer's run-turn endpoint with HTTP 409

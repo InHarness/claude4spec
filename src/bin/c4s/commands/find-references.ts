@@ -80,6 +80,7 @@ export const findReferencesCommand: CliCommandContribution = {
   name: 'find-references',
   operation: 'find_references',
   executionMode: 'server-delegating',
+  flags: ['type', 'slug', 'pages', 'include-tag-matches', 'limit', 'offset'],
   errorCodes: ['INVALID_TYPE', 'INVALID_ARGS', 'INVALID_ARGUMENT'],
   handler: runFindReferences,
 };

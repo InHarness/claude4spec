@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertFlagValues, optionalInt, optionalString, parseArgs, paginationFrom, repeatedStrings, requireString, requireStringList } from './args.js';
+import { assertFlagValues, assertKnownFlags, optionalInt, optionalString, parseArgs, paginationFrom, repeatedStrings, requireString, requireStringList } from './args.js';
 import { CliError } from './errors.js';
 
 describe('parseArgs', () => {
@@ -109,5 +109,21 @@ describe('INVALID_ARGS for unreadable argv (2.1.23)', () => {
   it('declared boolean flags and valued flags pass', () => {
     expect(code(() => assertFlagValues(parseArgs(['get-sections', '--anchors', 'a,b', '--include-subtree', '--compact'])))).toBeUndefined();
     expect(code(() => assertFlagValues(parseArgs(['list-entities', '--limit', '3', '--type=dto'])))).toBeUndefined();
+  });
+});
+
+/**
+ * 2.1.53 — the dispatcher boundary: a flag outside the command's list is
+ * `INVALID_ARGS`, raised locally before any server call, for every command and
+ * every execution mode. `INVALID_ARGUMENT` belongs to the core. The sweep over
+ * every registered command lives in `tests/integration/packaging/c4s-unknown-flag.test.ts`
+ * (this directory may not list directories — see the discovery-core gate).
+ */
+describe('unknown flag → INVALID_ARGS (2.1.53)', () => {
+  it('declared and shared flags pass', () => {
+    const command = { name: 'list-pages', flags: ['root-id', 'limit'] };
+    expect(() =>
+      assertKnownFlags(parseArgs(['list-pages', '--root-id', 'pages', '--limit', '3', '--project', 'p', '--compact']), command),
+    ).not.toThrow();
   });
 });

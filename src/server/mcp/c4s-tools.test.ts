@@ -65,6 +65,18 @@ describe('buildC4sToolsServer — ask workspace inheritance', () => {
     expect(hoisted.calls[0]).toMatchObject({ workspace: 'ws-5555' });
   });
 
+  it('[section:m11dcore] 2.1.53 — the addressing sentence: `workspace` reaches another workspace, omitted = this server\'s', async () => {
+    const client = await connectClient('ws-5555');
+    const { tools } = await client.listTools();
+    const ask = tools.find((t) => t.name === 'ask')!;
+    expect(ask.description).toContain(
+      "Address the peer with `project` — its `id` exactly as `<workspace_projects/>` lists it. Pass `workspace` only to reach a peer in another workspace; without it `project` is resolved in this server's workspace.",
+    );
+    expect(ask.description).not.toContain('belongs to more than one workspace');
+    await client.callTool({ name: 'ask', arguments: { message: 'ping', project: 'peer' } });
+    expect(hoisted.calls[0]).toMatchObject({ workspace: 'ws-5555', channel: 'mcp' });
+  });
+
   it('(b) explicit input.workspace overrides callerWorkspace', async () => {
     const client = await connectClient('ws-5555');
     await client.callTool({ name: 'ask', arguments: { message: 'ping', project: 'peer', workspace: 'ws-5556' } });
@@ -241,7 +253,7 @@ describe('c4s-tools · ask — contract (2.1.9)', () => {
       .properties;
     expect(props.message!.description).toBe('Question/prompt for the peer spec.');
     expect(props.project!.description).toBe("The peer project's `id`, exactly as <workspace_projects/> lists it. Not a path, not a name.");
-    expect(props.workspace!.description).toBe("Workspace override; defaults to the caller's workspace when omitted.");
+    expect(props.workspace!.description).toBe("Another workspace to resolve `project` in; omitted = this server's workspace.");
     expect(props.server!.description).toBe('Peer server address override (e.g. its publicUrl). Valid only together with `project`.');
     expect(props.threadId!.description).toBe('Continue an existing peer thread.');
     expect(props.model!.description).toBe(
@@ -260,7 +272,7 @@ describe('c4s-tools · ask — contract (2.1.9)', () => {
     // Without `workspace` the caller's is taken; the call is a locked `ask` turn.
     hoisted.calls.length = 0;
     await client.callTool({ name: 'ask', arguments: { message: 'ping', project: 'app-spec' } });
-    expect(hoisted.calls[0]).toMatchObject({ workspace: 'ws-caller', contextType: 'ask', output: 'final' });
+    expect(hoisted.calls[0]).toMatchObject({ workspace: 'ws-caller', channel: 'mcp', contextType: 'ask', output: 'final' });
 
     // An agent error comes back with its own code and hint.
     vi.mocked(runAgent).mockImplementationOnce(async () => {

@@ -97,15 +97,11 @@ export type CliErrorCode =
   // `AMBIGUOUS_PROJECT` stay — they are M11's own, raised by the resolver.
   | 'PAGE_NOT_FOUND'
   | 'INVALID_ARGUMENT'
-  // 0.2.13 — `--root-id` naming a root the project does not have. Raised by the
-  // REST rendering ahead of the core (the per-root routers resolve the id from
-  // the path segment), so it never travelled the `INVALID_ARGUMENT` path the
-  // core would have used. Exits 4 with the other "you asked for something the
-  // contract does not offer" codes.
-  // 2.1.14 (M11 L14 `m11dcmds`) — neither an M11 code nor one mapped from the
-  // core: it comes from the M02 page router and is passed on untranslated, for
-  // an unknown root and a system root (`plans`) alike, the roots in `hint`.
-  | 'ROOT_NOT_FOUND'
+  // 2.1.53 — `ROOT_NOT_FOUND` left the union. It came from the M02 page router
+  // (`/api/pages/:rootId/...`), which refused an unknown or system `--root-id`
+  // before the core ran; the page commands now reach the core operation, which
+  // refuses the same root with `INVALID_ARGUMENT` (the `kind: pages` roots in
+  // `message`) — the code the MCP channel always gave.
   // 0.2.65 M31 — `c4s list-workspaces` (mode `registry-read`) could not read
   // `~/.claude4spec/workspaces.json` at all: invalid JSON, a shape that is not a
   // registry, a schema version from a newer binary, or EACCES. A MISSING file is
@@ -171,8 +167,6 @@ export function cliErrorFromDiscovery(err: unknown): CliError | null {
  */
 export function codeToExit(code: string): number {
   switch (code) {
-    case 'PROJECT_NOT_FOUND':
-      return 2;
     case 'ENTITY_NOT_FOUND':
     // 0.2.6 — an anchor that names nothing is the same outcome for a script as a
     // slug that names nothing.
@@ -187,16 +181,6 @@ export function codeToExit(code: string): number {
       return 3;
     case 'INVALID_TYPE':
     case 'INVALID_ARGS':
-    /**
-     * 0.2.13 — a `--root-id` that names nothing is the same CLASS of mistake as
-     * a bad `--type`: the caller asked for something the contract does not
-     * offer. It reached this table only after the read commands became
-     * server-delegating (the core used to answer `INVALID_ARGUMENT`, already in
-     * this group); unmapped, it fell to the `default: 1` bucket that also holds
-     * UNKNOWN_COMMAND, so a wrapper branching on exit 4 for "you typed the flags
-     * wrong" read a typo'd root id as an infrastructure failure.
-     */
-    case 'ROOT_NOT_FOUND':
     // M39 — the core's refusal shares the "you asked for something the contract
     // does not allow" exit, since a caller scripting c4s branches on the class
     // of failure and these are the same class.
@@ -250,7 +234,11 @@ export function codeToExit(code: string): number {
     // as every other "no such project" (PROJECT_NOT_IN_WORKSPACE falls to the
     // generic 1 as well). The exit-10 slot of the retired PROJECT_SLUG_NOT_FOUND
     // is not reused.
+    // 2.1.53 — the explicit environment table: every "no such project" outcome
+    // is exit 1, the walk-up's PROJECT_NOT_FOUND included (it was 2).
+    case 'PROJECT_NOT_FOUND':
     case 'PROJECT_ID_NOT_FOUND':
+    case 'PROJECT_NOT_IN_WORKSPACE':
       return 1;
     // 2.1.0 — an ambiguous project id is resolved the same way as an ambiguous
     // workspace (pass --workspace), so it shares its exit status.
@@ -307,7 +295,6 @@ export function codeToExit(code: string): number {
       return 25;
     case 'NOT_TEXT':
       return 26;
-    // PROJECT_NOT_IN_WORKSPACE → 1 (ask-group, like other server-side ask errors)
     default:
       return 1;
   }

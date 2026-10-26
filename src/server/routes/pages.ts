@@ -137,8 +137,9 @@ export function pagesRouter(
        * without one (`plans`, `briefs`, …) or outside the registry gets this
        * very refusal, and the list names only roots with a facade.
        *
-       * 2.1.14 — this is the REST rendering of the core's refusal, and the CLI
-       * passes it on untranslated (M11 L14 `m11dcmds`, M02 `l4rootseg`): an
+       * 2.1.14 — this is the REST rendering of the core's refusal (M02
+       * `l4rootseg`; since 2.1.53 the CLI's page reads bypass it and get the
+       * core's `INVALID_ARGUMENT` over the MCP mount): an
        * unknown root and a system root get the identical `ROOT_NOT_FOUND`,
        * `message` "root '<id>' not found", the roots in `hint`. The core itself
        * keeps `INVALID_ARGUMENT` (list in `message`) for MCP and in-process
@@ -222,7 +223,7 @@ export function pagesRouter(
       if (!pagePath) throw new DomainError('VALIDATION', 'path query param required');
       // 2.1.8: a leftover `?range=` is forwarded so the core refuses it — the
       // same refusal MCP and in-process callers get. (`c4s get-page --range` never
-      // gets here: the CLI refuses it locally, M11 L14 `m11dcmds`.)
+      // gets here: since 2.1.53 the CLI forwards it to the core over the MCP mount.)
       res.json(
         await discovery.getPage({
           rootId: rt.root.id,
@@ -236,7 +237,8 @@ export function pagesRouter(
   });
 
   /**
-   * 0.2.59 — the transport `c4s get-page-outline` delegates to.
+   * 0.2.59 — the transport `c4s get-page-outline` delegated to until 2.1.53, when
+   * the command moved to the operation by name over the MCP mount.
    *
    * It lives in the PAGE family, not under `/sections`, and that is the operation's
    * identity showing through: an outline is keyed by one page — `(rootId, path)` —

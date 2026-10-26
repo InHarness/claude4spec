@@ -24,6 +24,7 @@ export const releaseListCommand: CliCommandContribution = {
   name: 'release-list',
   operation: 'release_list',
   executionMode: 'server-delegating',
+  flags: ['limit', 'offset'],
   errorCodes: [...SERVER_DELEGATING_CODES, 'INVALID_ARGS', 'INVALID_ARGUMENT', 'INVALID_PAGINATION'],
   handler: runReleaseList,
 };

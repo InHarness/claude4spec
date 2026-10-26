@@ -64,6 +64,7 @@ export const loadSkillFileCommand: CliCommandContribution = {
   name: 'load-skill-file',
   operation: 'load_skill_file',
   executionMode: 'server-delegating',
+  flags: ['file'],
   errorCodes: [
     ...SERVER_DELEGATING_CODES,
     'INVALID_ARGS',

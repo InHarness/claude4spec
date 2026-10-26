@@ -44,6 +44,7 @@ export const elementListCommand: CliCommandContribution = {
   name: 'element_list',
   operation: 'get_entities',
   executionMode: 'server-delegating',
+  flags: ['type', 'slugs'],
   errorCodes: ['INVALID_TYPE', 'INVALID_ARGS', 'ENTITY_NOT_FOUND'],
   handler: runElementList,
 };

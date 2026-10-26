@@ -163,10 +163,10 @@ describe('c4s release commands (2.1.11)', () => {
       expect(seen).toEqual([]);
     });
 
-    it('refuses an unknown flag locally and lists the legal ones', async () => {
+    it('refuses an unknown flag locally with INVALID_ARGS (2.1.53) and lists the legal ones', async () => {
       await expect(
         runReleaseDiff(args('release-diff', '--from', 'v1', '--to', 'v2', '--types', 'x')),
-      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', message: expect.stringContaining('--entity-types') });
+      ).rejects.toMatchObject({ code: 'INVALID_ARGS', message: expect.stringContaining('--entity-types') });
       expect(seen).toEqual([]);
     });
 

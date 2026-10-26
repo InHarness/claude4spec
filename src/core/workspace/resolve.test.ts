@@ -107,6 +107,48 @@ describe('resolveWorkspaceProject — 2.1.0: --project <id> is the only selector
     );
   });
 
+  /**
+   * 2.1.53 — the 0/1/N rule belongs to `cli`. An `mcp`/`internal` caller runs in
+   * a server process of exactly one workspace and resolves the id there; the
+   * codes PROJECT_NOT_FOUND and AMBIGUOUS_* do not arise on that path.
+   */
+  it('[section:m11dcore] mcp: an id present in the serving workspace and another resolves to the serving one, no AMBIGUOUS_*', () => {
+    const registry = new WorkspaceRegistry(dir);
+    const wsA = registry.selectOrCreate({ name: 'ws-a', port: 4501 });
+    const wsB = registry.selectOrCreate({ name: 'ws-b', port: 4502 });
+    registry.registerProject(wsA, path.join(dir, 'repo-a', 'shared'));
+    registry.registerProject(wsB, path.join(dir, 'repo-b', 'shared'));
+
+    for (const channel of ['mcp', 'internal'] as const) {
+      const resolved = resolveWorkspaceProject({ project: 'shared', workspace: 'ws-b', channel });
+      expect(resolved.workspaceName).toBe('ws-b');
+      expect(resolved.localUrl).toBe('http://localhost:4502');
+    }
+    // The cli channel keeps the rule.
+    expect(expectResolveError(() => resolveWorkspaceProject({ project: 'shared', channel: 'cli' })).code).toBe(
+      'AMBIGUOUS_PROJECT',
+    );
+  });
+
+  it('[section:m11dcore] mcp: a miss is PROJECT_ID_NOT_FOUND — never PROJECT_NOT_FOUND, even for an unregistered workspace', () => {
+    const registry = new WorkspaceRegistry(dir);
+    const wsA = registry.selectOrCreate({ name: 'ws-a', port: 4501 });
+    registry.selectOrCreate({ name: 'ws-b', port: 4502 });
+    registry.registerProject(wsA, path.join(dir, 'only-in-a'));
+
+    const elsewhere = expectResolveError(() =>
+      resolveWorkspaceProject({ project: 'only-in-a', workspace: 'ws-b', channel: 'mcp' }),
+    );
+    expect(elsewhere.code).toBe('PROJECT_ID_NOT_FOUND');
+    const unknownWs = expectResolveError(() =>
+      resolveWorkspaceProject({ project: 'only-in-a', workspace: 'nope', channel: 'mcp' }),
+    );
+    expect(unknownWs.code).toBe('PROJECT_ID_NOT_FOUND');
+    expect(unknownWs.message).toContain("workspace 'nope' is not registered");
+    // A named workspace reaches a peer outside the serving one.
+    expect(resolveWorkspaceProject({ project: 'only-in-a', workspace: 'ws-a', channel: 'mcp' }).workspaceName).toBe('ws-a');
+  });
+
   it('reports an unrecognized --workspace distinctly from PROJECT_ID_NOT_FOUND', () => {
     const registry = new WorkspaceRegistry(dir);
     const ws = registry.selectOrCreate({ name: 'default' });

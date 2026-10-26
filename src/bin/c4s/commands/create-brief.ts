@@ -87,6 +87,7 @@ export const createBriefCommand: CliCommandContribution = {
   name: 'create-brief',
   operation: 'create_brief',
   executionMode: 'server-delegating',
+  flags: ['body-file', 'from', 'suffix', 'to', 'roots'],
   errorCodes: [
     ...SERVER_DELEGATING_CODES,
     'INVALID_ARGUMENT',

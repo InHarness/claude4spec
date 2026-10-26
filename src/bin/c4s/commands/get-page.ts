@@ -1,8 +1,7 @@
 import type { ParsedArgs } from '../args.js';
 import { requireString } from '../args.js';
-import { delegateGet } from '../delegate.js';
+import { delegateOperation } from '../delegate.js';
 import { writeOutput } from '../output.js';
-import { CliError } from '../errors.js';
 import { serializePageStructure } from '../../../shared/section-parser.js';
 import type { CliCommandContribution } from '../registry.js';
 
@@ -22,33 +21,25 @@ import type { CliCommandContribution } from '../registry.js';
  * `--range` is refused rather than ignored — ignoring it would hand back the
  * whole page to a caller who believes it asked for twenty lines.
  *
- * 2.1.14 — the command has no line window, as the operation has none, and
- * `--range` is refused LOCALLY, before the server is called, with `INVALID_ARGS`
- * and the repair path `get-page-outline` → `get-sections` — never silently
- * dropped (M11 L14 `m11dcmds`, "`c4s get-page` — format wyjścia").
- * ASSUMPTION:m11r-dev-0001 — M39 L2 `984v8437` says the core refuses and the
- * rendering forwards the key; M11 L14 says this command refuses it itself. Both
- * forbid the silent whole page; the CLI-owning slice decides the CLI's code.
+ * 2.1.53 — `--range` is forwarded, not refused here: the channel does not drop
+ * a parameter the operation refuses itself, so the core answers
+ * `INVALID_ARGUMENT` with the repair path `get_page_outline` → `get_sections`.
+ * It is the one flag outside the command's contract that the dispatcher lets
+ * through (see `flags` below).
  *
- * 0.2.13 — `server-delegating`, over `GET /api/pages/:rootId/get?path=`. The
- * path travels as a QUERY parameter: it contains slashes, and the operation's
- * route must not be shadowable by a page whose name matches a static segment.
+ * 0.2.13 — `server-delegating`. 2.1.53 — `get_page` has no REST channel, so it
+ * is called by name over the project's MCP mount (`delegateOperation`) rather
+ * than through the M02 page router, which refused a bad root before the core.
  */
 export async function runGetPage(args: ParsedArgs): Promise<void> {
   const rootId = requireString(args, 'root-id');
   const pagePath = requireString(args, 'path');
-  // Refused here, before any request: a script that passed `--range` believes
-  // it narrowed the read, and the whole page would prove it wrong silently. A
-  // bare `--range` with no value is refused the same way.
-  if (args.flags.has('range')) {
-    throw new CliError(
-      'INVALID_ARGS',
-      'c4s get-page has no line window: --range is not accepted',
-      'read the page structure with `c4s get-page-outline --root-id <id> --path <p>`, then fetch the anchors you need with `c4s get-sections --anchors <a,b>`',
-    );
-  }
-
-  const page = await delegateGet(args, `/pages/${encodeURIComponent(rootId)}/get`, { path: pagePath });
+  const range = args.flags.get('range');
+  const page = await delegateOperation(args, 'get_page', {
+    rootId,
+    path: pagePath,
+    ...(range !== undefined ? { range } : {}),
+  });
   if (args.format === 'text') {
     process.stdout.write(renderPageText(page as PageEnvelope));
     // The cut notice goes to stderr so stdout stays the page, pipeable as markdown.
@@ -79,6 +70,7 @@ export const getPageCommand: CliCommandContribution = {
   name: 'get-page',
   operation: 'get_page',
   executionMode: 'server-delegating',
-  errorCodes: ['INVALID_ARGS', 'INVALID_ARGUMENT', 'PAGE_NOT_FOUND', 'ROOT_NOT_FOUND'],
+  flags: ['root-id', 'path', 'range'],
+  errorCodes: ['INVALID_ARGS', 'INVALID_ARGUMENT', 'PAGE_NOT_FOUND'],
   handler: runGetPage,
 };

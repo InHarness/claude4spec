@@ -31,6 +31,7 @@ export const detailCommand: CliCommandContribution = {
   name: 'detail',
   operation: 'get_entities',
   executionMode: 'server-delegating',
+  flags: ['type', 'slug'],
   errorCodes: ['INVALID_TYPE', 'INVALID_ARGS', 'ENTITY_NOT_FOUND'],
   handler: runDetail,
 };

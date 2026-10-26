@@ -73,6 +73,7 @@ export const searchPagesCommand: CliCommandContribution = {
   name: 'search-pages',
   operation: 'search_pages',
   executionMode: 'server-delegating',
+  flags: ['query', 'regex', 'root-id', 'mode', 'path-include', 'path-exclude', 'anchors', 'context', 'limit', 'offset'],
   errorCodes: ['INVALID_ARGS', 'INVALID_ARGUMENT', 'SEARCH_BUDGET_EXCEEDED'],
   handler: runSearchPages,
 };

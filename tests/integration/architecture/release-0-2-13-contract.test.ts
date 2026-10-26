@@ -597,6 +597,7 @@ describe('[ac:ac-kontrybucja-komendy-jest-niepoprawna] every shipped command con
       name: string;
       operation?: string;
       executionMode: 'server-delegating' | 'fs-scoped' | 'registry-write' | 'scaffold';
+      flags: [];
       errorCodes: [];
       handler: () => Promise<void>;
     }> = [];
@@ -613,6 +614,7 @@ describe('[ac:ac-kontrybucja-komendy-jest-niepoprawna] every shipped command con
         name: name!,
         ...(operation ? { operation } : {}),
         executionMode: mode as 'server-delegating',
+        flags: [],
         errorCodes: [],
         handler: async () => {},
       });

@@ -264,6 +264,25 @@ export function repeatedStrings(args: ParsedArgs, flag: string): string[] | unde
 export const GLOBAL_FLAGS: readonly string[] = ['project', 'workspace', 'server', 'format', 'compact', 'sort-keys', 'help'];
 
 /**
+ * 2.1.53 — the dispatcher's boundary: a flag outside the command's list is
+ * unreadable argv, refused LOCALLY with `INVALID_ARGS` before any server is
+ * addressed, for every execution mode. `INVALID_ARGUMENT` stays the core's code
+ * for an argument that contradicts the operation's contract.
+ */
+export function assertKnownFlags(args: ParsedArgs, command: { name: string; flags: readonly string[] }): void {
+  const unknown = [...args.flags.keys()].filter((f) => !command.flags.includes(f) && !GLOBAL_FLAGS.includes(f));
+  if (unknown.length === 0) return;
+  const listing = command.flags.length
+    ? `legal flags: ${command.flags.map((f) => `--${f}`).join(', ')}`
+    : 'this command takes no flags of its own';
+  throw new CliError(
+    'INVALID_ARGS',
+    `${command.name}: unknown flag${unknown.length > 1 ? 's' : ''} ${unknown.map((f) => `--${f}`).join(', ')} — ${listing}`,
+    listing,
+  );
+}
+
+/**
  * 2.1.11 — a command whose flag set IS its operation's parameter set refuses
  * any other flag, and a missing required one, LOCALLY: nothing is sent, and the
  * message lists the legal flags. An ignored flag would answer a different query
@@ -279,8 +298,11 @@ export function assertFlagSet(
   const listing = `legal flags: ${legal.map((f) => `--${f}`).join(', ')}`;
   const unknown = [...args.flags.keys()].filter((f) => !legal.includes(f) && !GLOBAL_FLAGS.includes(f));
   if (unknown.length > 0) {
+    // 2.1.53 — an unknown flag is unreadable argv (`INVALID_ARGS`), the same
+    // code the dispatcher gives it; the other refusals below stay the
+    // operation-contract `INVALID_ARGUMENT`.
     throw new CliError(
-      'INVALID_ARGUMENT',
+      'INVALID_ARGS',
       `${command}: unknown flag${unknown.length > 1 ? 's' : ''} ${unknown.map((f) => `--${f}`).join(', ')} — ${listing}`,
       listing,
     );

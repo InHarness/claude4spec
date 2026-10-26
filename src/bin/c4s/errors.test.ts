@@ -172,3 +172,25 @@ describe('the agent-turn code catalogue (2.1.26)', () => {
     expect(askCommand.executionMode).toBe('server-delegating');
   });
 });
+
+/**
+ * 2.1.53 — the explicit table of environment codes and their exits. Exit 8 is
+ * the one class fixed by a single command (start the server); every "no such
+ * project" is exit 1; an unmapped code falls to a generic non-zero exit.
+ */
+describe('environment codes → exit statuses (2.1.53)', () => {
+  it('[section:m11dcore] maps the environment table exactly', () => {
+    expect(codeToExit('PROJECT_NOT_FOUND')).toBe(1);
+    expect(codeToExit('PROJECT_ID_NOT_FOUND')).toBe(1);
+    expect(codeToExit('PROJECT_NOT_IN_WORKSPACE')).toBe(1);
+    expect(codeToExit('AMBIGUOUS_WORKSPACE')).toBe(7);
+    expect(codeToExit('AMBIGUOUS_PROJECT')).toBe(7);
+    expect(codeToExit('SERVER_NOT_RUNNING')).toBe(8);
+    expect(codeToExit('SERVER_NOT_RECOGNIZED')).toBe(8);
+    expect(codeToExit('SOMETHING_UNMAPPED')).toBeGreaterThan(0);
+  });
+
+  it('[section:m11dcore] ROOT_NOT_FOUND is no longer a CLI code', () => {
+    expect(cliErrorCodeUnion()).not.toContain('ROOT_NOT_FOUND');
+  });
+});

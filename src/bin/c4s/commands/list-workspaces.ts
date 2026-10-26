@@ -46,6 +46,7 @@ export const listWorkspacesCommand: CliCommandContribution = {
   // bootstrap, no db slot, no project `cwd` files, no resolver — enforced by this
   // file importing neither `delegate.js` nor `project-selector.js`.
   executionMode: 'registry-read',
+  flags: [],
   output: {
     unit: 'workspace',
     fields: ['name', 'mode', 'defaultPort', 'projectCount', 'lastOpened'],

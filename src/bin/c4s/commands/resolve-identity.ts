@@ -36,6 +36,7 @@ export const resolveIdentityCommand: CliCommandContribution = {
   name: 'resolve-identity',
   operation: 'resolve_identity',
   executionMode: 'server-delegating',
+  flags: ['query', 'types', 'limit', 'select', 'offset'],
   errorCodes: ['INVALID_TYPE', 'INVALID_ARGS'],
   handler: runResolveIdentity,
 };

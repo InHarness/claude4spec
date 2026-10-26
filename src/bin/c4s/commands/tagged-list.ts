@@ -59,6 +59,7 @@ export const taggedListCommand: CliCommandContribution = {
   name: 'tagged_list',
   operation: 'list_entities',
   executionMode: 'server-delegating',
+  flags: ['type', 'tags', 'tag-filter', 'filter'],
   errorCodes: ['INVALID_TYPE', 'INVALID_ARGS'],
   handler: runTaggedList,
 };

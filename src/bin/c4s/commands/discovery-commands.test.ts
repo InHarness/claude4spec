@@ -25,8 +25,9 @@
  * `--anchors` — belong to the core, which raises them with the repair path
  * attached. They are asserted in `src/server/discovery/discovery.test.ts`;
  * asserting them again through a stub would only prove the stub. An unknown
- * `--root-id` (also a system root id) is asserted below through the REAL page
- * router, whose `ROOT_NOT_FOUND` the CLI passes on (2.1.14).
+ * `--root-id` (also a system root id) is asserted below through the REAL MCP
+ * rendering of the page operations and the REAL root set, whose
+ * `INVALID_ARGUMENT` the CLI passes on (2.1.53).
  */
 
 import fs from 'node:fs';
@@ -56,12 +57,13 @@ import { runInlineMention } from './inline-mention.js';
 import { runSingleElement } from './single-element.js';
 import { runDetail } from './detail.js';
 import { runElementList } from './element-list.js';
-import express from 'express';
 import { CliError } from '../errors.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { RootRegistry } from '../../../server/roots/registry.js';
-import { pagesRouter, type PageRootRuntime } from '../../../server/routes/pages.js';
+import { createC4sReaderServer } from '../../../server/mcp/c4s-reader.js';
+import { crossRootPagesRouter } from '../../../server/routes/pages.js';
 import { errorHandler } from '../../../server/routes/errors.js';
-import { PagesService } from '../../../server/services/pages.js';
+import express from 'express';
 import type { DiscoveryCore } from '../../../server/discovery/types.js';
 import { getPage as coreGetPage } from '../../../server/discovery/ops/pages.js';
 import { PageSource } from '../../../server/discovery/page-source.js';
@@ -85,8 +87,15 @@ describe('discovery commands on the CLI', () => {
   let seen: Array<{ method: string; url: string }>;
   /** What the next non-config request answers with. */
   let reply: unknown;
-  /** When set, non-config requests go to this real handler instead of `reply`. */
+  /**
+   * 2.1.53 — the page operations are reached by name over `/api/projects/:id/mcp`.
+   * That mount is served here by the REAL `c4s-reader` rendering over this core;
+   * by default a stub that records the call and answers `reply`.
+   */
+  let discovery: DiscoveryCore;
+  /** When set, the REST (non-MCP) requests go to this real handler instead of `reply`. */
   let passThrough: http.RequestListener | null;
+  let toolCalls: Array<{ op: string; input: Record<string, unknown> }>;
 
   beforeEach(async () => {
     registryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-disc-cmd-registry-'));
@@ -96,7 +105,17 @@ describe('discovery commands on the CLI', () => {
 
     seen = [];
     reply = { ok: true };
+    toolCalls = [];
     passThrough = null;
+    const record = (op: string) => async (input: Record<string, unknown>) => {
+      toolCalls.push({ op, input });
+      return reply;
+    };
+    discovery = {
+      listPages: record('list_pages'),
+      getPage: record('get_page'),
+      getPageOutline: record('get_page_outline'),
+    } as unknown as DiscoveryCore;
     server = http.createServer((req, res) => {
       const url = req.url ?? '';
       if (url.endsWith('/config')) {
@@ -104,6 +123,19 @@ describe('discovery commands on the CLI', () => {
         return res.end(JSON.stringify(CONFIG));
       }
       seen.push({ method: req.method ?? 'GET', url });
+      if (/\/mcp(\?|$)/.test(url)) {
+        // Stateless: a fresh server per request, as the SDK's stateless mode expects.
+        const { server: mcp } = createC4sReaderServer({
+          reader: {} as never,
+          db: {} as never,
+          projectDir,
+          discovery,
+          packageVersion: 'test',
+        });
+        const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+        void mcp.connect(transport).then(() => transport.handleRequest(req, res));
+        return;
+      }
       if (passThrough) return passThrough(req, res);
       res.setHeader('content-type', 'application/json');
       res.end(JSON.stringify(reply));
@@ -242,17 +274,21 @@ describe('discovery commands on the CLI', () => {
     });
 
     it('the page and section operations address their own routes', async () => {
+      // 2.1.53 — the page reads go to the core operation by name over the MCP
+      // mount, never through the M02 page router `/pages/:rootId/...`.
       reply = { items: [], total: 0, hasMore: false };
       await runListPages(args('list-pages', '--root-id', 'pages', '--prefix', 'g/', '--sort', 'modified'));
-      expect(called()).toBe('/pages/pages/list?prefix=g%2F&sort=modified');
+      expect(toolCalls).toEqual([{ op: 'list_pages', input: expect.objectContaining({ rootId: 'pages', prefix: 'g/', sort: 'modified' }) }]);
+      expect(seen.every((r) => /\/api\/projects\/[^/]+\/mcp/.test(r.url))).toBe(true);
+      expect(printed()).toEqual(reply);
 
       seen = [];
       stdout = '';
+      toolCalls = [];
       reply = { rootId: 'pages', path: 'budget.md', hash: 'h', results: [] };
       await runGetPage(args('get-page', '--root-id', 'pages', '--path', 'budget.md'));
-      // The path is a QUERY parameter: it contains slashes, and no page name can
-      // shadow the operation's route.
-      expect(called()).toBe('/pages/pages/get?path=budget.md');
+      expect(toolCalls).toEqual([{ op: 'get_page', input: { rootId: 'pages', path: 'budget.md' } }]);
+      expect(printed()).toEqual(reply);
 
       seen = [];
       stdout = '';
@@ -263,18 +299,19 @@ describe('discovery commands on the CLI', () => {
 
       seen = [];
       stdout = '';
+      toolCalls = [];
       reply = { rootId: 'pages', path: 'budget.md', hash: 'h', sections: [] };
       await runGetPageOutline(args('get-page-outline', '--root-id', 'pages', '--path', 'budget.md'));
-      // The PAGE family, not `/sections`: an outline is keyed by (rootId, path), and
-      // the two section routes key nothing (a flat global list) and an anchor.
-      expect(called()).toBe('/pages/pages/outline?path=budget.md');
+      // Keyed by (rootId, path) — the operation, not `/sections`.
+      expect(toolCalls).toEqual([{ op: 'get_page_outline', input: { rootId: 'pages', path: 'budget.md' } }]);
 
       seen = [];
       stdout = '';
-      reply = { results: [{ anchor: 'aaaaaa11', body: 'text' }] };
+      const sections = { results: [{ anchor: 'aaaaaa11', body: 'text' }] };
+      reply = sections;
       await runGetSections(args('get-sections', '--anchors', 'aaaaaa11,bbbbbb22', '--include-subtree'));
       expect(called()).toBe('/sections/get?anchors=aaaaaa11%2Cbbbbbb22&includeSubtree=true');
-      expect(printed().results).toEqual(reply.results);
+      expect(printed().results).toEqual(sections.results);
     });
 
     it('resolve-identity carries --types, which the route used to drop', async () => {
@@ -673,13 +710,12 @@ describe('discovery commands on the CLI', () => {
   });
 
   /**
-   * 2.1.14 — an unknown `--root-id` on a page command, and a system root id
-   * (`plans`) alike, end in `ROOT_NOT_FOUND` from the M02 page router, which the
-   * CLI passes on untranslated (M11 L14 `m11dcmds`, M02 `l4rootseg`): `message`
-   * "root '<id>' not found", the page roots in `hint`, never the system root
-   * that was asked for. The request reaches the REAL page router, resolving over
-   * the roots of a real root registry, as the project context wires it, and —
-   * where it gets that far — the REAL core read.
+   * 2.1.53 — an unknown `--root-id` on a page command, and a system root id
+   * (`plans`) alike, are refused by the CORE: `INVALID_ARGUMENT` with the
+   * `kind: pages` roots in `message`. The CLI contributes no code of its own and
+   * never answers `PAGE_NOT_FOUND` for a root. The request reaches the REAL MCP
+   * rendering over a core whose root set is real, built from a real root
+   * registry as the project context wires it — and, for `get_page`, the REAL read.
    */
   describe('an unknown or system root id on a page command', () => {
     let registry: RootRegistry;
@@ -691,21 +727,19 @@ describe('discovery commands on the CLI', () => {
       const pageRoots = registry.pages();
       const source = new PageSource(projectDir, pageRoots);
       const roots = new RootSet(pageRoots);
-      const core = {
+      discovery = {
         getPage: (input: Parameters<DiscoveryCore['getPage']>[0]) => coreGetPage(source, roots, input),
-        listPages: (input: { rootId: string }) => Promise.resolve({ rootId: input.rootId, items: [], total: 0, hasMore: false }),
+        // The listing and the outline need an index this rig does not build; the
+        // root gate in front of them is the core's own.
+        listPages: async (input: { rootId: string }) => {
+          roots.require(input.rootId, 'list_pages');
+          return { rootId: input.rootId, items: [], total: 0, hasMore: false };
+        },
+        getPageOutline: async (input: { rootId: string; path: string }) => {
+          roots.require(input.rootId, 'get_page_outline');
+          return { rootId: input.rootId, path: input.path, sections: [] };
+        },
       } as unknown as DiscoveryCore;
-      const runtimes = new Map<string, PageRootRuntime>(
-        pageRoots.map((r) => [r.id, { root: r, pages: new PagesService(projectDir, r.dir, r.id), writer: null }]),
-      );
-      const app = express();
-      app.use(
-        '/api/projects/:projectId/pages/:rootId',
-        pagesRouter((id) => runtimes.get(id), null, core, () => [...runtimes.keys()]),
-      );
-      // The project router's error mapping, so a core refusal reaches the CLI as the REST envelope.
-      app.use(errorHandler);
-      passThrough = app;
     });
 
     const refusalOf = async (run: () => Promise<void>, what: string): Promise<CliError> => {
@@ -717,7 +751,7 @@ describe('discovery commands on the CLI', () => {
       throw new Error(`${what} did not refuse`);
     };
 
-    it('[ac:ac-c4s-get-page-root-id-id-path-p] c4s get-page --root-id plans --path <p> ends in ROOT_NOT_FOUND, the same error as an unknown --root-id', async () => {
+    it('[ac:ac-c4s-get-page-root-id-id-path-p] c4s get-page --root-id plans --path <p> ends in INVALID_ARGUMENT, the same error as an unknown --root-id', async () => {
       // `plans` IS a registered root of this project — just not one of kind `pages`.
       expect(registry.get('plans')?.kind).toBe('plans');
       const getPage = (rootId: string) => () => runGetPage(args('get-page', '--root-id', rootId, '--path', 'a.md'));
@@ -725,36 +759,36 @@ describe('discovery commands on the CLI', () => {
       const unknown = await refusalOf(getPage('nope'), 'c4s get-page --root-id nope');
 
       expect(plans).toBeInstanceOf(CliError);
-      expect(plans.code).toBe('ROOT_NOT_FOUND');
-      expect(unknown.code).toBe('ROOT_NOT_FOUND');
-      expect(plans.message).toBe("root 'plans' not found");
+      expect(plans.code).toBe('INVALID_ARGUMENT');
+      expect(unknown.code).toBe('INVALID_ARGUMENT');
+      // The list of `kind: pages` roots is in MESSAGE — never the system root asked for.
+      expect(plans.message).toBe("unknown rootId 'plans' (page roots in this project: pages)");
       expect(plans.message.replace("'plans'", "'<id>'")).toBe(unknown.message.replace("'nope'", "'<id>'"));
-      expect(plans.hint).toBe(unknown.hint);
-      // The list it offers is the page roots — never the system root that was asked for.
-      expect(plans.hint).toBe('roots in this project: pages');
-      expect(plans.hint).not.toContain('plans');
       // The page root itself still answers — the refusal is about the id, not the path.
       await runGetPage(args('get-page', '--root-id', 'pages', '--path', 'a.md', '--compact'));
       expect(JSON.parse(stdout)).toMatchObject({ rootId: 'pages', path: 'a.md' });
     });
 
-    it('[ac:ac-nieznany-root-id-podany-bez-towarzys] c4s list-pages --root-id nieistniejacy ends in ROOT_NOT_FOUND with the page roots in hint, not PAGE_NOT_FOUND', async () => {
+    it('[ac:ac-nieznany-root-id-podany-bez-towarzys] c4s list-pages --root-id nieistniejacy ends in INVALID_ARGUMENT with the page roots in message, not PAGE_NOT_FOUND', async () => {
       const unknown = await refusalOf(
         () => runListPages(args('list-pages', '--root-id', 'nieistniejacy')),
         'c4s list-pages --root-id nieistniejacy',
       );
       expect(unknown).toBeInstanceOf(CliError);
-      // Passed on as the router answered it — not translated to INVALID_ARGUMENT
-      // (the retired 2.1.13 rule) and not PAGE_NOT_FOUND.
-      expect(unknown.code).toBe('ROOT_NOT_FOUND');
-      expect(unknown.message).toBe("root 'nieistniejacy' not found");
-      expect(unknown.hint).toBe('roots in this project: pages');
-      expect(seen.map((r) => r.url.replace(/^\/api\/projects\/[^/]+/, ''))).toEqual(['/pages/nieistniejacy/list']);
+      expect(unknown.code).toBe('INVALID_ARGUMENT');
+      expect(unknown.message).toBe("unknown rootId 'nieistniejacy' (page roots in this project: pages)");
+      // Through the operation, never the page router.
+      expect(seen.some((r) => r.url.includes('/pages/'))).toBe(false);
 
-      // A system root id on the same command is refused identically.
+      // A system root id, and the outline, are refused identically.
       const plans = await refusalOf(() => runListPages(args('list-pages', '--root-id', 'plans')), 'c4s list-pages --root-id plans');
-      expect(plans.code).toBe('ROOT_NOT_FOUND');
-      expect(plans.hint).toBe(unknown.hint);
+      expect(plans.code).toBe('INVALID_ARGUMENT');
+      expect(plans.message).toContain('page roots in this project: pages');
+      const outline = await refusalOf(
+        () => runGetPageOutline(args('get-page-outline', '--root-id', 'plans', '--path', 'a.md')),
+        'c4s get-page-outline --root-id plans',
+      );
+      expect(outline.code).toBe('INVALID_ARGUMENT');
 
       // PAGE_NOT_FOUND stays reserved for an existing `kind: pages` root whose path does not exist.
       const missingPage = await refusalOf(
@@ -763,46 +797,43 @@ describe('discovery commands on the CLI', () => {
       );
       expect(missingPage.code).toBe('PAGE_NOT_FOUND');
     });
-  });
 
-  /**
-   * 2.1.14 — `c4s get-page` has no line window, as the operation has none:
-   * `--range` is refused LOCALLY, before the server is called, with
-   * `INVALID_ARGS` and the repair path `get-page-outline` → `get-sections` —
-   * never silently dropped (M11 L14 `m11dcmds`). The core's own refusal of a
-   * leftover `range` (M39 L2 `984v8437`) is asserted on the core and the MCP
-   * renderings (discovery.test.ts, c4s-reader.test.ts, reference-tools.test.ts).
-   */
-  describe('get-page --range is refused locally', () => {
-    const refusalOf = async (...flags: string[]): Promise<CliError> => {
-      try {
-        await runGetPage(args('get-page', '--root-id', 'pages', '--path', 'a.md', ...flags));
-      } catch (e) {
-        return e as CliError;
-      }
-      throw new Error(`c4s get-page ${flags.join(' ')} did not refuse`);
-    };
-
-    it('[section:m11dcmds] c4s get-page --range ends in INVALID_ARGS before any request, not in the whole page', async () => {
-      reply = { rootId: 'pages', path: 'a.md', hash: 'h', results: [{ anchor: 'aaaa0001', heading_text: 'A', heading_level: 1, body: '' }] };
-      const refusal = await refusalOf('--range', '1:20');
-      expect(refusal).toBeInstanceOf(CliError);
-      expect(refusal.code).toBe('INVALID_ARGS');
-      expect(refusal.message).toContain('--range');
-      // Refused before the server was called, and nothing of the page was printed.
-      expect(seen).toEqual([]);
-      expect(stdout).toBe('');
-      // A bare `--range` with no value is refused the same way — not read as absent.
-      const bare = await refusalOf('--range');
-      expect(bare.code).toBe('INVALID_ARGS');
-      expect(seen).toEqual([]);
+    it('[section:m11dcmds] c4s search-pages --root-id plans is the core\'s INVALID_ARGUMENT too (cross-root route, no page router)', async () => {
+      const roots = new RootSet(registry.pages());
+      const core = {
+        searchPages: async (input: { rootId?: string }) => {
+          if (input.rootId !== undefined) roots.require(input.rootId, 'search_pages');
+          return { items: [], total: 0, hasMore: false };
+        },
+      } as unknown as DiscoveryCore;
+      const app = express();
+      app.use('/api/projects/:projectId/pages', crossRootPagesRouter(core));
+      app.use(errorHandler);
+      passThrough = app;
+      const refusal = await refusalOf(
+        () => runSearchPages(args('search-pages', '--query', 'x', '--root-id', 'plans')),
+        'c4s search-pages --root-id plans',
+      );
+      expect(refusal.code).toBe('INVALID_ARGUMENT');
+      expect(refusal.message).toContain('page roots in this project: pages');
     });
 
-    it('[section:m11dcmds] the refusal of c4s get-page --range points to get-page-outline, then to get-sections', async () => {
-      const refusal = await refusalOf('--range', '1:20');
-      const outlineAt = refusal.hint?.indexOf('get-page-outline') ?? -1;
+    /**
+     * 2.1.53 — `--range` is not dropped by the channel: it reaches the core,
+     * which refuses it with `INVALID_ARGUMENT` and the repair path
+     * `get_page_outline` → `get_sections`. Nothing of the page is printed.
+     */
+    it('[section:m11dcmds] c4s get-page --range ends in the core\'s INVALID_ARGUMENT pointing to get_page_outline, then get_sections', async () => {
+      const refusal = await refusalOf(
+        () => runGetPage(args('get-page', '--root-id', 'pages', '--path', 'a.md', '--range', '1-10')),
+        'c4s get-page --range',
+      );
+      expect(refusal).toBeInstanceOf(CliError);
+      expect(refusal.code).toBe('INVALID_ARGUMENT');
+      const outlineAt = refusal.message.indexOf('get_page_outline');
       expect(outlineAt).toBeGreaterThan(-1);
-      expect(refusal.hint!.indexOf('get-sections')).toBeGreaterThan(outlineAt);
+      expect(refusal.message.indexOf('get_sections')).toBeGreaterThan(outlineAt);
+      expect(stdout).toBe('');
     });
   });
 

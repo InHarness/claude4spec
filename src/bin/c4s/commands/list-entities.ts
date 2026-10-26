@@ -74,6 +74,7 @@ export const listEntitiesCommand: CliCommandContribution = {
   name: 'list-entities',
   operation: 'list_entities',
   executionMode: 'server-delegating',
+  flags: ['type', 'tags', 'tag-filter', 'sort', 'dir', 'mode', 'select', 'view', 'limit', 'offset'],
   errorCodes: ['INVALID_TYPE', 'INVALID_ARGS', 'INVALID_ARGUMENT'],
   handler: runListEntities,
 };

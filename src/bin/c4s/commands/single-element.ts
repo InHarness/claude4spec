@@ -33,6 +33,7 @@ export const singleElementCommand: CliCommandContribution = {
   name: 'single_element',
   operation: 'get_entities',
   executionMode: 'server-delegating',
+  flags: ['type', 'slug'],
   errorCodes: ['INVALID_TYPE', 'INVALID_ARGS', 'ENTITY_NOT_FOUND'],
   handler: runSingleElement,
 };

@@ -99,6 +99,7 @@ export const searchEntitiesCommand: CliCommandContribution = {
   name: 'search-entities',
   operation: 'search_entities',
   executionMode: 'server-delegating',
+  flags: ['type', 'query', 'regex', 'fields', 'mode', 'select', 'view', 'context', 'limit', 'offset'],
   errorCodes: ['INVALID_TYPE', 'INVALID_ARGS', 'INVALID_ARGUMENT', 'SEARCH_BUDGET_EXCEEDED'],
   handler: runSearchEntities,
 };

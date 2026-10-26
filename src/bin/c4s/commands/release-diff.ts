@@ -88,6 +88,7 @@ export const releaseDiffCommand: CliCommandContribution = {
   name: 'release-diff',
   operation: 'release_diff',
   executionMode: 'server-delegating',
+  flags: ['from', 'to', 'include', 'entity-types', 'slugs', 'roots', 'paths', 'summary-only', 'section-offset', 'section-limit', 'limit', 'offset'],
   errorCodes: [
     ...SERVER_DELEGATING_CODES,
     'INVALID_ARGS',

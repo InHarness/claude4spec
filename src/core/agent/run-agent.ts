@@ -68,8 +68,18 @@ export interface AgentParams {
    * CLI; kanal `mcp` wymaga go zawsze). Wymagane, gdy podano `server`.
    */
   project?: string;
-  /** M31: workspace selector — required when the project is in N workspaces. */
+  /**
+   * M31: workspace selector. On `cli` it disambiguates an id present in N
+   * workspaces; on `mcp`/`internal` it is the workspace `project` is resolved in
+   * (the caller passes its own when the tool input names none).
+   */
   workspace?: string;
+  /**
+   * 2.1.53 — the channel the call arrived on. Default `'cli'`: the 0/1/N rule over
+   * every workspace. `'mcp'`/`'internal'` resolve `project` in `workspace` only
+   * and never raise PROJECT_NOT_FOUND / AMBIGUOUS_*.
+   */
+  channel?: 'cli' | 'mcp' | 'internal';
   /** Nadpisuje ADRES serwera peera (nie projekt); wymaga `project` (inaczej INVALID_ARGS). */
   server?: string;
   /** Default `'chat'`. Ignorowany gdy podano `threadId`. */
@@ -223,12 +233,13 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
   }
 
   // --- discovery + health-check tozsamosci --------------------------------
-  const { baseUrl, apiBase } = await resolveServer({
+  const { baseUrl, apiBase, workspaceName } = await resolveServer({
     project: params.project,
     workspace: params.workspace,
     server: params.server,
+    ...(params.channel ? { channel: params.channel } : {}),
   });
-  await healthCheck(baseUrl, apiBase);
+  await healthCheck(baseUrl, apiBase, workspaceName);
 
   // --- create-thread (context-specific) — pomijany dla threadId ----------
   let threadId: string;

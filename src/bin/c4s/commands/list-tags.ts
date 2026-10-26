@@ -37,6 +37,7 @@ export const listTagsCommand: CliCommandContribution = {
   name: 'list-tags',
   operation: 'list_tags',
   executionMode: 'server-delegating',
+  flags: ['co-occurring-with', 'min-count', 'with-counts', 'limit', 'offset'],
   errorCodes: [],
   handler: runListTags,
 };
