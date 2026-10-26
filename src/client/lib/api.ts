@@ -10,6 +10,7 @@ import type {
   TodoHit,
 } from '../../shared/types.js';
 import type { PluginActivationState } from '../../shared/plugin-host/types.js';
+import type { ElementsMenuEntry } from '../../shared/elements-menu.js';
 import type { PluginMigrationInfo } from '../../shared/plugin-host/host-api.js';
 import type { FrontendManifestResponse } from '../../shared/plugin-host/frontend-manifest.js';
 import type {
@@ -203,6 +204,11 @@ export interface ConfigResponse {
   onboarding: { completed: boolean };
   /** M13: whitelist of active entity-plugin types; undefined = all registered active. */
   entities?: string[];
+  /**
+   * 2.1.50 (M13): the ELEMENTS menu layout as `config.json` holds it (save rules
+   * are not re-applied on read); absent ⇒ flat list in `sidebarTab.order`.
+   */
+  elementsMenu?: ElementsMenuEntry[];
   /** M26: hot-reload Claude agent flags. 0.1.51 adds conversationalLanguage; 0.1.90 adds FS path scope. */
   agent: {
     claudeUsePreset: boolean;
@@ -292,6 +298,8 @@ export interface ConfigPatch {
   description?: string | null;
   onboardingCompleted?: boolean;
   entities?: string[];
+  /** 2.1.50 (M13): replaces the whole layout (last save wins); a broken rule is a 400 on `elementsMenu`. */
+  elementsMenu?: ElementsMenuEntry[];
   /** 0.1.51: agent.* deep-merged server-side (preserves untouched fields). 0.1.90 adds FS path scope. */
   agent?: {
     claudeUsePreset?: boolean;

@@ -1,5 +1,5 @@
 {
-  "iteration": 0,
+  "iteration": 3,
   "conventions": [
     {
       "label": "L5 (UI) — implementor M50",
@@ -51,7 +51,7 @@
         "u1-elements-menu-config",
         "u3-sidebar-side-menu"
       ],
-      "startCommit": null
+      "startCommit": "857e85380b50a3626304cb0e42b57e750425c1c2"
     },
     {
       "n": 2,
@@ -213,13 +213,39 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u1-elements-menu-config/p1",
+          "layers": [
+            "M01 config",
+            "M13 ELEMENTS menu",
+            "L17"
+          ],
+          "slugs": [
+            "app-config-response",
+            "patch-config-request",
+            "config-json-shape",
+            "ac-blad-odrzucenia-zapisu-elementsmenu-j",
+            "ac-zapis-dwoch-grup-menu-elements-o-tej",
+            "ac-zapis-elementsmenu-z-typem-obecnym-w",
+            "ac-zapis-grupy-menu-elements-bez-typow-j",
+            "ac-zapis-grupy-menu-elements-z-pusta-ety",
+            "ac-zapis-wpisu-grupy-menu-elements-z-pol",
+            "ac-plik-z-typem-obecnym-w-elementsmenu-d"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "857e85380b50a3626304cb0e42b57e750425c1c2",
+      "baseCommit": "857e85380b50a3626304cb0e42b57e750425c1c2",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },
@@ -698,5 +724,6 @@
       "version": 1
     }
   ],
-  "entityParts": []
+  "entityParts": [],
+  "baselineGreen": true
 }

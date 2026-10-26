@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { type Root } from '../shared/types.js';
+import type { ElementsMenuEntry } from '../shared/elements-menu.js';
 import {
   RESERVED_WRITE_TARGETS,
   SYSTEM_ROOTS,
@@ -47,6 +48,15 @@ export interface Config {
    * projects. Empty array [] = no plugins active (markdown-only project).
    */
   entities?: string[];
+  /**
+   * 2.1.50 (M13 `o4ju2d7m`): the team's ELEMENTS menu layout — committed with
+   * the rest of the shared config. Absent = flat list in `sidebarTab.order`.
+   * The loader checks the SHAPE only ({@link parseElementsMenu}); the save
+   * rules (labels, uniqueness, non-empty groups) are enforced by PATCH, so a
+   * file that breaks them after a git merge still loads. Additive — no
+   * `$schemaVersion` bump.
+   */
+  elementsMenu?: ElementsMenuEntry[];
   consistency?: ConsistencyConfig;
   agent?: AgentConfig;
   /**
@@ -486,6 +496,44 @@ function pickDefined<T extends object>(obj: T): Partial<T> {
   return out;
 }
 
+/**
+ * 2.1.50 (M13 `o4ju2d7m` rule 1, `5kkkih9i`) — the SHAPE of `elementsMenu`, the
+ * only part of the key that is a hard load error: the value is an array, every
+ * entry carries exactly one of `type` and `group`, and `hidden` (always `true`)
+ * appears only on a type entry. Rules 2–5 (non-empty and unique group labels,
+ * non-empty `types`, a slug at most once) are save rules — a file breaking them
+ * loads untouched. Unknown fields of an entry are dropped, as for any key.
+ * Throws a message pinned to the offending entry (no `config.json:` prefix — the
+ * PATCH route reports it as is).
+ */
+export function parseElementsMenu(raw: unknown): ElementsMenuEntry[] {
+  if (!Array.isArray(raw)) throw new Error('elementsMenu must be an array');
+  return raw.map((entry, i): ElementsMenuEntry => {
+    const at = `elementsMenu[${i}]`;
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new Error(`${at} must be an object`);
+    }
+    const e = entry as Record<string, unknown>;
+    const hasType = 'type' in e;
+    const hasGroup = 'group' in e;
+    if (hasType === hasGroup) throw new Error(`${at} must have exactly one of 'type' and 'group'`);
+    if (hasType) {
+      if (typeof e.type !== 'string') throw new Error(`${at}.type must be a string`);
+      if (!('hidden' in e)) return { type: e.type };
+      if (e.hidden !== true) throw new Error(`${at}.hidden must be true`);
+      return { type: e.type, hidden: true };
+    }
+    if ('hidden' in e) throw new Error(`${at}.hidden is allowed only on a type entry`);
+    if (typeof e.group !== 'string') throw new Error(`${at}.group must be a string`);
+    if (!Array.isArray(e.types) || !e.types.every((t) => typeof t === 'string')) {
+      throw new Error(`${at}.types must be string[]`);
+    }
+    if (!('icon' in e)) return { group: e.group, types: e.types as string[] };
+    if (typeof e.icon !== 'string') throw new Error(`${at}.icon must be a string`);
+    return { group: e.group, icon: e.icon, types: e.types as string[] };
+  });
+}
+
 function typeError(field: string, expected: string, got: unknown): Error {
   return new Error(`config.json: field '${field}' expected ${expected}, got ${got === null ? 'null' : typeof got}`);
 }
@@ -761,6 +809,13 @@ function validate(raw: unknown): Partial<Config> {
       throw new Error("config.json: field 'entities' expected string[], got non-string element");
     }
     out.entities = r.entities as string[];
+  }
+  if ('elementsMenu' in r) {
+    try {
+      out.elementsMenu = parseElementsMenu(r.elementsMenu);
+    } catch (err) {
+      throw new Error(`config.json: ${(err as Error).message}`);
+    }
   }
   if ('consistency' in r) {
     const c = r.consistency;

@@ -149,6 +149,8 @@ function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRe
     skill: c.skill ?? {},
     onboarding: { completed: c.onboardingCompleted },
     entities: c.entities,
+    // 2.1.50 (M13): the ELEMENTS menu layout as the file holds it; absent ⇒ omitted.
+    elementsMenu: c.elementsMenu,
     agent: {
       claudeUsePreset: c.agent.claudeUsePreset,
       conversationalLanguage: c.agent.conversationalLanguage,
