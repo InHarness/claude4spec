@@ -165,6 +165,30 @@ describe('GitService — merge primitives of the shadow acceptance (2.1.47)', ()
       });
     });
 
+    it('2.1.52: a single-path pathspec collides with an equal pending path, its ancestor and its descendant — by path segments, never by string prefix', async () => {
+      const plans = path.join(dir, 'plans');
+      fs.mkdirSync(path.join(plans, 'd'), { recursive: true });
+      fs.writeFileSync(path.join(plans, 'x'), 'a file where the shadow puts a directory\n'); // ancestor of plans/x/a.md
+      fs.writeFileSync(path.join(plans, 'xy.md'), 'a string prefix only\n');
+      fs.writeFileSync(path.join(plans, 'd', 'inner.md'), 'inner\n'); // descendant of plans/d
+      fs.writeFileSync(path.join(plans, 'same.md'), 'same\n'); // equal
+      fs.writeFileSync(path.join(plans, 'other.md'), 'other\n'); // no collision
+      expect(await svc.pendingChanges(abs('plans/x/a.md', 'plans/d', 'plans/same.md'))).toEqual({
+        status: 'dirty',
+        paths: ['plans/d/inner.md', 'plans/same.md', 'plans/x'],
+      });
+      expect(await svc.pendingChanges(abs('plans/x'))).toEqual({ status: 'dirty', paths: ['plans/x'] });
+      expect(await svc.pendingChanges(abs('plans/zzz.md'))).toEqual({ status: 'clean' });
+      // Root dirs and single paths mix freely; staged-anywhere still joins the result.
+      fs.writeFileSync(path.join(pages(), 'a.md'), '# a edited\n');
+      fs.writeFileSync(path.join(dir, 'outside.txt'), 'outside staged\n');
+      await git(['add', 'outside.txt'], dir);
+      expect(await svc.pendingChanges([pages(), ...abs('plans/same.md')])).toEqual({
+        status: 'dirty',
+        paths: ['outside.txt', 'pages/a.md', 'plans/same.md'],
+      });
+    });
+
     it('is stricter than checkout(): an untracked file alone makes it dirty', async () => {
       fs.writeFileSync(path.join(pages(), 'only-untracked.md'), '# u\n');
       expect(await svc.pendingChanges([pages()])).toEqual({ status: 'dirty', paths: ['pages/only-untracked.md'] });
@@ -276,7 +300,7 @@ describe('GitService — merge primitives of the shadow acceptance (2.1.47)', ()
         expect(result.recovery?.kind).toBe('merge-abort-failed');
         expect(result.recovery?.operation).toBe('commit-on-release');
         expect(result.recovery?.gitStderr).toContain('index.lock');
-        expect(result.recovery?.intentPrompt).toContain('git merge --abort');
+        expect(result.recovery?.intentPrompt).toContain('the files the shadow modified:\n  - pages/a.md');
         expect(await mergeHead()).toBe(tip);
       } finally {
         spy.mockRestore();
@@ -285,6 +309,21 @@ describe('GitService — merge primitives of the shadow acceptance (2.1.47)', ()
       // Lock released on the failure path: the next call goes through and undoes the open merge.
       expect(await svc.abortMerge([path.join(pages(), 'a.md')])).toEqual({ status: 'aborted' });
       expect(await mergeHead()).toBeNull();
+    });
+
+    it.each([
+      ['a modified tracked file', 'pages/a.md'],
+      ['an untracked file', 'pages/c.md'],
+    ])('2.1.52: git refusing to start the merge over %s it would overwrite → dirty with the paths of its refusal; the repository is untouched', async (_label, rel) => {
+      const tip = await shadowWith({ 'pages/a.md': '# a\n\nline 1 — shadow\n', 'pages/c.md': '# c — shadow\n' });
+      fs.writeFileSync(path.join(dir, rel), '# mine, not saved anywhere\n');
+      const headBefore = await sha('HEAD');
+      const statusBefore = await git(['status', '--porcelain', '--untracked-files=all'], dir);
+      expect(await svc.mergeIntoIndex(tip, abs('pages/a.md', 'pages/c.md'))).toEqual({ status: 'dirty', paths: [rel] });
+      expect(await mergeHead()).toBeNull();
+      expect(await sha('HEAD')).toBe(headBefore);
+      expect(await git(['status', '--porcelain', '--untracked-files=all'], dir)).toBe(statusBefore);
+      expect(fs.readFileSync(path.join(dir, rel), 'utf8')).toBe('# mine, not saved anywhere\n');
     });
 
     it('a tip already contained in HEAD leaves no merge open → error; lock taken without the handle → busy', async () => {
@@ -396,13 +435,60 @@ describe('GitService — merge primitives of the shadow acceptance (2.1.47)', ()
         expect(result.recovery.kind).toBe('merge-abort-failed');
         expect(result.recovery.operation).toBe('commit-on-release');
         expect(result.recovery.gitStderr).toContain('index.lock');
-        expect(result.recovery.intentPrompt).toContain('git merge --abort');
+        expect(result.recovery.intentPrompt).toContain('Delete the files the shadow added:\n  - pages/c.md');
         expect(await mergeHead()).toBe(tip);
       } finally {
         fs.rmSync(indexLock, { force: true });
       }
       // Lock released on the failure path: the next call goes through.
       expect(await svc.abortMerge([path.join(pages(), 'c.md')])).toEqual({ status: 'aborted' });
+    });
+
+    it('2.1.52: files outside `paths` survive the abort — an unstaged change stays unstaged with its content, an untracked file stays untracked', async () => {
+      const tip = await shadowWith({ 'pages/c.md': '# c\n' });
+      fs.writeFileSync(path.join(pages(), 'b.md'), '# b — unsaved\n');
+      fs.writeFileSync(path.join(pages(), 'draft.md'), '# draft\n');
+      expect((await svc.mergeIntoIndex(tip, abs('pages/c.md'))).status).toBe('merged');
+      expect(await svc.abortMerge(abs('pages/c.md'))).toEqual({ status: 'aborted' });
+      expect(await mergeHead()).toBeNull();
+      const status = (await git(['status', '--porcelain', '--untracked-files=all'], dir)).split('\n').filter(Boolean).sort();
+      expect(status).toEqual([' M pages/b.md', '?? pages/draft.md']);
+      expect(fs.readFileSync(path.join(pages(), 'b.md'), 'utf8')).toBe('# b — unsaved\n');
+      expect(fs.readFileSync(path.join(pages(), 'draft.md'), 'utf8')).toBe('# draft\n');
+      expect(fs.existsSync(path.join(pages(), 'c.md'))).toBe(false);
+    });
+
+    it('2.1.52: the merge-abort-failed prompt names the shadow paths by what the shadow did — added, modified, deleted — and no other pending file', async () => {
+      await git(['checkout', '-q', '-b', 'shadow-src', 'main'], dir);
+      fs.writeFileSync(path.join(pages(), 'a.md'), '# a\n\nline 1 — shadow\n');
+      await git(['rm', '-q', 'pages/b.md'], dir);
+      fs.writeFileSync(path.join(pages(), 'c.md'), '# c\n');
+      await git(['add', '-A'], dir);
+      await git(['commit', '-q', '-m', 'shadow turn'], dir);
+      const tip = await sha('HEAD');
+      await git(['checkout', '-q', 'main'], dir);
+      await git(['branch', '-q', '-D', 'shadow-src'], dir);
+      fs.writeFileSync(path.join(dir, 'outside.txt'), 'outside — unsaved\n');
+      fs.writeFileSync(path.join(pages(), 'draft.md'), '# draft\n');
+      const changed = abs('pages/a.md', 'pages/b.md', 'pages/c.md');
+      expect((await svc.mergeIntoIndex(tip, changed)).status).toBe('merged');
+      const indexLock = path.join(dir, '.git', 'index.lock');
+      fs.writeFileSync(indexLock, '');
+      try {
+        const result = await svc.abortMerge(changed);
+        expect(result.status).toBe('error');
+        if (result.status !== 'error') return;
+        const prompt = result.recovery.intentPrompt;
+        expect(prompt).toContain('Delete the files the shadow added:\n  - pages/c.md');
+        expect(prompt).toContain('Restore to their state in HEAD the files the shadow modified:\n  - pages/a.md');
+        expect(prompt).toContain('Restore to their state in HEAD the files the shadow deleted:\n  - pages/b.md');
+        expect(prompt).toContain('Leave every other change of the working tree untouched. Do not commit.');
+        expect(prompt).not.toContain('draft.md');
+        expect(prompt).not.toContain('outside.txt');
+      } finally {
+        fs.rmSync(indexLock, { force: true });
+      }
+      expect(await svc.abortMerge(changed)).toEqual({ status: 'aborted' });
     });
 
     it('no merge open → aborted, nothing touched', async () => {

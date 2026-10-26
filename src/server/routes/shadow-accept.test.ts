@@ -564,7 +564,7 @@ describe('M17 shadow acceptance — POST /api/shadow-accept (2.1.47)', () => {
     await expectUntouched(res, 'ACCEPT_STALE', before, dbBefore);
   });
 
-  it('[ac:ac-nowy-plik-niesledzony-w-korzeniu-reje] a new untracked file in a registry root → 409 ACCEPT_DIRTY', async () => {
+  it('[ac:ac-nowy-plik-niesledzony-w-korzeniu-reje] a new untracked file in a root of a kind with the release flag → 409 ACCEPT_DIRTY', async () => {
     await baseScenario();
     write('pages/new.md', '# New\n');
     const before = await repoState();
@@ -575,7 +575,7 @@ describe('M17 shadow acceptance — POST /api/shadow-accept (2.1.47)', () => {
     await expectUntouched(res, 'ACCEPT_DIRTY', before, dbBefore);
   });
 
-  it('[ac:ac-zmodyfikowany-plik-sledzony-w-korzeni] a modified tracked file in a registry root → 409 ACCEPT_DIRTY', async () => {
+  it('[ac:ac-zmodyfikowany-plik-sledzony-w-korzeni] a modified tracked file in a root of a kind with the release flag → 409 ACCEPT_DIRTY', async () => {
     await baseScenario();
     write('pages/b.md', '# B\n\nB edited, not committed\n');
     const before = await repoState();
@@ -831,7 +831,7 @@ describe('M17 shadow acceptance — POST /api/shadow-accept (2.1.47)', () => {
     expect(await git(['diff', '--cached', '--name-only'], dir)).toBe('');
   });
 
-  it('[ac:ac-porazka-po-scaleniu-a-przed-utworzeni-3] a failure after the merge and before the release, with no other writes meanwhile, leaves the registry roots in the working tree as before the call', async () => {
+  it('[ac:ac-porazka-po-scaleniu-a-przed-utworzeni-3] a failure after the merge and before the release, with no other writes meanwhile, leaves the shadow paths in the working tree as before the call', async () => {
     await baseScenario();
     const before = await repoState();
     failChainOfA();
@@ -1009,5 +1009,207 @@ describe('M17 shadow acceptance — POST /api/shadow-accept (2.1.47)', () => {
     expect(inAcceptance).toContain('.claude4spec/releases/v1.json');
     expect(inAcceptance).not.toContain('.claude4spec/releases/v2.json');
     expect((await git(['rev-list', '--parents', '-n', '1', acceptance], dir)).trim().split(' ')).toHaveLength(3);
+  });
+
+  // ─── 2.1.52: the pending-changes test depends on the root ─────────────────────
+
+  describe('2.1.52 — release content whole, the other registry roots only on collisions with the shadow', () => {
+    const PLANS = '.claude4spec/plans';
+    const SKILL = '.claude4spec/skills/s/SKILL.md';
+    /** Committed plans + a skill on the master; the shadow edits a.md and runs `edit`; HEAD stays at that commit. */
+    const plansScenario = async (edit: () => void = () => {}): Promise<void> => {
+      write(`${PLANS}/kept.md`, '# Kept\n');
+      write(`${PLANS}/touched.md`, '# Touched\n');
+      write(`${PLANS}/gone.md`, '# Gone\n');
+      write(SKILL, '---\nname: s\ndescription: a skill\n---\n# S\n');
+      const base = await commitAll('plans and a skill');
+      tip = await shadow('run-1/spec', base, () => {
+        write('pages/a.md', '# A\n\nA shadow\n');
+        edit();
+      });
+      headSha = base;
+    };
+    const expectDirty = async (paths: string[]): Promise<void> => {
+      const before = await repoState();
+      const dbBefore = dbState();
+      const res = await accept();
+      expect(res.status).toBe(409);
+      expect((res.body as ErrorBody).error.details).toEqual(paths);
+      expect((res.body as ErrorBody).error.message).toContain('pending changes that collide with the merge');
+      await expectUntouched(res, 'ACCEPT_DIRTY', before, dbBefore);
+    };
+
+    it('[ac:ac-nowy-plik-niesledzony-w-korzeniu-rele] a new untracked file in the releases root → 409 ACCEPT_DIRTY', async () => {
+      await baseScenario();
+      write('.claude4spec/releases/stray.json', '{}\n');
+      await expectDirty(['.claude4spec/releases/stray.json']);
+    });
+
+    it('[ac:ac-zmodyfikowany-plik-sledzony-w-korzeni-5] a modified tracked file in the releases root → 409 ACCEPT_DIRTY', async () => {
+      await baseScenario();
+      write('.claude4spec/releases/v0.json', `${read('.claude4spec/releases/v0.json')!.trimEnd()} \n`);
+      await expectDirty(['.claude4spec/releases/v0.json']);
+    });
+
+    it('[ac:ac-niesledzony-plik-w-korzeniu-plans-kto] an untracked file in plans that the shadow adds → 409 ACCEPT_DIRTY', async () => {
+      await plansScenario(() => write(`${PLANS}/new.md`, '# New — shadow\n'));
+      write(`${PLANS}/new.md`, '# New — mine\n');
+      await expectDirty([`${PLANS}/new.md`]);
+    });
+
+    it('[ac:ac-niesledzony-plik-plans-x-przy-cieniu] an untracked file plans/x with the shadow adding plans/x/a.md → 409 ACCEPT_DIRTY', async () => {
+      await plansScenario(() => write(`${PLANS}/x/a.md`, '# A — shadow\n'));
+      write(`${PLANS}/x`, 'a file where the shadow puts a directory\n');
+      await expectDirty([`${PLANS}/x`]);
+    });
+
+    it('[ac:ac-zmodyfikowany-plik-sledzony-w-korzeni-3] a modified tracked file in plans that the shadow changes → 409 ACCEPT_DIRTY', async () => {
+      await plansScenario(() => write(`${PLANS}/touched.md`, '# Touched — shadow\n'));
+      write(`${PLANS}/touched.md`, '# Touched — mine\n');
+      await expectDirty([`${PLANS}/touched.md`]);
+    });
+
+    it('[ac:ac-zmodyfikowany-plik-sledzony-w-korzeni-6] a modified tracked file in plans that the shadow deletes → 409 ACCEPT_DIRTY', async () => {
+      await plansScenario(() => fs.rmSync(path.join(dir, PLANS, 'gone.md')));
+      write(`${PLANS}/gone.md`, '# Gone — mine\n');
+      await expectDirty([`${PLANS}/gone.md`]);
+    });
+
+    it('[ac:ac-zastage-owany-plik-w-korzeniu-plans-a] a staged file in plans, whatever the shadow does → 409 ACCEPT_DIRTY', async () => {
+      await plansScenario();
+      write(`${PLANS}/kept.md`, '# Kept — staged\n');
+      await git(['add', `${PLANS}/kept.md`], dir);
+      await expectDirty([`${PLANS}/kept.md`]);
+    });
+
+    it('[ac:ac-zmodyfikowany-plik-sledzony-w-korzeni-2] a modified tracked file in plans that the shadow does not change does not block the acceptance', async () => {
+      await plansScenario(() => write(`${PLANS}/touched.md`, '# Touched — shadow\n'));
+      write(`${PLANS}/kept.md`, '# Kept — mine\n');
+      expect((await accept()).status).toBe(201);
+    });
+
+    it('[ac:ac-nowy-plik-niesledzony-w-korzeniu-plan] a new untracked file in plans that the shadow does not add does not block the acceptance', async () => {
+      await plansScenario(() => write(`${PLANS}/new.md`, '# New — shadow\n'));
+      write(`${PLANS}/draft.md`, '# Draft\n');
+      expect((await accept()).status).toBe(201);
+    });
+
+    it('[ac:ac-zmodyfikowany-plik-sledzony-w-korzeni-4] a modified tracked file in skills that the shadow does not change does not block the acceptance', async () => {
+      await plansScenario();
+      write(SKILL, '---\nname: s\ndescription: a skill, edited\n---\n# S\n');
+      expect((await accept()).status).toBe(201);
+    });
+
+    it('[ac:ac-po-udanym-przyjeciu-oczekujacy-plik-k] after a successful acceptance a pending file of the plans root is in the acceptance merge commit', async () => {
+      await plansScenario();
+      write(`${PLANS}/kept.md`, '# Kept — mine\n');
+      write(`${PLANS}/draft.md`, '# Draft\n');
+      expect((await accept()).status).toBe(201);
+      const inMerge = (await git(['diff', '--name-only', 'HEAD^1', 'HEAD'], dir)).split('\n');
+      expect(inMerge).toEqual(expect.arrayContaining([`${PLANS}/kept.md`, `${PLANS}/draft.md`, 'pages/a.md']));
+      expect(await git(['show', `HEAD:${PLANS}/kept.md`], dir)).toBe('# Kept — mine\n');
+      expect(await git(['status', '--porcelain', '--untracked-files=all', '--', PLANS], dir)).toBe('');
+    });
+
+    it('[ac:ac-po-udanym-przyjeciu-oczekujacy-plik-k-2] after a successful acceptance a pending file of the plans root is in no release_diff dimension of the acceptance release', async () => {
+      await plansScenario();
+      write(`${PLANS}/kept.md`, '# Kept — mine\n');
+      write(`${PLANS}/draft.md`, '# Draft\n');
+      const res = await accept();
+      expect(res.status).toBe(201);
+      const delta = await releaseService.getReleaseDiff(releaseIdOf('v0'), res.body.id as number);
+      const text = JSON.stringify(delta);
+      expect(text).toContain('a.md');
+      expect(text).not.toContain('kept.md');
+      expect(text).not.toContain('draft.md');
+    });
+
+    it('[ac:ac-po-nieudanym-commicie-scalajacym-przy] after a failed acceptance merge commit (merge-open) a pending file of the plans root is staged in the index of the open merge', async () => {
+      await plansScenario();
+      write(`${PLANS}/kept.md`, '# Kept — mine\n');
+      const hook = path.join(dir, '.git', 'hooks', 'pre-commit');
+      fs.mkdirSync(path.dirname(hook), { recursive: true });
+      fs.writeFileSync(hook, '#!/bin/sh\necho "refused by hook" >&2\nexit 1\n', { mode: 0o755 });
+      const res = await accept();
+      expect(res.status).toBe(201);
+      expect(res.body.gitSync.recovery.kind).toBe('merge-open');
+      expect(res.body.gitSync.recovery.intentPrompt).toContain('keep them staged');
+      expect(fs.existsSync(path.join(dir, '.git', 'MERGE_HEAD'))).toBe(true);
+      expect((await git(['diff', '--cached', '--name-only'], dir)).split('\n')).toContain(`${PLANS}/kept.md`);
+      expect(await git(['diff', '--name-only', '--', PLANS], dir)).toBe('');
+    });
+
+    /** A rollback with pending plans files: a modified tracked one and an untracked one. */
+    const rolledBack = async (): Promise<void> => {
+      await plansScenario();
+      write(`${PLANS}/kept.md`, '# Kept — mine\n');
+      write(`${PLANS}/draft.md`, '# Draft\n');
+      failChainOfA();
+      const res = await accept();
+      expect(res.status).toBe(500);
+      expect((res.body as ErrorBody).error.code).toBe('ACCEPT_FAILED');
+      expect(fs.existsSync(path.join(dir, '.git', 'MERGE_HEAD'))).toBe(false);
+    };
+
+    it('[ac:ac-po-cofnietym-przyjeciu-plik-niesledzo] after a rolled-back acceptance an untracked file in plans stays untracked', async () => {
+      await rolledBack();
+      expect(await git(['status', '--porcelain', '--untracked-files=all', '--', `${PLANS}/draft.md`], dir)).toBe(`?? ${PLANS}/draft.md\n`);
+    });
+
+    it('[ac:ac-po-cofnietym-przyjeciu-plik-niesledzo-2] after a rolled-back acceptance an untracked file in plans has its content from before the call', async () => {
+      await rolledBack();
+      expect(read(`${PLANS}/draft.md`)).toBe('# Draft\n');
+    });
+
+    it('[ac:ac-po-cofnietym-przyjeciu-zmodyfikowany] after a rolled-back acceptance a modified tracked file in plans has its content from before the call', async () => {
+      await rolledBack();
+      expect(read(`${PLANS}/kept.md`)).toBe('# Kept — mine\n');
+    });
+
+    it('[ac:ac-po-cofnietym-przyjeciu-niezastage-owa] after a rolled-back acceptance an unstaged change of a tracked file in plans stays unstaged', async () => {
+      await rolledBack();
+      expect(await git(['status', '--porcelain', '--', `${PLANS}/kept.md`], dir)).toBe(` M ${PLANS}/kept.md\n`);
+      expect(await git(['diff', '--cached', '--name-only'], dir)).toBe('');
+    });
+
+    it('[ac:ac-przy-accept-abort-failed-intentprompt] at ACCEPT_ABORT_FAILED the intentPrompt of the repair window does not name a pending plans file the shadow does not change', async () => {
+      await plansScenario();
+      write(`${PLANS}/kept.md`, '# Kept — mine\n');
+      failChainOfA();
+      // A real failure of the internal `merge --abort`, so the real repair context is built.
+      type GitRunner = { git: (args: string[], cwd: string, ...rest: unknown[]) => Promise<{ stdout: string; stderr: string }> };
+      const runner = gitService as unknown as GitRunner;
+      const original = runner.git.bind(gitService);
+      vi.spyOn(runner, 'git').mockImplementation(async (args, cwd, ...rest) => {
+        if (args[0] === 'merge' && args[1] === '--abort') {
+          throw Object.assign(new Error('injected abort failure'), { stderr: 'fatal: injected abort failure' });
+        }
+        return original(args, cwd, ...rest);
+      });
+      const res = await accept();
+      expect(res.status).toBe(500);
+      const error = (res.body as ErrorBody).error as ErrorBody['error'] & { recovery: { kind: string; intentPrompt: string } };
+      expect(error.code).toBe('ACCEPT_ABORT_FAILED');
+      expect(error.recovery.kind).toBe('merge-abort-failed');
+      expect(error.recovery.intentPrompt).toContain('pages/a.md');
+      expect(error.recovery.intentPrompt).not.toContain('kept.md');
+      vi.restoreAllMocks();
+      await git(['merge', '--abort'], dir);
+    });
+
+    it('git refusing to start the merge over a local change the strict test did not see (a write meanwhile) → 409 ACCEPT_DIRTY, nothing merged', async () => {
+      await baseScenario();
+      write('pages/a.md', '# A\n\nwritten meanwhile\n');
+      vi.spyOn(gitService, 'pendingChanges').mockResolvedValue({ status: 'clean' });
+      const res = await accept();
+      expect(res.status).toBe(409);
+      expect((res.body as ErrorBody).error.code).toBe('ACCEPT_DIRTY');
+      expect((res.body as ErrorBody).error.details).toEqual(['pages/a.md']);
+      expect(fs.existsSync(path.join(dir, '.git', 'MERGE_HEAD'))).toBe(false);
+      expect(await head()).toBe(headSha);
+      expect(read('pages/a.md')).toBe('# A\n\nwritten meanwhile\n');
+      expect(dbState().releases).toEqual([{ name: 'v0', slug: 'v0' }]);
+      expect(suppressions[0]!.released).toBe(true);
+    });
   });
 });

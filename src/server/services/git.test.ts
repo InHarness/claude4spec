@@ -388,7 +388,7 @@ describe('GitService — 0.1.118 read-only methods', () => {
       expect(tracked).toContain('.claude4spec/patches/a.md');
     });
 
-    it('[ac:ac-git-commit-przy-createrelease-obejmuje-w] 2.1.8: stages the dir of EVERY registry root — a page root whose config entry carries legacy `releasable: false` is still staged, plus all five system dirs', async () => {
+    it('[ac:ac-git-commit-przy-createrelease-obejmuje-w] 2.1.8: stages the dir of EVERY registry root — a page root whose config entry carries legacy `releasable: false` is still staged, plus all six system dirs (2.1.52: `skills` among them)', async () => {
       await initRepo(dir);
       writeConfigJson(dir, { enabled: true }, [
         { id: 'pages', name: 'Pages', dir: 'pages', builtin: true },
@@ -402,7 +402,7 @@ describe('GitService — 0.1.118 read-only methods', () => {
       fs.writeFileSync(path.join(dir, 'pages', 'a.md'), '# a');
       fs.mkdirSync(path.join(dir, 'notes'), { recursive: true });
       fs.writeFileSync(path.join(dir, 'notes', 'n.md'), '# n');
-      for (const kind of ['plans', 'briefs', 'patches', 'entities', 'releases']) {
+      for (const kind of ['plans', 'briefs', 'patches', 'skills', 'entities', 'releases']) {
         fs.mkdirSync(path.join(dir, '.claude4spec', kind), { recursive: true });
         fs.writeFileSync(path.join(dir, '.claude4spec', kind, 'f.md'), kind);
       }
@@ -417,7 +417,7 @@ describe('GitService — 0.1.118 read-only methods', () => {
       const tracked = (await git(['ls-tree', '-r', '--name-only', 'HEAD'], dir)).split('\n');
       expect(tracked).toContain('pages/a.md');
       expect(tracked).toContain('notes/n.md');
-      for (const kind of ['plans', 'briefs', 'patches', 'entities', 'releases']) {
+      for (const kind of ['plans', 'briefs', 'patches', 'skills', 'entities', 'releases']) {
         expect(tracked).toContain(`.claude4spec/${kind}/f.md`);
       }
       expect(tracked).toContain('.claude4spec/entities/tags.json');

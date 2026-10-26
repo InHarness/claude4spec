@@ -206,8 +206,8 @@ describe('root kinds', () => {
     const reg = new RootRegistry(user);
     expect(reg.pages().map((r) => r.id)).toEqual(['pages', 'adr']);
     expect(reg.withFlag('release').map((r) => r.id)).toEqual(['pages', 'adr', 'entities']);
-    // plans/briefs/patches carry file_version rows but are not of kind `pages` — out of the release by construction.
-    for (const kind of ['plans', 'briefs', 'patches'] as const) {
+    // plans/briefs/patches/skills carry file_version rows but are not of kind `pages` — out of the release by construction (2.1.52: skills).
+    for (const kind of ['plans', 'briefs', 'patches', 'skills'] as const) {
       expect(KIND_DECLARATIONS[kind].fileMap.some((e) => e.track === 'file_version')).toBe(true);
       expect(reg.pages().some((r) => r.kind === kind)).toBe(false);
       expect(reg.withFlag('release').some((r) => r.kind === kind)).toBe(false);
