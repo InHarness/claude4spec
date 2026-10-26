@@ -686,7 +686,16 @@ describe('release-tools — the 2.1.26 mcp-tool records', () => {
     expect(first.isError).toBe(false);
     expect(first.body.total).toBe(7);
     expect(first.body.releases.map((r: { name: string }) => r.name)).toEqual(['tie', 'r6', 'r5', 'r4', 'r3']);
-    expect(Object.keys(first.body.releases[0]).sort()).toEqual(['createdAt', 'createdBy', 'description', 'id', 'name']);
+    expect(Object.keys(first.body.releases[0]).sort()).toEqual([
+      'acceptedShadow',
+      'createdAt',
+      'createdBy',
+      'description',
+      'id',
+      'name',
+    ]);
+    // 2.1.49: a release that did not accept a shadow carries `acceptedShadow: null`.
+    expect(first.body.releases.map((r: { acceptedShadow: unknown }) => r.acceptedShadow)).toEqual([null, null, null, null, null]);
 
     const rest = await h.call('release_list', { offset: 5 });
     expect(rest.body.releases.map((r: { name: string }) => r.name)).toEqual(['r2', 'r1']);
@@ -698,6 +707,27 @@ describe('release-tools — the 2.1.26 mcp-tool records', () => {
       expect(r.isError).toBe(true);
       expect(r.body.code).toBe('INVALID_PAGINATION');
     }
+  });
+
+  it('[entity:release-tools-release-list] release_list: the row of a release that accepted a shadow carries `acceptedShadow` `{ id, tipSha }`, every other row `acceptedShadow: null`', async () => {
+    const h = liveHarness();
+    const tip = '9f2c4e7a1b3d5f60718293a4b5c6d7e8f9012345';
+    h.db
+      .prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES ('plain', 'plain', 'd', 'user', ?)`)
+      .run('2026-08-01T00:00:00.000Z');
+    h.db
+      .prepare(
+        `INSERT INTO spec_release (name, slug, description, created_by, created_at, accepted_shadow_id, accepted_shadow_sha)
+         VALUES ('accepted', 'accepted', 'd', 'user', ?, 'run-42/spec', ?)`,
+      )
+      .run('2026-08-02T00:00:00.000Z', tip);
+
+    const res = await h.call('release_list', {});
+    expect(res.isError).toBe(false);
+    expect(res.body.releases.map((r: { name: string; acceptedShadow: unknown }) => [r.name, r.acceptedShadow])).toEqual([
+      ['accepted', { id: 'run-42/spec', tipSha: tip }],
+      ['plain', null],
+    ]);
   });
 
   it('[entity:release-tools-release-show] release_show: releaseName required, include as enum(pages, entities)[], entityTypes, limit, offset as the record states them, no hints; filter refusals, RELEASE_NOT_FOUND for an unknown name or a literal, identity-only rows windowed by one window per list', async () => {
@@ -743,6 +773,8 @@ describe('release-tools — the 2.1.26 mcp-tool records', () => {
       description: '',
       created_by: 'agent',
       created_at: '2026-09-01T00:00:00.000Z',
+      // 2.1.49: a release that did not accept a shadow → `accepted_shadow: null`.
+      accepted_shadow: null,
     });
     expect(full.body.total).toEqual({ entities: 2, pages: 1 });
     expect(full.body.entities).toEqual([
@@ -759,6 +791,28 @@ describe('release-tools — the 2.1.26 mcp-tool records', () => {
     const pagesOnly = await call({ releaseName: 'v1', include: ['pages'] });
     expect(pagesOnly.body.total).toEqual({ pages: 1 });
     expect(pagesOnly.body).not.toHaveProperty('entities');
+  });
+
+  it('[entity:release-tools-release-show] release_show: the release details of a release that accepted a shadow carry `accepted_shadow` `{ id, tipSha }` (a live release created by the acceptance variant)', async () => {
+    const h = liveHarness();
+    const tip = '9f2c4e7a1b3d5f60718293a4b5c6d7e8f9012345';
+    h.db
+      .prepare(
+        `INSERT INTO spec_release (name, slug, description, created_by, created_at, accepted_shadow_id, accepted_shadow_sha)
+         VALUES ('accepted', 'accepted', 'from a shadow', 'user', ?, 'run-42/spec', ?)`,
+      )
+      .run('2026-08-02T00:00:00.000Z', tip);
+
+    const res = await h.call('release_show', { releaseName: 'accepted' });
+    expect(res.isError).toBe(false);
+    expect(res.body.release).toEqual({
+      id: expect.any(Number),
+      name: 'accepted',
+      description: 'from a shadow',
+      created_by: 'user',
+      created_at: '2026-08-02T00:00:00.000Z',
+      accepted_shadow: { id: 'run-42/spec', tipSha: tip },
+    });
   });
 
   it('[entity:release-tools-release-diff] release_diff: fromReleaseName as string | null, toReleaseName, include as enum(pages, entities)[] and the filter and window parameters as the record states them, no hints; window refusals first, empty filters and literals refused, `current` against the unassigned state with `to.id: null`, entities and pages windowed independently after filters', async () => {

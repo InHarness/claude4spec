@@ -209,6 +209,8 @@ describe('M17 shadow acceptance — POST /api/shadow-accept (2.1.47)', () => {
     gitService = new GitService(dir, [pagesDir], () => turnActive, ws);
     const releaseStore = new ReleaseFileStore(dir, '.claude4spec/releases', { suppress: () => {} } as SelfWriteSuppressor);
     releaseStore.ensureRoot();
+    // 2.1.49 (m17ui001): the store announces its writes in the `releases` root (M49).
+    releaseStore.ws = ws;
     releaseService = new ReleaseService(
       db,
       host,
@@ -309,6 +311,15 @@ describe('M17 shadow acceptance — POST /api/shadow-accept (2.1.47)', () => {
     const list = await request(app).get('/api/releases');
     expect(list.body.releases.map((r: { name: string }) => r.name)).toEqual(['v1', 'v0']);
     expect(broadcasts).toContainEqual({ kind: 'release:created', releaseId: res.body.id, name: 'v1' });
+  });
+
+  it('[section:m17ui001] a successful acceptance announces its release file to open tabs: file:changed { rootId: releases, event: change, origin: server } next to release:created', async () => {
+    await baseScenario();
+    broadcasts.length = 0;
+    const res = await accept();
+    expect(res.status).toBe(201);
+    expect(broadcasts).toContainEqual({ kind: 'release:created', releaseId: res.body.id, name: 'v1' });
+    expect(broadcasts).toContainEqual({ kind: 'file:changed', event: 'change', path: 'v1.json', rootId: 'releases', origin: 'server' });
   });
 
   it('[entity:shadow-accept-request] the body is ref + name + description + expectedTipSha + expectedHeadSha, all required strings; a missing one is 400 VALIDATION before the repository is touched, and an acceptedShadow in the body is never taken from the caller', async () => {
@@ -429,11 +440,15 @@ describe('M17 shadow acceptance — POST /api/shadow-accept (2.1.47)', () => {
     expect(committed.acceptedShadow.id).toBe('run-1/spec');
   });
 
-  it('[ac:ac-plik-wydania-przyjmujacego-cien-niesi-2] the file of the acceptance release carries acceptedShadow.tipSha equal to the tip SHA', async () => {
+  it('[ac:ac-plik-wydania-przyjmujacego-cien-niesi-2] the file of the acceptance release carries acceptedShadow.tipSha equal to the tip SHA, and the release dto carries it as its accepted shadow', async () => {
     await baseScenario();
-    expect((await accept()).status).toBe(201);
+    const res = await accept();
+    expect(res.status).toBe(201);
     const onDisk = JSON.parse(read('.claude4spec/releases/v1.json')!) as { acceptedShadow: { tipSha: string } };
     expect(onDisk.acceptedShadow.tipSha).toBe(tip);
+    // The release dto (the acceptance answer and GET /api/releases/:name) reads the same tip SHA.
+    expect(res.body.acceptedShadow).toEqual({ id: 'run-1/spec', tipSha: tip });
+    expect((await request(app).get('/api/releases/v1')).body.acceptedShadow).toEqual({ id: 'run-1/spec', tipSha: tip });
     // The plain release keeps no such key.
     expect(JSON.parse(read('.claude4spec/releases/v0.json')!)).not.toHaveProperty('acceptedShadow');
   });

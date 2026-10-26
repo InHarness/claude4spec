@@ -2058,6 +2058,11 @@ async function buildInner(
     // thing — so its only scope is global.
     projectionStatus.markStale(PROJECTION_IDS.releases);
   }
+  // 2.1.49 (M17 m17ui001): from here on the store's own writes announce
+  // `file:changed` in the `releases` root, so open tabs refresh the release list
+  // (M49). Wired after the boot backfill and rebuild above: nothing listens while
+  // the context is being built, so those writes announce nothing.
+  releaseFileStore.ws = ws;
 
   /**
    * 0.2.77 — the manual rebuild button's entry points: each projection's OWN full

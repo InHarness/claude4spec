@@ -38,9 +38,11 @@
  *     or a plan Save, whose `updateContent` always broadcasts), the first event after
  *     the PUT answered, if none came during the flight: the WS frame and the
  *     HTTP response travel on different sockets.
- * The base `file:changed` is never absorbed: the record store writes briefs,
+ * The base `file:changed` of these roots is never absorbed: the record store writes briefs,
  * patches and plans with `chain: false` under the primitive's suppress token, so an own
- * save broadcasts no `file:changed` — one that arrives is another writer.
+ * save broadcasts no `file:changed` — one that arrives is another writer. (The
+ * `releases` root is the exception, with a ledger of its own — see the end of
+ * this file.)
  *
  * A failed write hands back whether it absorbed an event (`failed()` → true):
  * that event may have been the foreign write that made it fail, so the caller
@@ -118,4 +120,51 @@ export function absorbOwnEcho(root: OwnWriteRoot, path: string): boolean {
 /** The live-update socket reconnected: every pending echo may have been lost. */
 export function resetOwnWrites(): void {
   tokens.clear();
+}
+
+/*
+ * 2.1.49 (M17 m17ui001) — this tab's own release writes (create, edit, shadow
+ * acceptance). The release file store announces every write it lands as the base
+ * `file:changed { rootId: 'releases', origin: 'server' }` (M49), from inside the
+ * request — before the answer. The mutation itself invalidates `['releases']`
+ * right after the answer, so the echo queued in the watcher's batch window would
+ * download the whole list a second time.
+ *
+ * The list is ONE query over the whole root, so a release write is root-wide,
+ * not per path (a create's slug is not known before the answer; a rename echoes
+ * twice: `unlink` + `change`): while one is in flight, EVERY `file:changed` of the
+ * root is absorbed. That swallows no foreign write: whatever arrives during the
+ * flight landed before the answer, and the refetch the mutation starts after the
+ * answer reads the list with it. A failed write hands back whether it absorbed
+ * anything (`failed()`), and the caller then invalidates the list as the watcher
+ * would have. An echo arriving only after the answer (the WS frame and the HTTP
+ * response travel on different sockets) is not absorbed — it costs one more
+ * fetch, never a missed update; no token outlives its request.
+ */
+const releaseWrites = new Set<{ seen: boolean }>();
+
+/** Register a release write of this tab BEFORE its request is sent. */
+export function beginOwnReleaseWrite(): OwnWrite {
+  const token = { seen: false };
+  releaseWrites.add(token);
+  return {
+    succeeded() {
+      releaseWrites.delete(token);
+    },
+    failed() {
+      releaseWrites.delete(token);
+      return token.seen;
+    },
+  };
+}
+
+/**
+ * Called by the watcher for a `file:changed` in the `releases` root. True → a
+ * release write of this tab is in flight, and its own invalidation of
+ * `['releases']` after the answer covers the event.
+ */
+export function absorbOwnReleaseEcho(): boolean {
+  if (releaseWrites.size === 0) return false;
+  for (const token of releaseWrites) token.seen = true;
+  return true;
 }

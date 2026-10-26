@@ -1,5 +1,5 @@
 {
- "iteration": 5,
+ "iteration": 9,
  "conventions": [
   {
    "label": "L4 (API)",
@@ -802,13 +802,38 @@
     }
    ],
    "wave": 2,
-   "status": "pending",
-   "portions": [],
-   "startCommit": null,
-   "baseCommit": null,
+   "status": "verified",
+   "portions": [
+    {
+     "name": "u5-m17-accepted-shadow-and-release-list-ui/p1-l2-l5",
+     "layers": [
+      "L2",
+      "L4",
+      "L5"
+     ],
+     "slugs": [
+      "release-tools-release-list",
+      "release-tools-release-show",
+      "release-detail",
+      "m17-requires-m49",
+      "ac-plik-wydania-przyjmujacego-cien-niesi-2",
+      "ac-po-nieudanym-przyjeciu-entity-version",
+      "ac-po-nieudanym-przyjeciu-liczba-wierszy",
+      "ac-udane-przyjecie-dodaje-dokladnie-jede",
+      "section:m17ui001"
+     ],
+     "status": "implemented",
+     "rounds": 4,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
+   "startCommit": "2dc3faf09e815f0c9a8cd902b6c0082a7f55ff55",
+   "baseCommit": "29941f9dce76b3dc27d13dffbf2229943ad5389a",
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 4
    },
    "jobs": []
   }

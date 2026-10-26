@@ -71,11 +71,12 @@ export interface ReleaseToolsDeps {
  */
 
 /**
- * 2.1.47: the release shape of the MCP tools. Their mcp-tool records
- * (`release_create`, `release_list`, `release_update`) name the fields a release
- * carries here — `id`, `name`, `description`, `createdBy`, `createdAt` (plus
- * what each tool adds) — and `acceptedShadow` is not one of them: it belongs to
- * the REST dto `release` only, so the tools project it out.
+ * 2.1.47: the release shape of the writing MCP tools. Their mcp-tool records
+ * (`release_create`, `release_update`) name the fields a release carries here —
+ * `id`, `name`, `description`, `createdBy`, `createdAt` (plus what each tool
+ * adds) — and `acceptedShadow` is not one of them, so they project it out.
+ * 2.1.49: `release_list` is no longer among them — its rows carry
+ * `acceptedShadow` (see `releaseList` below).
  */
 function mcpRelease<T extends Release>(release: T): Omit<T, 'acceptedShadow'> {
   const { acceptedShadow: _acceptedShadow, ...rest } = release;
@@ -158,7 +159,10 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
           limit: args.limit as number | undefined,
           offset: args.offset as number | undefined,
         });
-        return ok({ releases: releases.map(mcpRelease), total });
+        // 2.1.49 (mcp-tool `release-tools-release-list`): the rows go out as the
+        // operation returns them — the release service's row mapper already sets
+        // `acceptedShadow` (`{ id, tipSha }` or `null`) on every row.
+        return ok({ releases, total });
       } catch (err) {
         return fail(err);
       }

@@ -17,6 +17,7 @@ import { DeltaSection } from './release/DeltaSection.js';
 import { ReleaseSelect } from './release/ReleaseSelect.js';
 import { ReleasePushesList } from './release/ReleasePushesList.js';
 import { UnreleasedBanner } from './release/UnreleasedBanner.js';
+import { AcceptedShadowLine } from './release/AcceptedShadowLine.js';
 import { CreateBriefDialog } from './CreateBriefDialog.js';
 import { confirmDestructive, surfaceGitSync, toast } from '../ui/events.js';
 import { MAX_RELEASE_DESCRIPTION_LENGTH, releaseDescriptionLength } from '../../shared/entities.js';
@@ -277,6 +278,10 @@ export function ReleaseDetail({ name }: Props) {
               {release.description}
             </div>
           )}
+          {/* 2.1.49 (ui-view `release-detail`): under the description, the shadow
+              this release accepted — same format as the release list card; none
+              for a release that did not accept one. */}
+          <AcceptedShadowLine acceptedShadow={release.acceptedShadow} className="mt-1" />
           <div className="text-[11.5px] font-mono mt-2" style={{ color: 'var(--c-subtle)' }}>
             {Object.entries(release.countBreakdown.entities)
               .map(([type, n]) => `${n} ${type}`)
