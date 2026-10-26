@@ -576,3 +576,29 @@ describe('M42 — a write without the chain (2.1.14)', () => {
     expect(seen).toEqual(['a.md']);
   });
 });
+
+describe('M40 edge cases at the write primitive', () => {
+  it('[ac:ac-zapis-wlasny-ktory-nie-zmienil-bajtow] an own write that changed no byte of the file runs that path’s reaction chain', async () => {
+    const { store, runtime, dir } = harness();
+    const ran: string[] = [];
+    const phase = (name: string): WatchSubscriber => ({
+      onChange: (_s, _src, relPath, origin) => void ran.push(`${name}:${relPath}:${origin}`),
+      onUnlink: () => {},
+    });
+    runtime.subscribe(SOURCE, phase('write-back'), { id: 'wb', phase: 'write-back', scope: CTX });
+    runtime.subscribe(SOURCE, phase('projection'), { id: 'proj', phase: 'projection', scope: CTX });
+    runtime.subscribe(SOURCE, phase('capture'), { id: 'cap', phase: 'capture', scope: CTX });
+
+    await store.write('a.md', { body: '# Same\n' });
+    const before = fs.readFileSync(path.join(dir, 'a.md'));
+    ran.length = 0;
+
+    // The same bytes again: nothing on disk changes, and a file provider would
+    // report no event at all — the chain still runs, in-band, on that path.
+    const res = await store.write('a.md', { body: '# Same\n' });
+    expect(fs.readFileSync(path.join(dir, 'a.md')).equals(before)).toBe(true);
+    expect(ran).toEqual(['write-back:a.md:server', 'projection:a.md:server', 'capture:a.md:server']);
+    expect(res.staleProjections).toEqual([]);
+    expect(res.content).toBe('# Same\n');
+  });
+});

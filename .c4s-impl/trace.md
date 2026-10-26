@@ -3,3 +3,4 @@ section:ezudoqef → src/server/services/git.ts (GitRepoLock, tryWithRepoLock, c
 section:es9w55mr → src/server/services/git.ts (pendingChanges, mergeIntoIndex, abortMerge, mergePrimitiveRoot)
 section:m28aug01 → src/server/services/git.ts (diffRefs, statusAheadBehind, resolveReleaseCommit)
 section:57bep23m → src/server/services/git.ts (resolveReleaseCommit, findFirstAdd)
+section:c38qf5p5 → src/server/fs/watcher.ts (OPERATION_SUPPRESS_LIMIT_MS — the operation suppression limit; expiry warning names it and logs its value)

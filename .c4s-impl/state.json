@@ -1,5 +1,5 @@
 {
- "iteration": 1,
+ "iteration": 2,
  "conventions": [
   {
    "label": "L4 (API)",
@@ -257,13 +257,33 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "pending",
-   "portions": [],
-   "startCommit": null,
-   "baseCommit": null,
+   "status": "verified",
+   "portions": [
+    {
+     "name": "u3-m40-operation-suppression-limit/p1-l7-l7",
+     "layers": [
+      "L7"
+     ],
+     "slugs": [
+      "ac-tlumienie-na-czas-operacji-niezdjete",
+      "ac-zapis-wlasny-ktory-nie-zmienil-bajtow",
+      "ac-zapis-spoza-aplikacji-do-sciezki-tlum",
+      "ac-zamkniecie-mountu-w-trakcie-pelnej-od",
+      "ac-blad-odczytu-pliku-w-fazie-jednego-su",
+      "section:c38qf5p5"
+     ],
+     "status": "implemented",
+     "rounds": 1,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
+   "startCommit": "7acf9c4ed914c1b183ff08f7d8eb9f6f91bacdac",
+   "baseCommit": "7acf9c4ed914c1b183ff08f7d8eb9f6f91bacdac",
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 1
    },
    "jobs": []
   },
