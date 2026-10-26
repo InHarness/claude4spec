@@ -199,6 +199,20 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
       expect(runAgentTurnMock).not.toHaveBeenCalled();
     });
 
+    // 2.1.53 — the lock covers the model too, not only the reasoning level.
+    it('[section:g24dkd8t] 409 RESUME_CONFIG_LOCKED when resuming with a different model at the same effort', async () => {
+      initialArchitectureConfigSnapshot = JSON.stringify({
+        model: 'haiku-4.5',
+        architectureConfig: { claude_effort: 'medium', claude_thinking: 'enabled', claude_thinking_budget: 8192 },
+      });
+      const res = await request(app())
+        .post(`/threads/${thread.id}/ask`)
+        .send({ message: 'hi', model: 'sonnet-5', effort: 'medium' });
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe('RESUME_CONFIG_LOCKED');
+      expect(runAgentTurnMock).not.toHaveBeenCalled();
+    });
+
     it('no violation (200) when resuming with the same effort/model', async () => {
       initialArchitectureConfigSnapshot = JSON.stringify({
         model: 'haiku-4.5',

@@ -53,6 +53,7 @@ export async function runResolve(args: ParsedArgs): Promise<void> {
 export const resolveCommand: CliCommandContribution = {
   name: 'resolve',
   executionMode: 'server-delegating',
+  flags: [],
   errorCodes: ['INVALID_ARGS', 'FILE_NOT_FOUND'],
   handler: runResolve,
 };

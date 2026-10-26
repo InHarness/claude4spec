@@ -45,6 +45,7 @@ export const markBriefImplementedCommand: CliCommandContribution = {
   name: 'mark-brief-implemented',
   operation: 'mark_brief_implemented',
   executionMode: 'server-delegating',
+  flags: [],
   errorCodes: [...SERVER_DELEGATING_CODES, 'INVALID_ARGS', 'BRIEF_NOT_FOUND', 'IMMUTABLE_FIELD'],
   handler: runMarkBriefImplemented,
 };

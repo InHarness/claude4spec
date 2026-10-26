@@ -24,6 +24,7 @@ const isCatalogOperation = (n: string): boolean => CATALOG.has(n);
 const contribution = (over: Partial<CliCommandContribution>): CliCommandContribution => ({
   name: 'demo',
   executionMode: 'server-delegating',
+  flags: [],
   errorCodes: [],
   handler: async () => {},
   ...over,
@@ -116,8 +117,12 @@ describe('the 2.1.26 command surface', () => {
       expect(c.errorCodes, c.name).toContain('PAGE_NOT_FOUND');
     }
     expect(listPagesCommand.errorCodes).not.toContain('PAGE_NOT_FOUND');
-    // An unknown root stays the page router's ROOT_NOT_FOUND.
-    expect(listPagesCommand.errorCodes).toContain('ROOT_NOT_FOUND');
+    // 2.1.53 — an unknown root is the core's INVALID_ARGUMENT; ROOT_NOT_FOUND is
+    // no longer a CLI code.
+    for (const c of [listPagesCommand, getPageCommand, getPageOutlineCommand]) {
+      expect(c.errorCodes as readonly string[], c.name).not.toContain('ROOT_NOT_FOUND');
+      expect(c.errorCodes, c.name).toContain('INVALID_ARGUMENT');
+    }
   });
 
   it('[section:m11dcmds] get-field-content renders the generic core operation get_field_content', async () => {

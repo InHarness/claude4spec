@@ -1,6 +1,9 @@
 import { optionalString, type ParsedArgs } from './args.js';
 import { CliError, type CliErrorCode } from './errors.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { AgentError, getJson, healthCheck, patchJson, postJson, resolveServer } from '../../core/agent/http.js';
+import { readPackageVersion } from './package-version.js';
 
 /**
  * The `server-delegating` execution mode, as one function per verb.
@@ -42,6 +45,7 @@ interface Target {
   baseUrl: string;
   apiBase: string;
   projectId: string;
+  workspaceName?: string;
 }
 
 /**
@@ -70,7 +74,7 @@ export async function resolveTarget(args: ParsedArgs): Promise<Target> {
       ...(args.workspace !== undefined ? { workspace: args.workspace } : {}),
       ...(server !== undefined ? { server } : {}),
     });
-    await healthCheck(target.baseUrl, target.apiBase);
+    await healthCheck(target.baseUrl, target.apiBase, target.workspaceName);
     return target;
   })();
   TARGETS.set(key, pending);
@@ -148,6 +152,86 @@ export async function delegatePost(args: ParsedArgs, path: string, body: unknown
 export async function delegatePatch(args: ParsedArgs, path: string, body: unknown): Promise<unknown> {
   const { apiBase } = await resolveTarget(args).catch(asCliError);
   return patchJson(`${apiBase}${path}`, body).catch(asCliError);
+}
+
+/**
+ * 2.1.53 — call a core operation BY NAME, over the project's MCP mount
+ * (`/api/projects/:id/mcp`), for operations with no REST channel of their own.
+ *
+ * The page reads (`list_pages`, `get_page`, `get_page_outline`) used to go
+ * through the M02 page router `/pages/:rootId/...`, which resolves the root from
+ * the path segment and refuses an unknown or system root with its own
+ * `ROOT_NOT_FOUND` before the core runs — so the CLI and MCP refused the same
+ * mistake with different codes. Over the mount the core answers, and its
+ * `INVALID_ARGUMENT` (the `kind: pages` roots in `message`) is what the caller
+ * sees. Nothing is reinterpreted here: a tool error's `{ error, code, hint }` is
+ * re-framed as a `CliError`, a success is the operation's own payload.
+ *
+ * The session is opened under the read-only `ask` profile and closed per call.
+ */
+export async function delegateOperation(
+  args: ParsedArgs,
+  tool: string,
+  input: Record<string, unknown>,
+): Promise<unknown> {
+  const { apiBase } = await resolveTarget(args).catch(asCliError);
+  const client = new Client({ name: 'c4s', version: readPackageVersion() });
+  const transport = new StreamableHTTPClientTransport(new URL(`${apiBase}/mcp?profile=ask`));
+  let result: Awaited<ReturnType<Client['callTool']>>;
+  try {
+    await client.connect(transport);
+    result = await client.callTool({ name: tool, arguments: dropUndefined(input) });
+  } catch (err) {
+    throw transportError(err, apiBase);
+  } finally {
+    // End the session on the server too: a closed client alone would leave it
+    // to the mount's idle reaper, one orphan per CLI call.
+    await transport.terminateSession().catch(() => undefined);
+    await client.close().catch(() => undefined);
+  }
+  const text = (result.content as Array<{ type: string; text?: string }> | undefined)?.find((c) => c.type === 'text')?.text;
+  let payload: unknown;
+  try {
+    payload = text === undefined ? undefined : JSON.parse(text);
+  } catch {
+    payload = text;
+  }
+  if (result.isError) {
+    if (typeof payload === 'string') {
+      // Not the operation's envelope: the SDK refused the input against the
+      // tool's schema (e.g. a negative `--limit`) before the core ran. That is
+      // an argument the operation's contract does not admit.
+      const code = /Input validation error/i.test(payload) ? 'INVALID_ARGUMENT' : 'AGENT_ERROR';
+      throw new CliError(code, payload);
+    }
+    const err = (payload ?? {}) as { error?: unknown; code?: unknown; hint?: unknown };
+    throw new CliError(
+      (typeof err.code === 'string' ? err.code : 'AGENT_ERROR') as CliErrorCode,
+      typeof err.error === 'string' ? err.error : `${tool} failed`,
+      typeof err.hint === 'string' ? err.hint : undefined,
+    );
+  }
+  return payload;
+}
+
+function dropUndefined(input: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined));
+}
+
+/**
+ * A failure below the tool layer: the mount's JSON-RPC error (`data.code`, e.g.
+ * PROJECT_NOT_IN_WORKSPACE) when there is one, a refused connection as
+ * SERVER_NOT_RUNNING, anything else as AGENT_ERROR with its message.
+ */
+function transportError(err: unknown, apiBase: string): CliError {
+  if (err instanceof CliError) return err;
+  const cause = (err as { cause?: { code?: string } })?.cause?.code;
+  if (cause === 'ECONNREFUSED') {
+    return new CliError('SERVER_NOT_RUNNING', `request to ${apiBase}/mcp failed (connection refused)`);
+  }
+  const message = err instanceof Error ? err.message : String(err);
+  const code = /"code"\s*:\s*"([A-Z_]+)"/.exec(message)?.[1];
+  return new CliError((code ?? 'AGENT_ERROR') as CliErrorCode, message);
 }
 
 /**

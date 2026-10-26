@@ -168,9 +168,12 @@ export async function resolveServer(params: {
   project?: string;
   workspace?: string;
   server?: string;
-}): Promise<{ baseUrl: string; apiBase: string; projectId: string }> {
+  /** 2.1.53 — who is asking; only `cli` gets the registry-wide 0/1/N rule. */
+  channel?: 'cli' | 'mcp' | 'internal';
+}): Promise<{ baseUrl: string; apiBase: string; projectId: string; workspaceName?: string }> {
   let baseUrl: string;
   let projectId: string;
+  let workspaceName: string | undefined;
   if (params.server) {
     if (!params.project) {
       throw new AgentError(
@@ -184,7 +187,11 @@ export async function resolveServer(params: {
   } else {
     let resolved;
     try {
-      resolved = resolveWorkspaceProject({ project: params.project, workspace: params.workspace });
+      resolved = resolveWorkspaceProject({
+        project: params.project,
+        workspace: params.workspace,
+        ...(params.channel ? { channel: params.channel } : {}),
+      });
     } catch (err) {
       if (err instanceof WorkspaceResolveError) {
         throw new AgentError(err.code, err.message, err.hint);
@@ -193,9 +200,10 @@ export async function resolveServer(params: {
     }
     baseUrl = resolved.localUrl;
     projectId = resolved.projectId;
+    workspaceName = resolved.workspaceName;
   }
   const apiBase = `${baseUrl}/api/projects/${encodeURIComponent(projectId)}`;
-  return { baseUrl, apiBase, projectId };
+  return { baseUrl, apiBase, projectId, ...(workspaceName !== undefined ? { workspaceName } : {}) };
 }
 
 /**
@@ -246,15 +254,19 @@ export async function confirmRemoteProject(server: string, projectId: string): P
  * here" all arrive as an unreadable failure from whatever call happened to go
  * first, and only one of the three is fixed by starting a server.
  */
-export async function healthCheck(baseUrl: string, apiBase: string): Promise<void> {
+export async function healthCheck(baseUrl: string, apiBase: string, workspaceName?: string): Promise<void> {
   let res: Response;
   try {
     res = await fetch(`${apiBase}/config`);
   } catch {
     throw new AgentError(
       'SERVER_NOT_RUNNING',
-      `no claude4spec server responding at ${baseUrl}`,
-      'start it with `npx @inharness-ai/claude4spec` (or check the --server address)',
+      // 2.1.53 — the message names the workspace whose server is missing, when
+      // the address came from the registry (`--server` has no workspace to name).
+      workspaceName !== undefined
+        ? `no claude4spec server for workspace \`${workspaceName}\` at \`${baseUrl}\``
+        : `no claude4spec server responding at ${baseUrl}`,
+      'start it with `npx @inharness-ai/claude4spec`, or pass --server <url>',
     );
   }
   let body: unknown;

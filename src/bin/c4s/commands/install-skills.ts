@@ -91,6 +91,7 @@ export async function runInstallSkills(args: ParsedArgs): Promise<void> {
 export const installSkillsCommand: CliCommandContribution = {
   name: 'install-skills',
   executionMode: 'fs-scoped',
+  flags: ['skills', 'dir', 'server'],
   errorCodes: [
     'INVALID_ARGS',
     'SKILLS_WRITE_FAILED',

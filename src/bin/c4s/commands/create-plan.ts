@@ -64,6 +64,7 @@ export const createPlanCommand: CliCommandContribution = {
   name: 'create-plan',
   operation: 'create_plan',
   executionMode: 'server-delegating',
+  flags: ['title', 'body-file'],
   errorCodes: [...SERVER_DELEGATING_CODES, 'INVALID_ARGUMENT', 'VALIDATION', 'PLAN_ALREADY_EXISTS'],
   handler: runCreatePlan,
 };

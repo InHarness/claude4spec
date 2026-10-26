@@ -71,6 +71,7 @@ export const taggedListMixedCommand: CliCommandContribution = {
   name: 'tagged_list_mixed',
   operation: 'list_entities',
   executionMode: 'server-delegating',
+  flags: ['tags', 'tag-filter', 'filter'],
   errorCodes: ['INVALID_ARGS'],
   handler: runTaggedListMixed,
 };

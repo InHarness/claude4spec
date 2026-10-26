@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { assertFlagValues, optionalInt, optionalString, parseArgs, paginationFrom, repeatedStrings, requireString, requireStringList } from './args.js';
+import { assertFlagValues, assertKnownFlags, optionalInt, optionalString, parseArgs, paginationFrom, repeatedStrings, requireString, requireStringList } from './args.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { CliError } from './errors.js';
+import type { CliCommandContribution } from './registry.js';
 
 describe('parseArgs', () => {
   it('parses command, positionals and defaults', () => {
@@ -109,5 +113,44 @@ describe('INVALID_ARGS for unreadable argv (2.1.23)', () => {
   it('declared boolean flags and valued flags pass', () => {
     expect(code(() => assertFlagValues(parseArgs(['get-sections', '--anchors', 'a,b', '--include-subtree', '--compact'])))).toBeUndefined();
     expect(code(() => assertFlagValues(parseArgs(['list-entities', '--limit', '3', '--type=dto'])))).toBeUndefined();
+  });
+});
+
+/**
+ * 2.1.53 — the dispatcher boundary: a flag outside the command's list is
+ * `INVALID_ARGS`, raised locally before any server call, for every command and
+ * every execution mode. `INVALID_ARGUMENT` belongs to the core.
+ */
+describe('unknown flag → INVALID_ARGS (2.1.53)', () => {
+  it('[section:m11dcore] every registered command refuses a flag it does not declare, with INVALID_ARGS', async () => {
+    // The bin runs `main()` at import, so the contributions are collected from
+    // their modules rather than from its COMMANDS array.
+    const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'commands');
+    const commands: CliCommandContribution[] = [];
+    for (const f of fs.readdirSync(dir).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts') && !f.startsWith('_'))) {
+      const mod = (await import(`./commands/${f.replace(/\.ts$/, '.js')}`)) as Record<string, unknown>;
+      for (const v of Object.values(mod)) {
+        if (v && typeof v === 'object' && 'executionMode' in v && 'handler' in v) commands.push(v as CliCommandContribution);
+      }
+    }
+    expect(commands.length).toBeGreaterThan(30);
+    for (const command of commands) {
+      let caught: unknown;
+      try {
+        assertKnownFlags(parseArgs([command.name, '--definitely-not-a-flag', 'x']), command);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught, command.name).toBeInstanceOf(CliError);
+      expect((caught as CliError).code, command.name).toBe('INVALID_ARGS');
+      expect((caught as CliError).message, command.name).toContain('--definitely-not-a-flag');
+    }
+  });
+
+  it('declared and shared flags pass', () => {
+    const command = { name: 'list-pages', flags: ['root-id', 'limit'] };
+    expect(() =>
+      assertKnownFlags(parseArgs(['list-pages', '--root-id', 'pages', '--limit', '3', '--project', 'p', '--compact']), command),
+    ).not.toThrow();
   });
 });

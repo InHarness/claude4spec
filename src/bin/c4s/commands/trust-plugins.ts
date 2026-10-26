@@ -73,6 +73,7 @@ export const trustPluginsCommand: CliCommandContribution = {
   // `registry-write`, not `fs-scoped`: it never resolves a project, it writes
   // the workspace registry directly and creates the project record on demand.
   executionMode: 'registry-write',
+  flags: ['cwd', 'port', 'mode'],
   errorCodes: ['INVALID_ARGS', 'REGISTRY_MIGRATION_PENDING'],
   handler: runTrustPlugins,
 };

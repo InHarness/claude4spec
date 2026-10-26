@@ -86,6 +86,7 @@ export const createPatchCommand: CliCommandContribution = {
   name: 'create-patch',
   operation: 'create_patch',
   executionMode: 'server-delegating',
+  flags: ['brief', 'desc', 'kind', 'body-file', 'created-by'],
   errorCodes: [...SERVER_DELEGATING_CODES, 'INVALID_ARGS', 'BRIEF_NOT_FOUND', 'PATCH_WRITE_FAILED'],
   handler: runCreatePatch,
 };

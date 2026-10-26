@@ -20,10 +20,12 @@ import { DEFAULT_MODEL } from '../../core/agent/models.js';
  * ktorym dziala wolajacy agent. Pozostale parametry (peer, threadId, model)
  * celuja w **innego** peera i przychodza jako input.
  *
- * `callerWorkspace` rozwiazuje AMBIGUOUS_WORKSPACE: gdy ten sam katalog projektu
- * jest zarejestrowany w N>1 workspace'ach, `ask` bez jawnego `workspace`
- * dziedziczy workspace wolajacego zamiast wpadac w niejednoznacznosc, ktora z
- * jego perspektywy nie istnieje. Jawny `input.workspace` nadal wygrywa (override).
+ * 2.1.53 — `callerWorkspace` to workspace procesu serwera, ktory obsluguje
+ * wywolanie. Bez `workspace` peer jest rozwiazywany WYLACZNIE w nim (kanal `mcp`,
+ * bez reguly 0/1/N), wiec `id` obecne tez w innym workspace'ie nie daje
+ * AMBIGUOUS_*. Jawny `input.workspace` to jedyna droga do peera spoza tego
+ * workspace'u — przelacznik, nie dezambiguator. PROJECT_NOT_FOUND i AMBIGUOUS_*
+ * naleza wylacznie do kanalu `cli`.
  *
  * Pozostale parametry (peer, threadId, model, effort) celuja w innego peera i
  * przychodza jako input; default `effort` ('medium') rozwiazywany w `runAgent`.
@@ -41,7 +43,7 @@ import { DEFAULT_MODEL } from '../../core/agent/models.js';
  * names — so the tool no longer tells the caller not to ask for one.
  */
 export const ASK_TOOL_DESCRIPTION =
-  "Consult another claude4spec specification synchronously. Sends `message` to the peer project's agent, blocks until the peer's turn completes, and returns the peer's final answer. Use it when the current task needs context that lives in a different spec — clarifying a cross-spec contract, checking how the other side models something, asking for the peer's domain knowledge. The peer answers read-only: it never edits the peer's pages or entities. To get a change into the peer's specification — including a project you use as a skill — ask for it: the peer leaves a plan on its side and the answer names that plan's path; nothing changes until the peer's author applies it. Do not use it to orchestrate work inside the current specification. Peers available in this workspace are listed in `<workspace_projects/>`. Address the peer with `project` — its `id` exactly as `<workspace_projects/>` lists it — plus `workspace` when that id belongs to more than one workspace. `server` is an explicit peer server URL and is only valid together with `project`: it replaces the address, never the project. Pass `threadId` to continue an earlier conversation with that peer — the id always refers to a thread on the peer side, never to the current thread; omit it to start a fresh peer thread. The answer comes back collapsed: only the last assistant message of the peer's turn is returned, without the intermediate text between the peer's tool calls and without its tool-call history, all of which stays on the peer. Nothing streams — the call returns once, at the end, so a long peer turn is a long block. `model` and `effort` apply to the peer's turn only.";
+  "Consult another claude4spec specification synchronously. Sends `message` to the peer project's agent, blocks until the peer's turn completes, and returns the peer's final answer. Use it when the current task needs context that lives in a different spec — clarifying a cross-spec contract, checking how the other side models something, asking for the peer's domain knowledge. The peer answers read-only: it never edits the peer's pages or entities. To get a change into the peer's specification — including a project you use as a skill — ask for it: the peer leaves a plan on its side and the answer names that plan's path; nothing changes until the peer's author applies it. Do not use it to orchestrate work inside the current specification. Peers available in this workspace are listed in `<workspace_projects/>`. Address the peer with `project` — its `id` exactly as `<workspace_projects/>` lists it. Pass `workspace` only to reach a peer in another workspace; without it `project` is resolved in this server's workspace. `server` is an explicit peer server URL and is only valid together with `project`: it replaces the address, never the project. Pass `threadId` to continue an earlier conversation with that peer — the id always refers to a thread on the peer side, never to the current thread; omit it to start a fresh peer thread. The answer comes back collapsed: only the last assistant message of the peer's turn is returned, without the intermediate text between the peer's tool calls and without its tool-call history, all of which stays on the peer. Nothing streams — the call returns once, at the end, so a long peer turn is a long block. `model` and `effort` apply to the peer's turn only.";
 
 export function buildC4sToolsServer(callerWorkspace?: string): CapturedMcpServer {
   const ask = mcpTool(
@@ -55,7 +57,7 @@ export function buildC4sToolsServer(callerWorkspace?: string): CapturedMcpServer
       workspace: z
         .string()
         .optional()
-        .describe("Workspace override; defaults to the caller's workspace when omitted."),
+        .describe("Another workspace to resolve `project` in; omitted = this server's workspace."),
       server: z
         .string()
         .optional()
@@ -101,8 +103,9 @@ export function buildC4sToolsServer(callerWorkspace?: string): CapturedMcpServer
         const result = await runAgent({
           message,
           project,
-          // Jawny input wygrywa; w przeciwnym razie dziedzicz workspace wolajacego.
+          // Jawny input siega gdzie indziej; bez niego — workspace tego serwera.
           workspace: (typeof input.workspace === 'string' ? input.workspace : undefined) ?? callerWorkspace,
+          channel: 'mcp',
           server: typeof input.server === 'string' ? input.server : undefined,
           threadId: typeof input.threadId === 'string' ? input.threadId : undefined,
           // Schema (z.enum) waliduje wartosci w runtime; `input` jest luzno typowany,

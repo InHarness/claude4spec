@@ -33,6 +33,7 @@ export const describeCommand: CliCommandContribution = {
   name: 'describe',
   operation: 'describe_types',
   executionMode: 'server-delegating',
+  flags: ['type', 'view', 'limit', 'offset'],
   errorCodes: ['INVALID_TYPE', 'INVALID_ARGS'],
   handler: runDescribe,
 };

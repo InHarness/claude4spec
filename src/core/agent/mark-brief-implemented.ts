@@ -14,11 +14,11 @@ export async function markBriefImplemented(params: {
   project?: string;
   workspace?: string;
 }): Promise<Record<string, unknown>> {
-  const { baseUrl, apiBase } = await resolveServer({
+  const { baseUrl, apiBase, workspaceName } = await resolveServer({
     project: params.project,
     workspace: params.workspace,
   });
-  await healthCheck(baseUrl, apiBase);
+  await healthCheck(baseUrl, apiBase, workspaceName);
 
   // Same guard as `get-brief`, and for the same reason: `..` survives
   // `encodeURIComponent` and is collapsed by URL resolution, so a traversal

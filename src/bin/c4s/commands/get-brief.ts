@@ -132,6 +132,7 @@ export const getBriefCommand: CliCommandContribution = {
   name: 'get-brief',
   operation: 'get_brief',
   executionMode: 'server-delegating',
+  flags: ['range'],
   errorCodes: [...SERVER_DELEGATING_CODES, 'INVALID_ARGS', 'INVALID_ARGUMENT', 'BRIEF_NOT_FOUND'],
   handler: runGetBrief,
 };

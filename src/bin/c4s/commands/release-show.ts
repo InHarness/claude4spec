@@ -41,6 +41,7 @@ export const releaseShowCommand: CliCommandContribution = {
   name: 'release-show',
   operation: 'release_show',
   executionMode: 'server-delegating',
+  flags: ['release', 'include', 'entity-types', 'limit', 'offset'],
   errorCodes: [
     ...SERVER_DELEGATING_CODES,
     'INVALID_ARGS',

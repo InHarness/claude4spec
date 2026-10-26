@@ -31,6 +31,7 @@ export const listSkillsCommand: CliCommandContribution = {
   name: 'list-skills',
   operation: 'list_skills',
   executionMode: 'server-delegating',
+  flags: ['context-type'],
   errorCodes: [...SERVER_DELEGATING_CODES, 'INVALID_ARGS', 'INVALID_ARGUMENT'],
   handler: runListSkills,
 };

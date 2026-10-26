@@ -59,6 +59,7 @@ function valuedFlag(args: ParsedArgs, flag: string): string | undefined {
 export const createPluginCommand: CliCommandContribution = {
   name: 'create-plugin',
   executionMode: 'scaffold',
+  flags: ['template', 'branch', 'force', 'no-install'],
   errorCodes: [
     'INVALID_ARGS',
     'INVALID_TARGET',

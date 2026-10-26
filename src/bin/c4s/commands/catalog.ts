@@ -24,6 +24,7 @@ export const catalogCommand: CliCommandContribution = {
   name: 'catalog',
   operation: 'overview',
   executionMode: 'server-delegating',
+  flags: ['limit', 'offset'],
   errorCodes: [],
   handler: runCatalog,
 };

@@ -56,6 +56,7 @@ export const getEntitiesCommand: CliCommandContribution = {
   name: 'get-entities',
   operation: 'get_entities',
   executionMode: 'server-delegating',
+  flags: ['type', 'slugs', 'select', 'view', 'limit', 'offset'],
   errorCodes: ['INVALID_TYPE', 'INVALID_ARGS', 'INVALID_ARGUMENT'],
   handler: runGetEntities,
 };

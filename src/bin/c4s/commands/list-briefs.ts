@@ -56,6 +56,7 @@ export const listBriefsCommand: CliCommandContribution = {
   name: 'list-briefs',
   operation: 'list_briefs',
   executionMode: 'server-delegating',
+  flags: ['status', 'limit', 'offset'],
   errorCodes: [...SERVER_DELEGATING_CODES, 'INVALID_ARGS'],
   handler: runListBriefs,
 };
