@@ -1,9 +1,0 @@
-{
- "role": "reviewer",
- "scope": {
-  "kind": "unit",
-  "id": "u5-m17-accepted-shadow-and-release-list-ui",
-  "base": "354fe2cfeb7beb8f682e02d7e6495c5ecf9ddfb3"
- },
- "findings": []
-}

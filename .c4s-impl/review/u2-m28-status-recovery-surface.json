@@ -1,9 +1,0 @@
-{
- "role": "reviewer",
- "scope": {
-  "kind": "unit",
-  "id": "u2-m28-status-recovery-surface",
-  "base": "354fe2cfeb7beb8f682e02d7e6495c5ecf9ddfb3"
- },
- "findings": []
-}

@@ -1,9 +1,0 @@
-{
- "role": "reviewer",
- "scope": {
-  "kind": "unit",
-  "id": "u3-m40-operation-suppression-limit",
-  "base": "7acf9c4ed914c1b183ff08f7d8eb9f6f91bacdac"
- },
- "findings": []
-}
