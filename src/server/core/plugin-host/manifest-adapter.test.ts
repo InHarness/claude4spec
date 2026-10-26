@@ -132,7 +132,7 @@ describe('lowerEntityContribution', () => {
    * without it lowers (the field is no longer required), the lowered module
    * carries no ordering field, and a contribution still declaring it is refused
    * as an unknown key — the field has no successor on the identity: ELEMENTS
-   * order lives only in the frontend's `sidebarTab.order`.
+   * default order lives in the frontend's `sidebarTab.order`.
    */
   it('[section:z7l89jhf] the type identity has no `displayOrder`: not required, not copied, and refused when declared', () => {
     const lowered = lowerEntityContribution(base());

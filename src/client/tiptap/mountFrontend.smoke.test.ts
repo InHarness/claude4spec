@@ -212,3 +212,45 @@ describe('mountFrontend — the detail page of a type with a route', () => {
     expect(DetailPanel).not.toHaveBeenCalled();
   });
 });
+
+describe('mountFrontend — a type hidden in the ELEMENTS layout (M13 8mwihe60)', () => {
+  it('[ac:ac-lista-encji-ukrytego-typu-otwiera-sie] the entity list of a hidden type opens from the address of its route', async () => {
+    const List = vi.fn(() => createElement('section', { 'data-veiled-list': '' }, 'VEILED-LIST'));
+    const make = createRoute as unknown as (opts: {
+      getParentRoute: () => unknown;
+      path: string;
+      component: unknown;
+    }) => unknown;
+    const mod = browsableModule('veiled', {
+      routes: (({ rootRoute: parent }: { rootRoute: unknown }) => [
+        make({ getParentRoute: () => parent, path: '/veileds', component: List }),
+        make({ getParentRoute: () => parent, path: '/veileds/$slug', component: Noop }),
+      ]) as unknown as FrontendModule['routes'],
+      sidebarTab: { icon: Tag, label: 'Veileds', order: 60 },
+    });
+    registerFrontendModule(mod);
+    mountFrontend(fakeRouter(), [clientPluginHost.getEntity('veiled')!]);
+
+    // The team hid the type: it has no ELEMENTS entry…
+    await act(async () => {
+      root.render(
+        createElement(SidebarElements, {
+          entityCounts: { veiled: 3 },
+          pathname: '/veileds',
+          elementsMenu: [{ type: 'veiled', hidden: true }],
+        }),
+      );
+    });
+    expect(host.querySelector('a[data-tab="Veileds"]')).toBeNull();
+    expect(host.querySelector('a[href="/veileds"]')).toBeNull();
+
+    // …but hiding is navigation only: the type stays active and its list route
+    // is mounted, so its address opens the plugin's list page.
+    expect(clientPluginHost.isActive('veiled')).toBe(true);
+    const listRoute = mountedRoute('/veileds');
+    expect(listRoute).toBeDefined();
+    expect(listRoute!.options!.component).toBe(List);
+    const html = renderToStaticMarkup(createElement(listRoute!.options!.component as never));
+    expect(html).toContain('VEILED-LIST');
+  });
+});

@@ -2,9 +2,9 @@
  * 2.1.26 (M33 `m33load01`, L11 "Plugin manifest" of every type package) — the
  * `displayOrder` field is retired from the type identity. Every package page's
  * manifest block drops its `displayOrder: N` line (and the hidden types drop
- * the "no consumer" comment that stood in for it); the order of the ELEMENTS
- * entries comes only from the frontend module's `sidebarTab.order`, and a type
- * without a tab declares no order at all.
+ * the "no consumer" comment that stood in for it); the (since 2.1.50: default)
+ * order of the ELEMENTS entries comes from the frontend module's
+ * `sidebarTab.order`, and a type without a tab declares no order at all.
  *
  * Per type, three things are checked:
  *   - the contribution the package's manifest exports carries no `displayOrder`

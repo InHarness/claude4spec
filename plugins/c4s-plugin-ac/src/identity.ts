@@ -27,8 +27,10 @@ export const AC_LABEL = 'Acceptance Criterion';
 export const AC_LABEL_PLURAL = 'Acceptance Criteria';
 
 /**
- * The ELEMENTS tab's `sidebarTab.order` — since 2.1.26 the only ordering a type
- * declares (the identity has no `displayOrder`). Inherited from the host
+ * The ELEMENTS tab's `sidebarTab.order` — the only ordering a type declares
+ * (the identity has no `displayOrder`). Since 2.1.50 it is the DEFAULT order:
+ * it holds when the project has no `elementsMenu` and for the types the team's
+ * layout does not place (M13 `e8xcx6g7`). Inherited from the host
  * registration so the tab does not move when the type changes delivery path. It
  * sits between `ui-view` (40) and `design-system` (60).
  */

@@ -1,5 +1,5 @@
 {
-  "iteration": 9,
+  "iteration": 13,
   "conventions": [
     {
       "label": "L5 (UI) — implementor M50",
@@ -615,13 +615,54 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u4-elements-slot/p1",
+          "layers": [
+            "M13 ELEMENTS menu",
+            "L2",
+            "L5"
+          ],
+          "slugs": [
+            "ac-brak-klucza-elementsmenu-daje-wpisy-e",
+            "ac-grupa-bez-widocznego-czlonka-nie-ma-w",
+            "ac-grupa-typow-zajmuje-w-elements-jeden",
+            "ac-grupa-z-jednym-widocznym-czlonkiem-ma",
+            "ac-ikona-grupy-spoza-listy-ikon-grup-daj",
+            "ac-klik-wpisu-grupy-w-elements-otwiera-m",
+            "ac-licznik-wpisu-grupy-pokazuje-placehol",
+            "ac-licznik-wpisu-grupy-rowna-sie-sumie-l",
+            "ac-lista-encji-ukrytego-typu-otwiera-sie",
+            "ac-na-trasie-ukrytego-typu-zaden-wpis-el",
+            "ac-pozycje-menu-bocznego-grupy-stoja-w-k",
+            "ac-typ-nieaktywny-w-grupie-nie-ma-pozycj",
+            "ac-typ-ukryty-w-elementsmenu-nie-ma-wpis",
+            "ac-typ-zapisany-w-elementsmenu-dwa-razy",
+            "ac-typ-zgrupowany-nie-ma-wlasnego-wpisu",
+            "ac-typy-nieobecne-w-elementsmenu-stoja-w",
+            "ac-widoczny-typ-nieobecny-w-elementsmenu",
+            "ac-wpis-sidebara-obejmujacy-kilka-typow",
+            "ac-wpis-typu-nieaktywnego-w-elementsmenu",
+            "ac-wpis-typu-w-elements-moze-stac-przed",
+            "ac-wpisy-elements-stoja-w-kolejnosci-z-e",
+            "ac-wpisy-w-sekcji-elements-sidebara-derywow",
+            "ac-zmiana-elementsmenu-zapisana-w-innej"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [
+            "ac-wpisy-w-sekcji-elements-sidebara-derywow"
+          ],
+          "only": []
+        }
+      ],
+      "startCommit": "460226a2d57f4ef5885de638c79885f58bca0efc",
+      "baseCommit": "de951ec03af057b858b81ee51e054d97d83a2c7e",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
       "jobs": []
     },

@@ -32,8 +32,10 @@ export const DESIGN_SYSTEM_LABEL = 'Design System';
 export const DESIGN_SYSTEM_LABEL_PLURAL = 'Design Systems';
 
 /**
- * The ELEMENTS tabs' `sidebarTab.order` — since 2.1.26 the only ordering a type
- * declares (the identity has no `displayOrder`). Inherited from the host
+ * The ELEMENTS tabs' `sidebarTab.order` — the only ordering a type declares
+ * (the identity has no `displayOrder`). Since 2.1.50 it is the DEFAULT order:
+ * it holds when the project has no `elementsMenu` and for the types the team's
+ * layout does not place (M13 `e8xcx6g7`). Inherited from the host
  * registration so neither tab moves when the types change delivery path. `ac`
  * sits at 50 between them.
  */

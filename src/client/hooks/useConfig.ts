@@ -1,7 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { configApi, type ConfigPatch } from '../lib/api.js';
 import { PROJECT_ID } from '../lib/api-core.js';
 import type { Root } from '../../shared/types.js';
+import type { ElementsMenuEntry } from '../../shared/elements-menu.js';
 import { recordRootRename } from '../state/rootRenames.js';
 
 /**
@@ -35,6 +36,32 @@ export function useConfig() {
 export function useRoots(): Root[] {
   const { data } = useConfig();
   return data?.roots ?? [];
+}
+
+/**
+ * 2.1.50 (M13 `m13ui000`, M50 `8h2a734u`) — the ELEMENTS layout the page's
+ * sidebar is composed from: the `elementsMenu` of the FIRST `['config']` read
+ * this page sees, kept for the page's life (one seed per query cache, i.e. per
+ * page load). A later refetch of the config — another tab's save, a hand edit of
+ * `config.json`, a WS-driven invalidation — does not rearrange the sidebar until
+ * the page reloads, the same rule as activation saved elsewhere.
+ *
+ * `ready` is false only while the first read is in flight, so the section does
+ * not flash the default order before the team's layout; a failed read and the
+ * project-less `/welcome` fall back to the default order (`layout` undefined).
+ */
+const elementsMenuSeeds = new WeakMap<QueryClient, { layout: ElementsMenuEntry[] | undefined }>();
+
+export function useElementsMenuLayout(): { ready: boolean; layout: ElementsMenuEntry[] | undefined } {
+  const qc = useQueryClient();
+  const { data, isError } = useConfig();
+  let seed = elementsMenuSeeds.get(qc);
+  if (!seed && data) {
+    seed = { layout: data.elementsMenu };
+    elementsMenuSeeds.set(qc, seed);
+  }
+  if (seed) return { ready: true, layout: seed.layout };
+  return { ready: isError || !PROJECT_ID, layout: undefined };
 }
 
 export function usePatchConfig() {

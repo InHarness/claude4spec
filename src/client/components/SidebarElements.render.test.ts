@@ -155,7 +155,7 @@ afterEach(() => {
 });
 
 describe('Sidebar ELEMENTS follows activation (M50 8h2a734u)', () => {
-  it('[section:z7l89jhf] renders one tab per active type with a sidebarTab, in sidebarTab.order — the only ordering source — with its count', () => {
+  it('[section:z7l89jhf] with no elementsMenu, renders one tab per active type with a sidebarTab, in sidebarTab.order — the default order — with its count', () => {
     // 2.1.26 — the identity carries no `displayOrder`: the pool lists by type
     // (gadget before widget), and the ELEMENTS order still follows `sidebarTab.order`.
     const pool = clientPluginHost.listAvailable().map((m) => m.type).filter((t) => t.startsWith('sbx-'));

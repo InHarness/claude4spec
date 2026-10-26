@@ -43,6 +43,7 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
 vi.mock('../hooks/useConfig.js', () => ({
   useRoots: () => h.roots,
   useBaseRootId: () => h.roots.find((r) => r.builtin)?.id ?? null,
+  useElementsMenuLayout: () => ({ ready: true, layout: undefined }),
 }));
 
 vi.mock('../hooks/usePages.js', () => ({
