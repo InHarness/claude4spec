@@ -43,7 +43,7 @@ import { Popover } from '../../host-ui-kit/overlay-feedback/Popover.js';
  */
 
 /** How long a preview survives the pointer being outside its entry and panel. */
-export const SIDE_MENU_PREVIEW_DELAY_MS = 200;
+export const SIDE_MENU_PREVIEW_DELAY_MS = 150;
 
 type SideMenuMode = 'preview' | 'pinned';
 
@@ -116,8 +116,11 @@ export function SidebarSideMenu({
   /** Tooltip of the entry. */
   title?: string;
   triggerClassName?: string;
-  /** The entry's look, given whether its menu is open. */
-  triggerStyle?: (open: boolean) => CSSProperties;
+  /**
+   * The entry's look, given whether its menu is pinned. A hover preview leaves
+   * the entry looking as it did — only the shared `.sidebar-entry:hover` tint.
+   */
+  triggerStyle?: (pinned: boolean) => CSSProperties;
   /** The entry's content. */
   children: ReactNode;
 }) {
@@ -265,7 +268,7 @@ export function SidebarSideMenu({
           if (state === null && canHover(e)) setState({ mode: 'preview', id });
         }}
         className={triggerClassName}
-        style={triggerStyle?.(open)}
+        style={triggerStyle?.(mode === 'pinned')}
         title={title}
       >
         {children}

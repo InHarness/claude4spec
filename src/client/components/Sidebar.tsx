@@ -369,12 +369,12 @@ function ElementsGroupEntry({
       label={entry.label}
       items={items}
       title={entry.label}
-      triggerClassName="w-full flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-md text-[13px] transition text-left"
-      triggerStyle={(open) => ({
-        background: active || open ? 'var(--c-accent-soft)' : 'transparent',
+      triggerClassName="sidebar-entry w-full flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-md text-[13px] text-left"
+      triggerStyle={(pinned) => ({
+        background: active || pinned ? 'var(--c-accent-soft)' : undefined,
         color: active ? 'var(--c-ink)' : 'var(--c-muted)',
         fontWeight: active ? 600 : 500,
-        border: `1px solid ${active || open ? 'var(--c-hair-strong)' : 'transparent'}`,
+        border: `1px solid ${active || pinned ? 'var(--c-hair-strong)' : 'transparent'}`,
       })}
     >
       <I size={13} />
@@ -442,7 +442,7 @@ function NavLinkRow({
   extra?: ReactNode;
 }) {
   const style: React.CSSProperties = {
-    background: active ? 'var(--c-accent-soft)' : 'transparent',
+    background: active ? 'var(--c-accent-soft)' : undefined,
     color: disabled ? 'var(--c-subtle)' : active ? 'var(--c-ink)' : 'var(--c-muted)',
     fontWeight: active ? 600 : 500,
     border: `1px solid ${active ? 'var(--c-hair-strong)' : 'transparent'}`,
@@ -502,7 +502,7 @@ function NavLinkRow({
   );
 
   const className =
-    'w-full flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-md text-[13px] transition text-left';
+    'sidebar-entry w-full flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-md text-[13px] text-left';
 
   if (disabled) {
     return (
@@ -556,10 +556,10 @@ function SearchResults({
             to="/space/$rootId/$"
             params={{ rootId: rootId ?? '', _splat: hit.path }}
             onClick={onClose}
-            className="block px-2 py-1 rounded text-[12px]"
+            className="sidebar-entry block px-2 py-1 rounded text-[12px]"
             style={{
               color: active ? 'var(--c-ink)' : 'var(--c-muted)',
-              background: active ? 'var(--c-accent-soft)' : 'transparent',
+              background: active ? 'var(--c-accent-soft)' : undefined,
               fontWeight: active ? 600 : 400,
               textDecoration: 'none',
             }}
@@ -634,11 +634,9 @@ function TreeAccordion({
       }
     >
       <button
-        className="w-full flex items-center gap-1.5 px-2 py-[3px] rounded transition"
+        className="sidebar-entry w-full flex items-center gap-1.5 px-2 py-[3px] rounded"
         style={{ color: 'var(--c-subtle)' }}
         onClick={() => onToggle(token)}
-        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--c-panel)')}
-        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
         title={accordion.label}
       >
         {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -693,11 +691,9 @@ function PagesTree({
           return (
             <div key={n.path}>
               <button
-                className="w-full flex items-center gap-1.5 px-2 py-[3px] rounded text-[13px] transition"
+                className="sidebar-entry w-full flex items-center gap-1.5 px-2 py-[3px] rounded text-[13px]"
                 style={{ paddingLeft: 6 + depth * 12, color: 'var(--c-muted)' }}
                 onClick={() => onToggle(n.path)}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--c-panel)')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
                 {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                 <Folder size={13} />
@@ -892,11 +888,11 @@ function PageRow({
       <Link
         to="/space/$rootId/$"
         params={{ rootId, _splat: node.path }}
-        className="w-full flex items-center gap-1.5 px-2 py-[3px] rounded text-[13px] transition text-left"
+        className="sidebar-entry w-full flex items-center gap-1.5 px-2 py-[3px] rounded text-[13px] text-left"
         style={{
           paddingLeft: 6 + depth * 12 + 14,
           color: active ? 'var(--c-ink)' : 'var(--c-muted)',
-          background: active ? 'var(--c-accent-soft)' : 'transparent',
+          background: active ? 'var(--c-accent-soft)' : undefined,
           fontWeight: active ? 600 : 400,
         }}
       >
@@ -1015,12 +1011,12 @@ function OthersMenu({
         label="Others"
         items={items}
         title="Others (Plans, Releases, TODOs, Tags, Links, Briefs)"
-        triggerClassName="w-full flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-md text-[13px] transition text-left"
-        triggerStyle={(open) => ({
-          background: inOthers || open ? 'var(--c-accent-soft)' : 'transparent',
+        triggerClassName="sidebar-entry w-full flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-md text-[13px] text-left"
+        triggerStyle={(pinned) => ({
+          background: inOthers || pinned ? 'var(--c-accent-soft)' : undefined,
           color: inOthers ? 'var(--c-ink)' : 'var(--c-muted)',
           fontWeight: inOthers ? 600 : 500,
-          border: `1px solid ${inOthers || open ? 'var(--c-hair-strong)' : 'transparent'}`,
+          border: `1px solid ${inOthers || pinned ? 'var(--c-hair-strong)' : 'transparent'}`,
         })}
       >
         <MoreHorizontal size={13} />

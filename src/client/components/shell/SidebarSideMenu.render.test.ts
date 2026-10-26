@@ -33,7 +33,12 @@ function Shell() {
   return createElement(
     Fragment,
     null,
-    createElement(SidebarSideMenu, { label: 'Menu A', items: MENU_A, children: 'Entry A' }),
+    createElement(SidebarSideMenu, {
+      label: 'Menu A',
+      items: MENU_A,
+      children: 'Entry A',
+      triggerStyle: (pinned: boolean) => ({ background: pinned ? 'rgb(1, 2, 3)' : undefined }),
+    }),
     createElement(SidebarSideMenu, { label: 'Menu B', items: MENU_B, children: 'Entry B' }),
     createElement('a', { 'data-testid': 'plain-entry', href: '/' }, 'Plain entry'),
     createElement('button', { 'data-testid': 'elsewhere' }, 'elsewhere'),
@@ -441,6 +446,15 @@ describe('sidebar side menu — preview (hover) vs pinned (click) (M50 8h2a734u)
     const pinned = [a.getAttribute('aria-expanded'), a.getAttribute('aria-controls')];
     expect(previewed[0]).toBe('true');
     expect(pinned).toEqual(previewed);
+  });
+
+  it('[section:8h2a734u] a hover preview leaves the entry looking as before — only a pinned menu takes the open look', async () => {
+    const a = trigger('Entry A');
+    await hover(a);
+    expect(openMenus()).toEqual(['Menu A']);
+    expect(a.style.background).toBe('');
+    await click(a);
+    expect(a.style.background).toBe('rgb(1, 2, 3)');
   });
 
   it('[ac:ac-wskaznik-przecinajacy-sasiedni-wpis-w] a pointer crossing a neighbouring entry on its way to the panel keeps the hover-opened menu', async () => {
