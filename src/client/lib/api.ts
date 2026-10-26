@@ -298,8 +298,11 @@ export interface ConfigPatch {
   description?: string | null;
   onboardingCompleted?: boolean;
   entities?: string[];
-  /** 2.1.50 (M13): replaces the whole layout (last save wins); a broken rule is a 400 on `elementsMenu`. */
-  elementsMenu?: ElementsMenuEntry[];
+  /**
+   * 2.1.50 (M13): replaces the whole layout (last save wins); a broken rule is a
+   * 400 on `elementsMenu`. `null` removes the key — Reset to default order.
+   */
+  elementsMenu?: ElementsMenuEntry[] | null;
   /** 0.1.51: agent.* deep-merged server-side (preserves untouched fields). 0.1.90 adds FS path scope. */
   agent?: {
     claudeUsePreset?: boolean;

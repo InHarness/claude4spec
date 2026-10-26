@@ -13,14 +13,14 @@ import {
 import { KIND_DECLARATIONS, SYSTEM_ROOTS } from '../../../shared/root-kinds.js';
 import { SUPPORTED_LANGUAGES } from '../../../shared/languages.js';
 import type { ConfigResponse } from '../../lib/api.js';
-import { STATIC_SETTINGS_CONTRIBUTIONS } from './SettingsPage.js';
+import { staticSettingsContributions } from './SettingsPage.js';
 
 /**
  * 0.2.113 §1.6 — the card catalog after the move to owning modules. The page is
  * assembled from declarations, so the catalog is checkable without a browser.
  */
 describe('/settings card catalog (0.2.113 §1.6)', () => {
-  const page = assembleSettings(STATIC_SETTINGS_CONTRIBUTIONS);
+  const page = assembleSettings(staticSettingsContributions());
   const byAnchor = new Map(page.map((c) => [c.decl.anchor, c]));
 
   it('renders the core cards in group → weight order', () => {

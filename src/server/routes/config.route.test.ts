@@ -950,6 +950,34 @@ describe('PATCH /config — elementsMenu save rules (2.1.50)', () => {
     expect((await request(app()).get('/config')).body.elementsMenu).toEqual(second);
     expect(rebuilds).toBe(0);
   });
+
+  it('[ac:ac-reset-to-default-order-usuwa-klucz-el] the #entities card\'s save after Reset to default order (elementsMenu: null) removes the elementsMenu key from the file', async () => {
+    const layout = [{ group: 'API', icon: 'globe', types: ['endpoint'] }, { type: 'ac', hidden: true }];
+    expect((await request(app()).patch('/config').send({ elementsMenu: layout })).status).toBe(200);
+    expect(onDisk().elementsMenu).toEqual(layout);
+
+    // The card sends the reset as `null` — no type check, no save rule, the key goes.
+    const res = await request(app()).patch('/config').send({ elementsMenu: null });
+    expect(res.status).toBe(200);
+    expect('elementsMenu' in res.body).toBe(false);
+    expect('elementsMenu' in onDisk()).toBe(false);
+    // Only the key goes — the rest of the file stays.
+    expect(onDisk()).toMatchObject({ $schemaVersion: 4, name: 'X' });
+    expect('elementsMenu' in (await request(app()).get('/config')).body).toBe(false);
+    expect(rebuilds).toBe(0);
+  });
+
+  it('[ac:ac-przy-dwoch-zapisach-karty-entities-pl] after two saves of the #entities card the file carries the elementsMenu layout of the last one', async () => {
+    // Two editors (two tabs) each save the whole menu, as the card does; the
+    // second was opened before the first saved and knows nothing of its group.
+    const fromTabA = [{ group: 'API', types: ['endpoint', 'dto'] }, { type: 'ac' }];
+    const fromTabB = [{ type: 'ac' }, { type: 'dto', hidden: true }, { type: 'endpoint' }];
+    expect((await request(app()).patch('/config').send({ elementsMenu: fromTabA })).status).toBe(200);
+    expect((await request(app()).patch('/config').send({ elementsMenu: fromTabB })).status).toBe(200);
+    // The last save wins whole — nothing of the first is merged in.
+    expect(onDisk().elementsMenu).toEqual(fromTabB);
+    expect((await request(app()).get('/config')).body.elementsMenu).toEqual(fromTabB);
+  });
 });
 
 /**

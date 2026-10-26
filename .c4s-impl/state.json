@@ -1,5 +1,5 @@
 {
-  "iteration": 13,
+  "iteration": 20,
   "conventions": [
     {
       "label": "L5 (UI) — implementor M50",
@@ -66,7 +66,7 @@
       "units": [
         "u5-sidebar-menu-editor"
       ],
-      "startCommit": null
+      "startCommit": "368515c60a5ad584e823c96a8909c6a99f6778c3"
     }
   ],
   "systemVerified": false,
@@ -762,13 +762,33 @@
         }
       ],
       "wave": 3,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u5-sidebar-menu-editor/p1",
+          "layers": [
+            "L17"
+          ],
+          "slugs": [
+            "ac-po-zapisie-karty-entities-sidebar-pok",
+            "ac-przy-dwoch-zapisach-karty-entities-pl",
+            "ac-reset-to-default-order-usuwa-klucz-el",
+            "ac-slug-nieaktywnego-typu-zostaje-w-elem",
+            "ac-ukrycie-typu-zgrupowanego-w-edytorze",
+            "ac-usuniety-w-edytorze-sidebar-menu-wpis"
+          ],
+          "status": "implemented",
+          "rounds": 3,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "4d0b65e0ccb49d0ea9331c1941f35e73d27f838d",
+      "baseCommit": "368515c60a5ad584e823c96a8909c6a99f6778c3",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 3
       },
       "jobs": []
     }

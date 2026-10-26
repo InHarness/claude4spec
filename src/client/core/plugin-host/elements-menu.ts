@@ -65,9 +65,14 @@ export type ElementsSlotEntry =
   | { kind: 'type'; module: SidebarModule }
   | { kind: 'group'; label: string; icon: LucideIcon; members: SidebarModule[] };
 
-const hasTab = (m: FrontendModule): m is SidebarModule => m.sidebarTab !== undefined;
+/** A module that declares a sidebar tab. */
+export const hasSidebarTab = (m: FrontendModule | null | undefined): m is SidebarModule => m?.sidebarTab !== undefined;
 
-const byDefaultOrder = (modules: Iterable<SidebarModule>): SidebarModule[] =>
+/**
+ * The DEFAULT order of ELEMENTS (`sidebarTab.order`, absent = 999) — one rule
+ * for the slot and the Sidebar menu editor's options.
+ */
+export const byDefaultOrder = (modules: Iterable<SidebarModule>): SidebarModule[] =>
   [...modules].sort((a, b) => (a.sidebarTab.order ?? 999) - (b.sidebarTab.order ?? 999));
 
 /**
@@ -95,7 +100,7 @@ export function composeElementsSlot(
   active: readonly FrontendModule[],
   layout: readonly ElementsMenuEntry[] | undefined,
 ): ElementsSlotEntry[] {
-  const visible = new Map(active.filter(hasTab).map((m) => [m.type, m] as const));
+  const visible = new Map(active.filter(hasSidebarTab).map((m) => [m.type, m] as const));
   if (layout === undefined) {
     return byDefaultOrder(visible.values()).map((module) => ({ kind: 'type', module }));
   }

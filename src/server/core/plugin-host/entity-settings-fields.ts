@@ -1,44 +1,6 @@
 import type { FieldDeclaration } from '../../settings/field-registry.js';
 import { parseElementsMenu } from '../../config.js';
-import { isElementsMenuGroup, type ElementsMenuEntry } from '../../../shared/elements-menu.js';
-
-/**
- * 2.1.50 (M13 `o4ju2d7m`) — the SAVE rules of `elementsMenu` (2–5 of the
- * `Validation` column), on an already shape-checked list: a group label is
- * non-empty after trimming and unique among groups regardless of case, a group
- * has at least one type, and a slug appears at most once across the menu (type
- * entries, hidden ones included, and group members counted together). A slug
- * outside the effective pool or inactive is saved (rule 6). The loader does NOT
- * apply these — a merged file that breaks them loads with normalization.
- * Returns the error message, or `null` when the list may be saved.
- */
-export function elementsMenuSaveError(entries: readonly ElementsMenuEntry[]): string | null {
-  const labels = new Set<string>();
-  const slugs = new Set<string>();
-  const claim = (slug: string): string | null => {
-    if (slugs.has(slug)) return `elementsMenu: type "${slug}" appears more than once in the menu`;
-    slugs.add(slug);
-    return null;
-  };
-  for (const [i, entry] of entries.entries()) {
-    if (!isElementsMenuGroup(entry)) {
-      const dup = claim(entry.type);
-      if (dup) return dup;
-      continue;
-    }
-    const label = entry.group.trim();
-    if (label === '') return `elementsMenu[${i}]: a group label must not be empty`;
-    const folded = label.toLowerCase();
-    if (labels.has(folded)) return `elementsMenu[${i}]: group label "${label}" is already used by another group`;
-    labels.add(folded);
-    if (entry.types.length === 0) return `elementsMenu[${i}]: group "${label}" must contain at least one type`;
-    for (const slug of entry.types) {
-      const dup = claim(slug);
-      if (dup) return dup;
-    }
-  }
-  return null;
-}
+import { elementsMenuSaveIssues, type ElementsMenuEntry } from '../../../shared/elements-menu.js';
 
 /**
  * 0.2.113 — `entities`, declared by the entity framework: axis A, the per-project
@@ -70,6 +32,9 @@ export function entitySettingsFields(knownEntityTypes?: () => string[]): FieldDe
     {
       // 2.1.50 (M13 `o4ju2d7m`): the ELEMENTS menu layout. Navigation only — it
       // never rebuilds the context; the whole list is replaced (last save wins).
+      // `null` removes the key — Reset to default order (M13 `lbqrd6xh`).
+      // ASSUMPTION:dev-0001 — the DTO `patch-config-request` types the field as an
+      // array only; `null` is how the card's [Save] removes the key.
       key: 'elementsMenu',
       owner: 'entity-framework',
       type: 'object',
@@ -81,12 +46,15 @@ export function entitySettingsFields(knownEntityTypes?: () => string[]): FieldDe
         } catch (err) {
           return { ok: false, error: (err as Error).message };
         }
-        const error = elementsMenuSaveError(entries);
-        return error ? { ok: false, error } : { ok: true, value: entries };
+        // The save rules (2–5) live in `shared/elements-menu.ts`, shared with the
+        // settings editor; the first issue refuses the whole save.
+        const [issue] = elementsMenuSaveIssues(entries);
+        return issue ? { ok: false, error: issue.message } : { ok: true, value: entries };
       },
       effect: 'per-operation',
       resumeLock: false,
       apiWritable: true,
+      nullRemovesKey: true,
     },
   ];
 }

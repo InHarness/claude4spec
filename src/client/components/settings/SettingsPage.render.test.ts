@@ -34,7 +34,7 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
   };
 });
 
-import { SettingsPage, STATIC_SETTINGS_CONTRIBUTIONS } from './SettingsPage.js';
+import { SettingsPage, staticSettingsContributions } from './SettingsPage.js';
 import { assembleSettings } from './registry.js';
 import { UserSection } from '../UserSection.js';
 
@@ -109,7 +109,7 @@ async function render(): Promise<string[]> {
 describe('SettingsPage — composition without a plugin settings channel (2.1.21)', () => {
   it('[entity:settings-page] renders one stack of the declared cards in group → weight order, with no group headings and no generated plugin cards', async () => {
     const anchors = await render();
-    const expected = assembleSettings(STATIC_SETTINGS_CONTRIBUTIONS).map((c) => c.decl.anchor);
+    const expected = assembleSettings(staticSettingsContributions()).map((c) => c.decl.anchor);
     expect(anchors).toEqual(expected);
     // The implementor's own diagnostic cards are part of the stack.
     expect(anchors).toContain('about');
@@ -122,7 +122,7 @@ describe('SettingsPage — composition without a plugin settings channel (2.1.21
 
   it('[section:7f76eszm] the card registry is the declared cards plus About and Index status — nothing is generated for plugins, and the page never asks for plugin settings', async () => {
     const anchors = await render();
-    const declared = STATIC_SETTINGS_CONTRIBUTIONS.flatMap((c) => c.cards ?? []).map((c) => c.anchor);
+    const declared = staticSettingsContributions().flatMap((c) => c.cards ?? []).map((c) => c.anchor);
     expect(new Set(anchors)).toEqual(new Set(declared));
     expect(anchors).toHaveLength(declared.length);
     expect(fetched.some((url) => url.includes('plugin-settings'))).toBe(false);

@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { configApi, type ConfigPatch } from '../lib/api.js';
 import { PROJECT_ID } from '../lib/api-core.js';
@@ -49,17 +50,48 @@ export function useRoots(): Root[] {
  * `ready` is false only while the first read is in flight, so the section does
  * not flash the default order before the team's layout; a failed read and the
  * project-less `/welcome` fall back to the default order (`layout` undefined).
+ *
+ * The one exception is THIS tab's own save of the key (Settings → Entities →
+ * Sidebar menu, M13 `lbqrd6xh`): `usePatchConfig` replaces the seed with the
+ * saved layout before the new config lands in the cache, so the sidebar shows
+ * it at once, without a reload.
  */
-const elementsMenuSeeds = new WeakMap<QueryClient, { layout: ElementsMenuEntry[] | undefined }>();
+interface ElementsMenuSeed {
+  layout: ElementsMenuEntry[] | undefined;
+}
+const elementsMenuSeeds = new WeakMap<QueryClient, ElementsMenuSeed>();
+const elementsMenuSeedListeners = new WeakMap<QueryClient, Set<() => void>>();
+
+/** Replaces the page's layout seed and re-renders every sidebar reading it. */
+function replaceElementsMenuSeed(qc: QueryClient, layout: ElementsMenuEntry[] | undefined): void {
+  elementsMenuSeeds.set(qc, { layout });
+  for (const listener of elementsMenuSeedListeners.get(qc) ?? []) listener();
+}
 
 export function useElementsMenuLayout(): { ready: boolean; layout: ElementsMenuEntry[] | undefined } {
   const qc = useQueryClient();
   const { data, isError } = useConfig();
-  let seed = elementsMenuSeeds.get(qc);
-  if (!seed && data) {
-    seed = { layout: data.elementsMenu };
-    elementsMenuSeeds.set(qc, seed);
-  }
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      let listeners = elementsMenuSeedListeners.get(qc);
+      if (!listeners) {
+        listeners = new Set();
+        elementsMenuSeedListeners.set(qc, listeners);
+      }
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    [qc],
+  );
+  const getSnapshot = useCallback(() => elementsMenuSeeds.get(qc), [qc]);
+  const stored = useSyncExternalStore(subscribe, getSnapshot);
+  // The first read seeds the page: derived here, persisted after commit — never
+  // written during render. The rendered layout is the persisted one, so no
+  // listener needs a notification.
+  const seed = stored ?? (data ? { layout: data.elementsMenu } : undefined);
+  useEffect(() => {
+    if (seed && !elementsMenuSeeds.has(qc)) elementsMenuSeeds.set(qc, seed);
+  }, [qc, seed]);
   if (seed) return { ready: true, layout: seed.layout };
   return { ready: isError || !PROJECT_ID, layout: undefined };
 }
@@ -69,6 +101,8 @@ export function usePatchConfig() {
   return useMutation({
     mutationFn: (input: ConfigPatch) => configApi.patch(input),
     onSuccess: (data, variables) => {
+      // Own-tab save of the ELEMENTS layout: the sidebar follows at once.
+      if ('elementsMenu' in variables) replaceElementsMenuSeed(qc, data.elementsMenu);
       qc.setQueryData(['config'], data);
       if ('writingStyle' in variables) {
         qc.invalidateQueries({ queryKey: ['writing-styles'] });

@@ -1349,7 +1349,11 @@ export function migrateConfigToV4(cwd: string): { config: NormalizedConfig; migr
  * zapisuje atomic. Uzywany przez PATCH /api/config (M01 + M16).
  * Throws na malformed input lub blad I/O.
  */
-export function writeConfig(cwd: string, partial: Partial<Config>): NormalizedConfig {
+/**
+ * `remove` — top-level keys deleted from the file after the merge (a field whose
+ * absence is its default, e.g. `elementsMenu` reset to the default order).
+ */
+export function writeConfig(cwd: string, partial: Partial<Config>, remove: readonly (keyof Config)[] = []): NormalizedConfig {
   const file = configPath(cwd);
   const dir = path.dirname(file);
   fs.mkdirSync(dir, { recursive: true });
@@ -1382,6 +1386,7 @@ export function writeConfig(cwd: string, partial: Partial<Config>): NormalizedCo
   if (validated.skill) {
     merged.skill = { ...current.skill, ...validated.skill };
   }
+  for (const key of remove) delete merged[key];
   atomicWrite(file, JSON.stringify(merged, null, 2) + '\n');
   // Return the NORMALIZED view of what was just persisted — callers read
   // `updated.git.enabled` & co. directly (no `??` at the point of use).

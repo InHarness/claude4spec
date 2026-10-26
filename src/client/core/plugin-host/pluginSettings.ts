@@ -4,6 +4,7 @@ import { metaApi } from '../../lib/api.js';
 import { refreshPluginActivation } from '../../runtime/boot-plugins.js';
 import { clientPluginHost } from './host.js';
 import { PluginPoolElement } from './PluginPoolElement.js';
+import { ELEMENTS_MENU_KEY, SIDEBAR_MENU_HELP, SidebarMenuElement } from './SidebarMenuElement.js';
 import { EFFECT, type SettingsContribution } from '../../components/settings/registry.js';
 
 /**
@@ -68,6 +69,21 @@ export const PLUGIN_HOST_SETTINGS: SettingsContribution = {
           window.location.reload();
         }
       },
+    },
+    {
+      // 2.1.50 (M13 `4ckqwi8t`, `lbqrd6xh`): the ELEMENTS layout editor, saved
+      // with the card's shared [Save]. The sidebar follows the save at once —
+      // `usePatchConfig` replaces the page's layout seed.
+      id: 'sidebar-menu',
+      card: 'entities',
+      weight: 20,
+      kind: 'custom',
+      owner: 'entity-framework',
+      keys: [ELEMENTS_MENU_KEY],
+      label: 'Sidebar menu',
+      help: SIDEBAR_MENU_HELP,
+      effectMessage: EFFECT.immediate,
+      component: SidebarMenuElement,
     },
     {
       id: 'plugin-pool',

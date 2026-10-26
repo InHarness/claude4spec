@@ -260,6 +260,8 @@ export function configRouter(deps: ConfigRouterDeps): Router {
       }
       const present = writable.filter((d) => hasPath(body, fieldPath(d)));
       const touched = new Set(present.map((d) => d.key));
+      // A `null` for a field whose absence is its default removes the key (no type, no rule).
+      const removed = present.filter((d) => d.nullRemovesKey && getPath(body, fieldPath(d)) === null);
       const vctx: FieldValidationContext = {
         cwd,
         current: currentConfig,
@@ -269,7 +271,8 @@ export function configRouter(deps: ConfigRouterDeps): Router {
       };
 
       // Stage 1 — the wire type of every present key.
-      for (const d of present) {
+      const written = present.filter((d) => !removed.includes(d));
+      for (const d of written) {
         const typeError = checkFieldType(d.key, d.type, getPath(body, fieldPath(d)));
         if (typeError) return reject(d.key, typeError);
       }
@@ -277,7 +280,8 @@ export function configRouter(deps: ConfigRouterDeps): Router {
       // Stage 2 — each field's own rule. A rule may normalize what it accepts.
       const values = new Map<string, unknown>();
       const warnings: string[] = [];
-      for (const d of present) {
+      for (const d of removed) values.set(d.key, undefined);
+      for (const d of written) {
         let value = getPath(body, fieldPath(d));
         if (d.validate) {
           const r = await d.validate(value, vctx);
@@ -303,9 +307,13 @@ export function configRouter(deps: ConfigRouterDeps): Router {
       for (const w of warnings) console.warn(`[config] ${w}`);
 
       const patch: Record<string, unknown> = {};
-      for (const d of present) setPath(patch, fieldPath(d), values.get(d.key));
+      for (const d of written) setPath(patch, fieldPath(d), values.get(d.key));
 
-      const updated = writeConfig(cwd, patch as Partial<Config>);
+      const updated = writeConfig(
+        cwd,
+        patch as Partial<Config>,
+        removed.map((d) => d.key as keyof Config),
+      );
       // 0.1.118: re-sync .gitignore when the `git` branch changes — the only
       // field the managed block depends on (2.1.8: a `roots[]` save never
       // changes it). Best-effort (never fail the PATCH over a gitignore hiccup).
