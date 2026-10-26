@@ -28,6 +28,7 @@ import { pipeline } from 'node:stream/promises';
 import { create as tarCreate, extract as tarExtract } from 'tar';
 import { nanoid } from 'nanoid';
 import type { Release, SpecSnapshot } from '../../shared/entities.js';
+import type { ElementsMenuEntry } from '../../shared/elements-menu.js';
 import type { Root } from '../../shared/types.js';
 import type { Config, NormalizedConfig } from '../config.js';
 import { DomainError } from './tags.js';
@@ -113,6 +114,13 @@ export interface BundleConfig {
   writingStyle: string | null;
   onboardingCompleted: boolean;
   entities?: string[];
+  /**
+   * 2.1.50 (M17 `m17bndcf1`, verdict KEEP): the team's ELEMENTS menu layout, so
+   * a clone gets the same navigation. Present only when the source project's
+   * file carries the key (absent = the flat `sidebarTab.order` list). Additive —
+   * an older reader ignores the unknown field, so `bundleSchemaVersion` stays.
+   */
+  elementsMenu?: ElementsMenuEntry[];
   agent?: { claudeUsePreset?: boolean; disableDirectFilesystemAccess?: boolean };
 }
 
@@ -244,6 +252,10 @@ export function sanitizeConfigForBundle(config: NormalizedConfig): BundleConfig 
     writingStyle: config.writingStyle,
     onboardingCompleted: config.onboardingCompleted,
     entities: config.entities,
+    // 2.1.50: KEEP — a navigation convention of the team, no secret (its group
+    // labels do become public with the bundle). Key-presence: an absent key
+    // stays absent, so the clone keeps the default flat list.
+    ...(config.elementsMenu !== undefined ? { elementsMenu: config.elementsMenu } : {}),
     /**
      * 0.2.53 adds `disableDirectFilesystemAccess` beside `claudeUsePreset`, with
      * the verdict KEEP: it is a convention for working on the specification, not

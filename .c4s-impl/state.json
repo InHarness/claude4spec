@@ -1,5 +1,5 @@
 {
-  "iteration": 7,
+  "iteration": 9,
   "conventions": [
     {
       "label": "L5 (UI) — implementor M50",
@@ -59,7 +59,7 @@
         "u2-elements-menu-bundle-clone",
         "u4-elements-slot"
       ],
-      "startCommit": null
+      "startCommit": "c4ea81358b20f66cb031d750a79b3de816671d76"
     },
     {
       "n": 3,
@@ -413,13 +413,30 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u2-elements-menu-bundle-clone/p1",
+          "layers": [
+            "M17 bundle",
+            "M27 clone"
+          ],
+          "slugs": [
+            "m17bndcf1",
+            "64bmqf81"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "c4ea81358b20f66cb031d750a79b3de816671d76",
+      "baseCommit": "c4ea81358b20f66cb031d750a79b3de816671d76",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },

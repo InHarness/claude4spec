@@ -21,3 +21,10 @@
 - The OTHERS fly-out (`OthersTrigger`, `FlyoutLink`) is removed; the e2e `sidebar-others-flyout.test.ts` became `sidebar-others-side-menu.test.ts` (same stacking/viewport/active assertions, now against `role="menu"` / `menuitem`).
 - (round 2, rev-0001) The side menu's keydown handler acts only while focus is on its entry or inside its list (`document.activeElement` checked against `triggerRef`/`menuRef`). A hover-opened menu with focus in the editor/an input leaves ↑/↓/Enter/Tab to that field; Esc there closes the menu only through the catalog Popover's own Escape close and focus is not pulled to the entry. The render test opens menus with a focusing click (`openByClick`), as a browser click focuses the button, and a new `[section:l5pkeysm]` test pins the hover-opened/focus-elsewhere case.
 - (round 2, rev-0002, non-blocking, fixed alongside since it is the same handler) Tab/Shift+Tab with focus on a menu item first moves focus to the entry, then closes, so the browser's focus move continues from the entry instead of <body>. rev-0003 (unnamed Popover dialog) left open: non-blocking and outside `only`.
+
+## loop
+- 2026-10-26 after wave 1: the user asked to run all remaining waves without stopping → `build.gates` set to [] (wave gates off); the always-on gates (stuck, blocked(review), waiting, red smoke, next window) still apply.
+
+## u2-elements-menu-bundle-clone/p1
+- `sanitizeConfigForBundle` publishes `elementsMenu` by key presence: present in the project file → copied verbatim (as the loader parsed it, shape only); absent → no key in the bundle (the clone stays on the default flat list). `BUNDLE_SCHEMA_VERSION` stays 4 (additive).
+- `buildClonePatch` applies `elementsMenu` by key presence; `writeConfig` re-runs the shape parser, so a malformed layout in a bundle fails the clone and goes through the existing full rollback instead of being dropped silently.

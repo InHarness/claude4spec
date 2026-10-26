@@ -2,7 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { buildClonePatch, assertCloneWritingStyleAvailable } from './release-import.js';
 import type { BundleConfig } from './release-bundle.js';
 import { DomainError } from './tags.js';
-import { builtinPagesRoot } from '../config.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { builtinPagesRoot, readConfig, writeConfig } from '../config.js';
+import type { ElementsMenuEntry } from '../../shared/elements-menu.js';
 
 /**
  * 0.2.8 (C6/C7): the clone must reproduce the WHOLE sanitized config the bundle
@@ -98,6 +102,31 @@ describe('buildClonePatch — the clone is faithful to its bundle (C6/C7, 0.2.8)
 
   it('leaves entities undefined when the bundle omits it (undefined = all types)', () => {
     expect('entities' in buildClonePatch(bundle(), opts)).toBe(false);
+  });
+
+  /**
+   * 2.1.50 (M27 64bmqf81 step 8): `elementsMenu` is on the sanitized allow-list,
+   * so the clone persists it — written through `writeConfig` into the clone's
+   * config.json and read back unchanged. A bundle without the key leaves the
+   * clone on the default flat list (no key written).
+   */
+  it('[section:64bmqf81] persists the bundle\'s elementsMenu in the clone\'s config, and writes no key when the bundle has none', () => {
+    const elementsMenu: ElementsMenuEntry[] = [
+      { group: 'API', icon: 'plug', types: ['endpoint', 'dto'] },
+      { type: 'diagram', hidden: true },
+    ];
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-clone-menu-'));
+    try {
+      const patch = buildClonePatch(bundle({ elementsMenu }), opts);
+      expect(patch.elementsMenu).toEqual(elementsMenu);
+      writeConfig(cwd, patch);
+      expect(readConfig(cwd).elementsMenu).toEqual(elementsMenu);
+      const onDisk = JSON.parse(fs.readFileSync(path.join(cwd, '.claude4spec', 'config.json'), 'utf8'));
+      expect(onDisk.elementsMenu).toEqual(elementsMenu);
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+    expect('elementsMenu' in buildClonePatch(bundle(), opts)).toBe(false);
   });
 });
 
