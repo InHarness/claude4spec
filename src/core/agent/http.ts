@@ -266,7 +266,9 @@ export async function healthCheck(baseUrl: string, apiBase: string, workspaceNam
       workspaceName !== undefined
         ? `no claude4spec server for workspace \`${workspaceName}\` at \`${baseUrl}\``
         : `no claude4spec server responding at ${baseUrl}`,
-      'start it with `npx @inharness-ai/claude4spec`, or pass --server <url>',
+      workspaceName !== undefined
+        ? 'start it with `npx @inharness-ai/claude4spec`, or pass --server <url>'
+        : 'start it with `npx @inharness-ai/claude4spec` (or check the --server address)',
     );
   }
   let body: unknown;

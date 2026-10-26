@@ -156,7 +156,9 @@ export async function delegatePatch(args: ParsedArgs, path: string, body: unknow
 
 /**
  * 2.1.53 — call a core operation BY NAME, over the project's MCP mount
- * (`/api/projects/:id/mcp`), for operations with no REST channel of their own.
+ * (`/api/projects/:id/mcp`), for operations whose REST channel is missing
+ * (`get_page`, `get_page_outline`) or refuses ahead of the core (`list_pages`'
+ * `/pages/:rootId/list` still answers its own `ROOT_NOT_FOUND`).
  *
  * The page reads (`list_pages`, `get_page`, `get_page_outline`) used to go
  * through the M02 page router `/pages/:rootId/...`, which resolves the root from
@@ -179,8 +181,10 @@ export async function delegateOperation(
   const transport = new StreamableHTTPClientTransport(new URL(`${apiBase}/mcp?profile=ask`));
   let result: Awaited<ReturnType<Client['callTool']>>;
   try {
-    await client.connect(transport);
-    result = await client.callTool({ name: tool, arguments: dropUndefined(input) });
+    // No clock: the SDK's default 60 s request timeout would fail a long read
+    // that the REST channel (`getJson`, no timeout) answered.
+    await client.connect(transport, NO_REQUEST_TIMEOUT);
+    result = await client.callTool({ name: tool, arguments: dropUndefined(input) }, undefined, NO_REQUEST_TIMEOUT);
   } catch (err) {
     throw transportError(err, apiBase);
   } finally {
@@ -213,6 +217,9 @@ export async function delegateOperation(
   }
   return payload;
 }
+
+/** The largest delay `setTimeout` accepts — the SDK has no "no timeout" value. */
+const NO_REQUEST_TIMEOUT = { timeout: 2_147_483_647 };
 
 function dropUndefined(input: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined));

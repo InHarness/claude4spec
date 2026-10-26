@@ -86,7 +86,7 @@ export const askCommand: CliCommandContribution = {
   name: 'ask',
   operation: 'ask',
   executionMode: 'server-delegating',
-  flags: ['ct', 'brief', 'plan', 'thread', 'server', 'effort', 'model'],
+  flags: ['ct', 'brief', 'plan', 'thread', 'effort', 'model'],
   errorCodes: [...SERVER_DELEGATING_CODES, 'INVALID_ARGS', 'RESUME_CONFIG_LOCKED'],
   handler: runAsk_cli,
 };

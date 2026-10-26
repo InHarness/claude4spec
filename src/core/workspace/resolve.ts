@@ -178,7 +178,7 @@ function resolveInServingWorkspace(
   project: string,
   workspace: string | undefined,
 ): ResolvedWorkspaceProject {
-  const ws = workspace ? registry.listWorkspaces().find((w) => w.name === workspace) : undefined;
+  const ws = workspace ? registry.getWorkspace(workspace) : null;
   const hit = ws?.projects.find((p) => p.id === project);
   if (!ws || !hit) {
     const available = ws?.projects.map((p) => p.id) ?? [];
