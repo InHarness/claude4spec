@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { ThreadPromptConfig } from './session-config.js';
 import { nanoid } from 'nanoid';
+import { isChatRole } from '../../shared/entities.js';
 import type {
   ArtifactThreadListItem,
   ChatBackgroundTask,
@@ -495,6 +496,7 @@ export class ChatService {
     planMode = false,
     status: ChatMessageStatus = 'complete'
   ): ChatMessage {
+    if (!isChatRole(role)) throw new DomainError('INTERNAL', `unknown chat_message role '${String(role)}'`);
     const tx = this.db.transaction(() => {
       const info = this.db
         .prepare(
@@ -758,6 +760,21 @@ export class ChatService {
            WHERE id = ? AND initial_architecture_config_json IS NULL`
       )
       .run(JSON.stringify(snapshot), threadId);
+  }
+
+  /**
+   * Id sesji razem ze snapshotem pierwszej tury — w JEDNEJ transakcji, zeby guard
+   * `RESUME_CONFIG_LOCKED` nigdy nie zobaczyl sesji bez punktu odniesienia.
+   */
+  recordSession(
+    threadId: string,
+    sessionId: string,
+    snapshot: Parameters<ChatService['setInitialArchitectureConfig']>[1],
+  ): void {
+    this.db.transaction(() => {
+      this.setLastSessionId(threadId, sessionId);
+      this.setInitialArchitectureConfig(threadId, snapshot);
+    })();
   }
 
   /** Debug-only — NIE w domyslnej projekcji GET /api/threads/:id (jak initial_system_prompt). */

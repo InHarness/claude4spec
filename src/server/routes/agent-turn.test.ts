@@ -93,6 +93,7 @@ import {
   AdapterBackgroundHoldExpiredError,
   AdapterIdleTimeoutError,
   AdapterTimeoutError,
+  AdapterToolPolicyError,
 } from '@inharness-ai/agent-adapters';
 import { abortChildTurns, runAgentTurn, type ActiveAdapter, type AgentTurnDeps, type AgentTurnInput } from './agent-turn.js';
 import { SpecSkillTools } from '../mcp/spec-skill-tools.js';
@@ -160,7 +161,11 @@ function makeDeps() {
     // seeds the one "already in the database"; none means a thread without one.
     getInitialArchitectureConfig: () => (storedSnapshot.json ?? null),
     setLastUsage: () => {},
-    setLastSessionId: () => {},
+    setLastSessionId: (_id: string, _sessionId: string) => {},
+    recordSession(id: string, sessionId: string, snapshot: Record<string, unknown>) {
+      this.setLastSessionId(id, sessionId);
+      this.setInitialArchitectureConfig(id, snapshot);
+    },
     attachTurnUsage: () => {},
     setLastContextSize: () => {},
     attachTurnContextSize: () => {},
@@ -1183,6 +1188,36 @@ describe('runAgentTurn — M17 background tasks (0-1-141-to-next-2)', () => {
   });
 
   /**
+   * 2.1.51: the anchors belong to the turn. A merged turn that produces no main
+   * assistant row (and no tool_result) has nothing to stamp — it must not land
+   * its usage on the previous turn's row.
+   */
+  it('does not stamp a merged turn\'s usage onto the previous turn\'s row', async () => {
+    hoisted.events = [
+      { type: 'text_delta', text: 'first turn' },
+      { type: 'result', sessionId: 's1', usage: { inputTokens: 10, outputTokens: 5 }, contextSize: 15 },
+    ];
+    const { deps } = makeDeps();
+    let drained = false;
+    (deps.chatService as unknown as { popAllQueued: () => Array<{ prompt: string }> }).popAllQueued = () => {
+      if (drained) return [];
+      drained = true;
+      // The merged turn yields a bare `result` — no text, no tool output.
+      hoisted.events = [
+        { type: 'result', sessionId: 's2', usage: { inputTokens: 20, outputTokens: 8 }, contextSize: 28 },
+      ];
+      return [{ prompt: 'queued follow-up' }];
+    };
+    const attach = vi.spyOn(deps.chatService as unknown as { attachTurnUsage: (...a: unknown[]) => void }, 'attachTurnUsage');
+
+    await runAgentTurn(deps, makeInput());
+
+    expect(hoisted.executes).toHaveLength(2);
+    const calls = attach.mock.calls as Array<[string, number, { outputTokens: number }]>;
+    expect(calls.map(([, , u]) => u.outputTokens)).toEqual([5]);
+  });
+
+  /**
    * A task abandoned by cap expiry or abort NEVER receives
    * `background_task_completed` — the contract has no failed/aborted variant. Its
    * row would otherwise read `running` forever, so after a reload the panel would
@@ -1440,24 +1475,68 @@ describe('runAgentTurn — 0.2.109 delegation holds the turn open', () => {
 
 describe('runAgentTurn — 0.2.50 turn-lifecycle contract', () => {
   /**
-   * `adapter_ready` is an INTERNAL delimiter. Forwarding it would put an event
-   * on the wire that renders nothing and that the client's mapper has no branch
-   * for; the client's real "an iteration began" marker is `turn_start`.
+   * 2.1.51: `adapter_ready` is forwarded live and never replayed. The wire copy
+   * carries the adapter name only — `sdkConfig` holds `custom_env` with a
+   * decrypted API key.
    */
-  it('consumes adapter_ready internally instead of forwarding it', async () => {
+  it('forwards adapter_ready live as a name-only frame and keeps it out of the replay', async () => {
     hoisted.events = [
-      { type: 'adapter_ready', adapter: 'claude-code', sdkConfig: { model: 'opus' } },
+      {
+        type: 'adapter_ready',
+        adapter: 'claude-code',
+        sdkConfig: { custom_env: { ANTHROPIC_API_KEY: 'sk-ant-super-secret' } },
+      },
       { type: 'text_delta', text: 'hi' },
       { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+    const activeAdapters = new Map();
+    (deps as unknown as { activeAdapters: Map<string, unknown> }).activeAdapters = activeAdapters;
+    let replaySnapshot: Array<Record<string, unknown>> = [];
+    hoisted.beforeEvent = () => {
+      const active = activeAdapters.get('t1') as { replay: { events: unknown[] } } | undefined;
+      if (active) replaySnapshot = active.replay.events as Array<Record<string, unknown>>;
+    };
+    const emitted: Array<Record<string, unknown>> = [];
+    const input = makeInput();
+    input.onEvent = (e) => emitted.push(e as Record<string, unknown>);
+
+    await runAgentTurn(deps, input);
+    hoisted.beforeEvent = null;
+
+    const ready = emitted.filter((e) => e.type === 'adapter_ready');
+    expect(ready).toEqual([{ type: 'adapter_ready', adapter: 'claude-code' }]);
+    // Before the first text of the turn, never after it.
+    expect(emitted.indexOf(ready[0]!)).toBeLessThan(emitted.findIndex((e) => e.type === 'text_delta'));
+    expect(JSON.stringify(emitted)).not.toContain('sk-ant-super-secret');
+    expect(replaySnapshot.some((e) => e.type === 'adapter_ready')).toBe(false);
+  });
+
+  /**
+   * A refusal the adapter DELIVERS (`AdapterToolPolicyError`) is still exactly
+   * `error` + `done` on the wire: the held `adapter_ready` is dropped.
+   */
+  it('drops adapter_ready when the adapter delivers a tool-policy refusal', async () => {
+    hoisted.events = [
+      { type: 'adapter_ready', adapter: 'claude-code', sdkConfig: {} },
+      {
+        type: 'error',
+        error: new AdapterToolPolicyError('claude-code', {
+          unenforceable: ['shell'],
+          unknownGroups: [],
+          enforceable: [],
+        }),
+        phase: 'init',
+      },
     ];
     const { deps } = makeDeps();
     const emitted: Array<Record<string, unknown>> = [];
     const input = makeInput();
     input.onEvent = (e) => emitted.push(e as Record<string, unknown>);
 
-    await runAgentTurn(deps, input);
+    await expect(runAgentTurn(deps, input)).rejects.toMatchObject({ code: 'TOOL_POLICY_REFUSED' });
 
-    expect(emitted.filter((e) => e.type === 'adapter_ready')).toHaveLength(0);
+    expect(emitted.map((e) => e.type)).toEqual(['error', 'done']);
   });
 
   /**
@@ -1651,11 +1730,17 @@ describe('runAgentTurn — replay buffer byte budget', () => {
   });
 
   it('[ac:ac-bufor-replay-przekraczajacy-budzet-ba] degrades the oldest tool_result entries to a header instead of dropping them', async () => {
+    const toolUse = (id: string) => ({ type: 'tool_use', toolUseId: id, toolName: 'Read', input: {}, isSubagent: false });
     hoisted.events = [
+      toolUse('tu-1'),
       bigResult('tu-1'),
+      toolUse('tu-2'),
       bigResult('tu-2'),
+      toolUse('tu-3'),
       bigResult('tu-3'),
+      toolUse('tu-4'),
       bigResult('tu-4'),
+      toolUse('tu-5'),
       bigResult('tu-5'),
       { type: 'result', sessionId: 's1' },
     ];
@@ -1690,6 +1775,9 @@ describe('runAgentTurn — replay buffer byte budget', () => {
       expect(entry.summary).toBe('');
       expect(entry).toHaveProperty('isSubagent');
     }
+    // 2.1.51: the header names the tool — taken from the paired `tool_use`,
+    // since the adapter's `tool_result` carries no name.
+    expect(degraded[0]!.toolName).toBe('Read');
     // Oldest-first: the newest result is the one a joiner most likely still wants.
     expect(toolResults[0].truncated).toBe(true);
     expect(toolResults[toolResults.length - 1].truncated).toBeUndefined();
@@ -2819,6 +2907,9 @@ describe('runAgentTurn — delivered terminal errors', () => {
       });
 
       expect(seen.filter((e) => e.type === 'error')).toHaveLength(1);
+      // 2.1.51: exactly `error` + `done` — `done` ends the stream on the error
+      // path too, with no `adapter_ready` and no `result`.
+      expect(seen.map((e) => e.type)).toEqual(['error', 'done']);
       // Refused BEFORE dispatch: the adapter was never asked to run.
       expect(hoisted.executes).toHaveLength(0);
     } finally {

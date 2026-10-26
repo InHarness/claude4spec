@@ -898,6 +898,9 @@ describe('TransagentDispatcher — continuation founds a new row (0.2.111)', () 
       expect(err).toMatchObject({ code: 'RESUME_CONFIG_LOCKED' });
       expect((err as DomainError).message).toContain('model');
       expect((err as DomainError).hint).toMatch(/omit `threadId`/);
+      // 2.1.51: the same structured `[{ path, reason }]` the HTTP 409 body carries.
+      const violations = (err as { violations?: Array<{ path: string; reason: string }> }).violations;
+      expect(violations?.some((v) => v.path === 'model' && typeof v.reason === 'string')).toBe(true);
       expect(threadCount()).toBe(before);
     });
 

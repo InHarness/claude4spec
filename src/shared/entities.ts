@@ -668,20 +668,29 @@ export interface SectionIndexEntry {
 
 // --- M05: Chat & Agent ---
 
-export type ChatRole =
-  | 'user'
-  | 'assistant'
-  | 'tool_use'
-  | 'tool_result'
-  | 'user_input_request'
-  | 'user_input_response'
+/**
+ * Every value `chat_message.role` accepts. The column carries no SQL CHECK, so
+ * this list IS the constraint — checked at write time by `ChatService.addMessage`.
+ */
+export const CHAT_ROLES = [
+  'user',
+  'assistant',
+  'tool_use',
+  'tool_result',
+  'user_input_request',
+  'user_input_response',
   /**
    * C21: a runtime warning from the adapter (degraded FS sandbox, ignored
    * execute params). Content is `{ "message": "…" }`, status always 'complete'
-   * — a point event with no streaming phase. `chat_message.role` carries no SQL
-   * CHECK, so this union IS the constraint; no migration accompanies it.
+   * — a point event with no streaming phase.
    */
-  | 'warning';
+  'warning',
+] as const;
+
+export type ChatRole = (typeof CHAT_ROLES)[number];
+
+export const isChatRole = (value: unknown): value is ChatRole =>
+  (CHAT_ROLES as readonly unknown[]).includes(value);
 
 /**
  * M21 generic context discriminator. 'chat' = default (overlay UI, the full MCP

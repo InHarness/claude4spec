@@ -125,6 +125,14 @@ describe('runTransagent — error taxonomy', () => {
     expect(locked.body.hint).toMatch(/fresh banka/);
   });
 
+  it('carries RESUME_CONFIG_LOCKED violations structured in the tool error', async () => {
+    const violations = [{ path: 'model', reason: 'immutable on resume' }];
+    const { body } = await callAndParse(
+      Object.assign(new DomainError('RESUME_CONFIG_LOCKED', 'config changed', 'Spawn a fresh banka'), { violations }),
+    );
+    expect(body.violations).toEqual(violations);
+  });
+
   /** A hint is the half of the error that says which call would have worked. */
   it('forwards a DomainError hint, which the handler used to drop', async () => {
     const { body } = await callAndParse(

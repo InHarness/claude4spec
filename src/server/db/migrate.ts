@@ -64,26 +64,51 @@ export function runMigrations(db: Database.Database): string[] {
   // SQLite's recommended table-rebuild procedure requires foreign keys
   // disabled — otherwise DROP of the old parent table cascade-deletes child
   // rows via ON DELETE CASCADE. `PRAGMA foreign_keys` is a no-op inside a
-  // transaction, so toggle it around the whole batch (each migration still
-  // runs in its own transaction).
-  const fkWasOn = db.pragma('foreign_keys', { simple: true }) === 1;
-  if (fkWasOn) db.pragma('foreign_keys = OFF');
+  // transaction, so it is switched OFF before the batch's single transaction
+  // and back ON after it, followed by `foreign_key_check`.
+  db.pragma('foreign_keys = OFF');
 
   const newlyApplied: string[] = [];
   try {
-    for (const file of pending) {
-      const version = file.replace(/\.sql$/, '');
-      const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf-8');
-      const tx = db.transaction(() => {
-        db.exec(sql);
-        db.prepare('INSERT INTO schema_migrations (version) VALUES (?)').run(version);
-      });
-      tx();
-      newlyApplied.push(version);
-    }
+    // ONE transaction for the whole pending batch: a failure in migration N
+    // rolls back 1..N-1 too, so the ledger never describes a half-upgraded schema.
+    const record = db.prepare('INSERT INTO schema_migrations (version) VALUES (?)');
+    db.transaction(() => {
+      for (const file of pending) {
+        const version = file.replace(/\.sql$/, '');
+        db.exec(fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf-8'));
+        record.run(version);
+        newlyApplied.push(version);
+      }
+    })();
   } finally {
-    if (fkWasOn) db.pragma('foreign_keys = ON');
+    db.pragma('foreign_keys = ON');
   }
+  warnForeignKeyViolations(db, 'migrations');
 
   return newlyApplied;
+}
+
+/**
+ * `PRAGMA foreign_key_check` after a batch that ran with foreign keys OFF.
+ *
+ * Warns instead of throwing: a database upgraded across many releases can carry
+ * orphans that predate this check, and refusing to open it would turn a latent
+ * inconsistency into a project that cannot start.
+ */
+export function warnForeignKeyViolations(db: Database.Database, label: string): void {
+  const violations = db.pragma('foreign_key_check') as Array<{
+    table: string;
+    rowid: number | null;
+    parent: string;
+    fkid: number;
+  }>;
+  if (violations.length === 0) return;
+  const sample = violations
+    .slice(0, 20)
+    .map((v) => `${v.table}#${v.rowid ?? '?'} -> ${v.parent}`)
+    .join(', ');
+  console.warn(
+    `[db] foreign_key_check after ${label}: ${violations.length} violation(s): ${sample}${violations.length > 20 ? ', …' : ''}`,
+  );
 }

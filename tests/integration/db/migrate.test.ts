@@ -67,6 +67,38 @@ describe('runMigrations', () => {
     db.close();
   });
 
+  /**
+   * 2.1.51: a rebuild of a table with incoming `ON DELETE CASCADE` (042 rebuilds
+   * `chat_thread`, which `chat_message` points at) must not delete child rows,
+   * and the batch ends with foreign keys ON and a clean `foreign_key_check`.
+   */
+  it('keeps child rows across a cascade-parent rebuild and re-enables foreign keys', () => {
+    const db = new Database(':memory:');
+    runMigrations(db);
+    db.prepare("INSERT INTO chat_thread (id) VALUES ('t1')").run();
+    db.prepare("INSERT INTO chat_message (thread_id, role, content) VALUES ('t1', 'user', '{}')").run();
+    db.prepare("DELETE FROM schema_migrations WHERE version = '042_chat_thread_drop_context_type_check'").run();
+    db.pragma('foreign_keys = ON');
+
+    expect(runMigrations(db)).toEqual(['042_chat_thread_drop_context_type_check']);
+
+    expect((db.prepare('SELECT COUNT(*) AS n FROM chat_message').get() as { n: number }).n).toBe(1);
+    expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
+    expect(db.pragma('foreign_key_check')).toEqual([]);
+    db.close();
+  });
+
+  it('applies the pending batch atomically: a failing migration rolls back the whole batch', () => {
+    const db = new Database(':memory:');
+    runMigrations(db);
+    db.prepare("DELETE FROM schema_migrations WHERE version IN ('042_chat_thread_drop_context_type_check', '058_spec_release_accepted_shadow')").run();
+    // 058 adds columns that already exist → it fails after 042 has run.
+    expect(() => runMigrations(db)).toThrow();
+    expect(versionsIn(db)).not.toContain('042_chat_thread_drop_context_type_check');
+    expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
+    db.close();
+  });
+
   it('restores PRAGMA foreign_keys after the batch when it was ON before', () => {
     const db = new Database(':memory:');
     db.pragma('foreign_keys = ON');
