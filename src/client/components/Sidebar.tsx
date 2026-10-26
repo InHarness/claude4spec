@@ -37,6 +37,7 @@ import { GitStatusBadge } from './GitStatusBadge.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
 import { useRegistryVersion } from '../core/plugin-host/useRegistryVersion.js';
 import { Popover } from '../host-ui-kit/overlay-feedback/Popover.js';
+import { SidebarSideMenu } from './shell/SidebarSideMenu.js';
 
 interface SidebarProps {
   width: number;
@@ -230,7 +231,8 @@ export function Sidebar({
         <SidebarElements entityCounts={entityCounts} pathname={pathname} />
       </div>
 
-      <OthersTrigger
+      <OthersMenu
+        pathname={pathname}
         todoCount={todoCount}
         linkIssueCount={brokenLinkCount + unresolvedMentionCount}
         brokenLinkCount={brokenLinkCount}
@@ -281,7 +283,7 @@ export function SidebarElements({
               icon={m.sidebarTab!.icon}
               label={m.sidebarTab!.label}
               count={entityCounts[m.type] ?? 0}
-              active={pathname.startsWith(m.pathPrefix)}
+              active={isElementsEntryActive(pathname, [m.pathPrefix])}
               to={m.pathPrefix}
             />
           ))
@@ -296,6 +298,14 @@ export function SidebarElements({
       </div>
     </>
   );
+}
+
+/**
+ * M50 `8h2a734u`: an ELEMENTS entry is active when the route path (without the
+ * project prefix) starts with the route prefix of ANY type the entry covers.
+ */
+export function isElementsEntryActive(pathname: string, pathPrefixes: readonly string[]): boolean {
+  return pathPrefixes.some((prefix) => pathname.startsWith(prefix));
 }
 
 function SectionHeader({ label, right }: { label: string; right?: ReactNode }) {
@@ -831,8 +841,7 @@ function PageRow({
             <MoreHorizontal size={12} />
           </button>
           {/*
-           * The published `Popover`, not a twin of it — same rule as the OTHERS
-           * flyout below: the primitive owns the z-tier, the viewport clamp and the
+           * The published `Popover`, not a twin of it: the primitive owns the z-tier, the viewport clamp and the
            * mousedown/Escape dismissal, and naming any of that here is the anatomy
            * the one-implementation scan looks for.
            */}
@@ -860,146 +869,108 @@ function PageRow({
   );
 }
 
-const OTHERS_PATHS = ['/plans', '/releases', '/todos', '/tags', '/links', '/briefs'];
+/**
+ * OTHERS (M50 `8h2a734u`) — a closed list of 6 items in a fixed order: Plans →
+ * Releases → TODOs → Tags → Links → Briefs. An item is active when the route is
+ * its own (or below it).
+ */
+const OTHERS_ITEMS: ReadonlyArray<{ to: string; icon: LucideIcon; label: string }> = [
+  { to: '/plans', icon: ClipboardList, label: 'Plans' },
+  { to: '/releases', icon: GitCommit, label: 'Releases' },
+  { to: '/todos', icon: StickyNote, label: 'TODOs' },
+  { to: '/tags', icon: Tag, label: 'Tags' },
+  { to: '/links', icon: Link2, label: 'Links' },
+  { to: '/briefs', icon: FileText, label: 'Briefs' },
+];
 
-function OthersTrigger({
+const isOnRoute = (pathname: string, to: string) => pathname === to || pathname.startsWith(`${to}/`);
+
+/**
+ * The OTHERS link at the bottom of the sidebar — it opens the shell's sidebar
+ * side menu (`SidebarSideMenu`), the same mechanism ELEMENTS entries use.
+ */
+function OthersMenu({
+  pathname,
   todoCount,
   linkIssueCount,
   brokenLinkCount,
 }: {
+  pathname: string;
   todoCount: number;
   linkIssueCount: number;
   brokenLinkCount: number;
 }) {
-  const pathname = stripBase(useRouterState({ select: (s) => s.location.pathname }));
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const [open, setOpen] = useState(false);
-  const inOthers = OTHERS_PATHS.some((p) => pathname.startsWith(p));
-
-  const closeMenu = useCallback(() => setOpen(false), []);
+  const extras: Record<string, ReactNode> = {
+    '/todos': todoCount > 0 ? <AmberBadge count={todoCount} /> : null,
+    '/links': (
+      <>
+        {brokenLinkCount > 0 ? <BrokenBadge count={brokenLinkCount} /> : null}
+        {linkIssueCount > 0 ? <AmberBadge count={linkIssueCount} /> : null}
+      </>
+    ),
+  };
+  const items = OTHERS_ITEMS.map((item) => ({
+    ...item,
+    active: isOnRoute(pathname, item.to),
+    extra: extras[item.to],
+  }));
+  const inOthers = items.some((item) => item.active);
 
   return (
-    <>
-      <div className="px-1.5 py-2" style={{ borderTop: '1px solid var(--c-hair)' }}>
-        <button
-          ref={triggerRef}
-          onClick={() => setOpen((v) => !v)}
-          className="w-full flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-md text-[13px] transition text-left"
-          style={{
-            background: inOthers || open ? 'var(--c-accent-soft)' : 'transparent',
-            color: inOthers ? 'var(--c-ink)' : 'var(--c-muted)',
-            fontWeight: inOthers ? 600 : 500,
-            border: `1px solid ${inOthers || open ? 'var(--c-hair-strong)' : 'transparent'}`,
-          }}
-          title="Others (Plans, Releases, TODOs, Tags, Links, Briefs)"
-        >
-          <MoreHorizontal size={13} />
-          <span className="flex-1 truncate">OTHERS</span>
-          <ChevronRight size={12} />
-        </button>
-      </div>
-
-      {/*
-       * M34/L12: the menu is the published `Popover`, not a twin of it. The
-       * primitive supplies the popover z-tier (1100) — which is what keeps the
-       * menu above the plan page's `ActionBar` (900) — plus viewport clamping
-       * and the mousedown/Escape dismissal this component used to hand-roll.
-       * The z-index is deliberately absent here: naming it, even in a comment,
-       * is the anatomy the one-implementation scan looks for.
-       *
-       * `placement="right"` anchors off the trigger's right edge; because the
-       * trigger sits at the bottom of the sidebar the clamp always pulls the
-       * panel up, so the menu still grows upward off the trigger — now without
-       * being able to run off the viewport edge, which the old flyout could.
-       */}
-      <Popover
-        open={open}
-        onClose={closeMenu}
-        anchorRef={triggerRef}
-        placement="right"
-        width={200}
+    <div className="px-1.5 py-2" style={{ borderTop: '1px solid var(--c-hair)' }}>
+      <SidebarSideMenu
+        label="Others"
+        items={items}
+        title="Others (Plans, Releases, TODOs, Tags, Links, Briefs)"
+        triggerClassName="w-full flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-md text-[13px] transition text-left"
+        triggerStyle={(open) => ({
+          background: inOthers || open ? 'var(--c-accent-soft)' : 'transparent',
+          color: inOthers ? 'var(--c-ink)' : 'var(--c-muted)',
+          fontWeight: inOthers ? 600 : 500,
+          border: `1px solid ${inOthers || open ? 'var(--c-hair-strong)' : 'transparent'}`,
+        })}
       >
-        <FlyoutLink to="/plans" icon={ClipboardList} label="Plans" onNavigate={closeMenu} />
-        <FlyoutLink to="/releases" icon={GitCommit} label="Releases" onNavigate={closeMenu} />
-        <FlyoutLink
-          to="/todos"
-          icon={StickyNote}
-          label="TODOs"
-          amberBadge={todoCount > 0 ? todoCount : null}
-          onNavigate={closeMenu}
-        />
-        <FlyoutLink to="/tags" icon={Tag} label="Tags" onNavigate={closeMenu} />
-        <FlyoutLink
-          to="/links"
-          icon={Link2}
-          label="Links"
-          amberBadge={linkIssueCount > 0 ? linkIssueCount : null}
-          brokenCount={brokenLinkCount}
-          onNavigate={closeMenu}
-        />
-        <FlyoutLink to="/briefs" icon={FileText} label="Briefs" onNavigate={closeMenu} />
-      </Popover>
-    </>
+        <MoreHorizontal size={13} />
+        <span className="flex-1 truncate">OTHERS</span>
+        <ChevronRight size={12} />
+      </SidebarSideMenu>
+    </div>
   );
 }
 
-function FlyoutLink({
-  to,
-  icon: I,
-  label,
-  amberBadge,
-  brokenCount,
-  onNavigate,
-}: {
-  to: string;
-  icon: LucideIcon;
-  label: string;
-  amberBadge?: number | null;
-  brokenCount?: number;
-  onNavigate: () => void;
-}) {
+function BrokenBadge({ count }: { count: number }) {
   return (
-    <Link
-      to={to}
-      onClick={onNavigate}
-      className="flex items-center gap-2 px-2 py-1.5 rounded text-[13px]"
-      style={{ color: 'var(--c-ink)', textDecoration: 'none' }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--c-panel)')}
-      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+    <span
+      className="font-mono"
+      style={{
+        fontSize: 9.5,
+        color: '#c45a3b',
+        border: '1px solid #c45a3b',
+        borderRadius: 999,
+        padding: '0 6px',
+        background: 'rgba(196, 90, 59, 0.18)',
+      }}
+      title={`${count} broken`}
     >
-      <I size={13} />
-      <span className="flex-1">{label}</span>
-      {brokenCount && brokenCount > 0 ? (
-        <span
-          className="font-mono"
-          style={{
-            fontSize: 9.5,
-            color: '#c45a3b',
-            border: '1px solid #c45a3b',
-            borderRadius: 999,
-            padding: '0 6px',
-            background: 'rgba(196, 90, 59, 0.18)',
-          }}
-          title={`${brokenCount} broken`}
-        >
-          {brokenCount}
-        </span>
-      ) : null}
-      {amberBadge != null && (
-        <span
-          className="font-mono"
-          style={{
-            fontSize: 9.5,
-            color: '#a87033',
-            border: '1px solid #c99467',
-            borderRadius: 999,
-            padding: '0 6px',
-            background: 'rgba(200, 150, 60, 0.2)',
-          }}
-        >
-          {amberBadge}
-        </span>
-      )}
-    </Link>
+      {count}
+    </span>
+  );
+}
+
+function AmberBadge({ count }: { count: number }) {
+  return (
+    <span
+      className="font-mono"
+      style={{
+        fontSize: 9.5,
+        color: '#a87033',
+        border: '1px solid #c99467',
+        borderRadius: 999,
+        padding: '0 6px',
+        background: 'rgba(200, 150, 60, 0.2)',
+      }}
+    >
+      {count}
+    </span>
   );
 }

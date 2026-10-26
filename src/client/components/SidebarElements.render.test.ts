@@ -66,7 +66,7 @@ vi.mock('../tiptap/mountFrontend.js', () => ({
 
 vi.mock('../runtime/shared-runtime.js', () => ({ sharedRuntimeReady: Promise.resolve() }));
 
-import { SidebarElements } from './Sidebar.js';
+import { SidebarElements, isElementsEntryActive } from './Sidebar.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
 import { PLUGIN_HOST_SETTINGS } from '../core/plugin-host/pluginSettings.js';
 import { bootFrontendPlugins, reloadFrontendPlugins, refreshPluginActivation } from '../runtime/boot-plugins.js';
@@ -201,6 +201,15 @@ describe('Sidebar ELEMENTS follows activation (M50 8h2a734u)', () => {
     expect(server.mounts).toBeGreaterThanOrEqual(2);
     expect(invalidated.length).toBe(2);
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('[section:8h2a734u] an ELEMENTS entry is active when the route path starts with the route prefix of ANY type it covers', () => {
+    const covered = ['/sbx-widgets', '/sbx-gadgets'];
+    expect(isElementsEntryActive('/sbx-gadgets/g-1', covered)).toBe(true);
+    expect(isElementsEntryActive('/sbx-widgets', covered)).toBe(true);
+    expect(isElementsEntryActive('/plans', covered)).toBe(false);
+    // A single-type entry covers only its own prefix.
+    expect(isElementsEntryActive('/sbx-gadgets/g-1', ['/sbx-widgets'])).toBe(false);
   });
 
   it('refreshPluginActivation re-reads activation in this tab on its own', async () => {

@@ -1,5 +1,5 @@
 {
-  "iteration": 3,
+  "iteration": 7,
   "conventions": [
     {
       "label": "L5 (UI) — implementor M50",
@@ -317,13 +317,33 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u3-sidebar-side-menu/p1",
+          "layers": [
+            "L5"
+          ],
+          "slugs": [
+            "ac-cmd-ctrl-klik-pozycji-menu-bocznego-o",
+            "ac-esc-zamyka-otwarte-menu-boczne-sideba",
+            "ac-klik-pozycji-menu-bocznego-sidebara-n",
+            "ac-klik-pozycji-menu-bocznego-sidebara-z",
+            "ac-otwarcie-menu-bocznego-sidebara-zamyk",
+            "ac-po-zamknieciu-menu-bocznego-klawiszem"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "7cdcff034b889c7db2682088a56eca549b0e6d9c",
+      "baseCommit": "e8adbf89da13e4c985f16bb1cd7fc57e4c8bf0f0",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
       "jobs": []
     },
