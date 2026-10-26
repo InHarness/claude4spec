@@ -1195,6 +1195,7 @@ describe('runAgentTurn — M17 background tasks (0-1-141-to-next-2)', () => {
   it('does not stamp a merged turn\'s usage onto the previous turn\'s row', async () => {
     hoisted.events = [
       { type: 'text_delta', text: 'first turn' },
+      { type: 'assistant_message', message: { usage: { inputTokens: 10, outputTokens: 5 } } },
       { type: 'result', sessionId: 's1', usage: { inputTokens: 10, outputTokens: 5 }, contextSize: 15 },
     ];
     const { deps } = makeDeps();
@@ -1204,6 +1205,7 @@ describe('runAgentTurn — M17 background tasks (0-1-141-to-next-2)', () => {
       drained = true;
       // The merged turn yields a bare `result` — no text, no tool output.
       hoisted.events = [
+        { type: 'assistant_message', message: { usage: { inputTokens: 20, outputTokens: 8 } } },
         { type: 'result', sessionId: 's2', usage: { inputTokens: 20, outputTokens: 8 }, contextSize: 28 },
       ];
       return [{ prompt: 'queued follow-up' }];
@@ -1536,7 +1538,8 @@ describe('runAgentTurn — 0.2.50 turn-lifecycle contract', () => {
 
     await expect(runAgentTurn(deps, input)).rejects.toMatchObject({ code: 'TOOL_POLICY_REFUSED' });
 
-    expect(emitted.map((e) => e.type)).toEqual(['error', 'done']);
+    // `connected` is the transport's opening frame, not a turn event.
+    expect(emitted.map((e) => e.type).filter((t) => t !== 'connected')).toEqual(['error', 'done']);
   });
 
   /**
@@ -2909,7 +2912,7 @@ describe('runAgentTurn — delivered terminal errors', () => {
       expect(seen.filter((e) => e.type === 'error')).toHaveLength(1);
       // 2.1.51: exactly `error` + `done` — `done` ends the stream on the error
       // path too, with no `adapter_ready` and no `result`.
-      expect(seen.map((e) => e.type)).toEqual(['error', 'done']);
+      expect(seen.map((e) => e.type).filter((t) => t !== 'connected')).toEqual(['error', 'done']);
       // Refused BEFORE dispatch: the adapter was never asked to run.
       expect(hoisted.executes).toHaveLength(0);
     } finally {
