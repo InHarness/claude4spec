@@ -1,8 +1,14 @@
 import Database from 'better-sqlite3';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { z } from 'zod';
 import { describe, expect, it, vi } from 'vitest';
 import { createReleaseToolsServer } from './index.js';
 import { ReleaseService } from '../../services/release.js';
 import { ReleaseFileStore } from '../../services/release-store.js';
+import { ReleaseIndexerService } from '../../services/release-indexer.js';
+import type { SelfWriteSuppressor } from '../../fs/sources.js';
 import type { GitService } from '../../services/git.js';
 import type { WsEmitter } from '../../ws/project-emitter.js';
 import type { RawDelta, FileDiff, SpecSnapshot } from '../../../shared/entities.js';
@@ -812,6 +818,126 @@ describe('release-tools — the 2.1.26 mcp-tool records', () => {
       created_by: 'user',
       created_at: '2026-08-02T00:00:00.000Z',
       accepted_shadow: { id: 'run-42/spec', tipSha: tip },
+    });
+  });
+
+  it('[ac:ac-release-show-z-liczba-w-releasename-j] release_show with a number in `releaseName` is refused by the input-schema validation (a digit STRING is a name and passes)', () => {
+    const tool = toolOf('release_show')!;
+    const shape = tool.inputSchema as unknown as z.ZodRawShape | z.ZodType;
+    const schema = shape instanceof z.ZodType ? shape : z.object(shape);
+    const numeric = schema.safeParse({ releaseName: 12 });
+    expect(numeric.success).toBe(false);
+    expect(numeric.error!.issues.map((i) => i.path.join('.'))).toEqual(['releaseName']);
+    expect(schema.safeParse({ releaseName: '12' }).success).toBe(true);
+  });
+
+  it('[ac:ac-release-show-z-releasename-initial-je] release_show with `releaseName: "initial"` is refused with RELEASE_NOT_FOUND', async () => {
+    const h = liveHarness();
+    await h.call('release_create', { name: 'v1', description: 'first' });
+    const r = await h.call('release_show', { releaseName: 'initial' });
+    expect(r.isError).toBe(true);
+    expect(r.body.code).toBe('RELEASE_NOT_FOUND');
+    // The real release next to it is addressable — the refusal is the literal's.
+    expect((await h.call('release_show', { releaseName: 'v1' })).isError).toBe(false);
+  });
+
+  describe('a release file in the `releases` root carrying a reserved name', () => {
+    /**
+     * The release file is written into a real `releases` root on disk and
+     * rebuilt into the `spec_release` cache by the release indexer (the boot
+     * rebuild); the tools then read that cache through the live service.
+     */
+    async function withReleaseFiles(names: string[]) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-release-tools-reserved-'));
+      const h = liveHarness();
+      const watcher = { suppress: () => {} } as SelfWriteSuppressor;
+      const store = new ReleaseFileStore(dir, 'releases', watcher);
+      store.ensureRoot();
+      names.forEach((name, i) =>
+        store.write(name, {
+          name,
+          slug: name,
+          description: `file-backed ${name}`,
+          createdAt: `2026-01-0${i + 1}T00:00:00.000Z`,
+          createdBy: 'user',
+          roots: ['pages'],
+        }),
+      );
+      await new ReleaseIndexerService(h.db, store, watcher).indexAll();
+      return { h, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+    }
+
+    const cachedNames = (h: ReturnType<typeof liveHarness>) =>
+      (h.db.prepare('SELECT name FROM spec_release ORDER BY id').all() as Array<{ name: string }>).map((r) => r.name);
+
+    it('[ac:ac-plik-wydania-z-name-initial-w-korzeni] a release file with `name: "initial"` is rebuilt into the spec_release cache and listed by release_list', async () => {
+      const { h, cleanup } = await withReleaseFiles(['initial']);
+      try {
+        expect(cachedNames(h)).toEqual(['initial']);
+        const res = await h.call('release_list', {});
+        expect(res.isError).toBe(false);
+        expect(res.body.total).toBe(1);
+        expect(res.body.releases).toEqual([
+          {
+            id: expect.any(Number),
+            name: 'initial',
+            description: 'file-backed initial',
+            createdBy: 'user',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            acceptedShadow: null,
+          },
+        ]);
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('[ac:ac-plik-wydania-z-name-current-w-korzeni] a release file with `name: "current"` is rebuilt into the spec_release cache and listed by release_list', async () => {
+      const { h, cleanup } = await withReleaseFiles(['current']);
+      try {
+        expect(cachedNames(h)).toEqual(['current']);
+        const res = await h.call('release_list', {});
+        expect(res.isError).toBe(false);
+        expect(res.body.total).toBe(1);
+        expect(res.body.releases).toEqual([
+          {
+            id: expect.any(Number),
+            name: 'current',
+            description: 'file-backed current',
+            createdBy: 'user',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            acceptedShadow: null,
+          },
+        ]);
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('[ac:ac-release-show-z-releasename-initial-pr] release_show with `releaseName: "initial"` while a release named `initial` exists is refused with RELEASE_NOT_FOUND', async () => {
+      const { h, cleanup } = await withReleaseFiles(['initial']);
+      try {
+        // The release exists — it is in the cache and listed…
+        expect((await h.call('release_list', {})).body.releases.map((r: { name: string }) => r.name)).toEqual(['initial']);
+        // …and still cannot be addressed: the literal is refused before any lookup.
+        const r = await h.call('release_show', { releaseName: 'initial' });
+        expect(r.isError).toBe(true);
+        expect(r.body.code).toBe('RELEASE_NOT_FOUND');
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('[ac:ac-release-show-z-releasename-null-przy] release_show with `releaseName: "null"` while a release named `null` exists is refused with RELEASE_NOT_FOUND', async () => {
+      const { h, cleanup } = await withReleaseFiles(['null']);
+      try {
+        expect((await h.call('release_list', {})).body.releases.map((r: { name: string }) => r.name)).toEqual(['null']);
+        const r = await h.call('release_show', { releaseName: 'null' });
+        expect(r.isError).toBe(true);
+        expect(r.body.code).toBe('RELEASE_NOT_FOUND');
+      } finally {
+        cleanup();
+      }
     });
   });
 

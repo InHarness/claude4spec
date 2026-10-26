@@ -1,5 +1,5 @@
 {
- "iteration": 11,
+ "iteration": 12,
  "conventions": [
   {
    "label": "L4 (API)",
@@ -802,7 +802,7 @@
     }
    ],
    "wave": 2,
-   "status": "in-progress",
+   "status": "verified",
    "portions": [
     {
      "name": "u5-m17-accepted-shadow-and-release-list-ui/p1-l2-l5",
@@ -822,52 +822,18 @@
       "ac-udane-przyjecie-dodaje-dokladnie-jede",
       "section:m17ui001"
      ],
-     "status": "pending",
-     "rounds": 4,
+     "status": "implemented",
+     "rounds": 5,
      "partial": 0,
-     "uncovered": [
-      "ac-plik-wydania-z-name-initial-w-korzeni",
-      "ac-plik-wydania-z-name-current-w-korzeni",
-      "ac-release-show-z-liczba-w-releasename-j",
-      "ac-release-show-z-releasename-initial-je",
-      "ac-release-show-z-releasename-initial-pr",
-      "ac-release-show-z-releasename-null-przy",
-      "ac-trasa-releases-nazwa-otwiera-widok-de",
-      "ac-po-zmianie-nazwy-inline-trasa-detalu"
-     ],
-     "only": [
-      {
-       "slug": "ac-plik-wydania-z-name-initial-w-korzeni"
-      },
-      {
-       "slug": "ac-plik-wydania-z-name-current-w-korzeni"
-      },
-      {
-       "slug": "ac-release-show-z-liczba-w-releasename-j"
-      },
-      {
-       "slug": "ac-release-show-z-releasename-initial-je"
-      },
-      {
-       "slug": "ac-release-show-z-releasename-initial-pr"
-      },
-      {
-       "slug": "ac-release-show-z-releasename-null-przy"
-      },
-      {
-       "slug": "ac-trasa-releases-nazwa-otwiera-widok-de"
-      },
-      {
-       "slug": "ac-po-zmianie-nazwy-inline-trasa-detalu"
-      }
-     ]
+     "uncovered": [],
+     "only": []
     }
    ],
    "startCommit": "354fe2cfeb7beb8f682e02d7e6495c5ecf9ddfb3",
-   "baseCommit": "354fe2cfeb7beb8f682e02d7e6495c5ecf9ddfb3",
+   "baseCommit": "b75c7c2d25c7515d9e8c986b902433b6a90bf1df",
    "rounds": {
     "review": 0,
-    "unit": 4
+    "unit": 5
    },
    "jobs": []
   }
