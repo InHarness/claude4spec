@@ -1,5 +1,5 @@
 {
- "iteration": 10,
+ "iteration": 11,
  "conventions": [
   {
    "label": "L4 (API)",
@@ -655,17 +655,17 @@
       "ac-m28-jest-jedynym-wlascicielem-danych-sta"
      ],
      "status": "implemented",
-     "rounds": 1,
+     "rounds": 2,
      "partial": 0,
      "uncovered": [],
      "only": []
     }
    ],
-   "startCommit": "02e1e771bb24ce53fc992519d3374ec60bad2bba",
-   "baseCommit": "02e1e771bb24ce53fc992519d3374ec60bad2bba",
+   "startCommit": "354fe2cfeb7beb8f682e02d7e6495c5ecf9ddfb3",
+   "baseCommit": "354fe2cfeb7beb8f682e02d7e6495c5ecf9ddfb3",
    "rounds": {
     "review": 0,
-    "unit": 1
+    "unit": 2
    },
    "jobs": []
   },
@@ -802,7 +802,7 @@
     }
    ],
    "wave": 2,
-   "status": "verified",
+   "status": "in-progress",
    "portions": [
     {
      "name": "u5-m17-accepted-shadow-and-release-list-ui/p1-l2-l5",
@@ -822,15 +822,49 @@
       "ac-udane-przyjecie-dodaje-dokladnie-jede",
       "section:m17ui001"
      ],
-     "status": "implemented",
+     "status": "pending",
      "rounds": 4,
      "partial": 0,
-     "uncovered": [],
-     "only": []
+     "uncovered": [
+      "ac-plik-wydania-z-name-initial-w-korzeni",
+      "ac-plik-wydania-z-name-current-w-korzeni",
+      "ac-release-show-z-liczba-w-releasename-j",
+      "ac-release-show-z-releasename-initial-je",
+      "ac-release-show-z-releasename-initial-pr",
+      "ac-release-show-z-releasename-null-przy",
+      "ac-trasa-releases-nazwa-otwiera-widok-de",
+      "ac-po-zmianie-nazwy-inline-trasa-detalu"
+     ],
+     "only": [
+      {
+       "slug": "ac-plik-wydania-z-name-initial-w-korzeni"
+      },
+      {
+       "slug": "ac-plik-wydania-z-name-current-w-korzeni"
+      },
+      {
+       "slug": "ac-release-show-z-liczba-w-releasename-j"
+      },
+      {
+       "slug": "ac-release-show-z-releasename-initial-je"
+      },
+      {
+       "slug": "ac-release-show-z-releasename-initial-pr"
+      },
+      {
+       "slug": "ac-release-show-z-releasename-null-przy"
+      },
+      {
+       "slug": "ac-trasa-releases-nazwa-otwiera-widok-de"
+      },
+      {
+       "slug": "ac-po-zmianie-nazwy-inline-trasa-detalu"
+      }
+     ]
     }
    ],
-   "startCommit": "2dc3faf09e815f0c9a8cd902b6c0082a7f55ff55",
-   "baseCommit": "29941f9dce76b3dc27d13dffbf2229943ad5389a",
+   "startCommit": "354fe2cfeb7beb8f682e02d7e6495c5ecf9ddfb3",
+   "baseCommit": "354fe2cfeb7beb8f682e02d7e6495c5ecf9ddfb3",
    "rounds": {
     "review": 0,
     "unit": 4

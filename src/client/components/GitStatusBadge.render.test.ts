@@ -222,3 +222,109 @@ describe('header branch switcher — Fetch and Sync', () => {
     expect(q('[data-git-entry-hint]')?.textContent).toBe('A background task is running — try again in a moment');
   });
 });
+
+/**
+ * 2.1.49 (endpoints get-api-git-branches / post-api-git-checkout) — the
+ * interactive branch switcher: the dropdown lists the local branches from
+ * `GET /api/git/branches` with the current one marked, a checkout spins the
+ * entry, and every non-`switched` outcome is an English inline hint or toast.
+ */
+describe('header branch switcher — branch list and checkout', () => {
+  const branchButton = (name: string) =>
+    [...host.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === name) ?? null;
+  const checkoutBodies = () =>
+    vi
+      .mocked(fetch)
+      .mock.calls.filter(([url]) => String(url).endsWith('/git/checkout'))
+      .map(([, init]) => JSON.parse(String((init as RequestInit | undefined)?.body ?? 'null')));
+
+  async function openList() {
+    await click(q('[data-git-entry-toggle]'));
+    await settle();
+  }
+
+  it('[ac:ac-interaktywny-gitstatusbadge-po-kliknie] a click opens the local branches with `current` marked; a checkout spins the entry; dirty-blocked / not-found / busy / error come back as English hints and toasts', async () => {
+    await mount();
+    expect(branchButton('main')).toBeNull(); // closed until clicked
+    await openList();
+
+    // The local branches, the current one marked (accent + bold) and not pickable.
+    const main = branchButton('main');
+    const feature = branchButton('feature');
+    expect(main).not.toBeNull();
+    expect(feature).not.toBeNull();
+    expect(main!.disabled).toBe(true);
+    expect(main!.style.fontWeight).toBe('600');
+    expect(feature!.disabled).toBe(false);
+    expect(feature!.style.fontWeight).toBe('400');
+
+    // Spinner while the checkout runs; the list is locked.
+    const pending = deferred<unknown>();
+    routes['/api/git/checkout'] = () => pending.promise;
+    expect(q('[data-git-spinner]')).toBeNull();
+    await click(feature);
+    expect(q('[data-git-spinner]')).not.toBeNull();
+    expect(branchButton('feature')!.disabled).toBe(true);
+    expect(checkoutBodies()).toEqual([{ branch: 'feature' }]);
+
+    // dirty-blocked → an inline hint in the open list.
+    pending.resolve({ status: 'dirty-blocked', branch: null, message: 'pages/a.md is modified' });
+    await settle();
+    expect(q('[data-git-spinner]')).toBeNull();
+    expect(q('[data-git-list-hint]')?.textContent).toBe('Commit or stash your changes before switching branches');
+    expect(reload.calls).toBe(0);
+
+    // not-found → a warning toast, the list closes.
+    routes['/api/git/checkout'] = async () => ({ status: 'not-found', branch: null, message: 'no such branch' });
+    await click(branchButton('feature'));
+    await settle();
+    expect(toasts).toContainEqual(expect.objectContaining({ variant: 'warning', message: 'Branch no longer exists' }));
+    expect(branchButton('feature')).toBeNull();
+
+    // busy → an inline hint at the entry.
+    routes['/api/git/checkout'] = async () => ({ status: 'busy', branch: null, message: null });
+    await openList();
+    await click(branchButton('feature'));
+    await settle();
+    expect(q('[data-git-entry-hint]')?.textContent).toBe('A background task is running — try again in a moment');
+
+    // error → an error toast carrying git's message, the list closes (busy left it open).
+    routes['/api/git/checkout'] = async () => ({
+      status: 'error',
+      branch: null,
+      message: 'untracked working tree files would be overwritten by checkout',
+    });
+    expect(branchButton('feature')).not.toBeNull();
+    await click(branchButton('feature'));
+    await settle();
+    expect(toasts).toContainEqual(
+      expect.objectContaining({ variant: 'error', message: 'untracked working tree files would be overwritten by checkout' }),
+    );
+    expect(branchButton('feature')).toBeNull();
+    expect(reload.calls).toBe(0);
+  });
+
+  it('[ac:ac-w-detached-head-gitstatusbadge-pokazuj] on a detached HEAD the badge still opens the branch list (current null, branches non-empty) and a pick checks the branch out', async () => {
+    status = { ...baseStatus, branch: null, ahead: null, behind: null };
+    routes['/api/git/branches'] = async () => ({ current: null, branches: ['main', 'feature'] });
+    routes['/api/git/checkout'] = async () => ({ status: 'switched', branch: 'main', message: null });
+    await mount();
+
+    expect(q('[data-git-entry-toggle]')?.textContent).toContain('detached HEAD');
+    await openList();
+
+    // Not a read-only fallback: every branch is listed and pickable, none is current.
+    const main = branchButton('main');
+    const feature = branchButton('feature');
+    expect(main).not.toBeNull();
+    expect(feature).not.toBeNull();
+    expect(main!.disabled).toBe(false);
+    expect(feature!.disabled).toBe(false);
+    expect(host.textContent).not.toContain('No local branches');
+
+    await click(main);
+    await settle();
+    expect(checkoutBodies()).toEqual([{ branch: 'main' }]);
+    expect(reload.calls).toBe(1); // switched → the project route reloads
+  });
+});

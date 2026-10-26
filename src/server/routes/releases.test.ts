@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
 import { ReleaseService } from '../services/release.js';
 import { releasesRouter } from './releases.js';
+import { gitRouter } from './git.js';
 import { GitService } from '../services/git.js';
 import { errorHandler } from './errors.js';
 import { releaseDiffOperation, releaseListOperation, releaseShowOperation } from '../services/release-operations.js';
@@ -560,6 +561,36 @@ describe('PATCH /api/releases/:name — gitSync of the pull commit (M17 + M28)',
 
     expect(pull.status).toBe(200);
     expect(pull.body.gitSync).toEqual({ status: 'skipped' });
+  });
+
+  it('[ac:ac-gdy-repo-zniknelo-miedzy-akcjami-przeni] the repository vanishing between actions (`.git` removed) → GET /api/git/status reports detected: false, the next release answers gitSync null and the pull gitSync { status: "skipped" } — no error anywhere', async () => {
+    initRepo();
+    writeProjectConfig({ enabled: true });
+    mount();
+    const status = express()
+      .use('/api/git', gitRouter(new GitService(cwd, [path.join(cwd, 'pages')])))
+      .use(errorHandler);
+    const first = await request(app).post('/api/releases').send({ name: 'v1', description: 'first cut' });
+    expect(first.status).toBe(201);
+    expect(first.body.gitSync).toMatchObject({ status: 'committed' });
+    expect((await request(status).get('/api/git/status')).body.detected).toBe(true);
+
+    fs.rmSync(path.join(cwd, '.git'), { recursive: true, force: true }); // the repository is gone
+
+    const after = await request(status).get('/api/git/status');
+    expect(after.status).toBe(200);
+    expect(after.body.detected).toBe(false);
+    expect(after.body.rootPath).toBeNull();
+
+    fs.writeFileSync(path.join(cwd, 'pages', 'b.md'), '# b');
+    const second = await request(app).post('/api/releases').send({ name: 'v2', description: 'second cut' });
+    expect(second.status).toBe(201);
+    expect(second.body).toHaveProperty('gitSync', null);
+
+    const pull = await request(app).patch('/api/releases/v2').send({ assignUnreleased: true });
+    expect(pull.status).toBe(200);
+    expect(pull.body.gitSync).toEqual({ status: 'skipped' });
+    expect(fs.existsSync(path.join(cwd, '.git'))).toBe(false); // nothing re-created the repository
   });
 
   it('[ac:ac-wariant-error-gitcommitresult-gitpushres] a failed git commit answers gitSync { status: error, message } plus the additive recovery { operation, reason, gitStderr, intentPrompt } — operation commit-on-release on createRelease, pull on updateRelease', async () => {
