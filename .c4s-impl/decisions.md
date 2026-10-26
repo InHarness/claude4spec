@@ -1,0 +1,8 @@
+# Decisions
+
+## setup
+- entityTypes carried over from earlier loops where the type recurs (`ac`, `code-snippet`, `dto`, `endpoint`, `mcp-tool`, `ui-view` built/criteria; `module-dependency` context; catalog payload versions unchanged), with `inCode`/`verify` re-aimed at this window's code (M28 git service + git routes, M17 release service + release MCP tools + release detail screen). No `per-entity` types → no entityParts. Approved by the user with the plan.
+- conventions: four lines (L4, L5, L7, user-jobs address). Every recipe and convention address was checked against the section lists (`--from 2.1.48` for change reads, `--from initial --to 2.1.49` for context): all offsets 0-based and all anchors match — no off-by-one.
+- user jobs: the brief's jobs address (`pages/SKILL.md` §13, `oq23nb0j`) holds only the spreadsheet `moduly-feature` — a module table, not user jobs → `jobs: []` everywhere; the system verifier works from the units' criteria. Recorded as non-blocking deviation dev-0001 (shipped as a patch at the end).
+- release.json: the `ask` rows answered as in 2.1.48 (user confirmed): tests only in env-runner (full `npm test` + `npm run test:e2e` once, at system verification), filtered = static reading + `npm run typecheck`, waiting recipient = the user in this session. startMode `resume` (delta window).
+- Build overrides carried over to all four prompts (empty `verifies`, retired criteria, deletions, `not yet`, removal without alias, static-verification cautions, dead code and performance blocking); dropped the 2.1.48-specific "whole file past budget" and "refused save" rules; added fake timers for the suppression limit and temp-repo cleanup to the static cautions.

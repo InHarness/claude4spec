@@ -1,0 +1,793 @@
+{
+ "iteration": 0,
+ "conventions": [
+  {
+   "label": "L4 (API)",
+   "key": "pages/layers/L4-api.md",
+   "offset": 2,
+   "anchor": "pondhd6o"
+  },
+  {
+   "label": "L5 (UI)",
+   "key": "pages/layers/L5-ui.md",
+   "offset": 2,
+   "anchor": "tehej2wz"
+  },
+  {
+   "label": "L7 (File Change Reactions)",
+   "key": "pages/layers/L7-file-change-reactions.md",
+   "offset": 3,
+   "anchor": "3nzulmvf"
+  },
+  {
+   "label": "User jobs table, for the system verifier",
+   "key": "pages/SKILL.md",
+   "offset": 13,
+   "anchor": "oq23nb0j"
+  }
+ ],
+ "waves": [
+  {
+   "n": 1,
+   "units": [
+    "u1-m28-repo-lock-merge-primitives",
+    "u3-m40-operation-suppression-limit",
+    "u4-m17-create-release-channel-hook"
+   ],
+   "startCommit": null
+  },
+  {
+   "n": 2,
+   "units": [
+    "u2-m28-status-recovery-surface",
+    "u5-m17-accepted-shadow-and-release-list-ui"
+   ],
+   "startCommit": null
+  }
+ ],
+ "units": [
+  {
+   "id": "u1-m28-repo-lock-merge-primitives",
+   "goal": "Blokada repozytorium M28 działa przez wywołanie zwrotne z zasięgiem (zajęta blokada daje brak wyniku zamiast czekania), a commit wydania i commit ogólny mogą wykonać się pod blokadą trzymaną przez wołającego. Prymitywy scalenia do indeksu przy przyjęciu cienia przyjmują trzymaną blokadę, dostają listę zmienionych ścieżek od wołającego i nigdy nie rzucają. Porównanie refów przyjmuje po prawej stronie drzewo i zwraca listę plików ze statusem. Odczyt statusu repo daje pusty wynik bez repo lub przy wyłączonym przełączniku. Wyszukiwanie markera wydania wymusza porządek topologiczny.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m28-git-sync.md",
+      "change": {
+       "offset": 9,
+       "limit": 1,
+       "anchors": [
+        "57bep23m"
+       ]
+      },
+      "context": {
+       "offset": 1,
+       "limit": 1,
+       "anchors": [
+        "incf3qhp"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m28-git-sync.md",
+      "change": {
+       "offset": 16,
+       "limit": 3,
+       "anchors": [
+        "ezudoqef",
+        "es9w55mr",
+        "m28aug01"
+       ]
+      },
+      "context": {
+       "offset": 3,
+       "limit": 3,
+       "anchors": [
+        "snn15dck",
+        "eu1rffp6",
+        "43k2laa1"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m28-git-sync.md",
+      "context": {
+       "offset": 15,
+       "limit": 2,
+       "anchors": [
+        "hx3ecmcl",
+        "57bep23m"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m28-git-sync.md",
+      "context": {
+       "offset": 25,
+       "limit": 3,
+       "anchors": [
+        "ng0h4t5o",
+        "ezudoqef",
+        "es9w55mr"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m28-git-sync.md",
+      "context": {
+       "offset": 36,
+       "limit": 1,
+       "anchors": [
+        "m28aug01"
+       ]
+      }
+     }
+    ],
+    "entities": [
+     {
+      "type": "code-snippet",
+      "slugs": [
+       "git-service-contract"
+      ]
+     }
+    ]
+   },
+   "dependsOn": [],
+   "wave": 1,
+   "status": "pending",
+   "portions": [],
+   "startCommit": null,
+   "baseCommit": null,
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  },
+  {
+   "id": "u3-m40-operation-suppression-limit",
+   "goal": "Tłumienie zdarzeń plików na czas operacji ma nazwany górny limit, po którego upływie wygasa samo z ostrzeżeniem w logu podającym wartość limitu. Pierwszym użytkownikiem tego tłumienia jest przyjęcie cienia (M17). Jednostka zamyka też obserwowalne przypadki brzegowe runtime'u obserwacji plików, teraz zapisane jako kryteria: zapis własny bez zmiany bajtów nadal odpala łańcuch, zapis z zewnątrz w trakcie operacji jest połykany, zamknięcie mountu nie przerywa pełnej odbudowy, błąd odczytu jednego subskrybenta nie zatrzymuje dispatchu.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m40-file-watch-runtime.md",
+      "change": {
+       "offset": 0,
+       "limit": 1,
+       "anchors": [
+        "c38qf5p5"
+       ]
+      },
+      "context": {
+       "offset": 1,
+       "limit": 2,
+       "anchors": [
+        "21j8a8rx",
+        "lezr5lgy"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m40-file-watch-runtime.md",
+      "context": {
+       "offset": 6,
+       "limit": 1,
+       "anchors": [
+        "t4euqrks"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m40-file-watch-runtime.md",
+      "context": {
+       "offset": 9,
+       "limit": 1,
+       "anchors": [
+        "tuy3l3eu"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m40-file-watch-runtime.md",
+      "context": {
+       "offset": 11,
+       "limit": 5,
+       "anchors": [
+        "l1h0puma",
+        "v90cvq22",
+        "j37qjvvh",
+        "c38qf5p5",
+        "h78z773w"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m40-file-watch-runtime.md",
+      "context": {
+       "offset": 17,
+       "limit": 1,
+       "anchors": [
+        "zkxf6s7o"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m40-file-watch-runtime.md",
+      "context": {
+       "offset": 24,
+       "limit": 2,
+       "anchors": [
+        "antfe82l",
+        "4liizslf"
+       ]
+      }
+     }
+    ],
+    "entities": [
+     {
+      "type": "ac",
+      "slugs": [
+       "ac-tlumienie-na-czas-operacji-niezdjete",
+       "ac-zapis-wlasny-ktory-nie-zmienil-bajtow",
+       "ac-zapis-spoza-aplikacji-do-sciezki-tlum",
+       "ac-zamkniecie-mountu-w-trakcie-pelnej-od",
+       "ac-blad-odczytu-pliku-w-fazie-jednego-su"
+      ]
+     }
+    ]
+   },
+   "dependsOn": [],
+   "wave": 1,
+   "status": "pending",
+   "portions": [],
+   "startCommit": null,
+   "baseCommit": null,
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  },
+  {
+   "id": "u4-m17-create-release-channel-hook",
+   "goal": "Tworzenie wydania zapisuje wiersz cache wydań w samej transakcji, a nieudany zapis pliku metadanych po zatwierdzeniu transakcji jest logowany bez wywracania operacji (bez pliku nie ma markera, diff wydania spada na tor SQLite). Hook commit-on-release woła kanał tworzenia wydania (trasa REST i narzędzie MCP) po powrocie z serwisu, niezależnie od wyniku zapisu pliku. Zmiany encji wniesione scaleniem synchronizacji git nie dostają wierszy w historii wersji encji. Usunięcia: znika osobny krok odbudowy cache po zapisie pliku (reakcja odbudowy obsługuje już tylko pliki wniesione z zewnątrz) i wywołanie hooka git z wnętrza serwisu.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+      "change": {
+       "offset": 11,
+       "limit": 1,
+       "anchors": [
+        "spdg8mon"
+       ]
+      },
+      "context": {
+       "offset": 0,
+       "limit": 1,
+       "anchors": [
+        "x62r1cd9"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+      "change": {
+       "offset": 14,
+       "limit": 1,
+       "anchors": [
+        "w6cocvik"
+       ]
+      },
+      "context": {
+       "offset": 2,
+       "limit": 2,
+       "anchors": [
+        "6if4oa3e",
+        "2je62eu5"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+      "change": {
+       "offset": 32,
+       "limit": 1,
+       "anchors": [
+        "ry0bx4ji"
+       ]
+      },
+      "context": {
+       "offset": 11,
+       "limit": 1,
+       "anchors": [
+        "ry0bx4ji"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+      "context": {
+       "offset": 14,
+       "limit": 1,
+       "anchors": [
+        "hybasevj"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+      "context": {
+       "offset": 19,
+       "limit": 7,
+       "anchors": [
+        "tl7cqrzg",
+        "spdg8mon",
+        "an568j27",
+        "aybs7x89",
+        "w6cocvik",
+        "18dkumzo",
+        "trr01evi"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+      "context": {
+       "offset": 29,
+       "limit": 1,
+       "anchors": [
+        "m17reldisk"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+      "context": {
+       "offset": 33,
+       "limit": 1,
+       "anchors": [
+        "skdacugq"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+      "context": {
+       "offset": 36,
+       "limit": 1,
+       "anchors": [
+        "m17reldiff"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+      "context": {
+       "offset": 1,
+       "limit": 2,
+       "anchors": [
+        "xkpt256d",
+        "m17zal001"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+      "context": {
+       "offset": 25,
+       "limit": 1,
+       "anchors": [
+        "m17api401"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+      "context": {
+       "offset": 31,
+       "limit": 2,
+       "anchors": [
+        "m17l13rt",
+        "1dufnk2n"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+      "context": {
+       "offset": 34,
+       "limit": 1,
+       "anchors": [
+        "yg8keaew"
+       ]
+      }
+     }
+    ],
+    "entities": [
+     {
+      "type": "code-snippet",
+      "slugs": [
+       "release-service-contract"
+      ]
+     },
+     {
+      "type": "ac",
+      "slugs": [
+       "ac-gdy-zapis-pliku-metadanych-po-zatwier",
+       "ac-encja-zmieniona-scaleniem-sync-z-wyni"
+      ]
+     }
+    ]
+   },
+   "dependsOn": [],
+   "wave": 1,
+   "status": "pending",
+   "portions": [],
+   "startCommit": null,
+   "baseCommit": null,
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  },
+  {
+   "id": "u2-m28-status-recovery-surface",
+   "goal": "Okno naprawy błędu git rozróżnia operacje po zamkniętym zbiorze wartości (commit wydania, pull, push), a nieudane przerwanie scalenia przy przyjęciu cienia jedzie na operacji commitu wydania. Zmiany stanu repozytorium M28 docierają do otwartych kart przez zdarzenia serwera lokalnego (M49). Odczyty statusu i gałęzi obsługują teraz kartę ustawień git i przełącznik gałęzi w nagłówku. Usunięcie: kryterium o wyłącznej własności danych statusu przez komponent odznaki przestaje obowiązywać (deprecated), więc jego test znika.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m28-git-sync.md",
+      "change": {
+       "offset": 13,
+       "limit": 1,
+       "anchors": [
+        "snn15dck"
+       ]
+      },
+      "context": {
+       "offset": 1,
+       "limit": 1,
+       "anchors": [
+        "incf3qhp"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m28-git-sync.md",
+      "change": {
+       "offset": 19,
+       "limit": 1,
+       "anchors": [
+        "u5vl07ch"
+       ]
+      },
+      "context": {
+       "offset": 3,
+       "limit": 1,
+       "anchors": [
+        "snn15dck"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m28-git-sync.md",
+      "context": {
+       "offset": 6,
+       "limit": 1,
+       "anchors": [
+        "mm4bidri"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m28-git-sync.md",
+      "context": {
+       "offset": 23,
+       "limit": 1,
+       "anchors": [
+        "ja538czb"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m28-git-sync.md",
+      "context": {
+       "offset": 36,
+       "limit": 1,
+       "anchors": [
+        "m28aug01"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m28-git-sync.md",
+      "context": {
+       "offset": 39,
+       "limit": 5,
+       "anchors": [
+        "rhj0h9rl",
+        "3buwjux7",
+        "8i5qf0xx",
+        "u5vl07ch",
+        "846dmtbu"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m28-git-sync.md",
+      "context": {
+       "offset": 48,
+       "limit": 2,
+       "anchors": [
+        "4cp5vqa6",
+        "fxcropku"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m28-git-sync.md",
+      "context": {
+       "offset": 52,
+       "limit": 1,
+       "anchors": [
+        "squlomnc"
+       ]
+      }
+     }
+    ],
+    "entities": [
+     {
+      "type": "dto",
+      "slugs": [
+       "git-status-response",
+       "git-branches-response"
+      ]
+     },
+     {
+      "type": "endpoint",
+      "slugs": [
+       "get-api-git-status",
+       "get-api-git-branches"
+      ]
+     },
+     {
+      "type": "module-dependency",
+      "slugs": [
+       "m28-requires-m49"
+      ]
+     },
+     {
+      "type": "ac",
+      "slugs": [
+       "ac-gdy-adne-repo-git-nie-jest-wykryte-w-pa",
+       "ac-m28-jest-jedynym-wlascicielem-danych-sta"
+      ]
+     }
+    ]
+   },
+   "dependsOn": [
+    {
+     "unit": "u1-m28-repo-lock-merge-primitives",
+     "why": "typy wyniku błędu z polem operacji i pusty status bez repo pochodzą z kontraktu, który buduje u1"
+    }
+   ],
+   "wave": 2,
+   "status": "pending",
+   "portions": [],
+   "startCommit": null,
+   "baseCommit": null,
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  },
+  {
+   "id": "u5-m17-accepted-shadow-and-release-list-ui",
+   "goal": "Wydanie przyjmujące cień pokazuje przyjęty cień wszędzie, gdzie się je czyta: w wierszach listy i w szczegółach wydania zwracanych przez narzędzia MCP oraz w nagłówku ekranu szczegółów wydania. Lista wydań w UI ma własny klucz zapytania, który unieważnia zmiana pliku w korzeniu wydań, mutacje tworzenia, edycji i pushu oraz sukces przyjęcia cienia (razem z listą cieni i podglądem cienia, od razu po odpowiedzi). Otwarte karty dowiadują się o nowych i edytowanych wydaniach oraz o przyjęciu cienia przez zdarzenia serwera lokalnego (M49). Kryteria przyjęcia cienia (liczba wierszy wersji stron i encji po sukcesie i po porażce, plik wydania niosący SHA tipu) wskazują teraz weryfikowane tabele i DTO, a jedno z nich staje się wymaganiem.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m17-snapshots-releases/L5-ui.md",
+      "change": "all"
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+      "context": {
+       "offset": 11,
+       "limit": 3,
+       "anchors": [
+        "ry0bx4ji",
+        "mghvzn0w",
+        "qi04ao7g"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+      "context": {
+       "offset": 26,
+       "limit": 2,
+       "anchors": [
+        "wh8x023p",
+        "g4rsukyw"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+      "context": {
+       "offset": 32,
+       "limit": 1,
+       "anchors": [
+        "2e1no4v9"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+      "context": {
+       "offset": 47,
+       "limit": 4,
+       "anchors": [
+        "aae2vgem",
+        "nk344dz5",
+        "uq78vxm4",
+        "3qrdxxh2"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+      "context": {
+       "offset": 1,
+       "limit": 2,
+       "anchors": [
+        "xkpt256d",
+        "m17zal001"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+      "context": {
+       "offset": 17,
+       "limit": 1,
+       "anchors": [
+        "rnwev4kg"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m40-file-watch-runtime.md",
+      "context": {
+       "offset": 14,
+       "limit": 1,
+       "anchors": [
+        "c38qf5p5"
+       ]
+      }
+     }
+    ],
+    "entities": [
+     {
+      "type": "mcp-tool",
+      "slugs": [
+       "release-tools-release-list",
+       "release-tools-release-show"
+      ]
+     },
+     {
+      "type": "ui-view",
+      "slugs": [
+       "release-detail"
+      ]
+     },
+     {
+      "type": "module-dependency",
+      "slugs": [
+       "m17-requires-m49"
+      ]
+     },
+     {
+      "type": "ac",
+      "slugs": [
+       "ac-plik-wydania-przyjmujacego-cien-niesi-2",
+       "ac-po-nieudanym-przyjeciu-entity-version",
+       "ac-po-nieudanym-przyjeciu-liczba-wierszy",
+       "ac-udane-przyjecie-dodaje-dokladnie-jede"
+      ]
+     }
+    ]
+   },
+   "dependsOn": [
+    {
+     "unit": "u1-m28-repo-lock-merge-primitives",
+     "why": "przyjęcie cienia scala do indeksu i przerywa scalenie pod trzymaną blokadą przez nowe sygnatury prymitywów"
+    },
+    {
+     "unit": "u3-m40-operation-suppression-limit",
+     "why": "przyjęcie tłumi zdarzenia scalonych ścieżek na czas operacji z limitem"
+    },
+    {
+     "unit": "u4-m17-create-release-channel-hook",
+     "why": "wydanie scalające idzie przez tworzenie wydania z cache w transakcji i hookiem po stronie kanału"
+    }
+   ],
+   "wave": 2,
+   "status": "pending",
+   "portions": [],
+   "startCommit": null,
+   "baseCommit": null,
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  }
+ ],
+ "entityTypes": [
+  {
+   "type": "ac",
+   "role": "criteria",
+   "checks": "verifies",
+   "links": [
+    "verifies"
+   ],
+   "observedIn": "unit",
+   "inactive": "status = deprecated",
+   "version": 3
+  },
+  {
+   "type": "code-snippet",
+   "role": "built",
+   "inCode": "the contract the snippet shows, shape-matched not verbatim: git-service-contract → the GitService API in src/server/services/git.ts (scoped-callback repo lock, release/general commit under a held lock, merge-to-index primitives taking the held lock + caller's changed paths and never throwing, ref diff with a tree on the right returning files with status, empty status without repo / toggle off, topo-ordered release-marker lookup); release-service-contract → the release service in src/server/services/release.ts (createRelease with the release-cache row inside the transaction, metadata-file write after commit logged not thrown, no git hook call from inside the service)",
+   "verify": "a trace.md line plus a vitest test next to the service (src/server/services/git-lock.test.ts, git-merge-primitives.test.ts, git.test.ts / release-create-transaction.test.ts) named with [entity:<slug>] asserting the signatures and the behaviour the snippet states",
+   "links": [],
+   "version": 1
+  },
+  {
+   "type": "dto",
+   "role": "built",
+   "inCode": "the TypeScript type (src/shared/** or src/server/routes/git.ts) of the payload GET /api/git/status and GET /api/git/branches return — field names, types and required/optional/nullability exactly as the DTO's `fields`",
+   "verify": "a supertest test in src/server/routes/git.test.ts named with [entity:<slug>] asserting the live payload has every required field with its type and no removed field",
+   "links": [],
+   "version": 2
+  },
+  {
+   "type": "endpoint",
+   "role": "built",
+   "inCode": "the Express routes GET /status and GET /branches in src/server/routes/git.ts (mounted under the project's /api/git), answering the linked response/error DTOs at their status codes and the behaviour `description` states",
+   "verify": "a supertest test in src/server/routes/git.test.ts named with [entity:<slug>] asserting method+path answer with the documented statuses and the linked DTO shapes",
+   "links": [
+    "linkedDtos"
+   ],
+   "version": 3
+  },
+  {
+   "type": "mcp-tool",
+   "role": "built",
+   "inCode": "the tool registered in src/server/mcp/release-tools/index.ts (payload projection in projection.ts, types in types.ts) with the entity's `name`, `params`, `description`, annotations and the payload `returns` states (incl. the accepted shadow on list rows / release details)",
+   "verify": "a vitest test in src/server/mcp/release-tools/index.test.ts or projection.test.ts named with [entity:<slug>] asserting the registered tool's input schema and the returned payload shape",
+   "links": [],
+   "version": 1
+  },
+  {
+   "type": "ui-view",
+   "role": "built",
+   "inCode": "the React release detail screen at /releases/$name (src/client/components/ReleaseDetail.tsx, route in src/client/router.tsx) — composition, header (accepted shadow) and alternative `states` as the view states",
+   "verify": "a happy-dom render test next to the screen (src/client/components/ReleaseDetail.*.render.test.ts) named with [entity:release-detail] asserting the composition and states the view lists",
+   "links": [],
+   "version": 4
+  },
+  {
+   "type": "module-dependency",
+   "role": "context",
+   "links": [],
+   "version": 1
+  }
+ ],
+ "entityParts": []
+}
