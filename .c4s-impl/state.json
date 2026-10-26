@@ -1,5 +1,5 @@
 {
- "iteration": 0,
+ "iteration": 1,
  "conventions": [
   {
    "label": "L4 (API)",
@@ -34,7 +34,7 @@
     "u3-m40-operation-suppression-limit",
     "u4-m17-create-release-channel-hook"
    ],
-   "startCommit": null
+   "startCommit": "fe3ccd859ca016fdfdf9bbea0334102c03af5463"
   },
   {
    "n": 2,
@@ -134,13 +134,32 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "pending",
-   "portions": [],
-   "startCommit": null,
-   "baseCommit": null,
+   "status": "verified",
+   "portions": [
+    {
+     "name": "u1-m28-repo-lock-merge-primitives/p1-domain-domain",
+     "layers": [
+      "domain"
+     ],
+     "slugs": [
+      "git-service-contract",
+      "section:57bep23m",
+      "section:ezudoqef",
+      "section:es9w55mr",
+      "section:m28aug01"
+     ],
+     "status": "implemented",
+     "rounds": 1,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
+   "startCommit": "fe3ccd859ca016fdfdf9bbea0334102c03af5463",
+   "baseCommit": "fe3ccd859ca016fdfdf9bbea0334102c03af5463",
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 1
    },
    "jobs": []
   },
@@ -789,5 +808,6 @@
    "version": 1
   }
  ],
- "entityParts": []
+ "entityParts": [],
+ "baselineGreen": true
 }

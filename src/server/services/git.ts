@@ -471,13 +471,23 @@ export class GitService {
    * config is unreadable, or no page root is inside a worktree. Never throws.
    */
   async probeRepo(): Promise<GitRepoRoot | null> {
-    try {
-      if (!readConfig(this.cwd).git.enabled) return null;
-    } catch {
-      return null;
-    }
+    if (!this.gitEnabled()) return null;
     const rootPath = await this.probeRoot();
     return rootPath ? { detected: true, rootPath } : null;
+  }
+
+  /**
+   * 2.1.49 (M28 eu1rffp6 / m28aug01): is the git master switch on? Read per
+   * call (hot reload). An unreadable `config.json` reads as off — the read-only
+   * methods never throw to their caller (`diffRefs`, `resolveReleaseCommit`,
+   * `statusAheadBehind`, the merge primitives' gate).
+   */
+  private gitEnabled(): boolean {
+    try {
+      return readConfig(this.cwd).git.enabled;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -1167,13 +1177,7 @@ export class GitService {
    * branch) are exactly this gate, read once under its lock.
    */
   async mergePrimitiveRoot(): Promise<{ root: string } | { refusal: GitMergePrimitiveRefusal }> {
-    let enabled: boolean;
-    try {
-      enabled = readConfig(this.cwd).git.enabled;
-    } catch {
-      enabled = false;
-    }
-    if (!enabled) return { refusal: { status: 'skipped' } };
+    if (!this.gitEnabled()) return { refusal: { status: 'skipped' } };
     const root = await this.probeRoot();
     if (!root) return { refusal: { status: 'skipped' } };
     if (!(await this.currentBranch(root))) return { refusal: { status: 'no-branch' } };
@@ -1474,8 +1478,7 @@ export class GitService {
    * SQLite version tables. There is no unrestricted all-refs search any more.
    */
   async resolveReleaseCommit(absPath: string): Promise<string | null> {
-    const config = readConfig(this.cwd);
-    if (!config.git.enabled) return null;
+    if (!this.gitEnabled()) return null;
     const status = await this.detect();
     if (!status.detected || !status.rootPath) return null;
     let real: string;
@@ -1615,8 +1618,7 @@ export class GitService {
     pathspecs: string[],
     precomputedStatus?: GitRepoRoot,
   ): Promise<GitRefDiff | null> {
-    const config = readConfig(this.cwd);
-    if (!config.git.enabled) return null;
+    if (!this.gitEnabled()) return null;
     const status = precomputedStatus ?? (await this.detect());
     if (!status.detected || !status.rootPath) return null;
     const root = status.rootPath;
@@ -1665,8 +1667,7 @@ export class GitService {
     pathspecs: string[],
     precomputedStatus?: GitRepoRoot,
   ): Promise<GitRefDiff | null> {
-    const config = readConfig(this.cwd);
-    if (!config.git.enabled) return null;
+    if (!this.gitEnabled()) return null;
     const status = precomputedStatus ?? (await this.detect());
     if (!status.detected || !status.rootPath) return null;
     const root = status.rootPath;
@@ -1707,8 +1708,7 @@ export class GitService {
    * answer.
    */
   async isAncestorOfHead(sha: string): Promise<boolean> {
-    const config = readConfig(this.cwd);
-    if (!config.git.enabled) return false;
+    if (!this.gitEnabled()) return false;
     const status = await this.detect();
     if (!status.detected || !status.rootPath) return false;
     try {
@@ -1743,13 +1743,7 @@ export class GitService {
     absPath: string,
     precomputedStatus?: GitRepoRoot,
   ): Promise<string | null> {
-    let config: ReturnType<typeof readConfig>;
-    try {
-      config = readConfig(this.cwd);
-    } catch {
-      return null;
-    }
-    if (!config.git.enabled) return null;
+    if (!this.gitEnabled()) return null;
     const status = precomputedStatus ?? (await this.detect());
     if (!status.detected || !status.rootPath) return null;
     let real: string;
@@ -1770,28 +1764,24 @@ export class GitService {
 
   /**
    * 0.1.118 read-only: HEAD status vs. upstream. Reuses `detect()`'s
-   * branch/dirty rather than re-probing. `null` when git is disabled, no repo
-   * is detected, or the branch is detached (no branch to compare). A non-null
-   * result with `ahead`/`behind` both `null` means a repo + branch exist but
-   * no upstream is configured — distinct from "no repo at all".
+   * branch/dirty rather than re-probing. `null` ONLY when git is disabled
+   * (or the config is unreadable) or no repo is detected (2.1.49 M28
+   * m28aug01). A detached HEAD is a repository with no branch:
+   * `branch: null` with `ahead`/`behind` `null` (nothing to compare against).
+   * A non-null result with `ahead`/`behind` both `null` and a branch means no
+   * upstream is configured — distinct from "no repo at all".
    *
    * `precomputedStatus` (0.1.119): pass an already-fetched `detect()` result
    * (e.g. from the `/api/git/status` route, which now merges this in) so a
    * single request doesn't pay for two full `detect()` probe rounds.
    */
   async statusAheadBehind(precomputedStatus?: GitRepoInfo): Promise<GitAheadBehindStatus | null> {
-    let config: ReturnType<typeof readConfig>;
-    try {
-      config = readConfig(this.cwd);
-    } catch {
-      // Class-wide contract (see file header): never throw to the caller. A
-      // malformed config.json mid-run must degrade to "can't tell", same as
-      // every other failure mode here — this route is otherwise always-200.
-      return null;
-    }
-    if (!config.git.enabled) return null;
+    // Class-wide contract (see file header): never throw to the caller — a
+    // malformed config.json mid-run degrades to "can't tell" (`null`).
+    if (!this.gitEnabled()) return null;
     const status = precomputedStatus ?? (await this.detect());
-    if (!status.detected || !status.rootPath || !status.branch) return null;
+    if (!status.detected || !status.rootPath) return null;
+    if (!status.branch) return { branch: null, isDirty: status.isDirty, ahead: null, behind: null };
     const { ahead, behind } = await this.aheadBehindAt(status.rootPath, status.branch);
     // `null`/`null` = no upstream configured (or another failure) — repo and
     // branch are known, but no ahead/behind comparison is possible.

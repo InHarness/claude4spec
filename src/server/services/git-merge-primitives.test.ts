@@ -4,7 +4,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GitRepoLock, GitService, type GitLockHandle } from './git.js';
+import { GitRepoLock, GitService, type GitHeldRepo, type GitLockHandle } from './git.js';
+import type {
+  GitAbortMergeResult,
+  GitAheadBehindStatus,
+  GitCommitResult,
+  GitMergeIntoIndexResult,
+  GitPendingChangesResult,
+  GitRefDiff,
+} from '../../shared/git.js';
 
 /**
  * 2.1.47 (M28 ezudoqef / es9w55mr / aqys9dje / eu1rffp6) — the git layer under
@@ -511,6 +519,154 @@ describe('GitService — merge primitives of the shadow acceptance (2.1.47)', ()
       expect(result?.recovery?.operation).toBe('commit-on-release');
       expect(result?.recovery?.gitStderr).toContain('pre-commit refused');
       expect(await mergeHead()).toBe(tip);
+    });
+  });
+
+  /**
+   * 2.1.49 (code-snippet git-service-contract): the GitService API the snippet
+   * states — a compile-time shape check (typecheck fails on a drifted
+   * signature) plus the behaviour each line of the snippet promises.
+   */
+  describe('[entity:git-service-contract] GitService — repo lock, merge primitives, ref diff, status, release marker', () => {
+    interface GitServiceContract {
+      commitOnRelease(
+        release: { name: string; description: string },
+        lockHandle?: GitLockHandle,
+      ): Promise<GitCommitResult | null>;
+      commit(opts: { name: string; description: string }, lockHandle?: GitLockHandle): Promise<GitCommitResult>;
+      resolveReleaseCommit(path: string): Promise<string | null>;
+      diffRefs(shaA: string, shaB: string, pathspecs: string[]): Promise<GitRefDiff | null>;
+      statusAheadBehind(): Promise<GitAheadBehindStatus | null>;
+      tryWithRepoLock<T>(fn: (lock: GitLockHandle) => Promise<T>): Promise<T | null>;
+      pendingChanges(pathspecs: string[], held?: GitHeldRepo): Promise<GitPendingChangesResult>;
+      mergeIntoIndex(tipSha: string, changedPaths: string[], held?: GitHeldRepo): Promise<GitMergeIntoIndexResult>;
+      abortMerge(paths: string[], held?: GitHeldRepo): Promise<GitAbortMergeResult>;
+    }
+
+    /** Commit everything staged with author and committer date `iso`. */
+    async function commitAt(message: string, iso: string): Promise<string> {
+      await pexec('git', ['commit', '-q', '-m', message], {
+        cwd: dir,
+        env: { ...process.env, GIT_AUTHOR_DATE: iso, GIT_COMMITTER_DATE: iso },
+      });
+      return sha('HEAD');
+    }
+
+    it('[section:ezudoqef] the scoped lock: tryWithRepoLock runs fn with a handle and releases it after; taken → null without calling fn; commit and commitOnRelease take the bare handle and run under the held lock', async () => {
+      const contract: GitServiceContract = svc;
+      for (const name of [
+        'commitOnRelease',
+        'commit',
+        'resolveReleaseCommit',
+        'diffRefs',
+        'statusAheadBehind',
+        'tryWithRepoLock',
+        'pendingChanges',
+        'mergeIntoIndex',
+        'abortMerge',
+      ] as const) {
+        expect(typeof contract[name]).toBe('function');
+      }
+
+      const inner = vi.fn(async () => 'never');
+      const outcome = await svc.tryWithRepoLock(async (lock) => {
+        // Taken: a second scoped take answers null and never calls its fn.
+        const second = await svc.tryWithRepoLock(inner);
+        fs.writeFileSync(path.join(pages(), 'c.md'), '# c\n');
+        const viaCommit = await svc.commit({ name: 'v1', description: 'first' }, lock);
+        fs.writeFileSync(path.join(pages(), 'd.md'), '# d\n');
+        const viaEntry = await svc.commitOnRelease({ name: 'v2', description: 'second' }, lock);
+        return { second, viaCommit: viaCommit.status, viaEntry: viaEntry?.status };
+      });
+      expect(outcome).toEqual({ second: null, viaCommit: 'committed', viaEntry: 'committed' });
+      expect(inner).not.toHaveBeenCalled();
+      expect((await git(['log', '-2', '--format=%s'], dir)).trim().split('\n')).toEqual(['v2', 'v1']);
+      // Released when the scoped call ended: the next take runs.
+      expect(await svc.tryWithRepoLock(async () => 'free')).toBe('free');
+    });
+
+    it('[section:es9w55mr] the merge primitives never throw: a failed read → pendingChanges error { message }; merged answers the caller\'s changedPaths as given, without recomputing; abortMerge with no merge open → aborted', async () => {
+      const tip = await shadowWith({ 'pages/c.md': '# c\n' });
+      // The caller's set comes back verbatim — even one the primitive would not derive itself.
+      const given = abs('pages/c.md', 'pages/given-by-caller.md');
+      const merged = await svc.mergeIntoIndex(tip, given);
+      expect(merged).toEqual({ status: 'merged', changedPaths: given });
+      expect(await svc.abortMerge(abs('pages/c.md'))).toEqual({ status: 'aborted' });
+      expect(await mergeHead()).toBeNull();
+      // Nothing open any more: still aborted, nothing to undo.
+      expect(await svc.abortMerge(abs('pages/c.md'))).toEqual({ status: 'aborted' });
+
+      // An unreadable index: `git status` fails → error, not a throw.
+      fs.writeFileSync(path.join(dir, '.git', 'index'), 'this is not a git index file at all');
+      const pending = await svc.pendingChanges([pages()]);
+      expect(pending.status).toBe('error');
+      expect(pending.status === 'error' && pending.message.length > 0).toBe(true);
+    });
+
+    it('[section:m28aug01] diffRefs takes a tree SHA on the right (two arguments, not a range) and returns the files with status A/M/D; statusAheadBehind is null only without a repo or with the master switch off', async () => {
+      const before = await sha('HEAD');
+      fs.writeFileSync(path.join(pages(), 'a.md'), '# a\n\nline 2\n');
+      fs.rmSync(path.join(pages(), 'b.md'));
+      fs.writeFileSync(path.join(pages(), 'n.md'), '# n\n');
+      await git(['add', '-A'], dir);
+      const tree = (await git(['write-tree'], dir)).trim();
+      expect((await git(['cat-file', '-t', tree], dir)).trim()).toBe('tree');
+
+      const diff = await svc.diffRefs(before, tree, [pages()]);
+      expect(diff).not.toBeNull();
+      const byPath = Object.fromEntries(diff!.files.map((f) => [path.relative(root(), f.path), f.status]));
+      expect(byPath).toEqual({ 'pages/a.md': 'M', 'pages/b.md': 'D', 'pages/n.md': 'A' });
+      // A failing git call never throws: an unknown revision → null.
+      expect(await svc.diffRefs('0000000000000000000000000000000000000000', tree, [pages()])).toBeNull();
+
+      expect(await svc.statusAheadBehind()).toEqual({ branch: 'main', isDirty: true, ahead: null, behind: null });
+      writeConfigJson(dir, { enabled: false });
+      expect(await svc.statusAheadBehind()).toBeNull();
+
+      const noRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-git-norepo-'));
+      try {
+        writeConfigJson(noRepo, { enabled: true });
+        fs.mkdirSync(path.join(noRepo, 'pages'));
+        expect(await new GitService(noRepo, [path.join(noRepo, 'pages')]).statusAheadBehind()).toBeNull();
+      } finally {
+        fs.rmSync(noRepo, { recursive: true, force: true });
+      }
+    });
+
+    it('[section:57bep23m] resolveReleaseCommit forces topological order: the ancestor introduction wins over a descendant re-introduction dated earlier', async () => {
+      const marker = path.join(pages(), 'releases', 'v1.json');
+      fs.mkdirSync(path.dirname(marker), { recursive: true });
+      // X — the real marker, introduces the file (late date).
+      fs.writeFileSync(marker, '{"name":"v1"}\n');
+      await git(['add', '-A'], dir);
+      const x = await commitAt('X adds v1.json', '2025-06-01T00:00:00Z');
+
+      // Side line off X: Z deletes the file, Y re-introduces it — both dated BEFORE X.
+      await git(['checkout', '-q', '-b', 'side', x], dir);
+      fs.rmSync(marker);
+      await git(['add', '-A'], dir);
+      await commitAt('Z deletes', '2001-01-01T00:00:00Z');
+      fs.writeFileSync(marker, '{"name":"v1","side":true}\n');
+      await git(['add', '-A'], dir);
+      const y = await commitAt('Y re-adds', '2000-01-01T00:00:00Z');
+      fs.writeFileSync(path.join(pages(), 'side.md'), '# side\n');
+      await git(['add', '-A'], dir);
+      await commitAt('P2', '2030-01-01T00:00:00Z');
+
+      // Main line: P1 after X, then a merge of the side line whose file differs from both parents.
+      await git(['checkout', '-q', 'main'], dir);
+      fs.writeFileSync(path.join(pages(), 'main.md'), '# main\n');
+      await git(['add', '-A'], dir);
+      await commitAt('P1', '2020-01-01T00:00:00Z');
+      await git(['merge', '-q', '--no-ff', '--no-commit', 'side'], dir);
+      fs.writeFileSync(marker, '{"name":"v1","merged":true}\n');
+      await git(['add', '-A'], dir);
+      await commitAt('merge side', '2040-01-01T00:00:00Z');
+
+      // Both X and Y introduce the path in HEAD's history; Y is X's descendant yet dated earlier.
+      const adds = (await git(['log', '--diff-filter=A', '--format=%H', '--', marker], dir)).trim().split('\n');
+      expect(adds).toEqual(expect.arrayContaining([x, y]));
+      expect(await svc.resolveReleaseCommit(marker)).toBe(x);
     });
   });
 });
