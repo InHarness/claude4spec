@@ -56,8 +56,14 @@ function GitIntegrationElement({ config, draft }: ElementContext) {
   const switchAfterRelease = Boolean(draft.get(K.switchAfterRelease));
   const disabled = draft.saving;
 
+  // M28 rhj0h9rl / fxcropku: the card's states come from `GET /api/git/status`
+  // (`["git-status"]`); the branch list (`GET /api/git/branches`,
+  // `["git-branches"]`) feeds only the commit-target lists, which exist only
+  // with a detected repository — so it is not read before that.
   const { data: status, isLoading } = useGitStatus({ enabled });
-  const { data: branches } = useGitBranches({ enabled: enabled && mode !== 'current' });
+  const { data: branches } = useGitBranches({
+    enabled: enabled && status?.detected === true && mode !== 'current',
+  });
 
   // The companion field of the active mode must be set before anything is sent —
   // the server would refuse the pair anyway.

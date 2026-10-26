@@ -26,8 +26,9 @@ export function gitRouter(
 ): Router {
   const router = Router();
 
-  // GET /api/git/status — repo detection for the Settings Git section + the
-  // sidebar git-status badge.
+  // GET /api/git/status — repo detection; consumers (2.1.49, endpoint
+  // get-api-git-status): the `#git` settings card and the header's
+  // `GitStatusBadge`.
   router.get('/status', async (_req, res, next) => {
     try {
       // 2.1.10 (dto git-status-response): ALWAYS ahead/behind + lastFetchedAt.
@@ -49,8 +50,9 @@ export function gitRouter(
     }
   });
 
-  // GET /api/git/branches — local branches for the interactive git badge
-  // dropdown + the release-plan commit-target picker.
+  // GET /api/git/branches — local branches; consumers (2.1.49, endpoint
+  // get-api-git-branches): the header `GitStatusBadge` dropdown and the
+  // `Commit target` lists of the `#git` settings card.
   router.get('/branches', async (_req, res, next) => {
     try {
       res.json(await gitService.listBranches());

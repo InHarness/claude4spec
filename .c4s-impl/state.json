@@ -1,5 +1,5 @@
 {
- "iteration": 4,
+ "iteration": 5,
  "conventions": [
   {
    "label": "L4 (API)",
@@ -42,7 +42,7 @@
     "u2-m28-status-recovery-surface",
     "u5-m17-accepted-shadow-and-release-list-ui"
    ],
-   "startCommit": null
+   "startCommit": "02e1e771bb24ce53fc992519d3374ec60bad2bba"
   }
  ],
  "units": [
@@ -633,13 +633,39 @@
     }
    ],
    "wave": 2,
-   "status": "pending",
-   "portions": [],
-   "startCommit": null,
-   "baseCommit": null,
+   "status": "verified",
+   "portions": [
+    {
+     "name": "u2-m28-status-recovery-surface/p1-l3-l17",
+     "layers": [
+      "L3",
+      "L4",
+      "L5",
+      "L17"
+     ],
+     "slugs": [
+      "section:snn15dck",
+      "section:u5vl07ch",
+      "git-status-response",
+      "git-branches-response",
+      "get-api-git-status",
+      "get-api-git-branches",
+      "m28-requires-m49",
+      "ac-gdy-adne-repo-git-nie-jest-wykryte-w-pa",
+      "ac-m28-jest-jedynym-wlascicielem-danych-sta"
+     ],
+     "status": "implemented",
+     "rounds": 1,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
+   "startCommit": "02e1e771bb24ce53fc992519d3374ec60bad2bba",
+   "baseCommit": "02e1e771bb24ce53fc992519d3374ec60bad2bba",
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 1
    },
    "jobs": []
   },

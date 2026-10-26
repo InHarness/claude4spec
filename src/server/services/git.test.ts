@@ -663,7 +663,8 @@ describe('GitService — 0.1.118 read-only methods', () => {
       const svc = new GitService(dir, [dir]);
       const result = await svc.listBranches();
       expect(result.current).toBeNull();
-      expect(result.branches).toContain('main');
+      // Branch names only — not git's `(HEAD detached at <sha>)` line.
+      expect(result.branches).toEqual(['main']);
     });
   });
 

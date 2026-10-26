@@ -216,4 +216,35 @@ describe('GitService — repository lock and git:status-changed (2.1.10)', () =>
     expect(result?.status).toBe('nothing-to-commit');
     expect(gateway.broadcast).not.toHaveBeenCalled();
   });
+
+  it('[section:snn15dck] M28 broadcasts its repository state changes through the local server: a branch switch, a release commit moving the ref and a fetch each reach the project room as git:status-changed', async () => {
+    const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-git-lock-remote-'));
+    try {
+      await git(['init', '--bare', '-b', 'main', bare], bare);
+      await git(['remote', 'add', 'origin', bare], dir);
+      await git(['push', '-u', 'origin', 'main'], dir);
+      await git(['branch', 'other'], dir);
+      const gateway = { broadcast: vi.fn() };
+      const svc = new GitService(dir, [dir], () => false, new ProjectWsEmitter(gateway as unknown as WsGateway, 'proj-1'));
+
+      // Branch change — HEAD moved.
+      expect((await svc.checkout('other')).status).toBe('switched');
+      expect(gateway.broadcast).toHaveBeenLastCalledWith('proj-1', { kind: 'git:status-changed', headChanged: true });
+      expect((await svc.checkout('main')).status).toBe('switched');
+
+      // Ref moved by a release commit.
+      fs.writeFileSync(path.join(dir, 'page.md'), '# v2\n');
+      expect((await svc.commitOnRelease({ name: 'v2', description: '' }))?.status).toBe('committed');
+      expect(gateway.broadcast).toHaveBeenLastCalledWith('proj-1', { kind: 'git:status-changed', headChanged: true });
+
+      // Remote-tracking refs refreshed by a fetch — HEAD untouched.
+      gateway.broadcast.mockClear();
+      expect((await svc.fetch()).status).toBe('fetched');
+      expect(gateway.broadcast).toHaveBeenCalledWith('proj-1', { kind: 'git:status-changed', headChanged: false });
+      // Every broadcast went to this project's room only.
+      for (const call of gateway.broadcast.mock.calls) expect(call[0]).toBe('proj-1');
+    } finally {
+      fs.rmSync(bare, { recursive: true, force: true });
+    }
+  });
 });

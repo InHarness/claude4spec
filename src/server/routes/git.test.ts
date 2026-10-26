@@ -576,3 +576,103 @@ describe('GET /api/git/shadows (2.1.46)', () => {
     }
   });
 });
+
+/**
+ * 2.1.49 (endpoints get-api-git-status / get-api-git-branches, dtos
+ * git-status-response / git-branches-response) — the two reads the `#git`
+ * settings card and the header `GitStatusBadge` consume: method + path, the
+ * documented 200 and the exact DTO shape (every required field, typed, nothing
+ * else).
+ */
+describe('GET /api/git/status + GET /api/git/branches — the settings card and header reads (2.1.49)', () => {
+  let base: string;
+  let work: string;
+  let bare: string;
+
+  function appFor(svc: GitService): express.Express {
+    return express().use(express.json()).use('/api/git', gitRouter(svc)).use(errorHandler);
+  }
+
+  beforeEach(async () => {
+    base = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-git-reads-'));
+    work = path.join(base, 'work');
+    bare = path.join(base, 'remote.git');
+    await pexec('git', ['init', '--bare', '-b', 'main', bare]);
+    await initRepo(work);
+    writeConfigJson(work, { enabled: true });
+    fs.writeFileSync(path.join(work, 'page.md'), '# page v1\n');
+    await git(['add', '-A'], work);
+    await git(['commit', '-m', 'first'], work);
+    await git(['remote', 'add', 'origin', bare], work);
+    await git(['push', '-u', 'origin', 'main'], work);
+    await git(['branch', 'feature'], work);
+  });
+
+  afterEach(() => {
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  it('[entity:get-api-git-status] [entity:git-status-response] GET /api/git/status → 200 with exactly the GitStatusResponse fields, each with its type', async () => {
+    fs.writeFileSync(path.join(work, 'page.md'), '# page v2\n');
+    const res = await request(appFor(new GitService(work, [work]))).get('/api/git/status');
+    expect(res.status).toBe(200);
+    expect(Object.keys(res.body).sort()).toEqual(
+      ['ahead', 'behind', 'branch', 'detected', 'isDirty', 'lastFetchedAt', 'remoteUrl', 'rootPath'].sort(),
+    );
+    expect(res.body.detected).toBe(true);
+    expect(fs.realpathSync(res.body.rootPath)).toBe(fs.realpathSync(work));
+    expect(res.body.remoteUrl).toBe(bare);
+    expect(res.body.branch).toBe('main');
+    expect(res.body.isDirty).toBe(true);
+    expect(res.body.ahead).toBe(0);
+    expect(res.body.behind).toBe(0);
+    // `git push -u` alone never fetched: no FETCH_HEAD yet.
+    expect(res.body.lastFetchedAt).toBeNull();
+  });
+
+  it('[entity:get-api-git-status] [entity:git-status-response] with the git master switch off GET /api/git/status still answers 200 with every field present', async () => {
+    writeConfigJson(work, { enabled: false });
+    const res = await request(appFor(new GitService(work, [work]))).get('/api/git/status');
+    expect(res.status).toBe(200);
+    expect(Object.keys(res.body).sort()).toEqual(
+      ['ahead', 'behind', 'branch', 'detected', 'isDirty', 'lastFetchedAt', 'remoteUrl', 'rootPath'].sort(),
+    );
+    expect(typeof res.body.detected).toBe('boolean');
+    expect(typeof res.body.isDirty).toBe('boolean');
+    // ahead/behind need the master switch: `null` while it is off.
+    expect(res.body.ahead).toBeNull();
+    expect(res.body.behind).toBeNull();
+  });
+
+  it('[entity:get-api-git-branches] [entity:git-branches-response] GET /api/git/branches → 200 { current, branches } with the current branch and the local branches only', async () => {
+    const app = appFor(new GitService(work, [work]));
+    const res = await request(app).get('/api/git/branches');
+    expect(res.status).toBe(200);
+    expect(Object.keys(res.body).sort()).toEqual(['branches', 'current']);
+    expect(res.body.current).toBe('main');
+    expect([...res.body.branches].sort()).toEqual(['feature', 'main']);
+    // Local branches only — no remote-tracking `origin/*`.
+    expect(res.body.branches.some((b: string) => b.startsWith('origin/'))).toBe(false);
+  });
+
+  it('[entity:get-api-git-branches] [entity:git-branches-response] detached HEAD → current null with a non-empty list; master switch off or no repository → current null with an empty list (always 200)', async () => {
+    const head = (await git(['rev-parse', 'HEAD'], work)).trim();
+    await git(['checkout', head], work);
+    const detached = await request(appFor(new GitService(work, [work]))).get('/api/git/branches');
+    expect(detached.status).toBe(200);
+    expect(detached.body.current).toBeNull();
+    expect([...detached.body.branches].sort()).toEqual(['feature', 'main']);
+
+    writeConfigJson(work, { enabled: false });
+    const off = await request(appFor(new GitService(work, [work]))).get('/api/git/branches');
+    expect(off.status).toBe(200);
+    expect(off.body).toEqual({ current: null, branches: [] });
+
+    const plain = path.join(base, 'plain');
+    fs.mkdirSync(plain);
+    writeConfigJson(plain, { enabled: true });
+    const noRepo = await request(appFor(new GitService(plain, [plain]))).get('/api/git/branches');
+    expect(noRepo.status).toBe(200);
+    expect(noRepo.body).toEqual({ current: null, branches: [] });
+  });
+});

@@ -383,7 +383,7 @@ describe('GitService — merge primitives of the shadow acceptance (2.1.47)', ()
       expect(fs.readFileSync(path.join(pages(), 'sub', 'd.md'), 'utf8')).toBe('# d\n');
     });
 
-    it('a failed abort → error with the repair context merge-abort-failed (operation commit-on-release); the merge stays open', async () => {
+    it('[section:u5vl07ch] a failed abort → error with the repair context merge-abort-failed (operation commit-on-release); the merge stays open', async () => {
       const tip = await shadowWith({ 'pages/c.md': '# c\n' });
       expect((await svc.mergeIntoIndex(tip, abs('pages/c.md'))).status).toBe('merged');
       // Inject the failure: another process holds the index lock.

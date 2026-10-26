@@ -4,6 +4,9 @@
   "blocking": false,
   "address": "setup/oq23nb0j",
   "text": "The workflow brief 2.1.48→2.1.49 addresses the user-jobs table for the system verifier as `pages/SKILL.md` section 13 (`oq23nb0j`). At 2.1.49 that section holds only `<single_element type=\"spreadsheet\" slug=\"moduly-feature\"/>` — the module index table (columns #, Moduł, Złożoność, Warstwy, Zakres, Plik), which names no user jobs (who does what, success sentence, modules walked across). Assumed: the specification has no user-jobs table at 2.1.49; no unit owns a job and the system verifier works from the units' criteria. Either the brief generator should not emit a jobs convention pointing at the module table, or the specification should gain a real user-jobs table.",
-  "slugs": ["moduly-feature"],
-  "sent": false
+  "slugs": [
+    "moduly-feature"
+  ],
+  "sent": true,
+  "patchPath": "2-1-48-to-2-1-49-setup-oq23nb0j-user-jobs-convention-points-at-the-module-table.md"
 }

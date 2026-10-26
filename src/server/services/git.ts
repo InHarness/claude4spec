@@ -2438,9 +2438,12 @@ export class GitService {
     return merged;
   }
 
-  /** Local branch names (`git branch --format=%(refname:short)`) at an already-detected `rootPath`. */
+  /** Local branch names (`refs/heads/*`) at an already-detected `rootPath`. */
   private async listBranchesAt(rootPath: string): Promise<string[]> {
-    return this.git(['branch', '--format=%(refname:short)'], rootPath)
+    // 2.1.49 (dto git-branches-response): local branch names only. `git branch
+    // --format` adds a `(HEAD detached at <sha>)` line on a detached HEAD —
+    // not a branch; `for-each-ref refs/heads/` lists exactly the local ones.
+    return this.git(['for-each-ref', '--format=%(refname:short)', 'refs/heads/'], rootPath)
       .then((r) =>
         r.stdout
           .split('\n')
@@ -2452,7 +2455,7 @@ export class GitService {
 
   /**
    * 0.1.123 read-only: local branches for the interactive git badge dropdown +
-   * the release-plan commit-target picker. `current` is `null` on detached
+   * (2.1.49) the commit-target lists of the `#git` settings card. `current` is `null` on detached
    * HEAD. `branches` is non-empty even in detached HEAD, so the UI can offer a
    * way out. Never throws — degrades to `{ current: null, branches: [] }` when
    * git is disabled or no repo is detected. Uses `probeRoot()`/`currentBranch()`

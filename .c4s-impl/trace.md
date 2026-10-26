@@ -8,3 +8,9 @@ release-service-contract → src/server/services/release.ts (ReleaseService; cre
 section:spdg8mon → src/server/services/release.ts (createRelease: transaction → file, no separate cache rebuild; failed file write logged, release stands without a marker)
 section:w6cocvik → src/server/routes/releases.ts (POST /) + src/server/mcp/release-tools/index.ts (release_create) — commitOnRelease called by the channel after createRelease returns
 section:ry0bx4ji → src/server/services/entity-indexer.ts (indexAll / per-file reindex — no entity_version INSERT; sync() merged entity changes arrive this way) — test tests/integration/api/sync-merge-entity-version.test.ts
+git-status-response → src/shared/git.ts (GitStatusResponse extends GitRepoInfo) — test src/server/routes/git.test.ts "[entity:git-status-response]"
+git-branches-response → src/shared/git.ts (GitBranchesResponse) — test src/server/routes/git.test.ts "[entity:git-branches-response]"
+get-api-git-status → src/server/routes/git.ts (GET /status) — test src/server/routes/git.test.ts "[entity:get-api-git-status]"
+get-api-git-branches → src/server/routes/git.ts (GET /branches; GitService.listBranches / listBranchesAt in src/server/services/git.ts) — test src/server/routes/git.test.ts "[entity:get-api-git-branches]"
+section:snn15dck → src/server/services/git.ts (emitStatusChanged after checkout / commit / fetch / sync → ProjectWsEmitter) — test src/server/services/git-lock.test.ts "[section:snn15dck]"
+section:u5vl07ch → src/shared/git.ts (GitErrorRecovery.operation: commit-on-release | pull | push) + src/client/ui/modals/GitSyncRecover.tsx (OPERATION_LABEL) + src/server/services/git.ts (abortMerge/mergeIntoIndex recovery 'commit-on-release' + 'merge-abort-failed') — tests src/client/ui/modals/GitSyncRecover.render.test.ts, src/server/services/git-merge-primitives.test.ts "[section:u5vl07ch]"
