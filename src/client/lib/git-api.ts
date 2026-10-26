@@ -13,7 +13,8 @@ export const gitApi = {
   async status(): Promise<GitStatusResponse> {
     return handle<GitStatusResponse>(await apiFetch('/api/git/status'));
   },
-  /** 0.1.123: local branches for the interactive git badge dropdown. */
+  /** 0.1.123: local branches — the header git badge dropdown and (2.1.49) the
+   *  `#git` settings card's commit-target lists. */
   async branches(): Promise<GitBranchesResponse> {
     return handle<GitBranchesResponse>(await apiFetch('/api/git/branches'));
   },

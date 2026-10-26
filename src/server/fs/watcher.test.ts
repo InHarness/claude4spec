@@ -142,6 +142,55 @@ describe('M40 — mount, scope, lifecycle', () => {
       r.subscribe('plugins:overlay', recorder([], 'x'), { id: 'm33-overlay', phase: 'reload', scope: CTX }),
     ).toThrow(/unmounted source/);
   });
+
+  it('[ac:ac-zamkniecie-mountu-w-trakcie-pelnej-od] closing the mount mid full rebuild does not interrupt the subscriber’s running rebuild', async () => {
+    const r = runtime();
+    const dir = tmp();
+    for (const name of ['a.md', 'b.md', 'c.md']) fs.writeFileSync(path.join(dir, name), `# ${name}\n`);
+    r.mountSource({ source: 'pages:pages', dir, scope: CTX });
+
+    // A subscriber whose reaction is a FULL rebuild of its projection: it reads
+    // every file of the directory, one by one, yielding between them.
+    const indexed: string[] = [];
+    let started!: () => void;
+    const inRebuild = new Promise<void>((res) => (started = res));
+    let resume!: () => void;
+    const gate = new Promise<void>((res) => (resume = res));
+    let finished = false;
+    r.subscribe(
+      'pages:pages',
+      {
+        onChange: async () => {
+          const files = fs.readdirSync(dir).sort();
+          for (const [i, name] of files.entries()) {
+            indexed.push(`${name}:${fs.readFileSync(path.join(dir, name), 'utf-8').trim()}`);
+            if (i === 0) {
+              started();
+              await gate; // the mount is closed while the rebuild is here
+            }
+          }
+          finished = true;
+        },
+        onUnlink: () => {},
+      },
+      { id: 'm06-section-indexer', phase: 'projection', scope: CTX },
+    );
+
+    const chain = r.flush(CTX, 'pages:pages', 'a.md');
+    await inRebuild;
+    expect(indexed).toEqual(['a.md:# a.md']);
+
+    // Closing the mount neither waits for the rebuild (no deadlock against the
+    // dispatch it is closing) nor cancels it.
+    await r.unmountSource('pages:pages', CTX);
+    expect(r.isMounted('pages:pages', CTX)).toBe(false);
+    expect(finished).toBe(false);
+
+    resume();
+    await chain;
+    expect(finished).toBe(true);
+    expect(indexed).toEqual(['a.md:# a.md', 'b.md:# b.md', 'c.md:# c.md']);
+  });
 });
 
 describe('M40 — phases and ordering', () => {
@@ -296,6 +345,55 @@ describe('M40 — phases and ordering', () => {
 
     await r.flush(CTX, 'pages:pages', 'a.md');
     expect(log).toEqual(['survivor']);
+    spy.mockRestore();
+  });
+
+  it('[ac:ac-blad-odczytu-pliku-w-fazie-jednego-su] a file read error in one subscriber does not stop the dispatch to the others', async () => {
+    const r = runtime();
+    const dir = tmp();
+    fs.writeFileSync(path.join(dir, 'a.md'), '# A\n');
+    r.mountSource({ source: 'pages:pages', dir, scope: CTX });
+    const log: string[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    /** Reads a file that is not there — a genuine ENOENT from the read, not a thrown stub. */
+    const failingReader: WatchSubscriber = {
+      onChange: () => {
+        log.push('reader');
+        fs.readFileSync(path.join(dir, 'gone-meanwhile.md'), 'utf-8');
+      },
+      onUnlink: () => {},
+    };
+    /** Reads the event's own file and records what it saw. */
+    const reader = (id: string): WatchSubscriber => ({
+      onChange: (_s, _src, relPath) => void log.push(`${id}:${fs.readFileSync(path.join(dir, relPath), 'utf-8').trim()}`),
+      onUnlink: () => {},
+    });
+
+    // Same phase: the failing reader sits BETWEEN two siblings.
+    r.subscribe('pages:pages', reader('first'), { id: 'm30-first', phase: 'notification', scope: CTX });
+    r.subscribe('pages:pages', failingReader, {
+      id: 'm30-failing',
+      phase: 'notification',
+      after: ['m30-first'],
+      scope: CTX,
+    });
+    r.subscribe('pages:pages', reader('last'), {
+      id: 'm30-last',
+      phase: 'notification',
+      after: ['m30-failing'],
+      scope: CTX,
+    });
+    // A later phase still runs as well.
+    r.subscribe('pages:pages', reader('capture'), { id: 'm17-capture', phase: 'capture', scope: CTX });
+
+    await r.flush(CTX, 'pages:pages', 'a.md');
+    expect(log).toEqual(['first:# A', 'reader', 'last:# A', 'capture:# A']);
+    // The read error is logged, not swallowed silently.
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining("subscription 'm30-failing' failed"),
+      expect.objectContaining({ code: 'ENOENT' }),
+    );
     spy.mockRestore();
   });
 
@@ -678,16 +776,18 @@ describe('2.1.47 — suppression for the duration of an operation', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('[ac:ac-tlumienie-na-czas-operacji-niezdjete] a suppression its operation never released expires at the upper limit, with a warning in the log', async () => {
+  it('[ac:ac-tlumienie-na-czas-operacji-niezdjete] a suppression its operation never released expires once the operation suppression limit has passed', async () => {
     const { r, dir, log } = setup();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const op = r.scoped(CTX).suppressOperation([path.join(dir, 'a.md')]);
 
+    // Up to the last millisecond of the limit the path is still swallowed.
     await vi.advanceTimersByTimeAsync(OPERATION_SUPPRESS_LIMIT_MS - 1);
     await r.flush(CTX, 'pages:pages', 'a.md');
     expect(log).toEqual([]);
     expect(warn).not.toHaveBeenCalled();
 
+    // The limit passes: the suppression expires on its own, with one warning.
     await vi.advanceTimersByTimeAsync(1);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0]?.[0])).toMatch(/operation suppression of 1 path\(s\) in scope 'context:p1' was not released/);
@@ -705,12 +805,41 @@ describe('2.1.47 — suppression for the duration of an operation', () => {
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
-  it('[section:antfe82l] an external write to a suppressed path during the operation is swallowed; the next one after it dispatches', async () => {
+  it('[section:c38qf5p5] the upper limit is a named value, and the expiry warning names the limit and logs its value', async () => {
+    const { r, dir } = setup();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(Number.isInteger(OPERATION_SUPPRESS_LIMIT_MS) && OPERATION_SUPPRESS_LIMIT_MS > 0).toBe(true);
+    // The limit bounds a forgotten release, not the operation: far beyond a primitive's guard window.
+    expect(OPERATION_SUPPRESS_LIMIT_MS).toBeGreaterThan(60_000);
+
+    r.scoped(CTX).suppressOperation([path.join(dir, 'a.md'), path.join(dir, 'b.md')]);
+    await vi.advanceTimersByTimeAsync(OPERATION_SUPPRESS_LIMIT_MS);
+    expect(warn).toHaveBeenCalledTimes(1);
+    const message = String(warn.mock.calls[0]?.[0]);
+    expect(message).toContain('operation suppression limit');
+    expect(message).toContain(`${OPERATION_SUPPRESS_LIMIT_MS} ms`);
+    expect(message).toContain('2 path(s)');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('[ac:ac-zapis-spoza-aplikacji-do-sciezki-tlum] an external write to a suppressed path during the operation is swallowed and runs no chain; the next one after it dispatches', async () => {
     const { r, dir, log } = setup();
     const op = r.scoped(CTX).suppressOperation([path.join(dir, 'a.md')]);
+    // The operation changes the file and runs its own chain for it, in-band…
+    fs.writeFileSync(path.join(dir, 'a.md'), 'merged in');
+    await r.runChain(CTX, 'pages:pages', 'a.md', 'change', 'server');
+    expect(log).toEqual(['proj']);
+
+    // …then, still during the operation, a write from outside the app lands on
+    // the same path. Its content differs from what the chain left (no echo by
+    // hash) — it is swallowed by the suppression alone, whatever the provider
+    // reports: no chain runs for it.
     fs.writeFileSync(path.join(dir, 'a.md'), 'edited outside the app');
-    await r.flush(CTX, 'pages:pages', 'a.md');
-    expect(log).toEqual([]);
+    await r.flush(CTX, 'pages:pages', 'a.md', 'change');
+    await r.flush(CTX, 'pages:pages', 'a.md', 'unlink');
+    await r.flush(CTX, 'pages:pages', 'a.md', 'add');
+    expect(log).toEqual(['proj']);
+    expect(fs.readFileSync(path.join(dir, 'a.md'), 'utf-8')).toBe('edited outside the app');
 
     op.release();
     op.release(); // idempotent: one guard window, not two
@@ -718,7 +847,7 @@ describe('2.1.47 — suppression for the duration of an operation', () => {
     await vi.advanceTimersByTimeAsync(2_000);
     fs.writeFileSync(path.join(dir, 'a.md'), 'edited again');
     await r.flush(CTX, 'pages:pages', 'a.md');
-    expect(log).toEqual(['proj']);
+    expect(log).toEqual(['proj', 'proj']);
   });
 
   it('[section:c38qf5p5] keys by (scope, source, relPath): paths outside every mount and other scopes are untouched', async () => {

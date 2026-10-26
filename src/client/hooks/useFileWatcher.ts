@@ -12,7 +12,7 @@ import { artifactVersionsKey } from './useArtifactVersions.js';
 import { reloadFrontendPlugins } from '../runtime/boot-plugins.js';
 import { entityChangeKeys, tagChangeKeys } from '../lib/entity-invalidation.js';
 import { releaseDiffInvalidationFor, shadowDiffInvalidationFor } from '../lib/release-diff-invalidation.js';
-import { absorbOwnEcho, resetOwnWrites } from '../lib/own-writes.js';
+import { absorbOwnEcho, absorbOwnReleaseEcho, resetOwnWrites } from '../lib/own-writes.js';
 
 /**
  * M33 phase 3: window event dispatched once a plugin reload has re-pinned the
@@ -88,7 +88,10 @@ export function useFileWatcher() {
               batcher.queue(['patches', 'list']);
               batcher.queue(['patches', 'detail', data.path]);
             } else if (systemKind === 'releases') {
-              batcher.queue(['releases']);
+              // 2.1.49 (m17ui001): a release write of THIS tab in flight
+              // refetches the list itself right after its answer — the echo
+              // would download it twice (`lib/own-writes.ts`).
+              if (!absorbOwnReleaseEcho()) batcher.queue(['releases']);
             }
           } else if (data.kind === 'file:changed') {
             // 0.1.96 multiroot: page trees + documents are keyed by rootId.

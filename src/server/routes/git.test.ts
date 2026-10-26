@@ -576,3 +576,211 @@ describe('GET /api/git/shadows (2.1.46)', () => {
     }
   });
 });
+
+/**
+ * 2.1.49 (endpoints get-api-git-status / get-api-git-branches, dtos
+ * git-status-response / git-branches-response) — the two reads the `#git`
+ * settings card and the header `GitStatusBadge` consume: method + path, the
+ * documented 200 and the exact DTO shape (every required field, typed, nothing
+ * else).
+ */
+describe('GET /api/git/status + GET /api/git/branches — the settings card and header reads (2.1.49)', () => {
+  let base: string;
+  let work: string;
+  let bare: string;
+
+  function appFor(svc: GitService): express.Express {
+    return express().use(express.json()).use('/api/git', gitRouter(svc)).use(errorHandler);
+  }
+
+  beforeEach(async () => {
+    base = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-git-reads-'));
+    work = path.join(base, 'work');
+    bare = path.join(base, 'remote.git');
+    await pexec('git', ['init', '--bare', '-b', 'main', bare]);
+    await initRepo(work);
+    writeConfigJson(work, { enabled: true });
+    fs.writeFileSync(path.join(work, 'page.md'), '# page v1\n');
+    await git(['add', '-A'], work);
+    await git(['commit', '-m', 'first'], work);
+    await git(['remote', 'add', 'origin', bare], work);
+    await git(['push', '-u', 'origin', 'main'], work);
+    await git(['branch', 'feature'], work);
+  });
+
+  afterEach(() => {
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  it('[entity:get-api-git-status] [entity:git-status-response] GET /api/git/status → 200 with exactly the GitStatusResponse fields, each with its type', async () => {
+    fs.writeFileSync(path.join(work, 'page.md'), '# page v2\n');
+    const res = await request(appFor(new GitService(work, [work]))).get('/api/git/status');
+    expect(res.status).toBe(200);
+    expect(Object.keys(res.body).sort()).toEqual(
+      ['ahead', 'behind', 'branch', 'detected', 'isDirty', 'lastFetchedAt', 'remoteUrl', 'rootPath'].sort(),
+    );
+    expect(res.body.detected).toBe(true);
+    expect(fs.realpathSync(res.body.rootPath)).toBe(fs.realpathSync(work));
+    expect(res.body.remoteUrl).toBe(bare);
+    expect(res.body.branch).toBe('main');
+    expect(res.body.isDirty).toBe(true);
+    expect(res.body.ahead).toBe(0);
+    expect(res.body.behind).toBe(0);
+    // `git push -u` alone never fetched: no FETCH_HEAD yet.
+    expect(res.body.lastFetchedAt).toBeNull();
+  });
+
+  it('[entity:get-api-git-status] [entity:git-status-response] with the git master switch off GET /api/git/status still answers 200 with every field present', async () => {
+    writeConfigJson(work, { enabled: false });
+    const res = await request(appFor(new GitService(work, [work]))).get('/api/git/status');
+    expect(res.status).toBe(200);
+    expect(Object.keys(res.body).sort()).toEqual(
+      ['ahead', 'behind', 'branch', 'detected', 'isDirty', 'lastFetchedAt', 'remoteUrl', 'rootPath'].sort(),
+    );
+    expect(typeof res.body.detected).toBe('boolean');
+    expect(typeof res.body.isDirty).toBe('boolean');
+    // ahead/behind need the master switch: `null` while it is off.
+    expect(res.body.ahead).toBeNull();
+    expect(res.body.behind).toBeNull();
+  });
+
+  it('[entity:get-api-git-branches] [entity:git-branches-response] GET /api/git/branches → 200 { current, branches } with the current branch and the local branches only', async () => {
+    const app = appFor(new GitService(work, [work]));
+    const res = await request(app).get('/api/git/branches');
+    expect(res.status).toBe(200);
+    expect(Object.keys(res.body).sort()).toEqual(['branches', 'current']);
+    expect(res.body.current).toBe('main');
+    expect([...res.body.branches].sort()).toEqual(['feature', 'main']);
+    // Local branches only — no remote-tracking `origin/*`.
+    expect(res.body.branches.some((b: string) => b.startsWith('origin/'))).toBe(false);
+  });
+
+  it('[entity:get-api-git-branches] [entity:git-branches-response] [ac:ac-get-api-git-branches-zwraca-current] on a branch → current + the local branches; detached HEAD → current null with a non-empty list; master switch off or no repository (listBranches() null) → current null with an empty list (always 200)', async () => {
+    const onBranch = await request(appFor(new GitService(work, [work]))).get('/api/git/branches');
+    expect(onBranch.status).toBe(200);
+    expect(onBranch.body.current).toBe('main');
+    expect([...onBranch.body.branches].sort()).toEqual(['feature', 'main']);
+
+    const head = (await git(['rev-parse', 'HEAD'], work)).trim();
+    await git(['checkout', head], work);
+    const detached = await request(appFor(new GitService(work, [work]))).get('/api/git/branches');
+    expect(detached.status).toBe(200);
+    expect(detached.body.current).toBeNull();
+    expect([...detached.body.branches].sort()).toEqual(['feature', 'main']);
+
+    writeConfigJson(work, { enabled: false });
+    const off = await request(appFor(new GitService(work, [work]))).get('/api/git/branches');
+    expect(off.status).toBe(200);
+    expect(off.body).toEqual({ current: null, branches: [] });
+
+    const plain = path.join(base, 'plain');
+    fs.mkdirSync(plain);
+    writeConfigJson(plain, { enabled: true });
+    const noRepo = await request(appFor(new GitService(plain, [plain]))).get('/api/git/branches');
+    expect(noRepo.status).toBe(200);
+    expect(noRepo.body).toEqual({ current: null, branches: [] });
+  });
+});
+
+/**
+ * 2.1.49 (endpoint get-api-git-status) — the edge cases of the repository
+ * probe behind `GET /api/git/status`: no `git` binary, no repository, and roots
+ * of kind `pages` outside the worktree. The probe never throws; "no repository"
+ * is `detected: false` (the `null` of the M28 contract), always with 200.
+ */
+describe('GET /api/git/status — detection edge cases (2.1.49)', () => {
+  let base: string;
+  let work: string;
+
+  function appFor(svc: GitService): express.Express {
+    return express().use(express.json()).use('/api/git', gitRouter(svc)).use(errorHandler);
+  }
+
+  beforeEach(async () => {
+    base = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-git-detect-'));
+    work = path.join(base, 'work');
+    await initRepo(work);
+    writeConfigJson(work, { enabled: true });
+    fs.mkdirSync(path.join(work, 'pages'));
+    fs.writeFileSync(path.join(work, 'seed.txt'), 'seed');
+    await git(['add', 'seed.txt'], work);
+    await git(['commit', '-m', 'seed'], work);
+  });
+
+  afterEach(() => {
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  it('[ac:ac-detect-przy-braku-git-w-path-lub] without `git` in PATH (and without a repository) detect() resolves to detected: false without throwing, and GET /api/git/status answers 200 with the not-detected payload', async () => {
+    const svc = new GitService(work, [path.join(work, 'pages')]);
+    expect((await svc.detect()).detected).toBe(true); // the repository is there…
+
+    const savedPath = process.env.PATH;
+    const emptyBin = path.join(base, 'empty-bin');
+    fs.mkdirSync(emptyBin);
+    process.env.PATH = emptyBin; // …but no `git` binary can be found
+    try {
+      await expect(svc.detect()).resolves.toMatchObject({ detected: false, rootPath: null });
+      const res = await request(appFor(svc)).get('/api/git/status');
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        detected: false,
+        rootPath: null,
+        remoteUrl: null,
+        branch: null,
+        isDirty: false,
+        ahead: null,
+        behind: null,
+        lastFetchedAt: null,
+      });
+    } finally {
+      process.env.PATH = savedPath;
+    }
+
+    // No repository at all (git present): the same answer.
+    const plain = path.join(base, 'plain');
+    fs.mkdirSync(path.join(plain, 'pages'), { recursive: true });
+    writeConfigJson(plain, { enabled: true });
+    const noRepo = new GitService(plain, [path.join(plain, 'pages')]);
+    await expect(noRepo.detect()).resolves.toMatchObject({ detected: false, rootPath: null });
+    const res = await request(appFor(noRepo)).get('/api/git/status');
+    expect(res.status).toBe(200);
+    expect(res.body.detected).toBe(false);
+    expect(res.body.rootPath).toBeNull();
+  });
+
+  it('[ac:ac-gdy-wszystkie-releasable-roota-leza-poza] every `pages` root outside the worktree → not detected (no repository, no commit); some inside, some outside → detected, the outside ones skipped with a log and the commit covers the roots inside', async () => {
+    const outside = path.join(base, 'outside-pages'); // a sibling of the worktree, in no repository
+    fs.mkdirSync(outside);
+    fs.writeFileSync(path.join(outside, 'ext.md'), '# outside\n');
+
+    // All `pages` roots outside the worktree: treated as no repository.
+    const allOutside = new GitService(work, [outside]);
+    const none = await request(appFor(allOutside)).get('/api/git/status');
+    expect(none.status).toBe(200);
+    expect(none.body.detected).toBe(false);
+    expect(none.body.rootPath).toBeNull();
+    expect(await allOutside.commitOnRelease({ name: 'v0', description: 'nothing' })).toBeNull();
+    expect((await git(['rev-list', '--count', 'HEAD'], work)).trim()).toBe('1');
+
+    // One root outside (listed first), one inside: the inside one is detected.
+    fs.writeFileSync(path.join(work, 'pages', 'a.md'), '# a\n');
+    const mixed = new GitService(work, [outside, path.join(work, 'pages')]);
+    const some = await request(appFor(mixed)).get('/api/git/status');
+    expect(some.status).toBe(200);
+    expect(some.body.detected).toBe(true);
+    expect(fs.realpathSync(some.body.rootPath)).toBe(fs.realpathSync(work));
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const result = await mixed.commitOnRelease({ name: 'v1', description: 'first cut' });
+      expect(result?.status).toBe('committed');
+      expect(warn.mock.calls.some((c) => String(c[0]).includes(outside) && String(c[0]).includes('outside the repository'))).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+    const tracked = (await git(['ls-tree', '-r', '--name-only', 'HEAD'], work)).split('\n');
+    expect(tracked).toContain('pages/a.md');
+    expect(tracked.some((t) => t.includes('ext.md'))).toBe(false);
+  });
+});

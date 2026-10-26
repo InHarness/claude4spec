@@ -26,13 +26,27 @@
  * `createRelease` (accepting a shadow), whose order is file → cache →
  * transaction — it writes the file first and rebuilds the row from it in-band
  * with the indexer's own upsert (`indexReleaseFile`).
+ *
+ * 2.1.49 (M17 m17ui001, M49): open tabs learn about a new, edited or
+ * shadow-accepting release from the base `file:changed { rootId: 'releases' }`
+ * — the one event that refreshes the release list (`['releases']`);
+ * `release:created` / `release:updated` reach only the release diff. Without
+ * the chain nothing in-band broadcasts it, and the watcher's own event is
+ * suppressed, so the store announces every write and removal that landed
+ * itself, with the base reaction's payload (`change` / `unlink`,
+ * `origin: 'server'`). The writing tab absorbs its own echo
+ * (`client/lib/own-writes.ts`).
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import type { SelfWriteSuppressor } from '../fs/sources.js';
 import type { RecordStore } from '../fs/record-store.js';
+import type { WsEmitter } from '../ws/project-emitter.js';
 import type { AcceptedShadow } from '../../shared/entities.js';
+
+/** The registry id of the `releases` root (a code-source root's id is its kind). */
+const RELEASES_ROOT_ID = 'releases';
 
 export interface ReleaseFileData {
   name: string;
@@ -112,6 +126,8 @@ export class ReleaseFileStore {
   readonly root: string;
   /** The M42 record store for `releases`; `null` in rigs with no watcher. */
   records: RecordStore<ReleaseFileData> | null = null;
+  /** The project's M49 emitter; `null` in rigs with no server events. */
+  ws: WsEmitter | null = null;
 
   constructor(
     cwd: string,
@@ -158,24 +174,25 @@ export class ReleaseFileStore {
   /** Write `<slug>.json` (atomic + suppress). */
   write(slug: string, data: ReleaseFileData): void {
     const relPath = this.relPathFor(slug);
+    const abs = this.absFor(relPath);
     if (this.records) {
       this.records.writeSync(relPath, data);
-      return;
+    } else {
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      const body = JSON.stringify(data, null, 2) + '\n';
+      this.watcher.suppress(relPath);
+      const tmp = `${abs}.tmp`;
+      fs.writeFileSync(tmp, body);
+      fs.renameSync(tmp, abs);
     }
-    const abs = this.absFor(relPath);
-    fs.mkdirSync(path.dirname(abs), { recursive: true });
-    const body = JSON.stringify(data, null, 2) + '\n';
-    this.watcher.suppress(relPath);
-    const tmp = `${abs}.tmp`;
-    fs.writeFileSync(tmp, body);
-    fs.renameSync(tmp, abs);
+    this.announce('change', relPath);
   }
 
   /** Remove `<slug>.json` (atomic suppress; ignore if already gone). */
   remove(slug: string): void {
     const relPath = this.relPathFor(slug);
     if (this.records) {
-      this.records.removeSync(relPath);
+      if (this.records.removeSync(relPath)) this.announce('unlink', relPath);
       return;
     }
     this.watcher.suppress(relPath);
@@ -183,7 +200,17 @@ export class ReleaseFileStore {
       fs.unlinkSync(this.absFor(relPath));
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      return;
     }
+    this.announce('unlink', relPath);
+  }
+
+  /**
+   * The base `file:changed` for a write or removal of this store that landed —
+   * the base reaction's payload, which knows only `change` and `unlink`.
+   */
+  private announce(event: 'change' | 'unlink', relPath: string): void {
+    this.ws?.broadcast({ kind: 'file:changed', event, path: relPath, rootId: RELEASES_ROOT_ID, origin: 'server' });
   }
 
   listSlugs(): string[] {

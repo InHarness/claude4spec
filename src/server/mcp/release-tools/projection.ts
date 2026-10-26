@@ -695,6 +695,9 @@ export function projectSpecSnapshot(
       description: raw.release.description,
       created_by: raw.release.createdBy,
       created_at: raw.release.createdAt,
+      // 2.1.49 (mcp-tool `release-tools-release-show`): the accepted shadow,
+      // `null` for a release that did not accept one.
+      accepted_shadow: raw.release.acceptedShadow ?? null,
     },
     total: {},
   };

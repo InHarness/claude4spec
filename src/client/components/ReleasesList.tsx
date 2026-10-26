@@ -7,6 +7,7 @@ import { useBriefs } from '../hooks/useBriefs.js';
 import type { BriefListItemView } from '../lib/briefs-api.js';
 import { UnreleasedBanner } from './release/UnreleasedBanner.js';
 import { ImplementedBadge } from './BriefsList.js';
+import { AcceptedShadowLine } from './release/AcceptedShadowLine.js';
 
 /** Briefs attached to a single release card — belonging (`toRelease === name`)
  * vs outgoing (a brief authored FROM this release whose window is still open at
@@ -130,15 +131,7 @@ export function ReleasesList({ onCreateClick }: Props) {
                   {r.description}
                 </div>
                 {/* 2.1.47: the card of a release that accepted a shadow names it — `id @ sha7`. */}
-                {r.acceptedShadow ? (
-                  <div
-                    className="text-[11.5px] font-mono mt-1"
-                    style={{ color: 'var(--c-subtle)' }}
-                    data-accepted-shadow
-                  >
-                    Accepted shadow {r.acceptedShadow.id} @ {r.acceptedShadow.tipSha.slice(0, 7)}
-                  </div>
-                ) : null}
+                <AcceptedShadowLine acceptedShadow={r.acceptedShadow} className="mt-1" />
                 <ReleaseBriefsSection briefs={briefsByRelease.get(r.name)} />
               </div>
             </Link>

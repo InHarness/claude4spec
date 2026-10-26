@@ -7,7 +7,7 @@
  * 'non-fast-forward'` `Sync` + `Dismiss` instead — `Sync` calls
  * `POST /api/git/sync` and its result is handled by the header's sync toasts.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -328,6 +328,46 @@ describe('git-sync-recover window (M28 u5vl07ch)', () => {
       );
       expect(reload.calls).toBe(0);
       expect(useGitOpsStore.getState().ops).toEqual([]);
+    });
+  });
+
+  describe('the closed set of recovery.operation values (2.1.49, M28 u5vl07ch)', () => {
+    it('[section:u5vl07ch] recovery.operation is exactly commit-on-release, pull or push — sync is not one of them', () => {
+      expectTypeOf<GitErrorRecovery['operation']>().toEqualTypeOf<'commit-on-release' | 'pull' | 'push'>();
+      // @ts-expect-error — `sync` results are toasts, never a recovery operation.
+      const sync: GitErrorRecovery['operation'] = 'sync';
+      expect(sync).toBe('sync');
+    });
+
+    it.each([
+      ['commit-on-release', 'Committing the release'],
+      ['pull', 'Committing pulled changes'],
+      ['push', 'Pushing to the remote'],
+    ] as const)('[section:u5vl07ch] operation %s is named in the window and in its details', async (operation, label) => {
+      const recovery: GitErrorRecovery = {
+        operation,
+        reason: 'git failed',
+        gitStderr: 'fatal: boom',
+        intentPrompt: 'Repair it.',
+      };
+      await render(recovery);
+      expect(host.textContent).toContain(`${label} failed: git failed`);
+      await click(q('[data-git-recover-details-toggle]'));
+      expect(q('[data-git-recover-details]')?.textContent).toContain(`operation: ${operation}`);
+    });
+
+    it('[section:u5vl07ch] a failed abort of the shadow-acceptance merge rides on the commit-on-release operation', async () => {
+      const recovery: GitErrorRecovery = {
+        operation: 'commit-on-release',
+        kind: 'merge-abort-failed',
+        reason: 'git merge --abort failed',
+        gitStderr: 'fatal: could not reset index file',
+        intentPrompt: 'Abort the open merge and restore the registry roots to HEAD. Do not commit.',
+      };
+      await render(recovery);
+      await click(q('[data-git-recover-details-toggle]'));
+      expect(q('[data-git-recover-details]')?.textContent).toContain('operation: commit-on-release');
+      expect(q('[data-git-recover-kind-hint]')?.textContent).toContain('Accepting the shadow failed');
     });
   });
 

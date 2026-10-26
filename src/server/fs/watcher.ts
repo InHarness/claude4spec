@@ -183,14 +183,25 @@ interface SuppressToken {
 const SUPPRESS_GUARD_MS = 300 + SELF_WRITE_WINDOW_MS;
 
 /**
- * 2.1.47 — upper limit of an operation suppression (see
- * {@link FileWatchRuntime.suppressOperation}). A suppression its issuer never
- * released expires on its own after this, with a warning in the log: a token
- * must not outlive the events it exists to swallow. Generous on purpose — it
- * bounds a forgotten release, not the operation; a merge into the index plus
- * the in-band chains of every changed file stays far below it.
+ * 2.1.49 (M40 `c38qf5p5`) — the **operation suppression limit**: the named upper
+ * limit of a suppression for the duration of an operation (see
+ * {@link FileWatchRuntime.suppressOperation}). The specification leaves its value
+ * to the implementation; this is it. A suppression its issuer never released
+ * expires on its own after this, with a warning in the log that names the limit
+ * and states its value: a token must not outlive the events it exists to
+ * swallow. Generous on purpose — it bounds a forgotten release, not the
+ * operation; a merge into the index plus the in-band chains of every changed
+ * file stays far below it.
  */
 export const OPERATION_SUPPRESS_LIMIT_MS = 10 * 60_000;
+
+/** The expiry warning — names the limit and logs its value (M40 `c38qf5p5`). */
+function operationSuppressionExpiredWarning(scope: WatchScope, paths: number): string {
+  return (
+    `[m40] operation suppression of ${paths} path(s) in scope '${scope}' was not released within ` +
+    `the operation suppression limit (${OPERATION_SUPPRESS_LIMIT_MS} ms) — expired on its own`
+  );
+}
 
 /**
  * The handle of one operation suppression. Retired by its issuer through
@@ -589,12 +600,12 @@ export class FileWatchRuntime {
    *    injection (M06) and build-artifact materialisation (M33).
    *
    * A write-back to a DIFFERENT file than the chain's is not arm 2 — it goes
-   * through the primitive and lands in arm 1.
+   * through the primitive and lands in arm 1 (rename-sync M14, entity slug
+   * propagation M19).
    *
-   * The old rule "`suppress` on an ordinary server write is a bug, `markOrigin`
-   * is correct there" is withdrawn as historically true but no longer current:
-   * it held only while a server write existed that did not go through the
-   * primitive. None does.
+   * `markOrigin` labels instead of swallowing, and is the mechanism where the
+   * app CAUSED a change it did not write byte for byte — there the chain must
+   * run from the watcher, the only trigger that sees it.
    *
    * Token lifetime: see {@link SuppressToken}. An arm-2 token is cleared by the
    * dispatch that encloses it; an arm-1 token is retired by its issuer through
@@ -651,8 +662,9 @@ export class FileWatchRuntime {
    *   alike, any number of them — until it is released, with no time window;
    * - `release()` keeps it for the primitive's guard window, so echoes that
    *   arrive just after the operation are still swallowed;
-   * - expires on its own after {@link OPERATION_SUPPRESS_LIMIT_MS}, with a
-   *   warning in the log, when its issuer never released it.
+   * - expires on its own after the operation suppression limit
+   *   ({@link OPERATION_SUPPRESS_LIMIT_MS}), with a warning in the log naming
+   *   the limit and its value, when its issuer never released it.
    *
    * Legal ONLY for a caller that runs the chain itself (`runChain`, which never
    * consults a suppression) for EVERY suppressed path: the events it swallows
@@ -681,10 +693,7 @@ export class FileWatchRuntime {
       released: false,
       timer: setTimeout(() => {
         if (!this.operations.delete(op)) return;
-        console.warn(
-          `[m40] operation suppression of ${keys.size} path(s) in scope '${scope}' was not released ` +
-            `within ${OPERATION_SUPPRESS_LIMIT_MS} ms — expired on its own`,
-        );
+        console.warn(operationSuppressionExpiredWarning(scope, keys.size));
       }, OPERATION_SUPPRESS_LIMIT_MS),
     };
     // Never hold the process open for a suppression.

@@ -1,5 +1,9 @@
 import { isValidGitRefName } from './git.js';
-import { renderCommitTargetTemplate, localDateYYYYMMDD } from '../../shared/git.js';
+import {
+  COMMIT_TARGET_PREVIEW_RELEASE_NAME,
+  renderCommitTargetTemplate,
+  localDateYYYYMMDD,
+} from '../../shared/git.js';
 import type { CrossFieldRule, FieldDeclaration } from '../settings/field-registry.js';
 
 /**
@@ -52,11 +56,9 @@ export const GIT_COMMIT_TARGET_RULE: CrossFieldRule = {
           error: "git.commitTarget.template is required when mode is 'new'",
         };
       }
-      // Ref-safe dummy release name for the preview render — a space (as in
-      // "Preview Release") is itself an invalid ref character, which would fail
-      // every template using the documented `{release_name}` placeholder.
+      // The same ref-safe dummy release name the card's live preview renders with.
       const preview = renderCommitTargetTemplate(template as string, {
-        releaseName: 'preview-release',
+        releaseName: COMMIT_TARGET_PREVIEW_RELEASE_NAME,
         date: localDateYYYYMMDD(new Date()),
       });
       if (!(await isValidGitRefName(preview))) {

@@ -329,7 +329,7 @@ describe('GitService — 0.1.118 read-only methods', () => {
       expect(diff!.files.some((f) => f.path.includes('\\') || f.path.includes('"'))).toBe(false);
     });
 
-    it('statusAheadBehind returns null on detached HEAD (no branch to compare)', async () => {
+    it('[section:m28aug01] statusAheadBehind on detached HEAD is not null (null only without a repo or with the master switch off): branch null, nothing to compare ahead/behind against', async () => {
       const svc = new GitService(dir, [dir]);
       fs.writeFileSync(path.join(dir, 'x.txt'), 'x');
       await git(['add', '.'], dir);
@@ -337,7 +337,7 @@ describe('GitService — 0.1.118 read-only methods', () => {
       const sha = (await git(['rev-parse', 'HEAD'], dir)).trim();
       await git(['checkout', sha], dir);
 
-      expect(await svc.statusAheadBehind()).toBeNull();
+      expect(await svc.statusAheadBehind()).toEqual({ branch: null, isDirty: false, ahead: null, behind: null });
     });
   });
 
@@ -663,7 +663,8 @@ describe('GitService — 0.1.118 read-only methods', () => {
       const svc = new GitService(dir, [dir]);
       const result = await svc.listBranches();
       expect(result.current).toBeNull();
-      expect(result.branches).toContain('main');
+      // Branch names only — not git's `(HEAD detached at <sha>)` line.
+      expect(result.branches).toEqual(['main']);
     });
   });
 

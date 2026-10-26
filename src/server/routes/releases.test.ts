@@ -5,10 +5,11 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import express from 'express';
 import request from 'supertest';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
 import { ReleaseService } from '../services/release.js';
 import { releasesRouter } from './releases.js';
+import { gitRouter } from './git.js';
 import { GitService } from '../services/git.js';
 import { errorHandler } from './errors.js';
 import { releaseDiffOperation, releaseListOperation, releaseShowOperation } from '../services/release-operations.js';
@@ -19,6 +20,7 @@ import type { FileVersionService } from '../services/file-version.js';
 import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import type { TagsService } from '../services/tags.js';
 import type { PagesService } from '../services/pages.js';
+import { ReleaseFileStore } from '../services/release-store.js';
 
 // 0.1.122: this route never has real entity/page rows to diff — it only
 // exercises the `:to === 'current'` dispatch ahead of the name lookup
@@ -298,6 +300,57 @@ describe('POST /api/releases — commit-on-release (M28)', () => {
     expect((await request(app).get('/api/releases/v1')).status).toBe(200);
   });
 
+  it('[section:w6cocvik] [section:spdg8mon] the route calls commit-on-release after createRelease returns, whatever the outcome of the metadata file write: a failed write still commits, the commit carries no release file and is not a marker; a written file makes the next commit its marker', async () => {
+    const releases = new ReleaseService(
+      db,
+      fakeHost,
+      fakeVersions,
+      fakeFileVersions,
+      fakeFileSerializer,
+      fakeRawReader,
+      fakeTagsService,
+      fakePagesService,
+    );
+    const store = new ReleaseFileStore(cwd, '.claude4spec/releases', { suppress: () => {} });
+    const realWrite = store.write.bind(store);
+    let failWrite = true;
+    store.write = (slug, data) => {
+      if (failWrite) throw new Error('disk full');
+      realWrite(slug, data);
+    };
+    releases.setReleaseStore(store);
+    const gitService = new GitService(cwd, [path.join(cwd, 'pages')]);
+    const routeApp = express()
+      .use(express.json())
+      .use('/api/releases', releasesRouter(releases, undefined, gitService))
+      .use(errorHandler);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await request(routeApp).post('/api/releases').send({ name: 'v1', description: 'first cut' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.name).toBe('v1');
+      expect(error).toHaveBeenCalledTimes(1); // the failed write was logged…
+      expect(res.body.gitSync.status).toBe('committed'); // …and the hook ran anyway
+      expect(git('log', '-1', '--format=%B').trim()).toBe('v1\n\nfirst cut');
+      const tracked = git('ls-tree', '-r', '--name-only', 'HEAD').split('\n');
+      expect(tracked).toContain('pages/a.md');
+      expect(tracked).not.toContain('.claude4spec/releases/v1.json');
+      expect(await gitService.resolveReleaseCommit(path.join(cwd, '.claude4spec', 'releases', 'v1.json'))).toBeNull();
+
+      failWrite = false;
+      const next = await request(routeApp).post('/api/releases').send({ name: 'v2', description: 'second cut' });
+      expect(next.status).toBe(201);
+      expect(next.body.gitSync.status).toBe('committed');
+      expect(git('ls-tree', '-r', '--name-only', 'HEAD').split('\n')).toContain('.claude4spec/releases/v2.json');
+      expect(await gitService.resolveReleaseCommit(path.join(cwd, '.claude4spec', 'releases', 'v2.json'))).toBe(
+        git('rev-parse', 'HEAD').trim(),
+      );
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it('[ac:ac-commitforrelease-i-push-honoruja-master] [entity:release] with git.enabled=false commitOnRelease does not run — createRelease answers gitSync: null and makes no commit; no commit-on-release sub-toggle can switch it on', async () => {
     // A legacy sub-toggle left `true` is not a switch: `enabled` is the only gate.
     setGitConfig({ enabled: false, syncCommitOnRelease: true });
@@ -508,6 +561,36 @@ describe('PATCH /api/releases/:name — gitSync of the pull commit (M17 + M28)',
 
     expect(pull.status).toBe(200);
     expect(pull.body.gitSync).toEqual({ status: 'skipped' });
+  });
+
+  it('[ac:ac-gdy-repo-zniknelo-miedzy-akcjami-przeni] the repository vanishing between actions (`.git` removed) → GET /api/git/status reports detected: false, the next release answers gitSync null and the pull gitSync { status: "skipped" } — no error anywhere', async () => {
+    initRepo();
+    writeProjectConfig({ enabled: true });
+    mount();
+    const status = express()
+      .use('/api/git', gitRouter(new GitService(cwd, [path.join(cwd, 'pages')])))
+      .use(errorHandler);
+    const first = await request(app).post('/api/releases').send({ name: 'v1', description: 'first cut' });
+    expect(first.status).toBe(201);
+    expect(first.body.gitSync).toMatchObject({ status: 'committed' });
+    expect((await request(status).get('/api/git/status')).body.detected).toBe(true);
+
+    fs.rmSync(path.join(cwd, '.git'), { recursive: true, force: true }); // the repository is gone
+
+    const after = await request(status).get('/api/git/status');
+    expect(after.status).toBe(200);
+    expect(after.body.detected).toBe(false);
+    expect(after.body.rootPath).toBeNull();
+
+    fs.writeFileSync(path.join(cwd, 'pages', 'b.md'), '# b');
+    const second = await request(app).post('/api/releases').send({ name: 'v2', description: 'second cut' });
+    expect(second.status).toBe(201);
+    expect(second.body).toHaveProperty('gitSync', null);
+
+    const pull = await request(app).patch('/api/releases/v2').send({ assignUnreleased: true });
+    expect(pull.status).toBe(200);
+    expect(pull.body.gitSync).toEqual({ status: 'skipped' });
+    expect(fs.existsSync(path.join(cwd, '.git'))).toBe(false); // nothing re-created the repository
   });
 
   it('[ac:ac-wariant-error-gitcommitresult-gitpushres] a failed git commit answers gitSync { status: error, message } plus the additive recovery { operation, reason, gitStderr, intentPrompt } — operation commit-on-release on createRelease, pull on updateRelease', async () => {

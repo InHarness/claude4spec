@@ -645,15 +645,21 @@ export class ReleaseService {
       return row;
     });
     const releaseRow = tx();
-    // 0.1.118: write the on-disk identity file AFTER the SQLite transaction
-    // commits (best-effort — a release-store write failure must not undo an
-    // already-committed release; log and continue, mirroring the codebase's
-    // "never block a committed mutation on a secondary side-effect" posture).
+    // 2.1.49 (M17 spdg8mon): the order is transaction → file. The `spec_release`
+    // cache row was INSERTed inside the transaction (step 1), so there is no
+    // separate cache-rebuild step after the file write — the `m29-release-cache`
+    // reaction only serves release files brought in from outside the app.
+    // The commit is the point of no return: a failed file write is logged and
+    // the release stands, without a file and so without a marker
+    // (`resolveReleaseCommit` → null, the release diff falls back to SQLite).
+    // The commit-on-release hook is NOT called from here (w6cocvik): the
+    // release channels (REST route, MCP tool) call it after this returns,
+    // whatever the outcome of the file write.
     if (this.releaseStore) {
       try {
         this.releaseStore.write(slug, toReleaseFileData(releaseRow, slug, this.pagesKindRootIds));
       } catch (err) {
-        console.error(`[release] failed to write release file for '${name}':`, err);
+        console.error(`[release] failed to write release file for '${name}' — the release stands without a marker:`, err);
       }
     }
     const release = this.toRelease(releaseRow);

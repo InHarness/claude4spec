@@ -9,6 +9,7 @@ import { SHADOW_DIFF_KEY, shadowDiffKey } from '../lib/release-diff-invalidation
 import { GIT_SHADOWS_KEY } from '../lib/git-ws.js';
 import { useGitOpsStore } from '../state/gitOps.js';
 import { ApiError } from '../lib/api-core.js';
+import { beginOwnReleaseWrite } from '../lib/own-writes.js';
 
 /**
  * The full release list — everything the host's `/releases` UI needs
@@ -157,8 +158,14 @@ export function useAcceptShadow(handlers: {
     mutationFn: (input: ShadowAcceptRequest) => releasesApi.acceptShadow(input),
     // THIS client's own HEAD-moving operation: the WS map must not reload the
     // route on the release commit's `git:status-changed { headChanged: true }`.
-    onMutate: () => useGitOpsStore.getState().begin('accept'),
-    onSuccess: (release, input) => {
+    // 2.1.49: and its own release write — the list's `file:changed` echo is
+    // absorbed, the invalidation below refetches it once (`lib/own-writes.ts`).
+    onMutate: () => {
+      useGitOpsStore.getState().begin('accept');
+      return beginOwnReleaseWrite();
+    },
+    onSuccess: (release, input, own) => {
+      own?.succeeded();
       void qc.invalidateQueries({ queryKey: ['releases'] });
       // A release's rank places briefs on the release axis (server-computed).
       void qc.invalidateQueries({ queryKey: ['briefs', 'list'] });
@@ -166,7 +173,10 @@ export function useAcceptShadow(handlers: {
       void qc.invalidateQueries({ queryKey: SHADOW_DIFF_KEY });
       handlers.onSuccess(release, input);
     },
-    onError: (error, input) => handlers.onError(error, input),
+    onError: (error, input, own) => {
+      if (own?.failed()) void qc.invalidateQueries({ queryKey: ['releases'] });
+      handlers.onError(error, input);
+    },
     onSettled: (release, error) => {
       const ops = useGitOpsStore.getState();
       if (releaseCommitLanded(release, error)) ops.answeredWithHeadChange('accept');
@@ -197,7 +207,12 @@ export function useCreateRelease() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: { name: string; description: string }) => releasesApi.create(input),
-    onSuccess: () => {
+    onMutate: beginOwnReleaseWrite,
+    onError: (_err, _input, own) => {
+      if (own?.failed()) qc.invalidateQueries({ queryKey: ['releases'] });
+    },
+    onSuccess: (_created, _input, own) => {
+      own?.succeeded();
       qc.invalidateQueries({ queryKey: ['releases'] });
       // A release's rank places briefs on the release axis (server-computed).
       qc.invalidateQueries({ queryKey: ['briefs', 'list'] });
@@ -219,7 +234,12 @@ export function useUpdateRelease() {
         description: params.description,
         assignUnreleased: params.assignUnreleased,
       }),
-    onSuccess: (updated, params) => {
+    onMutate: beginOwnReleaseWrite,
+    onError: (_err, _params, own) => {
+      if (own?.failed()) qc.invalidateQueries({ queryKey: ['releases'] });
+    },
+    onSuccess: (updated, params, own) => {
+      own?.succeeded();
       qc.invalidateQueries({ queryKey: ['releases'] });
       // A rename moves briefs on the release axis (rank is looked up by name).
       qc.invalidateQueries({ queryKey: ['briefs', 'list'] });

@@ -1,7 +1,12 @@
 import { useEffect } from 'react';
 import { useGitStatus } from '../../hooks/useGitStatus.js';
 import { useGitBranches } from '../../hooks/useGitBranches.js';
-import { renderCommitTargetTemplate, localDateYYYYMMDD } from '../../../shared/git.js';
+import {
+  COMMIT_TARGET_PREVIEW_RELEASE_NAME,
+  isRefSafeBranchName,
+  renderCommitTargetTemplate,
+  localDateYYYYMMDD,
+} from '../../../shared/git.js';
 import { EFFECT, readKey, type ElementContext, type SettingsContribution } from '../settings/registry.js';
 
 const K = {
@@ -56,19 +61,33 @@ function GitIntegrationElement({ config, draft }: ElementContext) {
   const switchAfterRelease = Boolean(draft.get(K.switchAfterRelease));
   const disabled = draft.saving;
 
+  // M28 rhj0h9rl / fxcropku: the card's states come from `GET /api/git/status`
+  // (`["git-status"]`); the branch list (`GET /api/git/branches`,
+  // `["git-branches"]`) feeds only the commit-target lists, which exist only
+  // with a detected repository — so it is not read before that.
   const { data: status, isLoading } = useGitStatus({ enabled });
-  const { data: branches } = useGitBranches({ enabled: enabled && mode !== 'current' });
+  const { data: branches } = useGitBranches({
+    enabled: enabled && status?.detected === true && mode !== 'current',
+  });
 
   // The companion field of the active mode must be set before anything is sent —
-  // the server would refuse the pair anyway.
+  // the server would refuse the pair anyway. 2.1.49 (M28 fxcropku): the template
+  // is also checked live against the ref-name rule on its rendered preview.
   const branchMissing = mode === 'named' && !branch;
   const templateMissing = mode === 'new' && !template;
+  const preview = template ? renderTemplatePreview(template) : '';
+  const templateInvalid = mode === 'new' && !!preview && !isRefSafeBranchName(preview);
   useEffect(() => {
     draft.setLiveError(K.branch, branchMissing ? 'Pick a branch for the commit target.' : null);
-    draft.setLiveError(K.template, templateMissing ? 'Enter a branch name template.' : null);
-  }, [branchMissing, templateMissing, draft]);
-
-  const preview = template ? renderTemplatePreview(template) : '';
+    draft.setLiveError(
+      K.template,
+      templateMissing
+        ? 'Enter a branch name template.'
+        : templateInvalid
+          ? `The template renders to an invalid branch name: "${preview}".`
+          : null,
+    );
+  }, [branchMissing, templateMissing, templateInvalid, preview, draft]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -172,8 +191,8 @@ function GitIntegrationElement({ config, draft }: ElementContext) {
                 </select>
                 {draft.error(K.branch) ? <ErrorText>{draft.error(K.branch)}</ErrorText> : null}
                 {branch && branches && !branches.branches.includes(branch) ? (
-                  <span className="text-[11.5px]" style={{ color: '#a87033' }}>
-                    Saved branch "{branch}" no longer exists.
+                  <span className="text-[11.5px]" style={{ color: '#a87033' }} role="status" data-git-branch-missing>
+                    This branch no longer exists — pick another or it will fail on release.
                   </span>
                 ) : null}
               </div>
@@ -259,9 +278,12 @@ function ErrorText({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Live preview only — shares `renderCommitTargetTemplate` (src/shared/git.ts) with the server so the two never drift out of sync; the authoritative ref-format check still happens server-side on PATCH. */
+/** Live preview — rendered exactly as the server's PATCH check renders it (`renderCommitTargetTemplate` + the shared preview release name), so the live ref-name check and the server's `git check-ref-format` judge the same name. */
 function renderTemplatePreview(template: string): string {
-  return renderCommitTargetTemplate(template, { releaseName: 'Preview Release', date: localDateYYYYMMDD(new Date()) });
+  return renderCommitTargetTemplate(template, {
+    releaseName: COMMIT_TARGET_PREVIEW_RELEASE_NAME,
+    date: localDateYYYYMMDD(new Date()),
+  });
 }
 
 function RadioRow({

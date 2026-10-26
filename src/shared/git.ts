@@ -304,7 +304,7 @@ export interface GitAheadBehindStatus {
 export interface GitBranchesResponse {
   /** `git rev-parse --abbrev-ref HEAD`; `null` on detached HEAD, no repo, or git disabled. */
   current: string | null;
-  /** `git branch --format=%(refname:short)`. Non-empty in detached HEAD — branches
+  /** The names under `refs/heads/` (`git for-each-ref`). Non-empty in detached HEAD — branches
    *  still exist, there's just no current one, so the UI can offer a way out. */
   branches: string[];
 }
@@ -364,6 +364,33 @@ export function renderCommitTargetTemplate(
         return token;
     }
   });
+}
+
+/**
+ * 2.1.49 (M28 fxcropku): the release name a commit-target template is rendered
+ * with for its preview and its validity check — ref-safe itself (a space, as in
+ * "Preview Release", is an invalid ref character and would fail every template
+ * using `{release_name}`). Shared by the PATCH /api/config rule and the `#git`
+ * card's live preview, so both judge the same rendered name.
+ */
+export const COMMIT_TARGET_PREVIEW_RELEASE_NAME = 'preview-release';
+
+/**
+ * 2.1.49 (M28 fxcropku): the `#git` card's live check of a rendered branch
+ * name — the rules of `git check-ref-format --branch`. The server still runs
+ * git's own check on save (`isValidGitRefName`); this mirrors it so the error
+ * shows while typing.
+ */
+export function isRefSafeBranchName(name: string): boolean {
+  if (!name || name === '@' || name.startsWith('-')) return false;
+  if (name.startsWith('/') || name.endsWith('/') || name.endsWith('.')) return false;
+  if (name.includes('..') || name.includes('//') || name.includes('@{')) return false;
+  // Control characters, space, DEL and ~ ^ : ? * [ \ are never allowed in a ref.
+  for (const ch of name) {
+    const code = ch.charCodeAt(0);
+    if (code <= 0x20 || code === 0x7f || '~^:?*[\\'.includes(ch)) return false;
+  }
+  return name.split('/').every((part) => !part.startsWith('.') && !part.endsWith('.lock'));
 }
 
 /**

@@ -8,6 +8,8 @@
  * snapshots per entity and per modified section.
  */
 
+import type { AcceptedShadow } from '../../../shared/entities.js';
+
 /** Per-type entity snapshot shape decided by plugin's serializer.snapshot(). */
 export type EntitySnapshot = Record<string, unknown>;
 
@@ -222,6 +224,8 @@ export interface MCPSpecSnapshot {
     description: string;
     created_by: string;
     created_at: string;
+    /** 2.1.49: `{ id, tipSha }` on a release that accepted a shadow, otherwise `null`. */
+    accepted_shadow: AcceptedShadow | null;
   };
   /**
    * Totals BEFORE limit/offset, AFTER include/entityTypes filters. Keys stay in
