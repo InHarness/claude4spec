@@ -159,4 +159,51 @@ describe.skipIf(!BASE)('sidebar OTHERS side menu', () => {
 
     await page.close();
   });
+
+  /** The AC list page, with the pointer parked in the page body. */
+  async function openAcs(page: Page) {
+    await page.goto(`${BASE}/p/${project.id}/acs`, { waitUntil: 'networkidle' });
+    await page.mouse.move(900, 450);
+  }
+
+  it('a hover previews the menu: it closes after the delay once the pointer goes away, and survives the way onto the panel', async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await openAcs(page);
+    const trigger = page.getByRole('button', { name: 'OTHERS' });
+    const menu = page.getByRole('menu', { name: 'Others' });
+
+    await trigger.hover();
+    await expect.poll(() => menu.isVisible()).toBe(true);
+    expect(await trigger.getAttribute('aria-expanded')).toBe('true');
+
+    // Entry → panel, with real mouse steps across the gap between them.
+    const box = (await menu.getByRole('menuitem', { name: 'Tags' }).boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 8 });
+    await page.waitForTimeout(500);
+    expect(await menu.isVisible()).toBe(true);
+
+    // Away from both: closes after the delay.
+    await page.mouse.move(900, 450, { steps: 4 });
+    await expect.poll(() => menu.count(), { timeout: 2000 }).toBe(0);
+    expect(await trigger.getAttribute('aria-expanded')).toBe('false');
+
+    await page.close();
+  });
+
+  it('a click pins the menu: it stays when the pointer goes away, and a second click on OTHERS closes it', async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await openAcs(page);
+    const trigger = page.getByRole('button', { name: 'OTHERS' });
+    const menu = page.getByRole('menu', { name: 'Others' });
+
+    await trigger.click();
+    await page.mouse.move(900, 450, { steps: 4 });
+    await page.waitForTimeout(600);
+    expect(await menu.isVisible()).toBe(true);
+
+    await trigger.click();
+    await expect.poll(() => menu.count()).toBe(0);
+
+    await page.close();
+  });
 });

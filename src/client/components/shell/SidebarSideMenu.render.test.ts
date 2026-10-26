@@ -19,7 +19,7 @@ import {
   createRouter,
 } from '@tanstack/react-router';
 import { ClipboardList, GitCommit, Tag } from 'lucide-react';
-import { SidebarSideMenu, type SideMenuItem } from './SidebarSideMenu.js';
+import { SIDE_MENU_PREVIEW_DELAY_MS, SidebarSideMenu, type SideMenuItem } from './SidebarSideMenu.js';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -35,6 +35,7 @@ function Shell() {
     null,
     createElement(SidebarSideMenu, { label: 'Menu A', items: MENU_A, children: 'Entry A' }),
     createElement(SidebarSideMenu, { label: 'Menu B', items: MENU_B, children: 'Entry B' }),
+    createElement('a', { 'data-testid': 'plain-entry', href: '/' }, 'Plain entry'),
     createElement('button', { 'data-testid': 'elsewhere' }, 'elsewhere'),
     createElement('input', { 'data-testid': 'field' }),
     createElement(Outlet),
@@ -97,11 +98,37 @@ async function openByClick(text: string) {
   await click(t);
 }
 
-async function hover(el: Element) {
+/** Where the (mouse) pointer currently is — moves dispatch out/over pairs as a browser does. */
+let pointerAt: Element = document.body;
+
+/** Moves a pointer onto `el` (React derives enter/leave from these out/over pairs). */
+async function pointTo(el: Element, pointerType = 'mouse') {
+  const from = pointerAt;
+  pointerAt = el;
   await act(async () => {
-    el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body }));
+    from.dispatchEvent(new PointerEvent('pointerout', { bubbles: true, relatedTarget: el, pointerType }));
+    el.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, relatedTarget: from, pointerType }));
   });
 }
+
+const hover = (el: Element) => pointTo(el);
+/** The open menu's panel — the Popover around the list. */
+const panel = () => host.querySelector('[role="menu"]')!.closest('[role="dialog"]')!;
+const elsewhere = () => host.querySelector<HTMLElement>('[data-testid="elsewhere"]')!;
+const plainEntry = () => host.querySelector<HTMLElement>('[data-testid="plain-entry"]')!;
+
+/** Lets `ms` of real time pass (the preview delay is a real timer). */
+async function wait(ms: number) {
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, ms));
+  });
+}
+const pastDelay = () => wait(SIDE_MENU_PREVIEW_DELAY_MS + 60);
+const withinDelay = () => wait(SIDE_MENU_PREVIEW_DELAY_MS / 4);
+
+/** Whether the device reports a hover-capable primary pointer (`(hover: hover)`). */
+let deviceCanHover = true;
+const realMatchMedia = window.matchMedia;
 
 /** Presses a key on the focused element; returns whether the app prevented its default. */
 async function key(k: string, shiftKey = false): Promise<boolean> {
@@ -116,6 +143,18 @@ async function key(k: string, shiftKey = false): Promise<boolean> {
 
 beforeEach(async () => {
   lastClickLeftToBrowser = null;
+  pointerAt = document.body;
+  deviceCanHover = true;
+  window.matchMedia = ((query: string) => ({
+    matches: query === '(hover: hover)' ? deviceCanHover : false,
+    media: query,
+    onchange: null,
+    addEventListener() {},
+    removeEventListener() {},
+    addListener() {},
+    removeListener() {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia;
   document.addEventListener('click', clickGuard);
   host = document.createElement('div');
   document.body.appendChild(host);
@@ -134,6 +173,7 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
   document.removeEventListener('click', clickGuard);
+  window.matchMedia = realMatchMedia;
 });
 
 describe('sidebar side menu (M50 8h2a734u)', () => {
@@ -167,10 +207,14 @@ describe('sidebar side menu (M50 8h2a734u)', () => {
     expect(trigger('Entry A').getAttribute('aria-expanded')).toBe('false');
     expect(trigger('Entry B').getAttribute('aria-expanded')).toBe('true');
 
-    // Hover opens A; B closes.
+    // A hover opens A once nothing is pinned; hovering B then previews B, A closes.
+    await key('Escape');
     await hover(trigger('Entry A'));
     expect(openMenus()).toEqual(['Menu A']);
-    expect(trigger('Entry B').getAttribute('aria-expanded')).toBe('false');
+    await hover(trigger('Entry B'));
+    await pastDelay();
+    expect(openMenus()).toEqual(['Menu B']);
+    expect(trigger('Entry A').getAttribute('aria-expanded')).toBe('false');
   });
 
   it('[ac:ac-klik-pozycji-menu-bocznego-sidebara-n] a click on a side-menu item navigates to that item\'s route', async () => {
@@ -302,5 +346,133 @@ describe('sidebar side menu (M50 8h2a734u)', () => {
         .dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     });
     expect(openMenus()).toEqual([]);
+  });
+});
+
+describe('sidebar side menu — preview (hover) vs pinned (click) (M50 8h2a734u)', () => {
+  it('[ac:ac-menu-boczne-sidebara-otwarte-najechan] a hover-opened side menu closes after the delay once the pointer is outside the entry and the panel', async () => {
+    await hover(trigger('Entry A'));
+    expect(openMenus()).toEqual(['Menu A']);
+    await hover(elsewhere());
+    // Not at once — only after the delay.
+    await withinDelay();
+    expect(openMenus()).toEqual(['Menu A']);
+    await pastDelay();
+    expect(openMenus()).toEqual([]);
+  });
+
+  it('[ac:ac-powrot-wskaznika-na-wpis-lub-panel-pr] coming back to the entry or the panel before the delay cancels the close of a hover-opened menu', async () => {
+    await hover(trigger('Entry A'));
+    await hover(elsewhere());
+    await withinDelay();
+    await hover(trigger('Entry A'));
+    await pastDelay();
+    expect(openMenus()).toEqual(['Menu A']);
+
+    await hover(elsewhere());
+    await withinDelay();
+    await hover(item('Plans'));
+    await pastDelay();
+    expect(openMenus()).toEqual(['Menu A']);
+  });
+
+  it('[ac:ac-przejscie-wskaznika-z-wpisu-na-panel] moving the pointer from the entry onto the panel keeps a hover-opened menu', async () => {
+    await hover(trigger('Entry A'));
+    // The Popover's padding is the panel too, not only the list.
+    await hover(panel());
+    await hover(item('Releases'));
+    await pastDelay();
+    expect(openMenus()).toEqual(['Menu A']);
+  });
+
+  it('[ac:ac-po-kliku-wpisu-ktorego-menu-boczne-je] after a click on the entry of a hover-opened menu, it stays open once the pointer leaves', async () => {
+    await hover(trigger('Entry A'));
+    await click(trigger('Entry A'));
+    await hover(elsewhere());
+    await pastDelay();
+    expect(openMenus()).toEqual(['Menu A']);
+  });
+
+  it('[ac:ac-menu-boczne-sidebara-otwarte-klikiem] a click-opened side menu stays open when the pointer leaves the entry and the panel', async () => {
+    await click(trigger('Entry A'));
+    await hover(panel());
+    await hover(elsewhere());
+    await pastDelay();
+    expect(openMenus()).toEqual(['Menu A']);
+  });
+
+  it('[ac:ac-klik-wpisu-ktorego-menu-boczne-jest-p] a click on the entry of a pinned side menu closes it', async () => {
+    await click(trigger('Entry A'));
+    expect(openMenus()).toEqual(['Menu A']);
+    await click(trigger('Entry A'));
+    expect(openMenus()).toEqual([]);
+    expect(trigger('Entry A').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('[ac:ac-po-wejsciu-focusu-do-panelu-menu-bocz] after focus enters the panel of a hover-opened menu, it stays open once the pointer leaves', async () => {
+    await hover(trigger('Entry A'));
+    act(() => item('Plans').focus());
+    await hover(elsewhere());
+    await pastDelay();
+    expect(openMenus()).toEqual(['Menu A']);
+  });
+
+  it('[ac:ac-na-urzadzeniu-bez-najechania-menu-boc] on a device without hover the side menu opens only by a click', async () => {
+    // A touch pointer never previews…
+    await pointTo(trigger('Entry A'), 'touch');
+    expect(openMenus()).toEqual([]);
+    // …nor does a mouse-typed event on a device whose media says it cannot hover.
+    deviceCanHover = false;
+    await pointTo(elsewhere());
+    await pointTo(trigger('Entry A'));
+    expect(openMenus()).toEqual([]);
+    // A click opens it — pinned at once.
+    await click(trigger('Entry A'));
+    await pointTo(elsewhere());
+    await pastDelay();
+    expect(openMenus()).toEqual(['Menu A']);
+  });
+
+  it('[ac:ac-wpis-wyzwalacz-oglasza-stan-rozwiniec] the entry announces the expanded state the same for a hover-opened and a click-opened menu', async () => {
+    const a = trigger('Entry A');
+    await hover(a);
+    const previewed = [a.getAttribute('aria-expanded'), a.getAttribute('aria-controls')];
+    await click(a);
+    const pinned = [a.getAttribute('aria-expanded'), a.getAttribute('aria-controls')];
+    expect(previewed[0]).toBe('true');
+    expect(pinned).toEqual(previewed);
+  });
+
+  it('[ac:ac-wskaznik-przecinajacy-sasiedni-wpis-w] a pointer crossing a neighbouring entry on its way to the panel keeps the hover-opened menu', async () => {
+    await hover(trigger('Entry A'));
+    await hover(trigger('Entry B'));
+    await withinDelay();
+    await hover(panel());
+    await pastDelay();
+    expect(openMenus()).toEqual(['Menu A']);
+    // Resting on the neighbour past the delay swaps the preview to it.
+    await hover(trigger('Entry B'));
+    await pastDelay();
+    expect(openMenus()).toEqual(['Menu B']);
+  });
+
+  it('[ac:ac-najechanie-wpisu-sidebara-ktory-nie-o] hovering a sidebar entry that opens no menu closes a hover-opened menu after the delay', async () => {
+    await hover(trigger('Entry A'));
+    await hover(plainEntry());
+    await withinDelay();
+    expect(openMenus()).toEqual(['Menu A']);
+    await pastDelay();
+    expect(openMenus()).toEqual([]);
+  });
+
+  it('[ac:ac-najechanie-innego-wpisu-przy-menu-boc] hovering another entry while a side menu is pinned neither closes it nor previews the other', async () => {
+    await click(trigger('Entry A'));
+    await hover(trigger('Entry B'));
+    await pastDelay();
+    expect(openMenus()).toEqual(['Menu A']);
+    expect(trigger('Entry B').getAttribute('aria-expanded')).toBe('false');
+    // Only a click opens another one.
+    await click(trigger('Entry B'));
+    expect(openMenus()).toEqual(['Menu B']);
   });
 });
