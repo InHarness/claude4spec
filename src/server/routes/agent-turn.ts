@@ -587,14 +587,18 @@ export async function runAgentTurn(
     'warning',
   ]);
   /**
-   * Byte budget for ONE iteration's replay buffer (0.2.50).
+   * Byte budget for the WHOLE replay buffer (0.2.50).
    *
    * The buffer is unbounded RAM held for the whole turn, and a turn that reads
    * a lot of large files can push tens of MB of `tool_result` summaries through
-   * it. The cap is per iteration, not per turn, because merged dispatch resets
-   * the buffer on each new `turn_start`.
+   * it. The cap covers the turn since the last merged dispatch — continuations
+   * after a background task or a delegation share it — because merged dispatch
+   * is the only reset.
    */
   const REPLAY_BUDGET_BYTES = 4 * 1024 * 1024;
+
+  /** `tool_use` id → tool name, for the header of a degraded `tool_result`. */
+  const replayToolNames = new Map<string, string>();
 
   const sizeOf = (event: TurnEvent): number => {
     try {
@@ -639,6 +643,10 @@ export async function runAgentTurn(
        */
       degraded.summary = '';
       degraded.truncated = true;
+      // The adapter's `tool_result` has no name; the header takes it from the
+      // paired `tool_use` (see `replayToolNames`).
+      const toolName = replayToolNames.get(String(degraded.toolUseId));
+      if (toolName !== undefined) degraded.toolName = toolName;
       replay.bytes -= before - sizeOf(entry);
     }
   };
@@ -656,6 +664,9 @@ export async function runAgentTurn(
      * destroying exactly the full copy that makes degradation safe to do at all.
      */
     const buffered = event.type === 'tool_result' ? ({ ...event } as TurnEvent) : event;
+    if (event.type === 'tool_use') {
+      replayToolNames.set(String(event.toolUseId), String(event.toolName));
+    }
     replay.events.push(buffered);
     replay.bytes += sizeOf(buffered);
     if (replay.bytes <= REPLAY_BUDGET_BYTES) return;
@@ -1266,10 +1277,9 @@ export async function runAgentTurn(
     // still records the config of the turn that actually opened the session.
     const { custom_env: _customEnv, ...snapshotArchitectureConfig } = input.architectureConfig;
     const recordSession = (sessionId: string): void => {
-      deps.chatService.setLastSessionId(thread.id, sessionId);
       const live = deps.activeAdapters.get(thread.id);
       if (live && live.requestId === requestId) live.sessionId = sessionId;
-      deps.chatService.setInitialArchitectureConfig(thread.id, {
+      deps.chatService.recordSession(thread.id, sessionId, {
         model: input.model,
         architectureConfig: snapshotArchitectureConfig,
         allowedPaths: normalizeResumePathScope(resolvedPathScope.allowedPaths),
@@ -1844,7 +1854,7 @@ export async function runAgentTurn(
       disallowedPaths: resolvedPathScope.disallowedPaths,
     };
     // Resume anchor threaded across turns of THIS request (merged dispatch resumes
-    // the just-finished session). `setLastSessionId` only writes the DB, so we
+    // the just-finished session). `chatService.recordSession` only writes the DB, so we
     // track the latest id in-memory too.
     let currentSessionId: string | undefined = thread.lastSessionId ?? undefined;
 
@@ -1870,10 +1880,31 @@ export async function runAgentTurn(
        * belonged to an MCP tool, and the result event carries only the id.
        */
       const mcpToolUseNames = new Map<string, string>();
+      /**
+       * `adapter_ready` of THIS query, held until the first event that is not an
+       * `error`.
+       *
+       * Forwarded live but never replayed — it is not in `REPLAY_EVENT_TYPES`.
+       * Held rather than sent at once because a refusal the adapter delivers as
+       * `AdapterToolPolicyError` must reach the client as exactly `error` +
+       * `done`: if the next event is that error, the held frame is dropped. The
+       * wire copy carries only the adapter name — the library's `sdkConfig`
+       * holds `custom_env` with a decrypted API key.
+       */
+      let heldAdapterReady: TurnEvent | null = null;
       const observed = input.consoleObserver
         ? observeStream(stream, [input.consoleObserver])
         : stream;
       for await (const event of observed) {
+        if (event.type === 'adapter_ready') {
+          heldAdapterReady = { type: 'adapter_ready', adapter: event.adapter };
+        } else if (event.type === 'error') {
+          heldAdapterReady = null;
+        } else if (heldAdapterReady) {
+          input.onEvent(heldAdapterReady);
+          emitter.emit('event', heldAdapterReady);
+          heldAdapterReady = null;
+        }
         if (parked && isMainModelEvent(event)) {
           // 0.2.109: the model woke up after a non-terminal `result` — a
           // delegation or a background task settled and the adapter resumed.
@@ -2137,9 +2168,10 @@ export async function runAgentTurn(
             break;
           /**
            * Internal delimiter meaning "every start-up warning has now been
-           * emitted". Consumed here and nowhere else: not forwarded (filtered
-           * out above), not persisted, not replayed — it renders nothing, and
-           * the client's marker for "an iteration began" is `turn_start`.
+           * emitted". Forwarded live (held at the top of the loop, as a
+           * name-only frame), never persisted, never replayed — it renders
+           * nothing, and the client's marker for "an iteration began" is
+           * `turn_start`.
            *
            * Logged because it is the only record of what the turn actually ran
            * with. `sdkConfig` is library-shaped and carries `custom_env` with a
@@ -2263,10 +2295,15 @@ export async function runAgentTurn(
       };
       replay.turnStart = mergedTurnStart;
       replay.events = [];
-      // The byte budget is PER ITERATION, so the counter and the truncation
-      // flag reset with the events they describe.
+      replayToolNames.clear();
+      // The byte budget covers the buffer since the last merged dispatch, so
+      // the counter and the truncation flag reset with the events they describe.
       replay.bytes = 0;
       delete replay.truncated;
+      // The usage anchors belong to the turn too: a merged turn with no main
+      // assistant row must not stamp its usage onto the previous turn's row.
+      lastMainAssistantRowId = null;
+      lastToolResultRowId = null;
       emit(mergedTurnStart);
       await consume(merged);
       batch = deps.chatService.popAllQueued(thread.id);
@@ -2305,6 +2342,9 @@ export async function runAgentTurn(
     // `emit` (nie samo `input.onEvent`) — error musi trafić też do emittera/bufora,
     // żeby klient wznawiający przez `joinStream` sfinalizował turę (reducer: isStreaming=false).
     emit({ type: 'error', code: turnErr.code, error: turnErr.message });
+    // `done` is the only unconditional end of the stream, on the error path too
+    // (a refusal is exactly `error` + `done`). The emitter gets its own in `finally`.
+    input.onEvent({ type: 'done' });
     throw turnErr;
   } finally {
     try {

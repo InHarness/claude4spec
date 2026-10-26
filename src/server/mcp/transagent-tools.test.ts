@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { buildTransagentToolsServer } from './transagent-tools.js';
-import { TransagentDispatcher } from '../services/transagent-dispatcher.js';
+import { ResumeConfigLockedError, TransagentDispatcher } from '../services/transagent-dispatcher.js';
 import type { AgentTurnDeps, AgentTurnInput } from '../routes/agent-turn.js';
 import { runMigrations } from '../db/migrate.js';
 import { ChatService } from '../services/chat.js';
@@ -123,6 +123,14 @@ describe('runTransagent — error taxonomy', () => {
     );
     expect(locked.body.code).toBe('RESUME_CONFIG_LOCKED');
     expect(locked.body.hint).toMatch(/fresh banka/);
+  });
+
+  it('carries RESUME_CONFIG_LOCKED violations structured in the tool error', async () => {
+    const violations = [{ path: 'model', reason: 'immutable on resume' }];
+    const { body } = await callAndParse(
+      new ResumeConfigLockedError('config changed', 'Spawn a fresh banka', violations as ResumeConfigLockedError['violations']),
+    );
+    expect(body.violations).toEqual(violations);
   });
 
   /** A hint is the half of the error that says which call would have worked. */

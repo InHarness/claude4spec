@@ -192,12 +192,11 @@ export function ChatOverlay() {
     (activeThreadMeta?.id === chatThreadId ? activeThreadMeta : null);
   const resumeConstraints = chatConfig?.sessionResumeConstraints ?? [];
   /**
-   * Default TRUE while the config is still loading: the toggle's normal state is
-   * available, and `claude-code` (the only architecture this app runs) always
-   * reports both groups enforceable. Defaulting to false would flicker the
-   * control into a disabled state on every mount.
+   * `undefined` while the config is still loading — the toggle reads that as
+   * "checking", not as available: it is offered only once the server has
+   * confirmed that every withheld group is enforceable, never on an assumption.
    */
-  const planModeEnforceable = chatConfig?.planModeEnforceable ?? true;
+  const planModeEnforceable = chatConfig?.planModeEnforceable;
   // M21: dla brief context naglowek pokazuje "Brief: <filename>" zamiast title.
   // Pozwala na szybka identyfikacje ze rozmowa ma whitelisted toolset (brief-tools).
   const activeTitle = activeThread?.contextType === 'brief' && activeThread.briefPath
@@ -535,25 +534,32 @@ export function ChatOverlay() {
             architectureConfig={thinkingToConfig(thinking, adaptive)}
             contextWindow={modelInfo?.contextWindow}
           />
-          <button
-            onClick={() => void handleToggleSystemPrompt()}
-            disabled={!activeThread?.hasSystemPrompt}
-            aria-pressed={systemPromptViewOpen}
-            className="h-7 w-7 rounded-md inline-flex items-center justify-center btn-ghost"
-            style={{
-              color: systemPromptViewOpen ? 'var(--c-ink)' : 'var(--c-muted)',
-              background: systemPromptViewOpen ? 'var(--c-accent-soft)' : 'transparent',
-              opacity: activeThread?.hasSystemPrompt ? 1 : 0.4,
-              cursor: activeThread?.hasSystemPrompt ? 'pointer' : 'not-allowed',
-            }}
+          {/* The tooltip sits on a wrapper: a disabled <button> does not show its
+              own `title` in every browser. */}
+          <span
+            className="inline-flex"
             title={
               activeThread?.hasSystemPrompt
                 ? 'Show system prompt'
                 : 'System prompt will be rendered after the first message'
             }
           >
-            <FileText size={14} />
-          </button>
+            <button
+              onClick={() => void handleToggleSystemPrompt()}
+              disabled={!activeThread?.hasSystemPrompt}
+              aria-pressed={systemPromptViewOpen}
+              aria-label="Show system prompt"
+              className="h-7 w-7 rounded-md inline-flex items-center justify-center btn-ghost"
+              style={{
+                color: systemPromptViewOpen ? 'var(--c-ink)' : 'var(--c-muted)',
+                background: systemPromptViewOpen ? 'var(--c-accent-soft)' : 'transparent',
+                opacity: activeThread?.hasSystemPrompt ? 1 : 0.4,
+                cursor: activeThread?.hasSystemPrompt ? 'pointer' : 'not-allowed',
+              }}
+            >
+              <FileText size={14} />
+            </button>
+          </span>
           <IconBtn icon={Plus} title="New conversation" onClick={handleCreateThread} />
           <IconBtn icon={X} title="Close chat" onClick={() => setChatOpen(false)} />
           {threadsOpen && (
@@ -1082,7 +1088,8 @@ interface ModelSettingsPopoverProps {
   /** Locked fields declared by the adapter package (served via GET /api/chat/config). */
   resumeConstraints: SessionResumeConstraint[];
   /** Whether `probeToolGating` confirmed both plan-mode deny-groups are enforceable. */
-  planModeEnforceable: boolean;
+  /** `undefined` = enforceability not confirmed yet (config loading). */
+  planModeEnforceable: boolean | undefined;
   onClose(): void;
 }
 
@@ -1257,20 +1264,23 @@ function ModelSettingsPopover({ models, defaultModel, model, setModel, thinking,
             confirmed BOTH preset deny-groups are enforceable here. Where they are
             not, `planMode: true` would make the next turn refuse to start
             (TOOL_POLICY_REFUSED), so a switch that only breaks the turn is worse
-            than no switch. */}
+            than no switch. Switching it OFF is always allowed: an unconfirmed
+            (or unenforceable) state must never trap a thread in plan mode. */}
         <button
-          onClick={() => { if (planModeEnforceable) setPlanMode(!planMode); }}
-          disabled={!planModeEnforceable}
+          onClick={() => { if (planModeEnforceable || planMode) setPlanMode(!planMode); }}
+          disabled={!planModeEnforceable && !planMode}
           title={
             planModeEnforceable
               ? undefined
-              : 'This agent architecture cannot enforce the file-write and shell restrictions plan mode requires'
+              : planModeEnforceable === undefined
+                ? 'Checking whether plan mode can be enforced…'
+                : 'This agent architecture cannot enforce the file-write and shell restrictions plan mode requires'
           }
           className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-md disabled:cursor-not-allowed"
           style={{
             background: planMode ? 'var(--c-accent-soft)' : 'var(--c-panel)',
             border: `1px solid ${planMode ? 'var(--c-accent)' : 'var(--c-hair)'}`,
-            opacity: planModeEnforceable ? 1 : 0.5,
+            opacity: planModeEnforceable || planMode ? 1 : 0.5,
           }}
         >
           <span
@@ -1291,7 +1301,9 @@ function ModelSettingsPopover({ models, defaultModel, model, setModel, thinking,
             <div className="text-[10.5px]" style={{ color: 'var(--c-subtle)' }}>
               {planModeEnforceable
                 ? "Agent proposes, doesn't modify"
-                : 'Unavailable — not enforceable on this architecture'}
+                : planModeEnforceable === undefined
+                  ? 'Checking availability…'
+                  : 'Unavailable — not enforceable on this architecture'}
             </div>
           </span>
         </button>

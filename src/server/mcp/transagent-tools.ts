@@ -48,7 +48,7 @@ import { toIso } from '../services/artifact-content.js';
 import type { BriefService } from '../services/brief.js';
 import type { PatchService } from '../services/patch.js';
 import type { PlanService } from '../services/plan.js';
-import type { TransagentDispatcher } from '../services/transagent-dispatcher.js';
+import { ResumeConfigLockedError, type TransagentDispatcher } from '../services/transagent-dispatcher.js';
 import { DomainError } from '../services/tags.js';
 import { AgentTurnError } from '../../shared/agent-turn.js';
 
@@ -188,9 +188,9 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
         // clock (IDLE_TIMEOUT); the caller's turn carries on. The collapse
         // returns no id of the row the failed turn founded — the session is
         // picked up again by continuing the `threadId` the caller passed.
-        const { code, hint } = transagentErrorCode(err);
+        const { code, hint, violations } = transagentErrorCode(err);
         const message = err instanceof Error ? err.message : String(err);
-        return toolError(code, message, hint);
+        return toolError(code, message, hint, violations ? { violations } : undefined);
       }
     },
   );
@@ -446,10 +446,15 @@ function buildListPlansTool(plans: Pick<PlanService, 'listPlans'>, projectId: st
  * `z.string()` so this function could reject it by hand would trade a
  * protocol-level guarantee for a spelling.
  */
-function transagentErrorCode(err: unknown): { code: string; hint?: string } {
+function transagentErrorCode(err: unknown): { code: string; hint?: string; violations?: unknown[] } {
   if (err instanceof AgentTurnError) return { code: err.code };
   if (err instanceof DomainError) {
-    return { code: err.code === 'VALIDATION' ? 'INVALID_ARGS' : err.code, hint: err.hint };
+    return {
+      code: err.code === 'VALIDATION' ? 'INVALID_ARGS' : err.code,
+      hint: err.hint,
+      // `RESUME_CONFIG_LOCKED` carries its `[{ path, reason }]` list as the remedy.
+      ...(err instanceof ResumeConfigLockedError ? { violations: err.violations } : {}),
+    };
   }
   // Default stays `AGENT_ERROR` rather than `INTERNAL`: a child turn that
   // failed is not this server faulting.

@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { slugify } from '../services/slug.js';
 import type { MarkdownFileStore } from '../services/markdown-file-store.js';
+import { warnForeignKeyViolations } from '../db/migrate.js';
 
 interface LegacyPlanRow {
   id: number;
@@ -197,6 +198,7 @@ export async function backfillPlansToFilesystem(params: {
   } finally {
     if (fkWasOn) db.pragma('foreign_keys = ON');
   }
+  warnForeignKeyViolations(db, 'plan migration');
 
   console.log(`[plan-migration] migrated ${rows.length} plan(s) to filesystem storage under .claude4spec/plans`);
 }
