@@ -1,5 +1,5 @@
 {
- "iteration": 2,
+ "iteration": 4,
  "conventions": [
   {
    "label": "L4 (API)",
@@ -461,13 +461,33 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "pending",
-   "portions": [],
-   "startCommit": null,
-   "baseCommit": null,
+   "status": "verified",
+   "portions": [
+    {
+     "name": "u4-m17-create-release-channel-hook/p1-l2-l2",
+     "layers": [
+      "L2"
+     ],
+     "slugs": [
+      "release-service-contract",
+      "ac-gdy-zapis-pliku-metadanych-po-zatwier",
+      "ac-encja-zmieniona-scaleniem-sync-z-wyni",
+      "section:spdg8mon",
+      "section:w6cocvik",
+      "section:ry0bx4ji"
+     ],
+     "status": "implemented",
+     "rounds": 2,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
+   "startCommit": "3c7197d9424a554c4e9639c65acee2510ebdce23",
+   "baseCommit": "34628692fc7217be38c9f7016718e729fccefd49",
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 2
    },
    "jobs": []
   },

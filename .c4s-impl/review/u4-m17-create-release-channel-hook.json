@@ -1,0 +1,10 @@
+{
+ "role": "reviewer",
+ "scope": {
+  "kind": "unit",
+  "id": "u4-m17-create-release-channel-hook",
+  "base": "3c7197d9424a554c4e9639c65acee2510ebdce23"
+ },
+ "findings": [],
+ "deviations": []
+}

@@ -1,7 +1,8 @@
 import Database from 'better-sqlite3';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createReleaseToolsServer } from './index.js';
 import { ReleaseService } from '../../services/release.js';
+import { ReleaseFileStore } from '../../services/release-store.js';
 import type { GitService } from '../../services/git.js';
 import type { WsEmitter } from '../../ws/project-emitter.js';
 import type { RawDelta, FileDiff, SpecSnapshot } from '../../../shared/entities.js';
@@ -607,7 +608,7 @@ function liveHarness(opts: { commit?: unknown; pull?: unknown } = {}) {
       .run(slug);
   const releaseIdOf = (slug: string) =>
     (db.prepare(`SELECT release_id AS r FROM entity_version WHERE entity_slug = ?`).get(slug) as { r: number | null }).r;
-  return { db, server, call, gitCalls, broadcasts, unreleased, releaseIdOf };
+  return { db, releaseService, server, call, gitCalls, broadcasts, unreleased, releaseIdOf };
 }
 
 const toolOf = (name: string) =>
@@ -1032,5 +1033,30 @@ describe('release-tools — the 2.1.26 spec-operation records of M17', () => {
     expect(op.opClass).toBe('write');
     expect(Object.keys(op.inputSchema)).toEqual(['releaseName']);
     expect(registered.has('release_restore')).toBe(false);
+  });
+});
+
+describe('release_create — the commit-on-release hook is the channel\'s (2.1.49)', () => {
+  it('[section:w6cocvik] [section:spdg8mon] release_create calls commitOnRelease once createRelease has returned, also when the metadata file write failed — the release stands and the answer carries gitSync', async () => {
+    const h = liveHarness();
+    const store = new ReleaseFileStore('/nonexistent-c4s-project', '.claude4spec/releases', { suppress: () => {} });
+    store.write = () => {
+      throw new Error('disk full');
+    };
+    h.releaseService.setReleaseStore(store);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await h.call('release_create', { name: 'v1', description: 'first' });
+
+      expect(res.isError).toBe(false);
+      expect(error).toHaveBeenCalledTimes(1);
+      // The release is in the cache, and the hook was called with it.
+      const row = h.db.prepare(`SELECT id FROM spec_release WHERE name = 'v1'`).get() as { id: number };
+      expect(res.body.id).toBe(row.id);
+      expect(h.gitCalls).toEqual([{ kind: 'commitOnRelease', releaseId: row.id }]);
+      expect(res.body.gitSync).toEqual({ status: 'committed', branch: 'main' });
+    } finally {
+      error.mockRestore();
+    }
   });
 });

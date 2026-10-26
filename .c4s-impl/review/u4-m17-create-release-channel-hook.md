@@ -1,0 +1,1 @@
+- rev-0001 (round 1, raised to blocking by the orchestrator, fixed in round 2): fixed 1500 ms settle wait in tests/integration/api/sync-merge-entity-version.test.ts replaced by vi.waitFor on entity:indexed.

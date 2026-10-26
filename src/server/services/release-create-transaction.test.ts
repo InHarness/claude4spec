@@ -2,10 +2,11 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
 import { ReleaseService } from './release.js';
 import { FileVersionService } from './file-version.js';
+import { ReleaseFileStore } from './release-store.js';
 import { DomainError } from './tags.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import type { FileSerializer } from './file-serializer.js';
@@ -13,6 +14,8 @@ import type { VersionService } from './versions.js';
 import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import type { TagsService } from './tags.js';
 import type { PagesService } from './pages.js';
+import type { GitService } from './git.js';
+import type { SelfWriteSuppressor } from '../fs/sources.js';
 
 /**
  * M17 — `releaseService.createRelease({ name, description })`: validation of
@@ -141,5 +144,100 @@ describe('releaseService.createRelease — validation + one transaction (M17)', 
     expect(db.prepare(`SELECT 1 FROM spec_release WHERE name = 'v2'`).get()).toBeUndefined();
     expect(entityReleaseIds()).toEqual([created.id, created.id, null]);
     expect(fileReleaseIds()).toEqual([created.id, created.id, null]);
+  });
+
+  /** The `releases` root's file store over `cwd` (no watcher: the suppression is a no-op). */
+  const releaseStoreIn = (dir: string): ReleaseFileStore =>
+    new ReleaseFileStore(dir, '.claude4spec/releases', { suppress: () => {} } as SelfWriteSuppressor);
+  const releaseFile = (slug: string): string => path.join(cwd, '.claude4spec', 'releases', `${slug}.json`);
+
+  it('[entity:release-service-contract] [section:spdg8mon] [section:w6cocvik] createRelease(input, actor) → Release + countBreakdown; the spec_release cache row exists before the metadata file is written (transaction → file), no cache rebuild reads the file back, and the service itself never calls the git hook', () => {
+    const releases = serviceWith(new FileVersionService(db, serializer));
+
+    // The public surface the contract snippet names.
+    for (const method of [
+      'listReleases',
+      'getRelease',
+      'getReleaseSnapshot',
+      'getReleaseDiff',
+      'getCurrentSnapshot',
+      'getUnreleasedDiff',
+      'shadowDiff',
+      'createRelease',
+      'acceptShadow',
+      'updateRelease',
+      'restoreEntity',
+      'restorePage',
+      'restoreSpec',
+      'buildBundleArchive',
+      'restoreBundleArchive',
+    ] as const) {
+      expect(typeof releases[method]).toBe('function');
+    }
+
+    const store = releaseStoreIn(cwd);
+    const rowAtWrite: unknown[] = [];
+    const realWrite = store.write.bind(store);
+    store.write = (slug, data) => {
+      // What the cache holds at the moment the file is written.
+      rowAtWrite.push(db.prepare('SELECT name, slug, created_at FROM spec_release WHERE slug = ?').get(slug));
+      realWrite(slug, data);
+    };
+    const read = vi.spyOn(store, 'read');
+    releases.setReleaseStore(store);
+    const commitOnRelease = vi.fn();
+    const commitPull = vi.fn();
+    releases.setGitService({ commitOnRelease, commitPull } as unknown as GitService);
+
+    const created = releases.createRelease({ name: 'v1', description: 'first cut' }, 'user');
+
+    expect(created).toMatchObject({ name: 'v1', description: 'first cut', createdBy: 'user' });
+    expect(created.countBreakdown.entities).toEqual({ endpoint: 2 });
+    // transaction → file: the row was already in spec_release when the file was written…
+    expect(rowAtWrite).toEqual([{ name: 'v1', slug: 'v1', created_at: created.createdAt }]);
+    // …the file carries the same stamp…
+    expect(JSON.parse(fs.readFileSync(releaseFile('v1'), 'utf8'))).toMatchObject({
+      name: 'v1',
+      slug: 'v1',
+      description: 'first cut',
+      createdAt: created.createdAt,
+      createdBy: 'user',
+      roots: ['pages'],
+    });
+    // …and no separate cache-rebuild step read it back.
+    expect(read).not.toHaveBeenCalled();
+    expect(releases.listReleases().map((r) => r.name)).toEqual(['v1']);
+    // The commit-on-release hook belongs to the channels, not to the service.
+    expect(commitOnRelease).not.toHaveBeenCalled();
+    expect(commitPull).not.toHaveBeenCalled();
+  });
+
+  it('[ac:ac-gdy-zapis-pliku-metadanych-po-zatwier] [section:spdg8mon] a metadata file write failing after the committed transaction of a plain createRelease leaves the spec_release row and its assignment; the error is logged, not thrown, and no file is left', () => {
+    const releases = serviceWith(new FileVersionService(db, serializer));
+    const store = releaseStoreIn(cwd);
+    store.write = () => {
+      throw new Error('disk full');
+    };
+    releases.setReleaseStore(store);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const created = releases.createRelease({ name: 'v1', description: 'first cut' }, 'user');
+
+      // The release stands: its row, and the versions assigned to it.
+      expect(db.prepare('SELECT id, name, slug FROM spec_release').all()).toEqual([
+        { id: created.id, name: 'v1', slug: 'v1' },
+      ]);
+      expect(entityReleaseIds()).toEqual([created.id, created.id]);
+      expect(fileReleaseIds()).toEqual([created.id, created.id]);
+      expect(releases.getRelease('v1').id).toBe(created.id);
+      // No metadata file (so no marker).
+      expect(fs.existsSync(releaseFile('v1'))).toBe(false);
+      // The failure went to the log.
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(String(error.mock.calls[0]![0])).toContain("'v1'");
+      expect((error.mock.calls[0]![1] as Error).message).toBe('disk full');
+    } finally {
+      error.mockRestore();
+    }
   });
 });
