@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { ENTITIES_SOURCE } from '../../../src/server/fs/sources.js';
 import type { PluginManifest } from '../../../src/shared/plugin-host/manifest.js';
 import { createPluginTestApp, type PluginTestApp } from '../../helpers/plugin-test-setup.js';
 
@@ -20,6 +21,14 @@ import { createPluginTestApp, type PluginTestApp } from '../../helpers/plugin-te
  * "remote", the project tracking it, and a teammate's clone pushing a change to
  * an entity file while the project has a local commit of its own (divergence →
  * `merged`).
+ *
+ * The file-watch chain over the merged file is run directly (`runWatchChain`,
+ * M40 `runChain`) with the fs provider switched off: under the fork pool's load
+ * the provider's event for the merged file is not guaranteed to arrive in any
+ * bounded time (a full suite run once waited 30 s for it in vain), and when —
+ * or whether, inside the create's self-write guard window — it arrives is M40's
+ * concern, not this criterion's. `runChain` resolves once the chain's phases
+ * have settled, so no wait and no sleep is involved.
  */
 
 const pexec = promisify(execFile);
@@ -88,7 +97,7 @@ describe('entity changes merged by sync() do not enter entity_version (M17 ry0bx
   });
 
   it('[ac:ac-encja-zmieniona-scaleniem-sync-z-wyni] [section:ry0bx4ji] an entity changed by a sync() with result merged gets no new entity_version row — the index takes the merged content through the reconstruction path', async () => {
-    t = await createPluginTestApp([gadgetManifest()]);
+    t = await createPluginTestApp([gadgetManifest()], { fsEvents: false });
     const work = t.cwd;
     base = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-sync-ev-'));
     const bare = path.join(base, 'remote.git');
@@ -144,24 +153,20 @@ describe('entity changes merged by sync() do not enter entity_version (M17 ry0bx
     expect(sync.body.status).toBe('merged');
     expect(JSON.parse(fs.readFileSync(path.join(work, entityRel), 'utf8')).title).toBe('Remote title');
 
-    // The watcher's chain for the merged file (M40: a HEAD change from the app
-    // is labelled, not suppressed — the chain runs over the changed files) is the
-    // per-file reconstruction path: the indexer broadcasts `entity:indexed` once
-    // the merged content has landed in the index. Waiting for that signal AND the
-    // merged title in the index proves the chain ran over the merged file (an
-    // earlier chain of the create would have indexed the old title).
-    await vi.waitFor(
-      async () => {
-        expect(
-          t!.broadcasts.some(
-            (e) => e.kind === 'entity:indexed' && e.type === 'gadget' && e.slug === slug && e.op === 'upsert',
-          ),
-        ).toBe(true);
-        const indexed = await request(t!.app).get(`${t!.baseUrl}/gadgets/${slug}`);
-        expect(indexed.body.data?.title).toBe('Remote title');
-      },
-      { timeout: 30_000, interval: 50 },
-    );
+    // The file-watch chain for the merged file (M40: a HEAD change from the app
+    // is labelled `origin: 'server'`, not suppressed — the chain runs over the
+    // changed files) is the per-file reconstruction path. Once it has settled
+    // the indexer has broadcast `entity:indexed` for the merged content, which
+    // is in the index — and no version row was written.
+    await t.runWatchChain(ENTITIES_SOURCE, `gadget/${slug}.json`, 'server');
+    expect(
+      t.broadcasts.some(
+        (e) => e.kind === 'entity:indexed' && e.type === 'gadget' && e.slug === slug && e.op === 'upsert',
+      ),
+    ).toBe(true);
+    const indexed = await request(t.app).get(`${t.baseUrl}/gadgets/${slug}`);
+    expect(indexed.status).toBe(200);
+    expect(indexed.body.data.title).toBe('Remote title');
     expect(versions()).toBe(before);
 
     // The full reconstruction path (M29 indexAll — what the M31 reload runs)

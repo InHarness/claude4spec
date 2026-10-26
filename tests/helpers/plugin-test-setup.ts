@@ -26,7 +26,12 @@
  *     loader installs it (same latch, same fallback when the runtime has no
  *     module hooks);
  *   - NOT reproduced: discovery, the dynamic import of a package, the
- *     `hostApiVersion` / `engines` gate, the trust gate, hot reload.
+ *     `hostApiVersion` / `engines` gate, the trust gate, hot reload;
+ *   - the file-watch runtime observes the disk through the real fs provider
+ *     unless `{ fsEvents: false }` is passed — then no provider event arrives
+ *     at all and `runWatchChain` is the only trigger of the file-watch chain,
+ *     which makes a test of that chain independent of when (and whether) the
+ *     provider reports a change under the load of the fork pool.
  *
  * Lifetime: one instance = one temporary project with its own context, db handle
  * and broadcast buffer. `createPluginTestApp` returns once the context's
@@ -49,7 +54,7 @@ import { registerAllPlugins } from '../../src/server/core/plugin-host/register-b
 import { loadBuiltinEnvelopes, type PluginLoadRecord } from '../../src/server/core/plugin-host/loader.js';
 import { installPluginRuntimeResolver } from '../../src/server/core/plugin-host/plugin-runtime-resolver.js';
 import type { CrudFacade, ProjectPluginHost } from '../../src/server/core/plugin-host/types.js';
-import { FileWatchRuntime } from '../../src/server/fs/watcher.js';
+import { FileWatchRuntime, type ScopedWatchRegistrar, type WatchOrigin, type WatchScope } from '../../src/server/fs/watcher.js';
 import { errorHandler } from '../../src/server/routes/errors.js';
 import { bootstrapProject } from '../../src/server/workspace/bootstrap.js';
 import { buildProjectContext } from '../../src/server/workspace/project-context.js';
@@ -83,6 +88,15 @@ export interface PluginTestApp {
   /** Every WS event the project broadcast, in order. Clear it with `broadcasts.length = 0`. */
   broadcasts: WsEvent[];
   /**
+   * Run the file-watch reaction chain (M40 `runChain`) for a `change` of
+   * `relPath` in the context's mounted `source`, with the given origin — the
+   * same subscribers, phases and order a provider event dispatches, without a
+   * provider and without the self-write suppression gate (that gate and the
+   * provider's delivery are M40's own suites). Resolves once every phase has
+   * settled.
+   */
+  runWatchChain: (source: string, relPath: string, origin: WatchOrigin) => Promise<void>;
+  /**
    * Disposes the context (watchers, MCP factories, db handle) and only then removes
    * the temporary directory. When it resolves nothing of this instance is running
    * or logging. Idempotent.
@@ -100,7 +114,10 @@ export interface PluginTestApp {
  * error `registry.registerPlugin` raises under the loader (the loader records
  * that error's message as `PLUGIN_INVALID_MANIFEST`); nothing is left on disk.
  */
-export async function createPluginTestApp(manifests: PluginManifest[]): Promise<PluginTestApp> {
+export async function createPluginTestApp(
+  manifests: PluginManifest[],
+  opts: { fsEvents?: boolean } = {},
+): Promise<PluginTestApp> {
   installPluginRuntimeResolver();
 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-plugin-test-'));
@@ -142,7 +159,8 @@ export async function createPluginTestApp(manifests: PluginManifest[]): Promise<
       broadcast: (_projectId: string, event: WsEvent) => void broadcasts.push(event),
       closeRoom: () => {},
     } as unknown as WsGateway;
-    const watchRuntime = new FileWatchRuntime({
+    const watchRuntime = new ScopeRecordingWatchRuntime({
+      fsEvents: opts.fsEvents,
       broadcaster: { broadcast: (_scope, event) => void broadcasts.push(event) },
     });
 
@@ -171,6 +189,12 @@ export async function createPluginTestApp(manifests: PluginManifest[]): Promise<
       throw err;
     }
 
+    // The context registers under exactly one scope (`context:<id>#<instance>`).
+    const [watchScope] = watchRuntime.scopes;
+    if (!watchScope || watchRuntime.scopes.length !== 1) {
+      throw new Error(`plugin-test-setup: expected one watch scope, got ${watchRuntime.scopes.length}`);
+    }
+
     const baseUrl = `/api/projects/${project.id}`;
     const app = express();
     app.use(express.json({ limit: '2mb' }));
@@ -187,6 +211,9 @@ export async function createPluginTestApp(manifests: PluginManifest[]): Promise<
       cwd: project.cwd,
       db: ctx.db.handle,
       broadcasts,
+      runWatchChain: async (source, relPath, origin) => {
+        await watchRuntime.runChain(watchScope, source, relPath, 'change', origin);
+      },
       cleanup: async () => {
         if (cleaned) return;
         cleaned = true;
@@ -205,5 +232,15 @@ export async function createPluginTestApp(manifests: PluginManifest[]): Promise<
   } catch (err) {
     removeTmp();
     throw err;
+  }
+}
+
+/** The runtime, recording the scope the context registers under — `runWatchChain` needs it. */
+class ScopeRecordingWatchRuntime extends FileWatchRuntime {
+  readonly scopes: WatchScope[] = [];
+
+  override scoped(scope: WatchScope): ScopedWatchRegistrar {
+    this.scopes.push(scope);
+    return super.scoped(scope);
   }
 }
