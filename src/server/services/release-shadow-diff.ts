@@ -40,7 +40,12 @@ import { DomainError } from './tags.js';
 
 /** Where the comparison looks — resolved by the release service from the root registry. */
 export interface ShadowDiffScope {
-  /** The roots of the delta (the release-flag roots, the `releases` root excluded) — the same as the release diff's. */
+  /**
+   * The roots of the delta (the release-flag roots, the `releases` root excluded) — the same as the release diff's.
+   * Its unfiltered `pathspecs` — the dir of every root whose kind has the `release` flag plus the
+   * `releases` root — is the one set with two consumers (2.1.52): the release's git diff and the
+   * strict pending-changes test of the shadow acceptance, which checks it whole.
+   */
   roots: DeltaRoots;
   /**
    * EVERY registry root, with its kind and its absolute, realpath'd dir: a
@@ -57,7 +62,8 @@ export interface ShadowDiffDeps {
   scope: () => ShadowDiffScope;
 }
 
-function isInsideOrEqual(parent: string, child: string): boolean {
+/** Is `child` the dir `parent` itself or under it (absolute paths)? */
+export function isInsideOrEqual(parent: string, child: string): boolean {
   const rel = nodePath.relative(parent, child);
   return rel === '' || (!rel.startsWith('..') && !nodePath.isAbsolute(rel));
 }

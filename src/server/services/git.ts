@@ -529,7 +529,7 @@ export class GitService {
    * root, whatever its kind: the `pages` roots, `entities` (entity files +
    * `tags.json`), `releases` (so a new release's identity file lands in the same
    * commit as its marker, for `resolveReleaseCommit` later), `plans`, `briefs`
-   * and `patches`. Roots of a kind without the `release` flag ride along in the
+   * `patches` and (2.1.52) `skills`. Roots of a kind without the `release` flag ride along in the
    * commit, outside the `release_diff` dimension. While the git master switch is
    * off the `gitignore`-flagged roots are still ignored, so staging them is a
    * harmless no-op (`git add` on an ignored path adds nothing).
@@ -537,7 +537,7 @@ export class GitService {
   private resolveStagingTargets(root: string): string[] {
     // 2.1.8: the staging set is derived from the ROOT REGISTRY — the dir of
     // EVERY root (all `pages` roots, `entities` with `tags.json`, `releases`,
-    // `plans`/`briefs`/`patches`) plus `config.json`. No user root is skipped,
+    // `plans`/`briefs`/`patches`/`skills`) plus `config.json`. No user root is skipped,
     // whatever a legacy `releasable: false` once said. The page roots are the
     // EFFECTIVE ones this service was built with (`--pages` override applied);
     // the system roots come from code.
@@ -1204,13 +1204,19 @@ export class GitService {
 
   /**
    * M28 es9w55mr — the strict test for pending changes before the acceptance:
-   * the paths pending inside `pathspecs` (the roots' dirs: a modified tracked
-   * file, a staged change, a new untracked file) plus the paths staged
-   * ANYWHERE in the repository — the merge commit takes the whole index (git
-   * allows no partial commit during a merge), so someone else's staged file
-   * would ride in the acceptance commit. Stricter than `checkout()`, which
-   * ignores untracked files. One `git status` for both sets. Paths are
-   * repository-relative, sorted. Non-empty → `dirty { paths }`, empty → `clean`.
+   * the pending paths (a modified tracked file, a staged change, a new
+   * untracked file) that collide with `pathspecs`, plus the paths staged
+   * ANYWHERE in the repository. 2.1.52: a pathspec is a root's dir or a single
+   * ABSOLUTE path, chosen by the caller, any number of them; a pending path
+   * collides with one when it is equal to it, its descendant or its ancestor
+   * (an untracked file `plans/x` collides with `plans/x/a.md`) — counted by
+   * path segments, never by string prefix. The staged rule stays because the
+   * three-way merge strategy does not start while the index differs from HEAD,
+   * and if it did, the merge commit would take the whole index — someone
+   * else's staged file would ride in the acceptance commit. Stricter than
+   * `checkout()`, which ignores untracked files. One `git status` for both
+   * sets. Paths are repository-relative, sorted. Non-empty → `dirty { paths }`,
+   * empty → `clean`.
    */
   async pendingChanges(pathspecs: string[], held?: GitHeldRepo): Promise<GitPendingChangesResult> {
     const gate = await this.primitiveRoot(held);
@@ -1226,10 +1232,25 @@ export class GitService {
       } catch (err) {
         return { status: 'error', message: errMessage(err) };
       }
-      const scopes = this.resolveDiffTargets(root, pathspecs).map((abs) =>
-        path.relative(root, abs).split(path.sep).join('/'),
-      );
-      const inScope = (p: string): boolean => scopes.some((s) => s === '' || p === s || p.startsWith(`${s}/`));
+      // A pathspec `s` itself and every proper ancestor of it: a pending path
+      // equal to or under `s` has `s` among its ancestors-or-self; one above
+      // `s` is among its proper ancestors. Two set lookups per segment.
+      const scopes = new Set<string>();
+      const scopeAncestors = new Set<string>();
+      for (const abs of this.resolveDiffTargets(root, pathspecs)) {
+        const s = path.relative(root, abs).split(path.sep).join('/');
+        scopes.add(s);
+        for (let i = s.indexOf('/'); i !== -1; i = s.indexOf('/', i + 1)) scopeAncestors.add(s.slice(0, i));
+      }
+      const inScope = (p: string): boolean => {
+        // A directory entry (`dir/`) of the porcelain listing compares by its path.
+        const q = p.endsWith('/') ? p.slice(0, -1) : p;
+        if (scopes.has('') || scopes.has(q) || scopeAncestors.has(q)) return true;
+        for (let i = q.indexOf('/'); i !== -1; i = q.indexOf('/', i + 1)) {
+          if (scopes.has(q.slice(0, i))) return true;
+        }
+        return false;
+      };
       const paths = new Set<string>();
       for (const entry of splitNul(stdout)) {
         // `XY <path>`: X = index status (' ' unstaged, '?' untracked), Y = working tree.
@@ -1273,6 +1294,12 @@ export class GitService {
    * open → `error`. A conflict whose own abort fails → `error` with the
    * repair context `recovery.kind: 'merge-abort-failed'` (the merge stays open).
    *
+   * 2.1.52: git refusing to START the merge over local changes it would
+   * overwrite → `dirty { paths }` with the paths of git's refusal
+   * (repository-relative, sorted); the repository is untouched. The safety net
+   * for collisions the caller's `pendingChanges` cannot see ahead (case
+   * differences on the file system, writes during the sequence).
+   *
    * `changedPaths` is an input: the caller reads the set BEFORE the merge with
    * `shadowChangedPaths` (the acceptance needs it to suppress their events), so
    * the primitive answers with it instead of re-deriving the same answer.
@@ -1287,9 +1314,18 @@ export class GitService {
     const { root } = gate;
     const run = this.underRepoLock(root, held?.lock, async (): Promise<GitMergeIntoIndexResult> => {
       try {
-        await this.git(['merge', '--no-commit', '--no-ff', tipSha], root, { ...process.env, LC_ALL: 'C', LANG: 'C' });
+        await this.git(['-c', 'core.quotePath=false', 'merge', '--no-commit', '--no-ff', tipSha], root, {
+          ...process.env,
+          LC_ALL: 'C',
+          LANG: 'C',
+        });
       } catch (err) {
-        if (!(await this.mergeHeadOpen(root))) return { status: 'error', message: errMessage(err) };
+        if (!(await this.mergeHeadOpen(root))) {
+          const blocked = overwrittenPaths(`${rawStderr(err)}\n${(err as { stdout?: string })?.stdout ?? ''}`);
+          return blocked.length > 0
+            ? { status: 'dirty', paths: blocked.sort() }
+            : { status: 'error', message: errMessage(err) };
+        }
         const conflicted = await this.git(['diff', '--name-only', '-z', '--diff-filter=U'], root)
           .then((r) => splitNul(r.stdout))
           .catch(() => []);
@@ -1301,7 +1337,7 @@ export class GitService {
           return {
             status: 'error',
             message: errMessage(abortErr),
-            recovery: this.buildRecovery('commit-on-release', abortErr, root, 'merge-abort-failed'),
+            recovery: await this.mergeAbortFailedRecovery(abortErr, root, changedPaths),
           };
         }
         return conflicted.length > 0
@@ -1324,7 +1360,12 @@ export class GitService {
    * in neither the merged index nor the working tree, and `add -A -- <path>`
    * refuses such a pathspec ("did not match any files", every git version),
    * which used to fail every rollback of a shadow deleting a file;
-   * `update-index` treats it as already staged. A target that is a directory
+   * `update-index` treats it as already staged. 2.1.52: nothing outside
+   * `paths` is staged, so the abort leaves the files the merge did not touch
+   * alone — an unstaged change of a tracked file stays unstaged with the same
+   * content, an untracked (not ignored) file stays untracked — provided
+   * `paths` collided with no path pending before the merge (the caller's
+   * guarantee). A target that is a directory
    * on disk is skipped: `update-index` refuses it ("is a directory - add
    * individual files instead"), and a shadow turning file `p/x` into
    * directory `p/x` lists the files inside (`p/x/y`) as paths of their own.
@@ -1348,11 +1389,44 @@ export class GitService {
         return {
           status: 'error',
           message: errMessage(err),
-          recovery: this.buildRecovery('commit-on-release', err, root, 'merge-abort-failed'),
+          recovery: await this.mergeAbortFailedRecovery(err, root, paths),
         };
       }
     });
     return run ?? { status: 'busy' };
+  }
+
+  /**
+   * 2.1.52 (M28 eu1rffp6): the repair context of a merge the acceptance could
+   * not abort — the shadow's paths (ABSOLUTE) named in the prompt, sorted by
+   * what the shadow did to them: added (not in HEAD), deleted (in HEAD, not in
+   * MERGE_HEAD), modified (the rest). Read off the trees, never off the working
+   * tree; a failed read counts a path as modified (restored to HEAD).
+   */
+  private async mergeAbortFailedRecovery(
+    err: unknown,
+    root: string,
+    absPaths: readonly string[],
+  ): Promise<GitErrorRecovery> {
+    const rels = [
+      ...new Set(
+        this.resolveDiffTargets(root, [...absPaths]).map((abs) => path.relative(root, abs).split(path.sep).join('/')),
+      ),
+    ].sort();
+    const inTree = async (ref: string): Promise<Set<string> | null> =>
+      rels.length === 0
+        ? new Set()
+        : this.git(['ls-tree', '-r', '--name-only', '-z', ref, '--', ...rels], root)
+            .then((r) => new Set(splitNul(r.stdout)))
+            .catch(() => null);
+    const [inHead, inTip] = await Promise.all([inTree('HEAD'), inTree('MERGE_HEAD')]);
+    const shadowPaths: ShadowPathsByChange = { added: [], modified: [], deleted: [] };
+    for (const rel of rels) {
+      if (inHead && !inHead.has(rel)) shadowPaths.added.push(rel);
+      else if (inHead && inTip && !inTip.has(rel)) shadowPaths.deleted.push(rel);
+      else shadowPaths.modified.push(rel);
+    }
+    return this.buildRecovery('commit-on-release', err, root, 'merge-abort-failed', shadowPaths);
   }
 
   /**
@@ -1373,6 +1447,7 @@ export class GitService {
     err: unknown,
     rootPath: string,
     kind?: GitErrorRecovery['kind'],
+    shadowPaths?: ShadowPathsByChange,
   ): GitErrorRecovery {
     const gitStderr = rawStderr(err);
     if (kind === 'non-fast-forward') {
@@ -1407,17 +1482,30 @@ export class GitService {
             'so the merge is still open (MERGE_HEAD).'
           : 'accepting a shadow failed and undoing its merge failed too, so the merge is still open ' +
             '(MERGE_HEAD) and no release was created.';
+      // 2.1.52: `merge-open` — the staging set may already have put the pending
+      // files of the roots without the `release` flag into the index before the
+      // commit failed; they stay there. `merge-abort-failed` — only the shadow's
+      // paths are undone, by name; every other working-tree change is left alone.
       const ask =
         kind === 'merge-open'
-          ? 'Please finish the merge safely: fix what blocked the commit, then conclude it with `git commit` ' +
-            '(the index already holds the merge and the release file).'
-          : 'Please end the merge safely: fix what blocked it, then run `git merge --abort`.';
+          ? 'Please finish the merge safely: fix what blocked the commit, then conclude it with ONE `git commit` ' +
+            'of everything staged (the index already holds the merge and the release file, and may hold other ' +
+            'files staged before the failed commit — keep them staged, do not unstage them), with the release ' +
+            'message. Never run `git merge --abort` or any reset.'
+          : [
+              'Please end the merge safely, touching only the paths the shadow changed:',
+              ...shadowPathLines('Delete the files the shadow added', shadowPaths?.added),
+              ...shadowPathLines('Restore to their state in HEAD the files the shadow modified', shadowPaths?.modified),
+              ...shadowPathLines('Restore to their state in HEAD the files the shadow deleted', shadowPaths?.deleted),
+              'Then close the merge without a commit (remove MERGE_HEAD, e.g. `git merge --quit`). Leave every ' +
+                'other change of the working tree untouched. Do not commit.',
+            ].join('\n');
       const intentPrompt = [
         `claude4spec's git sync left a merge open in the repository at ${rootPath}: ${state}`,
         '',
         `Git error:\n${gitStderr || errMessage(err)}`,
         '',
-        `${ask} Never use \`--force\`, \`reset --hard\`, or anything else that could discard work. ` +
+        `${ask}\nNever use \`--force\`, \`reset --hard\`, or anything else that could discard work. ` +
           'Report back what you found and what you did.',
       ].join('\n');
       return { operation, reason: errMessage(err), gitStderr, intentPrompt, kind };
@@ -2585,6 +2673,18 @@ function syncResult(
   return { status, paths: null, reason: null, message: null, ...extra };
 }
 
+/** 2.1.52: the shadow's paths (repository-relative) by what the shadow did to them — the `merge-abort-failed` prompt. */
+interface ShadowPathsByChange {
+  added: string[];
+  modified: string[];
+  deleted: string[];
+}
+
+/** `heading:` and one `- path` line per path; nothing when there are none. */
+function shadowPathLines(heading: string, paths: readonly string[] | undefined): string[] {
+  return paths && paths.length > 0 ? [`${heading}:`, ...paths.map((p) => `  - ${p}`)] : [];
+}
+
 /** Entries of a `-z` (NUL-terminated) git listing. */
 function splitNul(stdout: string): string[] {
   return stdout.split('\0').filter((s) => s.length > 0);
@@ -2593,13 +2693,14 @@ function splitNul(stdout: string): string[] {
 /**
  * The paths git lists when it refuses a merge/checkout because it would
  * overwrite local changes or untracked files ("…would be overwritten by
- * merge:" followed by tab-indented paths).
+ * merge:" or "…would lose untracked files in them:", followed by
+ * tab-indented paths).
  */
 function overwrittenPaths(output: string): string[] {
   const paths: string[] = [];
   let inList = false;
   for (const line of output.split('\n')) {
-    if (/would be overwritten by/.test(line)) {
+    if (/would be overwritten by|would lose untracked files/.test(line)) {
       inList = true;
       continue;
     }

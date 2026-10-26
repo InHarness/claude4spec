@@ -267,11 +267,14 @@ export type GitPendingChangesResult =
 /**
  * `mergeIntoIndex(tipSha, changedPaths)` — `merged` leaves `MERGE_HEAD` open; `conflicts` was
  * aborted already. `error` carries `recovery` (kind `merge-abort-failed`) only
- * when aborting a conflicted merge failed and the merge stayed open.
+ * when aborting a conflicted merge failed and the merge stayed open. 2.1.52:
+ * `dirty` — git refused to start the merge over local changes it would
+ * overwrite (the paths of its refusal); the repository is untouched.
  */
 export type GitMergeIntoIndexResult =
   | GitMergePrimitiveRefusal
   | { status: 'merged'; changedPaths: string[] }
+  | { status: 'dirty'; paths: string[] }
   | { status: 'conflicts'; paths: string[] }
   | { status: 'error'; message: string; recovery?: GitErrorRecovery };
 

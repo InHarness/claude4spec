@@ -9,21 +9,33 @@
  *      repository (`hybasevj`);
  *   2. the release mutex (waits), then the repository lock (refuses `busy`),
  *      both held to the end of the sequence (`g4rsukyw`, M28 `ezudoqef`);
- *   3. the guards under the lock, in a fixed order (`rnwev4kg`);
+ *   3. the guards under the lock, in a fixed order (`rnwev4kg`): after the
+ *      SHA guard the paths the shadow changes (`changedPaths`, base → tip of
+ *      the preview) are read once; the strict pending-changes test checks the
+ *      release content (the release-flag roots + `releases`) whole and the
+ *      other registry roots (`plans`, `briefs`, `patches`, `skills`) only on
+ *      the paths colliding with `changedPaths` (2.1.52);
  *   4. suppression of the shadow paths' events for the operation (M40) and the
  *      high-water mark of the page versions (`qi04ao7g`);
- *   5. the merge into the index of the tip SHA from the preview (M28 `es9w55mr`);
+ *   5. the merge into the index of the tip SHA from the preview (M28 `es9w55mr`),
+ *      handed the `changedPaths` of step 3 — never re-derived;
  *   6. the in-band capture of the merged paths — no rebuild of the project
  *      context (`mghvzn0w`, M31 `hp1z8pox`);
  *   7. the release, through the acceptance variant of `createRelease`
  *      (file → cache → transaction, `wh8x023p`);
  *   8. its commit under the held lock — a merge commit with two parents.
  *
+ * The sequence never writes the pending files of the other registry roots
+ * that collide with no shadow path: on success the staging set of step 8
+ * takes them into the merge commit (outside every `release_diff` dimension of
+ * the release); on a failure they survive the rollback untouched.
+ *
  * The commit of the release transaction is the point of no return. A failure
  * after the merge and before it runs the ROLLBACK: the merge is aborted, the
  * chains of the reverted paths run, and the unreleased page versions the
  * operation wrote for the shadow's paths are deleted — the repository and the
- * version log are back to their state before the call. A rollback that cannot
+ * version log are back to their state before the call — the shadow paths are
+ * restored, the pending files outside them are left as they were. A rollback that cannot
  * abort leaves the merge open for repair (`ACCEPT_ABORT_FAILED`). A failed
  * merge commit after the point of no return is an ordinary git sync result
  * (`gitSync.status: 'error'`, `recovery.kind: 'merge-open'`), not a failure.
@@ -44,7 +56,7 @@ import { readConfig } from '../config.js';
 import type { WatchEventKind } from '../fs/watcher.js';
 import type { SnapshotData } from '../serialization/types.js';
 import type { GitHeldRepo, GitLockHandle, GitService } from './git.js';
-import { acceptanceFlags, gitUnavailable, type ShadowDiffScope } from './release-shadow-diff.js';
+import { acceptanceFlags, gitUnavailable, isInsideOrEqual, type ShadowDiffScope } from './release-shadow-diff.js';
 import { DomainError } from './tags.js';
 
 /** One entity version the shadow brings — written by the release transaction (`mghvzn0w`). */
@@ -155,6 +167,30 @@ function refuse(code: string, message: string, extra?: { details?: string[]; rec
 const busy = (): DomainError =>
   refuse('ACCEPT_BUSY', 'A git operation or an agent turn is running — try accepting the shadow again in a moment.');
 
+/** `ACCEPT_DIRTY` — from the strict pending-changes test, or from git refusing to start the merge. */
+const dirty = (paths: string[]): DomainError =>
+  refuse(
+    'ACCEPT_DIRTY',
+    `There are pending changes that collide with the merge (${paths.join(', ')}) — commit or discard them before accepting a shadow.`,
+    { details: paths },
+  );
+
+/**
+ * 2.1.52 — the pathspecs of the strict pending-changes test: the release
+ * content whole (`scope.roots.pathspecs`: the release-flag roots' dirs + the
+ * `releases` root), and of the other registry roots only the shadow's own
+ * paths, as single-path pathspecs — a pending path there blocks only when it
+ * collides with one of them.
+ */
+function pendingPathspecs(scope: ShadowDiffScope, changedPaths: readonly string[]): string[] {
+  const whole = scope.roots.pathspecs;
+  const others = scope.registryRoots.filter((root) => !whole.some((dir) => isInsideOrEqual(dir, root.dir)));
+  const colliding = changedPaths.filter(
+    (abs) => !whole.some((dir) => isInsideOrEqual(dir, abs)) && others.some((root) => isInsideOrEqual(root.dir, abs)),
+  );
+  return [...whole, ...colliding];
+}
+
 /** `VALIDATION` unless the body carries the shadow id and both preview SHAs as non-empty strings. */
 export function parseShadowAcceptRequest(body: unknown): ShadowAcceptRequest {
   const b = (body ?? {}) as Record<string, unknown>;
@@ -235,24 +271,17 @@ async function sequence<R extends { name: string; description: string }>(
       'The shadow or the master moved since the preview was computed — refresh the preview and accept again.',
     );
   }
-  const scope = deps.scope();
-  const pending = await git.pendingChanges(
-    scope.registryRoots.map((r) => r.dir),
-    held,
-  );
-  if (pending.status === 'dirty') {
-    throw refuse(
-      'ACCEPT_DIRTY',
-      `There are pending changes (${pending.paths.join(', ')}) — commit or discard them before accepting a shadow.`,
-      { details: pending.paths },
-    );
+  const changedPaths = await git.shadowChangedPaths(shadow.baseSha, shadow.tipSha, repo);
+  if (!changedPaths) {
+    throw new Error('Accepting the shadow failed: the pending-changes test failed (the files of the shadow could not be read).');
   }
+  const scope = deps.scope();
+  const pending = await git.pendingChanges(pendingPathspecs(scope, changedPaths), held);
+  if (pending.status === 'dirty') throw dirty(pending.paths);
   if (pending.status === 'busy') throw busy();
   if (pending.status !== 'clean') {
     throw new Error(`Accepting the shadow failed: the pending-changes test failed (${pending.status === 'error' ? pending.message : pending.status}).`);
   }
-  const changedPaths = await git.shadowChangedPaths(shadow.baseSha, shadow.tipSha, repo);
-  if (!changedPaths) throw new Error('Accepting the shadow failed: the files of the shadow could not be read.');
   const flags = acceptanceFlags(changedPaths, scope.registryRoots, gate.root);
   if (flags.outsideSpecFiles.length > 0) {
     throw refuse(
@@ -280,6 +309,7 @@ async function sequence<R extends { name: string; description: string }>(
 
     // 5. The merge into the index of the PREVIEWED tip SHA.
     const merged = await git.mergeIntoIndex(request.expectedTipSha, changedPaths, held);
+    if (merged.status === 'dirty') throw dirty(merged.paths);
     if (merged.status === 'conflicts') {
       // The real merge conflicted; the primitive aborted it.
       throw refuse('ACCEPT_CONFLICTS', `The shadow conflicts with the master (${merged.paths.join(', ')}).`, {
