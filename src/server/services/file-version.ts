@@ -268,13 +268,23 @@ export class FileVersionService {
     return !!row;
   }
 
-  /** Distinct paths captured at-or-before a given release (or all if undefined). */
-  listPathsForRelease(releaseId: number): string[] {
+  /**
+   * Distinct paths of ONE space captured at-or-before a given release.
+   *
+   * 2.1.55 (M17, `file_version` keyed `(rootId, path)`): scoped to the space's
+   * identifier chain — a path released under another `pages` root is a different
+   * file, and restoring it into this space would write another root's content
+   * here.
+   */
+  listPathsForRelease(releaseId: number, rootId: string): string[] {
+    const chain = this.chainOf(rootId);
     const rows = this.db
       .prepare(
-        `SELECT DISTINCT path FROM file_version WHERE release_id = ? ORDER BY path`
+        `SELECT DISTINCT path FROM file_version
+          WHERE release_id IS NOT NULL AND release_id <= ?${this.rootClause(chain)}
+          ORDER BY path`
       )
-      .all(releaseId) as Array<{ path: string }>;
+      .all(releaseId, ...chain) as Array<{ path: string }>;
     return rows.map((r) => r.path);
   }
 

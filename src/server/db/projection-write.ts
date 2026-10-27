@@ -1711,8 +1711,8 @@ function rowExists(db: Database, table: string, slug: string): boolean {
   try {
     return db.prepare(`SELECT 1 FROM ${table} WHERE slug = ?`).get(slug) !== undefined;
   } catch {
-    // The referenced type is not projected in this project (deactivated, or a
-    // bundle carrying a type this installation never had). Treat as missing
+    // The referenced type is not projected in this project (deactivated, or
+    // never installed here). Treat as missing
     // rather than throwing — the caller degrades it to a warning.
     return false;
   }

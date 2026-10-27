@@ -6,7 +6,8 @@
  *
  * - a `file:changed` in the `releases` root (the WS map row
  *   "`file:changed` w korzeniu `releases` → `['releases']`");
- * - directly, the create, edit and push mutations of a release.
+ * - directly, the create and edit mutations of a release (2.1.55: the M25 push
+ *   mutation is gone with the release push).
  *
  * `release:created` and `release:updated` do NOT invalidate it (they reach the
  * release diff only). Driven through the real `useFileWatcher` socket handler
@@ -25,7 +26,6 @@ vi.mock('../core/plugin-host/host.js', () => ({
 
 import { useFileWatcher } from './useFileWatcher.js';
 import { useAcceptShadow, useCreateRelease, useReleaseList, useUpdateRelease } from './useReleases.js';
-import { usePushRelease } from './useReleasePushes.js';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -71,7 +71,6 @@ const listFetches = () =>
 const mutations: {
   create?: ReturnType<typeof useCreateRelease>;
   update?: ReturnType<typeof useUpdateRelease>;
-  push?: ReturnType<typeof usePushRelease>;
   accept?: ReturnType<typeof useAcceptShadow>;
 } = {};
 
@@ -80,7 +79,6 @@ function Probe() {
   useReleaseList();
   mutations.create = useCreateRelease();
   mutations.update = useUpdateRelease();
-  mutations.push = usePushRelease();
   mutations.accept = useAcceptShadow({ onSuccess: () => {}, onError: () => {} });
   return null;
 }
@@ -121,7 +119,6 @@ beforeEach(() => {
     else if (u.endsWith('/api/releases') && method === 'POST') body = RELEASE;
     else if (u.endsWith('/api/shadow-accept') && method === 'POST') body = { ...RELEASE, acceptedShadow: { id: 'run-1/spec', tipSha: 'abc' } };
     else if (u.endsWith('/api/releases/v1') && method === 'PATCH') body = { ...RELEASE, description: 'edited' };
-    else if (u.endsWith('/api/release-pushes') && method === 'POST') body = { id: 1, releaseId: 1, release: { id: 1, name: 'v1' }, gitSync: null };
     return new Response(JSON.stringify(body), { status: 200 });
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -164,7 +161,7 @@ describe("the release list query ['releases'] (M17 m17ui001, 2.1.49)", () => {
     expect(listFetches()).toBe(2);
   });
 
-  it("[section:m17ui001] the create, edit and push mutations of a release refetch ['releases'] directly, without a WS event", async () => {
+  it("[section:m17ui001] the create and edit mutations of a release refetch ['releases'] directly, without a WS event", async () => {
     await mount();
     expect(listFetches()).toBe(1);
 
@@ -179,12 +176,6 @@ describe("the release list query ['releases'] (M17 m17ui001, 2.1.49)", () => {
     });
     await settle();
     expect(listFetches()).toBe(3);
-
-    await act(async () => {
-      await mutations.push!.mutateAsync('v1');
-    });
-    await settle();
-    expect(listFetches()).toBe(4);
   });
 
   /** Plays the release file store's echo(es) while the mutation's request is held, then answers it. */

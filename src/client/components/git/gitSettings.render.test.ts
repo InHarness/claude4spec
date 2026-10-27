@@ -164,14 +164,14 @@ describe('#git settings card — repository status from GET /api/git/status', ()
 describe('#git settings card — master switch, commit target and branch list (2.1.49)', () => {
   it('[ac:ac-sekcja-git-w-m26-ma-nadrzedny-master-che] the master switch "Enable Git integration" alone turns commit-on-release on (no separate commit checkbox); off hides the push sub-toggle and shows "Git off — using local history only"', async () => {
     status = DETECTED;
-    await mount({ 'git.enabled': false, 'git.syncPushOnPush': false }, /Git off/);
+    await mount({ 'git.enabled': false, 'git.syncPushOnRelease': false }, /Git off/);
 
     // Off: the master switch only, unchecked; the empty state; no push sub-toggle.
     expect(checkboxLabels()).toHaveLength(1);
     expect(checkboxLabels()[0]).toContain('Enable Git integration');
     expect(host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false);
     expect(host.textContent).toContain('Git off — using local history only');
-    expect(host.textContent).not.toContain('Push on remote push');
+    expect(host.textContent).not.toContain('Push to git remote on release');
     expect(requested).not.toContain('/api/git/status');
 
     // On: the switch itself carries commit-on-release — its description says so,
@@ -183,7 +183,8 @@ describe('#git settings card — master switch, commit target and branch list (2
     const labels = checkboxLabels();
     expect(labels[0]).toContain('Enable Git integration');
     expect(labels[0]).toContain('creating a release or pulling unreleased changes automatically git commits');
-    expect(labels.some((l) => l!.includes('Push on remote push'))).toBe(true);
+    // The push sub-toggle (git.syncPushOnRelease) shows up only with the master on.
+    expect(labels.some((l) => l!.includes('Push to git remote on release'))).toBe(true);
     expect(host.textContent).not.toContain('Commit specification on release');
     expect(host.textContent).not.toContain('Git off — using local history only');
   });
@@ -252,5 +253,68 @@ describe('#git settings card — master switch, commit target and branch list (2
     await vi.waitFor(() => expect(host.querySelectorAll('select option')).toHaveLength(3));
     expect(host.querySelector('[data-git-branch-missing]')).toBeNull();
     expect(host.querySelector<HTMLSelectElement>('select')!.value).toBe('feature');
+  });
+});
+
+describe('#git settings card — push on release and the B1 regression banner (2.1.55)', () => {
+  const BANNER = 'Git sync was previously configured but is now off. Enable Git integration to restore it.';
+
+  it('[ac:ac-gdy-config-ma-synccommitonrelease-true-l] git.syncPushOnRelease: true with git.enabled: false shows the amber B1 regression banner over the "Git off" state', async () => {
+    status = DETECTED;
+    await mount({ 'git.enabled': false, 'git.syncPushOnRelease': true }, /Git off/);
+
+    expect(host.textContent).toContain(BANNER);
+    expect(host.textContent).toContain('Git off — using local history only');
+    // Git off: no request for the repository status.
+    expect(requested).not.toContain('/api/git/status');
+  });
+
+  it('[ac:ac-gdy-config-ma-synccommitonrelease-true-l] the banner condition reads git.syncPushOnRelease only — not with it false, not from a legacy syncPushOnPush or syncCommitOnRelease, not with the master on', async () => {
+    status = DETECTED;
+    await mount(
+      { 'git.enabled': false, 'git.syncPushOnRelease': false, 'git.syncPushOnPush': true, 'git.syncCommitOnRelease': true },
+      /Git off/,
+    );
+    expect(host.textContent).not.toContain(BANNER);
+
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    await mount({ 'git.enabled': true, 'git.syncPushOnRelease': true, 'git.commitTarget.mode': 'current' });
+    expect(host.textContent).not.toContain(BANNER);
+  });
+
+  it('[section:fxcropku] with a detected repository the push sub-toggle is "Push to git remote on release" bound to git.syncPushOnRelease, described as pushing the release\'s target branch when a release is created', async () => {
+    status = DETECTED;
+    await mount({ 'git.enabled': true, 'git.syncPushOnRelease': false, 'git.commitTarget.mode': 'current' });
+
+    const push = [...host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find((c) =>
+      c.closest('label')!.textContent!.includes('Push to git remote on release'),
+    )!;
+    expect(push).toBeDefined();
+    expect(push.checked).toBe(false);
+    expect(push.closest('label')!.textContent).toContain(
+      "When you create a release, also git push the release's target branch.",
+    );
+    expect(host.textContent).not.toContain('remote server');
+
+    await act(async () => {
+      push.click();
+    });
+    expect(push.checked).toBe(true);
+  });
+
+  it('[section:4cp5vqa6] the Git integration element writes git.syncPushOnRelease (no syncPushOnPush) and its effect message is "Applies from the next release or pull."', () => {
+    const decl = GIT_SETTINGS.elements!.find((e) => e.id === 'git-integration')!;
+    const keys = decl.keys!.map((k) => k.join('.'));
+    expect(keys).toEqual([
+      'git.enabled',
+      'git.syncPushOnRelease',
+      'git.commitTarget.mode',
+      'git.commitTarget.branch',
+      'git.commitTarget.template',
+      'git.commitTarget.base',
+      'git.switchAfterRelease',
+    ]);
+    expect(decl.effectMessage).toBe('Applies from the next release or pull.');
   });
 });

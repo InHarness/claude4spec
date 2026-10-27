@@ -58,24 +58,12 @@ export interface StartOptions {
   host?: string;
   mode?: 'dev' | 'prod';
   pagesDir?: string;
-  name?: string;
-  /** M27: bootstrap-time clone of this published remote project slug, before app.listen. */
-  clone?: string;
   /**
    * M01 (0.1.36): resolved `--remote-url` value (flag > config.json). `null`/
    * absent ⇒ fall back to `bootConfig.remoteApiUrl`, then the M24 prod constant
-   * (applied inside RemoteHttpClient). Drives both the M24 auth client and the
-   * M27 clone-fetch base URL.
+   * (applied inside RemoteHttpClient). Drives the M24 auth client.
    */
   remoteApiUrl?: string | null;
-  /** M27 (0.1.37): did THIS bootstrap run write config.json? Drives clone rollback. */
-  configCreated?: boolean;
-  /** M27 (0.1.37): did THIS bootstrap run create .claude4spec/? Drives clone rollback. */
-  claudeDirCreated?: boolean;
-  /** M27 (0.1.37): did THIS bootstrap run create .gitignore (vs append to a user's)? Drives clone rollback. */
-  gitignoreCreated?: boolean;
-  /** 2.1.8: system root dirs THIS bootstrap run created. Drives clone rollback. */
-  systemRootDirsCreated?: string[];
 }
 
 export interface ServerHandle {
@@ -343,19 +331,6 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     broadcaster: createRoomBroadcaster(gateway),
   });
 
-  // M27 clone runs only on the FIRST build of the CLI-started project —
-  // consumed here so a later cache rebuild never re-clones.
-  let clonePending = opts.clone
-    ? {
-        slug: opts.clone,
-        nameOverride: opts.name,
-        configCreated: opts.configCreated ?? false,
-        claudeDirCreated: opts.claudeDirCreated ?? false,
-        gitignoreCreated: opts.gitignoreCreated ?? false,
-        systemRootDirsCreated: opts.systemRootDirsCreated ?? [],
-      }
-    : undefined;
-
   // M33 phase 3 / 0.2.2: the base frontend tier — workspace/npm packages (the
   // same resolved list `loadWorkspacePlugins` consumed) and the servable
   // envelopes — served ungated for every project: by the process-global asset
@@ -363,11 +338,9 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const frontendBase = { workspacePackages: resolvePluginPackages(workspace), envelopes };
 
   // M31: lazily-built, cached per-project contexts. The CLI-only overrides
-  // (pagesDir flag, --remote-url, clone) apply solely to the initial project.
+  // (pagesDir flag, --remote-url) apply solely to the initial project.
   const cache: ProjectContextCache = new ProjectContextCache(async (project) => {
     const isInitial = initialProject != null && project.id === initialProject.id;
-    const clone = isInitial ? clonePending : undefined;
-    if (clone) clonePending = undefined;
     return buildProjectContext({
       registry,
       pluginRegistry,
@@ -381,7 +354,6 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       mode,
       remoteApiUrl: isInitial ? opts.remoteApiUrl : undefined,
       pagesDirOverride: isInitial ? opts.pagesDir : undefined,
-      clone,
       onTurnFinished: () => cache.reapIdle(),
       onContextConfigChanged: (opts) => cache.invalidate(project.id, opts),
       // 2.1.9 (M52 `1v62dbhb`): a provider's context, on request, from this cache
@@ -504,7 +476,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // `{ error: { code, message } }` instead of Express's HTML error page.
   app.use('/api', errorHandler);
 
-  // Eager warm of the CLI-started project: clone executes before listen. A
+  // Eager warm of the CLI-started project: it is built before listen. A
   // workspace-only start has no initial project to warm.
   //
   // 2.1.23 — a project whose context cannot be BUILT (an unresolvable

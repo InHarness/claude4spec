@@ -18,9 +18,7 @@ import type { Root } from '../shared/types.js';
  *
  * The specification is explicit that the registry is NOT a `config.json` field —
  * the config sheet gains no row for it and `$schemaVersion` does not bump again.
- * Its shape and location are left to the implementation, with one hard
- * requirement: inside a release bundle the transitions travel ONLY as
- * `manifest.roots[].formerIds`, never through the sanitized `config.json`.
+ * Its shape and location are left to the implementation.
  *
  * So: `.claude4spec/root-renames.json`, written with the same atomic
  * temp→rename primitive as the config, and read by the same pure-disk-read
@@ -142,11 +140,6 @@ export function rootIdChain(transitions: readonly RootRenameTransition[], curren
   return chain;
 }
 
-/** The chain minus its head, oldest identifier first — the bundle manifest's `formerIds`. */
-export function formerIdsOf(transitions: readonly RootRenameTransition[], currentId: string): string[] {
-  return rootIdChain(transitions, currentId).slice(1).reverse();
-}
-
 /**
  * Where a retired identifier's chain leads today, or `null` when the value was
  * never retired. Used for the idempotent replay of a finished rename and to
@@ -263,32 +256,4 @@ export function recoverPendingRootRename(cwd: string): 'none' | 'completed' | 'r
     `[root-renames] interrupted rename '${journal.from}' → '${journal.to}' was ${outcome === 'completed' ? 'completed' : 'rolled back'} at startup`,
   );
   return outcome;
-}
-
-/**
- * Seeds a freshly cloned project's registry from a bundle manifest.
- *
- * A clone does not TRANSLATE identities — it keeps the ones the bundle carries.
- * But it must inherit the set of taken addresses: rule 7 has to hold in the
- * clone from its very first boot, or the clone could hand a retired identifier
- * to a different space and make its imported history ambiguous.
- *
- * `formerIds` arrives oldest-first, so consecutive pairs reconstruct the chain.
- * A manifest predating the field (or carrying an empty array) means "never
- * renamed" and seeds nothing.
- */
-export function seedRootRenamesFromManifest(
-  cwd: string,
-  roots: ReadonlyArray<{ id: string; formerIds?: readonly string[] }>,
-): void {
-  const transitions: RootRenameTransition[] = [];
-  const at = new Date().toISOString();
-  for (const root of roots) {
-    const chain = [...(root.formerIds ?? []), root.id];
-    for (let i = 0; i + 1 < chain.length; i += 1) {
-      transitions.push({ from: chain[i]!, to: chain[i + 1]!, at });
-    }
-  }
-  if (transitions.length === 0) return;
-  writeRootRenames(cwd, { version: 1, transitions });
 }

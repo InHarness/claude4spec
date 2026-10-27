@@ -99,7 +99,6 @@ export type ConfirmKind =
   | 'brief-reload'
   | 'release-restore'
   | 'entity-delete'
-  | 'remote-project-disconnect'
   | 'project-detach'
   | 'project-purge'
   | 'account-logout'
@@ -140,12 +139,13 @@ export function showGitErrorModal(recovery: GitErrorRecovery): void {
 }
 
 /**
- * 2.1.14 (M28 rhj0h9rl / fxcropku, M17 hybasevj / mbjdcls0, M25 wosnh845):
- * the one reaction of the release and push pages to the `gitSync` field of
- * `createRelease`, `updateRelease({ assignUnreleased })` and the release push.
+ * 2.1.14 (M28 rhj0h9rl / fxcropku, M17 hybasevj / mbjdcls0): the one reaction
+ * of the release pages to the `gitSync` field of `createRelease` and
+ * `updateRelease({ assignUnreleased })`, and (2.1.55) to the `gitPush` field
+ * of `createRelease` — the push that follows the release commit.
  * Only `status: 'error'` gives a signal — it opens the `git-sync-recover`
  * window. Every other result (`committed`, `nothing-to-commit`, `pushed`,
- * `nothing-to-push`, `skipped`) and `gitSync: null` give NO signal in the UI:
+ * `nothing-to-push`, `skipped`) and `null` give NO signal in the UI:
  * no toast, no window.
  */
 export function surfaceGitSync(
@@ -332,7 +332,6 @@ export type ModalMap = {
   };
   'page-reload': { props: { rootId: string; path: string }; result: 'reload' | 'keep' };
   'onboarding-skip': { props: NoProps; result: true };
-  'release-push': { props: { releaseName: string; projectName: string }; result: true };
   /**
    * M33 `m33trst0` — opened with `dismissible: false`: only its two buttons
    * close it, and the result is the branch the user picked (trust and load /

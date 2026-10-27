@@ -18,18 +18,16 @@ export interface CliArgs {
   /** M31: workspace selector (`--workspace <name>`); absent = port/default resolution. */
   workspace?: string;
   noOpen: boolean;
-  /** M27: `--clone <slug>` — bootstrap-time clone of a published remote project. */
-  clone?: string;
   /**
    * M01 (0.1.36): `--remote-url <url>` — sticky override of the remote
    * claude4spec-API base. Maps to config `remoteApiUrl`; persisted on first
-   * bootstrap so later pushes/clones target the same remote.
+   * bootstrap so later sign-ins target the same remote.
    */
   remoteUrl?: string;
   /**
    * Decision #11 (0.1.57): `--create-project` — explicit opt-in to register the
    * CWD as a workspace project. Non-sticky (never written to config.json).
-   * Implied by any per-project flag (`--cwd`/`--name`/`--pages`/`--clone`/
+   * Implied by any per-project flag (`--cwd`/`--name`/`--pages`/
    * `--remote-url`). Without it the bare command is a workspace-only start that
    * writes nothing to the CWD and opens `/welcome`.
    */
@@ -55,7 +53,6 @@ export function parseLaunchArgs(argv: string[], baseCwd: string = process.cwd())
     name: undefined,
     workspace: undefined,
     noOpen: false,
-    clone: undefined,
     remoteUrl: undefined,
     createProject: false,
     host: undefined,
@@ -98,10 +95,6 @@ export function parseLaunchArgs(argv: string[], baseCwd: string = process.cwd())
       args.workspace = argv[++i];
     } else if (a?.startsWith('--workspace=')) {
       args.workspace = a.split('=')[1];
-    } else if (a === '--clone' && argv[i + 1]) {
-      args.clone = argv[++i];
-    } else if (a?.startsWith('--clone=')) {
-      args.clone = a.split('=')[1];
     } else if (a === '--remote-url' && argv[i + 1]) {
       args.remoteUrl = argv[++i];
     } else if (a?.startsWith('--remote-url=')) {
@@ -126,12 +119,20 @@ export function parseLaunchArgs(argv: string[], baseCwd: string = process.cwd())
     cwdExplicit ||
     args.name != null ||
     args.pagesDir != null ||
-    args.clone != null ||
     args.remoteUrl != null
   ) {
     args.createProject = true;
   }
   return args;
+}
+
+/**
+ * The address a create-project start opens: the project's own page under the
+ * LOCAL server address (loopback or a concrete bindHost, never `publicUrl`);
+ * a fresh directory redirects from there to onboarding.
+ */
+export function projectStartUrl(localUrl: string, projectId: string): string {
+  return `${localUrl}/p/${projectId}/`;
 }
 
 /**

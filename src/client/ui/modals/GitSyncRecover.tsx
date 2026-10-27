@@ -43,6 +43,8 @@ const KIND_HINT: Record<NonNullable<GitErrorRecovery['kind']>, string> = {
  * `openModal('git-sync-recover', { recovery })`), rendered by `<ModalHost/>`.
  * 2.1.10: `kind: 'non-fast-forward'` (push) offers `Sync` instead of
  * "Fix it with Agent".
+ * 2.1.55: the push runs after the release commit (`gitPush` of createRelease);
+ * `operation: 'push'` gets its own release-created framing.
  * 2.1.47: the shadow acceptance opens it too — `merge-open` (from a success
  * whose `gitSync.status === 'error'`) and `merge-abort-failed` (from the
  * refusal `ACCEPT_ABORT_FAILED`); both go through "Fix it with Agent".
@@ -61,6 +63,13 @@ export function GitSyncRecover({ request, onClose }: ModalFormProps<'git-sync-re
   // `merge-abort-failed` the shadow acceptance really did not happen (no
   // release), so the window says so instead of "Done — but…".
   const acceptFailed = recovery.kind === 'merge-abort-failed';
+  // 2.1.55 (M28 u5vl07ch): a push is a step of creating a release, so its
+  // failure is framed as "the release exists — only the push failed".
+  const title = acceptFailed
+    ? 'The shadow was not accepted — its merge is still open'
+    : recovery.operation === 'push'
+      ? 'Release created — but git push hit a problem'
+      : 'Done — but git sync hit a problem';
 
   /**
    * `Sync` calls `POST /api/git/sync`; its result is handled by the sync toasts
@@ -116,7 +125,7 @@ export function GitSyncRecover({ request, onClose }: ModalFormProps<'git-sync-re
       open
       onClose={dismiss}
       dismissible={!syncing}
-      title={acceptFailed ? 'The shadow was not accepted — its merge is still open' : 'Done — but git sync hit a problem'}
+      title={title}
       size="md"
       footer={
         <>

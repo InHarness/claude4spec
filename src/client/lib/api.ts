@@ -38,10 +38,6 @@ import type {
   RemoteAccountResponse,
 } from '../../shared/remote-account.js';
 import type {
-  RemoteProjectInfo,
-  UpdateRemoteProjectRequest,
-} from '../../shared/remote-project.js';
-import type {
   AgentCredentialResponse,
   SetAgentCredentialRequest,
 } from '../../shared/agent-credential.js';
@@ -248,7 +244,7 @@ export interface ConfigResponse {
    */
   git: {
     enabled: boolean;
-    syncPushOnPush: boolean;
+    syncPushOnRelease: boolean;
     commitTarget: {
       mode: 'current' | 'named' | 'new';
       branch: string | null;
@@ -257,8 +253,6 @@ export interface ConfigResponse {
     };
     switchAfterRelease: boolean;
   };
-  /** M25: UUID of this project on the remote; null ⇒ next push is a first push. */
-  remoteProjectId: string | null;
   /** M24: explicit remote-API override; null = production constant. UI hides this. */
   remoteApiUrl: string | null;
   /** M01: config schema version (0.1.96 bumped to 4 — pagesDir → roots[]). */
@@ -318,7 +312,7 @@ export interface ConfigPatch {
    */
   git?: {
     enabled?: boolean;
-    syncPushOnPush?: boolean;
+    syncPushOnRelease?: boolean;
     commitTarget?: {
       mode?: 'current' | 'named' | 'new';
       branch?: string | null;
@@ -327,7 +321,6 @@ export interface ConfigPatch {
     };
     switchAfterRelease?: boolean;
   };
-  remoteProjectId?: string | null;
 }
 
 export interface RenameRootRequest {
@@ -752,22 +745,6 @@ export const remoteAccountApi = {
   async logout(): Promise<RemoteAccountResponse> {
     return handle<RemoteAccountResponse>(
       await apiFetch('/api/remote-account/logout', { method: 'POST' }),
-    );
-  },
-};
-
-// M26 §4 — remote-project proxy (used by Settings → "Remote project" section).
-export const remoteProjectApi = {
-  async get(): Promise<RemoteProjectInfo> {
-    return handle<RemoteProjectInfo>(await apiFetch('/api/remote-project'));
-  },
-  async update(body: UpdateRemoteProjectRequest): Promise<RemoteProjectInfo> {
-    return handle<RemoteProjectInfo>(
-      await apiFetch('/api/remote-project', {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      }),
     );
   },
 };

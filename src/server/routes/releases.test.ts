@@ -630,6 +630,39 @@ describe('PATCH /api/releases/:name — gitSync of the pull commit (M17 + M28)',
     expect(git('log', '--all', '--format=%s').split('\n').filter(Boolean)).toEqual(['seed']);
   });
 
+  it('[ac:ac-b-d-operacji-git-brak-gita-w-path-bra] a git operation that fails (the repository broken under the app: a stale index.lock) never changes the outcome of the release or the pull — 201/200, the release persisted and updated, gitSync { status: error, message, recovery }', async () => {
+    initRepo();
+    writeProjectConfig({ enabled: true });
+    mount();
+    // Another git process left the index locked: every `git add` now fails.
+    fs.writeFileSync(path.join(cwd, '.git', 'index.lock'), '');
+
+    const created = await request(app).post('/api/releases').send({ name: 'v1', description: 'first cut' });
+    expect(created.status).toBe(201);
+    expect(created.body.name).toBe('v1');
+    expect(created.body.gitSync.status).toBe('error');
+    expect(created.body.gitSync.message).toContain('index.lock');
+    expect(created.body.gitSync.recovery).toMatchObject({ operation: 'commit-on-release' });
+    expect(created.body.gitSync.recovery.gitStderr).toContain('index.lock');
+    expect(created.body.gitSync.recovery.intentPrompt).toBeTruthy();
+    // No push follows a commit that did not land.
+    expect(created.body.gitPush).toBeNull();
+    const persisted = await request(app).get('/api/releases/v1');
+    expect(persisted.status).toBe(200);
+    expect(persisted.body.description).toBe('first cut');
+
+    fs.writeFileSync(path.join(cwd, 'pages', 'b.md'), '# b');
+    const pull = await request(app).patch('/api/releases/v1').send({ description: 'pulled', assignUnreleased: true });
+    expect(pull.status).toBe(200);
+    expect(pull.body.description).toBe('pulled');
+    expect(pull.body.gitSync.status).toBe('error');
+    expect(pull.body.gitSync.message).toContain('index.lock');
+    expect(pull.body.gitSync.recovery).toMatchObject({ operation: 'pull' });
+    expect((await request(app).get('/api/releases/v1')).body.description).toBe('pulled');
+    // Nothing was committed.
+    expect(git('log', '--all', '--format=%s').split('\n').filter(Boolean)).toEqual(['seed']);
+  });
+
   it('[ac:ac-rest-patch-api-releases-nameorid-z-bod] errors: 409 RELEASE_FROZEN on a release that is not the latest, 409 RELEASE_NAME_CONFLICT on a rename collision', async () => {
     writeProjectConfig({ enabled: false });
     mount();
@@ -643,6 +676,282 @@ describe('PATCH /api/releases/:name — gitSync of the pull commit (M17 + M28)',
     const conflict = await request(app).patch('/api/releases/v2').send({ name: 'v1' });
     expect(conflict.status).toBe(409);
     expect(conflict.body.error.code).toBe('RELEASE_NAME_CONFLICT');
+  });
+});
+
+/**
+ * 2.1.55 (M17 w6cocvik / 18dkumzo, M28 sw1u84nn, dto `release` field
+ * `gitPush`) — push on release: after the release commit, `POST /api/releases`
+ * best-effort pushes the branch the commit landed on and answers the outcome in
+ * `gitPush`, separate from `gitSync`. A failed push never fails the release.
+ * `PATCH` (pull into the latest release) never pushes and carries no `gitPush`.
+ * Real repositories: the project's working repo tracking a bare "remote".
+ */
+describe('POST /api/releases — push on release (M17 + M28, 2.1.55)', () => {
+  let db: Database.Database;
+  let base: string;
+  let cwd: string;
+  let bare: string;
+  let app: express.Express;
+  const git = (...args: string[]): string => execFileSync('git', args, { cwd, encoding: 'utf8' });
+  const remoteSha = (ref: string): string | null => {
+    try {
+      return execFileSync('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${ref}`], { cwd: bare, encoding: 'utf8' }).trim();
+    } catch {
+      return null;
+    }
+  };
+
+  function setGitConfig(gitCfg: Record<string, unknown>): void {
+    fs.writeFileSync(
+      path.join(cwd, '.claude4spec', 'config.json'),
+      JSON.stringify({
+        $schemaVersion: 4,
+        name: 'p',
+        roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }],
+        git: gitCfg,
+      }),
+    );
+  }
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    runMigrations(db);
+    base = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-rel-push-'));
+    cwd = path.join(base, 'work');
+    bare = path.join(base, 'remote.git');
+    fs.mkdirSync(cwd);
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', bare]);
+    git('init', '-q', '-b', 'main');
+    git('config', 'user.email', 'test@example.com');
+    git('config', 'user.name', 'Test');
+    fs.mkdirSync(path.join(cwd, '.claude4spec'), { recursive: true });
+    setGitConfig({ enabled: true, syncPushOnRelease: true });
+    fs.mkdirSync(path.join(cwd, 'pages'), { recursive: true });
+    fs.writeFileSync(path.join(cwd, 'pages', 'a.md'), '# a');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'seed');
+    git('remote', 'add', 'origin', bare);
+    git('push', '-q', '-u', 'origin', 'main');
+    const releases = new ReleaseService(
+      db,
+      fakeHost,
+      fakeVersions,
+      fakeFileVersions,
+      fakeFileSerializer,
+      fakeRawReader,
+      fakeTagsService,
+      fakePagesService,
+    );
+    const gitService = new GitService(cwd, [path.join(cwd, 'pages')]);
+    releases.setGitService(gitService);
+    app = express().use(express.json()).use('/api/releases', releasesRouter(releases, undefined, gitService)).use(errorHandler);
+  });
+
+  afterEach(() => {
+    db.close();
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  const createRelease = (name = 'v1') => request(app).post('/api/releases').send({ name, description: 'first cut' });
+  /** Unreleased work the release commit picks up. */
+  const work = (file = 'b.md') => fs.writeFileSync(path.join(cwd, 'pages', file), `# ${file}`);
+
+  /** A second clone pushes to the remote first: the project's next push is a non-fast-forward. */
+  function remoteMovesAhead(): void {
+    const other = path.join(base, 'other');
+    execFileSync('git', ['clone', '-q', bare, other]);
+    const inOther = (...args: string[]) => execFileSync('git', args, { cwd: other, encoding: 'utf8' });
+    inOther('config', 'user.email', 'mate@example.com');
+    inOther('config', 'user.name', 'Mate');
+    fs.writeFileSync(path.join(other, 'mate.txt'), 'mate');
+    inOther('add', 'mate.txt');
+    inOther('commit', '-q', '-m', 'mate');
+    inOther('push', '-q', 'origin', 'main');
+  }
+
+  it('[entity:release] createRelease answers the dto `release` with both additive git fields — gitSync (the commit) and gitPush (the push), separate; updateRelease carries no gitPush', async () => {
+    work();
+    const created = await createRelease();
+    expect(created.status).toBe(201);
+    expectReleasePayload(created.body);
+    expect(created.body.gitSync).toMatchObject({ status: 'committed', branch: 'main', switched: false });
+    expect(typeof created.body.gitSync.sha).toBe('string');
+    expect(created.body.gitPush).toEqual({ status: 'pushed', branch: 'main' });
+
+    work('c.md');
+    const updated = await request(app).patch('/api/releases/v1').send({ assignUnreleased: true });
+    expect(updated.status).toBe(200);
+    expectReleasePayload(updated.body);
+    expect('gitPush' in updated.body).toBe(false);
+  });
+
+  it('[ac:ac-przy-w-czonym-config-git-syncpushonpush] with config.git.syncPushOnRelease on and a committed release commit, createRelease best-effort pushes the branch the commit landed on', async () => {
+    work();
+    const res = await createRelease();
+    expect(res.status).toBe(201);
+    expect(res.body.gitSync.status).toBe('committed');
+    expect(res.body.gitPush).toEqual({ status: 'pushed', branch: 'main' });
+    // The remote branch now holds the release commit.
+    expect(remoteSha('main')).toBe(git('rev-parse', 'main').trim());
+    expect(remoteSha('main')).toBe(res.body.gitSync.sha);
+  });
+
+  it('[ac:ac-przy-config-git-syncpushonpush-false] with config.git.syncPushOnRelease=false createRelease answers gitPush: null — the commit lands, nothing is pushed', async () => {
+    setGitConfig({ enabled: true, syncPushOnRelease: false });
+    const remoteBefore = remoteSha('main');
+    work();
+    const res = await createRelease();
+    expect(res.status).toBe(201);
+    expect(res.body.gitSync.status).toBe('committed');
+    expect(res.body).toHaveProperty('gitPush', null);
+    expect(remoteSha('main')).toBe(remoteBefore);
+  });
+
+  it('[ac:ac-przy-config-git-enabled-false-creater] with config.git.enabled=false createRelease answers gitPush: null — whatever the push toggle says', async () => {
+    setGitConfig({ enabled: false, syncPushOnRelease: true });
+    const remoteBefore = remoteSha('main');
+    work();
+    const res = await createRelease();
+    expect(res.status).toBe(201);
+    expect(res.body).toHaveProperty('gitSync', null);
+    expect(res.body).toHaveProperty('gitPush', null);
+    expect(remoteSha('main')).toBe(remoteBefore);
+  });
+
+  it('[ac:ac-przy-gitsync-status-innym-niz-committ] with gitSync other than committed createRelease runs no git push and answers gitPush: null — nothing-to-commit, and an error of the commit', async () => {
+    // HEAD ahead of the remote: a push, had one run, would move origin/main.
+    fs.writeFileSync(path.join(cwd, 'seed.txt'), 'local');
+    git('add', 'seed.txt');
+    git('commit', '-q', '-m', 'local only');
+    const remoteBefore = remoteSha('main');
+
+    // Nothing new to commit — the config file is committed with the seed.
+    git('add', '-A');
+    git('commit', '-q', '--allow-empty', '-m', 'clean');
+    const clean = await createRelease('v1');
+    expect(clean.status).toBe(201);
+    expect(clean.body.gitSync).toEqual({ status: 'nothing-to-commit' });
+    expect(clean.body).toHaveProperty('gitPush', null);
+
+    // The commit ends in an error (a refusing pre-commit hook).
+    const hooks = path.join(base, 'hooks');
+    fs.mkdirSync(hooks);
+    fs.writeFileSync(path.join(hooks, 'pre-commit'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+    git('config', 'core.hooksPath', hooks);
+    work();
+    const failed = await createRelease('v2');
+    expect(failed.status).toBe(201);
+    expect(failed.body.gitSync.status).toBe('error');
+    expect(failed.body).toHaveProperty('gitPush', null);
+
+    expect(remoteSha('main')).toBe(remoteBefore);
+  });
+
+  it('[ac:ac-response-createrelease-oraz-release-push] gitSync of createRelease with status committed carries the additive branch (where the commit landed) and switched (whether HEAD moved)', async () => {
+    setGitConfig({ enabled: true });
+    work();
+    const current = await createRelease('v1');
+    expect(current.body.gitSync).toMatchObject({ status: 'committed', branch: 'main', switched: false });
+
+    git('branch', 'release-target');
+    setGitConfig({ enabled: true, commitTarget: { mode: 'named', branch: 'release-target' }, switchAfterRelease: true });
+    work('c.md');
+    const named = await createRelease('v2');
+    expect(named.body.gitSync).toMatchObject({ status: 'committed', branch: 'release-target', switched: true });
+    expect(git('rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('release-target');
+  });
+
+  it('[ac:ac-push-bez-upstream-przy-bledzie-sie] push with no upstream, on a network error and on a non-fast-forward answers gitPush { status: error, message } — best-effort: the release stands untouched each time', async () => {
+    const expectReleaseStands = async (name: string, res: Awaited<ReturnType<typeof createRelease>>): Promise<void> => {
+      expect(res.status).toBe(201);
+      expect(res.body.name).toBe(name);
+      expect(res.body.gitSync.status).toBe('committed');
+      expect(res.body.gitPush.status).toBe('error');
+      expect(typeof res.body.gitPush.message).toBe('string');
+      expect(res.body.gitPush.message).not.toBe('');
+      const persisted = await request(app).get(`/api/releases/${name}`);
+      expect(persisted.status).toBe(200);
+      expect(persisted.body.name).toBe(name);
+    };
+
+    // No upstream: the branch tracks nothing.
+    git('branch', '--unset-upstream');
+    work('b.md');
+    await expectReleaseStands('v1', await createRelease('v1'));
+
+    // A network error: the remote is unreachable.
+    git('branch', '--set-upstream-to=origin/main');
+    git('remote', 'set-url', 'origin', path.join(base, 'does-not-exist.git'));
+    work('c.md');
+    await expectReleaseStands('v2', await createRelease('v2'));
+
+    // A non-fast-forward rejection.
+    git('remote', 'set-url', 'origin', bare);
+    remoteMovesAhead();
+    work('d.md');
+    await expectReleaseStands('v3', await createRelease('v3'));
+  });
+
+  it('[ac:ac-konflikt-odrzucenie-push-przez-remote] a conflicting push rejected by the remote (non-fast-forward) answers gitPush { status: error, message }, and creating the release still succeeds', async () => {
+    remoteMovesAhead();
+    const remoteBefore = remoteSha('main');
+    work();
+    const res = await createRelease();
+    expect(res.status).toBe(201);
+    expect(res.body.name).toBe('v1');
+    expect(res.body.gitSync.status).toBe('committed');
+    expect(res.body.gitPush.status).toBe('error');
+    expect(res.body.gitPush.message).toMatch(/rejected/);
+    expect(remoteSha('main')).toBe(remoteBefore);
+    expect((await request(app).get('/api/releases/v1')).status).toBe(200);
+  });
+
+  it('[ac:ac-push-wydania-odrzucony-przez-remote-j] a git push after the release rejected as non-fast-forward answers recovery.kind non-fast-forward in gitPush', async () => {
+    remoteMovesAhead();
+    work();
+    const res = await createRelease();
+    expect(res.status).toBe(201);
+    expect(res.body.gitPush.status).toBe('error');
+    expect(res.body.gitPush.recovery.operation).toBe('push');
+    expect(res.body.gitPush.recovery.kind).toBe('non-fast-forward');
+    // The commit result is separate and untouched by the push.
+    expect(res.body.gitSync.status).toBe('committed');
+    expect(res.body.gitSync.recovery).toBeUndefined();
+  });
+
+  it('[ac:ac-wariant-error-gitpushresult-niesie-w] the error variant of GitPushResult carries, in gitPush of the createRelease answer, recovery with operation push, reason, gitStderr and intentPrompt', async () => {
+    git('remote', 'set-url', 'origin', path.join(base, 'does-not-exist.git'));
+    work();
+    const res = await createRelease();
+    expect(res.status).toBe(201);
+    const { gitPush } = res.body as { gitPush: Record<string, unknown> };
+    expect(gitPush.status).toBe('error');
+    expect(gitPush.branch).toBe('main');
+    const recovery = gitPush.recovery as Record<string, unknown>;
+    expect(recovery.operation).toBe('push');
+    expect(typeof recovery.reason).toBe('string');
+    expect(recovery.reason).not.toBe('');
+    expect(typeof recovery.gitStderr).toBe('string');
+    expect(recovery.gitStderr).not.toBe('');
+    expect(typeof recovery.intentPrompt).toBe('string');
+    expect(recovery.intentPrompt).toContain(recovery.gitStderr as string);
+    expect(recovery.kind).toBeUndefined();
+  });
+
+  it('[ac:ac-updaterelease-z-assignunreleased-nie] updateRelease with assignUnreleased does not push — the answer carries no gitPush field and the pull commit stays local', async () => {
+    work();
+    await createRelease().expect(201);
+    const remoteAfterCreate = remoteSha('main');
+
+    work('c.md');
+    const pull = await request(app).patch('/api/releases/v1').send({ assignUnreleased: true });
+    expect(pull.status).toBe(200);
+    expect(pull.body.gitSync).toMatchObject({ status: 'committed' });
+    expect(git('log', '-1', '--format=%s').trim()).toBe('Pull to v1');
+    expect('gitPush' in pull.body).toBe(false);
+    expect(remoteSha('main')).toBe(remoteAfterCreate);
+    expect(remoteSha('main')).not.toBe(git('rev-parse', 'main').trim());
   });
 });
 
@@ -724,6 +1033,44 @@ describe('release routes — view=operation (2.1.11)', () => {
     expect(res.body.data).toEqual(
       releaseShowOperation({ releaseService: releases, roots: () => ROOTS }, { releaseName: 'v3', include: ['pages'] }),
     );
+  });
+
+  // 2.1.55 — the record no longer contrasts the route with a portable export:
+  // the bundle archive is gone, so the snapshot is read from the version
+  // tables only and carries the plain SpecSnapshot shape, nothing archive-like.
+  it('[entity:get-api-releases-nameorid-snapshot] GET /api/releases/:name/snapshot answers the raw SpecSnapshot by default, { data: release_show } under view=operation, 400 for an operation parameter without the view, 404 for a literal or unknown name', async () => {
+    const raw = await request(app).get('/api/releases/v3/snapshot');
+    expect(raw.status).toBe(200);
+    // spec-snapshot: exactly the four version-table fields — no envelope, no manifest/bundle field.
+    expect(Object.keys(raw.body).sort()).toEqual(['entities', 'pages', 'release', 'serializer_versions']);
+    expect(raw.body.release.name).toBe('v3');
+    expect(raw.body).toEqual(JSON.parse(JSON.stringify(releases.getReleaseSnapshot(releases.resolveReleaseId('v3')))));
+    for (const field of ['data', 'bundleSchemaVersion', 'c4sVersion', 'roots', 'manifest', 'sha256', 'tarGzPath']) {
+      expect(raw.body).not.toHaveProperty(field);
+    }
+
+    // mcp-spec-snapshot: the operation payload under `data`, windowed by the operation's parameters.
+    const op = await request(app).get('/api/releases/v3/snapshot?view=operation&include=entities&include=pages&limit=2&offset=0');
+    expect(op.status).toBe(200);
+    expect(op.body.data).toEqual(
+      releaseShowOperation(
+        { releaseService: releases, roots: () => ROOTS },
+        { releaseName: 'v3', include: ['entities', 'pages'], limit: 2, offset: 0 },
+      ),
+    );
+
+    for (const stray of ['limit=2', 'offset=1', 'include=pages', 'entityTypes=adr']) {
+      const res = await request(app).get(`/api/releases/v3/snapshot?${stray}`);
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('INVALID_ARGUMENT');
+      expect(JSON.stringify(res.body.error)).toContain('view=operation');
+    }
+
+    for (const name of ['current', 'nope']) {
+      const res = await request(app).get(`/api/releases/${name}/snapshot`);
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe('RELEASE_NOT_FOUND');
+    }
   });
 
   it('diff view=operation equals release_diff, for a release pair and for current', async () => {

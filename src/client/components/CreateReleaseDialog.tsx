@@ -56,7 +56,11 @@ export function CreateReleaseDialog({ onClose }: Props) {
       // M28: git commit-sync is best-effort — a failure never blocks creation.
       // 2.1.14: only `status: 'error'` reacts (the `git-sync-recover` window);
       // every other result, `null` included, gives no signal.
+      // 2.1.55 (M17 m17ui001, M28 u5vl07ch): the same for `gitPush`, the push
+      // that follows the release commit. Both never err together: the push runs
+      // only after a `committed` gitSync.
       surfaceGitSync(release.gitSync);
+      surfaceGitSync(release.gitPush);
       onClose();
       navigate({ to: '/releases/$name', params: { name: release.name } });
     } catch (err) {

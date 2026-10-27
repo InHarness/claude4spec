@@ -51,7 +51,10 @@ let closed: number;
 const onToast = (e: Event) => toasts.push((e as CustomEvent).detail);
 const onModal = (e: Event) => modals.push((e as CustomEvent).detail);
 
-function releaseWith(gitSync: CreateReleaseResponse['gitSync']): CreateReleaseResponse {
+function releaseWith(
+  gitSync: CreateReleaseResponse['gitSync'],
+  gitPush: CreateReleaseResponse['gitPush'] = null,
+): CreateReleaseResponse {
   return {
     id: 7,
     name: 'v2.1.14',
@@ -60,7 +63,24 @@ function releaseWith(gitSync: CreateReleaseResponse['gitSync']): CreateReleaseRe
     createdAt: '2026-10-12T10:00:00.000Z',
     countBreakdown: { entities: {}, pages: 1, total: 1 },
     gitSync,
+    gitPush,
   };
+}
+
+/** Renders the window a captured `git-sync-recover` request asks for, in place of the dialog. */
+async function renderRecoverWindow(request: ModalRequest<'git-sync-recover'>) {
+  act(() => root.unmount());
+  root = createRoot(host);
+  await act(async () => {
+    root.render(
+      createElement(
+        QueryClientProvider,
+        { client: new QueryClient() },
+        createElement(GitSyncRecover, { request, onClose: () => {} }),
+      ),
+    );
+  });
+  await flush();
 }
 
 async function flush() {
@@ -157,19 +177,7 @@ describe('create-release dialog — gitSync outcome of commitOnRelease (M28 2.1.
     expect(modals[0]!.props.recovery.kind).toBe('branch-missing');
 
     // The window is kind-aware: it says WHY — the target branch is gone.
-    act(() => root.unmount());
-    root = createRoot(host);
-    const qc = new QueryClient();
-    await act(async () => {
-      root.render(
-        createElement(
-          QueryClientProvider,
-          { client: qc },
-          createElement(GitSyncRecover, { request: modals[0]!, onClose: () => {} }),
-        ),
-      );
-    });
-    await flush();
+    await renderRecoverWindow(modals[0]!);
     expect(host.textContent).toContain('Done — but git sync hit a problem');
     expect(host.textContent).toContain(`Committing the release failed: ${branchMissing.reason}`);
     expect(host.querySelector('[data-git-recover-kind-hint]')?.textContent).toBe(
@@ -227,5 +235,124 @@ describe('create-release dialog — gitSync outcome of commitOnRelease (M28 2.1.
     expect(toasts).toEqual([]);
     expect(modals).toHaveLength(1);
     expect(modals[0]!.kind).toBe('git-sync-recover');
+  });
+});
+
+/**
+ * 2.1.55 (M17 m17ui001 „Naprawa po przyjęciu”, M28 u5vl07ch / fxcropku) — the
+ * push that follows the release commit answers in `gitPush`, separate from
+ * `gitSync`. The release page opens the same `git-sync-recover` window when
+ * `gitPush.status === 'error'`, with the recovery of `gitPush`; every other
+ * push result, `null` included, gives no signal.
+ */
+describe('create-release dialog — gitPush outcome of the push on release (2.1.55)', () => {
+  const committed: CreateReleaseResponse['gitSync'] = { status: 'committed', sha: 'abc1234', branch: 'main', switched: false };
+  const rejected: GitErrorRecovery = {
+    operation: 'push',
+    kind: 'non-fast-forward',
+    reason: 'the remote rejected the push (non-fast-forward)',
+    gitStderr: ' ! [rejected]        main -> main (fetch first)',
+    intentPrompt: 'Bring the remote commits in, then push again.',
+  };
+  const noUpstream: GitErrorRecovery = {
+    operation: 'push',
+    reason: "branch 'main' has no upstream",
+    gitStderr: 'fatal: The current branch main has no upstream branch.',
+    intentPrompt: 'Set an upstream for main, then push it.',
+  };
+
+  it('[ac:ac-gdy-gitsync-status-error-operacje] a gitPush error after createRelease opens git-sync-recover (not a toast) with the recovery of gitPush — the release stays created; non-fast-forward offers [Sync] + [Dismiss]', async () => {
+    createResponse = releaseWith(committed, {
+      status: 'error',
+      branch: 'main',
+      message: 'push rejected',
+      recovery: rejected,
+    });
+    await createRelease();
+
+    // The release exists: the dialog closes and navigates to it.
+    expect(closed).toBe(1);
+    expect(nav.calls).toEqual([{ to: '/releases/$name', params: { name: 'v2.1.14' } }]);
+    // A window, not a toast, carrying the push's own recovery.
+    expect(toasts).toEqual([]);
+    expect(modals).toHaveLength(1);
+    expect(modals[0]!.kind).toBe('git-sync-recover');
+    expect(modals[0]!.props.recovery).toEqual(rejected);
+
+    await renderRecoverWindow(modals[0]!);
+    expect(host.textContent).toContain('Release created — but git push hit a problem');
+    expect(host.textContent).toContain(`Pushing to the remote failed: ${rejected.reason}`);
+    expect(host.querySelector('[data-git-recover-sync]')?.textContent).toBe('Sync');
+    expect(host.querySelector('[data-git-recover-dismiss]')?.textContent).toBe('Dismiss');
+    expect(host.querySelector('[data-git-recover-agent]')).toBeNull();
+  });
+
+  it('[ac:ac-gdy-gitsync-status-error-operacje] a plain gitPush error (no kind) opens the window with [Fix it with Agent] + [Dismiss]', async () => {
+    createResponse = releaseWith(committed, { status: 'error', branch: 'main', recovery: noUpstream });
+    await createRelease();
+
+    expect(toasts).toEqual([]);
+    expect(modals).toHaveLength(1);
+    expect(modals[0]!.props.recovery).toEqual(noUpstream);
+
+    await renderRecoverWindow(modals[0]!);
+    expect(host.querySelector('[data-git-recover-agent]')?.textContent).toBe('Fix it with Agent');
+    expect(host.querySelector('[data-git-recover-dismiss]')?.textContent).toBe('Dismiss');
+    expect(host.querySelector('[data-git-recover-sync]')).toBeNull();
+  });
+
+  const nonErrorPush: Array<[string, CreateReleaseResponse['gitPush']]> = [
+    ['pushed', { status: 'pushed', branch: 'main' }],
+    ['nothing-to-push', { status: 'nothing-to-push', branch: 'main' }],
+    ['skipped', { status: 'skipped' }],
+    ['null', null],
+  ];
+
+  it.each(nonErrorPush)(
+    '[section:fxcropku] a gitPush of %s after a committed release gives no toast and no window',
+    async (_label, gitPush) => {
+      createResponse = releaseWith(committed, gitPush);
+      await createRelease();
+
+      expect(closed).toBe(1);
+      expect(nav.calls).toEqual([{ to: '/releases/$name', params: { name: 'v2.1.14' } }]);
+      expect(toasts).toEqual([]);
+      expect(modals).toEqual([]);
+    },
+  );
+});
+
+/**
+ * M28 edge case: a failing git operation never changes the outcome of the
+ * release — the server half (201/200 with `gitSync.status: 'error'`, a
+ * message and `recovery`) is in `src/server/routes/releases.test.ts`; this is
+ * the UI half: the release is created and the window, not a toast, offers
+ * "Fix it with Agent".
+ */
+describe('create-release dialog — a failed git operation keeps the release (M28)', () => {
+  it('[ac:ac-b-d-operacji-git-brak-gita-w-path-bra] a gitSync error on createRelease leaves the release created and opens git-sync-recover with Fix it with Agent instead of a toast', async () => {
+    const gitMissing: GitErrorRecovery = {
+      operation: 'commit-on-release',
+      reason: 'spawn git ENOENT',
+      gitStderr: '',
+      intentPrompt: 'Install git or put it on PATH, then commit the release.',
+    };
+    createResponse = releaseWith({ status: 'error', message: 'spawn git ENOENT', recovery: gitMissing });
+    await createRelease();
+
+    // The release outcome is unchanged: created, the dialog navigates to it, no error in the form.
+    expect(closed).toBe(1);
+    expect(nav.calls).toEqual([{ to: '/releases/$name', params: { name: 'v2.1.14' } }]);
+    expect(host.textContent).not.toContain('spawn git ENOENT');
+    // The window, not a toast.
+    expect(toasts).toEqual([]);
+    expect(modals).toHaveLength(1);
+    expect(modals[0]!.kind).toBe('git-sync-recover');
+    expect(modals[0]!.props.recovery).toEqual(gitMissing);
+
+    await renderRecoverWindow(modals[0]!);
+    expect(host.textContent).toContain('Done — but git sync hit a problem');
+    expect(host.querySelector('[data-git-recover-agent]')?.textContent).toBe('Fix it with Agent');
+    expect(host.querySelector('[data-git-recover-dismiss]')?.textContent).toBe('Dismiss');
   });
 });

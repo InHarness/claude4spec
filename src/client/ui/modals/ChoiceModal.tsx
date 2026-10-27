@@ -1,35 +1,22 @@
 import { Dialog } from '../../host-ui-kit/overlay/Dialog.js';
 import type { ModalFormProps } from '../ModalHost.js';
 
-type ChoiceProps = ModalFormProps<'onboarding-skip'> | ModalFormProps<'release-push'>;
+type ChoiceProps = ModalFormProps<'onboarding-skip'>;
 
-function copyOf(request: ChoiceProps['request']): {
-  title: string;
-  body: string;
-  confirmLabel: string;
-} {
-  if (request.kind === 'release-push') {
-    const { projectName } = request.props as { projectName: string };
-    return {
-      title: `Create remote project '${projectName}'`,
-      body: 'This is your first push. A new project will be created on the remote server with this name. Subsequent pushes will go to the same project.',
-      confirmLabel: 'Create and push',
-    };
-  }
-  return {
-    title: 'Skip onboarding?',
-    body: 'To re-run onboarding later, set onboardingCompleted: false in .claude4spec/config.json, then re-activate this project in the switcher (or restart the server). Editing the file alone won’t trigger it — claude4spec doesn’t watch .claude4spec/.',
-    confirmLabel: 'Skip anyway',
-  };
-}
+const COPY = {
+  title: 'Skip onboarding?',
+  body: 'To re-run onboarding later, set onboardingCompleted: false in .claude4spec/config.json, then re-activate this project in the switcher (or restart the server). Editing the file alone won’t trigger it — claude4spec doesn’t watch .claude4spec/.',
+  confirmLabel: 'Skip anyway',
+} as const;
 
 /**
- * 0.2.110 — non-destructive two-button windows: `onboarding-skip` (M16, `[Skip]`
- * on onboarding) and `release-push` (M25, the first push of a release). The
- * confirm answers `true`; Cancel, Escape, the scrim and ✕ answer `null`.
+ * 0.2.110 — non-destructive two-button window: `onboarding-skip` (M16, `[Skip]`
+ * on onboarding). 2.1.55: the M25 `release-push` first-push window left with the
+ * release push. The confirm answers `true`; Cancel, Escape, the scrim and ✕
+ * answer `null`.
  */
-export function ChoiceModal({ request, onClose }: ChoiceProps) {
-  const copy = copyOf(request);
+export function ChoiceModal({ onClose }: ChoiceProps) {
+  const copy = COPY;
   const close = onClose as (r: true | null) => void;
   return (
     <Dialog

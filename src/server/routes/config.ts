@@ -21,7 +21,7 @@ import {
 import { indexStatusRouter } from './index-status.js';
 import type { ProjectionStatusRegistry } from '../services/projection-status.js';
 import type { ContextInvalidation, Root } from '../../shared/types.js';
-import { C4S_VERSION } from '../services/release-bundle.js';
+import { readPackageVersion } from '../../bin/c4s/package-version.js';
 import type { SkillRegistry } from '../services/skill-registry.js';
 import { resolveAgentPathScope } from '../services/agent-path-scope.js';
 import { RootRegistry } from '../roots/registry.js';
@@ -176,7 +176,7 @@ function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRe
     },
     git: {
       enabled: c.git.enabled,
-      syncPushOnPush: c.git.syncPushOnPush,
+      syncPushOnRelease: c.git.syncPushOnRelease,
       commitTarget: {
         mode: c.git.commitTarget.mode,
         branch: c.git.commitTarget.branch,
@@ -185,11 +185,10 @@ function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRe
       },
       switchAfterRelease: c.git.switchAfterRelease,
     },
-    remoteProjectId: c.remoteProjectId ?? null,
     remoteApiUrl: c.remoteApiUrl ?? null,
     $schemaVersion: c.$schemaVersion,
     /** 0.2.113: the running app's version, for the About card beside `$schemaVersion`. */
-    appVersion: C4S_VERSION,
+    appVersion: readPackageVersion(),
     /**
      * 0.2.101: optimistic-concurrency token — sha256 of `config.json` as read.
      * A client hands it back as `expectedConfigHash` when renaming a root, the
@@ -220,7 +219,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
   }
 
   router.get('/meta', (_req, res) => {
-    res.json({ cwd, cwdName: path.basename(cwd), c4sVersion: C4S_VERSION });
+    res.json({ cwd, cwdName: path.basename(cwd), c4sVersion: readPackageVersion() });
   });
 
   router.get('/config', (_req, res) => {

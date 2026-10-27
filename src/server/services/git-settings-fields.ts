@@ -23,7 +23,7 @@ const gitField = (key: string, type: FieldDeclaration['type'], def: unknown): Fi
 
 export const GIT_SETTINGS_FIELDS: FieldDeclaration[] = [
   gitField('git.enabled', 'boolean', false),
-  gitField('git.syncPushOnPush', 'boolean', false),
+  gitField('git.syncPushOnRelease', 'boolean', false),
   gitField('git.commitTarget.mode', { enum: ['current', 'named', 'new'] }, 'current'),
   gitField('git.commitTarget.branch', 'string|null', null),
   gitField('git.commitTarget.template', 'string|null', null),

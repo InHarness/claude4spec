@@ -301,16 +301,42 @@ describe('M17 shadow acceptance — POST /api/shadow-accept (2.1.47)', () => {
       createdBy: 'user',
       acceptedShadow: { id: 'run-1/spec', tipSha: tip },
       gitSync: { status: 'committed', branch: 'main', switched: false },
+      gitPush: null,
     });
     expect(typeof res.body.id).toBe('number');
-    // The linked response dto `release`: its fields, `acceptedShadow` set, plus `gitSync`.
+    // The linked response dto `release`: its fields, `acceptedShadow` set, plus `gitSync` and `gitPush`.
     expect(Object.keys(res.body).sort()).toEqual(
-      ['acceptedShadow', 'countBreakdown', 'createdAt', 'createdBy', 'description', 'gitSync', 'id', 'name'].sort(),
+      ['acceptedShadow', 'countBreakdown', 'createdAt', 'createdBy', 'description', 'gitPush', 'gitSync', 'id', 'name'].sort(),
     );
     expect(res.body.countBreakdown).toEqual(expect.objectContaining({ pages: expect.any(Number), total: expect.any(Number) }));
     const list = await request(app).get('/api/releases');
     expect(list.body.releases.map((r: { name: string }) => r.name)).toEqual(['v1', 'v0']);
     expect(broadcasts).toContainEqual({ kind: 'release:created', releaseId: res.body.id, name: 'v1' });
+  });
+
+  it('[ac:ac-przyjecie-cienia-nie-wypycha-odpowied] accepting a shadow does not push — even with push on release switched on, the answer carries gitPush: null and the remote branch stays where it was', async () => {
+    const bare = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-shadow-accept-remote-')));
+    try {
+      await git(['init', '-q', '--bare', '-b', 'main', bare], bare);
+      // Push on release switched on, committed on the master before the shadow scenario.
+      setConfig({ enabled: true, syncPushOnRelease: true });
+      await commitAll('push on release');
+      await baseScenario();
+      await git(['remote', 'add', 'origin', bare], dir);
+      await git(['push', '-q', '-u', 'origin', 'main'], dir);
+      const remoteBefore = (await git(['rev-parse', 'main'], bare)).trim();
+      expect(remoteBefore).toBe(headSha);
+
+      const res = await accept();
+      expect(res.status).toBe(201);
+      expect(res.body.gitSync).toMatchObject({ status: 'committed', branch: 'main' });
+      expect(res.body).toHaveProperty('gitPush', null);
+      // The merge commit landed locally only.
+      expect(await head()).not.toBe(headSha);
+      expect((await git(['rev-parse', 'main'], bare)).trim()).toBe(remoteBefore);
+    } finally {
+      fs.rmSync(bare, { recursive: true, force: true });
+    }
   });
 
   it('[section:m17ui001] a successful acceptance announces its release file to open tabs: file:changed { rootId: releases, event: change, origin: server } next to release:created', async () => {

@@ -29,7 +29,7 @@ import {
 } from '../core/plugin-host/generic-crud.js';
 import type { CrudFacade } from '../core/plugin-host/types.js';
 import { referencesRouter } from '../routes/references.js';
-import { TagsService, DomainError } from '../services/tags.js';
+import { TagsService } from '../services/tags.js';
 import { VersionService } from '../services/versions.js';
 import { ReferencesService } from '../services/references.js';
 import { ChatService } from '../services/chat.js';
@@ -63,7 +63,6 @@ import { RemoteAuthService } from '../services/remote-auth.js';
 import { RemoteHttpClient } from '../services/remote-http-client.js';
 import { remoteAccountRouter } from '../routes/remote-account.js';
 import { agentRouter } from '../routes/agent-credential.js';
-import { remoteProjectRouter } from '../routes/remote-project.js';
 import { PagesFrontmatterIndexer } from '../services/pages-frontmatter-indexer.js';
 import { SectionIndexerService } from '../services/section-indexer.js';
 import { TodosIndexerService } from '../services/todos-indexer.js';
@@ -87,9 +86,6 @@ import { ReleaseService } from '../services/release.js';
 import { releasesRouter } from '../routes/releases.js';
 import { shadowDiffRouter } from '../routes/shadow-diff.js';
 import { shadowAcceptRouter } from '../routes/shadow-accept.js';
-import { ReleasePushService } from '../services/release-push.js';
-import { releasePushesRouter } from '../routes/release-pushes.js';
-import { ReleaseImportService, rollbackClone, snapshotRootFiles } from '../services/release-import.js';
 import { createReleaseToolsServer } from '../mcp/release-tools/index.js';
 import { GitService } from '../services/git.js';
 import { gitRouter } from '../routes/git.js';
@@ -108,7 +104,7 @@ import { mountRegistryRoots, bindRegistryReactions } from './root-registry-runti
 import { RootRegistry, rootDirAbs } from '../roots/registry.js';
 import { headChangeOriginMarker } from '../fs/head-change-origin.js';
 import { mountRelPaths } from '../fs/mount-paths.js';
-import { kindDeclaration, kindSelects, type RegistryRoot } from '../../shared/root-kinds.js';
+import { kindSelects, type RegistryRoot } from '../../shared/root-kinds.js';
 import { FileVersionCapture } from '../services/file-version-capture.js';
 import { EntityStore } from '../services/entity-store.js';
 import { EntityIndexerService } from '../services/entity-indexer.js';
@@ -258,16 +254,6 @@ export interface ProjectContextDeps {
    * (attachments still list; their reads refuse as unreachable).
    */
   providerContext?: (projectId: string) => Promise<ProjectContext>;
-  /** M27: bootstrap-time clone — runs inside build, before mounts dispatch. */
-  clone?: {
-    slug: string;
-    nameOverride?: string;
-    configCreated: boolean;
-    claudeDirCreated: boolean;
-    gitignoreCreated: boolean;
-    /** 2.1.8: system root dirs the activation (bootstrap) created before this build. */
-    systemRootDirsCreated?: string[];
-  };
 }
 
 export interface ProjectContext {
@@ -553,12 +539,6 @@ async function buildInner(
   // holds exactly them, so the page routes and page-tools address only them).
   // Reactions are bound further down (`bindRegistryReactions`), once the
   // services exist: mount → bind is a contract per source.
-  // Which root dirs this build CREATES — a failed clone rolls back exactly those
-  // (the system roots included), even when `.claude4spec/` existed before it.
-  const rootDirsCreatedHere = rootRegistry
-    .list()
-    .filter((r) => !fs.existsSync(rootDirAbs(cwd, r)))
-    .map((r) => r.dir);
   const { rootRuntimes, artifactMounts, sourceByRootId, storeByRootId, writerByRootId, serializerByRootId } =
     await mountRegistryRoots({ cwd, registry: rootRegistry, userRoots: effectiveRoots, w });
   const rootById = new Map(rootRuntimes.map((rt) => [rt.root.id, rt]));
@@ -1126,12 +1106,12 @@ async function buildInner(
   // M17: ReleaseService + cross-cutting `release-tools` MCP. Like
   // reference-tools, owned by the host (not a plugin) — release semantics
   // are dual-track (entities + pages), neither side is a plugin owner.
-  // 0.1.96: the `pages` roots drive releases/bundles/diffs; the release-flag roots drive the git pathspecs
+  // 0.1.96: the `pages` roots drive releases/diffs; the release-flag roots drive the git pathspecs
   // (`setReleaseFlagRootDirs`). 2.1.8: git STAGING is every registry root plus config.json, and repo
   // detection probes the roots of kind `pages` (`GitService(pagesKindRootDirs)`).
   // 2.1.8: every `pages` root takes part — no user root is left out, whatever
   // a legacy `releasable` once said. M02 m02l13001: consumers that must see PAGES only (the `assignToRelease`
-  // filter, the `file_version` path filter, bundle `roots` sanitisation) iterate
+  // filter, the `file_version` path filter) iterate
   // the roots of KIND `pages`, not the `release` flag — entities are released
   // too, and these lists do not cover them. Only the git pathspecs read the flag.
   const releasePageRoots = rootRegistry.pages();
@@ -1151,7 +1131,6 @@ async function buildInner(
     cwd,
     pagesKindRootIds,
     pagesKindRootDirs,
-    (rootId) => rootById.get(rootId)?.pages.records ?? null,
     renameTransitions,
   );
   // M29: release restore must persist restored entities' files.
@@ -1205,70 +1184,9 @@ async function buildInner(
         mountRelPaths([absPath], [mount]).map(({ relPath }) => ({ rootId: mount.rootId, relPath })),
       ),
   });
-  // M25 Release Push — coordinates M17 bundle build + M24 transport; owns release_push.
-  const releasePushService = new ReleasePushService(
-    db.handle,
-    releaseService,
-    remoteAuthService,
-    gitService,
-    cwd,
-  );
   pluginHost.registerMcpServer('release-tools', () =>
     createReleaseToolsServer({ releaseService, gitService, ws, roots: () => rootRegistry.pages() }),
   );
-
-  // M27 Project Clone — bootstrap-time only. Runs after services exist (DB
-  // migrated, plugin host mounted, pages root ensured) but BEFORE watchers start
-  // and before listen, so restore writes land without watcher double-capture.
-  if (deps.clone) {
-    const importService = new ReleaseImportService(
-      db.handle,
-      releaseService,
-      remoteHttpClient,
-      cwd,
-      skillRegistry,
-    );
-    // System roots whose dir pre-existed this run (e.g. a `.claude4spec/` that was
-    // already there): the rollback keeps the dir but removes the files restored
-    // into it — snapshot what each held before the restore.
-    const systemRootDirsCreated = new Set([
-      ...(deps.clone.systemRootDirsCreated ?? []),
-      ...rootRegistry
-        .list()
-        .filter((r) => kindDeclaration(r.kind).source === 'code' && rootDirsCreatedHere.includes(r.dir))
-        .map((r) => r.dir),
-    ]);
-    const preexistingSystemRoots = rootRegistry
-      .list()
-      .filter((r) => kindDeclaration(r.kind).source === 'code' && !systemRootDirsCreated.has(r.dir))
-      .map((r) => ({ dir: r.dir, filesBefore: snapshotRootFiles(cwd, r.dir) }));
-    try {
-      const result = await importService.clone(deps.clone.slug, { nameOverride: deps.clone.nameOverride });
-      console.log(
-        `  cloned remote project '${deps.clone.slug}' → local release #${result.localReleaseId ?? '?'}`,
-      );
-    } catch (err) {
-      const code = err instanceof DomainError ? err.code : 'CLONE_FAILED';
-      console.error(
-        `\x1b[31mclone failed\x1b[0m: ${code} — ${err instanceof Error ? err.message : String(err)}`,
-      );
-      // Full all-or-nothing rollback: cwd returns to its pre-`--clone` state. Close
-      // the DB handle first so db.sqlite can be unlinked (required on Windows).
-      db.close();
-      rollbackClone(cwd, {
-        rootDirs: effectiveRoots.map((r) => r.dir),
-        // Bootstrap mkdirs the system roots BEFORE this build, so its own record
-        // is the one that knows which of them this run created.
-        systemRootDirs: [...systemRootDirsCreated],
-        preexistingSystemRoots,
-        configCreated: deps.clone.configCreated,
-        claudeDirCreated: deps.clone.claudeDirCreated,
-        gitignoreCreated: deps.clone.gitignoreCreated,
-        dbSlotDir,
-      });
-      process.exit(1);
-    }
-  }
 
   // M21: BriefService — top-level (nie plugin), wzorzec analogiczny do
   // PlanService. Mountowany router /briefs poniżej.
@@ -1652,7 +1570,6 @@ async function buildInner(
   router.use('/shadow-diff', shadowDiffRouter(releaseService));
   // 2.1.47 (M17 m17api401): the shadow acceptance — M17's third own router.
   router.use('/shadow-accept', shadowAcceptRouter(releaseService, ws));
-  router.use('/release-pushes', releasePushesRouter(releasePushService));
   // 0.1.123: on a successful checkout, reuse the same invalidate path as a
   // context-defining config change — no new M31 reload machinery needed.
   // 2.1.10 (M31 ic35jwy6): the same reload after a sync that moved HEAD
@@ -1671,7 +1588,6 @@ async function buildInner(
   );
   router.use('/agent', agentRouter(agentCredentialService));
   router.use('/remote-account', remoteAccountRouter(remoteAuthService));
-  router.use('/remote-project', remoteProjectRouter(remoteAuthService, cwd));
   router.use('/chat', chatRouter(agentDeps));
   router.use(errorHandler);
 

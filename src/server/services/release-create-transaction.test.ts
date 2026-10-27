@@ -169,10 +169,13 @@ describe('releaseService.createRelease — validation + one transaction (M17)', 
       'restoreEntity',
       'restorePage',
       'restoreSpec',
-      'buildBundleArchive',
-      'restoreBundleArchive',
     ] as const) {
       expect(typeof releases[method]).toBe('function');
+    }
+    // 2.1.55: the release is no longer a portable archive — the bundle pair
+    // left the contract, and nothing on the service answers under either name.
+    for (const removed of ['buildBundleArchive', 'restoreBundleArchive']) {
+      expect(removed in releases).toBe(false);
     }
 
     const store = releaseStoreIn(cwd);

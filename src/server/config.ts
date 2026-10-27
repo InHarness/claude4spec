@@ -65,13 +65,9 @@ export interface Config {
    * `$schemaVersion` bump; projects from before M24 keep production behaviour.
    */
   remoteApiUrl?: string | null;
-  /**
-   * M25: UUID of this project on the remote (set after the first successful
-   * push). `null`/absent = no remote project yet ⇒ the next push is a first push
-   * (creates a new project from `name`). Additive — no `$schemaVersion` bump; not
-   * a secret (the secret is `access_token` in `remote_session`).
-   */
-  remoteProjectId?: string | null;
+  // 2.1.55 (code-snippet `config-json-shape`): `remoteProjectId` left the file with
+  // M25 (release push removed). A legacy key in an existing file is an unknown key
+  // now — neither validated nor copied, so the next write drops it.
   /**
    * M28: optional Git Sync toggles. Absent/missing ⇒ both `false` (opt-in,
    * forward-compatible with configs written before M28). Additive — no
@@ -83,7 +79,6 @@ export interface Config {
    * exposure fields (`exposed`, `name`, `description`, `entry`, `scope`,
    * `contextTypes`) and the attachments of other projects' skills (`uses`).
    * Additive — no `$schemaVersion` bump; absent ⇒ not exposed, no attachments.
-   * Not in the release bundle's sanitized config (allow-list, M17 `m17bndcf1`).
    * Read through {@link normalizeSkillConfig}, never field by field with `??`.
    */
   skill?: SkillConfig;
@@ -142,9 +137,8 @@ export function normalizeSkillConfig(c: Pick<Config, 'skill'>): NormalizedSkillC
 export interface GitSyncConfig {
   /**
    * 0.1.118: master switch for the entire git layer. Absent/missing ⇒ `false`
-   * (opt-in — existing projects with `syncPushOnPush` already `true` lose
-   * push-on-release after upgrading; the Settings UI surfaces an amber banner
-   * for that case). When `false`, ALL git operations no-op and return
+   * (opt-in). When `false`, ALL git operations no-op — the release entries
+   * (`commitOnRelease`, `pushOnRelease`) answer `null`, the rest
    * `status: 'skipped'`; `detect()` may still run.
    *
    * 0.1.124: `enabled` alone now also gates commit-on-release/commit-on-pull —
@@ -155,8 +149,13 @@ export interface GitSyncConfig {
    * project that had commit-on-release keeps it after upgrading.
    */
   enabled?: boolean;
-  /** When on, a successful remote push best-effort `git push`es the current branch. */
-  syncPushOnPush?: boolean;
+  /**
+   * 2.1.55 (M28 dj6r1sam): when on (and `enabled`), creating a release
+   * best-effort `git push`es the branch its release commit landed on. Renamed
+   * from `syncPushOnPush` WITHOUT a migration: a legacy `syncPushOnPush` in
+   * `config.json` is an unknown key — ignored on read, dropped by the next write.
+   */
+  syncPushOnRelease?: boolean;
   /**
    * 0.1.125: where a release commit lands. Absent/missing ⇒
    * `{ mode: 'current', branch: null, template: null, base: null }` (prior
@@ -261,7 +260,7 @@ export interface NormalizedGitCommitTargetConfig {
 
 export interface NormalizedGitSyncConfig {
   enabled: boolean;
-  syncPushOnPush: boolean;
+  syncPushOnRelease: boolean;
   commitTarget: NormalizedGitCommitTargetConfig;
   switchAfterRelease: boolean;
 }
@@ -310,7 +309,7 @@ export interface ConfigCliArgs {
   pagesDir?: string;
   /**
    * M01 (0.1.36): `--remote-url <url>` maps here. Sticky like `name` —
-   * persisted to `config.json` on first bootstrap, then drives M24/M27 base URL.
+   * persisted to `config.json` on first bootstrap, then drives the M24 base URL.
    */
   remoteApiUrl?: string | null;
 }
@@ -402,7 +401,7 @@ export function defaults(cwd: string): NormalizedConfig {
     // M28/0.1.118/0.1.125: git layer off unless opted in; commits land on HEAD.
     git: {
       enabled: false,
-      syncPushOnPush: false,
+      syncPushOnRelease: false,
       commitTarget: { mode: 'current', branch: null, template: null, base: null },
       switchAfterRelease: false,
     },
@@ -432,8 +431,6 @@ export function bootstrapDefaults(cwd: string): Config {
     onboardingCompleted: true,
     // M24: null = use the hardcoded production remote in M24.
     remoteApiUrl: null,
-    // M25: null = no remote project yet ⇒ next push creates one.
-    remoteProjectId: null,
   };
 }
 
@@ -896,8 +893,8 @@ function validate(raw: unknown): Partial<Config> {
     // Syntactic-only check here (sync): parsable via `new URL()` + an `http(s)://`
     // scheme. Reachability is NOT probed at boot (0.1.65) — the client bootstrap is
     // cold; an unreachable-but-syntactically-valid host lets the process start, and
-    // the reachability error surfaces only at the first remote action (login M24,
-    // push M25, clone M27) as a graceful per-action failure.
+    // the reachability error surfaces only at the first remote action (today: the
+    // M24 login) as a graceful per-action failure.
     if (typeof r.remoteApiUrl === 'string' && r.remoteApiUrl.trim() !== '') {
       let parsed: URL;
       try {
@@ -910,12 +907,6 @@ function validate(raw: unknown): Partial<Config> {
       }
     }
     out.remoteApiUrl = r.remoteApiUrl;
-  }
-  if ('remoteProjectId' in r) {
-    if (r.remoteProjectId !== null && typeof r.remoteProjectId !== 'string') {
-      throw typeError('remoteProjectId', 'string | null', r.remoteProjectId);
-    }
-    out.remoteProjectId = r.remoteProjectId;
   }
   if ('git' in r) {
     const g = r.git;
@@ -935,11 +926,13 @@ function validate(raw: unknown): Partial<Config> {
     // is the v4 migration's job (`migrateConfigToV4`), which runs at project
     // activation; this function must stay tolerant since it also runs on every
     // boot, including on files the migration has not reached yet.
-    if ('syncPushOnPush' in gr) {
-      if (typeof gr.syncPushOnPush !== 'boolean') {
-        throw typeError('git.syncPushOnPush', 'boolean', gr.syncPushOnPush);
+    // 2.1.55: `syncPushOnPush` was renamed to `syncPushOnRelease` with no
+    // migration — the old key is not copied, so it is an unknown key.
+    if ('syncPushOnRelease' in gr) {
+      if (typeof gr.syncPushOnRelease !== 'boolean') {
+        throw typeError('git.syncPushOnRelease', 'boolean', gr.syncPushOnRelease);
       }
-      git.syncPushOnPush = gr.syncPushOnPush;
+      git.syncPushOnRelease = gr.syncPushOnRelease;
     }
     // 0.1.125: shape-only validation — semantic checks (non-empty branch/template
     // for the active mode, ref-format) live in the PATCH /api/config route, since

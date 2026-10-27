@@ -33,24 +33,11 @@ vi.mock('../hooks/useReleases.js', () => ({
   useReleaseDiff: () => ({ data: undefined }),
   useReleaseSnapshot: () => ({ data: undefined }),
   useRestoreSpec: () => ({ mutateAsync: async () => {} }),
-  useUnreleasedCount: () => ({ data: 0 }),
   forgetReleaseName: () => {},
   useUpdateRelease: () => ({ isPending: false, mutateAsync: async () => state.release }),
 }));
-vi.mock('../hooks/useReleasePushes.js', () => ({
-  useReleasePushes: () => ({ data: [] }),
-  useAllReleasePushes: () => ({ data: [] }),
-  usePushRelease: () => ({ isPending: false, mutateAsync: async () => ({}) }),
-}));
-vi.mock('../hooks/useConfig.js', () => ({
-  useConfig: () => ({ data: { name: 'p', remoteProjectId: null } }),
-}));
-vi.mock('../hooks/useRemoteAccount.js', () => ({
-  useRemoteAccount: () => ({ data: { connected: false } }),
-}));
 vi.mock('./release/DeltaSection.js', () => ({ DeltaSection: () => null }));
 vi.mock('./release/ReleaseSelect.js', () => ({ ReleaseSelect: () => null }));
-vi.mock('./release/ReleasePushesList.js', () => ({ ReleasePushesList: () => null }));
 vi.mock('./CreateBriefDialog.js', () => ({ CreateBriefDialog: () => null }));
 
 import { ReleaseDetail } from './ReleaseDetail.js';

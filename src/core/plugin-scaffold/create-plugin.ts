@@ -60,8 +60,8 @@ export interface CreatePluginResult {
 
 /**
  * Tracks what THIS run put on disk, so a rollback removes exactly that and
- * nothing else. Same discipline as M27's `rollbackClone`: with `--force` over a
- * pre-existing directory, files that were already there are never touched.
+ * nothing else: with `--force` over a pre-existing directory, files that were
+ * already there are never touched.
  */
 interface WriteLedger {
   /** True when this run created the target directory itself. */

@@ -10,7 +10,7 @@
  * and the `/releases` screen, wired as `router.tsx`'s `ReleasesIndexRoute`
  * wires it (`tab`, `ref` from the search, `visit` = the history entry's key).
  * Only the network (`fetch`), the config, the entity registry and the
- * briefs/pushes lists are stubbed.
+ * briefs list is stubbed.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement, type ReactElement } from 'react';
@@ -29,10 +29,6 @@ import {
 
 vi.mock('../hooks/useConfig.js', () => ({ useConfig: () => ({ data: { git: { enabled: true } } }) }));
 vi.mock('../lib/project-reload.js', () => ({ reloadProjectRoute: () => {} }));
-vi.mock('../hooks/useReleasePushes.js', () => ({
-  releasePushesKey: (releaseName: string | undefined) => ['release-pushes', { releaseName }],
-  useAllReleasePushes: () => ({ data: [] }),
-}));
 vi.mock('../hooks/useBriefs.js', () => ({ useBriefs: () => ({ data: [] }) }));
 vi.mock('./BriefsList.js', () => ({ ImplementedBadge: () => null }));
 vi.mock('../core/plugin-host/host.js', () => ({

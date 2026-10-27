@@ -39,7 +39,7 @@ import { isSystemRootId } from '../../shared/root-kinds.js';
  * the files and every section anchor stay exactly as they are; no page file is
  * written, so no `file_version` row is captured either — a capture would have
  * nothing to snapshot. It does not move the directory, does not rewrite past
- * releases or their bundles, and does not install an alias one may write under.
+ * releases, and does not install an alias one may write under.
  *
  * The retired identifier is recorded permanently. Asking for it afterwards
  * behaves like asking for any unknown root — never a quiet redirect.

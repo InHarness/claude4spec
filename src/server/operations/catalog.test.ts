@@ -19,7 +19,8 @@ import { registerCoreOperations } from './core-operations.js';
 import { KNOWN_OPERATION_CLASSES, PROFILES, mcpServerSetForProfile, profileAdmits } from './profiles.js';
 import { pluginServerNamesFor, toolAdmittedByProfile, withheldTools } from './profile-gate.js';
 import { toolError, toolSuccess } from './envelope.js';
-import { httpStatusForCode } from './error-codes.js';
+import { STATUS_FOR_CODE, httpStatusForCode } from './error-codes.js';
+import { OPERATION_RULES } from './operation-rules.js';
 import { createC4sReaderServer } from '../mcp/c4s-reader.js';
 import { createReferenceToolsServer, type ReferenceToolsDeps } from '../mcp/reference-tools.js';
 import { buildEntityTools, type EntityToolsDeps } from '../mcp/entity-tools.js';
@@ -209,7 +210,7 @@ describe('the seeded catalog', () => {
    * (`describe_entity_type` renders `describe_types` internally), and the alias
    * is written down here rather than inferred.
    */
-  it('every internal/mcp `direct` cell of an M39 row has a tool registered on its server (the whole-catalogue check is in `the catalogue against the window\'s 80 records`)', () => {
+  it('every internal/mcp `direct` cell of an M39 row has a tool registered on its server (the whole-catalogue check is in `the catalogue against the window\'s 77 records`)', () => {
     const mcpDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../mcp');
     const declared = (file: string): Set<string> =>
       new Set(
@@ -1433,81 +1434,35 @@ describe('the page, TODO, page-link and static-file rows as their 2.1.26 records
 });
 
 /**
- * 2.1.26 — the three M25 rows as their `spec-operation` records declare them
- * (`push-release`, `list-release-pushes`, `get-release-push`): each renders only
- * as its REST route under `/api/release-pushes`; the other three cells are `n/a`
- * with the records' `powody` verbatim, and `narzedzia` is empty. The routes'
- * behaviour (`zachowanie`) is held in `routes/release-pushes.test.ts`.
+ * 2.1.55 — M25 Release Push is gone, and with it its three `spec-operation`
+ * records (`push-release`, `list-release-pushes`, `get-release-push`): the
+ * catalogue declares none of the three rows, so no channel serves them, and
+ * the codes only they raised are no longer in the status table.
  */
-describe('the M25 release-push rows as their 2.1.26 records declare them', () => {
-  const D = { kind: 'direct' } as const;
-  const UI_ONLY = 'kod renderuje operację wyłącznie trasą REST interfejsu, a katalog operacji kodu jej nie deklaruje';
-  const NO_CLI = 'brak komendy `c4s`; kod renderuje operację wyłącznie trasą REST interfejsu';
-  const USER_INITIATED =
-    'akt user-initiated: push wyprowadza bajty specyfikacji poza maszynę pod tożsamością zalogowanego użytkownika; przegląd klasyfikacji otwarty';
-  const required = (name: string, key: string): boolean =>
-    !(CATALOG.require(name).inputSchema[key] as unknown as { isOptional(): boolean }).isOptional();
-
-  it('[entity:push-release] push_release: project, human-mediated, internal/cli/mcp n/a (user-initiated), rest direct, file/db/ui-notify, not idempotent, no content input, codes NOT_CONNECTED, ACCOUNT_NOT_ACTIVE, SESSION_EXPIRED, PUSH_FAILED, RELEASE_NOT_FOUND, VALIDATION, no renderings, addressed by releaseName', () => {
-    const op = expectOperationMatchesRecord(
-      {
-        nazwa: 'push_release',
-        mediacja: 'human-mediated',
-        channels: {
-          internal: { kind: 'na', reason: USER_INITIATED },
-          cli: { kind: 'na', reason: USER_INITIATED },
-          mcp: { kind: 'na', reason: USER_INITIATED },
-          rest: D,
-        },
-        efekty: ['file', 'db', 'ui-notify'],
-        idempotencja: false,
-        opisTresci: 'n/a',
-        kodyBledow: ['NOT_CONNECTED', 'ACCOUNT_NOT_ACTIVE', 'SESSION_EXPIRED', 'PUSH_FAILED', 'RELEASE_NOT_FOUND', 'VALIDATION'],
-        narzedzia: {},
-      },
-      {},
-    );
-    expect(op.opClass).toBe('write');
-    expect(Object.keys(op.inputSchema)).toEqual(['releaseName']);
-    expect(required('push_release', 'releaseName')).toBe(true);
+describe('the M25 release-push rows are no longer declared (2.1.55)', () => {
+  it('[entity:push-release] push_release is not declared in the catalogue — no channel serves it', () => {
+    expect(CATALOG.has('push_release')).toBe(false);
+    expect(CATALOG.get('push_release')).toBeUndefined();
+    expect(OPERATION_RULES).not.toHaveProperty('push_release');
+    expect(STATUS_FOR_CODE).not.toHaveProperty('ACCOUNT_NOT_ACTIVE');
+    expect(STATUS_FOR_CODE).not.toHaveProperty('PUSH_FAILED');
   });
 
-  it('[entity:list-release-pushes] list_release_pushes: project, direct, internal/mcp n/a (REST only), cli n/a (no c4s command), rest direct, no effects, idempotent, code VALIDATION, no renderings, optional releaseName and no paging', () => {
-    const op = expectOperationMatchesRecord(
-      {
-        nazwa: 'list_release_pushes',
-        channels: { internal: { kind: 'na', reason: UI_ONLY }, cli: { kind: 'na', reason: NO_CLI }, mcp: { kind: 'na', reason: UI_ONLY }, rest: D },
-        efekty: ['none'],
-        idempotencja: true,
-        opisTresci: undefined,
-        kodyBledow: ['VALIDATION'],
-        narzedzia: {},
-      },
-      {},
-    );
-    expect(op.opClass).toBe('read');
-    // Without a parameter the whole history; with `releaseName` one release's. No window.
-    expect(Object.keys(op.inputSchema)).toEqual(['releaseName']);
-    expect(required('list_release_pushes', 'releaseName')).toBe(false);
+  it('[entity:list-release-pushes] list_release_pushes is not declared in the catalogue — no channel serves it', () => {
+    expect(CATALOG.has('list_release_pushes')).toBe(false);
+    expect(CATALOG.get('list_release_pushes')).toBeUndefined();
+    expect(OPERATION_RULES).not.toHaveProperty('list_release_pushes');
   });
 
-  it('[entity:get-release-push] get_release_push: project, direct, internal/mcp n/a (REST only), cli n/a (no c4s command), rest direct, no effects, idempotent, codes VALIDATION, RELEASE_PUSH_NOT_FOUND, no renderings, addressed by the audit entry id', () => {
-    const op = expectOperationMatchesRecord(
-      {
-        nazwa: 'get_release_push',
-        channels: { internal: { kind: 'na', reason: UI_ONLY }, cli: { kind: 'na', reason: NO_CLI }, mcp: { kind: 'na', reason: UI_ONLY }, rest: D },
-        efekty: ['none'],
-        idempotencja: true,
-        opisTresci: undefined,
-        kodyBledow: ['VALIDATION', 'RELEASE_PUSH_NOT_FOUND'],
-        narzedzia: {},
-      },
-      {},
-    );
-    expect(op.opClass).toBe('read');
-    const shape = z.object(op.inputSchema as z.ZodRawShape);
-    expect(shape.safeParse({ id: 3 }).success).toBe(true);
-    expect(shape.safeParse({ id: 1.5 }).success).toBe(false);
+  it('[entity:get-release-push] get_release_push is not declared in the catalogue — no channel serves it', () => {
+    expect(CATALOG.has('get_release_push')).toBe(false);
+    expect(CATALOG.get('get_release_push')).toBeUndefined();
+    expect(OPERATION_RULES).not.toHaveProperty('get_release_push');
+    expect(STATUS_FOR_CODE).not.toHaveProperty('RELEASE_PUSH_NOT_FOUND');
+  });
+
+  it('no catalogue row names a release push, on any channel', () => {
+    for (const op of CATALOG.list()) expect(op.name, op.name).not.toMatch(/release_push/);
   });
 });
 
@@ -1793,7 +1748,7 @@ describe('the M18 tag write rows as their 2.1.26 records declare them', () => {
  * a record; each row answers for the record's fields; and the four L3/M43
  * criteria on `reguly` and `narzedzia` hold for every row at once.
  */
-describe("the catalogue against the window's 80 records", () => {
+describe("the catalogue against the window's 77 records", () => {
   const RECORD_CHANNEL: Record<ChannelCell['kind'], string> = { direct: 'direct', via: 'via', na: 'n/a' };
   const EFFECT: Record<string, string> = { brak: 'none', plik: 'file', db: 'db', 'ui-notify': 'ui-notify' };
   const IDEMPOTENCE: Record<string, boolean | 'conditional'> = { tak: true, nie: false, warunkowa: 'conditional' };
@@ -1888,9 +1843,9 @@ describe("the catalogue against the window's 80 records", () => {
 
   const byName = new Map(SPEC_OPERATION_RECORDS.map((r) => [r.nazwa, r]));
 
-  it('every one of the 80 records has its row, and every other row is a plugin row the window has no record for', () => {
-    expect(SPEC_OPERATION_RECORDS).toHaveLength(80);
-    expect(byName.size).toBe(80);
+  it('every one of the 77 records has its row, and every other row is a plugin row the window has no record for', () => {
+    expect(SPEC_OPERATION_RECORDS).toHaveLength(77);
+    expect(byName.size).toBe(77);
     for (const record of SPEC_OPERATION_RECORDS) expect(CATALOG.has(record.nazwa), record.nazwa).toBe(true);
     const withoutRecord = CATALOG.list()
       .filter((op) => !byName.has(op.name))

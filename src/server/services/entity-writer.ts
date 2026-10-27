@@ -103,7 +103,7 @@ export class HostEntityWriter implements EntityWriter {
 
     /**
      * The only remaining `null`: the type is not active in this project at all
-     * (deactivated, or carried by a bundle this installation never had). The
+     * (deactivated, or never installed here). The
      * caller reports a skip; this is NOT an error.
      *
      * A module that IS active and declares a schema but reached here means the

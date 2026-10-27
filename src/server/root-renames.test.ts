@@ -6,7 +6,6 @@ import { builtinPagesRoot, configPath, readConfig, type Config } from './config.
 import {
   appendTransition,
   clearRenameJournal,
-  formerIdsOf,
   readRootRenames,
   recoverPendingRootRename,
   resolveCurrentRootId,
@@ -14,7 +13,6 @@ import {
   rootIdChain,
   rootRenameJournalPath,
   rootRenamesPath,
-  seedRootRenamesFromManifest,
   writeRenameJournal,
   writeRootRenames,
   type RootRenameTransition,
@@ -26,13 +24,10 @@ describe('root-renames — the identifier chain (0.2.101)', () => {
   it('walks a multi-step chain back to the oldest identifier', () => {
     const transitions = [t('pages', 'docs'), t('docs', 'spec')];
     expect(rootIdChain(transitions, 'spec')).toEqual(['spec', 'docs', 'pages']);
-    // `formerIds` in a bundle manifest is the same chain, oldest first.
-    expect(formerIdsOf(transitions, 'spec')).toEqual(['pages', 'docs']);
   });
 
-  it('a never-renamed root is its own chain and has no former ids', () => {
+  it('a never-renamed root is its own chain', () => {
     expect(rootIdChain([], 'adr')).toEqual(['adr']);
-    expect(formerIdsOf([], 'adr')).toEqual([]);
   });
 
   it('resolves a retired identifier forward to the address it leads to today', () => {
@@ -94,16 +89,6 @@ describe('root-renames — persistence (0.2.101)', () => {
     expect(() => appendTransition(dir, 'docs', 'pages')).toThrow(/cycle/);
   });
 
-  it('seeds a clone from a manifest so the retired ids are taken from its first boot', () => {
-    seedRootRenamesFromManifest(dir, [{ id: 'spec', formerIds: ['pages', 'docs'] }, { id: 'adr' }]);
-    expect(retiredRootIds(dir)).toEqual(new Set(['pages', 'docs']));
-    expect(rootIdChain(readRootRenames(dir).transitions, 'spec')).toEqual(['spec', 'docs', 'pages']);
-    // A manifest predating the field means "never renamed" and seeds nothing.
-    const fresh = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-clone-'));
-    seedRootRenamesFromManifest(fresh, [{ id: 'pages' }]);
-    expect(fs.existsSync(rootRenamesPath(fresh))).toBe(false);
-    fs.rmSync(fresh, { recursive: true, force: true });
-  });
 });
 
 /**

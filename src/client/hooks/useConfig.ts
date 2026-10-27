@@ -107,9 +107,6 @@ export function usePatchConfig() {
       if ('writingStyle' in variables) {
         qc.invalidateQueries({ queryKey: ['writing-styles'] });
       }
-      if ('remoteProjectId' in variables) {
-        qc.invalidateQueries({ queryKey: ['remote-project'] });
-      }
       if (CONTEXT_DEFINING_FIELDS.some((k) => k in variables)) {
         qc.invalidateQueries();
       }

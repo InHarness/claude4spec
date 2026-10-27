@@ -341,7 +341,7 @@ describe('GitService — 0.1.118 read-only methods', () => {
     });
   });
 
-  describe('commitOnRelease / pushOnPush gating (0.1.118 master switch)', () => {
+  describe('commitOnRelease gating (0.1.118 master switch)', () => {
     it('commitOnRelease returns null when enabled is false', async () => {
       await initRepo(dir);
       writeConfigJson(dir, { enabled: false });
@@ -1035,21 +1035,43 @@ describe('GitService — 0.1.118 read-only methods', () => {
       expect(await svc.resolveReleaseCommit(filePath)).toBe(targetTip);
     });
 
-    it('branchContainingCommit finds the branch carrying a given sha, preferring current when ambiguous', async () => {
-      await initRepo(dir);
-      fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
-      await git(['add', '.'], dir);
-      await git(['commit', '-m', 'seed'], dir);
-      const sha = (await git(['rev-parse', 'HEAD'], dir)).trim();
-      await git(['branch', 'other'], dir);
+    it('[section:sw1u84nn] push(branch) pushes an explicit non-current branch to ITS upstream, not the current HEAD', async () => {
+      const bareDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-git-bare-'));
+      await pexec('git', ['init', '--bare', '-b', 'main', bareDir], {});
+      try {
+        await initRepo(dir);
+        fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
+        await git(['add', '.'], dir);
+        await git(['commit', '-m', 'seed'], dir);
+        await git(['remote', 'add', 'origin', bareDir], dir);
+        await git(['push', '-u', 'origin', 'main'], dir);
+        await git(['branch', 'other'], dir);
+        await git(['push', '-u', 'origin', 'other'], dir);
+        // `other` moves ahead of its upstream; `main` (HEAD) does too.
+        await git(['checkout', '-q', 'other'], dir);
+        fs.writeFileSync(path.join(dir, 'other.txt'), 'other');
+        await git(['add', '.'], dir);
+        await git(['commit', '-m', 'on other'], dir);
+        await git(['checkout', '-q', 'main'], dir);
+        fs.writeFileSync(path.join(dir, 'main.txt'), 'main');
+        await git(['add', '.'], dir);
+        await git(['commit', '-m', 'on main'], dir);
+        const remoteMainBefore = (await git(['rev-parse', 'main'], bareDir)).trim();
 
-      writeConfigJson(dir, { enabled: true });
-      const svc = new GitService(dir, [dir]);
-      // Both 'main' (current) and 'other' contain this commit — current wins.
-      expect(await svc.branchContainingCommit(sha)).toBe('main');
+        writeConfigJson(dir, { enabled: true });
+        const svc = new GitService(dir, [dir]);
+        const result = await svc.push('other');
+        expect(result.status).toBe('pushed');
+        expect(result.branch).toBe('other');
+
+        expect((await git(['rev-parse', 'other'], bareDir)).trim()).toBe((await git(['rev-parse', 'other'], dir)).trim());
+        expect((await git(['rev-parse', 'main'], bareDir)).trim()).toBe(remoteMainBefore);
+      } finally {
+        fs.rmSync(bareDir, { recursive: true, force: true });
+      }
     });
 
-    it('push(branch) pushes an explicit non-current branch via `git push origin <branch>`', async () => {
+    it('[section:sw1u84nn] push(branch) of a branch without an upstream is an error — nothing is pushed to any remote', async () => {
       const bareDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-git-bare-'));
       await pexec('git', ['init', '--bare', '-b', 'main', bareDir], {});
       try {
@@ -1062,13 +1084,12 @@ describe('GitService — 0.1.118 read-only methods', () => {
         await git(['branch', 'other'], dir);
 
         writeConfigJson(dir, { enabled: true });
-        const svc = new GitService(dir, [dir]);
-        const result = await svc.push('other');
-        expect(result.status).toBe('pushed');
-        expect(result.branch).toBe('other');
-
+        const result = await new GitService(dir, [dir]).push('other');
+        expect(result.status).toBe('error');
+        expect(result.message).toContain("'other' has no upstream");
+        expect(result.recovery?.operation).toBe('push');
         const remoteBranches = (await pexec('git', ['branch', '--format=%(refname:short)'], { cwd: bareDir })).stdout;
-        expect(remoteBranches).toContain('other');
+        expect(remoteBranches).not.toContain('other');
       } finally {
         fs.rmSync(bareDir, { recursive: true, force: true });
       }
@@ -1169,6 +1190,11 @@ describe('GitService — 0.1.118 read-only methods', () => {
         await git(['remote', 'add', 'origin', bareDir], dir);
         await git(['push', '-u', 'origin', 'main'], dir);
         await git(['branch', 'other'], dir);
+        await git(['push', '-u', 'origin', 'other'], dir);
+        await git(['checkout', '-q', 'other'], dir);
+        fs.writeFileSync(path.join(dir, 'other.txt'), 'other');
+        await git(['add', '.'], dir);
+        await git(['commit', '-m', 'on other'], dir);
         const sha = (await git(['rev-parse', 'HEAD'], dir)).trim();
         await git(['checkout', sha], dir); // detached HEAD
 
@@ -1364,7 +1390,7 @@ describe('GitService — 0.1.118 read-only methods', () => {
 
 /**
  * 2.1.14 (M28 eu1rffp6 / aqys9dje / yn1oesly / sw1u84nn / rslvdfbr) — the gated
- * entries (`commitOnRelease`, `pushOnPush`) vs the executions (`commit`, `push`):
+ * entries (`commitOnRelease`, `pushOnRelease`) vs the executions (`commit`, `push`):
  * only an entry answers `null` (gate not met); `skipped` comes from an execution
  * or from `commitPull`. `named`/`new` never read HEAD, so they commit on detached
  * HEAD and end in a target error (not `null`) in a repository with no commits.
@@ -1456,27 +1482,6 @@ describe('GitService — gated entry vs execution (2.1.14)', () => {
     expect(result).not.toBeNull();
     expect(result).toEqual({ status: 'skipped' });
     expect(await sha('HEAD')).toBe(headBefore);
-  });
-
-  it('[ac:ac-przy-detached-head-pushonpush-zwraca] on detached HEAD pushOnPush returns null even with an explicit branch — nothing is pushed', async () => {
-    const bareDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-git-bare-'));
-    await pexec('git', ['init', '--bare', '-b', 'main', bareDir], {});
-    try {
-      await seed(dir);
-      await git(['remote', 'add', 'origin', bareDir], dir);
-      await git(['push', '-u', 'origin', 'main'], dir);
-      await git(['branch', 'other'], dir);
-      await detachHead();
-      writeConfigJson(dir, { enabled: true, syncPushOnPush: true });
-
-      const svc = new GitService(dir, [dir]);
-      expect(await svc.pushOnPush('other')).toBeNull();
-      expect(await svc.pushOnPush()).toBeNull();
-      const remoteBranches = (await pexec('git', ['branch', '--format=%(refname:short)'], { cwd: bareDir })).stdout;
-      expect(remoteBranches).not.toContain('other');
-    } finally {
-      fs.rmSync(bareDir, { recursive: true, force: true });
-    }
   });
 
   it('[ac:ac-w-swiezym-repo-bez-commitow-commitonr] in a fresh repository with no commits commitOnRelease in mode `named` returns status error with recovery.kind branch-missing', async () => {
@@ -2016,5 +2021,231 @@ describe('GitService — 2.1.46 shadow layer', () => {
     } finally {
       fs.rmSync(noRepo, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * 2.1.55 (M28 sw1u84nn / dj6r1sam / 43k2laa1) — push on release: the gated
+ * entry `pushOnRelease(commit)` takes the release commit's result and pushes
+ * `commit.branch` — the branch the commit landed on, never HEAD; a branch the
+ * commit created (`new`) gets its upstream from the base branch's remote. The
+ * old HEAD-resolving entry and its branch lookup are gone.
+ */
+describe('GitService — push on release (2.1.55)', () => {
+  let base: string;
+  let dir: string;
+  let bare: string;
+
+  beforeEach(async () => {
+    base = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-git-por-'));
+    dir = path.join(base, 'work');
+    bare = path.join(base, 'remote.git');
+    await pexec('git', ['init', '--bare', '-b', 'main', bare]);
+    await initRepo(dir);
+    fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
+    await git(['add', '.'], dir);
+    await git(['commit', '-m', 'seed'], dir);
+    await git(['remote', 'add', 'origin', bare], dir);
+    await git(['push', '-u', 'origin', 'main'], dir);
+  });
+
+  afterEach(() => {
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  const remoteSha = async (ref: string): Promise<string | null> =>
+    pexec('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${ref}`], { cwd: bare })
+      .then((r) => r.stdout.trim())
+      .catch(() => null);
+  const localSha = async (ref: string): Promise<string> => (await git(['rev-parse', ref], dir)).trim();
+
+  it('[entity:git-service-contract] the contract members are on GitService — pushOnRelease(commit) and push(branch?) among them — and the old push entry and its branch lookup are gone; a committed result carries sha, branch and switched', async () => {
+    const svc = new GitService(dir, [dir]);
+    for (const member of [
+      'detect',
+      'commitOnRelease',
+      'commit',
+      'commitPull',
+      'pushOnRelease',
+      'push',
+      'resolveReleaseCommit',
+      'diffRefs',
+      'statusAheadBehind',
+      'listBranches',
+      'checkout',
+      'listShadows',
+      'resolveShadow',
+      'mergeTree',
+      'showFile',
+      'isAncestorOfHead',
+      'tryWithRepoLock',
+      'pendingChanges',
+      'mergeIntoIndex',
+      'abortMerge',
+    ] as const) {
+      expect(typeof svc[member], member).toBe('function');
+    }
+    for (const removed of ['pushOnPush', 'branchContainingCommit']) {
+      expect(removed in svc, removed).toBe(false);
+    }
+
+    writeConfigJson(dir, { enabled: true });
+    fs.writeFileSync(path.join(dir, 'spec.md'), '# delta');
+    const commit = await svc.commitOnRelease({ name: 'v1', description: 'd' });
+    expect(commit).toEqual({ status: 'committed', sha: await localSha('HEAD'), branch: 'main', switched: false });
+    // Gate not met → null from the entry, never `skipped`.
+    expect(await svc.pushOnRelease(commit)).toBeNull();
+  });
+
+  it('[ac:ac-gitservice-push-branch-pushuje-branch] pushOnRelease(commit) pushes commit.branch — the branch the release commit landed on — and not the current HEAD', async () => {
+    await git(['branch', 'release-target'], dir);
+    await git(['push', '-u', 'origin', 'release-target'], dir);
+    // HEAD (main) is ahead of its upstream too: a blind `git push` of HEAD would move origin/main.
+    fs.writeFileSync(path.join(dir, 'local-only.txt'), 'x');
+    await git(['add', 'local-only.txt'], dir);
+    await git(['commit', '-m', 'local only'], dir);
+    const remoteMainBefore = await remoteSha('main');
+    writeConfigJson(dir, { enabled: true, syncPushOnRelease: true, commitTarget: { mode: 'named', branch: 'release-target' } });
+    fs.writeFileSync(path.join(dir, 'spec.md'), '# delta');
+
+    const svc = new GitService(dir, [dir]);
+    const commit = await svc.commitOnRelease({ name: 'v1', description: 'd' });
+    expect(commit).toMatchObject({ status: 'committed', branch: 'release-target', switched: false });
+    expect(await git(['rev-parse', '--abbrev-ref', 'HEAD'], dir)).toBe('main\n');
+
+    const pushed = await svc.pushOnRelease(commit);
+    expect(pushed).toEqual({ status: 'pushed', branch: 'release-target' });
+    expect(await remoteSha('release-target')).toBe(await localSha('release-target'));
+    expect(await remoteSha('release-target')).toBe(commit?.sha);
+    expect(await remoteSha('main')).toBe(remoteMainBefore);
+  });
+
+  it('[ac:ac-push-po-commicie-wydania-na-branch-ut] a push after a release commit onto a branch created in this run (commitTarget new) sets that branch\'s upstream', async () => {
+    writeConfigJson(dir, {
+      enabled: true,
+      syncPushOnRelease: true,
+      commitTarget: { mode: 'new', template: 'release/{release_slug}', base: 'main' },
+    });
+    fs.writeFileSync(path.join(dir, 'spec.md'), '# delta');
+
+    const svc = new GitService(dir, [dir]);
+    const commit = await svc.commitOnRelease({ name: 'v1', description: 'd' });
+    expect(commit).toMatchObject({ status: 'committed', branch: 'release/v1' });
+
+    const pushed = await svc.pushOnRelease(commit);
+    expect(pushed).toEqual({ status: 'pushed', branch: 'release/v1' });
+    // The upstream is set: the remote of the base branch's upstream, the same name.
+    expect((await git(['config', '--get', 'branch.release/v1.remote'], dir)).trim()).toBe('origin');
+    expect((await git(['config', '--get', 'branch.release/v1.merge'], dir)).trim()).toBe('refs/heads/release/v1');
+    expect(await remoteSha('release/v1')).toBe(await localSha('release/v1'));
+  });
+
+  it('[section:sw1u84nn] a branch created in this run whose base has no upstream ends in { status: error, message, recovery } — nothing is pushed; with base null the default branch is the base', async () => {
+    await git(['branch', 'lonely'], dir); // a base without an upstream
+    writeConfigJson(dir, {
+      enabled: true,
+      syncPushOnRelease: true,
+      commitTarget: { mode: 'new', template: 'release/{release_slug}', base: 'lonely' },
+    });
+    fs.writeFileSync(path.join(dir, 'spec.md'), '# delta');
+    const svc = new GitService(dir, [dir]);
+    const commit = await svc.commitOnRelease({ name: 'v1', description: 'd' });
+    expect(commit?.status).toBe('committed');
+
+    const refused = await svc.pushOnRelease(commit);
+    expect(refused?.status).toBe('error');
+    expect(refused?.message).toContain("'lonely' has no upstream");
+    expect(refused?.recovery).toMatchObject({ operation: 'push' });
+    expect(await remoteSha('release/v1')).toBeNull();
+
+    // base null → the default branch (main, which tracks origin) is the base.
+    writeConfigJson(dir, {
+      enabled: true,
+      syncPushOnRelease: true,
+      commitTarget: { mode: 'new', template: 'release/{release_slug}', base: null },
+    });
+    fs.writeFileSync(path.join(dir, 'spec.md'), '# delta 2');
+    const second = await svc.commitOnRelease({ name: 'v2', description: 'd' });
+    expect(await svc.pushOnRelease(second)).toEqual({ status: 'pushed', branch: 'release/v2' });
+    expect((await git(['config', '--get', 'branch.release/v2.remote'], dir)).trim()).toBe('origin');
+  });
+
+  it('[ac:ac-push-po-commicie-wydania-na-branch-ut] a branch created in this run keeps its upstream even when, after switchAfterRelease, the default-branch fallback would name the new branch itself (base null, no origin/HEAD, no main/master) — the base travels with the commit, not re-derived at push time', async () => {
+    // Default branch `develop`: no local main/master, and `remote add` sets no origin/HEAD.
+    await git(['branch', '-m', 'main', 'develop'], dir);
+    await git(['push', '-u', 'origin', 'develop'], dir);
+    expect(await git(['branch', '--list', 'main', 'master'], dir)).toBe('');
+    await expect(git(['symbolic-ref', 'refs/remotes/origin/HEAD'], dir)).rejects.toThrow();
+    writeConfigJson(dir, {
+      enabled: true,
+      syncPushOnRelease: true,
+      switchAfterRelease: true,
+      commitTarget: { mode: 'new', template: 'release/{release_slug}', base: null },
+    });
+    fs.writeFileSync(path.join(dir, 'spec.md'), '# delta');
+
+    const svc = new GitService(dir, [dir]);
+    const commit = await svc.commitOnRelease({ name: 'v1', description: 'd' });
+    expect(commit).toMatchObject({ status: 'committed', branch: 'release/v1', switched: true });
+    // HEAD is now the new branch — the current-branch fallback would answer the branch itself.
+    expect((await git(['rev-parse', '--abbrev-ref', 'HEAD'], dir)).trim()).toBe('release/v1');
+    // The marker stays internal: the serialized gitSync carries only the contract fields.
+    expect(Object.keys(JSON.parse(JSON.stringify(commit))).sort()).toEqual(['branch', 'sha', 'status', 'switched']);
+    // A config edit between commit and push does not change what the commit did.
+    writeConfigJson(dir, { enabled: true, syncPushOnRelease: true, commitTarget: { mode: 'current' } });
+
+    const pushed = await svc.pushOnRelease(commit);
+    expect(pushed).toEqual({ status: 'pushed', branch: 'release/v1' });
+    expect((await git(['config', '--get', 'branch.release/v1.remote'], dir)).trim()).toBe('origin');
+    expect((await git(['config', '--get', 'branch.release/v1.merge'], dir)).trim()).toBe('refs/heads/release/v1');
+    expect(await remoteSha('release/v1')).toBe(await localSha('release/v1'));
+  });
+
+  it('[section:sw1u84nn] the gate: git off, push-on-release off, or a commit other than committed (nothing-to-commit, skipped, error, null) → null, nothing pushed; a named HEAD is not a condition', async () => {
+    fs.writeFileSync(path.join(dir, 'ahead.txt'), 'x');
+    await git(['add', 'ahead.txt'], dir);
+    await git(['commit', '-m', 'ahead'], dir);
+    const head = await localSha('HEAD');
+    const remoteBefore = await remoteSha('main');
+    const committed = { status: 'committed' as const, sha: head, branch: 'main', switched: false };
+    const svc = new GitService(dir, [dir]);
+
+    writeConfigJson(dir, { enabled: false, syncPushOnRelease: true });
+    expect(await svc.pushOnRelease(committed)).toBeNull();
+    writeConfigJson(dir, { enabled: true, syncPushOnRelease: false });
+    expect(await svc.pushOnRelease(committed)).toBeNull();
+
+    writeConfigJson(dir, { enabled: true, syncPushOnRelease: true });
+    for (const notCommitted of [
+      null,
+      { status: 'nothing-to-commit' as const },
+      { status: 'skipped' as const, message: 'detached HEAD' },
+      { status: 'error' as const, message: 'boom', branch: 'main' },
+    ]) {
+      expect(await svc.pushOnRelease(notCommitted)).toBeNull();
+    }
+    expect(await remoteSha('main')).toBe(remoteBefore);
+
+    // Detached HEAD: the branch comes from the commit, so the push still runs.
+    await git(['checkout', '-q', head], dir);
+    expect(await svc.pushOnRelease(committed)).toEqual({ status: 'pushed', branch: 'main' });
+    expect(await remoteSha('main')).toBe(head);
+  });
+
+  it('[ac:ac-config-git-enabled-default-false-nadrz] git.enabled defaults to false and gates the whole layer — no release commit, no push — and syncPushOnRelease counts only when enabled is true', async () => {
+    writeConfigJson(dir, { syncPushOnRelease: true }); // enabled absent → false
+    fs.writeFileSync(path.join(dir, 'spec.md'), '# delta');
+    const head = await localSha('HEAD');
+    const svc = new GitService(dir, [dir]);
+
+    expect(await svc.commitOnRelease({ name: 'v1', description: 'd' })).toBeNull();
+    expect(await svc.pushOnRelease({ status: 'committed', sha: head, branch: 'main', switched: false })).toBeNull();
+    expect(await localSha('HEAD')).toBe(head);
+
+    // The same push toggle, now with the master switch on: it takes effect.
+    writeConfigJson(dir, { enabled: true, syncPushOnRelease: true });
+    const commit = await svc.commitOnRelease({ name: 'v1', description: 'd' });
+    expect(commit?.status).toBe('committed');
+    expect(await svc.pushOnRelease(commit)).toEqual({ status: 'pushed', branch: 'main' });
   });
 });

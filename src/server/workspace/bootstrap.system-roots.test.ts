@@ -41,11 +41,10 @@ describe('bootstrapProject — system roots', () => {
       expect(root.dir).toBe(`.claude4spec/${root.kind}`);
       expect(fs.existsSync(path.join(cwd, root.dir))).toBe(false);
     }
-    const result = boot();
+    boot();
     for (const root of codeRoots) {
       expect(fs.statSync(path.join(cwd, '.claude4spec', root.kind)).isDirectory(), root.kind).toBe(true);
     }
-    expect([...result.systemRootDirsCreated].sort()).toEqual(codeRoots.map((r) => `.claude4spec/${r.kind}`).sort());
   });
 
   it('[ac:ac-swiezy-bootstrap-nie-zapisuje-w-confi] a fresh bootstrap writes no system root into config.json — neither as roots[] entries nor as separate keys', () => {
@@ -74,11 +73,8 @@ describe('bootstrapProject — system roots', () => {
         ],
       }),
     );
-    const result = boot();
+    boot();
     for (const dir of ['pages', 'docs/adr']) expect(fs.statSync(path.join(cwd, dir)).isDirectory()).toBe(true);
-    // Only system roots are reported for the clone rollback; user roots are rolled back by their own list.
-    expect(result.systemRootDirsCreated).not.toContain('pages');
-    expect(result.systemRootDirsCreated).not.toContain('docs/adr');
   });
 
   it('the CLI --pages override names the base root dir the activation creates', () => {

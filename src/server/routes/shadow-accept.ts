@@ -14,7 +14,8 @@ import type { WsEmitter } from '../ws/project-emitter.js';
  * the release-name codes, `GIT_UNAVAILABLE`, `SHADOW_NOT_FOUND`, `ACCEPT_*`)
  * come from the service and are rendered by the shared error handler
  * (`ACCEPT_ABORT_FAILED` with its `recovery`). Success → `201` with the release
- * (`acceptedShadow` set) and `gitSync`, like `POST /api/releases`.
+ * (`acceptedShadow` set) and `gitSync`, like `POST /api/releases` — and
+ * `gitPush: null`: accepting a shadow never pushes (2.1.55).
  */
 export function shadowAcceptRouter(releases: Pick<ReleaseService, 'acceptShadow'>, ws?: WsEmitter): Router {
   const router = Router();

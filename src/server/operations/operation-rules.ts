@@ -3,7 +3,7 @@
  * `reguly` (identifiers of the M43 vocabulary; an exclusion carries the
  * record's `wykluczenie` verbatim). Keyed by canonical name and attached by
  * `registerCoreOperations()`; `register()` validates every list against
- * `rules.ts`. One entry per record of the window — 80 (2.1.46 adds `shadow_diff`, 2.1.47 `accept_shadow`) — and none for the plugin
+ * `rules.ts`. One entry per record of the window — 77 (2.1.46 adds `shadow_diff`, 2.1.47 `accept_shadow`, 2.1.55 drops the three M25 release-push rows) — and none for the plugin
  * rows the window has no record for.
  */
 
@@ -44,7 +44,6 @@ export const OPERATION_RULES: Readonly<Record<string, readonly RuleCitation[]>> 
   get_patch: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'explicit-addressing' }],
   get_plan: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'explicit-addressing' }],
   get_plan_version: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'explicit-addressing' }],
-  get_release_push: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'explicit-addressing' }],
   get_sections: [{ id: 'error-code-once' }, { id: 'echo-free', exclusion: 'nie mutuje' }],
   get_static_file: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'explicit-addressing' }],
   get_todo_counts: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'explicit-addressing' }],
@@ -59,7 +58,6 @@ export const OPERATION_RULES: Readonly<Record<string, readonly RuleCitation[]>> 
   list_plan_versions: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'explicit-addressing' }],
   list_plans: [{ id: 'echo-free' }, { id: 'error-code-once' }],
   list_projects: [{ id: 'echo-free' }, { id: 'error-code-once' }],
-  list_release_pushes: [{ id: 'echo-free' }, { id: 'error-code-once' }],
   list_skills: [{ id: 'error-code-once' }, { id: 'echo-free', exclusion: 'nie mutuje' }],
   list_tags: [{ id: 'error-code-once' }, { id: 'echo-free', exclusion: 'nie mutuje' }],
   list_threads: [{ id: 'echo-free' }, { id: 'error-code-once' }],
@@ -70,7 +68,6 @@ export const OPERATION_RULES: Readonly<Record<string, readonly RuleCitation[]>> 
   mark_plan_applied: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'explicit-addressing' }, { id: 'operation-only-write' }],
   move_page: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'destructive-declared' }, { id: 'operation-only-write' }],
   overview: [{ id: 'error-code-once' }, { id: 'echo-free', exclusion: 'nie mutuje' }],
-  push_release: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'explicit-addressing' }],
   release_create: [{ id: 'error-code-once' }, { id: 'echo-free' }],
   release_diff: [{ id: 'error-code-once' }, { id: 'echo-free', exclusion: 'nie mutuje' }],
   release_list: [{ id: 'error-code-once' }, { id: 'echo-free', exclusion: 'nie mutuje' }],

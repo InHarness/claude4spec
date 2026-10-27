@@ -10,7 +10,6 @@
 
 import { PAGES_KIND, SYSTEM_ROOTS, systemRootDir, type RootKind } from '../../shared/root-kinds.js';
 import nodeFs from 'node:fs';
-import nodeOs from 'node:os';
 import nodePath from 'node:path';
 import type Database from 'better-sqlite3';
 import type {
@@ -40,7 +39,6 @@ import type { FileSerializer } from './file-serializer.js';
 import type { TagsService } from './tags.js';
 import type { PagesService } from './pages.js';
 import {
-  formerIdsOf,
   resolveCurrentRootId,
   rootIdChain,
   type RootRenameTransition,
@@ -49,22 +47,16 @@ import type { SelfWriteMarker } from '../fs/sources.js';
 import { DomainError } from './tags.js';
 import { HostEntityWriter } from './entity-writer.js';
 import type { RestoreContext, RestoreResult } from '../serialization/types.js';
-import { canonicalize, diffEntity, toRawDeltaEntityChange } from '../serialization/snapshot.js';
+import { diffEntity, toRawDeltaEntityChange } from '../serialization/snapshot.js';
 import { samePayloadVersion } from '../serialization/payload-version.js';
 import { nowIso, readSystemFields, stripSystemFields } from '../serialization/system-fields.js';
-import {
-  attachPayloadVersion,
-  stripPayloadVersion,
-  upgradeCapture,
-} from '../serialization/payload-upgrade.js';
+import { upgradeCapture } from '../serialization/payload-upgrade.js';
 import { payloadVersionOfCapture } from '../serialization/payload-version.js';
 import type { SnapshotData } from '../serialization/types.js';
 import { projectStamp } from './system-stamp-projection.js';
-import { readConfig, builtinPagesRoot } from '../config.js';
+import { readConfig } from '../config.js';
 import { slugify } from '../../shared/slug.js';
 import { acceptedShadowFromRow, toReleaseFileData, type ReleaseFileStore } from './release-store.js';
-import type { RecordStore } from '../fs/record-store.js';
-import type { MarkdownRecord } from '../fs/record-adapters.js';
 import type { GitService } from './git.js';
 import {
   classifyChangedFiles,
@@ -73,31 +65,18 @@ import {
   diffChangedPages,
   type DeltaRoots,
 } from './git-two-state-delta.js';
-import type { FileDiff, FileSnapshotData } from './file-serializer.js';
+import type { FileDiff } from './file-serializer.js';
 import { computeShadowDiff, gitUnavailable, requireShadowRef, type ShadowDiffScope } from './release-shadow-diff.js';
 import {
   acceptShadow as acceptShadowImpl,
   AcceptedReleaseCommittedError,
   parseShadowAcceptRequest,
+  type AcceptedShadowGitResults,
   type AcceptReleaseVariant,
   type AcceptShadowRuntime,
 } from './release-accept-shadow.js';
 import { releaseMutexFor } from './release-mutex.js';
 import { indexReleaseFile, unindexReleaseFile } from './release-indexer.js';
-import type { GitCommitResult } from '../../shared/git.js';
-import {
-  buildBundleArchive as buildBundleArchiveImpl,
-  extractBundleStream,
-  BUNDLE_SCHEMA_VERSION,
-  BUNDLE_TAGS_FILE,
-  readBundleEntities,
-  type BuildBundleResult,
-  type BundleEntityInput,
-  type BundleManifest,
-  type BundlePageInput,
-  type BundleRoot,
-  type BundleTagInput,
-} from './release-bundle.js';
 
 /**
  * 0.1.122: release names reserved by the `:to`/`:from` diff-route sentinel
@@ -123,29 +102,6 @@ export function isReservedReleaseName(name: string): boolean {
   return RESERVED_RELEASE_NAMES.has(name);
 }
 
-/** Recursively list files under `dir` as posix-style relative paths (read direction). */
-function listBundleFiles(dir: string): string[] {
-  if (!nodeFs.existsSync(dir)) return [];
-  const out: string[] = [];
-  const walk = (abs: string, rel: string): void => {
-    for (const entry of nodeFs.readdirSync(abs, { withFileTypes: true })) {
-      const childAbs = nodePath.join(abs, entry.name);
-      const childRel = rel ? `${rel}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) walk(childAbs, childRel);
-      else out.push(childRel);
-    }
-  };
-  walk(dir, '');
-  return out;
-}
-
-/** Reject `..` / absolute / null-byte bundle entry paths (M27 §1 step 4). */
-function assertSafeBundlePath(rel: string): void {
-  if (rel.includes('\0') || nodePath.isAbsolute(rel) || rel.split(/[\\/]/).includes('..')) {
-    throw new DomainError('BUNDLE_MALFORMED_ENTRY', `unsafe bundle entry path '${rel}'`);
-  }
-}
-
 interface UpdateReleaseInput {
   releaseName: string;
   name?: string;
@@ -165,14 +121,6 @@ interface ReleaseRow {
   accepted_shadow_sha: string | null;
 }
 
-/**
- * 0.2.112 — write-side guard for an already-trimmed description. The description
- * is a short statement of intent: the release list, the git commit message and
- * the bundle manifest all copy it verbatim. Counted in Unicode code points (not
- * UTF-16 units). Reads, the cache rebuild from the `releases` root and bundle restore
- * deliberately do NOT call this — a longer description saved before the limit
- * stays readable, untruncated.
- */
 /** `realpath` of `p`, or `p` itself when it does not resolve. */
 function realpathOrSelf(p: string): string {
   try {
@@ -182,6 +130,13 @@ function realpathOrSelf(p: string): string {
   }
 }
 
+/**
+ * 0.2.112 — write-side guard for an already-trimmed description. The description
+ * is a short statement of intent: the release list and the git commit message
+ * both copy it verbatim. Counted in Unicode code points (not UTF-16 units).
+ * Reads and the cache rebuild from the `releases` root deliberately do NOT call
+ * this — a longer description saved before the limit stays readable, untruncated.
+ */
 function assertReleaseDescription(description: string): void {
   if (!description) throw new DomainError('RELEASE_DESCRIPTION_REQUIRED', 'release description is required');
   const length = releaseDescriptionLength(description);
@@ -370,7 +325,7 @@ export class ReleaseService {
     /**
      * 0.1.96 / 2.1.8: ids of the roots of kind `pages` (every user root — the
      * `releasable` flag is gone). Only these roots' `file_version` rows enter
-     * releases/bundles/diffs; plan/brief/patch rows fall out structurally.
+     * releases/diffs; plan/brief/patch rows fall out structurally.
      */
     // 0.2.101: no `['pages']` default — the base root's identifier is the
     // project author's to choose, so a default here would quietly release the
@@ -383,20 +338,10 @@ export class ReleaseService {
      */
     private pagesKindRootDirs: string[] = [],
     /**
-     * 0.2.76 — the M42 record store of a root, when it has a mount. LAST in the
+     * 0.2.101 — the project's root-rename transitions. LAST in the positional
      * list on purpose: every existing positional construction keeps working.
      *
-     * A bundle can carry a root the destination project does not have configured
-     * yet (the clone case, where `config.json` is itself being restored from the
-     * bundle). There is no mount and so no store for it, and the import falls
-     * back to writing the bytes and authoring its own version row.
-     */
-    private recordsFor: (rootId: string) => RecordStore<MarkdownRecord> | null = () => null,
-    /**
-     * 0.2.101 — the project's root-rename transitions. LAST in the positional
-     * list, same reasoning as `recordsFor` above.
-     *
-     * Releases, diffs and bundles iterate a SPACE, not an identifier: a renamed
+     * Releases and diffs iterate a SPACE, not an identifier: a renamed
      * root enters them with its current id AND every identifier it retired,
      * because the `file_version` rows written before the rename still carry the
      * old one. Comparing `file_version.rootId` to a single value is the
@@ -514,7 +459,7 @@ export class ReleaseService {
    * 2.1.11: the channel's name → id step, without `getRelease`'s count
    * breakdown. A literal or an unknown name is RELEASE_NOT_FOUND. The id-taking
    * readers below (`getReleaseSnapshot`, `getReleaseDiff`, `getUnreleasedDiff`,
-   * `restore*`, `buildBundleArchive`) are internal — call this first.
+   * `restore*`) are internal — call this first.
    */
   resolveReleaseId(name: string): number {
     return this.requireReleaseRow(name).id;
@@ -534,22 +479,6 @@ export class ReleaseService {
 
   private toReleaseDetail(row: ReleaseRow): ReleaseDetail {
     return { ...this.toRelease(row), countBreakdown: this.computeCountBreakdown(row.id) };
-  }
-
-  /**
-   * 0.1.125: absolute path of `releaseId`'s identity file, for
-   * `gitService.resolveReleaseCommit()` — same computation `resolveReignRef`
-   * already does inline for the NEXT release's marker (line ~616), exposed
-   * here so `ReleasePushService` can resolve the branch carrying ITS OWN
-   * release's marker before pushing. `null` when no `ReleaseFileStore` is
-   * wired, the release doesn't exist, or it has no slug (legacy release,
-   * predates the identity-file feature).
-   */
-  getReleaseFilePath(releaseId: number): string | null {
-    if (!this.releaseStore) return null;
-    const row = this.findReleaseRowById(releaseId);
-    if (!row?.slug) return null;
-    return nodePath.join(this.releaseStore.root, `${row.slug}.json`);
   }
 
   // ─── Mutations ───────────────────────────────────────────────────────────
@@ -757,9 +686,9 @@ export class ReleaseService {
    * 2.1.47 (M17 `aae2vgem`, spec-operation `accept-shadow`): accept the shadow
    * `body.ref` as a new release — `acceptShadow` in `release-accept-shadow.ts`
    * over the M28 primitives, the M40 runtime and the acceptance variant of
-   * `createRelease`. Resolves to the release with `gitSync`.
+   * `createRelease`. Resolves to the release with `gitSync` and `gitPush: null`.
    */
-  async acceptShadow(body: unknown): Promise<ReleaseDetail & { gitSync: GitCommitResult | null }> {
+  async acceptShadow(body: unknown): Promise<ReleaseDetail & AcceptedShadowGitResults> {
     const gitService = this.gitService;
     const entityStore = this.entityStore;
     const runtime = this.acceptRuntime;
@@ -1027,10 +956,8 @@ export class ReleaseService {
    * Past releases therefore become complete retroactively.
    *
    * SCOPE = ACTIVE modules (`listEntities()`, not `listAvailable()`). A snapshot
-   * may only name types this host can `diff()`, `upgradeCapture()` and re-import
-   * — `restoreBundleArchive` rejects a bundle file whose type is inactive
-   * locally, so capturing one would produce an archive this same installation
-   * could not read. A type deactivated in `config.entities` therefore drops out
+   * may only name types this host can `diff()`, `upgradeCapture()` and restore,
+   * and an inactive type has no write path here. A type deactivated in `config.entities` therefore drops out
    * of new snapshots, and loses nothing by it: its rows keep their release
    * binding, so re-activating restores every past snapshot retroactively.
    */
@@ -1757,7 +1684,9 @@ export class ReleaseService {
   async restorePage(input: RestorePageInput, _actor: ChangedBy = 'user'): Promise<RestorePageResult> {
     const releaseRow = this.findReleaseRowById(input.releaseId);
     if (!releaseRow) throw new DomainError('RELEASE_NOT_FOUND', `release #${input.releaseId} not found`);
-    const target = this.pageVersions.getLatestForPath(input.path, releaseRow.id);
+    // 2.1.55: keyed `(rootId, path)` — the same path under another `pages` root
+    // is a different file with its own timeline, never this page's past.
+    const target = this.pageVersions.getLatestForPath(input.path, releaseRow.id, this.pagesService.rootId);
     if (!target || target.op === 'delete') {
       // Snapshot says page didn't exist — delete current file if present.
       if (await this.pagesService.exists(input.path)) {
@@ -1931,7 +1860,7 @@ export class ReleaseService {
     }
 
     // Pages
-    const targetPagePaths = this.pageVersions.listPathsForRelease(releaseId);
+    const targetPagePaths = this.pageVersions.listPathsForRelease(releaseId, this.pagesService.rootId);
     const allCurrentPaths = new Set(await this.pagesService.listMarkdownFiles());
     const pathsToRestore = new Set([...targetPagePaths, ...allCurrentPaths]);
     for (const path of pathsToRestore) {
@@ -1947,346 +1876,6 @@ export class ReleaseService {
     }
 
     return { releaseId, entityResults, pageResults };
-  }
-
-  // ─── Portable bundle (transport format — M25 push / M26 import) ────────────
-
-  /**
-   * Build a portable `tar.gz` of release N, deterministically reconstructed
-   * from the versioning tables (`getReleaseSnapshot`) + sanitized `config.json`.
-   * Does NOT read `pagesDir` on disk nor entity HEADs. The returned `tarGzPath`
-   * points at a temp file the CALLER owns (M25 deletes after streaming to
-   * remote); the internal working dir is cleaned up before returning.
-   */
-  async buildBundleArchive(releaseId: number): Promise<BuildBundleResult> {
-    // 2.1.11: read by the technical key — the public readers take a name.
-    const row = this.findReleaseRowById(releaseId);
-    if (!row) throw new DomainError('RELEASE_NOT_FOUND', `release #${releaseId} not found`);
-    const snapshot = this.getReleaseSnapshot(releaseId);
-    const release = this.toReleaseDetail(row);
-    // 0.1.96: resolve rootId per page straight from file_version (the snapshot's
-    // page rows don't carry it) so the bundle can lay pages out as <rootId>/<path>.md
-    // across every `pages` root.
-    const pageRows: BundlePageInput[] = this.latestPageRowsAtOrBefore(release.id).map((p) => ({
-      // 0.2.101: the archive prefix is the identifier the space carries AT BUILD
-      // TIME, even when the source row still names a retired one. One space,
-      // one prefix, matching `manifest.roots[].id` — a page is never written
-      // under both the old and the new prefix.
-      rootId: this.canonicalRootId(p.rootId),
-      path: p.path,
-      op: p.op as 'create' | 'update' | 'delete',
-      content: (safeJsonParse(p.data) as FileSnapshotData).content,
-    }));
-    const config = readConfig(this.cwd);
-    const rootFormerIds: Record<string, string[]> = {};
-    for (const root of config.roots) {
-      const former = formerIdsOf(this.rootRenameTransitions, root.id);
-      if (former.length > 0) rootFormerIds[root.id] = former;
-    }
-    return buildBundleArchiveImpl(
-      snapshot,
-      release,
-      config,
-      pageRows,
-      this.bundleEntityRows(snapshot),
-      this.bundleTagDefs(snapshot),
-      rootFormerIds,
-    );
-  }
-
-  /**
-   * The release's entities in M29 STORE shape — what `entities/<type>/<slug>.json`
-   * has to contain for restore to be an unpack rather than a translation.
-   *
-   * Two things separate a stored file from an `entity_version.data` blob. The
-   * envelope's `createdAt`/`updatedAt` are already in the blob (the capture in
-   * `versions.ts` runs the same `host.snapshot`), but `payloadVersion` is NOT:
-   * on the version log it lives in the `serializer_version` COLUMN, so it is
-   * stamped back in here from the manifest's map. And the row's `op` is dropped
-   * — an archive carries state.
-   *
-   * Types the host no longer knows are skipped: their rows survive in
-   * `entity_version`, but nothing can say what payload version they are at, and
-   * an entry the reader could not upgrade is worse than an absent one.
-   */
-  private bundleEntityRows(snapshot: SpecSnapshot): BundleEntityInput[] {
-    const rows: BundleEntityInput[] = [];
-    for (const entity of snapshot.entities) {
-      if (entity.op === 'delete') continue;
-      if (!this.host.getEntity(entity.type)) continue;
-      const version = snapshot.serializer_versions[entity.type];
-      if (version === undefined) continue;
-      rows.push({
-        type: entity.type,
-        slug: entity.slug,
-        // `payloadVersionOfCapture`, not `Number()`: the column holds two
-        // vocabularies — integers since 0.2.9, semver ('1.1.0') before it — and
-        // `Number('1.1.0')` is NaN, which `attachPayloadVersion` would happily
-        // stamp as `"payloadVersion": null`.
-        data: canonicalize(attachPayloadVersion(entity.data, payloadVersionOfCapture(version))),
-      });
-    }
-    return rows;
-  }
-
-  /**
-   * Tag DEFINITIONS for `entities/tags.json`, read from HEAD and filtered to the
-   * slugs this release's entities actually carry.
-   *
-   * HEAD, not a version table, because there is no `tag_version` — a tag is not
-   * a plugin-host entity type. That is a deliberate hole in the bundle's
-   * determinism, not an oversight: two builds of the same release separated by a
-   * tag rename produce different `tags.json`. Assignments are unaffected, since
-   * `tags[]` travels inside each entity's own payload; only the definition
-   * (colour, description, display name) is copied.
-   *
-   * `null` when the project has no `tags.json` — the bundle then omits the file.
-   */
-  private bundleTagDefs(snapshot: SpecSnapshot): BundleTagInput[] | null {
-    if (!this.entityStore?.tagsFileExists()) return null;
-    const used = new Set<string>();
-    for (const entity of snapshot.entities) {
-      if (entity.op === 'delete') continue;
-      const tags = (entity.data as { tags?: unknown } | null)?.tags;
-      if (!Array.isArray(tags)) continue;
-      for (const tag of tags) {
-        if (typeof tag === 'string') used.add(tag);
-        else if (tag && typeof tag === 'object' && typeof (tag as { slug?: unknown }).slug === 'string') {
-          used.add((tag as { slug: string }).slug);
-        }
-      }
-    }
-    return this.entityStore.readTags().filter((t) => used.has(t.slug));
-  }
-
-  /**
-   * The read direction (M27 project clone / `c4s import <bundle>`):
-   *
-   *   1. Parse `manifest.json` FIRST. Missing → `BUNDLE_MANIFEST_MISSING`.
-   *      `bundleSchemaVersion` > max supported → `BUNDLE_SCHEMA_UNSUPPORTED`.
-   *      (`BUNDLE_HASH_MISMATCH` is the CALLER's — it holds the expected hash
-   *      from the push header; see `release-import.ts`.)
-   *   2. Pages: `<rootId>/<path>.md`, or a flat `pages/` tree on v1, where the
-   *      absent `manifest.roots` selects the built-in root. Unsafe relative path
-   *      → `BUNDLE_MALFORMED_ENTRY`.
-   *   3. Entities, dispatched on the manifest version — see `readBundleEntities`.
-   *   4. Tag definitions — see `restoreBundleTags`.
-   *   5. Compose a `SpecSnapshot` (same shape as `getReleaseSnapshot`).
-   *
-   * All errors are structured (code + payload), never bare strings.
-   */
-  async restoreBundleArchive(stream: NodeJS.ReadableStream): Promise<SpecSnapshot> {
-    const restoreDir = nodeFs.mkdtempSync(nodePath.join(nodeOs.tmpdir(), 'c4s-restore-'));
-    try {
-      // 1. Extract the tar.gz into a sandboxed temp dir.
-      await extractBundleStream(stream, restoreDir);
-
-      // 2. Manifest first — schema gate.
-      const manifestPath = nodePath.join(restoreDir, 'manifest.json');
-      if (!nodeFs.existsSync(manifestPath)) {
-        throw new DomainError('BUNDLE_MANIFEST_MISSING', 'bundle is missing manifest.json');
-      }
-      const manifest = JSON.parse(nodeFs.readFileSync(manifestPath, 'utf8')) as BundleManifest;
-      if (manifest.bundleSchemaVersion > BUNDLE_SCHEMA_VERSION) {
-        throw new DomainError(
-          'BUNDLE_SCHEMA_UNSUPPORTED',
-          `bundle schema version ${manifest.bundleSchemaVersion} exceeds supported ${BUNDLE_SCHEMA_VERSION}`,
-        );
-      }
-
-      // 3. Pages — write byte-for-byte per root, then capture an unreleased
-      //    file_version tagged with its rootId. v2 lays pages out under
-      //    `<rootId>/…`; a v1 bundle (flat `pages/`, no `manifest.roots`) is read
-      //    as the built-in 'pages' root — the flat `pages/` dir IS that root's
-      //    subdir, and the bundled v1 config's `pagesDir` is mapped to a root by
-      //    the clone caller (v3→v4 path). (Mirrors restorePage's raw-write path.
-      //    Watcher is suppressed; at clone bootstrap it is not yet started.)
-      const pages: SpecSnapshotPageRow[] = [];
-      const fallbackRoot = builtinPagesRoot();
-      const bundleRoots: BundleRoot[] =
-        Array.isArray(manifest.roots) && manifest.roots.length > 0
-          ? manifest.roots
-          : [{ id: fallbackRoot.id, name: fallbackRoot.name, dir: fallbackRoot.dir }];
-      for (const root of bundleRoots) {
-        /**
-         * 0.2.101: the archive's prefix can be a RETIRED identifier — a bundle
-         * built before a rename keeps the prefix it was written with, and is
-         * never rewritten (that is what keeps its SHA-256 stable). So the prefix
-         * is matched against the entry's current `id` OR any of its `formerIds`,
-         * and whichever one is found on disk, the pages are written under the
-         * CURRENT address. A prefix matching neither is still a malformed entry.
-         */
-        const candidates = [root.id, ...(root.formerIds ?? [])];
-        const matched = candidates.find((candidate) =>
-          nodeFs.existsSync(nodePath.join(restoreDir, candidate)),
-        );
-        const srcDir = nodePath.join(restoreDir, matched ?? root.id);
-        // The pages root writes through the running service's dir (preserving its
-        // suppress semantics); every other root writes to `<cwd>/<dir>`.
-        const destRoot =
-          this.pagesService.rootId === root.id
-            ? this.pagesService.root
-            : nodePath.join(this.cwd, root.dir);
-        for (const rel of listBundleFiles(srcDir)) {
-          assertSafeBundlePath(rel);
-          const content = nodeFs.readFileSync(nodePath.join(srcDir, rel), 'utf8');
-          const abs = nodePath.join(destRoot, rel);
-          // A bundle can carry a root the destination project does not have
-          // configured yet — the clone case, where config.json is itself being
-          // restored FROM the bundle. There is no mount and no writer for it, so
-          // `capture` cannot author the row and this must.
-          const rootRecords = this.recordsFor(root.id);
-          if (rootRecords) {
-            // `raw` for the same reason restore uses it: a bundle's bytes are
-            // the artefact, and re-serializing them would make the imported file
-            // differ from what was exported.
-            await rootRecords.write(rel, { raw: content }, { actor: 'user' });
-          } else {
-            nodeFs.mkdirSync(nodePath.dirname(abs), { recursive: true });
-            nodeFs.writeFileSync(abs, content, 'utf8');
-            await this.pageVersions.recordVersion(rel, 'create', 'user', undefined, undefined, root.id);
-          }
-          pages.push({ path: rel, op: 'create', data: { path: rel, content } });
-        }
-      }
-
-      // 4. Entities — UPSERT via host.restore in dependency order (DTO before
-      //    Endpoint, which references DTO slugs). Each lands as an entity_version
-      //    row with release_id = NULL (the normal write-API capture).
-      const writer = new HostEntityWriter(this.host, this.tagsService, {}, {
-        db: this.db,
-        ...(this.entityStore ? { store: this.entityStore } : {}),
-        versions: this.versions,
-      });
-      const restoreCtx: RestoreContext = {
-        reader: this.rawReader,
-        writer,
-        releaseId: null,
-        actor: 'user',
-      };
-      const entities: SpecSnapshotEntityRow[] = [];
-      const entitiesDir = nodePath.join(restoreDir, 'entities');
-      if (nodeFs.existsSync(entitiesDir)) {
-        const byType = readBundleEntities(entitiesDir, manifest.bundleSchemaVersion, (t) =>
-          this.host.getEntity(t) !== null,
-        );
-        /**
-         * 0.2.11 — declared `dependsOn` order over the ACTIVE modules, the same
-         * source and cycle handling `restoreSpec` has used since 0.2.2.
-         *
-         * This was the last divergent order array, and it was not merely
-         * redundant: a bundle carrying a type outside its five literals passed
-         * the validation loop above (the type IS active) and was then never
-         * iterated, so its rows were dropped in silence — after the code had
-         * just confirmed they were restorable.
-         */
-        const order = topoSortModules(this.host.listEntities(), (remaining) =>
-          console.warn(
-            `[release] dependsOn cycle among [${remaining.join(', ')}] — ` +
-              `restoring those types in type order instead`,
-          ),
-        ).map((m) => m.type);
-        for (const type of order) {
-          const rows = byType.get(type);
-          if (!rows) continue;
-          for (const row of rows) {
-            // A bundle can be older than this installation; its manifest records
-            // the version each type was captured at.
-            const bundled = this.upgradeCapture(type, row.data, manifest.serializerVersions?.[type] ?? null);
-            if (!bundled.ok) continue; // same rule as restoreEntity: skip, never half-restore
-            /**
-             * The PATH's slug is stamped in, and the payload marker taken out.
-             *
-             * v4 lets a file body omit `slug` — the path already says it — but
-             * `restoreFromSchema` reads the slug from the body and would upsert
-             * such an entry under `''`, collapsing every slug-less file of a type
-             * onto one row while the returned snapshot still reported the right
-             * paths. The one authoritative slug has to reach the writer too.
-             *
-             * `payloadVersion` goes the other way: v4 stamps it into the FILE,
-             * where it is the store's own envelope, but a capture must not carry
-             * it (`PAYLOAD_VERSION_KEY`) — inside a snapshot it turns every diff
-             * spanning a bump into a spurious `modified`.
-             */
-            const data = stripPayloadVersion({
-              ...(bundled.data as Record<string, unknown>),
-              slug: row.slug,
-            });
-            this.host.restore(type, data, restoreCtx);
-            // An archive carries STATE, so every entry is a create in the fresh
-            // cwd this restores into. v1–v3 entries did carry an `op`; it is
-            // discarded rather than trusted, so both layouts land identically.
-            entities.push({ type, slug: row.slug, op: 'create', data });
-          }
-        }
-
-        // Tag definitions, after the entities — the fabrication warning counts
-        // slugs the entities actually reference.
-        this.restoreBundleTags(entitiesDir, entities);
-      }
-
-      // Compose a SpecSnapshot (same shape as getReleaseSnapshot).
-      return {
-        release: {
-          id: manifest.release.id,
-          name: manifest.release.name,
-          description: manifest.release.description,
-          createdBy: 'user',
-          createdAt: manifest.release.createdAt,
-        },
-        serializer_versions: manifest.serializerVersions,
-        entities,
-        pages,
-      };
-    } finally {
-      nodeFs.rmSync(restoreDir, { recursive: true, force: true });
-    }
-  }
-
-  /**
-   * Step 5b — tag DEFINITIONS from `entities/tags.json`, written verbatim to the
-   * store's own `tags.json`.
-   *
-   * Anything an entity references but the definitions do not carry is fabricated
-   * (`name = slug`, no colour, no description) so the assignment does not dangle.
-   * The precedent is the by-slug auto-create of `tag_entity`. It is a write path
-   * inventing data, so it must be VISIBLE: the count goes out as a warning rather
-   * than being absorbed silently. Bundles older than v4 have no such file, so
-   * every definition they need is fabricated through exactly this path.
-   */
-  private restoreBundleTags(entitiesDir: string, entities: readonly SpecSnapshotEntityRow[]): void {
-    if (!this.entityStore) return;
-    const bundledPath = nodePath.join(entitiesDir, BUNDLE_TAGS_FILE);
-    const defs: BundleTagInput[] = nodeFs.existsSync(bundledPath)
-      ? (JSON.parse(nodeFs.readFileSync(bundledPath, 'utf8')) as BundleTagInput[])
-      : [];
-    const known = new Set(defs.map((d) => d.slug));
-
-    const fabricated: BundleTagInput[] = [];
-    for (const entity of entities) {
-      const tags = (entity.data as { tags?: unknown } | null)?.tags;
-      if (!Array.isArray(tags)) continue;
-      for (const tag of tags) {
-        const slug =
-          typeof tag === 'string'
-            ? tag
-            : tag && typeof tag === 'object' && typeof (tag as { slug?: unknown }).slug === 'string'
-              ? (tag as { slug: string }).slug
-              : null;
-        if (slug === null || known.has(slug)) continue;
-        known.add(slug);
-        fabricated.push({ slug, name: slug, color: null, description: null });
-      }
-    }
-
-    if (defs.length === 0 && fabricated.length === 0) return;
-    if (fabricated.length > 0) {
-      console.warn(
-        `[release] bundle carried no definition for ${fabricated.length} tag(s) ` +
-          `(${fabricated.map((t) => `'${t.slug}'`).join(', ')}) — created from the slug alone`,
-      );
-    }
-    this.entityStore.writeTags([...defs, ...fabricated]);
   }
 
   // ─── Internals ───────────────────────────────────────────────────────────
@@ -2438,8 +2027,7 @@ export class ReleaseService {
      * The old `pv2.rootId = pv1.rootId` predicate means "same identifier", and
      * across a rename boundary one space wears two — it would hand back the last
      * row under the retired id AND the last row under the live one, i.e. the same
-     * page twice, which in a bundle is a duplicate under two prefixes and in a
-     * diff is a phantom delete+create pair.
+     * page twice, which in a diff is a phantom delete+create pair.
      */
     const latest = new Map<string, (typeof heads)[number]>();
     for (const row of heads) {

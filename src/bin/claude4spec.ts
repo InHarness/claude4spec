@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import path from 'node:path';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import { startServer } from '../server/index.js';
@@ -12,29 +11,7 @@ import {
 } from '../server/workspace/network-flags.js';
 import { effectiveBindHost, effectivePublicUrl } from '../core/workspace/network.js';
 import type { WorkspaceRecord } from '../server/workspace/types.js';
-import { parseLaunchArgs, printStartWarnings, workspaceOnlyLaunch } from './launch.js';
-
-/**
- * M27 clone guard (step 6a). The target must be empty — no non-dotfile entries
- * and no pre-existing `.claude4spec/db.sqlite` — ignoring dotfiles and the fresh
- * `.claude4spec/` created during bootstrap. Runs BEFORE any remote call / DB open.
- * A pre-seeded `.claude4spec/config.json` (e.g. to set `remoteApiUrl` for a dev
- * peer) is a dotfile and is ignored.
- */
-function assertCloneTargetEmpty(cwd: string): void {
-  const dbPath = path.join(cwd, '.claude4spec', 'db.sqlite');
-  const entries = fs.existsSync(cwd)
-    ? fs.readdirSync(cwd).filter((name) => !name.startsWith('.'))
-    : [];
-  if (fs.existsSync(dbPath) || entries.length > 0) {
-    console.error(
-      `\x1b[31mCLONE_TARGET_NOT_EMPTY\x1b[0m — --clone requires an empty directory.\n` +
-        `  cwd: ${cwd}\n` +
-        `  Hint: mkdir <slug> && cd <slug> && npx @inharness-ai/claude4spec --clone <slug>`,
-    );
-    process.exit(1);
-  }
-}
+import { parseLaunchArgs, printStartWarnings, projectStartUrl, workspaceOnlyLaunch } from './launch.js';
 
 function openBrowser(url: string): void {
   const { platform } = process;
@@ -56,7 +33,7 @@ function openBrowser(url: string): void {
 }
 
 const args = parseLaunchArgs(process.argv.slice(2));
-const { port, cwd, pagesDir, mode, name, noOpen, clone, remoteUrl, createProject } = args;
+const { port, cwd, pagesDir, mode, name, noOpen, remoteUrl, createProject } = args;
 
 const registry = new WorkspaceRegistry();
 
@@ -89,8 +66,6 @@ function withNetwork(ws: WorkspaceRecord): WorkspaceRecord {
 if (createProject) {
   // ── Create-project path (explicit opt-in or an implying flag) ──────────────
   fs.mkdirSync(cwd, { recursive: true });
-  // M27 step 6a: validate the clone target is empty before any remote call / DB open.
-  if (clone) assertCloneTargetEmpty(cwd);
 
   // M31: workspace select-or-create. Peek the config-v3 migration FIRST so a
   // pre-v3 `config.json.port` can still select the right workspace when no
@@ -123,25 +98,14 @@ if (createProject) {
     host: effectiveBindHost(workspace),
     pagesDir,
     mode: effectiveMode,
-    // Raw CLI --name only (undefined unless explicitly passed) — consumed solely as
-    // the M27 clone name override, where an explicit --name wins over the bundle's
-    // config.name.
-    name,
-    clone,
     // Resolved flag > config.json > null; startServer applies the prod-constant
     // fallback inside RemoteHttpClient.
     remoteApiUrl: boot.config.remoteApiUrl,
-    // M27 (0.1.37): drive the clone full-rollback — delete config.json / .claude4spec/
-    // only if THIS run created them.
-    configCreated: boot.configCreated,
-    claudeDirCreated: boot.claudeDirCreated,
-    gitignoreCreated: boot.gitignoreCreated,
-    systemRootDirsCreated: boot.systemRootDirsCreated,
   })
     .then((handle) => {
       // `handle.url` is the LOCAL address (loopback or a concrete bindHost) —
       // the browser opens that, never `publicUrl`.
-      const projectUrl = `${handle.url}/p/${boot.project.id}/`;
+      const projectUrl = projectStartUrl(handle.url, boot.project.id);
       console.log(`\x1b[32m  claude4spec\x1b[0m  ready at \x1b[36m${projectUrl}\x1b[0m`);
       console.log(`  workspace: ${workspace.name}`);
       console.log(`  public url: ${effectivePublicUrl({ ...workspace, defaultPort: effectivePort })}`);

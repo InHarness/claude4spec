@@ -43,6 +43,7 @@ let host: HTMLDivElement;
 let root: Root;
 let qc: QueryClient;
 let connected: boolean;
+let accountStatus: 'active' | 'deactivated';
 let requests: Array<{ url: string; method: string }>;
 
 async function flush() {
@@ -55,6 +56,7 @@ async function flush() {
 
 beforeEach(() => {
   connected = true;
+  accountStatus = 'active';
   requests = [];
   vi.stubGlobal(
     'fetch',
@@ -64,7 +66,7 @@ beforeEach(() => {
       requests.push({ url, method });
       const json = (body: unknown, status = 200) =>
         new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
-      if (url === '/api/remote-account' && method === 'GET') return json(connected ? ACCOUNT : { connected: false });
+      if (url === '/api/remote-account' && method === 'GET') return json(connected ? { ...ACCOUNT, accountStatus } : { connected: false });
       if (url === '/api/remote-account/logout' && method === 'POST') {
         connected = false;
         return json({ connected: false });
@@ -79,7 +81,6 @@ beforeEach(() => {
           expires_in: 900,
         });
       }
-      if (url === '/api/remote-project') return json({ linked: false, projectId: null, fetched: false, isOwner: false });
       return json({}, 404);
     }),
   );
@@ -123,7 +124,7 @@ const click = async (el: HTMLElement | null | undefined) => {
 };
 
 describe('Settings User card × sidebar User slot (M24/M26)', () => {
-  it('[ac:ac-logout-w-m26-sekcja-user-z-confirmmodal] Log out on the User card asks in a ConfirmModal, POSTs /api/remote-account/logout, invalidates remote-account and remote-project, and the sidebar slot returns to Log in — the sidebar never offers Log out', async () => {
+  it('[ac:ac-logout-w-m26-sekcja-user-z-confirmmodal] Log out on the User card asks in a ConfirmModal, POSTs /api/remote-account/logout, invalidates only remote-account (no remote-project), and the sidebar slot returns to Log in — the sidebar never offers Log out', async () => {
     const invalidate = vi.spyOn(qc, 'invalidateQueries');
     await render();
 
@@ -148,7 +149,9 @@ describe('Settings User card × sidebar User slot (M24/M26)', () => {
     ]);
     const keys = invalidate.mock.calls.map(([f]) => JSON.stringify((f as { queryKey?: unknown }).queryKey));
     expect(keys).toContain(JSON.stringify(['remote-account']));
-    expect(keys).toContain(JSON.stringify(['remote-project']));
+    // 2.1.55: logout refreshes the account state only — `remote-account` is the one key invalidated.
+    expect(keys.filter((k) => k !== JSON.stringify(['remote-account']))).toEqual([]);
+    expect(requests.some((r) => r.url.includes('remote-project'))).toBe(false);
 
     // The session is gone: the sidebar slot is back to its signed-out state (Log in).
     expect(confirmWindow()).toBeNull();
@@ -172,5 +175,31 @@ describe('Settings User card × sidebar User slot (M24/M26)', () => {
     expect(qc.getQueryData<{ connected: boolean }>(['remote-account'])?.connected).toBe(false);
     expect(buttonsIn(region('user-card'), 'Log out')).toEqual([]);
     expect(buttonsIn(document, 'Log out')).toEqual([]);
+  });
+
+  it('[ac:ac-konto-z-account-status-deactivated-po] a signed-in account with accountStatus deactivated is signalled by a badge on the avatar of the sidebar User slot and on the User card — and nothing says an action is blocked', async () => {
+    accountStatus = 'deactivated';
+    await render();
+
+    // Still signed in: the session is there, the slot shows the account.
+    expect(region('sidebar').textContent).toContain('ada@example.com');
+    // Sidebar slot: the badge sits on the avatar, with the deactivation label.
+    const avatarBadge = region('sidebar').querySelector('[data-deactivated-badge]');
+    expect(avatarBadge).not.toBeNull();
+    expect(avatarBadge!.parentElement!.textContent).toContain('AD');
+    expect(region('sidebar').textContent).toContain('account deactivated');
+    expect(region('sidebar').querySelector('a')?.getAttribute('title')).toBe('This remote account is deactivated.');
+    // User card: the deactivated badge.
+    expect(region('user-card').textContent).toContain('deactivated');
+    expect(region('user-card').querySelector('[title="This remote account is deactivated."]')).not.toBeNull();
+    // The state blocks nothing any more: no "blocked"/"publish"/"push" wording anywhere.
+    expect(host.textContent!.toLowerCase()).not.toMatch(/blocked|publish|push/);
+    expect(host.innerHTML.toLowerCase()).not.toMatch(/blocked|publish/);
+  });
+
+  it('an active account shows no deactivation badge', async () => {
+    await render();
+    expect(region('sidebar').querySelector('[data-deactivated-badge]')).toBeNull();
+    expect(region('user-card').querySelector('[title="This remote account is deactivated."]')).toBeNull();
   });
 });

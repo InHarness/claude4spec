@@ -116,8 +116,8 @@ describe('HostEntityWriter.upsert — one door, the projection', () => {
   });
 
   it('still reports a SKIP for a type that is not active at all', () => {
-    // The one surviving null case. "Deactivated, or carried by a bundle this
-    // installation never had" must degrade to "not restored", never to "the
+    // The one surviving null case. "Deactivated, or never installed here"
+    // must degrade to "not restored", never to "the
     // whole restore died".
     const writer = new HostEntityWriter(hostWith({}), tags, {}, {
       db: makeDb(),

@@ -2,12 +2,10 @@ import type Database from 'better-sqlite3';
 import { DomainError } from './tags.js';
 import {
   RemoteHttpClient,
-  RemoteRequestError,
   RemoteUnauthorizedError,
   type AccountProfileResponse,
   type DeviceTokenError,
   type DeviceTokenResponse,
-  type GetProjectResponse,
 } from './remote-http-client.js';
 import type {
   DeviceLoginPollResponse,
@@ -15,25 +13,6 @@ import type {
   DeviceLoginStatus,
   RemoteAccountResponse,
 } from '../../shared/remote-account.js';
-
-/** Input to `RemoteAuthService.pushBundle` — bytes-derived values come from M17. */
-export interface PushBundleInput {
-  tarGzPath: string;
-  sizeBytes: number;
-  sha256: string;
-  /** Sent as `X-Project-Name` on first push (config.name). */
-  projectName: string;
-  /** `null` ⇒ first push (create project); a UUID ⇒ subsequent push. */
-  remoteProjectId: string | null;
-}
-
-/** Unified outcome from a push, regardless of first vs subsequent endpoint. */
-export interface PushBundleOutcome {
-  remoteProjectId: string;
-  remoteReleaseId: string;
-  remoteReleaseSequence: number;
-  deduplicated: boolean;
-}
 
 interface RemoteSessionRow {
   id: number;
@@ -126,99 +105,6 @@ export class RemoteAuthService {
     this.flow = null;
     this.db.prepare('DELETE FROM remote_session').run();
     return { connected: false };
-  }
-
-  /**
-   * M26 §4 consumer entry point — fetch the remote project for the
-   * `/api/remote-project` proxy. Bearer OPTIONAL since 0.1.32: anonymous and
-   * non-owner readers also reach the card (with the public subset). The
-   * service is still the single owner of Bearer injection + 401 wipe.
-   *
-   * Returns:
-   *  - `{ kind: 'ok', project }` on 200 (project carries `isOwner`, `description`).
-   *  - `{ kind: 'not_found' }` on remote 404 (route surfaces `reason: 'not_found'`).
-   *
-   * Throws `RemoteUnauthorizedError` after wiping the session on 401 (only
-   * possible when a bearer was sent; route maps to 502 SESSION_EXPIRED).
-   * Rethrows `RemoteRequestError` on other transport errors / 5xx (route maps
-   * to 502 REMOTE_UNAVAILABLE).
-   */
-  async getRemoteProject(
-    remoteProjectId: string,
-  ): Promise<{ kind: 'ok'; project: GetProjectResponse } | { kind: 'not_found' }> {
-    const row = this.readSession();
-    const token = row?.access_token ?? null;
-    try {
-      const project = await this.client.getProject(token, remoteProjectId);
-      return { kind: 'ok', project };
-    } catch (err) {
-      if (err instanceof RemoteUnauthorizedError) {
-        this.db.prepare('DELETE FROM remote_session').run();
-        throw err;
-      }
-      if (err instanceof RemoteRequestError && err.status === 404) {
-        return { kind: 'not_found' };
-      }
-      throw err;
-    }
-  }
-
-  /**
-   * 0.1.32 M25 §1a consumer entry point — PATCH the remote project's name and/or
-   * description. Owner-only (peer enforces; we gate the call on a present
-   * session so the bearer is available). 401 wipes the session row before
-   * rethrowing; the route maps that to 502 SESSION_EXPIRED.
-   */
-  async updateRemoteProject(
-    remoteProjectId: string,
-    body: { name?: string; description?: string | null },
-  ): Promise<GetProjectResponse> {
-    const row = this.readSession();
-    if (!row) throw new DomainError('NOT_CONNECTED', 'not connected to the remote server');
-    try {
-      return await this.client.updateProject(row.access_token, remoteProjectId, body);
-    } catch (err) {
-      if (err instanceof RemoteUnauthorizedError) {
-        this.db.prepare('DELETE FROM remote_session').run();
-      }
-      throw err;
-    }
-  }
-
-  /**
-   * M25 consumer entry point — transports a release bundle to the remote with the
-   * Bearer injected from the local session. First push (`remoteProjectId === null`)
-   * creates the project; subsequent pushes append a release. The access_token never
-   * leaves M24. On 401 the single-row `remote_session` is atomically wiped (same as
-   * logout) and the `RemoteUnauthorizedError` is re-thrown for M25 to map to 502.
-   */
-  async pushBundle(input: PushBundleInput): Promise<PushBundleOutcome> {
-    const row = this.readSession();
-    if (!row) throw new DomainError('NOT_CONNECTED', 'not connected to the remote server');
-    const payload = { tarGzPath: input.tarGzPath, sizeBytes: input.sizeBytes, sha256: input.sha256 };
-    try {
-      if (input.remoteProjectId === null) {
-        const res = await this.client.createProject(row.access_token, payload, input.projectName);
-        return {
-          remoteProjectId: res.project.id,
-          remoteReleaseId: res.release.id,
-          remoteReleaseSequence: res.release.sequence,
-          deduplicated: false,
-        };
-      }
-      const res = await this.client.pushRelease(row.access_token, input.remoteProjectId, payload);
-      return {
-        remoteProjectId: input.remoteProjectId,
-        remoteReleaseId: res.release.id,
-        remoteReleaseSequence: res.release.sequence,
-        deduplicated: res.deduplicated,
-      };
-    } catch (err) {
-      if (err instanceof RemoteUnauthorizedError) {
-        this.db.prepare('DELETE FROM remote_session').run();
-      }
-      throw err;
-    }
   }
 
   // --- internals ----------------------------------------------------------

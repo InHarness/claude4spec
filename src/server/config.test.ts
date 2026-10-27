@@ -351,7 +351,7 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
       $schemaVersion: 4,
       name: 'X',
       roots: [builtinPagesRoot('pages')],
-      git: { syncCommitOnRelease: true, syncPushOnPush: false },
+      git: { syncCommitOnRelease: true, syncPushOnRelease: false },
     });
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
@@ -360,7 +360,7 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
       log.mockRestore();
     }
     const raw = JSON.parse(fs.readFileSync(configPath(dir), 'utf8'));
-    expect(raw.git).toEqual({ enabled: true, syncPushOnPush: false });
+    expect(raw.git).toEqual({ enabled: true, syncPushOnRelease: false });
     expect(readConfig(dir).git.enabled).toBe(true);
   });
 
@@ -659,7 +659,7 @@ describe('config — central default normalizer (C23, 0.2.8)', () => {
     });
     expect(cfg.git).toEqual({
       enabled: false,
-      syncPushOnPush: false,
+      syncPushOnRelease: false,
       commitTarget: { mode: 'current', branch: null, template: null, base: null },
       switchAfterRelease: false,
     });
@@ -672,7 +672,7 @@ describe('config — central default normalizer (C23, 0.2.8)', () => {
     write({ git: { enabled: true } });
     const cfg = readConfig(dir);
     expect(cfg.git.enabled).toBe(true);
-    expect(cfg.git.syncPushOnPush).toBe(false);
+    expect(cfg.git.syncPushOnRelease).toBe(false);
     expect(cfg.git.commitTarget.mode).toBe('current');
   });
 
@@ -780,7 +780,6 @@ describe('config — the config.json envelope (2.1.8)', () => {
     'consistency',
     'onboardingCompleted',
     'remoteApiUrl',
-    'remoteProjectId',
   ];
 
   it('[entity:config-json-shape] a fresh file is version 4, uses only envelope keys, roots entries carry four fields, no system-root key exists and plugins is neither scaffolded nor reserved', () => {
@@ -825,6 +824,26 @@ describe('config — the config.json envelope (2.1.8)', () => {
     writeConfig(dir, { plugins: { 'c4s-plugin-x': { on: true } } } as never);
     expect(JSON.parse(fs.readFileSync(configPath(dir), 'utf8'))).not.toHaveProperty('plugins');
     expect('plugins' in readConfig(dir)).toBe(false);
+  });
+
+  it('[entity:config-json-shape] 2.1.55: `remoteProjectId` is not an envelope key — neither scaffolded nor read, and a write drops a legacy one', () => {
+    expect(ENVELOPE_KEYS).not.toContain('remoteProjectId');
+    loadOrCreateConfig(dir, {});
+    expect(JSON.parse(fs.readFileSync(configPath(dir), 'utf8'))).not.toHaveProperty('remoteProjectId');
+
+    // A legacy file still carrying the key (from before 2.1.55) loads without an
+    // error — even a value of the wrong type is not validated any more — and the
+    // loaded config does not expose it.
+    const file = configPath(dir);
+    const legacy = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+    fs.writeFileSync(file, JSON.stringify({ ...legacy, remoteProjectId: 42 }));
+    expect('remoteProjectId' in readConfig(dir)).toBe(false);
+
+    // The next write persists only envelope keys: the legacy key is gone.
+    writeConfig(dir, { description: 'after' });
+    const after = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+    expect(after).not.toHaveProperty('remoteProjectId');
+    expect(after.description).toBe('after');
   });
 
   it('a legacy file with *Dir keys and extra per-root fields is not rewritten and stays at version 4', () => {

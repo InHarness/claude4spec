@@ -51,17 +51,17 @@ export interface DeviceLoginPollResponse {
 
 /**
  * `GET /api/remote-account` — the sidebar's identity source. NEVER exposes
- * `access_token`. Stable contract consumed by the sidebar (TanStack Query key
- * `["remote-account"]`) and, later, by M25 publish.
+ * `access_token`. Consumed by the sidebar `User` slot and the settings User card
+ * (TanStack Query key `["remote-account"]`).
  */
 export interface RemoteAccountResponse {
   /** `true` when a `remote_session` row exists. */
   connected: boolean;
-  /** UUID of the remote account (`remote_session.remote_account_id`). */
+  /** UUID of the remote account (`remote_session.remote_account_id`). For diagnostics. */
   remoteAccountId?: string;
   /** UI label — the only "connected as X" identity the remote exposes. */
   accountEmail?: string;
-  /** `deactivated` blocks publish (M25). */
+  /** `deactivated` is signalled in the UI (a badge on the avatar); it blocks no action. */
   accountStatus?: 'active' | 'deactivated';
   /** ISO 8601 from `remote_session.connected_at`. */
   connectedAt?: string;
