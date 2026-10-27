@@ -6,5 +6,6 @@
   "unit": "u10-skill-hook-trust-gate",
   "text": "M52 zostawia otwarte (TODO): nazwę pola potwierdzenia w rekordzie projektu, miejsce i chwilę pytania oraz zakres potwierdzenia. Decyzja użytkownika: budujemy samą funkcję w najprostszej postaci, żeby sprawdzić, czy ma sens. Przyjęte: pole `trustSpecSkillHooks: boolean` w rekordzie projektu w ~/.claude4spec/workspaces.json, obok `trustProjectPlugins`; jedna zgoda obejmuje całą listę podpięć z config.json; pytanie pada na karcie #skills (ostrzeżenie przy niepotwierdzonym podpięciu + akcja potwierdzenia), wzorem bramki zaufania pluginów.\n\nSugestia: wpisać te trzy decyzje do M52 (ybbal0vf) albo je zmienić w następnym oknie.",
   "assumption": "ASSUMPTION:dev-0002 trustSpecSkillHooks boolean on the project record, confirmed from the #skills card",
-  "sent": false
+  "sent": true,
+  "patchPath": "2-1-56-to-2-1-57-u10-skill-hook-trust-gate-ybbal0vf-przyjete-trustspecskillhooks-boolean-ca-a-lis.md"
 }

@@ -1,0 +1,15 @@
+{
+  "id": "dev-0003",
+  "kind": "incorrect",
+  "blocking": false,
+  "address": "u03-artifact-frontmatter-merge/m36l4fam",
+  "unit": "u03-artifact-frontmatter-merge",
+  "slugs": [
+    "patch-api-artifacts-kind-path-frontmatter",
+    "artifact-frontmatter-update-request"
+  ],
+  "text": "Endpoint patch-api-artifacts-kind-path-frontmatter ma linkedDtos: [] także w odczycie stanu przy 2.1.57, nie tylko w odczycie zmiany. Przed oknem wiązał artifact-frontmatter-update-request (request) i artifact-response (200), a okno zmieniło tylko opisy. Wygląda to na lukę po stronie specyfikacji. Kod zachowuje wiązanie request/response.\n\nSugestia: przywrócić linkedDtos endpointu (request: artifact-frontmatter-update-request, 200: artifact-response).",
+  "assumption": "ASSUMPTION:dev-0003 request/response DTO binding kept",
+  "sent": true,
+  "patchPath": "2-1-56-to-2-1-57-u03-artifact-frontmatter-merge-m36l4fam-endpoint-frontmatter-bez-linkeddtos-przy.md"
+}

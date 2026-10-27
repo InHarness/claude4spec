@@ -151,6 +151,15 @@ export interface RecordMoveResult {
   staleProjections: string[];
 }
 
+/** The answer of a settled {@link RecordStore.restore}: a write without a parsed record. */
+export interface RecordRestoreResult {
+  /** Hash of the bytes on disk after the chain settled. */
+  hash: string;
+  content: string;
+  /** Subscription ids whose critical phase failed twice; empty on a clean run. */
+  staleProjections: string[];
+}
+
 export interface RecordWriteResult<T> {
   /** Hash of the bytes on disk after the chain settled. */
   hash: string;
@@ -263,7 +272,12 @@ export class RecordStore<T> {
    * and because the two JSON stores (M29 entities, M17 releases) are synchronous
    * to their callers all the way up.
    */
-  private commit(relPath: string, record: T, expectedHash: string | undefined, owner: 'chain' | 'primitive'): string {
+  private commit(
+    relPath: string,
+    produce: () => string,
+    expectedHash: string | undefined,
+    owner: 'chain' | 'primitive',
+  ): string {
     const abs = this.absFor(relPath);
 
     // 1 — conflict check, over the state on disk, before anything is produced.
@@ -278,7 +292,8 @@ export class RecordStore<T> {
 
     // 2 — the last step that can still fail cleanly. An adapter throwing here
     // leaves the file exactly as it was: no version row, no phase, no trace.
-    const bytes = this.opts.adapter.serialize(record);
+    // A `restore` hands in bytes a serialization produced earlier, verbatim.
+    const bytes = produce();
 
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     // 4 — the token goes up immediately before the write, never earlier.
@@ -319,26 +334,15 @@ export class RecordStore<T> {
    * and a hash alone cannot tell it that.
    */
   async write(relPath: string, record: T, opts: RecordWriteOptions = {}): Promise<RecordWriteResult<T>> {
+    const produce = () => this.opts.adapter.serialize(record);
     if (this.isInOwnChain(relPath)) {
-      const bytes = this.commit(relPath, record, opts.expectedHash, 'chain');
+      const bytes = this.commit(relPath, produce, opts.expectedHash, 'chain');
       return { hash: this.opts.adapter.hash(bytes), content: bytes, record, staleProjections: [] };
     }
     return await this.withPathLock(relPath, async () => {
-      const exists = this.readRaw(relPath) !== null;
-      this.commit(relPath, record, opts.expectedHash, 'primitive');
-      // 5 — unless the caller switched it off. Off: no phase runs, the token is
-      // still retired by its issuer after the guard window, exactly as after a
-      // chain.
-      const chain =
-        opts.chain === false
-          ? (this.opts.registrar.releaseSuppress(this.opts.source, relPath), { staleProjections: [] })
-          : await this.runChain(relPath, exists ? 'change' : 'add', opts);
-      // 6 — read the settled state, NOT what was handed in. The chain's
-      // write-back phase may have rewritten the file after the commit.
-      const content = this.readRaw(relPath) ?? '';
+      const settled = await this.commitAndSettle(relPath, produce, opts);
       return {
-        hash: this.opts.adapter.hash(content),
-        content,
+        ...settled,
         /**
          * Parsing the settled bytes must NOT be able to fail the operation. We
          * are past the commit point: the file is written, the chain has run, the
@@ -348,10 +352,50 @@ export class RecordStore<T> {
          * believe it had failed. `content` is the authoritative answer; `record`
          * is a convenience, so it falls back to what was handed in.
          */
-        record: this.parseSettled(content, record),
-        staleProjections: chain.staleProjections,
+        record: this.parseSettled(settled.content, record),
       };
     });
+  }
+
+  /**
+   * 2.1.57 — put back bytes captured EARLIER, verbatim: the same six steps as
+   * {@link write}, except that step 2 is skipped — the bytes were produced by a
+   * serialization of this same source already, and re-parsing them through the
+   * adapter would normalise them (frontmatter key order, a trailing newline) so
+   * the file would no longer compare equal to what it was.
+   *
+   * It exists for the rollback of a multi-file operation
+   * (`multi-file-operation.ts`), which restores files it already
+   * wrote "by further writes through the primitive" — so with the conflict check,
+   * the commit, the suppression and the chain of any other write.
+   */
+  async restore(relPath: string, bytes: string, opts: RecordWriteOptions = {}): Promise<RecordRestoreResult> {
+    if (this.isInOwnChain(relPath)) {
+      this.commit(relPath, () => bytes, opts.expectedHash, 'chain');
+      return { hash: this.opts.adapter.hash(bytes), content: bytes, staleProjections: [] };
+    }
+    return await this.withPathLock(relPath, () => this.commitAndSettle(relPath, () => bytes, opts));
+  }
+
+  /** Steps 1–6 under the path lock the caller already holds. */
+  private async commitAndSettle(
+    relPath: string,
+    produce: () => string,
+    opts: RecordWriteOptions,
+  ): Promise<RecordRestoreResult> {
+    const exists = this.readRaw(relPath) !== null;
+    this.commit(relPath, produce, opts.expectedHash, 'primitive');
+    // 5 — unless the caller switched it off. Off: no phase runs, the token is
+    // still retired by its issuer after the guard window, exactly as after a
+    // chain.
+    const chain =
+      opts.chain === false
+        ? (this.opts.registrar.releaseSuppress(this.opts.source, relPath), { staleProjections: [] })
+        : await this.runChain(relPath, exists ? 'change' : 'add', opts);
+    // 6 — read the settled state, NOT what was handed in. The chain's
+    // write-back phase may have rewritten the file after the commit.
+    const content = this.readRaw(relPath) ?? '';
+    return { hash: this.opts.adapter.hash(content), content, staleProjections: chain.staleProjections };
   }
 
   /** Best-effort parse of the settled bytes; the handed-in record on failure. */
@@ -456,7 +500,7 @@ export class RecordStore<T> {
   /** Steps 1–4 only, for callers that are synchronous all the way up. */
   writeSync(relPath: string, record: T, opts: RecordWriteOptions = {}): string {
     const owner = this.isInOwnChain(relPath) ? 'chain' : 'primitive';
-    const bytes = this.commit(relPath, record, opts.expectedHash, owner);
+    const bytes = this.commit(relPath, () => this.opts.adapter.serialize(record), opts.expectedHash, owner);
     if (owner === 'primitive') this.opts.registrar.releaseSuppress(this.opts.source, relPath);
     return bytes;
   }

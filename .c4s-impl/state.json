@@ -1,5 +1,5 @@
 {
-  "iteration": 0,
+  "iteration": 1,
   "conventions": [
     {
       "label": "Tabela warstw (implementor każdej warstwy)",
@@ -34,7 +34,7 @@
         "u11-consistency-junction",
         "u12-prompt-block-templates"
       ],
-      "startCommit": null
+      "startCommit": "4b4a56c0f6ba84df01fd1c3377612aeac641181d"
     },
     {
       "n": 2,
@@ -109,15 +109,34 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u01-multi-file-primitive/p1-l1-l7",
+          "layers": [
+            "L1",
+            "L7"
+          ],
+          "slugs": [
+            "file-version",
+            "section:gg7sxih6"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "25a268c6db9be45f8e6ae9884e415a0f9e74ff2d",
+      "baseCommit": "4b4a56c0f6ba84df01fd1c3377612aeac641181d",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": [],
+      "lastBlocking": []
     },
     {
       "id": "u03-artifact-frontmatter-merge",
@@ -257,7 +276,43 @@
       "dependsOn": [],
       "wave": 1,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "u03-artifact-frontmatter-merge/p1-l3-l4",
+          "layers": [
+            "L3",
+            "L4"
+          ],
+          "slugs": [
+            "artifact-frontmatter-update-request",
+            "patch-api-artifacts-kind-path-frontmatter",
+            "m36l4fam",
+            "m23mcp01",
+            "m23edg01",
+            "bctqi8sw",
+            "ac-artefakt-rozbieznosci-bez-zadeklarowa",
+            "ac-c4s-mark-brief-implemented-brief-path",
+            "ac-frontmatter-planu-ma-pole-applied-boo",
+            "ac-get-patch-z-range-poza-koncem-pliku-w",
+            "ac-header-plans-slug-niesie-badge-applie",
+            "ac-jedynym-mutable-polem-frontmatteru-br",
+            "ac-mark-patch-applied-z-applied-false-je",
+            "ac-patch-api-artifacts-plan-path-frontma",
+            "ac-patch-dluzszy-niz-budzet-odpowiedzi-w",
+            "ac-patch-legacy-ze-status-completed-i-be",
+            "ac-patch-przekraczajacy-budzet-wolany-be",
+            "ac-po-autozapisie-patcha-dluzszego-niz-b",
+            "ac-settings-popover-na-patches-path-zawi",
+            "ac-ustawienie-implemented-true-przez-c4s",
+            "ac-watek-patch-ktory-stwierdza-ze-patch"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -446,7 +501,42 @@
       "dependsOn": [],
       "wave": 1,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "u04-plugin-registration-contract/p1-l2-a",
+          "layers": [
+            "L2"
+          ],
+          "slugs": [
+            "section:z7l89jhf",
+            "section:m13pool0",
+            "section:x2nr826t",
+            "section:l4crudhl"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        },
+        {
+          "name": "u04-plugin-registration-contract/p2-l2-l11",
+          "layers": [
+            "L2",
+            "L11"
+          ],
+          "slugs": [
+            "section:m33load01",
+            "section:klprfawm",
+            "section:69i6wnvo"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -525,7 +615,25 @@
       "dependsOn": [],
       "wave": 1,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "u05-frontend-activation-gate/p1-l2-l11",
+          "layers": [
+            "L2",
+            "L11"
+          ],
+          "slugs": [
+            "section:m13actv0",
+            "section:j1jk3ykt",
+            "section:9g96q3pp"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -720,7 +828,27 @@
       "dependsOn": [],
       "wave": 1,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "u09-remote-token-encryption/p1-l1-l1",
+          "layers": [
+            "L1"
+          ],
+          "slugs": [
+            "remote-session",
+            "m24-requires-m05",
+            "ac-konto-z-account-status-deactivated-po",
+            "ac-logout-kasuje-wiersz-remote-session-zer",
+            "ac-po-http-401-z-owner-only-endpointu-zdaln",
+            "ac-token-zdalnej-sesji-prze-ywa-restart-ser"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -817,7 +945,27 @@
       "dependsOn": [],
       "wave": 1,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "u10-skill-hook-trust-gate/p1-m31-l17",
+          "layers": [
+            "M31 workspace registry (Domain)",
+            "M52 Domain",
+            "L17 Project Settings"
+          ],
+          "slugs": [
+            "section:ybbal0vf",
+            "section:9j9cxrsr",
+            "section:f1nbs7qy",
+            "section:44viw74p"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -904,7 +1052,24 @@
       "dependsOn": [],
       "wave": 1,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "u11-consistency-junction/p1-domain",
+          "layers": [
+            "domain"
+          ],
+          "slugs": [
+            "section:q91m4kgl",
+            "section:5tfhxy2p",
+            "section:z5cl1q4o"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -965,7 +1130,57 @@
       "dependsOn": [],
       "wave": 1,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "u12-prompt-block-templates/p1-l15-l15",
+          "layers": [
+            "L15"
+          ],
+          "slugs": [
+            "szablon-current-page-handling",
+            "szablon-agent-filesystem-access",
+            "szablon-agent-path-scope",
+            "szablon-annotation-handling",
+            "szablon-annotations",
+            "szablon-available-skills-spec-skills",
+            "szablon-available-skills",
+            "szablon-brief-scope",
+            "szablon-brief-tools-usage",
+            "szablon-claude4spec-identity",
+            "szablon-claude4spec-plan-mode",
+            "szablon-conversational-language",
+            "szablon-current-patch-rama",
+            "szablon-current-patch-tresc",
+            "szablon-current-skill",
+            "szablon-diagram-references",
+            "szablon-discovery-and-impact",
+            "szablon-entities-rama",
+            "szablon-entities-wiersz-diagram",
+            "szablon-entities-wiersz",
+            "szablon-entity-embeds",
+            "szablon-interaction-context-ask",
+            "szablon-interaction-context-brief",
+            "szablon-interaction-context-patch",
+            "szablon-interaction-context-rama",
+            "szablon-project-writing-skill",
+            "szablon-project",
+            "szablon-sections-and-anchors",
+            "szablon-spec-language",
+            "szablon-tags",
+            "szablon-todo-markers",
+            "szablon-tooling-c4s-tools",
+            "szablon-tooling-patch-tools",
+            "szablon-tooling-plan-tools",
+            "szablon-tooling",
+            "szablon-workspace-projects"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -1479,5 +1694,6 @@
       "version": 1
     }
   ],
-  "entityParts": []
+  "entityParts": [],
+  "baselineGreen": true
 }
