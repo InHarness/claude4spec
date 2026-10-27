@@ -9,7 +9,7 @@ import type { EntityType, SectionIndexEntry } from '../../shared/entities.js';
 type Navigate = ReturnType<typeof useNavigate>;
 
 /**
- * The chat-aware `EditorBridge` (M05 rehyxchp, M20 nvc5wy2p): `openEntity` /
+ * The chat-aware `EditorBridge` (M53 rehyxchp, M20 nvc5wy2p): `openEntity` /
  * `openSection` navigate the main pane in the background, UNDER the overlay —
  * the chat overlay stays open (nothing here closes it), and the page editor
  * underneath scrolls to the target through the anchor hash.

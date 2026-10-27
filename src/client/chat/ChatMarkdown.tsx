@@ -66,7 +66,7 @@ function ChatMarkdownBase({
   pagesIndex?: ReadonlyMap<string, unknown>;
 }) {
   // A `type` the host does not know, or whose plugin is inactive, still
-  // sanitizes and renders as the host's broken chip `[broken: slug]` (M05).
+  // sanitizes and renders as the host's broken chip `[broken: slug]` (M53).
   const processed = useMemo(() => preprocessXmlChips(text), [text]);
 
   return (
@@ -104,7 +104,7 @@ function ChatMarkdownBase({
 
 /**
  * The `components.a` override: a placeholder link minted by `preprocessXmlChips`
- * becomes the chip it encodes; a link to an entity route (0.2.110 M05) becomes a
+ * becomes the chip it encodes; a link to an entity route (0.2.110 M53) becomes a
  * router `<Link>` — client-side navigation, no reload; any other link stays a link.
  */
 /**

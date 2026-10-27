@@ -1,7 +1,7 @@
 /**
  * 2.1.9 — M52 `<skill_ref slug/>` (sheet `znaczniki-xml-m52`): the tag's
  * registration, its assigned render `SkillRefChip` and that render in chat —
- * a user message and an assistant reply alike (M05 `rehyxchp` step 0).
+ * a user message and an assistant reply alike (M53 `rehyxchp` step 0).
  *
  * Static render (`renderToStaticMarkup`); the `chat` skill listing is seeded
  * into the query cache under the key the chip reads.
@@ -90,7 +90,7 @@ describe('M52 edge cases', () => {
   });
 });
 
-describe('M05 chat chips for a tag with an assigned render', () => {
+describe('M53 chat chips for a tag with an assigned render', () => {
   it('[ac:m05-chip-slug-bez-type-przypisany-render] a tag with `slug` and no `type` whose owner assigned a render shows in chat as that component, not as a broken chip', () => {
     expect(chipTargetOf(getXmlTag('skill_ref')!)).toBeNull();
     expect(isChipTag('skill_ref')).toBe(true);

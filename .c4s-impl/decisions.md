@@ -43,3 +43,21 @@
 - `GET /api/chat/config` keeps `planModeEnforceable` and `sessionResumeConstraints`: M53 (`fpo8oq66`) still has the shell hide the plan-mode toggle until enforceability is confirmed and take the lock list from the library, and the route is M05's. The M05 page dropping its UI wording does not remove the data the shell consumes.
 - M05 UI (L5) at 2.1.56 is the `["agent-credentials"]` query and the `agent-credential-remove` window; both already exist (`src/client/hooks/useAgentCredentials.ts`, `src/client/chat/settings/agentSettings.tsx`). Nothing to remove client-side in this unit; client chat code relabelling belongs to the M53 units.
 - `ac-claude-cli-niezainstalowane-lub-nieza`: tested through `runAgentTurn` (AdapterInitError → `AGENT_UNAVAILABLE`) plus the route status table (`STATUS_FOR_TURN_ERROR.AGENT_UNAVAILABLE === 503`), which both turn routes use. On `POST /api/chat` the error arrives after the SSE headers, as an `error` frame with that code; the JSON `503` is the `ask` route.
+
+## m53-powloka/p1-domain-l15 (implementer)
+
+- The six "new behaviours" of the goal, against the code: the `queue_cleared` restore for other clients, the Plan Mode toggle gated on `planModeEnforceable`, the posture-free popover, the config-ordered picker, the in-stream warning (live carrier + persisted `warning` row) and `Monitor` as a plain card were already in the code. They get tests that carry their slugs (`ChatOverlay.render.test.ts`, `useChat.render.test.ts`, `BlockRenderer.render.test.ts`). The other-clients restore has no criterion of its own, so it is tagged `[section:impolq96]`.
+- Real changes, where the M53 pages at 2.1.56 and the code differed:
+  - Plan mode wording: "Agent proposes, doesn't modify" read as a read-only guarantee, which `fpo8oq66` forbids. The popover and the user-bubble tooltip now say "a strong signal, not a read-only guarantee".
+  - The system-prompt preview hid the composer. `wraq0g4h` swaps only the message list, and the toggle criterion needs a send from preview mode. The composer now stays, and sending closes the preview.
+  - The empty thread list now offers "Start new" (`wraq0g4h`).
+  - The batch card header showed `<first tool> × N`. It now shows the library's `categoryLabel` ("Edited 3 files", "Read 5 files", `{toolName} × N` for `other`), as `5615w04d` and the batching criterion ask.
+  - Annotation highlights: the range is no longer trusted. A highlight is drawn, and kept after an edit, only while its range still covers the saved text (`9x9xm07q`); the annotation stays in the store. The saved text of a selection takes what an atom node renders (its node view's text), not its XML (`annotationSelectionText`).
+  - Chat chips: a tag with an assigned render but no target attribute (`anchor`/`slug`/`slugs`/`tags`) now stays text (`rehyxchp` precondition). Before, `type` alone was enough.
+- Module attribution: client chat-shell comments, the L12 gate's out-of-scope label and test titles now name M53 instead of M05. Session-lock comments still name M05, because they describe the M05 server rule. `useChat.ts` and the turn-state panels belong to `m53-stan-tury` and were not relabelled here. No code names the module dependencies M05→M14/M20/M51 or M28→M05, so nothing changed for them.
+- `wklad-do-edytora-m05` tests were rewritten as `wklad-do-edytora-m53` (`slashSources.test.ts`). No test names the deleted sheet now.
+- The "Clear all" and "Remove" highlight tests subscribe `refreshAnnotations` to the store, the way `Editor.tsx`/`PlanEditor.tsx` do it in an effect on `annotations`.
+
+## m53-powloka review base (orchestrator)
+
+- The unit-verifier reopen moved `startCommit` before any review round ran, so the first review reads `baseCommit..HEAD` (the whole unit), not only the reopen fix.

@@ -1,5 +1,5 @@
 {
-  "iteration": 9,
+  "iteration": 18,
   "errors": 0,
   "systemVerified": false,
   "conventions": [
@@ -55,7 +55,7 @@
         "m53-powloka",
         "m53-stan-tury"
       ],
-      "startCommit": null
+      "startCommit": "90d52cd28ebd9656baae7be24ec5222bd882cd1c"
     }
   ],
   "units": [
@@ -588,15 +588,97 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "m53-powloka/p1-domain-l15",
+          "layers": [
+            "Domain",
+            "L5",
+            "L8",
+            "L11",
+            "L15"
+          ],
+          "slugs": [
+            "ac-adnotacja-ktorej-highlight-przestal-p",
+            "ac-adnotacja-z-pustym-komentarzem-jest-d",
+            "ac-adnotacje-sa-czyszczone-po-pomyslnym",
+            "ac-adnotacje-sa-podswietlone-w-edytorze",
+            "ac-akcja-dodaj-do-chatu-tworzy-karte-adn",
+            "ac-akcja-new-conversation-tworzy-nowy-wa",
+            "ac-akcja-wyczysc-wszystko-usuwa-wszystki",
+            "ac-bloki-extended-thinking-sa-renderowan",
+            "ac-composer-pozostaje-odblokowany-podczas-s",
+            "ac-composer-pozwala-wyslac-wiadomosc-z-p",
+            "ac-context-indicator-w-overlayu-czatu-po",
+            "ac-custom-threadlistdropdown-w-overlayu",
+            "ac-dla-komponentu-obecnego-w-katalogu-l12-n",
+            "ac-edycja-dokumentu-po-ktorej-range-adno",
+            "ac-gdy-activethread-lastsessionid-null-k",
+            "ac-highlighty-adnotacji-sa-widoczne-wyla",
+            "ac-hook-useagentchat-serverurl-dostarcza",
+            "ac-ikona-filetext-w-headerze-chatoverlay",
+            "ac-joiner-widzi-snapshot-kolejki-natychm",
+            "ac-karte-adnotacji-mozna-edytowac-w-pane",
+            "ac-karte-adnotacji-mozna-usunac-z-panelu",
+            "ac-klik-fix-it-with-agent-w-giterrorrecov",
+            "ac-klikniecie-toolbatchcard-rozwija-list",
+            "ac-kolejne-tool-use-tej-samej-kategorii",
+            "ac-mid-turn-user-message-push-w-tej-samej",
+            "ac-narzedzie-monitor-renderuje-sie-w-cza",
+            "ac-nawigacja-miedzy-stronami-zachowuje-a",
+            "ac-ostrzezenie-adaptera-renderuje-sie-w",
+            "ac-otwarcie-innego-projektu-innego-cwd-na",
+            "ac-overlay-czatu-m05-i-powierzchnia-edyto",
+            "ac-picker-modelu-w-composerze-pokazuje-m",
+            "ac-po-createthread-lastsessionid-null-ko",
+            "ac-po-f5-chipy-kolejki-watku-sa-odtworzo",
+            "ac-po-f5-lub-przelaczeniu-watku-usagebad",
+            "ac-po-przelaczeniu-na-zablokowany-watek",
+            "ac-po-przerwaniu-tury-teksty-skasowanej",
+            "ac-popover-ustawien-modelu-pokazuje-togg",
+            "ac-przycisk-abort-w-inputarea-przerywa-t",
+            "ac-run-dlugosci-1-nie-jest-opakowywany-w",
+            "ac-skrot-cmd-shift-a-otwiera-popup-adnot",
+            "ac-swiezy-watek-initialarchitectureconfi",
+            "ac-ten-sam-cwd-przy-zresetowanej-bazie-ten",
+            "ac-toggle-podgladu-system-promptu-jest-d",
+            "ac-tool-calls-sa-renderowane-w-ui-jako-k",
+            "ac-tool-calls-wykonane-przez-subagenta-n",
+            "ac-ui-czatu-nie-ma-zadnej-kontrolki-agen",
+            "ac-utworzenie-adnotacji-przy-zamknietym",
+            "ac-watek-wznawiajacy-ktorego-tura-1-usta",
+            "ac-wyslanie-wiadomosci-z-adnotacjami-dok",
+            "ac-zaznaczenie-obejmujace-custom-xml-nod",
+            "ac-zaznaczenie-tekstu-w-edytorze-pokazuj",
+            "ac-zaznaczenie-tekstu-w-poprzek-node-ow",
+            "ac-zdarzenie-warning-ktore-przyszlo-po-o-2",
+            "ac-znacznik-encji-wyslany-w-wiadomosci-u",
+            "m05-chat-tag-without-target-attrs-stays-text",
+            "m05-chip-slug-bez-type-przypisany-render",
+            "m05-chip-w-wiadomosci-uzytkownika",
+            "m05-znacznik-slug-bez-type-bez-renderu",
+            "m20-composer-slash-popover",
+            "wklad-do-edytora-m53#adnotacje page-bound",
+            "wklad-do-edytora-m53#`chat-input`",
+            "wklad-do-edytora-m05"
+          ],
+          "status": "implemented",
+          "rounds": 3,
+          "partial": 0,
+          "only": [],
+          "uncovered": []
+        }
+      ],
+      "startCommit": "85f36e5d1b21ccc103be7273daaaa9dd509252ce",
+      "baseCommit": "90d52cd28ebd9656baae7be24ec5222bd882cd1c",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 3
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "m53-stan-tury",

@@ -1,7 +1,7 @@
 import { stripBase } from '../lib/api-core.js';
 
 /**
- * 0.2.110 M05 — the in-app route an agent-reply link points at, when it points
+ * 0.2.110 M53 — the in-app route an agent-reply link points at, when it points
  * at an entity route (`/endpoints/get-users`, `/acs`, …), else `null`. The
  * query and hash come back apart, as the router's `<Link>` takes them — a
  * `to` carrying `?…#…` would be matched as part of the pathname.

@@ -177,6 +177,9 @@ registerEditorExtension({
   extension: (ctx) => HeadingActions.configure({ linkPath: headingLinkPath(ctx) }),
 });
 
+// M53 (Agent Chat Shell, `m05ledit`) — the page-bound annotation highlight: a
+// decoration only (never a Node or a Mark), so it never reaches the page's
+// markdown. M53's other contribution is the composer's `chat-input` context.
 registerEditorExtension({
   name: 'annotationHighlight',
   priority: 1000,

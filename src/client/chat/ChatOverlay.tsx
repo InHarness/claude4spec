@@ -130,7 +130,7 @@ export function ChatOverlay() {
     setChatThreadId(null);
   }, [setChatThreadId]);
 
-  // M05 (D4): when the queue is cleared (Stop/abort/clear), restore the texts
+  // M53 (D4): when the queue is cleared (Stop/abort/clear), restore the texts
   // into the composer. `@path.md` mentions re-parse via PageRefNode input rules.
   const handleQueueCleared = useCallback((texts: string[]) => {
     const handle = inputRef.current;
@@ -454,7 +454,7 @@ export function ChatOverlay() {
       }
     };
 
-    // M05: during a live turn the composer stays unlocked; Send/↵ enqueues the
+    // M53: during a live turn the composer stays unlocked; Send/↵ enqueues the
     // message (mid-turn push or after-turn merged dispatch) instead of starting
     // a new stream. Annotations are for fresh turns only.
     if (isBusy) {
@@ -509,7 +509,7 @@ export function ChatOverlay() {
         className="flex-1 flex flex-col min-w-0 min-h-0 relative"
         style={{ background: 'var(--c-bg)' }}
       >
-        {/* 2.1.28 (M05 rehyxchp): the chat-aware EditorBridge — chips in the
+        {/* 2.1.28 (M53 rehyxchp): the chat-aware EditorBridge — chips in the
             message tree call the editorBridge singleton, which reaches it. */}
         <ChatEditorBridgeProvider>
         {/* Header */}
@@ -680,7 +680,7 @@ export function ChatOverlay() {
               {pendingUserInputs.map((req) => (
                 <UserInputRequestCard key={req.requestId} request={req} onSubmit={submitUserInput} />
               ))}
-              {/* M05: queued messages as grey "ghost" bubbles — pending delivery
+              {/* M53: queued messages as grey "ghost" bubbles — pending delivery
                   (mid-turn push or after-turn merge). Distinct from sent (solid) bubbles. */}
               {queuedMessages.map((q) => (
                 <QueuedMessageBubble key={q.id} text={q.text} onCancel={() => cancelQueued(q.id)} />
@@ -695,8 +695,10 @@ export function ChatOverlay() {
         {/* Sticky TODO snapshot (main agent only) */}
         <CurrentTodoList items={currentTodoItems} />
 
-        {/* Input — hidden while a user_input_request is pending (answer via the card instead) */}
-        {pendingUserInputs.length === 0 && !systemPromptViewOpen && (
+        {/* Input — hidden while a user_input_request is pending (answer via the card instead).
+            The system-prompt preview swaps only the message list, so the composer stays:
+            sending from it closes the preview and returns to the stream. */}
+        {pendingUserInputs.length === 0 && (
         <div className="p-2.5 relative" style={{ borderTop: '1px solid var(--c-hair)' }}>
           {/* 0.2.87: the context-link bar never renders in an `ask` thread — that type has no
               artifact, even when the peer left a plan behind (plan-tools are mounted there). */}
@@ -786,7 +788,7 @@ export function ChatOverlay() {
                 </span>
               </div>
             )}
-            {/* M05: compact queue counter — full pending messages render as grey
+            {/* M53: compact queue counter — full pending messages render as grey
                 ghost bubbles in the conversation; this is a count + clear-all. */}
             {queuedMessages.length > 0 && (
               <div className="flex items-center gap-1.5 px-2 pt-1.5 flex-wrap">
@@ -823,7 +825,7 @@ export function ChatOverlay() {
             <div className="chat-input-wrap px-2.5 pt-1.5 pb-1" style={{ color: 'var(--c-ink)' }}>
               <ChatInputEditor
                 ref={inputRef}
-                // M05: composer stays unlocked during a live turn — Send/↵ queues.
+                // M53: composer stays unlocked during a live turn — Send/↵ queues.
                 placeholder={
                   isBusy
                     ? 'Queue a message…'
@@ -881,7 +883,7 @@ export function ChatOverlay() {
                 <ChevronDown size={10} />
               </button>
               <span className="flex-1" />
-              {/* M05: during a live turn show Stop + a queueing Send (↵ also queues). */}
+              {/* M53: during a live turn show Stop + a queueing Send (↵ also queues). */}
               {isBusy && (
                 <button
                   onClick={abort}
@@ -1009,8 +1011,11 @@ function ThreadDropdown({ threads, activeId, hasMore, loadingMore, onSelect, onC
       </div>
       <div className="max-h-80 overflow-auto nice-scroll py-1" onScroll={onScroll}>
         {threads.length === 0 && (
-          <div className="px-3 py-3 text-[12px]" style={{ color: 'var(--c-muted)' }}>
-            No previous conversations.
+          <div className="px-3 py-3 text-[12px] flex items-center gap-2" style={{ color: 'var(--c-muted)' }}>
+            <span className="flex-1">No previous conversations</span>
+            <button onClick={onCreate} className="hover:underline" style={{ color: 'var(--c-accent)' }}>
+              Start new
+            </button>
           </div>
         )}
         {threads.map((t) => {
@@ -1300,7 +1305,7 @@ function ModelSettingsPopover({ models, defaultModel, model, setModel, thinking,
             </div>
             <div className="text-[10.5px]" style={{ color: 'var(--c-subtle)' }}>
               {planModeEnforceable
-                ? "Agent proposes, doesn't modify"
+                ? 'Narrows the tools the agent gets — a strong signal, not a read-only guarantee'
                 : planModeEnforceable === undefined
                   ? 'Checking availability…'
                   : 'Unavailable — not enforceable on this architecture'}

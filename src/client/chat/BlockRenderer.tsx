@@ -391,7 +391,7 @@ function UserText({ text, annotations, planMode }: UserTextProps) {
           <div
             className="flex items-center gap-1 justify-end mb-1 text-[10.5px] font-mono uppercase tracking-wider"
             style={{ color: 'var(--c-muted)' }}
-            title="Sent in Plan Mode — agent proposes, doesn't modify"
+            title="Sent in Plan Mode — the agent's tools were narrowed (a strong signal, not a read-only guarantee)"
           >
             <ClipboardList size={10} />
             <span>plan mode</span>
@@ -410,7 +410,7 @@ function UserText({ text, annotations, planMode }: UserTextProps) {
 
 // --- Queued (pending) user message ---
 //
-// M05: a message typed during a live turn that is waiting in the queue (mid-turn
+// M53: a message typed during a live turn that is waiting in the queue (mid-turn
 // push or after-turn merged dispatch). Mirrors the sent `UserText` bubble shape
 // but rendered as a dimmed/dashed "ghost" so the contrast with delivered
 // (solid) messages is immediate. Replaced by a solid bubble once delivered.
