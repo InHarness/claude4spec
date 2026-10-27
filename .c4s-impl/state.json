@@ -1061,7 +1061,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "u11-consistency-junction/p1-domain",
@@ -1073,20 +1073,22 @@
             "section:5tfhxy2p",
             "section:z5cl1q4o"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 1,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "6bded41faceae02fccb4af854f78d82ffe23bcf6",
+      "baseCommit": "6bded41faceae02fccb4af854f78d82ffe23bcf6",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": [],
+      "lastBlocking": []
     },
     {
       "id": "u12-prompt-block-templates",
