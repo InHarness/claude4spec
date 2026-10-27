@@ -8,6 +8,15 @@
  * versions. The manifest carries no project identity field: the project appears
  * only in the addresses of overlay entries.
  *
+ * 2.1.57 (M13 `m13actv0`, M33 `j1jk3ykt` / `9g96q3pp`): type activation is the
+ * second condition of an entry. `config.entities` is one activation gate for the
+ * backend and the frontend, so a plugin that contributes entity types is
+ * announced only when at least one of its types is active in the project; a
+ * partly disabled plugin is announced and the client mounts only the modules of
+ * its active types. A plugin without entity types is not subject to the filter
+ * (like commands and subagents, `m13plset`). The filter is the host's: the
+ * contract a plugin sees does not change.
+ *
  * `importMap` is an informational copy of the map the server injects into the
  * page (`injectImportMap` in `server/index.ts`): the host's peer shims and both
  * runtime specifiers, with no plugin entries — a plugin entry is imported from
@@ -56,11 +65,33 @@ function toEntry(src: FrontendSource, projectId: string): PluginFrontendEntry {
   };
 }
 
-/** Build the boot manifest of project `projectId` from its effective frontend pool. */
-export function buildFrontendManifest(projectId: string, pool: FrontendPool = {}): FrontendManifestResponse {
+/** The project's type activation, as the manifest's second condition reads it. */
+export interface ManifestActivation {
+  /** The entity types the plugin of `src` contributed (its load record's `contributedTypes`). */
+  typesOf: (src: FrontendSource) => readonly string[];
+  /** Whether `type` is active in the project's `config.entities`. */
+  isActive: (type: string) => boolean;
+}
+
+/**
+ * The activation condition of one plugin: without entity types it always holds;
+ * with them, at least one must be active.
+ */
+export function passesActivation(types: readonly string[], isActive: (type: string) => boolean): boolean {
+  return types.length === 0 || types.some(isActive);
+}
+
+/** Build the boot manifest of project `projectId` from its effective frontend pool and type activation. */
+export function buildFrontendManifest(
+  projectId: string,
+  pool: FrontendPool,
+  activation: ManifestActivation,
+): FrontendManifestResponse {
   return {
     hostApiVersion: HOST_API_VERSION,
     importMap: buildImportMap(),
-    plugins: effectiveFrontendSources(pool).map((src) => toEntry(src, projectId)),
+    plugins: effectiveFrontendSources(pool)
+      .filter((src) => passesActivation(activation.typesOf(src), activation.isActive))
+      .map((src) => toEntry(src, projectId)),
   };
 }

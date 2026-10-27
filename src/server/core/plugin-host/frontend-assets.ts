@@ -23,7 +23,10 @@
  *   • Manifest filter. A source is admitted only when its BACKEND has status
  *     `loaded` after the `hostApiVersion` / `engines` gate — one rule for all three
  *     sources. A package without a backend entry never reaches `loaded`, so it
- *     never announces a frontend (no frontend-only plugins).
+ *     never announces a frontend (no frontend-only plugins). The second condition
+ *     of a manifest entry — type activation in `config.entities` (2.1.57, M13
+ *     `m13actv0`) — is the manifest builder's (`frontend-manifest.ts`), applied
+ *     to this effective pool; the asset routes do not consult it.
  *   • Precedence on a name collision, counted among backend-`loaded` plugins only:
  *     overlay over npm package over envelope. An overlay whose backend is `loaded`
  *     shadows the npm package even without a frontend entry of its own. The
@@ -256,9 +259,22 @@ export interface FrontendPool {
   envelopes?: { list: readonly BuiltinEnvelope[]; loaded: ReadonlySet<string> };
 }
 
+/** The part of a `PluginLoadRecord` the serving layer reads. */
+export interface FrontendLoadRecord {
+  package: string;
+  status: string;
+  /** Entity types the package contributed (present on `loaded` records). */
+  contributedTypes?: readonly string[];
+}
+
 /** The `loaded` ids of a list of load records. */
-export function loadedRecordKeys(records: ReadonlyArray<{ package: string; status: string }>): Set<string> {
+export function loadedRecordKeys(records: ReadonlyArray<FrontendLoadRecord>): Set<string> {
   return new Set(records.filter((r) => r.status === 'loaded').map((r) => r.package));
+}
+
+/** The entity types each `loaded` record contributed, by load-record id. */
+export function loadedRecordTypes(records: ReadonlyArray<FrontendLoadRecord>): Map<string, readonly string[]> {
+  return new Map(records.filter((r) => r.status === 'loaded').map((r) => [r.package, r.contributedTypes ?? []]));
 }
 
 /**
@@ -267,7 +283,7 @@ export function loadedRecordKeys(records: ReadonlyArray<{ package: string; statu
  * list and the servable built-in envelopes.
  */
 export interface FrontendBaseDeps {
-  pluginRecords: ReadonlyArray<{ package: string; status: string }>;
+  pluginRecords: ReadonlyArray<FrontendLoadRecord>;
   workspacePackages?: readonly string[];
   envelopes?: readonly BuiltinEnvelope[];
   /** Test seam: how a workspace package's root is found (default: `import.meta.resolve`). */

@@ -155,7 +155,7 @@ import { projectPluginsDir, type PluginImporter } from '../core/plugin-host/over
 import { buildBasePluginPackages } from '../routes/plugins.js';
 import { logRefRegistrationWarnings, overlayRefWarnings } from '../core/plugin-host/ref-warnings.js';
 import { projectPluginsFrontendRouter } from '../routes/plugins-project.js';
-import { loadedRecordKeys, type WorkspaceRootResolver } from '../core/plugin-host/frontend-assets.js';
+import type { WorkspaceRootResolver } from '../core/plugin-host/frontend-assets.js';
 import type { BuiltinEnvelope } from '../core/plugin-host/builtin-envelopes.js';
 import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import type { ActiveAdapter, PendingInput } from '../routes/agent-turn.js';
@@ -1271,13 +1271,15 @@ async function buildInner(
       projectId,
       cwd,
       isTrusted: () => registry.getProjectTrust(workspace, projectId) === true,
-      overlayLoaded: loadedRecordKeys(overlayRecords),
+      overlayRecords,
       base: {
         pluginRecords: deps.pluginRecords,
         workspacePackages: deps.frontendBase?.workspacePackages,
         envelopes: deps.frontendBase?.envelopes,
         resolveWorkspaceRoot: deps.frontendBase?.resolveWorkspaceRoot,
       },
+      // M13 `m13actv0`: one activation gate for the backend and the frontend.
+      isTypeActive: (type) => pluginHost.isActive(type),
     }),
   );
   router.use(

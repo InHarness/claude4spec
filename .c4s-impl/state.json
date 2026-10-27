@@ -618,7 +618,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "u05-frontend-activation-gate/p1-l2-l11",
@@ -631,20 +631,22 @@
             "section:j1jk3ykt",
             "section:9g96q3pp"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 1,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "9ae39a2cade116a8b1497a7c1bb2fc48aee73939",
+      "baseCommit": "9ae39a2cade116a8b1497a7c1bb2fc48aee73939",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": [],
+      "lastBlocking": []
     },
     {
       "id": "u08-off-loopback-auth",

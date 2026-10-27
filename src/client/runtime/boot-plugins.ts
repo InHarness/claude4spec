@@ -25,6 +25,13 @@
  * imported in this tab is never imported a second time: when a refetched
  * manifest changes it, or a hot-reload rebuilt it, the document reloads once
  * the editors have nothing unsaved (`document-reload.ts`).
+ *
+ * 2.1.57 (M13 `m13actv0`): `config.entities` is one activation gate for the
+ * backend and the frontend. The client gets the project's active types
+ * (`seedPluginActivation`, `GET /api/_meta/entities`) and `mountFrontend` mounts
+ * only their modules — the boot's mount waits for that list, so a manifest that
+ * answers first cannot mount a disabled type. The manifest itself announces a
+ * plugin contributing entity types only when one of them is active.
  */
 
 import { metaApi, pluginsApi } from '../lib/api.js';
@@ -44,6 +51,35 @@ import type { FrontendManifestResponse } from '../../shared/plugin-host/frontend
  * can re-mount routes onto the SAME router instance.
  */
 let activeRouter: AppRouter | null = null;
+
+/**
+ * The project's activation list, seeded once at startup. The boot's
+ * `mountFrontend` awaits it; until `seedPluginActivation` runs it is settled.
+ */
+let activationSeeded: Promise<void> = Promise.resolve();
+
+/**
+ * Seed the client host's activation from `GET /api/_meta/entities` — fired at
+ * startup from `main.tsx`, before the plugin boot. Failure is non-fatal: the host
+ * falls back to "all available active". A document without a project
+ * (`PROJECT_ID = ''`, e.g. `/welcome`) has no `/api/projects/<id>` prefix to ask
+ * and takes the same fallback at once.
+ */
+export function seedPluginActivation(): Promise<void> {
+  if (!PROJECT_ID) {
+    clientPluginHost.applyActivation(null);
+    activationSeeded = Promise.resolve();
+  } else {
+    activationSeeded = metaApi.entities().then(
+      (state) => clientPluginHost.applyActivation(state),
+      (err) => {
+        console.warn('[plugin-host] failed to fetch /api/_meta/entities — assuming all active', err);
+        clientPluginHost.applyActivation(null);
+      },
+    );
+  }
+  return activationSeeded;
+}
 
 function injectCssOnce(href: string): void {
   if (document.querySelector(`link[rel="stylesheet"][href="${CSS.escape(href)}"]`)) return;
@@ -108,7 +144,9 @@ async function loadManifestPlugins(manifest: FrontendManifestResponse, router: A
       console.warn(`[plugin-host] failed to import plugin "${plugin.name}" (${plugin.entry})`, err);
     }
   }
-  // Pin editor extensions + XML embeds + page routes for everything that registered.
+  // Pin editor extensions + XML embeds + page routes of the ACTIVE modules only:
+  // the activation list must be in before the mount (M13 `m13actv0`).
+  await activationSeeded;
   mountFrontend(router, clientPluginHost.listEntities());
 }
 
