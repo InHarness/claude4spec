@@ -131,6 +131,8 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
           // surface, with the outcome returned in `gitSync` (`null` when the
           // `commitOnRelease` gate did not let it through — git off, no repo,
           // detached/unborn HEAD in `current` mode).
+          // ASSUMPTION:dev-0002 — no push here: the release_create record answers
+          // `gitSync` only; push on release (`gitPush`) rides POST /api/releases.
           return { release: created, gitSync: await deps.gitService.commitOnRelease(created) };
         });
         return ok({ ...mcpRelease(release), gitSync });

@@ -11,7 +11,7 @@ import { EFFECT, readKey, type ElementContext, type SettingsContribution } from 
 
 const K = {
   enabled: ['git', 'enabled'],
-  syncPushOnPush: ['git', 'syncPushOnPush'],
+  syncPushOnRelease: ['git', 'syncPushOnRelease'],
   mode: ['git', 'commitTarget', 'mode'],
   branch: ['git', 'commitTarget', 'branch'],
   template: ['git', 'commitTarget', 'template'],
@@ -22,9 +22,10 @@ const K = {
 /**
  * 0.2.113 — the git-sync module's card. One element, three states: git off
  * (an empty state, plus the amber regression banner when a stale
- * `syncPushOnPush: true` survives from before the master switch), no repository
+ * `syncPushOnRelease: true` survives from before the master switch), no repository
  * detected, and a detected repository with its settings. Everything saves through
- * the card's [Save]; a change acts on the next release, pull or push.
+ * the card's [Save]; a change acts on the next release or pull (2.1.55, M28
+ * 4cp5vqa6: the push is a step of creating a release, not an action of its own).
  */
 export const GIT_SETTINGS: SettingsContribution = {
   cards: [
@@ -53,7 +54,7 @@ export const GIT_SETTINGS: SettingsContribution = {
 
 function GitIntegrationElement({ config, draft }: ElementContext) {
   const enabled = Boolean(draft.get(K.enabled));
-  const syncPushOnPush = Boolean(draft.get(K.syncPushOnPush));
+  const syncPushOnRelease = Boolean(draft.get(K.syncPushOnRelease));
   const mode = (draft.get(K.mode) as 'current' | 'named' | 'new' | undefined) ?? 'current';
   const branch = (draft.get(K.branch) as string | null | undefined) ?? '';
   const template = (draft.get(K.template) as string | null | undefined) ?? '';
@@ -107,7 +108,7 @@ function GitIntegrationElement({ config, draft }: ElementContext) {
         hint="When enabled, creating a release or pulling unreleased changes automatically git commits the pages, entities, releases and config."
       />
 
-      {!enabled && syncPushOnPush ? (
+      {!enabled && syncPushOnRelease ? (
         <div
           className="rounded-md px-3 py-2 text-[12px]"
           style={{ background: 'rgba(168, 112, 51, 0.18)', color: '#a87033' }}
@@ -140,11 +141,11 @@ function GitIntegrationElement({ config, draft }: ElementContext) {
 
           <div className="flex flex-col gap-3 pt-3" style={{ borderTop: '1px solid var(--c-hair)' }}>
             <Toggle
-              checked={syncPushOnPush}
+              checked={syncPushOnRelease}
               disabled={disabled}
-              onChange={(next) => draft.set(K.syncPushOnPush, next)}
-              title="Push on remote push"
-              hint="After a release is pushed to the remote server, push the current branch to its upstream."
+              onChange={(next) => draft.set(K.syncPushOnRelease, next)}
+              title="Push to git remote on release"
+              hint="When you create a release, also git push the release's target branch."
             />
           </div>
 

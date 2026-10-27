@@ -71,12 +71,12 @@ import {
   acceptShadow as acceptShadowImpl,
   AcceptedReleaseCommittedError,
   parseShadowAcceptRequest,
+  type AcceptedShadowGitResults,
   type AcceptReleaseVariant,
   type AcceptShadowRuntime,
 } from './release-accept-shadow.js';
 import { releaseMutexFor } from './release-mutex.js';
 import { indexReleaseFile, unindexReleaseFile } from './release-indexer.js';
-import type { GitCommitResult } from '../../shared/git.js';
 
 /**
  * 0.1.122: release names reserved by the `:to`/`:from` diff-route sentinel
@@ -481,21 +481,6 @@ export class ReleaseService {
     return { ...this.toRelease(row), countBreakdown: this.computeCountBreakdown(row.id) };
   }
 
-  /**
-   * 0.1.125: absolute path of `releaseId`'s identity file, for
-   * `gitService.resolveReleaseCommit()` — same computation `resolveReignRef`
-   * already does inline for the NEXT release's marker, exposed here for a
-   * caller that needs ITS OWN release's marker. `null` when no `ReleaseFileStore` is
-   * wired, the release doesn't exist, or it has no slug (legacy release,
-   * predates the identity-file feature).
-   */
-  getReleaseFilePath(releaseId: number): string | null {
-    if (!this.releaseStore) return null;
-    const row = this.findReleaseRowById(releaseId);
-    if (!row?.slug) return null;
-    return nodePath.join(this.releaseStore.root, `${row.slug}.json`);
-  }
-
   // ─── Mutations ───────────────────────────────────────────────────────────
 
   /**
@@ -701,9 +686,9 @@ export class ReleaseService {
    * 2.1.47 (M17 `aae2vgem`, spec-operation `accept-shadow`): accept the shadow
    * `body.ref` as a new release — `acceptShadow` in `release-accept-shadow.ts`
    * over the M28 primitives, the M40 runtime and the acceptance variant of
-   * `createRelease`. Resolves to the release with `gitSync`.
+   * `createRelease`. Resolves to the release with `gitSync` and `gitPush: null`.
    */
-  async acceptShadow(body: unknown): Promise<ReleaseDetail & { gitSync: GitCommitResult | null }> {
+  async acceptShadow(body: unknown): Promise<ReleaseDetail & AcceptedShadowGitResults> {
     const gitService = this.gitService;
     const entityStore = this.entityStore;
     const runtime = this.acceptRuntime;

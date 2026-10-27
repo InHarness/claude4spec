@@ -7,9 +7,11 @@
  *
  * `detect()` answers "is any root of kind `pages` inside a worktree, and what does
  * it look like". `commit()` / `push()` perform the two sync actions. `commitOnRelease()`
- * / `pushOnPush()` are the gated entry points the hooks call: they read the
- * (hot-reloaded) config flag, detect the repo, and either act or return `null`
- * (flag off OR no repo). `commitPull()` is the 0.1.124 sibling of
+ * / `pushOnRelease()` are the gated entry points the release channel calls: they
+ * read the (hot-reloaded) config switches and either act or return `null`
+ * (gate not met). 2.1.55 (M28 sw1u84nn): `pushOnRelease(commit)` takes the
+ * release commit's result and pushes the branch the commit landed on — no
+ * HEAD-based branch resolution. `commitPull()` is the 0.1.124 sibling of
  * `commitOnRelease()` for the "pull unreleased changes" flow — gated the same
  * way, but always returns a `GitCommitResult` (never `null`) since its caller
  * (`releaseService.updateRelease`) needs a result to decide whether to assign
@@ -259,7 +261,18 @@ export class GitService {
   private readonly pageRootDirs: string[];
 
   /**
-   * @param cwd                project root (holds `.claude4spec/config.json`).
+   * 2.1.55 (M28 sw1u84nn): the release commits that CREATED their branch in
+   * this run (commit target `new`), each mapped to the base branch it grew
+   * from — set by `commitToNewBranch` from what it actually did, read by
+   * `pushOnRelease` to set the new branch's upstream. Internal: keyed by the
+   * result object, so nothing leaks into the serialized `gitSync`, and the
+   * push never re-derives it from a config or HEAD that may have changed
+   * since the commit.
+   */
+  private readonly createdBranchBases = new WeakMap<GitCommitResult, string>();
+
+  /**
+   * @param cwd               project root (holds `.claude4spec/config.json`).
    * @param pageRootDirs       2.1.8: dirs of the roots of KIND `pages` (absolute
    *                           or cwd-relative) — the probe locations for repo
    *                           detection (a page root may live in a sub-worktree)
@@ -601,10 +614,13 @@ export class GitService {
 
     try {
       await this.git(['commit', '-m', message], root);
-      return { status: 'committed' };
     } catch (err) {
       return { status: 'error', message: errMessage(err), recovery: this.buildRecovery(operation, err, root, failureKind, { commitMessage: message }) };
     }
+    // 2.1.55 (M28 contract): a committed result names its commit and the branch
+    // it landed on — the current one — so `pushOnRelease` can push it.
+    const sha = (await this.git(['rev-parse', 'HEAD'], root).catch(() => null))?.stdout.trim();
+    return { status: 'committed', ...(sha ? { sha } : {}), branch: status.branch, switched: false };
   }
 
   /**
@@ -674,10 +690,7 @@ export class GitService {
     // temp-index `commit-tree -p <tip>` would lose the second parent. `branch`
     // = the current branch, never a switch; a failure is `merge-open`.
     if (status.detected && status.rootPath && (await this.mergeHeadOpen(status.rootPath))) {
-      const result = await this.stageAndCommit(status, message, 'commit-on-release', 'merge-open');
-      return result.status === 'committed' && status.branch
-        ? { ...result, branch: status.branch, switched: false }
-        : result;
+      return this.stageAndCommit(status, message, 'commit-on-release', 'merge-open');
     }
 
     let result: GitCommitResult;
@@ -692,7 +705,6 @@ export class GitService {
         // content matches the commit exactly) — this produces the identical
         // outcome (a commit lands on `status.branch`) via the safe path.
         result = await this.stageAndCommit(status, message, 'commit-on-release');
-        if (result.status === 'committed') result = { ...result, branch: status.branch };
       } else {
         result = await this.commitToNamedBranch(status, message, commitTarget.branch);
       }
@@ -721,7 +733,10 @@ export class GitService {
       if (!switched) {
         return { status: 'error', branch: result.branch, recovery };
       }
-      return { ...result, switched: true };
+      const switchedResult: GitCommitResult = { ...result, switched: true };
+      const createdFrom = this.createdBranchBases.get(result);
+      if (createdFrom) this.createdBranchBases.set(switchedResult, createdFrom);
+      return switchedResult;
     }
     return result;
   }
@@ -802,7 +817,9 @@ export class GitService {
       suffix += 1;
     }
 
-    return this.commitOntoTipViaTempIndex(root, message, baseTipSha, finalName);
+    const result = await this.commitOntoTipViaTempIndex(root, message, baseTipSha, finalName);
+    if (result.status === 'committed') this.createdBranchBases.set(result, baseBranch);
+    return result;
   }
 
   /**
@@ -931,7 +948,7 @@ export class GitService {
     }
     const commitSha = (await this.git(['commit-tree', treeSha, '-p', parentSha, '-m', message], root)).stdout.trim();
     await this.git(['update-ref', `refs/heads/${targetBranch}`, commitSha], root);
-    return { status: 'committed', branch: targetBranch };
+    return { status: 'committed', sha: commitSha, branch: targetBranch, switched: false };
   }
 
   /**
@@ -1003,7 +1020,7 @@ export class GitService {
    * alongside a NEW release-identity-file write, so no new marker file ever
    * lands in this commit; staging the `releases` root here is harmless. Gate:
    * `config.git.enabled` + a detected repo with a branch (mirrors
-   * `commitOnRelease`/`pushOnPush`) — on gate failure returns `{ status:
+   * `commitOnRelease`) — on gate failure returns `{ status:
    * 'skipped' }` rather than `null` (unlike the other two hooks, this method
    * always returns a result, never throws).
    */
@@ -1021,90 +1038,6 @@ export class GitService {
     });
     if (result.status === 'committed') this.emitStatusChanged(true);
     return result;
-  }
-
-  /**
-   * The push EXECUTION — reads no config switch (`pushOnPush()` is the gated
-   * entry). Push a branch to its remote. Assumes a repo is detected.
-   * `'nothing-to-push'` when git reports "Everything up-to-date", `'skipped'`
-   * on detached HEAD, `'error'` on a missing upstream or any other failure.
-   *
-   * 0.1.125: optional `branch` — when given and it differs from the current
-   * branch, pushes it explicitly (`git push origin <branch>`, the remote
-   * name this codebase already assumes elsewhere — see `detect()`'s `git
-   * remote get-url origin`). Omitted (or equal to the current branch): the
-   * original bare `git push` (current branch's configured upstream) —
-   * unchanged default behavior. An EXPLICIT `branch` has nothing to do with
-   * current HEAD, so the detached-HEAD skip only applies when there's no
-   * explicit branch to push — otherwise a caller resolving a specific branch
-   * (e.g. the branch actually carrying a release's marker commit) would be
-   * silently ignored whenever the
-   * currently checked-out ref happened to be detached for any unrelated
-   * reason.
-   */
-  async push(branch?: string): Promise<GitPushResult> {
-    // 2.1.10 (M28 ezudoqef): the push of a release push WAITS for the lock.
-    const lock = await this.repoLock();
-    const result = await lock.run(() => this.pushUnlocked(branch));
-    // A push moves only remote-tracking refs — never HEAD.
-    if (result.status === 'pushed') this.emitStatusChanged(false);
-    return result;
-  }
-
-  private async pushUnlocked(branch?: string): Promise<GitPushResult> {
-    const status = await this.detect();
-    if (!status.detected || !status.rootPath) return { status: 'skipped' };
-
-    const explicit = !!branch && branch !== status.branch;
-    if (!explicit && !status.branch) return { status: 'skipped', message: 'detached HEAD' };
-    const targetBranch = branch ?? status.branch!;
-    const args = explicit ? ['push', 'origin', branch!] : ['push'];
-
-    try {
-      // 2.1.10 (M28 h8tvjbdd): non-interactive, time-limited.
-      const { stdout, stderr } = await this.gitNetwork(args, status.rootPath);
-      if (/Everything up-to-date/i.test(`${stdout}\n${stderr}`)) {
-        return { status: 'nothing-to-push', branch: targetBranch };
-      }
-      return { status: 'pushed', branch: targetBranch };
-    } catch (err) {
-      // 2.1.10 (M28 sw1u84nn): a non-fast-forward rejection is told apart from
-      // other push failures — the recovery window offers `sync()` for it.
-      const kind = isNonFastForwardRejection(err) ? 'non-fast-forward' : undefined;
-      return {
-        status: 'error',
-        message: errMessage(err),
-        recovery: this.buildRecovery('push', err, status.rootPath, kind),
-      };
-    }
-  }
-
-  /**
-   * 0.1.125 read-only: local branch(es) containing `sha`
-   * (`git branch --contains <sha>`). Used by the push step to find the
-   * branch that actually carries a release's marker commit, so push targets
-   * that branch rather than blind current HEAD. Prefers the current branch
-   * when it's among the matches (stability); otherwise the first match.
-   * `null` on no match, no repo, or any failure.
-   */
-  async branchContainingCommit(sha: string): Promise<string | null> {
-    const status = await this.detect();
-    if (!status.detected || !status.rootPath) return null;
-    try {
-      const { stdout } = await this.git(
-        ['branch', '--contains', sha, '--format=%(refname:short)'],
-        status.rootPath,
-      );
-      const branches = stdout
-        .split('\n')
-        .map((s) => s.trim())
-        .filter(Boolean);
-      if (branches.length === 0) return null;
-      if (status.branch && branches.includes(status.branch)) return status.branch;
-      return branches[0]!;
-    } catch {
-      return null;
-    }
   }
 
   /**
@@ -1143,22 +1076,99 @@ export class GitService {
   }
 
   /**
-   * Gated push ENTRY (2.1.14 M28 sw1u84nn). `null` — never `'skipped'` — when
-   * the git master switch is off, push-sync is off, no repo is detected, or
-   * HEAD has no branch (detached/unborn) — a named HEAD is required even when
-   * the caller passes an explicit `branch`; otherwise the `push()` result.
-   * Reads config per-call (hot-reload).
+   * The push EXECUTION — reads no config switch (`pushOnRelease()` is the gated
+   * entry). Pushes `branch` (default: the current branch) to its upstream —
+   * `git push <remote> refs/heads/<branch>:<upstream ref>`, so a branch other
+   * than HEAD is pushed where it tracks, never blindly the current HEAD
+   * (2.1.55, M28 sw1u84nn). Waits for the repository lock. Never throws:
+   * `'nothing-to-push'` when git reports "Everything up-to-date", `'skipped'`
+   * with no repository or on detached HEAD without an explicit `branch`,
+   * `'error'` (with `recovery`, operation `push`) on a missing upstream, a
+   * network failure or a rejection — `recovery.kind: 'non-fast-forward'` when
+   * the remote has commits the branch lacks.
    *
-   * 0.1.125: optional `branch` — forwarded to `push()` so a caller that
-   * resolves the branch actually carrying the release's marker commit can
-   * direct the push there instead of blind current HEAD.
+   * `opts.setUpstreamFrom` — a branch created by this run (commit target
+   * `new`) has no upstream yet: it is pushed with `git push -u <remote>
+   * <branch>`, `<remote>` being the remote of the upstream of the named base
+   * branch; a base without an upstream is an `'error'` like any missing upstream.
    */
-  async pushOnPush(branch?: string): Promise<GitPushResult | null> {
+  async push(branch?: string, opts: { setUpstreamFrom?: string } = {}): Promise<GitPushResult> {
+    // 2.1.10 (M28 ezudoqef): a push driven by a release WAITS for the lock.
+    const lock = await this.repoLock();
+    const result = await lock.run(() => this.pushUnlocked(branch, opts.setUpstreamFrom));
+    // A push moves only remote-tracking refs — never HEAD.
+    if (result.status === 'pushed') this.emitStatusChanged(false);
+    return result;
+  }
+
+  private async pushUnlocked(branch: string | undefined, setUpstreamFrom: string | undefined): Promise<GitPushResult> {
+    // The root and (without an explicit branch) the current branch only — not
+    // `detect()`'s remote probe and working-tree scan, which a push never reads.
+    const root = await this.probeRoot();
+    if (!root) return { status: 'skipped' };
+    const target = branch ?? (await this.currentBranch(root));
+    if (!target) return { status: 'skipped', message: 'detached HEAD' };
+
+    let args: string[];
+    const upstream = await this.branchUpstream(root, target);
+    if (upstream) {
+      args = ['push', upstream.remote, `refs/heads/${target}:${upstream.merge}`];
+    } else if (setUpstreamFrom) {
+      const baseUpstream = await this.branchUpstream(root, setUpstreamFrom);
+      if (!baseUpstream) {
+        return this.pushRefused(root, target, `fatal: The base branch '${setUpstreamFrom}' has no upstream branch, so '${target}' has no remote to be pushed to.`);
+      }
+      args = ['push', '-u', baseUpstream.remote, target];
+    } else {
+      return this.pushRefused(root, target, `fatal: The branch '${target}' has no upstream branch.`);
+    }
+
+    try {
+      // 2.1.10 (M28 h8tvjbdd): non-interactive, time-limited.
+      const { stdout, stderr } = await this.gitNetwork(args, root);
+      if (/Everything up-to-date/i.test(`${stdout}\n${stderr}`)) {
+        return { status: 'nothing-to-push', branch: target };
+      }
+      return { status: 'pushed', branch: target };
+    } catch (err) {
+      // 2.1.10 (M28 sw1u84nn): a non-fast-forward rejection is told apart from
+      // other push failures — the recovery window offers `sync()` for it.
+      const kind = isNonFastForwardRejection(err) ? 'non-fast-forward' : undefined;
+      return {
+        status: 'error',
+        branch: target,
+        message: errMessage(err),
+        recovery: this.buildRecovery('push', err, root, kind),
+      };
+    }
+  }
+
+  /** A push that cannot start — no upstream to push to: an `'error'` in git's own words, nothing pushed. */
+  private pushRefused(root: string, branch: string, stderr: string): GitPushResult {
+    const err = Object.assign(new Error(stderr), { stderr });
+    return { status: 'error', branch, message: stderr, recovery: this.buildRecovery('push', err, root) };
+  }
+
+  /**
+   * Gated push ENTRY (2.1.55, M28 sw1u84nn). `null` — never `'skipped'` — when
+   * the git master switch is off, `git.syncPushOnRelease` is off, or the
+   * release commit `commit` is not `committed` (`nothing-to-commit`,
+   * `skipped`, `error`, or `null` — no commit ran); createRelease passes it on
+   * verbatim as `gitPush`. A named HEAD is not a condition: the branch comes
+   * from the commit (`commit.branch`), never from HEAD. Otherwise the `push()`
+   * result for `commit.branch`. A branch created by this run (commit target
+   * `new`) gets its upstream set from the base branch's upstream remote — the
+   * fact and the base travel with `commit` itself (recorded by
+   * `commitToNewBranch`), never re-derived from the config or HEAD at push
+   * time. Reads config per call (hot-reload) for the gate only. Called by the release channel after
+   * the release commit has released the repository lock — never under it.
+   */
+  async pushOnRelease(commit: GitCommitResult | null): Promise<GitPushResult | null> {
     const config = readConfig(this.cwd);
-    if (!config.git.enabled || !config.git.syncPushOnPush) return null;
-    const status = await this.detect();
-    if (!status.detected || !status.branch) return null;
-    return this.push(branch);
+    if (!config.git.enabled || !config.git.syncPushOnRelease) return null;
+    if (commit?.status !== 'committed' || !commit.branch) return null;
+    const setUpstreamFrom = this.createdBranchBases.get(commit);
+    return this.push(commit.branch, setUpstreamFrom ? { setUpstreamFrom } : {});
   }
 
   // --- 2.1.47 (M28 es9w55mr): merging into the index for the shadow acceptance ---
@@ -1538,7 +1548,7 @@ export class GitService {
         ? 'committing the spec on release'
         : operation === 'pull'
           ? 'committing pulled changes into the latest release'
-          : 'pushing the current branch to its remote';
+          : 'pushing the release branch to its remote';
     const intentPrompt = [
       `claude4spec's git sync failed while ${opLabel}, in the repository at ${rootPath}.`,
       '',
@@ -2006,18 +2016,25 @@ export class GitService {
   }
 
   /**
-   * The remote the current branch tracks (`branch.<b>.remote`, with
-   * `branch.<b>.merge` set) — `null` when the branch has no upstream. Read from
-   * config rather than `@{upstream}`, which fails until the remote-tracking ref
-   * has been fetched once.
+   * The remote the branch tracks — see {@link branchUpstream}.
    */
   private async upstreamRemote(root: string, branch: string): Promise<string | null> {
+    return (await this.branchUpstream(root, branch))?.remote ?? null;
+  }
+
+  /**
+   * The upstream of `branch`: its remote (`branch.<b>.remote`) and the remote
+   * ref it merges (`branch.<b>.merge`, e.g. `refs/heads/main`) — `null` when
+   * either is unset. Read from config rather than `@{upstream}`, which fails
+   * until the remote-tracking ref has been fetched once.
+   */
+  private async branchUpstream(root: string, branch: string): Promise<{ remote: string; merge: string } | null> {
     const get = (key: string) =>
       this.git(['config', '--get', key], root)
         .then((r) => r.stdout.trim() || null)
         .catch(() => null);
     const [remote, merge] = await Promise.all([get(`branch.${branch}.remote`), get(`branch.${branch}.merge`)]);
-    return remote && merge ? remote : null;
+    return remote && merge ? { remote, merge } : null;
   }
 
   /**

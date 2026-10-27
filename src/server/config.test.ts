@@ -351,7 +351,7 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
       $schemaVersion: 4,
       name: 'X',
       roots: [builtinPagesRoot('pages')],
-      git: { syncCommitOnRelease: true, syncPushOnPush: false },
+      git: { syncCommitOnRelease: true, syncPushOnRelease: false },
     });
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
@@ -360,7 +360,7 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
       log.mockRestore();
     }
     const raw = JSON.parse(fs.readFileSync(configPath(dir), 'utf8'));
-    expect(raw.git).toEqual({ enabled: true, syncPushOnPush: false });
+    expect(raw.git).toEqual({ enabled: true, syncPushOnRelease: false });
     expect(readConfig(dir).git.enabled).toBe(true);
   });
 
@@ -659,7 +659,7 @@ describe('config — central default normalizer (C23, 0.2.8)', () => {
     });
     expect(cfg.git).toEqual({
       enabled: false,
-      syncPushOnPush: false,
+      syncPushOnRelease: false,
       commitTarget: { mode: 'current', branch: null, template: null, base: null },
       switchAfterRelease: false,
     });
@@ -672,7 +672,7 @@ describe('config — central default normalizer (C23, 0.2.8)', () => {
     write({ git: { enabled: true } });
     const cfg = readConfig(dir);
     expect(cfg.git.enabled).toBe(true);
-    expect(cfg.git.syncPushOnPush).toBe(false);
+    expect(cfg.git.syncPushOnRelease).toBe(false);
     expect(cfg.git.commitTarget.mode).toBe('current');
   });
 

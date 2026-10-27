@@ -58,7 +58,7 @@ const CONFIG = {
   },
   git: {
     enabled: false,
-    syncPushOnPush: false,
+    syncPushOnRelease: false,
     commitTarget: { mode: 'current', branch: null, template: null, base: null },
     switchAfterRelease: false,
   },

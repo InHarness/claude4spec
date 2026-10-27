@@ -176,7 +176,7 @@ function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRe
     },
     git: {
       enabled: c.git.enabled,
-      syncPushOnPush: c.git.syncPushOnPush,
+      syncPushOnRelease: c.git.syncPushOnRelease,
       commitTarget: {
         mode: c.git.commitTarget.mode,
         branch: c.git.commitTarget.branch,

@@ -1,0 +1,16 @@
+{
+  "id": "dev-0002",
+  "kind": "clarification",
+  "blocking": false,
+  "address": "u4-push-on-release/w6cocvik",
+  "slugs": [
+    "release",
+    "release-tools-release-create"
+  ],
+  "text": "M17 L2 w6cocvik (2.1.55) says the release channel (\"kanał wydania\") calls gitService.pushOnRelease(gitSync) after commitOnRelease and answers the result in gitPush; the commit paragraph of the same section defines the channel as both the REST route and the MCP tool. The mcp-tool record release-tools-release-create at 2.1.55, however, still returns only gitSync (its `returns`/`sampleReturn` carry no gitPush) and its `logic` ends at \"rozgłoszenie i commit git\" — no push. The dto `release` (REST) carries gitPush. The implementer built the push on the REST channel only (POST /api/releases answers gitPush) and left release_create as its record states: commit, no push, no gitPush field. ASSUMPTION:dev-0002. If agent-created releases should push too, the release_create record needs gitPush in returns/sampleReturn and a push step in logic.",
+  "assumption": "ASSUMPTION:dev-0002 — release_create (MCP) commits but does not push; only POST /api/releases calls pushOnRelease",
+  "unit": "u4-push-on-release",
+  "portion": "u4-push-on-release/p1-l2-l4",
+  "sent": true,
+  "patchPath": "2-1-54-to-2-1-55-u4-push-on-release-w6cocvik-does-mcp-release-create-push-after-the-release-commi.md"
+}

@@ -265,6 +265,6 @@ export const EFFECT = {
   rebuild: 'Applied — the project context will be rebuilt on the next request',
   rebuildResumeBreak:
     'Applied — the project context will be rebuilt on the next request. Existing conversations can no longer be resumed — start a new one to continue.',
-  git: 'Applies from the next release, pull or push.',
+  git: 'Applies from the next release or pull.',
   immediate: 'Applies immediately.',
 } as const;

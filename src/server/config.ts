@@ -137,9 +137,8 @@ export function normalizeSkillConfig(c: Pick<Config, 'skill'>): NormalizedSkillC
 export interface GitSyncConfig {
   /**
    * 0.1.118: master switch for the entire git layer. Absent/missing ⇒ `false`
-   * (opt-in — existing projects with `syncPushOnPush` already `true` lose
-   * push-on-release after upgrading; the Settings UI surfaces an amber banner
-   * for that case). When `false`, ALL git operations no-op and return
+   * (opt-in). When `false`, ALL git operations no-op — the release entries
+   * (`commitOnRelease`, `pushOnRelease`) answer `null`, the rest
    * `status: 'skipped'`; `detect()` may still run.
    *
    * 0.1.124: `enabled` alone now also gates commit-on-release/commit-on-pull —
@@ -150,8 +149,13 @@ export interface GitSyncConfig {
    * project that had commit-on-release keeps it after upgrading.
    */
   enabled?: boolean;
-  /** When on, a successful remote push best-effort `git push`es the current branch. */
-  syncPushOnPush?: boolean;
+  /**
+   * 2.1.55 (M28 dj6r1sam): when on (and `enabled`), creating a release
+   * best-effort `git push`es the branch its release commit landed on. Renamed
+   * from `syncPushOnPush` WITHOUT a migration: a legacy `syncPushOnPush` in
+   * `config.json` is an unknown key — ignored on read, dropped by the next write.
+   */
+  syncPushOnRelease?: boolean;
   /**
    * 0.1.125: where a release commit lands. Absent/missing ⇒
    * `{ mode: 'current', branch: null, template: null, base: null }` (prior
@@ -256,7 +260,7 @@ export interface NormalizedGitCommitTargetConfig {
 
 export interface NormalizedGitSyncConfig {
   enabled: boolean;
-  syncPushOnPush: boolean;
+  syncPushOnRelease: boolean;
   commitTarget: NormalizedGitCommitTargetConfig;
   switchAfterRelease: boolean;
 }
@@ -397,7 +401,7 @@ export function defaults(cwd: string): NormalizedConfig {
     // M28/0.1.118/0.1.125: git layer off unless opted in; commits land on HEAD.
     git: {
       enabled: false,
-      syncPushOnPush: false,
+      syncPushOnRelease: false,
       commitTarget: { mode: 'current', branch: null, template: null, base: null },
       switchAfterRelease: false,
     },
@@ -922,11 +926,13 @@ function validate(raw: unknown): Partial<Config> {
     // is the v4 migration's job (`migrateConfigToV4`), which runs at project
     // activation; this function must stay tolerant since it also runs on every
     // boot, including on files the migration has not reached yet.
-    if ('syncPushOnPush' in gr) {
-      if (typeof gr.syncPushOnPush !== 'boolean') {
-        throw typeError('git.syncPushOnPush', 'boolean', gr.syncPushOnPush);
+    // 2.1.55: `syncPushOnPush` was renamed to `syncPushOnRelease` with no
+    // migration — the old key is not copied, so it is an unknown key.
+    if ('syncPushOnRelease' in gr) {
+      if (typeof gr.syncPushOnRelease !== 'boolean') {
+        throw typeError('git.syncPushOnRelease', 'boolean', gr.syncPushOnRelease);
       }
-      git.syncPushOnPush = gr.syncPushOnPush;
+      git.syncPushOnRelease = gr.syncPushOnRelease;
     }
     // 0.1.125: shape-only validation — semantic checks (non-empty branch/template
     // for the active mode, ref-format) live in the PATCH /api/config route, since

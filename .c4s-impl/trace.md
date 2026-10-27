@@ -10,3 +10,7 @@ file-version → src/server/db/migrations/000_baseline.sql
 release-service-contract → src/server/services/release.ts
 spec-snapshot-entity-row → src/shared/entities.ts
 get-api-releases-nameorid-snapshot → src/server/routes/releases.ts
+git-service-contract → src/server/services/git.ts
+release → src/shared/entities.ts
+get-api-git-status → src/server/routes/git.ts
+get-api-git-branches → src/server/routes/git.ts

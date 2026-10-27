@@ -1,5 +1,5 @@
 import type { TodoItem, UsageStats } from '@inharness-ai/agent-adapters';
-import type { GitCommitStatus, GitSyncField } from './git.js';
+import type { GitCommitStatus, GitPushField, GitSyncField } from './git.js';
 import type { DiffOp } from './plugin-host/data-schema.js';
 
 export type { TodoItem, UsageStats };
@@ -371,6 +371,13 @@ export interface ReleaseDetail extends Release {
  */
 export interface CreateReleaseResponse extends ReleaseDetail {
   gitSync?: GitSyncField<GitCommitStatus>;
+  /**
+   * 2.1.55 (dto `release`, M17 18dkumzo): the best-effort `git push` after the
+   * release commit (`pushOnRelease(gitSync)`), separate from `gitSync`. `null`
+   * when the push gate did not let it through; the shadow acceptance always
+   * answers `null`. `UpdateReleaseResponse` never carries it.
+   */
+  gitPush?: GitPushField;
 }
 
 /**

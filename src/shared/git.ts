@@ -3,7 +3,8 @@
  *
  * Git sync is best-effort: every operation wraps a missing/broken git in a
  * non-throwing result. None of these shapes are persisted — the `gitSync`
- * fields ride the synchronous create/push responses only (see brief 0.1.38).
+ * and `gitPush` fields ride the synchronous create/update-release responses
+ * only (see brief 0.1.38; 2.1.55 for `gitPush`).
  */
 
 import { slugify } from './slug.js';
@@ -159,21 +160,30 @@ export interface GitErrorRecovery {
 
 export interface GitCommitResult {
   status: GitCommitStatus;
+  /** 2.1.55 (M28 contract): SHA of the release commit; populated on `status: 'committed'`. */
+  sha?: string;
   message?: string;
   /** Present only when `status === 'error'`. */
   recovery?: GitErrorRecovery;
   /**
    * 0.1.125: branch the commit actually landed on (or was targeting when a
-   * post-commit switch failed). Populated on `status: 'committed'`, and also
+   * post-commit switch failed). Populated on `status: 'committed'` in every
+   * mode (2.1.55: also `current` — `pushOnRelease` pushes it), and also
    * on `status: 'error'` when the commit itself succeeded but a subsequent
    * `switchAfterRelease` attempt failed (`recovery.kind` is
    * `'switch-failed'`/`'switch-dirty'` in that case — the commit is durable).
    */
   branch?: string;
-  /** 0.1.125: whether HEAD was switched to `branch` after the commit (`config.git.switchAfterRelease`). */
+  /** 0.1.125: whether HEAD was switched to `branch` after the commit (`config.git.switchAfterRelease`); `false` in mode `current`. */
   switched?: boolean;
 }
 
+/**
+ * Result of `gitService.push()` / `pushOnRelease()` (2.1.55, M28 sw1u84nn):
+ * `pushed`, `nothing-to-push` (git: "Everything up-to-date"), `skipped` (no
+ * repository; detached HEAD with no explicit branch), `error` with `recovery`
+ * (operation `push`; `kind: 'non-fast-forward'` when the remote rejected it).
+ */
 export interface GitPushResult {
   status: GitPushStatus;
   message?: string;
@@ -192,10 +202,22 @@ export interface GitPushResult {
  * with no `assignUnreleased`) — git off / no repo there answer `skipped`. The
  * release page reacts only to `status: 'error'` (`surfaceGitSync`).
  *
- * 0.1.125: `branch`/`switched` added — see `GitCommitResult`/`GitPushResult`.
+ * 0.1.125: `branch`/`switched` added — see `GitCommitResult`. 2.1.55: `sha`.
  */
 export type GitSyncField<TStatus extends string> =
-  | { status: TStatus; message?: string; recovery?: GitErrorRecovery; branch?: string; switched?: boolean }
+  | { status: TStatus; sha?: string; message?: string; recovery?: GitErrorRecovery; branch?: string; switched?: boolean }
+  | null;
+
+/**
+ * 2.1.55 (dto `release`, field `gitPush`; M17 18dkumzo): the outcome of the
+ * best-effort `git push` after the release commit — `pushOnRelease(gitSync)`.
+ * Only on the createRelease response (and the shadow acceptance, always
+ * `null` there); `null` when the push gate did not let it through (git off,
+ * `git.syncPushOnRelease` off, or `gitSync` other than `committed`). The
+ * release page reacts only to `status: 'error'`, as for `gitSync`.
+ */
+export type GitPushField =
+  | { status: GitPushStatus; branch?: string; message?: string; recovery?: GitErrorRecovery }
   | null;
 
 /**

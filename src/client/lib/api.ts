@@ -244,7 +244,7 @@ export interface ConfigResponse {
    */
   git: {
     enabled: boolean;
-    syncPushOnPush: boolean;
+    syncPushOnRelease: boolean;
     commitTarget: {
       mode: 'current' | 'named' | 'new';
       branch: string | null;
@@ -312,7 +312,7 @@ export interface ConfigPatch {
    */
   git?: {
     enabled?: boolean;
-    syncPushOnPush?: boolean;
+    syncPushOnRelease?: boolean;
     commitTarget?: {
       mode?: 'current' | 'named' | 'new';
       branch?: string | null;

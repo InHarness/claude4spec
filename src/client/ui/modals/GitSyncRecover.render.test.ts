@@ -143,8 +143,8 @@ afterEach(() => {
 });
 
 describe('git-sync-recover window (M28 u5vl07ch)', () => {
-  it('[ac:ac-gdy-gitsync-status-error-operacje] a gitSync error opens the git-sync-recover window (not a toast) with success framing, the operation context, stderr in an expandable block, and Fix it with Agent + Dismiss', async () => {
-    // The openers (M17 release detail, M25 push) call showGitErrorModal: a
+  it('[ac:ac-gdy-gitsync-status-error-operacje] a gitPush error opens the git-sync-recover window (not a toast) with success framing, the operation context, stderr in an expandable block, and Fix it with Agent + Dismiss', async () => {
+    // The opener (M17: createRelease, the pull) calls showGitErrorModal: a
     // modal request of kind git-sync-recover carrying the recovery — no toast.
     const opened: Array<ModalRequest<'git-sync-recover'>> = [];
     const onModal = (e: Event) => opened.push((e as CustomEvent).detail);
@@ -158,8 +158,8 @@ describe('git-sync-recover window (M28 u5vl07ch)', () => {
 
     await render(opened[0]!.props.recovery);
 
-    // Framing: the action succeeded, only git sync hit a problem.
-    expect(host.textContent).toContain('Done — but git sync hit a problem');
+    // Framing (2.1.55, push): the release was created, only the push hit a problem.
+    expect(host.textContent).toContain('Release created — but git push hit a problem');
     // Operation context: operation + reason.
     expect(host.textContent).toContain(`Pushing to the remote failed: ${plainPushFailure.reason}`);
     // Raw stderr only after expanding the details block.
@@ -181,7 +181,7 @@ describe('git-sync-recover window (M28 u5vl07ch)', () => {
   it('[ac:ac-gdy-gitsync-status-error-operacje] with recovery.kind "non-fast-forward" the window offers [Sync] instead of [Fix it with Agent], next to [Dismiss]', async () => {
     await render(nonFastForward);
 
-    expect(host.textContent).toContain('Done — but git sync hit a problem');
+    expect(host.textContent).toContain('Release created — but git push hit a problem');
     expect(q('[data-git-recover-sync]')?.textContent).toBe('Sync');
     expect(q('[data-git-recover-dismiss]')?.textContent).toBe('Dismiss');
     expect(q('[data-git-recover-agent]')).toBeNull();
@@ -340,10 +340,10 @@ describe('git-sync-recover window (M28 u5vl07ch)', () => {
     });
 
     it.each([
-      ['commit-on-release', 'Committing the release'],
-      ['pull', 'Committing pulled changes'],
-      ['push', 'Pushing to the remote'],
-    ] as const)('[section:u5vl07ch] operation %s is named in the window and in its details', async (operation, label) => {
+      ['commit-on-release', 'Committing the release', 'Done — but git sync hit a problem'],
+      ['pull', 'Committing pulled changes', 'Done — but git sync hit a problem'],
+      ['push', 'Pushing to the remote', 'Release created — but git push hit a problem'],
+    ] as const)('[section:u5vl07ch] operation %s is named in the window and in its details, under a success-framed header', async (operation, label, header) => {
       const recovery: GitErrorRecovery = {
         operation,
         reason: 'git failed',
@@ -351,6 +351,7 @@ describe('git-sync-recover window (M28 u5vl07ch)', () => {
         intentPrompt: 'Repair it.',
       };
       await render(recovery);
+      expect(host.textContent).toContain(header);
       expect(host.textContent).toContain(`${label} failed: git failed`);
       await click(q('[data-git-recover-details-toggle]'));
       expect(q('[data-git-recover-details]')?.textContent).toContain(`operation: ${operation}`);

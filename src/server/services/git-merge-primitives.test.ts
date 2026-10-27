@@ -518,7 +518,7 @@ describe('GitService — merge primitives of the shadow acceptance (2.1.47)', ()
         fs.writeFileSync(releaseFile, '{"name":"v1"}\n');
 
         const result = await svc.commitOnRelease({ name: 'v1', description: 'accepts run-1' });
-        expect(result).toEqual({ status: 'committed', branch: 'main', switched: false });
+        expect(result).toEqual({ status: 'committed', sha: expect.any(String), branch: 'main', switched: false });
         const parents = (await git(['rev-list', '--parents', '-n', '1', 'HEAD'], dir)).trim().split(' ').slice(1);
         expect(parents).toEqual([headBefore, tip]);
         expect((await git(['log', '-1', '--format=%B'], dir)).trim()).toBe('v1\n\naccepts run-1');

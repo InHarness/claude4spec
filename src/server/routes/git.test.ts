@@ -219,10 +219,10 @@ describe('POST /api/git/fetch + GET /api/git/status (2.1.10)', () => {
     }
   });
 
-  it('[entity:git-status-response] 2.1.14: on detached HEAD GET /api/git/status reports branch null (every field present, typed) — and with branch null the release push and a `current`-mode release commit do not run (null), the pull commit is skipped, `named` still commits', async () => {
+  it('[entity:git-status-response] 2.1.14: on detached HEAD GET /api/git/status reports branch null (every field present, typed) — and with branch null a `current`-mode release commit does not run (null), the pull commit is skipped, `named` still commits', async () => {
     const head = (await git(['rev-parse', 'HEAD'], work)).trim();
     await git(['checkout', head], work);
-    writeConfigJson(work, { enabled: true, syncPushOnPush: true });
+    writeConfigJson(work, { enabled: true });
     const svc = new GitService(work, [work]);
 
     const res = await request(appFor(svc)).get('/api/git/status');
@@ -240,7 +240,6 @@ describe('POST /api/git/fetch + GET /api/git/status (2.1.10)', () => {
     expect(res.body.lastFetchedAt === null || typeof res.body.lastFetchedAt === 'string').toBe(true);
 
     fs.writeFileSync(path.join(work, 'page.md'), '# page v2\n');
-    expect(await svc.pushOnPush('main')).toBeNull();
     expect(await svc.commitOnRelease({ name: 'v1', description: 'd' })).toBeNull();
     expect(await svc.commitPull({ name: 'v1' })).toEqual({ status: 'skipped' });
 

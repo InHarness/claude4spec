@@ -315,6 +315,37 @@ describe('PATCH /config — git.commitTarget (0.1.125)', () => {
     });
   });
 
+  it('[ac:ac-patch-pojedynczego-pola-git-w-tym-zagni] PATCH of a single git field — the nested commitTarget too — deep-merges onto the git object: enabled, syncPushOnRelease and switchAfterRelease survive', async () => {
+    const seeded = await request(app())
+      .patch('/config')
+      .send({ git: { enabled: true, syncPushOnRelease: true, switchAfterRelease: true } });
+    expect(seeded.status).toBe(200);
+
+    // One nested field alone.
+    const nested = await request(app())
+      .patch('/config')
+      .send({ git: { commitTarget: { mode: 'named', branch: 'release' } } });
+    expect(nested.status).toBe(200);
+    expect(nested.body.git).toEqual({
+      enabled: true,
+      syncPushOnRelease: true,
+      commitTarget: { mode: 'named', branch: 'release', template: null, base: null },
+      switchAfterRelease: true,
+    });
+
+    // One top-level git field alone — the rest, the nested target included, stays.
+    const single = await request(app()).patch('/config').send({ git: { syncPushOnRelease: false } });
+    expect(single.status).toBe(200);
+    expect(single.body.git).toEqual({
+      enabled: true,
+      syncPushOnRelease: false,
+      commitTarget: { mode: 'named', branch: 'release', template: null, base: null },
+      switchAfterRelease: true,
+    });
+    const onDisk = JSON.parse(fs.readFileSync(configPath(dir), 'utf8')) as { git: Record<string, unknown> };
+    expect(onDisk.git).toMatchObject({ enabled: true, syncPushOnRelease: false, switchAfterRelease: true });
+  });
+
   it('accepts switchAfterRelease and rejects a non-boolean value', async () => {
     const ok = await request(app()).patch('/config').send({ git: { switchAfterRelease: true } });
     expect(ok.status).toBe(200);
@@ -492,6 +523,9 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
 
   it('[entity:app-config-response] GET /config carries the AppConfigResponse fields — and no system-root keys, no consistency, no per-plugin settings', async () => {
     writeFile({
+      // 2.1.55: the push toggle is `git.syncPushOnRelease`; a legacy
+      // `syncPushOnPush` is NOT migrated — it reads as an unknown key.
+      git: { syncPushOnPush: true },
       $schemaVersion: 4,
       name: 'demo',
       description: 'pitch',
@@ -530,10 +564,11 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
     expect(body.remoteApiUrl).toBeNull();
     expect(body.git).toEqual({
       enabled: false,
-      syncPushOnPush: false,
+      syncPushOnRelease: false,
       commitTarget: { mode: 'current', branch: null, template: null, base: null },
       switchAfterRelease: false,
     });
+    expect('syncPushOnPush' in (body.git as Record<string, unknown>)).toBe(false);
     expect(body.onboarding).toEqual({ completed: true });
     expect(body.$schemaVersion).toBe(4);
     // 2.1.55: `remoteProjectId` left the response with M25 (release push removed).
@@ -555,7 +590,8 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
         writingStyle: null,
         language: 'English',
         agent: { claudeUsePreset: true, conversationalLanguage: 'Polski', allowedPaths: ['/opt/x'], disallowedPaths: ['/opt/y'], disableDirectFilesystemAccess: false },
-        git: { enabled: true },
+        // 2.1.55: the renamed push toggle is writable; the old name is not a field any more.
+        git: { enabled: true, syncPushOnRelease: true, syncPushOnPush: true },
         onboardingCompleted: true,
         // Not writable here: fixed system roots, response-only fields, the removed per-plugin namespace,
         // and (2.1.55) the release-push `remoteProjectId` that left with M25.
@@ -577,9 +613,12 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
       writingStyle: null,
       language: 'English',
       agent: { claudeUsePreset: true, conversationalLanguage: 'Polski', allowedPaths: ['/opt/x'], disallowedPaths: ['/opt/y'], disableDirectFilesystemAccess: false },
-      git: { enabled: true },
+      git: { enabled: true, syncPushOnRelease: true },
       onboardingCompleted: true,
     });
+    expect('syncPushOnPush' in (file.git as Record<string, unknown>)).toBe(false);
+    expect(res.body.git.syncPushOnRelease).toBe(true);
+    expect('syncPushOnPush' in res.body.git).toBe(false);
     expect(res.body.elementsMenu).toEqual(file.elementsMenu);
     for (const k of ['plansDir', 'releasesDir', 'configHash', 'writingStyleUnavailable', 'plugins', 'remoteProjectId']) expect(k in file, k).toBe(false);
     expect('plugins' in res.body).toBe(false);

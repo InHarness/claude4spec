@@ -2,7 +2,7 @@ import { Router, type Request } from 'express';
 import type { ReleaseService } from '../services/release.js';
 import type { GitService } from '../services/git.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
-import { CURRENT_RELEASE_NAME } from '../../shared/entities.js';
+import { CURRENT_RELEASE_NAME, type CreateReleaseResponse } from '../../shared/entities.js';
 import type { Root } from '../../shared/types.js';
 import { DomainError } from '../services/tags.js';
 import {
@@ -67,7 +67,15 @@ export function releasesRouter(
         const gitSync = gitService ? await gitService.commitOnRelease(release) : null;
         return { ...release, gitSync };
       });
-      res.status(201).json(created);
+      // 2.1.55 (M17 w6cocvik, M28 sw1u84nn): best-effort push of the branch the
+      // release commit landed on — after the commit released the repository
+      // lock (and outside the release mutex: a slow remote never holds up the
+      // next release). Its own field, separate from the commit's `gitSync`;
+      // `null` when the push gate did not let it through. A failed push never
+      // fails the release.
+      const gitPush = gitService ? await gitService.pushOnRelease(created.gitSync) : null;
+      const answer: CreateReleaseResponse = { ...created, gitPush };
+      res.status(201).json(answer);
     } catch (err) {
       next(err);
     }
@@ -95,7 +103,8 @@ export function releasesRouter(
       // response. 2.1.14 (M17 mbjdcls0): unlike `POST /api/releases`, it is
       // `null` ONLY when no pull ran (`assignUnreleased` not `true`, or no
       // GitService wired) — git off / no repo / detached HEAD answer
-      // `commitPull`'s `{ status: 'skipped' }`.
+      // `commitPull`'s `{ status: 'skipped' }`. 2.1.55 (M17 18dkumzo): no
+      // `gitPush` here — pulling into the latest release never pushes.
       const release = await releases.updateRelease({
         releaseName: releaseNameParam(req.params.name),
         name: body.name,

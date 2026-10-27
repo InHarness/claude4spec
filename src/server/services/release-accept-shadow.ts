@@ -209,14 +209,21 @@ export function parseShadowAcceptRequest(body: unknown): ShadowAcceptRequest {
 }
 
 /**
+ * The git results riding the acceptance's answer: the merge commit in
+ * `gitSync`; `gitPush` always `null` — accepting a shadow never pushes
+ * (2.1.55, M17 w6cocvik).
+ */
+export type AcceptedShadowGitResults = { gitSync: GitCommitResult | null; gitPush: null };
+
+/**
  * Accept the shadow named by `body.ref`. Resolves to the release (with
- * `gitSync`); throws the refusals and failures of the record as
- * `DomainError`s.
+ * `gitSync`, and `gitPush: null`); throws the refusals and failures of the
+ * record as `DomainError`s.
  */
 export async function acceptShadow<R extends { name: string; description: string }>(
   deps: AcceptShadowDeps<R>,
   body: unknown,
-): Promise<R & { gitSync: GitCommitResult | null }> {
+): Promise<R & AcceptedShadowGitResults> {
   const request = parseShadowAcceptRequest(body);
   // 1. Validation — before the mutex, the lock and the repository.
   const { name, description } = deps.validate(request.name, request.description);
@@ -234,7 +241,7 @@ async function sequence<R extends { name: string; description: string }>(
   request: ShadowAcceptRequest,
   input: { name: string; description: string },
   lock: GitLockHandle,
-): Promise<R & { gitSync: GitCommitResult | null }> {
+): Promise<R & AcceptedShadowGitResults> {
   const { git } = deps;
   // An agent turn running at the moment of the call is a refusal, not a wait.
   if (git.agentTurnActive()) throw busy();
@@ -356,7 +363,8 @@ async function sequence<R extends { name: string; description: string }>(
     // result (`merge-open`), not a failure of the operation: the release exists.
     const gitSync = await git.commitOnRelease(release, lock);
     if (gitSync?.status !== 'committed') git.notifyStatusChanged(false);
-    return { ...release, gitSync };
+    // No push: the acceptance variant answers `gitPush: null` (M17 w6cocvik).
+    return { ...release, gitSync, gitPush: null };
   } finally {
     // Lifted only after the rollback's clean-up, so a late watcher event cannot
     // write an empty deletion row for a page the shadow added.
