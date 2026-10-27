@@ -1,7 +1,7 @@
 {
-  "iteration": 28,
+  "iteration": 29,
   "errors": 0,
-  "systemVerified": false,
+  "systemVerified": true,
   "conventions": [
     {
       "label": "L5 (UI) — stan klienta, pamięć lokalna, okna",
