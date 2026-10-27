@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "split",
+  "description": "Output of the implementer in split mode: the unit's portions. Returned, never written by the role; the orchestrator records them in state.json once.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "role",
+    "unit",
+    "packetBytes",
+    "portions"
+  ],
+  "properties": {
+    "role": {
+      "const": "implementer"
+    },
+    "unit": {
+      "type": "string"
+    },
+    "packetBytes": {
+      "type": "integer"
+    },
+    "portions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "slugs"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "slugs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "criteriaGroup": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "empty only together with a blocking deviation: a read of the recipe did not hold (reading-the-spec.md, Read problems)"
+    },
+    "deviations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
