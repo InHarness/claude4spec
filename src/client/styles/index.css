@@ -4,3 +4,12 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+ * Every sidebar entry tints on hover — a plain link, a folder, a side-menu
+ * entry alike. A neutral hair tone, not the accent: the accent stays the mark
+ * of the active route (and of a pinned side menu), set inline, which wins here.
+ */
+.sidebar-entry:hover {
+  background: var(--c-hair);
+}

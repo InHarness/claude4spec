@@ -7,6 +7,7 @@ import {
   useSyncExternalStore,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
 import { Link } from '@tanstack/react-router';
@@ -20,27 +21,59 @@ import { Popover } from '../../host-ui-kit/overlay-feedback/Popover.js';
  *  - anchored at its entry, opening to the right and bouncing off the window
  *    edge — the panel is the catalog `Popover` (`placement="right"`), which owns
  *    the z-tier, the viewport clamp and click-outside;
- *  - opened by a click or by hovering the entry; at most ONE side menu is open
- *    (`openMenuId` below), so opening another closes the previous one;
+ *  - at most ONE side menu is open (`state` below), in one of two modes:
+ *    - a hover opens a *preview*: once the pointer is outside the entry and the
+ *      panel it closes after `SIDE_MENU_PREVIEW_DELAY_MS`; coming back before
+ *      that cancels it, and hovering another menu entry swaps the preview to
+ *      that entry after the same delay (a pointer crossing a neighbour on its
+ *      way to the panel keeps the menu);
+ *    - a click *pins* it: pointer movement no longer touches it, only a click
+ *      on its entry (closes), on another entry (pins that one) or a closer;
+ *      a click on a previewed entry, or focus entering its panel, pins it;
+ *    - a device without hover never previews — a click opens the menu pinned;
  *  - its items are links: a click navigates to the item's route and closes the
  *    menu, Cmd/Ctrl+click is left to the browser (a new tab) and keeps it open;
  *  - keys (`l5pkeysm`): Esc closes and gives focus back to the entry, Enter goes
  *    to the highlighted item, Tab / Shift+Tab close, ↑ / ↓ move the highlight;
- *  - a11y: the entry announces `aria-expanded` / `aria-haspopup="menu"`, the
- *    list is a `role="menu"` of `role="menuitem"` links.
+ *  - a11y: the entry announces `aria-expanded` (true in both modes) /
+ *    `aria-haspopup="menu"`, the list is a `role="menu"` of `role="menuitem"` links.
  *
  * Not a facade window: it never goes through `openPopover`, which serves forms
  * and takes coordinates only (`wkkqzeum`).
  */
 
+/** How long a preview survives the pointer being outside its entry and panel. */
+export const SIDE_MENU_PREVIEW_DELAY_MS = 150;
+
+type SideMenuMode = 'preview' | 'pinned';
+
 /** The one open side menu, shared by every instance — `null` when none is open. */
-let openMenuId: string | null = null;
+let state: { mode: SideMenuMode; id: string } | null = null;
+/** During a preview: the other menu entry under the pointer, previewed when the timer fires. */
+let pendingId: string | null = null;
+let previewTimer: ReturnType<typeof setTimeout> | null = null;
 const listeners = new Set<() => void>();
 
-function setOpenMenu(id: string | null): void {
-  if (openMenuId === id) return;
-  openMenuId = id;
+function disarmPreviewTimer(): void {
+  if (previewTimer !== null) clearTimeout(previewTimer);
+  previewTimer = null;
+}
+
+function setState(next: { mode: SideMenuMode; id: string } | null): void {
+  disarmPreviewTimer();
+  pendingId = null;
+  if (state?.mode === next?.mode && state?.id === next?.id) return;
+  state = next;
   for (const listener of listeners) listener();
+}
+
+/** Starts the preview's countdown (pinned menus have none); a running one keeps going. */
+function armPreviewTimer(): void {
+  if (state?.mode !== 'preview' || previewTimer !== null) return;
+  previewTimer = setTimeout(() => {
+    previewTimer = null;
+    setState(pendingId ? { mode: 'preview', id: pendingId } : null);
+  }, SIDE_MENU_PREVIEW_DELAY_MS);
 }
 
 function subscribe(listener: () => void): () => void {
@@ -48,6 +81,12 @@ function subscribe(listener: () => void): () => void {
   return () => {
     listeners.delete(listener);
   };
+}
+
+/** A hover only previews on a device that has one — never on a touch screen. */
+function canHover(e: ReactPointerEvent): boolean {
+  if (e.pointerType === 'touch') return false;
+  return typeof window.matchMedia !== 'function' || window.matchMedia('(hover: hover)').matches;
 }
 
 export interface SideMenuItem {
@@ -77,41 +116,75 @@ export function SidebarSideMenu({
   /** Tooltip of the entry. */
   title?: string;
   triggerClassName?: string;
-  /** The entry's look, given whether its menu is open. */
-  triggerStyle?: (open: boolean) => CSSProperties;
+  /**
+   * The entry's look, given whether its menu is pinned. A hover preview leaves
+   * the entry looking as it did — only the shared `.sidebar-entry:hover` tint.
+   */
+  triggerStyle?: (pinned: boolean) => CSSProperties;
   /** The entry's content. */
   children: ReactNode;
 }) {
   const id = useId();
   const menuId = `${id}-menu`;
-  const open = useSyncExternalStore(
+  const mode = useSyncExternalStore(
     subscribe,
-    () => openMenuId === id,
-    () => false,
+    () => (state?.id === id ? state.mode : null),
+    () => null,
   );
+  const open = mode !== null;
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  /** Opened by hovering: the next click keeps it open instead of toggling it shut. */
-  const openedByHover = useRef(false);
   const [highlight, setHighlight] = useState(-1);
 
   const close = useCallback(() => {
-    if (openMenuId === id) setOpenMenu(null);
+    if (state?.id === id) setState(null);
   }, [id]);
 
-  const show = (byHover: boolean) => {
-    openedByHover.current = byHover;
-    setHighlight(-1);
-    setOpenMenu(id);
-  };
+  // Every opening starts without a highlighted item.
+  useEffect(() => {
+    if (!open) setHighlight(-1);
+  }, [open]);
 
   // An unmounted entry never leaves its menu registered as the open one.
   useEffect(
     () => () => {
-      if (openMenuId === id) setOpenMenu(null);
+      if (state?.id === id) setState(null);
     },
     [id],
   );
+
+  // A preview follows the pointer: on its entry or panel it stays, anywhere
+  // else (a plain sidebar entry included) it closes after the delay — unless
+  // the pointer rests on another menu entry, which is then previewed instead.
+  // The panel is the whole Popover, its padding included; the gap between
+  // entry and panel is bridged by the delay itself.
+  useEffect(() => {
+    if (mode !== 'preview') return;
+    const onOver = (e: PointerEvent) => {
+      const target = e.target as Element | null;
+      const panel = menuRef.current?.closest('[role="dialog"]');
+      if (target && (triggerRef.current?.contains(target) || panel?.contains(target))) {
+        disarmPreviewTimer();
+        pendingId = null;
+        return;
+      }
+      const otherEntry = target?.closest?.('[data-side-menu-entry]')?.getAttribute('data-side-menu-entry');
+      pendingId = otherEntry ?? null;
+      armPreviewTimer();
+    };
+    const onOut = (e: PointerEvent) => {
+      // The pointer left the window: nothing will be "over" to report it.
+      if (e.relatedTarget !== null) return;
+      pendingId = null;
+      armPreviewTimer();
+    };
+    document.addEventListener('pointerover', onOver);
+    document.addEventListener('pointerout', onOut);
+    return () => {
+      document.removeEventListener('pointerover', onOver);
+      document.removeEventListener('pointerout', onOut);
+    };
+  }, [mode]);
 
   useEffect(() => {
     if (!open) return;
@@ -185,15 +258,17 @@ export function SidebarSideMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
+        data-side-menu-entry={id}
         onClick={() => {
-          if (open && !openedByHover.current) close();
-          else show(false);
+          // Pinned here → closed; closed, previewed here or open elsewhere → pinned here.
+          if (mode === 'pinned') close();
+          else setState({ mode: 'pinned', id });
         }}
-        onMouseEnter={() => {
-          if (!open) show(true);
+        onPointerEnter={(e) => {
+          if (state === null && canHover(e)) setState({ mode: 'preview', id });
         }}
         className={triggerClassName}
-        style={triggerStyle?.(open)}
+        style={triggerStyle?.(mode === 'pinned')}
         title={title}
       >
         {children}
@@ -204,6 +279,10 @@ export function SidebarSideMenu({
           id={menuId}
           role="menu"
           aria-label={label}
+          onFocus={() => {
+            // Focus entering a previewed panel means the user works with it: pin it.
+            if (state?.id === id && state.mode === 'preview') setState({ mode: 'pinned', id });
+          }}
           onMouseLeave={() => setHighlight(-1)}
         >
           {items.map((item, i) => {
