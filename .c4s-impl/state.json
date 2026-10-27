@@ -1,5 +1,5 @@
 {
-  "iteration": 23,
+  "iteration": 24,
   "conventions": [
     {
       "label": "L1 (DB)",
@@ -62,7 +62,7 @@
       "startCommit": "9329949e367a492ad9dca5f35c5a1ba7ce3797f5"
     }
   ],
-  "systemVerified": false,
+  "systemVerified": true,
   "errors": 0,
   "units": [
     {
