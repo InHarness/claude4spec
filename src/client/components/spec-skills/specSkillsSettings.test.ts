@@ -8,6 +8,10 @@ import {
   FORK_CONFLICT_MESSAGE,
   FORK_DONE_MESSAGE,
   ForkWritingStyleControl,
+  HOOK_TRUST_CONFIRMED_MESSAGE,
+  HOOK_TRUST_UNCONFIRMED_MESSAGE,
+  SkillHookTrustControl,
+  whenAttaching,
   SPEC_SKILLS_SETTINGS,
   UsedSkillProjectsList,
   attachmentMarker,
@@ -148,5 +152,52 @@ describe('#skills — Fork writing style locally (M52 L17, 2.1.9)', () => {
     expect(forkFailureMessage(new ApiError('SKILL_ALREADY_EXISTS', 'taken', 409))).toBe(FORK_CONFLICT_MESSAGE);
     expect(FORK_CONFLICT_MESSAGE).toBe('A skill with this name already exists in this project.');
     expect(render({ kind: 'failed', message: FORK_CONFLICT_MESSAGE })).toContain(FORK_CONFLICT_MESSAGE);
+  });
+});
+
+/**
+ * 2.1.57 — M52 `ybbal0vf`: the #skills card asks this machine to confirm the
+ * attachments the repository's config carries (ASSUMPTION:dev-0002 — one
+ * confirmation for the whole list, outside the card's shared save).
+ */
+describe('#skills — Skill projects from this repository (M52 ybbal0vf, 2.1.57)', () => {
+  it('[section:ybbal0vf] the card warns that unconfirmed attachments are not used and offers one confirmation for the whole list; confirmed, it offers to revoke', () => {
+    const render = (trusted: boolean, pending = false) =>
+      renderToStaticMarkup(createElement(SkillHookTrustControl, { trusted, pending, onChange: () => {} }));
+    const unconfirmed = render(false);
+    expect(unconfirmed).toContain('data-trusted="false"');
+    expect(unconfirmed).toContain(
+      'The skill projects in this repository&#x27;s config are not confirmed on this machine, so none of them is used.',
+    );
+    expect(HOOK_TRUST_UNCONFIRMED_MESSAGE).toContain('not confirmed on this machine');
+    expect(unconfirmed).toContain('>Confirm skill projects</button>');
+    expect(unconfirmed).not.toContain('disabled');
+
+    const confirmed = render(true);
+    expect(confirmed).toContain('data-trusted="true"');
+    expect(confirmed).toContain(HOOK_TRUST_CONFIRMED_MESSAGE.replace("'", '&#x27;'));
+    expect(confirmed).toContain('>Revoke confirmation</button>');
+    // Blocked while the decision is being stored.
+    expect(render(false, true)).toMatch(/<button[^>]*disabled=""/);
+
+    // The button flips the current decision.
+    const seen: boolean[] = [];
+    const tree = SkillHookTrustControl({ trusted: false, pending: false, onChange: (v) => seen.push(v) });
+    const button = (tree.props.children as Array<{ props: { children: { props: { onClick: () => void } } } }>)[1]!.props.children;
+    button.props.onClick();
+    expect(seen).toEqual([true]);
+  });
+
+  it('[section:ybbal0vf] the element sits on the #skills card before the list, shown only while the draft attaches a skill project, and never joins the card\'s save', () => {
+    const [card] = assembleSettings([SPEC_SKILLS_SETTINGS]);
+    const el = card!.elements.find((e) => e.id === 'skill-hook-trust')!;
+    expect(el).toMatchObject({ kind: 'custom', weight: 65, label: 'Skill projects from this repository' });
+    expect(el.configKey).toBeUndefined();
+    expect(el.keys).toBeUndefined();
+    expect(el.visible).toBe(whenAttaching);
+    const config = {} as ConfigResponse;
+    expect(whenAttaching({ config, draft: draftOver({ 'skill.uses': ['billing-rules'] }) })).toBe(true);
+    expect(whenAttaching({ config, draft: draftOver({ 'skill.uses': [] }) })).toBe(false);
+    expect(whenAttaching({ config, draft: draftOver({}) })).toBe(false);
   });
 });

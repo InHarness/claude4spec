@@ -952,7 +952,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "u10-skill-hook-trust-gate/p1-m31-l17",
@@ -967,20 +967,22 @@
             "section:f1nbs7qy",
             "section:44viw74p"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "fcc802ddaa43f20b1c3a40c7662b3f68044d4eca",
+      "baseCommit": "e58c9aaaa366c7680824b05596175b7704cf38a3",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": [],
+      "lastBlocking": []
     },
     {
       "id": "u11-consistency-junction",

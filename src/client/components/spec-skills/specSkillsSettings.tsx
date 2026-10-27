@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ExposedProjectRow } from '../../../shared/spec-skills.js';
 import type { WritingStylesResponse } from '../../../shared/writing-styles.js';
 import { ApiError } from '../../lib/api-core.js';
-import { EXPOSED_PROJECTS_QUERY_KEY, specSkillsApi } from '../../lib/spec-skills-api.js';
+import { EXPOSED_PROJECTS_QUERY_KEY, SPEC_SKILL_HOOK_TRUST_QUERY_KEY, specSkillsApi } from '../../lib/spec-skills-api.js';
 import { useWritingStyles } from '../../hooks/useWritingStyles.js';
 import { ElementField } from '../settings/controls.js';
 import { EFFECT, type ElementContext, type SettingsContribution, type SettingsElementDecl } from '../settings/registry.js';
@@ -126,6 +126,82 @@ function UsedSkillProjectsElement({ draft, decl }: ElementContext & { decl: Sett
           onToggle={(name, on) => draft.set(USES, toggleUse(uses, name, on))}
         />
       )}
+    </ElementField>
+  );
+}
+
+/**
+ * 2.1.57 (M52 `ybbal0vf`, M31 `44viw74p`) — the confirmation of the attachments
+ * the repository's config carries. Until this machine confirms them, none
+ * resolves to its provider (each warns like a dangling one). The decision is
+ * machine-local (the workspace registry), never written to the repository, and
+ * outside the card's shared save. ASSUMPTION:dev-0002 — one confirmation for
+ * the whole list, asked here.
+ */
+export const HOOK_TRUST_UNCONFIRMED_MESSAGE =
+  "The skill projects in this repository's config are not confirmed on this machine, so none of them is used. Confirm only if you trust this repository.";
+export const HOOK_TRUST_CONFIRMED_MESSAGE = "The skill projects in this repository's config are confirmed on this machine.";
+
+/** Visible while the draft attaches at least one skill project. */
+export const whenAttaching = ({ draft }: ElementContext): boolean => {
+  const raw = draft.get(USES);
+  return Array.isArray(raw) && raw.length > 0;
+};
+
+/** The confirmation, presentational: the state line and one button that flips it. */
+export function SkillHookTrustControl({
+  trusted,
+  pending,
+  onChange,
+}: {
+  trusted: boolean;
+  pending: boolean;
+  onChange: (trusted: boolean) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5" data-testid="skill-hook-trust" data-trusted={trusted ? 'true' : 'false'}>
+      <span className="text-[12px]" style={{ color: trusted ? 'var(--c-muted)' : '#a86a1a' }}>
+        {trusted ? HOOK_TRUST_CONFIRMED_MESSAGE : HOOK_TRUST_UNCONFIRMED_MESSAGE}
+      </span>
+      <div>
+        <button
+          type="button"
+          className="rounded-md px-3 py-1.5 text-[12.5px] font-medium"
+          style={{ border: '1px solid var(--c-hair)', color: 'var(--c-ink)', background: 'var(--c-bg)' }}
+          disabled={pending}
+          onClick={() => onChange(!trusted)}
+        >
+          {trusted ? 'Revoke confirmation' : 'Confirm skill projects'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** "Skill projects from this repository": reads and sets `GET|PUT /api/spec-skills/hook-trust`. */
+function SkillHookTrustElement({ decl }: ElementContext & { decl: SettingsElementDecl }) {
+  const queryClient = useQueryClient();
+  const { data } = useQuery({ queryKey: SPEC_SKILL_HOOK_TRUST_QUERY_KEY, queryFn: () => specSkillsApi.hookTrust() });
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (data === undefined) return null;
+  const onChange = (trusted: boolean) => {
+    setPending(true);
+    setError(null);
+    specSkillsApi.setHookTrust(trusted).then(
+      (next) => {
+        queryClient.setQueryData(SPEC_SKILL_HOOK_TRUST_QUERY_KEY, next);
+        setPending(false);
+      },
+      (err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err));
+        setPending(false);
+      },
+    );
+  };
+  return (
+    <ElementField label={decl.label} help={decl.help} error={error} asLabel={false}>
+      <SkillHookTrustControl trusted={data.trusted} pending={pending} onChange={onChange} />
     </ElementField>
   );
 }
@@ -311,6 +387,19 @@ export const SPEC_SKILLS_SETTINGS: SettingsContribution = {
       useOptions: () => CONTEXT_TYPES.map((t) => ({ value: t, label: t })),
       effectMessage: FOR_CONSUMERS,
       visible: whenExposed,
+    },
+    {
+      // 2.1.57 (M52 `ybbal0vf`): ASSUMPTION:dev-0002 — an action, no config key.
+      id: 'skill-hook-trust',
+      card: 'skills',
+      weight: 65,
+      kind: 'custom',
+      owner: 'spec-skills',
+      label: 'Skill projects from this repository',
+      // An action outside the save: no toast, so the timing is said here.
+      help: 'Applies from the next new conversation.',
+      component: SkillHookTrustElement,
+      visible: whenAttaching,
     },
     {
       id: 'used-skill-projects',

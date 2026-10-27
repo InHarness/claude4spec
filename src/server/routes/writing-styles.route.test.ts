@@ -69,10 +69,13 @@ async function rig(opts: { writingStyle?: string | null } = {}) {
   // `project-exposed` — an attached exposed project whose skill scope is a writing style.
   registry.registerSource(
     new ProjectExposedSkillSource('consumer', {
-      uses: () => ['house-rules'],
-      listExposed: () => [
-        { projectId: 'house', name: 'house-rules', description: 'The house rules.', entry: 'index.md', scope: 'writing-style', contextTypes: undefined },
-      ],
+      own: () => ({ uses: ['house-rules'], name: null }),
+      workspace: () => ({
+        trusted: true,
+        listExposed: () => [
+          { projectId: 'house', name: 'house-rules', description: 'The house rules.', entry: 'index.md', scope: 'writing-style', contextTypes: undefined },
+        ],
+      }),
       readProvider: async () => ({ content: '# House rules', files: {}, entry: 'index.md' }),
     }),
   );

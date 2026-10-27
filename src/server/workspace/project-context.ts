@@ -132,6 +132,7 @@ import {
   ProjectExposedSkillSource,
   exposedReadOnlyReason,
   readExposedPackage,
+  workspaceExposedSkillAccess,
   type ExposedSkillPackage,
 } from '../services/project-exposed-skills.js';
 import { listExposedProjectRows, listExposedProjects } from '../services/exposed-projects.js';
@@ -413,15 +414,22 @@ async function buildInner(
     }
   };
   skillRegistry.registerSource(
-    new ProjectExposedSkillSource(projectId, {
-      uses: () => readOwnSkillConfig().uses,
-      listExposed: () => listExposedProjects(workspaceProjects()),
-      readProvider: async (providerId) => {
-        if (!deps.providerContext) throw new Error('no provider context is reachable from this process');
-        const provider = await deps.providerContext(providerId);
-        return provider.readExposedSkill();
-      },
-    }),
+    new ProjectExposedSkillSource(
+      projectId,
+      // 2.1.57 (M52 `ybbal0vf`, M31 `44viw74p`): the machine-local confirmation
+      // of the committed attachment list comes from the same registry read as the
+      // project list; unconfirmed, no peer config is read. ASSUMPTION:dev-0002.
+      workspaceExposedSkillAccess({
+        consumerId: projectId,
+        readOwnSkill: readOwnSkillConfig,
+        readWorkspaceProjects: workspaceProjects,
+        readProvider: async (providerId) => {
+          if (!deps.providerContext) throw new Error('no provider context is reachable from this process');
+          const provider = await deps.providerContext(providerId);
+          return provider.readExposedSkill();
+        },
+      }),
+    ),
   );
   const briefsRootDir = rootRegistry.system('briefs').dir;
   const patchesRootDir = rootRegistry.system('patches').dir;
@@ -1551,6 +1559,12 @@ async function buildInner(
     specSkillsRouter({
       listExposedProjects: () =>
         listExposedProjectRows(projectId, readOwnSkillConfig().uses, listExposedProjects(workspaceProjects())),
+      // 2.1.57 (M52 `ybbal0vf`): the #skills card's confirmation of the committed
+      // attachment list, machine-local (M31 `44viw74p`). ASSUMPTION:dev-0002.
+      hookTrust: {
+        get: () => registry.getSpecSkillHooksTrust(workspace, projectId),
+        set: (value) => registry.setSpecSkillHooksTrust(workspace, projectId, value),
+      },
       // 2.1.9 (M52 row 3): `fork_writing_style` over this context's registry and
       // the facade of its root of kind `skills`; `config.writingStyle` untouched.
       forkWritingStyle: (input) =>

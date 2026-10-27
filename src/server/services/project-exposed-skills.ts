@@ -27,7 +27,14 @@
  *    copied or written anywhere;
  *  - manifest limit: {@link EXPOSED_SKILL_MANIFEST_LIMIT};
  *  - known, unresolved: every attachment that resolves to no provider —
- *    dangling or ambiguous — with the reason `provider-unreachable`.
+ *    dangling, ambiguous or not confirmed on this machine — with the reason
+ *    `provider-unreachable`.
+ *
+ * 2.1.57 (M52 `ybbal0vf`): the attachment list comes from the repository's
+ * committed `config.json`, so it works only once THIS machine confirmed it
+ * (`trustSpecSkillHooks` in the M31 registry record, read live). Until then no
+ * attachment resolves to its provider and each warns like a dangling one.
+ * ASSUMPTION:dev-0002.
  *
  * Attachments are not transitive (only the consumer's own `skill.uses` is read),
  * attaching oneself is ignored with a warning, and neither a dangling nor an
@@ -45,7 +52,14 @@ import { expandEmbeds } from '../../core/references/expand-embeds.js';
 import type { ExpansionContext } from '../../core/references/types.js';
 import { DomainError } from './tags.js';
 import { isKnownContextType } from './chat-context.js';
-import { resolveAttachments, type ExposedProject } from './exposed-projects.js';
+import type { NormalizedSkillConfig } from '../config.js';
+import {
+  exposureOf,
+  listExposedProjects,
+  resolveAttachments,
+  type ExposedProject,
+  type WorkspaceProjectRef,
+} from './exposed-projects.js';
 import {
   toPackageFiles,
   type SkillFileRead,
@@ -67,20 +81,87 @@ export const PROJECT_EXPOSED_SOURCE = 'project-exposed' as const;
  */
 export const EXPOSED_SKILL_MANIFEST_LIMIT = 200;
 
+/** Why an attachment not confirmed on this machine resolves to none (ASSUMPTION:dev-0002). */
+export const UNTRUSTED_DETAIL =
+  "the skill attachments in this repository's config are not confirmed on this machine, so the attachment resolves to none";
+
 /** The skill package of a provider, as its own context reads it. */
 export interface ExposedSkillPackage extends SkillFileRead {
   /** The base-root path of the entry page (`skill.entry`). */
   entry: string;
 }
 
+/**
+ * One read of the M31 registry for one query: this machine's confirmation of the
+ * consumer's attachments and, over the SAME read, the workspace's exposed projects.
+ */
+export interface ExposedWorkspaceRead {
+  /**
+   * 2.1.57 (M52 `ybbal0vf`, M31 `44viw74p`): whether this machine confirmed the
+   * attachments of the consumer's committed config. ASSUMPTION:dev-0002.
+   */
+  trusted: boolean;
+  /**
+   * Every OTHER project of the workspace exposed as a skill (M52 list over the
+   * project list of this read). Reads the peers' configs, so it is called only
+   * once the attachments are confirmed.
+   */
+  listExposed(): ExposedProject[];
+}
+
 /** What the source needs from the M31 layer — never a handle it keeps. */
 export interface ExposedSkillAccess {
-  /** The consumer's `skill.uses`, read per query. */
-  uses(): string[];
-  /** Every project of the workspace exposed as a skill (M52 list over the M31 project list), read per query. */
-  listExposed(): ExposedProject[];
+  /**
+   * The consumer's own config, read per query: its `skill.uses` and its own
+   * exposed `skill.name` (the "attaching oneself" rule), `null` when it is not exposed.
+   */
+  own(): { uses: string[]; name: string | null };
+  /** One registry read per query — the trust and the peer listing come from it together. */
+  workspace(): ExposedWorkspaceRead;
   /** Read the provider's package in the provider's context — the context is obtained for this read only. */
   readProvider(projectId: string): Promise<ExposedSkillPackage>;
+}
+
+/** A project of the M31 registry record, with its machine-local skill-attachment confirmation. */
+export interface WorkspaceProjectTrustRef extends WorkspaceProjectRef {
+  trustSpecSkillHooks?: boolean;
+}
+
+/**
+ * The access the project context wires in. Per query: one read of the consumer's
+ * own config, one read of the registry (trust and project list together) and —
+ * only when this machine confirmed the attachments — one config read per peer.
+ * An unconfirmed project reads no peer config at all (ASSUMPTION:dev-0002).
+ */
+export function workspaceExposedSkillAccess(opts: {
+  consumerId: string;
+  /** The consumer's own normalized `skill.*`. */
+  readOwnSkill: () => NormalizedSkillConfig;
+  /** The workspace's projects as ONE registry read gives them. */
+  readWorkspaceProjects: () => readonly WorkspaceProjectTrustRef[];
+  /** The sanctioned peer-config read (default: `readPeerSkillConfig`, M31 `peer-config.ts`). */
+  readPeerSkill?: (cwd: string) => NormalizedSkillConfig | null;
+  readProvider: (projectId: string) => Promise<ExposedSkillPackage>;
+}): ExposedSkillAccess {
+  const { consumerId } = opts;
+  return {
+    own: () => {
+      const skill = opts.readOwnSkill();
+      return { uses: skill.uses, name: exposureOf(consumerId, skill)?.name ?? null };
+    },
+    workspace: () => {
+      const projects = opts.readWorkspaceProjects();
+      return {
+        trusted: projects.find((p) => p.id === consumerId)?.trustSpecSkillHooks === true,
+        listExposed: () =>
+          listExposedProjects(
+            projects.filter((p) => p.id !== consumerId),
+            opts.readPeerSkill,
+          ),
+      };
+    },
+    readProvider: opts.readProvider,
+  };
 }
 
 export class ProjectExposedSkillSource implements SkillSourceRegistration {
@@ -111,14 +192,21 @@ export class ProjectExposedSkillSource implements SkillSourceRegistration {
 
   private resolutions() {
     let uses: string[] = [];
+    let ownName: string | null = null;
     let exposed: ExposedProject[] = [];
+    let trusted = false;
     try {
-      uses = this.access.uses();
-      exposed = this.access.listExposed();
+      ({ uses, name: ownName } = this.access.own());
+      // No attachment, nothing to resolve: no workspace or peer-config read.
+      if (uses.length === 0) return [];
+      const ws = this.access.workspace();
+      trusted = ws.trusted;
+      // Not confirmed on this machine: nothing resolves, so no peer config is read.
+      if (trusted) exposed = ws.listExposed();
     } catch (err) {
       this.warnOnce(`[skill] project-exposed: attachments unreadable: ${(err as Error).message}`);
     }
-    return resolveAttachments(this.consumerId, uses, exposed);
+    return resolveAttachments(this.consumerId, uses, ownName, exposed, trusted);
   }
 
   list(): SkillSourceScan {
@@ -130,6 +218,10 @@ export class ProjectExposedSkillSource implements SkillSourceRegistration {
       }
       if (r.status === 'unavailable') {
         this.warnOnce(`[skill] skill.uses "${r.name}": no project of the workspace exposes this name — the attachment is unavailable`);
+        continue;
+      }
+      if (r.status === 'untrusted') {
+        this.warnOnce(`[skill] skill.uses "${r.name}": ${UNTRUSTED_DETAIL} — confirm them in Settings → Skills`);
         continue;
       }
       if (r.status === 'ambiguous') {
@@ -167,6 +259,8 @@ export class ProjectExposedSkillSource implements SkillSourceRegistration {
     for (const r of this.resolutions()) {
       if (r.status === 'unavailable') {
         out.push({ slug: r.name, reason: 'provider-unreachable', detail: 'no project of the workspace exposes this name' });
+      } else if (r.status === 'untrusted') {
+        out.push({ slug: r.name, reason: 'provider-unreachable', detail: UNTRUSTED_DETAIL });
       } else if (r.status === 'ambiguous') {
         out.push({
           slug: r.name,
