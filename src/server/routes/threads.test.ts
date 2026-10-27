@@ -810,3 +810,93 @@ describe('POST /:id/ask — the answer names the plan by its project-relative pa
     expect(res.body.answer).toBe(answer);
   });
 });
+
+/**
+ * M05 DB (L1) — the thread and its messages live in the project's SQLite
+ * database: they survive a restart (a new connection on the same file) and
+ * `GET /api/threads/:id` hands them back, whole by default and page by page when
+ * the caller asks for a window.
+ *
+ * ASSUMPTION:dev-0002 — without `limit` the route returns every message (what the
+ * persistence criterion asks for); the M05 API deviation row "limit defaults to
+ * 100" is not applied.
+ */
+describe('GET /threads/:id — persisted history (M05 L1)', () => {
+  let dir: string;
+  let dbFile: string;
+
+  const app = (chat: ChatService) => {
+    const deps = {
+      chatService: chat,
+      agentCredentialService: { getDecrypted: () => null },
+      activeAdapters: new Map(),
+      cwd: dir,
+      roots: [],
+    } as unknown as AgentTurnDeps;
+    return express().use(express.json()).use('/threads', threadsRouter(deps));
+  };
+
+  const open = (): { db: Database.Database; chat: ChatService } => {
+    const db = new Database(dbFile);
+    db.pragma('foreign_keys = ON');
+    runMigrations(db);
+    return { db, chat: new ChatService(db) };
+  };
+
+  const seed = (count: number): string => {
+    const { db, chat } = open();
+    const t = chat.createThread('long');
+    for (let i = 1; i <= count; i++) {
+      chat.addMessage(t.id, i % 2 ? 'user' : 'assistant', JSON.stringify({ text: `m${i}` }));
+    }
+    db.close();
+    return t.id;
+  };
+
+  const texts = (messages: Array<{ content: string }>): string[] =>
+    messages.map((m) => (JSON.parse(m.content) as { text: string }).text);
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-threads-history-'));
+    dbFile = path.join(dir, 'chat.db');
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('[ac:ac-watki-czatu-sa-persystowane-w-sqlite] returns the thread and all its messages after reopening the SQLite file', async () => {
+    const threadId = seed(130);
+
+    // A fresh connection on the same file — nothing is held in memory.
+    const { db, chat } = open();
+    try {
+      const res = await request(app(chat)).get(`/threads/${threadId}`);
+      expect(res.status).toBe(200);
+      expect(res.body.data.id).toBe(threadId);
+      expect(res.body.data.title).toBe('long');
+      expect(res.body.data.messages).toHaveLength(130);
+      expect(texts(res.body.data.messages)).toEqual(Array.from({ length: 130 }, (_, i) => `m${i + 1}`));
+    } finally {
+      db.close();
+    }
+  });
+
+  it('[ac:ac-watek-z-bardzo-dluga-historia-get-api] pages the messages of a long thread with ?limit=50&offset=0', async () => {
+    const threadId = seed(120);
+    const { db, chat } = open();
+    try {
+      const first = await request(app(chat)).get(`/threads/${threadId}?limit=50&offset=0`);
+      expect(first.status).toBe(200);
+      expect(first.body.data.messages).toHaveLength(50);
+      expect(texts(first.body.data.messages)).toEqual(Array.from({ length: 50 }, (_, i) => `m${i + 1}`));
+
+      const next = await request(app(chat)).get(`/threads/${threadId}?limit=50&offset=50`);
+      expect(texts(next.body.data.messages)).toEqual(Array.from({ length: 50 }, (_, i) => `m${i + 51}`));
+
+      const last = await request(app(chat)).get(`/threads/${threadId}?limit=50&offset=100`);
+      expect(last.body.data.messages).toHaveLength(20);
+    } finally {
+      db.close();
+    }
+  });
+});

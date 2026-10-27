@@ -1,0 +1,1 @@
+szablon-task-tracking → removed: src/server/services/system-prompt/blocks/m05-chat-turn.ts (template + block), src/server/services/system-prompt/compositions/default.ts (slot); absence pinned by src/server/services/chat-context.test.ts and src/server/services/system-prompt/blocks/m05-chat-turn.test.ts ([entity:szablon-task-tracking]); golden snapshot updated

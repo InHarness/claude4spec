@@ -99,6 +99,7 @@ import {
   AdapterAbortError,
   AdapterBackgroundHoldExpiredError,
   AdapterIdleTimeoutError,
+  AdapterInitError,
   AdapterTimeoutError,
   AdapterToolPolicyError,
 } from '@inharness-ai/agent-adapters';
@@ -3102,6 +3103,88 @@ describe('runAgentTurn — delivered terminal errors', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+/**
+ * 2.1.56 (M05 `yazwev1g`) — the plan-mode preset's enforceability is asked of
+ * the library SYNCHRONOUSLY, before dispatch: the probe answers with a value,
+ * not a promise, and it runs before `adapter.execute`, so an unenforceable
+ * preset is a refusal to start rather than a degradation learned from an event.
+ */
+describe('runAgentTurn — plan-mode enforceability probe before dispatch', () => {
+  it('[ac:ac-toggle-plan-mode-jest-pokazywany-jako] probes the preset groups synchronously before execute, and refuses before the adapter starts', async () => {
+    const probe = await import('@inharness-ai/agent-adapters');
+    // Synchronous: the library answers with the reports themselves.
+    const direct = probe.probeToolGating('claude-code', [...probe.PLAN_MODE_DENY_GROUPS]);
+    expect(Array.isArray(direct)).toBe(true);
+    expect(typeof (direct as unknown as { then?: unknown }).then).toBe('undefined');
+
+    const order: string[] = [];
+    const probedGroups: string[][] = [];
+    let enforceable = true;
+    const realProbe = probe.probeToolGating;
+    const spy = vi.spyOn(probe, 'probeToolGating').mockImplementation((arch, groups) => {
+      order.push('probe');
+      probedGroups.push([...groups]);
+      const reports = realProbe(arch, groups);
+      return enforceable ? reports : reports.map((r) => ({ ...r, enforceable: false }) as unknown as typeof r);
+    });
+    hoisted.onExecute = () => order.push('execute');
+    try {
+      hoisted.events = [{ type: 'result', sessionId: 's1' }];
+      const enforced = makeDeps();
+      const okInput = makeInput();
+      (okInput.thread as { planMode: boolean }).planMode = true;
+      await runAgentTurn(enforced.deps, okInput);
+      // Asked with the preset's groups, and before the adapter ran.
+      expect(probedGroups.some((g) => probe.PLAN_MODE_DENY_GROUPS.every((p) => g.includes(p)))).toBe(true);
+      expect(order.indexOf('probe')).toBeGreaterThan(-1);
+      expect(order.indexOf('probe')).toBeLessThan(order.indexOf('execute'));
+
+      // Unenforceable → the caller refuses before the adapter is ever started.
+      order.length = 0;
+      hoisted.executes = [];
+      enforceable = false;
+      const refused = makeDeps();
+      const refusedInput = makeInput();
+      (refusedInput.thread as { planMode: boolean }).planMode = true;
+      await expect(runAgentTurn(refused.deps, refusedInput)).rejects.toMatchObject({ code: 'TOOL_POLICY_REFUSED' });
+      expect(order).toContain('probe');
+      expect(order).not.toContain('execute');
+      expect(hoisted.executes).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+/**
+ * M05 — the agent runs the local `claude` CLI; when it is missing or not logged
+ * in the adapter reports `AdapterInitError`, and the turn ends
+ * `AGENT_UNAVAILABLE`, which the turn routes answer as `503` (the route
+ * deviation in M05 API (L4): an environment state, not a bad request).
+ */
+describe('runAgentTurn — claude CLI unavailable', () => {
+  it('[ac:ac-claude-cli-niezainstalowane-lub-nieza] AdapterInitError ends the turn AGENT_UNAVAILABLE, answered 503', async () => {
+    const { STATUS_FOR_TURN_ERROR } = await import('../operations/error-codes.js');
+    hoisted.events = [{ type: 'error', error: new AdapterInitError('claude-code', new Error('spawn claude ENOENT')), phase: 'init' }];
+    const { deps } = makeDeps();
+    const seen: Array<Record<string, unknown>> = [];
+
+    const failure = await runAgentTurn(deps, { ...makeInput(), onEvent: (e) => seen.push(e as never) }).then(
+      () => null,
+      (err: unknown) => err,
+    );
+
+    expect(failure).toBeInstanceOf(AgentTurnError);
+    expect((failure as AgentTurnError).code).toBe('AGENT_UNAVAILABLE');
+    expect((failure as AgentTurnError).message).toContain('claude login');
+    const errors = seen.filter((e) => e.type === 'error');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.code).toBe('AGENT_UNAVAILABLE');
+    // The status every turn route answers this code with.
+    expect(STATUS_FOR_TURN_ERROR.AGENT_UNAVAILABLE).toBe(503);
   });
 });
 

@@ -332,3 +332,63 @@ describe('POST /api/chat — RESUME_CONFIG_LOCKED wiring (M05 item 33)', () => {
     });
   });
 });
+
+/**
+ * M05 — a turn may carry only annotations: an empty `prompt` (the message field
+ * of `ChatRequest`) is accepted when at least one annotation rides along, and the
+ * annotations reach the turn. Neither one → `400 VALIDATION`.
+ *
+ * ASSUMPTION:dev-0001 — the criterion says "field `message`"; the request DTO
+ * (`chat-request`) names the message field `prompt`, so `prompt` is what is sent.
+ */
+describe('POST /api/chat — empty message with annotations', () => {
+  let dir: string;
+  const thread = makeThread({ lastSessionId: null });
+
+  beforeEach(() => {
+    dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-chat-annot-')));
+    runAgentTurnMock.mockClear();
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const app = () => {
+    const deps = {
+      chatService: {
+        getThreadMeta: (id: string) => (id === thread.id ? thread : null),
+        createThread: () => thread,
+        getInitialArchitectureConfig: () => null,
+        updateThreadSettings: () => thread,
+        clearQueued: () => [],
+      },
+      agentCredentialService: { getDecrypted: () => null },
+      activeAdapters: new Map(),
+      pendingInputs: new Map(),
+      cwd: dir,
+      roots: [],
+    } as unknown as AgentTurnDeps;
+    return express().use(express.json()).use('/chat', chatRouter(deps));
+  };
+
+  it('[ac:ac-wyslanie-wiadomosci-z-pustym-polem-me] accepts an empty prompt when annotations are attached', async () => {
+    const annotations = [{ page: 'a.md', text: 'selected sentence', comment: 'tighten this' }];
+
+    const res = await request(app()).post('/chat').send({ prompt: '', threadId: thread.id, annotations });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/event-stream/);
+    expect(runAgentTurnMock).toHaveBeenCalledTimes(1);
+    const [, input] = runAgentTurnMock.mock.calls[0] as unknown as [unknown, { prompt: string; annotations: unknown[] }];
+    expect(input.prompt).toBe('');
+    expect(input.annotations).toEqual(annotations);
+  });
+
+  it('refuses an empty prompt with no annotations as 400 VALIDATION', async () => {
+    const res = await request(app()).post('/chat').send({ prompt: '', threadId: thread.id });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+    expect(runAgentTurnMock).not.toHaveBeenCalled();
+  });
+});

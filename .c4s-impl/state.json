@@ -1,5 +1,5 @@
 {
-  "iteration": 5,
+  "iteration": 9,
   "errors": 0,
   "systemVerified": false,
   "conventions": [
@@ -334,15 +334,48 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "m05-polityka/p1-domain-l17",
+          "layers": [
+            "Domain",
+            "L1",
+            "L3",
+            "L4",
+            "L5",
+            "L10",
+            "L13",
+            "L11",
+            "L15",
+            "L16",
+            "L17"
+          ],
+          "slugs": [
+            "szablon-task-tracking",
+            "ac-claude-cli-niezainstalowane-lub-nieza",
+            "ac-opus-5-nie-jest-wybieralny-w-pickerze",
+            "ac-picker-modelu-w-composerze-czatu-poka",
+            "ac-toggle-plan-mode-jest-pokazywany-jako",
+            "ac-watek-z-bardzo-dluga-historia-get-api",
+            "ac-watki-czatu-sa-persystowane-w-sqlite",
+            "ac-wyslanie-wiadomosci-z-pustym-polem-me"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "only": []
+        }
+      ],
+      "startCommit": "f5f982cdbeaa47d496c432e09998e53e3f454a44",
+      "baseCommit": "f5f982cdbeaa47d496c432e09998e53e3f454a44",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "m53-powloka",

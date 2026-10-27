@@ -1,0 +1,16 @@
+{
+  "id": "dev-0002",
+  "kind": "incorrect",
+  "blocking": false,
+  "address": "m05-polityka/vazt6j8g",
+  "slugs": [
+    "ac-watki-czatu-sa-persystowane-w-sqlite",
+    "ac-watek-z-bardzo-dluga-historia-get-api"
+  ],
+  "text": "M05 API (L4) `vazt6j8g`, deviations table: `GET /api/threads/:id` — message `limit` defaults to 100. The criterion `ac-watki-czatu-sa-persystowane-w-sqlite` says `GET /api/threads/:id` returns the thread's messages in full, which a 100-message default would break for longer threads. The code (unchanged in this window) returns every message when no `limit` is given and pages only on an explicit `?limit=&offset=`. Kept the code as is (it satisfies both criteria); the deviations-table row should either be dropped or say the default is 'no limit'.",
+  "assumption": "ASSUMPTION:dev-0002 — without `limit` the route returns every message (what the persistence criterion asks for); the M05 API deviation row \"limit defaults to 100\" is not applied.",
+  "unit": "m05-polityka",
+  "portion": "m05-polityka/p1-domain-l17",
+  "sent": true,
+  "patchPath": "2-1-55-to-2-1-56-m05-polityka-vazt6j8g-m05-api-l4-vazt6j8g-deviations-table.md"
+}

@@ -1615,16 +1615,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
 
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
-
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
 
@@ -1817,16 +1807,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
   <todo comment="..."/>
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
-
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
 
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
@@ -2033,16 +2013,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
 
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
-
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
 
@@ -2247,16 +2217,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
 
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
-
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
 
@@ -2455,16 +2415,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
 
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
-
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
 
@@ -2656,16 +2606,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
   <todo comment="..."/>
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
-
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
 
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
@@ -2871,16 +2811,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
 
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
-
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
 
@@ -3038,16 +2968,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
 
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
-
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
 
@@ -3202,16 +3122,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
   <todo comment="..."/>
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
-
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
 
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
@@ -3389,16 +3299,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
   <todo comment="..."/>
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
-
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
 
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
@@ -3604,16 +3504,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
 
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
-
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
 
@@ -3816,16 +3706,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
 
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
-
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
 
@@ -4020,16 +3900,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
   <todo comment="..."/>
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
-
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
 
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
@@ -4228,16 +4098,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
 
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
-
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
 
@@ -4430,16 +4290,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
   <todo comment="..."/>
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
-
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
 
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
@@ -4645,16 +4495,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
 
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
-
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
 
@@ -4858,16 +4698,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
   <todo comment="..."/>
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
-
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
 
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
@@ -5073,16 +4903,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
 
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
-
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
 
@@ -5286,16 +5106,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
   <todo comment="..."/>
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
-
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
 
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
@@ -5501,16 +5311,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
 
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
-
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
 
@@ -5714,16 +5514,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
   <todo comment="..."/>
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
-
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
 
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
@@ -5929,16 +5719,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
 
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
-
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
 
@@ -6134,16 +5914,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
   <todo comment="..."/>
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
-
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
 
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
@@ -6349,16 +6119,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
 
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
-
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
 
@@ -6562,16 +6322,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
   <todo comment="..."/>
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
-
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
 
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
@@ -6777,16 +6527,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
 
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
-
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
 
@@ -6974,16 +6714,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
   <todo comment="..."/>
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
-
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
 
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
@@ -7185,16 +6915,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
 
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
-
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
 
@@ -7372,16 +7092,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
 
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
-
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
 
@@ -7556,16 +7266,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
 
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
-
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
 
@@ -7730,16 +7430,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
   <todo comment="..."/>
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
-
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
 
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
@@ -7914,16 +7604,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
   <todo comment="..."/>
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
-
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
 
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
@@ -8148,16 +7828,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
 
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
-
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
 
@@ -8370,16 +8040,6 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
   <todo comment="..."/>
 Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>
-
-<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>
 
 <sections_and_anchors>
 Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
