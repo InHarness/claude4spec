@@ -113,7 +113,7 @@ describe('M17 release over pages roots only (2.1.55)', () => {
     insertFileVersion('briefs', 'a.md', 1, 'brief');
     insertFileVersion('plans', 'p.md', 1, 'plan');
 
-    const r1 = releases.createRelease({ name: 'r1', description: '' }, 'user').id;
+    const r1 = releases.createRelease({ name: 'r1', description: 'r1' }, 'user').id;
 
     const rows = db.prepare('SELECT rootId, path, release_id FROM file_version').all() as Array<{
       rootId: string;
@@ -130,7 +130,7 @@ describe('M17 release over pages roots only (2.1.55)', () => {
     insertFileVersion('pages', 'a.md', 1, 'base');
     insertFileVersion('notes', 'a.md', 1, 'note');
     insertFileVersion('briefs', 'a.md', 1, 'brief');
-    const r1 = releases.createRelease({ name: 'r1', description: '' }, 'user').id;
+    const r1 = releases.createRelease({ name: 'r1', description: 'r1' }, 'user').id;
 
     const snap = releases.getReleaseSnapshot(r1);
     const contents = snap.pages.map((p) => (p.data as { content: string }).content).sort();
@@ -141,10 +141,10 @@ describe('M17 release over pages roots only (2.1.55)', () => {
   it(`${AC} the diff pairs a page with its own root's past, never with the same path in another root, and skips system roots`, async () => {
     insertFileVersion('pages', 'a.md', 1, 'base');
     insertFileVersion('notes', 'a.md', 1, 'note');
-    const r1 = releases.createRelease({ name: 'r1', description: '' }, 'user').id;
+    const r1 = releases.createRelease({ name: 'r1', description: 'r1' }, 'user').id;
     insertFileVersion('notes', 'a.md', 2, 'note edited', 'update');
     insertFileVersion('briefs', 'b.md', 1, 'brief');
-    const r2 = releases.createRelease({ name: 'r2', description: '' }, 'user').id;
+    const r2 = releases.createRelease({ name: 'r2', description: 'r2' }, 'user').id;
 
     const delta = await releases.getReleaseDiff(r1, r2);
     expect(delta.pages.map((p) => [(p as { rootId?: string }).rootId, p.path, p.op])).toEqual([
@@ -163,7 +163,7 @@ describe('M17 release over pages roots only (2.1.55)', () => {
     insertFileVersion('notes', 'a.md', 1, 'note v1');
     insertFileVersion('notes', 'a.md', 2, 'note v2', 'update');
     insertFileVersion('notes', 'a.md', 3, 'note v3', 'update');
-    const r1 = releases.createRelease({ name: 'r1', description: '' }, 'user').id;
+    const r1 = releases.createRelease({ name: 'r1', description: 'r1' }, 'user').id;
     fs.writeFileSync(path.join(pagesDir, 'a.md'), 'edited since');
 
     const result = await releases.restorePage({ path: 'a.md', releaseId: r1 });
@@ -175,9 +175,9 @@ describe('M17 release over pages roots only (2.1.55)', () => {
   it(`${AC} restoring the spec brings back the base root's pages only — a path released under another pages root is not written here`, async () => {
     insertFileVersion('pages', 'a.md', 1, 'base');
     insertFileVersion('notes', 'n.md', 1, 'note only');
-    const r1 = releases.createRelease({ name: 'r1', description: '' }, 'user').id;
+    const r1 = releases.createRelease({ name: 'r1', description: 'r1' }, 'user').id;
     // A later release in which nothing changed: restore of r2 still sees r1's pages.
-    const r2 = releases.createRelease({ name: 'r2', description: '' }, 'user').id;
+    const r2 = releases.createRelease({ name: 'r2', description: 'r2' }, 'user').id;
 
     const result = await releases.restoreSpec({ releaseId: r2 });
 

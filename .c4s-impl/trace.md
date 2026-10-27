@@ -14,3 +14,4 @@ git-service-contract → src/server/services/git.ts
 release → src/shared/entities.ts
 get-api-git-status → src/server/routes/git.ts
 get-api-git-branches → src/server/routes/git.ts
+- system verification r1 (env 2-1-54-to-2-1-55, sha 3b5f75d4): release-pages-roots.test.ts 5/5 red — createRelease with description '' (RELEASE_DESCRIPTION_REQUIRED); fixed test inputs. chat.live-join flake green 3/3 in isolation. e2e red files (artifact-threads-panel, plan-footer, entity-version-history: "seed one first"; envelope-entity-pages, frontend-mockups-envelope green 2/2 in isolation) — seed/flake, same set as main env 2-1-53-to-2-1-54.
