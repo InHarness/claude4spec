@@ -45,6 +45,24 @@ export interface CreateVersionInput {
   serializerVersion?: string | null;
 }
 
+/**
+ * 2.1.57 (M13 `update-entities`) — the entity's current number in the
+ * `entity_version` log: the highest captured version, `0` for an entity the log
+ * has never captured. The next capture takes this plus one, and the optional
+ * per-item guard of `update_entities` (`expectedVersion`) compares against it.
+ *
+ * A free function over the handle rather than a `VersionService` method so the
+ * generic write door can read it on the SAME connection, inside the SAME
+ * transaction as its write — the check and the write are then one critical
+ * section, not two statements another writer could slip between.
+ */
+export function currentEntityVersion(db: Database.Database, entityType: string, entitySlug: string): number {
+  const row = db
+    .prepare(`SELECT MAX(version) AS v FROM entity_version WHERE entity_type = ? AND entity_slug = ?`)
+    .get(entityType, entitySlug) as { v: number | null };
+  return row.v ?? 0;
+}
+
 export class VersionService {
   // M17: lazily wired by index.ts after pluginHost.consolidate. When present,
   // entity services prefer captureSnapshot(...) over createVersion(...) so
@@ -427,12 +445,7 @@ export class VersionService {
   }
 
   private nextVersionNumber(entityType: string, entitySlug: string): number {
-    const row = this.db
-      .prepare(
-        `SELECT MAX(version) AS v FROM entity_version WHERE entity_type = ? AND entity_slug = ?`
-      )
-      .get(entityType, entitySlug) as { v: number | null };
-    return (row.v ?? 0) + 1;
+    return currentEntityVersion(this.db, entityType, entitySlug) + 1;
   }
 
   private toListItem(row: VersionRow): VersionListItem {

@@ -1,0 +1,15 @@
+{
+  "id": "dev-0012",
+  "kind": "clarification",
+  "blocking": false,
+  "address": "u06-entity-ops-guards/entity-tools-update-entities",
+  "unit": "u06-entity-ops-guards",
+  "portion": "u06-entity-ops-guards/p1-l2-l3",
+  "slugs": [
+    "entity-tools-update-entities"
+  ],
+  "text": "Rekord mcp-tool `entity-tools-update-entities` (2.1.57) dał parametrowi `updates` opis po polsku: „Pozycje `{ slug, data, newSlug?, expectedVersion? }`; `expectedVersion` (liczba całkowita) to opcjonalny guard: numer `entity_version`, na którym oparto zmianę.”. Opis parametru to tekst, który czyta model po drugiej stronie MCP; reszta kontraktu narzędzia (`description`, opisy parametrów innych narzędzi) jest po angielsku, a konwencja repo każe komunikaty API pisać po angielsku. Przyjęte: opis wpisany dosłownie z rekordu (test porównuje parametry z rekordem), oznaczony `ASSUMPTION:dev-0012` w `src/server/mcp/entity-tools.ts`.\n\nSugestia: przepisać opis parametru `updates` w rekordzie na angielski, np. „Items `{ slug, data, newSlug?, expectedVersion? }`; `expectedVersion` (an integer) is the optional guard: the `entity_version` number the change is based on.”",
+  "assumption": "ASSUMPTION:dev-0012 the updates param description is the record's Polish text, verbatim",
+  "sent": true,
+  "patchPath": "2-1-56-to-2-1-57-u06-entity-ops-guards-entity-tools-update-entities-rekord-mcp-tool-entity-tools-.md"
+}

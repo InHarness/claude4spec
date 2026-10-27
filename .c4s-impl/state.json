@@ -1471,7 +1471,7 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "u06-entity-ops-guards/p1-l2-l3",
@@ -1484,20 +1484,22 @@
             "update-entities",
             "entity-tools-update-entities"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 1,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "5525bb8b86546864d7770eb6a88d9f6e851e84b4",
+      "baseCommit": "5525bb8b86546864d7770eb6a88d9f6e851e84b4",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": [],
+      "lastBlocking": []
     },
     {
       "id": "u07-turn-argument-assembly",

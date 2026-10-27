@@ -36,6 +36,7 @@ import { normalizePayload } from '../../../shared/plugin-host/data-schema.js';
 import type { ChangedBy } from '../../../shared/entities.js';
 import type { RawEntity, RawEntityReader, RawEntityType } from '../../discovery/raw-entity-reader.js';
 import type { EntityStore } from '../../services/entity-store.js';
+import { currentEntityVersion } from '../../services/versions.js';
 import type { TagsService } from '../../services/tags.js';
 import type { ReferencesService } from '../../services/references.js';
 import type { ProjectPluginHost, BackendModule } from './types.js';
@@ -302,6 +303,16 @@ function mergeUpdate(
   return merged;
 }
 
+export interface GenericUpdateOptions {
+  /**
+   * 2.1.57 (M13 `update-entities`) — the optional per-item concurrency guard:
+   * the entity's `entity_version` number the caller based the change on. A
+   * different current number refuses the write with `VERSION_CONFLICT` and
+   * writes nothing; omitted, the write goes through unchecked, as before.
+   */
+  expectedVersion?: number;
+}
+
 /** `PATCH /api/{type}s/:slug` and `update_entities`, for a type with no service. */
 export function genericUpdate(
   deps: GenericCrudDeps,
@@ -309,6 +320,7 @@ export function genericUpdate(
   slug: string,
   input: unknown,
   actor: ChangedBy,
+  opts: GenericUpdateOptions = {},
 ): GenericMutateResult {
   const module = requireModule(deps, type);
   const current = deps.reader.getEntity(type, slug);
@@ -339,7 +351,26 @@ export function genericUpdate(
    * still sat at the old one, and the next rebuild resurrected it as a second
    * entity.
    */
+  /**
+   * The guard is the transaction's FIRST statement, so the check and the write
+   * are one critical section: the read of the version log, the row write, the
+   * capture that moves the number on, and the file derived after commit run
+   * without a single `await` between them, on the one connection every entity
+   * writer of this project shares. Two writers holding the same number cannot
+   * both pass — the second reads the number the first one's capture wrote.
+   * A refusal throws before anything is written, so the transaction has nothing
+   * to roll back and the file is never touched.
+   */
   const warnings = inOneTransaction(deps, () => {
+    if (opts.expectedVersion !== undefined) {
+      const now = currentEntityVersion(deps.projection.db, type, slug);
+      if (now !== opts.expectedVersion) {
+        throw new DomainError(
+          'VERSION_CONFLICT',
+          `${type} '${slug}' is at version ${now}, not ${opts.expectedVersion} — re-read it and apply the change again`,
+        );
+      }
+    }
     if (target !== slug) renameProjectionRow(deps.projection, module, slug, target, actor, ROW_ONLY);
     const result = upsertProjectionRow(deps.projection, module, target, merged, actor, ROW_ONLY);
     if (Object.prototype.hasOwnProperty.call(patch, 'tags')) {

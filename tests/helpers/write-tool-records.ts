@@ -58,10 +58,17 @@ export const WRITE_TOOL_RECORDS: Record<string, WriteToolRecord> = {
     server: 'entity-tools',
     name: 'update_entities',
     description:
-      "Update one or more entities in a single batch. `data` is validated against the type's updateSchema (partial by default). The slug is stable — pass an explicit `newSlug` to rename (collision → SLUG_CONFLICT); a rename propagates to every markdown reference. Non-transactional. Returns { results: [{ slug } | { error, code }] } in input order (slug is the NEW slug if renamed).",
+      "Update one or more entities in a single batch. `data` is validated against the type's updateSchema (partial by default). The slug is stable — pass an explicit `newSlug` to rename (collision → SLUG_CONFLICT); a rename propagates to every markdown reference. Optional per-item concurrency guard: pass `expectedVersion` — the entity's `entity_version` number you based the change on — and the item is refused with VERSION_CONFLICT if the entity has moved on; omit it to write unguarded. Non-transactional. Returns { results: [{ slug } | { error, code }] } in input order (slug is the NEW slug if renamed).",
+    // 2.1.57 — the `updates` parameter gained its description (the per-item guard).
     params: [
       { name: 'type', type: 'string', required: true },
-      { name: 'updates', type: 'object[]', required: true },
+      {
+        name: 'updates',
+        type: 'object[]',
+        required: true,
+        description:
+          'Pozycje `{ slug, data, newSlug?, expectedVersion? }`; `expectedVersion` (liczba całkowita) to opcjonalny guard: numer `entity_version`, na którym oparto zmianę.',
+      },
     ],
   },
   'entity-tools-delete-entities': {

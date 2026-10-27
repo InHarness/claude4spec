@@ -1,0 +1,1 @@
+{"role":"implementer","status":"progressed","release":"2.1.57","unit":"u06-entity-ops-guards","portion":"u06-entity-ops-guards/p1-l2-l3","claimed":["create-entities","update-entities","entity-tools-update-entities"],"deviations":["dev-0012","dev-0013"],"stubsOpened":[],"stubsClosed":[],"stoppedEarly":false}

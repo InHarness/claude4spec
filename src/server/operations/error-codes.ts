@@ -68,6 +68,13 @@ export const STATUS_FOR_CODE: Record<string, number> = {
   NOT_FOUND: 404,
   VERSION_NOT_FOUND: 404,
   SLUG_CONFLICT: 409,
+  /**
+   * 2.1.57 (M13 `update-entities`) — an `update_entities` item whose
+   * `expectedVersion` is not the entity's current `entity_version` number. 409
+   * like `PAGE_CONFLICT`, for the same reason: the refusal is about server state
+   * that moved, so re-reading and re-applying the identical intent succeeds.
+   */
+  VERSION_CONFLICT: 409,
   VALIDATION: 400,
   SECTION_NOT_FOUND: 400,
   AMBIGUOUS_HEADING: 400,
