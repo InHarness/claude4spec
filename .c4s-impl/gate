@@ -1,0 +1,1 @@
+wave 2 done — all buildable units verified (11/12; u08 blocked by user decision dev-0001). Next: system verification in env-runner (npm test + npm run test:e2e).
