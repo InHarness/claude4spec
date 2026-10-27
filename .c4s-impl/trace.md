@@ -1,3 +1,0 @@
-szablon-task-tracking → removed: src/server/services/system-prompt/blocks/m05-chat-turn.ts (template + block), src/server/services/system-prompt/compositions/default.ts (slot); absence pinned by src/server/services/chat-context.test.ts and src/server/services/system-prompt/blocks/m05-chat-turn.test.ts ([entity:szablon-task-tracking]); golden snapshot updated
-wklad-do-edytora-m53#adnotacje page-bound → src/client/tiptap/registrations.ts (`annotationHighlight`), src/client/tiptap/extensions/AnnotationHighlight.ts
-wklad-do-edytora-m53#`chat-input` → src/client/tiptap/contextSpec.ts (`chat-input` spec), src/client/chat/ChatInputEditor.tsx

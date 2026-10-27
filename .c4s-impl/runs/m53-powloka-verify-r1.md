@@ -1,3 +1,0 @@
-# m53-powloka unit verifier r1 — open rows
-
-- `ac-tool-calls-wykonane-przez-subagenta-n` — test-not-verifying: BlockRenderer.render.test.ts:180 — the fixture [Read r0, Task task1, subagent, result, Read r3] never forms a parent batch: r0/r3 are separated and Task is another category. So `parentItems` is [] and `expect(parentItems).not.toContain('task1')` / `.not.toContain('s1')` pass vacuously, whether or not batchToolBlocks excludes delegation calls. A discriminating fixture needs parallel delegations (use task1, use task2, subagent1, subagent2, …) or same-category neighbours. The criterion's wording is also open: see dev-0004.
