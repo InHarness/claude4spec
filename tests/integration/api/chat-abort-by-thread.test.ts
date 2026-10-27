@@ -81,6 +81,19 @@ describe('POST /api/chat/abort/:threadId', () => {
     expect(res.body.data.aborted).toBe(true);
     expect(res.body.clearedTexts).toEqual(['pending']);
     expect(aborted).toBe(true);
+    // The queue is CLEARED, not merely reported.
+    expect(h.chat.listQueued(h.threadId)).toEqual([]);
+  });
+
+  it('[ac:ac-abort-post-api-chat-abort-oraz-abort] the requestId-addressed abort clears the queue and returns its texts in clearedTexts too', async () => {
+    activate(h, { requestId: 'req-7' });
+    h.chat.enqueueQueued(h.threadId, 'first');
+    h.chat.enqueueQueued(h.threadId, 'second');
+
+    const res = await request(h.app).post('/api/chat/abort').send({ requestId: 'req-7' }).expect(200);
+    expect(res.body.data.aborted).toBe(true);
+    expect(res.body.clearedTexts).toEqual(['first', 'second']);
+    expect(h.chat.listQueued(h.threadId)).toEqual([]);
   });
 
   it('is idempotent — a known thread with no live turn is a 2xx no-op, not an error', async () => {

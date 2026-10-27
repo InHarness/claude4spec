@@ -1,5 +1,5 @@
 {
-  "iteration": 0,
+  "iteration": 5,
   "errors": 0,
   "systemVerified": false,
   "conventions": [
@@ -47,7 +47,7 @@
         "m05-tura",
         "m05-polityka"
       ],
-      "startCommit": null
+      "startCommit": "e33feb0855485fab46d2fc125d7282bde4214baf"
     },
     {
       "n": 2,
@@ -141,15 +141,65 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "m05-tura/p1-domain-a",
+          "layers": [
+            "Domain"
+          ],
+          "criteriaGroup": "chat-background-task … get-api-threads-id",
+          "slugs": [
+            "ac-dwa-rownolegle-zadania-w-tle-w-jednej",
+            "ac-zadanie-ktore-nigdy-nie-dostalo-backg",
+            "ac-zdarzenie-warning-ktore-przyszlo-po-o",
+            "ac-get-api-threads-id-zwraca-queuedmessag",
+            "ac-abort-post-api-chat-abort-oraz-abort",
+            "ac-dolaczenie-do-martwej-tury-404-bez-ot",
+            "ac-po-przeladowaniu-watku-delegacja-prze"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "only": []
+        },
+        {
+          "name": "m05-tura/p2-domain-b",
+          "layers": [
+            "Domain"
+          ],
+          "criteriaGroup": "post-api-chat … post-api-chat-queue-threadid, then criteria with no verifies target",
+          "slugs": [
+            "ac-odmowa-polityki-narzedzi-produkuje-st",
+            "ac-przekroczenie-capa-oczekiwania-na-zad",
+            "ac-post-api-chat-queue-threadid-na-watek-2",
+            "ac-agent-moze-zadac-pytanie-przez-askuse",
+            "ac-dismiss-karty-user-input-request-pozb",
+            "ac-echo-tool-result-rodziny-task-nie-tra",
+            "ac-pole-outputfile-renderuje-sie-jako-ni",
+            "ac-pytanie-askuserquestion-i-odpowiedz-u",
+            "ac-turn-start-kontynuacji-niesie-turnsta",
+            "ac-turn-start-po-merged-dispatch-niesie",
+            "ac-zdarzenia-background-task-started-pro",
+            "ac-zdarzenia-rodziny-scheduling-schedule",
+            "ac-zdarzenie-warning-z-adaptera-jest-for",
+            "ac-zmiany-listy-zadan-modelu-docieraja-d"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "only": []
+        }
+      ],
+      "startCommit": "e33feb0855485fab46d2fc125d7282bde4214baf",
+      "baseCommit": "e33feb0855485fab46d2fc125d7282bde4214baf",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "m05-polityka",
@@ -732,5 +782,6 @@
         }
       ]
     }
-  ]
+  ],
+  "baselineGreen": true
 }

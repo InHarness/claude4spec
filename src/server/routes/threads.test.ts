@@ -482,6 +482,56 @@ describe('GET /threads — detail-only projection of task collections (0.2.52)',
     expect(listBackgroundTasks).not.toHaveBeenCalled();
     expect(listSubagentTasks).not.toHaveBeenCalled();
   });
+
+  it('[ac:ac-get-api-threads-id-zwraca-queuedmessag] returns queuedMessages from the persisted chat_queued_message rows, also after a server restart', async () => {
+    // A file-backed DB: the "restart" closes the handle and the service and
+    // opens fresh ones, so nothing in-memory can carry the queue across.
+    const file = path.join(dir, 'restart.db');
+    const first = new Database(file);
+    runMigrations(first);
+    const before = new ChatService(first);
+    const t = before.createThread('t');
+    const a = before.enqueueQueued(t.id, 'first queued');
+    const b = before.enqueueQueued(t.id, 'second queued');
+    first.close();
+
+    // Restart: a new handle + service, and the boot sweeps production runs on
+    // project open (`project-context.ts`) — none of them may touch the queue.
+    const reopened = new Database(file);
+    runMigrations(reopened);
+    chat = new ChatService(reopened);
+    chat.finalizeAllStreamingRows();
+    chat.finalizeAllRunningBackgroundTasks();
+    chat.finalizeAllRunningSubagentTasks();
+    try {
+      const res = await request(app()).get(`/threads/${t.id}`);
+
+      expect(res.status).toBe(200);
+      // QueuedMessage wire shape: id = String(row id), text = prompt, createdAt.
+      expect(res.body.data.queuedMessages).toEqual([
+        { id: a.id, text: 'first queued', createdAt: a.createdAt },
+        { id: b.id, text: 'second queued', createdAt: b.createdAt },
+      ]);
+    } finally {
+      reopened.close();
+    }
+  });
+
+  it('[ac:ac-po-przeladowaniu-watku-delegacja-prze] after the turn closes, a delegation cut before subagent_completed comes back abandoned', async () => {
+    const t = chat.createThread('t');
+    chat.startSubagentTask(t.id, 'sub_1', 'Explore M05', 'tu_task');
+    // No `subagent_completed` ever arrives; closing the turn runs its finalizer
+    // (`runAgentTurn`'s finally → `finalizeRunningSubagentTasks`).
+    chat.finalizeRunningSubagentTasks(t.id);
+
+    const res = await request(app()).get(`/threads/${t.id}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.subagentTasks).toEqual([
+      expect.objectContaining({ taskId: 'sub_1', status: 'abandoned' }),
+    ]);
+    expect(res.body.data.subagentTasks[0].status).not.toBe('running');
+  });
 });
 
 /**
