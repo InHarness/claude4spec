@@ -92,7 +92,7 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
    * Tier E suffixed here as well, on the strength of `ac`'s comment — but even
    * `ac` threw `SLUG_CONFLICT` when the caller named the slug, and landing
    * somewhere other than where you were told to is worse than failing. A DERIVED
-   * collision follows the type's declared `slugConflict`, which defaults to the
+   * collision follows the type's declared `slugCollision`, which defaults to the
    * same refusal (`widget` declares nothing); `ac` and `diagram` opt into the
    * suffix because their slugs are slugified prose.
    */
@@ -103,7 +103,7 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
     expect(second.body.error.code).toBe('SLUG_CONFLICT');
   });
 
-  it('refuses a DERIVED collision too, for a type that declares no slugConflict', async () => {
+  it('refuses a DERIVED collision too, for a type that declares no slugCollision', async () => {
     expect((await request(t.app).post('/api/widgets').send({ title: 'Order Form' })).status).toBe(201);
     const dup = await request(t.app).post('/api/widgets').send({ title: 'Order Form' });
     expect(dup.status).toBe(409);

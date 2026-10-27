@@ -30,7 +30,7 @@ import { codeSnippetSystemPrompt } from './system-prompt.js';
  *     handed over in one read; the 10 000-character cap guarantees it can, and
  *     `get_entities` returns `code` whole.
  *
- * `slugConflict: 'suffix'`, which is the OPPOSITE of what `mcp-tool` and
+ * `slugCollision: 'suffix'`, which is the OPPOSITE of what `mcp-tool` and
  * `diagram` choose, and the difference is about what a duplicate MEANS. Two
  * tools sharing a server and a name are two descriptions of one tool — a
  * mistake, and `-2` would file the mistake as a legal catalogue entry. Two
@@ -46,7 +46,7 @@ export const codeSnippetEntity: EntityContribution = {
   type: CODE_SNIPPET_TYPE,
   data: codeSnippetData,
   slugPattern: codeSnippetSlugPattern,
-  slugConflict: 'suffix',
+  slugCollision: 'suffix',
   payloadVersion: 1,
   label: CODE_SNIPPET_LABEL,
   labelPlural: CODE_SNIPPET_LABEL_PLURAL,

@@ -26,7 +26,7 @@ const snippet: WritableModule = {
   type: 'snippet',
   payloadVersion: 1,
   slugPattern: [{ op: 'slugify', field: 'title' }],
-  slugConflict: 'suffix',
+  slugCollision: 'suffix',
   data: {
     schema: {
       title: { type: 'string', required: true, maxLength: 200 },

@@ -78,7 +78,7 @@ export const diagramData: DataDeclaration = {
  *
  * The retired chain ended in `diagram-<nanoid(8)>`, which meant two diagrams
  * captioned the same silently became two entities with unrelated slugs. Under
- * `slugConflict: 'reject'` the second one now fails loudly with `SLUG_CONFLICT`.
+ * `slugCollision: 'error'` the second one now fails loudly with `SLUG_CONFLICT`.
  * That is the trade the release takes deliberately: a noisy collision is better
  * than two entities nobody knows were meant to be one.
  *

@@ -36,6 +36,12 @@ import { onRegister as registerDiagram } from '../../entities/diagram/plugin.js'
  * plugin". That stopped being true at 2.0.0 and the description outlived it by
  * two releases: the packages it named declare `hostApiVersion: '^1.0.0'`, so the
  * loader's gate dropped them and the type was not preinstalled — it was absent.
+ *
+ * 2.1.57 (M13 `m13pool0`) — `diagram` is the last type on this direct tier, and
+ * the base registry's silent last-wins lasts until it leaves: once no built-in
+ * re-registers on a second start, a base collision becomes `PLUGIN_TYPE_CONFLICT`
+ * as in the overlay. ASSUMPTION:dev-0007 only diagram is still registered
+ * directly; base last-wins lasts until it leaves.
  */
 export function registerAllPlugins(registry: PluginRegistry): void {
   registerDiagram(registry);

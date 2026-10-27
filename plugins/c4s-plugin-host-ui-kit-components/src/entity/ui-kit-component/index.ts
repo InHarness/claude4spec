@@ -28,7 +28,7 @@ export const uiKitComponentEntity: EntityContribution = {
   data: uiKitComponentData,
   slugPattern: uiKitComponentSlugPattern,
   // A colliding slug gets `-2` / `-3` (`esn4za5k`).
-  slugConflict: 'suffix',
+  slugCollision: 'suffix',
   payloadVersion: UI_KIT_COMPONENT_PAYLOAD_VERSION,
   payloadUpgrades: [],
   label: UI_KIT_COMPONENT_LABEL,

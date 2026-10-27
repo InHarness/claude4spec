@@ -95,7 +95,7 @@ export const acFixtureModule = {
   slugPattern: acFixtureSlugPattern,
   // 1, not the real type's 3 — see the note above on payload age.
   payloadVersion: 1,
-  slugConflict: 'suffix',
+  slugCollision: 'suffix',
   label: 'Acceptance Criterion',
   labelPlural: 'Acceptance Criteria',
   pathPrefix: '/acs',

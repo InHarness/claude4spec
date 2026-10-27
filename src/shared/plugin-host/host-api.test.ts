@@ -157,12 +157,20 @@ describe('M33 — Host API versioning helpers', () => {
 });
 
 describe('2.1.0 — the Host API changelog records the minor bump', () => {
-  it('the newest minor release is the running HOST_API_VERSION, and it removes registerExtensionReferenceType', () => {
+  /**
+   * 2.1.57 (M33 `m33load01`, M51 `klprfawm`) — the entry has ONE item: the
+   * removal of `registerExtensionReferenceType`. The optional `form` of the XML
+   * tag registration shape left it, because that shape is an internal host
+   * contract outside the versioned surface.
+   */
+  it('[section:m33load01] the newest minor release is the running HOST_API_VERSION, and its one item removes registerExtensionReferenceType', () => {
     const latest = HOST_API_MINOR_RELEASES[HOST_API_MINOR_RELEASES.length - 1]!;
     expect(HOST_API_VERSION).toBe('2.1.0');
     expect(latest.version).toBe(HOST_API_VERSION);
-    expect(latest.changes.map((c) => c.kind)).toEqual(['slot-added', 'slot-removed']);
-    expect(latest.changes[1]!.slot).toContain('registerExtensionReferenceType');
+    expect(latest.changes).toHaveLength(1);
+    expect(latest.changes[0]!.kind).toBe('slot-removed');
+    expect(latest.changes[0]!.slot).toContain('registerExtensionReferenceType');
+    expect(JSON.stringify(latest)).not.toMatch(/XmlTagDefinition|\.form\b/);
   });
 });
 
@@ -318,6 +326,32 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
     expect(releases.indexOf('2.1.41')).toBe(releases.indexOf('2.1.40') + 1);
     expect(HOST_API_VERSION).toBe('2.1.0');
     expect(UI_KIT_STABLE_COMPONENTS).not.toContain('EntityRefValue');
+  });
+
+  it('[section:m33load01] 2.1.57: the slugCollision slot and the PLUGIN_TOOL_CONFLICT refusal are unversioned changes after the refLookup entry, with no bump and no migrations[] descriptor', () => {
+    const changes = HOST_API_UNVERSIONED_CHANGES.filter((c) => c.release === '2.1.57');
+    expect(changes).toHaveLength(2);
+    const slot = changes.find((c) => c.slot.includes('slugCollision'));
+    expect(slot?.kind).toBe('slot-added');
+    expect(slot?.slot).toContain('EntityModuleManifest');
+    expect(slot?.summary).toMatch(/additive/i);
+    expect(slot?.summary).toContain('SLUG_CONFLICT');
+    const refusal = changes.find((c) => c.slot.includes('PLUGIN_TOOL_CONFLICT'));
+    expect(refusal?.kind).toBe('behaviour-changed');
+    expect(refusal?.summary).toContain('PLUGIN_TYPE_CONFLICT');
+    expect(refusal?.summary).toMatch(/server name already registered/);
+    expect(refusal?.summary).toMatch(/tool name declared twice/);
+    for (const c of changes) expect(c.uiKitStable).toBeUndefined();
+    // Placed after the newest earlier entry (2.1.41).
+    const releases = HOST_API_UNVERSIONED_CHANGES.map((c) => c.release);
+    expect(releases.indexOf('2.1.57')).toBe(releases.lastIndexOf('2.1.41') + 1);
+    // No bump, no release and no major-crossing descriptor carries either.
+    expect(HOST_API_VERSION).toBe('2.1.0');
+    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0']);
+    for (const release of HOST_API_RELEASES) {
+      expect(JSON.stringify(release)).not.toMatch(/slugCollision|PLUGIN_TOOL_CONFLICT/);
+    }
+    expect(JSON.stringify(migrationsBetween(0, Number.MAX_SAFE_INTEGER))).not.toMatch(/slugCollision|PLUGIN_TOOL_CONFLICT/);
   });
 
   it('[section:m33load01] the composition of UI_KIT_STABLE_COMPONENTS is exactly what the registries record', () => {

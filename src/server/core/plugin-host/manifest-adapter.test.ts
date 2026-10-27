@@ -98,12 +98,33 @@ describe('lowerEntityContribution', () => {
         base({
           payloadVersion: 2,
           payloadUpgrades: [(p: unknown) => p],
-          slugConflict: 'suffix',
+          slugCollision: 'suffix',
           dependsOn: [],
           backend: { service: () => ({}) },
         }),
       ),
     ).not.toThrow();
+  });
+
+  /**
+   * 2.1.57 — the identity gains the optional `slugCollision?: 'error' | 'suffix'`
+   * slot (omitted means `'error'`). It replaces the code's earlier
+   * `slugConflict: 'reject' | 'suffix'` with no alias: the old key is refused as
+   * an unknown key, and a value outside the closed pair is refused rather than
+   * read as either answer.
+   */
+  it("[section:z7l89jhf] the identity's optional slugCollision slot: 'error' | 'suffix', copied when declared, absent when omitted", () => {
+    expect(lowerEntityContribution(base({ slugCollision: 'suffix' })).slugCollision).toBe('suffix');
+    expect(lowerEntityContribution(base({ slugCollision: 'error' })).slugCollision).toBe('error');
+    const omitted = lowerEntityContribution(base()) as unknown as Record<string, unknown>;
+    expect('slugCollision' in omitted).toBe(false);
+
+    expect(() => lowerEntityContribution(base({ slugCollision: 'reject' } as never))).toThrow(
+      /slugCollision must be 'error' or 'suffix'/,
+    );
+    expect(() => lowerEntityContribution(base({ slugConflict: 'suffix' } as never))).toThrow(
+      /unknown manifest key\(s\): `slugConflict`/,
+    );
   });
 
   /**

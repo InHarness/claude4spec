@@ -1,0 +1,16 @@
+{
+  "id": "dev-0006",
+  "kind": "drift",
+  "blocking": false,
+  "address": "u04-plugin-registration-contract/x2nr826t",
+  "unit": "u04-plugin-registration-contract",
+  "portion": "u04-plugin-registration-contract/p1-l2-a",
+  "slugs": [
+    "section:x2nr826t",
+    "section:z7l89jhf"
+  ],
+  "text": "Strony okna opisują `slugCollision?: 'error' | 'suffix'` jako NOWY slot tożsamości, po którego dodaniu typy doklejające dziś sufiks muszą go zadeklarować. Kod miał tę politykę już od 0.2.22 pod inną nazwą: `slugConflict?: 'reject' | 'suffix'` z domyślną odmową (`SLUG_CONFLICT`), jawny slug zawsze odmawiał, a pięć typów (ac, code-snippet, module-dependency, spreadsheet, ui-kit-component) deklarowało `'suffix'`. Przyjęte: zmiana nazwy na kształt ze specyfikacji bez aliasu — `slugCollision`, wartość `'error'` zamiast `'reject'`; manifest ze starym kluczem odpada jako nieznany klucz, wartość spoza pary jest błędem rejestracji. Zachowanie hosta się nie zmienia.\n\nSugestia: w M13 (x2nr826t) i w kwalifikacji M33 (m33load01) zapisać, że to zmiana nazwy istniejącego slotu (`slugConflict` → `slugCollision`, `'reject'` → `'error'`), a nie dodanie nowego — to nie jest zmiana czysto additive dla manifestu deklarującego stary klucz.",
+  "assumption": "ASSUMPTION:dev-0006 slugCollision replaces slugConflict ('reject' → 'error') with no alias",
+  "sent": true,
+  "patchPath": "2-1-56-to-2-1-57-u04-plugin-registration-contract-x2nr826t-strony-okna-opisuja-slugcollision-erro.md"
+}

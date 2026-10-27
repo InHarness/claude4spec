@@ -404,7 +404,9 @@ export interface BackendModule extends EntityModuleManifest {
      * wraps this factory in a thunk in `synthesizeMount` (`registerMcpServer`),
      * so `buildMcpServers()` rebuilds a fresh, connectable server for every
      * `adapter.execute()` behind the facade — see `registerMcpServer` on why the
-     * unit is the query and not the turn.
+     * unit is the query and not the turn. 2.1.57: a tool name declared twice in
+     * this server, or a `${type}-tools` name already in the pool, is refused at
+     * plugin load with `PLUGIN_TOOL_CONFLICT`.
      */
     mcpServer?: (service: unknown, ctx: MountContext) => McpServerFactory;
     /**
@@ -663,6 +665,9 @@ export interface ProjectPluginHost {
    *
    * Throws for a name in `CLAUDE_CODE_RESERVED_MCP_SERVER_KEYS` (`workspace`):
    * the CLI reserves it, and agent-adapters 0.10.0 would drop such a server.
+   * 2.1.57 (M13 `z7l89jhf`) — throws `PLUGIN_TOOL_CONFLICT` for a name already
+   * registered in the pool, and `mountBackend` throws it for a server a plugin
+   * mounted with a tool name declared twice.
    */
   registerMcpServer(name: string, factory: () => McpServerFactory): void;
 

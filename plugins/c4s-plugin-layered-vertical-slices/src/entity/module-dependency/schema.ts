@@ -106,7 +106,7 @@ export const moduleDependencyData: DataDeclaration = {
  * and does not touch a single reference; a rename goes through `newSlug`.
  *
  * The pair is NOT unique and the host does not pretend otherwise: describing the
- * same pair twice is suffixed (`-2`) rather than refused — see `slugConflict` on
+ * same pair twice is suffixed (`-2`) rather than refused — see `slugCollision` on
  * the contribution. Direction never collides, because the two orderings slugify
  * differently.
  */

@@ -6,3 +6,10 @@ section:m36l4fam → src/server/services/patch.ts (PatchService.withLock over up
 section:m23mcp01 → src/server/services/patch.ts (markApplied under the per-path lock)
 section:m23edg01 → src/server/services/patch.ts (markApplied under the per-path lock)
 section:bctqi8sw → src/server/services/plan.ts (PlanUpdateContentOpts without changeSummary)
+section:z7l89jhf → src/shared/plugin-host/types.ts (EntityModuleManifest.slugCollision?: 'error' | 'suffix') + src/server/core/plugin-host/manifest-adapter.ts (ENVELOPE_KEYS, value check, lowering)
+section:x2nr826t → src/server/core/plugin-host/generic-crud.ts (allocateSlug: suffix only for 'suffix', explicit slug always SLUG_CONFLICT) + every suffixing type's contribution (ac, code-snippet, module-dependency, spreadsheet, ui-kit-component)
+section:m13pool0 → src/server/core/plugin-host/registry.ts (registerEntityModule Map.set last-wins, unchanged) + src/server/core/plugin-host/register-builtins.ts (diagram, the last direct type)
+section:l4crudhl → no generic CRUD route helper (none in src/ or plugins/); domain-only routers: plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/routes.ts, plugins/c4s-plugin-frontend-mockups/src/entity/ui-view/backend/routes.ts
+section:m33load01 → src/shared/plugin-host/host-api.ts (HOST_API_UNVERSIONED_CHANGES 2.1.57: slugCollision slot-added, PLUGIN_TOOL_CONFLICT behaviour-changed; HOST_API_MINOR_RELEASES 2.1.0 has one item) + src/server/plugin-runtime/create-mcp-server.ts (PLUGIN_TOOL_CONFLICT, duplicate tool refused) + src/server/core/plugin-host/project-host.ts (registerMcpServer refuses a name already in the pool; mountBackend probes each plugin server once at load)
+section:klprfawm → src/shared/xml-markup/registry.ts (registration shape = internal host contract, Version surface: none) + src/shared/plugin-host/manifest.ts (HOST_API_VERSION note) + src/shared/plugin-host/host-api.ts (no XmlTagDefinition.form item)
+section:69i6wnvo → plugins/c4s-plugin-api-contracts/src/entity/endpoint/index.ts + backend/routes.ts (router: domain linkedDtos routes only; CRUD REST from the host's generated-crud-router.ts)

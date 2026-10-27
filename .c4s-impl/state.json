@@ -502,7 +502,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "u04-plugin-registration-contract/p1-l2-a",
@@ -515,8 +515,8 @@
             "section:x2nr826t",
             "section:l4crudhl"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 1,
           "partial": 0,
           "uncovered": [],
           "only": []
@@ -532,20 +532,22 @@
             "section:klprfawm",
             "section:69i6wnvo"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 1,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "18c09d4e7f10ab8cf4eaddccc26b398e5141d273",
+      "baseCommit": "18c09d4e7f10ab8cf4eaddccc26b398e5141d273",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": [],
+      "lastBlocking": []
     },
     {
       "id": "u05-frontend-activation-gate",

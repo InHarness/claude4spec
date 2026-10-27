@@ -14,6 +14,12 @@
  * name + attribute order + optional pure `validate` + optional `form`. It
  * carries no parser/serializer (both are generic, `xml-tags.ts`) and no render
  * (assigned separately in the browser, `client/xml-markup/renders.ts`).
+ *
+ * 2.1.57 (M51 `klprfawm`, Version surface: none) — this registration shape is
+ * an internal host contract, outside the versioned `hostApiVersion` surface:
+ * only host modules register and no plugin sees it, so a change to it (e.g.
+ * the optional `form`) is not a Host API change and the plugin runtime does
+ * not export it.
  */
 
 export type XmlTagForm = 'inline' | 'block';

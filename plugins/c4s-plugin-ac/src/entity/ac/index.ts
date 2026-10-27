@@ -50,7 +50,7 @@ export const acEntity: EntityContribution = {
   // diagram TITLE is now a hard conflict, because two diagrams meant to be one
   // is a worse outcome than a refusal. An AC is different — two criteria opening
   // with the same clause are ordinary.
-  slugConflict: 'suffix',
+  slugCollision: 'suffix',
 
   label: AC_LABEL,
   labelPlural: AC_LABEL_PLURAL,

@@ -379,7 +379,7 @@ const ENVELOPE_KEYS: ReadonlySet<string> = new Set([
   'type',
   'data',
   'slugPattern',
-  'slugConflict',
+  'slugCollision',
   'payloadVersion',
   'payloadUpgrades',
   'label',
@@ -447,6 +447,14 @@ function assertContribution(c: EntityContribution): void {
   assertSerializationContribution(c.type, c as unknown as Record<string, unknown>, c.payloadVersion);
   assertNoFrontendSlot(c.type, record);
   assertNoUnknownKeys(c.type, record);
+  // M13 `x2nr826t` — the policy is a closed pair. Anything else is refused
+  // rather than read as one of the two: a misspelt `'reject'` must not quietly
+  // become a suffixing type (or a refusing one the author did not ask for).
+  if (record.slugCollision !== undefined && record.slugCollision !== 'error' && record.slugCollision !== 'suffix') {
+    throw new PluginManifestError(
+      `entity "${c.type}" — slugCollision must be 'error' or 'suffix', got ${JSON.stringify(record.slugCollision)}`,
+    );
+  }
   if (c.systemPrompt == null) {
     throw new PluginManifestError(`entity "${c.type}" — systemPrompt is required`);
   }
@@ -495,7 +503,7 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
     labelPlural: c.labelPlural,
     data: c.data,
     slugPattern: c.slugPattern,
-    ...(c.slugConflict ? { slugConflict: c.slugConflict } : {}),
+    ...(c.slugCollision ? { slugCollision: c.slugCollision } : {}),
     payloadVersion: c.payloadVersion,
     pathPrefix: c.pathPrefix,
     dependsOn: c.dependsOn,

@@ -40,7 +40,7 @@ import { databaseTableSystemPrompt } from './system-prompt.js';
  * 1 still holds for version 1 itself: the `.json` files the retired plugins
  * wrote across six projects were read unconverted.
  *
- * NO `slugConflict: 'suffix'`, unlike `spreadsheet`. Two sheets called
+ * NO `slugCollision: 'suffix'`, unlike `spreadsheet`. Two sheets called
  * "Q1 report" is ordinary; two tables called `order_items` in one schema is a
  * mistake, and the hard `SLUG_CONFLICT` is the right answer to it.
  */

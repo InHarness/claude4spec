@@ -150,7 +150,7 @@ describe('design-system REST + ui-view relation', () => {
    * the slug is slugified prose and suffixing IS right), which would have turned
    * this into a silent `brand-2` that the author edits while every
    * `<single_element slug="brand"/>` keeps resolving to the stale original.
-   * `slugConflict` on the manifest is where the two answers now live; this type
+   * `slugCollision` on the manifest is where the two answers now live; this type
    * takes the default.
    */
   it('refuses a duplicate name rather than minting a second design system', async () => {

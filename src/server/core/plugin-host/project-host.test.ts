@@ -6,6 +6,7 @@ import request from 'supertest';
 import { PluginRegistryImpl } from './registry.js';
 import { pluginHostRouter } from './cross-cutting.js';
 import type { BackendModule, MountContext, ProjectPluginOverlay } from './types.js';
+import { createMcpServer, mcpTool, z } from '../../plugin-runtime/index.js';
 
 /** Minimal BackendModule for pool/activation assertions. */
 function mod(type: string): BackendModule {
@@ -368,6 +369,114 @@ describe('buildMcpServers — one malformed plugin must not kill the turn', () =
     const warn = silenceWarn();
     const host = hostWith({ 'legacy-bad-tools': () => () => ({ tools: [] }) });
     expect(host.buildMcpServers()).toEqual([]);
+    warn.mockRestore();
+  });
+});
+
+/**
+ * 2.1.57 (M13 `z7l89jhf` `mcpServer?`, M33 `m33load01` (d)) — the pool refuses,
+ * at plugin load, a tool name declared twice in one `${type}-tools` server and a
+ * server name already registered, with `PLUGIN_TOOL_CONFLICT` on the model of
+ * `PLUGIN_TYPE_CONFLICT`. Neither the silent factory overwrite nor the silent
+ * per-turn drop of the whole server survives.
+ */
+describe('[section:m33load01] PLUGIN_TOOL_CONFLICT — tool server refusals at plugin load', () => {
+  const tool = (name: string) => mcpTool(name, `${name} tool`, { q: z.string() }, async () => ({ content: [] }));
+
+  /** A module carrying the declarative `backend.mcpServer` slot (lowered by `registerEntityModule`). */
+  function modWithServer(type: string, toolNames: string[]): BackendModule {
+    return {
+      ...mod(type),
+      backend: {
+        mcpServer: () => createMcpServer({ name: `${type}-tools`, tools: toolNames.map(tool) }),
+      },
+    };
+  }
+
+  /** A module writing `mount` by hand and registering a server under a name of its choosing. */
+  function modMounting(type: string, serverName: string): BackendModule {
+    return {
+      ...mod(type),
+      backend: {
+        mount: (ctx: MountContext) =>
+          ctx.registerMcpServer(serverName, () => createMcpServer({ name: serverName, tools: [tool(`${type}_op`)] })),
+      },
+    };
+  }
+
+  function mountCtx(host: { registerMcpServer: MountContext['registerMcpServer'] }): MountContext {
+    return { registerMcpServer: (name, factory) => host.registerMcpServer(name, factory) } as MountContext;
+  }
+
+  it('[section:m33load01] the facade refuses a tool name declared twice in one server with PLUGIN_TOOL_CONFLICT', () => {
+    expect(() => createMcpServer({ name: 'glossary-tools', tools: [tool('lookup'), tool('lookup')] })).toThrow(
+      /PLUGIN_TOOL_CONFLICT.*"lookup".*twice/,
+    );
+    try {
+      createMcpServer({ name: 'glossary-tools', tools: [tool('lookup'), tool('lookup')] });
+    } catch (err) {
+      expect((err as { code?: string }).code).toBe('PLUGIN_TOOL_CONFLICT');
+    }
+  });
+
+  it('[section:m33load01] mounting a plugin whose tool server declares a tool twice is refused at load, naming the server', () => {
+    const registry = new PluginRegistryImpl();
+    registry.registerEntityModule(modWithServer('glossary', ['lookup', 'lookup']));
+    const host = registry.consolidate({});
+    let caught: unknown;
+    try {
+      host.mountBackend(mountCtx(host));
+    } catch (err) {
+      caught = err;
+    }
+    expect((caught as { code?: string }).code).toBe('PLUGIN_TOOL_CONFLICT');
+    expect((caught as Error).message).toMatch(/MCP server "glossary-tools"/);
+    expect((caught as Error).message).toMatch(/"lookup" is declared twice/);
+  });
+
+  it('[section:m33load01] a second server under a name already in the pool is refused, and the first factory is kept', () => {
+    const host = baseRegistry('endpoint').consolidate({});
+    const first = () => createMcpServer({ name: 'shared-tools', tools: [tool('a')] });
+    host.registerMcpServer('shared-tools', first);
+    let caught: unknown;
+    try {
+      host.registerMcpServer('shared-tools', () => createMcpServer({ name: 'shared-tools', tools: [tool('b')] }));
+    } catch (err) {
+      caught = err;
+    }
+    expect((caught as { code?: string }).code).toBe('PLUGIN_TOOL_CONFLICT');
+    expect((caught as Error).message).toMatch(/"shared-tools" is already registered/);
+    // No silent overwrite: the pool still builds the FIRST server.
+    const built = host.buildMcpServers();
+    expect(built.map((e) => e.name)).toEqual(['shared-tools']);
+    expect((built[0]!.server as { tools?: Array<{ name: string }> }).tools?.map((t) => t.name)).toEqual(['a']);
+  });
+
+  it('[section:m33load01] two plugins mounting a server under the same name — the second is refused at load', () => {
+    const registry = new PluginRegistryImpl();
+    registry.registerEntityModule(modMounting('alpha', 'shared-tools'));
+    registry.registerEntityModule(modMounting('beta', 'shared-tools'));
+    const host = registry.consolidate({});
+    expect(() => host.mountBackend(mountCtx(host))).toThrow(/PLUGIN_TOOL_CONFLICT.*"shared-tools"/);
+  });
+
+  it('[section:m33load01] distinct tool and server names load, and every other factory failure keeps its per-turn posture', () => {
+    const registry = new PluginRegistryImpl();
+    registry.registerEntityModule(modWithServer('glossary', ['lookup', 'define']));
+    registry.registerEntityModule({
+      ...mod('broken'),
+      backend: {
+        mcpServer: () => {
+          throw new Error('boom');
+        },
+      },
+    });
+    const host = registry.consolidate({});
+    expect(() => host.mountBackend(mountCtx(host))).not.toThrow();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const built = host.buildMcpServers();
+    expect(built.map((e) => e.name)).toEqual(['glossary-tools']);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('boom'));
     warn.mockRestore();
   });
 });

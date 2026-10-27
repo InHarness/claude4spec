@@ -1,0 +1,16 @@
+{
+  "id": "dev-0008",
+  "kind": "incorrect",
+  "blocking": false,
+  "address": "u04-plugin-registration-contract/69i6wnvo",
+  "unit": "u04-plugin-registration-contract",
+  "portion": "u04-plugin-registration-contract/p2-l2-l11",
+  "slugs": [
+    "section:69i6wnvo",
+    "section:l4crudhl"
+  ],
+  "text": "69i6wnvo (endpoint, L11) wymienia wśród tras domenowych routera pisanego ręcznie `/restore` („wyłącznie domain-specific routes (`/dtos`, `/dtos/:dtoSlug/:relation`, `/restore`)”). M13 l4crudhl w tym samym oknie wymienia dla endpointu tylko `/dtos` i `/dtos/:dtoSlug/:relation`, a kod nie ma trasy `/restore` w routerze endpointu (plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/routes.ts: `POST /:slug/dtos`, `DELETE /:slug/dtos/:dtoSlug/:relation`) — przywrócenie wersji obsługuje host (`POST /api/entities/:type/:slug/versions/:version/restore`, entities-router.ts). Przyjęte: kod bez zmian, router endpointu niesie dwie trasy linkedDtos; test [section:69i6wnvo] to przypina.\n\nSugestia: w 69i6wnvo usunąć `/restore` z listy tras routera endpointu (zgodnie z l4crudhl), albo dopisać, że restore generuje host.",
+  "assumption": "ASSUMPTION:dev-0008 the endpoint router carries only the two linkedDtos routes; restore is the host's versions route",
+  "sent": true,
+  "patchPath": "2-1-56-to-2-1-57-u04-plugin-registration-contract-69i6wnvo-69i6wnvo-endpoint-l11-wymienia-wsrod-t.md"
+}

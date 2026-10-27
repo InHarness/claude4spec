@@ -1,0 +1,15 @@
+{
+  "id": "dev-0007",
+  "kind": "incorrect",
+  "blocking": false,
+  "address": "u04-plugin-registration-contract/m13pool0",
+  "unit": "u04-plugin-registration-contract",
+  "portion": "u04-plugin-registration-contract/p1-l2-a",
+  "slugs": [
+    "section:m13pool0"
+  ],
+  "text": "m13pool0 mówi, że ciche last-wins w bazie trwa do wydzielenia ostatniego typu wbudowanego i że „dziś na szczeblu rejestracji bezpośredniej są `ac` i `diagram`”. W kodzie `ac` jest kopertą (`plugins/c4s-plugin-ac/`, ładowaną przez M33) od 0.2.80; `registerAllPlugins` (src/server/core/plugin-host/register-builtins.ts) rejestruje bezpośrednio wyłącznie `diagram`. Przyjęte: kod bez zmian (sekcja tego nie wymaga); termin last-wins liczony do wydzielenia `diagram`.\n\nSugestia: w m13pool0 zostawić `diagram` jako jedyny typ na szczeblu rejestracji bezpośredniej i usunąć odesłanie do kierunku wydzielenia `ac` (plugac01) jako wciąż otwartego.",
+  "assumption": "ASSUMPTION:dev-0007 only diagram is still registered directly; base last-wins lasts until it leaves",
+  "sent": true,
+  "patchPath": "2-1-56-to-2-1-57-u04-plugin-registration-contract-m13pool0-m13pool0-mowi-ze-ciche-last-wins-w-baz.md"
+}

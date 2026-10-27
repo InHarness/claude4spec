@@ -286,3 +286,38 @@ describe('plugin test harness subpath — outside hostApiVersion', () => {
     expect(migrationsBetween(2, Number.MAX_SAFE_INTEGER)).toEqual([]);
   });
 });
+
+/**
+ * 2.1.57 (M51 L11 `klprfawm`) — Version surface: none. The XML tag registration
+ * shape (name, attribute order, optional `validate`, optional `form`) is an
+ * internal host contract: only host modules register and no plugin sees the
+ * shape, so it is neither exported by the plugin runtime nor counted into
+ * `hostApiVersion` by any record of the versioned surface.
+ */
+describe('[section:klprfawm] the XML tag registration shape is outside the versioned Host API surface', () => {
+  const versionedRecords = JSON.stringify([
+    migrationsBetween(0, Number.MAX_SAFE_INTEGER),
+    HOST_API_MINOR_RELEASES,
+    HOST_API_UNVERSIONED_CHANGES,
+  ]);
+  const publishedSurface = ['./plugin-runtime.ts', './ui.ts', './ambient.d.ts', './ambient-backend.d.ts'].map((f) =>
+    readFileSync(fileURLToPath(new URL(f, import.meta.url)), 'utf8'),
+  );
+
+  it('[section:klprfawm] no plugin-runtime leg exports the registration point or its shape', () => {
+    for (const name of ['registerXmlTag', 'XmlTagRegistration', 'XmlTagDefinition', 'registerExtensionReferenceType']) {
+      expect(PLUGIN_RUNTIME_EXPORT_NAMES).not.toContain(name as never);
+      expect(PLUGIN_RUNTIME_BACKEND_VALUE_NAMES).not.toContain(name as never);
+      expect(backendBarrel).not.toHaveProperty(name);
+    }
+    for (const source of publishedSurface) expect(source).not.toMatch(/registerXmlTag|XmlTagRegistration|XmlTagDefinition/);
+  });
+
+  it('[section:klprfawm] no record of the versioned surface counts the registration shape or its optional form', () => {
+    expect(versionedRecords).not.toMatch(/XmlTag|registerXmlTag/);
+    // The 2.1.0 minor keeps its one item — the removal of the plugin-side
+    // registration point — and nothing about the shape.
+    const minor = HOST_API_MINOR_RELEASES.find((r) => r.version === '2.1.0');
+    expect(minor?.changes.map((c) => c.slot)).toEqual(['@c4s/plugin-runtime registerExtensionReferenceType']);
+  });
+});

@@ -174,7 +174,7 @@ function requireModule(deps: GenericCrudDeps, type: string): BackendModule {
 /**
  * The slug for a new entity: the caller's if it supplied one, otherwise the
  * pattern's — then either suffixed until free or refused, per the type's
- * declared `slugConflict`.
+ * declared `slugCollision`.
  *
  * An EXPLICIT slug always refuses. That half was never in dispute: `ac` is the
  * type tier E generalized from, and even `ac` threw `SLUG_CONFLICT` when the
@@ -184,7 +184,7 @@ function requireModule(deps: GenericCrudDeps, type: string): BackendModule {
  * A DERIVED slug follows the declaration, defaulting to refusing. Tier E
  * suffixed unconditionally, which made a re-`POST` of `GET /api/users` create
  * `get-api-users-2` — two entities for one route, drifting apart, with every
- * reference still pointing at the first. See `slugConflict` on the manifest for
+ * reference still pointing at the first. See `slugCollision` on the manifest for
  * why the two answers both exist.
  */
 function allocateSlug(deps: GenericCrudDeps, module: BackendModule, payload: Record<string, unknown>): string {
@@ -193,7 +193,7 @@ function allocateSlug(deps: GenericCrudDeps, module: BackendModule, payload: Rec
   if (!base) throw new DomainError('VALIDATION', `${module.type}: slug resolves to empty`);
   if (!deps.reader.getEntity(module.type, base)) return base;
 
-  if (explicit || (module.slugConflict ?? 'reject') === 'reject') {
+  if (explicit || module.slugCollision !== 'suffix') {
     throw new DomainError('SLUG_CONFLICT', `${module.type} slug '${base}' already exists`);
   }
   let candidate = base;
