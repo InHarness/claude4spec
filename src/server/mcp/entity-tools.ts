@@ -312,23 +312,34 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   // ─── update_entities ──────────────────────────────────────────────────────
   const updateEntities = mcpTool(
     'update_entities',
-    'Update one or more entities in a single batch. `data` is validated against the type\'s updateSchema (partial by default). The slug is stable — pass an explicit `newSlug` to rename (collision → SLUG_CONFLICT); a rename propagates to every markdown reference. Non-transactional. Returns { results: [{ slug } | { error, code }] } in input order (slug is the NEW slug if renamed).',
+    'Update one or more entities in a single batch. `data` is validated against the type\'s updateSchema (partial by default). The slug is stable — pass an explicit `newSlug` to rename (collision → SLUG_CONFLICT); a rename propagates to every markdown reference. Optional per-item concurrency guard: pass `expectedVersion` — the entity\'s `entity_version` number you based the change on — and the item is refused with VERSION_CONFLICT if the entity has moved on; omit it to write unguarded. Non-transactional. Returns { results: [{ slug } | { error, code }] } in input order (slug is the NEW slug if renamed).',
     {
       type: z.string(),
-      updates: z.array(
-        z.object({
-          slug: z.string(),
-          data: z.record(z.string(), z.unknown()),
-          newSlug: z.string().optional(),
-        }),
-      ),
+      updates: z
+        .array(
+          z.object({
+            slug: z.string(),
+            data: z.record(z.string(), z.unknown()),
+            newSlug: z.string().optional(),
+            expectedVersion: z.number().int().optional(),
+          }),
+        )
+        // The record's own wording, verbatim (ASSUMPTION:dev-0012 — it is Polish).
+        .describe(
+          'Pozycje `{ slug, data, newSlug?, expectedVersion? }`; `expectedVersion` (liczba całkowita) to opcjonalny guard: numer `entity_version`, na którym oparto zmianę.',
+        ),
     },
     async (args) => {
       const type = String(args.type);
       const resolved = resolveType(type);
       if (!resolved.ok) return resolved.response;
       const schema = updateSchemaOf(resolved.module);
-      const updates = args.updates as Array<{ slug: string; data: Record<string, unknown>; newSlug?: string }>;
+      const updates = args.updates as Array<{
+        slug: string;
+        data: Record<string, unknown>;
+        newSlug?: string;
+        expectedVersion?: number;
+      }>;
 
       const results: ItemResult<{ slug: string; warnings?: string[] }>[] = [];
       for (const u of updates) {
@@ -339,7 +350,11 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
         }
         try {
           const data = u.newSlug !== undefined ? { ...parsed.data, newSlug: u.newSlug } : parsed.data;
-          const updated = genericUpdate(genericDeps(), type, u.slug, data, 'agent');
+          // A refused guard throws VERSION_CONFLICT before anything is written;
+          // `itemError` keeps the code and the loop moves on to the next item.
+          const updated = genericUpdate(genericDeps(), type, u.slug, data, 'agent', {
+            ...(u.expectedVersion !== undefined ? { expectedVersion: u.expectedVersion } : {}),
+          });
           if (updated.slug !== u.slug) {
             await deps.referencesService.propagateSlugChange(type as EntityType, u.slug, updated.slug);
           }

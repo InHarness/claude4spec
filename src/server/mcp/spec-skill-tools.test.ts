@@ -273,10 +273,13 @@ describe('spec-skill-tools · update_skill_file (M52, 2.1.9)', () => {
     registerProjectRootedSkills(skillRegistry, roots, cwd);
     skillRegistry.registerSource(
       new ProjectExposedSkillSource('p1', {
-        uses: () => ['billing-rules'],
-        listExposed: () => [
-          { projectId: 'billing', name: 'billing-rules', description: 'How billing works.', entry: 'index.md', scope: 'contextual', contextTypes: undefined },
-        ],
+        own: () => ({ uses: ['billing-rules'], name: null }),
+        workspace: () => ({
+          trusted: true,
+          listExposed: () => [
+            { projectId: 'billing', name: 'billing-rules', description: 'How billing works.', entry: 'index.md', scope: 'contextual', contextTypes: undefined },
+          ],
+        }),
         readProvider: async () => ({ entry: 'index.md', content: '# Billing\n', files: toPackageFiles({}) }),
       }),
     );

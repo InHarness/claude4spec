@@ -7,6 +7,7 @@
 
 import type Database from 'better-sqlite3';
 import { FileSerializer, type FileSnapshotData } from './file-serializer.js';
+import { currentOperationId } from '../fs/multi-file-operation.js';
 
 export type FileChangedBy = 'user' | 'agent' | 'filesystem';
 export type FileOp = 'create' | 'update' | 'delete';
@@ -46,6 +47,8 @@ interface Row {
   created_at: string;
   rootId: string;
   change_summary: string | null;
+  /** 2.1.57 — the multi-file operation that wrote this row; NULL = a single-file write. */
+  operation_id: string | null;
 }
 
 /**
@@ -170,12 +173,19 @@ export class FileVersionService {
     const summary = typeof changeSummary === 'string' && changeSummary.length > 0
       ? changeSummary
       : null;
+    /**
+     * 2.1.57 (M42 `gg7sxih6`) — the one INSERT site stamps the id of the
+     * multi-file operation running on this async path, rollback rows included;
+     * NULL outside one. Read here rather than passed in, so the capture phase
+     * and the artifact services that author their own rows stamp it alike.
+     */
+    const operationId = currentOperationId() ?? null;
     const info = this.db
       .prepare(
-        `INSERT INTO file_version (path, version, data, serializer_version, op, changed_by, rootId, change_summary)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO file_version (path, version, data, serializer_version, op, changed_by, rootId, change_summary, operation_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(relPath, next, JSON.stringify(data), ser.version, op, changedBy, rootId, summary);
+      .run(relPath, next, JSON.stringify(data), ser.version, op, changedBy, rootId, summary, operationId);
     const row = this.db
       .prepare(`SELECT * FROM file_version WHERE id = ?`)
       .get(info.lastInsertRowid) as Row;

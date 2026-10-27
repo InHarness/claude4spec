@@ -45,7 +45,7 @@ export const spreadsheetEntity: EntityContribution = {
    * hard failure — sheets are named by humans, and two sheets sharing a title is
    * ordinary rather than a mistake worth refusing.
    */
-  slugConflict: 'suffix',
+  slugCollision: 'suffix',
   /**
    * 2, not 1 — every sheet on disk predates this port and carries the dense
    * `cells: string[][]` v1 wrote. See `upgrades.ts`; registration refuses this

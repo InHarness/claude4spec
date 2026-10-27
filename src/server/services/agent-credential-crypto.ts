@@ -4,7 +4,9 @@ import path from 'node:path';
 import { workspaceBaseDir } from '../workspace/registry.js';
 
 /**
- * M05 — at-rest encryption for the user's ANTHROPIC API key (`agent_credential`).
+ * M05 — the secrets primitive: at-rest encryption for the user's ANTHROPIC API key
+ * (`agent_credential`). 2.1.57 (m24-requires-m05): M24 encrypts the remote session
+ * token (`remote_session.access_token`) with it too — same algorithm, same keyring.
  *
  * Algorithm: AES-256-GCM with a random 12-byte IV per encryption. Stored format is
  * base64 of `iv | authTag | ciphertext`. The keyring is 32 random bytes generated

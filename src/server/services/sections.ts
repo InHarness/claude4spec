@@ -6,6 +6,7 @@ import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import { slugifyHeading } from '../../shared/section-parser.js';
 import type { MarkdownFileStore } from './markdown-file-store.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
+import { runMultiFileOperation } from '../fs/multi-file-operation.js';
 
 /**
  * 0.2.46 — how much of `section_index.body` a generic listing may emit.
@@ -174,8 +175,7 @@ export class SectionsService {
    * Rewrite all `<section_ref anchor="oldAnchor"/>` occurrences to newAnchor across
    * the roots of EVERY kind that selects the section indexer (0.1.96; 2.1.8 —
    * plan anchors are file-local and never propagated: `plans` does not select
-   * `m06-section-indexer`, so its root is not in `writeDeps`). Atomic per-file
-   * with rollback on error.
+   * `m06-section-indexer`, so its root is not in `writeDeps`).
    * Emits file:changed via watcher suppress on each write. `changed` entries are
    * `${rootId}:${relPath}` so a path present in two roots stays disambiguated.
    *
@@ -185,6 +185,11 @@ export class SectionsService {
    * else would repoint it. Each touched file is its own M42 write — its own chain
    * on its own path, with the event suppressed.
    *
+   * 2.1.57 (`h556wl8s`) — the batch is ONE multi-file operation (M42
+   * `gg7sxih6`): its version rows carry one `operation_id`, and a write failing
+   * halfway puts the files already rewritten back and fails the operation. Both
+   * rules are the primitive's; there is no rollback of this service's own.
+   *
    * No caller yet: the spec keeps anchors immutable and names no trigger.
    */
   async propagateAnchorChange(
@@ -192,48 +197,28 @@ export class SectionsService {
     newAnchor: string,
   ): Promise<{ changed: string[] }> {
     if (oldAnchor === newAnchor) return { changed: [] };
-    if (!this.writeDeps) {
+    const writeDeps = this.writeDeps;
+    if (!writeDeps) {
       throw new Error('SectionsService.propagateAnchorChange requires setWriteDeps to be called');
     }
-    const changed: string[] = [];
-    // key `${rootId}:${relPath}` → { root deps, original body } for rollback.
-    const backups = new Map<string, { root: SectionsRootWriteDeps; rel: string; body: string }>();
-
-    for (const [rootId, root] of this.writeDeps) {
-      const files = await root.pages.listMarkdownFiles();
-      for (const rel of files) {
-        const page = await root.pages.read(rel);
-        const rewritten = rewriteSectionRefAnchor(page.body, oldAnchor, newAnchor);
-        if (rewritten !== page.body) {
-          backups.set(`${rootId}:${rel}`, { root, rel, body: page.body });
-        }
-      }
-    }
-
-    try {
-      for (const [key, { root, rel }] of backups) {
-        const current = await root.pages.read(rel);
-        const newBody = rewriteSectionRefAnchor(current.body, oldAnchor, newAnchor);
-        if (newBody !== current.body) {
-          // See `ReferencesService.propagateSlugChange`: this is the no-store
+    return await runMultiFileOperation(async (op) => {
+      const changed: string[] = [];
+      for (const [rootId, root] of writeDeps) {
+        const files = await root.pages.listMarkdownFiles();
+        for (const rel of files) {
+          const page = await root.pages.read(rel);
+          const newBody = rewriteSectionRefAnchor(page.body, oldAnchor, newAnchor);
+          if (newBody === page.body) continue;
+          // See `ReferencesService.rewritePages`: this is the no-store
           // fallback; with a record store the primitive issues its own token and
           // runs a full chain on this file's own path.
           root.watcher.suppress(rel);
-          await root.pages.write(rel, { frontmatter: current.frontmatter, body: newBody });
-          changed.push(key);
+          await root.pages.write(rel, { frontmatter: page.frontmatter, body: newBody }, op);
+          changed.push(`${rootId}:${rel}`);
         }
       }
-    } catch (err) {
-      for (const [key, { root, rel, body }] of backups) {
-        if (!changed.includes(key)) continue;
-        const current = await root.pages.read(rel);
-        root.watcher.suppress(rel);
-        await root.pages.write(rel, { frontmatter: current.frontmatter, body });
-      }
-      throw err;
-    }
-
-    return { changed };
+      return { changed };
+    });
   }
 
   private hydrate(row: SectionRow): SectionIndexEntry {

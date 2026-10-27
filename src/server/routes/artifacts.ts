@@ -6,6 +6,7 @@ import type { FileVersionService, FileVersionListItem, FileVersionDetail } from 
 import type { ChatService, ArtifactThreadColumn } from '../services/chat.js';
 import { artifactEntry, artifactHeaderContract, artifactRootId, type ArtifactKind } from '../services/artifact-registry.js';
 import type {
+  ArtifactFrontmatterUpdateRequest,
   ArtifactListItem,
   ArtifactResponse,
   ArtifactWriteResponse,
@@ -522,11 +523,16 @@ export function artifactsRouter(deps: ArtifactsRouterDeps): Router {
 
   // PATCH /api/artifacts/:kind/<path>/frontmatter — only the mutable fields of
   // the root kind's header contract are accepted; anything else -> 400 IMMUTABLE_FIELD.
+  // 2.1.57 (M36 `m36l4fam`): no `expectedHash` — each kind's service merges the
+  // sent keys into the file it reads under its per-path lock, so a concurrent
+  // content save or second frontmatter write is never lost.
+  // ASSUMPTION:dev-0003 request/response DTO binding kept (ArtifactFrontmatterUpdateRequest in);
+  // ASSUMPTION:dev-0005 the answer stays echo-free `{ path, frontmatter, hash }` (ArtifactWriteResponse).
   router.patch('/:kind/*/frontmatter', async (req, res, next) => {
     try {
       const kind = req.params.kind as ArtifactKind;
       const path = extractPath(req.params);
-      const body = (req.body ?? {}) as { frontmatter?: Record<string, unknown> };
+      const body = (req.body ?? {}) as Partial<ArtifactFrontmatterUpdateRequest>;
       const frontmatter = body.frontmatter ?? {};
       // 2.1.8: the mutable fields come from the root kind's header contract.
       const mutable = new Set(artifactHeaderContract(kind).mutable);

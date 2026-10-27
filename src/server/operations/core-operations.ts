@@ -903,8 +903,13 @@ export function registerCoreOperations(): void {
   // consulted about. Now they are absent from its `tools/list`.
   //
   // Batch semantics are per-item and NON-TRANSACTIONAL: each element gets its own
-  // result envelope, and a duplicate slug fails that element with SLUG_CONFLICT
-  // rather than rolling back its siblings.
+  // result envelope, and a refused element (SLUG_CONFLICT, VERSION_CONFLICT, …)
+  // fails alone rather than rolling back its siblings.
+  //
+  // 2.1.57 — none of the three has a `cli` rendering (the generic `c4s` entity
+  // commands only read), and their `rest` cell is the host's GENERIC routes
+  // (`POST /api/{pathPrefix}`, `PATCH /api/{pathPrefix}/:slug`,
+  // `generated-crud-router.ts`), not a route of their own.
 
   /**
    * 2.1.26 — the three rows are the M13 records `create-entities`,
@@ -951,7 +956,7 @@ export function registerCoreOperations(): void {
   registerRow(
     entityWrite(
       'create_entities',
-      'Create several entities of one type. Per-item, non-transactional: a duplicate slug fails that item with SLUG_CONFLICT and leaves the rest applied; an item whose write raised warnings reports them beside its slug.',
+      'Create several entities of one type. Per-item, non-transactional: an explicit slug that already exists fails that item with SLUG_CONFLICT; a collision of the slug derived from the type\'s pattern fails with SLUG_CONFLICT or takes a suffix, per the type\'s `slugCollision` (refusal by default); a refused item leaves the rest applied; an item whose write raised warnings reports them beside its slug.',
       { type: z.string(), items: z.array(z.record(z.string(), z.unknown())).min(1) },
       false,
       ['INVALID_TYPE', 'SLUG_CONFLICT', 'VALIDATION'],
@@ -964,19 +969,32 @@ export function registerCoreOperations(): void {
    * partial `data` and an optional explicit `newSlug` — the shape the rendering
    * takes. (This row named the list `items`, a second spelling of the input the
    * tool has never accepted.)
+   *
+   * 2.1.57 — guard `opcjonalny`, per element: an element may carry
+   * `expectedVersion`, the entity's `entity_version` number the caller based the
+   * change on. A different current number fails that element with
+   * `VERSION_CONFLICT` and writes nothing; the rest of the batch goes on. The
+   * check and the write are one critical section (`genericUpdate`).
    */
   registerRow(
     entityWrite(
       'update_entities',
-      'Update several entities of one type, partial by field (each changed field gets its full value). Idempotent per element; an absent slug fails that item with ENTITY_NOT_FOUND; an item whose write raised warnings reports them beside its slug.',
+      'Update several entities of one type, partial by field (each changed field gets its full value). Idempotent per element; an absent slug fails that item with ENTITY_NOT_FOUND; an item carrying `expectedVersion` other than the entity\'s current `entity_version` number fails with VERSION_CONFLICT and writes nothing, the rest still applied; an item whose write raised warnings reports them beside its slug.',
       {
         type: z.string(),
         updates: z
-          .array(z.object({ slug: z.string(), data: z.record(z.string(), z.unknown()), newSlug: z.string().optional() }))
+          .array(
+            z.object({
+              slug: z.string(),
+              data: z.record(z.string(), z.unknown()),
+              newSlug: z.string().optional(),
+              expectedVersion: z.number().int().optional(),
+            }),
+          )
           .min(1),
       },
       true,
-      ['INVALID_TYPE', 'ENTITY_NOT_FOUND', 'VALIDATION'],
+      ['INVALID_TYPE', 'ENTITY_NOT_FOUND', 'VALIDATION', 'VERSION_CONFLICT'],
       'literal',
     ),
   );

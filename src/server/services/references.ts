@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
-import type { EntityType, ReferenceHit } from '../../shared/entities.js';
+import type { EntityType, ReferenceHit, Tag, TagUpdateInput } from '../../shared/entities.js';
+import type { PageContent } from '../../shared/types.js';
 import {
   parseXmlTags,
   serializeXmlTag,
@@ -11,6 +12,8 @@ import type { EntityStore } from './entity-store.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { type RawEntityType } from '../discovery/raw-entity-reader.js';
 import { findReferences as findReferencesCore } from '../../core/references/index.js';
+import { runMultiFileOperation, type MultiFileOperation } from '../fs/multi-file-operation.js';
+import type { TagsService } from './tags.js';
 import type { PagesSource, ReferencePage } from '../../core/references/index.js';
 
 /**
@@ -132,8 +135,8 @@ export class ReferencesService {
 
   async findPagesReferencingSlugs(type: EntityType, slugs: Set<string>): Promise<Set<string>> {
     const out = new Set<string>();
-    await this.walkPages(async (_rootId, relPath, body) => {
-      for (const tag of parseXmlTags(body)) {
+    await this.walkPages(async (_rootId, relPath, page) => {
+      for (const tag of parseXmlTags(page.body)) {
         if (tag.attrs.type && tag.attrs.type !== type && tag.kind !== 'tagged_list_mixed') continue;
         const hasSlug = entitySlugsInTag(tag).some((s) => slugs.has(s));
         if (hasSlug) out.add(relPath);
@@ -142,17 +145,26 @@ export class ReferencesService {
     return out;
   }
 
+  /**
+   * M19 `8n46mdrz` / M29 `m29ren001` — an entity's slug change, propagated.
+   *
+   * 2.1.57 — the propagation is ONE multi-file operation (M42 `gg7sxih6`): every
+   * page rewrite is a step of it, so their version rows carry one
+   * `operation_id`, and a write that fails puts the pages already rewritten back
+   * and fails the operation. Those two rules live in the primitive; this method
+   * no longer keeps backups or a restore loop of its own.
+   *
+   * The entity-file phase (`propagateInEntityFiles`) runs inside the same
+   * operation, after every page has been written. Its writes are derived copies
+   * of rows the listeners have just committed (M29 file-last), so nothing is
+   * written after them that could fail and call for their undo.
+   */
   async propagateSlugChange(
     type: EntityType,
     oldSlug: string,
     newSlug: string
   ): Promise<{ changed: string[] }> {
     if (oldSlug === newSlug) return { changed: [] };
-    const changed: string[] = [];
-    // Keyed by (rootId, relPath): a bare relPath is ambiguous across roots.
-    const backups = new Map<string, { rootId: string; relPath: string; body: string }>();
-    const changedKeys = new Set<string>();
-    const key = (rootId: string, relPath: string) => `${rootId} ${relPath}`;
 
     const mutate = (tag: XmlTag): Record<string, string> | null => {
       // 0.2.15 — every entity reference spells its type out in `type=`, so the
@@ -170,91 +182,96 @@ export class ReferencesService {
       return null;
     };
 
-    await this.walkPages(async (rootId, relPath, body) => {
-      const rewritten = rewriteTagsInBody(body, mutate);
-      if (rewritten !== body) {
-        backups.set(key(rootId, relPath), { rootId, relPath, body });
-      }
+    return await runMultiFileOperation(async (op) => {
+      const changed = await this.rewritePages(op, mutate);
+      // M29: also rewrite the slug inside other committed entity files.
+      this.propagateInEntityFiles(type, oldSlug, newSlug);
+      return { changed };
     });
-
-    try {
-      for (const { rootId, relPath } of backups.values()) {
-        const pages = this.roots.get(rootId);
-        if (!pages) continue;
-        const current = await pages.read(relPath);
-        const newBody = rewriteTagsInBody(current.body, mutate);
-        if (newBody !== current.body) {
-          /**
-           * 0.2.76 — a cascading write-back: it writes a DIFFERENT file from the
-           * one whose rename started this, so it takes the normal route through
-           * the primitive and gets its own conflict check, its own commit and its
-           * own full chain on its own path. This token is the fallback for a root
-           * with no record store (the hand-rolled rigs); where there is one, the
-           * primitive issues its own immediately before the write and this is
-           * simply replaced.
-           *
-           * The old asymmetry — one propagation site suppressing outright and
-           * another labelling with `markOrigin` — is gone with `markOrigin`.
-           */
-          this.watcherFor(rootId)?.suppress(relPath);
-          await pages.write(relPath, { frontmatter: current.frontmatter, body: newBody });
-          changed.push(relPath);
-          changedKeys.add(key(rootId, relPath));
-        }
-      }
-    } catch (err) {
-      for (const { rootId, relPath, body: originalBody } of backups.values()) {
-        if (!changedKeys.has(key(rootId, relPath))) continue;
-        const pages = this.roots.get(rootId);
-        if (!pages) continue;
-        const current = await pages.read(relPath);
-        this.watcherFor(rootId)?.suppress(relPath);
-        await pages.write(relPath, { frontmatter: current.frontmatter, body: originalBody });
-      }
-      throw err;
-    }
-
-    // M29: also rewrite the slug inside other committed entity files.
-    this.propagateInEntityFiles(type, oldSlug, newSlug);
-
-    return { changed };
   }
 
+  /**
+   * M18 `91vuvf2u` — the page half of a tag slug rename: `tags="…"` of
+   * `<tagged_list>` / `<tagged_list_mixed>` in every reference root. One
+   * multi-file operation (M42 `gg7sxih6`); called inside {@link updateTag}'s, it
+   * joins that one.
+   */
   async propagateTagSlugChange(
     oldTagSlug: string,
     newTagSlug: string
   ): Promise<{ changed: string[] }> {
     if (oldTagSlug === newTagSlug) return { changed: [] };
-    const changed: string[] = [];
-
-    await this.walkPages(async (rootId, relPath, body) => {
-      const newBody = rewriteTagsInBody(body, (tag) => {
+    return await runMultiFileOperation(async (op) => ({
+      changed: await this.rewritePages(op, (tag) => {
         if (tag.kind !== 'tagged_list' && tag.kind !== 'tagged_list_mixed') return null;
         const tags = splitCsv(tag.attrs.tags);
         if (!tags.includes(oldTagSlug)) return null;
         return { ...tag.attrs, tags: tags.map((t) => (t === oldTagSlug ? newTagSlug : t)).join(',') };
-      });
-      if (newBody !== body) {
-        const pages = this.roots.get(rootId);
-        if (!pages) return;
-        const current = await pages.read(relPath);
-        this.watcherFor(rootId)?.suppress(relPath);
-        await pages.write(relPath, { frontmatter: current.frontmatter, body: newBody });
-        changed.push(relPath);
-      }
-    });
+      }),
+    }));
+  }
 
-    return { changed };
+  /**
+   * M18 `91vuvf2u` / `m18acc00` — `update_tag` (REST and MCP alike). A change of
+   * `name` that changes the slug is ONE multi-file operation (M42 `gg7sxih6`)
+   * over the three places the slug lives: the pages, `tags.json` and the
+   * `tags[]` of the entity files.
+   *
+   * The pages go first. `tags.json` and the entity files are written by
+   * `TagsService.update` file-last, from the index rows it has just committed
+   * (M29), so they cannot be put back by bytes without leaving the index behind
+   * them; written last, they are never the files a later failure has to undo. A
+   * refusal of the update itself (`NOT_FOUND`, `VALIDATION`, `SLUG_CONFLICT`) is
+   * settled by `slugAfterUpdate` before the operation starts, so it reaches the
+   * caller with its own code and no page has been touched.
+   */
+  async updateTag(tags: TagsService, slug: string, input: TagUpdateInput): Promise<Tag> {
+    const newSlug = tags.slugAfterUpdate(slug, input);
+    if (newSlug === slug) return tags.update(slug, input);
+    return await runMultiFileOperation(async () => {
+      await this.propagateTagSlugChange(slug, newSlug);
+      return tags.update(slug, input);
+    });
+  }
+
+  /**
+   * Rewrite every reference-root page `mutate` changes, each as a step of `op`
+   * — its own write through the primitive, its own chain on its own path.
+   */
+  private async rewritePages(
+    op: MultiFileOperation,
+    mutate: (tag: XmlTag) => Record<string, string> | null,
+  ): Promise<string[]> {
+    const changed: string[] = [];
+    await this.walkPages(async (rootId, relPath, page) => {
+      const newBody = rewriteTagsInBody(page.body, mutate);
+      if (newBody === page.body) return;
+      const pages = this.roots.get(rootId);
+      if (!pages) return;
+      /**
+       * 0.2.76 — a cascading write-back: it writes a DIFFERENT file from the
+       * one whose rename started this, so it takes the normal route through
+       * the primitive and gets its own conflict check, its own commit and its
+       * own full chain on its own path. This token is the fallback for a root
+       * with no record store (the hand-rolled rigs); where there is one, the
+       * primitive issues its own immediately before the write and this is
+       * simply replaced.
+       */
+      this.watcherFor(rootId)?.suppress(relPath);
+      await pages.write(relPath, { frontmatter: page.frontmatter, body: newBody }, op);
+      changed.push(relPath);
+    });
+    return changed;
   }
 
   private async walkPages(
-    visit: (rootId: string, relPath: string, body: string) => Promise<void>
+    visit: (rootId: string, relPath: string, page: PageContent) => Promise<void>
   ): Promise<void> {
     for (const [rootId, pages] of this.roots) {
       const files = await pages.listMarkdownFiles();
       for (const rel of files) {
         const page = await pages.read(rel);
-        await visit(rootId, rel, page.body);
+        await visit(rootId, rel, page);
       }
     }
   }

@@ -6,6 +6,7 @@ import { hasDotSegment } from '../../shared/page-files.js';
 import { PAGES_KIND, fileMapEntryOf } from '../../shared/root-kinds.js';
 import type { RecordStore } from '../fs/record-store.js';
 import type { MarkdownRecord } from '../fs/record-adapters.js';
+import type { MultiFileOperation } from '../fs/multi-file-operation.js';
 import { MarkdownFileStore } from './markdown-file-store.js';
 
 export { MarkdownFileStore } from './markdown-file-store.js';
@@ -116,8 +117,8 @@ export class PagesService {
   stat(relPath: string): Promise<{ size: number; mtimeMs: number }> {
     return this.store.stat(relPath);
   }
-  write(relPath: string, input: PageWriteInput): Promise<PageContent> {
-    return this.store.write(relPath, input);
+  write(relPath: string, input: PageWriteInput, op?: MultiFileOperation): Promise<PageContent> {
+    return this.store.write(relPath, input, op);
   }
   remove(relPath: string): Promise<void> {
     return this.store.remove(relPath);

@@ -81,7 +81,12 @@ function envelope(dirName: string, pkg: Record<string, unknown>, files: Record<s
   return { name: dirName, dir, specifier: pathToFileURL(path.join(dir, 'dist/index.js')).href };
 }
 
-const loaded = (pkg: string): PluginLoadRecord => ({ package: pkg, status: 'loaded', layer: 'base' });
+const loaded = (pkg: string, contributedTypes?: string[]): PluginLoadRecord => ({
+  package: pkg,
+  status: 'loaded',
+  layer: 'base',
+  ...(contributedTypes ? { contributedTypes } : {}),
+});
 
 interface ProjectOpts {
   id: string;
@@ -90,6 +95,10 @@ interface ProjectOpts {
   trusted: boolean | (() => boolean);
   /** Overlay folders whose backend is `loaded` in the project's context instance. */
   loaded: string[];
+  /** Entity types each loaded overlay folder contributed (default: none). */
+  overlayTypes?: Record<string, string[]>;
+  /** The project's active entity types (`config.entities`); absent ⇒ every type active. */
+  activeTypes?: string[];
 }
 
 interface AppOpts {
@@ -97,7 +106,9 @@ interface AppOpts {
   workspacePackages?: string[];
   envelopes?: BuiltinEnvelope[];
   /** Shorthand for project `p1` (directory `cwd`). Default: untrusted, nothing loaded. */
-  overlay?: { trusted: boolean | (() => boolean); loaded: string[] };
+  overlay?: { trusted: boolean | (() => boolean); loaded: string[]; types?: Record<string, string[]> };
+  /** Project `p1`'s active entity types (`config.entities`); absent ⇒ every type active. */
+  activeTypes?: string[];
   /** Further projects of the same process. */
   projects?: ProjectOpts[];
 }
@@ -112,19 +123,32 @@ function makeApp(opts: AppOpts): express.Express {
   const app = express();
   app.use('/api', pluginsRouter({ pluginRegistry: new PluginRegistryImpl(), ...base }));
   const projects: ProjectOpts[] = [
-    { id: 'p1', cwd, trusted: opts.overlay?.trusted ?? false, loaded: opts.overlay?.loaded ?? [] },
+    {
+      id: 'p1',
+      cwd,
+      trusted: opts.overlay?.trusted ?? false,
+      loaded: opts.overlay?.loaded ?? [],
+      overlayTypes: opts.overlay?.types,
+      activeTypes: opts.activeTypes,
+    },
     ...(opts.projects ?? []),
   ];
   for (const p of projects) {
     const trusted = p.trusted;
+    const active = p.activeTypes;
     app.use(
       `/api/projects/${p.id}`,
       projectPluginsFrontendRouter({
         projectId: p.id,
         cwd: p.cwd,
         isTrusted: typeof trusted === 'function' ? trusted : () => trusted,
-        overlayLoaded: new Set(p.loaded),
+        overlayRecords: p.loaded.map((folder) => ({
+          package: folder,
+          status: 'loaded',
+          contributedTypes: p.overlayTypes?.[folder] ?? [],
+        })),
         base,
+        isTypeActive: active ? (type) => active.includes(type) : () => true,
       }),
     );
   }
@@ -532,6 +556,88 @@ describe('project manifest — overlay condition and name collisions', () => {
     const b = await manifest(app, 'p2');
     expect(b.plugins).toEqual([]);
     for (const p of b.plugins) expect(p.entry).not.toContain('/api/projects/p1/');
+  });
+});
+
+describe('project manifest — type activation is the second condition of an entry (2.1.57)', () => {
+  it('[section:9g96q3pp] the manifest consults config.entities: a plugin contributing entity types is announced only when one of them is active, a plugin without entity types is not subject to it — for the npm package, the envelope and the overlay alike', async () => {
+    npmPackage('npm-on', {}, { 'dist/frontend.js': 'export {}' });
+    npmPackage('npm-off', {}, { 'dist/frontend.js': 'export {}' });
+    npmPackage('npm-typeless', {}, { 'dist/frontend.js': 'export {}' });
+    const envOn = envelope('env-on', {}, { 'dist/frontend.js': 'export {}' });
+    const envOff = envelope('env-off', {}, { 'dist/frontend.js': 'export {}' });
+    overlayPlugin('local-on', '1.0.0', { 'dist/frontend.js': 'export {}' });
+    overlayPlugin('local-off', '1.0.0', { 'dist/frontend.js': 'export {}' });
+    overlayPlugin('local-typeless', '1.0.0', { 'dist/frontend.js': 'export {}' });
+    const opts: AppOpts = {
+      records: [
+        loaded('npm-on', ['glossary']),
+        loaded('npm-off', ['gadget']),
+        loaded('npm-typeless', []),
+        loaded('env-on', ['diagramish']),
+        loaded('env-off', ['widget']),
+      ],
+      workspacePackages: ['npm-on', 'npm-off', 'npm-typeless'],
+      envelopes: [envOn, envOff],
+      overlay: {
+        trusted: true,
+        loaded: ['local-on', 'local-off', 'local-typeless'],
+        types: { 'local-on': ['note'], 'local-off': ['memo'] },
+      },
+    };
+
+    // Field absent: every type active — every plugin announced.
+    const all = (await manifest(makeApp(opts))).plugins.map((p) => p.name).sort();
+    expect(all).toEqual(
+      ['env-off', 'env-on', 'local-off', 'local-on', 'local-typeless', 'npm-off', 'npm-on', 'npm-typeless'].sort(),
+    );
+
+    // A whitelist: the plugins whose every type is off drop out of the manifest.
+    const whitelisted = (
+      await manifest(makeApp({ ...opts, activeTypes: ['glossary', 'diagramish', 'note'] }))
+    ).plugins.map((p) => p.name).sort();
+    expect(whitelisted).toEqual(['env-on', 'local-on', 'local-typeless', 'npm-on', 'npm-typeless'].sort());
+    for (const off of ['npm-off', 'env-off', 'local-off']) expect(whitelisted).not.toContain(off);
+
+    // An empty list: only the plugins without entity types stay.
+    const none = (await manifest(makeApp({ ...opts, activeTypes: [] }))).plugins.map((p) => p.name).sort();
+    expect(none).toEqual(['local-typeless', 'npm-typeless']);
+  });
+
+  it('[section:m13actv0] one activation gate for the backend and the frontend: a partly disabled plugin is announced, and a plugin is dropped only once all its types are off', async () => {
+    npmPackage('@acme/contracts', {}, { 'dist/frontend.js': 'export {}' });
+    const opts: AppOpts = {
+      records: [loaded('@acme/contracts', ['endpoint', 'dto'])],
+      workspacePackages: ['@acme/contracts'],
+    };
+    const names = async (activeTypes: string[]) =>
+      (await manifest(makeApp({ ...opts, activeTypes }))).plugins.map((p) => p.name);
+
+    // One of its two types active → the frontend is announced (its client mount takes only `endpoint`).
+    expect(await names(['endpoint'])).toEqual(['@acme/contracts']);
+    expect(await names(['dto', 'ui-view'])).toEqual(['@acme/contracts']);
+    // None of its types active → not announced, even though the backend is `loaded` and the bundle exists.
+    expect(await names(['ui-view'])).toEqual([]);
+  });
+
+  it('[section:j1jk3ykt] "active" in the manifest is backend loaded + a resolvable frontend entry + (for a plugin contributing entity types) one type active — each condition is necessary', async () => {
+    npmPackage('ok', {}, { 'dist/frontend.js': 'export {}' });
+    npmPackage('no-entry', {}, {}); // backend loaded, no resolvable frontend entry
+    npmPackage('not-loaded', {}, { 'dist/frontend.js': 'export {}' });
+    npmPackage('type-off', {}, { 'dist/frontend.js': 'export {}' });
+    const app = makeApp({
+      records: [
+        loaded('ok', ['glossary']),
+        loaded('no-entry', ['glossary']),
+        { package: 'not-loaded', status: 'failed', layer: 'base', contributedTypes: ['glossary'] },
+        loaded('type-off', ['gadget']),
+      ],
+      workspacePackages: ['ok', 'no-entry', 'not-loaded', 'type-off'],
+      activeTypes: ['glossary'],
+    });
+    expect((await manifest(app)).plugins.map((p) => p.name)).toEqual(['ok']);
+    // The asset route is not the manifest: a disabled type's bundle stays servable (nothing mounts it).
+    await request(app).get('/api/plugins/type-off/frontend.js').expect(200);
   });
 });
 

@@ -21,7 +21,7 @@ export const diagramBackendModule: BackendModule = {
    * `ac`, which keeps suffixing because two criteria opening the same way are
    * ordinary, and `spreadsheet`, where two sheets called "Q1 report" are normal.
    */
-  slugConflict: 'reject',
+  slugCollision: 'error',
 
   label: 'Diagram',
   labelPlural: 'Diagrams',

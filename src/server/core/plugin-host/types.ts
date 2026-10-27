@@ -404,7 +404,9 @@ export interface BackendModule extends EntityModuleManifest {
      * wraps this factory in a thunk in `synthesizeMount` (`registerMcpServer`),
      * so `buildMcpServers()` rebuilds a fresh, connectable server for every
      * `adapter.execute()` behind the facade — see `registerMcpServer` on why the
-     * unit is the query and not the turn.
+     * unit is the query and not the turn. 2.1.57: a tool name declared twice in
+     * this server, or a `${type}-tools` name already in the pool, is refused at
+     * plugin load with `PLUGIN_TOOL_CONFLICT`.
      */
     mcpServer?: (service: unknown, ctx: MountContext) => McpServerFactory;
     /**
@@ -663,6 +665,9 @@ export interface ProjectPluginHost {
    *
    * Throws for a name in `CLAUDE_CODE_RESERVED_MCP_SERVER_KEYS` (`workspace`):
    * the CLI reserves it, and agent-adapters 0.10.0 would drop such a server.
+   * 2.1.57 (M13 `z7l89jhf`) — throws `PLUGIN_TOOL_CONFLICT` for a name already
+   * registered in the pool, and `mountBackend` throws it for a server a plugin
+   * mounted with a tool name declared twice.
    */
   registerMcpServer(name: string, factory: () => McpServerFactory): void;
 
@@ -694,8 +699,15 @@ export interface ProjectPluginHost {
    * `McpServerReuseError` instead of skipping it with a warning. Passed by the
    * MOUNT path only (`runAgentTurn`), where a shared instance darkens the whole
    * map; the external read surface never connects these handles.
+   *
+   * `include` — a predicate over the server NAME, applied before the factory
+   * is invoked: a server it rejects is not built at all. The turn handler and
+   * the external surface narrow the pool with it (`poolSelector`).
    */
-  buildMcpServers(opts?: { strict?: boolean }): Array<{ name: string; server: McpServerFactory }>;
+  buildMcpServers(opts?: {
+    strict?: boolean;
+    include?: (name: string) => boolean;
+  }): Array<{ name: string; server: McpServerFactory }>;
 
   /**
    * 0.2.13 — the type-specific operations of `:type`, read from the SAME factory

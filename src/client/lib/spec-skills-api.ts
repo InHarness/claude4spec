@@ -1,5 +1,10 @@
 import { apiFetch, handle, unwrap } from './api-core.js';
-import type { ExposedProjectRow, ForkWritingStyleRequest, ForkWritingStyleResponse } from '../../shared/spec-skills.js';
+import type {
+  ExposedProjectRow,
+  ForkWritingStyleRequest,
+  ForkWritingStyleResponse,
+  SpecSkillHookTrust,
+} from '../../shared/spec-skills.js';
 
 /**
  * M52 — client for `GET /api/spec-skills/exposed-projects` (operation
@@ -25,7 +30,29 @@ export const specSkillsApi = {
       }),
     );
   },
+  /**
+   * 2.1.57 (M52 `ybbal0vf`): `GET /api/spec-skills/hook-trust` — whether this
+   * machine confirmed the attachments of the project's committed config.
+   * ASSUMPTION:dev-0002.
+   */
+  async hookTrust(): Promise<SpecSkillHookTrust> {
+    return handle<SpecSkillHookTrust>(await apiFetch('/api/spec-skills/hook-trust'));
+  },
+  /** `PUT /api/spec-skills/hook-trust` — confirm (or withdraw) the whole attachment list on this machine. */
+  async setHookTrust(trusted: boolean): Promise<SpecSkillHookTrust> {
+    const body: SpecSkillHookTrust = { trusted };
+    return handle<SpecSkillHookTrust>(
+      await apiFetch('/api/spec-skills/hook-trust', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    );
+  },
 };
+
+/** The react-query key of the attachment confirmation (ASSUMPTION:dev-0002). */
+export const SPEC_SKILL_HOOK_TRUST_QUERY_KEY = ['spec-skills', 'hook-trust'] as const;
 
 /** The react-query key of that list — invalidated after a save of `skill.uses`. */
 export const EXPOSED_PROJECTS_QUERY_KEY = ['spec-skills', 'exposed-projects'] as const;

@@ -7,6 +7,7 @@ import { hasDotSegment, isMarkdownPath } from '../../shared/page-files.js';
 import { fileMapEntryOf, type RootKind } from '../../shared/root-kinds.js';
 import type { RecordStore } from '../fs/record-store.js';
 import type { MarkdownRecord } from '../fs/record-adapters.js';
+import type { MultiFileOperation } from '../fs/multi-file-operation.js';
 
 /**
  * 2.1.8 — M02's PRIMITIVE (D9): CRUD + frontmatter + sha256 over the markdown
@@ -126,12 +127,17 @@ export class MarkdownFileStore {
     return { size: st.size, mtimeMs: st.mtimeMs };
   }
 
-  async write(relPath: string, input: PageWriteInput): Promise<PageContent> {
+  /**
+   * `op` — 2.1.57 (M42 `gg7sxih6`): the multi-file operation this write is a
+   * step of. The write then goes through the operation's handle, which
+   * remembers what it overwrote so the operation's rollback can put it back.
+   */
+  async write(relPath: string, input: PageWriteInput, op?: MultiFileOperation): Promise<PageContent> {
     resolveSafe(this.root, relPath); // path-safety refusals first, as on every other method
     if (!this.servesPath(relPath)) {
       throw new Error(`path '${relPath}' is not an entry of the '${this.kind}' root's file map`);
     }
-    const written = await writeBytes(this, relPath, input);
+    const written = await writeBytes(this, relPath, input, op);
     return {
       path: relPath,
       frontmatter: input.frontmatter ?? {},
@@ -261,12 +267,18 @@ function parseRead(relPath: string, raw: string): PageContent {
 }
 
 /** The bytes that landed. Through the record store when this root has one. */
-async function writeBytes(store: MarkdownFileStore, relPath: string, input: PageWriteInput): Promise<string> {
+async function writeBytes(
+  store: MarkdownFileStore,
+  relPath: string,
+  input: PageWriteInput,
+  op: MultiFileOperation | undefined,
+): Promise<string> {
   if (store.records) {
-    const res = await store.records.write(relPath, {
+    const record: MarkdownRecord = {
       body: input.body,
       ...(input.frontmatter !== undefined ? { frontmatter: input.frontmatter } : {}),
-    });
+    };
+    const res = op ? await op.write(store.records, relPath, record) : await store.records.write(relPath, record);
     return res.content;
   }
   const abs = resolveSafe(store.root, relPath);

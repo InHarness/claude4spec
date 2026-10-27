@@ -172,6 +172,26 @@ describe('ProjectContext — M31 edge cases on a real build', () => {
     expect(emptyId.status).toBe(404);
   });
 
+  it('[section:mbladez6] the host registers reference-tools and release-tools in the pool like a plugin server — buildMcpServers hands them over with entity-tools, and a second registration under either name is refused (PLUGIN_TOOL_CONFLICT)', async () => {
+    const ctx = await cache.get(untrusted);
+    const pool = ctx.pluginHost.buildMcpServers().map((s) => s.name);
+    // 3b: one pool — entity-tools, the custom servers and the host's reference/release servers.
+    expect(pool).toEqual(expect.arrayContaining(['entity-tools', 'reference-tools', 'release-tools']));
+    // Each appears once: the pool, not the turn handler, is where they enter.
+    expect(pool.filter((n) => n === 'reference-tools')).toHaveLength(1);
+    expect(pool.filter((n) => n === 'release-tools')).toHaveLength(1);
+    // The same registration a plugin's server goes through: a duplicate name is refused.
+    for (const name of ['reference-tools', 'release-tools']) {
+      let caught: unknown;
+      try {
+        ctx.pluginHost.registerMcpServer(name, () => ({ config: {} }));
+      } catch (err) {
+        caught = err;
+      }
+      expect((caught as { code?: string } | undefined)?.code, name).toBe('PLUGIN_TOOL_CONFLICT');
+    }
+  });
+
   it('the MCP servers of a project context live as long as the context instance and are released with its dispose', async () => {
     const first = await cache.get(untrusted);
     const names = first.pluginHost.buildMcpServers().map((s) => s.name);

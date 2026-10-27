@@ -29,6 +29,17 @@ export interface ProjectRecord {
    * overlay loads; `false` = overlay refused.
    */
   trustProjectPlugins?: boolean;
+  /**
+   * 2.1.57 (M31 `44viw74p`, M52 `ybbal0vf`): machine-local confirmation of the
+   * skill attachments (`skill.uses`) this project's committed `config.json`
+   * carries — the same record, for the same reason as `trustProjectPlugins`: a
+   * cloned repo cannot self-authorize. Only `true` lets an attachment resolve to
+   * its provider; absent or `false` = not confirmed, every attachment resolves to
+   * none and warns like a dangling one.
+   * ASSUMPTION:dev-0002 — one boolean confirms the whole attachment list; asked
+   * on the `#skills` settings card.
+   */
+  trustSpecSkillHooks?: boolean;
 }
 
 export interface WorkspaceRecord {

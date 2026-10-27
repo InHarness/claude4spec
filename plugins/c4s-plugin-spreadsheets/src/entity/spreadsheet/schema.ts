@@ -124,7 +124,7 @@ export const spreadsheetData: DataDeclaration = {
  *
  * v1 fell back to a random suffix when `name` slugified to nothing, and
  * separately deduped `-2` / `-3` inside its own create transaction. The host
- * covers the second with `slugConflict: 'suffix'` on the contribution; the first
+ * covers the second with `slugCollision: 'suffix'` on the contribution; the first
  * is covered by `title` being `required`, which the generated create schema
  * enforces as non-blank precisely because this pattern has a single alternative.
  */

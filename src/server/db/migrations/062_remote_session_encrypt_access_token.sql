@@ -1,0 +1,12 @@
+-- 2.1.57 (M24 yuhlv2qw, depends on M05 agcrdinj): `remote_session.access_token`
+-- is stored encrypted at-rest with the M05 secrets primitive — the same
+-- AES-256-GCM and the same keyring file (`~/.claude4spec/secret.key`) as the
+-- agent's own API key — and decrypted server-side only.
+--
+-- The schema does not change: the column keeps its name, type and NOT NULL.
+-- What changes is the value. Every row written before this migration holds the
+-- token as plaintext; encrypting it needs the keyring, which SQL cannot reach,
+-- so this version's data step lives in code (`src/server/db/code-migrations.ts`,
+-- keyed by this file's version) and runs right after this file, inside the same
+-- migration transaction. A fresh database seeds this version as applied with an
+-- empty table, so the step never runs there.

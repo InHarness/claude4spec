@@ -26,7 +26,7 @@ import { moduleDependencySystemPrompt } from './system-prompt.js';
  *
  * So: no `mcpServer`, no `mcp-tool` entity, no `srv-*` tag, no `backend.routes`.
  *
- * `slugConflict: 'suffix'`, which is a DECISION and not the default (`'reject'`
+ * `slugCollision: 'suffix'`, which is a DECISION and not the default (`'error'`
  * is). Describing the same ordered pair twice is a duplicate the author should
  * clean up, but it is not a write the host is entitled to refuse — refusing it
  * would lose the second description's `needs` text at the moment of writing,
@@ -45,7 +45,7 @@ export const moduleDependencyEntity: EntityContribution = {
   type: MODULE_DEPENDENCY_TYPE,
   data: moduleDependencyData,
   slugPattern: moduleDependencySlugPattern,
-  slugConflict: 'suffix',
+  slugCollision: 'suffix',
   payloadVersion: 1,
   label: MODULE_DEPENDENCY_LABEL,
   labelPlural: MODULE_DEPENDENCY_LABEL_PLURAL,

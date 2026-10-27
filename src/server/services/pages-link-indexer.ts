@@ -14,6 +14,7 @@ import type { WatchSubscriber, WatchScope, WatchActor, WatchOrigin } from '../fs
 import { reactionRootId } from '../fs/sources.js';
 import type { ReactionInput } from '../fs/reactions.js';
 import { PROJECTION_IDS, type ProjectionStatusRegistry } from './projection-status.js';
+import { runMultiFileOperation } from '../fs/multi-file-operation.js';
 
 // 0.2.89 — the `#anchor` suffix is the canonical anchor id (`[a-z0-9]{6,12}`), the
 // alphabet anchors are minted from. Until now it was 8 hex digits, which almost no
@@ -99,8 +100,10 @@ export class PagesLinkIndexerService implements WatchSubscriber {
    *
    * Each rewritten page is its OWN write through the record primitive, with its
    * own commit, its own suppressed event and its own full phase chain. There is
-   * no transaction spanning N files and none is simulated: a failure partway
-   * leaves the pages already rewritten rewritten.
+   * no transaction spanning N files and none is simulated. 2.1.57 (`sjdtpuoo`):
+   * the rewrites are steps of a multi-file operation (M42 `gg7sxih6`) — the one
+   * the move started (`movePage`), which this joins — so their version rows carry
+   * that operation's id and a failure partway is rolled back by its rules.
    *
    * Scope is the ROOT. `reverseIndex` does not cover briefs and patches, so their
    * `@page.md` citations stay unsynchronised — unchanged from before.
@@ -122,22 +125,24 @@ export class PagesLinkIndexerService implements WatchSubscriber {
       const i = k.indexOf(':');
       return { sourceRootId: k.slice(0, i), sourcePath: k.slice(i + 1) };
     });
-    const rewritten: string[] = [];
-    for (const { sourceRootId, sourcePath } of sources) {
-      if (sourceRootId === rootId && sourcePath === from) continue;
-      const svc = this.roots.get(sourceRootId);
-      if (!svc?.records) continue;
-      const raw = svc.records.readRaw(sourcePath);
-      if (raw === null) continue;
-      const next = rewritePageCitations(raw, from, to);
-      if (next === raw) continue;
-      // Attributed to whoever performed the MOVE: the rewrite is a consequence of
-      // their action, not an authorless background edit, and `capture` records it
-      // under that name in each rewritten page's own version row.
-      await svc.records.write(sourcePath, { raw: next }, { actor });
-      rewritten.push(sourcePath);
-    }
-    return rewritten;
+    return await runMultiFileOperation(async (op) => {
+      const rewritten: string[] = [];
+      for (const { sourceRootId, sourcePath } of sources) {
+        if (sourceRootId === rootId && sourcePath === from) continue;
+        const svc = this.roots.get(sourceRootId);
+        if (!svc?.records) continue;
+        const raw = svc.records.readRaw(sourcePath);
+        if (raw === null) continue;
+        const next = rewritePageCitations(raw, from, to);
+        if (next === raw) continue;
+        // Attributed to whoever performed the MOVE: the rewrite is a consequence of
+        // their action, not an authorless background edit, and `capture` records it
+        // under that name in each rewritten page's own version row.
+        await op.write(svc.records, sourcePath, { raw: next }, { actor });
+        rewritten.push(sourcePath);
+      }
+      return rewritten;
+    });
   }
 
   private key(rootId: string, relPath: string): string {

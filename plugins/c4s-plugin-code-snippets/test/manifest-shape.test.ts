@@ -40,7 +40,7 @@ describe('envelope', () => {
 
   it('suffixes slug collisions rather than refusing them', () => {
     // Two snippets sharing a title is ordinary, unlike two tools sharing a name.
-    expect(codeSnippetEntity.slugConflict).toBe('suffix');
+    expect(codeSnippetEntity.slugCollision).toBe('suffix');
   });
 
   it('starts at payloadVersion 1 with an empty upgrade chain', () => {

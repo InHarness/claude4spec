@@ -60,7 +60,15 @@ export interface EntityModuleManifest {
   slugPattern: SlugPattern;
 
   /**
-   * What a CREATE does when the derived slug is taken. Defaults to `'reject'`.
+   * What a CREATE does when the slug DERIVED from `slugPattern` is taken: `'error'`
+   * answers `SLUG_CONFLICT`, `'suffix'` appends a disambiguating `-2`, `-3`.
+   * Omitted means `'error'`. An EXPLICIT slug is outside this declaration: its
+   * collision is always `SLUG_CONFLICT` (M13 `x2nr826t`).
+   *
+   * 2.1.57 (M13 `z7l89jhf`) — the identity slot the specification names
+   * `slugCollision`; it replaces `slugConflict` (`'reject' | 'suffix'`), with
+   * no alias: a manifest still carrying the old key is refused as an unknown key.
+   * ASSUMPTION:dev-0006 slugCollision replaces slugConflict ('reject' → 'error') with no alias.
    *
    * The two answers are both correct, for different KINDS of slug source, and
    * the six built-ins were split on it exactly that way: `ac` (slugified from
@@ -74,11 +82,11 @@ export interface EntityModuleManifest {
    * Tier E generalized the suffix to everything, on the strength of `ac`'s
    * comment. That silently turned "you already have this" into a duplicate the
    * author will edit while every `<single_element slug="…"/>` keeps resolving to
-   * the stale original. `'reject'` is the default because it is what five of the
+   * the stale original. `'error'` is the default because it is what five of the
    * six did and because the failure is loud rather than silent; a type whose
    * slug is prose says so.
    */
-  slugConflict?: 'reject' | 'suffix';
+  slugCollision?: 'error' | 'suffix';
 
   /**
    * Host API 2.0.0 — version of the PAYLOAD shape, a positive integer.

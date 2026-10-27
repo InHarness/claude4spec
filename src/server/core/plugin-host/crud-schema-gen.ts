@@ -159,7 +159,7 @@ function callerSupplied(node: FieldNode): boolean {
 const SLUG_INPUT = z
   .string()
   .optional()
-  .describe('Explicit slug; otherwise derived from the type\'s slugPattern. Collisions get a -2/-3 suffix.');
+  .describe('Explicit slug; otherwise derived from the type\'s slugPattern. A taken explicit slug is refused; a taken derived slug is refused too, unless the type declares slugCollision \'suffix\' (then -2, -3 is appended).');
 const TAGS_INPUT = z
   .array(z.string())
   .optional()

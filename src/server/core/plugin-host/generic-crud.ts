@@ -36,6 +36,7 @@ import { normalizePayload } from '../../../shared/plugin-host/data-schema.js';
 import type { ChangedBy } from '../../../shared/entities.js';
 import type { RawEntity, RawEntityReader, RawEntityType } from '../../discovery/raw-entity-reader.js';
 import type { EntityStore } from '../../services/entity-store.js';
+import { currentEntityVersion } from '../../services/versions.js';
 import type { TagsService } from '../../services/tags.js';
 import type { ReferencesService } from '../../services/references.js';
 import type { ProjectPluginHost, BackendModule } from './types.js';
@@ -174,7 +175,7 @@ function requireModule(deps: GenericCrudDeps, type: string): BackendModule {
 /**
  * The slug for a new entity: the caller's if it supplied one, otherwise the
  * pattern's — then either suffixed until free or refused, per the type's
- * declared `slugConflict`.
+ * declared `slugCollision`.
  *
  * An EXPLICIT slug always refuses. That half was never in dispute: `ac` is the
  * type tier E generalized from, and even `ac` threw `SLUG_CONFLICT` when the
@@ -184,7 +185,7 @@ function requireModule(deps: GenericCrudDeps, type: string): BackendModule {
  * A DERIVED slug follows the declaration, defaulting to refusing. Tier E
  * suffixed unconditionally, which made a re-`POST` of `GET /api/users` create
  * `get-api-users-2` — two entities for one route, drifting apart, with every
- * reference still pointing at the first. See `slugConflict` on the manifest for
+ * reference still pointing at the first. See `slugCollision` on the manifest for
  * why the two answers both exist.
  */
 function allocateSlug(deps: GenericCrudDeps, module: BackendModule, payload: Record<string, unknown>): string {
@@ -193,7 +194,7 @@ function allocateSlug(deps: GenericCrudDeps, module: BackendModule, payload: Rec
   if (!base) throw new DomainError('VALIDATION', `${module.type}: slug resolves to empty`);
   if (!deps.reader.getEntity(module.type, base)) return base;
 
-  if (explicit || (module.slugConflict ?? 'reject') === 'reject') {
+  if (explicit || module.slugCollision !== 'suffix') {
     throw new DomainError('SLUG_CONFLICT', `${module.type} slug '${base}' already exists`);
   }
   let candidate = base;
@@ -302,6 +303,16 @@ function mergeUpdate(
   return merged;
 }
 
+export interface GenericUpdateOptions {
+  /**
+   * 2.1.57 (M13 `update-entities`) — the optional per-item concurrency guard:
+   * the entity's `entity_version` number the caller based the change on. A
+   * different current number refuses the write with `VERSION_CONFLICT` and
+   * writes nothing; omitted, the write goes through unchecked, as before.
+   */
+  expectedVersion?: number;
+}
+
 /** `PATCH /api/{type}s/:slug` and `update_entities`, for a type with no service. */
 export function genericUpdate(
   deps: GenericCrudDeps,
@@ -309,6 +320,7 @@ export function genericUpdate(
   slug: string,
   input: unknown,
   actor: ChangedBy,
+  opts: GenericUpdateOptions = {},
 ): GenericMutateResult {
   const module = requireModule(deps, type);
   const current = deps.reader.getEntity(type, slug);
@@ -339,7 +351,26 @@ export function genericUpdate(
    * still sat at the old one, and the next rebuild resurrected it as a second
    * entity.
    */
+  /**
+   * The guard is the transaction's FIRST statement, so the check and the write
+   * are one critical section: the read of the version log, the row write, the
+   * capture that moves the number on, and the file derived after commit run
+   * without a single `await` between them, on the one connection every entity
+   * writer of this project shares. Two writers holding the same number cannot
+   * both pass — the second reads the number the first one's capture wrote.
+   * A refusal throws before anything is written, so the transaction has nothing
+   * to roll back and the file is never touched.
+   */
   const warnings = inOneTransaction(deps, () => {
+    if (opts.expectedVersion !== undefined) {
+      const now = currentEntityVersion(deps.projection.db, type, slug);
+      if (now !== opts.expectedVersion) {
+        throw new DomainError(
+          'VERSION_CONFLICT',
+          `${type} '${slug}' is at version ${now}, not ${opts.expectedVersion} — re-read it and apply the change again`,
+        );
+      }
+    }
     if (target !== slug) renameProjectionRow(deps.projection, module, slug, target, actor, ROW_ONLY);
     const result = upsertProjectionRow(deps.projection, module, target, merged, actor, ROW_ONLY);
     if (Object.prototype.hasOwnProperty.call(patch, 'tags')) {

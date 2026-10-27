@@ -22,6 +22,9 @@ import { parseXmlTags, taggedListVia } from '../../../shared/xml-tags.js';
 import { getXmlTag } from '../../../shared/xml-markup/registry.js';
 import { anchorLineIndexOf, parseSections } from '../../../shared/section-parser.js';
 import { invalidArgument } from '../errors.js';
+import { collectRefFields } from '../../../shared/plugin-host/ref-fields.js';
+import { columnOf, hasProjectionTable } from '../../../shared/plugin-host/data-schema.js';
+import { projectionTableOf } from '../../db/projection.js';
 import { classifyVerifies, readActiveAcs } from './ac-rules.js';
 import type { PageSource } from '../page-source.js';
 import type { RootSet } from '../roots.js';
@@ -156,6 +159,59 @@ function rulesFor(rule: string | number | undefined): RuleDef[] | null {
   return entries.map(([, def]) => def).filter((def) => !seen.has(def.id) && seen.add(def.id));
 }
 
+/**
+ * 2.1.57 (M19 `5tfhxy2p`) — rule 3's ONE read besides the page sweep: the
+ * structural link junctions. An entity a junction row points at counts as used
+ * even when no page embeds it — `endpoint.linkedDtos` → `endpoint_dto` is the
+ * case, where a DTO surfaced only by its endpoint's contract was a permanent
+ * false warning.
+ *
+ * Found from the declarations, not from a type name: a top-level value
+ * collection that projects to a table of its own (`hasProjectionTable`) whose
+ * item carries a `ref: '<type>'` scalar is a junction, and its ref column is
+ * read once, `DISTINCT`, per run. Only rule 3 reads it — `find_references`
+ * still does not traverse entity↔entity edges (M39 `z5cl1q4o`).
+ *
+ * A slug the junction names that the target type does not hold is not marked
+ * (it is not an entity), and a junction table not applied yet reads as empty,
+ * like `readProjectionCollection`.
+ */
+function markJunctionTargets(
+  deps: DiscoveryDeps,
+  slugSets: Record<string, Set<string>>,
+  referenced: Record<string, Set<string>>,
+): void {
+  for (const module of deps.host.listEntities()) {
+    const schema = module.data?.schema;
+    if (!schema || !slugSets[module.type]) continue;
+    for (const site of collectRefFields(schema).refs) {
+      const match = /^([^.[\]]+)\[\]\.([^.[\]]+)$/.exec(site.path);
+      if (!match) continue;
+      const [, field, itemField] = match as unknown as [string, string, string];
+      const collection = schema[field];
+      if (!collection || collection.type !== 'collection' || !hasProjectionTable(collection)) continue;
+      if (collection.item.type !== 'object') continue;
+      const targets = slugSets[site.target];
+      const seen = referenced[site.target];
+      if (!targets || !seen) continue;
+      const table = projectionTableOf(module, field, collection);
+      const column = columnOf(itemField, site.node);
+      let rows: Array<{ slug: unknown }>;
+      try {
+        rows = deps.db
+          .prepare(`SELECT DISTINCT ${column} AS slug FROM ${table} WHERE ${column} IS NOT NULL`)
+          .all() as Array<{ slug: unknown }>;
+      } catch (err) {
+        if (/no such table/i.test((err as Error).message ?? '')) continue;
+        throw err;
+      }
+      for (const { slug } of rows) {
+        if (typeof slug === 'string' && targets.has(slug)) seen.add(slug);
+      }
+    }
+  }
+}
+
 export async function checkConsistency(
   deps: DiscoveryDeps,
   pages: PageSource,
@@ -183,6 +239,7 @@ export async function checkConsistency(
       slugs.map((slug) => [slug, new Set(reader.getEntity(module.type, slug)?.tags ?? [])]),
     );
   }
+  markJunctionTargets(deps, slugSets, referenced);
   const tagSlugs = new Set(reader.listTags().map((t) => t.slug));
   /**
    * Rule 8 (2.0.0) asks the current project's `SectionsService` directly — the

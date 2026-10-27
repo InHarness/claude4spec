@@ -5,6 +5,7 @@ import path from 'node:path';
 import { markBriefImplemented } from './mark-brief-implemented.js';
 import { AgentError } from './run-agent.js';
 import { WorkspaceRegistry } from '../../server/workspace/registry.js';
+import { markBriefImplementedCommand } from '../../bin/c4s/commands/mark-brief-implemented.js';
 
 const VALID_CONFIG = {
   name: 'peer',
@@ -166,5 +167,44 @@ describe('markBriefImplemented', () => {
     );
     expect(err).toBeInstanceOf(AgentError);
     expect((err as AgentError).code).toBe('IMMUTABLE_FIELD');
+  });
+
+  it('[ac:ac-c4s-mark-brief-implemented-brief-path] wraps PATCH frontmatter of the brief with { implemented: true }, server-delegating behind the same /config health-check under /api/projects/:id; BRIEF_NOT_FOUND for an unknown path, IMMUTABLE_FIELD passed through, resolver codes reused', async () => {
+    // Server-delegating, declared as such, with the shared resolver codes.
+    expect(markBriefImplementedCommand.executionMode).toBe('server-delegating');
+    expect(markBriefImplementedCommand.errorCodes).toEqual(
+      expect.arrayContaining(['BRIEF_NOT_FOUND', 'IMMUTABLE_FIELD', 'SERVER_NOT_RUNNING']),
+    );
+
+    // Health-check first, then ONE PATCH — both under the project prefix.
+    const ok = stubFlow({ status: 200, ok: true, body: { data: { path: 'b.md', frontmatter: { implemented: true } } } });
+    await markBriefImplemented({ briefPath: 'b.md', project: projectId, workspace: 'default' });
+    const prefix = `/api/projects/${encodeURIComponent(projectId)}`;
+    expect(ok.calls.map((c) => [c.method ?? 'GET', new URL(c.url).pathname])).toEqual([
+      ['GET', `${prefix}/config`],
+      ['PATCH', `${prefix}/artifacts/brief/b.md/frontmatter`],
+    ]);
+    expect(ok.calls[1]!.body).toEqual({ frontmatter: { implemented: true } });
+    vi.unstubAllGlobals();
+
+    // An unknown brief path: the route's 404 BRIEF_NOT_FOUND reaches the caller as BRIEF_NOT_FOUND.
+    stubFlow({ status: 404, ok: false, body: { error: { code: 'BRIEF_NOT_FOUND', message: "brief 'nope.md' not found" } } });
+    const missing = await markBriefImplemented({ briefPath: 'nope.md', project: projectId, workspace: 'default' }).catch((e) => e);
+    expect((missing as AgentError).code).toBe('BRIEF_NOT_FOUND');
+    vi.unstubAllGlobals();
+
+    // The route's 400 IMMUTABLE_FIELD (the artifact family's shared code) passes through unchanged.
+    stubFlow({ status: 400, ok: false, body: { error: { code: 'IMMUTABLE_FIELD', message: 'cannot mutate immutable frontmatter keys: x' } } });
+    const immutable = await markBriefImplemented({ briefPath: 'b.md', project: projectId, workspace: 'default' }).catch((e) => e);
+    expect((immutable as AgentError).code).toBe('IMMUTABLE_FIELD');
+    vi.unstubAllGlobals();
+
+    // Address resolution reuses the resolver's codes — an unknown project id never reaches a server.
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const unknown = await markBriefImplemented({ briefPath: 'b.md', project: 'no-such-project', workspace: 'default' }).catch((e) => e);
+    expect(unknown).toBeInstanceOf(AgentError);
+    expect((unknown as AgentError).code).toBe('PROJECT_ID_NOT_FOUND');
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

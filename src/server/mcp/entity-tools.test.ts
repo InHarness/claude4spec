@@ -1363,3 +1363,114 @@ describe('entity-tools — the mutation tools as their 2.1.26 records declare th
     expect(deps.ws.broadcast).toHaveBeenCalledWith({ kind: 'entity:changed', entityType: 'widget', slug: 'c', action: 'delete' });
   });
 });
+
+/**
+ * 2.1.57 — the two entity operations' new behaviour, through the tools that
+ * render them (`internal` and `mcp`):
+ *
+ *   - `update-entities` guard `opcjonalny`: an item may carry `expectedVersion`
+ *     (the entity's `entity_version` number); a different current number fails
+ *     that item with VERSION_CONFLICT and writes nothing, the rest goes on; an
+ *     item without it writes unchecked;
+ *   - `create-entities`: an explicit taken slug is SLUG_CONFLICT; a collision of
+ *     the DERIVED slug follows the type's `slugCollision` (refusal by default,
+ *     a suffix for `'suffix'`); a refusal does not undo the other items.
+ */
+describe('entity-tools — the 2.1.57 entity operation guards', () => {
+  const results = (r: { content: Array<{ text: string }> }) => (parse(r) as { results: Array<Record<string, unknown>> }).results;
+  const versionOf = (db: Database.Database, slug: string): number =>
+    (
+      db
+        .prepare(`SELECT MAX(version) AS v FROM entity_version WHERE entity_type = 'widget' AND entity_slug = ?`)
+        .get(slug) as { v: number | null }
+    ).v ?? 0;
+
+  it('[entity:update-entities] [entity:entity-tools-update-entities] expectedVersion: a matching number writes, a stale one is VERSION_CONFLICT for its item and writes nothing, an item without one writes unguarded — the rest of the batch goes on', async () => {
+    const { deps, db, rows } = fakeDeps();
+    await seed(deps, 'a', 'b');
+    expect(versionOf(db, 'a')).toBe(1);
+    expect(versionOf(db, 'b')).toBe(1);
+    // Seeded straight into the table: an entity the log never captured is at 0.
+    expect(versionOf(db, 'widget-existing')).toBe(0);
+
+    const result = await tool(deps, 'update_entities').handler({
+      type: 'widget',
+      updates: [
+        { slug: 'a', data: { title: 'a two' }, expectedVersion: 1 },
+        // A second writer holding the same number: the first one moved it on.
+        { slug: 'a', data: { title: 'a stale' }, expectedVersion: 1 },
+        { slug: 'b', data: { title: 'b never' }, expectedVersion: 7 },
+        { slug: 'b', data: { title: 'b unguarded' } },
+        { slug: 'widget-existing', data: { title: 'changed' }, expectedVersion: 0 },
+      ],
+    });
+    expect(result.isError).toBeUndefined();
+    const r = results(result);
+    expect(r).toHaveLength(5);
+    expect(r[0]).toEqual({ slug: 'a' });
+    expect(r[1]).toMatchObject({ code: 'VERSION_CONFLICT' });
+    expect(String(r[1]!.error)).toMatch(/version 2, not 1/);
+    expect(r[2]).toMatchObject({ code: 'VERSION_CONFLICT' });
+    expect(r[3]).toEqual({ slug: 'b' });
+    expect(r[4]).toEqual({ slug: 'widget-existing' });
+
+    const titles = Object.fromEntries(rows().map((w) => [w.slug, w.title]));
+    expect(titles).toEqual({ a: 'a two', b: 'b unguarded', 'widget-existing': 'changed' });
+    // A refused item captured nothing: each entity moved exactly once.
+    expect(versionOf(db, 'a')).toBe(2);
+    expect(versionOf(db, 'b')).toBe(2);
+    expect(versionOf(db, 'widget-existing')).toBe(1);
+    // ...and was neither persisted to its file nor broadcast as a change.
+    const persisted = (deps.entityStore!.persist as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1]);
+    expect(persisted.filter((slug) => slug === 'a')).toHaveLength(2); // the create + one update
+    const broadcasts = (deps.ws.broadcast as unknown as ReturnType<typeof vi.fn>).mock.calls
+      .map((c) => c[0] as { slug: string; action: string })
+      .filter((e) => e.action === 'update');
+    expect(broadcasts.map((e) => e.slug)).toEqual(['a', 'b', 'widget-existing']);
+  });
+
+  it('[entity:update-entities] [entity:entity-tools-update-entities] two concurrent calls holding the same expectedVersion: exactly one writes, the other answers VERSION_CONFLICT', async () => {
+    const { deps, db, rows } = fakeDeps();
+    await seed(deps, 'a');
+    const update = (title: string) =>
+      tool(deps, 'update_entities').handler({ type: 'widget', updates: [{ slug: 'a', data: { title }, expectedVersion: 1 }] });
+    const [first, second] = await Promise.all([update('first'), update('second')]);
+    const codes = [results(first)[0], results(second)[0]].map((x) => (x as { code?: string }).code ?? 'ok').sort();
+    expect(codes).toEqual(['VERSION_CONFLICT', 'ok']);
+    expect(versionOf(db, 'a')).toBe(2);
+    expect(['first', 'second']).toContain(rows().find((w) => w.slug === 'a')?.title);
+  });
+
+  it('[entity:create-entities] an explicit taken slug is SLUG_CONFLICT; a derived collision follows slugCollision (refused by default, suffixed for a suffix type); a refused item leaves the others written', async () => {
+    const { deps, db, rows } = fakeDeps([widgetModule({ type: 'note', slugCollision: 'suffix' })]);
+    const created = await tool(deps, 'create_entities').handler({
+      type: 'widget',
+      items: [
+        { title: 'other', slug: 'widget-existing' }, // explicit, taken
+        { title: 'existing' }, // derives `existing`, free
+        { title: 'existing' }, // derives `existing` again — the default policy refuses
+        { title: 'fresh' },
+      ],
+    });
+    const r = results(created);
+    expect(r[0]).toMatchObject({ code: 'SLUG_CONFLICT' });
+    expect(r[1]).toEqual({ slug: 'existing' });
+    expect(r[2]).toMatchObject({ code: 'SLUG_CONFLICT' });
+    expect(r[3]).toEqual({ slug: 'fresh' });
+    expect(rows().map((w) => w.slug)).toEqual(['existing', 'fresh', 'widget-existing']);
+
+    // A `'suffix'` type: the derived collision takes a suffix, the explicit one still refuses.
+    const notes = await tool(deps, 'create_entities').handler({
+      type: 'note',
+      items: [{ title: 'Order Form' }, { title: 'Order Form' }, { title: 'Again', slug: 'order-form' }],
+    });
+    const n = results(notes);
+    expect(n[0]).toEqual({ slug: 'order-form' });
+    expect(n[1]).toEqual({ slug: 'order-form-2' });
+    expect(n[2]).toMatchObject({ code: 'SLUG_CONFLICT' });
+    expect((db.prepare(`SELECT slug FROM note ORDER BY slug`).all() as Array<{ slug: string }>).map((x) => x.slug)).toEqual([
+      'order-form',
+      'order-form-2',
+    ]);
+  });
+});

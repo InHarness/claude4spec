@@ -331,6 +331,32 @@ export class WorkspaceRegistry {
   }
 
   /**
+   * 2.1.57 (M31 `44viw74p`, M52 `ybbal0vf`): whether this machine confirmed the
+   * skill attachments of the project's committed config. Read live by the
+   * `project-exposed` skill source on every registry query. ASSUMPTION:dev-0002.
+   */
+  getSpecSkillHooksTrust(ws: WorkspaceRecord, id: string): boolean {
+    return this.getProject(ws, id)?.trustSpecSkillHooks === true;
+  }
+
+  /**
+   * 2.1.57: persist the skill-attachment confirmation per `(workspace × project)`
+   * in `~/.claude4spec/workspaces.json`, NEVER in the repo, next to
+   * `trustProjectPlugins`. No context rebuild: the source reads it live, and the
+   * listing of a thread is frozen anyway (from the next thread on).
+   * ASSUMPTION:dev-0002 — one confirmation for the whole attachment list.
+   */
+  setSpecSkillHooksTrust(ws: WorkspaceRecord, id: string, value: boolean): void {
+    this.withLock((data) => {
+      const target = data.workspaces.find((w) => w.name === ws.name);
+      if (!target) return null;
+      const p = target.projects.find((x) => x.id === id);
+      if (p) p.trustSpecSkillHooks = value;
+      return null;
+    });
+  }
+
+  /**
    * 2.1.0: persist `--host` / `--public-url` on a workspace. `undefined` leaves
    * a field untouched; `''` removes it (back to the default: loopback /
    * `http://localhost:<defaultPort>`). Callers validate `publicUrl` first.

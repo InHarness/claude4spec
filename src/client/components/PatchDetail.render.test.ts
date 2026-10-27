@@ -327,6 +327,33 @@ describe('PatchDetail (/patches/$)', () => {
     expect(JSON.parse(patchCall.body!)).toEqual({ frontmatter: { applied: false } });
   });
 
+  it('[ac:ac-settings-popover-na-patches-path-zawi] the settings popover holds ONE boolean toggle for `applied` (no enum switch), calling PATCH /api/artifacts/patch/:path/frontmatter with { frontmatter: { applied } }; turning it back to false is the user\'s', async () => {
+    await render();
+    await click(host.querySelector('button[title="Patch settings"]'));
+    const popover = Array.from(host.querySelectorAll('div')).find(
+      (d) => d.firstElementChild?.textContent?.trim() === 'Patch settings',
+    )!;
+    // One toggle, not a two-value enum switch: no awaiting/completed choice anywhere.
+    const toggles = () => Array.from(popover.querySelectorAll('button'));
+    expect(toggles().map((b) => b.textContent?.trim())).toEqual(['Mark as applied']);
+    expect(popover.textContent).not.toMatch(/awaiting|completed/);
+
+    // On: a boolean `true` to the generic frontmatter route.
+    await click(toggles()[0]!);
+    for (let i = 0; i < 3; i++) await flush();
+    // Off again — by the user, from the same toggle: a boolean `false`.
+    expect(toggles().map((b) => b.textContent?.trim())).toEqual(['Mark as pending']);
+    await click(toggles()[0]!);
+    const sent = server.calls.filter((c) => c.method === 'PATCH');
+    expect(sent).toHaveLength(2);
+    for (const c of sent) expect(c.url).toMatch(/\/api\/(projects\/[^/]+\/)?artifacts\/patch\/big\.md\/frontmatter$/);
+    expect(sent.map((c) => JSON.parse(c.body!))).toEqual([
+      { frontmatter: { applied: true } },
+      { frontmatter: { applied: false } },
+    ]);
+    expect(server.frontmatter.applied).toBe(false);
+  });
+
   it('[ac:ac-patch-dluzszy-niz-budzet-odpowiedzi-w] a patch longer than the response budget shows on /patches/$ with its last line', async () => {
     expect(server.file.length).toBeGreaterThan(DEFAULT_BUDGET_CHARS);
     await render();

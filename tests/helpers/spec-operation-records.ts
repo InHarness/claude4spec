@@ -1308,7 +1308,8 @@ export const SPEC_OPERATION_RECORDS: readonly SpecOperationRecord[] = [
     idempotencja: 'tak',
     opisTresci: 'dosłowny',
     reguly: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'explicit-addressing' }, { id: 'operation-only-write' }],
-    kodyBledow: ['INVALID_TYPE', 'ENTITY_NOT_FOUND', 'VALIDATION'],
+    // 2.1.57 — guard `opcjonalny`: the per-item `expectedVersion` and its refusal.
+    kodyBledow: ['INVALID_TYPE', 'ENTITY_NOT_FOUND', 'VALIDATION', 'VERSION_CONFLICT'],
     narzedzia: { internal: ['entity-tools-update-entities'], mcp: ['entity-tools-update-entities'] },
   },
   {

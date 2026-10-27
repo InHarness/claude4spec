@@ -1049,7 +1049,7 @@ describe('the M13 mutation rows as their 2.1.26 records declare them', () => {
     }
   }
 
-  it('[entity:create-entities] create_entities: project, direct, all four channels direct, file/db/ui-notify, not idempotent, literal, codes INVALID_TYPE, SLUG_CONFLICT, VALIDATION, rendered by entity-tools · create_entities', () => {
+  it('[entity:create-entities] create_entities: project, direct, internal/mcp/rest direct and cli n/a (generic c4s entity commands only read), file/db/ui-notify, not idempotent, literal, codes INVALID_TYPE, SLUG_CONFLICT, VALIDATION, rendered by entity-tools · create_entities', () => {
     expectRecordRow({
       nazwa: 'create_entities',
       mediacja: 'direct',
@@ -1061,19 +1061,25 @@ describe('the M13 mutation rows as their 2.1.26 records declare them', () => {
     });
   });
 
-  it('[entity:update-entities] update_entities: project, direct, all four channels direct, file/db/ui-notify, idempotent, literal, codes INVALID_TYPE, ENTITY_NOT_FOUND, VALIDATION, rendered by entity-tools · update_entities, addressed by (type, slug)', () => {
+  it('[entity:update-entities] update_entities: project, direct, internal/mcp/rest direct and cli n/a (generic c4s entity commands only read), file/db/ui-notify, idempotent, literal, codes INVALID_TYPE, ENTITY_NOT_FOUND, VALIDATION, VERSION_CONFLICT, rendered by entity-tools · update_entities, addressed by (type, slug) with an optional per-item expectedVersion guard', () => {
     expectRecordRow({
       nazwa: 'update_entities',
       mediacja: 'direct',
       channels: { internal: D, cli: { kind: 'na', reason: CLI_NA_ENTITY }, mcp: D, rest: D },
       idempotencja: true,
       opisTresci: 'literal',
-      kodyBledow: ['INVALID_TYPE', 'ENTITY_NOT_FOUND', 'VALIDATION'],
+      kodyBledow: ['INVALID_TYPE', 'ENTITY_NOT_FOUND', 'VALIDATION', 'VERSION_CONFLICT'],
       narzedzia: { internal: ['entity-tools-update-entities'], mcp: ['entity-tools-update-entities'] },
     });
     const shape = z.object(CATALOG.require('update_entities').inputSchema as z.ZodRawShape);
     expect(shape.safeParse({ type: 'ac', updates: [{ slug: 'a', data: { title: 'x' }, newSlug: 'b' }] }).success).toBe(true);
     expect(shape.safeParse({ type: 'ac', updates: [{ data: { title: 'x' } }] }).success).toBe(false);
+    // Guard `opcjonalny`: an item may carry an integer `expectedVersion`, or none.
+    expect(shape.safeParse({ type: 'ac', updates: [{ slug: 'a', data: {}, expectedVersion: 3 }] }).success).toBe(true);
+    expect(shape.safeParse({ type: 'ac', updates: [{ slug: 'a', data: {}, expectedVersion: 1.5 }] }).success).toBe(false);
+    expect(shape.safeParse({ type: 'ac', updates: [{ slug: 'a', data: {}, expectedVersion: '3' }] }).success).toBe(false);
+    // VERSION_CONFLICT is a conflict with server state the caller can resolve by re-reading.
+    expect(httpStatusForCode('VERSION_CONFLICT')).toBe(409);
   });
 
   it('[entity:delete-entities] delete_entities: project, direct, all four channels direct, file/db/ui-notify, not idempotent, no content input, codes INVALID_TYPE, ENTITY_NOT_FOUND, VALIDATION, rendered by entity-tools · delete_entities', () => {

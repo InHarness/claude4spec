@@ -17,17 +17,25 @@
  * cuts both at once, without a context rebuild; granting it takes effect from
  * the next build (the overlay is only loaded at build time).
  *
+ * 2.1.57 (M13 `m13actv0`): the manifest's second condition is type activation —
+ * a plugin contributing entity types is announced only when at least one of its
+ * types is active in this project's `config.entities` (`isTypeActive`, the
+ * context's host). The asset route does not consult it.
+ *
  * Nothing here depends on the project the process started with: a start
  * without `--cwd` serves every registered project's manifest and overlay the
  * same way.
  */
 
 import { Router, type Request, type Response } from 'express';
-import { buildFrontendManifest } from '../core/plugin-host/frontend-manifest.js';
+import { buildFrontendManifest, type ManifestActivation } from '../core/plugin-host/frontend-manifest.js';
 import {
   basePool,
+  loadedRecordKeys,
+  loadedRecordTypes,
   resolveOverlayAsset,
   type FrontendBaseDeps,
+  type FrontendLoadRecord,
   type FrontendPool,
 } from '../core/plugin-host/frontend-assets.js';
 import { sendPluginAsset } from './plugins.js';
@@ -40,26 +48,40 @@ export interface ProjectPluginsFrontendDeps {
   /** `trustProjectPlugins` of `(workspace × projectId)`, read live per request. */
   isTrusted: () => boolean;
   /**
-   * Overlay folders whose backend is `loaded` in the context instance that owns
-   * this router — fixed for the instance's life, rebuilt with the context.
+   * The overlay's load records of the context instance that owns this router —
+   * fixed for the instance's life, rebuilt with the context. Its `loaded`
+   * folders and the entity types they contributed are read from here.
    */
-  overlayLoaded: ReadonlySet<string>;
+  overlayRecords: ReadonlyArray<FrontendLoadRecord>;
   /** The process's base tier (the same for every project). */
   base: FrontendBaseDeps;
+  /** Whether an entity type is active in this project's `config.entities` (the context's host). */
+  isTypeActive: (type: string) => boolean;
 }
 
 export function projectPluginsFrontendRouter(deps: ProjectPluginsFrontendDeps): Router {
   const router = Router();
+  const overlayLoaded = loadedRecordKeys(deps.overlayRecords);
+  const overlayTypes = loadedRecordTypes(deps.overlayRecords);
 
   /** The project's pool, read now: base records and the trust flag can change while the process runs. */
   const currentPool = (): FrontendPool => ({
     ...basePool(deps.base),
-    overlay: { cwd: deps.cwd, trusted: deps.isTrusted(), loaded: deps.overlayLoaded },
+    overlay: { cwd: deps.cwd, trusted: deps.isTrusted(), loaded: overlayLoaded },
   });
+
+  /** Type activation, with the base records' types read now (they change across hot reloads). */
+  const currentActivation = (): ManifestActivation => {
+    const baseTypes = loadedRecordTypes(deps.base.pluginRecords);
+    return {
+      typesOf: (src) => (src.kind === 'overlay' ? overlayTypes : baseTypes).get(src.recordKey) ?? [],
+      isActive: deps.isTypeActive,
+    };
+  };
 
   router.get('/plugins/frontend-manifest', (_req, res, next) => {
     try {
-      res.json(buildFrontendManifest(deps.projectId, currentPool()));
+      res.json(buildFrontendManifest(deps.projectId, currentPool(), currentActivation()));
     } catch (err) {
       next(err);
     }

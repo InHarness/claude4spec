@@ -762,6 +762,34 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       '`experimental`, so the composition of the `stable` list does not change. The change is purely ' +
       'additive (rule (2)) and fits within the current baseline, with no bump. `HOST_API_VERSION` stays `2.1.0`.',
   },
+  {
+    release: '2.1.57',
+    slot: 'EntityModuleManifest.slugCollision (EntityContribution)',
+    kind: 'slot-added',
+    summary:
+      'The type identity gains an optional `slugCollision?: \'error\' | \'suffix\'`; omitted means ' +
+      '`\'error\'`. It sets what a slug derived from `slugPattern` does on a collision: `\'error\'` ' +
+      'answers `SLUG_CONFLICT`, `\'suffix\'` appends a distinguishing suffix. An explicit slug always ' +
+      'answers `SLUG_CONFLICT`. An optional slot invalidates no valid manifest: additive (rule (2)), ' +
+      'no bump. The host behaviour changes for a type that used to suffix on a collision, so every ' +
+      'such first-party type declares `\'suffix\'` in the same round. In code the slot replaces the ' +
+      'earlier `slugConflict?: \'reject\' | \'suffix\'` with no alias (ASSUMPTION:dev-0006). ' +
+      '`HOST_API_VERSION` stays `2.1.0`.',
+  },
+  {
+    release: '2.1.57',
+    slot: 'backend.mcpServer / MountContext.registerMcpServer: PLUGIN_TOOL_CONFLICT',
+    kind: 'behaviour-changed',
+    summary:
+      'Registering a plugin tool server refuses, at plugin load, a tool name declared twice in one ' +
+      '`${type}-tools` server and a server name already registered in the pool, with the new code ' +
+      '`PLUGIN_TOOL_CONFLICT` (modelled on `PLUGIN_TYPE_CONFLICT`). Before, a second server of the same ' +
+      'name silently replaced the first, and a duplicate tool dropped the whole server from every turn ' +
+      'with a warning. Formally a narrowing of the valid manifests under rule (1); absorbed into the ' +
+      'current baseline under the precedent of the `injection` retirement — a manifest with a duplicate ' +
+      'did not work anyway and no external plugin is published: `HOST_API_VERSION` is unchanged and ' +
+      'there is no `migrations[]` descriptor.',
+  },
 ];
 
 /**
@@ -809,24 +837,18 @@ export const HOST_API_MINOR_RELEASES: readonly HostApiMinorRelease[] = [
   {
     version: '2.1.0',
     title: 'XML markup registry (M51), the first minor bump',
+    // 2.1.57 (M51 `klprfawm`) — one item. The optional `form` of the XML tag
+    // registration shape is not here: that shape is an internal host contract,
+    // outside the versioned surface. The bump was allowed, not required.
     changes: [
-      {
-        slot: 'XmlTagDefinition.form',
-        kind: 'slot-added',
-        summary:
-          'The registration shape of an XML tag gains an OPTIONAL `form` (`inline` | `block`). ' +
-          'It picks the editor\'s markdown-it rule for the tag and never narrows recognition: ' +
-          'every registered name is recognised wherever it stands. Additive — a registration ' +
-          'without it defaults to `block`.',
-      },
       {
         slot: '@c4s/plugin-runtime registerExtensionReferenceType',
         kind: 'slot-removed',
         summary:
           'Removed from the runtime surface: a loaded plugin contributes no tag NAME, so ' +
           'there is nothing to call it with. No first-party package imported it and no ' +
-          'external plugin is published, so a minor bump suffices, with no `migrations[]` ' +
-          'descriptor.',
+          'external plugin is published, so it needs neither a major nor a `migrations[]` ' +
+          'descriptor: rule (2) fits it in the baseline, and the minor bump was allowed, not required.',
       },
     ],
   },

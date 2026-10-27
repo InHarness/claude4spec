@@ -325,18 +325,39 @@ describe('M10 — the plan write sequence: file → version → broadcast (2.1.1
       path: first.plan.path,
       content: second.plan.content.replace('MARK2', 'MARK3'),
       expectedHash: second.hash,
-      changeSummary: 'edited by hand',
       changedBy: 'user',
     });
     expect(r.order).toEqual(['version:file-has-MARK3', 'version:recorded:3', 'broadcast:plan:updated:3']);
 
-    // ONE row per call, each carrying the caller's summary — the service's own rows, nothing from a capture phase.
+    // ONE row per call — the service's own rows, nothing from a capture phase.
+    // The agent rows carry the caller's summary; the editor's row carries none
+    // (2.1.57, `bctqi8sw`) and is told apart by its author.
     const rows = r.versions.listVersions(first.plan.path, r.mount.rootId);
-    expect(rows.map((v) => [v.version, v.changeSummary])).toEqual([
-      [3, 'edited by hand'],
-      [2, 'second pass'],
-      [1, 'first draft'],
+    expect(rows.map((v) => [v.version, v.changedBy, v.changeSummary])).toEqual([
+      [3, 'user', null],
+      [2, 'agent', 'second pass'],
+      [1, 'agent', 'first draft'],
     ]);
+  });
+
+  it('[section:bctqi8sw] the editor\'s save carries no changeSummary: its file_version row has author `user` and an empty summary, while the agent\'s row keeps its summary', async () => {
+    const r = await planServiceOnBoundPlansRoot();
+    const created = await r.service.update({
+      threadId: 't1',
+      title: 'Hand edit',
+      content: '## Step\n\nagent text\n',
+      changeSummary: 'agent draft',
+      changedBy: 'agent',
+    });
+    await r.service.updateContent({
+      path: created.plan.path,
+      content: created.plan.content.replace('agent text', 'user text'),
+      expectedHash: created.hash,
+      changedBy: 'user',
+    });
+    const [latest, previous] = r.versions.listVersions(created.plan.path, r.mount.rootId);
+    expect(latest).toMatchObject({ version: 2, changedBy: 'user', changeSummary: null });
+    expect(previous).toMatchObject({ version: 1, changedBy: 'agent', changeSummary: 'agent draft' });
   });
 
   it('[section:m10ws000] m10-plan-updated requires nothing and runs in its own phase `notification` with no `after`; the plan\'s own write runs no phase chain, so the definition is not fired in-band', async () => {

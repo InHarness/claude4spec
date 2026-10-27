@@ -139,6 +139,7 @@ CREATE TABLE file_version (
   created_at          TEXT NOT NULL DEFAULT (datetime('now')),
   rootId              TEXT NOT NULL DEFAULT 'pages',
   change_summary      TEXT NULL,
+  operation_id        TEXT NULL,                    -- 061: one id per multi-file operation (rollback rows included); NULL = single-file write
 
   CONSTRAINT uq_file_version_path_root_version UNIQUE(path, rootId, version)
 );
@@ -257,6 +258,7 @@ CREATE INDEX idx_ev_entity             ON entity_version(entity_type, entity_slu
 CREATE INDEX idx_file_version_path           ON file_version(path);
 CREATE INDEX idx_file_version_release        ON file_version(release_id);
 CREATE INDEX idx_file_version_root_release   ON file_version(rootId, release_id);
+CREATE INDEX idx_file_version_operation_id   ON file_version(operation_id);
 CREATE INDEX idx_pv_plan ON plan_version(plan_id);
 CREATE UNIQUE INDEX uq_pv_plan_version ON plan_version(plan_id, version);
 CREATE UNIQUE INDEX uq_remote_session_remote_account_id

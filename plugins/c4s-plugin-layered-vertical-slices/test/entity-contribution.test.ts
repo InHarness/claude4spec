@@ -33,11 +33,11 @@ describe('module-dependency — identity and derivation', () => {
 
   /**
    * A duplicate pair is SUFFIXED, not refused — so this must be spelled out,
-   * because the host's default is the opposite (`'reject'`). Refusing would
+   * because the host's default is the opposite (`'error'`). Refusing would
    * throw away the second description's prose at the moment of writing.
    */
   it('files a duplicate pair under a suffix rather than refusing it', () => {
-    expect(moduleDependencyEntity.slugConflict).toBe('suffix');
+    expect(moduleDependencyEntity.slugCollision).toBe('suffix');
   });
 
   it('computes the title from both parties, so the author never fills it', () => {

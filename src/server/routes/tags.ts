@@ -133,11 +133,9 @@ export function tagsRouter(
 
   router.patch('/:slug', async (req, res, next) => {
     try {
-      const previousSlug = req.params.slug;
-      const updated = tags.update(previousSlug, req.body);
-      if (updated.slug !== previousSlug) {
-        await references.propagateTagSlugChange(previousSlug, updated.slug);
-      }
+      // A slug rename is one multi-file operation over pages, tags.json and the
+      // entity files (M18 `91vuvf2u`, M42 `gg7sxih6`).
+      const updated = await references.updateTag(tags, req.params.slug, req.body);
       ws.broadcast({ kind: 'tag:changed', slug: updated.slug, action: 'update' });
       res.json(updated);
     } catch (err) {

@@ -6,7 +6,7 @@ import matter from 'gray-matter';
 import Database from 'better-sqlite3';
 import express from 'express';
 import request from 'supertest';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, expectTypeOf, beforeEach, afterEach } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
 import { MarkdownFileStore } from '../services/pages.js';
 import { FileWatchRuntime } from '../fs/watcher.js';
@@ -23,6 +23,7 @@ import { errorHandler } from './errors.js';
 import { systemRootId } from '../../shared/root-kinds.js';
 import type { ReleaseService } from '../services/release.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
+import type { ArtifactFrontmatterUpdateRequest } from '../../shared/entities.js';
 import { expectPatchOperationRecord } from '../../../tests/helpers/patch-tool-records.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 
@@ -42,6 +43,10 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
   let pageVersions: FileVersionService;
   let frontmatterIndexer: PagesFrontmatterIndexer;
   let plans: PlanService;
+  let briefs: BriefService;
+  let patches: PatchService;
+  /** What the frontmatter indexer broadcast (its artifact-change events included). */
+  let indexerEvents: Array<{ kind: string; path?: string }>;
 
   const briefsDir = 'briefs';
   const patchesDir = 'patches';
@@ -92,7 +97,16 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       [systemRootId('patches'), patchesPages],
       [systemRootId('plans'), plansPages],
     ]);
-    frontmatterIndexer = new PagesFrontmatterIndexer(frontmatterRoots, fakeWs);
+    indexerEvents = [];
+    frontmatterIndexer = new PagesFrontmatterIndexer(
+      frontmatterRoots,
+      { broadcast: (e: { kind: string; path?: string }) => void indexerEvents.push(e) } as unknown as WsEmitter,
+      new Map([
+        [systemRootId('briefs'), 'briefs:changed'],
+        [systemRootId('patches'), 'patches:changed'],
+        [systemRootId('plans'), 'plans:changed'],
+      ] as const),
+    );
     const chatService = new ChatService(db);
 
     const briefService = new BriefService({
@@ -123,6 +137,8 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       ws: fakeWs,
     });
     plans = planService;
+    briefs = briefService;
+    patches = patchService;
 
     app = express()
       // The production body limit (src/server/index.ts): the editor's Save sends
@@ -445,22 +461,67 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       expect(res.body.error.code).toBe('VALIDATION');
     });
 
-    it('PATCH .../frontmatter accepts the mutable `implemented` key', async () => {
+    it('[ac:ac-jedynym-mutable-polem-frontmatteru-br] PATCH /api/artifacts/brief/:path/frontmatter accepts `implemented` alone and refuses every other key with 400 IMMUTABLE_FIELD', async () => {
+      for (const [key, value] of [
+        ['type', 'patch'],
+        ['from_release', 'v0'],
+        ['to_release', 'v3'],
+        ['generated_at', '2027-01-01T00:00:00.000Z'],
+        ['roots', ['docs']],
+        ['title', 'renamed'],
+      ] as const) {
+        const res = await request(app)
+          .patch('/api/artifacts/brief/v1-to-v2.md/frontmatter')
+          .send({ frontmatter: { [key]: value } });
+        expect(res.status, key).toBe(400);
+        expect(res.body.error.code, key).toBe('IMMUTABLE_FIELD');
+      }
+      // A mix of the mutable key and another one is refused whole — nothing is written.
+      const mixed = await request(app)
+        .patch('/api/artifacts/brief/v1-to-v2.md/frontmatter')
+        .send({ frontmatter: { implemented: true, to_release: 'v3' } });
+      expect(mixed.status).toBe(400);
+      expect(mixed.body.error.code).toBe('IMMUTABLE_FIELD');
+      expect(matter(await fs.readFile(path.join(cwd, briefsDir, 'v1-to-v2.md'), 'utf-8')).data.implemented).toBe(false);
+
+      const ok = await request(app)
+        .patch('/api/artifacts/brief/v1-to-v2.md/frontmatter')
+        .send({ frontmatter: { implemented: true } });
+      expect(ok.status).toBe(200);
+      expect(ok.body.data.frontmatter.implemented).toBe(true);
+    });
+
+    /**
+     * The server half of `c4s mark-brief-implemented` (the CLI half — one PATCH
+     * of this route — is in src/core/agent/mark-brief-implemented.test.ts).
+     * ASSUMPTION:dev-0004 — the AC names the version author `filesystem` and says
+     * a brief thread's agent does not read the flag; the window's pages give a
+     * user write the author `user` (M10 `bctqi8sw`) and the brief block carries
+     * `implemented`. Those two halves are filed as a clarification, not asserted.
+     */
+    it('[ac:ac-ustawienie-implemented-true-przez-c4s] setting implemented: true through the route mark-brief-implemented wraps writes the file on the server, emits the briefs source event, lands an `update` on the version axis and flips the listed badge from pending to implemented', async () => {
+      const pending = await request(app).get('/api/artifacts/brief?implemented=false');
+      expect(pending.body.data.map((b: { path: string }) => b.path)).toEqual(['v1-to-v2.md']);
+      indexerEvents.length = 0;
+
       const res = await request(app)
         .patch('/api/artifacts/brief/v1-to-v2.md/frontmatter')
         .send({ frontmatter: { implemented: true } });
-
       expect(res.status).toBe(200);
-      expect(res.body.data.frontmatter.implemented).toBe(true);
-    });
 
-    it('PATCH .../frontmatter 400s IMMUTABLE_FIELD on an immutable key', async () => {
-      const res = await request(app)
-        .patch('/api/artifacts/brief/v1-to-v2.md/frontmatter')
-        .send({ frontmatter: { from_release: 'v0' } });
-
-      expect(res.status).toBe(400);
-      expect(res.body.error.code).toBe('IMMUTABLE_FIELD');
+      // The file on the server.
+      const onDisk = matter(await fs.readFile(path.join(cwd, briefsDir, 'v1-to-v2.md'), 'utf-8'));
+      expect(onDisk.data.implemented).toBe(true);
+      expect(onDisk.content).toContain('# Brief: v1 -> v2');
+      // The source's event.
+      expect(indexerEvents).toContainEqual({ kind: 'briefs:changed', path: 'v1-to-v2.md' });
+      // The version axis: one `update` after the seeding `create`.
+      const versions = pageVersions.listVersions('v1-to-v2.md', systemRootId('briefs'));
+      expect(versions.map((v) => v.op)).toEqual(['update', 'create']);
+      // The reindex moves the badge: the list now answers it as implemented.
+      const done = await request(app).get('/api/artifacts/brief?implemented=true');
+      expect(done.body.data.map((b: { path: string }) => b.path)).toEqual(['v1-to-v2.md']);
+      expect((await request(app).get('/api/artifacts/brief?implemented=false')).body.data).toEqual([]);
     });
 
     it('POST .../threads creates a thread bound to this brief', async () => {
@@ -797,6 +858,188 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe('IMMUTABLE_FIELD');
+    });
+  });
+
+  /**
+   * 2.1.57 (M36 `m36l4fam`) — the frontmatter write MERGES the keys it was sent
+   * into the file read under the same per-path lock it writes under: no
+   * `expectedHash`, and neither a concurrent content save nor a second
+   * frontmatter write loses a change — for every kind of the family (the patch
+   * joined plan and brief here).
+   */
+  describe('the frontmatter write merges under the per-path lock (2.1.57)', () => {
+    const PATCH_FILE = 'v1-to-v2-drift.md';
+    const BRIEF_FILE = 'v1-to-v2.md';
+    const PATCH_FM = {
+      type: 'patch',
+      brief: BRIEF_FILE,
+      patch_kind: 'drift',
+      created_at: '2026-01-02T00:00:00.000Z',
+      created_by: 'implementer',
+      applied: false,
+    };
+    const BRIEF_FM = {
+      type: 'brief',
+      from_release: 'v1',
+      to_release: 'v2',
+      generated_at: '2026-01-01T00:00:00.000Z',
+      implemented: false,
+    };
+    let planPath: string;
+    const read = (dir: string, rel: string) => fs.readFile(path.join(cwd, dir, rel), 'utf-8');
+    const sha256 = (text: string) => crypto.createHash('sha256').update(text, 'utf-8').digest('hex');
+
+    beforeEach(async () => {
+      await writeArtifact('brief', BRIEF_FILE, BRIEF_FM, '# Brief: v1 -> v2\n');
+      await writeArtifact('patch', PATCH_FILE, PATCH_FM, '# Patch — drift\n');
+      planPath = (await plans.create({ title: 'Merge Plan', content: '## Step\n\noriginal\n', changedBy: 'agent' })).planPath;
+    });
+
+    it('[entity:patch-api-artifacts-kind-path-frontmatter] PATCH /api/artifacts/:kind/:path/frontmatter — the mutable keys of the kind (brief: implemented; plan: title, applied; patch: applied) answer 200 with the write payload, any other key 400 IMMUTABLE_FIELD naming it, an unknown path 404; the route takes no expectedHash; a plan frontmatter-only write adds no file_version', async () => {
+      const cases = [
+        { kind: 'brief', dir: briefsDir, file: BRIEF_FILE, ok: { implemented: true }, bad: 'from_release' },
+        { kind: 'patch', dir: patchesDir, file: PATCH_FILE, ok: { applied: true }, bad: 'created_by' },
+        { kind: 'plan', dir: plansDir, file: () => planPath, ok: { title: 'Renamed', applied: true }, bad: 'created_at' },
+      ] as const;
+      for (const c of cases) {
+        const file = typeof c.file === 'function' ? c.file() : c.file;
+        const url = `/api/artifacts/${c.kind}/${file}/frontmatter`;
+        const before = matter(await read(c.dir, file));
+
+        // A stale `expectedHash` beside the frontmatter is not a guard of this route.
+        const ok = await request(app).patch(url).send({ frontmatter: c.ok, expectedHash: 'stale' });
+        expect(ok.status, c.kind).toBe(200);
+        const after = await read(c.dir, file);
+        expect(ok.body.data, c.kind).toEqual({
+          path: file,
+          frontmatter: { ...before.data, ...c.ok },
+          hash: sha256(after),
+        });
+        // Only the sent keys changed; the body is the file's.
+        expect(matter(after).data, c.kind).toEqual({ ...before.data, ...c.ok });
+        expect(matter(after).content.trim(), c.kind).toBe(before.content.trim());
+
+        const refused = await request(app).patch(url).send({ frontmatter: { [c.bad]: 'x' } });
+        expect(refused.status, c.kind).toBe(400);
+        expect(refused.body.error.code, c.kind).toBe('IMMUTABLE_FIELD');
+        expect(refused.body.error.message, c.kind).toContain(c.bad);
+
+        const missing = await request(app).patch(`/api/artifacts/${c.kind}/no-such.md/frontmatter`).send({ frontmatter: c.ok });
+        expect(missing.status, c.kind).toBe(404);
+        expect(missing.body.error.code, c.kind).toMatch(/_NOT_FOUND$/);
+      }
+      // kind `plan`: frontmatter-only writes record no version (create only).
+      expect(pageVersions.listVersions(planPath, systemRootId('plans'))).toHaveLength(1);
+    });
+
+    it('[entity:artifact-frontmatter-update-request] the body is `{ frontmatter }` — a partial map: only the keys it carries change, the rest of the frontmatter is the file\'s; no expectedHash field exists in it', async () => {
+      const body: ArtifactFrontmatterUpdateRequest = { frontmatter: { title: 'Only the title' } };
+      expectTypeOf<keyof ArtifactFrontmatterUpdateRequest>().toEqualTypeOf<'frontmatter'>();
+      const url = `/api/artifacts/plan/${planPath}/frontmatter`;
+
+      const titled = await request(app).patch(url).send(body);
+      expect(titled.status).toBe(200);
+      expect(titled.body.data.frontmatter).toMatchObject({ title: 'Only the title', applied: false });
+
+      const flagged = await request(app).patch(url).send({ frontmatter: { applied: true } });
+      expect(flagged.status).toBe(200);
+      // The earlier title survives a write that did not carry it.
+      expect(matter(await read(plansDir, planPath)).data).toMatchObject({ title: 'Only the title', applied: true, type: 'plan' });
+    });
+
+    it('[section:m36l4fam] a frontmatter write racing a content save loses neither — for patch, brief and plan alike; when the flag lands first, the content save is refused by its own guard instead of overwriting it', async () => {
+      // Patch: the save is queued first, the flag reads the file the save left.
+      const p = await patches.getPatch(PATCH_FILE, { full: true });
+      await Promise.all([
+        patches.updateContent({ path: PATCH_FILE, content: matter.stringify('# Patch — edited by the user\n', p.frontmatter), expectedHash: p.hash }),
+        patches.updateFrontmatter({ path: PATCH_FILE, applied: true }),
+      ]);
+      let onDisk = matter(await read(patchesDir, PATCH_FILE));
+      expect(onDisk.content).toContain('edited by the user');
+      expect(onDisk.data).toEqual({ ...PATCH_FM, applied: true });
+
+      // Brief: the same race.
+      const b = await briefs.getBrief(BRIEF_FILE, { full: true });
+      await Promise.all([
+        briefs.updateContent({ path: BRIEF_FILE, content: matter.stringify('# Brief — edited by the user\n', b.frontmatter), expectedHash: b.hash, changedBy: 'user' }),
+        briefs.updateFrontmatter({ path: BRIEF_FILE, patch: { implemented: true }, changedBy: 'user' }),
+      ]);
+      onDisk = matter(await read(briefsDir, BRIEF_FILE));
+      expect(onDisk.content).toContain('edited by the user');
+      expect(onDisk.data.implemented).toBe(true);
+
+      // Plan: the same race.
+      const pl = await plans.getByPath(planPath);
+      await Promise.all([
+        plans.updateContent({ path: planPath, content: pl.content.replace('original', 'edited by the user'), expectedHash: pl.hash, changedBy: 'user' }),
+        plans.updateFrontmatter({ path: planPath, patch: { applied: true }, changedBy: 'user', threadId: null }),
+      ]);
+      onDisk = matter(await read(plansDir, planPath));
+      expect(onDisk.content).toContain('edited by the user');
+      expect(onDisk.data.applied).toBe(true);
+
+      // The other order: the flag first, then a save armed with the hash from
+      // before it — refused (409), and the flag stays written.
+      const stale = await patches.getPatch(PATCH_FILE, { full: true });
+      const results = await Promise.allSettled([
+        patches.updateFrontmatter({ path: PATCH_FILE, applied: false }),
+        patches.updateContent({ path: PATCH_FILE, content: matter.stringify('# Patch — late save\n', stale.frontmatter), expectedHash: stale.hash }),
+      ]);
+      expect(results[0].status).toBe('fulfilled');
+      expect(results[1]).toMatchObject({ status: 'rejected', reason: { code: 'PATCH_CONFLICT' } });
+      onDisk = matter(await read(patchesDir, PATCH_FILE));
+      expect(onDisk.data.applied).toBe(false);
+      expect(onDisk.content).toContain('edited by the user');
+    });
+
+    it('[section:m36l4fam] two frontmatter writes in flight keep both keys', async () => {
+      await Promise.all([
+        plans.updateFrontmatter({ path: planPath, patch: { title: 'Both survive' }, changedBy: 'user', threadId: null }),
+        plans.updateFrontmatter({ path: planPath, patch: { applied: true }, changedBy: 'user', threadId: null }),
+      ]);
+      expect(matter(await read(plansDir, planPath)).data).toMatchObject({ title: 'Both survive', applied: true });
+
+      await Promise.all([
+        request(app).patch(`/api/artifacts/patch/${PATCH_FILE}/frontmatter`).send({ frontmatter: { applied: true } }),
+        request(app).patch(`/api/artifacts/patch/${PATCH_FILE}/frontmatter`).send({ frontmatter: { applied: true } }),
+      ]);
+      expect(matter(await read(patchesDir, PATCH_FILE)).data).toEqual({ ...PATCH_FM, applied: true });
+    });
+
+    it('[section:m23mcp01] [section:m23edg01] mark_patch_applied racing the user\'s content save: no expectedHash, no refusal, and the user\'s edit survives — the write merges only `applied` under the per-path lock', async () => {
+      const p = await patches.getPatch(PATCH_FILE, { full: true });
+      const [, marked] = await Promise.all([
+        patches.updateContent({ path: PATCH_FILE, content: matter.stringify('# Patch — the user\'s concurrent edit\n', p.frontmatter), expectedHash: p.hash }),
+        patches.markApplied({ path: PATCH_FILE, applied: true }),
+      ]);
+      expect(marked).toEqual({ path: PATCH_FILE, applied: true });
+      const onDisk = matter(await read(patchesDir, PATCH_FILE));
+      expect(onDisk.content).toContain("the user's concurrent edit");
+      expect(onDisk.data).toEqual({ ...PATCH_FM, applied: true });
+      // Both writes are on the patch's version axis: the save, then the flag.
+      const rows = pageVersions.listVersions(PATCH_FILE, systemRootId('patches'));
+      expect(rows.map((r) => [r.op, r.changedBy])).toEqual([
+        ['update', 'agent'],
+        ['update', 'user'],
+        ['create', 'filesystem'],
+      ]);
+    });
+
+    it('[ac:ac-patch-api-artifacts-plan-path-frontma] changing a plan frontmatter key other than title and applied is refused, and the refusal names that key', async () => {
+      for (const key of ['type', 'created_at', 'created_by', 'roots'] as const) {
+        const res = await request(app)
+          .patch(`/api/artifacts/plan/${planPath}/frontmatter`)
+          .send({ frontmatter: { [key]: 'x' } });
+        expect(res.status, key).toBe(400);
+        expect(res.body.error.code, key).toBe('IMMUTABLE_FIELD');
+        expect(res.body.error.message, key).toContain(key);
+      }
+      // title and applied are the two that pass.
+      const ok = await request(app)
+        .patch(`/api/artifacts/plan/${planPath}/frontmatter`)
+        .send({ frontmatter: { title: 'Fine', applied: true } });
+      expect(ok.status).toBe(200);
     });
   });
 

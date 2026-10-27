@@ -29,6 +29,7 @@ import type {
 } from '../../serialization/types.js';
 import { RawEntityReader } from '../../discovery/raw-entity-reader.js';
 import { diffEntity, restoreEntity, snapshotEntity } from '../../serialization/snapshot.js';
+import { isPluginToolConflict, PluginToolConflictError } from '../../plugin-runtime/create-mcp-server.js';
 
 /**
  * A factory handed back a server it had already handed back in the same
@@ -44,6 +45,26 @@ export class McpServerReuseError extends Error {
   ) {
     super(message);
     this.name = 'McpServerReuseError';
+  }
+}
+
+/**
+ * 2.1.57 — build a plugin's tool server once, at plugin load, for the one
+ * failure that must not wait for a turn: a tool name declared twice, which the
+ * facade's `createMcpServer` refuses with `PLUGIN_TOOL_CONFLICT`. That refusal
+ * propagates, attributed to the server's registered name. Every other failure
+ * of the factory keeps its per-query posture in `buildMcpServers()` (one broken
+ * plugin degrades to "its tools are missing"), so it is not raised here.
+ */
+function assertDistinctToolNames(name: string, factory: () => McpServerFactory): void {
+  try {
+    const server: unknown = factory();
+    // A pre-0.1.133 thunk builds its server one call later.
+    if (typeof server === 'function') (server as () => unknown)();
+  } catch (err) {
+    if (isPluginToolConflict(err)) {
+      throw new PluginToolConflictError(`MCP server "${name}" — ${err.message.replace(`${err.code}: `, '')}`, name);
+    }
   }
 }
 
@@ -186,7 +207,18 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
    * failure (500 PROJECT_BUILD_FAILED), never a process crash.
    */
   mountBackend(ctx: MountContext): void {
-    for (const m of this.listEntities()) m.backend?.mount?.(ctx);
+    for (const m of this.listEntities()) {
+      const known = new Set(this.mcpServerFactories.keys());
+      m.backend?.mount?.(ctx);
+      // 2.1.57 (M13 `z7l89jhf`, M33 `m33load01` (d)) — a tool server a plugin
+      // registered while mounting is built once here, at plugin load, so a tool
+      // name it declares twice is refused now with `PLUGIN_TOOL_CONFLICT` rather
+      // than dropping the whole server from every turn with a warning
+      // (ASSUMPTION:dev-0009 — the refusal fails this context's build, M31).
+      for (const [name, factory] of this.mcpServerFactories) {
+        if (!known.has(name)) assertDistinctToolNames(name, factory);
+      }
+    }
   }
 
   /**
@@ -195,11 +227,22 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
    * mounting there would just lose its tools mid-turn. Refused here instead, at
    * registration, where the error names the server and the project fails to build
    * loudly (M31) rather than every turn quietly missing a server.
+   *
+   * 2.1.57 (M13 `z7l89jhf`, M33 `m33load01` (d)) — a name already registered in
+   * the pool is refused with `PLUGIN_TOOL_CONFLICT`, on the model of
+   * `PLUGIN_TYPE_CONFLICT`: the second server no longer silently replaces the
+   * first one's factory.
    */
   registerMcpServer(name: string, factory: () => McpServerFactory): void {
     if (CLAUDE_CODE_RESERVED_MCP_SERVER_KEYS.includes(name)) {
       throw new Error(
         `MCP server name "${name}" is reserved by the Claude Code CLI — register the server under a different name`,
+      );
+    }
+    if (this.mcpServerFactories.has(name)) {
+      throw new PluginToolConflictError(
+        `MCP server "${name}" is already registered in the pool — server names must be unique`,
+        name,
       );
     }
     this.mcpServerFactories.set(name, factory);
@@ -250,13 +293,18 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
    * consistent map — and is caught at the mount instead, by `assertFreshMount`
    * in `runAgentTurn`, which remembers across the queries of a turn.
    */
-  buildMcpServers(opts: { strict?: boolean } = {}): Array<{ name: string; server: McpServerFactory }> {
+  buildMcpServers(
+    opts: { strict?: boolean; include?: (name: string) => boolean } = {},
+  ): Array<{ name: string; server: McpServerFactory }> {
     const out: Array<{ name: string; server: McpServerFactory }> = [];
     // Identity, not equality: two structurally identical handles built by two
     // `createMcpServer` calls are fine — the same object twice is not.
     const seenHandles = new Set<object>();
     const seenInstances = new Set<object>();
     for (const [name, factory] of this.mcpServerFactories) {
+      // Selected by name BEFORE the factory runs: a server the caller does not
+      // take is never built (M44 `3f5ej79s` — the turn narrows the pool here).
+      if (opts.include && !opts.include(name)) continue;
       let server: unknown;
       try {
         server = factory();

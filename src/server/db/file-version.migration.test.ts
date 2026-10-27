@@ -44,6 +44,8 @@ describe('file_version schema (2.1.55)', () => {
     expect(shape('rootId')).toEqual({ type: 'TEXT', notnull: 1, dflt: "'pages'", pk: 0 });
     expect(shape('release_id')).toEqual({ type: 'INTEGER', notnull: 0, dflt: null, pk: 0 });
     expect(shape('changed_by')).toEqual({ type: 'TEXT', notnull: 1, dflt: null, pk: 0 });
+    // 2.1.57 — the multi-file operation id (migration 061); NULL = a single-file write.
+    expect(shape('operation_id')).toEqual({ type: 'TEXT', notnull: 0, dflt: null, pk: 0 });
     expect(shape('created_at')).toEqual({ type: 'TEXT', notnull: 1, dflt: "datetime('now')", pk: 0 });
     // `INTEGER PRIMARY KEY AUTOINCREMENT` — the table is registered in sqlite_sequence.
     const sql = (db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'file_version'").get() as {

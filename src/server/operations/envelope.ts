@@ -24,6 +24,7 @@
  */
 
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
+import { refusalBehind } from '../fs/multi-file-operation.js';
 
 /** The MCP tool result shape, structurally identical to the vendor's `McpToolResult`. */
 export interface ToolEnvelope {
@@ -214,7 +215,10 @@ export function toolError(
  * two service modules that this one must not depend on (the dependency runs the
  * other way), and both are plain classes carrying `code`/`hint`/`currentHash`.
  */
-export function toolFailure(err: unknown): ToolEnvelope {
+export function toolFailure(thrown: unknown): ToolEnvelope {
+  // 2.1.57 (M42) — a refusal raised inside a multi-file operation that rolled
+  // back cleanly answers with its own code, not the wrapper's `INTERNAL`.
+  const err = refusalBehind(thrown);
   const e = err as {
     code?: unknown;
     hint?: unknown;

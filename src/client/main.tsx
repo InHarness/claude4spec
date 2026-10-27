@@ -14,37 +14,25 @@ import './entities/index.js';
 import { clientPluginHost } from './core/plugin-host/host.js';
 import { mountFrontend } from './tiptap/mountFrontend.js';
 import { queryClient } from './runtime/query-client.js';
-import { bootFrontendPlugins } from './runtime/boot-plugins.js';
-import { metaApi } from './lib/api.js';
-import { PROJECT_ID } from './lib/api-core.js';
+import { bootFrontendPlugins, seedPluginActivation } from './runtime/boot-plugins.js';
 import './styles/index.css';
 import 'highlight.js/styles/atom-one-dark.css';
 
 // Seed plugin host activation before React mounts. Failure is non-fatal —
-// host falls back to "all available active" so legacy code paths keep working.
-// Decision #11: `/welcome` runs project-less (PROJECT_ID=''), where `apiFetch`
-// cannot build a `/api/projects/<id>` prefix — the request would 404 on every
-// visit to what 0.1.137 made the unconditional landing page. Skip it and apply
-// the same fallback the failure path uses (mirrors `useConfig`'s `enabled`).
-if (PROJECT_ID) {
-  metaApi
-    .entities()
-    .then((state) => clientPluginHost.applyActivation(state))
-    .catch((err) => {
-      console.warn('[plugin-host] failed to fetch /api/_meta/entities — assuming all active', err);
-      clientPluginHost.applyActivation(null);
-    });
-} else {
-  clientPluginHost.applyActivation(null);
-}
+// host falls back to "all available active". Decision #11: `/welcome` runs
+// project-less (PROJECT_ID=''), where `apiFetch` cannot build a
+// `/api/projects/<id>` prefix — `seedPluginActivation` skips the request there
+// and applies the same fallback at once.
+const activationSeeded = seedPluginActivation();
 
 const router = createAppRouter(queryClient);
 
 // M33 phase 3: mount the SYNCHRONOUSLY-registered built-in entity modules' page
-// routes (e.g. the transitional `database-table` fragment) onto the router BEFORE
-// first paint, so a deep link to a built-in route doesn't hit a 404 window while
-// the async plugin boot is still in flight.
-mountFrontend(router, clientPluginHost.listEntities());
+// routes (e.g. the transitional `database-table` fragment) as soon as the
+// project's activation list is in — `mountFrontend` mounts only ACTIVE modules
+// (M13 `m13actv0`). A deep link that lands before then waits on the boot window
+// (`pluginBootPending`) instead of rendering "not found".
+void activationSeeded.then(() => mountFrontend(router, clientPluginHost.listEntities()));
 
 // M33: load runtime plugins WITHOUT blocking first paint (the import map is
 // injected server-side). This re-runs `mountFrontend` once the manifest

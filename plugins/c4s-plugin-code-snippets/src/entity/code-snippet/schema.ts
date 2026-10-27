@@ -126,7 +126,7 @@ export const codeSnippetData: DataDeclaration = {
  * Evaluated ONLY at create, and an explicit slug in the create call always wins.
  * So editing `title` later does NOT move the slug and does not touch a single
  * reference — renaming is `newSlug`, which carries the standard M19 repointing
- * with it. Collisions are suffixed rather than refused; see the `slugConflict`
+ * with it. Collisions are suffixed rather than refused; see the `slugCollision`
  * note on the contribution.
  */
 export const codeSnippetSlugPattern: SlugPattern = [{ op: 'slugify', field: 'title' }];

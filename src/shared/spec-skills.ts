@@ -48,3 +48,14 @@ export interface ForkWritingStyleResponse {
   /** Path of the package's `SKILL.md`, relative to the `skills` root. */
   path: string;
 }
+
+/**
+ * 2.1.57 (M52 `ybbal0vf`, M31 `44viw74p`) — `GET|PUT /api/spec-skills/hook-trust`:
+ * whether this machine confirmed the skill attachments (`skill.uses`) of the
+ * project's committed config. Machine-local (the workspace registry record), never
+ * in the repository. ASSUMPTION:dev-0002 — one confirmation for the whole list,
+ * given on the `#skills` settings card.
+ */
+export interface SpecSkillHookTrust {
+  trusted: boolean;
+}

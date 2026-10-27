@@ -456,3 +456,141 @@ describe('POST /api/spec-skills/style-forks (M52 L4, 2.1.9)', () => {
     }
   });
 });
+
+/**
+ * 2.1.57 — M52 `ybbal0vf` / M31 `44viw74p`: `GET|PUT /api/spec-skills/hook-trust`,
+ * the #skills card's confirmation of the attachments the repository's config
+ * carries. Bound, as the project context binds it, to the machine-local workspace
+ * registry record. ASSUMPTION:dev-0002 — one confirmation for the whole list.
+ */
+describe('GET|PUT /api/spec-skills/hook-trust (M52 ybbal0vf, 2.1.57)', () => {
+  async function trustRig() {
+    const { WorkspaceRegistry } = await import('../workspace/registry.js');
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-hook-trust-home-'));
+    tmpDirs.push(home);
+    const shop = project('Shop', { uses: ['billing-rules'] });
+    const registry = new WorkspaceRegistry(home);
+    const ws = registry.selectOrCreate({ name: 'default' });
+    const rec = registry.registerProject(ws, shop);
+    const app = express().use(
+      '/api/spec-skills',
+      specSkillsRouter({
+        listExposedProjects: () => [],
+        hookTrust: {
+          get: () => registry.getSpecSkillHooksTrust(ws, rec.id),
+          set: (value) => registry.setSpecSkillHooksTrust(ws, rec.id, value),
+        },
+      }),
+    );
+    return { app, shop, home, registry, ws, id: rec.id };
+  }
+
+  it('[section:ybbal0vf] the card reads "not confirmed" until it confirms; PUT stores the decision in the machine-local registry, never in the repository config, and can withdraw it', async () => {
+    const r = await trustRig();
+    const configBefore = fs.readFileSync(path.join(r.shop, '.claude4spec', 'config.json'), 'utf8');
+
+    const first = await request(r.app).get('/api/spec-skills/hook-trust');
+    expect(first.status).toBe(200);
+    expect(first.body).toEqual({ trusted: false });
+
+    const put = await request(r.app).put('/api/spec-skills/hook-trust').send({ trusted: true });
+    expect(put.status).toBe(200);
+    expect(put.body).toEqual({ trusted: true });
+    expect((await request(r.app).get('/api/spec-skills/hook-trust')).body).toEqual({ trusted: true });
+    // Machine-local: the workspace registry record carries it…
+    const onDisk = JSON.parse(fs.readFileSync(path.join(r.home, 'workspaces.json'), 'utf8'));
+    expect(onDisk.workspaces[0].projects[0]).toMatchObject({ id: r.id, trustSpecSkillHooks: true });
+    // …and the repository's config is byte-identical, the attachment list untouched.
+    expect(fs.readFileSync(path.join(r.shop, '.claude4spec', 'config.json'), 'utf8')).toBe(configBefore);
+    expect(readConfig(r.shop).skill?.uses).toEqual(['billing-rules']);
+
+    const withdraw = await request(r.app).put('/api/spec-skills/hook-trust').send({ trusted: false });
+    expect(withdraw.body).toEqual({ trusted: false });
+    expect(r.registry.getSpecSkillHooksTrust(r.ws, r.id)).toBe(false);
+  });
+
+  it('[section:ybbal0vf] a PUT whose `trusted` is not a boolean is a 400 INVALID_ARGUMENT and changes nothing', async () => {
+    const r = await trustRig();
+    for (const body of [{}, { trusted: 'yes' }, { trusted: 1 }]) {
+      const res = await request(r.app).put('/api/spec-skills/hook-trust').send(body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+      expect(res.body.error.code).toBe('INVALID_ARGUMENT');
+    }
+    expect(r.registry.getSpecSkillHooksTrust(r.ws, r.id)).toBe(false);
+  });
+});
+
+/**
+ * 2.1.57 — M52 `f1nbs7qy`: the copy from a style snapshot is never merged with
+ * its upstream. The divergence is derivable without new data — `forkedFrom`'s
+ * version against the plugin's current one — and no snapshot base is stored, so
+ * a three-way merge is out of scope.
+ */
+describe('a forked style is not merged with upstream (M52 f1nbs7qy, 2.1.57)', () => {
+  it('[section:f1nbs7qy] the copy keeps only SKILL.md (with forkedFrom) and the package files — no stored base; forking again never merges or overwrites it', async () => {
+    const { FileWatchRuntime } = await import('../fs/watcher.js');
+    const { RootRegistry } = await import('../roots/registry.js');
+    const { registerCoreReactions } = await import('../workspace/core-reactions.js');
+    const { mountRegistryRoots } = await import('../workspace/root-registry-runtime.js');
+    const { SkillRegistry } = await import('../services/skill-registry.js');
+    const { registerProjectRootedSkills } = await import('../services/project-rooted-skills.js');
+    const { forkWritingStyle } = await import('../services/style-fork.js');
+    registerCoreReactions();
+
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-style-no-merge-'));
+    tmpDirs.push(cwd);
+    writeConfig(cwd, { name: 'Shop' });
+    const userRoots = [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }];
+    const runtime = new FileWatchRuntime({ fsEvents: false });
+    try {
+      const roots = new RootRegistry(userRoots);
+      const mounted = await mountRegistryRoots({ cwd, registry: roots, userRoots, w: runtime.scoped('context:style-no-merge#1') });
+      const skills = mounted.rootRuntimes.find((rt) => rt.root.id === 'skills')!;
+      const registry = SkillRegistry.load([], { rescanTtlMs: 0 });
+      registerProjectRootedSkills(registry, roots, cwd);
+      registry.addPluginStyle({
+        slug: 'plain-notes',
+        title: 'Plain Notes',
+        description: 'Upstream style.',
+        version: 1,
+        language: 'en',
+        content: '# Plain Notes\n\nWrite plainly.\n',
+        files: { 'templates/note.md': '# Note\n' },
+      });
+      const app = express().use(
+        '/api/spec-skills',
+        specSkillsRouter({
+          listExposedProjects: () => [],
+          forkWritingStyle: (input) => forkWritingStyle({ registry, skillsRoot: () => ({ pages: skills.pages }) }, input),
+        }),
+      );
+      const pkgDir = path.join(cwd, '.claude4spec', 'skills', 'plain-notes');
+
+      expect((await request(app).post('/api/spec-skills/style-forks').send({ slug: 'plain-notes' })).status).toBe(201);
+      // The whole copy: SKILL.md and the style's own files — no base snapshot stored next to it.
+      const files = (dir: string, rel = ''): string[] =>
+        fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+          e.isDirectory() ? files(path.join(dir, e.name), `${rel}${e.name}/`) : [`${rel}${e.name}`],
+        );
+      expect(files(pkgDir).sort()).toEqual(['SKILL.md', 'templates/note.md']);
+      const matter = (await import('gray-matter')).default;
+      const fm = matter(fs.readFileSync(path.join(pkgDir, 'SKILL.md'), 'utf8'), {}).data as Record<string, unknown>;
+      // The only record of the origin: enough to tell "upstream newer" (version vs the plugin's), nothing to merge from.
+      expect(fm.forkedFrom).toBe('plugin:plain-notes@1');
+      expect(Object.keys(fm).sort()).toEqual(['description', 'forkedFrom', 'language', 'scope', 'title', 'version']);
+
+      // The local copy is edited; a second fork does not merge the upstream into it, nor overwrite it.
+      const edited = fs.readFileSync(path.join(pkgDir, 'SKILL.md'), 'utf8').replace('Write plainly.', 'Write plainly, our way.');
+      fs.writeFileSync(path.join(pkgDir, 'SKILL.md'), edited);
+      const again = await request(app).post('/api/spec-skills/style-forks').send({ slug: 'plain-notes' });
+      expect(again.status).toBe(409);
+      expect(again.body.error.code).toBe('SKILL_ALREADY_EXISTS');
+      expect(fs.readFileSync(path.join(pkgDir, 'SKILL.md'), 'utf8')).toBe(edited);
+      expect(files(pkgDir).sort()).toEqual(['SKILL.md', 'templates/note.md']);
+      // No merge endpoint exists.
+      expect((await request(app).post('/api/spec-skills/style-merges').send({ slug: 'plain-notes' })).status).toBe(404);
+    } finally {
+      await runtime.close();
+    }
+  });
+});

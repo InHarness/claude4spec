@@ -75,25 +75,38 @@ export type AttachmentResolution =
   | { name: string; status: 'ok'; provider: ExposedProject }
   | { name: string; status: 'unavailable' }
   | { name: string; status: 'ambiguous'; providers: ExposedProject[] }
-  | { name: string; status: 'self' };
+  | { name: string; status: 'self' }
+  | { name: string; status: 'untrusted' };
 
 /**
  * Resolve the consumer's attachments against the exposed projects. `self` — the
- * consumer's own `skill.name` — is reported apart (ignored with a warning by the
- * callers), whatever other project shares the name.
+ * consumer's own exposed `skill.name` (`ownName`, from its own config) — is
+ * reported apart (ignored with a warning by the callers), whatever other project
+ * shares the name.
+ *
+ * 2.1.57 (M52 `ybbal0vf`): `trusted` is the machine-local confirmation of the
+ * attachments the project's committed config carries (M31 `44viw74p`). Not
+ * confirmed ⇒ every other attachment is `untrusted`: it resolves to no provider,
+ * whatever the workspace exposes, and the callers warn as for a dangling one.
+ * ASSUMPTION:dev-0002 — one confirmation covers the whole list.
  *
  * Duplicate names in `uses` collapse to one attachment.
  */
 export function resolveAttachments(
   consumerId: string,
   uses: readonly string[],
+  ownName: string | null,
   exposed: readonly ExposedProject[],
+  trusted: boolean,
 ): AttachmentResolution[] {
-  const own = exposed.find((p) => p.projectId === consumerId)?.name ?? null;
   const out: AttachmentResolution[] = [];
   for (const name of new Set(uses)) {
-    if (own !== null && name === own) {
+    if (ownName !== null && name === ownName) {
       out.push({ name, status: 'self' });
+      continue;
+    }
+    if (!trusted) {
+      out.push({ name, status: 'untrusted' });
       continue;
     }
     const providers = exposed.filter((p) => p.name === name && p.projectId !== consumerId);

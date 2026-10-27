@@ -132,6 +132,7 @@ import {
   ProjectExposedSkillSource,
   exposedReadOnlyReason,
   readExposedPackage,
+  workspaceExposedSkillAccess,
   type ExposedSkillPackage,
 } from '../services/project-exposed-skills.js';
 import { listExposedProjectRows, listExposedProjects } from '../services/exposed-projects.js';
@@ -155,7 +156,7 @@ import { projectPluginsDir, type PluginImporter } from '../core/plugin-host/over
 import { buildBasePluginPackages } from '../routes/plugins.js';
 import { logRefRegistrationWarnings, overlayRefWarnings } from '../core/plugin-host/ref-warnings.js';
 import { projectPluginsFrontendRouter } from '../routes/plugins-project.js';
-import { loadedRecordKeys, type WorkspaceRootResolver } from '../core/plugin-host/frontend-assets.js';
+import type { WorkspaceRootResolver } from '../core/plugin-host/frontend-assets.js';
 import type { BuiltinEnvelope } from '../core/plugin-host/builtin-envelopes.js';
 import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import type { ActiveAdapter, PendingInput } from '../routes/agent-turn.js';
@@ -413,15 +414,22 @@ async function buildInner(
     }
   };
   skillRegistry.registerSource(
-    new ProjectExposedSkillSource(projectId, {
-      uses: () => readOwnSkillConfig().uses,
-      listExposed: () => listExposedProjects(workspaceProjects()),
-      readProvider: async (providerId) => {
-        if (!deps.providerContext) throw new Error('no provider context is reachable from this process');
-        const provider = await deps.providerContext(providerId);
-        return provider.readExposedSkill();
-      },
-    }),
+    new ProjectExposedSkillSource(
+      projectId,
+      // 2.1.57 (M52 `ybbal0vf`, M31 `44viw74p`): the machine-local confirmation
+      // of the committed attachment list comes from the same registry read as the
+      // project list; unconfirmed, no peer config is read. ASSUMPTION:dev-0002.
+      workspaceExposedSkillAccess({
+        consumerId: projectId,
+        readOwnSkill: readOwnSkillConfig,
+        readWorkspaceProjects: workspaceProjects,
+        readProvider: async (providerId) => {
+          if (!deps.providerContext) throw new Error('no provider context is reachable from this process');
+          const provider = await deps.providerContext(providerId);
+          return provider.readExposedSkill();
+        },
+      }),
+    ),
   );
   const briefsRootDir = rootRegistry.system('briefs').dir;
   const patchesRootDir = rootRegistry.system('patches').dir;
@@ -947,6 +955,10 @@ async function buildInner(
   registerRefRewriteListeners(pluginHost, db.handle, entityStore);
 
   // Cross-cutting MCP server — owned by the host, not a plugin (M13).
+  // 2.1.57 (M13 `mbladez6` 3b, M44 `317cwhlj`): it enters the turn through the
+  // POOL, registered here exactly like a plugin's server (a duplicate name is
+  // refused with PLUGIN_TOOL_CONFLICT); the turn handler takes it from the pool
+  // rather than appending it on its own. Same for `release-tools` below.
   // Registered as a factory: a fresh instance is built per `adapter.execute()` so
   // neither concurrent turns nor successive queries of one turn share an MCP
   // transport. See `registerMcpServer` in plugin-host/types.ts for why the unit is
@@ -1271,13 +1283,15 @@ async function buildInner(
       projectId,
       cwd,
       isTrusted: () => registry.getProjectTrust(workspace, projectId) === true,
-      overlayLoaded: loadedRecordKeys(overlayRecords),
+      overlayRecords,
       base: {
         pluginRecords: deps.pluginRecords,
         workspacePackages: deps.frontendBase?.workspacePackages,
         envelopes: deps.frontendBase?.envelopes,
         resolveWorkspaceRoot: deps.frontendBase?.resolveWorkspaceRoot,
       },
+      // M13 `m13actv0`: one activation gate for the backend and the frontend.
+      isTypeActive: (type) => pluginHost.isActive(type),
     }),
   );
   router.use(
@@ -1549,6 +1563,12 @@ async function buildInner(
     specSkillsRouter({
       listExposedProjects: () =>
         listExposedProjectRows(projectId, readOwnSkillConfig().uses, listExposedProjects(workspaceProjects())),
+      // 2.1.57 (M52 `ybbal0vf`): the #skills card's confirmation of the committed
+      // attachment list, machine-local (M31 `44viw74p`). ASSUMPTION:dev-0002.
+      hookTrust: {
+        get: () => registry.getSpecSkillHooksTrust(workspace, projectId),
+        set: (value) => registry.setSpecSkillHooksTrust(workspace, projectId, value),
+      },
       // 2.1.9 (M52 row 3): `fork_writing_style` over this context's registry and
       // the facade of its root of kind `skills`; `config.writingStyle` untouched.
       forkWritingStyle: (input) =>

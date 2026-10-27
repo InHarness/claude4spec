@@ -11,7 +11,9 @@ import {
   RecordMissingError,
   RecordPathError,
   RecordTargetExistsError,
+  type RecordMoveResult,
 } from '../fs/record-store.js';
+import { runMultiFileOperation } from '../fs/multi-file-operation.js';
 import { PROJECTION_IDS, type ProjectionStatusRegistry } from './projection-status.js';
 import { DomainError } from './tags.js';
 import { resolveSafe, splitMarkdown } from './markdown-file-store.js';
@@ -973,8 +975,10 @@ export async function deletePage(
  *
  * Reported rather than thrown: the propagation runs after the commit point, so
  * its failure is news about the citations, not about the move. `error` present
- * means the pages in `rewritten` were rewritten and the rest were not — there
- * is no transaction spanning them and none is simulated.
+ * means the pages in `rewritten` are rewritten on disk and the rest are not:
+ * since 2.1.57 the rewrites already made are rolled back (M42), so `rewritten`
+ * holds only the pages the rollback could not restore because somebody changed
+ * them in between.
  */
 export interface CitationSyncResult {
   rewritten: string[];
@@ -1054,62 +1058,64 @@ export async function movePage(
       'read the page first and pass back the `hash` it answered with',
     );
   }
-  let settled;
-  try {
-    settled = await records.move(input.from, input.to, { actor, expectedHash: input.expectedHash });
-  } catch (err) {
-    // The primitive knows nothing about pages; the operation names the refusal.
-    // Content included: the client's conflict dialog (0.2.88) is keyed on
-    // BOTH fields, and a refusal raised under the store's path lock is the
-    // same refusal as the pre-lock one in `assertUnchanged`.
-    if (err instanceof RecordConflictError) {
-      throw new ConflictError('PAGE_CONFLICT', 'page changed since last read', err.currentHash, err.currentContent);
-    }
-    if (err instanceof RecordTargetExistsError) {
-      throw new DomainError('PAGE_EXISTS', `a page already exists at '${input.to}'`);
+  /**
+   * 2.1.57 (M14 `sjdtpuoo`, M42 `gg7sxih6`) — the move and the citation
+   * rewrites it causes are ONE multi-file operation: every version row they
+   * write carries its `operation_id` (`renameSync` joins this operation rather
+   * than opening its own).
+   *
+   * Two things are NOT left to `runMultiFileOperation`'s throw-and-wrap, both
+   * because the move's own contract says otherwise (the `move-page` records):
+   * a refusal of the move itself comes back as the move's typed code, so it is
+   * returned out of the operation and mapped below (nothing was written, there
+   * is nothing to roll back); and a failed citation sync does not undo the
+   * move. The move is therefore not a journalled step — `records.move`, not
+   * `op.move` — and a failing rewrite rolls back only the rewrites, through
+   * the operation's own rollback, before it is reported in `citationSync`.
+   */
+  const outcome = await runMultiFileOperation(async (op) => {
+    let settled: RecordMoveResult;
+    try {
+      settled = await records.move(input.from, input.to, { actor, expectedHash: input.expectedHash });
+    } catch (refusal) {
+      return { refusal } as const;
     }
     /**
-     * Before the generic path refusal, because it IS one — a subclass — and the
-     * two want opposite things from the caller. A missing source is `NOT_FOUND`:
-     * nothing is wrong with the request, the page is simply not there, which is
-     * exactly what a replay of a successful move looks like. Collapsing it into
-     * `INVALID_ARGUMENT` told a retrying client its arguments were bad when the
-     * truth was that its first call had worked.
+     * After the move has settled, so the propagation rewrites citations to a page
+     * that is already at its destination — and OUTSIDE the move's own success,
+     * which is what the catch is for.
+     *
+     * The rename has committed by the time this runs. Letting the propagation
+     * throw would report a move that happened as a move that failed: the file is
+     * at its new path, the caller is told `INDEX_STALE`, and every consequence of
+     * success — the cache key, the route the reader is on — is skipped. So the
+     * failure is answered WITH the move rather than instead of it. `citationSync`
+     * carries which pages were rewritten, or why none were; a caller that cares
+     * about the citations reads it, and one that only moved a file does not have
+     * to.
      */
-    if (err instanceof RecordMissingError) {
-      const roots = facadeRootIds?.() ?? [];
-      throw new DomainError(
-        'NOT_FOUND',
-        `no page at '${input.from}' in root '${rootId}'`,
-        'a move is not idempotent — a replay finds the source already gone' +
-          (roots.length ? `; roots in this project: ${roots.join(', ')}` : ''),
-      );
+    let citationSync: CitationSyncResult;
+    try {
+      citationSync = { rewritten: (await renameSync?.(rootId, input.from, input.to, actor)) ?? [] };
+    } catch (err) {
+      // The pages already rewritten go back to their content before the move.
+      // A page somebody changed in between is not overwritten by the undo: it
+      // stays rewritten, so it stays in `rewritten` and the error names it —
+      // `citationSync` describes what is on disk, not what was intended.
+      const { unrestored } = await op.rollback();
+      const why = err instanceof Error ? err.message : String(err);
+      const left = unrestored.map((u) => u.relPath);
+      citationSync = {
+        rewritten: left,
+        error: left.length === 0
+          ? why
+          : `${why}; ${left.length} rewritten page(s) changed meanwhile and were left rewritten: ${left.join(', ')}`,
+      };
     }
-    if (err instanceof RecordPathError) {
-      throw new DomainError('INVALID_ARGUMENT', err.message, 'a move stays inside one source — it is not a write plus a delete');
-    }
-    throw err;
-  }
-  /**
-   * After the move has settled, so the propagation rewrites citations to a page
-   * that is already at its destination — and OUTSIDE the move's own success,
-   * which is what the catch is for.
-   *
-   * The rename has committed by the time this runs. Letting the propagation
-   * throw would report a move that happened as a move that failed: the file is
-   * at its new path, the caller is told `INDEX_STALE`, and every consequence of
-   * success — the cache key, the route the reader is on — is skipped. So the
-   * failure is answered WITH the move rather than instead of it. `citationSync`
-   * carries which pages were rewritten, or why none were; a caller that cares
-   * about the citations reads it, and one that only moved a file does not have
-   * to.
-   */
-  let citationSync: CitationSyncResult = { rewritten: [] };
-  try {
-    citationSync = { rewritten: (await renameSync?.(rootId, input.from, input.to, actor)) ?? [] };
-  } catch (err) {
-    citationSync = { rewritten: [], error: err instanceof Error ? err.message : String(err) };
-  }
+    return { settled, citationSync } as const;
+  });
+  if ('refusal' in outcome) throw moveRefusal(outcome.refusal, rootId, input.from, input.to, facadeRootIds);
+  const { settled, citationSync } = outcome;
   return {
     rootId,
     path: settled.path,
@@ -1117,6 +1123,47 @@ export async function movePage(
     version: currentVersionOf(target, settled.path),
     citationSync,
   };
+}
+
+/** The primitive's refusal of a move, named as the page operation's code. */
+function moveRefusal(
+  err: unknown,
+  rootId: string,
+  from: string,
+  to: string,
+  facadeRootIds: (() => string[]) | undefined,
+): unknown {
+  // The primitive knows nothing about pages; the operation names the refusal.
+  // Content included: the client's conflict dialog (0.2.88) is keyed on
+  // BOTH fields, and a refusal raised under the store's path lock is the
+  // same refusal as the pre-lock one in `assertUnchanged`.
+  if (err instanceof RecordConflictError) {
+    return new ConflictError('PAGE_CONFLICT', 'page changed since last read', err.currentHash, err.currentContent);
+  }
+  if (err instanceof RecordTargetExistsError) {
+    return new DomainError('PAGE_EXISTS', `a page already exists at '${to}'`);
+  }
+  /**
+   * Before the generic path refusal, because it IS one — a subclass — and the
+   * two want opposite things from the caller. A missing source is `NOT_FOUND`:
+   * nothing is wrong with the request, the page is simply not there, which is
+   * exactly what a replay of a successful move looks like. Collapsing it into
+   * `INVALID_ARGUMENT` told a retrying client its arguments were bad when the
+   * truth was that its first call had worked.
+   */
+  if (err instanceof RecordMissingError) {
+    const roots = facadeRootIds?.() ?? [];
+    return new DomainError(
+      'NOT_FOUND',
+      `no page at '${from}' in root '${rootId}'`,
+      'a move is not idempotent — a replay finds the source already gone' +
+        (roots.length ? `; roots in this project: ${roots.join(', ')}` : ''),
+    );
+  }
+  if (err instanceof RecordPathError) {
+    return new DomainError('INVALID_ARGUMENT', err.message, 'a move stays inside one source — it is not a write plus a delete');
+  }
+  return err;
 }
 
 /** Who cites a section: one page, and the section of it the citation sits in. */

@@ -61,7 +61,8 @@ import type { McpToolDefinition } from '@inharness-ai/agent-adapters';
 import { gateServer, pluginServerNamesFor } from '../operations/profile-gate.js';
 import { CATALOG, type OperationScope } from '../operations/catalog.js';
 import { toolError } from '../operations/envelope.js';
-import { BRIEF_ALLOWED_PLUGIN_MCP, mcpRenderingProfile, mcpServerSetForProfile } from '../operations/profiles.js';
+import { mcpRenderingProfile, mcpServerSetForProfile } from '../operations/profiles.js';
+import { poolSelector } from '../services/turn-mcp-servers.js';
 import { createC4sReaderServer, type C4sReaderDeps } from './c4s-reader.js';
 import { buildPlanToolsServer } from './plan-tools.js';
 import { buildBriefToolsServer } from './brief-tools.js';
@@ -262,8 +263,9 @@ function sourceServers(deps: ExternalSurfaceDeps): Array<{ name: string; server:
   });
 
   // Plugin-contributed servers LAST — see the ordering note above.
-  for (const entry of deps.pluginHost.buildMcpServers()) {
-    if (set.pluginServers === 'release-only' && !BRIEF_ALLOWED_PLUGIN_MCP.has(entry.name)) continue;
+  // Narrowed by the same rule the turn handler uses (`poolSelector`), applied
+  // by the host before a factory runs: `brief` builds only `release-tools`.
+  for (const entry of deps.pluginHost.buildMcpServers({ include: poolSelector(set.pluginServers) })) {
     // `buildMcpServers()` returns the host-owned `McpServerFactory` view. Every
     // in-repo and plugin server is built through the facade, so `.tools` is
     // present; a handle without it contributes nothing to enumerate and is

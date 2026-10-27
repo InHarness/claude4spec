@@ -37,6 +37,7 @@ import { DomainError } from './tags.js';
 import { readArtifactWindow, windowBody, type ArtifactRange, type ArtifactReadChannel } from './artifact-read.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 import { ConflictError } from './brief.js';
+import { KeyedQueue } from '../fs/keyed-queue.js';
 
 export interface PatchServiceDeps {
   patchesPages: MarkdownFileStore;
@@ -154,6 +155,16 @@ const VALID_PATCH_KINDS: ReadonlySet<string> = new Set([
 
 export class PatchService {
   constructor(private deps: PatchServiceDeps) {}
+
+  /**
+   * 2.1.57 (M36 `m36l4fam`) — one critical section per patch path for every
+   * read-modify-write of the file, as `PlanService` and `BriefService` already
+   * hold for plans and briefs. The frontmatter write merges ONLY the keys it was
+   * sent into the file it read under this same queue, so a concurrent content
+   * save or a second frontmatter write is never lost — and no channel needs an
+   * `expectedHash` it would have nowhere to take from.
+   */
+  private readonly locks = new KeyedQueue();
 
   // ─── Reads ───────────────────────────────────────────────────────────────
 
@@ -281,7 +292,12 @@ export class PatchService {
     }
   }
 
-  async updateContent(opts: PatchUpdateContentOpts): Promise<PatchDetail> {
+  updateContent(opts: PatchUpdateContentOpts): Promise<PatchDetail> {
+    // Same queue as `updateFrontmatter`: both rewrite the whole file from a read.
+    return this.locks.run(opts.path, () => this.updateContentLocked(opts));
+  }
+
+  private async updateContentLocked(opts: PatchUpdateContentOpts): Promise<PatchDetail> {
     const current = await this.getPatch(opts.path);
     if (typeof opts.expectedHash === 'string' && opts.expectedHash !== current.hash) {
       throw new ConflictError('PATCH_CONFLICT', 'patch changed since last read', current.hash, current.content);
@@ -319,13 +335,23 @@ export class PatchService {
     return this.getPatch(opts.path);
   }
 
-  async updateFrontmatter(opts: PatchUpdateFrontmatterOpts): Promise<PatchDetail> {
-    const current = await this.getPatch(opts.path, { full: true });
-    await this.writeApplied(current, opts.applied, opts.changedBy ?? 'user');
-    return this.getPatch(opts.path);
+  /**
+   * 2.1.57 (M36 `m36l4fam`, M23 `m23edg01`) — the read of the current file and
+   * the write of the merged frontmatter are ONE critical section under the
+   * per-path queue; no `expectedHash` is taken.
+   */
+  updateFrontmatter(opts: PatchUpdateFrontmatterOpts): Promise<PatchDetail> {
+    return this.locks.run(opts.path, async () => {
+      const current = await this.getPatch(opts.path, { full: true });
+      await this.writeApplied(current, opts.applied, opts.changedBy ?? 'user');
+      return this.getPatch(opts.path);
+    });
   }
 
-  /** The `applied` write itself, over a `full` read the caller already holds. */
+  /**
+   * The `applied` write itself, over a `full` read the caller took under
+   * `locks` for the same path.
+   */
   private async writeApplied(current: PatchDetail, applied: boolean, changedBy: 'user' | 'agent'): Promise<void> {
     // Spread-then-set: a legacy `status` key already in the file survives the
     // write untouched (gray-matter pass-through), it is simply never read.
@@ -366,8 +392,10 @@ export class PatchService {
         'unset it in the UI — the settings popover on the patch page',
       );
     }
-    const current = await this.getPatch(input.path, { full: true });
-    if (current.frontmatter.applied !== true) await this.writeApplied(current, true, 'agent');
+    await this.locks.run(input.path, async () => {
+      const current = await this.getPatch(input.path, { full: true });
+      if (current.frontmatter.applied !== true) await this.writeApplied(current, true, 'agent');
+    });
     return { path: input.path, applied: true };
   }
 
