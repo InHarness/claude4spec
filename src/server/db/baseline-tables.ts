@@ -24,7 +24,6 @@ export const BASELINE_TABLES: ReadonlySet<string> = new Set([
   'file_version',
   'plan',
   'plan_version',
-  'release_import',
   'remote_session',
   'section_entity_link',
   'section_index',

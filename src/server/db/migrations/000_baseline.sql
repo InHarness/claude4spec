@@ -161,24 +161,6 @@ CREATE TABLE plan_version (
   changed_by TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-CREATE TABLE release_import (
-  id                        INTEGER PRIMARY KEY AUTOINCREMENT,
-  local_release_id          INTEGER REFERENCES spec_release(id),  -- nullable, no ON DELETE
-  remote_project_id         TEXT,                                 -- ← X-Project-Id
-  remote_project_slug       TEXT    NOT NULL,                     -- user input, always known
-  remote_release_id         TEXT,                                 -- ← X-Release-Id
-  remote_release_sequence   INTEGER,                              -- ← X-Release-Sequence
-  content_sha256            TEXT,                                 -- ← X-Content-SHA256
-  content_size_bytes        INTEGER,                              -- ← Content-Length
-  bundle_schema_version     INTEGER,                              -- ← bundle manifest (NOT a header)
-  imported_by_account_id    TEXT,                                 -- NULL for anon v1 clone
-  imported_by_account_email TEXT,                                 -- NULL for anon v1 clone
-  status                    TEXT    NOT NULL,                     -- 'success' | 'error' (app-validated, no SQL CHECK)
-  error_message             TEXT,                                 -- only when status='error'
-  imported_at               TEXT    NOT NULL DEFAULT (datetime('now')),
-  created_at                TEXT    NOT NULL DEFAULT (datetime('now')),
-  updated_at                TEXT    NOT NULL DEFAULT (datetime('now'))
-);
 CREATE TABLE remote_session (
   id                INTEGER PRIMARY KEY,
   access_token      TEXT NOT NULL,
@@ -277,7 +259,6 @@ CREATE INDEX idx_file_version_release        ON file_version(release_id);
 CREATE INDEX idx_file_version_root_release   ON file_version(rootId, release_id);
 CREATE INDEX idx_pv_plan ON plan_version(plan_id);
 CREATE UNIQUE INDEX uq_pv_plan_version ON plan_version(plan_id, version);
-CREATE INDEX idx_release_import_local_release ON release_import(local_release_id);
 CREATE UNIQUE INDEX uq_remote_session_remote_account_id
   ON remote_session(remote_account_id);
 CREATE INDEX idx_sel_anchor ON section_entity_link(anchor);

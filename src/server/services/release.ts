@@ -2064,8 +2064,7 @@ export class ReleaseService {
    *
    *   1. Parse `manifest.json` FIRST. Missing → `BUNDLE_MANIFEST_MISSING`.
    *      `bundleSchemaVersion` > max supported → `BUNDLE_SCHEMA_UNSUPPORTED`.
-   *      (`BUNDLE_HASH_MISMATCH` is the CALLER's — it holds the expected hash
-   *      from the push header; see `release-import.ts`.)
+   *      (`BUNDLE_HASH_MISMATCH` is the CALLER's — it holds the expected hash.)
    *   2. Pages: `<rootId>/<path>.md`, or a flat `pages/` tree on v1, where the
    *      absent `manifest.roots` selects the built-in root. Unsafe relative path
    *      → `BUNDLE_MALFORMED_ENTRY`.

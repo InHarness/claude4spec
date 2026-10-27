@@ -5,3 +5,4 @@ app-config-response → src/server/routes/config.ts
 patch-config-request → src/server/services/remote-settings-fields.ts
 release-detail → src/client/components/ReleaseDetail.tsx
 config-json-shape → src/server/config.ts
+flagi-cli-m01#--create-project → src/bin/launch.ts

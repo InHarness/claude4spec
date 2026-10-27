@@ -1,5 +1,5 @@
 import { RootRegistry } from '../roots/registry.js';
-import { PAGES_KIND, kindDeclaration } from '../../shared/root-kinds.js';
+import { PAGES_KIND } from '../../shared/root-kinds.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadOrCreateConfig, migrateConfigToV3, migrateConfigToV4, readConfig, type Config } from '../config.js';
@@ -11,7 +11,7 @@ import type { WorkspaceRegistry } from './registry.js';
 import type { ProjectRecord, WorkspaceRecord } from './types.js';
 
 export interface BootstrapOptions {
-  /** CLI `--name` (sticky config.name on first bootstrap; also M27 clone override). */
+  /** CLI `--name` (sticky config.name on first bootstrap). */
   name?: string;
   /** CLI `--pages` (sticky config.pagesDir on first bootstrap). */
   pagesDir?: string;
@@ -23,16 +23,8 @@ export interface BootstrapResult {
   project: ProjectRecord;
   config: Config;
   configPath: string;
-  /** M27 clone-rollback flags: did THIS run create the artifacts? */
+  /** Did THIS run write `config.json`? Reported by the launcher (`(created)`). */
   configCreated: boolean;
-  claudeDirCreated: boolean;
-  gitignoreCreated: boolean;
-  /**
-   * 2.1.8: cwd-relative dirs of the SYSTEM roots this run created. Captured here,
-   * not in the context build — this function mkdirs them first, so by the time
-   * the build looks they always exist.
-   */
-  systemRootDirsCreated: string[];
 }
 
 /**
@@ -40,8 +32,10 @@ export interface BootstrapResult {
  * is deferred to onboarding close (confirm or skip) so a `pagesDir` change in
  * onboarding can't orphan an index at the old path. The PATCH /api/config
  * handler calls this after persisting `onboardingCompleted: true`, on the
- * effective pagesDir. Idempotent: skips if `index.md` exists or pagesDir is
- * non-empty (don't clobber restored/cloned pages).
+ * effective pagesDir; activation calls it for a project whose onboarding is
+ * already closed (one from before onboarding included — M01 activation, the
+ * welcome-page step). Idempotent: skips if `index.md` exists or pagesDir is
+ * non-empty (don't clobber existing pages).
  */
 export function ensureWelcomePage(cwd: string, pagesDir: string): void {
   // 0.2.101: the caller passes the BASE root's effective dir (found by the
@@ -64,12 +58,13 @@ export function ensureWelcomePage(cwd: string, pagesDir: string): void {
  *
  * Sequence: mkdir cwd → config (create or load) → config v3 migration (carry
  * port/mode to the registry, first-wins) → .gitignore → mkdir of every root in
- * the root registry → registry registration (creates the DB slot) → legacy DB
- * relocation.
+ * the root registry → welcome page (onboarding closed only) → registry
+ * registration (creates the DB slot) → legacy DB relocation.
  * (0.2.93: no integration artifact for external agents lands on disk at all —
  * neither a skill nor an MCP config entry; the latter is served on demand by
- * `GET /api/projects/:id/_meta/mcp-config`.) (0.1.56: welcome page no longer created here —
- * deferred to onboarding close. 0.1.104: external skills generation moved
+ * `GET /api/projects/:id/_meta/mcp-config`.) (0.1.56: the welcome page is written
+ * here only when onboarding is already closed — otherwise at onboarding close.
+ * 0.1.104: external skills generation moved
  * off this bootstrap hook entirely — see `c4s install-skills` / M22's
  * `buildExternalSkillsBundle`, both on-demand.)
  */
@@ -80,9 +75,6 @@ export function bootstrapProject(
   opts: BootstrapOptions = {},
 ): BootstrapResult {
   fs.mkdirSync(cwd, { recursive: true });
-  // M27: capture pre-bootstrap state for clone rollback — `.claude4spec/` is
-  // created lazily by loadOrCreateConfig, so check existence BEFORE it.
-  const claudeDirExisted = fs.existsSync(path.join(cwd, '.claude4spec'));
   // 0.2.8: migrations run BEFORE `loadOrCreateConfig`, not after. That function
   // validates the file it reads, so on exactly the outdated shapes a migration
   // exists to repair it threw first and the repair never ran — the project
@@ -118,10 +110,8 @@ export function bootstrapProject(
   // predates that write.
   const config = readConfig(cwd);
 
-  const gitignoreExisted = fs.existsSync(path.join(cwd, '.gitignore'));
   const rootRegistry = new RootRegistry(config.roots);
   ensureGitignore(cwd, { roots: rootRegistry.list(), gitEnabled: config.git.enabled });
-  // 0.1.56: welcome page deferred to onboarding close — see ensureWelcomePage.
   // 2.1.8 (M31 bootstrap): activation creates the directory of EVERY registry
   // root — the user roots (`kind: pages`) and the system roots, none of the
   // latter written to `config.json`. 2.1.9: which roots are system roots is the
@@ -130,13 +120,18 @@ export function bootstrapProject(
   // The CLI `--pages` override names the base root's directory for this run, so
   // that is the one created. The context build mkdirs again (idempotent) for
   // roots added later without a re-activation. `tags.json` stays lazy.
-  const systemRootDirsCreated: string[] = [];
+  let baseDir: string | null = null;
   for (const root of rootRegistry.list()) {
-    const dir = root.kind === PAGES_KIND && root.builtin && opts.pagesDir ? opts.pagesDir : root.dir;
-    const abs = path.resolve(cwd, dir);
-    if (kindDeclaration(root.kind).source === 'code' && !fs.existsSync(abs)) systemRootDirsCreated.push(root.dir);
-    fs.mkdirSync(abs, { recursive: true });
+    const isBase = root.kind === PAGES_KIND && root.builtin;
+    const dir = isBase && opts.pagesDir ? opts.pagesDir : root.dir;
+    if (isBase) baseDir = dir;
+    fs.mkdirSync(path.resolve(cwd, dir), { recursive: true });
   }
+  // M01 activation, the welcome-page step: only once onboarding has closed. A
+  // fresh file says it has not (onboarding writes the page when it closes); a
+  // file without the field — a project from before onboarding — reads as closed
+  // and gets the page here. `ensureWelcomePage` leaves a non-empty space alone.
+  if (config.onboardingCompleted && baseDir !== null) ensureWelcomePage(cwd, baseDir);
   const project = registry.registerProject(workspace, cwd);
   migrateLegacyDbIfNeeded(registry, workspace, cwd, project.id);
 
@@ -145,8 +140,5 @@ export function bootstrapProject(
     config,
     configPath: configFilePath,
     configCreated,
-    claudeDirCreated: !claudeDirExisted,
-    gitignoreCreated: !gitignoreExisted,
-    systemRootDirsCreated,
   };
 }

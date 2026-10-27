@@ -591,31 +591,3 @@ export async function extractBundleStream(
 ): Promise<void> {
   await pipeline(stream, tarExtract({ cwd: destDir }));
 }
-
-/**
- * Cheaply read just `manifest.json` + `config.json` out of an already-downloaded
- * bundle tar.gz. Consumed by the M27 clone service for the `release_import`
- * audit row's `bundle_schema_version` and for the post-restore config patch
- * (name / entities) — facts that the `restoreBundleArchive(): Promise<SpecSnapshot>`
- * signature cannot carry. Missing manifest ⇒ `BUNDLE_MANIFEST_MISSING`.
- */
-export async function readBundleMeta(
-  tarGzPath: string,
-): Promise<{ manifest: BundleManifest; config: BundleConfig | null }> {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-bundle-meta-'));
-  try {
-    await pipeline(fs.createReadStream(tarGzPath), tarExtract({ cwd: tmpDir }));
-    const manifestPath = path.join(tmpDir, 'manifest.json');
-    if (!fs.existsSync(manifestPath)) {
-      throw new DomainError('BUNDLE_MANIFEST_MISSING', 'bundle is missing manifest.json');
-    }
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as BundleManifest;
-    const configPath = path.join(tmpDir, 'config.json');
-    const config = fs.existsSync(configPath)
-      ? (JSON.parse(fs.readFileSync(configPath, 'utf8')) as BundleConfig)
-      : null;
-    return { manifest, config };
-  } finally {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  }
-}

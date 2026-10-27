@@ -306,7 +306,7 @@ export interface ConfigCliArgs {
   pagesDir?: string;
   /**
    * M01 (0.1.36): `--remote-url <url>` maps here. Sticky like `name` —
-   * persisted to `config.json` on first bootstrap, then drives M24/M27 base URL.
+   * persisted to `config.json` on first bootstrap, then drives the M24 base URL.
    */
   remoteApiUrl?: string | null;
 }

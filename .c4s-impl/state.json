@@ -1,5 +1,5 @@
 {
-  "iteration": 5,
+  "iteration": 8,
   "conventions": [
     {
       "label": "L1 (DB)",
@@ -733,15 +733,68 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u2-remove-project-clone/p1-l1-l14",
+          "layers": [
+            "L1",
+            "L10",
+            "L13",
+            "L14"
+          ],
+          "slugs": [
+            "release-import",
+            "m27-requires-m01",
+            "m27-requires-m17",
+            "m27-requires-m29",
+            "m27-requires-m31",
+            "m27-requires-m41",
+            "flagi-cli-m01",
+            "sub-drzewo-m27",
+            "ac-npx-inharness-ai-claude4spec-create",
+            "ac-start-z-create-project-lub-flaga-impl",
+            "ac-swiezy-bootstrap-onboardingcompleted",
+            "ac-migracja-sprzed-m29-entitiesdir-istn",
+            "ac-b-d-po-czenia-pobierania-z-remote-h",
+            "ac-brak-l4-api-release-imports-w-v1",
+            "ac-brak-mcp-toolu-project-clone-releas",
+            "ac-clone-draft-slug-lub-nieistniej-cy",
+            "ac-clone-restore-odtwarza-wszystkie-releasa",
+            "ac-clone-slug-nie-trafia-do-config-j",
+            "ac-clone-slug-razem-z-name-s",
+            "ac-clone-slug-razem-z-port-p",
+            "ac-clone-slug-w-niepustym-cwd-clon",
+            "ac-dla-anon-clone-v1-kolumny-imported-by-a",
+            "ac-encja-release-import-istnieje-jako-da",
+            "ac-ka-dy-fail-w-krokach-2-9-algorytmu-clone",
+            "ac-lokalny-release-1-powstaje-przez-creat",
+            "ac-na-cie-ce-error-clone-a-nie-powstaje-tr",
+            "ac-npx-claude4spec-clone-slug-projekt",
+            "ac-npx-claude4spec-clone-slug-remote",
+            "ac-po-clone-kolejny-release-push-m25-id",
+            "ac-projekt-published-bez-adnego-release-u",
+            "ac-retry-clone-slug-po-wczesniejszym",
+            "ac-sha-256-streamowanych-bajt-w-bundla-r-n",
+            "ac-snapshot-serwowany-z-content-type-appl",
+            "ac-wiersz-release-import-po-udanym-clone"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "ad2a9e638fa167e315ff7cf904d3b597f15bee4f",
+      "baseCommit": "ad2a9e638fa167e315ff7cf904d3b597f15bee4f",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "u3-remove-bundle-archive",
