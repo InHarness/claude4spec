@@ -62,7 +62,6 @@ const CONFIG = {
     commitTarget: { mode: 'current', branch: null, template: null, base: null },
     switchAfterRelease: false,
   },
-  remoteProjectId: null,
   remoteApiUrl: null,
   $schemaVersion: 4,
   configHash: 'h',

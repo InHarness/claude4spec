@@ -11,7 +11,7 @@
  *
  * The screen, its hooks and `DeltaSection` are rendered; only the network
  * (`fetch`), the router's `Link`, the config, the entity registry and the
- * briefs/pushes lists are stubbed. The shell's modal host is not mounted: the
+ * briefs list is stubbed. The shell's modal host is not mounted: the
  * test answers the `shadow-accept` window through its modal request, as the
  * host would.
  */
@@ -32,10 +32,6 @@ vi.mock('@tanstack/react-router', async () => {
     useNavigate: () => () => {},
   };
 });
-vi.mock('../hooks/useReleasePushes.js', () => ({
-  releasePushesKey: (releaseName: string | undefined) => ['release-pushes', { releaseName }],
-  useAllReleasePushes: () => ({ data: [] }),
-}));
 vi.mock('../hooks/useBriefs.js', () => ({ useBriefs: () => ({ data: [] }) }));
 vi.mock('./BriefsList.js', () => ({ ImplementedBadge: () => null }));
 vi.mock('../core/plugin-host/host.js', () => ({

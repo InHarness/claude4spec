@@ -14,7 +14,7 @@ export const PROJECT_SETTINGS: SettingsContribution = {
     {
       anchor: 'project',
       title: 'Project',
-      description: 'Name shown in the sidebar and used as the remote project label on first push.',
+      description: 'Name shown in the sidebar.',
       group: 'Project',
       weight: 10,
       owner: 'project',

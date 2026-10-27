@@ -186,11 +186,8 @@ export const STATUS_FOR_CODE: Record<string, number> = {
   // M24 Remote Account
   NO_ACTIVE_FLOW: 400,
   REMOTE_UNAUTHORIZED: 401,
-  // M25 Release Push
-  NOT_CONNECTED: 409,
-  ACCOUNT_NOT_ACTIVE: 409,
+  // M17 — no release under the given name.
   RELEASE_NOT_FOUND: 404,
-  RELEASE_PUSH_NOT_FOUND: 404,
   // M17 shadow diff (2.1.46, `22u3o5bx`) — the shadow is unknown, unrelated to
   // HEAD or already accepted; the comparison is git-only, so git off / no
   // repository refuses instead of answering an empty delta.
@@ -209,8 +206,6 @@ export const STATUS_FOR_CODE: Record<string, number> = {
   ACCEPT_CONFLICTS: 409,
   ACCEPT_FAILED: 500,
   ACCEPT_ABORT_FAILED: 500,
-  SESSION_EXPIRED: 502,
-  PUSH_FAILED: 502,
   // M37 Skills registry (0.2.99)
   SKILL_NOT_FOUND: 404,
   SKILL_FILE_NOT_FOUND: 404,

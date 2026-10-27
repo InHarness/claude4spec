@@ -194,6 +194,7 @@ export function UserSection() {
             {initials}
             {deactivated && (
               <span
+                data-deactivated-badge=""
                 className="absolute -top-0.5 -right-0.5 rounded-full"
                 style={{ width: 8, height: 8, background: '#a87033', border: '1.5px solid var(--c-panel)' }}
               />
@@ -232,8 +233,8 @@ export function UserSection() {
 /** 0.2.113: the Settings User card dispatches this to start the slot's device flow. */
 export const REMOTE_LOGIN_START_EVENT = 'c4s:remote-login-start';
 
-/** Shared with the Settings User card's amber badge. */
-export const DEACTIVATED_TOOLTIP = 'Account deactivated — publishing blocked';
+/** Shared with the Settings User card's amber badge (M24 a21tr5i1 / m26usec, 2.1.55). */
+export const DEACTIVATED_TOOLTIP = 'This remote account is deactivated.';
 
 /** 1–2 chars before `@`, uppercase; `?` fallback. */
 export function initialsFor(email: string): string {

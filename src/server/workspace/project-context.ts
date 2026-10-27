@@ -63,7 +63,6 @@ import { RemoteAuthService } from '../services/remote-auth.js';
 import { RemoteHttpClient } from '../services/remote-http-client.js';
 import { remoteAccountRouter } from '../routes/remote-account.js';
 import { agentRouter } from '../routes/agent-credential.js';
-import { remoteProjectRouter } from '../routes/remote-project.js';
 import { PagesFrontmatterIndexer } from '../services/pages-frontmatter-indexer.js';
 import { SectionIndexerService } from '../services/section-indexer.js';
 import { TodosIndexerService } from '../services/todos-indexer.js';
@@ -87,8 +86,6 @@ import { ReleaseService } from '../services/release.js';
 import { releasesRouter } from '../routes/releases.js';
 import { shadowDiffRouter } from '../routes/shadow-diff.js';
 import { shadowAcceptRouter } from '../routes/shadow-accept.js';
-import { ReleasePushService } from '../services/release-push.js';
-import { releasePushesRouter } from '../routes/release-pushes.js';
 import { ReleaseImportService, rollbackClone, snapshotRootFiles } from '../services/release-import.js';
 import { createReleaseToolsServer } from '../mcp/release-tools/index.js';
 import { GitService } from '../services/git.js';
@@ -1205,14 +1202,6 @@ async function buildInner(
         mountRelPaths([absPath], [mount]).map(({ relPath }) => ({ rootId: mount.rootId, relPath })),
       ),
   });
-  // M25 Release Push — coordinates M17 bundle build + M24 transport; owns release_push.
-  const releasePushService = new ReleasePushService(
-    db.handle,
-    releaseService,
-    remoteAuthService,
-    gitService,
-    cwd,
-  );
   pluginHost.registerMcpServer('release-tools', () =>
     createReleaseToolsServer({ releaseService, gitService, ws, roots: () => rootRegistry.pages() }),
   );
@@ -1652,7 +1641,6 @@ async function buildInner(
   router.use('/shadow-diff', shadowDiffRouter(releaseService));
   // 2.1.47 (M17 m17api401): the shadow acceptance — M17's third own router.
   router.use('/shadow-accept', shadowAcceptRouter(releaseService, ws));
-  router.use('/release-pushes', releasePushesRouter(releasePushService));
   // 0.1.123: on a successful checkout, reuse the same invalidate path as a
   // context-defining config change — no new M31 reload machinery needed.
   // 2.1.10 (M31 ic35jwy6): the same reload after a sync that moved HEAD
@@ -1671,7 +1659,6 @@ async function buildInner(
   );
   router.use('/agent', agentRouter(agentCredentialService));
   router.use('/remote-account', remoteAccountRouter(remoteAuthService));
-  router.use('/remote-project', remoteProjectRouter(remoteAuthService, cwd));
   router.use('/chat', chatRouter(agentDeps));
   router.use(errorHandler);
 

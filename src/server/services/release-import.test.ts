@@ -27,7 +27,7 @@ const bundle = (over: Partial<BundleConfig> = {}): BundleConfig => ({
   ...over,
 });
 
-const opts = { projectId: 'proj-1', fallbackName: 'Remote name' };
+const opts = { fallbackName: 'Remote name' };
 
 describe('buildClonePatch — the clone is faithful to its bundle (C6/C7, 0.2.8)', () => {
   it('applies the writing style the bundle carries', () => {
@@ -85,7 +85,8 @@ describe('buildClonePatch — the clone is faithful to its bundle (C6/C7, 0.2.8)
     const patch = buildClonePatch(null, opts);
     expect(patch.onboardingCompleted).toBe(true);
     expect(patch.name).toBe('Remote name');
-    expect(patch.remoteProjectId).toBe('proj-1');
+    // 2.1.55: `remoteProjectId` left the config with M25 — the clone writes no such key.
+    expect('remoteProjectId' in patch).toBe(false);
   });
 
   it('keeps the existing name precedence: CLI override > bundle > remote', () => {

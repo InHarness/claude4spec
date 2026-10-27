@@ -4,8 +4,9 @@
  * it resolves the remote project anonymously, downloads the latest published
  * release bundle, verifies its hash, restores it via M17
  * (`releaseService.restoreBundleArchive`), collects the restored rows into local
- * release #1 (`releaseService.createRelease`), persists `remoteProjectId` so a
- * later push targets the same remote project, and records the attempt.
+ * release #1 (`releaseService.createRelease`), writes the bundle's config and
+ * records the attempt. (2.1.55: the config no longer carries `remoteProjectId` —
+ * it left with the M25 release push.)
  *
  * No auth gate — the published snapshot is served anonymously, so clone has zero
  * dependency on the M24 device-flow / session machinery. Only a SUCCESSFUL clone
@@ -25,7 +26,7 @@ import path from 'node:path';
 import type Database from 'better-sqlite3';
 import { nanoid } from 'nanoid';
 import { DomainError } from './tags.js';
-import { readConfig, writeConfig, builtinPagesRoot, type Config } from '../config.js';
+import { writeConfig, builtinPagesRoot, type Config } from '../config.js';
 import type { Root } from '../../shared/types.js';
 import {
   RemoteRequestError,
@@ -159,13 +160,11 @@ export class ReleaseImportService {
       );
       localReleaseId = release.id;
 
-      // 7 + 8. Persist remoteProjectId (subsequent-push target) + the whole
-      //         sanitized config the bundle carries (0.2.8 — C6/C7).
+      // 7 + 8. Persist the whole sanitized config the bundle carries (0.2.8 — C6/C7).
       const projectId = download.projectId ?? project.id;
       writeConfig(
         this.cwd,
         buildClonePatch(bundleConfig, {
-          projectId,
           nameOverride: opts.nameOverride,
           fallbackName: project.name,
         }),
@@ -231,10 +230,6 @@ export class ReleaseImportService {
       .get() as { releases: number; entities: number; pages: number };
     if (c.releases > 0 || c.entities > 0 || c.pages > 0) {
       throw new DomainError('CLONE_TARGET_NOT_EMPTY', 'target project already contains spec data');
-    }
-    // Belt-and-suspenders: a stale remoteProjectId would mis-target a later push.
-    if (readConfig(this.cwd).remoteProjectId != null) {
-      throw new DomainError('CLONE_TARGET_NOT_EMPTY', 'target project is already linked to a remote project');
     }
   }
 
@@ -365,7 +360,7 @@ function resolveBundleRoots(bundleConfig: BundleConfig | null): Root[] | undefin
 
 /**
  * 0.2.8 (C6/C7): the config a clone writes — the FULL sanitized allow-list the
- * bundle carries, plus the `remoteProjectId` the import itself determines.
+ * bundle carries (2.1.55: without the `remoteProjectId` key, gone with M25).
  * Before 0.2.8 this dropped `writingStyle` and `agent.claudeUsePreset` on the
  * floor and hardcoded `onboardingCompleted: true`, so a clone silently lost the
  * writing convention its whole specification was authored in and could never
@@ -376,10 +371,9 @@ function resolveBundleRoots(bundleConfig: BundleConfig | null): Root[] | undefin
  */
 export function buildClonePatch(
   bundleConfig: BundleConfig | null,
-  opts: { projectId: string; nameOverride?: string; fallbackName: string },
+  opts: { nameOverride?: string; fallbackName: string },
 ): Partial<Config> {
   const patch: Partial<Config> = {
-    remoteProjectId: opts.projectId,
     name: opts.nameOverride ?? bundleConfig?.name ?? opts.fallbackName,
     // C7: read from the bundle. A bundle with no config.json at all keeps the
     // pre-0.2.8 fallback — there is no onboarding state to reproduce.

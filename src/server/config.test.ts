@@ -780,7 +780,6 @@ describe('config — the config.json envelope (2.1.8)', () => {
     'consistency',
     'onboardingCompleted',
     'remoteApiUrl',
-    'remoteProjectId',
   ];
 
   it('[entity:config-json-shape] a fresh file is version 4, uses only envelope keys, roots entries carry four fields, no system-root key exists and plugins is neither scaffolded nor reserved', () => {
@@ -825,6 +824,26 @@ describe('config — the config.json envelope (2.1.8)', () => {
     writeConfig(dir, { plugins: { 'c4s-plugin-x': { on: true } } } as never);
     expect(JSON.parse(fs.readFileSync(configPath(dir), 'utf8'))).not.toHaveProperty('plugins');
     expect('plugins' in readConfig(dir)).toBe(false);
+  });
+
+  it('[entity:config-json-shape] 2.1.55: `remoteProjectId` is not an envelope key — neither scaffolded nor read, and a write drops a legacy one', () => {
+    expect(ENVELOPE_KEYS).not.toContain('remoteProjectId');
+    loadOrCreateConfig(dir, {});
+    expect(JSON.parse(fs.readFileSync(configPath(dir), 'utf8'))).not.toHaveProperty('remoteProjectId');
+
+    // A legacy file still carrying the key (from before 2.1.55) loads without an
+    // error — even a value of the wrong type is not validated any more — and the
+    // loaded config does not expose it.
+    const file = configPath(dir);
+    const legacy = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+    fs.writeFileSync(file, JSON.stringify({ ...legacy, remoteProjectId: 42 }));
+    expect('remoteProjectId' in readConfig(dir)).toBe(false);
+
+    // The next write persists only envelope keys: the legacy key is gone.
+    writeConfig(dir, { description: 'after' });
+    const after = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+    expect(after).not.toHaveProperty('remoteProjectId');
+    expect(after.description).toBe('after');
   });
 
   it('a legacy file with *Dir keys and extra per-root fields is not rewritten and stays at version 4', () => {

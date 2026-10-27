@@ -66,8 +66,7 @@ describe('errorHandler', () => {
    * The branch above matches body-parser's `type`, not a bare 4xx `status`, and
    * this is why. `RemoteRequestError` carries the REMOTE peer's status, so a
    * rate-limited upstream would otherwise be rendered to the user as "your
-   * request is malformed" — and `remote-project.ts` maps the same error to
-   * `502 REMOTE_UNAVAILABLE`, which is the opposite reading.
+   * request is malformed" — a relay's status is not the caller's fault.
    */
   it('does not treat a relayed upstream status as the caller\'s validation error', () => {
     const json = vi.fn();

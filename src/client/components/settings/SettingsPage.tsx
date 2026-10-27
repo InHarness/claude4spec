@@ -7,7 +7,6 @@ import { REMOTE_ACCOUNT_SETTINGS } from '../account/UserCardElement.js';
 import { APPEARANCE_SETTINGS } from '../shell/AppearanceElement.js';
 import { PROJECT_SETTINGS } from '../project/projectSettings.js';
 import { WRITING_STYLE_SETTINGS } from '../writing-styles/writingStyleSettings.js';
-import { RELEASE_PUSH_SETTINGS } from '../release/RemoteProjectElement.js';
 import { GIT_SETTINGS } from '../git/gitSettings.js';
 import { EXTERNAL_INTEGRATIONS_SETTINGS } from '../external-integrations/ExternalIntegrationsElements.js';
 import { WORKSPACE_SETTINGS } from '../workspace/DangerZoneElement.js';
@@ -35,7 +34,6 @@ export function staticSettingsContributions(): SettingsContribution[] {
     APPEARANCE_SETTINGS,
     PROJECT_SETTINGS,
     WRITING_STYLE_SETTINGS,
-    RELEASE_PUSH_SETTINGS,
     GIT_SETTINGS,
     PLUGIN_HOST_SETTINGS,
     EXTERNAL_INTEGRATIONS_SETTINGS,

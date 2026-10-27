@@ -54,12 +54,9 @@ function UserCardElement() {
     if (!ok) return;
     try {
       await remoteAccountApi.logout();
-      // Broad prefixes: the slot, this card, and the remote project (which now
-      // refetches without a bearer) all move to the signed-out view in place.
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ['remote-account'] }),
-        qc.invalidateQueries({ queryKey: ['remote-project'] }),
-      ]);
+      // Broad prefix: the slot and this card move to the signed-out view in
+      // place. 2.1.55: logout refreshes the account state only (M24 m26usec).
+      await qc.invalidateQueries({ queryKey: ['remote-account'] });
       toast.success('Logged out');
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Logout failed');

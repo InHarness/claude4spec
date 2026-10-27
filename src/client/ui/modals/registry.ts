@@ -26,7 +26,6 @@ export const MODAL_RENDERERS: RendererMap = {
   'page-resolve': PageChanged,
   'page-reload': PageChanged,
   'onboarding-skip': ChoiceModal,
-  'release-push': ChoiceModal,
   'project-create': ProjectCreate,
   'project-plugins-trust': TrustPluginsModal,
 };

@@ -65,13 +65,9 @@ export interface Config {
    * `$schemaVersion` bump; projects from before M24 keep production behaviour.
    */
   remoteApiUrl?: string | null;
-  /**
-   * M25: UUID of this project on the remote (set after the first successful
-   * push). `null`/absent = no remote project yet ⇒ the next push is a first push
-   * (creates a new project from `name`). Additive — no `$schemaVersion` bump; not
-   * a secret (the secret is `access_token` in `remote_session`).
-   */
-  remoteProjectId?: string | null;
+  // 2.1.55 (code-snippet `config-json-shape`): `remoteProjectId` left the file with
+  // M25 (release push removed). A legacy key in an existing file is an unknown key
+  // now — neither validated nor copied, so the next write drops it.
   /**
    * M28: optional Git Sync toggles. Absent/missing ⇒ both `false` (opt-in,
    * forward-compatible with configs written before M28). Additive — no
@@ -432,8 +428,6 @@ export function bootstrapDefaults(cwd: string): Config {
     onboardingCompleted: true,
     // M24: null = use the hardcoded production remote in M24.
     remoteApiUrl: null,
-    // M25: null = no remote project yet ⇒ next push creates one.
-    remoteProjectId: null,
   };
 }
 
@@ -896,8 +890,8 @@ function validate(raw: unknown): Partial<Config> {
     // Syntactic-only check here (sync): parsable via `new URL()` + an `http(s)://`
     // scheme. Reachability is NOT probed at boot (0.1.65) — the client bootstrap is
     // cold; an unreachable-but-syntactically-valid host lets the process start, and
-    // the reachability error surfaces only at the first remote action (login M24,
-    // push M25, clone M27) as a graceful per-action failure.
+    // the reachability error surfaces only at the first remote action (today: the
+    // M24 login) as a graceful per-action failure.
     if (typeof r.remoteApiUrl === 'string' && r.remoteApiUrl.trim() !== '') {
       let parsed: URL;
       try {
@@ -910,12 +904,6 @@ function validate(raw: unknown): Partial<Config> {
       }
     }
     out.remoteApiUrl = r.remoteApiUrl;
-  }
-  if ('remoteProjectId' in r) {
-    if (r.remoteProjectId !== null && typeof r.remoteProjectId !== 'string') {
-      throw typeError('remoteProjectId', 'string | null', r.remoteProjectId);
-    }
-    out.remoteProjectId = r.remoteProjectId;
   }
   if ('git' in r) {
     const g = r.git;

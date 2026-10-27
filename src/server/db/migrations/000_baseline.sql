@@ -179,24 +179,6 @@ CREATE TABLE release_import (
   created_at                TEXT    NOT NULL DEFAULT (datetime('now')),
   updated_at                TEXT    NOT NULL DEFAULT (datetime('now'))
 );
-CREATE TABLE release_push (
-  id                       INTEGER PRIMARY KEY AUTOINCREMENT,
-  release_id               INTEGER NOT NULL REFERENCES spec_release(id),
-  remote_project_id        TEXT,                            -- UUID; NULL only for first-push error rows
-  remote_release_id        TEXT,                            -- UUID of the release on the remote; NULL on error
-  remote_release_sequence  INTEGER,                         -- per-project sequence; NULL on error
-  content_sha256           TEXT    NOT NULL,                -- lowercase hex64; from M17.buildBundleArchive
-  content_size_bytes       INTEGER NOT NULL,                -- from M17.buildBundleArchive
-  deduplicated             INTEGER NOT NULL DEFAULT 0,      -- 0 or 1; the peer dedups by SHA
-  pushed_by_account_id     TEXT    NOT NULL,                -- snapshot of remote_session.remote_account_id
-  pushed_by_account_email  TEXT,                            -- snapshot of remote_session.account_email (cached identity)
-  bundle_schema_version    INTEGER NOT NULL,                -- from M17.buildBundleArchive
-  status                   TEXT    NOT NULL,                -- 'success' | 'error'; validated in app (no SQL CHECK)
-  error_message            TEXT,                            -- populated only for status='error'
-  pushed_at                TEXT    NOT NULL DEFAULT (datetime('now')),
-  created_at               TEXT    NOT NULL DEFAULT (datetime('now')),
-  updated_at               TEXT    NOT NULL DEFAULT (datetime('now'))
-);
 CREATE TABLE remote_session (
   id                INTEGER PRIMARY KEY,
   access_token      TEXT NOT NULL,
@@ -296,8 +278,6 @@ CREATE INDEX idx_file_version_root_release   ON file_version(rootId, release_id)
 CREATE INDEX idx_pv_plan ON plan_version(plan_id);
 CREATE UNIQUE INDEX uq_pv_plan_version ON plan_version(plan_id, version);
 CREATE INDEX idx_release_import_local_release ON release_import(local_release_id);
-CREATE INDEX idx_release_push_release_id        ON release_push (release_id, pushed_at DESC);
-CREATE INDEX idx_release_push_remote_release_id ON release_push (remote_release_id);
 CREATE UNIQUE INDEX uq_remote_session_remote_account_id
   ON remote_session(remote_account_id);
 CREATE INDEX idx_sel_anchor ON section_entity_link(anchor);

@@ -28,7 +28,6 @@ describe('/settings card catalog (0.2.113 §1.6)', () => {
       'user-section',
       'appearance',
       'project',
-      'remote-project',
       'git',
       'directories',
       'entities',
@@ -86,7 +85,7 @@ describe('/settings card catalog (0.2.113 §1.6)', () => {
       byAnchor.get(anchor)!.elements.some((e) => e.configKey !== undefined || (e.keys?.length ?? 0) > 0);
     expect(['project', 'directories', 'git', 'entities', 'agent', 'skills'].every(fileBacked)).toBe(true);
     expect(
-      ['user-section', 'appearance', 'remote-project', 'external-integrations', 'plugin-pool', 'about', 'index-status', 'danger-zone'].some(
+      ['user-section', 'appearance', 'external-integrations', 'plugin-pool', 'about', 'index-status', 'danger-zone'].some(
         fileBacked,
       ),
     ).toBe(false);

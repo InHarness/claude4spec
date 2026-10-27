@@ -10,8 +10,8 @@
  * since last release” at N = 0 and does not block creation.
  *
  * The screen, its hooks and the shared counter query are real; only the
- * network (`fetch`), the router's `Link`/`useNavigate`, the briefs/pushes lists
- * and the per-item diff cards are stubbed.
+ * network (`fetch`), the router's `Link`/`useNavigate`, the briefs list and the
+ * per-item diff cards are stubbed.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement } from 'react';
@@ -33,10 +33,6 @@ vi.mock('@tanstack/react-router', async () => {
     },
   };
 });
-vi.mock('../hooks/useReleasePushes.js', () => ({
-  releasePushesKey: (releaseName: string | undefined) => ['release-pushes', { releaseName }],
-  useAllReleasePushes: () => ({ data: [] }),
-}));
 vi.mock('../hooks/useBriefs.js', () => ({ useBriefs: () => ({ data: [] }) }));
 vi.mock('./BriefsList.js', () => ({ ImplementedBadge: () => null }));
 vi.mock('../core/plugin-host/host.js', () => ({
@@ -258,8 +254,9 @@ describe('/releases screen (M17 releases-list, 2.1.45)', () => {
 
     // Git is off here (no config): no Shadows tab.
     expect(tabLabels()).toEqual(['Releases', 'Changes (5)']);
-    // The M25 banner over the list shows the count but carries no deep link.
-    expect(host.querySelector('[data-testid="unreleased-banner"]')?.textContent).toContain('You have 5 unreleased changes');
+    // 2.1.55: the M25 banner over the list is gone with the release push.
+    expect(host.querySelector('[data-testid="unreleased-banner"]')).toBeNull();
+    expect(host.textContent).not.toContain('unreleased change');
     const links = Array.from(host.querySelectorAll('a'));
     expect(links.filter((a) => a.getAttribute('data-to') === '/releases')).toEqual([]);
     expect(links.filter((a) => (a.getAttribute('data-search') ?? '').includes('compare'))).toEqual([]);
@@ -273,44 +270,6 @@ describe('/releases screen (M17 releases-list, 2.1.45)', () => {
     await flush();
     expect(compareTab().getAttribute('aria-selected')).toBe('true');
     expect(host.textContent).toContain('Compare current state to release:');
-  });
-
-  it('[ac:ac-baner-you-have-n-unreleased-changes-p] the banner "You have N unreleased changes" stands over the release list on /releases while the unreleased counter is above 0, N being that counter', async () => {
-    summaryTotal = { entities: 4, pages: 3 };
-    await mount();
-
-    const banner = host.querySelector<HTMLElement>('[data-testid="unreleased-banner"]');
-    expect(banner?.textContent).toBe(
-      'You have 7 unreleased changes — they will NOT be included in this push. Pull them into this release or create a new one.',
-    );
-    // Over the list: before the first release card, inside the List tab.
-    const firstCard = host.querySelector('a[data-to="/releases/$name"]')!;
-    expect(banner!.compareDocumentPosition(firstCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(panel('list').contains(banner!)).toBe(true);
-    // N is the shared counter — the same number as the Compare tab label, one request for both.
-    expect(compareTab().textContent).toBe('Changes (7)');
-    expect(counterRequests()).toHaveLength(1);
-  });
-
-  it('[ac:ac-baner-you-have-n-unreleased-changes-p] no banner over the list while the unreleased counter is 0, nor without any release', async () => {
-    summaryTotal = { entities: 0, pages: 0 };
-    await mount();
-    expect(host.querySelectorAll('a[data-to="/releases/$name"]')).toHaveLength(2);
-    expect(host.querySelector('[data-testid="unreleased-banner"]')).toBeNull();
-    expect(host.textContent).not.toContain('unreleased change');
-
-    act(() => root.unmount());
-    root = createRoot(host);
-    releaseList = [];
-    summaryTotal = { entities: 4, pages: 3 };
-    qc.clear();
-    // The second half asserts only its own requests: drop the first mount's
-    // counter request (the implementation stays, only the recorded calls go).
-    fetchMock.mockClear();
-    await mount();
-    expect(host.textContent).toContain('No releases yet.');
-    expect(host.querySelector('[data-testid="unreleased-banner"]')).toBeNull();
-    expect(counterRequests()).toEqual([]);
   });
 
   it("[ac:ac-etykieta-zakladki-compare-na-releases] the Compare tab label shows \"Changes (N)\" with N equal to the Compare header's global change counter for the newest release", async () => {
@@ -357,7 +316,7 @@ describe('/releases screen (M17 releases-list, 2.1.45)', () => {
     expect(window.location.href).toBe(urlBefore);
   });
 
-  it('[ac:ac-klik-w-licznik-niezreleasowanych-zmian-n] a tab switch only switches the tab: no refetch of the list, pushes, briefs, the counter or the Compare diff', async () => {
+  it('[ac:ac-klik-w-licznik-niezreleasowanych-zmian-n] a tab switch only switches the tab: no refetch of the list, briefs, the counter or the Compare diff', async () => {
     await mount();
     // Mounting /releases: the release list and the counter, nothing for Compare yet.
     expect(rawDiffRequests()).toEqual([]);

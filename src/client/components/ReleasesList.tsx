@@ -2,10 +2,8 @@ import { useMemo } from 'react';
 import { Link } from '@tanstack/react-router';
 import { ArrowUpRight, FileText, GitCommit, Plus } from 'lucide-react';
 import { useReleaseList } from '../hooks/useReleases.js';
-import { useAllReleasePushes } from '../hooks/useReleasePushes.js';
 import { useBriefs } from '../hooks/useBriefs.js';
 import type { BriefListItemView } from '../lib/briefs-api.js';
-import { UnreleasedBanner } from './release/UnreleasedBanner.js';
 import { ImplementedBadge } from './BriefsList.js';
 import { AcceptedShadowLine } from './release/AcceptedShadowLine.js';
 
@@ -25,18 +23,7 @@ interface Props {
 
 export function ReleasesList({ onCreateClick }: Props) {
   const { data: releases = [], isLoading } = useReleaseList();
-  const { data: pushes = [] } = useAllReleasePushes();
   const { data: briefs = [] } = useBriefs();
-
-  // Per-release count of SUCCESSFUL pushes (dedup hits count; errors do not).
-  const pushedCounts = useMemo(() => {
-    const m = new Map<number, number>();
-    for (const p of pushes) {
-      if (p.status !== 'success') continue;
-      m.set(p.releaseId, (m.get(p.releaseId) ?? 0) + 1);
-    }
-    return m;
-  }, [pushes]);
 
   // 0.1.119 (M17): client-side join of releases + briefs by release NAME (the
   // brief frontmatter's from/toRelease are version strings, not release ids —
@@ -68,7 +55,6 @@ export function ReleasesList({ onCreateClick }: Props) {
   return (
     <div className="flex-1 overflow-auto nice-scroll">
       <div className="mx-auto" style={{ maxWidth: 800, padding: '24px 32px 48px' }}>
-        <UnreleasedBanner />
         {isLoading && (
           <div className="text-center text-[13px] py-10" style={{ color: 'var(--c-subtle)' }}>
             Loading…
@@ -115,14 +101,6 @@ export function ReleasesList({ onCreateClick }: Props) {
                   <span className="text-[11px]" style={{ color: 'var(--c-subtle)' }}>
                     by {r.createdBy} · {formatDate(r.createdAt)}
                   </span>
-                  {pushedCounts.get(r.id) ? (
-                    <span
-                      className="text-[10px] font-mono px-1.5 py-0.5 rounded"
-                      style={{ background: 'var(--c-accent-soft)', color: 'var(--c-accent-ink)' }}
-                    >
-                      {pushedCounts.get(r.id) === 1 ? 'Pushed' : `Pushed ${pushedCounts.get(r.id)}×`}
-                    </span>
-                  ) : null}
                 </div>
                 <div
                   className="text-[12.5px] mt-1"

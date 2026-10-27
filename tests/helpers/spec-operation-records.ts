@@ -1,5 +1,5 @@
 /**
- * 2.1.26 — the window's 78 `spec-operation` records (79 since 2.1.46 added `shadow-diff`, 80 since 2.1.47 added `accept-shadow`; 2.1.48 changed `get-plan`'s `powody.cli`), as `release-diff --from
+ * 2.1.26 — the window's 78 `spec-operation` records (79 since 2.1.46 added `shadow-diff`, 80 since 2.1.47 added `accept-shadow`; 2.1.48 changed `get-plan`'s `powody.cli`; 77 since 2.1.55 deleted `push-release`, `list-release-pushes` and `get-release-push`), as `release-diff --from
  * initial --to 2.1.26` returns them, in the fields a catalog row answers for:
  * `nazwa`, scope, mediation, the four channel values with the channel entries of
  * `powody`, `efekty`, `idempotencja`, `opisTresci`, `reguly`, `kodyBledow` and
@@ -572,23 +572,6 @@ export const SPEC_OPERATION_RECORDS: readonly SpecOperationRecord[] = [
     narzedzia: { internal: ['plan-tools-get-plan-version'], mcp: ['plan-tools-get-plan-version-explicit'] },
   },
   {
-    slug: 'get-release-push',
-    nazwa: 'get_release_push',
-    zasieg: 'project',
-    mediacja: 'direct',
-    internal: 'n/a',
-    cli: 'n/a',
-    mcp: 'n/a',
-    rest: 'direct',
-    powody: { internal: 'kod renderuje operację wyłącznie trasą REST interfejsu, a katalog operacji kodu jej nie deklaruje', mcp: 'kod renderuje operację wyłącznie trasą REST interfejsu, a katalog operacji kodu jej nie deklaruje', cli: 'brak komendy `c4s`; kod renderuje operację wyłącznie trasą REST interfejsu' },
-    efekty: ['brak'],
-    idempotencja: 'tak',
-    opisTresci: 'n/d',
-    reguly: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'explicit-addressing' }],
-    kodyBledow: ['VALIDATION', 'RELEASE_PUSH_NOT_FOUND'],
-    narzedzia: {},
-  },
-  {
     slug: 'get-sections',
     nazwa: 'get_sections',
     zasieg: 'project',
@@ -827,23 +810,6 @@ export const SPEC_OPERATION_RECORDS: readonly SpecOperationRecord[] = [
     narzedzia: { internal: ['workspace-tools-list-projects'], mcp: ['workspace-tools-list-projects'] },
   },
   {
-    slug: 'list-release-pushes',
-    nazwa: 'list_release_pushes',
-    zasieg: 'project',
-    mediacja: 'direct',
-    internal: 'n/a',
-    cli: 'n/a',
-    mcp: 'n/a',
-    rest: 'direct',
-    powody: { internal: 'kod renderuje operację wyłącznie trasą REST interfejsu, a katalog operacji kodu jej nie deklaruje', mcp: 'kod renderuje operację wyłącznie trasą REST interfejsu, a katalog operacji kodu jej nie deklaruje', cli: 'brak komendy `c4s`; kod renderuje operację wyłącznie trasą REST interfejsu' },
-    efekty: ['brak'],
-    idempotencja: 'tak',
-    opisTresci: 'n/d',
-    reguly: [{ id: 'echo-free' }, { id: 'error-code-once' }],
-    kodyBledow: ['VALIDATION'],
-    narzedzia: {},
-  },
-  {
     slug: 'list-skills',
     nazwa: 'list_skills',
     zasieg: 'project',
@@ -1012,23 +978,6 @@ export const SPEC_OPERATION_RECORDS: readonly SpecOperationRecord[] = [
     reguly: [{ id: 'error-code-once' }, { id: 'echo-free', wykluczenie: 'nie mutuje' }],
     kodyBledow: ['n/d'],
     narzedzia: { mcp: ['c4s-reader-overview'] },
-  },
-  {
-    slug: 'push-release',
-    nazwa: 'push_release',
-    zasieg: 'project',
-    mediacja: 'human-mediated',
-    internal: 'n/a',
-    cli: 'n/a',
-    mcp: 'n/a',
-    rest: 'direct',
-    powody: { cli: 'akt user-initiated: push wyprowadza bajty specyfikacji poza maszynę pod tożsamością zalogowanego użytkownika; przegląd klasyfikacji otwarty', internal: 'akt user-initiated: push wyprowadza bajty specyfikacji poza maszynę pod tożsamością zalogowanego użytkownika; przegląd klasyfikacji otwarty', mcp: 'akt user-initiated: push wyprowadza bajty specyfikacji poza maszynę pod tożsamością zalogowanego użytkownika; przegląd klasyfikacji otwarty' },
-    efekty: ['plik', 'db', 'ui-notify'],
-    idempotencja: 'nie',
-    opisTresci: 'n/d',
-    reguly: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'explicit-addressing' }],
-    kodyBledow: ['NOT_CONNECTED', 'ACCOUNT_NOT_ACTIVE', 'SESSION_EXPIRED', 'PUSH_FAILED', 'RELEASE_NOT_FOUND', 'VALIDATION'],
-    narzedzia: {},
   },
   {
     slug: 'release-create',

@@ -3,8 +3,7 @@ import type { GitService } from '../services/git.js';
 import type { GitFetchResponse, GitShadowsResponse, GitStatusResponse, GitSyncResponse } from '../../shared/git.js';
 
 /**
- * M28 — `/api/git/*`. Own prefix (exception to the L4 convention, analogous to
- * `/api/release-pushes/*` and `/api/remote-project/*`). `GET /status`,
+ * M28 — `/api/git/*`. Own prefix (exception to the L4 convention). `GET /status`,
  * `GET /branches` and `GET /shadows` are read-only. `POST /checkout` and `POST /sync` (HEAD and
  * working tree) and `POST /fetch` (remote-tracking refs) write to `.git` but — like the
  * others — never surface an HTTP error for a domain outcome

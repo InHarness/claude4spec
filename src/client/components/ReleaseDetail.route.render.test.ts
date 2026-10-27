@@ -43,7 +43,6 @@ vi.mock('../hooks/useReleases.js', async (importOriginal) => {
     useReleaseDiff: () => ({ data: undefined }),
     useReleaseSnapshot: () => ({ data: undefined }),
     useRestoreSpec: () => ({ mutateAsync: async () => {} }),
-    useUnreleasedCount: () => ({ data: 0 }),
     forgetReleaseName: (_qc: unknown, oldName: string) => {
       state.forgotten.push(oldName);
     },
@@ -61,21 +60,12 @@ vi.mock('../hooks/useReleases.js', async (importOriginal) => {
     }),
   };
 });
-vi.mock('../hooks/useReleasePushes.js', () => ({
-  useReleasePushes: () => ({ data: [] }),
-  useAllReleasePushes: () => ({ data: [] }),
-  usePushRelease: () => ({ isPending: false, mutateAsync: async () => ({}) }),
-}));
 vi.mock('../hooks/useConfig.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../hooks/useConfig.js')>();
-  return { ...actual, useConfig: () => ({ data: { name: 'p', remoteProjectId: null } }) };
+  return { ...actual, useConfig: () => ({ data: { name: 'p' } }) };
 });
-vi.mock('../hooks/useRemoteAccount.js', () => ({
-  useRemoteAccount: () => ({ data: { connected: false } }),
-}));
 vi.mock('./release/DeltaSection.js', () => ({ DeltaSection: () => null }));
 vi.mock('./release/ReleaseSelect.js', () => ({ ReleaseSelect: () => null }));
-vi.mock('./release/ReleasePushesList.js', () => ({ ReleasePushesList: () => null }));
 vi.mock('./CreateBriefDialog.js', () => ({ CreateBriefDialog: () => null }));
 
 import { BASE_ROUTE_CHILDREN, rootRoute } from '../router.js';

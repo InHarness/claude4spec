@@ -11,7 +11,7 @@
  * The screen, its hooks, `DeltaSection` and the real diff cards are rendered;
  * only the network (`fetch`), the router's `Link`, the config, the entity
  * registry (one `endpoint` type whose card prints its entity) and the
- * briefs/pushes lists are stubbed.
+ * briefs list is stubbed.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -54,10 +54,6 @@ vi.mock('@tanstack/react-router', async () => {
     useNavigate: () => () => {},
   };
 });
-vi.mock('../hooks/useReleasePushes.js', () => ({
-  releasePushesKey: (releaseName: string | undefined) => ['release-pushes', { releaseName }],
-  useAllReleasePushes: () => ({ data: [] }),
-}));
 vi.mock('../hooks/useBriefs.js', () => ({ useBriefs: () => ({ data: [] }) }));
 vi.mock('./BriefsList.js', () => ({ ImplementedBadge: () => null }));
 vi.mock('../core/plugin-host/host.js', () => ({

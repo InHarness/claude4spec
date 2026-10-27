@@ -126,8 +126,7 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
    * Matched by body-parser's `type`, NOT by `status` alone. Any error carrying a
    * numeric 4xx would also catch `RemoteRequestError`, which stores the REMOTE
    * peer's status: a rate-limited upstream (429) would then be rendered to the
-   * user as "your request is malformed", and `remote-project.ts` already maps
-   * that same error to `502 REMOTE_UNAVAILABLE`. A relay's status is not this
+   * user as "your request is malformed". A relay's status is not this
    * caller's fault, and it must keep falling through to the 500 branch below,
    * which is also the only one that logs.
    */

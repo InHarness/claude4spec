@@ -106,7 +106,7 @@ describe('clone across page roots (2.1.8)', () => {
     }
 
     // (2) the config the clone writes carries every root entry of the bundle.
-    const patch = buildClonePatch({ ...config, roots: ROOTS } as never, { projectId: 'p1', fallbackName: 'X' });
+    const patch = buildClonePatch({ ...config, roots: ROOTS } as never, { fallbackName: 'X' });
     expect(patch.roots?.map((r) => [r.id, r.dir])).toEqual([
       ['pages', 'pages'],
       ['adr', 'docs/adr'],

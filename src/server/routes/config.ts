@@ -185,7 +185,6 @@ function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRe
       },
       switchAfterRelease: c.git.switchAfterRelease,
     },
-    remoteProjectId: c.remoteProjectId ?? null,
     remoteApiUrl: c.remoteApiUrl ?? null,
     $schemaVersion: c.$schemaVersion,
     /** 0.2.113: the running app's version, for the About card beside `$schemaVersion`. */

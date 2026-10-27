@@ -1,26 +1,16 @@
 import type { FieldDeclaration } from '../settings/field-registry.js';
 
 /**
- * 0.2.113 — the two remote identifiers.
- *
- * `remoteProjectId` belongs to release push: set by the first successful push,
- * cleared by Disconnect (`PATCH { remoteProjectId: null }` ⇒ the next push founds a
- * new remote project).
+ * 0.2.113 — the remote account's settings field.
  *
  * `remoteApiUrl` belongs to the remote account (M24 dev/staging override). Whether it
  * may be written through the API is an OPEN decision in the spec; until it is taken,
  * it keeps its pre-0.2.113 status — hand-edited only.
+ *
+ * 2.1.55: the release-push `remoteProjectId` field is gone with M25 — it is neither
+ * answered by `GET /api/config` nor accepted by `PATCH /api/config`.
  */
 export const REMOTE_SETTINGS_FIELDS: FieldDeclaration[] = [
-  {
-    key: 'remoteProjectId',
-    owner: 'release-push',
-    type: 'string|null',
-    default: null,
-    effect: 'per-operation',
-    resumeLock: false,
-    apiWritable: true,
-  },
   {
     key: 'remoteApiUrl',
     owner: 'remote-account',

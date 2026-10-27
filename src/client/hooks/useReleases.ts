@@ -4,7 +4,6 @@ import { releasesApi } from '../lib/releases-api.js';
 import { CURRENT_RELEASE_NAME, type CreateReleaseResponse, type ShadowAcceptRequest } from '../../shared/entities.js';
 import { unreleasedCountOf } from '../../shared/unreleased-counter.js';
 import { releasesService } from '../runtime/releases-service.js';
-import { releasePushesKey } from './useReleasePushes.js';
 import { SHADOW_DIFF_KEY, shadowDiffKey } from '../lib/release-diff-invalidation.js';
 import { GIT_SHADOWS_KEY } from '../lib/git-ws.js';
 import { useGitOpsStore } from '../state/gitOps.js';
@@ -62,9 +61,9 @@ export function unreleasedCounterKey(latestReleaseName: string) {
 
 /**
  * 2.1.45 (M17 L2 zbc9jdnr) — THE unreleased counter, the one shared frontend
- * query every consumer reads (Compare tab label, create-release warning, M25
- * banner): the size of the light `release_diff` delta from the newest release
- * (the head of the newest-first `['releases']` list) to `current` — changed
+ * query every consumer reads (Compare tab label, create-release warning): the
+ * size of the light `release_diff` delta from the newest release (the head of
+ * the newest-first `['releases']` list) to `current` — changed
  * entities plus changed pages (`unreleasedCountOf`), not a count of versions.
  * Without any release the counter does not exist: `data` is `undefined`.
  *
@@ -250,7 +249,6 @@ export function useUpdateRelease() {
       qc.setQueryData(['release', updated.name], updated);
       if (updated.name === params.releaseName) {
         qc.invalidateQueries({ queryKey: ['release', updated.name] });
-        qc.invalidateQueries({ queryKey: releasePushesKey(updated.name) });
       }
     },
   });
@@ -258,14 +256,13 @@ export function useUpdateRelease() {
 
 /**
  * 2.1.11: drop every query keyed by a release name that no longer exists (after
- * a rename): the detail, the snapshot, the push log and any diff naming it on
+ * a rename): the detail, the snapshot and any diff naming it on
  * either side. A later visit to the old address then fetches afresh and behaves
  * like any unknown name. Call it once nothing on screen observes the old name.
  */
 export function forgetReleaseName(qc: QueryClient, oldName: string): void {
   qc.removeQueries({ queryKey: ['release', oldName], exact: true });
   qc.removeQueries({ queryKey: ['release-snapshot', oldName], exact: true });
-  qc.removeQueries({ queryKey: releasePushesKey(oldName), exact: true });
   qc.removeQueries({
     predicate: (q) => q.queryKey[0] === 'release-diff' && (q.queryKey[1] === oldName || q.queryKey[2] === oldName),
   });

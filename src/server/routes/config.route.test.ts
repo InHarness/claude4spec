@@ -527,7 +527,6 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
       disableDirectFilesystemAccess: true,
       pathScopeStrength: 'none',
     });
-    expect(body.remoteProjectId).toBeNull();
     expect(body.remoteApiUrl).toBeNull();
     expect(body.git).toEqual({
       enabled: false,
@@ -537,7 +536,8 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
     });
     expect(body.onboarding).toEqual({ completed: true });
     expect(body.$schemaVersion).toBe(4);
-    for (const k of ['plansDir', 'briefsDir', 'patchesDir', 'entitiesDir', 'releasesDir', 'consistency', 'plugins']) {
+    // 2.1.55: `remoteProjectId` left the response with M25 (release push removed).
+    for (const k of ['plansDir', 'briefsDir', 'patchesDir', 'entitiesDir', 'releasesDir', 'consistency', 'plugins', 'remoteProjectId']) {
       expect(k in body, k).toBe(false);
     }
   });
@@ -556,9 +556,10 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
         language: 'English',
         agent: { claudeUsePreset: true, conversationalLanguage: 'Polski', allowedPaths: ['/opt/x'], disallowedPaths: ['/opt/y'], disableDirectFilesystemAccess: false },
         git: { enabled: true },
-        remoteProjectId: '11111111-2222-3333-4444-555555555555',
         onboardingCompleted: true,
-        // Not writable here: fixed system roots, response-only fields, the removed per-plugin namespace.
+        // Not writable here: fixed system roots, response-only fields, the removed per-plugin namespace,
+        // and (2.1.55) the release-push `remoteProjectId` that left with M25.
+        remoteProjectId: '11111111-2222-3333-4444-555555555555',
         plugins: { 'c4s-plugin-x': { flag: true } },
         plansDir: 'docs/plans',
         releasesDir: 'rel',
@@ -577,12 +578,12 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
       language: 'English',
       agent: { claudeUsePreset: true, conversationalLanguage: 'Polski', allowedPaths: ['/opt/x'], disallowedPaths: ['/opt/y'], disableDirectFilesystemAccess: false },
       git: { enabled: true },
-      remoteProjectId: '11111111-2222-3333-4444-555555555555',
       onboardingCompleted: true,
     });
     expect(res.body.elementsMenu).toEqual(file.elementsMenu);
-    for (const k of ['plansDir', 'releasesDir', 'configHash', 'writingStyleUnavailable', 'plugins']) expect(k in file, k).toBe(false);
+    for (const k of ['plansDir', 'releasesDir', 'configHash', 'writingStyleUnavailable', 'plugins', 'remoteProjectId']) expect(k in file, k).toBe(false);
     expect('plugins' in res.body).toBe(false);
+    expect('remoteProjectId' in res.body).toBe(false);
     // A roots[] entry missing one of its four fields is refused.
     const partial = await request(app()).patch('/config').send({ roots: [{ id: 'pages', name: 'Pages', dir: 'pages' }] });
     expect(partial.status).toBe(400);
