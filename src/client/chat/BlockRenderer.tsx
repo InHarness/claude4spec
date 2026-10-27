@@ -516,6 +516,9 @@ function PersistedUserInputCard({
   responseContent: string | null;
 }) {
   const [open, setOpen] = useState(false);
+  // A question-less request (or a row whose payload lost its list) renders as
+  // a card with no questions rather than taking the transcript down.
+  const questions = Array.isArray(request?.questions) ? request.questions : [];
   let response: UserInputResponse | null = null;
   if (responseContent) {
     try {
@@ -545,7 +548,7 @@ function PersistedUserInputCard({
         {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
         <HelpCircle size={11} />
         <span className="font-mono text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>
-          user question · {request.origin}
+          user question · {request?.origin}
         </span>
         <span className="flex-1" />
         <span className="text-[10.5px] font-mono uppercase" style={{ color: actionColor }}>
@@ -554,12 +557,12 @@ function PersistedUserInputCard({
       </button>
       {!open && (
         <div className="px-3 py-2 text-[12.5px]" style={{ color: 'var(--c-ink)' }}>
-          {request.questions[0]?.question ?? '(question)'}
+          {questions[0]?.question ?? '(question)'}
         </div>
       )}
       {open && (
         <div className="px-3 py-2.5 space-y-3">
-          {request.questions.map((q, i) => {
+          {questions.map((q, i) => {
             const answer = response?.answers?.[i] ?? [];
             return (
               <div key={i}>

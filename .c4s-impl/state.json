@@ -1,5 +1,5 @@
 {
-  "iteration": 18,
+  "iteration": 28,
   "errors": 0,
   "systemVerified": false,
   "conventions": [
@@ -816,15 +816,75 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "m53-stan-tury/p1-domain-l5",
+          "layers": [
+            "Domain",
+            "L5"
+          ],
+          "slugs": [
+            "ac-blok-listy-zadan-modelu-aktualizuje-s",
+            "ac-blok-zadania-w-tle-przezywa-przeladow",
+            "ac-dismiss-karty-user-input-request-pozb-2",
+            "ac-dwa-rownolegle-zadania-w-tle-jednej-t",
+            "ac-jedyna-wartoscia-status-na-ktorej-ren",
+            "ac-karta-podagenta-w-stanie-running-poka",
+            "ac-kontynuacja-po-zadaniu-w-tle-lub-dele",
+            "ac-merged-dispatch-zeruje-zegar-tury",
+            "ac-na-turze-zaparkowanej-banki-streaming",
+            "ac-na-user-input-request-odtworzone-z-hi",
+            "ac-nieznana-wartosc-tasktype-unia-jest-o",
+            "ac-nieznany-task-type-renderuje-sie-neut",
+            "ac-obok-banki-streaming-widac-zegar-tury",
+            "ac-odtworzony-blok-zadania-w-tle-stoi-na",
+            "ac-po-f5-nad-zywa-tura-zegar-pokazuje-cz",
+            "ac-po-f5-ui-pokazuje-pelna-tresc-trwajac",
+            "ac-po-f5-zegar-zywego-zadania-w-tle-licz",
+            "ac-po-odpowiedzi-404-not-found-na-dolacz",
+            "ac-po-odswiezeniu-przegladarki-overlay-o",
+            "ac-po-przeladowaniu-pytanie-agenta-i-odp",
+            "ac-po-przeladowaniu-watku-karta-delegacj",
+            "ac-pole-outputfile-renderuje-sie-jako-ni-2",
+            "ac-pole-status-zdarzen-rodziny-backgroun",
+            "ac-przed-pierwszym-result-tury-wskaznik",
+            "ac-przelaczenie-watku-a-b-a-przywraca-zy",
+            "ac-przelaczenie-watku-a-b-podczas-stream",
+            "ac-przy-503-agent-unavailable-z-powodu-b",
+            "ac-spinner-holdu-wraca-po-f5-nad-zywa-tu",
+            "ac-starsze-wiadomosci-watku-z-bardzo-dlu",
+            "ac-strumien-odmowy-polityki-overlay-poka",
+            "ac-tura-czysto-tekstowa-wznawia-sie-po-f",
+            "ac-tykniecia-zegara-tury-nie-sa-oglaszan",
+            "ac-userinputrequest-questions-bedace-pus",
+            "ac-w-zywej-sesji-karta-delegacji-bez-sub",
+            "ac-wartosc-status-pochodzaca-z-kontraktu",
+            "ac-wiadomosc-wepchnieta-w-trakcie-pracy",
+            "ac-wiersz-zadania-w-tle-o-statusie-innym",
+            "ac-wiersz-zadania-w-tle-o-statusie-runni",
+            "ac-wskaznik-holdu-pokazuje-wygasniecie-s",
+            "ac-wskaznik-zajetosci-pokazuje-sie-na-za",
+            "ac-zadania-w-tle-renderuja-sie-w-turze-j",
+            "ac-zadanie-w-tle-o-statusie-abandoned-re",
+            "ac-zdarzenie-user-input-request-renderuj"
+          ],
+          "status": "implemented",
+          "rounds": 3,
+          "partial": 0,
+          "only": [],
+          "uncovered": []
+        }
+      ],
+      "startCommit": "e54c6cd38aaf10ce0d54782e8df50f6b73267ad3",
+      "baseCommit": "3280de9b07b3e2a9d0c3ba55abe7aed4db21e6a0",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 3
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     }
   ],
   "entityTypes": [

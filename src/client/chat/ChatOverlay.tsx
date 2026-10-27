@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from 'react';
 import { ApiError, apiFetch } from '../lib/api-core.js';
 import { useMatches, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
@@ -36,6 +36,18 @@ const NEW_THREAD_DRAFT_KEY = '__new__';
  * switch wątku wykonany chwilę później przez użytkownika.
  */
 const PREFILL_HANDOFF_MS = 1000;
+
+/**
+ * M53: how many messages of the thread the list renders at once, and how many
+ * more each scroll to its top reveals. ASSUMPTION:dev-0005 — the thread read
+ * stays whole (the live-join cut and the per-user metadata need every row), so
+ * "loading older messages" is a render window over it: a thread with a very
+ * long history mounts its newest messages only, and the older ones are added
+ * as the user scrolls up.
+ */
+export const HISTORY_WINDOW = 60;
+/** Scroll offset from the top (px) at which the next older window is revealed. */
+const REVEAL_OLDER_AT_PX = 40;
 
 /**
  * Display label for an alias (`haiku-4.5` → "Haiku 4.5"). Cosmetic only — nothing about
@@ -364,21 +376,62 @@ export function ChatOverlay() {
     [chatThreadId, threadList],
   );
 
-  const displayMessages = useMemo(
-    () => messages.map((msg) => ({ ...msg, blocks: batchToolBlocks(msg.blocks) })),
-    [messages],
-  );
-
   // 0.2.109: while the turn is parked nothing streams, so the "streaming" badge
   // gives way to the parked turn's own indicator (`busyIndicator`).
   const showStreamingBubble = streamingBubbleVisible({ isStreaming, isResuming, isParked });
+
+  // Long history: the list renders the thread's newest `HISTORY_WINDOW` messages;
+  // scrolling to the top reveals the next window, keeping the viewport on the
+  // message the user was reading. The window is anchored on a start index (how
+  // many of the oldest messages stay hidden): before the first reveal it follows
+  // the newest messages, after a reveal it is a fixed count, so messages arriving
+  // in a live turn never re-hide what the user revealed. It is keyed by thread
+  // and dropped during render, so a thread switch (A → B → A included) starts
+  // from the newest window on its very first render — the previous thread's
+  // enlarged window never mounts.
+  const [revealedWindow, setRevealedWindow] = useState<{ threadId: string | null; start: number } | null>(null);
+  const pinned = revealedWindow?.threadId === chatThreadId;
+  if (revealedWindow && !pinned) setRevealedWindow(null);
+  const hiddenOlder = pinned
+    ? Math.min(revealedWindow.start, messages.length)
+    : Math.max(0, messages.length - HISTORY_WINDOW);
+
+  // Only the visible slice is batched and mapped: the hidden prefix costs no work
+  // per streamed delta. `firstUserIdx` = the user messages in the hidden prefix —
+  // the per-user metadata (`userPlanModes`/`userAnnotations`) is indexed over the
+  // whole thread.
+  const { displayMessages, firstUserIdx } = useMemo(() => {
+    let hiddenUsers = 0;
+    for (let i = 0; i < hiddenOlder; i++) if (messages[i]!.role === 'user') hiddenUsers++;
+    return {
+      displayMessages: messages
+        .slice(hiddenOlder)
+        .map((msg) => ({ ...msg, blocks: batchToolBlocks(msg.blocks) })),
+      firstUserIdx: hiddenUsers,
+    };
+  }, [messages, hiddenOlder]);
+
+  /** Distance from the list's bottom to keep across a reveal (null = nothing to restore). */
+  const keepFromBottomRef = useRef<number | null>(null);
+  const revealOlder = useCallback(() => {
+    const el = listRef.current;
+    keepFromBottomRef.current = el ? el.scrollHeight - el.scrollTop : null;
+    setRevealedWindow({ threadId: chatThreadId, start: Math.max(0, hiddenOlder - HISTORY_WINDOW) });
+  }, [chatThreadId, hiddenOlder]);
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    const fromBottom = keepFromBottomRef.current;
+    keepFromBottomRef.current = null;
+    if (el && fromBottom != null) el.scrollTop = el.scrollHeight - fromBottom;
+  }, [revealedWindow]);
 
   const handleListScroll = useCallback(() => {
     const el = listRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     stickToBottomRef.current = distanceFromBottom < 80;
-  }, []);
+    if (hiddenOlder > 0 && el.scrollTop <= REVEAL_OLDER_AT_PX) revealOlder();
+  }, [hiddenOlder, revealOlder]);
 
   useEffect(() => {
     const el = listRef.current;
@@ -587,6 +640,7 @@ export function ChatOverlay() {
         <div
           ref={listRef}
           onScroll={handleListScroll}
+          data-chat-message-list=""
           className={`flex-1 overflow-auto nice-scroll ${systemPromptViewOpen ? '' : 'px-3 py-3'}`}
         >
           {systemPromptViewOpen ? (
@@ -601,8 +655,20 @@ export function ChatOverlay() {
                   Start a conversation.
                 </div>
               )}
+              {hiddenOlder > 0 && (
+                <button
+                  type="button"
+                  onClick={revealOlder}
+                  data-older-messages={hiddenOlder}
+                  className="w-full mb-3 py-1 text-[11px] font-mono"
+                  style={{ color: 'var(--c-subtle)' }}
+                >
+                  Scroll up to load {Math.min(hiddenOlder, HISTORY_WINDOW)} earlier message
+                  {Math.min(hiddenOlder, HISTORY_WINDOW) === 1 ? '' : 's'}
+                </button>
+              )}
               {(() => {
-                let userIdx = 0;
+                let userIdx = firstUserIdx;
                 return displayMessages.map((msg) => {
                   const isUser = msg.role === 'user';
                   const thisIdx = isUser ? userIdx++ : -1;

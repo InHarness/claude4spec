@@ -61,3 +61,30 @@
 ## m53-powloka review base (orchestrator)
 
 - The unit-verifier reopen moved `startCommit` before any review round ran, so the first review reads `baseCommit..HEAD` (the whole unit), not only the reopen fix.
+
+## m53-stan-tury/p1-domain-l5 (implementer)
+
+- Most of the unit had already moved and worked. It now has client tests carrying its slugs: `useChat.turn-state.test.ts` (real hook over a faked network, blocks drawn by `<BlockRenderer />`), `BackgroundTaskPanel.render.test.ts`, `UserInputRequestCard.render.test.ts`, `useChat.hydration.test.ts`, and `ChatOverlay.render.test.ts`. The clock, busy-indicator and delegation-status slugs keep their earlier client tests (`work-clock.render.test.ts`, `useChat.turn-clock.test.ts`, `useChat.turn-endings.test.ts`). `ac-tura-czysto-tekstowa-wznawia-sie-po-f` also has its server tag in `chat.live-join.test.ts`, so its client half now gets a tag of its own.
+- Real changes:
+  - Hold-cap ending (`ie5g78h8`, `x2jiptny`). The line is set on `BACKGROUND_HOLD_EXPIRED` even when no background task of ours is running, because a hold kept only by a delegation ends the same way. Its wording is the server's message, built from both abandoned-work counters (`HoldEnding.detail`). Before, the line counted local background tasks only, and showed nothing for a hold kept only by a delegation.
+  - Policy refusal. The toast for `TOOL_POLICY_REFUSED` now reads "Turn refused — …". The `error` and `done` frames already closed the turn, so no bubble or clock is left waiting.
+  - Agent question with no questions. `<UserInputRequestCard />` renders no form and no `Send answer` when the questions are missing or empty, so it offers only `Decline` and `Cancel`. Before, `Send answer` was enabled on an empty list, and an absent list crashed the card. The history card reads its questions defensively too.
+  - Long history (`ac-starsze-wiadomosci-watku-z-bardzo-dlu`, dev-0005). The message list renders the newest 60 messages. Scrolling to the top, or clicking the "Scroll up to load N earlier messages" line, adds the next 60 and keeps the viewport where it was. The thread read stays whole, because the live-join cut needs every row.
+- `connected.replayTruncated` (dev-0006). agent-chat 0.4.0 never gives `connected` to `onEvent`, so the existing "Replay incomplete" toast branch in `useChat` cannot run. It is kept as the seam a library fix plugs into, and is marked in code. `ac-po-f5-ui-pokazuje-pelna-tresc-trwajac` is tested for its full-turn half and left the skiplist.
+- Model task list (`bc08os5a`). The sticky `<CurrentTodoList />` stays the block. The section only moved, and its two sources (model update, session restore) both arrive as full snapshots that are rendered as they are. The per-item merge for `Task*` versus whole replacement for `TodoWrite` is done in the adapter, and the client test asserts what the user sees for each.
+- Attribution: client turn-state comments in `useChat.ts`, `BackgroundTaskPanel.tsx` and `StreamingBubble.tsx` now name M53. The queue endpoints comment still names M05, because those routes are M05's.
+
+## m53-stan-tury: agent-chat 0.4.1 (user decision, 2026-10-27)
+
+- dev-0006 (trimmed-replay notice unreachable on agent-chat 0.4.0) was resolved at the library: the user chose to release `@inharness-ai/agent-chat` 0.4.1 (PR InHarness/agent-chat#7), where `onConnected(requestId, threadId, frame)` receives the whole `connected` frame (`ConnectedFrame`). The app pins `^0.4.1`; the worktree has its own `npm ci` install (no symlink to the main checkout).
+
+## m53-stan-tury/p1-domain-l5 reopen (implementer, agent-chat 0.4.1)
+
+- The trimmed-replay notice moved from `onEvent` to `onConnected(requestId, threadId, frame)`: agent-chat 0.4.1 hands the whole `connected` frame there and still never to `onEvent`. The `onEvent` branch and the `connected` member of `WireEventExtended` (used only by that branch) are removed; the `ASSUMPTION:dev-0006` marker is gone from code. The notice sits after the stale-thread guard, so a `connected` from a thread the user already left raises nothing.
+- Tests: `useChat.turn-state.test.ts` drives a real live-join with `connected.replayTruncated: true` and asserts one warning toast with the "Replay incomplete" text, plus an untrimmed join that raises none. The `ASSUMPTION:dev-0006` markers in `src/server/routes/agent-turn.test.ts` belong to an earlier brief's deviation of the same number and are not touched.
+
+## m53-stan-tury/p1-domain-l5 reopen (implementer, rev-0001 + rev-0002)
+
+- rev-0001: `ChatOverlay` slices the thread to the visible window first and runs `batchToolBlocks` and the copy only over that slice. The user-message counter starts at the number of user messages in the hidden prefix (`firstUserIdx`), so `userPlanModes`/`userAnnotations` still index over the whole thread. The null branch for hidden messages is gone.
+- rev-0002: the window is a start index (`revealedWindow = { threadId, start }`, the count of oldest hidden messages). Before the first reveal there is no pinned start and the window is the newest 60. A start pinned at thread switch would be computed against the previous thread's messages, because `useChat` hydrates the new thread after the switch render. After a reveal the start is a fixed count, so live messages never re-hide what the user revealed. A start that belongs to another thread is dropped during render (setState in render), so a switch, A → B → A included, renders the newest window on its first render. The `useEffect` reset is removed.
+- Tests: `ChatOverlay.render.test.ts` spies on `batchToolBlocks` and `BlockRenderer` (pass-through). It asserts that a delta batches only `HISTORY_WINDOW` messages, that plan-mode indexing holds across the hidden prefix, that a new message after a reveal keeps the revealed range (`msg-0010`, 10 hidden), and that a switch never renders the other thread's hidden history, not even on its first render.

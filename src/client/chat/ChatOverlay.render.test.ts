@@ -64,6 +64,31 @@ vi.mock('./useChat.js', async (importOriginal) => ({
   },
 }));
 
+// Pass-through spies: which message blocks the list batches and renders.
+const batched = vi.hoisted(() => ({ count: 0 }));
+vi.mock('@inharness-ai/agent-chat', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@inharness-ai/agent-chat')>();
+  return {
+    ...actual,
+    batchToolBlocks: (blocks: Parameters<typeof actual.batchToolBlocks>[0]) => {
+      batched.count++;
+      return actual.batchToolBlocks(blocks);
+    },
+  };
+});
+const rendered = vi.hoisted(() => ({ blocks: [] as Array<{ text?: string; planMode?: boolean }> }));
+vi.mock('./BlockRenderer.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./BlockRenderer.js')>();
+  return {
+    ...actual,
+    BlockRenderer: (props: Parameters<typeof actual.BlockRenderer>[0]) => {
+      // React dev may call a component once more without props (component stack).
+      if (props) rendered.blocks.push({ text: (props.block as { text?: string }).text, planMode: props.planMode });
+      return createElement(actual.BlockRenderer, props);
+    },
+  };
+});
+
 const threads = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock('./ThreadListContext.js', () => ({ useThreadListContext: () => threads.value }));
 
@@ -104,7 +129,7 @@ vi.mock('../ui/events.js', async (importOriginal) => ({
 }));
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ChatOverlay } from './ChatOverlay.js';
+import { ChatOverlay, HISTORY_WINDOW } from './ChatOverlay.js';
 import { CHAT_ENDPOINTS } from './useChat.js';
 import { useChatStore } from '../state/chat.js';
 
@@ -216,6 +241,8 @@ beforeEach(() => {
   composer.props = null;
   chat.opts = null;
   chat.value = chatValue();
+  batched.count = 0;
+  rendered.blocks = [];
   threads.value = threadList([thread()]);
   cfg.chatConfig = CONFIG;
   route.matches = [];
@@ -603,5 +630,109 @@ describe('model settings popover', () => {
     expect(retired.textContent).toContain('No longer offered');
     expect(retired.disabled).toBe(true);
     expect(chat.opts!.model).toBe('opus-4.1');
+  });
+});
+
+describe('message list — turn state (M53 Stan tury w UI)', () => {
+  const history = (prefix: string, length: number) =>
+    Array.from({ length }, (_, i) => ({
+      id: `${prefix}${i}`,
+      role: i % 2 ? 'assistant' : 'user',
+      blocks: [{ type: 'text', text: `${prefix}-${String(i).padStart(4, '0')}`, isStreaming: false }],
+      timestamp: '',
+      isStreaming: false,
+    }));
+  const shownOf = (prefix: string) => () => host.textContent?.match(new RegExp(`${prefix}-\\d{4}`, 'g')) ?? [];
+  const scrollListToTop = () => {
+    const list = host.querySelector('[data-chat-message-list]') as HTMLDivElement;
+    list.scrollTop = 0;
+    act(() => {
+      list.dispatchEvent(new Event('scroll'));
+    });
+  };
+
+  it('[ac:ac-starsze-wiadomosci-watku-z-bardzo-dlu] older messages of a thread with a very long history load into the overlay as the list is scrolled up', () => {
+    const messages = history('msg', 130);
+    const userPlanModes: boolean[] = [];
+    userPlanModes[40] = true; // user message #40 of the thread = msg-0080
+    chat.value = chatValue({ messages, userPlanModes });
+    render();
+    const shown = shownOf('msg');
+
+    // The newest window only — and only it is batched and rendered.
+    expect(shown()).toHaveLength(HISTORY_WINDOW);
+    expect(shown()[0]).toBe('msg-0070');
+    expect(shown()[shown().length - 1]).toBe('msg-0129');
+    expect(host.querySelector('[data-older-messages]')?.getAttribute('data-older-messages')).toBe('70');
+    expect(rendered.blocks.some((b) => b.text === 'msg-0069')).toBe(false);
+    // Per-user metadata stays indexed over the whole thread, hidden prefix included.
+    expect(rendered.blocks.find((b) => b.text === 'msg-0080')?.planMode).toBe(true);
+    expect(rendered.blocks.find((b) => b.text === 'msg-0082')?.planMode).toBe(false);
+
+    // A streamed delta batches the visible slice, not the hidden history.
+    batched.count = 0;
+    chat.value = chatValue({ messages: [...messages], userPlanModes });
+    rerender();
+    expect(batched.count).toBe(HISTORY_WINDOW);
+
+    // Scrolled to the top: the next older window is added above.
+    scrollListToTop();
+    expect(shown()).toHaveLength(2 * HISTORY_WINDOW);
+    expect(shown()[0]).toBe('msg-0010');
+
+    // A message arriving in a live turn does not re-hide what was revealed.
+    const withNew = [...messages, ...history('msg', 131).slice(130)];
+    chat.value = chatValue({ messages: withNew, userPlanModes });
+    rerender();
+    expect(shown()).toHaveLength(2 * HISTORY_WINDOW + 1);
+    expect(shown()[0]).toBe('msg-0010');
+    expect(shown()[shown().length - 1]).toBe('msg-0130');
+    expect(host.querySelector('[data-older-messages]')?.getAttribute('data-older-messages')).toBe('10');
+
+    scrollListToTop();
+    expect(shown()).toHaveLength(131);
+    expect(shown()[0]).toBe('msg-0000');
+    expect(host.querySelector('[data-older-messages]')).toBeNull();
+  });
+
+  it('[ac:ac-starsze-wiadomosci-watku-z-bardzo-dlu] a thread switch starts from the newest window, even on its first render', () => {
+    chat.value = chatValue({ messages: history('msg', 130) });
+    render();
+    scrollListToTop();
+    scrollListToTop();
+    expect(shownOf('msg')()).toHaveLength(130);
+
+    // Switch to another long thread: its older history never mounts, not even for one frame.
+    rendered.blocks = [];
+    act(() => {
+      chat.value = chatValue({ messages: history('oth', 130) });
+      useChatStore.setState({ chatThreadId: 't2' });
+    });
+    expect(shownOf('oth')()).toHaveLength(HISTORY_WINDOW);
+    expect(shownOf('oth')()[0]).toBe('oth-0070');
+    expect(rendered.blocks.some((b) => b.text === 'oth-0069')).toBe(false);
+
+    // Back to the first thread: newest window again, not the window revealed before.
+    act(() => {
+      chat.value = chatValue({ messages: history('msg', 130) });
+      useChatStore.setState({ chatThreadId: 't1' });
+    });
+    expect(shownOf('msg')()).toHaveLength(HISTORY_WINDOW);
+    expect(shownOf('msg')()[0]).toBe('msg-0070');
+  });
+
+  it('[ac:ac-wskaznik-holdu-pokazuje-wygasniecie-s] the hold-cap ending is drawn as its own line, worded by the server counters, apart from a user abort', () => {
+    const detail = 'background hold expired after 300000ms with 1 subagent delegation(s) still running';
+    chat.value = chatValue({ holdEnding: { kind: 'hold-expired', abandoned: 0, detail } });
+    render();
+    let line = host.querySelector('[data-hold-ending]');
+    expect(line?.getAttribute('data-hold-ending')).toBe('hold-expired');
+    expect(line?.textContent).toBe(detail);
+
+    chat.value = chatValue({ holdEnding: { kind: 'user-abort', abandoned: 1 } });
+    rerender();
+    line = host.querySelector('[data-hold-ending]');
+    expect(line?.getAttribute('data-hold-ending')).toBe('user-abort');
+    expect(line?.textContent).toBe('stopped by you — 1 background task abandoned');
   });
 });

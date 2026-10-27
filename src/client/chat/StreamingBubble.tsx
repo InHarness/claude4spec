@@ -10,7 +10,7 @@ export function streamingBubbleVisible(s: { isStreaming: boolean; isResuming: bo
 }
 
 /**
- * M05: the `streaming` bubble — `streaming · 1:23`. Shown while the turn is open
+ * M53: the `streaming` bubble — `streaming · 1:23`. Shown while the turn is open
  * and not parked (the caller decides); parking swaps it for the busy indicator.
  *
  * 0.2.114: the turn clock sits NEXT TO the `aria-live` region, never inside it —

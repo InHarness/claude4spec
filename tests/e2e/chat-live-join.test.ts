@@ -17,8 +17,10 @@ import { chromium, type Browser, type Page } from 'playwright';
  * file, not a garnish.
  *
  * NOT covered here: a genuine mid-turn F5. That needs a live agent turn in
- * flight, and an ephemeral environment has no Claude login — see
- * `ac-po-f5-ui-pokazuje-pelna-tresc-trwajac` in `tests/ac-skiplist.json`.
+ * flight, and an ephemeral environment has no Claude login. Its client half —
+ * the RESTORE cut and the replay through the same reducer — is pinned with a
+ * faked stream in `src/client/chat/useChat.turn-state.test.ts`
+ * (`ac-po-f5-ui-pokazuje-pelna-tresc-trwajac`).
  */
 const BASE = process.env.C4S_E2E_BASE_URL?.replace(/\/$/, '');
 
