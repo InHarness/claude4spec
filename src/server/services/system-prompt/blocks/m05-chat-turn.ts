@@ -3,19 +3,19 @@ import { attrs } from '../glue.js';
 import type { PromptBlock, PromptContext } from '../types.js';
 
 /*
- * M05 — Chat & Agent: what the chat turn itself brings to the prompt.
+ * M05 — Agent Runtime: what the agent turn itself brings to the prompt.
  *
- * 2.1.1 — `<annotations>`, `<annotation_handling>` and `<task_tracking>` moved
- * here from M48's own blocks. Each is a fact about the chat turn (the
- * annotations the user attached, the live task list the user watches), not
- * about the prompt itself, so they are the chat module's contribution — and
- * the pairing "`<annotation_handling>` iff `<annotations>`" now sits in one
- * file, on one predicate. The rendered text is unchanged.
+ * 2.1.1 — `<annotations>` and `<annotation_handling>` moved here from M48's own
+ * blocks. Each is a fact about the turn (the annotations the user attached), not
+ * about the prompt itself, so they are the turn module's contribution — and the
+ * pairing "`<annotation_handling>` iff `<annotations>`" sits in one file, on one
+ * predicate.
  *
- * Emission:
- *  - `annotations` / `annotation_handling` — only when the turn carries at
- *    least one annotation;
- *  - `task_tracking` — every frame but `ask`.
+ * 2.1.56 — `<task_tracking>` is gone, with its template: the module no longer
+ * contributes it, and no composition carries it.
+ *
+ * Emission: `annotations` / `annotation_handling` — only when the turn carries
+ * at least one annotation.
  */
 
 /**
@@ -54,47 +54,6 @@ function buildAnnotations(
 }
 
 /**
- * 0.2.65 — the block that makes task tracking OURS rather than the preset's.
- *
- * A project with `agent.claudeUsePreset: false` REPLACES the Claude Code preset
- * rather than appending to it, and the preset carried the only "keep a task
- * list" instruction the model ever saw. This project has run with the preset off
- * since 2026-07-04, so for two months the agent was asked to track nothing —
- * which is why it did so less and less consistently. Stated here, the behaviour
- * stops being a function of that flag.
- *
- * WHY IT LEADS WITH `TodoWrite`, and not with the `TaskCreate`/`TaskUpdate` pair
- * the reporting brief prescribed: against the version this repo actually pins
- * (`agent-adapters` ^0.9.9, published), those two are precisely the calls that do
- * not persist. `mergeTaskToolInputIntoSnapshot` there merges only when the raw
- * input carries a top-level `subject`/`description`/`activeForm`/`status`, so a
- * batch `TaskCreate({ tasks: [...] })` returns nothing and a `TaskUpdate` keyed on
- * `state` is a silent no-op. `TodoWrite` takes a different route entirely —
- * `todoItemsFromTodoWriteInput`, a full-list replace with no such guard — and
- * reaches `chat_thread.current_todo_items` TODAY. Naming only the pair would have
- * steered the model off the one path that still works, and made the panel less
- * likely to fill rather than more. The pair is named as an equal because it is
- * the right shape once the library fix (unreleased at time of writing, commit
- * `287d2cc`) ships; nothing here has to change then.
- *
- * The tools themselves are opted into explicitly in `agent-turn.ts` — see
- * `autoApproveTools` there. Instruction and capability are separate things.
- *
- * Omitted from the `ask` frame. That turn is a headless read-only peer consult
- * with no viewer, so its list would be written for nobody — and the block's whole
- * premise, that someone is watching it advance, would be a false statement.
- */
-const TASK_TRACKING = `<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
-
-Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
-
-Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
-
-Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
-</task_tracking>`;
-
-/**
  * 0.2.50 — the block gained the trap, which is the whole reason it is worth its
  * space.
  *
@@ -128,5 +87,4 @@ export const M05_TURN_BLOCKS: readonly PromptBlock[] = [
         : null,
   },
   { name: 'annotation_handling', render: (c) => (hasAnnotations(c) ? ANNOTATION_HANDLING : null) },
-  { name: 'task_tracking', render: (c) => (c.contextType === 'ask' ? null : TASK_TRACKING) },
 ];

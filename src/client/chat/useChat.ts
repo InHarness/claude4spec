@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiFetch, API_BASE } from '../lib/api-core.js';
-import { useEventStream, useMessageReducer } from '@inharness-ai/agent-chat';
+import { useEventStream, useMessageReducer, type ConnectedFrame } from '@inharness-ai/agent-chat';
 import type { QueuedMessage, UsageStats, WireEvent } from '@inharness-ai/agent-chat';
 import type { NormalizedMessage, TodoItem, UserInputRequest, UserInputResponse } from '@inharness-ai/agent-adapters';
 import type {
@@ -40,11 +40,10 @@ type WireEventExtended =
   // nested-live-joins GET /api/chat/stream/:childThreadId between these.
   | { type: 'transagent_started'; childThreadId: string; toolUseId: string; contextType: string }
   | { type: 'transagent_completed'; childThreadId: string; toolUseId: string; status?: string; summary?: string }
-  // M05: engine-backgrounded tasks (a `run_in_background` shell, a Monitor, a
+  // M53: engine-backgrounded tasks (a `run_in_background` shell, a Monitor, a
   // workflow). agent-adapters 0.9.1 emits these instead of mislabelling the work
   // as `subagent_*`. agent-chat's reducer doesn't know them (unknown → identity),
   // so this panel is driven entirely from onEvent + custom state, transagent-style.
-  | { type: 'connected'; requestId: string; threadId?: string; replayTruncated?: true }
   | { type: 'background_task_started'; taskId: string; taskType: string; description: string }
   | {
       type: 'background_task_progress';
@@ -86,7 +85,7 @@ export interface TransagentEntry {
 }
 
 /**
- * M05: an engine-backgrounded task surfaced in the panel, keyed by `taskId`.
+ * M53: an engine-backgrounded task surfaced in the panel, keyed by `taskId`.
  * `status` is 'running' until a `background_task_completed` sets the terminal
  * value the engine reports (e.g. 'success' / 'failed'). Rebuilt live from the
  * `background_task_*` events and, on cold reload, from the persisted
@@ -120,6 +119,14 @@ export interface HoldEnding {
   kind: HoldEndingKind;
   /** Background tasks still running when the turn ended — abandoned now. */
   abandoned: number;
+  /**
+   * `hold-expired` only: the terminal error's message. The server builds it from
+   * the turn's own abandoned-work counters — background tasks and subagent
+   * delegations, each named on its own, or "no recognized cause" with neither —
+   * because the library's hold-expired error carries no task list. The client's
+   * registry knows background tasks only, so it cannot say this itself.
+   */
+  detail?: string;
 }
 
 /** Terminal SSE `error` code → hold ending. */
@@ -149,7 +156,7 @@ export function holdEndingLabel(ending: HoldEnding): string {
     case 'backstop-expired':
       return `turn backstop expired (idle clock failure) — ${tasks} abandoned`;
     case 'hold-expired':
-      return `background hold cap expired — ${tasks} abandoned`;
+      return ending.detail ?? `background hold cap expired — ${tasks} abandoned`;
     case 'failed':
       return `turn failed — ${tasks} abandoned`;
   }
@@ -235,7 +242,7 @@ export function nextTurnStartedAt(
 }
 
 /**
- * M05 (F5 / cold reload): a persisted `chat_background_task` row as a panel
+ * M53 (F5 / cold reload): a persisted `chat_background_task` row as a panel
  * entry. 0.2.114: the work clock starts at the row's `created_at` (raw SQLite,
  * UTC) — the client did not see this task's `background_task_started`.
  */
@@ -284,6 +291,11 @@ export function terminalErrorToast(
       return { level: 'warning', message: formatted };
     case 'TIMEOUT':
       return { level: 'error', message: 'Turn backstop expired — the idle clock failed to stop a silent turn.' };
+    case 'TOOL_POLICY_REFUSED':
+      // The turn refused to START: the stream is this error and `done`, nothing
+      // else. Said as a refusal, so it does not read as a turn that died midway
+      // — and `done` closes the turn, so no bubble is left waiting for content.
+      return { level: 'error', message: `Turn refused — ${formatted}` };
     default:
       return { level: 'error', message: formatted };
   }
@@ -340,7 +352,7 @@ export interface UseChatOptions {
   thinking: ChatThinking;
   planMode: boolean;
   /**
-   * M05 (D4): fired when the server clears the thread's queue (Stop/abort or
+   * M53 (D4): fired when the server clears the thread's queue (Stop/abort or
    * explicit clear). Carries the cleared texts so the composer can restore them
    * (the reducer only drops the chips — composer text is component-owned).
    */
@@ -437,7 +449,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
   const [isResuming, setIsResuming] = useState(false);
   // 0.1.69 Transagents: child banki surfaced in this panel (keyed by tool_use id).
   const [transagents, setTransagents] = useState<TransagentEntry[]>([]);
-  // M05: engine-backgrounded tasks surfaced in this panel (keyed by taskId).
+  // M53: engine-backgrounded tasks surfaced in this panel (keyed by taskId).
   const [backgroundTasks, setBackgroundTasks] = useState<BackgroundTaskEntry[]>([]);
   const backgroundTasksRef = useRef<BackgroundTaskEntry[]>(backgroundTasks);
   backgroundTasksRef.current = backgroundTasks;
@@ -448,10 +460,18 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
    * `abandoned` in the database only — no SSE follows — so the local entries are
    * flipped here too, or the "waiting for N" spinner would outlive the turn.
    */
-  const endHold = useCallback((code: string | undefined) => {
+  const endHold = useCallback((code: string | undefined, message?: string) => {
     const running = backgroundTasksRef.current.filter((t) => t.status === 'running').length;
+    // The hold cap always ends a HOLD — also one kept only by a delegation, with
+    // no background task of ours running — so its ending is shown regardless.
+    const holdExpired = code === 'BACKGROUND_HOLD_EXPIRED';
+    if (running === 0 && !holdExpired) return;
+    setHoldEnding({
+      kind: holdEndingKindFor(code),
+      abandoned: running,
+      ...(holdExpired && message ? { detail: message } : {}),
+    });
     if (running === 0) return;
-    setHoldEnding({ kind: holdEndingKindFor(code), abandoned: running });
     setBackgroundTasks((prev) =>
       prev.map((t) => (t.status === 'running' ? { ...t, status: 'abandoned' } : t)),
     );
@@ -499,20 +519,6 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
         setSubagentStartedAt((prev) => (prev.has(taskId) ? prev : new Map(prev).set(taskId, Date.now())));
       }
       const ext = event as WireEventExtended;
-      /**
-       * 0.2.50 — the joined turn's replay buffer blew its 4MB budget and
-       * degradation was not enough, so what follows is an INCOMPLETE picture of
-       * the turn so far.
-       *
-       * Read off the raw wire event because the library's `onConnected` callback
-       * is typed `(requestId, threadId)` and drops everything else. Told once,
-       * as a toast, rather than rendered inline: the gap is in the transcript we
-       * are about to draw, so there is no single place in it to point at — and
-       * the full content does come back from `chat_message` once the turn ends.
-       */
-      if (ext.type === 'connected' && (ext as { replayTruncated?: boolean }).replayTruncated) {
-        toast.warning('Replay incomplete — full content will load once the turn finishes.');
-      }
       if (ext.type === 'transagent_started') {
         const { toolUseId, childThreadId, contextType } = ext;
         setTransagents((prev) =>
@@ -532,7 +538,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
         );
         return;
       }
-      // M05: background-task lifecycle. Every variant UPSERTS by taskId — progress
+      // M53: background-task lifecycle. Every variant UPSERTS by taskId — progress
       // and completed can legitimately arrive before `started` (replay-buffer
       // ordering, or a completed-only fast task), so a plain map that dropped the
       // update on a missing entry would lose the task. Kept out of the lib reducer
@@ -681,7 +687,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
         const cs = (ext as { contextSize?: number }).contextSize;
         if (typeof cs === 'number') setLiveContextSize(cs);
       }
-      // M05 (D4): restore cleared queue texts into the composer. Arrives both
+      // M53 (D4): restore cleared queue texts into the composer. Arrives both
       // from the SSE broadcast and synthesized by useEventStream.abort. The
       // reducer (below) drops the chips; the composer text is component-owned.
       if (ext.type === 'queue_cleared') {
@@ -695,9 +701,10 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
       // Skip ABORTED (user pressed Stop) to avoid noise on intentional cancels.
       // 0.2.107: IDLE_TIMEOUT / TIMEOUT get their own wording (`terminalErrorToast`).
       if (ext.type === 'error') {
-        const t = terminalErrorToast(ext.code, formatStreamError(ext));
+        const formatted = formatStreamError(ext);
+        const t = terminalErrorToast(ext.code, formatted);
         if (t) toast[t.level](t.message);
-        endHold(ext.code);
+        endHold(ext.code, formatted);
       }
       /**
        * C21: `warning` reaches the transcript by being translated into a
@@ -742,11 +749,23 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     [handleWireEvent],
   );
   const onConnected = useCallback(
-    (_requestId: string, tid: string) => {
+    (_requestId: string, tid: string, frame: ConnectedFrame) => {
       // Guard: ignoruj `connected` ze streamow ktorych watek juz nie jest aktywny
       // w UI (uzytkownik przelaczyl sie zanim doszedl event z poprzedniego streamu).
       if (currentThreadIdRef.current && tid !== currentThreadIdRef.current) return;
       currentThreadIdRef.current = tid;
+      /**
+       * M53 `oo8qeekf` — the joined turn's replay buffer blew its budget, so the
+       * replay that follows is an INCOMPLETE picture of the turn so far. The
+       * server sets `replayTruncated` (only when true) on the live-join's
+       * `connected` frame; agent-chat hands the whole frame here. Told once, as
+       * a toast, rather than rendered inline: the gap is in the transcript we
+       * are about to draw, so there is no single place in it to point at — and
+       * the full content does come back from `chat_message` once the turn ends.
+       */
+      if (frame.replayTruncated === true) {
+        toast.warning('Replay incomplete — full content will load once the turn finishes.');
+      }
       if (tid && tid !== threadId) {
         createdByActiveStreamRef.current = tid;
         onThreadCreated?.(tid);
@@ -837,7 +856,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     synthesizedUserInputsRef.current = new Set();
   }, [abortStream, handleWireEvent, endHold]);
 
-  // M05: enqueue a message typed during a live turn. Returns true on success so
+  // M53: enqueue a message typed during a live turn. Returns true on success so
   // the caller can clear the composer; on failure the message stays put.
   const queueMessage = useCallback(
     async (prompt: string): Promise<boolean> => {
@@ -977,7 +996,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
         // reconstructed here — the live join replays `transagent_started` which
         // re-adds them via onEvent.
         setTransagents(reconstructTransagents(thread.messages, thread.childThreads ?? []));
-        // M05 (F5 / cold reload): rebuild the background-task panel from persisted
+        // M53 (F5 / cold reload): rebuild the background-task panel from persisted
         // rows. In-flight ('running') entries dedup against the live replay's
         // `background_task_started` (onEvent upserts by taskId).
         // Seed the carrier-dedup set from the rows `rowsToChatMessages` just
@@ -1097,14 +1116,14 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     currentTodoItems,
     userPlanModes,
     userAnnotations,
-    // M05 queue
+    // M53: the queue (over the M05 queue routes)
     queuedMessages: state.queuedMessages,
     queueMessage,
     cancelQueued,
     clearQueue,
     // 0.1.69 Transagents
     transagents,
-    // M05: engine-backgrounded tasks
+    // M53: engine-backgrounded tasks
     backgroundTasks,
     /**
      * How many background tasks the turn is currently waiting on — the "hold".
@@ -1375,9 +1394,6 @@ export function rowsToChatMessages(
     // Before the row, so a task that started between two rows lands between
     // them rather than after everything.
     if (row.role !== 'user') flushBackgroundTasksBefore(row.createdAt);
-    // Before the row, so a task that started between two rows lands between
-    // them rather than after everything.
-
 
     if (row.role === 'user') {
       currentAssistant = null;

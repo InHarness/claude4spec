@@ -59,7 +59,6 @@ export const DEFAULT_COMPOSITION: readonly CompositionEntry[] = [
   { layer: 'D', block: 'discovery_and_impact' },
   { layer: 'D', block: 'tags' },
   { layer: 'D', block: 'todo_markers' },
-  { layer: 'D', block: 'task_tracking' },
   { layer: 'D', block: 'sections_and_anchors' },
   { layer: 'D', block: 'spec_language' },
   { layer: 'D', block: 'conversational_language' },

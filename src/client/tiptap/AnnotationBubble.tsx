@@ -15,7 +15,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useChatStore } from '../state/chat.js';
-import { refreshAnnotations } from './extensions/AnnotationHighlight.js';
+import { annotationSelectionText, refreshAnnotations } from './extensions/AnnotationHighlight.js';
 
 interface Props {
   editor: Editor | null;
@@ -30,6 +30,11 @@ interface FormatAction {
   run: () => void;
 }
 
+/**
+ * M53 (Agent Chat Shell, `annotcmp`) — the annotation popup on a non-collapsed
+ * selection in the page / plan editor: preview, comment (optional) and
+ * "Add to chat"; `Cmd/Ctrl+Shift+A` opens it. Adding opens a closed chat.
+ */
 export function AnnotationBubble({ editor, currentPage }: Props) {
   const addAnnotation = useChatStore((s) => s.addAnnotation);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
@@ -51,7 +56,12 @@ export function AnnotationBubble({ editor, currentPage }: Props) {
         setOpen(false);
         return;
       }
-      const text = editor.state.doc.textBetween(from, to, ' ');
+      // Plain text across nodes; an entity reference (an atom XML tag node)
+      // contributes the text its chip renders, never the raw tag.
+      const text = annotationSelectionText(editor.state.doc, from, to, (at) => {
+        const dom = at >= 0 ? editor.view.nodeDOM(at) : null;
+        return dom?.textContent?.trim() ?? '';
+      });
       if (!text.trim()) {
         setPos(null);
         setOpen(false);

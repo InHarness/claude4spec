@@ -7,9 +7,21 @@ interface Props {
   onSubmit: (requestId: string, response: UserInputResponse) => void | Promise<void>;
 }
 
+/**
+ * M53: the live agent question — a form per question, answered through
+ * `POST /api/chat/user-input`.
+ *
+ * A request with NO questions (an elicitation that asks nothing) still has to
+ * be closed, or the turn waits on it: the card renders without any question
+ * form and without `Send answer` — there is nothing to answer — keeping only
+ * `Decline` and `Cancel`.
+ */
 export function UserInputRequestCard({ request, onSubmit }: Props) {
-  const [answers, setAnswers] = useState<string[][]>(() => request.questions.map(() => []));
-  const [customValues, setCustomValues] = useState<string[]>(() => request.questions.map(() => ''));
+  // Read defensively: the event comes off the wire, and an absent list is the
+  // same "nothing to ask" as an empty one.
+  const questions = Array.isArray(request.questions) ? request.questions : [];
+  const [answers, setAnswers] = useState<string[][]>(() => questions.map(() => []));
+  const [customValues, setCustomValues] = useState<string[]>(() => questions.map(() => ''));
   const [submitting, setSubmitting] = useState<false | UserInputResponse['action']>(false);
 
   const updateAnswer = (qIdx: number, values: string[]) => {
@@ -21,7 +33,7 @@ export function UserInputRequestCard({ request, onSubmit }: Props) {
   };
 
   const handleAccept = async () => {
-    const finalAnswers = request.questions.map((q, i) => {
+    const finalAnswers = questions.map((q, i) => {
       const selected = answers[i] ?? [];
       const custom = customValues[i]?.trim() ?? '';
       if (q.options) {
@@ -38,7 +50,7 @@ export function UserInputRequestCard({ request, onSubmit }: Props) {
     await onSubmit(request.requestId, { action });
   };
 
-  const canAccept = request.questions.every((q, i) => {
+  const canAccept = questions.every((q, i) => {
     const selected = answers[i] ?? [];
     const custom = customValues[i]?.trim() ?? '';
     if (q.options) return selected.length > 0 || custom.length > 0;
@@ -72,18 +84,20 @@ export function UserInputRequestCard({ request, onSubmit }: Props) {
         </span>
       </div>
 
-      <div className="px-3 py-3 space-y-4">
-        {request.questions.map((q, qIdx) => (
-          <QuestionForm
-            key={qIdx}
-            question={q}
-            selected={answers[qIdx] ?? []}
-            custom={customValues[qIdx] ?? ''}
-            onSelect={(values) => updateAnswer(qIdx, values)}
-            onCustomChange={(value) => updateCustom(qIdx, value)}
-          />
-        ))}
-      </div>
+      {questions.length > 0 && (
+        <div className="px-3 py-3 space-y-4">
+          {questions.map((q, qIdx) => (
+            <QuestionForm
+              key={qIdx}
+              question={q}
+              selected={answers[qIdx] ?? []}
+              custom={customValues[qIdx] ?? ''}
+              onSelect={(values) => updateAnswer(qIdx, values)}
+              onCustomChange={(value) => updateCustom(qIdx, value)}
+            />
+          ))}
+        </div>
+      )}
 
       <div
         className="px-3 py-2 flex items-center gap-1.5"
@@ -112,14 +126,16 @@ export function UserInputRequestCard({ request, onSubmit }: Props) {
           <X size={11} /> Cancel
         </button>
         <span className="flex-1" />
-        <button
-          onClick={handleAccept}
-          disabled={!canAccept || Boolean(submitting)}
-          className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11.5px] disabled:opacity-40"
-          style={{ background: 'var(--c-accent)', color: '#fff' }}
-        >
-          <Send size={11} /> Send answer
-        </button>
+        {questions.length > 0 && (
+          <button
+            onClick={handleAccept}
+            disabled={!canAccept || Boolean(submitting)}
+            className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11.5px] disabled:opacity-40"
+            style={{ background: 'var(--c-accent)', color: '#fff' }}
+          >
+            <Send size={11} /> Send answer
+          </button>
+        )}
       </div>
     </div>
   );

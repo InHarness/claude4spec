@@ -76,7 +76,7 @@ export type { RefLookupEntry } from '../host-ui-kit/actions/EntityRefValue.js';
  * 0.2.79 — the published equivalent of a host-only facade.
  *
  * `startSeededThread` opens the chat overlay on a fresh thread and seeds it. It
- * lives over the M05 chat store, which is a Zustand singleton rather than a
+ * lives over the M53 chat store, which is a Zustand singleton rather than a
  * window event — so unlike `toast`, an envelope cannot re-create it by
  * dispatching. `c4s-plugin-ac`'s list screen needs exactly it: the "Analyze
  * consistency" action is specified as `startSeededThread(SEED_PROMPT,

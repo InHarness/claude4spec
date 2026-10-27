@@ -4,7 +4,7 @@ import { hasServer } from '../glue.js';
 import type { McpInventoryEntry, PromptBlock } from '../types.js';
 import { M05_TURN_BLOCKS } from './m05-chat-turn.js';
 
-/* M05 — Chat & Agent: where the agent may reach, and whether it has built-in
+/* M05 — Agent Runtime: where the agent may reach, and whether it has built-in
  * filesystem tools at all. */
 
 /**

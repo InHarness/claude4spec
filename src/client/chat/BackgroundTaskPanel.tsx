@@ -3,7 +3,7 @@ import type { BackgroundTaskEntry } from './useChat.js';
 import { ElapsedClock } from './ElapsedClock.js';
 
 /**
- * M05: an engine-backgrounded task (a `run_in_background` shell, a Monitor loop,
+ * M53: an engine-backgrounded task (a `run_in_background` shell, a Monitor loop,
  * a workflow run) surfaced as a compact status row. Deliberately NOT the
  * subagent panel (blue, expandable agent transcript) nor the transagent panel
  * (accent-bordered nested child) — a backgrounded process is neither a spawned

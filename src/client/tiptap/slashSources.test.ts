@@ -1,6 +1,6 @@
 /**
  * 2.1.9 — M20 `lxdrxdm2`: command sources in the slash framework, the chat
- * composer's `chat-input` instance (M05 / M14), and the `pages`-kind gate on
+ * composer's `chat-input` instance (M53 / M14), and the `pages`-kind gate on
  * `@` and the page-ref node (M20 `m20l13rt`, M14 `m14l13rt`).
  *
  * The popover's content is pinned on `createSlashSession` — the listing the
@@ -176,7 +176,7 @@ describe('command sources in the slash popover (M20 lxdrxdm2)', () => {
   });
 });
 
-describe('the chat composer — `chat-input` (M05 / M14 / M20 ctxregst)', () => {
+describe('the chat composer — `chat-input` (M53 / M14 / M20 ctxregst)', () => {
   it('[ac:ac-chat-input-minimalna-instancja-tiptap] the chat-input instance mounts the slash framework beside MentionExtension, PageRefNode and the section_ref tag node', () => {
     const mounted = names(EditorFactory.buildExtensions('chat-input', ctx));
     expect(mounted).toEqual(
@@ -317,24 +317,34 @@ describe('M20 contribution sheet — wklad-do-edytora-m20', () => {
   });
 });
 
-describe('M05 contribution sheet — wklad-do-edytora-m05', () => {
-  it('[entity:wklad-do-edytora-m05#adnotacje page-bound] the annotation decoration is registered directly and mounted where the context declares it', () => {
+describe('M53 contribution sheet — wklad-do-edytora-m53', () => {
+  it('[entity:wklad-do-edytora-m53#adnotacje page-bound] the annotation decoration is registered directly, mounted where the context declares it, and never persists into the document', () => {
     const reg = getEditorExtensionRegistration('annotationHighlight');
     expect(reg?.extension).toBeDefined();
+    // Direct registration: no markdown parser rule, so nothing in a page body maps to it.
     expect(reg?.markdownIt).toBeUndefined();
+    expect(reg?.slashCommand).toBeUndefined();
     expect(getContextSpec('page').decorations).toContain('annotations');
     expect(getContextSpec('plan').decorations).toContain('annotations');
-    expect(names(getEditorExtensionsForContext(ctx, 'page'))).toContain('annotationHighlight');
-    // Not in the composer, and never part of the document's schema.
+    const mounted = getEditorExtensionsForContext(ctx, 'page').find((e) => e.name === 'annotationHighlight');
+    expect(mounted).toBeDefined();
+    // Non-persisting: an Extension (decorations only) — not a Node or a Mark, so it
+    // adds nothing to the schema and the markdown serializer never sees it.
+    expect(mounted!.type).toBe('extension');
+    // Not in the composer.
     expect(getContextSpec('chat-input').decorations).toEqual([]);
     expect(names(getEditorExtensionsForContext(ctx, 'chat-input'))).not.toContain('annotationHighlight');
   });
 
-  it('[entity:wklad-do-edytora-m05#`chat-input`] the composer embeds the `chat-input` context — its composition (slash framework included) comes from the context, saved on submit only', () => {
+  it('[entity:wklad-do-edytora-m53#`chat-input`] the composer embeds the `chat-input` context — slash framework included — saved on submit only, serialising PageRefNode as `@path.md`', () => {
     const spec = getContextSpec('chat-input');
     expect(spec.save).toEqual({ mode: 'explicit' });
     expect(spec.extensions).toEqual(expect.arrayContaining(['slash_commands', 'mention_extension', 'page_ref', 'section_ref']));
     expect(spec.slashCommands).toContain('section');
     expect(spec.mentions).toEqual(['files']);
+    const composerRef = getEditorExtensionsForContext(ctx, 'chat-input').find((e) => e.name === 'page_ref')!;
+    expect(serializePageRef(composerRef as never, { syntax: 'link', path: 'modules/m01.md', anchor: '', label: 'Auth' })).toBe(
+      '@modules/m01.md',
+    );
   });
 });

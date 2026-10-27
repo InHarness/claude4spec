@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from 'react';
 import { ApiError, apiFetch } from '../lib/api-core.js';
 import { useMatches, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
@@ -36,6 +36,18 @@ const NEW_THREAD_DRAFT_KEY = '__new__';
  * switch wątku wykonany chwilę później przez użytkownika.
  */
 const PREFILL_HANDOFF_MS = 1000;
+
+/**
+ * M53: how many messages of the thread the list renders at once, and how many
+ * more each scroll to its top reveals. ASSUMPTION:dev-0005 — the thread read
+ * stays whole (the live-join cut and the per-user metadata need every row), so
+ * "loading older messages" is a render window over it: a thread with a very
+ * long history mounts its newest messages only, and the older ones are added
+ * as the user scrolls up.
+ */
+export const HISTORY_WINDOW = 60;
+/** Scroll offset from the top (px) at which the next older window is revealed. */
+const REVEAL_OLDER_AT_PX = 40;
 
 /**
  * Display label for an alias (`haiku-4.5` → "Haiku 4.5"). Cosmetic only — nothing about
@@ -130,7 +142,7 @@ export function ChatOverlay() {
     setChatThreadId(null);
   }, [setChatThreadId]);
 
-  // M05 (D4): when the queue is cleared (Stop/abort/clear), restore the texts
+  // M53 (D4): when the queue is cleared (Stop/abort/clear), restore the texts
   // into the composer. `@path.md` mentions re-parse via PageRefNode input rules.
   const handleQueueCleared = useCallback((texts: string[]) => {
     const handle = inputRef.current;
@@ -364,21 +376,62 @@ export function ChatOverlay() {
     [chatThreadId, threadList],
   );
 
-  const displayMessages = useMemo(
-    () => messages.map((msg) => ({ ...msg, blocks: batchToolBlocks(msg.blocks) })),
-    [messages],
-  );
-
   // 0.2.109: while the turn is parked nothing streams, so the "streaming" badge
   // gives way to the parked turn's own indicator (`busyIndicator`).
   const showStreamingBubble = streamingBubbleVisible({ isStreaming, isResuming, isParked });
+
+  // Long history: the list renders the thread's newest `HISTORY_WINDOW` messages;
+  // scrolling to the top reveals the next window, keeping the viewport on the
+  // message the user was reading. The window is anchored on a start index (how
+  // many of the oldest messages stay hidden): before the first reveal it follows
+  // the newest messages, after a reveal it is a fixed count, so messages arriving
+  // in a live turn never re-hide what the user revealed. It is keyed by thread
+  // and dropped during render, so a thread switch (A → B → A included) starts
+  // from the newest window on its very first render — the previous thread's
+  // enlarged window never mounts.
+  const [revealedWindow, setRevealedWindow] = useState<{ threadId: string | null; start: number } | null>(null);
+  const pinned = revealedWindow?.threadId === chatThreadId;
+  if (revealedWindow && !pinned) setRevealedWindow(null);
+  const hiddenOlder = pinned
+    ? Math.min(revealedWindow.start, messages.length)
+    : Math.max(0, messages.length - HISTORY_WINDOW);
+
+  // Only the visible slice is batched and mapped: the hidden prefix costs no work
+  // per streamed delta. `firstUserIdx` = the user messages in the hidden prefix —
+  // the per-user metadata (`userPlanModes`/`userAnnotations`) is indexed over the
+  // whole thread.
+  const { displayMessages, firstUserIdx } = useMemo(() => {
+    let hiddenUsers = 0;
+    for (let i = 0; i < hiddenOlder; i++) if (messages[i]!.role === 'user') hiddenUsers++;
+    return {
+      displayMessages: messages
+        .slice(hiddenOlder)
+        .map((msg) => ({ ...msg, blocks: batchToolBlocks(msg.blocks) })),
+      firstUserIdx: hiddenUsers,
+    };
+  }, [messages, hiddenOlder]);
+
+  /** Distance from the list's bottom to keep across a reveal (null = nothing to restore). */
+  const keepFromBottomRef = useRef<number | null>(null);
+  const revealOlder = useCallback(() => {
+    const el = listRef.current;
+    keepFromBottomRef.current = el ? el.scrollHeight - el.scrollTop : null;
+    setRevealedWindow({ threadId: chatThreadId, start: Math.max(0, hiddenOlder - HISTORY_WINDOW) });
+  }, [chatThreadId, hiddenOlder]);
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    const fromBottom = keepFromBottomRef.current;
+    keepFromBottomRef.current = null;
+    if (el && fromBottom != null) el.scrollTop = el.scrollHeight - fromBottom;
+  }, [revealedWindow]);
 
   const handleListScroll = useCallback(() => {
     const el = listRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     stickToBottomRef.current = distanceFromBottom < 80;
-  }, []);
+    if (hiddenOlder > 0 && el.scrollTop <= REVEAL_OLDER_AT_PX) revealOlder();
+  }, [hiddenOlder, revealOlder]);
 
   useEffect(() => {
     const el = listRef.current;
@@ -454,7 +507,7 @@ export function ChatOverlay() {
       }
     };
 
-    // M05: during a live turn the composer stays unlocked; Send/↵ enqueues the
+    // M53: during a live turn the composer stays unlocked; Send/↵ enqueues the
     // message (mid-turn push or after-turn merged dispatch) instead of starting
     // a new stream. Annotations are for fresh turns only.
     if (isBusy) {
@@ -509,7 +562,7 @@ export function ChatOverlay() {
         className="flex-1 flex flex-col min-w-0 min-h-0 relative"
         style={{ background: 'var(--c-bg)' }}
       >
-        {/* 2.1.28 (M05 rehyxchp): the chat-aware EditorBridge — chips in the
+        {/* 2.1.28 (M53 rehyxchp): the chat-aware EditorBridge — chips in the
             message tree call the editorBridge singleton, which reaches it. */}
         <ChatEditorBridgeProvider>
         {/* Header */}
@@ -587,6 +640,7 @@ export function ChatOverlay() {
         <div
           ref={listRef}
           onScroll={handleListScroll}
+          data-chat-message-list=""
           className={`flex-1 overflow-auto nice-scroll ${systemPromptViewOpen ? '' : 'px-3 py-3'}`}
         >
           {systemPromptViewOpen ? (
@@ -601,8 +655,20 @@ export function ChatOverlay() {
                   Start a conversation.
                 </div>
               )}
+              {hiddenOlder > 0 && (
+                <button
+                  type="button"
+                  onClick={revealOlder}
+                  data-older-messages={hiddenOlder}
+                  className="w-full mb-3 py-1 text-[11px] font-mono"
+                  style={{ color: 'var(--c-subtle)' }}
+                >
+                  Scroll up to load {Math.min(hiddenOlder, HISTORY_WINDOW)} earlier message
+                  {Math.min(hiddenOlder, HISTORY_WINDOW) === 1 ? '' : 's'}
+                </button>
+              )}
               {(() => {
-                let userIdx = 0;
+                let userIdx = firstUserIdx;
                 return displayMessages.map((msg) => {
                   const isUser = msg.role === 'user';
                   const thisIdx = isUser ? userIdx++ : -1;
@@ -680,7 +746,7 @@ export function ChatOverlay() {
               {pendingUserInputs.map((req) => (
                 <UserInputRequestCard key={req.requestId} request={req} onSubmit={submitUserInput} />
               ))}
-              {/* M05: queued messages as grey "ghost" bubbles — pending delivery
+              {/* M53: queued messages as grey "ghost" bubbles — pending delivery
                   (mid-turn push or after-turn merge). Distinct from sent (solid) bubbles. */}
               {queuedMessages.map((q) => (
                 <QueuedMessageBubble key={q.id} text={q.text} onCancel={() => cancelQueued(q.id)} />
@@ -695,8 +761,10 @@ export function ChatOverlay() {
         {/* Sticky TODO snapshot (main agent only) */}
         <CurrentTodoList items={currentTodoItems} />
 
-        {/* Input — hidden while a user_input_request is pending (answer via the card instead) */}
-        {pendingUserInputs.length === 0 && !systemPromptViewOpen && (
+        {/* Input — hidden while a user_input_request is pending (answer via the card instead).
+            The system-prompt preview swaps only the message list, so the composer stays:
+            sending from it closes the preview and returns to the stream. */}
+        {pendingUserInputs.length === 0 && (
         <div className="p-2.5 relative" style={{ borderTop: '1px solid var(--c-hair)' }}>
           {/* 0.2.87: the context-link bar never renders in an `ask` thread — that type has no
               artifact, even when the peer left a plan behind (plan-tools are mounted there). */}
@@ -786,7 +854,7 @@ export function ChatOverlay() {
                 </span>
               </div>
             )}
-            {/* M05: compact queue counter — full pending messages render as grey
+            {/* M53: compact queue counter — full pending messages render as grey
                 ghost bubbles in the conversation; this is a count + clear-all. */}
             {queuedMessages.length > 0 && (
               <div className="flex items-center gap-1.5 px-2 pt-1.5 flex-wrap">
@@ -823,7 +891,7 @@ export function ChatOverlay() {
             <div className="chat-input-wrap px-2.5 pt-1.5 pb-1" style={{ color: 'var(--c-ink)' }}>
               <ChatInputEditor
                 ref={inputRef}
-                // M05: composer stays unlocked during a live turn — Send/↵ queues.
+                // M53: composer stays unlocked during a live turn — Send/↵ queues.
                 placeholder={
                   isBusy
                     ? 'Queue a message…'
@@ -881,7 +949,7 @@ export function ChatOverlay() {
                 <ChevronDown size={10} />
               </button>
               <span className="flex-1" />
-              {/* M05: during a live turn show Stop + a queueing Send (↵ also queues). */}
+              {/* M53: during a live turn show Stop + a queueing Send (↵ also queues). */}
               {isBusy && (
                 <button
                   onClick={abort}
@@ -1009,8 +1077,11 @@ function ThreadDropdown({ threads, activeId, hasMore, loadingMore, onSelect, onC
       </div>
       <div className="max-h-80 overflow-auto nice-scroll py-1" onScroll={onScroll}>
         {threads.length === 0 && (
-          <div className="px-3 py-3 text-[12px]" style={{ color: 'var(--c-muted)' }}>
-            No previous conversations.
+          <div className="px-3 py-3 text-[12px] flex items-center gap-2" style={{ color: 'var(--c-muted)' }}>
+            <span className="flex-1">No previous conversations</span>
+            <button onClick={onCreate} className="hover:underline" style={{ color: 'var(--c-accent)' }}>
+              Start new
+            </button>
           </div>
         )}
         {threads.map((t) => {
@@ -1300,7 +1371,7 @@ function ModelSettingsPopover({ models, defaultModel, model, setModel, thinking,
             </div>
             <div className="text-[10.5px]" style={{ color: 'var(--c-subtle)' }}>
               {planModeEnforceable
-                ? "Agent proposes, doesn't modify"
+                ? 'Narrows the tools the agent gets — a strong signal, not a read-only guarantee'
                 : planModeEnforceable === undefined
                   ? 'Checking availability…'
                   : 'Unavailable — not enforceable on this architecture'}

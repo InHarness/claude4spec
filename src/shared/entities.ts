@@ -673,7 +673,7 @@ export interface SectionIndexEntry {
   updatedAt: string;
 }
 
-// --- M05: Chat & Agent ---
+// --- M05: Agent Runtime ---
 
 /**
  * Every value `chat_message.role` accepts. The column carries no SQL CHECK, so

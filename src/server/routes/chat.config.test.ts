@@ -71,7 +71,7 @@ describe('GET /api/chat/config — the claude-code catalog', () => {
     expect(res.body.planModeEnforceable).toBe(true);
   });
 
-  it('offers exactly the four selectable aliases, strongest first, with opus-5.5 as the default', async () => {
+  it('[ac:ac-picker-modelu-w-composerze-czatu-poka] offers exactly the four selectable aliases, strongest first, with opus-5.5 as the default', async () => {
     const cc = await config();
     expect(cc.models.map((m) => m.alias)).toEqual(['fable-5.1', 'opus-5.5', 'sonnet-5', 'haiku-4.5']);
     expect(cc.default).toBe('opus-5.5');
@@ -80,7 +80,7 @@ describe('GET /api/chat/config — the claude-code catalog', () => {
     expect(cc.default).toBe(DEFAULT_MODEL);
   });
 
-  it('keeps opus-5 off the list although the library still resolves it', async () => {
+  it('[ac:ac-opus-5-nie-jest-wybieralny-w-pickerze] keeps opus-5 off the list although the library still resolves it', async () => {
     const cc = await config();
     expect(resolveModel('claude-code', 'opus-5')).toBe('claude-opus-5');
     expect(cc.models.map((m) => m.alias)).not.toContain('opus-5');

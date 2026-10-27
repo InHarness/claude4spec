@@ -37,6 +37,21 @@ describe('chat: chip picked from the registry by target (M51)', () => {
     expect(preprocessXmlChips(text)).toBe(text);
   });
 
+  it('[ac:m05-chat-tag-without-target-attrs-stays-text] a registered tag with none of `anchor`, `slug`, `slugs`, `tags` stays text as written — even with an assigned render', () => {
+    registerXmlTag({ name: 'scratch_note', attrOrder: ['comment'], form: 'inline' });
+    assignTagRender('scratch_note', () => null);
+    // `type` alone is not a target either.
+    registerXmlTag({ name: 'scratch_typed', attrOrder: ['type'], form: 'inline' });
+    assignTagRender('scratch_typed', () => null);
+    for (const text of ['a <todo comment="x"/> b', 'a <scratch_note comment="keep me"/> b', 'a <scratch_typed type="dto"/> b']) {
+      expect(chips(text)).toEqual([]);
+      expect(preprocessXmlChips(text)).toBe(text);
+    }
+    expect(isChipTag('todo')).toBe(false);
+    expect(isChipTag('scratch_note')).toBe(false);
+    expect(isChipTag('scratch_typed')).toBe(false);
+  });
+
   it('step 0: a tag its owner assigned a render to is shown by that render whatever its attributes; one whose content the chip cannot carry stays text', () => {
     registerXmlTag({ name: 'scratch_rendered', attrOrder: ['slug'], form: 'inline' });
     assignTagRender('scratch_rendered', () => null);

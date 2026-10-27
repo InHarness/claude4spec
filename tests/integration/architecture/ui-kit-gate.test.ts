@@ -116,7 +116,7 @@ describe('[section:hntah0r7] gate (a) — the automatic check over the host code
     }
   });
 
-  it('[section:hntah0r7] the editor surface (M20) and the chat overlay (M05) are outside the check and need no declaration', () => {
+  it('[section:hntah0r7] the editor surface (M20) and the chat overlay (M53) are outside the check and need no declaration', () => {
     expect(isOutOfScope('src/client/chat/ToolCard.tsx')).toBe(true);
     expect(isOutOfScope('src/client/ui/modals/ToolJsonView.tsx')).toBe(true);
     expect(isOutOfScope('src/client/tiptap/registrations.ts')).toBe(true);
@@ -128,7 +128,7 @@ describe('[section:hntah0r7] gate (a) — the automatic check over the host code
     expect(HOST_LOCAL_DECLARATIONS.flatMap((d) => d.files)).not.toContain('src/client/ui/modals/ToolJsonView.tsx');
   });
 
-  it('[ac:ac-overlay-czatu-m05-i-powierzchnia-edyto] the chat overlay (M05) and the editor surface (M20) render own markup legally and undeclared: the full-screen raw tool-JSON window is not reported as a catalog twin', () => {
+  it('[ac:ac-overlay-czatu-m05-i-powierzchnia-edyto] the chat overlay (M53) and the editor surface (M20) render own markup legally and undeclared: the full-screen raw tool-JSON window is not reported as a catalog twin', () => {
     const toolJson = 'src/client/ui/modals/ToolJsonView.tsx';
     // It is own markup with the anatomy of a modal twin (a full-viewport scrim
     // with a centred panel) — the Dialog detector would match it…
