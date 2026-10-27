@@ -1,1 +1,0 @@
-system r1: all covered; no regression (npm test only chat.live-join load flake 3/3 green; e2e failures = empty-seed preconditions or isolated-green flakes, same as parallel 2-1-55-to-2-1-56 env). u08 excluded (dev-0001).
