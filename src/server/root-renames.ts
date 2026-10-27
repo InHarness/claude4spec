@@ -18,9 +18,7 @@ import type { Root } from '../shared/types.js';
  *
  * The specification is explicit that the registry is NOT a `config.json` field —
  * the config sheet gains no row for it and `$schemaVersion` does not bump again.
- * Its shape and location are left to the implementation, with one hard
- * requirement: inside a release bundle the transitions travel ONLY as
- * `manifest.roots[].formerIds`, never through the sanitized `config.json`.
+ * Its shape and location are left to the implementation.
  *
  * So: `.claude4spec/root-renames.json`, written with the same atomic
  * temp→rename primitive as the config, and read by the same pure-disk-read
@@ -140,11 +138,6 @@ export function rootIdChain(transitions: readonly RootRenameTransition[], curren
     cursor = previous;
   }
   return chain;
-}
-
-/** The chain minus its head, oldest identifier first — the bundle manifest's `formerIds`. */
-export function formerIdsOf(transitions: readonly RootRenameTransition[], currentId: string): string[] {
-  return rootIdChain(transitions, currentId).slice(1).reverse();
 }
 
 /**

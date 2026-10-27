@@ -115,8 +115,7 @@ export function boundSuppress(
  * The handle an ordinary server write needs, bound to one source.
  *
  * 0.2.76 — this handle is now the FALLBACK path, for a caller with no M42 record
- * store: the hand-rolled rigs, and a bundle carrying a root this project has not
- * configured. Every mounted source writes through the primitive instead, which
+ * store: the hand-rolled rigs. Every mounted source writes through the primitive instead, which
  * suppresses its own event and runs the chain in-band.
  *
  * On that fallback path `markOrigin` labels the write — it does NOT suppress, so

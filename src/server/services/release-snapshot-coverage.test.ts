@@ -9,7 +9,7 @@
  * These two cases pin both halves of the decision. The first is the fix. The
  * second is the deliberate limit on it: scope is ACTIVE modules, not every
  * module the host could load, because a snapshot may only name types this
- * installation can also diff, upgrade and re-import.
+ * installation can also diff, upgrade and restore.
  */
 
 import Database from 'better-sqlite3';
@@ -92,7 +92,7 @@ describe('ReleaseService — snapshot type coverage (0.2.11)', () => {
   it('records a serializer version for every covered type', () => {
     insertEntityVersion('design-system', 'ds-1', { slug: 'ds-1' });
 
-    // Keyed SINGULAR by type id, independent of the bundle file name.
+    // Keyed SINGULAR by type id.
     expect(releases.getCurrentSnapshot().serializer_versions).toMatchObject({
       endpoint: '1',
       'design-system': '2',
@@ -119,5 +119,36 @@ describe('ReleaseService — snapshot type coverage (0.2.11)', () => {
       c: number;
     };
     expect(rows.c).toBe(1);
+  });
+
+  /**
+   * 2.1.55 (M17 dto `spec-snapshot-entity-row`): one entity entry of a
+   * `SpecSnapshot` is exactly `{ type, slug, op, data }`. With the release
+   * archive gone, `op: 'delete'` is simply a tombstone the snapshot carries —
+   * nothing downstream skips it any more.
+   */
+  it('[entity:spec-snapshot-entity-row] an entity row carries exactly type, slug, op and data, and a delete stays in as a tombstone', () => {
+    insertEntityVersion('endpoint', 'e-1', { slug: 'e-1', summary: 'live' });
+    insertEntityVersion('endpoint', 'e-2', { slug: 'e-2' });
+    db.prepare(
+      `INSERT INTO entity_version
+        (entity_type, entity_slug, version, data, changed_by, release_id, serializer_version, op)
+       VALUES ('endpoint', 'e-2', 2, ?, 'user', NULL, 'v1', 'delete')`,
+    ).run(JSON.stringify({ slug: 'e-2' }));
+
+    const rows = releases.getCurrentSnapshot().entities;
+
+    expect(rows.map((r) => [r.slug, r.op])).toEqual([
+      ['e-1', 'create'],
+      ['e-2', 'delete'],
+    ]);
+    for (const row of rows) {
+      expect(Object.keys(row).sort()).toEqual(['data', 'op', 'slug', 'type']);
+      expect(typeof row.type).toBe('string');
+      expect(typeof row.slug).toBe('string');
+      expect(['create', 'update', 'delete']).toContain(row.op);
+      expect(typeof row.data).toBe('object');
+    }
+    expect(rows[0]?.data).toEqual({ slug: 'e-1', summary: 'live' });
   });
 });

@@ -39,8 +39,7 @@ export interface EntityWriter {
    * observable to the caller.
    *
    * Still returns `null` — but now for exactly ONE reason: the type is not active
-   * in this project at all (deactivated, or carried by a bundle this installation
-   * never had). "Active but serviceless" stopped being a null case in 0.2.9. A
+   * in this project at all (deactivated, or never installed here). "Active but serviceless" stopped being a null case in 0.2.9. A
    * caller must degrade that to "this entity was not restored", never to "the
    * whole restore died"; `restoreEntity` turns it into a reported skip.
    */

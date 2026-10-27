@@ -18,8 +18,7 @@ import { formatLegalContextTypes, isKnownContextType } from './chat-context.js';
  * | `skill.contextTypes` | `new-thread` | a subset of the context-type enumeration |
  * | `skill.uses` | `new-thread` | names; a dangling or ambiguous one is NOT a validation error |
  *
- * None locks a resume, all are API-writable. The keys never ride in a release
- * bundle: the bundle's config is an allow-list that does not name them.
+ * None locks a resume, all are API-writable.
  */
 
 const OWNER = 'spec-skills';

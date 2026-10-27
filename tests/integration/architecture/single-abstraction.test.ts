@@ -104,18 +104,8 @@ describe('Single Abstraction Rule', () => {
       //
       // A user-facing sentence that happens to name the field.
       expect.stringContaining('BrokenChip.tsx'),
-      // Pass-through, not dispatch: the project config is copied verbatim into
-      // the release bundle so a restore can reproduce the activation set.
-      expect.stringContaining('release-bundle.ts'),
-      // A user-facing sentence that happens to name the field: the refusal when
-      // a bundle carries a type this installation has deactivated tells the
-      // reader where to go and fix it. Naming a setting is not dispatching on it.
-      //
-      // 0.2.24 moved this sentence from `release.ts` into the bundle module with
-      // the rest of the layout's read direction. The activation TEST is still
-      // not made here — `readBundleEntities` takes an `isActive` predicate the
-      // host supplies, which is the whole reason the module can stay pure.
-      expect.stringContaining('release-bundle.ts'),
+      // (2.1.55: the release bundle module — which copied the field into the
+      // archive and named it in an import refusal — is gone with the bundle.)
     ]);
   });
 
@@ -152,7 +142,7 @@ describe('Single Abstraction Rule', () => {
    * all prose in comments, which `codeLines()` strips.
    */
   it('the release tier enumerates no entity type', () => {
-    const files = ['release.ts', 'release-bundle.ts', 'release-operations.ts'].map((f) =>
+    const files = ['release.ts', 'release-operations.ts'].map((f) =>
       path.join(REPO_ROOT, 'src', 'server', 'services', f),
     );
     const pattern = /['"](endpoint|dto|database-table|ui-view|ac|design-system|diagram)['"]/;

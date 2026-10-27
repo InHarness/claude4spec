@@ -726,6 +726,44 @@ describe('release routes — view=operation (2.1.11)', () => {
     );
   });
 
+  // 2.1.55 — the record no longer contrasts the route with a portable export:
+  // the bundle archive is gone, so the snapshot is read from the version
+  // tables only and carries the plain SpecSnapshot shape, nothing archive-like.
+  it('[entity:get-api-releases-nameorid-snapshot] GET /api/releases/:name/snapshot answers the raw SpecSnapshot by default, { data: release_show } under view=operation, 400 for an operation parameter without the view, 404 for a literal or unknown name', async () => {
+    const raw = await request(app).get('/api/releases/v3/snapshot');
+    expect(raw.status).toBe(200);
+    // spec-snapshot: exactly the four version-table fields — no envelope, no manifest/bundle field.
+    expect(Object.keys(raw.body).sort()).toEqual(['entities', 'pages', 'release', 'serializer_versions']);
+    expect(raw.body.release.name).toBe('v3');
+    expect(raw.body).toEqual(JSON.parse(JSON.stringify(releases.getReleaseSnapshot(releases.resolveReleaseId('v3')))));
+    for (const field of ['data', 'bundleSchemaVersion', 'c4sVersion', 'roots', 'manifest', 'sha256', 'tarGzPath']) {
+      expect(raw.body).not.toHaveProperty(field);
+    }
+
+    // mcp-spec-snapshot: the operation payload under `data`, windowed by the operation's parameters.
+    const op = await request(app).get('/api/releases/v3/snapshot?view=operation&include=entities&include=pages&limit=2&offset=0');
+    expect(op.status).toBe(200);
+    expect(op.body.data).toEqual(
+      releaseShowOperation(
+        { releaseService: releases, roots: () => ROOTS },
+        { releaseName: 'v3', include: ['entities', 'pages'], limit: 2, offset: 0 },
+      ),
+    );
+
+    for (const stray of ['limit=2', 'offset=1', 'include=pages', 'entityTypes=adr']) {
+      const res = await request(app).get(`/api/releases/v3/snapshot?${stray}`);
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('INVALID_ARGUMENT');
+      expect(JSON.stringify(res.body.error)).toContain('view=operation');
+    }
+
+    for (const name of ['current', 'nope']) {
+      const res = await request(app).get(`/api/releases/${name}/snapshot`);
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe('RELEASE_NOT_FOUND');
+    }
+  });
+
   it('diff view=operation equals release_diff, for a release pair and for current', async () => {
     const deps = { releaseService: releases, roots: () => ROOTS };
     for (const [from, to] of [

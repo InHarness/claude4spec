@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
 import { ReleaseService } from './release.js';
 import { ReleaseFileStore } from './release-store.js';
-import { buildBundleArchive, extractBundleStream, type BundleManifest } from './release-bundle.js';
 import type { SelfWriteSuppressor } from '../fs/sources.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import type { FileSerializer } from './file-serializer.js';
@@ -15,14 +14,11 @@ import type { FileVersionService } from './file-version.js';
 import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import type { TagsService } from './tags.js';
 import type { PagesService } from './pages.js';
-import type { NormalizedConfig } from '../config.js';
-import type { Release, SpecSnapshot } from '../../shared/entities.js';
 
 /**
  * 2.1.14 (M17 m17reldisk) — the lightweight release metadata file
  * `.claude4spec/releases/<slug>.json` records `roots` as the bare ids of the
- * `pages`-kind roots at the moment of the release (no `name`/`dir`). The richer
- * `{id,name,dir}` shape stays only in the bundle's `manifest.roots`.
+ * `pages`-kind roots at the moment of the release (no `name`/`dir`).
  */
 
 const fakeHost = { getEntity: () => null, listEntities: () => [] } as unknown as PluginHost;
@@ -83,45 +79,5 @@ describe('release metadata file roots (2.1.14)', () => {
     const file = readFile('v1-final');
     expect(file.description).toBe('edited');
     expect(file.roots).toEqual(['pages', 'docs']);
-  });
-
-  it('[section:m17reldisk] the bundle manifest.roots keeps the richer {id,name,dir} shape', async () => {
-    const release: Release = {
-      id: 1,
-      name: '0.2.0',
-      description: 'd',
-      createdBy: 'user',
-      createdAt: '2026-07-09T10:00:00.000Z',
-    };
-    const config = {
-      $schemaVersion: 4,
-      name: 'demo',
-      roots: [
-        { id: 'pages', name: 'Pages', dir: 'pages', builtin: true, linkTargets: [] },
-        { id: 'docs', name: 'Docs', dir: 'documentation', builtin: false, linkTargets: [] },
-      ],
-      entities: [],
-      agent: { claudeUsePreset: false, disableDirectFilesystemAccess: false },
-    } as unknown as NormalizedConfig;
-    const snapshot = {
-      release,
-      entities: [],
-      pages: [],
-      serializer_versions: { page: '1.0.0' },
-    } as unknown as SpecSnapshot;
-
-    const result = await buildBundleArchive(snapshot, release, config, [], [], null);
-    const out = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-release-roots-bundle-'));
-    try {
-      await extractBundleStream(fs.createReadStream(result.tarGzPath), out);
-      const manifest = JSON.parse(fs.readFileSync(path.join(out, 'manifest.json'), 'utf8')) as BundleManifest;
-      expect(manifest.roots).toEqual([
-        { id: 'pages', name: 'Pages', dir: 'pages' },
-        { id: 'docs', name: 'Docs', dir: 'documentation' },
-      ]);
-    } finally {
-      fs.rmSync(out, { recursive: true, force: true });
-      fs.rmSync(result.tarGzPath, { force: true });
-    }
   });
 });

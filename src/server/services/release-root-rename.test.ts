@@ -1,19 +1,12 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import crypto from 'node:crypto';
 import Database from 'better-sqlite3';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
 import { ReleaseService } from './release.js';
 import { FileVersionService } from './file-version.js';
-import {
-  BUNDLE_SCHEMA_VERSION,
-  buildBundleArchive,
-  extractBundleStream,
-  type BundleManifest,
-} from './release-bundle.js';
-import { builtinPagesRoot, configPath, type NormalizedConfig } from '../config.js';
+import { builtinPagesRoot, configPath } from '../config.js';
 import { rootIdChain, type RootRenameTransition } from '../root-renames.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import type { FileSerializer } from './file-serializer.js';
@@ -21,10 +14,9 @@ import type { VersionService } from './versions.js';
 import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import type { TagsService } from './tags.js';
 import type { PagesService } from './pages.js';
-import type { Release, SpecSnapshot } from '../../shared/entities.js';
 
 /**
- * 0.2.101 — history, diffs and bundles follow the SPACE, not the literal
+ * 0.2.101 — history and diffs follow the SPACE, not the literal
  * `rootId`.
  *
  * A rename never re-stamps `file_version`: rows written before it keep the
@@ -58,13 +50,7 @@ const fakeFileSerializer = {
     return { path: p, op: JSON.stringify(a) === JSON.stringify(b) ? 'noop' : 'modified', ...emptyPageDiffFields };
   },
   snapshotFromContent: (p: string, content: string) => ({ path: p, content }),
-  // Reads the restored file back the way the real serializer does — relative
-  // to the base root's directory of the test's current cwd.
-  snapshot: async (p: string) => ({ path: p, content: fs.readFileSync(path.join(snapshotRoot, p), 'utf8') }),
 } as unknown as FileSerializer;
-
-/** Set per test: where `fakeFileSerializer.snapshot` reads from. */
-let snapshotRoot = '';
 
 const fakeHost = {
   listEntities: () => [],
@@ -83,7 +69,6 @@ describe('release tier across a root rename (0.2.101)', () => {
     // after the rename. `git.enabled` stays at its default (off), so the diff
     // takes the SQL path under test rather than the git-anchored one.
     cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-rel-rename-'));
-    snapshotRoot = path.join(cwd, 'docs');
     fs.mkdirSync(path.dirname(configPath(cwd)), { recursive: true });
     fs.writeFileSync(
       configPath(cwd),
@@ -102,7 +87,6 @@ describe('release tier across a root rename (0.2.101)', () => {
       cwd,
       ['docs'],
       [path.join(cwd, 'pages')],
-      () => null,
       TRANSITIONS,
     );
   });
@@ -208,117 +192,5 @@ describe('release tier across a root rename (0.2.101)', () => {
 
     const delta = await releases.getReleaseDiff(r1, r2);
     expect(delta.pages.map((p) => [p.path, p.op])).toEqual([['edited.md', 'modified']]);
-  });
-
-  /**
-   * AC: "A release bundle built before the space was renamed has the same
-   * SHA-256 after the rename as before it." Old archives are never rewritten; a
-   * NEW bundle of the same release is laid out under the current id, with the
-   * retired one recorded in the manifest.
-   */
-  it('[ac:root-rename-bundle-stable] a bundle built before the rename is untouched; a new one uses the live prefix + formerIds', async () => {
-    const release: Release = {
-      id: 1,
-      name: 'r1',
-      description: '',
-      createdBy: 'user',
-      createdAt: '2026-01-01T00:00:00.000Z',
-    };
-    const snapshot = { release, entities: [], pages: [], serializer_versions: { page: '1.0.0' } } as unknown as SpecSnapshot;
-    const before = await buildBundleArchive(
-      snapshot,
-      release,
-      {
-        $schemaVersion: 4,
-        name: 'X',
-        roots: [builtinPagesRoot()],
-        writingStyle: null,
-        onboardingCompleted: true,
-        agent: { claudeUsePreset: false, disableDirectFilesystemAccess: true },
-      } as unknown as NormalizedConfig,
-      [{ rootId: 'pages', path: 'a.md', op: 'create', content: 'hello' }],
-      [],
-      null,
-    );
-    const sha = (p: string) => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
-    const shaBefore = sha(before.tarGzPath);
-
-    // The rename happens here. Nothing in it touches an archive on disk.
-    expect(sha(before.tarGzPath)).toBe(shaBefore);
-    expect(before.sha256).toBe(shaBefore);
-
-    // A bundle built NOW from the pre-rename rows: one space, one prefix — the
-    // current id — and the manifest names the retired one.
-    const r1 = insertRelease('r1');
-    insertPageVersion({ rootId: 'pages', path: 'a.md', version: 1, content: 'hello', releaseId: r1 });
-    const after = await releases.buildBundleArchive(r1);
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-rel-rename-x-'));
-    try {
-      await extractBundleStream(fs.createReadStream(after.tarGzPath), dir);
-      expect(fs.existsSync(path.join(dir, 'docs', 'a.md'))).toBe(true);
-      expect(fs.existsSync(path.join(dir, 'pages'))).toBe(false);
-      const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8')) as BundleManifest;
-      expect(manifest.roots).toEqual([
-        expect.objectContaining({ id: 'docs', formerIds: ['pages'] }),
-      ]);
-      // Additive field — the schema version does not move for it. (It is 4 on
-      // main since the entity-layout change; what matters is that 0.2.101
-      // leaves it where it was.)
-      expect(manifest.bundleSchemaVersion).toBe(BUNDLE_SCHEMA_VERSION);
-      expect(BUNDLE_SCHEMA_VERSION).toBe(4);
-      // The transitions ride ONLY the manifest, never the sanitized config.
-      const bundledConfig = fs.readFileSync(path.join(dir, 'config.json'), 'utf8');
-      expect(bundledConfig).not.toMatch(/formerIds|transitions/);
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-      fs.rmSync(after.tarGzPath, { force: true });
-      fs.rmSync(before.tarGzPath, { force: true });
-    }
-  });
-  /**
-   * The archive prefix may carry a RETIRED identifier. Restore matches it
-   * against the entry's current `id` OR any of its `formerIds`, and writes the
-   * pages under the current address — so the space comes back as one space, not
-   * as a stray directory named after an address that no longer exists.
-   */
-  it('restore matches an archive prefix against formerIds and writes under the current id', async () => {
-    const release: Release = {
-      id: 9,
-      name: 'r9',
-      description: '',
-      createdBy: 'user',
-      createdAt: '2026-01-01T00:00:00.000Z',
-    };
-    const snapshot = { release, entities: [], pages: [], serializer_versions: { page: '1.0.0' } } as unknown as SpecSnapshot;
-    const built = await buildBundleArchive(
-      snapshot,
-      release,
-      {
-        $schemaVersion: 4,
-        name: 'X',
-        roots: [{ ...builtinPagesRoot(), id: 'docs', dir: 'docs' }],
-        writingStyle: null,
-        onboardingCompleted: true,
-        agent: { claudeUsePreset: false, disableDirectFilesystemAccess: true },
-      } as unknown as NormalizedConfig,
-      // Laid out under the RETIRED prefix, the way an archive can legitimately be.
-      [{ rootId: 'pages', path: 'guide/intro.md', op: 'create', content: '# Intro\n' }],
-      [],
-      null,
-      { docs: ['pages'] },
-    );
-    try {
-      const restored = await releases.restoreBundleArchive(fs.createReadStream(built.tarGzPath));
-      expect(restored.pages.map((p) => p.path)).toEqual(['guide/intro.md']);
-      expect(fs.readFileSync(path.join(cwd, 'docs', 'guide', 'intro.md'), 'utf8')).toBe('# Intro\n');
-      expect(fs.existsSync(path.join(cwd, 'pages'))).toBe(false);
-      // Its version row is filed under the live identifier.
-      const row = db.prepare(`SELECT rootId FROM file_version WHERE path = 'guide/intro.md'`).get() as {
-        rootId: string;
-      };
-      expect(row.rootId).toBe('docs');
-    } finally {
-      fs.rmSync(built.tarGzPath, { force: true });
-    }
   });
 });

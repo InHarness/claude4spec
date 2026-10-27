@@ -508,8 +508,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
   // with dir='.' (the builtin default), it scopes the entire project root — so
   // the file-to-root attribution loop must not sweep .claude4spec/briefs,
   // .claude4spec/patches, or other internal .claude4spec/* files into the page
-  // diff (ac-korze-tar-bundle-a-zawiera-wy-cznie-ma: briefs/patches are never
-  // releasable page content).
+  // diff (briefs/patches are never releasable page content).
   it('excludes .claude4spec/* internal files when the pages root is the project root (dir=".")', async () => {
     // pages root IS the project root — reproduces the offending configuration.
     const { releaseService, releaseStore } = buildReleaseService(dir);

@@ -202,7 +202,7 @@ describe('root kinds', () => {
     expect(reg.selecting('m29-release-cache').map((r) => r.id)).toEqual(['releases']);
   });
 
-  it('M17 9vwvitnu: the two iterations — release-flag roots (git pathspecs) are the `pages` roots plus `entities`; the `pages`-kind roots (file_version track, filters, bundle) leave out every system root', () => {
+  it('M17 9vwvitnu: the two iterations — release-flag roots (git pathspecs) are the `pages` roots plus `entities`; the `pages`-kind roots (file_version track, roots/paths filters) leave out every system root', () => {
     const reg = new RootRegistry(user);
     expect(reg.pages().map((r) => r.id)).toEqual(['pages', 'adr']);
     expect(reg.withFlag('release').map((r) => r.id)).toEqual(['pages', 'adr', 'entities']);

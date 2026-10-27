@@ -55,9 +55,8 @@ export interface ReleaseFileData {
   createdAt: string;
   createdBy: string;
   // 2.1.14 (M17 m17reldisk): the ids (`rootId`) of the `pages`-kind roots at the
-  // moment of the release — bare ids, no `name`/`dir`. Deliberately poorer than
-  // the bundle's `manifest.roots` (`{id,name,dir}`): committed release files are
-  // immutable git diff anchors, so this shape is frozen with them.
+  // moment of the release — bare ids, no `name`/`dir`. Committed release files
+  // are immutable git diff anchors, so this shape is frozen with them.
   roots: string[];
   // 2.1.47 (M17 m17reldisk): the accepted shadow `{ id, tipSha }`. Additive and
   // optional — the frozen shape covers the existing fields only. Set solely by

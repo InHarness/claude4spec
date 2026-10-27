@@ -112,8 +112,8 @@ export function releasesRouter(
   /**
    * Internal-only consumer: konsumowane wyłącznie przez stronę release detail
    * (UI L5) do renderowania kart `single_element` w stanie `from` dla deleted
-   * entities. Nie jest portowalnym eksportem JSON-a — moduł linearizacji
-   * (przyszły) doda swoje własne API.
+   * entities. Projekcja domyślna to surowy SpecSnapshot z tabel wersji;
+   * `view=operation` zwraca payload `release_show` w `{ data }`.
    */
   router.get('/:name/snapshot', (req, res, next) => {
     try {

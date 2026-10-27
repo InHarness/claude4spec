@@ -79,7 +79,6 @@ export interface Config {
    * exposure fields (`exposed`, `name`, `description`, `entry`, `scope`,
    * `contextTypes`) and the attachments of other projects' skills (`uses`).
    * Additive — no `$schemaVersion` bump; absent ⇒ not exposed, no attachments.
-   * Not in the release bundle's sanitized config (allow-list, M17 `m17bndcf1`).
    * Read through {@link normalizeSkillConfig}, never field by field with `??`.
    */
   skill?: SkillConfig;

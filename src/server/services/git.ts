@@ -1037,8 +1037,8 @@ export class GitService {
    * unchanged default behavior. An EXPLICIT `branch` has nothing to do with
    * current HEAD, so the detached-HEAD skip only applies when there's no
    * explicit branch to push — otherwise a caller resolving a specific branch
-   * (e.g. `ReleasePushService`, which finds the branch actually carrying a
-   * release's marker commit) would be silently ignored whenever the
+   * (e.g. the branch actually carrying a release's marker commit) would be
+   * silently ignored whenever the
    * currently checked-out ref happened to be detached for any unrelated
    * reason.
    */
@@ -1149,10 +1149,9 @@ export class GitService {
    * the caller passes an explicit `branch`; otherwise the `push()` result.
    * Reads config per-call (hot-reload).
    *
-   * 0.1.125: optional `branch` — forwarded to `push()` so the caller (e.g.
-   * `ReleasePushService`, which resolves the branch actually carrying the
-   * release's marker commit) can direct the push there instead of blind
-   * current HEAD.
+   * 0.1.125: optional `branch` — forwarded to `push()` so a caller that
+   * resolves the branch actually carrying the release's marker commit can
+   * direct the push there instead of blind current HEAD.
    */
   async pushOnPush(branch?: string): Promise<GitPushResult | null> {
     const config = readConfig(this.cwd);

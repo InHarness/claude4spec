@@ -1,0 +1,14 @@
+{
+  "id": "dev-0001",
+  "kind": "drift",
+  "blocking": false,
+  "address": "u3-remove-bundle-archive/L1",
+  "slugs": [
+    "file-version"
+  ],
+  "text": "The file-version record (unchanged in this window except the serializer_version description) disagrees with the schema that has shipped since 0.2.2 in ways this window does not touch: (1) index names — the record lists idx_file_version_release_id and idx_file_version_root_path(rootId, path), the code has idx_file_version_release(release_id), idx_file_version_path(path) and idx_file_version_root_release(rootId, release_id); the unique index is a table constraint uq_file_version_path_root_version, which SQLite materialises as sqlite_autoindex_file_version_1; (2) release_id carries no FOREIGN KEY to spec_release (the record declares FK ON DELETE SET NULL); (3) op and changed_by have CHECK constraints although the record says 'validation in the application, no CHECK'; (4) the table has an extra nullable column change_summary (written by FileVersionService.recordVersion) that the record does not list. The implementer left the schema as is — no migration, since nothing in 2.1.55 changes these — and the [entity:file-version] test asserts the record's columns and the (path, rootId, version) uniqueness only. The record should be brought to the shipped schema (or a later brief should migrate the schema to the record).",
+  "unit": "u3-remove-bundle-archive",
+  "portion": "u3-remove-bundle-archive/p1-l1",
+  "sent": true,
+  "patchPath": "2-1-54-to-2-1-55-u3-remove-bundle-archive-l1-file-version-record-disagrees-with-the-shipped-schem.md"
+}

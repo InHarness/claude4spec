@@ -6,7 +6,6 @@ import { builtinPagesRoot, configPath, readConfig, type Config } from './config.
 import {
   appendTransition,
   clearRenameJournal,
-  formerIdsOf,
   readRootRenames,
   recoverPendingRootRename,
   resolveCurrentRootId,
@@ -25,13 +24,10 @@ describe('root-renames — the identifier chain (0.2.101)', () => {
   it('walks a multi-step chain back to the oldest identifier', () => {
     const transitions = [t('pages', 'docs'), t('docs', 'spec')];
     expect(rootIdChain(transitions, 'spec')).toEqual(['spec', 'docs', 'pages']);
-    // `formerIds` in a bundle manifest is the same chain, oldest first.
-    expect(formerIdsOf(transitions, 'spec')).toEqual(['pages', 'docs']);
   });
 
-  it('a never-renamed root is its own chain and has no former ids', () => {
+  it('a never-renamed root is its own chain', () => {
     expect(rootIdChain([], 'adr')).toEqual(['adr']);
-    expect(formerIdsOf([], 'adr')).toEqual([]);
   });
 
   it('resolves a retired identifier forward to the address it leads to today', () => {

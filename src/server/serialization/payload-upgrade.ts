@@ -269,7 +269,7 @@ export function upgradePayload(
 
 
 /**
- * Bring a CAPTURED payload (an `entity_version` / bundle row) to the type's
+ * Bring a CAPTURED payload (an `entity_version` row) to the type's
  * current shape.
  *
  * ONE implementation for every reader of that column, because there are four of

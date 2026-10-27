@@ -6,3 +6,7 @@ patch-config-request → src/server/services/remote-settings-fields.ts
 release-detail → src/client/components/ReleaseDetail.tsx
 config-json-shape → src/server/config.ts
 flagi-cli-m01#--create-project → src/bin/launch.ts
+file-version → src/server/db/migrations/000_baseline.sql
+release-service-contract → src/server/services/release.ts
+spec-snapshot-entity-row → src/shared/entities.ts
+get-api-releases-nameorid-snapshot → src/server/routes/releases.ts

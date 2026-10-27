@@ -21,8 +21,8 @@ export interface GitRepoInfo {
   remoteUrl: string | null;
   /**
    * Current branch; `null` when not detected, on detached HEAD or an unborn
-   * branch (fresh repo, 0 commits). 2.1.14: with `null` the release push and a
-   * `current`-mode release commit do not run (`gitSync: null`), the pull commit
+   * branch (fresh repo, 0 commits). 2.1.14: with `null` a `current`-mode
+   * release commit does not run (`gitSync: null`), the pull commit
    * answers `skipped`; `named`/`new` release commits run on detached HEAD too.
    */
   branch: string | null;
@@ -185,13 +185,12 @@ export interface GitPushResult {
 
 /**
  * 0.1.124: shared shape for the `gitSync` field riding the synchronous
- * create/update-release and push responses — `CreateReleaseResponse`,
- * `UpdateReleaseResponse`, `ReleasePushResponse`. 2.1.14: on create and push
- * `null` means the gated entry (`commitOnRelease` / `pushOnPush`) did not let
- * the operation through (git off, push-sync off, no repo, detached HEAD); on
- * update `null` means no pull ran at all (e.g. a rename with no
- * `assignUnreleased`) — git off / no repo there answer `skipped`. The release
- * and push pages react only to `status: 'error'` (`surfaceGitSync`).
+ * create/update-release responses — `CreateReleaseResponse`,
+ * `UpdateReleaseResponse`. 2.1.14: on create `null` means the gated entry
+ * (`commitOnRelease`) did not let the operation through (git off, no repo,
+ * detached HEAD); on update `null` means no pull ran at all (e.g. a rename
+ * with no `assignUnreleased`) — git off / no repo there answer `skipped`. The
+ * release page reacts only to `status: 'error'` (`surfaceGitSync`).
  *
  * 0.1.125: `branch`/`switched` added — see `GitCommitResult`/`GitPushResult`.
  */

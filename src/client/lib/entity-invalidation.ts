@@ -27,8 +27,8 @@ import { clientPluginHost } from '../core/plugin-host/host.js';
 /**
  * An entity type → its React Query list key (plural).
  *
- * 0.2.11: derived from the type's own `pathPrefix` (last segment), the same rule
- * the release bundle uses for file names, instead of a five-entry map.
+ * 0.2.11: derived from the type's own `pathPrefix` (last segment) instead of a
+ * five-entry map.
  *
  * Falls back to `entities` when the type is unknown to the client host — which
  * includes the window before plugin boot settles, where answering with a
