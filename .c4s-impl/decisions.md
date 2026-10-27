@@ -1,0 +1,5 @@
+# Decisions
+
+- 2026-10-27 (setup, decyzja użytkownika): na tym etapie bez poświadczeń. **u08-off-loopback-auth nie jest budowana** — status `blocked(dev-0001)`; serwer, nasłuch i ostrzeżenia startowe zostają jak są.
+- 2026-10-27 (setup, decyzja użytkownika): **u10-skill-hook-trust-gate budowana w najprostszej postaci**, żeby sprawdzić sens funkcji: `trustSpecSkillHooks: boolean` w rekordzie projektu (`src/server/workspace/types.ts`, obok `trustProjectPlugins`); jedna zgoda na całą listę podpięć; potwierdzenie z karty #skills (wzór: bramka zaufania pluginów, `POST /trust-plugins` w `src/server/core/plugin-host/cross-cutting.ts`). Niepotwierdzone podpięcie nie rozwiązuje się do dostawcy i daje ostrzeżenie jak podpięcie wiszące. Zgłoszone jako dev-0002 (non-blocking).
+- 2026-10-27 (setup): jobs — konwencje wskazują tabelę modułów (`oq23nb0j`) i modułów-pluginów (`zpn3gaip`), nie tabelę zadań użytkownika; żadna jednostka nie dostaje joba, weryfikator systemu pracuje z celów jednostek i encji.

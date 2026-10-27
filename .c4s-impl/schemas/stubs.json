@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "stubs",
+  "description": "The stub ledger (.c4s-impl/stubs.json): the brief's rows, plus stubs opened during the build. Usually empty for a delta window.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "stubs"
+  ],
+  "properties": {
+    "stubs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dependent",
+          "provider",
+          "pretends",
+          "closesInWave",
+          "closed"
+        ],
+        "properties": {
+          "dependent": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "pretends": {
+            "type": "string",
+            "description": "what the stub pretends"
+          },
+          "why": {
+            "type": "string",
+            "description": "the justification \u2014 why cutting the units differently could not avoid it"
+          },
+          "moduleDependency": {
+            "type": "string"
+          },
+          "closesInWave": {
+            "type": "integer"
+          },
+          "closed": {
+            "type": "boolean"
+          },
+          "openedBy": {
+            "type": "string",
+            "description": "'brief' or the portion that opened it"
+          }
+        }
+      }
+    }
+  }
+}
