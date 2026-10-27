@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { DomainError } from './tags.js';
+import { encrypt } from './agent-credential-crypto.js';
 import {
   RemoteHttpClient,
   RemoteUnauthorizedError,
@@ -16,6 +17,7 @@ import type {
 
 interface RemoteSessionRow {
   id: number;
+  /** Ciphertext of the M05 secrets primitive (`agent-credential-crypto`), never the token itself. */
   access_token: string;
   token_id: string;
   issued_at: string;
@@ -44,6 +46,14 @@ interface FlowState {
  * Grant. Login is a human action (no MCP tool): the agent never logs in or
  * touches the device flow. The token is an operational secret kept in
  * `remote_session` and never returned to the UI.
+ *
+ * 2.1.57 (yuhlv2qw, m24-requires-m05): the token is stored encrypted at-rest
+ * with the M05 secrets primitive — the same AES-256-GCM and keyring file as the
+ * agent's own API key. It is decrypted server-side only, right before an
+ * owner-only remote call; rows written as plaintext before that are encrypted
+ * by the one-off data step of migration 062. ASSUMPTION:dev-0010 — no call reads
+ * the stored token today (the only owner-only call, the post-login
+ * `GET /v1/account`, uses the fresh token), so there is no decrypt path here yet.
  */
 export class RemoteAuthService {
   private flow: FlowState | null = null;
@@ -119,7 +129,8 @@ export class RemoteAuthService {
    * Fetch the account profile (email/status), then atomically replace the
    * single `remote_session` row. Profile-first so a failed enrich never leaves
    * a half-written row; a 401 here means the freshly-issued token was already
-   * rejected — surface as unauthenticated without persisting.
+   * rejected: the local session is wiped (as on any owner-only 401) and the
+   * flow dropped, so the user must start a new device flow.
    */
   private async persistSession(token: DeviceTokenResponse): Promise<RemoteAccountResponse> {
     let profile: AccountProfileResponse;
@@ -127,10 +138,13 @@ export class RemoteAuthService {
       profile = await this.client.getAccount(token.access_token);
     } catch (err) {
       if (err instanceof RemoteUnauthorizedError) {
+        this.db.prepare('DELETE FROM remote_session').run();
+        this.flow = null;
         throw new DomainError('REMOTE_UNAUTHORIZED', 'remote session expired; log in again');
       }
       throw err;
     }
+    const ciphertext = encrypt(token.access_token);
     const tx = this.db.transaction(() => {
       this.db.prepare('DELETE FROM remote_session').run();
       this.db
@@ -139,7 +153,7 @@ export class RemoteAuthService {
              (access_token, token_id, issued_at, remote_account_id, account_email, account_status)
            VALUES (?, ?, ?, ?, ?, ?)`,
         )
-        .run(token.access_token, token.token_id, token.issued_at, token.account_id, profile.email, profile.status);
+        .run(ciphertext, token.token_id, token.issued_at, token.account_id, profile.email, profile.status);
     });
     tx();
     return this.getCurrentAccount();

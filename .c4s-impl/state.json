@@ -833,7 +833,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "u09-remote-token-encryption/p1-l1-l1",
@@ -848,20 +848,22 @@
             "ac-po-http-401-z-owner-only-endpointu-zdaln",
             "ac-token-zdalnej-sesji-prze-ywa-restart-ser"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 1,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "101934147508392198a229e818e29b953e64b8c3",
+      "baseCommit": "101934147508392198a229e818e29b953e64b8c3",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": [],
+      "lastBlocking": []
     },
     {
       "id": "u10-skill-hook-trust-gate",

@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CODE_MIGRATIONS } from './code-migrations.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -77,6 +78,9 @@ export function runMigrations(db: Database.Database): string[] {
       for (const file of pending) {
         const version = file.replace(/\.sql$/, '');
         db.exec(fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf-8'));
+        // A data step SQL cannot express (e.g. one that needs the M05 keyring)
+        // runs right after its file, inside the same transaction.
+        CODE_MIGRATIONS[version]?.(db);
         record.run(version);
         newlyApplied.push(version);
       }

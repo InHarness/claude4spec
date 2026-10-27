@@ -1,11 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import request from 'supertest';
 import Database from 'better-sqlite3';
 import { RemoteAuthService } from '../services/remote-auth.js';
-import type { RemoteHttpClient } from '../services/remote-http-client.js';
+import { RemoteUnauthorizedError, type RemoteHttpClient } from '../services/remote-http-client.js';
 import { remoteAccountRouter } from './remote-account.js';
 
 /**
@@ -19,7 +21,22 @@ const MIGRATION = fs.readFileSync(
   'utf8',
 );
 
+// A login encrypts the token with the M05 keyring (`secret.key` under `C4S_HOME`) —
+// a throwaway home, never the real one.
+let tmpHome: string;
+const prevHome = process.env.C4S_HOME;
+beforeAll(() => {
+  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-remote-account-'));
+  process.env.C4S_HOME = tmpHome;
+});
+afterAll(() => {
+  if (prevHome === undefined) delete process.env.C4S_HOME;
+  else process.env.C4S_HOME = prevHome;
+  fs.rmSync(tmpHome, { recursive: true, force: true });
+});
+
 let db: Database.Database;
+const sessionCount = () => (db.prepare('SELECT COUNT(*) AS n FROM remote_session').get() as { n: number }).n;
 const app = () =>
   express()
     .use(express.json())
@@ -52,6 +69,58 @@ describe('POST /api/remote-account/logout (M24)', () => {
 
     const after = await request(app()).get('/api/remote-account');
     expect(after.body).toEqual({ connected: false });
+  });
+});
+
+describe('POST /api/remote-account/logout — the remote_session row (M24)', () => {
+  it('[ac:ac-logout-kasuje-wiersz-remote-session-zer] logout deletes the remote_session row — zero rows after the operation, also when repeated', async () => {
+    expect(sessionCount()).toBe(1);
+
+    await request(app()).post('/api/remote-account/logout').expect(200);
+    expect(sessionCount()).toBe(0);
+
+    // Idempotent: a second logout on an empty table still leaves zero rows.
+    await request(app()).post('/api/remote-account/logout').expect(200);
+    expect(sessionCount()).toBe(0);
+  });
+});
+
+describe('HTTP 401 from an owner-only remote endpoint (M24)', () => {
+  it('[ac:ac-po-http-401-z-owner-only-endpointu-zdaln] a 401 from GET /v1/account wipes the local remote_session and requires a new device flow', async () => {
+    expect(sessionCount()).toBe(1);
+    const client = {
+      startDeviceFlow: async () => ({
+        device_code: 'dc-401',
+        user_code: 'QRST-0401',
+        verification_uri: 'https://remote.example/device',
+        verification_uri_complete: 'https://remote.example/device?code=QRST-0401',
+        expires_in: 900,
+        interval: 5,
+      }),
+      pollDeviceToken: async () => ({
+        ok: true as const,
+        token: { access_token: 'tok-revoked', token_type: 'Bearer' as const, token_id: 'tid-9', account_id: 'acc-9', issued_at: '2026-10-27T00:00:00Z' },
+      }),
+      getAccount: async () => {
+        throw new RemoteUnauthorizedError();
+      },
+    } as unknown as RemoteHttpClient;
+    const authApp = express()
+      .use(express.json())
+      .use('/api/remote-account', remoteAccountRouter(new RemoteAuthService(db, client)));
+
+    await request(authApp).post('/api/remote-account/login/start').expect(200);
+    const poll = await request(authApp).post('/api/remote-account/login/poll');
+    expect(poll.status).toBe(401);
+    expect(poll.body.error.code).toBe('REMOTE_UNAUTHORIZED');
+
+    // The local session is gone …
+    expect(sessionCount()).toBe(0);
+    expect((await request(authApp).get('/api/remote-account')).body).toEqual({ connected: false });
+    // … and the old flow is dropped: polling again needs a new login/start.
+    const again = await request(authApp).post('/api/remote-account/login/poll');
+    expect(again.status).toBe(400);
+    expect(again.body.error.code).toBe('NO_ACTIVE_FLOW');
   });
 });
 
