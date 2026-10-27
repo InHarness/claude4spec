@@ -6,7 +6,7 @@ export interface StartSeededThreadOptions {
 }
 
 /**
- * M05 chat orchestration (brief 0.1.45 §3). Opens the chat overlay on a fresh
+ * M53 chat orchestration (brief 0.1.45 §3). Opens the chat overlay on a fresh
  * thread and seeds it with `prompt`. Pure client orchestration over the
  * existing `post-api-chat` endpoint — no new endpoint, no new `context_type`:
  *

@@ -14,7 +14,9 @@ import { backgroundHoldExpiredMessage } from '../../shared/agent-turn.js';
  * them apart, and everything keys on the SSE `error` code.
  */
 describe('turn endings (0.2.107)', () => {
-  it('[ac:ac-przekroczenie-capa-oczekiwania-na-zad] maps each terminal code to its own hold ending', () => {
+  // The server half — the hold cap ends the turn with a terminal BACKGROUND_HOLD_EXPIRED
+  // error — is pinned in src/server/routes/agent-turn.test.ts. This is the client half.
+  it('maps each terminal code to its own hold ending', () => {
     const kinds = ['ABORTED', 'IDLE_TIMEOUT', 'TIMEOUT', 'BACKGROUND_HOLD_EXPIRED'].map(holdEndingKindFor);
     expect(kinds).toEqual(['user-abort', 'went-silent', 'backstop-expired', 'hold-expired']);
     expect(new Set(kinds.map((kind) => holdEndingLabel({ kind, abandoned: 2 }))).size).toBe(4);

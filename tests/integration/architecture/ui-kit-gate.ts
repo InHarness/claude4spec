@@ -4,7 +4,7 @@
  * Scope: the host code (`src/client/**`, the catalog folder itself excluded)
  * and the sources of every envelope (`plugins/<package>/src/**`). Out of scope
  * are the two surfaces the gate's reach excludes from L12 — the editor surface
- * (M20) and the chat overlay (M05): own markup there is no violation and needs
+ * (M20) and the chat overlay (M53): own markup there is no violation and needs
  * no declaration.
  *
  * Exceptions: read from `HOST_LOCAL_DECLARATIONS` and nothing else — the DŁUG,
@@ -40,8 +40,8 @@ export const CATALOG_DIR = 'src/client/host-ui-kit/';
  * from chat tool cards — it is the chat overlay's, not a slice of L12.
  */
 export const OUT_OF_L12_SCOPE: Readonly<Record<string, string>> = {
-  'src/client/chat/': 'M05 — chat overlay',
-  'src/client/ui/modals/ToolJsonView.tsx': 'M05 — chat overlay (the tool-json-view window of chat tool cards)',
+  'src/client/chat/': 'M53 — chat overlay',
+  'src/client/ui/modals/ToolJsonView.tsx': 'M53 — chat overlay (the tool-json-view window of chat tool cards)',
   'src/client/tiptap/': 'M20 — editor surface',
 };
 

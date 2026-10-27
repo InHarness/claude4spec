@@ -5,7 +5,7 @@
  * malformed tags fall through and react-markdown drops them).
  *
  * 2.1.2 (M51) — WHICH tags become chips is a rule over the registry, not a
- * list of names. 2.1.9 (M05 `rehyxchp`) — resolved in this order:
+ * list of names. 2.1.9 (M53 `rehyxchp`) — resolved in this order:
  *  0. a tag its owning module assigned a render to (M51 `urs8n775`) is shown
  *     with that component, whatever its attributes (see `rendersInChat`);
  *  1. otherwise the default render, the target read off the attribute names:
@@ -21,7 +21,7 @@
  * emitted: `slug` / `slugs` / `tags` as `^[a-z0-9-]+$`, `anchor` as
  * `^[a-z0-9]{6,12}$`, `type` as a type-name shape. A chip tag failing it is
  * dropped — react-markdown without rehype-raw would drop the raw HTML anyway.
- * 2.1.7 (M05) — a `type` outside the host's available types is NOT dropped:
+ * 2.1.7 (M53) — a `type` outside the host's available types is NOT dropped:
  * it renders as the host's broken chip `[broken: <slug>]`, like a type with
  * no module.
  *
@@ -72,6 +72,9 @@ export function chipTargetOf(def: Pick<XmlTagDefinition, 'attrOrder'>): ChipTarg
 /** The attribute names sanitization knows how to check — the only ones a chip carries. */
 const CHIP_ATTRS = new Set(['type', 'slug', 'slugs', 'tags', 'filter', 'anchor']);
 
+/** The attributes that name a target; a tag with none of them is never a chip. */
+const TARGET_ATTRS = new Set(['anchor', 'slug', 'slugs', 'tags']);
+
 /**
  * Step 0 — the tag has a render assigned by its owner, and that render can be
  * handed the tag's content. Sanitization carries only the attributes it checks
@@ -80,7 +83,13 @@ const CHIP_ATTRS = new Set(['type', 'slug', 'slugs', 'tags', 'filter', 'anchor']
  * as the default render leaves it. ASSUMPTION:dev-0301.
  */
 function rendersInChat(def: Pick<XmlTagDefinition, 'name' | 'attrOrder'>): boolean {
-  return !!getTagRender(def.name) && def.attrOrder.every((a) => CHIP_ATTRS.has(a));
+  return (
+    !!getTagRender(def.name) &&
+    // Precondition (M53 `rehyxchp`): a tag with no target attribute carries its
+    // own content and stays text, assigned render or not.
+    def.attrOrder.some((a) => TARGET_ATTRS.has(a)) &&
+    def.attrOrder.every((a) => CHIP_ATTRS.has(a))
+  );
 }
 
 /** True for a registered tag the chat shows as a component (assigned render or chip). */

@@ -69,7 +69,7 @@ describe('rowsToChatMessages — background-task carriers', () => {
     expect((found[0] as { input: { taskId: string } }).input.taskId).toBe('bg1');
   });
 
-  it('anchors carriers by createdAt rather than dumping them at the end', () => {
+  it('[ac:ac-odtworzony-blok-zadania-w-tle-stoi-na] a restored background-task block stands at its place in the turn — between the assistant blocks, by created_at — not in a flat list appended at the end of the thread', () => {
     const msgs = rowsToChatMessages(
       [
         row({ id: 1, createdAt: '2026-08-26T10:00:00.000Z' }),
@@ -86,6 +86,50 @@ describe('rowsToChatMessages — background-task carriers', () => {
     // Between the two assistant blocks, not after both.
     expect(carrierAt).toBe(1);
     expect(blocks).toHaveLength(3);
+  });
+
+  it('[ac:ac-odtworzony-blok-zadania-w-tle-stoi-na] tasks from different turns stay in their own turns instead of merging into one list at the end', () => {
+    const msgs = rowsToChatMessages(
+      [
+        row({ id: 1, role: 'user', content: JSON.stringify({ text: 'turn one' }), createdAt: '2026-08-26 10:00:00' }),
+        row({ id: 2, createdAt: '2026-08-26 10:00:02' }),
+        row({ id: 3, role: 'user', content: JSON.stringify({ text: 'turn two' }), createdAt: '2026-08-26 10:05:00' }),
+        row({ id: 4, createdAt: '2026-08-26 10:05:02' }),
+      ],
+      [],
+      [
+        task({ taskId: 'first', createdAt: '2026-08-26 10:00:01' }),
+        task({ taskId: 'second', createdAt: '2026-08-26 10:05:01' }),
+      ],
+    );
+
+    const taskIdsOf = (m: (typeof msgs)[number]) =>
+      m.blocks
+        .filter((b) => (b as { toolName?: string }).toolName === BACKGROUND_TASK_TOOL_NAME)
+        .map((b) => (b as { input: { taskId: string } }).input.taskId);
+    expect(msgs.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant']);
+    expect(taskIdsOf(msgs[1]!)).toEqual(['first']);
+    expect(taskIdsOf(msgs[3]!)).toEqual(['second']);
+  });
+
+  it('[ac:ac-dwa-rownolegle-zadania-w-tle-jednej-t] two parallel background tasks of one turn come back after a reload as two separate blocks', () => {
+    const msgs = rowsToChatMessages(
+      [
+        row({ id: 1, role: 'user', content: JSON.stringify({ text: 'build and test' }), createdAt: '2026-08-26 10:00:00' }),
+        row({ id: 2, createdAt: '2026-08-26 10:00:05' }),
+      ],
+      [],
+      [
+        task({ taskId: 'build', description: 'npm run build', createdAt: '2026-08-26 10:00:01' }),
+        task({ taskId: 'test', description: 'npm test', createdAt: '2026-08-26 10:00:01' }),
+      ],
+    );
+
+    const found = carriers(msgs);
+    expect(found).toHaveLength(2);
+    // Each its own block, keyed by its own task — not one block listing both.
+    expect(found.map((b) => (b as { toolUseId: string }).toolUseId)).toEqual(['bgtask-build', 'bgtask-test']);
+    expect(found.map((b) => (b as { input: { taskId: string } }).input.taskId)).toEqual(['build', 'test']);
   });
 
   it('places a carrier for a task that started after the last persisted row', () => {
@@ -113,7 +157,7 @@ describe('rowsToChatMessages — background-task carriers', () => {
 });
 
 describe('rowsToChatMessages — abandoned delegation (0.2.109)', () => {
-  it('[ac:ac-po-przeladowaniu-watku-delegacja-prze] after a reload a delegation cut before subagent_completed comes back abandoned, not running', () => {
+  it('after a reload a delegation cut before subagent_completed comes back abandoned, not running', () => {
     const msgs = rowsToChatMessages(
       [
         row({ id: 1, role: 'user', content: JSON.stringify({ text: 'go' }) }),

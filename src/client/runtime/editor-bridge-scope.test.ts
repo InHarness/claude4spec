@@ -1,5 +1,5 @@
 /**
- * 2.1.28 — the editor bridge's two faces (M20 nvc5wy2p / m20l11sc, M05 rehyxchp,
+ * 2.1.28 — the editor bridge's two faces (M20 nvc5wy2p / m20l11sc, M53 rehyxchp,
  * M13 chipprops / z7l89jhf / xr8fs8dc):
  *  - chips in the editor, in chat and in plugins navigate through the
  *    `editorBridge` singleton of `@c4s/plugin-runtime`;

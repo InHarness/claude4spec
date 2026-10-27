@@ -219,7 +219,7 @@ const M19_NODES = ['inline_mention', 'single_element', 'element_list', 'tagged_l
  * before the whitelist existed (rule 7 — the core must cover syntax already in
  * the content).
  *
- * `chat-input`: minimal — `Document`/`Paragraph`/`Text` (core) +
+ * `chat-input` (embedded by M53's chat composer): minimal — `Document`/`Paragraph`/`Text` (core) +
  * `MentionExtension` + `PageRefNode` + the `section_ref` tag node (allowed
  * exception: the chip most often pasted into chat) + the slash framework
  * (`SlashDispatcher` = `slash_commands`) with `/section`, plus (2.1.9, M52)

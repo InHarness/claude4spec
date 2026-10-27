@@ -27,7 +27,7 @@ export function XmlChipDispatcher({ chip }: { chip: SanitizedChip }) {
 function TypeChip({ type, slug }: { type: string; slug: string }) {
   const def = getEntityDef(type);
   // A hidden type opens its fullscreen overlay, a normal one navigates through
-  // the `editorBridge` singleton (2.1.28, M05 rehyxchp) — which delegates to the
+  // the `editorBridge` singleton (2.1.28, M53 rehyxchp) — which delegates to the
   // chat-aware bridge of the provider around the message tree.
   const open = openEntityHandler(type, slug, editorBridge);
   if (!def) {

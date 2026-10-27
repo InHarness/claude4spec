@@ -1781,7 +1781,9 @@ export async function runAgentTurn(
       disallowedToolGroups,
       /**
        * 0.2.65: the task family, named EXPLICITLY — the one line that decides
-       * whether `<task_tracking>` in the prompt can be obeyed at all.
+       * whether the model can keep the turn's task list at all (the list the
+       * turn forwards as `todo_list_updated`). The prompt names no such block
+       * any more (2.1.56); the capability stays because the list does.
        *
        * From Agent SDK 0.3.233 `TodoWrite`/`TaskCreate`/`TaskGet`/`TaskUpdate`/
        * `TaskList` are off by default on opus-5 and its generation, and a session

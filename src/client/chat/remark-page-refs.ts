@@ -4,7 +4,7 @@ import { AT_PAYLOAD_RE, LINK_PATH_RE, PATH_WITH_EXT_RE, isWordCodePoint } from '
 import { resolveAgainstIndex, type PathIndex } from '../tiptap/lib/pathResolve.js';
 
 /**
- * 2.1.7 (M05/M14) — page references in a USER chat message, now that the
+ * 2.1.7 (M53/M14) — page references in a USER chat message, now that the
  * message renders through `<ChatMarkdown />` like every other chat text.
  *
  * The same three rules the editor's markdown-it pipeline applies

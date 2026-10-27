@@ -970,15 +970,11 @@ describe('buildSystemPrompt — <builtin> reflects the posture (0.2.53)', () => 
 });
 
 /**
- * 0.2.65 — the two prompt-side halves of the task-tracking repair.
- *
- * `<todo_markers>` used to send the sweep through `Grep`, which the default
- * posture removes from the catalog entirely; `<task_tracking>` did not exist at
- * all, so the only "keep a task list" instruction lived in the Claude Code
- * preset — and a project running `claudeUsePreset: false` REPLACES that preset.
- * Both assertions are about a route that survives the default posture.
+ * 0.2.65 — `<todo_markers>` used to send the sweep through `Grep`, which the
+ * default posture removes from the catalog entirely; the route below survives
+ * both postures.
  */
-describe('buildSystemPrompt — task tracking (0.2.65)', () => {
+describe('buildSystemPrompt — TODO sweep (0.2.65)', () => {
   /** Read one block's body out of the rendered prompt, by tag name. */
   const blockBody = (out: string, tag: string): string => {
     const open = out.indexOf(`<${tag}>`);
@@ -996,50 +992,32 @@ describe('buildSystemPrompt — task tracking (0.2.65)', () => {
       expect(body).toContain('search_pages');
       expect(body).not.toContain('Grep');
     });
-
-    /**
-     * `TodoWrite` FIRST, and that ordering is the assertion. Against the pinned
-     * published agent-adapters it is the only one of the three that reaches
-     * `chat_thread.current_todo_items` — the `TaskCreate`/`TaskUpdate` merge is
-     * still guarded there — so a block naming only the pair would steer the model
-     * onto the path that drops silently.
-     */
-    it(`leads with TodoWrite and still offers the pair (access enabled=${enabled})`, () => {
-      const body = blockBody(build({ contextType: 'chat', agentFilesystemAccess: { enabled } }), 'task_tracking');
-      expect(body).toContain('TodoWrite');
-      expect(body).toContain('TaskCreate');
-      expect(body).toContain('TaskUpdate');
-      expect(body.indexOf('TodoWrite')).toBeLessThan(body.indexOf('TaskCreate'));
-    });
   }
-
-  /**
-   * Its own block, deliberately. Registered in the main table, it cannot be
-   * taken away by the preset flag — which is the entire reason it is not left
-   * to the Claude Code preset to say.
-   */
-  it('registers task_tracking in the main block table, beside todo_markers', () => {
-    const names = mainPromptBlockNames();
-    expect(names).toContain('task_tracking');
-    expect(names.indexOf('task_tracking')).toBe(names.indexOf('todo_markers') + 1);
-  });
-
-  /**
-   * The block promises a reader ("the user watches it advance"). `ask` is a
-   * headless peer consult with no viewer, so emitting it there would both waste
-   * the calls and state something untrue.
-   */
-  it('is omitted from the ask frame, and present in chat and patch', () => {
-    expect(build({ contextType: 'ask' })).not.toContain('<task_tracking>');
-    for (const contextType of ['chat', 'patch'] as const) {
-      expect(build({ contextType })).toContain('<task_tracking>');
-    }
-  });
 
   /** The sweep must ask for the text, not just the page list. */
   it('asks search_pages for hits, not the textless default', () => {
     const body = blockBody(build({ contextType: 'chat' }), 'todo_markers');
     expect(body).toContain("mode: 'hits'");
+  });
+});
+
+/**
+ * 2.1.56 — `<task_tracking>` and its template are removed (code-snippet
+ * `szablon-task-tracking` deleted): no frame composes the block, and the main
+ * block table no longer names it.
+ */
+describe('buildSystemPrompt — no <task_tracking> block (2.1.56)', () => {
+  it('[entity:szablon-task-tracking] the composed system prompt carries no <task_tracking> block in any frame', () => {
+    for (const contextType of ['chat', 'patch', 'ask'] as const) {
+      for (const enabled of [true, false]) {
+        const out = build({ contextType, agentFilesystemAccess: { enabled } });
+        expect(out, `${contextType}/${enabled}`).not.toContain('<task_tracking>');
+        expect(out, `${contextType}/${enabled}`).not.toContain('TASK LIST');
+      }
+    }
+    expect(build({ contextType: 'brief', brief: null, writingStyleSkill: null })).not.toContain('<task_tracking>');
+    expect(mainPromptBlockNames()).not.toContain('task_tracking');
+    expect(DEFAULT_COMPOSITION.some((entry) => entry.block === 'task_tracking')).toBe(false);
   });
 });
 

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 /**
- * 2.1.28 — M05 `rehyxchp`: the chat message tree is wrapped in an
+ * 2.1.28 — M53 `rehyxchp`: the chat message tree is wrapped in an
  * `EditorBridgeProvider` with the chat-aware bridge, and a chip in chat calls
  * `editorBridge.openEntity(...)` / `editorBridge.openSection(...)` itself. The
  * singleton reaches the chat-aware bridge (the nearest provider), which

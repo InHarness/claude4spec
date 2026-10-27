@@ -24,10 +24,11 @@ const cfg = vi.hoisted(() => ({ disableDirectFilesystemAccess: false }));
 vi.mock('../../hooks/useConfig.js', () => ({
   useConfig: () => ({ data: { agent: { disableDirectFilesystemAccess: cfg.disableDirectFilesystemAccess } } }),
 }));
-const seeded = vi.hoisted(() => ({ prompts: [] as string[] }));
+const seeded = vi.hoisted(() => ({ prompts: [] as string[], opts: [] as unknown[] }));
 vi.mock('../../chat/startSeededThread.js', () => ({
-  startSeededThread: (prompt: string) => {
+  startSeededThread: (prompt: string, opts?: unknown) => {
     seeded.prompts.push(prompt);
+    seeded.opts.push(opts);
   },
 }));
 
@@ -107,6 +108,7 @@ beforeEach(() => {
   reload.calls = 0;
   cfg.disableDirectFilesystemAccess = false;
   seeded.prompts = [];
+  seeded.opts = [];
   toasts = [];
   requests = [];
   closed = [];
@@ -176,6 +178,13 @@ describe('git-sync-recover window (M28 u5vl07ch)', () => {
     await click(q('[data-git-recover-agent]'));
     expect(seeded.prompts).toEqual([plainPushFailure.intentPrompt]);
     expect(closed).toEqual([null]);
+  });
+
+  it('[ac:ac-klik-fix-it-with-agent-w-giterrorrecov] "Fix it with Agent" hands the intentPrompt to the chat shell\'s seeded-thread action, auto-submitted — a new thread whose first visible user message is that prompt', async () => {
+    await render(plainPushFailure);
+    await click(q('[data-git-recover-agent]'));
+    expect(seeded.prompts).toEqual([plainPushFailure.intentPrompt]);
+    expect(seeded.opts).toEqual([{ autoSubmit: true }]);
   });
 
   it('[ac:ac-gdy-gitsync-status-error-operacje] with recovery.kind "non-fast-forward" the window offers [Sync] instead of [Fix it with Agent], next to [Dismiss]', async () => {

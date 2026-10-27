@@ -14,6 +14,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
+import { categoryLabel, toolCategory } from '@inharness-ai/agent-chat';
 import { getRenderer, parseToolResult, prettyToolName } from './toolRenderers.js';
 import { openModal } from '../ui/events.js';
 import { localToolCategory, type LocalToolCategory } from './toolCategoryLocal.js';
@@ -29,6 +30,13 @@ interface Props {
   items: ToolItem[];
 }
 
+/**
+ * M53 (`m05batch`, `5615w04d`) — one tool call, or a batch of at least two
+ * consecutive same-category calls (the `<ToolBatchCard />` of the spec): a
+ * collapsible card whose header carries the category's summary label from the
+ * chat library ("Edited 3 files", "Read 5 files", `{toolName} × N` for `other`).
+ * Expanding a batch lists every call with its own per-tool renderer.
+ */
 export function ToolCard({ items }: Props) {
   const [expanded, setExpanded] = useState(false);
 
@@ -49,6 +57,9 @@ export function ToolCard({ items }: Props) {
       : 'done';
 
   const isBatch = items.length > 1;
+  // The batch label comes from the library's category, the same one its
+  // grouping keyed the run on; `other` falls back to the tool name.
+  const headerLabel = isBatch ? categoryLabel(toolCategory(first.toolName), items.length, displayName) : displayName;
 
   return (
     <>
@@ -71,17 +82,8 @@ export function ToolCard({ items }: Props) {
               className="font-mono text-[11.5px] truncate"
               style={{ color: 'var(--c-ink)' }}
             >
-              {displayName}
+              {headerLabel}
             </span>
-            {isBatch && (
-              <span
-                className="font-mono text-[10.5px]"
-                style={{ color: 'var(--c-subtle)' }}
-                title={`${items.length} tool calls`}
-              >
-                × {items.length}
-              </span>
-            )}
           </button>
           {status === 'running' ? (
             <span className="dot-pulse" aria-label="running">
@@ -100,7 +102,7 @@ export function ToolCard({ items }: Props) {
             onClick={(e) => {
               e.stopPropagation();
               void openModal('tool-json-view', {
-                title: isBatch ? `${displayName} × ${items.length}` : first.toolName,
+                title: isBatch ? headerLabel : first.toolName,
                 items: items.map((i) => ({
                   toolName: i.toolName,
                   input: i.input,

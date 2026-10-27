@@ -85,7 +85,7 @@ interface ChatState {
   setChatWidth(px: number): void;
   setChatThreadId(id: string | null): void;
   /**
-   * 0.2.110 M05/M50 — open the overlay on a fresh thread seeded with `prompt`
+   * 0.2.110 M53/M50 — open the overlay on a fresh thread seeded with `prompt`
    * (auto-submitted when `autoSubmit`). See `chat/startSeededThread.ts`.
    */
   startSeededThread(prompt: string, opts?: { autoSubmit?: boolean }): void;

@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import Database from 'better-sqlite3';
 import { TOOL_RESULT_CEILING_TOKENS } from '../discovery/budget.js';
 import path from 'node:path';
 
@@ -47,8 +48,14 @@ const hoisted = vi.hoisted(() => ({
    * mount guard reports on.
    */
   onExecute: null as ((opts: Record<string, unknown>) => void) | null,
-  /** Runs before each event is yielded — lets a test change the world mid-stream. */
-  beforeEvent: null as ((event: Record<string, unknown>, opts: Record<string, unknown>) => void) | null,
+  /**
+   * Runs before each event is yielded — lets a test change the world mid-stream.
+   * Awaited, so a test can also make a real request inside a window of the turn
+   * (the hold between a `result` and its continuation).
+   */
+  beforeEvent: null as
+    | ((event: Record<string, unknown>, opts: Record<string, unknown>) => unknown)
+    | null,
 }));
 
 vi.mock('@inharness-ai/agent-adapters', async (importOriginal) => {
@@ -62,7 +69,7 @@ vi.mock('@inharness-ai/agent-adapters', async (importOriginal) => {
         hoisted.executes.push(opts);
         hoisted.onExecute?.(opts);
         for (const e of hoisted.events) {
-          hoisted.beforeEvent?.(e, opts);
+          await hoisted.beforeEvent?.(e, opts);
           yield e;
         }
       },
@@ -92,6 +99,7 @@ import {
   AdapterAbortError,
   AdapterBackgroundHoldExpiredError,
   AdapterIdleTimeoutError,
+  AdapterInitError,
   AdapterTimeoutError,
   AdapterToolPolicyError,
 } from '@inharness-ai/agent-adapters';
@@ -101,8 +109,11 @@ import { buildC4sToolsServer } from '../mcp/c4s-tools.js';
 import { createMcpServer, mcpTool } from '../plugin-runtime/index.js';
 import { z } from 'zod';
 import { CONTEXT_TYPE_REGISTRY } from '../services/chat-context.js';
+import { ChatService } from '../services/chat.js';
+import { runMigrations } from '../db/migrate.js';
 import {
   BACKGROUND_WAKEUP_GRACE_MS,
+  CLAUDE_CODE_SUPPRESSED_HARNESS_TOOLS,
   CLAUDE_CODE_TASK_TRACKING_TOOLS,
 } from '@inharness-ai/agent-adapters/claude-code';
 import {
@@ -1252,6 +1263,133 @@ describe('runAgentTurn — M17 background tasks (0-1-141-to-next-2)', () => {
 });
 
 /**
+ * The background-task family driven through the REAL `chat_background_task`
+ * statements: the stubbed `chatService` above proves the calls, this proves
+ * what the turn leaves in the table once it has closed.
+ */
+describe('runAgentTurn — background tasks persisted in chat_background_task', () => {
+  let db: Database.Database;
+  let real: ChatService;
+  let threadId: string;
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    runMigrations(db);
+    real = new ChatService(db);
+    threadId = real.createThread('t').id;
+  });
+  afterEach(() => db.close());
+
+  /** The stub rig, with the background-task family routed to the real service. */
+  const rig = () => {
+    const { deps } = makeDeps();
+    const cs = deps.chatService as unknown as Record<string, unknown>;
+    cs.startBackgroundTask = real.startBackgroundTask.bind(real);
+    cs.updateBackgroundTaskProgress = real.updateBackgroundTaskProgress.bind(real);
+    cs.completeBackgroundTask = real.completeBackgroundTask.bind(real);
+    cs.finalizeRunningBackgroundTasks = real.finalizeRunningBackgroundTasks.bind(real);
+    const input = makeInput();
+    input.thread = { ...input.thread, id: threadId } as AgentTurnInput['thread'];
+    return { deps, input };
+  };
+
+  const rows = () =>
+    db
+      .prepare(`SELECT task_id, status FROM chat_background_task WHERE thread_id = ? ORDER BY task_id`)
+      .all(threadId) as Array<{ task_id: string; status: string }>;
+
+  it('[ac:ac-dwa-rownolegle-zadania-w-tle-w-jednej] two parallel background tasks of one turn are stored as two chat_background_task rows, each under its own taskId', async () => {
+    hoisted.events = [
+      { type: 'background_task_started', taskId: 'bg1', taskType: 'shell', description: 'npm run build' },
+      { type: 'background_task_started', taskId: 'bg2', taskType: 'monitor', description: 'watch logs' },
+      { type: 'background_task_progress', taskId: 'bg2', taskType: 'monitor', description: 'still watching' },
+      { type: 'background_task_completed', taskId: 'bg1', taskType: 'shell', status: 'success' },
+      { type: 'background_task_completed', taskId: 'bg2', taskType: 'monitor', status: 'success' },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps, input } = rig();
+
+    await runAgentTurn(deps, input);
+
+    expect(rows()).toEqual([
+      { task_id: 'bg1', status: 'success' },
+      { task_id: 'bg2', status: 'success' },
+    ]);
+  });
+
+  it('[ac:ac-zadanie-ktore-nigdy-nie-dostalo-backg] a background task that never got background_task_completed has an abandoned row once the turn closes', async () => {
+    hoisted.events = [
+      { type: 'background_task_started', taskId: 'bg1', taskType: 'shell', description: 'sleep 900' },
+      { type: 'background_task_started', taskId: 'bg2', taskType: 'shell', description: 'npm run build' },
+      { type: 'background_task_completed', taskId: 'bg2', taskType: 'shell', status: 'success' },
+      // The generator ends with bg1 still in flight — its completion never comes.
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps, input } = rig();
+
+    await runAgentTurn(deps, input);
+
+    // Only the unsettled task is closed out; a real outcome is not overwritten.
+    expect(rows()).toEqual([
+      { task_id: 'bg1', status: 'abandoned' },
+      { task_id: 'bg2', status: 'success' },
+    ]);
+  });
+
+  it('[ac:ac-pole-outputfile-renderuje-sie-jako-ni] the app neither reads nor tails the file a background task names in outputFile — it stores the path only', async () => {
+    const { default: fs } = await import('node:fs');
+    const os = await import('node:os');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-bg-output-'));
+    const outputFile = path.join(dir, 'bg1.log');
+    const MARKER = 'BG-OUTPUT-NEVER-READ-7f3a';
+    fs.writeFileSync(outputFile, MARKER);
+    // Every fs entry point that could read or follow the file. Spied through, so
+    // the rest of the turn (config, prompt) still reads what it needs; only a call
+    // naming THIS path counts.
+    const spies = [
+      vi.spyOn(fs, 'readFileSync'),
+      vi.spyOn(fs, 'readFile'),
+      vi.spyOn(fs, 'createReadStream'),
+      vi.spyOn(fs, 'openSync'),
+      vi.spyOn(fs, 'open'),
+      vi.spyOn(fs, 'watch'),
+      vi.spyOn(fs, 'watchFile'),
+      vi.spyOn(fs.promises, 'readFile'),
+      vi.spyOn(fs.promises, 'open'),
+    ];
+    hoisted.events = [
+      { type: 'background_task_started', taskId: 'bg1', taskType: 'shell', description: 'npm run build' },
+      { type: 'background_task_progress', taskId: 'bg1', taskType: 'shell', description: 'building', outputFile },
+      { type: 'background_task_completed', taskId: 'bg1', taskType: 'shell', status: 'success', outputFile },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps, input } = rig();
+    const emitted: Array<Record<string, unknown>> = [];
+    input.onEvent = (e) => emitted.push(e as Record<string, unknown>);
+
+    let touched: unknown[][] = [];
+    try {
+      await runAgentTurn(deps, input);
+      touched = spies.flatMap((spy) =>
+        (spy.mock.calls as unknown[][]).filter((args) => String(args[0]) === outputFile),
+      );
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+
+    expect(touched).toEqual([]);
+    // The path is kept as data, and the file's content is nowhere — not on the
+    // stream, not in the stored task.
+    const stored = real.listBackgroundTasks(threadId);
+    expect(stored.map((t) => t.outputFile)).toEqual([outputFile]);
+    expect(JSON.stringify(stored)).not.toContain(MARKER);
+    expect(JSON.stringify(emitted)).not.toContain(MARKER);
+  });
+});
+
+/**
  * 0.2.109 — end of turn is read from the class and position of events, never
  * from the `result` payload. A live subagent delegation keeps the run open
  * after a `result` that carries no `backgroundTasks` at all.
@@ -1441,6 +1579,30 @@ describe('runAgentTurn — 0.2.109 delegation holds the turn open', () => {
       });
     });
 
+    it('[ac:ac-przekroczenie-capa-oczekiwania-na-zad] background tasks outliving the hold cap end the turn with a terminal error carrying AdapterBackgroundHoldExpiredError as BACKGROUND_HOLD_EXPIRED', async () => {
+      hoisted.events = expired([
+        { type: 'background_task_started', taskId: 'bg1', taskType: 'shell', description: 'sleep 900' },
+        { type: 'result', sessionId: 's1', backgroundTasks: [{ taskId: 'bg1', taskType: 'shell' }] },
+      ]);
+      const { deps } = makeDeps();
+      const emitted: Array<Record<string, unknown>> = [];
+      const input = makeInput();
+      input.onEvent = (e) => emitted.push(e as Record<string, unknown>);
+
+      await expect(runAgentTurn(deps, input)).rejects.toMatchObject({
+        name: 'AgentTurnError',
+        code: 'BACKGROUND_HOLD_EXPIRED',
+      });
+
+      // One typed error frame on the wire, carrying the hold-expiry code…
+      const errors = emitted.filter((e) => e.type === 'error');
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toMatchObject({ code: 'BACKGROUND_HOLD_EXPIRED' });
+      expect(errors[0]!.error).toContain('1 background task(s)');
+      // …and it is terminal: nothing but `done` follows it.
+      expect(emitted.slice(emitted.indexOf(errors[0]!) + 1).map((e) => e.type)).toEqual(['done']);
+    });
+
     it('[ac:ac-komunikat-wygasniecia-holdu-podaje-li] the message counts abandoned delegations from subagent_started minus subagent_completed', async () => {
       hoisted.events = expired([
         { type: 'subagent_started', taskId: 'sub_1', description: 'a' },
@@ -1526,7 +1688,7 @@ describe('runAgentTurn — 0.2.50 turn-lifecycle contract', () => {
    * A refusal the adapter DELIVERS (`AdapterToolPolicyError`) is still exactly
    * `error` + `done` on the wire: the held `adapter_ready` is dropped.
    */
-  it('drops adapter_ready when the adapter delivers a tool-policy refusal', async () => {
+  it('[ac:ac-odmowa-polityki-narzedzi-produkuje-st] a tool-policy refusal (error, phase init) is a stream of one error and done, with no adapter_ready and no result', async () => {
     hoisted.events = [
       { type: 'adapter_ready', adapter: 'claude-code', sdkConfig: {} },
       {
@@ -1546,8 +1708,10 @@ describe('runAgentTurn — 0.2.50 turn-lifecycle contract', () => {
 
     await expect(runAgentTurn(deps, input)).rejects.toMatchObject({ code: 'TOOL_POLICY_REFUSED' });
 
-    // `connected` is the transport's opening frame, not a turn event.
+    // `connected` is the transport's opening frame, not a turn event. Exactly one
+    // `error` and `done` — so neither `adapter_ready` nor `result` is on the wire.
     expect(emitted.map((e) => e.type).filter((t) => t !== 'connected')).toEqual(['error', 'done']);
+    expect(emitted.find((e) => e.type === 'error')).toMatchObject({ code: 'TOOL_POLICY_REFUSED' });
   });
 
   /**
@@ -1585,21 +1749,30 @@ describe('runAgentTurn — 0.2.50 turn-lifecycle contract', () => {
    * stream carries no meaning. It must be accepted normally rather than treated
    * as a protocol error or as a second end-of-turn.
    */
-  it('accepts a side-band warning that arrives after the terminal result', async () => {
+  it('[ac:ac-zdarzenie-warning-ktore-przyszlo-po-o] a warning that arrives after the terminal result is persisted in the thread, not rejected and not a second end of turn', async () => {
     hoisted.events = [
       { type: 'text_delta', text: 'answer' },
       { type: 'result', sessionId: 's1' },
       { type: 'warning', message: 'scope degraded to soft enforcement' },
     ];
-    const { deps } = makeDeps();
+    const { deps, messages } = makeDeps();
     const emitted: Array<Record<string, unknown>> = [];
     const input = makeInput();
     input.onEvent = (e) => emitted.push(e as Record<string, unknown>);
 
+    // Resolves — no protocol error is thrown for the late event.
     const result = await runAgentTurn(deps, input);
 
     expect(result.answer).toBe('answer');
+    // Persisted as its own `warning` row of the thread, after the answer.
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant', 'warning']);
     expect(emitted.filter((e) => e.type === 'warning')).toHaveLength(1);
+    // Neither a protocol error nor an end of turn: no `error` event, and the
+    // stream's single `done` comes after the warning, not before it.
+    expect(emitted.filter((e) => e.type === 'error')).toHaveLength(0);
+    const types = emitted.map((e) => e.type);
+    expect(types.filter((t) => t === 'done')).toHaveLength(1);
+    expect(types.indexOf('warning')).toBeLessThan(types.indexOf('done'));
   });
 
   /**
@@ -1844,7 +2017,7 @@ describe('runAgentTurn — replay buffer byte budget', () => {
  * never written to history. A security notice nobody can see is not a notice.
  */
 describe('runAgentTurn — adapter warnings reach the user (C21)', () => {
-  it('persists a warning as its own complete row and forwards it to the client', async () => {
+  it('[ac:ac-zdarzenie-warning-z-adaptera-jest-for] persists a warning as its own complete row, forwards it to the client and keeps it in the replay buffer', async () => {
     hoisted.events = [
       { type: 'text_delta', text: 'Starting. ' },
       { type: 'warning', message: 'filesystem scope degraded to soft enforcement' },
@@ -1852,6 +2025,14 @@ describe('runAgentTurn — adapter warnings reach the user (C21)', () => {
       { type: 'result', sessionId: 's1' },
     ];
     const { deps, messages } = makeDeps();
+    // The buffer dies with the turn's registry entry, so read it while the turn
+    // is still running — right before its last event.
+    let replayed: Array<Record<string, unknown>> = [];
+    hoisted.beforeEvent = (event) => {
+      if (event.type !== 'result') return;
+      const active = (deps.activeAdapters as Map<string, { replay: { events: Array<Record<string, unknown>> } }>).get('t1')!;
+      replayed = [...active.replay.events];
+    };
     const emitted: Array<Record<string, unknown>> = [];
     const input = makeInput();
     input.onEvent = (e) => emitted.push(e as Record<string, unknown>);
@@ -1871,6 +2052,10 @@ describe('runAgentTurn — adapter warnings reach the user (C21)', () => {
 
     // It still reaches the live client too.
     expect(emitted.filter((e) => e.type === 'warning')).toHaveLength(1);
+    // And a joiner gets it from the replay buffer, like every other turn event.
+    expect(replayed.filter((e) => e.type === 'warning')).toEqual([
+      { type: 'warning', message: 'filesystem scope degraded to soft enforcement' },
+    ]);
   });
 
   it('lands between the assistant blocks it interrupted, not after the turn', async () => {
@@ -2930,6 +3115,88 @@ describe('runAgentTurn — delivered terminal errors', () => {
 });
 
 /**
+ * 2.1.56 (M05 `yazwev1g`) — the plan-mode preset's enforceability is asked of
+ * the library SYNCHRONOUSLY, before dispatch: the probe answers with a value,
+ * not a promise, and it runs before `adapter.execute`, so an unenforceable
+ * preset is a refusal to start rather than a degradation learned from an event.
+ */
+describe('runAgentTurn — plan-mode enforceability probe before dispatch', () => {
+  it('[ac:ac-toggle-plan-mode-jest-pokazywany-jako] probes the preset groups synchronously before execute, and refuses before the adapter starts', async () => {
+    const probe = await import('@inharness-ai/agent-adapters');
+    // Synchronous: the library answers with the reports themselves.
+    const direct = probe.probeToolGating('claude-code', [...probe.PLAN_MODE_DENY_GROUPS]);
+    expect(Array.isArray(direct)).toBe(true);
+    expect(typeof (direct as unknown as { then?: unknown }).then).toBe('undefined');
+
+    const order: string[] = [];
+    const probedGroups: string[][] = [];
+    let enforceable = true;
+    const realProbe = probe.probeToolGating;
+    const spy = vi.spyOn(probe, 'probeToolGating').mockImplementation((arch, groups) => {
+      order.push('probe');
+      probedGroups.push([...groups]);
+      const reports = realProbe(arch, groups);
+      return enforceable ? reports : reports.map((r) => ({ ...r, enforceable: false }) as unknown as typeof r);
+    });
+    hoisted.onExecute = () => order.push('execute');
+    try {
+      hoisted.events = [{ type: 'result', sessionId: 's1' }];
+      const enforced = makeDeps();
+      const okInput = makeInput();
+      (okInput.thread as { planMode: boolean }).planMode = true;
+      await runAgentTurn(enforced.deps, okInput);
+      // Asked with the preset's groups, and before the adapter ran.
+      expect(probedGroups.some((g) => probe.PLAN_MODE_DENY_GROUPS.every((p) => g.includes(p)))).toBe(true);
+      expect(order.indexOf('probe')).toBeGreaterThan(-1);
+      expect(order.indexOf('probe')).toBeLessThan(order.indexOf('execute'));
+
+      // Unenforceable → the caller refuses before the adapter is ever started.
+      order.length = 0;
+      hoisted.executes = [];
+      enforceable = false;
+      const refused = makeDeps();
+      const refusedInput = makeInput();
+      (refusedInput.thread as { planMode: boolean }).planMode = true;
+      await expect(runAgentTurn(refused.deps, refusedInput)).rejects.toMatchObject({ code: 'TOOL_POLICY_REFUSED' });
+      expect(order).toContain('probe');
+      expect(order).not.toContain('execute');
+      expect(hoisted.executes).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+/**
+ * M05 — the agent runs the local `claude` CLI; when it is missing or not logged
+ * in the adapter reports `AdapterInitError`, and the turn ends
+ * `AGENT_UNAVAILABLE`, which the turn routes answer as `503` (the route
+ * deviation in M05 API (L4): an environment state, not a bad request).
+ */
+describe('runAgentTurn — claude CLI unavailable', () => {
+  it('[ac:ac-claude-cli-niezainstalowane-lub-nieza] AdapterInitError ends the turn AGENT_UNAVAILABLE, answered 503', async () => {
+    const { STATUS_FOR_TURN_ERROR } = await import('../operations/error-codes.js');
+    hoisted.events = [{ type: 'error', error: new AdapterInitError('claude-code', new Error('spawn claude ENOENT')), phase: 'init' }];
+    const { deps } = makeDeps();
+    const seen: Array<Record<string, unknown>> = [];
+
+    const failure = await runAgentTurn(deps, { ...makeInput(), onEvent: (e) => seen.push(e as never) }).then(
+      () => null,
+      (err: unknown) => err,
+    );
+
+    expect(failure).toBeInstanceOf(AgentTurnError);
+    expect((failure as AgentTurnError).code).toBe('AGENT_UNAVAILABLE');
+    expect((failure as AgentTurnError).message).toContain('claude login');
+    const errors = seen.filter((e) => e.type === 'error');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.code).toBe('AGENT_UNAVAILABLE');
+    // The status every turn route answers this code with.
+    expect(STATUS_FOR_TURN_ERROR.AGENT_UNAVAILABLE).toBe(503);
+  });
+});
+
+/**
  * 0.2.107: silence is detected by the LIBRARY's idle clock (`idleTimeoutMs`,
  * agent-adapters >= 0.9.11). What stays ours: passing the budget, mapping
  * `AdapterIdleTimeoutError` to `IDLE_TIMEOUT`, and the Stop-like side effects
@@ -3332,7 +3599,7 @@ describe('runAgentTurn — 0.2.114 turnStartedAt on turn_start', () => {
         { type: 'result', sessionId: 's-final' },
       ],
     ],
-  ])('[ac:ac-kontynuacja-po-zadaniu-w-tle-lub-dele] a continuation after %s inherits turnStartedAt and resets nothing', async (_label, events) => {
+  ])('[ac:ac-kontynuacja-po-zadaniu-w-tle-lub-dele] [ac:ac-turn-start-kontynuacji-niesie-turnsta] a continuation after %s inherits turnStartedAt and resets nothing', async (_label, events) => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-09-25T10:12:03.000Z'));
     hoisted.events = events;
@@ -3390,7 +3657,7 @@ describe('runAgentTurn — 0.2.114 turnStartedAt on turn_start', () => {
     expect(new Set(seen).size).toBe(1);
   });
 
-  it('[ac:ac-merged-dispatch-zeruje-zegar-tury] a merged dispatch mints new ids and a new turnStartedAt, and resets the replay buffer', async () => {
+  it('[ac:ac-merged-dispatch-zeruje-zegar-tury] [ac:ac-turn-start-po-merged-dispatch-niesie] a merged dispatch mints new ids and a new turnStartedAt, and resets the replay buffer', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-09-25T10:00:00.000Z'));
     hoisted.events = [{ type: 'text_delta', text: 'first' }, { type: 'result', sessionId: 's1' }];
@@ -3840,5 +4107,219 @@ describe('runAgentTurn — the turn argument: host pool, handler servers, profil
       // No execute parameter steers schema deferral (the SDK decides it on its own).
       expect(Object.keys(hoisted.lastExecute ?? {}).filter((k) => /defer|lazy|toolsearch/i.test(k)), contextType).toEqual([]);
     }
+  });
+});
+
+/**
+ * 2.1.56 (M05 Agent Runtime, `4fc4hute` / `c47xltl5`) — what the turn stream
+ * carries, and the hold window as a running turn. Driven through `runAgentTurn`
+ * with the stream the claude-code adapter produces; the transport (SSE of
+ * `POST /api/chat`) is `input.onEvent`, a live joiner is the registry emitter.
+ */
+describe('runAgentTurn — the turn stream (2.1.56)', () => {
+  type LiveView = {
+    emitter: { on: (name: string, fn: (e: Record<string, unknown>) => void) => void };
+    replay: { events: Array<Record<string, unknown>> };
+  };
+  const activeOf = (deps: AgentTurnDeps, threadId = 't1') =>
+    (deps.activeAdapters as unknown as Map<string, LiveView>).get(threadId)!;
+
+  /** Records what the POST sender gets, what a joiner gets, and the replay at the last event. */
+  function capture(deps: AgentTurnDeps, input: AgentTurnInput) {
+    const live: Array<Record<string, unknown>> = [];
+    const joined: Array<Record<string, unknown>> = [];
+    const view = { replay: [] as Array<Record<string, unknown>> };
+    input.onEvent = (e) => live.push(e as Record<string, unknown>);
+    let attached = false;
+    hoisted.beforeEvent = (event) => {
+      const active = activeOf(deps);
+      if (!attached) {
+        active.emitter.on('event', (e) => joined.push(e));
+        attached = true;
+      }
+      if (event.type === 'result') view.replay = [...active.replay.events];
+    };
+    return { live, joined, view };
+  }
+
+  it('[ac:ac-zdarzenia-background-task-started-pro] forwards background_task_started, _progress and _completed over the stream', async () => {
+    hoisted.events = [
+      { type: 'background_task_started', taskId: 'bg1', taskType: 'shell', description: 'npm run build' },
+      { type: 'background_task_progress', taskId: 'bg1', taskType: 'shell', description: 'compiling' },
+      { type: 'background_task_completed', taskId: 'bg1', taskType: 'shell', status: 'success', summary: 'built' },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+    const input = makeInput();
+    const { live, joined } = capture(deps, input);
+
+    await runAgentTurn(deps, input);
+
+    const background = (events: Array<Record<string, unknown>>) =>
+      events.filter((e) => String(e.type).startsWith('background_task_'));
+    for (const stream of [live, joined]) {
+      expect(background(stream).map((e) => [e.type, e.taskId])).toEqual([
+        ['background_task_started', 'bg1'],
+        ['background_task_progress', 'bg1'],
+        ['background_task_completed', 'bg1'],
+      ]);
+    }
+    expect(background(live)[1]).toMatchObject({ description: 'compiling' });
+    expect(background(live)[2]).toMatchObject({ status: 'success', summary: 'built' });
+  });
+
+  it('[ac:ac-zmiany-listy-zadan-modelu-docieraja-d] model task-list changes reach the client as todo_list_updated carrying the ready list', async () => {
+    // What the adapter emits for the two shapes of the family: `Task*` merged per
+    // item (the event already carries the merged list), `TodoWrite` replacing it.
+    const merged = [
+      { id: 'toolu_a', content: 'Read M05', status: 'completed' },
+      { id: 'toolu_b', content: 'Write the tests', status: 'in_progress' },
+    ];
+    const replaced = [{ id: 'todo-0', content: 'Ship it', status: 'pending' }];
+    hoisted.events = [
+      { type: 'todo_list_updated', items: merged, source: 'model-tool', isSubagent: false },
+      { type: 'text_delta', text: 'Working.' },
+      { type: 'todo_list_updated', items: replaced, source: 'model-tool', isSubagent: false },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+    const persisted = vi.spyOn(
+      deps.chatService as unknown as { updateCurrentTodoItems: (...a: unknown[]) => void },
+      'updateCurrentTodoItems',
+    );
+    const input = makeInput();
+    const { live, joined, view } = capture(deps, input);
+
+    await runAgentTurn(deps, input);
+
+    // Each change is its own event with the whole list — the client never merges.
+    for (const stream of [live, joined, view.replay]) {
+      expect(stream.filter((e) => e.type === 'todo_list_updated').map((e) => e.items)).toEqual([merged, replaced]);
+    }
+    expect(persisted.mock.calls).toEqual([
+      ['t1', merged],
+      ['t1', replaced],
+    ]);
+  });
+
+  it('[ac:ac-echo-tool-result-rodziny-task-nie-tra] the tool_result echo of the Task* family does not reach the turn stream', async () => {
+    // A `TaskCreate` round-trip as the claude-code adapter delivers it: the call
+    // becomes `todo_list_updated`, and its tool_result echo is swallowed — while an
+    // ordinary tool keeps its tool_use / tool_result pair.
+    expect(CLAUDE_CODE_TASK_TRACKING_TOOLS).toContain('TaskCreate');
+    hoisted.events = [
+      {
+        type: 'todo_list_updated',
+        items: [{ id: 'toolu_task', content: 'Read M05', status: 'pending' }],
+        source: 'model-tool',
+        isSubagent: false,
+      },
+      { type: 'tool_use', toolName: 'Read', toolUseId: 'toolu_read', input: { file_path: 'a.md' }, isSubagent: false },
+      { type: 'tool_result', toolUseId: 'toolu_read', summary: 'contents', isSubagent: false },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+    const input = makeInput();
+    const { live, joined, view } = capture(deps, input);
+
+    await runAgentTurn(deps, input);
+
+    for (const stream of [live, joined, view.replay]) {
+      // No card and no result for the task call — not even a synthesized one.
+      expect(stream.filter((e) => e.toolUseId === 'toolu_task')).toEqual([]);
+      expect(stream.filter((e) => e.type === 'tool_result').map((e) => e.toolUseId)).toEqual(['toolu_read']);
+      expect(stream.filter((e) => e.type === 'todo_list_updated')).toHaveLength(1);
+    }
+    // Nor is a tool row persisted for it, so nothing waits on a result that never comes.
+    const rows = (deps.chatService as unknown as { getMessages: () => Array<{ role: string; content: string }> })
+      .getMessages()
+      .filter((r) => r.role === 'tool_use' || r.role === 'tool_result');
+    expect(rows.map((r) => r.role)).toEqual(['tool_use', 'tool_result']);
+  });
+
+  it('[ac:ac-zdarzenia-rodziny-scheduling-schedule] events of the scheduling family (ScheduleWakeup, Cron*, /loop) never reach the SSE stream', async () => {
+    // The adapter the turn runs on denies the family outright — the contract the
+    // stream relies on, pinned here so a library upgrade that drops it fails.
+    expect([...CLAUDE_CODE_SUPPRESSED_HARNESS_TOOLS].sort()).toEqual(
+      ['CronCreate', 'CronDelete', 'CronList', 'ScheduleWakeup'].sort(),
+    );
+    hoisted.events = [
+      { type: 'text_delta', text: 'Polling the build. ' },
+      { type: 'tool_use', toolName: 'Monitor', toolUseId: 'toolu_mon', input: { command: 'tail -f build.log' }, isSubagent: false },
+      { type: 'tool_result', toolUseId: 'toolu_mon', summary: 'started', isSubagent: false },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+    const input = makeInput();
+    const { live, joined } = capture(deps, input);
+
+    await runAgentTurn(deps, input);
+
+    const scheduling = /ScheduleWakeup|Cron(Create|List|Delete)|\/loop/;
+    for (const stream of [live, joined]) {
+      expect(stream.length).toBeGreaterThan(0);
+      expect(stream.filter((e) => scheduling.test(JSON.stringify(e)))).toEqual([]);
+    }
+  });
+
+  describe('the hold window is a running turn for the queue', () => {
+    let db: Database.Database;
+    let real: ChatService;
+    let threadId: string;
+
+    beforeEach(() => {
+      db = new Database(':memory:');
+      db.pragma('foreign_keys = ON');
+      runMigrations(db);
+      real = new ChatService(db);
+      threadId = real.createThread('t').id;
+    });
+    afterEach(() => db.close());
+
+    it('[ac:ac-post-api-chat-queue-threadid-na-watek-2] POST /api/chat/queue/:threadId is 409 NO_ACTIVE_STREAM with no turn, and 202 between a held result and its continuation', async () => {
+      const { default: express } = await import('express');
+      const { default: request } = await import('supertest');
+      const { chatRouter } = await import('./chat.js');
+      const { deps } = makeDeps();
+      const cs = deps.chatService as unknown as Record<string, unknown>;
+      cs.countQueued = real.countQueued.bind(real);
+      cs.enqueueQueued = real.enqueueQueued.bind(real);
+      cs.listQueued = real.listQueued.bind(real);
+      cs.removeQueued = real.removeQueued.bind(real);
+      // One process: the queue route and the turn share the registry of active turns.
+      const app = express().use(express.json()).use('/api/chat', chatRouter(deps));
+      const enqueue = (prompt: string) => request(app).post(`/api/chat/queue/${threadId}`).send({ prompt });
+
+      hoisted.events = [
+        { type: 'text_delta', text: 'Backgrounding. ' },
+        { type: 'background_task_started', taskId: 'bg1', taskType: 'shell', description: 'sleep 5' },
+        { type: 'result', sessionId: 's-held', backgroundTasks: [{ taskId: 'bg1', taskType: 'shell' }] },
+        { type: 'background_task_completed', taskId: 'bg1', taskType: 'shell', status: 'success' },
+        { type: 'text_delta', text: 'Continuation.' },
+        { type: 'result', sessionId: 's-final' },
+      ];
+      let heldResultSeen = false;
+      let inHold: Awaited<ReturnType<typeof enqueue>> | null = null;
+      hoisted.beforeEvent = async (event) => {
+        // Runs once the held `result` has been consumed and before the
+        // continuation starts: the hold window.
+        if (heldResultSeen && !inHold) inHold = await enqueue('sent while held');
+        if (event.type === 'result' && event.sessionId === 's-held') heldResultSeen = true;
+      };
+      const input = makeInput();
+      input.thread = { ...input.thread, id: threadId } as AgentTurnInput['thread'];
+
+      const before = await enqueue('no turn yet');
+      await runAgentTurn(deps, input);
+      const after = await enqueue('turn over');
+
+      expect(before.status).toBe(409);
+      expect(before.body.error.code).toBe('NO_ACTIVE_STREAM');
+      expect(inHold).not.toBeNull();
+      expect(inHold!.status).toBe(202);
+      expect(inHold!.body.queued.map((q: { text: string }) => q.text)).toEqual(['sent while held']);
+      expect(after.status).toBe(409);
+      expect(after.body.error.code).toBe('NO_ACTIVE_STREAM');
+    });
   });
 });
