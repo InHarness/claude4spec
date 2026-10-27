@@ -25,3 +25,39 @@ section:f1nbs7qy → src/server/services/style-fork.ts (copy = SKILL.md with for
 section:q91m4kgl → src/server/discovery/ops/consistency.ts (markJunctionTargets: rule 3's single second read besides the page sweep); test src/server/discovery/ops/consistency.junction.test.ts
 section:5tfhxy2p → src/server/discovery/ops/consistency.ts (markJunctionTargets, read once before the sweep: a junction-linked entity counts as referenced); test src/server/discovery/ops/consistency.junction.test.ts
 section:z5cl1q4o → src/server/discovery/ops/consistency.ts (junction read only by rule 3; src/server/discovery/ops/references.ts unchanged — find_references does not traverse it); test src/server/discovery/ops/consistency.junction.test.ts
+szablon-current-page-handling → src/server/services/system-prompt/blocks/m02-current-page.ts (CURRENT_PAGE_HANDLING; text already at 2.1.57, no change); test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-agent-filesystem-access → src/server/services/system-prompt/blocks/m05-agent-scope.ts; test src/server/services/system-prompt/blocks/writing-style-templates.test.ts
+szablon-agent-path-scope → src/server/services/system-prompt/blocks/m05-agent-scope.ts; test src/server/services/chat-context.test.ts
+szablon-annotation-handling → src/server/services/system-prompt/blocks/m05-chat-turn.ts (ANNOTATION_HANDLING); test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-annotations → src/server/services/system-prompt/blocks/m05-chat-turn.ts (buildAnnotations — already M05); test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-available-skills-spec-skills → src/server/services/system-prompt/blocks/m52-spec-skills.ts; test src/server/services/system-prompt/blocks/m52-spec-skills.test.ts
+szablon-available-skills → src/server/services/system-prompt/blocks/m37-skills.ts; test src/server/services/system-prompt/blocks/m37-skills.test.ts
+szablon-brief-scope → src/server/services/system-prompt/blocks/m21-brief.ts (buildBriefScope; text differs from template, unchanged — dev-0011)
+szablon-brief-tools-usage → src/server/services/system-prompt/blocks/m21-brief.ts (BRIEF_TOOLS_USAGE; text differs from template, unchanged — dev-0011)
+szablon-claude4spec-identity → src/server/services/system-prompt/blocks/m48-own.ts (buildIdentity); test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-claude4spec-plan-mode → src/server/services/system-prompt/blocks/m48-own.ts (buildPlanMode); test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-conversational-language → src/server/services/system-prompt/blocks/m01-language.ts; test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-current-patch-rama → src/server/services/system-prompt/blocks/m23-patch.ts (buildCurrentPatch, frame); test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-current-patch-tresc → src/server/services/system-prompt/blocks/m23-patch.ts (buildCurrentPatch, genre attributes + prose); test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-current-skill → src/server/services/system-prompt/blocks/m52-spec-skills.ts; test src/server/services/system-prompt/blocks/m52-spec-skills.test.ts
+szablon-diagram-references → src/server/entities/diagram/system-prompt.ts (promptBlocks); test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-discovery-and-impact → src/server/services/system-prompt/blocks/m48-own.ts (buildDiscoveryAndImpact); test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-entities-rama → src/server/services/system-prompt/blocks/m13-entities.ts (buildEntitiesBlock); test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-entities-wiersz-diagram → src/server/entities/diagram/system-prompt.ts (narrativeBlock); test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-entities-wiersz → src/server/services/system-prompt/blocks/m13-entities.ts (buildEntityRows); test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-entity-embeds → src/server/services/system-prompt/blocks/m48-own.ts (buildEntityEmbeds); test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-interaction-context-ask → src/server/services/interaction-rules.ts; test src/server/services/interaction-rules.test.ts
+szablon-interaction-context-brief → src/server/services/interaction-rules.ts (BRIEF_RULES; text differs from template, unchanged — dev-0011)
+szablon-interaction-context-patch → src/server/services/interaction-rules.ts (PATCH_RULES; text differs from template, unchanged — dev-0011)
+szablon-interaction-context-rama → src/server/services/system-prompt/blocks/m44-interaction-context.ts; test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-project-writing-skill → src/server/services/system-prompt/blocks/m15-writing-style.ts; test src/server/services/system-prompt/blocks/writing-style-templates.test.ts
+szablon-project → src/server/services/system-prompt/blocks/m48-own.ts (project block, roots option); test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-sections-and-anchors → src/server/services/system-prompt/blocks/m48-own.ts (SECTIONS_AND_ANCHORS); test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-spec-language → src/server/services/system-prompt/blocks/m01-language.ts; test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-tags → src/server/services/system-prompt/blocks/m48-own.ts (buildTags); test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-todo-markers → src/server/services/system-prompt/blocks/m48-own.ts (TODO_MARKERS); test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-tooling-c4s-tools → src/server/mcp/c4s-tools.ts (declared tools) + src/server/services/system-prompt/blocks/m48-own.ts (buildTooling); test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-tooling-patch-tools → src/server/mcp/patch-tools.ts (declared tools) + src/server/services/system-prompt/blocks/m48-own.ts (buildTooling); test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-tooling-plan-tools → src/server/mcp/plan-tools.ts (declared tools, incl. create_plan) + src/server/services/system-prompt/blocks/m48-own.ts (buildTooling; line differs from template — dev-0011)
+szablon-tooling → src/server/services/system-prompt/blocks/m48-own.ts (buildTooling); test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
+szablon-workspace-projects → src/server/services/system-prompt/blocks/m31-workspace.ts; test src/server/services/system-prompt/blocks/m31-workspace.test.ts (two-line layout differs from template — dev-0011)

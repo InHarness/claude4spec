@@ -1141,7 +1141,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "u12-prompt-block-templates/p1-l15-l15",
@@ -1186,20 +1186,22 @@
             "szablon-tooling",
             "szablon-workspace-projects"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "b93e7100ab4b3bed0369b932a84f297b55637121",
+      "baseCommit": "a8f56e5c03f773be561969c3a8e330996b8680bc",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": [],
+      "lastBlocking": []
     },
     {
       "id": "u02-multi-file-consumers",
