@@ -1,0 +1,1 @@
+{"role":"implementer","unit":"u06-entity-ops-guards","packetBytes":26023,"portions":[{"name":"u06-entity-ops-guards/p1-l2-l3","layers":["L2","L3"],"slugs":["create-entities","update-entities","entity-tools-update-entities"]}],"deviations":[]}

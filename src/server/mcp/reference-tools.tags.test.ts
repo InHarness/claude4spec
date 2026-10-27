@@ -10,7 +10,7 @@ import { TagsService } from '../services/tags.js';
 import { httpStatusForCode } from '../operations/error-codes.js';
 import type { BackendModule, ProjectPluginHost } from '../core/plugin-host/types.js';
 import type { EntityStore } from '../services/entity-store.js';
-import type { ReferencesService } from '../services/references.js';
+import { ReferencesService } from '../services/references.js';
 
 /**
  * 2.1.26 — the five M18 tag write tools on `reference-tools` as their re-rendered
@@ -76,8 +76,14 @@ beforeEach(() => {
   deps = {
     pluginHost: host,
     tagsService: tags,
+    // The real `updateTag` (the one multi-file operation of a rename, M18
+    // `91vuvf2u`) over a recording page half.
     referencesService: {
-      propagateTagSlugChange: async (from: string, to: string) => void propagations.push([from, to]),
+      updateTag: ReferencesService.prototype.updateTag,
+      propagateTagSlugChange: async (from: string, to: string) => {
+        propagations.push([from, to]);
+        return { changed: [] };
+      },
     } as unknown as ReferencesService,
     discovery: {} as never,
     ws: { broadcast: (e) => void broadcasts.push(e as unknown as Record<string, unknown>) },

@@ -24,7 +24,8 @@
  * plugin-contributed type the host has never heard of.
  *
  * WHAT IT DOES NOT DO. It does not touch page markdown (the caller,
- * `ReferencesService.propagateSlugChange`, owns that and its rollback), it does
+ * `ReferencesService.propagateSlugChange`, owns that — as one multi-file
+ * operation whose rollback is the M42 primitive's), it does
  * not write entity files (the caller re-persists the slugs this returns), and it
  * does not validate that `newSlug` exists. It reports which entities of one type
  * it changed, and nothing else.

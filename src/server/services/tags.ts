@@ -155,7 +155,19 @@ export class TagsService {
     return this.insert(slug, { name }, null);
   }
 
-  update(slug: string, input: TagUpdateInput): Tag {
+  /**
+   * The slug `update(slug, input)` would leave the tag on — with every refusal
+   * of the update (`NOT_FOUND`, a reserved new slug → `VALIDATION`, a taken one
+   * → `SLUG_CONFLICT`) raised here, before anything is written. A slug rename
+   * runs as a multi-file operation that rewrites the pages first
+   * (`ReferencesService.updateTag`), so it has to know the target and that the
+   * update will be accepted before the first page is touched.
+   */
+  slugAfterUpdate(slug: string, input: TagUpdateInput): string {
+    return this.checkUpdate(slug, input).newSlug;
+  }
+
+  private checkUpdate(slug: string, input: TagUpdateInput): { existing: TagRow; newName: string; newSlug: string } {
     const existing = this.db.prepare(`SELECT * FROM tag WHERE slug = ?`).get(slug) as TagRow | undefined;
     if (!existing) throw new DomainError('NOT_FOUND', `tag '${slug}' not found`);
 
@@ -168,28 +180,44 @@ export class TagsService {
       const conflict = this.db.prepare(`SELECT 1 FROM tag WHERE slug = ?`).get(newSlug);
       if (conflict) throw new DomainError('SLUG_CONFLICT', `tag slug '${newSlug}' already exists`);
     }
+    return { existing, newName, newSlug };
+  }
 
-    this.db
-      .prepare(
-        `UPDATE tag
-           SET slug = ?,
-               name = ?,
-               color = ?,
-               description = ?,
-               updated_at = datetime('now')
-         WHERE slug = ?`
-      )
-      .run(
-        newSlug,
-        newName,
-        input.color !== undefined ? input.color : existing.color,
-        input.description !== undefined ? input.description : existing.description,
-        slug
-      );
-    this.store?.persistTags();
-    // M29: on rename, entity_tag.tag_slug already cascaded (FK ON UPDATE
-    // CASCADE) — re-persist the entity files whose tags[] now reference newSlug.
-    if (newSlug !== slug) this.persistEntitiesWithTag(newSlug);
+  update(slug: string, input: TagUpdateInput): Tag {
+    const { existing, newName, newSlug } = this.checkUpdate(slug, input);
+
+    /**
+     * 2.1.57 (M18 `m18acc00`) — the row change and its file copies are ONE
+     * transaction. The UPDATE (and the `entity_tag` FK cascade it drives) is
+     * written first and `tags.json` is derived from it; a throw from the
+     * persist rolls the row back with it, so a slug rename that fails at
+     * `tags.json` leaves the index on the old slug — the state the pages
+     * `ReferencesService.updateTag` rolled back are on. Without it the index
+     * and `entity_tag` stayed on the new slug under restored pages.
+     */
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `UPDATE tag
+             SET slug = ?,
+                 name = ?,
+                 color = ?,
+                 description = ?,
+                 updated_at = datetime('now')
+           WHERE slug = ?`
+        )
+        .run(
+          newSlug,
+          newName,
+          input.color !== undefined ? input.color : existing.color,
+          input.description !== undefined ? input.description : existing.description,
+          slug
+        );
+      this.store?.persistTags();
+      // M29: on rename, entity_tag.tag_slug already cascaded (FK ON UPDATE
+      // CASCADE) — re-persist the entity files whose tags[] now reference newSlug.
+      if (newSlug !== slug) this.persistEntitiesWithTag(newSlug);
+    })();
     return this.getBySlug(newSlug)!;
   }
 

@@ -134,15 +134,13 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): CapturedMc
     async (args) => {
       try {
         const data = args.data as Record<string, unknown>;
-        const oldSlug = String(args.slug);
-        const tag = deps.tagsService.update(oldSlug, {
+        // A slug rename is one multi-file operation over pages, tags.json and
+        // the entity files (M18 `91vuvf2u`, M42 `gg7sxih6`).
+        const tag = await deps.referencesService.updateTag(deps.tagsService, String(args.slug), {
           name: data.name as string | undefined,
           color: data.color as string | null | undefined,
           description: data.description as string | null | undefined,
         });
-        if (tag.slug !== oldSlug) {
-          await deps.referencesService.propagateTagSlugChange(oldSlug, tag.slug);
-        }
         deps.ws.broadcast({ kind: 'tag:changed', slug: tag.slug, action: 'update' });
         return ok({ slug: tag.slug, updated: true });
       } catch (err) {

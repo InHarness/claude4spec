@@ -149,3 +149,25 @@ export async function runMultiFileOperation<R>(fn: (op: MultiFileOperation) => P
     }
   });
 }
+
+/**
+ * The error a channel renders for `err` (REST `routes/errors.ts`, MCP
+ * `toolFailure`).
+ *
+ * A refusal raised by a step INSIDE an operation — a `SLUG_CONFLICT` that a
+ * concurrent writer created after the caller's pre-check, say — reaches the
+ * channel wrapped in {@link MultiFileOperationError}, which no channel maps: it
+ * would answer `500 INTERNAL` for what is the caller's `409`. When the rollback
+ * put every file back, nothing of the operation is left on disk and the
+ * refusal is the whole truth, so the channel answers it with its own code. Two
+ * cases keep the wrapper: a file the rollback could not restore (the disk is
+ * neither what the caller had nor what it asked for — a server-side failure,
+ * and the wrapper's message names the count), and a cause that is not a
+ * refusal (no string `code`, or a Node I/O error carrying `errno`).
+ */
+export function refusalBehind(err: unknown): unknown {
+  if (!(err instanceof MultiFileOperationError) || err.unrestored.length > 0) return err;
+  const cause = err.cause as { code?: unknown; errno?: unknown } | null | undefined;
+  if (!(cause instanceof Error) || typeof cause.code !== 'string' || cause.errno !== undefined) return err;
+  return cause;
+}

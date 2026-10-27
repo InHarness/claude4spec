@@ -61,3 +61,9 @@ szablon-tooling-patch-tools → src/server/mcp/patch-tools.ts (declared tools) +
 szablon-tooling-plan-tools → src/server/mcp/plan-tools.ts (declared tools, incl. create_plan) + src/server/services/system-prompt/blocks/m48-own.ts (buildTooling; line differs from template — dev-0011)
 szablon-tooling → src/server/services/system-prompt/blocks/m48-own.ts (buildTooling); test src/server/services/system-prompt/blocks/prompt-block-templates.test.ts
 szablon-workspace-projects → src/server/services/system-prompt/blocks/m31-workspace.ts; test src/server/services/system-prompt/blocks/m31-workspace.test.ts (two-line layout differs from template — dev-0011)
+section:m29ren001 → src/server/services/references.ts (propagateSlugChange: entity-file phase inside the one operation); test src/server/services/multi-file-consumers.test.ts
+section:8n46mdrz → src/server/services/references.ts (propagateSlugChange / rewritePages over runMultiFileOperation; MarkdownFileStore.write(…, op)); test src/server/services/multi-file-consumers.test.ts
+section:h556wl8s → src/server/services/sections.ts (propagateAnchorChange over runMultiFileOperation); test src/server/services/multi-file-consumers.test.ts
+section:91vuvf2u → src/server/services/references.ts (updateTag + propagateTagSlugChange; TagsService.slugAfterUpdate in src/server/services/tags.ts; callers src/server/routes/tags.ts, src/server/mcp/reference-tools.ts); test src/server/services/multi-file-consumers.test.ts
+section:m18acc00 → src/server/services/references.ts (updateTag: one operation, rollback of written pages); test src/server/services/multi-file-consumers.test.ts
+section:sjdtpuoo → src/server/services/page-write.ts (movePage: move + renameSync in one operation, rollback of rewrites only) + src/server/services/pages-link-indexer.ts (renameSync joins via op.write); test src/server/services/multi-file-consumers.test.ts

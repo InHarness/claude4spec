@@ -4,6 +4,7 @@ import { ConflictError } from '../services/brief.js';
 import { BriefFsError } from '../../core/briefs/types.js';
 import { isDiscoveryError } from '../discovery/errors.js';
 import { STATUS_FOR_CODE, STATUS_FOR_DISCOVERY_CODE, httpStatusForCode } from '../operations/error-codes.js';
+import { refusalBehind } from '../fs/multi-file-operation.js';
 
 /**
  * The status for a `DomainError`'s code: this channel's own table first, the
@@ -63,15 +64,18 @@ const BODY_PARSER_TYPES = new Set([
   'encoding.unsupported',
 ]);
 
-export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
+export const errorHandler: ErrorRequestHandler = (thrown, _req, res, next) => {
   // A streaming response (e.g. the external-skills ZIP download) can error
   // after headers/bytes are already on the wire — setting a status/body at
   // that point throws ERR_HTTP_HEADERS_SENT. Delegating to Express's built-in
   // final handler is the documented pattern: it detects headersSent and just
   // destroys the socket instead of trying to write a response.
   if (res.headersSent) {
-    return next(err);
+    return next(thrown);
   }
+  // 2.1.57 (M42) — a refusal raised inside a multi-file operation that rolled
+  // back cleanly answers as the refusal, not as the operation's wrapper.
+  const err = refusalBehind(thrown);
   if (err instanceof ConflictError) {
     return res.status(409).json({
       error: { code: err.code, message: err.message },
