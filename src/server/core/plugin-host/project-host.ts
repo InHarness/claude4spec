@@ -293,13 +293,18 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
    * consistent map — and is caught at the mount instead, by `assertFreshMount`
    * in `runAgentTurn`, which remembers across the queries of a turn.
    */
-  buildMcpServers(opts: { strict?: boolean } = {}): Array<{ name: string; server: McpServerFactory }> {
+  buildMcpServers(
+    opts: { strict?: boolean; include?: (name: string) => boolean } = {},
+  ): Array<{ name: string; server: McpServerFactory }> {
     const out: Array<{ name: string; server: McpServerFactory }> = [];
     // Identity, not equality: two structurally identical handles built by two
     // `createMcpServer` calls are fine — the same object twice is not.
     const seenHandles = new Set<object>();
     const seenInstances = new Set<object>();
     for (const [name, factory] of this.mcpServerFactories) {
+      // Selected by name BEFORE the factory runs: a server the caller does not
+      // take is never built (M44 `3f5ej79s` — the turn narrows the pool here).
+      if (opts.include && !opts.include(name)) continue;
       let server: unknown;
       try {
         server = factory();

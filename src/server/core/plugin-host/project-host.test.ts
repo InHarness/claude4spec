@@ -301,6 +301,17 @@ describe('buildMcpServers — one malformed plugin must not kill the turn', () =
     expect(host.buildMcpServers()).toEqual([]);
   });
 
+  it('[section:3f5ej79s] `include` selects by name BEFORE a factory runs — a rejected server is never built', () => {
+    const calls: string[] = [];
+    const host = hostWith({
+      'entity-tools': () => (calls.push('entity-tools'), validInstance('entity-tools')),
+      'release-tools': () => (calls.push('release-tools'), validInstance('release-tools')),
+    });
+    const built = host.buildMcpServers({ include: (name) => name === 'release-tools' });
+    expect(built.map((e) => e.name)).toEqual(['release-tools']);
+    expect(calls).toEqual(['release-tools']);
+  });
+
   it('passes a well-formed McpServerInstance through untouched', () => {
     const instance = validInstance('ok-tools');
     const host = hostWith({ 'ok-tools': () => instance });

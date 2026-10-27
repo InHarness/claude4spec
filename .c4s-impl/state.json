@@ -1685,7 +1685,7 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "u07-turn-argument-assembly/p1-l2-l15",
@@ -1723,20 +1723,22 @@
             "ac-wywolanie-narzedzia-spoza-whitelisty",
             "ac-wywolanie-runtransagent-w-watku-conte"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "7c9daafdb462c6ebe1912280950b3f1ad2f81291",
+      "baseCommit": "04431a957033e4c49fdeb08ccbab33bf709f7524",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": [],
+      "lastBlocking": []
     }
   ],
   "entityTypes": [

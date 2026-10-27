@@ -97,6 +97,9 @@ import {
 } from '@inharness-ai/agent-adapters';
 import { abortChildTurns, runAgentTurn, type ActiveAdapter, type AgentTurnDeps, type AgentTurnInput } from './agent-turn.js';
 import { SpecSkillTools } from '../mcp/spec-skill-tools.js';
+import { buildC4sToolsServer } from '../mcp/c4s-tools.js';
+import { createMcpServer, mcpTool } from '../plugin-runtime/index.js';
+import { z } from 'zod';
 import { CONTEXT_TYPE_REGISTRY } from '../services/chat-context.js';
 import {
   BACKGROUND_WAKEUP_GRACE_MS,
@@ -109,6 +112,9 @@ import {
   IDLE_TIMEOUT_MS,
   TURN_TIMEOUT_MS,
 } from '../../shared/agent-turn.js';
+
+/** The options `ProjectPluginHost.buildMcpServers` takes — fakes honour `include` like the real host. */
+type HostBuildOpts = { strict?: boolean; include?: (name: string) => boolean };
 
 afterEach(() => {
   hoisted.agent = undefined;
@@ -581,10 +587,12 @@ describe('runAgentTurn — entity-tools mcpServers wiring (M13, 0-1-112-to-0-1-1
   it('brief thread (pluginServers: release-only): entity-tools is excluded, same as every other per-type plugin server', async () => {
     hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
     const { deps } = makeDeps();
-    (deps.pluginHost as unknown as { buildMcpServers: () => unknown }).buildMcpServers = () => [
-      { name: 'entity-tools', server: { config: { type: 'sdk', name: 'entity-tools', instance: {} } } },
-      { name: 'release-tools', server: { config: { type: 'sdk', name: 'release-tools', instance: {} } } },
-    ];
+    // Honours `include` like the real host: the name predicate runs before a factory.
+    (deps.pluginHost as unknown as { buildMcpServers: (o?: HostBuildOpts) => unknown }).buildMcpServers = (o) =>
+      [
+        { name: 'entity-tools', server: { config: { type: 'sdk', name: 'entity-tools', instance: {} } } },
+        { name: 'release-tools', server: { config: { type: 'sdk', name: 'release-tools', instance: {} } } },
+      ].filter(({ name }) => !o?.include || o.include(name));
     const input = makeInput();
     (input.thread as unknown as { contextType: string }).contextType = 'brief';
 
@@ -2137,8 +2145,8 @@ describe('runAgentTurn — the profile gate covers the inline servers too', () =
     }
   });
 
-  it('workspace-tools survives the gate for every profile — list_projects is read-class', async () => {
-    for (const contextType of ['chat', 'ask', 'patch']) {
+  it('workspace-tools survives the gate for every profile — list_projects is read-class; 2.1.57: brief included (M44 row)', async () => {
+    for (const contextType of ['chat', 'ask', 'patch', 'brief']) {
       expect(await mountedFor(contextType)).toContain('workspace-tools');
     }
   });
@@ -3511,5 +3519,326 @@ describe('runAgentTurn — plan in the prompt (2.1.13)', () => {
     const brief = await promptFor({ contextType: 'brief' });
     expect(Object.keys((hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>)).not.toContain('plan-tools');
     expect(brief.prompt).not.toContain('<mcp name="plan-tools"');
+  });
+});
+
+
+/**
+ * 2.1.57 (M44 `317cwhlj` / `kegqwiy9` / `3f5ej79s`, M13 `mbladez6`, M11 `6exnmup9`,
+ * M23 `m23akc01`) — the turn handler owns the whole `mcpServers` argument and
+ * builds it in three steps: the host pool (entity servers, custom servers and the
+ * host's `reference-tools` / `release-tools`, registered in the pool like a
+ * plugin's server), the handler's own servers by context type, and the profile
+ * gate. The pool here is what `ProjectPluginHost.buildMcpServers()` hands over,
+ * built from real `createMcpServer` handles whose tool names are real catalog
+ * rows, so the gate classifies them as it does in production.
+ */
+describe('runAgentTurn — the turn argument: host pool, handler servers, profile gate (2.1.57)', () => {
+  function fixture(name: string, tools: string[]) {
+    return createMcpServer({
+      name,
+      tools: tools.map((t) =>
+        mcpTool(t, `${t} fixture`, { x: z.string().optional() }, async () => ({
+          content: [{ type: 'text' as const, text: t }],
+        })),
+      ),
+    });
+  }
+
+  const POOL_FACTORIES: ReadonlyArray<readonly [string, string[]]> = [
+    ['entity-tools', ['get_entities', 'create_entities']],
+    ['reference-tools', ['find_references', 'create_tag']],
+    ['release-tools', ['release_diff']],
+  ];
+
+  /**
+   * Fresh handles per call, like the real host's factories — and, like the real
+   * host, `include` is applied by NAME before a factory runs. `built` records
+   * every factory invocation of the turn.
+   */
+  function hostPool(built: string[] = [], extra: ReadonlyArray<readonly [string, string[]]> = []) {
+    return (o?: HostBuildOpts) =>
+      [...POOL_FACTORIES, ...extra]
+        .filter(([name]) => !o?.include || o.include(name))
+        .map(([name, tools]) => {
+          built.push(name);
+          return { name, server: fixture(name, tools) };
+        });
+  }
+
+  async function turnFor(
+    contextType: string,
+    opts: {
+      patchPath?: string | null;
+      briefPath?: string | null;
+      parentThreadId?: string | null;
+      planMode?: boolean;
+      events?: Array<Record<string, unknown>>;
+    } = {},
+  ) {
+    hoisted.events = opts.events ?? [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    const built: string[] = [];
+    (deps.pluginHost as unknown as { buildMcpServers: (o?: HostBuildOpts) => unknown }).buildMcpServers =
+      hostPool(built);
+    (deps as unknown as { listWorkspaceProjects: () => unknown }).listWorkspaceProjects = () => ({ projects: [] });
+    (deps as unknown as { specSkillTools: SpecSkillTools }).specSkillTools = new SpecSkillTools(
+      { skillsRoot: () => undefined },
+      'p1',
+    );
+    const input = makeInput();
+    const thread = input.thread as unknown as {
+      contextType: string;
+      patchPath: string | null;
+      briefPath: string | null;
+      parentThreadId: string | null;
+      planMode: boolean;
+    };
+    thread.contextType = contextType;
+    thread.patchPath = opts.patchPath ?? null;
+    thread.briefPath = opts.briefPath ?? null;
+    thread.parentThreadId = opts.parentThreadId ?? null;
+    thread.planMode = opts.planMode ?? false;
+    await runAgentTurn(deps, input);
+    const servers = (hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>;
+    const prompt = String(hoisted.lastExecute?.systemPrompt);
+    /** The declared tools of a mounted server, read off the `<tooling>` line the inventory derives from the mount. */
+    const toolsOf = (server: string): string[] | null => {
+      const m = new RegExp(`<mcp name="${server}">([^<]*)</mcp>`).exec(prompt);
+      return m ? m[1]!.split(',').map((t) => t.trim()) : null;
+    };
+    return { deps, built, mounted: Object.keys(servers).sort(), servers, prompt, toolsOf };
+  }
+
+  const CHAT_SET = [
+    'c4s-tools',
+    'entity-tools',
+    'plan-tools',
+    'reference-tools',
+    'release-tools',
+    'skill-tools',
+    'spec-skill-tools',
+    'transagent-tools',
+    'workspace-tools',
+  ];
+
+  it('[section:317cwhlj] [section:kegqwiy9] the handler assembles the whole mcpServers argument: pool servers (reference-tools, release-tools with the entity servers) plus its own, one map', async () => {
+    const { mounted, prompt } = await turnFor('chat');
+    expect(mounted).toEqual(CHAT_SET);
+    // reference-tools / release-tools come from the pool — with an empty pool the
+    // handler appends neither of them on its own.
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    (deps as unknown as { listWorkspaceProjects: () => unknown }).listWorkspaceProjects = () => ({ projects: [] });
+    await runAgentTurn(deps, makeInput());
+    const bare = Object.keys((hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>);
+    expect(bare).not.toContain('reference-tools');
+    expect(bare).not.toContain('release-tools');
+    // The inventory names the same set the adapter receives.
+    for (const name of CHAT_SET) expect(prompt, name).toContain(`<mcp name="${name}"`);
+  });
+
+  it('[section:3f5ej79s] a pool entry colliding with a handler server name is replaced by the handler entry — mounted once, with the handler\'s tools', async () => {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    const built: string[] = [];
+    (deps.pluginHost as unknown as { buildMcpServers: (o?: HostBuildOpts) => unknown }).buildMcpServers = hostPool(
+      built,
+      [['plan-tools', ['find_references']]],
+    );
+    await runAgentTurn(deps, makeInput());
+    const prompt = String(hoisted.lastExecute?.systemPrompt);
+    const lines = prompt.match(/<mcp name="plan-tools"[^\n]*/g) ?? [];
+    expect(lines).toHaveLength(1);
+    // The handler's plan-tools (its own plan operations), not the pool's fixture.
+    expect(lines[0]).not.toContain('find_references');
+    expect(lines[0]).toContain('update_plan');
+    // The shadowed pool factory is never even built.
+    expect(built).not.toContain('plan-tools');
+    expect(built).toContain('entity-tools');
+  });
+
+  it('[section:3f5ej79s] [section:6exnmup9] ask = the pool plus plan-tools, skill-tools and workspace-tools; the profile gate cuts the write tools and leaves the reads', async () => {
+    const { mounted, toolsOf } = await turnFor('ask');
+    expect(mounted).toEqual(
+      ['entity-tools', 'plan-tools', 'reference-tools', 'release-tools', 'skill-tools', 'workspace-tools'].sort(),
+    );
+    expect(toolsOf('entity-tools')).toEqual(['get_entities']);
+    expect(toolsOf('reference-tools')).toEqual(['find_references']);
+    // The same pool under chat keeps the writes.
+    const chat = await turnFor('chat');
+    expect(chat.toolsOf('entity-tools')).toEqual(['get_entities', 'create_entities']);
+    expect(chat.toolsOf('reference-tools')).toEqual(['find_references', 'create_tag']);
+  });
+
+  it('[section:m23akc01] a patch thread gets the full chat set without transagent-tools — c4s-tools and spec-skill-tools included — plus patch-tools', async () => {
+    const { mounted } = await turnFor('patch', { patchPath: 'p.md' });
+    expect(mounted).toEqual(
+      [...CHAT_SET.filter((n) => n !== 'transagent-tools'), 'patch-tools'].sort(),
+    );
+  });
+
+  it('[ac:ac-mcp-ask-peer-w-posture-plan-mode-c] an ask turn runs with planMode=true whatever the thread flag says, strips c4s-tools and transagent-tools, keeps plan-tools, and mutates no spec (write tools withheld)', async () => {
+    const { mounted, toolsOf } = await turnFor('ask', { planMode: false });
+    expect(hoisted.lastExecute?.planMode).toBe(true);
+    expect(mounted).not.toContain('c4s-tools');
+    expect(mounted).not.toContain('transagent-tools');
+    expect(mounted).toContain('plan-tools');
+    expect(toolsOf('entity-tools')).not.toContain('create_entities');
+    expect(toolsOf('reference-tools')).not.toContain('create_tag');
+  });
+
+  it('[ac:ac-mcp-server-c4s-tools-jest-whitelistowa] c4s-tools is mounted in chat and patch, and absent from brief and ask', async () => {
+    expect((await turnFor('chat')).mounted).toContain('c4s-tools');
+    expect((await turnFor('patch', { patchPath: 'p.md' })).mounted).toContain('c4s-tools');
+    expect((await turnFor('brief', { briefPath: 'b.md' })).mounted).not.toContain('c4s-tools');
+    expect((await turnFor('ask')).mounted).not.toContain('c4s-tools');
+  });
+
+  it('[ac:ac-prompt-nie-niesie-osobnego-bloku-inst] the prompt carries no separate consultation-instruction block: c4s-tools appears as an inventory line, and the call contract only in the tool description', async () => {
+    const { prompt } = await turnFor('chat');
+    expect(prompt).toContain('<mcp name="c4s-tools">ask</mcp>');
+    expect(prompt).not.toContain('<c4s_tools_usage');
+    // The contract lives in the operation's own description, which the prompt does not repeat.
+    const description = buildC4sToolsServer('default').tools[0]!.description;
+    expect(description.length).toBeGreaterThan(40);
+    expect(prompt).not.toContain(description.slice(0, 40));
+  });
+
+  it('[ac:ac-serwer-skill-tools-jest-zamontowany-w] skill-tools is mounted in all four context types — brief included, with no filesystem built-in', async () => {
+    for (const [contextType, opts] of [
+      ['chat', {}],
+      ['patch', { patchPath: 'p.md' }],
+      ['ask', {}],
+      ['brief', { briefPath: 'b.md' }],
+    ] as const) {
+      expect((await turnFor(contextType, opts)).mounted, contextType).toContain('skill-tools');
+    }
+    // The last turn was brief: no file built-ins there at all.
+    const groups = hoisted.lastExecute?.disallowedToolGroups as string[];
+    expect(groups).toEqual(expect.arrayContaining(['file-read', 'file-write', 'shell']));
+  });
+
+  it('[ac:ac-watek-context-type-brief-ma-zamontowa] a brief thread mounts brief-tools, release-tools and skill-tools — no entity servers, no reference-tools, no plan-tools', async () => {
+    const { mounted } = await turnFor('brief', { briefPath: 'b.md' });
+    for (const name of ['brief-tools', 'release-tools', 'skill-tools']) expect(mounted, name).toContain(name);
+    for (const name of ['entity-tools', 'reference-tools', 'plan-tools']) expect(mounted, name).not.toContain(name);
+    // ASSUMPTION:dev-0014 — the criterion says "only" these three; the M44 row at
+    // 2.1.57 adds workspace-tools to every type, brief included. Built to the row:
+    // workspace-tools is the one further server.
+    expect(mounted).toEqual(['brief-tools', 'release-tools', 'skill-tools', 'workspace-tools']);
+  });
+
+  it('[section:3f5ej79s] a brief turn builds only the pool servers it mounts — no entity-tools / reference-tools factory runs, on any buildMcpEntries call', async () => {
+    const { built } = await turnFor('brief', { briefPath: 'b.md' });
+    // `<tooling>` + one execute: release-tools built each time, nothing else.
+    expect(built.length).toBeGreaterThan(0);
+    expect(new Set(built)).toEqual(new Set(['release-tools']));
+    // A chat turn, by contrast, builds the whole pool.
+    const chat = await turnFor('chat');
+    expect(new Set(chat.built)).toEqual(new Set(['entity-tools', 'reference-tools', 'release-tools']));
+  });
+
+  it('[section:3f5ej79s] the pool narrowing is driven by the registry row (ctx.mcp.pluginServers), not by a second table', async () => {
+    const row = CONTEXT_TYPE_REGISTRY.chat.mcp;
+    const original = row.pluginServers;
+    row.pluginServers = 'release-only';
+    try {
+      const { built, mounted } = await turnFor('chat');
+      expect(new Set(built)).toEqual(new Set(['release-tools']));
+      expect(mounted).not.toContain('entity-tools');
+      expect(mounted).not.toContain('reference-tools');
+      expect(mounted).toContain('release-tools');
+    } finally {
+      row.pluginServers = original;
+    }
+  });
+
+  it('[ac:ac-watek-context-type-brief-nie-ma-zamon] a brief thread has neither c4s-tools nor transagent-tools mounted', async () => {
+    const { mounted, prompt } = await turnFor('brief', { briefPath: 'b.md' });
+    expect(mounted).not.toContain('c4s-tools');
+    expect(mounted).not.toContain('transagent-tools');
+    expect(prompt).not.toMatch(/<mcp name="(c4s|transagent)-tools"/);
+  });
+
+  it('[ac:ac-watek-context-type-brief-niesie-posta] a brief thread carries its tool posture (cwd, no filesystem writes, no plan/entity tools) inside <interaction_context type="brief">', async () => {
+    const { prompt } = await turnFor('brief', { briefPath: 'b.md' });
+    const block = /<interaction_context type="brief">([\s\S]*?)<\/interaction_context>/.exec(prompt)?.[1];
+    expect(block).toBeDefined();
+    expect(block).toContain('You work at the project cwd');
+    expect(block).toContain('no writes');
+    expect(block).toContain('You have NO plan tools and NO entity tools.');
+  });
+
+  it('[ac:ac-watek-context-type-patch-ma-zamontowa] a patch thread has patch-tools mounted', async () => {
+    const { mounted, toolsOf } = await turnFor('patch', { patchPath: 'p.md' });
+    expect(mounted).toContain('patch-tools');
+    expect(toolsOf('patch-tools')).toEqual(['get_patch', 'mark_patch_applied']);
+  });
+
+  it('[ac:ac-watek-dziecko-w-typie-ktorego-wiersz] a child thread of a type whose row names the orchestrator (chat) has transagent-tools stripped — the thread flag wins over the row', async () => {
+    // The row: chat names transagent-tools.
+    expect(CONTEXT_TYPE_REGISTRY.chat.mcp.transagentTools).toBe(true);
+    const top = await turnFor('chat', { parentThreadId: null });
+    expect(top.mounted).toContain('transagent-tools');
+    // The thread: a child of the same type does not get it.
+    const child = await turnFor('chat', { parentThreadId: 'parent-1' });
+    expect(child.mounted).not.toContain('transagent-tools');
+    expect(child.prompt).not.toMatch(/<mcp name="transagent-tools"/);
+  });
+
+  it('[ac:ac-watki-context-type-chat-brief-ask-nie] chat, brief and ask threads have no patch-tools mounted — even with a patch path on the row', async () => {
+    for (const [contextType, opts] of [
+      ['chat', { patchPath: 'p.md' }],
+      ['brief', { briefPath: 'b.md', patchPath: 'p.md' }],
+      ['ask', { patchPath: 'p.md' }],
+    ] as const) {
+      const { mounted, prompt } = await turnFor(contextType, opts);
+      expect(mounted, contextType).not.toContain('patch-tools');
+      expect(prompt, contextType).not.toMatch(/<mcp name="patch-tools"/);
+    }
+  });
+
+  it('[ac:ac-wywolanie-narzedzia-spoza-whitelisty] a call to a tool outside the type\'s whitelist: its server is not registered in the runtime, and the runtime\'s answer reaches the model as a tool_result error', async () => {
+    // A brief thread calling an entity tool: entity-tools is in the pool, not in brief's set.
+    const { mounted, prompt, deps } = await turnFor('brief', {
+      briefPath: 'b.md',
+      events: [
+        { type: 'tool_use', toolName: 'mcp__entity-tools__get_entities', toolUseId: 'u1', input: {} },
+        { type: 'tool_result', toolUseId: 'u1', summary: 'Tool not available in this context', isError: true },
+        { type: 'text_delta', text: 'done' },
+        { type: 'result', sessionId: 's1' },
+      ],
+    });
+    expect(mounted).not.toContain('entity-tools');
+    expect(prompt).not.toMatch(/<mcp name="[^"]*">[^<]*\bget_entities\b/);
+    // ASSUMPTION:dev-0014 — the wording is the agent runtime's own answer to a call on an
+    // unregistered tool; the app guarantees the non-registration and passes the error on.
+    const rows = (deps.chatService as unknown as {
+      getMessages: () => Array<{ role: string; content: string }>;
+    }).getMessages();
+    const result = rows.find((r) => r.role === 'tool_result');
+    expect(result).toBeDefined();
+    expect(JSON.parse(result!.content)).toEqual({ summary: 'Tool not available in this context', isError: true });
+  });
+
+  it('[section:kaasgyj8] [section:55dy5doq] <tooling> is an inventory of names derived from the mount alone — it states no schema, and the turn passes the adapter no deferral control, in any context type', async () => {
+    for (const [contextType, opts] of [
+      ['chat', {}],
+      ['patch', { patchPath: 'p.md' }],
+      ['ask', {}],
+      ['brief', { briefPath: 'b.md' }],
+    ] as const) {
+      const { mounted, prompt } = await turnFor(contextType, opts);
+      // Anchored on the block's own lines: rule text (BRIEF_RULES) mentions `<tooling>` inline.
+      const tooling = /(?:^|\n)<tooling>\n([\s\S]*?)\n<\/tooling>/.exec(prompt)?.[1] ?? '';
+      expect(tooling, contextType).not.toBe('');
+      // One <mcp> line per mounted server, in the mount — nothing else, no schema.
+      const named = [...tooling.matchAll(/<mcp name="([^"]+)"/g)].map((m) => m[1]).sort();
+      expect(named, contextType).toEqual(mounted);
+      expect(tooling, contextType).not.toMatch(/inputSchema|"type":\s*"object"/);
+      // No execute parameter steers schema deferral (the SDK decides it on its own).
+      expect(Object.keys(hoisted.lastExecute ?? {}).filter((k) => /defer|lazy|toolsearch/i.test(k)), contextType).toEqual([]);
+    }
   });
 });

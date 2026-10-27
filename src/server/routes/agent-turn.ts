@@ -34,9 +34,8 @@ import { buildBriefToolsServer } from '../mcp/brief-tools.js';
 import { buildC4sToolsServer } from '../mcp/c4s-tools.js';
 import { buildWorkspaceToolsServer } from '../mcp/workspace-tools.js';
 import { SPEC_SKILL_TOOLS_SERVER, type SpecSkillTools } from '../mcp/spec-skill-tools.js';
-import type { McpServerFactory } from '../../shared/plugin-host/mcp.js';
-import { gateServers, pluginServerNamesFor } from '../operations/profile-gate.js';
-import { BRIEF_ALLOWED_PLUGIN_MCP } from '../operations/profiles.js';
+import { pluginServerNamesFor } from '../operations/profile-gate.js';
+import { assembleTurnMcpServers, type TurnServerEntry } from '../services/turn-mcp-servers.js';
 import type { ListProjectsResult } from '../workspace/list-projects.js';
 import {
   buildSystemPrompt,
@@ -534,7 +533,7 @@ export async function runAgentTurn(
   // thread's stored plan_mode flag. "Read-only" is the wrong word for what that buys:
   // plan mode desugars to `disallowedToolGroups: ['file-write','shell']`, which touches
   // BUILT-INS ONLY — the MCP surface is narrowed by the context profile instead (see
-  // `gateServers` below). One site, so it covers both POST /api/threads/:id/ask and
+  // `assembleTurnMcpServers` below). One site, so it covers both POST /api/threads/:id/ask and
   // POST /api/chat. (Today only `ask` forces; the rest follow the thread flag.)
   const planMode = ctx.builtinPosture === 'force-plan' ? true : thread.planMode;
 
@@ -1164,14 +1163,14 @@ export async function runAgentTurn(
      * list against.
      *
      * Now there is. The same `buildMcpEntries()` that mounts the servers for the
-     * turn is run through the same `gateServers()` with the same profile, and the
+     * turn is run through the same profile gate (`assembleTurnMcpServers`), and the
      * surviving handles are read for their DECLARED tool names. A server the
      * profile empties out is dropped by the gate and never named; a server built
      * against the pre-0.2.13 contract, which declares no `tools`, renders as its
      * bare name — "I cannot enumerate this", which is a true statement, rather
      * than an invented list, which is not.
      */
-    const mcpInventory = gateServers(thread.contextType, buildMcpEntries(), pluginServerNames).map(
+    const mcpInventory = buildMcpEntries().map(
       ({ name, server }) => ({
         name,
         tools: server.tools?.map((t) => t.name),
@@ -1464,13 +1463,13 @@ export async function runAgentTurn(
      */
     const buildMcpServersForExecute = (): Record<string, McpServerConfig> => {
       /**
-       * ONE gate call, producing the final map. There is deliberately no second
+       * ONE assembly, producing the final map. There is deliberately no second
        * place where a server can enter it: `buildMcpEntries` is the only
        * producer, and it is shared with the prompt's `<tooling>` inventory
        * (built ~250 lines above, before the system prompt) so the set the model
        * is TOLD about and the set it is GIVEN cannot describe different things.
        */
-      const gated = gateServers(thread.contextType, buildMcpEntries(), pluginServerNames);
+      const gated = buildMcpEntries();
 
       const mcpServers: Record<string, McpServerConfig> = Object.fromEntries(
         // 0.2.2: `McpServerFactory.config` is deliberately `unknown` — the host
@@ -1499,7 +1498,7 @@ export async function runAgentTurn(
      * `assertFreshMount`; the inventory call's handles are read for their
      * declared `tools` and discarded.
      */
-    function buildMcpEntries(): Array<{ name: string; server: McpServerFactory }> {
+    function buildMcpEntries(): TurnServerEntry[] {
       // M05 m05ctxreg dim 2: per-thread MCP servers are dispatched from the registry's
       // `mcp` descriptor — each server mounts iff its registry flag is set.
       const planTools = ctx.mcp.planTools
@@ -1593,70 +1592,42 @@ export async function runAgentTurn(
         ctx.mcp.specSkillTools && deps.specSkillTools ? deps.specSkillTools.build() : null;
 
       /**
-       * Two gates, coarse then fine.
-       *
-       * Registry `pluginServers` picks whole SERVERS: 'all' mounts every
-       * entity-plugin server, 'release-only' narrows to the
-       * BRIEF_ALLOWED_PLUGIN_MCP whitelist (read-only release-tools).
-       *
-       * 0.2.13 adds `gateServers`, which then picks TOOLS within the survivors by
-       * the context profile's admitted operation classes. The coarse gate could
-       * never express "this profile gets `get_page` but not `create_tag`" — both
-       * live on `reference-tools` — so `ask` was handed the write tools of every
-       * mounted server and held back only by forced plan mode, which does not
-       * apply to MCP at all. A server left with no admitted tools is dropped
-       * rather than mounted empty.
+       * Step 2 — the handler's own servers, each already behind its registry
+       * gate above. On a name collision with a pool entry the handler's entry
+       * wins. `workspace-tools` and `skill-tools` are unconditional: both are
+       * read-class, which every profile admits.
        */
-      const pluginEntries = deps.pluginHost
-        // `strict`: this is the mount, where a repeat instance is fatal.
-        .buildMcpServers({ strict: true })
-        .filter(({ name }) =>
-          ctx.mcp.pluginServers === 'release-only' ? BRIEF_ALLOWED_PLUGIN_MCP.has(name) : true,
-        );
+      const handlerEntries: TurnServerEntry[] = [];
+      if (planTools) handlerEntries.push({ name: 'plan-tools', server: planTools });
+      if (briefTools) handlerEntries.push({ name: 'brief-tools', server: briefTools });
+      if (patchTools) handlerEntries.push({ name: 'patch-tools', server: patchTools });
+      if (c4sTools) handlerEntries.push({ name: 'c4s-tools', server: c4sTools });
+      if (transagentTools)
+        handlerEntries.push({ name: 'transagent-tools', server: transagentTools });
+      if (workspaceTools) handlerEntries.push({ name: 'workspace-tools', server: workspaceTools });
+      if (specSkillTools) handlerEntries.push({ name: SPEC_SKILL_TOOLS_SERVER, server: specSkillTools });
+      handlerEntries.push({ name: 'skill-tools', server: skillTools });
 
       /**
-       * The INLINE servers, as gate input rather than as post-gate assignments.
+       * Step 1 (M44 `3f5ej79s`) — the host pool: every server registered in the
+       * plugin host, `reference-tools` and `release-tools` among them (the host
+       * registers both in the pool like a plugin's server). The pool knows no
+       * context type: it is narrowed by this row's `ctx.mcp.pluginServers`
+       * (`brief` takes only `release-tools`) and by the handler names above,
+       * both as a name predicate the host applies BEFORE invoking a factory —
+       * a server this turn does not mount is never built. `strict`: this is
+       * the mount, where a repeat instance is fatal.
        *
-       * They used to be written into the map after `gateServers` had run, which
-       * made L3's "the profile is the only hard gate" false for half the map:
-       * six servers reached the model governed solely by the coarse `ctx.mcp.*`
-       * flags, with their per-tool declarations never consulted. They carry
-       * `.tools` from `createMcpServer` exactly like a plugin's server does, so
-       * there was never a reason they could not be gated — only an ordering.
-       *
-       * Nothing is expected to DROP as a result: each inline tool's catalog
-       * `opClass` matches the coarse flag that mounts it (`get_brief` /
-       * `update_brief` are `brief`, plan tools are `plan`, `ask` is `peer`,
-       * `list_projects` and `get_patch` are `read`, `mark_patch_applied` is
-       * `write` — patch-tools is mounted by the thread's anchor, not a coarse
-       * flag, and both classes are admitted by the `patch` profile), and `mcpServerSetForProfile`
-       * derives those flags from the same class sets the gate reads. The point
-       * is that the two can no longer drift apart in silence: widen a profile
-       * without widening the catalog and the gate now has the final word.
-       *
-       * `list_projects` (workspace-tools) stays mounted for every context type
-       * for the reason it always was — it is read-class, which every profile
-       * admits, and neither alternative home's gate (the peer-consultation
-       * recursion guard on `c4s-tools`, the release-only narrowing of the plugin
-       * pool for `brief`) has anything to do with workspace discovery. It now
-       * reaches that outcome THROUGH the gate rather than around it.
-       *
-       * Ordering is load-bearing: inline entries come last, so a name collision
-       * with a plugin server resolves to the inline one, exactly as the previous
-       * overwrite-by-key assignment did.
+       * Step 3 — the profile gate, inside the same call: tools filtered by the
+       * profile's operation classes, servers left with none dropped.
        */
-      const inlineEntries: Array<{ name: string; server: McpServerFactory }> = [];
-      if (planTools) inlineEntries.push({ name: 'plan-tools', server: planTools });
-      if (briefTools) inlineEntries.push({ name: 'brief-tools', server: briefTools });
-      if (patchTools) inlineEntries.push({ name: 'patch-tools', server: patchTools });
-      if (c4sTools) inlineEntries.push({ name: 'c4s-tools', server: c4sTools });
-      if (transagentTools)
-        inlineEntries.push({ name: 'transagent-tools', server: transagentTools });
-      if (workspaceTools) inlineEntries.push({ name: 'workspace-tools', server: workspaceTools });
-      if (specSkillTools) inlineEntries.push({ name: SPEC_SKILL_TOOLS_SERVER, server: specSkillTools });
-      inlineEntries.push({ name: 'skill-tools', server: skillTools });
-
-      return [...pluginEntries, ...inlineEntries];
+      return assembleTurnMcpServers({
+        contextType: thread.contextType,
+        pluginServers: ctx.mcp.pluginServers,
+        buildPool: (include) => deps.pluginHost.buildMcpServers({ strict: true, include }),
+        handlerEntries,
+        pluginServerNames,
+      });
     }
 
     // M05 queue: streaming-input keeps the SDK input channel open across turns so

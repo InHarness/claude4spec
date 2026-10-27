@@ -955,6 +955,10 @@ async function buildInner(
   registerRefRewriteListeners(pluginHost, db.handle, entityStore);
 
   // Cross-cutting MCP server — owned by the host, not a plugin (M13).
+  // 2.1.57 (M13 `mbladez6` 3b, M44 `317cwhlj`): it enters the turn through the
+  // POOL, registered here exactly like a plugin's server (a duplicate name is
+  // refused with PLUGIN_TOOL_CONFLICT); the turn handler takes it from the pool
+  // rather than appending it on its own. Same for `release-tools` below.
   // Registered as a factory: a fresh instance is built per `adapter.execute()` so
   // neither concurrent turns nor successive queries of one turn share an MCP
   // transport. See `registerMcpServer` in plugin-host/types.ts for why the unit is

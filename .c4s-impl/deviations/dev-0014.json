@@ -1,0 +1,16 @@
+{
+  "id": "dev-0014",
+  "kind": "drift",
+  "blocking": false,
+  "address": "u07-turn-argument-assembly/3f5ej79s",
+  "unit": "u07-turn-argument-assembly",
+  "portion": "u07-turn-argument-assembly/p1-l2-l15",
+  "slugs": [
+    "ac-watek-context-type-brief-ma-zamontowa",
+    "ac-mcp-server-c4s-tools-jest-whitelistowa",
+    "ac-wywolanie-narzedzia-spoza-whitelisty"
+  ],
+  "text": "Dwa kryteria embedowane przez strony M44/M11 rozmijają się z wierszami rejestru przy 2.1.57:\n1. `ac-watek-context-type-brief-ma-zamontowa` mówi, że wątek `brief` ma zamontowane **wyłącznie** `brief-tools`, `release-tools` i `skill-tools`. Wiersz `brief` w M44 3f5ej79s przy 2.1.57 dokłada `workspace-tools` (handler dokleja go bezwarunkowo do wszystkich czterech typów). Zbudowane wg wiersza: brief montuje cztery serwery; test kryterium asertuje trzy wymienione, brak serwerów encji/`reference-tools`/`plan-tools` oraz `workspace-tools` jako jedyny dodatkowy (ASSUMPTION:dev-0014).\n2. `ac-mcp-server-c4s-tools-jest-whitelistowa` mówi, że whitelist `c4s-tools` jest „egzekwowany w `routes/chat.ts` przy budowie agent runtime”. Przy 2.1.57 zestaw składa handler tury (M44 317cwhlj/3f5ej79s), a `routes/chat.ts` serwerów MCP nie składa. Test asertuje samą obecność/nieobecność `c4s-tools` per typ.\n3. `ac-wywolanie-narzedzia-spoza-whitelisty` wymaga brzmienia „Tool not available in this context”. To odpowiedź runtime'u agenta na wywołanie niezarejestrowanego narzędzia; aplikacja gwarantuje niezarejestrowanie serwera i przekazanie błędu jako `tool_result` z `isError: true`, nie samo brzmienie (ASSUMPTION:dev-0014).\n\nSugestia: w (1) dopisać `workspace-tools` do kryterium (albo zamienić „wyłącznie” na listę z wiersza), w (2) zastąpić `routes/chat.ts` handlerem tury M44, w (3) opisać brzmienie jako odpowiedź runtime'u, nie aplikacji.",
+  "sent": true,
+  "patchPath": "2-1-56-to-2-1-57-u07-turn-argument-assembly-3f5ej79s-dwa-kryteria-embedowane-przez-strony-m44-m11.md"
+}

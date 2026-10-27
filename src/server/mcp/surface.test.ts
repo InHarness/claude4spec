@@ -61,16 +61,27 @@ function stubDeps(overrides: Partial<ExternalSurfaceDeps> = {}): ExternalSurface
   };
 }
 
-function pluginHostWith(entries: Array<{ name: string; tools: string[] }>, types: string[]) {
-  const servers = entries.map(({ name, tools }) => ({
-    name,
-    server: createMcpServer({
-      name,
-      tools: tools.map((t) => mcpTool(t, `${t} description`, { x: z.string().optional() }, async () => ({ content: [] }))),
-    }) as unknown as McpServerFactory,
-  }));
+/**
+ * Like the real host, `include` is applied by NAME before a factory runs; the
+ * names of the factories that did run are recorded in `built`.
+ */
+function pluginHostWith(entries: Array<{ name: string; tools: string[] }>, types: string[], built: string[] = []) {
   return {
-    buildMcpServers: () => servers,
+    buildMcpServers: (o?: { include?: (name: string) => boolean }) =>
+      entries
+        .filter(({ name }) => !o?.include || o.include(name))
+        .map(({ name, tools }) => {
+          built.push(name);
+          return {
+            name,
+            server: createMcpServer({
+              name,
+              tools: tools.map((t) =>
+                mcpTool(t, `${t} description`, { x: z.string().optional() }, async () => ({ content: [] })),
+              ),
+            }) as unknown as McpServerFactory,
+          };
+        }),
     listEntities: () => types.map((type) => ({ type })),
   } as unknown as ExternalSurfaceDeps['pluginHost'];
 }
@@ -256,7 +267,8 @@ describe('composeExternalSurface', () => {
     });
   });
 
-  it('narrows `brief` to the release-tools whitelist', () => {
+  it('narrows `brief` to the release-tools whitelist — by the turn\'s shared poolSelector, before any other factory runs', () => {
+    const built: string[] = [];
     const names = composeExternalSurface(
       stubDeps({
         profile: 'brief',
@@ -266,11 +278,13 @@ describe('composeExternalSurface', () => {
             { name: 'spreadsheet-tools', tools: ['get_overview'] },
           ],
           ['spreadsheet'],
+          built,
         ),
       }),
     ).toolNames;
     expect(names).toContain('release_diff');
     expect(names).not.toContain('get_overview');
+    expect(built).toEqual(['release-tools']);
   });
 
   it('states the error codes it produces, and the ones 0.2.13 retired', () => {

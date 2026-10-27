@@ -699,8 +699,15 @@ export interface ProjectPluginHost {
    * `McpServerReuseError` instead of skipping it with a warning. Passed by the
    * MOUNT path only (`runAgentTurn`), where a shared instance darkens the whole
    * map; the external read surface never connects these handles.
+   *
+   * `include` — a predicate over the server NAME, applied before the factory
+   * is invoked: a server it rejects is not built at all. The turn handler and
+   * the external surface narrow the pool with it (`poolSelector`).
    */
-  buildMcpServers(opts?: { strict?: boolean }): Array<{ name: string; server: McpServerFactory }>;
+  buildMcpServers(opts?: {
+    strict?: boolean;
+    include?: (name: string) => boolean;
+  }): Array<{ name: string; server: McpServerFactory }>;
 
   /**
    * 0.2.13 — the type-specific operations of `:type`, read from the SAME factory
