@@ -163,14 +163,14 @@ describe('patch-tools (thread-bound)', () => {
     expect(res.body.content.trim()).toBe('line B');
   });
 
-  it('get_patch with range past the end is INVALID_ARGUMENT stating the file size', async () => {
+  it('[ac:ac-get-patch-z-range-poza-koncem-pliku-w] get_patch with range past the end is INVALID_ARGUMENT stating the file size', async () => {
     const res = await call('get_patch', { range: { start: 999, end: 1000 } });
     expect(res.isError).toBe(true);
     expect(res.raw.error?.code ?? res.raw.code).toBe('INVALID_ARGUMENT');
     expect(JSON.stringify(res.raw)).toMatch(/\d+ lines?/);
   });
 
-  it('get_patch over the budget without range comes back truncated with a range hint', async () => {
+  it('[ac:ac-patch-przekraczajacy-budzet-wolany-be] get_patch over the budget without range comes back truncated with a range hint', async () => {
     const big = Array.from({ length: 20000 }, (_, i) => `line ${i} ${'x'.repeat(20)}`).join('\n');
     await fs.writeFile(path.join(cwd, 'patches', 'big.md'), patchFile(false, big), 'utf-8');
     const res = await call('get_patch', { path: 'big.md' });
@@ -218,7 +218,7 @@ describe('patch-tools (thread-bound)', () => {
     expect((await call('get_patch', {})).body.frontmatter.applied).toBe(true);
   });
 
-  it('mark_patch_applied with applied: false is refused, pointing at the UI', async () => {
+  it('[ac:ac-mark-patch-applied-z-applied-false-je] mark_patch_applied with applied: false is refused, pointing at the UI', async () => {
     const res = await call('mark_patch_applied', { applied: false });
     expect(res.isError).toBe(true);
     expect(res.raw.error?.code ?? res.raw.code).toBe('INVALID_ARGUMENT');

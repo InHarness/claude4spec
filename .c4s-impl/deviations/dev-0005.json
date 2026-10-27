@@ -1,0 +1,15 @@
+{
+  "id": "dev-0005",
+  "kind": "drift",
+  "blocking": false,
+  "address": "u03-artifact-frontmatter-merge/m36l4fam",
+  "unit": "u03-artifact-frontmatter-merge",
+  "portion": "u03-artifact-frontmatter-merge/p1-l3-l4",
+  "slugs": [
+    "patch-api-artifacts-kind-path-frontmatter"
+  ],
+  "text": "Opis endpointu patch-api-artifacts-kind-path-frontmatter kończy się „Zwraca pełny ArtifactResponse”, a dev-0003 proponuje przywrócić wiązanie response → artifact-response (200). Kod od 0.2.86 (reguła `echo-free`, M43) odpowiada na tej trasie węższym kształtem `{ path, frontmatter, hash }` (ArtifactWriteResponse, src/shared/entities.ts) — bez `body` i `content` — tak samo jak PUT .../content. Okno tego nie zmieniało; kod zostaje przy odpowiedzi echo-free, a test encji asercjonuje ten kształt.\n\nSugestia: w opisie endpointu i w jego linkedDtos wskazać odpowiedź echo-free (path, frontmatter, hash) zamiast pełnego ArtifactResponse — albo potwierdzić, że trasa ma wrócić do pełnej odpowiedzi.",
+  "assumption": "ASSUMPTION:dev-0005 PATCH .../frontmatter answers echo-free { path, frontmatter, hash }",
+  "sent": true,
+  "patchPath": "2-1-56-to-2-1-57-u03-artifact-frontmatter-merge-m36l4fam-opis-endpointu-patch-api-artifacts-kind-.md"
+}

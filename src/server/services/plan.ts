@@ -62,6 +62,7 @@ import {
 } from './plan-write.js';
 import { applyTextEdits, type TextEdit } from './text-edits.js';
 import { bodyPositionResolver } from './section-text.js';
+import { KeyedQueue } from '../fs/keyed-queue.js';
 
 /** How a plan is read: a window + the budget (default), or the whole file (`full`). */
 export interface PlanReadOpts {
@@ -205,12 +206,17 @@ interface ComposedPlanBody {
   replacements?: number;
 }
 
+/**
+ * 2.1.57 (M10 `bctqi8sw`) — the editor's save carries NO `changeSummary`, by
+ * design: only the agent channel (`update_plan`) owes a summary. A user version
+ * is told apart from an agent one by its author on the `file_version` axis
+ * (`user`), not by a description — its summary stays empty.
+ */
 export interface PlanUpdateContentOpts {
   path: string;
   content: string;
   expectedHash?: string;
   changedBy: PlanChangedBy;
-  changeSummary?: string;
 }
 
 export interface PlanUpdateFrontmatterOpts {
@@ -263,32 +269,13 @@ export class PlanService {
     return this.deps.plansPages.root;
   }
 
-  /** Per-key (plan path, or thread while the plan doesn't exist yet) write queue. */
-  private locks = new Map<string, Promise<unknown>>();
-
   /**
-   * Serializes read-modify-write cycles per `key` — the filesystem gives no
-   * transaction to provide this, unlike the SQLite `BEGIN IMMEDIATE` the
-   * pre-0.1.127 implementation relied on. Queued via chained promises rather
-   * than a real mutex library since this only needs to serialize calls within
-   * this single process/service instance.
+   * Per-key (plan path, or thread while the plan doesn't exist yet) write
+   * queue: serializes read-modify-write cycles per key — the filesystem gives
+   * no transaction to provide this, unlike the SQLite `BEGIN IMMEDIATE` the
+   * pre-0.1.127 implementation relied on.
    */
-  private withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const prior = this.locks.get(key) ?? Promise.resolve();
-    const settled = prior.then(
-      () => undefined,
-      () => undefined,
-    );
-    const run = settled.then(fn);
-    this.locks.set(
-      key,
-      run.then(
-        () => undefined,
-        () => undefined,
-      ),
-    );
-    return run;
-  }
+  private readonly locks = new KeyedQueue();
 
   // ─── Reads ───────────────────────────────────────────────────────────────
 
@@ -557,7 +544,7 @@ export class PlanService {
     const content = input.content;
     const base = slugify(title) || 'plan';
 
-    return this.withLock(`new-plan:${base}`, async () => {
+    return this.locks.run(`new-plan:${base}`, async () => {
       const planPath = `${base}.md`;
       this.absPath(planPath);
       if (await this.deps.plansPages.exists(planPath)) {
@@ -639,7 +626,7 @@ export class PlanService {
    * batch is all-or-nothing: one rejected entry means no file change, no
    * `file_version` row and no `plan:updated`.
    *
-   * The whole read-modify-write cycle runs inside {@link withLock}, keyed by
+   * The whole read-modify-write cycle runs inside `locks`, keyed by
    * the target plan path (or by thread while the plan doesn't exist yet) —
    * filesystem writes have no transaction to serialize concurrent editors the
    * way the pre-0.1.127 SQLite `BEGIN IMMEDIATE` transaction did, so two
@@ -662,7 +649,7 @@ export class PlanService {
     if (addressed !== undefined) await this.requirePlan(addressed);
     const lockKey = addressed ?? this.deps.chatService.getThreadPlanPath(threadId) ?? `thread:${threadId}`;
 
-    return this.withLock(lockKey, async () => {
+    return this.locks.run(lockKey, async () => {
       // Re-resolve inside the lock: another call for the same thread may have
       // created the plan while this call was waiting its turn.
       const existingPath = addressed ?? this.deps.chatService.getThreadPlanPath(threadId);
@@ -701,7 +688,7 @@ export class PlanService {
         // resource — the slug `base` every racing candidate is derived from —
         // so only genuinely colliding titles serialize; different titles
         // never look at the same candidates and proceed unblocked.
-        const { planPath, version, plan, finalContent } = await this.withLock(`new-plan:${base}`, async () => {
+        const { planPath, version, plan, finalContent } = await this.locks.run(`new-plan:${base}`, async () => {
           const allocated = await this.allocatePath(base);
           const { injected, fullContent } = newPlanBytes(trimmedTitle, composed.body, changedBy);
           // `absPath` is still called for its path validation — the write itself
@@ -915,7 +902,7 @@ export class PlanService {
    * `file_version` row and land through the same watcher suppression.
    */
   async updateContent(opts: PlanUpdateContentOpts): Promise<{ newHash: string }> {
-    return this.withLock(opts.path, async () => {
+    return this.locks.run(opts.path, async () => {
       const current = await this.readForWrite(opts.path);
       if (typeof opts.expectedHash === 'string' && opts.expectedHash !== current.hash) {
         throw new ConflictError('PLAN_CONFLICT', 'plan changed since last read', current.hash, current.content);
@@ -931,7 +918,6 @@ export class PlanService {
       const { version } = await this.persistRaw({
         planPath: opts.path,
         fullContent: opts.content,
-        changeSummary: opts.changeSummary,
         changedBy: opts.changedBy,
       });
       /**
@@ -978,7 +964,7 @@ export class PlanService {
    * Consumers key cache invalidation off `planPath` regardless.
    */
   async updateFrontmatter(opts: PlanUpdateFrontmatterOpts): Promise<Plan> {
-    return this.withLock(opts.path, async () => {
+    return this.locks.run(opts.path, async () => {
       const current = await this.readForWrite(opts.path);
       const next: PlanFrontmatter = { ...current.frontmatter };
       if (opts.patch.title !== undefined && opts.patch.title !== current.frontmatter.title) {
@@ -1086,7 +1072,7 @@ export class PlanService {
   }
 
   /** `base` is the already-slugified filename stem (caller computes it — see
-   *  the `withLock('new-plan:' + base, ...)` call site, which needs the same
+   *  the `locks.run('new-plan:' + base, ...)` call site, which needs the same
    *  value to key its lock). */
   private async allocatePath(base: string): Promise<string> {
     let candidate = `${base}.md`;

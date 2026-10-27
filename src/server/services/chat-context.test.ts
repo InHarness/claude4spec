@@ -1446,6 +1446,15 @@ describe('buildSystemPrompt — <current_patch applied=…>', () => {
     expect(patchWith({ applied: true })).not.toContain('status=');
   });
 
+  it('[ac:ac-artefakt-rozbieznosci-bez-zadeklarowa] a patch with no declared kind carries no patch_kind attribute at all — never an empty one', () => {
+    for (const out of [patchWith({ patch_kind: undefined }), patchWith({ patch_kind: '' }), patchWith({ patch_kind: null })]) {
+      const open = out.match(/<current_patch[^>]*>/)?.[0];
+      expect(open).toBe('<current_patch path="p1.md" applied="false" brief="b1.md">');
+    }
+    // With a kind declared the attribute is there.
+    expect(patchWith({})).toContain('patch_kind="drift"');
+  });
+
   // A pre-0.2.14 patch is not silently promoted: `status` is an unknown field.
   it('reads a legacy `status: completed` as applied="false"', () => {
     expect(patchWith({ status: 'completed' })).toContain('applied="false"');

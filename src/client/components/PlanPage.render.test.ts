@@ -19,6 +19,9 @@
  * editor's chrome (outline, annotation bubble) are fakes. The plan is LONGER
  * than the response budget, so "the whole file" is proven by its last line.
  */
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -164,6 +167,8 @@ const server = {
   versions: 3,
   /** The next content PUT fails with a plain 500 (not a conflict). */
   failPut: false,
+  /** The plan's `applied` flag, written by the frontmatter route. */
+  applied: false,
   calls: [] as Array<{ method: string; url: string; body?: string }>,
 };
 
@@ -174,7 +179,13 @@ async function fakeFetch(input: unknown, init?: RequestInit): Promise<Response> 
   const url = String(input);
   const method = init?.method ?? 'GET';
   server.calls.push({ method, url, ...(typeof init?.body === 'string' ? { body: init.body } : {}) });
-  const frontmatter = { type: 'plan', title: 'My plan', created_at: '2026-10-23T00:00:00.000Z', applied: false };
+  const frontmatter = { type: 'plan', title: 'My plan', created_at: '2026-10-23T00:00:00.000Z', applied: server.applied };
+  if (method === 'PATCH' && /\/artifacts\/plan\/my-plan\.md\/frontmatter$/.test(url)) {
+    const sent = JSON.parse(String(init!.body)) as { frontmatter: { applied?: boolean } };
+    if (typeof sent.frontmatter.applied === 'boolean') server.applied = sent.frontmatter.applied;
+    server.hash = `${server.hash}+`;
+    return json(200, { data: { path: 'my-plan.md', hash: server.hash, frontmatter: { ...frontmatter, applied: server.applied } } });
+  }
   if (method === 'GET' && /\/artifacts\/plan\/my-plan\.md(\?.*)?$/.test(url)) {
     return json(200, {
       data: { path: 'my-plan.md', frontmatter, body: server.file.slice(FRONTMATTER.length), content: server.file, hash: server.hash },
@@ -258,6 +269,7 @@ beforeEach(() => {
   server.hash = 'h1';
   server.versions = 3;
   server.failPut = false;
+  server.applied = false;
   server.calls = [];
   h.actionBars = [];
   h.editor = null;
@@ -320,6 +332,34 @@ describe('[section:0dy3js11] M10 Host UI Kit slice — plan-page footer is the c
     const history = host.querySelector('[data-testid="file-version-history"]');
     expect(history).not.toBeNull();
     expect(history!.getAttribute('data-kind')).toBe('plan');
+  });
+});
+
+describe('PlanPage (/plans/$slug) — the applied flag in the header', () => {
+  it('[ac:ac-header-plans-slug-niesie-badge-applie] the plan page header shows the applied badge, and it is the only place from which the user turns it back to pending', async () => {
+    server.applied = true;
+    await render();
+    const header = () => host.querySelector('header')!;
+    expect(header().textContent).toContain('applied ✅');
+
+    // The badge in the header is the toggle: a click unsets the flag through the frontmatter route.
+    const toggle = Array.from(header().querySelectorAll('button')).find((b) => b.textContent?.includes('applied ✅'));
+    expect(toggle?.getAttribute('title')).toMatch(/click to mark pending again/);
+    await click(toggle ?? null);
+    const patches = server.calls.filter((c) => c.method === 'PATCH');
+    expect(patches).toHaveLength(1);
+    expect(patches[0]!.url).toMatch(/\/api\/artifacts\/plan\/my-plan\.md\/frontmatter$/);
+    expect(JSON.parse(patches[0]!.body!)).toEqual({ frontmatter: { applied: false } });
+    expect(header().textContent).toContain('pending ⏳');
+
+    // The only place: the hook that writes the plan's flag from the UI has exactly one consumer — this header.
+    const clientDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+    const consumers = (fs.readdirSync(clientDir, { recursive: true }) as string[])
+      .filter((f) => /\.tsx?$/.test(f) && !/\.test\.tsx?$/.test(f))
+      .filter((f) => fs.readFileSync(path.join(clientDir, f), 'utf-8').includes('useSetPlanApplied('))
+      .map((f) => f.split(path.sep).join('/'))
+      .sort();
+    expect(consumers).toEqual(['components/PlanPage.tsx', 'hooks/usePlan.ts']);
   });
 });
 

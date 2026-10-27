@@ -648,7 +648,7 @@ describe('M40 — plan anchor injection has one implementation and two triggers'
 // `applied` is a declaration, so nothing computes it and nothing about the
 // plan's version history moves when it changes.
 describe('PlanService — the `applied` flag (0.2.14)', () => {
-  it('writes `applied: false` explicitly into a newly created plan file', async () => {
+  it('[ac:ac-frontmatter-planu-ma-pole-applied-boo] writes `applied: false` explicitly into a newly created plan file', async () => {
     const h = await setup();
     try {
       seedThread(h.db, 'thread-1');
@@ -661,7 +661,11 @@ describe('PlanService — the `applied` flag (0.2.14)', () => {
       const plan = (await h.service.getByThread('thread-1'))!;
       expect(plan.frontmatter.applied).toBe(false);
       // Explicit in the FILE, not merely defaulted on read.
-      expect(await readPlanFile(h, plan.path)).toMatch(/applied: false/);
+      expect(await readPlanFile(h, plan.path)).toMatch(/^applied: false$/m);
+
+      // The other door that calls a plan into being (`create_plan`) writes it the same way.
+      const made = await h.service.create({ title: 'Created plan', content: 'body', changedBy: 'user' });
+      expect(await readPlanFile(h, made.planPath)).toMatch(/^applied: false$/m);
     } finally {
       await teardown(h);
     }

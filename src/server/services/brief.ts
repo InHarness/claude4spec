@@ -35,6 +35,7 @@ import { DomainError } from './tags.js';
 import { readArtifactWindow, windowBody, type ArtifactRange, type ArtifactReadChannel } from './artifact-read.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 import { compareBriefsByReleaseAxis } from '../../core/briefs/release-axis.js';
+import { KeyedQueue } from '../fs/keyed-queue.js';
 
 export interface BriefServiceDeps {
   briefsPages: MarkdownFileStore;
@@ -176,33 +177,16 @@ function generatedAtIso(value: unknown): string {
 export class BriefService {
   constructor(private deps: BriefServiceDeps) {}
 
-  /** Per-brief-path write queue (see {@link withLock}). */
-  private locks = new Map<string, Promise<unknown>>();
-
   /**
-   * Serializes the read-compare-write cycle of one brief, as `PlanService`
-   * does for plans. Without it two `update_brief` calls from two editorial
-   * threads armed with the same `expectedHash` could both pass the comparison
-   * across the awaits before either wrote, and the later write would silently
-   * erase the earlier one — the opposite of first-write-wins. Inside the queue
-   * the second caller re-reads the file the first one wrote and is answered
-   * `BRIEF_CONFLICT`. In-process only, which is all one server needs.
+   * Per-brief-path write queue. Serializes the read-compare-write cycle of one
+   * brief, as `PlanService` does for plans. Without it two `update_brief` calls
+   * from two editorial threads armed with the same `expectedHash` could both
+   * pass the comparison across the awaits before either wrote, and the later
+   * write would silently erase the earlier one — the opposite of
+   * first-write-wins. Inside the queue the second caller re-reads the file the
+   * first one wrote and is answered `BRIEF_CONFLICT`.
    */
-  private withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const prior = this.locks.get(key) ?? Promise.resolve();
-    const run = prior.then(
-      () => undefined,
-      () => undefined,
-    ).then(fn);
-    this.locks.set(
-      key,
-      run.then(
-        () => undefined,
-        () => undefined,
-      ),
-    );
-    return run;
-  }
+  private readonly locks = new KeyedQueue();
 
   /**
    * 2.1.8 — the id of the root this service writes: the `briefs` system root,
@@ -609,7 +593,7 @@ export class BriefService {
   }
 
   updateContent(opts: BriefUpdateContentOpts): Promise<{ newHash: string }> {
-    return this.withLock(opts.path, () => this.updateContentLocked(opts));
+    return this.locks.run(opts.path, () => this.updateContentLocked(opts));
   }
 
   private async updateContentLocked(opts: BriefUpdateContentOpts): Promise<{ newHash: string }> {
@@ -669,7 +653,7 @@ export class BriefService {
 
   updateFrontmatter(opts: BriefUpdateFrontmatterOpts): Promise<Brief> {
     // Same queue as `updateContent`: both rewrite the whole file from a read.
-    return this.withLock(opts.path, () => this.updateFrontmatterLocked(opts));
+    return this.locks.run(opts.path, () => this.updateFrontmatterLocked(opts));
   }
 
   private async updateFrontmatterLocked(opts: BriefUpdateFrontmatterOpts): Promise<Brief> {

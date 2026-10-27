@@ -275,7 +275,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "u03-artifact-frontmatter-merge/p1-l3-l4",
@@ -306,20 +306,22 @@
             "ac-ustawienie-implemented-true-przez-c4s",
             "ac-watek-patch-ktory-stwierdza-ze-patch"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "1c1ae49f442c92eb5a7425e9cd08644ad198aed9",
+      "baseCommit": "bda0c499581bf0294a106cd3b51b2a3e547e9501",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": [],
+      "lastBlocking": []
     },
     {
       "id": "u04-plugin-registration-contract",

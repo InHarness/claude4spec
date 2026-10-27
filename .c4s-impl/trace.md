@@ -1,2 +1,8 @@
 file-version → src/server/db/migrations/061_file_version_operation_id.sql (+ 000_baseline.sql, src/server/services/file-version.ts)
 section:gg7sxih6 → src/server/fs/multi-file-operation.ts (+ RecordStore.restore in src/server/fs/record-store.ts)
+artifact-frontmatter-update-request → src/shared/entities.ts (ArtifactFrontmatterUpdateRequest; client mirror src/client/lib/patches-api.ts, briefs-api.ts; route body in src/server/routes/artifacts.ts)
+patch-api-artifacts-kind-path-frontmatter → src/server/routes/artifacts.ts (PATCH /:kind/*/frontmatter) + src/server/services/patch.ts (updateFrontmatter under withLock)
+section:m36l4fam → src/server/services/patch.ts (PatchService.withLock over updateContent / updateFrontmatter / markApplied)
+section:m23mcp01 → src/server/services/patch.ts (markApplied under the per-path lock)
+section:m23edg01 → src/server/services/patch.ts (markApplied under the per-path lock)
+section:bctqi8sw → src/server/services/plan.ts (PlanUpdateContentOpts without changeSummary)

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { RecordFormatAdapter } from './record-adapters.js';
+import { KeyedQueue } from './keyed-queue.js';
 import type { ChainResult, ScopedWatchRegistrar, WatchActor, WatchEventKind, WatchOrigin } from './watcher.js';
 
 /**
@@ -170,8 +171,8 @@ export interface RecordWriteResult<T> {
 }
 
 export class RecordStore<T> {
-  /** One promise chain per relPath — the tail every new writer awaits. */
-  private readonly locks = new Map<string, Promise<unknown>>();
+  /** Serializes writers on one relPath; a writer that refused still releases it. */
+  private readonly locks = new KeyedQueue();
 
   constructor(
     private readonly opts: {
@@ -339,7 +340,7 @@ export class RecordStore<T> {
       const bytes = this.commit(relPath, produce, opts.expectedHash, 'chain');
       return { hash: this.opts.adapter.hash(bytes), content: bytes, record, staleProjections: [] };
     }
-    return await this.withPathLock(relPath, async () => {
+    return await this.locks.run(relPath, async () => {
       const settled = await this.commitAndSettle(relPath, produce, opts);
       return {
         ...settled,
@@ -374,7 +375,7 @@ export class RecordStore<T> {
       this.commit(relPath, () => bytes, opts.expectedHash, 'chain');
       return { hash: this.opts.adapter.hash(bytes), content: bytes, staleProjections: [] };
     }
-    return await this.withPathLock(relPath, () => this.commitAndSettle(relPath, () => bytes, opts));
+    return await this.locks.run(relPath, () => this.commitAndSettle(relPath, () => bytes, opts));
   }
 
   /** Steps 1–6 under the path lock the caller already holds. */
@@ -450,8 +451,8 @@ export class RecordStore<T> {
 
     // Deterministic lock order — see the docblock. Both paths, one nesting.
     const [first, second] = fromRel < toRel ? [fromRel, toRel] : [toRel, fromRel];
-    return await this.withPathLock(first, async () =>
-      await this.withPathLock(second, async () => {
+    return await this.locks.run(first, async () =>
+      await this.locks.run(second, async () => {
         // 1 — the source must exist and match what the caller believes it wrote over.
         const raw = this.readRaw(fromRel);
         if (raw === null) throw new RecordMissingError(fromRel);
@@ -515,7 +516,7 @@ export class RecordStore<T> {
      * that callers stop hand-rolling this must not leave the trap open.
      */
     if (this.isInOwnChain(relPath)) return this.removeSync(relPath);
-    return await this.withPathLock(relPath, async () => {
+    return await this.locks.run(relPath, async () => {
       if (!this.removeSync(relPath)) return false;
       await this.runChain(relPath, 'unlink', opts);
       return true;
@@ -552,31 +553,6 @@ export class RecordStore<T> {
       );
     } finally {
       this.opts.registrar.releaseSuppress(this.opts.source, relPath);
-    }
-  }
-
-  /**
-   * Serialize writers on one path. Failures do not poison the queue: the next
-   * writer runs regardless, which is what makes "the second writer sees what the
-   * first left" true even when the first refused.
-   */
-  private async withPathLock<R>(relPath: string, fn: () => Promise<R>): Promise<R> {
-    const prev = this.locks.get(relPath) ?? Promise.resolve();
-    // `then(fn, fn)` on purpose: a predecessor that REFUSED still released the
-    // path, and the next writer must run — that is what makes "the second writer
-    // sees what the first left" true even when the first threw.
-    const run = prev.then(fn, fn);
-    const settled = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    this.locks.set(relPath, settled);
-    try {
-      return await run;
-    } finally {
-      // Only the tail clears the entry, so the map cannot grow without bound and
-      // a waiter queued in the meantime keeps its predecessor.
-      if (this.locks.get(relPath) === settled) this.locks.delete(relPath);
     }
   }
 }
