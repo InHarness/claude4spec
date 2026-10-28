@@ -1,0 +1,1973 @@
+{
+  "iteration": 0,
+  "conventions": [
+    {
+      "label": "L5 (UI) — implementor M50: rodzaj trasy (projektu / workspace'u) deklarowany w opisie widoku",
+      "key": "pages/layers/L5-ui.md",
+      "offset": 2,
+      "anchor": "tehej2wz"
+    },
+    {
+      "label": "L14 (CLI Commands) — implementor M11: tryby registry-read / registry-write wobec opisu workspace'u",
+      "key": "pages/layers/L14-cli-commands.md",
+      "offset": 1,
+      "anchor": "flt0hm9r"
+    },
+    {
+      "label": "L17 (Project Settings) — implementor M26: zakres karty ustawień",
+      "key": "pages/layers/L17-project-settings.md",
+      "offset": 2,
+      "anchor": "ata1r5sz"
+    },
+    {
+      "label": "Modules table (zadanie użytkownika każdego modułu; indeks nie ma osobnej tabeli user jobs), for the system verifier",
+      "key": "pages/SKILL.md",
+      "offset": 12,
+      "anchor": "45yst8co"
+    }
+  ],
+  "waves": [
+    {
+      "n": 1,
+      "units": [
+        "workspace-home-model"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 2,
+      "units": [
+        "lazy-project-activation",
+        "workspace-plugin-pool",
+        "cli-workspace-resolution"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 3,
+      "units": [
+        "workspace-selection-at-start",
+        "workspace-projects-api"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 4,
+      "units": [
+        "workspace-route-frame",
+        "remote-session-issuer"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 5,
+      "units": [
+        "workspace-settings-split"
+      ],
+      "startCommit": null
+    }
+  ],
+  "systemVerified": false,
+  "errors": 0,
+  "units": [
+    {
+      "id": "workspace-home-model",
+      "goal": "System zna drugi rodzaj workspace'u — z katalogiem domowym, którego skład projektów (identyfikator + ścieżka względna) i lista pakietów pluginów żyją w commitowanym opisie, a atrybuty machine-local, zaufanie per projekt i sloty w rejestrze oraz w lokalnej, ignorowanej przez git części katalogu domowego. Przed nasłuchem proces składa z rejestru i opisu jeden widok workspace'u i waliduje opis (start odmawia przy pliku nieczytelnym, wpisie bez identyfikatora i identyfikatorze powtórzonym), mintuje wspólny dla zespołu identyfikator projektu pod blokadą pliku opisu, a katalog slotów i otwarcie bazy przestają zakładać jedną stałą ścieżkę w katalogu domowym użytkownika.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 0,
+              "limit": 5,
+              "anchors": [
+                "vaa83o17",
+                "t97gncju",
+                "k1gjmnhy",
+                "4y64rsxf",
+                "xukg6b31"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 6,
+              "limit": 1,
+              "anchors": [
+                "m31purp01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 8,
+              "limit": 3,
+              "anchors": [
+                "fjsgq19h",
+                "dojs7m3h",
+                "44viw74p"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 12,
+              "limit": 5,
+              "anchors": [
+                "2eyrx9es",
+                "fzno8pd4",
+                "vzkw903j",
+                "9yq1j7e8",
+                "zovs1ohc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 24,
+              "limit": 1,
+              "anchors": [
+                "ssn335r8"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 1,
+              "limit": 19
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 32,
+              "limit": 1,
+              "anchors": [
+                "ssn335r8"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m41-sqlite-store.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m41-sqlite-store.md",
+            "context": {
+              "offset": 1,
+              "limit": 5,
+              "anchors": [
+                "ayuepkus",
+                "lq82k1c9",
+                "llj97o6g",
+                "t25ut9qh",
+                "yffftxih"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m29-entity-store.md",
+            "change": {
+              "offset": 2,
+              "limit": 1,
+              "anchors": [
+                "m29mig001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m29-entity-store.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m29cel001",
+                "m29dep001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m29-entity-store.md",
+            "context": {
+              "offset": 13,
+              "limit": 1,
+              "anchors": [
+                "m29mig001"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-workspace-json-nie-zawiera-zadnego-at",
+              "ac-start-procesu-w-workspace-ie-z-katalo",
+              "ac-nieczytelny-albo-niezgodny-z-ksztalte",
+              "ac-wpis-projektu-bez-id-w-workspace-json",
+              "ac-id-powtorzony-w-workspace-json-blokuj",
+              "ac-po-zmianie-sciezki-zaufanego-projektu"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "lazy-project-activation",
+      "goal": "Żaden projekt nie jest budowany przed nasłuchem — każdy aktywuje się leniwie przy pierwszym żądaniu, z konfiguracją wyłącznie z pliku i defaultów (linia komend przestaje być wejściem konfiguracji projektu), a zły plik konfiguracyjny daje błąd tej aktywacji zamiast blokować start procesu; aktywacja odmawia katalogu, który jest katalogiem domowym workspace'u. Usuwa: wyjątek „projektu startowego” budowanego eager z fail-fast przy starcie oraz utrwalanie nazwy z flagi (kryterium zdeprecjonowane w oknie).",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m01-project.md",
+            "change": {
+              "offset": 0,
+              "limit": 7,
+              "anchors": [
+                "85hp4f2v",
+                "7yzhxgmw",
+                "c0nf1g4a",
+                "3ebblo1q",
+                "v878dqht",
+                "cfg0gitw",
+                "dsh8ezbz"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "context": {
+              "offset": 1,
+              "limit": 4,
+              "anchors": [
+                "85hp4f2v",
+                "cri3lyli",
+                "cjx6s5bd",
+                "7yzhxgmw"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "context": {
+              "offset": 6,
+              "limit": 4,
+              "anchors": [
+                "c0nf1g4a",
+                "3ebblo1q",
+                "nai0sy86",
+                "v878dqht"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "context": {
+              "offset": 12,
+              "limit": 1,
+              "anchors": [
+                "cfg0gitw"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "context": {
+              "offset": 14,
+              "limit": 1,
+              "anchors": [
+                "dsh8ezbz"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 25,
+              "limit": 1,
+              "anchors": [
+                "m31ctx001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "m31purp01",
+                "m31deps01",
+                "m31l2001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 32,
+              "limit": 2,
+              "anchors": [
+                "ssn335r8",
+                "m31ctx001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m29-entity-store.md",
+            "change": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "m29idx001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m29-entity-store.md",
+            "change": {
+              "offset": 3,
+              "limit": 1,
+              "anchors": [
+                "m29krit1"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m29-entity-store.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m29cel001",
+                "m29dep001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m29-entity-store.md",
+            "context": {
+              "offset": 10,
+              "limit": 1,
+              "anchors": [
+                "m29idx001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m29-entity-store.md",
+            "context": {
+              "offset": 20,
+              "limit": 1,
+              "anchors": [
+                "m29krit1"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m16-onboarding.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m16-onboarding.md",
+            "context": {
+              "offset": 1,
+              "limit": 4,
+              "anchors": [
+                "x5c6lzgo",
+                "0jo31abd",
+                "6jif23wi",
+                "za9e9492"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "dto",
+            "slugs": [
+              "app-config-response"
+            ]
+          },
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m31-requires-m01"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-aktywacja-katalogu-ktorego-claude4spe",
+              "ac-brak-uprawnien-do-zapisu-do-cwd-erro",
+              "ac-config-json-malformed-json-hard-erro",
+              "ac-config-json-type-mismatch-np-sche",
+              "ac-projekt-z-nieprawidlowym-config-json",
+              "ac-npx-inharness-ai-claude4spec-w-katalo",
+              "ac-npx-inharness-ai-claude4spec-gola-ko",
+              "ac-name-my-spec-w-pustym-katalogu-zap"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "workspace-home-model",
+          "why": "odmowa aktywacji rozpoznaje opis workspace'u, a katalog projektu pochodzi z widoku workspace'u."
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "workspace-plugin-pool",
+      "goal": "Tier bazowy pluginów bierze listę pakietów z widoku workspace'u (w workspace'ie z katalogiem domowym — z commitowanego opisu) i rozwiązuje pakiety, ich frontend oraz obserwację hot-reload względem jednego katalogu `node_modules` w katalogu slotów workspace'u; pakiet z listy, którego tam brak, jest pomijany z diagnozą, a start trwa. Serwer nigdy nie instaluje pakietów, a serwowanie manifestu nie wyróżnia żadnego projektu.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "change": {
+              "offset": 0,
+              "limit": 3,
+              "anchors": [
+                "m33l2001",
+                "m33trst0",
+                "m33l10sc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "m33purp01",
+                "m33deps01",
+                "m33l2001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "context": {
+              "offset": 9,
+              "limit": 3,
+              "anchors": [
+                "m33trst0",
+                "h71olejg",
+                "rki0ykan"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "context": {
+              "offset": 17,
+              "limit": 1,
+              "anchors": [
+                "m33l10sc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/L11-plugin-runtime-surface.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/L11-plugin-runtime-surface.md",
+            "context": {
+              "offset": 0,
+              "limit": 3,
+              "anchors": [
+                "m33l5fe0",
+                "m33l5man",
+                "9g96q3pp"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/L7-file-change-reactions.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/L7-file-change-reactions.md",
+            "context": {
+              "offset": 0,
+              "limit": 2,
+              "anchors": [
+                "m33l7hr0",
+                "m33l7wch"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "change": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "m26esec"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m13cel00",
+                "m13dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 18,
+              "limit": 1,
+              "anchors": [
+                "m26esec"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "endpoint",
+            "slugs": [
+              "get-api-plugins-frontend-manifest"
+            ]
+          },
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m13-requires-m31",
+              "m33-requires-m31"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-pakiet-z-listy-pluginow-workspace-u-k",
+              "ac-start-bez-cwd-manifest-oglasza-baze",
+              "ac-start-bez-cwd-manifest-oglasza-nakladke"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "workspace-home-model",
+          "why": "lista pakietów w widoku i katalog slotów workspace'u."
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "cli-workspace-resolution",
+      "goal": "Bezserwerowe `c4s` czyta, poza rejestrem, opisy workspace'ów zarejestrowanych katalogów domowych: resolver projektu i reguła 0/1/N liczą po widokach obu rodzajów, walk-up rozpoznaje opis niezarejestrowanego katalogu domowego oraz sam katalog domowy (nowe kody środowiska), lista workspace'ów pokazuje rodzaj, katalog domowy i stan wpisu, a ustawianie zaufania w workspace'ie z katalogiem domowym pisze tylko do rejestru i odmawia projektu spoza opisu. Kontrakt błędów operacji `ask` i treść trzech zewnętrznych skilli obsługują nowy kod „workspace niezarejestrowany” (zatrzymaj się, poproś o jednorazowy start serwera z katalogiem domowym).",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m11-c4s/m11-c4s.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m11-c4s/m11-c4s.md",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "m11cel00",
+                "m11dep00",
+                "m11dom00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m11-c4s/m11-c4s.md",
+            "context": {
+              "offset": 6,
+              "limit": 1,
+              "anchors": [
+                "lv1lp2ce"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m11-c4s/m11-c4s.md",
+            "context": {
+              "offset": 17,
+              "limit": 1,
+              "anchors": [
+                "ihakwlks"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m11-c4s/m11-c4s.md",
+            "context": {
+              "offset": 19,
+              "limit": 5,
+              "anchors": [
+                "m11dserv",
+                "vcb07x73",
+                "m11pjres",
+                "m11wsres",
+                "euyb84yv"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m11-c4s/m11-c4s.md",
+            "context": {
+              "offset": 33,
+              "limit": 2,
+              "anchors": [
+                "g24dkd8t",
+                "tcs1yuku"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m11-c4s/m11-c4s.md",
+            "context": {
+              "offset": 36,
+              "limit": 1,
+              "anchors": [
+                "m11pkg00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 20,
+              "limit": 1,
+              "anchors": [
+                "459ucmfg"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 26,
+              "limit": 1,
+              "anchors": [
+                "m31cli01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "m31purp01",
+                "m31deps01",
+                "m31l2001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 6,
+              "limit": 1,
+              "anchors": [
+                "44viw74p"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 25,
+              "limit": 1,
+              "anchors": [
+                "459ucmfg"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 42,
+              "limit": 1,
+              "anchors": [
+                "m31cli01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m22-external-skills/m22-external-skills.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m22-external-skills/m22-external-skills.md",
+            "context": {
+              "offset": 1,
+              "limit": 4,
+              "anchors": [
+                "m22cel00",
+                "m22dep00",
+                "m22dom00",
+                "m22dserv"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m22-external-skills/c4s-brief-implementer.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m22-external-skills/c4s-brief-implementer.md",
+            "context": {
+              "offset": 0,
+              "limit": 2,
+              "anchors": [
+                "qv83eat4"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m22-external-skills/c4s-refactor.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m22-external-skills/c4s-refactor.md",
+            "context": {
+              "offset": 0,
+              "limit": 2,
+              "anchors": [
+                "sa9x6lzh"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m22-external-skills/c4s-spec-reader.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m22-external-skills/c4s-spec-reader.md",
+            "context": {
+              "offset": 0,
+              "limit": 3,
+              "anchors": [
+                "coz7bila",
+                "sws0pnrn"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m22-external-skills/c4s-spec-reader.md",
+            "context": {
+              "offset": 9,
+              "limit": 1,
+              "anchors": [
+                "zvd7wn4t"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "cli-command",
+            "slugs": [
+              "list-workspaces",
+              "trust-plugins"
+            ]
+          },
+          {
+            "type": "spec-operation",
+            "slugs": [
+              "ask"
+            ]
+          },
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m11-requires-m31"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-c4s-list-workspaces-oznacza-wpis-ktor",
+              "ac-c4s-list-workspaces-wypisuje-wszystki",
+              "ac-kazdy-wiersz-wyjscia-c4s-list-workspa",
+              "ac-c4s-trust-plugins-cwd-dir-dla-katalog",
+              "ac-c4s-trust-plugins-cwd-dir-true-fal",
+              "ac-c4s-uruchomione-w-samym-katalogu-domo",
+              "ac-c4s-w-katalogu-bez-projektu-walk-up-n",
+              "ac-jedyne-pliki-czytane-lokalnie-przez-b",
+              "ac-nieczytelny-albo-niezgodny-z-ksztalte-2",
+              "ac-resolver-projektu-jest-wspolny-dla-wszys",
+              "ac-walk-up-ktory-trafia-na-workspace-jso",
+              "ac-walk-up-w-projekcie-workspace-u-z-kat"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "workspace-home-model",
+          "why": "kształt i walidacja opisu workspace'u, klucz zaufania w rejestrze."
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "workspace-selection-at-start",
+      "goal": "Start procesu wybiera workspace według rozszerzonej reguły: katalog wskazany flagą jest katalogiem domowym workspace'u (otwiera albo zakłada wpis), goła komenda robi walk-up do opisu workspace'u, port podany razem z wyborem workspace'u nadpisuje i utrwala port wpisu, kombinacje flag mają jedną tabelę z odmowami, a nowy wpis bez portu dostaje pierwszy wolny od 4500. Przeglądarka otwiera ostatnio otwarty projekt workspace'u albo ekran powitalny. Usuwa: flagi startu niosące konfigurację projektu (nazwa, przestrzenie stron, tworzenie projektu) i rejestrację katalogu uruchomienia jako projektu, razem z kryteriami zdeprecjonowanymi w oknie.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 5,
+              "limit": 1,
+              "anchors": [
+                "qglsgonq"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 11,
+              "limit": 1,
+              "anchors": [
+                "3l4ge8xa"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 17,
+              "limit": 1,
+              "anchors": [
+                "m31wsel01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 1,
+              "limit": 4,
+              "anchors": [
+                "m31purp01",
+                "m31deps01",
+                "m31l2001",
+                "fjsgq19h"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 7,
+              "limit": 1,
+              "anchors": [
+                "vaa83o17"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 12,
+              "limit": 1,
+              "anchors": [
+                "3l4ge8xa"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 21,
+              "limit": 2,
+              "anchors": [
+                "m31wsel01",
+                "qglsgonq"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "change": {
+              "offset": 7,
+              "limit": 1,
+              "anchors": [
+                "r7ozfsa9"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "change": {
+              "offset": 9,
+              "limit": 1,
+              "anchors": [
+                "3zqke46q"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "85hp4f2v",
+                "cri3lyli",
+                "cjx6s5bd"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "context": {
+              "offset": 16,
+              "limit": 1,
+              "anchors": [
+                "r7ozfsa9"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "context": {
+              "offset": 32,
+              "limit": 1,
+              "anchors": [
+                "3zqke46q"
+              ]
+            }
+          },
+          {
+            "key": "pages/SKILL.md",
+            "change": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "xxagita3"
+              ]
+            }
+          },
+          {
+            "key": "pages/SKILL.md",
+            "context": {
+              "offset": 9,
+              "limit": 1,
+              "anchors": [
+                "xxagita3"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "spreadsheet",
+            "slugs": [
+              "flagi-cli-m01"
+            ]
+          },
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m01-requires-m31"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-cwd-dir-na-katalogu-ktory-nie-jest-ho",
+              "ac-cwd-home-wybiera-workspace-default",
+              "ac-cwd-wskazujace-istniejacy-wpis-urucho",
+              "ac-cwd-wskazujace-katalog-projektu-z-cla",
+              "ac-cwd-wskazujace-podkatalog-katalogu-do",
+              "ac-cwd-wskazuje-na-nieistniejacy-katalo",
+              "ac-gola-komenda-npx-inharness-ai-claude4-2",
+              "ac-gola-komenda-npx-inharness-ai-claude4",
+              "ac-gola-komenda-uruchomiona-w-katalogu-z",
+              "ac-mode-dev-prod-seeduje-pole-mode-wy",
+              "ac-npx-inharness-ai-claude4spec-create",
+              "ac-pagesservice-walk-pomija-entry-name-s",
+              "ac-port-3000-uzywa-portu-3000-dla-insta",
+              "ac-port-n-podany-z-workspace-albo-cwd-gd",
+              "ac-port-n-wybiera-workspace-ktorego",
+              "ac-nowy-wpis-tworzony-z-cwd-ktorego-nazw",
+              "ac-start-procesu-ktorego-lastopenedproje",
+              "ac-start-procesu-otwiera-w-przegladarce",
+              "ac-start-procesu-w-workspace-ie-bez-osta",
+              "ac-start-z-create-project-lub-flaga-impl",
+              "ac-start-z-create-project-w-swiezym-kata",
+              "ac-workspace-x-cwd-y-gdy-x-ma-inny-katal",
+              "ac-workspace-x-uruchomione-wewnatrz-kata"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "workspace-home-model",
+          "why": "wpisy z katalogiem domowym i ostatnio otwarty projekt"
+        },
+        {
+          "unit": "lazy-project-activation",
+          "why": "start nie buduje projektu, a aktywacja nie czyta flag, więc flagi projektu można usunąć."
+        }
+      ],
+      "wave": 3,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "workspace-projects-api",
+      "goal": "Dodanie, odłączenie i usunięcie projektu działa w workspace'ie z katalogiem domowym: dodanie zapisuje do opisu workspace'u ścieżkę względną (z dwiema odmowami przed zapisem — ścieżka poza katalogiem domowym i sam katalog domowy), detach i purge usuwają wpis z opisu, a przeglądarka katalogów serwera startuje w katalogu domowym. Nowa trasa odczytu bieżącego workspace'u (nazwa, rodzaj, ostatnio otwarty projekt) obsługuje ekrany bez projektu, a aktywacja z trasy dodawania nie przyjmuje już argumentów linii komend.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 19,
+              "limit": 1,
+              "anchors": [
+                "7fgfpqzf"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 21,
+              "limit": 2,
+              "anchors": [
+                "m31boot01",
+                "m31l4001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "m31purp01",
+                "m31deps01",
+                "m31l2001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 7,
+              "limit": 2,
+              "anchors": [
+                "vaa83o17",
+                "t97gncju"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 24,
+              "limit": 1,
+              "anchors": [
+                "7fgfpqzf"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 27,
+              "limit": 1,
+              "anchors": [
+                "m31boot01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 29,
+              "limit": 1,
+              "anchors": [
+                "m31l4001"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "endpoint",
+            "slugs": [
+              "get-api-workspace",
+              "get-api-workspace-fs",
+              "post-api-workspace-projects"
+            ]
+          },
+          {
+            "type": "dto",
+            "slugs": [
+              "workspace-response"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-detach-projektu-w-workspace-ie-z-kata",
+              "ac-dodanie-projektu-spoza-katalogu-domow",
+              "ac-dodanie-samego-katalogu-domowego-work",
+              "ac-get-api-workspace-zwraca-nazwe-rodzaj",
+              "ac-projekt-dodany-w-workspace-ie-z-katal"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "workspace-home-model",
+          "why": "operacje rejestru i widok workspace'u"
+        },
+        {
+          "unit": "lazy-project-activation",
+          "why": "aktywacja bez flag, którą wywołuje dodanie projektu."
+        }
+      ],
+      "wave": 3,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "workspace-route-frame",
+      "goal": "Klient ma trasy workspace'u montowane poza prefiksem projektu, w jednej ramie bez projektu (pasek z marką i wpisami slotu nagłówka; bez sidebaru projektu, czatu, pasa awarii i kanału zdarzeń), a dokument aplikacji na takiej trasie nie wstrzykuje tożsamości projektu, co dla bootstrapu klienta jest normalną ścieżką, nie przypadkiem brzegowym. Slot nagłówka zamiast przełącznika projektów pokazuje nazwę workspace'u i wejście do ostatnio otwartego projektu, modale dodania i odłączenia projektu znają rodzaj workspace'u (start przeglądarki katalogów, nowe błędy inline, tekst detachu dla opisu commitowanego), a ekran powitalny staje się trasą workspace'u. Usuwa: przełącznik projektów w nagłówku.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m50-app-shell.md",
+            "change": {
+              "offset": 0,
+              "limit": 4,
+              "anchors": [
+                "1bd92aq2",
+                "8h2a734u",
+                "k4fhsrkz",
+                "l5stlocs"
+              ]
+            },
+            "deferred": [
+              {
+                "what": "zębatka w ramie trasy workspace'u prowadząca do strony ustawień workspace'u",
+                "to": "workspace-settings-split",
+                "why": "strona docelowa powstaje dopiero tam"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m50-app-shell.md",
+            "change": {
+              "offset": 6,
+              "limit": 1,
+              "anchors": [
+                "6z6uzzhv"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m50-app-shell.md",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "2gxohenh",
+                "bdmt5qsw",
+                "pqxnmscd"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m50-app-shell.md",
+            "context": {
+              "offset": 5,
+              "limit": 4,
+              "anchors": [
+                "8h2a734u",
+                "4dsclic8",
+                "1bd92aq2",
+                "k4fhsrkz"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m50-app-shell.md",
+            "context": {
+              "offset": 20,
+              "limit": 1,
+              "anchors": [
+                "l5stlocs"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m50-app-shell.md",
+            "context": {
+              "offset": 30,
+              "limit": 1,
+              "anchors": [
+                "6z6uzzhv"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 18,
+              "limit": 1,
+              "anchors": [
+                "eb95ery1"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 23,
+              "limit": 1,
+              "anchors": [
+                "m31l5001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "m31purp01",
+                "m31deps01",
+                "m31l2001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 23,
+              "limit": 1,
+              "anchors": [
+                "eb95ery1"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 30,
+              "limit": 1,
+              "anchors": [
+                "m31l5001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/L2-domain.md",
+            "change": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "mbladez6"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/L2-domain.md",
+            "context": {
+              "offset": 0,
+              "limit": 2,
+              "anchors": [
+                "m13dom00",
+                "z7l89jhf"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/L2-domain.md",
+            "context": {
+              "offset": 8,
+              "limit": 1,
+              "anchors": [
+                "mbladez6"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ui-view",
+            "slugs": [
+              "welcome-page"
+            ]
+          },
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m31-requires-m50"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-lista-projektow-na-welcome-nie-wyrozn"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "workspace-projects-api",
+          "why": "odczyt bieżącego workspace'u dla nagłówka i odmowy dodania pokazywane inline."
+        }
+      ],
+      "wave": 4,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "remote-session-issuer",
+      "goal": "Adres efektywny serwera zdalnego liczy się z precedencją: flaga startu (na czas życia procesu, dla wszystkich projektów workspace'u, bez zapisu do pliku), potem plik konfiguracyjny projektu, potem adres produkcyjny. Sesja zapamiętuje adres, pod którym wydano token, i przy innym adresie efektywnym projekt jest niezalogowany — tokenu ani się nie wysyła, ani nie kasuje, a powrót do adresu wydawcy przywraca sesję; istniejące sesje bez zapamiętanego adresu znaczą „niezalogowany”.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m24-remote-account/m24-remote-account.md",
+            "change": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "ux690pt2"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m24-remote-account/m24-remote-account.md",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "ro5xbtxj",
+                "mxjqndqv",
+                "lmgy08qc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m24-remote-account/m24-remote-account.md",
+            "context": {
+              "offset": 6,
+              "limit": 1,
+              "anchors": [
+                "ux690pt2"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m24-remote-account/m24-remote-account.md",
+            "context": {
+              "offset": 10,
+              "limit": 1,
+              "anchors": [
+                "o65ffoym"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m24-remote-account/m24-remote-account.md",
+            "context": {
+              "offset": 12,
+              "limit": 1,
+              "anchors": [
+                "7da91xip"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "database-table",
+            "slugs": [
+              "remote-session"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-nieparsowalny-bez-schematu-remoteapiur",
+              "ac-remote-url-url-nie-zapisuje-wartosci",
+              "ac-remote-url-url-ustawia-effectivec",
+              "ac-sesja-wydana-pod-innym-adresem-zdalne"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "workspace-selection-at-start",
+          "why": "flaga adresu zdalnego jest flagą startu procesu, a nie konfiguracji projektu."
+        }
+      ],
+      "wave": 4,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "workspace-settings-split",
+      "goal": "Karty ustawień deklarują zakres (projekt albo workspace; brak deklaracji znaczy projekt) i zakres wybiera stronę: strona ustawień projektu nie renderuje kart workspace'u, a nowa strona ustawień workspace'u — trasa workspace'u otwierana bez wybranego projektu — renderuje wyłącznie karty workspace'u, bez wspólnego zapisu. Przechodzą na nią karta wyglądu (motyw globalny dla przeglądarki) i karta puli pluginów, która pokazuje już tylko bazę workspace'u z procesowej trasy diagnostycznej; karty pozostałych modułów dostają zakres projektu.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m26-project-settings.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m26-project-settings.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m26cel01",
+                "m26dep01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m26-project-settings.md",
+            "context": {
+              "offset": 4,
+              "limit": 1,
+              "anchors": [
+                "m26dom01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m26-project-settings.md",
+            "context": {
+              "offset": 9,
+              "limit": 2,
+              "anchors": [
+                "m26ui01",
+                "m26route"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m26-project-settings.md",
+            "context": {
+              "offset": 15,
+              "limit": 1,
+              "anchors": [
+                "b3ny18qh"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m26-project-settings.md",
+            "context": {
+              "offset": 20,
+              "limit": 2,
+              "anchors": [
+                "7f76eszm",
+                "oqp0up79"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m50-app-shell.md",
+            "change": {
+              "offset": 4,
+              "limit": 2,
+              "anchors": [
+                "6tn2yf92",
+                "m26asec"
+              ]
+            },
+            "completes": [
+              {
+                "what": "zębatka w ramie trasy workspace'u prowadząca do strony ustawień workspace'u",
+                "from": "workspace-route-frame"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m50-app-shell.md",
+            "context": {
+              "offset": 7,
+              "limit": 1,
+              "anchors": [
+                "1bd92aq2"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m50-app-shell.md",
+            "context": {
+              "offset": 26,
+              "limit": 3,
+              "anchors": [
+                "qv4sp8p9",
+                "6tn2yf92",
+                "m26asec"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "change": {
+              "offset": 3,
+              "limit": 2,
+              "anchors": [
+                "df0ri1ao",
+                "jz4lgiy7"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "context": {
+              "offset": 24,
+              "limit": 3,
+              "anchors": [
+                "4i79oz3s",
+                "df0ri1ao",
+                "jz4lgiy7"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 27,
+              "limit": 1,
+              "anchors": [
+                "nvqp58hv"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 45,
+              "limit": 3,
+              "anchors": [
+                "lv6kryov",
+                "nvqp58hv",
+                "h23797ko"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "change": {
+              "offset": 8,
+              "limit": 1,
+              "anchors": [
+                "m26psec"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "context": {
+              "offset": 20,
+              "limit": 1,
+              "anchors": [
+                "vh16uzm6"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "context": {
+              "offset": 22,
+              "limit": 1,
+              "anchors": [
+                "m26psec"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "change": {
+              "offset": 2,
+              "limit": 1,
+              "anchors": [
+                "4ckqwi8t"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 35,
+              "limit": 1,
+              "anchors": [
+                "79sw3wsb"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework/m13-entity-framework.md",
+            "context": {
+              "offset": 37,
+              "limit": 1,
+              "anchors": [
+                "4ckqwi8t"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m24-remote-account/m24-remote-account.md",
+            "change": {
+              "offset": 2,
+              "limit": 1,
+              "anchors": [
+                "va7hqsxc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m24-remote-account/m24-remote-account.md",
+            "context": {
+              "offset": 11,
+              "limit": 1,
+              "anchors": [
+                "nrotv4oi"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m24-remote-account/m24-remote-account.md",
+            "context": {
+              "offset": 13,
+              "limit": 1,
+              "anchors": [
+                "va7hqsxc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m05-agent-runtime.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m05-agent-runtime.md",
+            "context": {
+              "offset": 78,
+              "limit": 1,
+              "anchors": [
+                "l8kbpbza"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m05-agent-runtime.md",
+            "context": {
+              "offset": 80,
+              "limit": 1,
+              "anchors": [
+                "m26agsec"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m12-external-mcp.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m12-external-mcp.md",
+            "context": {
+              "offset": 24,
+              "limit": 2,
+              "anchors": [
+                "umyl9n4b",
+                "9xlpfbip"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m28-git-sync.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m28-git-sync.md",
+            "context": {
+              "offset": 46,
+              "limit": 1,
+              "anchors": [
+                "rqw08s3l"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m28-git-sync.md",
+            "context": {
+              "offset": 48,
+              "limit": 1,
+              "anchors": [
+                "4cp5vqa6"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "context": {
+              "offset": 20,
+              "limit": 1,
+              "anchors": [
+                "vixysa1w"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "context": {
+              "offset": 22,
+              "limit": 1,
+              "anchors": [
+                "1osy2o5r"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ui-view",
+            "slugs": [
+              "settings-page",
+              "workspace-settings-page"
+            ]
+          },
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m26-requires-m31"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-ikona-zebatki-w-prawym-gornym-rogu",
+              "ac-strona-ustawien-projektu-settings-nie",
+              "ac-strona-ustawien-workspace-u-workspace"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "workspace-route-frame",
+          "why": "rama trasy workspace'u, w której strona się montuje"
+        },
+        {
+          "unit": "workspace-projects-api",
+          "why": "odczyt bieżącego workspace'u"
+        },
+        {
+          "unit": "workspace-plugin-pool",
+          "why": "baza puli z listy workspace'u."
+        }
+      ],
+      "wave": 5,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    }
+  ],
+  "entityTypes": [
+    {
+      "type": "ac",
+      "role": "criteria",
+      "checks": "verifies",
+      "observedIn": "unit",
+      "inactive": "status = deprecated",
+      "links": [
+        "verifies"
+      ],
+      "version": 3
+    },
+    {
+      "type": "database-table",
+      "role": "built",
+      "inCode": "a SQL migration under src/server/db/migrations/ (next free number after 062) bringing the schema to the record — remote_session gains the column remembering the remote address the token was issued under (existing rows: null = not logged in) — and the matching row/type mapping in the code that reads and writes it",
+      "verify": "a vitest migration test (src/server/db/<name>.migration.test.ts, pattern of file-version-root-ids.migration.test.ts) named with [entity:<slug>] asserting PRAGMA table_info / index_list has the record's columns and indexes (nullability, default)",
+      "links": [],
+      "version": 3
+    },
+    {
+      "type": "dto",
+      "role": "built",
+      "inCode": "the TypeScript type (src/shared/** or the route file) of the payload, plus its client mirror in src/client/lib/** — field names, types and required/optional/nullability exactly as the DTO's `fields` (app-config-response, workspace-response)",
+      "verify": "a supertest or vitest test next to the owning route/service named with [entity:<slug>] asserting the accepted body / live payload has every field with its type",
+      "links": [],
+      "version": 2
+    },
+    {
+      "type": "endpoint",
+      "role": "built",
+      "inCode": "the Express route (method + path) in the owning route file under src/server/routes/ (workspace routes, plugins.ts for the frontend manifest) answering the linked DTOs at their status codes and with the behaviour the record states",
+      "verify": "a supertest test next to the route (src/server/routes/<area>*.test.ts) named with [entity:<slug>] asserting method+path answer with the documented statuses/bodies and linked DTO shapes",
+      "links": [
+        "linkedDtos"
+      ],
+      "version": 3
+    },
+    {
+      "type": "spec-operation",
+      "role": "built",
+      "inCode": "the operation declaration in the L3 catalog (src/server/operations/core-operations.ts, types in catalog.ts; record mirror in tests/helpers/spec-operation-records.ts) with its channel cells and error codes — for `ask` the new 'workspace not registered' error code — plus the behaviour behind it",
+      "verify": "a vitest test in src/server/operations/catalog.test.ts named with [entity:<slug>] asserting the declaration matches the record (channels, errors), plus behaviour tests for its new error codes next to the implementing service",
+      "links": [],
+      "version": 2
+    },
+    {
+      "type": "cli-command",
+      "role": "built",
+      "inCode": "the leaf c4s command in src/bin/c4s/commands/<name>.ts (registered in src/bin/c4s.ts) — its mode, args, own flags, CLI error codes and returned payload exactly as the record states",
+      "verify": "a vitest test next to the command (src/bin/c4s/commands/<name>.test.ts) named with [entity:<slug>] asserting flags, output rows/fields and CLI error codes",
+      "links": [],
+      "version": 1
+    },
+    {
+      "type": "ui-view",
+      "role": "built",
+      "inCode": "the client route in src/client/router.tsx (project route vs workspace route, per L5) and its page component under src/client/components/** with the record's url, params and alternative states",
+      "verify": "a client render test next to the component (*.render.test.ts / *.test.tsx, pattern of WelcomePage.render.test.ts) named with [entity:<slug>] asserting the route/url kind and each listed state",
+      "links": [],
+      "version": 4
+    },
+    {
+      "type": "module-dependency",
+      "role": "context",
+      "links": [],
+      "version": 1
+    },
+    {
+      "type": "spreadsheet",
+      "role": "per-entity",
+      "version": 3
+    }
+  ],
+  "entityParts": [
+    {
+      "slug": "flagi-cli-m01",
+      "type": "spreadsheet",
+      "why": "Each body row (rows 2–9) is one flag the start process registers, with its default and where its value lands; the behaviour in column 'Opis' is stated as ACs of the same unit.",
+      "parts": [
+        {
+          "role": "built",
+          "items": "rows 2–9 (every body row: --cwd, --workspace, --port, --host, --public-url, --mode, --no-open, --remote-url)",
+          "key": "column 'Flag'",
+          "inCode": "the flag's parsing in the start CLI (src/bin/launch.ts / src/server/config.ts): accepted, with the row's default ('Default (brak configu)') and destination ('Gdzie trafia': registry entry field or nothing); flags absent from the table (project-config flags) are removed",
+          "verify": "a vitest case in src/bin/launch.test.ts named [entity:flagi-cli-m01#<flag>] asserting default and destination"
+        },
+        {
+          "role": "context",
+          "items": "column 'Opis' of rows 2–9",
+          "key": "column 'Flag'"
+        }
+      ]
+    }
+  ]
+}
