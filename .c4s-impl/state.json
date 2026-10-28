@@ -1,5 +1,5 @@
 {
-  "iteration": 5,
+  "iteration": 8,
   "conventions": [
     {
       "label": "L10 (Project Scoping) — implementor M31",
@@ -172,15 +172,36 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "U2-indeksacja-oddajaca-petle/p1-l7-l10",
+          "layers": [
+            "L7",
+            "L10"
+          ],
+          "slugs": [
+            "ac-m29-entityindexerservice-indexall-je",
+            "ac-entityindexer-indexall-jest-await-ow",
+            "m29cel001",
+            "m29idx001"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "dea70f179763f9cf04b65005151b6c328f6dde62",
+      "baseCommit": "dea70f179763f9cf04b65005151b6c328f6dde62",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "U3-aktywacja-bez-zapisow",

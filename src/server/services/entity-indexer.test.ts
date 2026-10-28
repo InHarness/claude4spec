@@ -10,7 +10,7 @@
 
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EntityIndexerService } from './entity-indexer.js';
+import { EntityIndexerService, INDEX_SLICE_FILES } from './entity-indexer.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import type { EntityStore, TagSnapshot } from './entity-store.js';
 import type { TagsService } from './tags.js';
@@ -378,5 +378,126 @@ describe('indexAll — counting', () => {
     expect(log.mock.calls.flat().join(' ')).toContain('indexed 0 entities');
     expect(warn.mock.calls.flat().join(' ')).toContain('no entity service');
     log.mockRestore();
+  });
+});
+
+/**
+ * 2.1.60 (M29 `m29idx001`) — the rebuild reads its files in slices and hands the
+ * event loop back between them: a context build runs in the background next to
+ * projects that are already serving, and must not stall them for its whole length.
+ */
+describe('indexAll — reads in slices and yields the event loop', () => {
+  const TOTAL = INDEX_SLICE_FILES * 2 + 5; // three slices
+  const slugs = Array.from({ length: TOTAL }, (_, i) => `e-${String(i).padStart(4, '0')}`);
+
+  /** A host whose `restore` records what it was handed, per slug, in call order. */
+  function recordingHost() {
+    const restored: Array<{ slug: string; snap: unknown }> = [];
+    const host = {
+      ...hostWith([{ type: 'endpoint', table: 'endpoint' }]),
+      restore: (_type: string, snap: { slug: string }) => {
+        restored.push({ slug: snap.slug, snap });
+        return { op: 'created', entity: {} };
+      },
+    } as unknown as PluginHost;
+    return { host, restored };
+  }
+
+  let log: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    log = vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+  afterEach(() => log.mockRestore());
+
+  it('[section:m29idx001] other work on the event loop runs between the slices, before the rebuild resolves', async () => {
+    let reads = 0;
+    const { host, restored } = recordingHost();
+    const { indexer } = makeIndexer(host, {
+      listType: (type: string) => (type === 'endpoint' ? slugs : []),
+      read: (_type: string, slug: string) => {
+        reads += 1;
+        return { slug } as never;
+      },
+    } as Partial<EntityStore>);
+
+    // Stands in for a request to another project: queued on the loop the moment
+    // the rebuild starts.
+    let readsWhenOtherWorkRan = -1;
+    setImmediate(() => {
+      readsWhenOtherWorkRan = reads;
+    });
+
+    const rebuild = indexer.indexAll();
+    // The call returned control after its first slice, not after every file.
+    expect(reads).toBe(INDEX_SLICE_FILES);
+
+    await rebuild;
+    // The other work ran mid-rebuild: after the first slice, before the last.
+    expect(readsWhenOtherWorkRan).toBeGreaterThanOrEqual(INDEX_SLICE_FILES);
+    expect(readsWhenOtherWorkRan).toBeLessThan(TOTAL);
+    // And the rebuild is still complete — every file read once, every entity restored.
+    expect(reads).toBe(TOTAL);
+    expect(restored.map((r) => r.slug)).toEqual(slugs);
+    expect(log.mock.calls.flat().join(' ')).toContain(`indexed ${TOTAL} entities`);
+  });
+
+  it('[section:m29idx001] the database is written in one go after the reads — nothing is cleared while the rebuild is still yielding', async () => {
+    db.prepare(`INSERT INTO endpoint (slug) VALUES ('kept-until-commit')`).run();
+    const { host } = recordingHost();
+    const { indexer } = makeIndexer(host, {
+      listType: (type: string) => (type === 'endpoint' ? slugs : []),
+      read: (_type: string, slug: string) => ({ slug }) as never,
+    } as Partial<EntityStore>);
+
+    let rowsMidRebuild = -1;
+    setImmediate(() => {
+      rowsMidRebuild = rowCount('endpoint');
+    });
+    await indexer.indexAll();
+
+    // A reader of this connection between the slices still saw the old index,
+    // never a half-cleared one; the commit then replaced it.
+    expect(rowsMidRebuild).toBe(1);
+    expect(rowCount('endpoint')).toBe(0); // the double's restore writes no rows
+  });
+
+  it('[section:m29idx001] a file changed or added between the slices is committed as it is on disk, not as it was read', async () => {
+    const onDisk = new Map<string, { slug: string; title: string }>(
+      slugs.map((slug) => [slug, { slug, title: 'v1' }]),
+    );
+    const { host, restored } = recordingHost();
+    const { indexer } = makeIndexer(host, {
+      listType: (type: string) => (type === 'endpoint' ? slugs : []),
+      read: (_type: string, slug: string) => {
+        const file = onDisk.get(slug);
+        if (!file) throw new Error('ENOENT');
+        return { ...file } as never;
+      },
+      exists: (_type: string, slug: string) => onDisk.has(slug),
+      parseRelPath: (relPath: string) => ({ type: 'endpoint' as never, slug: relPath.slice('endpoint/'.length, -'.json'.length) }),
+    } as Partial<EntityStore>);
+
+    const rebuild = indexer.indexAll();
+    // Between the slices: one already-read file is rewritten, one new file
+    // appears, one already-read file is deleted — each announced by the watcher.
+    const first = slugs[0]!;
+    const gone = slugs[1]!;
+    onDisk.set(first, { slug: first, title: 'v2' });
+    onDisk.set('e-new', { slug: 'e-new', title: 'v1' });
+    onDisk.delete(gone);
+    indexer.onChange({} as never, 'entities', `endpoint/${first}.json`);
+    indexer.onChange({} as never, 'entities', 'endpoint/e-new.json');
+    void indexer.onUnlink({} as never, 'entities', `endpoint/${gone}.json`);
+    await rebuild;
+
+    // The rebuild's own restores are the last ones for each slug.
+    const last = new Map<string, unknown>();
+    for (const r of restored) last.set(r.slug, r.snap);
+    expect(last.get(first)).toMatchObject({ title: 'v2' });
+    expect(last.get('e-new')).toMatchObject({ title: 'v1' });
+    // The deleted file is not restored by the commit (its only restore, if any,
+    // came before the event).
+    const restoresOfGone = restored.filter((r) => r.slug === gone).length;
+    expect(restoresOfGone).toBe(0);
   });
 });

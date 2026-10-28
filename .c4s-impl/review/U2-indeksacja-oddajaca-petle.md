@@ -1,0 +1,4 @@
+# U2-indeksacja-oddajaca-petle — non-blocking review findings
+
+- round 1, rev-0001 (`src/server/services/entity-indexer.ts:259`): only the read/parse half of `indexAll()` yields; the write transaction (clear + restore all rows + stamp + upgraded-file rewrites) is one synchronous block proportional to project size. Spec conflict m29idx001 vs kqrmcy8f ("one transaction") → dev-0002 sent. If the spec says writes must yield too, this becomes a blocking performance fix.
+- round 1, rev-0002 (`src/server/services/entity-indexer.ts:243`): yielding lets `indexAll()` interleave with itself (two overlapping projection rebuilds, last commit wins with possibly stale reads) and with teardown (db closed between slices → commit throws; boot path marks projection stale, manual rebuild surfaces an error). Suggested: serialise calls (reuse in-flight promise) and abort when the context is disposed. Natural home: U4b (teardown during build) — orchestrator note.
