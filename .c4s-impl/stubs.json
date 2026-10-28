@@ -1,3 +1,13 @@
 {
-  "stubs": []
+  "stubs": [
+    {
+      "dependent": "U3-aktywacja-bez-zapisow",
+      "provider": "U4a-kolejka-budowy-w-tle",
+      "pretends": "backgroundBuild()/backgroundActivationSteps() and buildProjectContext({ projectWrites: 'none' }) exist without a production caller: startServer still builds every project through activatingBuild on its first request; U4a's background build queue calls backgroundBuild and routes «needs activation» to activatingBuild on the first request",
+      "why": "U3 owns the no-write init steps and their mode; the queue that runs them after listen is U4a's goal",
+      "closesInWave": 2,
+      "closed": false,
+      "openedBy": "U3-aktywacja-bez-zapisow/p1-m01-m01"
+    }
+  ]
 }

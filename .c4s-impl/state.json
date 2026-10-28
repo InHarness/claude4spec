@@ -1,5 +1,5 @@
 {
-  "iteration": 8,
+  "iteration": 11,
   "conventions": [
     {
       "label": "L10 (Project Scoping) — implementor M31",
@@ -252,15 +252,34 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "U3-aktywacja-bez-zapisow/p1-m01-m01",
+          "layers": [
+            "M01"
+          ],
+          "slugs": [
+            "ac-budowa-kontekstu-w-tle-nie-tworzy-ani",
+            "ac-budowa-projektu-ktorego-katalog-nie-i",
+            "section:dsh8ezbz"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "526fafbdfba0ee13ff145248f4c7a2fb836672b3",
+      "baseCommit": "526fafbdfba0ee13ff145248f4c7a2fb836672b3",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "U4a-kolejka-budowy-w-tle",

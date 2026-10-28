@@ -204,7 +204,14 @@ export class EntityIndexerService implements WatchSubscriber {
     return out;
   }
 
-  async indexAll(): Promise<void> {
+  /**
+   * `persistUpgrades: false` (2.1.60, M01 `dsh8ezbz`) — the background context
+   * build writes nothing into the project: an entity file in an older payload
+   * shape is indexed in its upgraded shape, and the file keeps its old shape
+   * until a build with writes (an activation) or the file's next write.
+   */
+  async indexAll(opts: { persistUpgrades?: boolean } = {}): Promise<void> {
+    const persistUpgrades = opts.persistUpgrades ?? true;
     const startedAt = performance.now();
     let count = 0;
     /**
@@ -353,7 +360,7 @@ export class EntityIndexerService implements WatchSubscriber {
         this.indexTagsFile({ reconcile: true }); // tags first — so entity tag refs resolve to real rows
         for (const m of ordered) {
           for (const entity of prepared.get(m.type)?.values() ?? []) {
-            if (entity && this.applyEntity(entity, false)) count += 1;
+            if (entity && this.applyEntity(entity, false, persistUpgrades)) count += 1;
           }
         }
       })();
@@ -468,7 +475,7 @@ export class EntityIndexerService implements WatchSubscriber {
   /** Returns true if the entity was (re)indexed; false if skipped (inactive/error). */
   private indexEntity(type: RawEntityType, slug: string, broadcast: boolean): boolean {
     const entity = this.prepareEntity(type, slug);
-    return entity !== null && this.applyEntity(entity, broadcast);
+    return entity !== null && this.applyEntity(entity, broadcast, true);
   }
 
   /**
@@ -522,7 +529,11 @@ export class EntityIndexerService implements WatchSubscriber {
   }
 
   /** The write half of a reindex: restore the prepared payload into the index. */
-  private applyEntity({ type, slug, snap, upgraded }: PreparedEntity, broadcast: boolean): boolean {
+  private applyEntity(
+    { type, slug, snap, upgraded }: PreparedEntity,
+    broadcast: boolean,
+    persistUpgrades: boolean,
+  ): boolean {
     try {
       // 0.2.2: `restore` no longer throws when a type has no registered entity
       // service — it returns `{op:'noop'}` so one unwritable type cannot abort a
@@ -563,7 +574,7 @@ export class EntityIndexerService implements WatchSubscriber {
      * stamp projection above, so the regenerated file carries the timestamps the
      * old one did rather than the ones a mid-restore row briefly held.
      */
-    if (upgraded) {
+    if (upgraded && persistUpgrades) {
       try {
         this.store.persist(type, slug);
       } catch (err) {

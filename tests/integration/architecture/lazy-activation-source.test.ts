@@ -104,7 +104,8 @@ function eagerCallsBeforeListen(file: string, fn: string): string[] {
 describe('2.1.58 — no project is built before listen (source)', () => {
   it('[section:m29idx001] [section:m29krit1] the context build awaits entityIndexer.indexAll() — for every project, the one place a project gets its index', () => {
     const lines = codeLines(PROJECT_CONTEXT);
-    expect(lines.some(({ text }) => /\bawait entityIndexer\.indexAll\s*\(\s*\)/.test(text))).toBe(true);
+    // 2.1.60: the background build passes `{ persistUpgrades: false }` — still awaited, every build.
+    expect(lines.some(({ text }) => /\bawait entityIndexer\.indexAll\s*\(/.test(text))).toBe(true);
     // The build is one function for every project: no "start project" branch in it.
     expect(lines.filter(({ text }) => /initialProject|isInitial|pagesDirOverride/.test(text))).toEqual([]);
   });

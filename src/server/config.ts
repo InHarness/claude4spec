@@ -1165,18 +1165,13 @@ export interface MigrateV3Result {
 }
 
 /**
- * M31 config v3 migration — runs from the project activation hook (NOT at
- * process start). Harvests `port`/`mode` from the raw JSON (they move to the
- * workspace registry), deletes them and bumps `$schemaVersion` to 3. Atomic
- * write; no-op when already v3-shaped. (2.1.8: no longer materializes
- * `entitiesDir` — the entities root is a system root in code.)
+ * The raw `config.json` object a migration decides on, or `null` when there is
+ * no file. Malformed JSON, a non-object root and a non-number `$schemaVersion`
+ * refuse the file BEFORE any decision.
  */
-export function migrateConfigToV3(cwd: string): MigrateV3Result {
+function readRawConfigObject(cwd: string): Record<string, unknown> | null {
   const file = configPath(cwd);
-  const carried: MigrateV3Result['carried'] = {};
-  if (!fs.existsSync(file)) {
-    return { config: readConfig(cwd), migrated: false, carried };
-  }
+  if (!fs.existsSync(file)) return null;
   const text = fs.readFileSync(file, 'utf8');
   let parsed: unknown;
   try {
@@ -1189,65 +1184,44 @@ export function migrateConfigToV3(cwd: string): MigrateV3Result {
   }
   const raw = parsed as Record<string, unknown>;
   assertSchemaVersionType(raw);
+  return raw;
+}
 
+/**
+ * The v3 rewrite of `raw`, in place: harvests `port`/`mode`, deletes them and
+ * bumps `$schemaVersion` to at least 3. `false` (nothing touched) when the
+ * object is already v3-shaped.
+ */
+function rewriteToV3(raw: Record<string, unknown>, carried: MigrateV3Result['carried']): boolean {
   const alreadyV3 =
     typeof raw.$schemaVersion === 'number' &&
     raw.$schemaVersion >= 3 &&
     !('port' in raw) &&
     !('mode' in raw);
-  if (alreadyV3) {
-    return { config: readConfig(cwd), migrated: false, carried };
-  }
-
+  if (alreadyV3) return false;
   if (typeof raw.port === 'number' && Number.isInteger(raw.port)) carried.defaultPort = raw.port;
   if (raw.mode === 'dev' || raw.mode === 'prod') carried.mode = raw.mode;
   delete raw.port;
   delete raw.mode;
   // Bring the file to at least v3; the pagesDir→roots (v4) bump is owned by
-  // migrateConfigToV4, called right after this at activation.
+  // the v4 rewrite.
   if (typeof raw.$schemaVersion !== 'number' || raw.$schemaVersion < 3) raw.$schemaVersion = 3;
-  // 2.1.17: a file that cannot load is refused untouched — never half-migrated.
-  assertMigratable(raw);
-  atomicWrite(file, JSON.stringify(raw, null, 2) + '\n');
-  return { config: readConfig(cwd), migrated: true, carried };
+  return true;
 }
 
 /**
- * 0.1.96 config v4 migration — runs from the project activation hook right after
- * `migrateConfigToV3`. Maps the legacy `pagesDir` scalar to the built-in `pages`
- * root (with default props), deletes `pagesDir`, and bumps `$schemaVersion` to 4.
- * (2.1.8: the former `briefsDir`/`patchesDir`/`entitiesDir` keys are gone — unknown fields, never touched.)
- *
- * 0.2.8 adds a repair that must run even on an ALREADY-v4 file:
- * `git.syncCommitOnRelease` → `git.enabled`. (2.1.8: `roots[]` entries are no
- * longer materialized — four fields, complete or invalid; legacy per-root
- * flags are unknown fields and stay in the file untouched.) Atomic write;
- * no-op when nothing needed changing.
+ * The v4 rewrite of `raw`, in place: `pagesDir` → the built-in `pages` root,
+ * `git.syncCommitOnRelease` → `git.enabled`, `$schemaVersion` 4. `changed` is
+ * `false` (nothing touched) when nothing needed changing; `gitCarried` says the
+ * legacy git flag turned git sync ON (the caller says it out loud).
  */
-export function migrateConfigToV4(cwd: string): { config: NormalizedConfig; migrated: boolean } {
-  const file = configPath(cwd);
-  if (!fs.existsSync(file)) {
-    return { config: readConfig(cwd), migrated: false };
-  }
-  const text = fs.readFileSync(file, 'utf8');
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (err) {
-    throw new Error(`config.json: invalid JSON — ${(err as Error).message}`);
-  }
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('config.json: expected JSON object at root');
-  }
-  const raw = parsed as Record<string, unknown>;
-  assertSchemaVersionType(raw);
-
+function rewriteToV4(raw: Record<string, unknown>): { changed: boolean; gitCarried: boolean } {
   // A file from a NEWER claude4spec is not ours to touch. Repairing it would
   // mean re-adding fields that version deliberately dropped and stamping
   // `$schemaVersion` back down to 4 — a silent downgrade. Hand it to readConfig,
   // which refuses it with "schema version N not supported" and leaves it intact.
   if (typeof raw.$schemaVersion === 'number' && raw.$schemaVersion > CURRENT_SCHEMA_VERSION) {
-    return { config: readConfig(cwd), migrated: false };
+    return { changed: false, gitCarried: false };
   }
 
   const alreadyV4 =
@@ -1257,6 +1231,7 @@ export function migrateConfigToV4(cwd: string): { config: NormalizedConfig; migr
     !('pagesDir' in raw);
 
   let changed = false;
+  let gitCarried = false;
 
   // Map legacy pagesDir → built-in pages root. Preserve an existing `roots[]` if
   // one is somehow already present (defensive); otherwise synthesize from pagesDir.
@@ -1278,30 +1253,87 @@ export function migrateConfigToV4(cwd: string): { config: NormalizedConfig; migr
     if ('syncCommitOnRelease' in git) {
       if (!('enabled' in git) && git.syncCommitOnRelease === true) {
         git.enabled = true;
-        // Say it out loud. `enabled` is the master switch, so restoring the
-        // pre-0.1.118 intent also re-arms commit-on-pull and stops `.gitignore`
-        // ignoring the artifact dirs. A user who has since come to rely on git
-        // being off must be able to see WHY their repo started taking commits.
-        console.log(
-          `[config] ${cwd}: legacy git.syncCommitOnRelease carried onto git.enabled — git sync is ON for this project (set "git": { "enabled": false } to turn it back off)`,
-        );
+        gitCarried = true;
       }
       delete git.syncCommitOnRelease;
       changed = true;
     }
   }
 
-  if (alreadyV4 && !changed) {
-    return { config: readConfig(cwd), migrated: false };
-  }
+  if (alreadyV4 && !changed) return { changed: false, gitCarried };
   raw.$schemaVersion = 4;
+  return { changed: true, gitCarried };
+}
+
+/**
+ * M31 config v3 migration — runs from the project activation hook (NOT at
+ * process start). Harvests `port`/`mode` from the raw JSON (they move to the
+ * workspace registry), deletes them and bumps `$schemaVersion` to 3. Atomic
+ * write; no-op when already v3-shaped. (2.1.8: no longer materializes
+ * `entitiesDir` — the entities root is a system root in code.)
+ */
+export function migrateConfigToV3(cwd: string): MigrateV3Result {
+  const carried: MigrateV3Result['carried'] = {};
+  const raw = readRawConfigObject(cwd);
+  if (raw === null || !rewriteToV3(raw, carried)) {
+    return { config: readConfig(cwd), migrated: false, carried };
+  }
+  // 2.1.17: a file that cannot load is refused untouched — never half-migrated.
+  assertMigratable(raw);
+  atomicWrite(configPath(cwd), JSON.stringify(raw, null, 2) + '\n');
+  return { config: readConfig(cwd), migrated: true, carried };
+}
+
+/**
+ * 0.1.96 config v4 migration — runs from the project activation hook right after
+ * `migrateConfigToV3`. Maps the legacy `pagesDir` scalar to the built-in `pages`
+ * root (with default props), deletes `pagesDir`, and bumps `$schemaVersion` to 4.
+ * (2.1.8: the former `briefsDir`/`patchesDir`/`entitiesDir` keys are gone — unknown fields, never touched.)
+ *
+ * 0.2.8 adds a repair that must run even on an ALREADY-v4 file:
+ * `git.syncCommitOnRelease` → `git.enabled`. (2.1.8: `roots[]` entries are no
+ * longer materialized — four fields, complete or invalid; legacy per-root
+ * flags are unknown fields and stay in the file untouched.) Atomic write;
+ * no-op when nothing needed changing.
+ */
+export function migrateConfigToV4(cwd: string): { config: NormalizedConfig; migrated: boolean } {
+  const raw = readRawConfigObject(cwd);
+  if (raw === null) return { config: readConfig(cwd), migrated: false };
+  const { changed, gitCarried } = rewriteToV4(raw);
+  if (!changed) return { config: readConfig(cwd), migrated: false };
   // Validate BEFORE writing. A file this migration cannot fully repair (missing
   // `id`, a duplicate root `id`, …) fails to load either way — but it must fail
   // with the user's file untouched, not half-rewritten. In a git-tracked spec
   // repo a partial rewrite is a dirty tree the next auto-commit would sweep up.
   assertMigratable(raw);
-  atomicWrite(file, JSON.stringify(raw, null, 2) + '\n');
+  atomicWrite(configPath(cwd), JSON.stringify(raw, null, 2) + '\n');
+  if (gitCarried) {
+    // Say it out loud. `enabled` is the master switch, so restoring the
+    // pre-0.1.118 intent also re-arms commit-on-pull and stops `.gitignore`
+    // ignoring the artifact dirs. A user who has since come to rely on git
+    // being off must be able to see WHY their repo started taking commits.
+    console.log(
+      `[config] ${cwd}: legacy git.syncCommitOnRelease carried onto git.enabled — git sync is ON for this project (set "git": { "enabled": false } to turn it back off)`,
+    );
+  }
   return { config: readConfig(cwd), migrated: true };
+}
+
+/**
+ * 2.1.60 (M01 `dsh8ezbz`, M26 `hozcm4w5`): would the activation's config
+ * migrations (v4, then v3 — the activation's order) rewrite `config.json`?
+ * Decides on the file without writing it — the background context build's
+ * read. A file the migrations could not repair throws the error the activation
+ * would throw (a broken project is an error, not «needs activation»).
+ */
+export function configMigrationPending(cwd: string): boolean {
+  const raw = readRawConfigObject(cwd);
+  if (raw === null) return false;
+  const v4 = rewriteToV4(raw).changed;
+  const v3 = rewriteToV3(raw, {});
+  if (!v4 && !v3) return false;
+  assertMigratable(raw);
+  return true;
 }
 
 /**

@@ -41,6 +41,21 @@ async function findExistingMigratedFile(
   return null;
 }
 
+function hasLegacyPlanTable(db: Database.Database): boolean {
+  return db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='plan'`).get() !== undefined;
+}
+
+/**
+ * 2.1.60 (M01 `dsh8ezbz` step 8): would {@link backfillPlansToFilesystem} write
+ * plan files into the project? Only when the legacy `plan` table still holds
+ * rows — an EMPTY legacy table (every fresh slot: the numbered migrations
+ * create it before the cutover drops it) is dropped in the slot alone, without
+ * touching the project. Reads only — the background build's check.
+ */
+export function legacyPlanRowsPending(db: Database.Database): boolean {
+  return hasLegacyPlanTable(db) && db.prepare(`SELECT 1 FROM plan LIMIT 1`).get() !== undefined;
+}
+
 /**
  * 0.1.127 (brief 0-1-126-to-0-1-127): one-time boot cutover of the Plan
  * artifact from SQLite (`plan`/`plan_version`) to `.claude4spec/plans/<slug>.md` files (the `plans` system root).
@@ -75,10 +90,7 @@ export async function backfillPlansToFilesystem(params: {
 }): Promise<void> {
   const { db, plansPages, backupDb } = params;
 
-  const hasLegacyTable = db
-    .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='plan'`)
-    .get();
-  if (!hasLegacyTable) return;
+  if (!hasLegacyPlanTable(db)) return;
 
   backupDb();
 

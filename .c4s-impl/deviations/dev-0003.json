@@ -1,0 +1,15 @@
+{
+  "id": "dev-0003",
+  "kind": "clarification",
+  "blocking": false,
+  "address": "U3-aktywacja-bez-zapisow/dsh8ezbz",
+  "text": "M01 dsh8ezbz («Budowa w tle a aktywacja») lists four writes that end the background build in «needs activation» (no config file, a database to move, the migration to text, a config migration with a write) and says the background build skips the writing steps. The build also has write sites the section does not name. Assumed: (1) «migration to text» covers every one-time DB→text write of the build — entities only in the DB, legacy plan ROWS (an empty legacy `plan` table is dropped in the slot alone), legacy release rows without a slug, and entity files lacking createdAt/updatedAt (the 0.2.4 timestamp backfill); each ends the background build in «needs activation». (2) The recurring write-backs of a boot pass are skipped, not «needs activation»: anchor injection into pages without anchors (pages are indexed as on disk) and the rewrite of an entity file whose payload was upgraded (indexed in the upgraded shape; the file keeps its old shape until a build with writes or its next write). (3) The managed `.gitignore` block and the welcome page are skipped in the background — a project whose background build is «ready» is never activated again, so a missing block/page is not restored until it is registered again or reaches «needs activation». (4) The refusal of a non-existent directory (step 1) applies to the background build and to the activation of a REGISTERED project on a request; registration keeps its route-level refusal (`400 VALIDATION`), and the internal `bootstrapProject` used by tests still creates the directory.",
+  "assumption": "ASSUMPTION:dev-0003",
+  "unit": "U3-aktywacja-bez-zapisow",
+  "portion": "U3-aktywacja-bez-zapisow/p1-m01-m01",
+  "slugs": [
+    "ac-budowa-kontekstu-w-tle-nie-tworzy-ani"
+  ],
+  "sent": true,
+  "patchPath": "2-1-58-to-2-1-60-u3-aktywacja-bez-zapisow-dsh8ezbz-unnamed-write-sites-of-the-background-build.md"
+}

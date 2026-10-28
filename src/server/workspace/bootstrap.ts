@@ -2,12 +2,21 @@ import { RootRegistry } from '../roots/registry.js';
 import { PAGES_KIND } from '../../shared/root-kinds.js';
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadOrCreateConfig, migrateConfigToV3, migrateConfigToV4, type NormalizedConfig } from '../config.js';
+import {
+  configMigrationPending,
+  configPath,
+  loadOrCreateConfig,
+  migrateConfigToV3,
+  migrateConfigToV4,
+  readConfig,
+  validateRootDirs,
+  type NormalizedConfig,
+} from '../config.js';
 import { toProjectPath, workspaceFilePath } from './home-workspace.js';
 import { ensureGitignore } from '../../bin/gitignore.js';
 import { BOOTSTRAP_TEMPLATE } from '../../bin/bootstrap-template.js';
-import { migrateLegacyDbIfNeeded } from './db-migration.js';
-import { recoverPendingRootRename } from '../root-renames.js';
+import { legacyDbToMove, migrateLegacyDbIfNeeded } from './db-migration.js';
+import { readRenameJournal, recoverPendingRootRename } from '../root-renames.js';
 import type { WorkspaceRegistry } from './registry.js';
 import type { ProjectRecord, WorkspaceRecord } from './types.js';
 
@@ -57,6 +66,138 @@ export class WorkspaceHomeNotProjectError extends Error {
     super(`${dir} is the home directory of a workspace (its .claude4spec/ carries workspace.json), not a project`);
     this.name = 'WorkspaceHomeNotProjectError';
   }
+}
+
+/**
+ * 2.1.60 (M01 `dsh8ezbz` step 1): a project directory that does not exist is
+ * refused — the build ends in the error state and the directory is NOT created.
+ */
+export class ProjectDirMissingError extends Error {
+  readonly code = 'PROJECT_DIR_MISSING';
+  constructor(readonly dir: string) {
+    super(`project directory ${dir} does not exist`);
+    this.name = 'ProjectDirMissingError';
+  }
+}
+
+/**
+ * Step 1 of a REGISTERED project's build — the background build and the
+ * activation on a request alike: a workspace home and a directory that does
+ * not exist are refused before anything is read or written. (Registration
+ * refuses a missing directory earlier, at the route — `unusableDirectoryReason`.)
+ */
+function refuseNonProjectDir(cwd: string): void {
+  if (fs.existsSync(workspaceFilePath(cwd))) throw new WorkspaceHomeNotProjectError(cwd);
+  let isDir = false;
+  try {
+    isDir = fs.statSync(cwd).isDirectory();
+  } catch {
+    /* absent, or unreadable as a directory */
+  }
+  if (!isDir) throw new ProjectDirMissingError(cwd);
+}
+
+/**
+ * 2.1.60 (M01 `dsh8ezbz`, «Budowa w tle a aktywacja»): why a project's
+ * background build stops at «needs activation» — each one a step that would
+ * write into the project directory:
+ *  - `config-missing`   — no `config.json` (step 4 would write a fresh file);
+ *  - `config-migration` — a config migration with a write (M26 `hozcm4w5`: the
+ *    v4/v3 rewrite, or the replay of an interrupted root rename);
+ *  - `legacy-db`        — a database found in the project directory, to be
+ *    moved to the slot (step 7);
+ *  - `text-migration`   — the one-time migration to text (step 8): entities,
+ *    legacy plans or releases held only in the database, or entity files
+ *    without the timestamps the backfill writes. Found by the build itself,
+ *    once the slot database is open ({@link ProjectNeedsActivationError}).
+ */
+export type ActivationNeed = 'config-missing' | 'config-migration' | 'legacy-db' | 'text-migration';
+
+/**
+ * 2.1.60: thrown by a background context build (`projectWrites: 'none'`) that
+ * reached a step which would write into the project directory. Not a failure:
+ * {@link backgroundBuild} turns it into the «needs activation» state.
+ */
+export class ProjectNeedsActivationError extends Error {
+  readonly code = 'PROJECT_NEEDS_ACTIVATION';
+  constructor(readonly needs: readonly ActivationNeed[]) {
+    super(`project needs activation (${needs.join(', ')})`);
+    this.name = 'ProjectNeedsActivationError';
+  }
+}
+
+/** The outcome of the background build's activation steps ({@link backgroundActivationSteps}). */
+export type BackgroundStepsResult =
+  | { state: 'ready'; config: NormalizedConfig }
+  | { state: 'needs-activation'; needs: ActivationNeed[] };
+
+/**
+ * 2.1.60 (M01 `dsh8ezbz`, M31 `m31ctx001`): the activation's steps as the
+ * background context build runs them — WITHOUT writing into the project
+ * directory. A broken project (a workspace home, a missing directory, a
+ * malformed or unmigratable `config.json`, colliding roots) throws: the error
+ * state. A project that needs a write ends in «needs activation» and nothing is
+ * written. Otherwise the one permitted write follows — the missing directories
+ * of the registry roots (step 5), only because the config file exists — and
+ * the project is ready for the build. Skipped, never needed for «ready»: the
+ * internal directory (step 2 — it holds the existing config), the managed
+ * `.gitignore` block and the welcome page (step 6); the activation writes them.
+ * ASSUMPTION:dev-0003 — which writes count as «needs activation» and which are
+ * merely skipped by the background build.
+ */
+export function backgroundActivationSteps(
+  registry: WorkspaceRegistry,
+  project: ProjectRecord,
+): BackgroundStepsResult {
+  const cwd = project.cwd;
+  refuseNonProjectDir(cwd);
+  const needs: ActivationNeed[] = [];
+  if (!fs.existsSync(configPath(cwd))) needs.push('config-missing');
+  else if (readRenameJournal(cwd) !== null || configMigrationPending(cwd)) needs.push('config-migration');
+  if (legacyDbToMove(registry, cwd, project.id) !== null) needs.push('legacy-db');
+  if (needs.length > 0) return { state: 'needs-activation', needs };
+
+  // Step 3: the file is validated (malformed JSON / a type mismatch throws);
+  // step 5: the registry's roots — collisions refused before anything else.
+  const config = readConfig(cwd);
+  const { errors } = validateRootDirs(config.roots);
+  if (errors.length > 0) throw new Error(errors[0]);
+  for (const root of new RootRegistry(config.roots).list()) {
+    const abs = path.resolve(cwd, root.dir);
+    if (!fs.existsSync(abs)) fs.mkdirSync(abs, { recursive: true });
+  }
+  return { state: 'ready', config };
+}
+
+/** What a background build of one project ends in, short of an error (which rejects). */
+export type BackgroundBuildResult<T> =
+  | { state: 'ready'; context: T }
+  | { state: 'needs-activation'; needs: ActivationNeed[] };
+
+/**
+ * 2.1.60 (M01 `dsh8ezbz`, M31 `m31ctx001`): one project's build in the
+ * background mode — the activation's steps without writes
+ * ({@link backgroundActivationSteps}), then the context build, which the caller
+ * runs with `projectWrites: 'none'` (handed to `build`). Resolves «ready» with
+ * the context, or «needs activation» (from the steps, or from a build that met
+ * a migration to text — the partial build is released by the build itself).
+ * Rejects on any error: a missing directory is that build's
+ * {@link ProjectDirMissingError}, and the directory is not created.
+ */
+export function backgroundBuild<T>(
+  registry: WorkspaceRegistry,
+  build: (project: ProjectRecord, mode: { projectWrites: 'none' }) => Promise<T>,
+): (project: ProjectRecord) => Promise<BackgroundBuildResult<T>> {
+  return async (project) => {
+    const steps = backgroundActivationSteps(registry, project);
+    if (steps.state === 'needs-activation') return steps;
+    try {
+      return { state: 'ready', context: await build(project, { projectWrites: 'none' }) };
+    } catch (err) {
+      if (err instanceof ProjectNeedsActivationError) return { state: 'needs-activation', needs: [...err.needs] };
+      throw err;
+    }
+  };
 }
 
 /**
@@ -133,13 +274,20 @@ export function activateProjectDir(
  * broken `config.json`, EACCES) is that build's failure: the project answers
  * `500 PROJECT_BUILD_FAILED`, the process and every other project keep serving.
  * Step 7's legacy move: a database found in the project directory moves to the
- * workspace slot, it is not rebuilt.
+ * workspace slot, it is not rebuilt. 2.1.60: this is the activation WITH writes
+ * — the first request to a project whose background build ended in «needs
+ * activation» runs it (the background build itself writes nothing,
+ * {@link backgroundBuild}); a directory that does not exist is refused and not
+ * created ({@link ProjectDirMissingError}).
  */
 export function activateProject(
   registry: WorkspaceRegistry,
   workspace: WorkspaceRecord,
   project: ProjectRecord,
 ): ActivationResult {
+  // 2.1.60 (step 1): a registered project's directory that no longer exists is
+  // refused, not created.
+  refuseNonProjectDir(project.cwd);
   const result = activateProjectDir(registry, workspace, project.cwd);
   migrateLegacyDbIfNeeded(registry, workspace, project.cwd, project.id);
   return result;

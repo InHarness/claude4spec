@@ -1,8 +1,15 @@
 import { Router } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
-import { builtinRoot, migrateConfigToV4, normalizeSkillConfig, readConfig, validateRootDirs } from '../config.js';
-import { recoverPendingRootRename, rootIdChain, readRootRenames } from '../root-renames.js';
+import {
+  builtinRoot,
+  configMigrationPending,
+  migrateConfigToV4,
+  normalizeSkillConfig,
+  readConfig,
+  validateRootDirs,
+} from '../config.js';
+import { readRenameJournal, recoverPendingRootRename, rootIdChain, readRootRenames } from '../root-renames.js';
 import type { ContextInvalidation, Root } from '../../shared/types.js';
 import { resolveAgentTurnScope } from '../services/agent-execution-scope.js';
 import type { PageRootRuntime } from '../routes/pages.js';
@@ -44,8 +51,8 @@ import { PlanService } from '../services/plan.js';
 import { artifactAnchorInjectionSubscriber } from '../services/anchor-injection.js';
 import { plansRouter } from '../routes/plans.js';
 import { skillsRouter } from '../routes/skills.js';
-import { backfillPlansToFilesystem } from './plan-migration.js';
-import { backfillEntityTimestamps } from './entity-timestamp-backfill.js';
+import { backfillPlansToFilesystem, legacyPlanRowsPending } from './plan-migration.js';
+import { backfillEntityTimestamps, entityTimestampsPending } from './entity-timestamp-backfill.js';
 import { BriefService } from '../services/brief.js';
 import { briefsRouter } from '../routes/briefs.js';
 import { patchesRouter } from '../routes/patches.js';
@@ -161,7 +168,7 @@ import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import type { ActiveAdapter, PendingInput } from '../routes/agent-turn.js';
 import { abortAllTurns } from '../routes/agent-turn.js';
 import { ProjectWsEmitter } from '../ws/project-emitter.js';
-import { ensureWelcomePage } from './bootstrap.js';
+import { ensureWelcomePage, ProjectNeedsActivationError } from './bootstrap.js';
 import type { WorkspaceRegistry } from './registry.js';
 import type { WorkspaceRecord } from './types.js';
 
@@ -240,6 +247,18 @@ export interface ProjectContextDeps {
    * then the prod constant.
    */
   remoteApiUrl?: string;
+  /**
+   * 2.1.60 (M01 `dsh8ezbz`): `'none'` — the background build, which writes
+   * nothing into the project directory except the missing directories of its
+   * registry roots: a step that would write (a config migration, the migration
+   * to text) throws {@link ProjectNeedsActivationError} before any boot work
+   * starts, and the boot passes skip their write-backs (anchor injection, the
+   * rewrite of an upgraded entity payload). `'allowed'` (default) — the build
+   * that follows an activation. ASSUMPTION:dev-0003 — legacy plan/release rows
+   * and unstamped entity files count as the migration to text; anchor injection
+   * and the upgraded-payload rewrite are skipped, not «needs activation».
+   */
+  projectWrites?: 'allowed' | 'none';
   /** M31: pinged when an agent turn finishes — context-cache idle-retry hook. */
   onTurnFinished?: () => void;
   /**
@@ -360,6 +379,8 @@ async function buildInner(
   cleanup: Array<() => unknown>,
 ): Promise<ProjectContext> {
   const { registry, workspace, projectId, cwd, gateway, mode } = deps;
+  /** 2.1.60 (M01 `dsh8ezbz`): the background build — no write into the project directory. */
+  const noProjectWrites = deps.projectWrites === 'none';
   const router = Router();
   const onContextConfigChanged = (opts?: ContextInvalidation): void => {
     deps.onContextConfigChanged?.(opts);
@@ -379,8 +400,16 @@ async function buildInner(
   // 0.2.101: finish or undo a rename interrupted between its two writes, before
   // anything reads `roots[]` (see `root-renames.ts`). Idempotent and a no-op
   // without a journal.
-  recoverPendingRootRename(cwd);
-  migrateConfigToV4(cwd);
+  // 2.1.60: the background build migrates nothing — a pending rewrite is the
+  // activation's (M26 `hozcm4w5`), checked here before anything is acquired.
+  if (noProjectWrites) {
+    if (readRenameJournal(cwd) !== null || configMigrationPending(cwd)) {
+      throw new ProjectNeedsActivationError(['config-migration']);
+    }
+  } else {
+    recoverPendingRootRename(cwd);
+    migrateConfigToV4(cwd);
+  }
   const bootConfig = readConfig(cwd);
   // 0.1.96: page roots come from config.roots[] — the file and the defaults
   // alone (2.1.58: no start flag names a root's directory).
@@ -558,6 +587,12 @@ async function buildInner(
   // the `plans` root (`.claude4spec/plans/*.md`) — must run before the initial-sync IIFE below (~line
   // 962) so its file_version capture picks up these files, and before
   // PlanService is constructed since it reads exclusively through plansMount now.
+  // 2.1.60: legacy plan ROWS would be written as files into the project — the
+  // background build leaves that migration to text to the activation. (An
+  // empty legacy table is dropped in the slot alone.)
+  if (noProjectWrites && legacyPlanRowsPending(db.handle)) {
+    throw new ProjectNeedsActivationError(['text-migration']);
+  }
   await backfillPlansToFilesystem({
     db: db.handle,
     plansPages: plansMount.store,
@@ -617,6 +652,40 @@ async function buildInner(
   });
   // M34/L11: wire version-restore deps now that entityStore exists.
   versionService.configureRestore(entityStore, tagsService);
+  /**
+   * M29 entity store boot inputs — is there text, and does the database hold
+   * entities the text lacks? Read by the entity boot below.
+   */
+  const readEntityBootCounts = () => ({
+    fileEntityCount: entityStore.listAll().length,
+    hasTagsFile: entityStore.readTags().length > 0,
+    dbEntityCount: rawReader
+      .listTypes()
+      .filter((t) => pluginHost.getEntity(t))
+      .reduce((n, t) => n + rawReader.listSlugs(t).length, 0),
+  });
+  /**
+   * 2.1.60 (M01 `dsh8ezbz` step 8): the background build stops at «needs
+   * activation» on any migration to text — BEFORE any boot work starts, so the
+   * partial build releases nothing still running. Read once here and handed to
+   * the entity boot below. An unreadable store is left to that boot, which
+   * fails the same way before it would write.
+   */
+  let entityBootCounts: ReturnType<typeof readEntityBootCounts> | undefined;
+  if (noProjectWrites) {
+    try {
+      entityBootCounts = readEntityBootCounts();
+    } catch {
+      entityBootCounts = undefined;
+    }
+    const { fileEntityCount = 0, hasTagsFile = false, dbEntityCount = 0 } = entityBootCounts ?? {};
+    const exportPending = fileEntityCount === 0 && !hasTagsFile && dbEntityCount > 0;
+    const legacyReleasesPending =
+      db.handle.prepare(`SELECT 1 FROM spec_release WHERE slug IS NULL LIMIT 1`).get() !== undefined;
+    if (exportPending || legacyReleasesPending || entityTimestampsPending(entityStore)) {
+      throw new ProjectNeedsActivationError(['text-migration']);
+    }
+  }
   /**
    * 0.2.77 — where projection freshness is kept for this project.
    *
@@ -1737,8 +1806,10 @@ async function buildInner(
   const indexedRows = (db.handle.prepare('SELECT COUNT(*) AS n FROM section_index').get() as { n: number }).n;
   if (indexedRows === 0) projectionStatus.markStale(PROJECTION_IDS.sections);
   const sectionsBootPass = projectionStatus.beginRebuild();
+  // 2.1.60: the background build indexes the pages as they are on disk — no
+  // anchor is minted into a file (`indexAll` without `suppress` writes nothing).
   bootWork.push(sectionIndexer
-    .indexAll((source, relPath) => w.suppress(source, relPath))
+    .indexAll(noProjectWrites ? undefined : (source, relPath) => w.suppress(source, relPath))
     /**
      * `finishRebuild`, not `markFresh` — the boot rebuild is slow and mounts are
      * already live, so a reaction can fail on some page while it runs. Clearing
@@ -1840,12 +1911,7 @@ async function buildInner(
   // text" (entity files or `tags.json`) — activation mkdirs every registry root
   // (M31 bootstrap) before this runs, so the bare directory is always there.
   try {
-    const fileEntityCount = entityStore.listAll().length;
-    const hasTagsFile = entityStore.readTags().length > 0;
-    const dbEntityCount = rawReader
-      .listTypes()
-      .filter((t) => pluginHost.getEntity(t))
-      .reduce((n, t) => n + rawReader.listSlugs(t).length, 0);
+    const { fileEntityCount, hasTagsFile, dbEntityCount } = entityBootCounts ?? readEntityBootCounts();
     const filesPresent = fileEntityCount > 0 || hasTagsFile;
 
     if (!filesPresent && dbEntityCount > 0) {
@@ -1887,8 +1953,10 @@ async function buildInner(
      * fields short-circuits before any `git` spawn, so this costs one directory
      * walk per boot forever after.
      */
+    // 2.1.60: skipped by the background build — it was refused above when a
+    // file lacked its timestamps, so there is nothing to stamp.
     try {
-      backfillEntityTimestamps(db.handle, entityStore, cwd, entitiesRootDir);
+      if (!noProjectWrites) backfillEntityTimestamps(db.handle, entityStore, cwd, entitiesRootDir);
     } catch (err) {
       // A missing timestamp degrades ordering; it does not stop the project
       // from serving. Never let the backfill be the reason boot fails.
@@ -1902,7 +1970,7 @@ async function buildInner(
      * here would erase the very fact it just recorded.
      */
     const pass = projectionStatus.beginRebuild();
-    await entityIndexer.indexAll();
+    await entityIndexer.indexAll({ persistUpgrades: !noProjectWrites });
     projectionStatus.finishRebuild(PROJECTION_IDS.entities, pass);
   } catch (err) {
     console.error('[entity-indexer] boot indexAll failed:', err);

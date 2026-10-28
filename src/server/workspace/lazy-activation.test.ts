@@ -398,10 +398,12 @@ describe('M01 lazy project activation (2.1.58)', () => {
   });
 
   it('[section:85hp4f2v] the start writes nothing into a project of the workspace; its first activation gives it a config file of defaults, and the index lives in the workspace slot', () => {
-    const cwd = path.join(tmp, 'goal');
+    // 2.1.60 (M01 `dsh8ezbz` step 1): the directory exists — one that does not
+    // is refused by the activation, never created.
+    const cwd = dirOf('goal');
     const project = registry.registerProject(ws, cwd);
     const prepared = prepareStart(registry, parseLaunchArgs(['--workspace', 'default'], tmp));
-    expect(fs.existsSync(cwd)).toBe(false);
+    expect(fs.readdirSync(cwd)).toEqual([]);
 
     const activation = activateProject(registry, prepared.workspace, project);
     expect(activation.configCreated).toBe(true);
