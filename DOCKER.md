@@ -259,7 +259,7 @@ production server's boot path entirely (it's a one-off CLI mutation of
   that already narrows `entities`.
 - Don't rely on hot-reload after rebuilding your plugin's `dist/` — Docker
   bind-mount file-watch propagation (especially Docker Desktop/macOS) isn't
-  guaranteed to fire the host's `chokidar` watcher. Recreate the container
+  guaranteed to fire the host's file watcher. Recreate the container
   (`docker compose up -d --force-recreate app-registry`, or just re-run
   `plugin-smoke.sh`) after every rebuild instead of expecting a live reload.
 - The version-gate for a caller in another repo is simply the presence of

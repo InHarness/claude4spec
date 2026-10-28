@@ -1,5 +1,5 @@
 {
-  "iteration": 0,
+  "iteration": 5,
   "conventions": [
     {
       "label": "L10 (Project Scoping) — implementor M31",
@@ -16,7 +16,7 @@
         "U2-indeksacja-oddajaca-petle",
         "U3-aktywacja-bez-zapisow"
       ],
-      "startCommit": null
+      "startCommit": "3c4b2c51dee011e41207e600b1da0900a02c4637"
     },
     {
       "n": 2,
@@ -97,15 +97,36 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "U1-obserwacja-poddrzewa/p1-l7-l7",
+          "layers": [
+            "L7"
+          ],
+          "slugs": [
+            "ac-dodanie-1000-plikow-do-istniejacego-k",
+            "ac-katalog-z-plikami-przeniesiony-do-obs",
+            "ac-katalog-z-plikami-przeniesiony-poza-o",
+            "ac-plik-utworzony-w-nowym-podkatalogu-ob",
+            "m31-requires-m40"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "c74e0f223611f71fc2175bfb7c03ae00776d42fc",
+      "baseCommit": "3c4b2c51dee011e41207e600b1da0900a02c4637",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "U2-indeksacja-oddajaca-petle",
@@ -868,5 +889,6 @@
       "version": 1
     }
   ],
-  "entityParts": []
+  "entityParts": [],
+  "baselineGreen": true
 }

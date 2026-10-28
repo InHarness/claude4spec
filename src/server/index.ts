@@ -9,6 +9,7 @@ import { WsGateway } from './ws/gateway.js';
 import { createRoomBroadcaster } from './ws/watch-broadcaster.js';
 import { FileWatchRuntime } from './fs/watcher.js';
 import { PLUGINS_BASE_SOURCE } from './fs/sources.js';
+import { isExcludedSubtree } from './fs/watch-ignore.js';
 import { type WorkspaceRegistry, DEFAULT_WORKSPACE_PORT } from './workspace/registry.js';
 import { ActivatedProjects, activatingBuild, bootstrapProject } from './workspace/bootstrap.js';
 import { readPeerConfigSummary } from './workspace/peer-config.js';
@@ -405,7 +406,8 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // M33: the base pool is the one `scope: 'process'` mount in the system — it
   // survives every ProjectContext rebuild, because it belongs to no project.
   for (const dir of new Set(baseDirByPkg.values())) {
-    watchRuntime.mountSource({ source: `${PLUGINS_BASE_SOURCE}:${dir}`, dir, scope: 'process' });
+    // M33 declares the excluded subtrees of its source (2.1.60).
+    watchRuntime.mountSource({ source: `${PLUGINS_BASE_SOURCE}:${dir}`, dir, scope: 'process', exclude: isExcludedSubtree });
   }
   // The runtime debounces PER FILE, but a plugin rebuild rewrites a whole dist/
   // at once — without a burst-level coalesce that is one reloadPlugin() and one

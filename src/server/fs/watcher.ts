@@ -1,10 +1,9 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import chokidar, { type FSWatcher } from 'chokidar';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { WsEvent } from '../../shared/types.js';
-import { makeWatchIgnore } from './watch-ignore.js';
+import { DirWatch } from './dir-watch.js';
 import { mountRelPaths } from './mount-paths.js';
 import { globToRegExp } from '../../shared/root-kinds.js';
 
@@ -29,8 +28,10 @@ import { globToRegExp } from '../../shared/root-kinds.js';
  * whatever discriminator it needs in the name (`pages:<rootId>`, `artifacts:brief`)
  * and subscribers derive their projection keys from the suffix.
  *
- * The public contract is defined WITHOUT reference to the filesystem — chokidar,
- * `awaitWriteFinish` and the debounce are implementation details of a mount.
+ * The public contract is defined WITHOUT reference to the filesystem — the
+ * system's observation mechanism, write stabilisation and the debounce are
+ * implementation details of a mount (2.1.60: the provider is `DirWatch`, which
+ * observes the mount dir with its whole subtree, see `dir-watch.ts`).
  * Swapping the backend replaces the event provider inside mounts only;
  * subscribers, phases and broadcast stay untouched. We do NOT design a provider
  * system up front.
@@ -127,7 +128,8 @@ interface Mount {
   source: string;
   scope: WatchScope;
   dir: string;
-  fsw: FSWatcher | null;
+  /** The fs event provider; null with `fsEvents: false`. */
+  provider: DirWatch | null;
   /** Debounce timers, per file within this mount. */
   timers: Map<string, NodeJS.Timeout>;
   /** Resolved-at-arrival event awaiting its debounce window. */
@@ -232,13 +234,10 @@ interface OperationToken {
  *
  * Timers are per file within the mount: a 20-file batch gets 20 timers, but each
  * file's reactions fire exactly once. The window covers tiptap autosave, the fs
- * provider's write stabilization (`awaitWriteFinish`) and the atomic rename an
- * agent's Write tool performs.
+ * provider's write stabilization (an event only once the file's size stopped
+ * changing) and the atomic rename an agent's Write tool performs.
  */
 const DEBOUNCE_MS = 300;
-
-const AWAIT_WRITE_FINISH = { stabilityThreshold: 80, pollInterval: 20 } as const;
-
 
 /**
  * What a chain run reports back to the caller that drove it.
@@ -276,20 +275,34 @@ export interface WatchBroadcaster {
 
 export interface FileWatchRuntimeOptions {
   /**
-   * When false, mounts register without constructing an `FSWatcher`. The
+   * When false, mounts register without constructing an fs provider. The
    * subscription registry, phase ordering and `flush()` all still work — which
-   * is how the test harness drives reactions without leaking chokidar fds across
-   * the vitest fork pool.
+   * is how the test harness drives reactions without leaking system watches
+   * across the vitest fork pool.
    */
   fsEvents?: boolean;
   /** Room-scoped WS transport. M40 routes; it never authors an event. */
   broadcaster?: WatchBroadcaster;
 }
 
+/** What the owner of a source hands over when mounting it. */
+export interface MountSourceOptions {
+  source: string;
+  /** Observed together with its whole subtree. */
+  dir: string;
+  /**
+   * 2.1.60 — the subtrees the source's OWNER excludes, declared at mount time
+   * relative to `dir`: true when `relPath` lies in (or is the root of) an
+   * excluded subtree. The provider drops their events mechanically, before
+   * stabilisation and before the debounce, and never descends into them.
+   */
+  exclude?: (relPath: string) => boolean;
+}
+
 /** Registration surface bound to one scope — `subscribe` inherits it from the registration site. */
 export interface ScopedWatchRegistrar {
   readonly scope: WatchScope;
-  mountSource(opts: { source: string; dir: string }): void;
+  mountSource(opts: MountSourceOptions): void;
   unmountSource(source: string): Promise<void>;
   subscribe(source: string, handler: WatchSubscriber, opts: SubscribeOptions): void;
   markOrigin(source: string, relPath: string, actor: WatchActor): void;
@@ -422,8 +435,8 @@ export class FileWatchRuntime {
    * Claim `(scope, source)` and start observing `dir`. The key is the PAIR — the
    * same source in two projects is two different mounts.
    */
-  mountSource(opts: { source: string; dir: string; scope: WatchScope }): void {
-    const { source, dir, scope } = opts;
+  mountSource(opts: MountSourceOptions & { scope: WatchScope }): void {
+    const { source, dir, scope, exclude } = opts;
     const key = mountKey(scope, source);
     if (this.mounts.has(key)) {
       throw new Error(`[m40] source '${source}' is already mounted in scope '${scope}'`);
@@ -432,7 +445,7 @@ export class FileWatchRuntime {
       source,
       scope,
       dir,
-      fsw: null,
+      provider: null,
       timers: new Map(),
       pending: new Map(),
       inflight: new Map(),
@@ -441,19 +454,13 @@ export class FileWatchRuntime {
     this.mounts.set(key, mount);
     if (!this.fsEvents) return;
 
-    const fsw = chokidar.watch(dir, {
-      ignoreInitial: true,
-      ignored: makeWatchIgnore(dir),
-      awaitWriteFinish: AWAIT_WRITE_FINISH,
+    mount.provider = new DirWatch({
+      dir,
+      exclude,
+      onEvent: (event, relPath) => this.onFsEvent(mount, event, relPath),
+      // A watch failure (a system watch limit, say) is logged, never fatal.
+      onError: (err) => console.error(`[m40] watch error on ${scope}/${source}:`, err),
     });
-    fsw.on('add', (p) => this.onFsEvent(mount, 'add', p));
-    fsw.on('change', (p) => this.onFsEvent(mount, 'change', p));
-    fsw.on('unlink', (p) => this.onFsEvent(mount, 'unlink', p));
-    // EMFILE (and other watch errors) arrive on 'error' — without a listener Node
-    // escalates them to an uncaught exception that kills the process. Log instead,
-    // so a transient watch failure stays non-fatal.
-    fsw.on('error', (err) => console.error(`[m40] watch error on ${scope}/${source}:`, err));
-    mount.fsw = fsw;
   }
 
   async unmountSource(source: string, scope: WatchScope): Promise<void> {
@@ -465,7 +472,7 @@ export class FileWatchRuntime {
     for (const t of mount.timers.values()) clearTimeout(t);
     mount.timers.clear();
     mount.pending.clear();
-    await mount.fsw?.close();
+    mount.provider?.close();
     // Do NOT await in-flight work here: `unmountSource` is on the dispose hot path
     // and a handler that re-enters the runtime would deadlock against its own
     // dispatch. The `closed` flag below stops the chain instead, and
@@ -532,7 +539,7 @@ export class FileWatchRuntime {
    *
    * The first design counted tokens: one token per write, consumed one per fs
    * event. That is unsound, because the relationship between writes and events is
-   * not 1:1 — chokidar's `awaitWriteFinish` deliberately coalesces a burst into a
+   * not 1:1 — the provider's write stabilisation deliberately coalesces a burst into a
    * single event, and a slow write can split into several. Any leftover token then
    * swallowed a LATER, genuine write, which (with `capture` as the sole author of
    * `file_version`) silently lost the user's edit.
@@ -805,7 +812,7 @@ export class FileWatchRuntime {
   /**
    * Drive the full reaction chain for `(scope, source, relPath)` to completion.
    *
-   * Contract-level, not fs-level: it does not "drain chokidar", it guarantees the
+   * Contract-level, not fs-level: it does not "drain the provider", it guarantees the
    * reactions for this key have finished. It coalesces with a pending debounce
    * timer for the same key, and runs the chain even when the fs provider queued
    * nothing at all — which is what makes a server write read-after-write
@@ -868,9 +875,8 @@ export class FileWatchRuntime {
 
   // ---------------------------------------------------------------- dispatch
 
-  private onFsEvent(mount: Mount, event: WatchEventKind, absPath: string): void {
-    const relPath = path.relative(mount.dir, absPath).replaceAll(path.sep, '/');
-    if (!relPath || relPath.startsWith('..')) return;
+  /** A settled per-file event from the mount's provider (excluded subtrees already dropped). */
+  private onFsEvent(mount: Mount, event: WatchEventKind, relPath: string): void {
     const key = writeKey(mount.scope, mount.source, relPath);
 
     if (event === 'unlink') {

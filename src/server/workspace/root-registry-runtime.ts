@@ -22,6 +22,7 @@ import {
 import { sourceNameFor, boundWriter, type SelfWriteMarker } from '../fs/sources.js';
 import { validateKindRequirements, type ReactionBinder } from '../fs/reactions.js';
 import type { ScopedWatchRegistrar } from '../fs/watcher.js';
+import { isExcludedSubtree } from '../fs/watch-ignore.js';
 import { RecordStore, RecordPathError } from '../fs/record-store.js';
 import { markdownAdapter, type MarkdownRecord } from '../fs/record-adapters.js';
 import { rootDirAbs, type RegistryRoot, type RootRegistry } from '../roots/registry.js';
@@ -140,9 +141,11 @@ export async function mountRegistryRoots(opts: {
     // 1. observation of the root's dir.
     const source = sourceNameFor(root);
     const abs = rootDirAbs(cwd, root);
-    // chokidar silently swallows ENOENT on a missing dir — mkdir before the mount.
+    // A dir missing at mount time is observed as empty — mkdir before the mount.
     await fs.promises.mkdir(abs, { recursive: true });
-    w.mountSource({ source, dir: abs });
+    // 2.1.60 — the owner declares the excluded subtrees: everything outside the
+    // root's namespace (M02 `l13model0`).
+    w.mountSource({ source, dir: abs, exclude: isExcludedSubtree });
     out.sourceByRootId.set(root.id, source);
 
     // 2. the root's file store: the primitive for every kind with markdown

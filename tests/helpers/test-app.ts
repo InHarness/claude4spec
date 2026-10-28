@@ -91,7 +91,7 @@ export interface TestApp {
  * Composes the same backend building blocks production mounts in
  * buildProjectContext (mountBackend + entitiesRouter) on top of an in-memory
  * db and a throwaway tmp dir. Watchers are constructed but never started —
- * starting chokidar here would leak fds across the fork pool. Do NOT import
+ * starting the fs provider here would leak system watches across the fork pool. Do NOT import
  * project-context.ts (it registers section_ref at import time).
  */
 export async function createTestApp(opts: { extraModules?: BackendModule[] } = {}): Promise<TestApp> {

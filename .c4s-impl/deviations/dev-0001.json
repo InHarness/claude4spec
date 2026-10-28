@@ -1,0 +1,13 @@
+{
+  "id": "dev-0001",
+  "kind": "clarification",
+  "blocking": false,
+  "address": "U1-obserwacja-poddrzewa/vfyffo9a",
+  "text": "M40 vfyffo9a says the excluded subtrees of a registry root are its namespace (M02 l13model0), and the namespace excludes only dot-segment subtrees. A root at `.` would then observe node_modules, dist, build, coverage, out — before 2.1.60 every mount ignored these heavy directories. The implementation keeps excluding them for registry roots and for M33 plugin sources (on top of the dot-segment rule), so a root at `.` does not observe node_modules. Please confirm, or state in M02/M40 that the heavy build/dependency directories are outside a root's observed subtree.",
+  "assumption": "ASSUMPTION:dev-0001 — the namespace of a registry root excludes only dot-segment subtrees; the heavy directories are excluded on top of it, as every mount did before 2.1.60, so a root at `.` does not observe `node_modules`.",
+  "unit": "U1-obserwacja-poddrzewa",
+  "portion": "U1-obserwacja-poddrzewa/p1-l7-l7",
+  "slugs": [],
+  "sent": true,
+  "patchPath": "2-1-58-to-2-1-60-u1-obserwacja-poddrzewa-vfyffo9a-heavy-dirs-outside-a-root-s-observed-subtree.md"
+}

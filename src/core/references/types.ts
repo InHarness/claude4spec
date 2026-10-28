@@ -1,7 +1,7 @@
 /**
  * Serverless collaborators for the references core (M19).
  *
- * The core knows nothing about a running server — no Express, ws, chokidar, or
+ * The core knows nothing about a running server — no Express, ws, fs watchers, or
  * PagesService. Every transport (REST, MCP, CLI) injects readonly collaborators
  * and projects the superset hit onto its own existing shape.
  */

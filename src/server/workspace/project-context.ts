@@ -102,6 +102,7 @@ import { registerCoreReactions, type CoreReactionContext } from './core-reaction
 import { mountRegistryRoots, bindRegistryReactions } from './root-registry-runtime.js';
 import { RootRegistry, rootDirAbs } from '../roots/registry.js';
 import { headChangeOriginMarker } from '../fs/head-change-origin.js';
+import { isExcludedSubtree } from '../fs/watch-ignore.js';
 import { mountRelPaths } from '../fs/mount-paths.js';
 import { kindSelects, type RegistryRoot } from '../../shared/root-kinds.js';
 import { FileVersionCapture } from '../services/file-version-capture.js';
@@ -1686,7 +1687,8 @@ async function buildInner(
   // re-invalidating the projectId the new context now owns — dispose unmounts
   // this source.
   if (overlayMounted) {
-    w.mountSource({ source: PLUGINS_OVERLAY_SOURCE, dir: projectPluginsDir(cwd) });
+    // M33 declares the excluded subtrees of its source (2.1.60).
+    w.mountSource({ source: PLUGINS_OVERLAY_SOURCE, dir: projectPluginsDir(cwd), exclude: isExcludedSubtree });
     let overlayFired = false;
     const onOverlayChange = (relPath: string): void => {
       // Fire ONCE. Invalidating this context retires it, and the rebuilt context

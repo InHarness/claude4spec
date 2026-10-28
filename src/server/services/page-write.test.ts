@@ -46,7 +46,7 @@ const RIG_SCOPE: WatchScope = 'context:page-write-rig';
  * They used to run without one, exercising the `markOrigin` → write → `flush`
  * fallback this release deleted: spec content has exactly one writer, so a rig
  * with no record store would be testing a path production no longer has.
- * `fsEvents: false` — nothing in this file is about chokidar.
+ * `fsEvents: false` — nothing in this file is about the fs provider.
  */
 const rigRuntimes: FileWatchRuntime[] = [];
 

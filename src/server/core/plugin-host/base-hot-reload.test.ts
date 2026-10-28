@@ -131,7 +131,7 @@ describe('M33 — base hot-reload of an ESM-only package', () => {
       { onChange, onUnlink: onChange },
       { id: 'm33-base-reload', phase: 'reload', scope: 'process' },
     );
-    await new Promise((r) => setTimeout(r, 150)); // let chokidar settle
+    await new Promise((r) => setTimeout(r, 150)); // let the fs provider finish its first listing
 
     // Rebuild the package's dist with a bumped version.
     fs.writeFileSync(entry, moduleSource('2.0.0'));

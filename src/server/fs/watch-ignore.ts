@@ -1,34 +1,25 @@
-import path from 'node:path';
-
 // Directories that are never worth watching and routinely contain thousands
-// of files — descending into them is the usual cause of EMFILE (one OS file
-// descriptor per watched directory on macOS).
-const HEAVY_DIRS = new Set([
-  'node_modules',
-  '.git',
-  'dist',
-  'build',
-  'coverage',
-  '.next',
-  'out',
-  '.cache',
-  '.turbo',
-]);
+// of files — descending into them costs an observation per directory on
+// systems without native recursive watching, and floods a recursive stream.
+// (Dot-dirs such as `.git`, `.next`, `.cache` are covered by the dot-segment rule.)
+const HEAVY_DIRS = new Set(['node_modules', 'dist', 'build', 'coverage', 'out']);
 
 /**
- * Build a chokidar `ignored` predicate. Ignores dotfile basenames and known
- * heavy directories, but NEVER the watch root(s) themselves — a root resolved
- * to e.g. `<workspace node_modules>/<pkg>/dist` (the base watcher uses the
- * dirname of the base locator's ESM entry) must still be watched — its path
- * runs through `node_modules` (and, for a workspace with a home, through
- * `.claude4spec/local/`) — otherwise the watcher would ignore its own root and
- * observe nothing.
+ * 2.1.60 (M40 `vfyffo9a`) — the excluded subtrees a source's OWNER declares when
+ * it mounts the source, as the `exclude` predicate of `mountSource`. `relPath`
+ * is relative to the mount dir, so the mount dir itself is never excluded, even
+ * when its own absolute path runs through `node_modules` (a plugin's `dist`) or
+ * a dot-dir (`.claude4spec/plugins`).
+ *
+ * Every subtree passing through a dot-segment — the namespace of a registry
+ * root (M02 `l13model0`), which also hides the record store's dot-prefixed
+ * temp files — and every heavy build/dependency directory.
+ *
+ * ASSUMPTION:dev-0001 — the namespace of a registry root excludes only
+ * dot-segment subtrees; the heavy directories are excluded on top of it, as
+ * every mount did before 2.1.60, so a root at `.` does not observe
+ * `node_modules`.
  */
-export function makeWatchIgnore(roots: string | string[]): (p: string) => boolean {
-  const rootSet = new Set((Array.isArray(roots) ? roots : [roots]).map((r) => path.resolve(r)));
-  return (p: string): boolean => {
-    if (rootSet.has(path.resolve(p))) return false; // never ignore a root
-    const base = path.basename(p);
-    return base.startsWith('.') || HEAVY_DIRS.has(base);
-  };
+export function isExcludedSubtree(relPath: string): boolean {
+  return relPath.split('/').some((seg) => seg.startsWith('.') || HEAVY_DIRS.has(seg));
 }
