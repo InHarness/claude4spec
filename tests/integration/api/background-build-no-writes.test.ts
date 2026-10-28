@@ -178,4 +178,106 @@ describe('M01 — the background context build writes nothing into the project',
     await expect(background(project)).rejects.toThrow(/does not exist/);
     expect(fs.existsSync(project.cwd)).toBe(false);
   });
+
+  it('[section:yffftxih] the dispose of a context closes its database handle and leaves the slot file in place', async () => {
+    const { project } = await projectWithEntity('dispose-handle');
+    const ctx = await cache.get(project);
+    await ctx.bootSettled;
+    const file = path.join(registry.slotDir(registry.getWorkspace('default')!, project.id), 'db.sqlite');
+    expect(ctx.db.handle.open).toBe(true);
+
+    await cache.retire(project.id);
+    expect(ctx.db.handle.open).toBe(false);
+    // The mixed store is never deleted by a dispose — the runtime state lives there.
+    expect(fs.existsSync(file)).toBe(true);
+  });
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    '[carried:U3-rev-0001] a migration to text the build with writes cannot complete is that build\'s error, with its cause — the project does not stay in «needs activation» forever',
+    async () => {
+      const { project } = await projectWithEntity('incomplete-migration');
+      // A legacy release row without a slug: the background build sees a migration to text.
+      const seeded = await cache.get(project);
+      seeded.db.handle
+        .prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES (?, NULL, ?, ?, ?)`)
+        .run('Legacy release', '', 'user', '2026-01-01T00:00:00.000Z');
+      await seeded.bootSettled;
+      await cache.retire(project.id);
+      expect(await background(project)).toEqual({ state: 'needs-activation', needs: ['text-migration'] });
+
+      // The build with writes cannot write the release file …
+      const releases = path.join(project.cwd, '.claude4spec', 'releases');
+      fs.chmodSync(releases, 0o555);
+      try {
+        await expect(cache.get(project)).rejects.toThrow(
+          /the migration to text could not complete \(releases without a slug\)/,
+        );
+        // … and a request answers with that cause, not with a context.
+        const res = await request(app).get(`/api/projects/${project.id}/acs`);
+        expect(res.status).toBe(500);
+        expect(res.body.error.code).toBe('PROJECT_BUILD_FAILED');
+        expect(res.body.error.message).toContain('releases without a slug');
+      } finally {
+        fs.chmodSync(releases, 0o755);
+      }
+
+      // Once the write can happen, the build with writes completes the migration
+      // and the background build is ready again — nothing is left pending.
+      cache.invalidate(project.id);
+      const written = await cache.get(project);
+      await written.bootSettled;
+      await cache.retire(project.id);
+      const ready = await background(project);
+      expect(ready.state).toBe('ready');
+      if (ready.state === 'ready') {
+        await ready.context.bootSettled;
+        await ready.context.dispose();
+      }
+    },
+  );
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    '[carried:U3-rev-0001] an entity file the timestamp backfill could not stamp fails the build with writes with that cause — read off the backfill\'s own outcome',
+    async () => {
+      const { project, slug } = await projectWithEntity('incomplete-timestamps');
+      // A pre-0.2.4 entity file: no createdAt/updatedAt. The background build sees a migration to text.
+      const acDir = path.join(project.cwd, ENTITIES, 'ac');
+      const file = path.join(acDir, `${slug}.json`);
+      const { createdAt: _c, updatedAt: _u, ...unstamped } = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<
+        string,
+        unknown
+      >;
+      fs.writeFileSync(file, `${JSON.stringify(unstamped, null, 2)}\n`);
+      expect(await background(project)).toEqual({ state: 'needs-activation', needs: ['text-migration'] });
+
+      // The build with writes cannot write the stamped file (its directory is read-only) …
+      fs.chmodSync(acDir, 0o555);
+      try {
+        await expect(cache.get(project)).rejects.toThrow(
+          /the migration to text could not complete \(entity files without createdAt\/updatedAt\)/,
+        );
+        // … the file is still unstamped, and the cause reaches the request.
+        expect(JSON.parse(fs.readFileSync(file, 'utf8'))).not.toHaveProperty('createdAt');
+        const res = await request(app).get(`/api/projects/${project.id}/acs`);
+        expect(res.status).toBe(500);
+        expect(res.body.error.code).toBe('PROJECT_BUILD_FAILED');
+        expect(res.body.error.message).toContain('entity files without createdAt/updatedAt');
+      } finally {
+        fs.chmodSync(acDir, 0o755);
+      }
+
+      // Once the write can happen, the build with writes stamps the file and the background build is ready.
+      cache.invalidate(project.id);
+      const written = await cache.get(project);
+      await written.bootSettled;
+      await cache.retire(project.id);
+      expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toHaveProperty('createdAt');
+      const ready = await background(project);
+      expect(ready.state).toBe('ready');
+      if (ready.state === 'ready') {
+        await ready.context.bootSettled;
+        await ready.context.dispose();
+      }
+    },
+  );
 });

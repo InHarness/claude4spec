@@ -1,0 +1,6 @@
+# U4a-kolejka-budowy-w-tle — non-blocking review findings
+
+- round 1, rev-0003 (`src/server/workspace/context-cache.ts:375`): redispatch() hands waiters to this.get(entry.project), also when the invalidation comes from DETACH (routes.ts:227 cache.invalidate(id)), queued or building (settleDropped). A request in flight to a project being detached then recreates an entry and keeps a live context (db handle, watch mounts) for a project no longer in the workspace, never released before shutdown. Not a regression (old cache leaked similarly). Releasing the context at detach is U4b's; U4b should reject the waiters instead of redispatching when the project has left the workspace.
+- round 1, rev-0004 (`src/server/fs/watcher.ts:1167`): Stale comments still describe LRU eviction: watcher.ts:1167; routes/agent-turn.ts:90, 870; ws/gateway.ts:169; shared/types.ts:228; services/project-exposed-skills.ts:45; routes/abort-all-turns.test.ts:16; tests/integration/api/mcp-over-http.test.ts:215; mcp-workspace-mount.test.ts:23,246,255. Reword to retire/dispose/invalidation. Leave http-mount.ts:125 and mcp/surface.ts:311 (U6).
+
+Orchestrator: rev-0003 carried into U4b (detach must reject waiters, not redispatch); rev-0004 handed to the round-2 implementer as trivial.

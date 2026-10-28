@@ -173,8 +173,9 @@ export interface PreparedStart {
  * The launcher's pre-listen sequence (`claude4spec.ts` runs exactly this, then
  * `startServer(prepared.options)`). 2.1.58 (M01 `r7ozfsa9`, M31 `m31ctx001`):
  * the start selects a workspace and opens its view; no project is registered,
- * activated or built here — every project activates on its first request, and
- * projects are added from the UI or in the home's `workspace.json`. The server
+ * activated or built here — 2.1.60: the server builds every project in the
+ * background after listen (M31 `m31ctx001`), and projects are added from the
+ * UI or in the home's `workspace.json`. The server
  * gets this registry and that view — not a second registry of its own.
  */
 export function prepareStart(

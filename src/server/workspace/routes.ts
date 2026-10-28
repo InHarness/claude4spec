@@ -26,7 +26,8 @@ export interface WorkspaceRoutesDeps {
    * Registration with activation (`POST /api/workspace/projects`): the M01
    * activation's file steps, the registration and the legacy-db move. The CLI
    * start does not use it — the start registers no project (its `--cwd` names
-   * a workspace home), and every project activates on its first request.
+   * a workspace home); the projects of the workspace are built in the
+   * background after listen.
    */
   activateProject: (cwd: string) => Promise<ProjectRecord>;
 }
@@ -58,12 +59,19 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
   // UI surface (switcher, /welcome, RemoveProjectResponse): the display name
   // comes from the project's config.json, falling back to the id. `path` stays
   // here deliberately — this is the UI, not an agent channel.
-  const serializeProjects = (ws: WorkspaceRecord) =>
-    ws.projects.map((p) => ({
+  // 2.1.60 (M31 `m31ctx001`): this is the read of the workspace's project
+  // states — not a request to any project. It leaves the build queue's order
+  // alone; a project whose failed build is past its window goes back to the
+  // end of the queue (`readStates`). ASSUMPTION:dev-0004 — this listing (GET
+  // /api/workspace, and the DELETE answer) is that read; `list_projects` is not.
+  const serializeProjects = (ws: WorkspaceRecord) => {
+    const states = cache.readStates();
+    return ws.projects.map((p) => ({
       ...p,
       name: readPeerConfigSummary(p.cwd).name ?? p.id,
-      live: cache.isLive(p.id),
+      live: states.get(p.id) === 'ready',
     }));
+  };
 
   router.get('/health', (_req, res) => {
     res.json({ ok: true, mode, workspace: workspace.name });
@@ -161,6 +169,9 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
     }
     try {
       const project = await deps.activateProject(target);
+      // 2.1.60 (M31 `m31boot01`): the registered project joins the background
+      // build queue — it builds without waiting for a request.
+      cache.enqueue(project);
       res.status(201).json({ projectId: project.id });
     } catch (err) {
       if (err instanceof ProjectPathError) {
@@ -212,8 +223,9 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
         forgetDbSlot(slot);
         fs.rmSync(slot, { recursive: true, force: true });
       } else {
-        // Context retires/disposes; the DB slot stays on disk (re-register = same index).
-        cache.invalidate(id);
+        // Context retires/disposes (a queued project leaves the queue); the DB
+        // slot stays on disk (re-register = same index).
+        cache.remove(id);
       }
       const fresh = registry.getWorkspace(workspace.name) ?? workspace;
       // Most-recently-opened of the remainder → first → null (empty workspace).

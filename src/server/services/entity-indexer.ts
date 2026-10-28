@@ -68,12 +68,20 @@ interface PreparedEntity {
 
 export class EntityIndexerService implements WatchSubscriber {
   /**
-   * The paths a watch event touched while an `indexAll()` was between its read
-   * slices — one set per rebuild in flight. Such a path was read BEFORE the
-   * event (or not listed at all, if it is new), so the commit re-reads it rather
-   * than writing the stale copy over the reaction's fresher row.
+   * The paths a watch event touched while the `indexAll()` in flight was
+   * between its read slices. Such a path was read BEFORE the event (or not
+   * listed at all, if it is new), so the commit re-reads it rather than writing
+   * the stale copy over the reaction's fresher row. `null` when no rebuild runs.
    */
-  private readonly touchedDuringRebuild = new Set<Set<string>>();
+  private touchedDuringRebuild: Set<string> | null = null;
+  /**
+   * The rebuild in flight. `indexAll()` yields between slices, so a second call
+   * (the manual projection rebuild during the build's own pass) would
+   * interleave with the first: it reuses this promise instead.
+   */
+  private rebuild: Promise<void> | null = null;
+  /** Set by {@link dispose}: a rebuild between its slices ends without a commit. */
+  private disposed = false;
 
   constructor(
     private db: Database.Database,
@@ -210,7 +218,25 @@ export class EntityIndexerService implements WatchSubscriber {
    * shape is indexed in its upgraded shape, and the file keeps its old shape
    * until a build with writes (an activation) or the file's next write.
    */
-  async indexAll(opts: { persistUpgrades?: boolean } = {}): Promise<void> {
+  indexAll(opts: { persistUpgrades?: boolean } = {}): Promise<void> {
+    if (this.rebuild) return this.rebuild;
+    const run = this.runIndexAll(opts).finally(() => {
+      this.rebuild = null;
+    });
+    this.rebuild = run;
+    return run;
+  }
+
+  /**
+   * The context is released (its dispose, or the cleanup of a failed build):
+   * a rebuild still between its read slices ends early — it never commits
+   * through a database handle that is about to close.
+   */
+  dispose(): void {
+    this.disposed = true;
+  }
+
+  private async runIndexAll(opts: { persistUpgrades?: boolean }): Promise<void> {
     const persistUpgrades = opts.persistUpgrades ?? true;
     const startedAt = performance.now();
     let count = 0;
@@ -244,10 +270,11 @@ export class EntityIndexerService implements WatchSubscriber {
      * half-cleared index to this context's own readers during a manual rebuild.
      */
     const touched = new Set<string>();
-    this.touchedDuringRebuild.add(touched);
+    this.touchedDuringRebuild = touched;
     let prepared: Map<string, Map<string, PreparedEntity | null>>;
     try {
       prepared = await this.readSliced(ordered);
+      if (this.disposed) return;
       // A watch event between the slices means the copy read earlier may be
       // stale, or the file is new. From here to the commit nothing yields, so
       // this re-read is the last word.
@@ -261,7 +288,7 @@ export class EntityIndexerService implements WatchSubscriber {
         );
       }
     } finally {
-      this.touchedDuringRebuild.delete(touched);
+      this.touchedDuringRebuild = null;
     }
     this.db
       .transaction(() => {
@@ -392,6 +419,7 @@ export class EntityIndexerService implements WatchSubscriber {
       for (const slug of this.store.listType(type)) {
         if (inSlice === INDEX_SLICE_FILES) {
           await yieldEventLoop();
+          if (this.disposed) return out; // the caller ends without a commit
           inSlice = 0;
         }
         inSlice += 1;
@@ -414,9 +442,9 @@ export class EntityIndexerService implements WatchSubscriber {
     return this.handleUnlink(relPath);
   }
 
-  /** Record a watched path against every `indexAll()` currently between read slices. */
+  /** Record a watched path against the `indexAll()` currently between read slices. */
   private noteTouched(relPath: string): void {
-    for (const touched of this.touchedDuringRebuild) touched.add(relPath);
+    this.touchedDuringRebuild?.add(relPath);
   }
 
   async handleUnlink(relPath: string): Promise<void> {

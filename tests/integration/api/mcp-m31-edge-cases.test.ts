@@ -154,7 +154,7 @@ describe('MCP mounts — M31 registry edge cases', () => {
     expect(ws.transport.sessionId).toBeTruthy();
     expect(proj.transport.sessionId).toBeTruthy();
 
-    // The context drops out (invalidate = eviction from the connection's side)
+    // The context drops out (an invalidation, from the connection's side)
     // and its rebuild fails.
     failBuild = true;
     cache.invalidate('app-spec');

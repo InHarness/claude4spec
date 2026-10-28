@@ -65,10 +65,11 @@ describe('M31 workspace routes — workspace with a home and registry workspace 
   });
 
   const cache = {
-    isLive: () => false,
+    readStates: () => new Map(),
+    enqueue: () => {},
     getLive: () => null,
     retire: async () => {},
-    invalidate: () => {},
+    remove: () => {},
   } as unknown as ProjectContextCache;
 
   /** The server's composition for one workspace: its start view, the POST through `bootstrapProject`. */

@@ -212,7 +212,7 @@ describe('MCP over HTTP', () => {
       await client.callTool({ name: 'overview', arguments: {} });
       // The harness's registry stands in for `hasInFlightTurn()`: an MCP
       // connection must never appear in it, or an editor left open overnight
-      // pins the ProjectContext against eviction forever.
+      // pins a retired ProjectContext against disposal forever.
       expect(activeMcpSessionCount()).toBe(1);
       expect(app.broadcasts.filter((b) => JSON.stringify(b).includes('turn'))).toHaveLength(0);
     });

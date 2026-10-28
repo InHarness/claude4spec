@@ -11,7 +11,7 @@ import { FileWatchRuntime } from './fs/watcher.js';
 import { PLUGINS_BASE_SOURCE } from './fs/sources.js';
 import { isExcludedSubtree } from './fs/watch-ignore.js';
 import { type WorkspaceRegistry, DEFAULT_WORKSPACE_PORT } from './workspace/registry.js';
-import { ActivatedProjects, activatingBuild, bootstrapProject } from './workspace/bootstrap.js';
+import { ActivatedProjects, activatingBuild, backgroundBuild, bootstrapProject } from './workspace/bootstrap.js';
 import { readPeerConfigSummary } from './workspace/peer-config.js';
 import { checkRequest, hostOriginGuard } from './http/host-origin-guard.js';
 import { effectiveBindHost, localServerUrl } from '../core/workspace/network.js';
@@ -19,7 +19,7 @@ import { buildProjectContext } from './workspace/project-context.js';
 import { ProjectContextCache } from './workspace/context-cache.js';
 import { projectDispatchMiddleware } from './workspace/middleware.js';
 import { workspaceRouter } from './workspace/routes.js';
-import type { WorkspaceRecord } from './workspace/types.js';
+import type { ProjectRecord, WorkspaceRecord } from './workspace/types.js';
 import { resolveSpaRoute, spaDocument, type SpaResolution } from './workspace/spa-route.js';
 import { PluginRegistryImpl } from './core/plugin-host/registry.js';
 import { registerAllPlugins } from './core/plugin-host/register-builtins.js';
@@ -345,18 +345,21 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     resolveWorkspaceRoot: baseLocator.packageRoot,
   };
 
-  // M31 `m31ctx001` / M01 `dsh8ezbz`: lazily-built, cached per-project
-  // contexts. Every project — none is an exception — is activated and built on
-  // its FIRST REQUEST, never before listen: the activation (refusal of a
-  // workspace home, the config from the file and the defaults, the fresh file,
-  // the roots, the welcome page, the legacy db move) runs inside the build, so
-  // its failure is that project's `500 PROJECT_BUILD_FAILED` and the process
-  // keeps serving. No start flag reaches a project except `--remote-url`, for
-  // every project alike. `activated` is the process's record of activated
-  // projects, shared with the registration route below: a project added through
-  // POST /api/workspace/projects is not activated a second time by its first build.
+  // M31 `m31ctx001` / M01 `dsh8ezbz` (2.1.60): the cache of live contexts and
+  // the background build queue. No project — none is an exception — is built
+  // before listen; after it, `cache.start` queues the whole composition (the
+  // last opened project first) and the contexts build one at a time in the
+  // background: the activation's steps WITHOUT writes (`backgroundBuild`), then
+  // the context with `projectWrites: 'none'`. A project that needs a write ends
+  // in «needs activation»; the first request to it runs the activation with
+  // writes (`activatingBuild`) and the build. A failure is that project's error
+  // state (`500 PROJECT_BUILD_FAILED` with its cause) and the process keeps
+  // serving. No start flag reaches a project except `--remote-url`, for every
+  // project alike. `activated` is the process's record of activated projects,
+  // shared with the registration route below: a project added through
+  // POST /api/workspace/projects is not activated a second time by its build.
   const activated = new ActivatedProjects();
-  const cache: ProjectContextCache = new ProjectContextCache(activatingBuild(registry, workspace, (project) =>
+  const buildContext = (project: ProjectRecord, projectWrites: 'allowed' | 'none') =>
     buildProjectContext({
       registry,
       pluginRegistry,
@@ -369,17 +372,23 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       watchRuntime,
       mode,
       remoteApiUrl: opts.remoteApiUrl,
+      projectWrites,
       onTurnFinished: () => cache.reapIdle(),
       onContextConfigChanged: (opts) => cache.invalidate(project.id, opts),
       // 2.1.9 (M52 `1v62dbhb`): a provider's context, on request, from this cache
       // — the `project-exposed` source of a consumer holds no handle of its own.
+      // Read at a turn, never during a build (a build waiting on the queue it
+      // runs in would never end).
       providerContext: async (providerId) => {
         const record = registry.getWorkspace(workspace.name)?.projects.find((p) => p.id === providerId);
         if (!record) throw new Error(`project "${providerId}" is not in workspace "${workspace.name}"`);
         return cache.get(record);
       },
-    }),
-  activated));
+    });
+  const cache: ProjectContextCache = new ProjectContextCache(
+    activatingBuild(registry, workspace, (project) => buildContext(project, 'allowed'), activated),
+    { background: backgroundBuild(registry, (project, mode) => buildContext(project, mode.projectWrites)) },
+  );
 
   // M33 phase 3: process-global base (workspace/npm) plugin hot-reload watcher.
   // The base catalog is shared across projects, so a reload mutates the shared
@@ -466,8 +475,8 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   }
 
   // Registration with activation — POST /api/workspace/projects (M01 file steps,
-  // then the registration and the legacy db move); the context itself is built
-  // on the project's first request, like every other.
+  // then the registration and the legacy db move); the route then appends the
+  // project to the background build queue, like every other project.
   // 0.2.93: no integration artifact is written here — the MCP config is served
   // on demand by `GET /api/projects/:id/_meta/mcp-config`.
   const activateProject = async (projectCwd: string) => {
@@ -500,6 +509,11 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const host = opts.host ?? effectiveBindHost(liveWorkspace());
   const port = await listenOrExit(httpServer, portRef.current, host);
   portRef.current = port;
+  // 2.1.60 (M31 `m31ctx001`, M01 `r7ozfsa9`): after listen, the background
+  // build queue gets the workspace's composition — the last opened project
+  // first, whether or not the start opens a browser, then the composition order.
+  const startView = registry.getWorkspace(workspace.name) ?? workspace;
+  cache.start(startView.projects, startView.lastOpenedProject);
   // The LOCAL address (loopback, or a concrete bindHost) — what the launcher
   // opens in the browser. Never `publicUrl`.
   const url = localServerUrl({ defaultPort: port, bindHost: host });

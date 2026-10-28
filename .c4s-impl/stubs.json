@@ -6,8 +6,10 @@
       "pretends": "backgroundBuild()/backgroundActivationSteps() and buildProjectContext({ projectWrites: 'none' }) exist without a production caller: startServer still builds every project through activatingBuild on its first request; U4a's background build queue calls backgroundBuild and routes «needs activation» to activatingBuild on the first request",
       "why": "U3 owns the no-write init steps and their mode; the queue that runs them after listen is U4a's goal",
       "closesInWave": 2,
-      "closed": false,
-      "openedBy": "U3-aktywacja-bez-zapisow/p1-m01-m01"
+      "closed": true,
+      "openedBy": "U3-aktywacja-bez-zapisow/p1-m01-m01",
+      "closedBy": "U4a-kolejka-budowy-w-tle/p1-m01-m41",
+      "closedHow": "startServer builds through ProjectContextCache(activatingBuild(...), { background: backgroundBuild(registry, (p, mode) => buildContext(p, mode.projectWrites)) }) and calls cache.start(...) after listenOrExit; a request to a project in «needs activation» runs activatingBuild (src/server/index.ts, src/server/workspace/context-cache.ts)"
     }
   ]
 }

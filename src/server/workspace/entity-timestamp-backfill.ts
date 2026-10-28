@@ -37,6 +37,11 @@ type Rung = 'entity_version' | 'git' | 'mtime' | 'placeholder';
 export interface BackfillReport {
   scanned: number;
   written: number;
+  /**
+   * 2.1.60: candidates whose write failed — they stay unstamped. The build with
+   * writes reads it instead of walking the store a second time.
+   */
+  unwritten: number;
   byRung: Record<Rung, number>;
 }
 
@@ -223,6 +228,7 @@ export function backfillEntityTimestamps(
   const report: BackfillReport = {
     scanned: 0,
     written: 0,
+    unwritten: 0,
     byRung: { entity_version: 0, git: 0, mtime: 0, placeholder: 0 },
   };
 
@@ -244,7 +250,6 @@ export function backfillEntityTimestamps(
   const realCwd = realpathOr(cwd);
   const gitDates = gitDatesByPath(realCwd, entitiesRootDir);
   const placeholder = placeholderStamp();
-  let failedWrites = 0;
   // git prints repo-root-relative paths; build the lookup key the same way.
   // Falls back to `cwd` when there is no work tree, which is harmless — the
   // git map is empty in that case anyway.
@@ -299,7 +304,7 @@ export function backfillEntityTimestamps(
       // Non-kebab slug, unwritable path. Never fail boot over it — but this
       // file stays unstamped, so say so once rather than silently retrying the
       // whole pass on every future boot.
-      failedWrites += 1;
+      report.unwritten += 1;
       continue;
     }
     report.byRung[rung] += 1;
@@ -311,9 +316,9 @@ export function backfillEntityTimestamps(
       `(entity_version: ${report.byRung.entity_version}, git: ${report.byRung.git}, ` +
       `mtime: ${report.byRung.mtime}, placeholder: ${report.byRung.placeholder})`,
   );
-  if (failedWrites) {
+  if (report.unwritten) {
     console.warn(
-      `[timestamp-backfill] ${failedWrites} entity file(s) could not be written and remain ` +
+      `[timestamp-backfill] ${report.unwritten} entity file(s) could not be written and remain ` +
         `unstamped — this pass will run again on the next boot until they are fixed or removed`,
     );
   }

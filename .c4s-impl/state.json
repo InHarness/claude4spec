@@ -1,5 +1,5 @@
 {
-  "iteration": 11,
+  "iteration": 18,
   "conventions": [
     {
       "label": "L10 (Project Scoping) — implementor M31",
@@ -23,7 +23,7 @@
       "units": [
         "U4a-kolejka-budowy-w-tle"
       ],
-      "startCommit": null
+      "startCommit": "c9f82376ba61b6d0e1cb69f16eec6e4a6dddd7c1"
     },
     {
       "n": 3,
@@ -476,15 +476,68 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "U4a-kolejka-budowy-w-tle/p1-m01-m41",
+          "layers": [
+            "M01",
+            "M31",
+            "M41"
+          ],
+          "slugs": [
+            "ac-budowa-w-tle-zaczyna-sie-od-ostatnio",
+            "ac-kazda-zmiana-stanu-budowy-projektu-em",
+            "ac-konteksty-projektow-buduja-sie-w-tle",
+            "ac-liczba-zywych-projectcontext-nie-prze",
+            "ac-gdy-wszystkie-kandydatury-do-eviction",
+            "ac-nieudana-budowa-jednego-projektu-nie",
+            "ac-odczyt-stanu-projektow-workspace-u-ni",
+            "ac-odczyt-stanu-projektow-workspace-u-po",
+            "ac-odpowiedz-project-build-failed-niesie",
+            "ac-po-zakonczeniu-budowy-w-tle-otwarcie",
+            "ac-po-zakonczeniu-budowy-w-tle-zadanie-d",
+            "ac-projekt-zarejestrowany-po-starcie-pro",
+            "ac-serwer-przyjmuje-zadania-zanim-zbuduj",
+            "ac-w-trakcie-budowy-w-tle-zadanie-do-pro",
+            "ac-wywolanie-list-projects-nie-buduje-pr",
+            "ac-zadanie-do-projektu-czekajacego-w-kol",
+            "ac-zadanie-do-projektu-czekajacego-w-kol-2",
+            "ac-config-json-type-mismatch-np-schem",
+            "ac-nieparsowalny-bez-schematu-remoteapiur",
+            "ac-pierwsze-zadanie-do-projektu-w-stanie",
+            "ac-projekt-ktorego-aktywacja-wymaga-zapi",
+            "ac-projekt-skladu-workspace-u-ktorego-ka",
+            "ac-projekt-z-nieprawidlowym-config-json",
+            "m31-requires-m01",
+            "m18-requires-m31",
+            "m52-requires-m31",
+            "section:m31boot01",
+            "section:ssn335r8",
+            "section:m31ctx001",
+            "section:l4txpfx0",
+            "section:7yzu5k8u",
+            "section:r7ozfsa9",
+            "section:yffftxih",
+            "carried:U3-rev-0001",
+            "carried:U2-rev-0002"
+          ],
+          "status": "implemented",
+          "rounds": 3,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "b992bc557eb8ea83f4da1da5c95432d3bff45a72",
+      "baseCommit": "c9f82376ba61b6d0e1cb69f16eec6e4a6dddd7c1",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 3
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "U4b-inwalidacja-i-zwalnianie",

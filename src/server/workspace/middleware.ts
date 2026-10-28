@@ -14,13 +14,15 @@ export function projectNotInWorkspaceMessage(ws: WorkspaceRecord, id: string): s
 
 /**
  * M31 transport middleware — mounted at `/api/projects/:id`. Resolves the
- * project from the URL prefix, lazily builds/fetches its context, and
+ * project from the URL prefix, takes its context — ready from the cache, or
+ * at the end of its build (preceded by the activation when the project needs
+ * one), which the request waits for (M31 `l4txpfx0`, `m31ctx001`) — and
  * dispatches into the per-context router (Express strips the mount path, so
  * ctx routers are mounted `/api`-less).
  *
  * - unknown id → 404 PROJECT_NOT_IN_WORKSPACE, before any handler
- * - build failure → 500 PROJECT_BUILD_FAILED for that project only;
- *   the process keeps serving the rest
+ * - failed build → 500 PROJECT_BUILD_FAILED for that project only, the cause
+ *   in the envelope's message; the process keeps serving the rest
  */
 export function projectDispatchMiddleware(
   registry: WorkspaceRegistry,

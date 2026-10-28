@@ -13,7 +13,7 @@ import {
   ProjectNeedsActivationError,
   WorkspaceHomeNotProjectError,
 } from './bootstrap.js';
-import { ProjectContextCache } from './context-cache.js';
+import { ProjectContextCache, type ProjectBuildStateChange } from './context-cache.js';
 import { projectDispatchMiddleware } from './middleware.js';
 import { workspaceFilePath } from './home-workspace.js';
 import type { ProjectContext } from './project-context.js';
@@ -39,7 +39,10 @@ describe('M01 — the activation steps of the background build (2.1.60)', () => 
     registry = new WorkspaceRegistry(path.join(tmp, 'registry'));
     ws = registry.selectOrCreate({ name: 'default' });
   });
-  afterEach(() => {
+  /** Every cache a test composed — its queue is stopped before the directories go. */
+  const caches: ProjectContextCache[] = [];
+  afterEach(async () => {
+    for (const cache of caches.splice(0)) await cache.disposeAll();
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -259,5 +262,91 @@ describe('M01 — the activation steps of the background build (2.1.60)', () => 
     const before = snapshot(p.cwd);
     expect((await backgroundBuild(registry, build)(p)).state).toBe('ready');
     expect(snapshot(p.cwd)).toEqual(before);
+  });
+
+  /**
+   * The server's composition (2.1.60): the queue builds every project through
+   * `backgroundBuild`, a request to a project in «needs activation» through
+   * `activatingBuild`. The context doubles record which of the two built them.
+   */
+  const compose = () => {
+    const built: Array<{ id: string; projectWrites: string }> = [];
+    const ctx = (rec: ProjectRecord, projectWrites: string): ProjectContext => {
+      const router = Router();
+      router.get('/ping', (_req, res) => {
+        res.json({ project: rec.id, projectWrites });
+      });
+      return { projectId: rec.id, router, hasInFlightTurn: () => false, dispose: async () => {} } as unknown as ProjectContext;
+    };
+    const cache = new ProjectContextCache(
+      activatingBuild(registry, view(), async (rec) => {
+        built.push({ id: rec.id, projectWrites: 'allowed' });
+        return ctx(rec, 'allowed');
+      }),
+      {
+        background: backgroundBuild(registry, async (rec, mode) => {
+          built.push({ id: rec.id, projectWrites: mode.projectWrites });
+          return ctx(rec, mode.projectWrites);
+        }),
+      },
+    );
+    caches.push(cache);
+    const outcomes = new Map<string, ProjectBuildStateChange>();
+    const waiters: Array<() => void> = [];
+    cache.onStateChange((change) => {
+      if (change.state === 'queued' || change.state === 'building') return;
+      outcomes.set(change.projectId, change);
+      for (const w of waiters.splice(0)) w();
+    });
+    const until = async (id: string): Promise<ProjectBuildStateChange> => {
+      while (!outcomes.has(id)) await new Promise<void>((resolve) => waiters.push(resolve));
+      return outcomes.get(id)!;
+    };
+    const app = express().use('/api/projects/:id', projectDispatchMiddleware(registry, view(), cache));
+    return { cache, app, built, until };
+  };
+
+  it('[ac:ac-projekt-ktorego-aktywacja-wymaga-zapi] a project whose activation needs a write in the project directory ends its background build in «needs activation» — and nothing is written', async () => {
+    const p = project('needs-write');
+    const before = snapshot(p.cwd);
+    const { cache, built, until } = compose();
+    cache.start([p]);
+    expect(await until(p.id)).toEqual({ projectId: p.id, state: 'needs-activation' });
+    expect(built).toEqual([]);
+    expect(snapshot(p.cwd)).toEqual(before);
+  });
+
+  it('[ac:ac-pierwsze-zadanie-do-projektu-w-stanie] the first request to a project in «needs activation» gets its answer from the context built after the activation', async () => {
+    const p = project('first-request');
+    const { cache, app, built, until } = compose();
+    cache.start([p]);
+    await until(p.id);
+    expect(fs.existsSync(configPath(p.cwd))).toBe(false);
+
+    const res = await request(app).get(`/api/projects/${p.id}/ping`);
+    expect(res.status).toBe(200);
+    // Served by the context of the build with writes, after the activation wrote the config.
+    expect(res.body).toEqual({ project: p.id, projectWrites: 'allowed' });
+    expect(built).toEqual([{ id: p.id, projectWrites: 'allowed' }]);
+    expect(fs.existsSync(configPath(p.cwd))).toBe(true);
+    expect(cache.readStates().get(p.id)).toBe('ready');
+  });
+
+  it('[ac:ac-projekt-skladu-workspace-u-ktorego-ka] a project of the workspace whose directory does not exist ends its build in the error state', async () => {
+    const cwd = path.join(tmp, 'vanished');
+    const gone = registry.registerProject(ws, cwd);
+    const ready = project('still-here');
+    writeRawConfig(ready.cwd, JSON.stringify({ $schemaVersion: 4, name: 'here', roots: [BASE_ROOT] }));
+    const { cache, built, until } = compose();
+    cache.start([gone, ready]);
+    expect(await until(gone.id)).toEqual({
+      projectId: gone.id,
+      state: 'failed',
+      cause: expect.stringContaining('does not exist'),
+    });
+    expect(fs.existsSync(cwd)).toBe(false);
+    // The queue went on.
+    expect(await until(ready.id)).toEqual({ projectId: ready.id, state: 'ready' });
+    expect(built).toEqual([{ id: ready.id, projectWrites: 'none' }]);
   });
 });

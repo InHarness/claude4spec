@@ -1164,7 +1164,7 @@ export class FileWatchRuntime {
   }
 
   /**
-   * Context dispose (LRU eviction): unmount every mount of THIS scope, drop its
+   * Context dispose (retire/invalidation, purge, shutdown): unmount every mount of THIS scope, drop its
    * subscriptions and settle its pending timers. `scope: 'process'` mounts and
    * other contexts' mounts stay active.
    */

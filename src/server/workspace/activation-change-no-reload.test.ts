@@ -148,7 +148,7 @@ describe('an activation change rebuilds the context without reloading the page (
 
     // The same process: the old context retired and disposed, the next request rebuilds it.
     expect(disposed).toEqual([{ reason: 'activation-changed' }]);
-    expect(cache.isLive(PROJECT)).toBe(false);
+    expect(cache.getLive(PROJECT)).toBeNull();
 
     // The room still hears that its context is gone — and why.
     const event = await savingTab.disposedEvent;
@@ -168,7 +168,7 @@ describe('an activation change rebuilds the context without reloading the page (
 
     // Same process: the old context retired and disposed, rebuilt on the next request.
     expect(disposed).toEqual([undefined]);
-    expect(cache.isLive(PROJECT)).toBe(false);
+    expect(cache.getLive(PROJECT)).toBeNull();
     // Not presented as an activation-only change on the wire.
     const event = await tab.disposedEvent;
     expect(event).toEqual({ kind: 'project:disposed' });

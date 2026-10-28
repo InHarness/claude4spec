@@ -268,10 +268,10 @@ export function activateProjectDir(
 }
 
 /**
- * 2.1.58 (M01 `dsh8ezbz`, M31 `m31ctx001`): the lazy activation of a REGISTERED
- * project — run by the context cache's build on the first request to it, never
- * before listen (no project is an exception). Its failure (a home directory, a
- * broken `config.json`, EACCES) is that build's failure: the project answers
+ * 2.1.58 (M01 `dsh8ezbz`, M31 `m31ctx001`): the activation of a REGISTERED
+ * project — run by the context cache's build with writes, never before listen
+ * (no project is an exception). Its failure (a home directory, a broken
+ * `config.json`, EACCES) is that build's failure: the project answers
  * `500 PROJECT_BUILD_FAILED`, the process and every other project keep serving.
  * Step 7's legacy move: a database found in the project directory moves to the
  * workspace slot, it is not rebuilt. 2.1.60: this is the activation WITH writes
@@ -315,14 +315,15 @@ export class ActivatedProjects {
 }
 
 /**
- * 2.1.58 (M31 `m31ctx001`): the context cache's build — the activation, then the
- * context. `startServer` hands the cache exactly this, so no project is
- * activated before its first request, and an activation that throws (sync)
- * rejects the build like any build failure (retried after the failed-build
- * window). A project is activated once per process — a later rebuild of its
- * context (invalidation, eviction) is a build, not a new activation — unless
- * its directory changed meanwhile. ASSUMPTION:dev-0202 — the rebuild after an
- * invalidation or LRU eviction does not re-run the activation's file steps.
+ * 2.1.58 (M31 `m31ctx001`): the context cache's build WITH writes — the
+ * activation, then the context. 2.1.60: the cache runs it for the first
+ * request to a project whose background build ({@link backgroundBuild}) ended
+ * in «needs activation»; an activation that throws (sync) rejects the build
+ * like any build failure (the error state, retried after the failed-build
+ * window). A project is activated once per process — a later build of its
+ * context (after an invalidation) is a build, not a new activation — unless its
+ * directory changed meanwhile. ASSUMPTION:dev-0202 — the rebuild after an
+ * invalidation does not re-run the activation's file steps.
  * `activated` is the process's record, shared with {@link bootstrapProject}.
  */
 export function activatingBuild<T>(
@@ -350,7 +351,8 @@ export function activatingBuild<T>(
  * a broken config) is never registered, and the id is minted from the name the
  * config now carries. Idempotent end-to-end: re-activating an existing project
  * changes nothing. The project lands in `activated` (the record the cache's
- * build reads), so its first request builds without activating again.
+ * build reads), so a build with writes does not activate it again; the route
+ * then appends it to the background build queue.
  * (0.2.93: no integration artifact lands on disk; 0.1.104: external skills are
  * on-demand.)
  */

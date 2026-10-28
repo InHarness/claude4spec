@@ -133,6 +133,28 @@ describe('backfillEntityTimestamps', () => {
     expect(stamp.createdAt <= stamp.updatedAt).toBe(true);
   });
 
+  it('[carried:U3-rev-0001] reports the candidates it could not write as unwritten — the build with writes reads that instead of re-scanning', () => {
+    seedEntity(repo, 'stuck', { slug: 'stuck', text: 'x' });
+    seedEntity(repo, 'fine', { slug: 'fine', text: 'x' });
+    const base = storeFor(repo);
+    const store = {
+      ...base,
+      write: (type: string, slug: string, data: unknown) => {
+        if (slug === 'stuck') throw new Error('EACCES');
+        (base.write as (t: string, s: string, d: unknown) => void)(type, slug, data);
+      },
+    } as unknown as EntityStore;
+
+    const report = backfillEntityTimestamps(db, store, repo, ENTITIES_DIR);
+
+    expect(report.written).toBe(1);
+    expect(report.unwritten).toBe(1);
+    // A clean pass reports nothing unwritten.
+    const again = backfillEntityTimestamps(db, base, repo, ENTITIES_DIR);
+    expect(again.written).toBe(1);
+    expect(again.unwritten).toBe(0);
+  });
+
   it('is idempotent — a second run finds nothing to do', () => {
     seedEntity(repo, 'once', { slug: 'once', text: 'x' });
     const store = storeFor(repo);

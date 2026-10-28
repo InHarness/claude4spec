@@ -500,4 +500,50 @@ describe('indexAll — reads in slices and yields the event loop', () => {
     const restoresOfGone = restored.filter((r) => r.slug === gone).length;
     expect(restoresOfGone).toBe(0);
   });
+
+  it('[carried:U2-rev-0002] [section:m29idx001] a second indexAll() while one is between its slices reuses the one in flight — the files are read once, nothing interleaves', async () => {
+    let reads = 0;
+    const { host, restored } = recordingHost();
+    const { indexer } = makeIndexer(host, {
+      listType: (type: string) => (type === 'endpoint' ? slugs : []),
+      read: (_type: string, slug: string) => {
+        reads += 1;
+        return { slug } as never;
+      },
+    } as Partial<EntityStore>);
+
+    const first = indexer.indexAll();
+    const second = indexer.indexAll(); // e.g. the manual projection rebuild during the build's pass
+    expect(second).toBe(first);
+    await Promise.all([first, second]);
+    expect(reads).toBe(TOTAL);
+    expect(restored.map((r) => r.slug)).toEqual(slugs);
+
+    // Once it has settled, a new call is a new rebuild.
+    await indexer.indexAll();
+    expect(reads).toBe(TOTAL * 2);
+  });
+
+  it('[carried:U2-rev-0002] a rebuild whose context is released between its slices ends early — no commit through the closing handle', async () => {
+    db.prepare(`INSERT INTO endpoint (slug) VALUES ('still-indexed')`).run();
+    let reads = 0;
+    const { host, restored } = recordingHost();
+    const { indexer } = makeIndexer(host, {
+      listType: (type: string) => (type === 'endpoint' ? slugs : []),
+      read: (_type: string, slug: string) => {
+        reads += 1;
+        return { slug } as never;
+      },
+    } as Partial<EntityStore>);
+
+    const rebuild = indexer.indexAll();
+    expect(reads).toBe(INDEX_SLICE_FILES);
+    // The context's dispose (or a failed build's cleanup) runs before the next slice.
+    indexer.dispose();
+    await expect(rebuild).resolves.toBeUndefined();
+    // No further slice was read, nothing was cleared and nothing restored.
+    expect(reads).toBe(INDEX_SLICE_FILES);
+    expect(rowCount('endpoint')).toBe(1);
+    expect(restored).toEqual([]);
+  });
 });

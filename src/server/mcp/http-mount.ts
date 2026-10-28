@@ -12,14 +12,13 @@
  * later by someone adding a reasonable-looking line. An open MCP connection:
  *
  *   - does NOT raise `hasInFlightTurn()`, so it never blocks a purge or a
- *     config reload;
- *   - does NOT pin the `ProjectContext` against LRU eviction;
- *   - does NOT count toward the `maxLive` budget.
+ *     config reload, nor the release of a retired context.
  *
  * An editor left open overnight with `c4s-spec-reader` configured would
- * otherwise hold a project live forever. The context is resolved per REQUEST,
- * through the normal cache, so a call arriving after an eviction rebuilds and
- * answers the operation — it does not fail the connection.
+ * otherwise hold a retired context forever. The context is resolved per
+ * REQUEST, through the normal cache, so a call arriving after an invalidation
+ * gets the rebuilt context and answers the operation — it does not fail the
+ * connection.
  *
  * ## Sessions outlive contexts, so tools are re-bound not re-created
  *
@@ -246,11 +245,11 @@ function registerOne(session: Session, decl: McpToolDeclaration): RegisteredTool
    * comment says why — but capturing `decl` to read `decl.name` kept the whole
    * declaration alive for the session's lifetime, and `decl.handler` closes over
    * the `ProjectContext` that was live at first registration: its db handle, its
-   * plugin host, its indexes. So the context could be evicted and disposed and
+   * plugin host, its indexes. So the context could be retired and disposed and
    * still never be collected, and a long-lived editor connection leaked one whole
-   * context per eviction — defeating the LRU budget this mount's own header
-   * claims a connection does not consume. Reaching for one field of an object is
-   * enough to retain all of it.
+   * context per rebuild — the very retention this mount's own header claims a
+   * connection does not cause. Reaching for one field of an object is enough to
+   * retain all of it.
    */
   const name = decl.name;
   const description = decl.description;

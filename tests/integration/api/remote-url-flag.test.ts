@@ -10,11 +10,11 @@ import { registerAllPlugins } from '../../../src/server/core/plugin-host/registe
 import { loadBuiltinEnvelopes } from '../../../src/server/core/plugin-host/loader.js';
 import { FileWatchRuntime } from '../../../src/server/fs/watcher.js';
 import { WsGateway } from '../../../src/server/ws/gateway.js';
-import { ProjectContextCache } from '../../../src/server/workspace/context-cache.js';
+import { ProjectContextCache, type ProjectBuildStateChange } from '../../../src/server/workspace/context-cache.js';
 import { projectDispatchMiddleware } from '../../../src/server/workspace/middleware.js';
-import { buildProjectContext } from '../../../src/server/workspace/project-context.js';
+import { buildProjectContext, type ProjectContext } from '../../../src/server/workspace/project-context.js';
 import { WorkspaceRegistry } from '../../../src/server/workspace/registry.js';
-import { activatingBuild, bootstrapProject } from '../../../src/server/workspace/bootstrap.js';
+import { activatingBuild, backgroundBuild, bootstrapProject } from '../../../src/server/workspace/bootstrap.js';
 import { configPath } from '../../../src/server/config.js';
 import { PROD_REMOTE_URL } from '../../../src/server/services/remote-http-client.js';
 import type { ProjectRecord, WorkspaceRecord } from '../../../src/server/workspace/types.js';
@@ -44,6 +44,19 @@ describe('--remote-url and config.remoteApiUrl on a real project build (M24)', (
   let flagApp: express.Express;
   /** A process started without the flag. */
   let plainApp: express.Express;
+
+  /** One real context build — the process value `--remote-url`, the project, the build's write mode. */
+  let buildWith: (
+    remoteApiUrl: string | undefined,
+    project: ProjectRecord,
+    projectWrites: 'allowed' | 'none',
+  ) => Promise<ProjectContext>;
+  const appOver = (cache: ProjectContextCache): express.Express => {
+    const app = express();
+    app.use(express.json());
+    app.use('/api/projects/:id', projectDispatchMiddleware(registry, workspace, cache));
+    return app;
+  };
 
   /** Projects: with a configured remote, without one, invalid, unreachable — one per process each. */
   const projects: Record<string, ProjectRecord> = {};
@@ -103,29 +116,27 @@ describe('--remote-url and config.remoteApiUrl on a real project build (M24)', (
     watchRuntime = new FileWatchRuntime({ broadcaster: { broadcast: () => {} } });
     const frontendBase = { workspacePackages: [], envelopes: [], resolveWorkspaceRoot: () => null };
 
+    buildWith = (remoteApiUrl, project, projectWrites) =>
+      buildProjectContext({
+        registry,
+        pluginRegistry,
+        pluginRecords: envelopeLoad.records,
+        frontendBase,
+        workspace,
+        projectId: project.id,
+        cwd: project.cwd,
+        gateway,
+        watchRuntime,
+        mode: 'prod',
+        remoteApiUrl,
+        projectWrites,
+      });
     const serve = (remoteApiUrl: string | undefined): express.Express => {
       const cache = new ProjectContextCache(
-        activatingBuild(registry, workspace, (project) =>
-          buildProjectContext({
-            registry,
-            pluginRegistry,
-            pluginRecords: envelopeLoad.records,
-            frontendBase,
-            workspace,
-            projectId: project.id,
-            cwd: project.cwd,
-            gateway,
-            watchRuntime,
-            mode: 'prod',
-            remoteApiUrl,
-          }),
-        ),
+        activatingBuild(registry, workspace, (project) => buildWith(remoteApiUrl, project, 'allowed')),
       );
       caches.push(cache);
-      const app = express();
-      app.use(express.json());
-      app.use('/api/projects/:id', projectDispatchMiddleware(registry, workspace, cache));
-      return app;
+      return appOver(cache);
     };
     flagApp = serve(FLAG);
     plainApp = serve(undefined);
@@ -201,28 +212,54 @@ describe('--remote-url and config.remoteApiUrl on a real project build (M24)', (
     // Two project builds when run alone (the precedence cases build them otherwise).
   }, 30_000);
 
-  it('[ac:ac-nieparsowalny-bez-schematu-remoteapiur] an unparsable remoteApiUrl fails the project\'s activation with "config.json: field \'remoteApiUrl\': invalid URL"; a valid but unreachable one activates normally and fails only its first remote action, gracefully', async () => {
-    const bad = await request(plainApp).get(`/api/projects/${projects.invalid!.id}/meta`);
+  it('[ac:ac-nieparsowalny-bez-schematu-remoteapiur] an unparsable remoteApiUrl is a hard error "config.json: field \'remoteApiUrl\': invalid URL" in the cause of the project\'s failed build; a valid but unreachable one builds normally and fails only its first remote action, gracefully', async () => {
+    // The server's composition: the background build queue after listen.
+    const cache = new ProjectContextCache(
+      activatingBuild(registry, workspace, (project) => buildWith(undefined, project, 'allowed')),
+      { background: backgroundBuild(registry, (project, mode) => buildWith(undefined, project, mode.projectWrites)) },
+    );
+    caches.push(cache);
+    const outcomes = new Map<string, ProjectBuildStateChange>();
+    const settled = new Promise<void>((resolve) => {
+      cache.onStateChange((change) => {
+        if (change.state === 'queued' || change.state === 'building') return;
+        outcomes.set(change.projectId, change);
+        if (outcomes.size === 2) resolve();
+      });
+    });
+    cache.start([projects.invalid!, projects.unreachable!]);
+    await settled;
+    // The invalid address: the failed build, its cause naming the field.
+    expect(outcomes.get(projects.invalid!.id)).toEqual({
+      projectId: projects.invalid!.id,
+      state: 'failed',
+      cause: expect.stringContaining("config.json: field 'remoteApiUrl': invalid URL"),
+    });
+    // The unreachable one: built normally — no probe at the build.
+    expect(outcomes.get(projects.unreachable!.id)).toEqual({ projectId: projects.unreachable!.id, state: 'ready' });
+
+    const app = appOver(cache);
+    const bad = await request(app).get(`/api/projects/${projects.invalid!.id}/meta`);
     expect(bad.status).toBe(500);
     expect(bad.body.error.code).toBe('PROJECT_BUILD_FAILED');
     expect(bad.body.error.message).toContain("config.json: field 'remoteApiUrl': invalid URL");
 
-    // Unreachable: the project activates and serves — no probe at start.
+    // Unreachable: the project serves from its background build.
     const base = `/api/projects/${projects.unreachable!.id}`;
-    expect((await request(plainApp).get(`${base}/meta`)).status).toBe(200);
-    expect((await request(plainApp).get(`${base}/remote-account`)).body).toEqual({ connected: false });
+    expect((await request(app).get(`${base}/meta`)).status).toBe(200);
+    expect((await request(app).get(`${base}/remote-account`)).body).toEqual({ connected: false });
 
     // The first remote action fails — that action only, with the reachability error.
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
-      const login = await request(plainApp).post(`${base}/remote-account/login/start`);
+      const login = await request(app).post(`${base}/remote-account/login/start`);
       expect(login.status).toBe(500);
       expect(login.body.error.message).toContain('request to remote /v1/auth/device/code failed');
     } finally {
       errSpy.mockRestore();
     }
     // … and the project keeps serving.
-    expect((await request(plainApp).get(`${base}/meta`)).status).toBe(200);
-    // Two project activations (one fails at its config read, one builds).
+    expect((await request(app).get(`${base}/meta`)).status).toBe(200);
+    // Two background builds (one fails at its config read, one builds).
   }, 30_000);
 });

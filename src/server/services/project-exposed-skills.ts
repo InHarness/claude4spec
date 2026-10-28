@@ -42,7 +42,7 @@
  *
  * L10: one instance per consumer context, key `projectId`, released with it (GC).
  * It holds NO handle to a provider's context: it asks the layer's implementor for
- * one on every read, and that context's lifetime and eviction are the
+ * one on every read, and that context's lifetime and disposal are the
  * implementor's (the M31 context cache).
  */
 
