@@ -70,6 +70,18 @@ export function findProjectByCwd(projects: ProjectRecord[], cwd: string): Projec
 }
 
 /**
+ * True when `child` is the directory `parent` itself or lies under it (both
+ * resolved). The one path-containment rule — "inside this home", "under this
+ * root" — shared by the CLI resolution (`src/core/workspace/resolve.ts`), the
+ * trust write (`trust-plugins.ts`) and the release shadow scope, so the rules
+ * cannot drift apart.
+ */
+export function isPathWithin(parent: string, child: string): boolean {
+  const rel = path.relative(path.resolve(parent), path.resolve(child));
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+/**
  * Every `(workspace, project)` whose `id` equals `id` — 0 or 1 per workspace,
  * 0/1/N across workspaces. The only project selector (`--project <id>`).
  */
@@ -176,6 +188,8 @@ export class WorkspaceRegistry {
    * listing; like any outside change, its fix applies from the next start).
    */
   private readonly homeFiles = new Map<string, WorkspaceFile | WorkspaceFileError>();
+  /** Homes whose directory was absent when their file failed to read (kept like the refusal). */
+  private readonly missingHomes = new Set<string>();
 
   constructor(baseDir: string = workspaceBaseDir()) {
     this.baseDir = baseDir;
@@ -212,10 +226,11 @@ export class WorkspaceRegistry {
    * Matches the project path of each view — the stored `cwd` of a registry
    * record, or a `workspace.json` path resolved against `home` — so after a
    * hand-edited path the project resolves from its new directory with its
-   * unchanged `id`.
+   * unchanged `id`. A caller that already holds the views passes them, so the
+   * registry is not read a second time.
    */
-  resolveWorkspacesForCwd(cwd: string): WorkspaceRecord[] {
-    return this.listWorkspaces().filter((w) => findProjectByCwd(w.projects, cwd) !== undefined);
+  resolveWorkspacesForCwd(cwd: string, views: readonly WorkspaceRecord[] = this.listWorkspaces()): WorkspaceRecord[] {
+    return views.filter((w) => findProjectByCwd(w.projects, cwd) !== undefined);
   }
 
   /**
@@ -659,6 +674,9 @@ export class WorkspaceRegistry {
       } catch (err) {
         if (!(err instanceof WorkspaceFileError)) throw err;
         file = err;
+        // Probed only on the failure path: a missing directory is a moved or
+        // deleted checkout, not a broken file (M31 `459ucmfg` `home-missing`).
+        if (!fs.existsSync(home)) this.missingHomes.add(home);
       }
       this.homeFiles.set(home, file);
     }
@@ -690,7 +708,13 @@ export class WorkspaceRegistry {
     const home = stored.home;
     const file = this.homeFileOrError(home);
     if (file instanceof WorkspaceFileError) {
-      return { ...entry, plugins: [], projects: [], fileError: { code: file.code, message: file.message } };
+      return {
+        ...entry,
+        plugins: [],
+        projects: [],
+        fileError: { code: file.code, message: file.message },
+        ...(this.missingHomes.has(home) ? { homeMissing: true as const } : {}),
+      };
     }
     return {
       ...entry,

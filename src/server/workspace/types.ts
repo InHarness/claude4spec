@@ -119,6 +119,15 @@ export interface WorkspaceRecord {
    * read on unaffected. ASSUMPTION:dev-0103.
    */
   fileError?: { code: WorkspaceFileErrorCode; message: string };
+  /**
+   * 2.1.58 (M31 `459ucmfg`): only on the view of a workspace with a home whose
+   * home directory does not exist on this machine (a deleted or moved checkout).
+   * Such a view also carries `fileError` (the file cannot be read), but it is
+   * not a broken file: `c4s list-workspaces` shows it as `home-missing`, and the
+   * CLI resolver treats it as a workspace with no projects instead of refusing
+   * with WORKSPACE_FILE_INVALID.
+   */
+  homeMissing?: true;
 }
 
 /**

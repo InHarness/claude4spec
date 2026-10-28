@@ -2251,14 +2251,18 @@ export function registerCoreOperations(): void {
       model: z.string().optional(),
       effort: z.enum(['low', 'medium', 'high']).optional(),
     },
-    // The record's fifteen codes (M11 `m11dcore`), in three groups by the moment
-    // the error arises: local validation, the peer endpoint's HTTP status
-    // (2.1.26 adds RESUME_CONFIG_LOCKED, its 409), and the turn body.
+    // The record's seventeen codes (M11 `m11dcore`), in three groups by the
+    // moment the error arises: local validation, the peer endpoint's HTTP status
+    // (2.1.26 adds RESUME_CONFIG_LOCKED, its 409), and the turn body. 2.1.58
+    // adds the two `cli`-only resolver codes of a workspace with a home:
+    // WORKSPACE_NOT_REGISTERED and WORKSPACE_FILE_INVALID.
     errorCodes: [
       'PROJECT_NOT_FOUND',
       'PROJECT_ID_NOT_FOUND',
       'AMBIGUOUS_WORKSPACE',
       'AMBIGUOUS_PROJECT',
+      'WORKSPACE_NOT_REGISTERED',
+      'WORKSPACE_FILE_INVALID',
       'SERVER_NOT_RUNNING',
       'SERVER_NOT_RECOGNIZED',
       'INVALID_ARGS',

@@ -250,7 +250,11 @@ Plugins (M33 — server-delegating: reports the SERVER host's loader, not a seco
   trust-plugins --cwd <dir> [--port <n>] [--mode dev|prod] <true|false>
                                     server-free: sets trustProjectPlugins for a project directly in
                                     workspaces.json, creating the project record if absent — for
-                                    non-interactive Docker plugin smoke-testing (see DOCKER.md)
+                                    non-interactive Docker plugin smoke-testing (see DOCKER.md). A
+                                    project of a workspace with a home is trusted in the registry
+                                    only; a <dir> inside that home its workspace.json does not list
+                                    → PROJECT_NOT_IN_WORKSPACE_FILE (workspace.json is never written).
+                                    Otherwise --port (default 4500) picks the registry workspace
 
 Brief/patch (M11 — server-delegating, like every read above):
   create-brief --body-file <f> [--from <release>] [--suffix <slug>]
@@ -294,8 +298,10 @@ Skills (M22 — filesystem-only, no server; on-demand, no bootstrap side-effect)
                   CODE repo), not the --project spec repo; --skills default: all three
 
 Workspace registry (M31 — mode \`registry-read\`: no server, no project, no db-slot):
-  list-workspaces  reads ~/.claude4spec/workspaces.json and prints one row per workspace
-                   (name, mode, defaultPort, projectCount, lastOpened), most recently
+  list-workspaces  reads ~/.claude4spec/workspaces.json (and the workspace.json of every
+                   registered home) and prints one row per workspace, of both kinds
+                   (name, kind, home, mode, defaultPort, bindHost, publicUrl, projectCount,
+                   lastOpened, state = ok|home-missing|workspace-file-invalid), most recently
                    opened first; never-opened workspaces last. Takes no arguments, and
                    --project/--workspace do not narrow it. No registry file → [] and
                    exit 0; an unreadable one → REGISTRY_READ_FAILED, exit 22.
@@ -309,7 +315,8 @@ Plugin scaffolding (M38 — mode \`scaffold\`: no project, no workspace, no serv
 Server required — for every step:
   Since 0.2.13 the \`c4s\` process holds no database handle and reads no
   specification files. It resolves an ADDRESS locally (.claude4spec/config.json,
-  ~/.claude4spec/workspaces.json, defaultPort) and every command above delegates
+  ~/.claude4spec/workspaces.json, the <home>/.claude4spec/workspace.json of each
+  registered home, defaultPort) and every command above delegates
   to \`npx @inharness-ai/claude4spec\`. Exceptions: install-skills, trust-plugins,
   create-plugin, list-workspaces. Those four address the machine rather than a
   specification — a code repo's skills directory, the workspace registry (written
@@ -317,6 +324,10 @@ Server required — for every step:
   them to ask a server about. Note the boundary is "navigation vs registry
   administration", not "read vs write": reading the registry skips the server too.
   No server → SERVER_NOT_RUNNING, exit 8. \`c4s\` never starts one for you.
+  A walk-up that meets the workspace.json of a home this machine never registered
+  → WORKSPACE_NOT_REGISTERED: start the server once with --cwd <home> (the bare
+  \`npx @inharness-ai/claude4spec --cwd\` names the workspace home, not a project).
+  An unreadable workspace.json of a registered home → WORKSPACE_FILE_INVALID.
 
 Global flags:
   --project <id>          the project's registry id (default: walk up from cwd to the nearest project)

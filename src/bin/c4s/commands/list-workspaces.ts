@@ -18,6 +18,11 @@ import type { CliCommandContribution } from '../registry.js';
  * does not narrow to one workspace by definition, so it never reaches the
  * project or workspace resolver. Passing them changes nothing about the answer.
  *
+ * Both kinds of workspace are listed: a registry entry, and an entry with a
+ * home directory whose composition is read (never written) from that home's
+ * committed description — each row says which kind it is and whether its
+ * composition could be read (`state`).
+ *
  * All the registry knowledge lives in `listWorkspaces()` — this layer only maps
  * one failure onto one CLI code. That is deliberate: `~/.claude4spec/
  * workspaces.json` should not be greppable in `src/bin/`, or the bin becomes a
@@ -49,7 +54,18 @@ export const listWorkspacesCommand: CliCommandContribution = {
   flags: [],
   output: {
     unit: 'workspace',
-    fields: ['name', 'mode', 'defaultPort', 'projectCount', 'lastOpened'],
+    fields: [
+      'name',
+      'kind',
+      'home',
+      'mode',
+      'defaultPort',
+      'bindHost',
+      'publicUrl',
+      'projectCount',
+      'lastOpened',
+      'state',
+    ],
   },
   errorCodes: ['REGISTRY_READ_FAILED'],
   handler: runListWorkspaces,

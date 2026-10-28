@@ -332,12 +332,13 @@ describe('M31 — workspace with a home directory', () => {
       expect(views.find((w) => w.name === 'solo')!.fileError).toBeUndefined();
       expect(registry.resolveWorkspacesForCwd(cwd).map((w) => w.name)).toEqual(['solo']);
 
-      // `c4s list-workspaces` answers every row; the broken one names its refusal on stderr.
+      // `c4s list-workspaces` answers every row; the broken one says so in its
+      // state (M31 `459ucmfg`) and names its refusal on stderr.
       const rows = listWorkspaces(new WorkspaceRegistry(registryHome));
-      expect(rows.map((r) => [r.name, r.projectCount])).toEqual(
+      expect(rows.map((r) => [r.name, r.projectCount, r.state])).toEqual(
         expect.arrayContaining([
-          ['team', 0],
-          ['solo', 1],
+          ['team', null, 'workspace-file-invalid'],
+          ['solo', 1, 'ok'],
         ]),
       );
       expect(rows).toHaveLength(2);

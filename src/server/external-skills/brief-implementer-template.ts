@@ -1,5 +1,5 @@
 import type { ExternalSkillContext } from './types.js';
-import { SERVER_REQUIRED_BLOCK, skillIdentity, staleAddressBlock } from './server-required.js';
+import { SERVER_REQUIRED_BLOCK, skillIdentity, staleAddressBlock, WORKSPACE_NOT_REGISTERED_STOP } from './server-required.js';
 
 export const BRIEF_IMPLEMENTER_FRONTMATTER = `---
 name: c4s-brief-implementer
@@ -14,7 +14,7 @@ export function briefImplementerBody(ctx: ExternalSkillContext): string {
 
 This skill describes how to implement a release brief in **your code repository** (not the spec repo). A brief is a self-contained markdown file that captures everything you need to ship the change: entity snapshots, section diffs, narrative, acceptance criteria. Briefs live in the **spec** repository, a different repo from the one you are working in — you never touch it directly; the \`c4s\` CLI reaches everything for you.
 
-**Reaching the briefs.** This skill is **CLI-only**: it reaches the briefs and writes patches solely through the \`c4s\` CLI, with the spec project's identity baked into this skill (\`${identity}\`) — \`c4s list-briefs\` / \`c4s get-brief\` / \`c4s create-patch\` work from any directory, and each of them delegates to the server (see below). If \`c4s\` is not installed, **stop** and ask the user to install it — do not read or write the spec repo's files by hand. There is no fallback **even when a \`c4s\` command fails**: a failed command ends the work and asks the user to intervene; it is never a reason to go read the specification's files instead.
+**Reaching the briefs.** This skill is **CLI-only**: it reaches the briefs and writes patches solely through the \`c4s\` CLI, with the spec project's identity baked into this skill (\`${identity}\`) — \`c4s list-briefs\` / \`c4s get-brief\` / \`c4s create-patch\` work from any directory, and each of them delegates to the server (see below). If \`c4s\` is not installed, **stop** and ask the user to install it — do not read or write the spec repo's files by hand. There is no fallback **even when a \`c4s\` command fails**: a failed command ends the work and asks the user to intervene; it is never a reason to go read the specification's files instead. ${WORKSPACE_NOT_REGISTERED_STOP}
 
 ${SERVER_REQUIRED_BLOCK}
 

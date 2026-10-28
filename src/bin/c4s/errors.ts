@@ -38,6 +38,16 @@ export type CliErrorCode =
   // lists the available ids — never directories.
   | 'PROJECT_ID_NOT_FOUND'
   | 'AMBIGUOUS_PROJECT'
+  // 2.1.58 (M11 `tcs1yuku`) — resolver codes of a workspace with a home
+  // directory: the walk-up met a `workspace.json` this machine never registered
+  // (start the server once with `--cwd <home>`), or a registered home's
+  // `workspace.json` is unreadable or off the shape (fix the file by hand).
+  | 'WORKSPACE_NOT_REGISTERED'
+  | 'WORKSPACE_FILE_INVALID'
+  // 2.1.58 (M31 `m31cli01`) — `c4s trust-plugins --cwd` inside a registered
+  // home, for a directory its `workspace.json` does not list. The CLI never
+  // writes the committed file, so it refuses before any mutation.
+  | 'PROJECT_NOT_IN_WORKSPACE_FILE'
   // 2.1.0 — a registry-writing command (`c4s trust-plugins`) met a registry that
   // still carries pre-2.1.0 hash ids. Only the server migrates; start it once.
   | 'REGISTRY_MIGRATION_PENDING'
@@ -239,6 +249,9 @@ export function codeToExit(code: string): number {
     case 'PROJECT_NOT_FOUND':
     case 'PROJECT_ID_NOT_FOUND':
     case 'PROJECT_NOT_IN_WORKSPACE':
+    // 2.1.58 (M11 `tcs1yuku`) — both workspace-description codes of the table.
+    case 'WORKSPACE_NOT_REGISTERED':
+    case 'WORKSPACE_FILE_INVALID':
       return 1;
     // 2.1.0 — an ambiguous project id is resolved the same way as an ambiguous
     // workspace (pass --workspace), so it shares its exit status.

@@ -37,6 +37,7 @@ import {
   type DeltaRoots,
 } from './git-two-state-delta.js';
 import { DomainError } from './tags.js';
+import { isPathWithin } from '../workspace/registry.js';
 
 /** Where the comparison looks — resolved by the release service from the root registry. */
 export interface ShadowDiffScope {
@@ -62,12 +63,6 @@ export interface ShadowDiffDeps {
   scope: () => ShadowDiffScope;
 }
 
-/** Is `child` the dir `parent` itself or under it (absolute paths)? */
-export function isInsideOrEqual(parent: string, child: string): boolean {
-  const rel = nodePath.relative(parent, child);
-  return rel === '' || (!rel.startsWith('..') && !nodePath.isAbsolute(rel));
-}
-
 /**
  * The two content flags of the acceptance (`nemiv2qh`) over the ABSOLUTE paths
  * a shadow changes (`merge-base..tip`): `outsideSpecFiles` — the paths under
@@ -83,7 +78,7 @@ export function acceptanceFlags(
   const outside = new Set<string>();
   let touchesReleases = false;
   for (const abs of absPaths) {
-    const owners = registryRoots.filter((root) => isInsideOrEqual(root.dir, abs));
+    const owners = registryRoots.filter((root) => isPathWithin(root.dir, abs));
     if (owners.length === 0) outside.add(nodePath.relative(rootPath, abs).split(nodePath.sep).join('/'));
     else if (owners.some((root) => root.kind === 'releases')) touchesReleases = true;
   }

@@ -938,7 +938,7 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "cli-workspace-resolution/p1-l3-l14",
@@ -978,18 +978,18 @@
             "section:sws0pnrn",
             "section:zvd7wn4t"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "9d33eee0b78c7b8ec5b8c1c304859065983751e5",
+      "baseCommit": "9d33eee0b78c7b8ec5b8c1c304859065983751e5",
       "rounds": {
-        "review": 0,
-        "unit": 0
+        "review": 2,
+        "unit": 2
       },
       "jobs": []
     },
