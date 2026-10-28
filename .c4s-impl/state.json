@@ -978,17 +978,11 @@
             "section:sws0pnrn",
             "section:zvd7wn4t"
           ],
-          "status": "pending",
-          "rounds": 2,
+          "status": "implemented",
+          "rounds": 3,
           "partial": 0,
-          "uncovered": [
-            "regression"
-          ],
-          "only": [
-            {
-              "slug": "regression"
-            }
-          ]
+          "uncovered": [],
+          "only": []
         }
       ],
       "startCommit": "bc78ed1e0baa4cf35ed7d0ccdd602b517782dc6f",
@@ -1247,17 +1241,11 @@
             "ac-workspace-x-cwd-y-gdy-x-ma-inny-katal",
             "ac-workspace-x-uruchomione-wewnatrz-kata"
           ],
-          "status": "pending",
-          "rounds": 3,
+          "status": "implemented",
+          "rounds": 4,
           "partial": 0,
-          "uncovered": [
-            "regression"
-          ],
-          "only": [
-            {
-              "slug": "regression"
-            }
-          ]
+          "uncovered": [],
+          "only": []
         }
       ],
       "startCommit": "bc78ed1e0baa4cf35ed7d0ccdd602b517782dc6f",
@@ -2142,17 +2130,11 @@
             "ac-strona-ustawien-workspace-u-workspace",
             "m26-requires-m31"
           ],
-          "status": "pending",
-          "rounds": 3,
+          "status": "implemented",
+          "rounds": 4,
           "partial": 0,
-          "uncovered": [
-            "regression"
-          ],
-          "only": [
-            {
-              "slug": "regression"
-            }
-          ]
+          "uncovered": [],
+          "only": []
         }
       ],
       "startCommit": "bc78ed1e0baa4cf35ed7d0ccdd602b517782dc6f",
