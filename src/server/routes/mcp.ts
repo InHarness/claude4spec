@@ -29,7 +29,9 @@
  * `404 PROJECT_NOT_IN_WORKSPACE` for an unknown `:id` and
  * `500 PROJECT_BUILD_FAILED` for a project whose build fails — the two codes this
  * release adds to the external catalog — and already resolves the context through
- * the cache on every request, which is where "rebuilt lazily" comes from.
+ * the cache on every request: a call during a rebuild waits for the successor,
+ * and a call on a project detached meanwhile is refused as one outside the
+ * workspace (M31 `xocjjal4`).
  */
 
 import { Router } from 'express';
@@ -45,7 +47,7 @@ import {
   type ProjectCallTarget,
 } from '../mcp/surface.js';
 import { listProjects } from '../workspace/list-projects.js';
-import type { ProjectContextCache } from '../workspace/context-cache.js';
+import { ProjectRemovedError, type ProjectContextCache } from '../workspace/context-cache.js';
 import type { WorkspaceRegistry } from '../workspace/registry.js';
 import type { WorkspaceRecord } from '../workspace/types.js';
 
@@ -138,6 +140,11 @@ export function workspaceMcpRouter(deps: WorkspaceMcpDeps): Router {
       const ctx = await deps.cache.get(project);
       return { ok: true, projectId: project.id, surface: composeExternalSurface(ctx.mcpSurfaceDeps(profile)) };
     } catch (err) {
+      // Detached while this call waited for its build (M31 `xocjjal4`): the
+      // refusal of a project outside the workspace, not a failed build.
+      if (err instanceof ProjectRemovedError) {
+        return { ok: false, code: 'PROJECT_NOT_IN_WORKSPACE', message: notFoundMessage(deps, id) };
+      }
       return { ok: false, code: 'PROJECT_BUILD_FAILED', message: err instanceof Error ? err.message : String(err) };
     }
   };

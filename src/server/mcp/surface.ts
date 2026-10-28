@@ -308,23 +308,24 @@ export interface ExternalSurface {
  * The mount needs the two halves separately. Tool identity (name, description,
  * schema) is what a session advertises and must stay stable across a rebuild;
  * the handler is what has to be re-resolved, because it closes over services
- * belonging to one `ProjectContext` and that context can be evicted underneath
- * an open connection. Returning a built server would have fused the two and made
- * "the context is rebuilt lazily at `tools/call`" impossible to honour.
+ * belonging to one `ProjectContext` and that context can be invalidated and
+ * released underneath an open connection. Returning a built server would have
+ * fused the two, and a `tools/call` could not dispatch into the successor
+ * context.
  */
 /**
  * Composition memoized on the PLUGIN HOST's identity.
  *
- * The mount recomposes before every request, which is what makes "the context is
- * rebuilt lazily at `tools/call`" true — but composing means building eight MCP
- * servers and registering their zod schemas, measured at ~5.7 ms. Paying that on
- * every tool invocation is pure waste when nothing has changed.
+ * The mount recomposes before every request, which is what makes a `tools/call`
+ * after a rebuild reach the successor context — but composing means building
+ * eight MCP servers and registering their zod schemas, measured at ~5.7 ms.
+ * Paying that on every tool invocation is pure waste when nothing has changed.
  *
  * The host object is MOST of the key, because of how invalidation usually works
  * here: a plugin activated or deactivated goes through a config change, which
  * invalidates the `ProjectContext`, which builds a NEW `ProjectPluginHost`. So a
- * changed pool is a changed key, and an unchanged pool is a cache hit — the
- * lazy-rebuild semantics are preserved rather than traded away for the speed.
+ * changed pool is a changed key, and an unchanged pool is a cache hit — a
+ * rebuilt context is still reached rather than traded away for the speed.
  *
  * It is not ALL of the key, and assuming it was is what this second level fixes.
  * The memoized `McpToolDeclaration`s carry HANDLERS, and those handlers close

@@ -1,5 +1,5 @@
 {
-  "iteration": 26,
+  "iteration": 29,
   "conventions": [
     {
       "label": "L10 (Project Scoping) — implementor M31",
@@ -964,15 +964,41 @@
         }
       ],
       "wave": 4,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "U6-polaczenie-mcp-wobec-przebudowy/p1-m12-m31",
+          "layers": [
+            "M12",
+            "M31"
+          ],
+          "slugs": [
+            "ac-otwarte-polaczenie-mcp-nie-chroni-pro",
+            "ac-otwarte-polaczenie-mcp-nie-utrzymuje",
+            "ac-wywolanie-narzedzia-na-polaczeniu-kto",
+            "ac-tools-call-na-polaczeniu-mcp-projektu",
+            "section:xocjjal4",
+            "section:reys7qo4",
+            "section:kl277elf",
+            "section:m12edge0",
+            "section:m12krit0"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "2f9e630c4bcccab45c35cb5374e3f89a1377452a",
+      "baseCommit": "2f9e630c4bcccab45c35cb5374e3f89a1377452a",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "U7-pomiary-obserwacji-i-zwalniania",

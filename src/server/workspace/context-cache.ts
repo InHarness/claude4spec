@@ -27,6 +27,18 @@ export class ProjectBuildFailedError extends Error {
   }
 }
 
+/**
+ * M31 `xocjjal4` (2.1.60): a request that waited for a project which was then
+ * detached or purged — the refusal of a project outside the workspace
+ * (`PROJECT_NOT_IN_WORKSPACE`, `l4txpfx0`), not a failed build.
+ */
+export class ProjectRemovedError extends Error {
+  constructor(readonly projectId: string) {
+    super(`project '${projectId}' was removed from the workspace`);
+    this.name = 'ProjectRemovedError';
+  }
+}
+
 interface Waiter {
   resolve: (ctx: ProjectContext) => void;
   reject: (err: Error) => void;
@@ -66,8 +78,6 @@ export interface ProjectContextCacheOptions {
   now?: () => number;
 }
 
-const removedFromWorkspace = (projectId: string) =>
-  new ProjectBuildFailedError(`project '${projectId}' was removed from the workspace`);
 const shuttingDown = () => new Error('the server is shutting down');
 
 /**
@@ -259,7 +269,7 @@ export class ProjectContextCache {
     const entry = this.entries.get(projectId);
     if (!entry) return;
     this.entries.delete(projectId);
-    this.rejectWaiters(entry, removedFromWorkspace(projectId));
+    this.rejectWaiters(entry, new ProjectRemovedError(projectId));
     if (entry.state === 'ready') {
       this.retired.set(entry.ctx!, undefined);
       this.reapIdle();
@@ -282,7 +292,7 @@ export class ProjectContextCache {
     const builds: Entry[] = [];
     if (entry) {
       this.entries.delete(projectId);
-      this.rejectWaiters(entry, removedFromWorkspace(projectId));
+      this.rejectWaiters(entry, new ProjectRemovedError(projectId));
       if (entry.state === 'ready') disposals.push(entry.ctx!.dispose());
       else if (entry.state === 'building') builds.push(entry);
     }

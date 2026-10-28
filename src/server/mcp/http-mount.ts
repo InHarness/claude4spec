@@ -11,22 +11,25 @@
  * The single most important property here, and the one most likely to be broken
  * later by someone adding a reasonable-looking line. An open MCP connection:
  *
- *   - does NOT raise `hasInFlightTurn()`, so it never blocks a purge or a
- *     config reload, nor the release of a retired context.
+ *   - does NOT raise `hasInFlightTurn()`, so it never holds back the release
+ *     of a context — a detach, a purge, an invalidation's predecessor
+ *     (M31 `xocjjal4`, M12 `reys7qo4`).
  *
  * An editor left open overnight with `c4s-spec-reader` configured would
- * otherwise hold a retired context forever. The context is resolved per
- * REQUEST, through the normal cache, so a call arriving after an invalidation
- * gets the rebuilt context and answers the operation — it does not fail the
- * connection.
+ * otherwise hold a stale or removed context forever. The context is resolved
+ * per REQUEST, through the normal cache: a `tools/call` arriving while an
+ * invalidation's rebuild runs waits for the successor — the same path a REST
+ * request takes — and answers the operation from it, without failing the
+ * connection. A call on a project detached meanwhile is refused as a project
+ * outside the workspace (`PROJECT_NOT_IN_WORKSPACE`).
  *
  * ## Sessions outlive contexts, so tools are re-bound not re-created
  *
  * The session registry is process-wide and keyed by MCP session id. Tool
  * IDENTITY (name, description, schema) is registered once on the session's
  * `McpServer`; the HANDLER dispatches through `session.current`, a map refreshed
- * from the live context before every request reaches the transport. That is what
- * "the context is rebuilt lazily at `tools/call`" means in code.
+ * from the live context before every request reaches the transport — so a call
+ * after a rebuild dispatches into the successor context, never the released one.
  *
  * `tools/list_changed` is sent only when the name set actually differs — a plugin
  * activated or deactivated. A plain rebuild of the same pool changes nothing the
@@ -122,7 +125,7 @@ interface Session {
 export const MCP_SESSION_IDLE_MS = 30 * 60 * 1000;
 
 /**
- * Process-wide, deliberately: a session must survive the eviction and rebuild of
+ * Process-wide, deliberately: a session must survive the release and rebuild of
  * the `ProjectContext` it was opened against. Keying it on anything derived from
  * a context would tie the connection's life to the context's, which is the
  * coupling this whole design exists to avoid.
