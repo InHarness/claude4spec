@@ -1,0 +1,1 @@
+wave 3 done — workspace-selection-at-start (33/33), workspace-projects-api (10/10) verified; carried rev-0006 fixed. No open non-blocking findings. Deviations sent: dev-0501..dev-0507, dev-0601..dev-0603. Note dev-0505 (--mode ignored for existing entry → npm run dev on a prod entry serves statics).

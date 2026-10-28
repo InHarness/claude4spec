@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { FolderPlus, Folder } from 'lucide-react';
 import { openModal } from '../../ui/events.js';
 import { Skeleton } from '../../ui/Skeleton.js';
+import type { WorkspaceResponse } from '../../lib/workspace.js';
 import { navigateDocument } from '../../lib/document-nav.js';
 
 interface WorkspaceProject {
@@ -11,8 +12,8 @@ interface WorkspaceProject {
   live: boolean;
 }
 
-interface WorkspaceResponse {
-  name: string;
+/** `GET /api/workspace`: the `WorkspaceResponse` fields plus the UI's project listing. */
+interface WorkspaceListing extends WorkspaceResponse {
   projects: WorkspaceProject[];
 }
 
@@ -26,12 +27,12 @@ interface WorkspaceResponse {
  * constants. "Add project to workspace" reuses the switcher's AddProjectDialog.
  */
 export function WelcomePage() {
-  const [workspace, setWorkspace] = useState<WorkspaceResponse | null>(null);
+  const [workspace, setWorkspace] = useState<WorkspaceListing | null>(null);
 
   useEffect(() => {
     fetch('/api/workspace')
       .then((r) => (r.ok ? r.json() : null))
-      .then((d: WorkspaceResponse | null) => d && setWorkspace(d))
+      .then((d: WorkspaceListing | null) => d && setWorkspace(d))
       .catch(() => {
         /* keep null — the page still offers "Add project" */
       });

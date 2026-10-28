@@ -107,6 +107,27 @@ export function findProjectsById(
   return matches;
 }
 
+/**
+ * The stored registry entry of a workspace this process serves is gone (another
+ * process of this machine detached it after the view was taken). Registration
+ * and removal refuse it the same way, before anything is written.
+ * ASSUMPTION:dev-0603 — the routes answer it as 409 WORKSPACE_NOT_REGISTERED.
+ */
+export class WorkspaceEntryGoneError extends Error {
+  readonly code = 'WORKSPACE_NOT_REGISTERED';
+  constructor(name: string, file: string) {
+    super(`workspace "${name}" no longer exists in ${file}`);
+  }
+}
+
+/**
+ * The stored entry a view was taken from: by name, with the same home (a
+ * registry entry has none, so `undefined === undefined` there).
+ */
+function isStoredEntryOf(stored: StoredWorkspaceRecord, ws: WorkspaceRecord): boolean {
+  return stored.name === ws.name && stored.home === ws.home;
+}
+
 export class RegistryMigrationPendingError extends Error {
   readonly code = 'REGISTRY_MIGRATION_PENDING';
   constructor(file: string) {
@@ -224,6 +245,19 @@ export class WorkspaceRegistry {
   findByPort(port: number): WorkspaceRecord | null {
     const stored = this.read().workspaces.find((w) => w.defaultPort === port);
     return stored ? this.compose(stored) : null;
+  }
+
+  /**
+   * rev-0022: refuse a view whose stored entry is gone — BEFORE a caller touches
+   * the project directory (the activation's file steps), so the refusal really
+   * writes nothing. One raw read of `workspaces.json`: no view is composed (no
+   * `workspace.json` read) and no migration is planned. Not a lock: the writes
+   * re-check under the registry lock for a detach racing this call.
+   */
+  assertStoredEntry(ws: WorkspaceRecord): void {
+    if (!this.readRaw().workspaces.some((w) => isStoredEntryOf(w, ws))) {
+      throw new WorkspaceEntryGoneError(ws.name, this.file);
+    }
   }
 
   getProject(ws: WorkspaceRecord, id: string): ProjectRecord | null {
@@ -542,8 +576,8 @@ export class WorkspaceRegistry {
     if (ws.home !== undefined) return this.registerHomeProject(ws, absCwd);
     const wsDir = path.join(this.baseDir, ws.name);
     const project = this.withLock((data) => {
-      const target = data.workspaces.find((w) => w.name === ws.name);
-      if (!target) throw new Error(`workspace "${ws.name}" no longer exists in ${this.file}`);
+      const target = data.workspaces.find((w) => isStoredEntryOf(w, ws));
+      if (!target) throw new WorkspaceEntryGoneError(ws.name, this.file);
       const projects = (target.projects ??= []);
       let p = findProjectByCwd(projects, absCwd);
       if (!p) {
@@ -568,12 +602,8 @@ export class WorkspaceRegistry {
 
   private registerHomeProject(ws: WorkspaceRecord, absCwd: string): ProjectRecord {
     const home = ws.home!;
+    // Both refusals (PROJECT_PATH_IS_HOME / PROJECT_PATH_OUTSIDE_HOME) before any write.
     const rel = toProjectPath(home, absCwd);
-    if (rel === null) {
-      throw new Error(
-        `${absCwd} cannot join workspace "${ws.name}": a project of a workspace with a home lies inside the home (${home}) and is not the home itself`,
-      );
-    }
     // This process's view already lists the path (the start's own view, or an
     // earlier write here): nothing to write, so `workspace.json` is not read a
     // second time — an outside change applies from the next start anyway.
@@ -586,17 +616,23 @@ export class WorkspaceRegistry {
       this.prepareSlot(ws, listed.id, absCwd);
       return ws.projects.find((p) => p.id === listed.id && path.resolve(p.cwd) === absCwd) ?? { id: listed.id, cwd: absCwd };
     }
-    const { file, result: id } = mutateWorkspaceFile(home, (data) => {
-      const existing = data.projects.find((p) => path.resolve(home, p.path) === absCwd);
-      if (existing) return { next: null, result: existing.id };
-      const name = readPeerConfigSummary(absCwd).name;
-      const minted = mintProjectId(
-        name && name.trim() !== '' ? name : path.basename(absCwd),
-        new Set(data.projects.map((p) => p.id)),
-      );
-      return { next: { ...data, projects: [...data.projects, { id: minted, path: rel }] }, result: minted };
+    // rev-0006: the committed file is written only while this machine still has
+    // the entry — under the registry lock, so a view held since before a detach
+    // of the workspace cannot write into its `workspace.json`.
+    const id = this.withStoredHomeEntry(ws, () => {
+      const { file, result } = mutateWorkspaceFile(home, (data) => {
+        const existing = data.projects.find((p) => path.resolve(home, p.path) === absCwd);
+        if (existing) return { next: null, result: existing.id };
+        const name = readPeerConfigSummary(absCwd).name;
+        const minted = mintProjectId(
+          name && name.trim() !== '' ? name : path.basename(absCwd),
+          new Set(data.projects.map((p) => p.id)),
+        );
+        return { next: { ...data, projects: [...data.projects, { id: minted, path: rel }] }, result: minted };
+      });
+      this.homeFiles.set(home, file);
+      return result;
     });
-    this.homeFiles.set(home, file);
     this.prepareSlot(ws, id, absCwd);
     // The caller's view already folds in the machine-local trust of a project
     // it lists under this path; a newly minted project has none yet.
@@ -606,28 +642,33 @@ export class WorkspaceRegistry {
   /**
    * Registry workspace: drop the record. Workspace with a home: drop the entry
    * from `workspace.json` (under its lock; the view follows at once) and the
-   * project's machine-local trust from the registry entry.
+   * project's machine-local trust from the registry entry. `false` = the id is
+   * not a project of the workspace. A workspace whose stored entry is gone is
+   * refused like the registration (`WorkspaceEntryGoneError`), nothing written.
    */
   removeProject(ws: WorkspaceRecord, id: string): boolean {
     if (ws.home !== undefined) {
       const home = ws.home;
-      const { file, result } = mutateWorkspaceFile(home, (data) => {
-        const projects = data.projects.filter((p) => p.id !== id);
-        return projects.length < data.projects.length
-          ? { next: { ...data, projects }, result: true }
-          : { next: null, result: false };
+      // Under the registry lock, like the registration: an entry this machine
+      // no longer has does not get its committed file rewritten (rev-0021).
+      return this.withLock((data) => {
+        const target = data.workspaces.find((w) => isStoredEntryOf(w, ws));
+        if (!target) throw new WorkspaceEntryGoneError(ws.name, this.file);
+        const { file, result } = mutateWorkspaceFile(home, (current) => {
+          const projects = current.projects.filter((p) => p.id !== id);
+          return projects.length < current.projects.length
+            ? { next: { ...current, projects }, result: true }
+            : { next: null, result: false };
+        });
+        this.homeFiles.set(home, file);
+        if (target.projectTrust) delete target.projectTrust[id];
+        return result;
       });
-      this.homeFiles.set(home, file);
-      this.withLock((data) => {
-        const target = data.workspaces.find((w) => w.name === ws.name);
-        if (target?.projectTrust) delete target.projectTrust[id];
-        return null;
-      });
-      return result;
     }
     return this.withLock((data) => {
-      const target = data.workspaces.find((w) => w.name === ws.name);
-      if (!target?.projects) return false;
+      const target = data.workspaces.find((w) => isStoredEntryOf(w, ws));
+      if (!target) throw new WorkspaceEntryGoneError(ws.name, this.file);
+      if (!target.projects) return false;
       const before = target.projects.length;
       target.projects = target.projects.filter((p) => p.id !== id);
       return target.projects.length < before;
@@ -944,6 +985,20 @@ export class WorkspaceRegistry {
 
   private lockPath(): string {
     return this.file + '.lock';
+  }
+
+  /**
+   * Run `fn` under the registry lock while the stored entry of `ws` — by name,
+   * with the same home — still exists; refuse otherwise. The registry is only
+   * read here, never rewritten: `fn` writes the home's own file.
+   */
+  private withStoredHomeEntry<T>(ws: WorkspaceRecord, fn: () => T): T {
+    fs.mkdirSync(this.baseDir, { recursive: true });
+    return withAdvisoryLock(this.lockPath(), () => {
+      const stored = this.readRaw().workspaces.find((w) => isStoredEntryOf(w, ws));
+      if (!stored) throw new WorkspaceEntryGoneError(ws.name, this.file);
+      return fn();
+    });
   }
 
   /** Re-read under lock → mutate → atomic write. Returns the mutator's value. */

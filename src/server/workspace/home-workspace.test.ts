@@ -270,8 +270,37 @@ describe('M31 — workspace with a home directory', () => {
     expect(registry.registerProject(ws, path.join(home, 'services', 'billing')).id).toBe('billing');
     expect(registry.getWorkspace('team')!.projects.map((p) => p.id)).toEqual(['app', 'billing', 'app-2']);
     // The home itself and a directory outside it cannot be projects of it.
-    expect(() => registry.registerProject(ws, home)).toThrow(/inside the home/);
-    expect(() => registry.registerProject(ws, path.join(tmp, 'elsewhere'))).toThrow(/inside the home/);
+    expect(() => registry.registerProject(ws, home)).toThrow(
+      expect.objectContaining({ code: 'PROJECT_PATH_IS_HOME' }),
+    );
+    expect(() => registry.registerProject(ws, path.join(tmp, 'elsewhere'))).toThrow(
+      expect.objectContaining({ code: 'PROJECT_PATH_OUTSIDE_HOME' }),
+    );
+    // A sibling whose name merely starts with dots is inside the home.
+    expect(() => registry.registerProject(ws, path.join(home, '..hidden'))).not.toThrow();
+  });
+
+  it('[section:fzno8pd4] rev-0006: a registration from a view held since before this machine dropped the entry is refused under the registry lock — workspace.json is not written; removal from such a view is refused the same way (rev-0021) and writes nothing either', () => {
+    writeWorkspaceFile({ projects: [{ id: 'app', path: 'specs/app' }], plugins: [] });
+    const registry = new WorkspaceRegistry(registryHome);
+    const ws = registry.openView('team');
+    // Another process of this machine drops the entry (the view above is now stale).
+    fs.writeFileSync(
+      path.join(registryHome, 'workspaces.json'),
+      JSON.stringify({ $schemaVersion: 3, workspaces: [] }),
+    );
+    const before = fs.readFileSync(workspaceFilePath(home), 'utf8');
+
+    expect(() => registry.registerProject(ws, path.join(home, 'services', 'billing'))).toThrow(/no longer exists/);
+    expect(fs.readFileSync(workspaceFilePath(home), 'utf8')).toBe(before);
+    expect(fs.existsSync(path.join(home, '.claude4spec', 'local', 'billing'))).toBe(false);
+
+    const registryBefore = fs.readFileSync(path.join(registryHome, 'workspaces.json'), 'utf8');
+    expect(() => registry.removeProject(ws, 'app')).toThrow(
+      expect.objectContaining({ code: 'WORKSPACE_NOT_REGISTERED', message: expect.stringMatching(/no longer exists/) }),
+    );
+    expect(fs.readFileSync(workspaceFilePath(home), 'utf8')).toBe(before);
+    expect(fs.readFileSync(path.join(registryHome, 'workspaces.json'), 'utf8')).toBe(registryBefore);
   });
 
   it('[section:vzkw903j] slots live in <home>/.claude4spec/local/<id>/; a slot recorded for another directory is quarantined and the project starts on an empty slot', () => {

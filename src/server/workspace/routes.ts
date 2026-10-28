@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -9,10 +9,12 @@ import { forgetDbSlot } from '../db/index.js';
 import { workspaceMcpRouter } from '../routes/mcp.js';
 import { readPackageVersion } from '../../bin/c4s/package-version.js';
 import { WorkspaceHomeNotProjectError } from './bootstrap.js';
+import { ProjectPathError } from './home-workspace.js';
+import type { WorkspaceResponse } from '../../shared/workspace-response.js';
 
 const pexec = promisify(execFile);
 import type { ProjectContextCache } from './context-cache.js';
-import type { WorkspaceRegistry } from './registry.js';
+import { WorkspaceEntryGoneError, type WorkspaceRegistry } from './registry.js';
 import type { ProjectRecord, WorkspaceRecord } from './types.js';
 
 export interface WorkspaceRoutesDeps {
@@ -67,10 +69,24 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
     res.json({ ok: true, mode, workspace: workspace.name });
   });
 
+  // 2.1.58 (endpoint `get-api-workspace`): `WorkspaceResponse` — name, kind
+  // and the last opened project (`null` when it is not in the view any more) —
+  // read from the view, nothing written. The remaining fields are the UI's
+  // project listing, which has no route of its own yet (M31 L4 todo):
+  // ASSUMPTION:dev-0601.
   router.get('/workspace', (_req, res) => {
     const fresh = registry.getWorkspace(workspace.name) ?? workspace;
-    res.json({
+    const lastOpenedProject =
+      fresh.lastOpenedProject !== undefined && fresh.projects.some((p) => p.id === fresh.lastOpenedProject)
+        ? fresh.lastOpenedProject
+        : null;
+    const body: WorkspaceResponse = {
       name: fresh.name,
+      kind: fresh.home !== undefined ? 'home' : 'registry',
+      lastOpenedProject,
+    };
+    res.json({
+      ...body,
       mode: fresh.mode,
       defaultPort: fresh.defaultPort,
       lastOpened: fresh.lastOpened,
@@ -93,7 +109,8 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
 
   // Decision #11 (0.1.57): server-side directory browser for the add-project
   // modal. Lists ONLY subdirectories (files skipped) under `path`; absent
-  // `path` starts at the process CWD; a leading `~` expands to the user's home.
+  // `path` starts at the workspace's home directory when it has one (2.1.58),
+  // otherwise at the process CWD; a leading `~` expands to the user's home.
   // Operates on the host filesystem, hence workspace scope (outside any project
   // prefix). ENOENT/EACCES (or any read error) → 400 consumed inline by the
   // modal — the server never crashes on a bad path.
@@ -101,7 +118,7 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
     const raw = typeof req.query.path === 'string' ? req.query.path.trim() : '';
     const expanded =
       raw === '~' || raw.startsWith('~/') ? path.join(os.homedir(), raw.slice(1)) : raw;
-    const target = expanded === '' ? process.cwd() : path.resolve(expanded);
+    const target = expanded === '' ? (workspace.home ?? process.cwd()) : path.resolve(expanded);
     try {
       const entries = fs
         .readdirSync(target, { withFileTypes: true })
@@ -126,7 +143,10 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
   // modal as `400 VALIDATION`, never created on their behalf and never a 500.
   // So is a workspace home (2.1.58, M01 `7yzhxgmw`): the activation refuses it
   // before anything is written or registered. (No path creates a project
-  // directory: the CLI start registers no project at all.)
+  // directory: the CLI start registers no project at all.) In a workspace with
+  // a home (M31 `m31boot01`) a directory outside the home and the home itself
+  // are refused before anything is written, as `400` with their own codes
+  // (PROJECT_PATH_OUTSIDE_HOME / PROJECT_PATH_IS_HOME) — ASSUMPTION:dev-0602.
   router.post('/workspace/projects', async (req, res, next) => {
     const cwd = req.body?.cwd;
     if (typeof cwd !== 'string' || cwd.trim() === '' || !path.isAbsolute(cwd)) {
@@ -143,6 +163,10 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
       const project = await deps.activateProject(target);
       res.status(201).json({ projectId: project.id });
     } catch (err) {
+      if (err instanceof ProjectPathError) {
+        return res.status(400).json({ error: { code: err.code, message: err.message } });
+      }
+      if (err instanceof WorkspaceEntryGoneError) return refuseEntryGone(res, err);
       const code = (err as NodeJS.ErrnoException | null)?.code;
       if (err instanceof WorkspaceHomeNotProjectError || (code && FS_VALIDATION_CODES.has(code))) {
         return res.status(400).json({
@@ -198,6 +222,9 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
         null;
       res.json({ projects: serializeProjects(fresh), redirectProjectId });
     } catch (err) {
+      // rev-0021: the stored entry is gone — refused like the registration,
+      // before the context is retired or the slot purged.
+      if (err instanceof WorkspaceEntryGoneError) return refuseEntryGone(res, err);
       // Express 4 does not catch a rejected async handler — without this a failed
       // dispose or `rmSync` was an unhandled rejection and a hung request.
       next(err);
@@ -246,6 +273,15 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
   });
 
   return router;
+}
+
+/**
+ * The workspace this process serves lost its stored entry (detached by another
+ * process of this machine): registration and removal both answer it this way,
+ * having written nothing. ASSUMPTION:dev-0603.
+ */
+function refuseEntryGone(res: Response, err: WorkspaceEntryGoneError) {
+  return res.status(409).json({ error: { code: err.code, message: err.message } });
 }
 
 /** Filesystem refusals that are the caller's path, not the server's fault. */

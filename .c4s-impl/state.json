@@ -1374,7 +1374,7 @@
         }
       ],
       "wave": 3,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "workspace-projects-api/p1-l2-l4",
@@ -1393,18 +1393,18 @@
             "ac-get-api-workspace-zwraca-nazwe-rodzaj",
             "ac-projekt-dodany-w-workspace-ie-z-katal"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 3,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "d222353bd5439c1368a08022c5b2e20782b189f2",
+      "baseCommit": "d222353bd5439c1368a08022c5b2e20782b189f2",
       "rounds": {
-        "review": 0,
-        "unit": 0
+        "review": 3,
+        "unit": 3
       },
       "jobs": []
     },

@@ -90,13 +90,39 @@ export function isValidProjectPath(rel: string): boolean {
   return segments.some((s) => s !== '' && s !== '.');
 }
 
+export type ProjectPathErrorCode = 'PROJECT_PATH_OUTSIDE_HOME' | 'PROJECT_PATH_IS_HOME';
+
+/**
+ * 2.1.58 (M31 `m31boot01`): the two refusals of adding a project to a
+ * workspace with a home — a directory outside the home, and the home itself.
+ * Both are raised before anything is written.
+ */
+export class ProjectPathError extends Error {
+  constructor(
+    readonly code: ProjectPathErrorCode,
+    readonly dir: string,
+    readonly home: string,
+  ) {
+    super(
+      code === 'PROJECT_PATH_IS_HOME'
+        ? `${dir} is the home directory of the workspace, which cannot be a project of it`
+        : `${dir} lies outside the home directory of the workspace (${home}); a project of a workspace with a home lies inside it`,
+    );
+    this.name = 'ProjectPathError';
+  }
+}
+
 /**
  * The `workspace.json` path of an absolute project directory: relative to the
- * home, `/`-separated, or `null` when the directory is not strictly inside it.
+ * home, `/`-separated. A directory that is not strictly inside the home is
+ * refused with {@link ProjectPathError}.
  */
-export function toProjectPath(home: string, absDir: string): string | null {
+export function toProjectPath(home: string, absDir: string): string {
   const rel = path.relative(path.resolve(home), path.resolve(absDir));
-  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  if (rel === '') throw new ProjectPathError('PROJECT_PATH_IS_HOME', absDir, home);
+  if (rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+    throw new ProjectPathError('PROJECT_PATH_OUTSIDE_HOME', absDir, home);
+  }
   return rel.split(path.sep).join('/');
 }
 

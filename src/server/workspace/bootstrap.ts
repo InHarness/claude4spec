@@ -3,7 +3,7 @@ import { PAGES_KIND } from '../../shared/root-kinds.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadOrCreateConfig, migrateConfigToV3, migrateConfigToV4, type NormalizedConfig } from '../config.js';
-import { workspaceFilePath } from './home-workspace.js';
+import { toProjectPath, workspaceFilePath } from './home-workspace.js';
 import { ensureGitignore } from '../../bin/gitignore.js';
 import { BOOTSTRAP_TEMPLATE } from '../../bin/bootstrap-template.js';
 import { migrateLegacyDbIfNeeded } from './db-migration.js';
@@ -193,7 +193,11 @@ export function activatingBuild<T>(
 }
 
 /**
- * M31: registration with activation — `POST /api/workspace/projects`. The file
+ * M31: registration with activation — `POST /api/workspace/projects`. In a
+ * workspace with a home the directory is checked against the home first
+ * (M31 `m31boot01`: outside it → `PROJECT_PATH_OUTSIDE_HOME`, the home itself →
+ * `PROJECT_PATH_IS_HOME`), so a refused path writes nothing at all; so is a
+ * workspace whose stored entry is gone (`WorkspaceEntryGoneError`). The file
  * steps run BEFORE the registration, so a refused directory (a workspace home,
  * a broken config) is never registered, and the id is minted from the name the
  * config now carries. Idempotent end-to-end: re-activating an existing project
@@ -208,6 +212,11 @@ export function bootstrapProject(
   cwd: string,
   activated?: ActivatedProjects,
 ): BootstrapResult {
+  if (workspace.home !== undefined) toProjectPath(workspace.home, cwd);
+  // rev-0022: a view whose stored entry is gone (detached by another process of
+  // this machine) is refused before the file steps touch the directory;
+  // `registerProject` re-checks under the registry lock for a racing detach.
+  registry.assertStoredEntry(workspace);
   const activation = activateProjectDir(registry, workspace, cwd);
   const project = registry.registerProject(workspace, cwd);
   migrateLegacyDbIfNeeded(registry, workspace, cwd, project.id);

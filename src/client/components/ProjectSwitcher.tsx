@@ -3,6 +3,7 @@ import { ChevronsUpDown, Check, Plus } from 'lucide-react';
 import { PROJECT_ID } from '../lib/api-core.js';
 
 import { Skeleton } from '../ui/Skeleton.js';
+import type { WorkspaceResponse } from '../lib/workspace.js';
 import { openModal, toast } from '../ui/events.js';
 
 interface WorkspaceProject {
@@ -12,8 +13,8 @@ interface WorkspaceProject {
   live: boolean;
 }
 
-interface WorkspaceResponse {
-  name: string;
+/** `GET /api/workspace`: the `WorkspaceResponse` fields plus the UI's project listing. */
+interface WorkspaceListing extends WorkspaceResponse {
   projects: WorkspaceProject[];
 }
 
@@ -34,7 +35,7 @@ export function ProjectSwitcher({
   loading?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [workspace, setWorkspace] = useState<WorkspaceResponse | null>(null);
+  const [workspace, setWorkspace] = useState<WorkspaceListing | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -42,7 +43,7 @@ export function ProjectSwitcher({
     if (!open) return;
     fetch('/api/workspace')
       .then((r) => (r.ok ? r.json() : null))
-      .then((d: WorkspaceResponse | null) => d && setWorkspace(d))
+      .then((d: WorkspaceListing | null) => d && setWorkspace(d))
       .catch(() => {
         /* keep empty — switcher degrades to the static label */
       });
