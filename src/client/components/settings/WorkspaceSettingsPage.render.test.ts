@@ -17,6 +17,7 @@ import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/rea
 
 import { BASE_ROUTE_CHILDREN, rootRoute, routesForDocument } from '../../router.js';
 import { PROJECT_ID } from '../../lib/api-core.js';
+import { HOST_API_VERSION } from '../../../shared/plugin-host/manifest.js';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -35,7 +36,7 @@ const workspace = {
 
 /** `GET /api/_meta/plugins` — the process-level base diagnostics. */
 const basePool = {
-  hostApiVersion: '3.1.0',
+  hostApiVersion: HOST_API_VERSION,
   packages: [
     { package: '@acme/adr', status: 'loaded', layer: 'base', contributedTypes: ['adr'] },
     {
@@ -195,7 +196,7 @@ describe('ui-view workspace-settings-page', () => {
     expect(rows[0]!.textContent).toContain('adr');
     expect(rows[1]!.textContent).toContain('skipped');
     expect(rows[1]!.textContent).toContain('not installed in /home/u/ws/node_modules');
-    expect(card.textContent).toContain('Host API 3.1.0');
+    expect(card.textContent).toContain(`Host API ${HOST_API_VERSION}`);
     // No overlay report: no layer pill on a row, no trust state, no shadowing.
     for (const row of rows) expect(row.textContent).not.toMatch(/\bbase\b|overlay|trusted/i);
     expect(card.textContent).not.toMatch(/shadow|project plugins/i);
