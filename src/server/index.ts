@@ -39,6 +39,10 @@ import { discoverBuiltinEnvelopes, servableEnvelopes } from './core/plugin-host/
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export interface StartOptions {
+  /**
+   * The directory the launcher was run in (never a project: the start
+   * registers none). Only the fallback of the package-root lookup for assets.
+   */
   cwd: string;
   /**
    * The launcher's registry (migrated, `src/bin/launch.ts` `prepareStart`).
@@ -241,7 +245,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const { registry, workspace } = opts;
   const liveWorkspace = () => {
     const ws = registry.getWorkspace(workspace.name) ?? workspace;
-    // The port actually bound wins over the stored default (a non-sticky --port).
+    // The port actually bound wins over the stored default (`port: 0` binds an ephemeral one).
     return { ...ws, defaultPort: portRef.current };
   };
 

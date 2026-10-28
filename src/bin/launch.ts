@@ -3,7 +3,8 @@ import type { StartOptions } from '../server/index.js';
 import type { WorkspaceRegistry } from '../server/workspace/registry.js';
 import { startWarnings } from '../server/workspace/network-flags.js';
 import { effectiveBindHost, type WorkspaceNetwork } from '../core/workspace/network.js';
-import type { ProjectRecord, StoredWorkspaceRecord, WorkspaceRecord } from '../server/workspace/types.js';
+import type { StoredWorkspaceRecord, WorkspaceRecord } from '../server/workspace/types.js';
+import type { WorkspaceSelection } from '../server/workspace/start-selection.js';
 import { isRemoteApiUrl } from '../server/config.js';
 
 /**
@@ -12,28 +13,34 @@ import { isRemoteApiUrl } from '../server/config.js';
  */
 
 export interface CliArgs {
+  /**
+   * 2.1.58 (M31 `m31wsel01`): `--port <n>`. Alone a selector (the entry with
+   * that `defaultPort`, else a new registry entry); with `--workspace` /
+   * `--cwd` it overrides and persists the selected entry's `defaultPort`.
+   * Absent: the entry's own port (a new one gets the first free from 4500).
+   */
   port?: number;
-  cwd: string;
+  /**
+   * 2.1.58: `--cwd <path>` — the workspace HOME directory, resolved against the
+   * launch directory; never a project directory, never written by itself (only
+   * the registry entry the selection creates records it). Absent = not given.
+   */
+  cwd?: string;
+  /** The directory the command was run in: the walk-up of a bare command starts here. */
+  launchDir: string;
+  /** `--mode` (internal, the dev script): seeds `mode` of a NEW workspace entry only. */
   mode?: 'dev' | 'prod';
-  /** M31: workspace selector (`--workspace <name>`); absent = port/default resolution. */
+  /** `--workspace <name>`: selects or creates the workspace by name. */
   workspace?: string;
+  /** `--no-open`: no browser at the start; a runtime preference, never persisted. */
   noOpen: boolean;
   /**
    * 2.1.58 (M01 `3ebblo1q`): `--remote-url <url>` — the remote claude4spec-API
    * base for the process lifetime, for every project of the workspace; never
-   * written to any `config.json`, so it is not a project-config input and does
-   * not register the CWD. Validated once here with M24's rule for
+   * written to any file. Validated once here with M24's rule for
    * `remoteApiUrl` (an http(s) URL); an empty value is absent.
    */
   remoteUrl?: string;
-  /**
-   * Decision #11 (0.1.57): `--create-project` — explicit opt-in to register the
-   * CWD as a workspace project. Non-sticky (never written to config.json).
-   * Implied by `--cwd`. 2.1.58: registration only — the project is activated on
-   * its first request, like every other. Without it the bare command is a
-   * workspace-only start that writes nothing to the CWD and opens `/welcome`.
-   */
-  createProject: boolean;
   /**
    * 2.1.0: `--host <addr>` — the workspace's listen address (`bindHost`).
    * Persisted in the registry; `''` (`--host=`) restores loopback. Not a selector.
@@ -46,23 +53,26 @@ export interface CliArgs {
   publicUrl?: string;
 }
 
-export function parseLaunchArgs(argv: string[], baseCwd: string = process.cwd()): CliArgs {
+/**
+ * The start flags (M01 sheet `flagi-cli-m01`): `--cwd`, `--workspace`,
+ * `--port`, `--host`, `--public-url`, `--mode`, `--no-open`, `--remote-url`.
+ * They concern the workspace and the process, never a project: there is no
+ * flag carrying project configuration and no flag registering a directory as a
+ * project — any other argument is not read.
+ */
+export function parseLaunchArgs(argv: string[], launchDir: string = process.cwd()): CliArgs {
   const args: CliArgs = {
     port: undefined,
-    cwd: baseCwd,
+    cwd: undefined,
+    launchDir,
     mode: undefined,
     workspace: undefined,
     noOpen: false,
     remoteUrl: undefined,
-    createProject: false,
     host: undefined,
     publicUrl: undefined,
   };
-  // `cwd` always defaults to process.cwd(), so its value can't signal intent —
-  // track whether `--cwd` was passed explicitly to drive the create-project
-  // implication.
-  let cwdExplicit = false;
-  const resolveCwd = (raw: string) => path.resolve(baseCwd, raw);
+  const resolveCwd = (raw: string) => path.resolve(launchDir, raw);
   const parseMode = (raw: string): 'dev' | 'prod' => {
     if (raw !== 'dev' && raw !== 'prod') throw new Error(`--mode must be 'dev' or 'prod', got '${raw}'`);
     return raw;
@@ -85,10 +95,8 @@ export function parseLaunchArgs(argv: string[], baseCwd: string = process.cwd())
       args.port = Number(a.split('=')[1]);
     } else if (a === '--cwd' && argv[i + 1]) {
       args.cwd = resolveCwd(argv[++i]!);
-      cwdExplicit = true;
     } else if (a?.startsWith('--cwd=')) {
-      args.cwd = resolveCwd(a.split('=')[1]!);
-      cwdExplicit = true;
+      args.cwd = resolveCwd(a.slice('--cwd='.length));
     } else if (a === '--mode' && argv[i + 1]) {
       args.mode = parseMode(argv[++i]!);
     } else if (a?.startsWith('--mode=')) {
@@ -109,34 +117,21 @@ export function parseLaunchArgs(argv: string[], baseCwd: string = process.cwd())
       args.publicUrl = argv[++i];
     } else if (a?.startsWith('--public-url=')) {
       args.publicUrl = a.slice('--public-url='.length);
-    } else if (a === '--create-project') {
-      args.createProject = true;
     } else if (a === '--no-open') {
       args.noOpen = true;
     }
   }
-  // Decision #11: `--cwd` implies `--create-project`. 2.1.58 (M01 `3ebblo1q`):
-  // the command line is no project-config input any more — there is no
-  // `--name`/`--pages`, and `--remote-url` is a process value, so neither
-  // registers the CWD.
-  if (cwdExplicit) args.createProject = true;
   return args;
 }
 
 /**
- * The address a create-project start opens: the project's own page under the
- * LOCAL server address (loopback or a concrete bindHost, never `publicUrl`);
- * a fresh directory redirects from there to onboarding.
+ * 2.1.58 (M01 `r7ozfsa9`): the path the start opens in the browser — the
+ * workspace's last opened project, or the workspace welcome page when there is
+ * none or it is no longer in the workspace. Nothing is activated by choosing it.
  */
-export function projectStartUrl(localUrl: string, projectId: string): string {
-  return `${localUrl}/p/${projectId}/`;
-}
-
-/** What the start selects a workspace by: `--workspace`, then the port, then the default. */
-export interface WorkspaceSelector {
-  name?: string;
-  port?: number;
-  mode?: 'dev' | 'prod';
+export function startPath(ws: Pick<WorkspaceRecord, 'projects' | 'lastOpenedProject'>): string {
+  const id = ws.lastOpenedProject;
+  return id !== undefined && ws.projects.some((p) => p.id === id) ? `/p/${id}/` : '/welcome';
 }
 
 /**
@@ -146,17 +141,17 @@ export interface WorkspaceSelector {
 export type NetworkStep = (entry: StoredWorkspaceRecord) => StoredWorkspaceRecord;
 
 /**
- * 2.1.58 (M31 `ssn335r8`): select the start's workspace and open its view —
- * the ONLY read of a home's `workspace.json` before listen. The entry is
- * selected (or created) from the registry alone, the network flags land on
- * that entry, and only then does `openView` ensure `.claude4spec/.gitignore`
- * and read and validate the file strictly (a `WorkspaceFileError` refuses the
- * start). The view is handed to `startServer` together with this registry, so
- * the server never reads the file again.
+ * 2.1.58 (M31 `ssn335r8`, `m31wsel01`): select the start's workspace by the
+ * selection rule and open its view — the ONLY read of a home's
+ * `workspace.json` before listen. The entry is selected (or created) from the
+ * registry alone, the network flags land on that entry, and only then does
+ * `openView` ensure `.claude4spec/.gitignore` and read and validate the file
+ * strictly (a `WorkspaceFileError` refuses the start). A refusal of the flag
+ * combinations (`WorkspaceSelectionError`) comes before anything is written.
  */
 export function openStartWorkspace(
   registry: WorkspaceRegistry,
-  select: WorkspaceSelector,
+  select: WorkspaceSelection,
   network: NetworkStep = (entry) => entry,
 ): WorkspaceRecord {
   const entry = network(registry.selectOrCreateEntry(select));
@@ -165,34 +160,21 @@ export function openStartWorkspace(
 
 /** Everything a start does before listen, and the options it then listens with. */
 export interface PreparedStart {
-  /** The view `startServer` serves (after the registration, on a create-project start). */
+  /** The view `startServer` serves. */
   workspace: WorkspaceRecord;
-  /**
-   * The project a create-project start registered (NOT activated — it is
-   * activated on its first request); `null` on a workspace-only start.
-   */
-  project: ProjectRecord | null;
-  port: number;
+  /** The selected entry's `mode` — `--mode` seeds only a new entry. */
   mode: 'dev' | 'prod';
+  /** What the browser opens under the local address (`startPath`). */
+  openPath: string;
   options: StartOptions;
 }
 
 /**
  * The launcher's pre-listen sequence (`claude4spec.ts` runs exactly this, then
- * `startServer(prepared.options)`). 2.1.58 (M01 `dsh8ezbz`, M31 `m31ctx001`):
- * no project is activated or built here — not even the one a create-project
- * start names. Every project activates on its first request, from the file and
- * the defaults, so a broken `config.json` is that activation's error and never
- * refuses the start.
- *
- *  - create-project (`--create-project` or `--cwd`): open the workspace, then
- *    REGISTER the CWD (an entry in the registry / `workspace.json` and the slot
- *    marker) — nothing is written to the CWD;
- *  - workspace-only (decision #11, the bare command): no registration — nothing
- *    is written to the CWD; the CWD is never registered, even when it already
- *    carries a `.claude4spec/config.json`.
- *
- * Either way the workspace is opened by `openStartWorkspace`, and the server
+ * `startServer(prepared.options)`). 2.1.58 (M01 `r7ozfsa9`, M31 `m31ctx001`):
+ * the start selects a workspace and opens its view; no project is registered,
+ * activated or built here — every project activates on its first request, and
+ * projects are added from the UI or in the home's `workspace.json`. The server
  * gets this registry and that view — not a second registry of its own.
  */
 export function prepareStart(
@@ -200,28 +182,24 @@ export function prepareStart(
   args: CliArgs,
   network: NetworkStep = (entry) => entry,
 ): PreparedStart {
-  const opened = openStartWorkspace(registry, { name: args.workspace, port: args.port, mode: args.mode }, network);
-  // A `--cwd` at a workspace home is registered here as given: its refusal (and
-  // `--cwd` naming the workspace home) is the start's workspace rule, owned by
-  // the `workspace-selection-at-start` unit (M31 flag combinations). Until then
-  // such a project answers its activation's refusal on its first request.
-  const project = args.createProject ? registry.registerProject(opened, args.cwd) : null;
-  // The view after the registration (this registry's own write — no re-read).
-  const workspace = project ? (registry.getWorkspace(opened.name) ?? opened) : opened;
-  const port = args.port ?? opened.defaultPort;
-  const mode = args.mode ?? opened.mode;
+  const workspace = openStartWorkspace(
+    registry,
+    { name: args.workspace, cwd: args.cwd, port: args.port, mode: args.mode, launchDir: args.launchDir },
+    network,
+  );
+  // ASSUMPTION:dev-0505 — `--mode` for an existing entry is ignored entirely:
+  // the process runs in the entry's own mode.
   return {
     workspace,
-    project,
-    port,
-    mode,
+    mode: workspace.mode,
+    openPath: startPath(workspace),
     options: {
-      cwd: args.cwd,
+      cwd: args.launchDir,
       registry,
       workspace,
-      port,
+      port: workspace.defaultPort,
       host: effectiveBindHost(workspace),
-      mode,
+      mode: workspace.mode,
       remoteApiUrl: args.remoteUrl,
     },
   };

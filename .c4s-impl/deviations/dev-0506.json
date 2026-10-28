@@ -1,0 +1,18 @@
+{
+  "id": "dev-0506",
+  "kind": "missing",
+  "blocking": false,
+  "address": "workspace-selection-at-start/qglsgonq",
+  "slugs": [
+    "ac-cwd-wskazujace-katalog-projektu-z-cla",
+    "ac-cwd-wskazujace-podkatalog-katalogu-do",
+    "ac-port-n-podany-z-workspace-albo-cwd-gd",
+    "ac-workspace-x-cwd-y-gdy-x-ma-inny-katal"
+  ],
+  "text": "The table names the refusal codes (CWD_IS_PROJECT, CWD_INSIDE_HOME, WORKSPACE_HOME_MISMATCH, PORT_TAKEN_BY_WORKSPACE) but not how a refused start reports them. Assumed: nothing is written; the launcher prints `<CODE> — <message>` and `  hint: <hint>` on stderr and exits 1 (the same shape as INVALID_ARGS for --public-url / --remote-url).",
+  "assumption": "ASSUMPTION:dev-0506 — a refused combination prints `<CODE> — <message>` and `hint: …`, and exits 1.",
+  "unit": "workspace-selection-at-start",
+  "portion": "workspace-selection-at-start/p1-l2-l2",
+  "sent": true,
+  "patchPath": "2-1-57-to-2-1-58-workspace-selection-at-start-qglsgonq-the-table-names-the-refusal-codes-cwd-is-p.md"
+}

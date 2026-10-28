@@ -1199,7 +1199,7 @@
         }
       ],
       "wave": 3,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "workspace-selection-at-start/p1-l2-l2",
@@ -1241,18 +1241,18 @@
             "ac-workspace-x-cwd-y-gdy-x-ma-inny-katal",
             "ac-workspace-x-uruchomione-wewnatrz-kata"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 3,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "541167de3cae8ec21226b57b3825a7b86a018595",
+      "baseCommit": "541167de3cae8ec21226b57b3825a7b86a018595",
       "rounds": {
-        "review": 0,
-        "unit": 0
+        "review": 3,
+        "unit": 3
       },
       "jobs": []
     },

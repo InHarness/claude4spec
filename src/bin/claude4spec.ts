@@ -8,7 +8,8 @@ import {
 } from '../server/workspace/network-flags.js';
 import { effectivePublicUrl } from '../core/workspace/network.js';
 import type { StoredWorkspaceRecord } from '../server/workspace/types.js';
-import { parseLaunchArgs, prepareStart, printStartWarnings, projectStartUrl, type CliArgs, type PreparedStart } from './launch.js';
+import { WorkspaceSelectionError } from '../server/workspace/start-selection.js';
+import { parseLaunchArgs, prepareStart, printStartWarnings, type CliArgs, type PreparedStart } from './launch.js';
 
 function openBrowser(url: string): void {
   const { platform } = process;
@@ -38,7 +39,7 @@ try {
   console.error(`\x1b[31mINVALID_ARGS\x1b[0m — ${err instanceof Error ? err.message : String(err)}`);
   process.exit(1);
 }
-const { port, cwd, noOpen } = args;
+const { noOpen } = args;
 
 const registry = new WorkspaceRegistry();
 
@@ -64,48 +65,40 @@ function withNetwork(entry: StoredWorkspaceRecord): StoredWorkspaceRecord {
     }
     throw err;
   }
-  printStartWarnings({ ...next, defaultPort: port ?? next.defaultPort });
+  printStartWarnings(next);
   return next;
 }
 
-// Everything before listen — workspace selection, the single eager read of a
-// home's workspace.json (after its .gitignore), and on a create-project start
-// the CWD's registration. No project is activated or built before listen: each
-// activates on its first request. startServer gets this registry and its view.
+// Everything before listen — the workspace selection rule (a refused flag
+// combination exits here, before anything is written) and the single eager
+// read of a home's workspace.json (after its .gitignore). No project is
+// registered, activated or built before listen: each activates on its first
+// request. startServer gets this registry and its view.
 let prepared: PreparedStart;
 try {
   prepared = prepareStart(registry, args, withNetwork);
 } catch (err) {
+  // ASSUMPTION:dev-0506 — a refused combination prints `<CODE> — <message>`
+  // and `hint: …`, and exits 1.
+  if (err instanceof WorkspaceSelectionError) {
+    console.error(`\x1b[31m${err.code}\x1b[0m — ${err.message}`);
+    console.error(`  hint: ${err.hint}`);
+    process.exit(1);
+  }
   failToStart(err);
 }
-const { workspace, project } = prepared;
-const effectivePort = prepared.port;
-const effectiveMode = prepared.mode;
+const { workspace } = prepared;
 
 startServer(prepared.options)
   .then((handle) => {
-    const publicUrl = effectivePublicUrl({ ...workspace, defaultPort: effectivePort });
-    if (project) {
-      // `handle.url` is the LOCAL address (loopback or a concrete bindHost) —
-      // the browser opens that, never `publicUrl`. The project activates on
-      // that first request (its config is created then, if it has none).
-      const projectUrl = projectStartUrl(handle.url, project.id);
-      registry.touchLastOpened(workspace.name, project.id);
-      console.log(`\x1b[32m  claude4spec\x1b[0m  ready at \x1b[36m${projectUrl}\x1b[0m`);
-      console.log(`  workspace: ${workspace.name}`);
-      console.log(`  public url: ${publicUrl}`);
-      console.log(`  project: ${project.id} (${cwd}) — activated on its first request`);
-      if (!noOpen && effectiveMode === 'prod') openBrowser(projectUrl);
-    } else {
-      // Workspace-only start (decision #11): nothing was written to the CWD;
-      // a project is registered later via /welcome or the switcher.
-      const welcomeUrl = `${handle.url}/welcome`;
-      console.log(`\x1b[32m  claude4spec\x1b[0m  ready at \x1b[36m${welcomeUrl}\x1b[0m`);
-      console.log(`  workspace: ${workspace.name} (workspace-only start — no project created)`);
-      console.log(`  public url: ${publicUrl}`);
-      console.log(`  hint: pass --create-project to register this directory as a project`);
-      if (!noOpen && effectiveMode === 'prod') openBrowser(welcomeUrl);
-    }
+    // `handle.url` is the LOCAL address (loopback or a concrete bindHost) — the
+    // browser opens that, never `publicUrl`: the last opened project of the
+    // workspace, else the welcome page. Nothing is activated before that request.
+    const openUrl = `${handle.url}${prepared.openPath}`;
+    console.log(`\x1b[32m  claude4spec\x1b[0m  ready at \x1b[36m${openUrl}\x1b[0m`);
+    console.log(`  workspace: ${workspace.name}${workspace.home !== undefined ? ` (home ${workspace.home})` : ''}`);
+    console.log(`  public url: ${effectivePublicUrl(workspace)}`);
+    if (!noOpen && prepared.mode === 'prod') openBrowser(openUrl);
     installShutdown(handle);
   })
   .catch(failToStart);

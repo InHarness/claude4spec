@@ -23,8 +23,8 @@ export interface WorkspaceRoutesDeps {
   /**
    * Registration with activation (`POST /api/workspace/projects`): the M01
    * activation's file steps, the registration and the legacy-db move. The CLI
-   * start does not use it — it only registers its `--cwd`, and that project is
-   * activated on its first request, like every other.
+   * start does not use it — the start registers no project (its `--cwd` names
+   * a workspace home), and every project activates on its first request.
    */
   activateProject: (cwd: string) => Promise<ProjectRecord>;
 }
@@ -126,7 +126,7 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
   // modal as `400 VALIDATION`, never created on their behalf and never a 500.
   // So is a workspace home (2.1.58, M01 `7yzhxgmw`): the activation refuses it
   // before anything is written or registered. (No path creates a project
-  // directory: the CLI start only registers its `--cwd`.)
+  // directory: the CLI start registers no project at all.)
   router.post('/workspace/projects', async (req, res, next) => {
     const cwd = req.body?.cwd;
     if (typeof cwd !== 'string' || cwd.trim() === '' || !path.isAbsolute(cwd)) {

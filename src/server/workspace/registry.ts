@@ -12,6 +12,16 @@ import {
 import { findSlotIdForCwd, listSlotIds, readSlotMarker, writeSlotMarker } from './slot-marker.js';
 import { withAdvisoryLock, writeJsonAtomic } from './advisory-lock.js';
 import {
+  ensureHomeDescription,
+  findWorkspaceHomeUp,
+  firstFreePort,
+  homeEntryName,
+  isProjectDirectory,
+  repositoryHintFor,
+  WorkspaceSelectionError,
+  type WorkspaceSelection,
+} from './start-selection.js';
+import {
   ensureHomeGitignore,
   homeLocalDir,
   mutateWorkspaceFile,
@@ -308,65 +318,200 @@ export class WorkspaceRegistry {
 
   // ─── mutations ────────────────────────────────────────────────────────────
 
-  /**
-   * Workspace identity = name. Selection order: explicit `name` → workspace
-   * owning `port` as defaultPort → sole/default workspace → create. `port`
-   * persists as `defaultPort` only at creation (first-wins; an existing
-   * workspace's defaultPort is never overwritten here).
-   */
-  selectOrCreate(opts: { name?: string; port?: number; mode?: 'dev' | 'prod' } = {}): WorkspaceRecord {
-    return this.compose(this.selectOrCreateEntry(opts));
+  /** `selectOrCreateEntry`, composed into the view. */
+  selectOrCreate(sel: WorkspaceSelection = {}): WorkspaceRecord {
+    return this.compose(this.selectOrCreateEntry(sel));
   }
 
   /**
-   * `selectOrCreate` without the view: the stored entry only, so no
-   * `workspace.json` is read. The start (`openStartWorkspace` in
-   * `src/bin/launch.ts`) uses it and leaves the single eager read of the home
-   * file to `openView`, after `.gitignore` is ensured.
+   * 2.1.58 (M31 `m31wsel01`, flag combinations `qglsgonq`): the start's
+   * workspace selection rule, first match wins —
+   *  1. `--workspace <name>` selects (or creates a registry entry of) that name;
+   *     with `--cwd` the combination table decides;
+   *  2. `--cwd <dir>` names the workspace HOME: `$HOME` → `default`; the `home`
+   *     of an entry → that entry; otherwise a new entry with that home (the
+   *     directory created when absent), named by `--workspace` or the directory
+   *     name (`-2`, `-3`… on a collision); a project directory is refused
+   *     (`CWD_IS_PROJECT`), a directory inside another home too (`CWD_INSIDE_HOME`);
+   *  3. `--port <n>` alone selects the entry with that `defaultPort`, or creates
+   *     a registry entry (`default`, else `ws-<port>`);
+   *  4. the bare command only: the walk-up from the launch directory to the
+   *     first `.claude4spec/workspace.json` selects the entry with that home,
+   *     created as in 2 when there is none;
+   *  5. otherwise the sole entry, else `default`, else the most recently opened
+   *     — homes whose directory is gone are skipped in 4–5; with no candidate
+   *     left, a new registry entry `default` (`ws-<port>` when a skipped entry
+   *     holds that name — the first free port whose `ws-<port>` name is free
+   *     too). No path creates a second entry with a taken name.
+   *
+   * With `--workspace` or `--cwd`, `--port` overrides and persists the selected
+   * entry's `defaultPort`; a port that is another entry's `defaultPort` is
+   * refused (`PORT_TAKEN_BY_WORKSPACE`). A new entry without `--port` gets the
+   * first free port from 4500 among the entries; `--mode` seeds a new entry
+   * only. Every refusal is raised before anything is written.
+   *
+   * The stored entry only, so no `workspace.json` is read: the start
+   * (`openStartWorkspace` in `src/bin/launch.ts`) leaves the single eager read
+   * of the home file to `openView`, after `.gitignore` is ensured.
    */
-  selectOrCreateEntry(
-    opts: { name?: string; port?: number; mode?: 'dev' | 'prod' } = {},
-  ): StoredWorkspaceRecord {
-    if (opts.name != null) assertValidWorkspaceName(opts.name);
+  selectOrCreateEntry(sel: WorkspaceSelection = {}): StoredWorkspaceRecord {
+    if (sel.name != null) assertValidWorkspaceName(sel.name);
+    const userHome = path.resolve(sel.userHome ?? os.homedir());
+    const bare = sel.name == null && sel.cwd === undefined && sel.port == null;
+    const homeDir =
+      sel.cwd !== undefined
+        ? path.resolve(sel.cwd)
+        : bare && sel.launchDir !== undefined
+          ? (findWorkspaceHomeUp(sel.launchDir) ?? undefined)
+          : undefined;
+    // `--port` is an override only when `--workspace` / `--cwd` select the entry.
+    const override = sel.name != null || sel.cwd !== undefined ? sel.port : undefined;
     return this.withLock((data) => {
-      let ws: StoredWorkspaceRecord | undefined;
-      if (opts.name != null) {
-        ws = data.workspaces.find((w) => w.name === opts.name);
-      } else if (opts.port != null) {
-        ws = data.workspaces.find((w) => w.defaultPort === opts.port);
-      }
-      if (!ws && opts.name == null && opts.port == null) {
-        // Bare start: reuse the obvious workspace instead of proliferating.
-        ws =
-          data.workspaces.length === 1
-            ? data.workspaces[0]
-            : data.workspaces.find((w) => w.name === DEFAULT_WORKSPACE_NAME) ??
-              byLastOpenedDesc(data.workspaces)[0];
-      }
-      if (!ws) {
-        let name = opts.name ?? DEFAULT_WORKSPACE_NAME;
-        if (opts.name == null && data.workspaces.some((w) => w.name === name)) {
-          name = `ws-${opts.port ?? DEFAULT_WORKSPACE_PORT}`;
-        }
-        if (data.workspaces.some((w) => w.name === name)) {
-          throw new Error(
-            `workspace "${name}" already exists with a different port — pass --workspace <name> explicitly`,
+      const assertPortFree = (port: number, self: string | null) => {
+        const owner = data.workspaces.find((w) => w.name !== self && w.defaultPort === port);
+        if (owner) {
+          throw new WorkspaceSelectionError(
+            'PORT_TAKEN_BY_WORKSPACE',
+            `port ${port} is the port of workspace '${owner.name}'`,
+            `pass another --port, or start workspace '${owner.name}' with --workspace ${owner.name}`,
           );
         }
+      };
+      const create = (name: string, port: number | undefined, home?: string): StoredWorkspaceRecord => {
         assertValidWorkspaceName(name);
-        ws = {
+        // Workspace identity is the name: a second entry with it would shadow the first.
+        if (data.workspaces.some((w) => w.name === name)) {
+          throw new Error(`workspace "${name}" already exists — pass --workspace ${name} explicitly`);
+        }
+        if (port !== undefined) assertPortFree(port, null);
+        const rec: StoredWorkspaceRecord = {
           name,
-          mode: opts.mode ?? 'prod',
-          defaultPort: opts.port ?? DEFAULT_WORKSPACE_PORT,
+          ...(home !== undefined ? { home } : {}),
+          mode: sel.mode ?? 'prod',
+          defaultPort: port ?? firstFreePort(data.workspaces, DEFAULT_WORKSPACE_PORT),
           lastOpened: nowIso(),
-          projects: [],
+          ...(home !== undefined ? {} : { projects: [] }),
         };
-        data.workspaces.push(ws);
+        // The home and its description exist before the entry naming them is written.
+        if (home !== undefined) ensureHomeDescription(home);
+        data.workspaces.push(rec);
+        return rec;
+      };
+
+      let ws: StoredWorkspaceRecord | undefined;
+      if (homeDir !== undefined) {
+        const found = this.entryForHome(data, homeDir, sel.name, userHome);
+        ws = 'existing' in found ? found.existing : create(found.name, override, found.home);
+      } else if (sel.name != null) {
+        ws = data.workspaces.find((w) => w.name === sel.name) ?? create(sel.name, override);
+      } else if (sel.port != null) {
+        ws = data.workspaces.find((w) => w.defaultPort === sel.port);
+        if (!ws) {
+          const name = data.workspaces.some((w) => w.name === DEFAULT_WORKSPACE_NAME)
+            ? `ws-${sel.port}`
+            : DEFAULT_WORKSPACE_NAME;
+          ws = create(name, sel.port);
+        }
       } else {
-        ws.lastOpened = nowIso();
+        // Step 5: reuse the obvious workspace instead of proliferating; a home
+        // whose directory is gone is no candidate.
+        const candidates = data.workspaces.filter((w) => w.home === undefined || fs.existsSync(w.home));
+        ws =
+          candidates.length === 1
+            ? candidates[0]
+            : (candidates.find((w) => w.name === DEFAULT_WORKSPACE_NAME) ?? byLastOpenedDesc(candidates)[0]);
+        if (!ws) {
+          // No candidate: a new registry workspace, named `default` — or, when the
+          // skipped entries hold that name, `ws-<port>` as in step 3, on the first
+          // free port whose `ws-<port>` name is free too (an entry may keep such a
+          // name after moving to another port).
+          // ASSUMPTION:dev-0507 — the skipped `default` is never reused or replaced.
+          const nameTaken = (n: string) => data.workspaces.some((w) => w.name === n);
+          let port = firstFreePort(data.workspaces, DEFAULT_WORKSPACE_PORT);
+          if (nameTaken(DEFAULT_WORKSPACE_NAME)) {
+            while (nameTaken(`ws-${port}`)) port = firstFreePort(data.workspaces, port + 1);
+            ws = create(`ws-${port}`, port);
+          } else {
+            ws = create(DEFAULT_WORKSPACE_NAME, port);
+          }
+        }
       }
+      if (override !== undefined && ws.defaultPort !== override) {
+        assertPortFree(override, ws.name);
+        ws.defaultPort = override;
+      }
+      ws.lastOpened = nowIso();
       return ws;
     });
+  }
+
+  /**
+   * Steps 2 and 4 of the selection rule for one home directory (resolved),
+   * with the `--workspace` name when given: the entry it selects, or the entry
+   * to create. Throws the combination table's refusals; writes nothing.
+   */
+  private entryForHome(
+    data: WorkspacesFile,
+    dir: string,
+    name: string | undefined,
+    userHome: string,
+  ): { existing: StoredWorkspaceRecord } | { name: string; home?: string } {
+    const byName = (n: string) => data.workspaces.find((w) => w.name === n);
+    if (dir === userHome) {
+      if (name != null && name !== DEFAULT_WORKSPACE_NAME) {
+        throw new WorkspaceSelectionError(
+          'WORKSPACE_HOME_MISMATCH',
+          `--cwd ${dir} is your home directory, which selects workspace '${DEFAULT_WORKSPACE_NAME}', not '${name}'`,
+          `drop --cwd to start workspace '${name}', or pass --workspace ${DEFAULT_WORKSPACE_NAME}`,
+        );
+      }
+      const existing = byName(DEFAULT_WORKSPACE_NAME);
+      return existing ? { existing } : { name: DEFAULT_WORKSPACE_NAME };
+    }
+    const isHomeOf = (w: StoredWorkspaceRecord) => w.home !== undefined && path.resolve(w.home) === dir;
+    const owner = data.workspaces.find(isHomeOf);
+    if (name != null) {
+      const named = byName(name);
+      if (named) {
+        if (isHomeOf(named)) return { existing: named };
+        throw new WorkspaceSelectionError(
+          'WORKSPACE_HOME_MISMATCH',
+          named.home !== undefined
+            ? `workspace '${name}' has the home ${named.home}, not ${dir}`
+            : `workspace '${name}' is a registry workspace — it has no home directory, so --cwd ${dir} cannot select it`,
+          named.home !== undefined
+            ? `pass --cwd ${named.home}, or drop --cwd to start workspace '${name}'`
+            : `drop --cwd to start workspace '${name}', or pass another --workspace name to create a workspace with the home ${dir}`,
+        );
+      }
+      // ASSUMPTION:dev-0504 — a new name over a directory that already is a home is refused too.
+      if (owner) {
+        throw new WorkspaceSelectionError(
+          'WORKSPACE_HOME_MISMATCH',
+          `${dir} is already the home of workspace '${owner.name}'`,
+          `pass --workspace ${owner.name}, or drop --workspace`,
+        );
+      }
+    } else if (owner) {
+      return { existing: owner };
+    }
+    const enclosing = data.workspaces.find((w) => w.home !== undefined && isPathWithin(w.home, dir));
+    if (isProjectDirectory(dir)) {
+      const hint = repositoryHintFor(dir, enclosing?.home);
+      throw new WorkspaceSelectionError(
+        'CWD_IS_PROJECT',
+        `${dir} is a project directory (it has .claude4spec/config.json) — a workspace home is not a project`,
+        `pass the repository directory instead: --cwd ${hint}`,
+      );
+    }
+    if (enclosing) {
+      throw new WorkspaceSelectionError(
+        'CWD_INSIDE_HOME',
+        `${dir} lies inside the home of workspace '${enclosing.name}' (${enclosing.home})`,
+        `pass --cwd ${enclosing.home}`,
+      );
+    }
+    return { name: name ?? homeEntryName(dir, new Set(data.workspaces.map((w) => w.name))), home: dir };
   }
 
   /**

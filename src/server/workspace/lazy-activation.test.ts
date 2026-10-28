@@ -295,11 +295,12 @@ describe('M01 lazy project activation (2.1.58)', () => {
       const text = JSON.stringify(cfg, null, 2);
       writeRawConfig(cwd, text);
 
-      // The start (create-project of this very directory) is not refused…
-      const prepared = prepareStart(registry, parseLaunchArgs(['--workspace', 'default', '--cwd', cwd], tmp));
-      expect(prepared.project?.cwd, name).toBe(cwd);
+      // The start of the workspace listing this very directory is not refused…
+      const project = registry.registerProject(view(), cwd);
+      const prepared = prepareStart(registry, parseLaunchArgs(['--workspace', 'default'], tmp));
+      expect(prepared.workspace.projects.some((p) => p.id === project.id), name).toBe(true);
       // …the activation is, with the field's name.
-      expect(() => activateProject(registry, prepared.workspace, prepared.project!), name).toThrow(message);
+      expect(() => activateProject(registry, prepared.workspace, project), name).toThrow(message);
       // `"3"` was not "converted" to a number: the file is untouched.
       expect(fs.readFileSync(configPath(cwd), 'utf8'), name).toBe(text);
     }
@@ -312,11 +313,10 @@ describe('M01 lazy project activation (2.1.58)', () => {
     const brokenProject = registry.registerProject(ws, broken);
     const fineProject = registry.registerProject(ws, fine);
 
-    // Both starts — the bare one and a create-project start of the broken
-    // directory itself — prepare without touching the project.
+    // Both starts — by name and the bare one — prepare without touching the project.
     expect(() => prepareStart(registry, parseLaunchArgs(['--workspace', 'default'], tmp))).not.toThrow();
-    const prepared = prepareStart(registry, parseLaunchArgs(['--workspace', 'default', '--cwd', broken], tmp));
-    expect(prepared.project?.id).toBe(brokenProject.id);
+    const prepared = prepareStart(registry, parseLaunchArgs([], tmp));
+    expect(prepared.workspace.projects.map((p) => p.id)).toEqual([brokenProject.id, fineProject.id]);
     expect(fs.readFileSync(configPath(broken), 'utf8')).toBe('{ "name": ');
 
     // The first request activates: the broken project answers 500, the other serves.
@@ -358,7 +358,6 @@ describe('M01 lazy project activation (2.1.58)', () => {
     const args = parseLaunchArgs([], cwd);
     const prepared = prepareStart(registry, args);
 
-    expect(prepared.project).toBeNull();
     expect(prepared.workspace.name).toBe('default');
     expect(fs.readdirSync(cwd)).toEqual([]);
     expect(view().projects.map((p) => p.id)).toEqual([listed.id]);
@@ -398,15 +397,16 @@ describe('M01 lazy project activation (2.1.58)', () => {
     expect(activateProject.length).toBe(3);
   });
 
-  it('[section:85hp4f2v] a create-project start writes nothing into the project; its first activation gives it a config file of defaults, and the index lives in the workspace slot', () => {
+  it('[section:85hp4f2v] the start writes nothing into a project of the workspace; its first activation gives it a config file of defaults, and the index lives in the workspace slot', () => {
     const cwd = path.join(tmp, 'goal');
-    const prepared = prepareStart(registry, parseLaunchArgs(['--workspace', 'default', '--cwd', cwd], tmp));
+    const project = registry.registerProject(ws, cwd);
+    const prepared = prepareStart(registry, parseLaunchArgs(['--workspace', 'default'], tmp));
     expect(fs.existsSync(cwd)).toBe(false);
 
-    const activation = activateProject(registry, prepared.workspace, prepared.project!);
+    const activation = activateProject(registry, prepared.workspace, project);
     expect(activation.configCreated).toBe(true);
     expect(activation.config.name).toBe('goal');
-    const db = openDb(registry.slotDir(prepared.workspace, prepared.project!.id));
+    const db = openDb(registry.slotDir(prepared.workspace, project.id));
     db.close();
     expect(filesUnder(cwd).filter((f) => f.includes('sqlite'))).toEqual([]);
   });
@@ -462,7 +462,7 @@ describe('M01 lazy project activation (2.1.58)', () => {
 
     // --remote-url reaches the server for the process (every project), not a file.
     const prepared = prepareStart(registry, args);
-    expect(prepared.project).toBeNull();
+    expect(prepared.workspace.projects).toEqual([]);
     expect(prepared.options.remoteApiUrl).toBe('https://staging.example');
     const fresh = dirOf('remote-fresh');
     activateProjectDir(registry, ws, fresh);
