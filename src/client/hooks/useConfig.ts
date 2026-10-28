@@ -24,15 +24,17 @@ export function useConfig() {
   return useQuery({
     queryKey: ['config'],
     queryFn: () => configApi.get(),
-    // Decision #11: `/welcome` runs project-less (PROJECT_ID=''), where there is
-    // no project-scoped `/api/config` to read — skip the doomed request.
+    // The project shell is the reader; a workspace document (PROJECT_ID='',
+    // M50 `1bd92aq2`) mounts the workspace frame instead. The window hosts sit
+    // beside BOTH frames, though, so a window reading the config there must not
+    // fire a request with no `/api/projects/<id>` prefix to build.
     enabled: !!PROJECT_ID,
   });
 }
 
 /**
  * 0.1.96 multiroot: selector for the configured page roots. Empty until the
- * config query resolves (or project-less `/welcome`, where there is no config).
+ * config query resolves.
  */
 export function useRoots(): Root[] {
   const { data } = useConfig();
@@ -48,8 +50,9 @@ export function useRoots(): Root[] {
  * the page reloads, the same rule as activation saved elsewhere.
  *
  * `ready` is false only while the first read is in flight, so the section does
- * not flash the default order before the team's layout; a failed read and the
- * project-less `/welcome` fall back to the default order (`layout` undefined).
+ * not flash the default order before the team's layout; a failed read falls
+ * back to the default order (`layout` undefined). Its only reader is the
+ * project sidebar, so it always runs in a project document.
  *
  * The one exception is THIS tab's own save of the key (Settings → Entities →
  * Sidebar menu, M13 `lbqrd6xh`): `usePatchConfig` replaces the seed with the
@@ -93,7 +96,7 @@ export function useElementsMenuLayout(): { ready: boolean; layout: ElementsMenuE
     if (seed && !elementsMenuSeeds.has(qc)) elementsMenuSeeds.set(qc, seed);
   }, [qc, seed]);
   if (seed) return { ready: true, layout: seed.layout };
-  return { ready: isError || !PROJECT_ID, layout: undefined };
+  return { ready: isError, layout: undefined };
 }
 
 export function usePatchConfig() {
@@ -117,8 +120,7 @@ export function usePatchConfig() {
 /**
  * 0.2.101 — the BASE page root: the single entry carrying `builtin: true`.
  *
- * `undefined` until the config query resolves (and on the project-less
- * `/welcome` route). Every consumer that used to fall back to the literal
+ * `undefined` until the config query resolves. Every consumer that used to fall back to the literal
  * `'pages'` asks this instead: that value is now just the default identifier a
  * new project starts with, and a project may have renamed it away.
  */

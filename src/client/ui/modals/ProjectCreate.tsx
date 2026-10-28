@@ -14,13 +14,18 @@ import type { ModalFormProps } from '../ModalHost.js';
 /**
  * M31 + decision #11: register a project into the current workspace. A
  * server-side directory browser (GET /api/workspace/fs — directories only,
- * starts at the process CWD, `~` expands) drives the selection; the resolved
- * path is also editable by hand. On success the app does a full reload into
+ * `~` expands) drives the selection; it asks without `path`, so it starts where
+ * the server says: in the home directory of a workspace that has one, in the
+ * process directory otherwise (2.1.58). The resolved path is also editable by
+ * hand. Every refusal — ENOENT/EACCES and, in a workspace with a home,
+ * `PROJECT_PATH_OUTSIDE_HOME` / `PROJECT_PATH_IS_HOME` — is shown inline in the
+ * window with the server's message, never as a toast. On success the app does a full reload into
  * `/p/<id>/` because PROJECT_ID / API_BASE / router basepath are module-load
  * constants. Both endpoints are workspace-scope (raw fetch, no project prefix).
  *
  * 0.2.110 M31: the `project-create` modal kind (`openModal('project-create', {})`),
- * opened from the project switcher and the Welcome screen.
+ * opened from the project switcher (project route) and the Welcome screen
+ * (workspace route).
  */
 export function ProjectCreate({ onClose: close }: ModalFormProps<'project-create'>) {
   const onClose = () => close(null);

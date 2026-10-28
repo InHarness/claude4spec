@@ -1,11 +1,31 @@
 import { PROJECT_ID } from '../../lib/api-core.js';
 import { useConfig } from '../../hooks/useConfig.js';
+import { useWorkspace } from '../../hooks/useWorkspace.js';
+import type { WorkspaceResponse } from '../../lib/workspace.js';
 import { confirmDestructive, toast } from '../../ui/events.js';
 import { navigateDocument } from '../../lib/document-nav.js';
 import type { SettingsContribution } from '../settings/registry.js';
 
 interface DeleteResponse {
   redirectProjectId: string | null;
+}
+
+/**
+ * M31 `m31l5001` Okna — the `project-detach` text depends on the workspace's
+ * kind: a registry workspace keeps the slot on disk; a workspace with a home
+ * directory drops the project from the committed `workspace.json`.
+ */
+function detachBody(projectName: string, kind: WorkspaceResponse['kind']): string {
+  if (kind === 'home') {
+    return (
+      `Detach ${projectName} from the workspace? The project leaves workspace.json — once committed, ` +
+      'it disappears for everyone working on this repository. Restore it with git or by adding the project again.'
+    );
+  }
+  return (
+    `Detach ${projectName} from the workspace? c4s data (index, chats, plans, releases) ` +
+    'stays on disk — registering the same directory again restores it.'
+  );
 }
 
 /**
@@ -54,6 +74,7 @@ export const WORKSPACE_SETTINGS: SettingsContribution = {
 
 export function DangerZoneElement() {
   const { data: config } = useConfig();
+  const { data: workspace } = useWorkspace();
   const projectName = config?.name ?? '';
 
   /** `true` = removed (navigating away); `false` = refused, the dialog stays open. */
@@ -89,12 +110,11 @@ export function DangerZoneElement() {
   }
 
   async function handleDetach(): Promise<void> {
+    if (!workspace) return;
     await confirmDestructive('project-detach', {
       action: () => remove(false),
       title: 'Detach project',
-      body:
-        `Detach ${projectName} from the workspace? c4s data (index, chats, plans, releases) ` +
-        'stays on disk — registering the same directory again restores it.',
+      body: detachBody(projectName, workspace.kind),
       confirmLabel: 'Detach',
       danger: false,
     });
@@ -123,7 +143,7 @@ export function DangerZoneElement() {
         >
           <button
             type="button"
-            disabled={!config}
+            disabled={!config || !workspace}
             onClick={() => void handleDetach()}
             className="rounded-md px-3 py-1.5 text-[12px] font-medium disabled:opacity-50"
             style={{ border: '1px solid var(--c-hair-strong)', color: 'var(--c-ink)' }}

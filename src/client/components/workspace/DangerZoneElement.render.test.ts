@@ -12,6 +12,8 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
 const nav = vi.hoisted(() => ({ hrefs: [] as string[] }));
+/** The workspace's kind as `GET /api/workspace` answers it (`useWorkspace`). */
+const ws = vi.hoisted(() => ({ kind: 'registry' as 'registry' | 'home' }));
 vi.mock('../../lib/document-nav.js', () => ({
   navigateDocument: (href: string) => {
     nav.hrefs.push(href);
@@ -19,6 +21,11 @@ vi.mock('../../lib/document-nav.js', () => ({
 }));
 vi.mock('../../hooks/useConfig.js', () => ({
   useConfig: () => ({ data: { name: 'alpha' } }),
+}));
+vi.mock('../../hooks/useWorkspace.js', () => ({
+  useWorkspace: () => ({
+    data: { name: 'default', kind: ws.kind, lastOpenedProject: 'alpha', projects: [] },
+  }),
 }));
 vi.mock('../../lib/api-core.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/api-core.js')>()),
@@ -72,6 +79,7 @@ const confirmWindow = () => host.querySelector<HTMLElement>('[data-modal-kind]')
 const nameInput = () => host.querySelector<HTMLInputElement>('input[placeholder="alpha"]');
 
 beforeEach(() => {
+  ws.kind = 'registry';
   nav.hrefs = [];
   toasts = [];
   requests = [];
@@ -147,7 +155,7 @@ describe('Danger zone — remove project (M31 h23797ko)', () => {
     expect(nav.hrefs).toEqual(['/p/beta/']);
   });
 
-  it('project-detach: a confirmation window with the spec text; [Detach] sends purgeData=false', async () => {
+  it('[section:m31l5001] project-detach in a registry workspace: a confirmation window with the spec text; [Detach] sends purgeData=false', async () => {
     await render();
     await click(button('Detach project'));
 
@@ -161,6 +169,21 @@ describe('Danger zone — remove project (M31 h23797ko)', () => {
     await click(button('Detach'));
     expect(requests).toEqual([{ url: '/api/workspace/projects/alpha?purgeData=false', method: 'DELETE' }]);
     expect(nav.hrefs).toEqual(['/']);
+  });
+
+  it('[section:m31l5001] project-detach in a workspace with a home directory: the text says the project leaves the committed workspace.json; [Detach] sends purgeData=false', async () => {
+    ws.kind = 'home';
+    await render();
+    await click(button('Detach project'));
+
+    expect(confirmWindow()?.getAttribute('data-modal-kind')).toBe('project-detach');
+    expect(confirmWindow()?.textContent).toBe(
+      'Detach alpha from the workspace? The project leaves workspace.json — once committed, it disappears for everyone working on this repository. Restore it with git or by adding the project again.',
+    );
+    expect(confirmWindow()?.textContent).not.toContain('stays on disk');
+
+    await click(button('Detach'));
+    expect(requests).toEqual([{ url: '/api/workspace/projects/alpha?purgeData=false', method: 'DELETE' }]);
   });
 
   it('project-detach: [Cancel] closes the window without a request', async () => {

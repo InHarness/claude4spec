@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { WorkspaceRegistry } from './registry.js';
-import { resolveSpaRoute } from './spa-route.js';
+import { resolveSpaRoute, spaDocument, WORKSPACE_ROUTE_PATHS } from './spa-route.js';
 import { legacyHashId } from './project-id.js';
 
 /**
@@ -62,14 +62,17 @@ describe('resolveSpaRoute — root always lands on /welcome', () => {
     });
   });
 
-  it('serves /welcome project-less and sends any other non-asset path to `/`', () => {
+  it('[section:eb95ery1] serves the workspace route /welcome outside the project prefix and sends any other non-asset path that is not a workspace route to `/`', () => {
     const registry = new WorkspaceRegistry(dir);
     const ws = registry.selectOrCreate({ name: 'default' });
     registry.registerProject(ws, path.join(dir, 'repo-a'));
     const fresh = registry.getWorkspace('default')!;
 
-    expect(resolveSpaRoute(registry, fresh, '/welcome')).toEqual({ kind: 'welcome' });
+    expect(WORKSPACE_ROUTE_PATHS).toContain('/welcome');
+    expect(resolveSpaRoute(registry, fresh, '/welcome')).toEqual({ kind: 'workspace' });
+    // A project route without its prefix is not a workspace route.
     expect(resolveSpaRoute(registry, fresh, '/settings')).toEqual({ kind: 'redirect', to: '/' });
+    expect(resolveSpaRoute(registry, fresh, '/space/pages/index.md')).toEqual({ kind: 'redirect', to: '/' });
   });
 
   it('[ac:ac-po-migracji-rejestru-stara-zakladka-p] after the registry migration an old /p/<hash id>/ bookmark ends on /welcome', () => {
@@ -103,12 +106,31 @@ describe('resolveSpaRoute — root always lands on /welcome', () => {
       hops.push(url);
       resolution = resolveSpaRoute(registry, ws, url);
     }
-    expect(resolution).toEqual({ kind: 'welcome' });
+    expect(resolution).toEqual({ kind: 'workspace' });
     expect(hops[hops.length - 1]).toBe('/welcome');
     // The migrated id is the address that still opens the project.
     expect(resolveSpaRoute(registry, ws, '/p/app-spec/')).toMatchObject({
       kind: 'project',
       project: { id: 'app-spec', cwd },
     });
+  });
+});
+
+describe('spaDocument — the application document (M50 k4fhsrkz)', () => {
+  const html =
+    '<!doctype html><html><head><meta charset="utf-8" /><script>/* theme */document.documentElement.dataset.t="1";</script></head><body><div id="root"></div></body></html>';
+
+  it('[section:k4fhsrkz] a route with a project gets ONE identity global, first in <head>, before the inline theme script', () => {
+    const doc = spaDocument(html, { id: 'app-spec', name: 'App </script> spec' });
+    expect(doc.match(/window\.__C4S_PROJECT__=/g)).toHaveLength(1);
+    expect(doc.startsWith('<!doctype html><html><head><script>window.__C4S_PROJECT__={"id":"app-spec","name":"App \\u003c/script> spec"};</script><meta')).toBe(true);
+    expect(doc.indexOf('__C4S_PROJECT__')).toBeLessThan(doc.indexOf('/* theme */'));
+  });
+
+  it('[section:k4fhsrkz] a workspace route has no project: nothing is injected and the inline scripts stay as they are', () => {
+    const doc = spaDocument(html, null);
+    expect(doc).not.toContain('__C4S_PROJECT__');
+    expect(doc).toBe(html);
+    expect(doc).toContain('<script>/* theme */document.documentElement.dataset.t="1";</script>');
   });
 });

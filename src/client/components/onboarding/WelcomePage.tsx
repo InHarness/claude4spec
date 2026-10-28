@@ -1,48 +1,29 @@
-import { useEffect, useState } from 'react';
 import { FolderPlus, Folder } from 'lucide-react';
 import { openModal } from '../../ui/events.js';
 import { Skeleton } from '../../ui/Skeleton.js';
-import type { WorkspaceResponse } from '../../lib/workspace.js';
+import { useWorkspace } from '../../hooks/useWorkspace.js';
 import { navigateDocument } from '../../lib/document-nav.js';
 
-interface WorkspaceProject {
-  id: string;
-  name: string;
-  cwd: string;
-  live: boolean;
-}
-
-/** `GET /api/workspace`: the `WorkspaceResponse` fields plus the UI's project listing. */
-interface WorkspaceListing extends WorkspaceResponse {
-  projects: WorkspaceProject[];
-}
-
 /**
- * Decision #11 (0.1.57): `/welcome` runs the SPA project-less. 0.1.137: it is the
- * SOLE, unconditional target of the root `/` redirect (no more auto-jump to the
- * last-opened project) and, as before, the permanent target of the bare
- * `npx @inharness-ai/claude4spec`. Lists the workspace projects neutrally
- * (no highlight for the process CWD); picking one does a full reload to
- * `/p/<id>/` because PROJECT_ID / API_BASE / router basepath are module-load
- * constants. "Add project to workspace" reuses the switcher's AddProjectDialog.
+ * M31 ui-view `welcome-page` (`/welcome`) — a WORKSPACE ROUTE (2.1.58): mounted
+ * outside the project prefix, in the workspace route frame (M50 `1bd92aq2`),
+ * which also carries the bar with the branding and the workspace header entry;
+ * the screen itself is only the registry listing. Its document has no
+ * `window.__C4S_PROJECT__` by construction.
+ *
+ * Lists the workspace projects neutrally (no highlight for the directory the
+ * process was started in); picking one does a full load of `/p/<id>/`, because
+ * PROJECT_ID / API_BASE / the router basepath are module-load constants. "Add
+ * project to workspace" opens the `project-create` window.
  */
 export function WelcomePage() {
-  const [workspace, setWorkspace] = useState<WorkspaceListing | null>(null);
-
-  useEffect(() => {
-    fetch('/api/workspace')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: WorkspaceListing | null) => d && setWorkspace(d))
-      .catch(() => {
-        /* keep null — the page still offers "Add project" */
-      });
-  }, []);
+  const { data: workspace } = useWorkspace();
 
   const projects = workspace?.projects ?? [];
 
   return (
     <div
-      className="h-full w-full flex items-start justify-center overflow-y-auto"
+      className="flex-1 min-h-0 w-full flex items-start justify-center overflow-y-auto"
       style={{ background: 'var(--c-bg)' }}
     >
       <div

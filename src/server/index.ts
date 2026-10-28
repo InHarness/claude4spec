@@ -19,7 +19,7 @@ import { ProjectContextCache } from './workspace/context-cache.js';
 import { projectDispatchMiddleware } from './workspace/middleware.js';
 import { workspaceRouter } from './workspace/routes.js';
 import type { WorkspaceRecord } from './workspace/types.js';
-import { resolveSpaRoute } from './workspace/spa-route.js';
+import { resolveSpaRoute, spaDocument, type SpaResolution } from './workspace/spa-route.js';
 import { PluginRegistryImpl } from './core/plugin-host/registry.js';
 import { registerAllPlugins } from './core/plugin-host/register-builtins.js';
 import { logRefRegistrationWarnings, refRegistrationWarnings } from './core/plugin-host/ref-warnings.js';
@@ -128,26 +128,26 @@ async function listenOrExit(server: HttpServer, port: number, host: string): Pro
   }
 }
 
-// Wstrzykuje tozsamosc projektu do serwowanego HTML — zaraz po <head>, czyli PRZED
-// inline theme-scriptem i bundlem React. Klient czyta `window.__C4S_PROJECT__.id`
-// synchronicznie przy module-load, zeby suffiksowac project-scoped klucze localStorage
-// (`::<scope>`), zbudowac API_BASE `/api/projects/<id>` i basepath routera `/p/<id>`.
-// M31: id przychodzi z ROUTE (`/p/<id>/…` → registry lookup) i jest STABILNYM,
-// przechowywanym `project.id` — nie przeliczamy go z cwd, zeby edycja cwd w
-// workspaces.json nie rozjechala routera/basepath z URL-em.
-function injectProjectGlobal(html: string, id: string, name: string): string {
-  const payload = JSON.stringify({ id, name }).replace(/</g, '\\u003c');
-  return html.replace('<head>', `<head><script>window.__C4S_PROJECT__=${payload};</script>`);
-}
-
 // M33 "Option B": inject the plugin import map into <head> statically (before any
 // module script resolves), so a runtime plugin's bare imports (`react`, …) resolve
-// to the host's singleton shims. Applied to every SPA page (welcome + project).
+// to the host's singleton shims. Applied to every SPA page (workspace + project routes).
 const IMPORT_MAP_SCRIPT = `<script type="importmap">${JSON.stringify({
   imports: buildImportMap(),
 }).replace(/</g, '\\u003c')}</script>`;
 function injectImportMap(html: string): string {
   return html.replace('<head>', `<head>${IMPORT_MAP_SCRIPT}`);
+}
+
+/**
+ * The project identity a served document carries: the project of a `/p/<id>/…`
+ * route (opening it records the workspace's last opened project), `null` on a
+ * workspace route, which has no project (M50 `1bd92aq2`).
+ */
+function documentIdentity(deps: SpaDeps, resolution: Exclude<SpaResolution, { kind: 'redirect' }>) {
+  if (resolution.kind === 'workspace') return null;
+  const { project } = resolution;
+  deps.registry.touchLastOpened(deps.workspace.name, project.id);
+  return { id: project.id, name: readPeerConfigSummary(project.cwd).name ?? project.id };
 }
 
 interface SpaDeps {
@@ -179,15 +179,10 @@ async function mountDevVite(app: Express, deps: SpaDeps) {
       let html = await fs.promises.readFile(htmlPath, 'utf-8');
       html = await vite.transformIndexHtml(req.originalUrl, html);
       html = injectImportMap(html);
-      // `/welcome` runs the SPA project-less: no `window.__C4S_PROJECT__`, so the
-      // client computes PROJECT_ID='' → API_BASE='/api' → router basepath '/'.
-      if (resolution.kind === 'welcome') {
-        return res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
-      }
-      const { project } = resolution;
-      deps.registry.touchLastOpened(deps.workspace.name, project.id);
-      html = injectProjectGlobal(html, project.id, readPeerConfigSummary(project.cwd).name ?? project.id);
-      res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+      res
+        .status(200)
+        .set({ 'Content-Type': 'text/html' })
+        .end(spaDocument(html, documentIdentity(deps, resolution)));
     } catch (err) {
       vite.ssrFixStacktrace(err as Error);
       next(err);
@@ -208,16 +203,10 @@ function mountProd(app: Express, deps: SpaDeps) {
       const resolution = resolveSpaRoute(deps.registry, deps.workspace, urlPath);
       if (resolution.kind === 'redirect') return res.redirect(302, resolution.to);
       const raw = injectImportMap(fs.readFileSync(path.join(clientDist, 'index.html'), 'utf-8'));
-      // `/welcome` runs the SPA project-less (no `window.__C4S_PROJECT__`).
-      if (resolution.kind === 'welcome') {
-        return res.status(200).set({ 'Content-Type': 'text/html' }).end(raw);
-      }
-      const { project } = resolution;
-      deps.registry.touchLastOpened(deps.workspace.name, project.id);
       res
         .status(200)
         .set({ 'Content-Type': 'text/html' })
-        .end(injectProjectGlobal(raw, project.id, readPeerConfigSummary(project.cwd).name ?? project.id));
+        .end(spaDocument(raw, documentIdentity(deps, resolution)));
     } catch (err) {
       next(err);
     }

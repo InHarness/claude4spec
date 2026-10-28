@@ -114,6 +114,26 @@ describe('M33 m33l5man — the manifest of the own project', () => {
     expect(manifestCalls()).toEqual([]);
   });
 
+  it('[section:mbladez6] on a workspace route (a document without the project global by construction) step 1b is skipped as the ordinary path: no request, no warning, no plugin mount', async () => {
+    delete (window as Win).__C4S_PROJECT__;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { boot, imports } = await loadModules();
+
+    await boot.seedPluginActivation();
+    await boot.bootFrontendPlugins(router);
+    await boot.frontendPluginsBooted;
+
+    // Neither the activation list nor the manifest is asked for…
+    expect(fetchMock).not.toHaveBeenCalled();
+    // …nothing is imported or mounted, and the boot settles…
+    expect(imports).toEqual([]);
+    expect(mountFrontend).not.toHaveBeenCalled();
+    expect(boot.pluginBootPending()).toBe(false);
+    // …without treating it as a failure.
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it('[ac:ac-blad-manifestu-host-bez-pluginow] when the frontend manifest request fails, the client renders the host without plugin frontends', async () => {
     (window as Win).__C4S_PROJECT__ = { id: 'app-spec' };
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});

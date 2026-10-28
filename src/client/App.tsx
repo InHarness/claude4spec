@@ -22,8 +22,29 @@ import { usePersistedWidth, useTheme } from './state/tweaks.js';
 import { useChatStore } from './state/chat.js';
 import { useBaseRootId, useConfig } from './hooks/useConfig.js';
 import { countFiles } from '../shared/page-files.js';
+import { WorkspaceFrame } from './components/shell/WorkspaceFrame.js';
 
 export function RootLayout() {
+  // M50 `1bd92aq2`: the route's kind is declared by its owner
+  // (`staticData.routeKind`, L5 `tehej2wz`); a workspace route has no project
+  // and gets the workspace frame instead of the project shell.
+  const isWorkspaceRoute = useMatches({
+    select: (ms) => ms.some((m) => m.staticData?.routeKind === 'workspace'),
+  });
+
+  // The window hosts sit beside whichever shell renders, at a fixed position
+  // in the tree: switching shells (onboarding → main, a config refetch error)
+  // must not unmount them, or an open window vanishes with its promise unsettled.
+  return (
+    <>
+      {isWorkspaceRoute ? <WorkspaceFrame /> : <ProjectShell />}
+      <WindowHosts />
+    </>
+  );
+}
+
+/** The shell of a project route: everything below reads the injected project. */
+function ProjectShell() {
   const navigate = useNavigate();
   const router = useRouter();
   const { data: config, isError, error, refetch } = useConfig();
@@ -45,21 +66,15 @@ export function RootLayout() {
     document.title = config?.name ? `${config.name} | claude4spec` : 'claude4spec';
   }, [config?.name]);
 
-  // The window hosts sit beside whichever shell renders, at a fixed position
-  // in the tree: switching shells (onboarding → main, a config refetch error)
-  // must not unmount them, or an open window vanishes with its promise unsettled.
   return (
-    <>
-      <ShellBody
-        isFullscreen={isFullscreen}
-        isError={isError}
-        error={error}
-        onRetry={() => void refetch()}
-        redirectPending={!!redirectTo}
-        projectName={config?.name ?? null}
-      />
-      <WindowHosts />
-    </>
+    <ShellBody
+      isFullscreen={isFullscreen}
+      isError={isError}
+      error={error}
+      onRetry={() => void refetch()}
+      redirectPending={!!redirectTo}
+      projectName={config?.name ?? null}
+    />
   );
 }
 
@@ -78,9 +93,9 @@ function ShellBody({
   redirectPending: boolean;
   projectName: string | null;
 }) {
-  // Minimalny shell dla onboardingu i welcome (bez sidebara, chatu, watchera).
-  // MainShell nie mountuje sie, wiec useFileWatcher / pages-tree query nie
-  // ruszaja — istotne dla `/welcome`, ktore dziala bez aktywnego projektu.
+  // Minimalny shell trasy pelnoekranowej projektu (onboarding): bez sidebara,
+  // chatu i watchera. Trasy workspace'u (`/welcome`) maja wlasna rame
+  // (`WorkspaceFrame`) i tu nie trafiaja.
   if (isFullscreen) {
     return (
       <div
