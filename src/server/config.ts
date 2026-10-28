@@ -304,16 +304,6 @@ export type NormalizedConfig = Config & {
   description: string | null;
 };
 
-export interface ConfigCliArgs {
-  name?: string;
-  pagesDir?: string;
-  /**
-   * M01 (0.1.36): `--remote-url <url>` maps here. Sticky like `name` —
-   * persisted to `config.json` on first bootstrap, then drives the M24 base URL.
-   */
-  remoteApiUrl?: string | null;
-}
-
 /**
  * v3 (M31): `port`/`mode` left the project config — they are workspace
  * settings now (`~/.claude4spec/workspaces.json`).
@@ -481,14 +471,6 @@ function deepMerge(
       // Scalars (incl. an explicit `null`) and arrays replace wholesale.
       out[key] = value;
     }
-  }
-  return out;
-}
-
-function pickDefined<T extends object>(obj: T): Partial<T> {
-  const out: Partial<T> = {};
-  for (const [k, v] of Object.entries(obj)) {
-    if (v !== undefined) (out as Record<string, unknown>)[k] = v;
   }
   return out;
 }
@@ -895,16 +877,8 @@ function validate(raw: unknown): Partial<Config> {
     // cold; an unreachable-but-syntactically-valid host lets the process start, and
     // the reachability error surfaces only at the first remote action (today: the
     // M24 login) as a graceful per-action failure.
-    if (typeof r.remoteApiUrl === 'string' && r.remoteApiUrl.trim() !== '') {
-      let parsed: URL;
-      try {
-        parsed = new URL(r.remoteApiUrl);
-      } catch {
-        throw new Error(`config.json: field 'remoteApiUrl': invalid URL`);
-      }
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-        throw new Error(`config.json: field 'remoteApiUrl': invalid URL`);
-      }
+    if (typeof r.remoteApiUrl === 'string' && r.remoteApiUrl.trim() !== '' && !isRemoteApiUrl(r.remoteApiUrl)) {
+      throw new Error(`config.json: field 'remoteApiUrl': invalid URL`);
     }
     out.remoteApiUrl = r.remoteApiUrl;
   }
@@ -1038,26 +1012,6 @@ function legacyRootsFromRaw(raw: Record<string, unknown>): Root[] | undefined {
 }
 
 /**
- * Apply the CLI `--pages` override to the BASE root's dir (returns a copy).
- * 0.2.101: the target is the `builtin: true` entry whatever its identifier — the
- * flag keeps its name `--pages` even when the base root is called `docs`, and a
- * USER root that happens to be named `pages` is never touched by it.
- */
-function applyPagesDirOverride<T extends Config>(config: T, pagesDir: string | undefined): T {
-  if (pagesDir == null) return config;
-  return {
-    ...config,
-    roots: config.roots.map((r) => (r.builtin ? { ...r, dir: pagesDir } : r)),
-  };
-}
-
-/** Split ConfigCliArgs into the Config patch (name/remoteApiUrl) and the special `--pages` override. */
-function splitCli(cli: ConfigCliArgs): { patch: Partial<Config>; pagesDir?: string } {
-  const { pagesDir, ...rest } = cli;
-  return { patch: pickDefined(rest) as Partial<Config>, pagesDir };
-}
-
-/**
  * 2.1.8: the pre-2.1.8 directory keys, now unknown fields. Each maps to the
  * system root that replaced it.
  */
@@ -1139,23 +1093,27 @@ function readValidatedFile(cwd: string): Partial<Config> | null {
   return loaded;
 }
 
-export function loadOrCreateConfig(cwd: string, cli: ConfigCliArgs): LoadResult {
+/**
+ * 2.1.58 (M01 `3ebblo1q`, `v878dqht`, `dsh8ezbz` step 4): the activation's config
+ * step — first non-empty wins: the field in the file, then the code default. The
+ * command line is not an input: no flag reaches a project's config. A missing
+ * file is written with the bootstrap key set only (onboarding open); an existing
+ * file is validated and never rewritten. Throws on malformed JSON (with the
+ * position from `JSON.parse`) and on a type mismatch (with the field name) —
+ * never continues with an empty config.
+ */
+export function loadOrCreateConfig(cwd: string): LoadResult {
   const dir = path.join(cwd, '.claude4spec');
   fs.mkdirSync(dir, { recursive: true });
   const file = configPath(cwd);
-  const { patch: cliDefined, pagesDir: cliPagesDir } = splitCli(cli);
 
   const loaded = readValidatedFile(cwd);
   if (loaded === null) {
-    // Swiezy bootstrap: wymusza onboardingCompleted=false zeby AppShell pokazal
-    // /onboarding po pierwszym starcie (M16). Defaults() ma true (forward compat
-    // dla projektow sprzed M16); nadpisanie tylko w tym miejscu. `--pages` seeds
-    // the built-in pages root's dir. Only the bootstrap key set is serialized —
-    // the nested branches come from `defaults()` on every read.
-    const seed: Config = applyPagesDirOverride(
-      { ...bootstrapDefaults(cwd), ...cliDefined, onboardingCompleted: false },
-      cliPagesDir,
-    );
+    // Swiezy plik przy aktywacji: wymusza onboardingCompleted=false zeby AppShell
+    // pokazal /onboarding (M16). Defaults() ma true (forward compat dla projektow
+    // sprzed M16); nadpisanie tylko w tym miejscu. Only the bootstrap key set is
+    // serialized — the nested branches come from `defaults()` on every read.
+    const seed: Config = { ...bootstrapDefaults(cwd), onboardingCompleted: false };
     atomicWrite(file, JSON.stringify(seed, null, 2) + '\n');
     return {
       config: normalizeConfig(seed, defaults(cwd)),
@@ -1164,11 +1122,7 @@ export function loadOrCreateConfig(cwd: string, cli: ConfigCliArgs): LoadResult 
     };
   }
 
-  const effective = applyPagesDirOverride(
-    normalizeConfig({ ...loaded, ...cliDefined }, defaults(cwd)),
-    cliPagesDir,
-  );
-  return { config: effective, created: false, path: file };
+  return { config: normalizeConfig(loaded, defaults(cwd)), created: false, path: file };
 }
 
 /**
@@ -1188,6 +1142,17 @@ function assertMigratable(raw: Record<string, unknown>): void {
   if (roots) {
     const { errors } = validateRootDirs(roots);
     if (errors.length > 0) throw new Error(errors[0]);
+  }
+}
+
+/**
+ * 2.1.58 (M01 `ac-config-json-type-mismatch-np-schem`): a migration decides by
+ * `$schemaVersion` and then stamps its own — so a non-number there must refuse
+ * the file BEFORE any decision, or `"3"` would be silently "converted" to `4`.
+ */
+function assertSchemaVersionType(raw: Record<string, unknown>): void {
+  if ('$schemaVersion' in raw && typeof raw.$schemaVersion !== 'number') {
+    throw typeError('$schemaVersion', 'number', raw.$schemaVersion);
   }
 }
 
@@ -1223,6 +1188,7 @@ export function migrateConfigToV3(cwd: string): MigrateV3Result {
     throw new Error('config.json: expected JSON object at root');
   }
   const raw = parsed as Record<string, unknown>;
+  assertSchemaVersionType(raw);
 
   const alreadyV3 =
     typeof raw.$schemaVersion === 'number' &&
@@ -1274,6 +1240,7 @@ export function migrateConfigToV4(cwd: string): { config: NormalizedConfig; migr
     throw new Error('config.json: expected JSON object at root');
   }
   const raw = parsed as Record<string, unknown>;
+  assertSchemaVersionType(raw);
 
   // A file from a NEWER claude4spec is not ours to touch. Repairing it would
   // mean re-adding fields that version deliberately dropped and stamping
@@ -1404,4 +1371,19 @@ export function resolveDirAbs(cwd: string, dir: string, fieldName: string): stri
     throw new Error(`config.json: ${fieldName} must not escape project root, got: ${dir}`);
   }
   return abs;
+}
+
+/**
+ * M24: the syntactic rule for a remote claude4spec-API base — parsable by
+ * `new URL()` with an `http(s)://` scheme; reachability is never probed. One
+ * rule for `config.remoteApiUrl` and the `--remote-url` start flag.
+ */
+export function isRemoteApiUrl(raw: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return false;
+  }
+  return parsed.protocol === 'http:' || parsed.protocol === 'https:';
 }

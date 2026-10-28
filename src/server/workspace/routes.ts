@@ -8,6 +8,7 @@ import { readPeerConfigSummary } from './peer-config.js';
 import { forgetDbSlot } from '../db/index.js';
 import { workspaceMcpRouter } from '../routes/mcp.js';
 import { readPackageVersion } from '../../bin/c4s/package-version.js';
+import { WorkspaceHomeNotProjectError } from './bootstrap.js';
 
 const pexec = promisify(execFile);
 import type { ProjectContextCache } from './context-cache.js';
@@ -20,8 +21,10 @@ export interface WorkspaceRoutesDeps {
   cache: ProjectContextCache;
   mode: 'dev' | 'prod';
   /**
-   * Full per-project activation hook (M01/M12/M22 bootstrap + registration +
-   * legacy-db migration). Shared with the CLI start path.
+   * Registration with activation (`POST /api/workspace/projects`): the M01
+   * activation's file steps, the registration and the legacy-db move. The CLI
+   * start does not use it — it only registers its `--cwd`, and that project is
+   * activated on its first request, like every other.
    */
   activateProject: (cwd: string) => Promise<ProjectRecord>;
 }
@@ -121,7 +124,9 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
   // `/p/<projectId>/`. The target must already be a readable+writable directory:
   // a missing or unreachable path is the user's typo, answered inline in the
   // modal as `400 VALIDATION`, never created on their behalf and never a 500.
-  // (The CLI start path still `mkdir`s its `--cwd` — that lives in the bootstrap.)
+  // So is a workspace home (2.1.58, M01 `7yzhxgmw`): the activation refuses it
+  // before anything is written or registered. (No path creates a project
+  // directory: the CLI start only registers its `--cwd`.)
   router.post('/workspace/projects', async (req, res, next) => {
     const cwd = req.body?.cwd;
     if (typeof cwd !== 'string' || cwd.trim() === '' || !path.isAbsolute(cwd)) {
@@ -139,7 +144,7 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
       res.status(201).json({ projectId: project.id });
     } catch (err) {
       const code = (err as NodeJS.ErrnoException | null)?.code;
-      if (code && FS_VALIDATION_CODES.has(code)) {
+      if (err instanceof WorkspaceHomeNotProjectError || (code && FS_VALIDATION_CODES.has(code))) {
         return res.status(400).json({
           error: { code: 'VALIDATION', message: err instanceof Error ? err.message : String(err) },
         });

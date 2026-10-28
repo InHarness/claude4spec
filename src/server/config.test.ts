@@ -729,7 +729,7 @@ describe('config — central default normalizer (C23, 0.2.8)', () => {
   it('a fresh bootstrap writes only the historical key set', () => {
     const fresh = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-cfg-boot-'));
     try {
-      const { config, created } = loadOrCreateConfig(fresh, {});
+      const { config, created } = loadOrCreateConfig(fresh);
       expect(created).toBe(true);
       // Normalized in memory…
       expect(config.git.enabled).toBe(false);
@@ -783,7 +783,7 @@ describe('config — the config.json envelope (2.1.8)', () => {
   ];
 
   it('[entity:config-json-shape] a fresh file is version 4, uses only envelope keys, roots entries carry four fields, no system-root key exists and plugins is neither scaffolded nor reserved', () => {
-    loadOrCreateConfig(dir, {});
+    loadOrCreateConfig(dir);
     const raw = JSON.parse(fs.readFileSync(configPath(dir), 'utf8')) as Record<string, unknown>;
     expect(raw.$schemaVersion).toBe(4);
     for (const key of Object.keys(raw)) expect(ENVELOPE_KEYS, key).toContain(key);
@@ -828,7 +828,7 @@ describe('config — the config.json envelope (2.1.8)', () => {
 
   it('[entity:config-json-shape] 2.1.55: `remoteProjectId` is not an envelope key — neither scaffolded nor read, and a write drops a legacy one', () => {
     expect(ENVELOPE_KEYS).not.toContain('remoteProjectId');
-    loadOrCreateConfig(dir, {});
+    loadOrCreateConfig(dir);
     expect(JSON.parse(fs.readFileSync(configPath(dir), 'utf8'))).not.toHaveProperty('remoteProjectId');
 
     // A legacy file still carrying the key (from before 2.1.55) loads without an
@@ -858,7 +858,7 @@ describe('config — the config.json envelope (2.1.8)', () => {
     fs.writeFileSync(file, text);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
-      loadOrCreateConfig(dir, {});
+      loadOrCreateConfig(dir);
       readConfig(dir);
     } finally {
       warn.mockRestore();
@@ -897,7 +897,7 @@ describe('config — elementsMenu on load (2.1.50)', () => {
     const text = write(menu);
     expect(() => readConfig(dir)).not.toThrow();
     expect(readConfig(dir).elementsMenu).toEqual(menu);
-    expect(() => loadOrCreateConfig(dir, {})).not.toThrow();
+    expect(() => loadOrCreateConfig(dir)).not.toThrow();
     expect(fs.readFileSync(configPath(dir), 'utf8')).toBe(text);
   });
 

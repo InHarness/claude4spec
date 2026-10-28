@@ -641,14 +641,14 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
   });
 
   it('[ac:ac-odczyt-konfiguracji-po-swiezym-bootst] a read after a fresh bootstrap returns onboarding.completed === false', async () => {
-    loadOrCreateConfig(dir, {});
+    loadOrCreateConfig(dir);
     const res = await request(app()).get('/config');
     expect(res.status).toBe(200);
     expect(res.body.onboarding).toEqual({ completed: false });
   });
 
   it('[ac:ac-po-domknieciu-onboardingu-odczyt-konf] after onboarding closes, a read returns onboarding.completed === true', async () => {
-    loadOrCreateConfig(dir, {});
+    loadOrCreateConfig(dir);
     await request(app()).patch('/config').send({ onboardingCompleted: true }).expect(200);
     const res = await request(app()).get('/config');
     expect(res.body.onboarding).toEqual({ completed: true });
@@ -663,7 +663,7 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
   });
 
   it('[ac:ac-continue-z-waznym-formularzem-wysyla] the [Continue] body persists name, writingStyle, language, agent.conversationalLanguage, roots and onboardingCompleted in one write', async () => {
-    loadOrCreateConfig(dir, {});
+    loadOrCreateConfig(dir);
     const res = await request(app())
       .patch('/config')
       .send({
@@ -715,7 +715,7 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
   });
 
   it('[ac:ac-skip-nie-wysyla-roots-dir-builtin-roo] the [Skip] body leaves the base root at its bootstrap dir and identifier, with no rename recorded', async () => {
-    loadOrCreateConfig(dir, {});
+    loadOrCreateConfig(dir);
     await request(app()).patch('/config').send({ onboardingCompleted: true }).expect(200);
     expect(onDisk().roots).toEqual([base]);
     expect(fs.existsSync(path.join(dir, '.claude4spec', 'root-renames.json'))).toBe(false);
@@ -723,7 +723,7 @@ describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria
   });
 
   it('[ac:ac-skip-otwiera-confirmmodal-a-po-potwie] the [Skip] body ({ onboardingCompleted: true } alone) leaves both languages null', async () => {
-    loadOrCreateConfig(dir, {});
+    loadOrCreateConfig(dir);
     const res = await request(app()).patch('/config').send({ onboardingCompleted: true });
     expect(res.status).toBe(200);
     expect(res.body.language).toBeNull();

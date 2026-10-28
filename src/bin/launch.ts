@@ -1,12 +1,10 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import type { StartOptions } from '../server/index.js';
-import { migrateConfigToV3 } from '../server/config.js';
 import type { WorkspaceRegistry } from '../server/workspace/registry.js';
-import { bootstrapProject, type BootstrapResult } from '../server/workspace/bootstrap.js';
 import { startWarnings } from '../server/workspace/network-flags.js';
 import { effectiveBindHost, type WorkspaceNetwork } from '../core/workspace/network.js';
-import type { StoredWorkspaceRecord, WorkspaceRecord } from '../server/workspace/types.js';
+import type { ProjectRecord, StoredWorkspaceRecord, WorkspaceRecord } from '../server/workspace/types.js';
+import { isRemoteApiUrl } from '../server/config.js';
 
 /**
  * The launcher's argument parsing and the side-effect-light steps of a start,
@@ -16,24 +14,24 @@ import type { StoredWorkspaceRecord, WorkspaceRecord } from '../server/workspace
 export interface CliArgs {
   port?: number;
   cwd: string;
-  pagesDir?: string;
   mode?: 'dev' | 'prod';
-  name?: string;
   /** M31: workspace selector (`--workspace <name>`); absent = port/default resolution. */
   workspace?: string;
   noOpen: boolean;
   /**
-   * M01 (0.1.36): `--remote-url <url>` — sticky override of the remote
-   * claude4spec-API base. Maps to config `remoteApiUrl`; persisted on first
-   * bootstrap so later sign-ins target the same remote.
+   * 2.1.58 (M01 `3ebblo1q`): `--remote-url <url>` — the remote claude4spec-API
+   * base for the process lifetime, for every project of the workspace; never
+   * written to any `config.json`, so it is not a project-config input and does
+   * not register the CWD. Validated once here with M24's rule for
+   * `remoteApiUrl` (an http(s) URL); an empty value is absent.
    */
   remoteUrl?: string;
   /**
    * Decision #11 (0.1.57): `--create-project` — explicit opt-in to register the
    * CWD as a workspace project. Non-sticky (never written to config.json).
-   * Implied by any per-project flag (`--cwd`/`--name`/`--pages`/
-   * `--remote-url`). Without it the bare command is a workspace-only start that
-   * writes nothing to the CWD and opens `/welcome`.
+   * Implied by `--cwd`. 2.1.58: registration only — the project is activated on
+   * its first request, like every other. Without it the bare command is a
+   * workspace-only start that writes nothing to the CWD and opens `/welcome`.
    */
   createProject: boolean;
   /**
@@ -52,9 +50,7 @@ export function parseLaunchArgs(argv: string[], baseCwd: string = process.cwd())
   const args: CliArgs = {
     port: undefined,
     cwd: baseCwd,
-    pagesDir: undefined,
     mode: undefined,
-    name: undefined,
     workspace: undefined,
     noOpen: false,
     remoteUrl: undefined,
@@ -71,6 +67,16 @@ export function parseLaunchArgs(argv: string[], baseCwd: string = process.cwd())
     if (raw !== 'dev' && raw !== 'prod') throw new Error(`--mode must be 'dev' or 'prod', got '${raw}'`);
     return raw;
   };
+  // M24 owns the rule (`isRemoteApiUrl`, the one `config.remoteApiUrl` passes);
+  // an invalid value refuses the start, an empty one (`--remote-url=`) is absent
+  // so `config.remoteApiUrl` still applies.
+  const parseRemoteUrl = (raw: string): string | undefined => {
+    const value = raw.trim();
+    if (value === '') return undefined;
+    // ASSUMPTION:dev-0203 — the wording of the refusal (not settled by the pages).
+    if (!isRemoteApiUrl(value)) throw new Error(`--remote-url must be an http(s) URL, got '${raw}'`);
+    return value;
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--port' && argv[i + 1]) {
@@ -83,26 +89,18 @@ export function parseLaunchArgs(argv: string[], baseCwd: string = process.cwd())
     } else if (a?.startsWith('--cwd=')) {
       args.cwd = resolveCwd(a.split('=')[1]!);
       cwdExplicit = true;
-    } else if (a === '--pages' && argv[i + 1]) {
-      args.pagesDir = argv[++i];
-    } else if (a?.startsWith('--pages=')) {
-      args.pagesDir = a.split('=')[1];
     } else if (a === '--mode' && argv[i + 1]) {
       args.mode = parseMode(argv[++i]!);
     } else if (a?.startsWith('--mode=')) {
       args.mode = parseMode(a.split('=')[1]!);
-    } else if (a === '--name' && argv[i + 1]) {
-      args.name = argv[++i];
-    } else if (a?.startsWith('--name=')) {
-      args.name = a.split('=')[1];
     } else if (a === '--workspace' && argv[i + 1]) {
       args.workspace = argv[++i];
     } else if (a?.startsWith('--workspace=')) {
       args.workspace = a.split('=')[1];
     } else if (a === '--remote-url' && argv[i + 1]) {
-      args.remoteUrl = argv[++i];
+      args.remoteUrl = parseRemoteUrl(argv[++i]!);
     } else if (a?.startsWith('--remote-url=')) {
-      args.remoteUrl = a.split('=')[1];
+      args.remoteUrl = parseRemoteUrl(a.slice('--remote-url='.length));
     } else if (a === '--host' && argv[i + 1] !== undefined) {
       args.host = argv[++i];
     } else if (a?.startsWith('--host=')) {
@@ -117,16 +115,11 @@ export function parseLaunchArgs(argv: string[], baseCwd: string = process.cwd())
       args.noOpen = true;
     }
   }
-  // Decision #11: per-project flags imply `--create-project` — each acted on the
-  // CWD project in 0.1.56, so their use still registers it (eases migration).
-  if (
-    cwdExplicit ||
-    args.name != null ||
-    args.pagesDir != null ||
-    args.remoteUrl != null
-  ) {
-    args.createProject = true;
-  }
+  // Decision #11: `--cwd` implies `--create-project`. 2.1.58 (M01 `3ebblo1q`):
+  // the command line is no project-config input any more — there is no
+  // `--name`/`--pages`, and `--remote-url` is a process value, so neither
+  // registers the CWD.
+  if (cwdExplicit) args.createProject = true;
   return args;
 }
 
@@ -172,10 +165,13 @@ export function openStartWorkspace(
 
 /** Everything a start does before listen, and the options it then listens with. */
 export interface PreparedStart {
-  /** The view `startServer` serves (after the bootstrap's registration, on a create-project start). */
+  /** The view `startServer` serves (after the registration, on a create-project start). */
   workspace: WorkspaceRecord;
-  /** The create-project activation; `null` on a workspace-only start. */
-  boot: BootstrapResult | null;
+  /**
+   * The project a create-project start registered (NOT activated — it is
+   * activated on its first request); `null` on a workspace-only start.
+   */
+  project: ProjectRecord | null;
   port: number;
   mode: 'dev' | 'prod';
   options: StartOptions;
@@ -183,16 +179,18 @@ export interface PreparedStart {
 
 /**
  * The launcher's pre-listen sequence (`claude4spec.ts` runs exactly this, then
- * `startServer(prepared.options)`):
+ * `startServer(prepared.options)`). 2.1.58 (M01 `dsh8ezbz`, M31 `m31ctx001`):
+ * no project is activated or built here — not even the one a create-project
+ * start names. Every project activates on its first request, from the file and
+ * the defaults, so a broken `config.json` is that activation's error and never
+ * refuses the start.
  *
- *  - create-project (`--create-project` or an implying flag): mkdir the CWD,
- *    peek the config-v3 migration (a pre-v3 `config.json.port` can still select
- *    the workspace; the first-wins carry happens in the bootstrap), open the
- *    workspace, then run the full per-project activation (M31 bootstrap);
- *  - workspace-only (decision #11, the bare command): no mkdir, no config peek
- *    (it would rewrite `config.json`), no bootstrap — nothing is written to the
- *    CWD; the CWD is never registered, even when it already carries a
- *    `.claude4spec/config.json`.
+ *  - create-project (`--create-project` or `--cwd`): open the workspace, then
+ *    REGISTER the CWD (an entry in the registry / `workspace.json` and the slot
+ *    marker) — nothing is written to the CWD;
+ *  - workspace-only (decision #11, the bare command): no registration — nothing
+ *    is written to the CWD; the CWD is never registered, even when it already
+ *    carries a `.claude4spec/config.json`.
  *
  * Either way the workspace is opened by `openStartWorkspace`, and the server
  * gets this registry and that view — not a second registry of its own.
@@ -202,55 +200,29 @@ export function prepareStart(
   args: CliArgs,
   network: NetworkStep = (entry) => entry,
 ): PreparedStart {
-  if (!args.createProject) {
-    const workspace = openStartWorkspace(registry, { name: args.workspace, port: args.port, mode: args.mode }, network);
-    const port = args.port ?? workspace.defaultPort;
-    const mode = args.mode ?? workspace.mode;
-    return {
-      workspace,
-      boot: null,
-      port,
-      mode,
-      options: { cwd: args.cwd, registry, workspace, initialProject: null, port, host: effectiveBindHost(workspace), mode },
-    };
-  }
-  fs.mkdirSync(args.cwd, { recursive: true });
-  const peeked = migrateConfigToV3(args.cwd);
-  const opened = openStartWorkspace(
-    registry,
-    {
-      name: args.workspace,
-      port: args.port ?? peeked.carried.defaultPort,
-      mode: args.mode ?? peeked.carried.mode,
-    },
-    network,
-  );
-  const boot = bootstrapProject(registry, opened, args.cwd, {
-    name: args.name,
-    pagesDir: args.pagesDir,
-    remoteApiUrl: args.remoteUrl,
-  });
+  const opened = openStartWorkspace(registry, { name: args.workspace, port: args.port, mode: args.mode }, network);
+  // A `--cwd` at a workspace home is registered here as given: its refusal (and
+  // `--cwd` naming the workspace home) is the start's workspace rule, owned by
+  // the `workspace-selection-at-start` unit (M31 flag combinations). Until then
+  // such a project answers its activation's refusal on its first request.
+  const project = args.createProject ? registry.registerProject(opened, args.cwd) : null;
   // The view after the registration (this registry's own write — no re-read).
-  const workspace = registry.getWorkspace(opened.name) ?? opened;
+  const workspace = project ? (registry.getWorkspace(opened.name) ?? opened) : opened;
   const port = args.port ?? opened.defaultPort;
   const mode = args.mode ?? opened.mode;
   return {
     workspace,
-    boot,
+    project,
     port,
     mode,
     options: {
       cwd: args.cwd,
       registry,
       workspace,
-      initialProject: boot.project,
       port,
       host: effectiveBindHost(workspace),
-      pagesDir: args.pagesDir,
       mode,
-      // Resolved flag > config.json > null; startServer applies the prod-constant
-      // fallback inside RemoteHttpClient.
-      remoteApiUrl: boot.config.remoteApiUrl,
+      remoteApiUrl: args.remoteUrl,
     },
   };
 }

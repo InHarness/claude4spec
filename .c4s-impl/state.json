@@ -453,7 +453,7 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "lazy-project-activation/p1-l2-l10",
@@ -486,18 +486,18 @@
             "section:m29krit1",
             "section:za9e9492"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 3,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "cebcc7d62a2b9f9c24c39497f033eebf675923a0",
+      "baseCommit": "cebcc7d62a2b9f9c24c39497f033eebf675923a0",
       "rounds": {
-        "review": 0,
-        "unit": 0
+        "review": 2,
+        "unit": 3
       },
       "jobs": []
     },

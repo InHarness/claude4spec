@@ -8,8 +8,9 @@ PORT="${PORT:-3000}"
 # a proxy hostname) needs PUBLIC_URL set to that address.
 PUBLIC_URL="${PUBLIC_URL:-}"
 
-# bootstrapProject() is idempotent (src/server/workspace/bootstrap.ts) — safe
-# to run --create-project against an already-provisioned volume on restart.
+# --create-project only registers the directory (idempotent — safe against an
+# already-provisioned volume on restart); the project is activated on its first
+# request (src/server/workspace/bootstrap.ts activateProject).
 mkdir -p "$PROJECT_DIR"
 exec node dist/bin/claude4spec.js \
   --cwd "$PROJECT_DIR" \

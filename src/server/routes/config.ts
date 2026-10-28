@@ -39,12 +39,9 @@ export interface ConfigRouterDeps {
   cwd: string;
   skillRegistry: SkillRegistry;
   /**
-   * The roots the RUNNING context was built from — `config.roots[]` with the built-in
-   * `pages` dir replaced by the `--pages` CLI override, when one was given. Overlap
-   * validation must use these, not the raw config: under `c4s --pages docs` the config
-   * may still say 'pages', so validating against the file would bless a root `dir`
-   * that the next boot then rejects, leaving the project unopenable. Optional so tests
-   * and any other caller can fall back to the on-disk roots.
+   * The roots the RUNNING context was built from — `config.roots[]` as the build read
+   * it (2.1.58: no start flag overrides a root's `dir`). Optional so tests and any
+   * other caller can fall back to the on-disk roots.
    */
   effectiveRoots?: Root[];
   /**

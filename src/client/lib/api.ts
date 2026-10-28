@@ -164,6 +164,7 @@ function encodePath(p: string): string {
 }
 
 export interface ConfigResponse {
+  /** M01: display name — default the project directory's name (written at first activation; no start flag sets it). */
   name: string;
   /**
    * 0.1.96 multiroot: replaces the single `pagesDir`.
@@ -253,7 +254,11 @@ export interface ConfigResponse {
     };
     switchAfterRelease: boolean;
   };
-  /** M24: explicit remote-API override; null = production constant. UI hides this. */
+  /**
+   * M24: remote-API override as `config.json` holds it (set by hand in the file);
+   * null = production constant. The `--remote-url` start flag overrides it for the
+   * process lifetime without changing it, so it never shows here. UI hides this.
+   */
   remoteApiUrl: string | null;
   /** M01: config schema version (0.1.96 bumped to 4 — pagesDir → roots[]). */
   $schemaVersion: number;

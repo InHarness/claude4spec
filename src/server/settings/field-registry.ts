@@ -52,8 +52,9 @@ export interface FieldValidationContext {
   current: NormalizedConfig;
   skillRegistry: SkillRegistry;
   /**
-   * Roots the running context was built from (`--pages` override applied); falls
-   * back to `current.roots` when the caller has none.
+   * Roots the running context was built from (its `config.json` at build time —
+   * 2.1.58: no start flag overrides them); falls back to `current.roots` when the
+   * caller has none.
    */
   effectiveRoots: Root[];
   /** Keys (dotted) the request actually carries, after the whitelist. */

@@ -8,7 +8,7 @@ import {
 } from '../server/workspace/network-flags.js';
 import { effectivePublicUrl } from '../core/workspace/network.js';
 import type { StoredWorkspaceRecord } from '../server/workspace/types.js';
-import { parseLaunchArgs, prepareStart, printStartWarnings, projectStartUrl, type PreparedStart } from './launch.js';
+import { parseLaunchArgs, prepareStart, printStartWarnings, projectStartUrl, type CliArgs, type PreparedStart } from './launch.js';
 
 function openBrowser(url: string): void {
   const { platform } = process;
@@ -29,8 +29,16 @@ function openBrowser(url: string): void {
   }
 }
 
-const args = parseLaunchArgs(process.argv.slice(2));
-const { port, cwd, pagesDir, noOpen } = args;
+// An invalid flag value (`--mode`, `--remote-url`) refuses the start before
+// anything is read or written.
+let args: CliArgs;
+try {
+  args = parseLaunchArgs(process.argv.slice(2));
+} catch (err) {
+  console.error(`\x1b[31mINVALID_ARGS\x1b[0m — ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(1);
+}
+const { port, cwd, noOpen } = args;
 
 const registry = new WorkspaceRegistry();
 
@@ -62,32 +70,31 @@ function withNetwork(entry: StoredWorkspaceRecord): StoredWorkspaceRecord {
 
 // Everything before listen — workspace selection, the single eager read of a
 // home's workspace.json (after its .gitignore), and on a create-project start
-// the per-project activation. startServer gets this registry and its view.
+// the CWD's registration. No project is activated or built before listen: each
+// activates on its first request. startServer gets this registry and its view.
 let prepared: PreparedStart;
 try {
   prepared = prepareStart(registry, args, withNetwork);
 } catch (err) {
   failToStart(err);
 }
-const { workspace, boot } = prepared;
+const { workspace, project } = prepared;
 const effectivePort = prepared.port;
 const effectiveMode = prepared.mode;
 
 startServer(prepared.options)
   .then((handle) => {
     const publicUrl = effectivePublicUrl({ ...workspace, defaultPort: effectivePort });
-    if (boot) {
+    if (project) {
       // `handle.url` is the LOCAL address (loopback or a concrete bindHost) —
-      // the browser opens that, never `publicUrl`.
-      const projectUrl = projectStartUrl(handle.url, boot.project.id);
+      // the browser opens that, never `publicUrl`. The project activates on
+      // that first request (its config is created then, if it has none).
+      const projectUrl = projectStartUrl(handle.url, project.id);
+      registry.touchLastOpened(workspace.name, project.id);
       console.log(`\x1b[32m  claude4spec\x1b[0m  ready at \x1b[36m${projectUrl}\x1b[0m`);
       console.log(`  workspace: ${workspace.name}`);
       console.log(`  public url: ${publicUrl}`);
-      console.log(`  cwd: ${cwd}`);
-      const baseRoot = boot.config.roots.find((r) => r.builtin);
-      console.log(`  pages: ${pagesDir ?? baseRoot?.dir ?? '(none)'}${baseRoot ? ` (root id: ${baseRoot.id})` : ''}`);
-      console.log(`  config: ${boot.configPath}${boot.configCreated ? ' (created)' : ''}`);
-      console.log(`  writing style: ${handle.writingStyle ? `${handle.writingStyle.title} (${handle.writingStyle.slug})` : 'none'}`);
+      console.log(`  project: ${project.id} (${cwd}) — activated on its first request`);
       if (!noOpen && effectiveMode === 'prod') openBrowser(projectUrl);
     } else {
       // Workspace-only start (decision #11): nothing was written to the CWD;

@@ -289,8 +289,8 @@ export interface MountContext {
   cwd: string;
   /**
    * 0.2.8 (A19): the project's effective page roots. Plugins that run an LLM adapter need
-   * them together with `cwd` to resolve the same FS path scope as the chat turn — the CLI
-   * `--pages` override means they are not always what `config.json` holds.
+   * them together with `cwd` to resolve the same FS path scope as the chat turn — the
+   * roots the context was built from, not a re-read of `config.json`.
    */
   roots: Root[];
   ws: WsEmitter;

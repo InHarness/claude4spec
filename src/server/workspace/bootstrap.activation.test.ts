@@ -42,8 +42,7 @@ describe('M01 project activation — welcome-page step, no clone', () => {
   });
   afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
-  const activate = (opts: { pagesDir?: string } = {}) =>
-    bootstrapProject(registry, registry.selectOrCreate({ name: 'default' }), cwd, opts);
+  const activate = () => bootstrapProject(registry, registry.selectOrCreate({ name: 'default' }), cwd);
 
   const writeConfig = (cfg: Record<string, unknown>) => {
     fs.mkdirSync(path.dirname(configPath(cwd)), { recursive: true });

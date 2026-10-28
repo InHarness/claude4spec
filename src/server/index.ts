@@ -10,15 +10,15 @@ import { createRoomBroadcaster } from './ws/watch-broadcaster.js';
 import { FileWatchRuntime } from './fs/watcher.js';
 import { PLUGINS_BASE_SOURCE } from './fs/sources.js';
 import { type WorkspaceRegistry, DEFAULT_WORKSPACE_PORT } from './workspace/registry.js';
-import { bootstrapProject } from './workspace/bootstrap.js';
+import { ActivatedProjects, activatingBuild, bootstrapProject } from './workspace/bootstrap.js';
 import { readPeerConfigSummary } from './workspace/peer-config.js';
 import { checkRequest, hostOriginGuard } from './http/host-origin-guard.js';
 import { effectiveBindHost, localServerUrl } from '../core/workspace/network.js';
 import { buildProjectContext } from './workspace/project-context.js';
-import { ProjectBuildFailedError, ProjectContextCache } from './workspace/context-cache.js';
+import { ProjectContextCache } from './workspace/context-cache.js';
 import { projectDispatchMiddleware } from './workspace/middleware.js';
 import { workspaceRouter } from './workspace/routes.js';
-import type { ProjectRecord, WorkspaceRecord } from './workspace/types.js';
+import type { WorkspaceRecord } from './workspace/types.js';
 import { resolveSpaRoute } from './workspace/spa-route.js';
 import { PluginRegistryImpl } from './core/plugin-host/registry.js';
 import { registerAllPlugins } from './core/plugin-host/register-builtins.js';
@@ -53,13 +53,6 @@ export interface StartOptions {
    * start, this registry's own writes update it at once.
    */
   workspace: WorkspaceRecord;
-  /**
-   * Decision #11 (0.1.57): the project a create-project start (CLI
-   * `--create-project` / an implying flag) activated before listen, or `null`
-   * for a workspace-only start — nothing is registered/activated, nothing is
-   * written to `cwd`, and the bare command lands on `/welcome`.
-   */
-  initialProject: ProjectRecord | null;
   port?: number;
   /**
    * 2.1.0: listen address. Absent ⇒ the workspace's `bindHost` (loopback when
@@ -67,19 +60,18 @@ export interface StartOptions {
    */
   host?: string;
   mode?: 'dev' | 'prod';
-  pagesDir?: string;
   /**
-   * M01 (0.1.36): resolved `--remote-url` value (flag > config.json). `null`/
-   * absent ⇒ fall back to `bootConfig.remoteApiUrl`, then the M24 prod constant
-   * (applied inside RemoteHttpClient). Drives the M24 auth client.
+   * 2.1.58 (M01 `3ebblo1q`): the `--remote-url` start flag. It overrides
+   * `config.remoteApiUrl` of EVERY project of the process for the process
+   * lifetime and is never written to a file. Absent ⇒ each project's
+   * `config.remoteApiUrl`, then the M24 prod constant (inside RemoteHttpClient).
    */
-  remoteApiUrl?: string | null;
+  remoteApiUrl?: string;
 }
 
 export interface ServerHandle {
   url: string;
   port: number;
-  writingStyle: { slug: string; title: string } | null;
   shutdown: () => Promise<void>;
 }
 
@@ -271,10 +263,6 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     });
   }
 
-  // Decision #11: a workspace-only start has no initial project — `cwd` stays
-  // untouched and the bare command lands on `/welcome`.
-  const initialProject = opts.initialProject;
-
   // M31: process-immutable plugin catalog, populated exactly once.
   const pluginRegistry = new PluginRegistryImpl();
   registerAllPlugins(pluginRegistry);
@@ -340,11 +328,19 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // route, and announced by every project's manifest (2.1.22).
   const frontendBase = { workspacePackages: resolvePluginPackages(workspace), envelopes };
 
-  // M31: lazily-built, cached per-project contexts. The CLI-only overrides
-  // (pagesDir flag, --remote-url) apply solely to the initial project.
-  const cache: ProjectContextCache = new ProjectContextCache(async (project) => {
-    const isInitial = initialProject != null && project.id === initialProject.id;
-    return buildProjectContext({
+  // M31 `m31ctx001` / M01 `dsh8ezbz`: lazily-built, cached per-project
+  // contexts. Every project — none is an exception — is activated and built on
+  // its FIRST REQUEST, never before listen: the activation (refusal of a
+  // workspace home, the config from the file and the defaults, the fresh file,
+  // the roots, the welcome page, the legacy db move) runs inside the build, so
+  // its failure is that project's `500 PROJECT_BUILD_FAILED` and the process
+  // keeps serving. No start flag reaches a project except `--remote-url`, for
+  // every project alike. `activated` is the process's record of activated
+  // projects, shared with the registration route below: a project added through
+  // POST /api/workspace/projects is not activated a second time by its first build.
+  const activated = new ActivatedProjects();
+  const cache: ProjectContextCache = new ProjectContextCache(activatingBuild(registry, workspace, (project) =>
+    buildProjectContext({
       registry,
       pluginRegistry,
       pluginRecords: pluginLoad.records,
@@ -355,8 +351,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       gateway,
       watchRuntime,
       mode,
-      remoteApiUrl: isInitial ? opts.remoteApiUrl : undefined,
-      pagesDirOverride: isInitial ? opts.pagesDir : undefined,
+      remoteApiUrl: opts.remoteApiUrl,
       onTurnFinished: () => cache.reapIdle(),
       onContextConfigChanged: (opts) => cache.invalidate(project.id, opts),
       // 2.1.9 (M52 `1v62dbhb`): a provider's context, on request, from this cache
@@ -366,8 +361,8 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
         if (!record) throw new Error(`project "${providerId}" is not in workspace "${workspace.name}"`);
         return cache.get(record);
       },
-    });
-  });
+    }),
+  activated));
 
   // M33 phase 3: process-global base (workspace/npm) plugin hot-reload watcher.
   // The base catalog is shared across projects, so a reload mutates the shared
@@ -449,12 +444,13 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     );
   }
 
-  // Per-project activation — POST /api/workspace/projects runs the SAME full
-  // bootstrap as a CLI start (M01 hooks + registration + db migration).
+  // Registration with activation — POST /api/workspace/projects (M01 file steps,
+  // then the registration and the legacy db move); the context itself is built
+  // on the project's first request, like every other.
   // 0.2.93: no integration artifact is written here — the MCP config is served
   // on demand by `GET /api/projects/:id/_meta/mcp-config`.
   const activateProject = async (projectCwd: string) => {
-    return bootstrapProject(registry, workspace, projectCwd).project;
+    return bootstrapProject(registry, workspace, projectCwd, activated).project;
   };
 
   app.use('/api', workspaceRouter({ registry, workspace, cache, mode, activateProject }));
@@ -479,23 +475,8 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // `{ error: { code, message } }` instead of Express's HTML error page.
   app.use('/api', errorHandler);
 
-  // Eager warm of the CLI-started project: it is built before listen. A
-  // workspace-only start has no initial project to warm.
-  //
-  // 2.1.23 — a project whose context cannot be BUILT (an unresolvable
-  // `config.writingStyle`, say) blocks that project, not the process: the
-  // server serves many projects, so the failure is logged and the project
-  // answers `500 PROJECT_BUILD_FAILED` (retried after the failed-build window)
-  // until `config.json` is repaired. Any other error still fails the boot.
-  let initialCtx: Awaited<ReturnType<typeof cache.get>> | null = null;
-  if (initialProject) {
-    try {
-      initialCtx = await cache.get(initialProject);
-    } catch (err) {
-      if (!(err instanceof ProjectBuildFailedError)) throw err;
-      console.error(`[claude4spec] project '${initialProject.id}' failed to build — ${err.message}`);
-    }
-  }
+  // 2.1.58 (M31 `m31ctx001`): no project is built before listen — fail-fast of
+  // a broken project config at process start is given up deliberately.
 
   const spaDeps = { registry, workspace, startCwd: cwd };
   const closeAssets = mode === 'dev' ? await mountDevVite(app, spaDeps) : mountProd(app, spaDeps);
@@ -503,7 +484,6 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const host = opts.host ?? effectiveBindHost(liveWorkspace());
   const port = await listenOrExit(httpServer, portRef.current, host);
   portRef.current = port;
-  if (initialProject) registry.touchLastOpened(workspace.name, initialProject.id);
   // The LOCAL address (loopback, or a concrete bindHost) — what the launcher
   // opens in the browser. Never `publicUrl`.
   const url = localServerUrl({ defaultPort: port, bindHost: host });
@@ -511,7 +491,6 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   return {
     url,
     port,
-    writingStyle: initialCtx?.writingStyle ?? null,
     shutdown: async () => {
       /**
        * FIRST, before the watcher can hand out another event to reschedule one.

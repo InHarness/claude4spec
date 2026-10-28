@@ -235,10 +235,13 @@ export interface ProjectContextDeps {
   /** M40: the process-wide file-watch runtime. Mounts made here carry `scope: 'context:<id>'`. */
   watchRuntime: FileWatchRuntime;
   mode: 'dev' | 'prod';
-  /** Resolved `--remote-url` value (flag > config.json); null/absent ⇒ prod constant. */
-  remoteApiUrl?: string | null;
-  /** CLI `--pages` override — effective only for the CLI-started project. */
-  pagesDirOverride?: string;
+  /**
+   * 2.1.58 (M01 `3ebblo1q`): the `--remote-url` start flag — the one start value
+   * that reaches a project, for every project of the process and for its
+   * lifetime, never written to `config.json`. Absent ⇒ `config.remoteApiUrl`,
+   * then the prod constant.
+   */
+  remoteApiUrl?: string;
   /** M31: pinged when an agent turn finishes — context-cache idle-retry hook. */
   onTurnFinished?: () => void;
   /**
@@ -371,25 +374,19 @@ async function buildInner(
   const pendingInputs = new Map<string, PendingInput>();
 
   const skillRegistry = SkillRegistry.load(findSkillsRoots(cwd));
-  // 0.2.8: config migrations belong to project ACTIVATION, not to bootstrap
-  // alone. `bootstrapProject` runs only for the CLI `--cwd` project and for
-  // freshly added ones, so a workspace's other projects — opened here, from the
-  // switcher — never saw a migration: the same workspace could hold one repaired
-  // project and two carrying the shape that no longer loads. Idempotent, and it
-  // writes only when something actually changed.
+  // 0.2.8: config migrations belong to project ACTIVATION. The server's cache
+  // runs the activation (`activateProject`) right before this build; the build
+  // keeps its own idempotent pass so a context built by any other caller never
+  // reads a shape that no longer loads. Writes only when something changed.
   // 0.2.101: finish or undo a rename interrupted between its two writes, before
   // anything reads `roots[]` (see `root-renames.ts`). Idempotent and a no-op
   // without a journal.
   recoverPendingRootRename(cwd);
   migrateConfigToV4(cwd);
   const bootConfig = readConfig(cwd);
-  // 0.1.96: page roots come from config.roots[]. The CLI --pages override
-  // applies to the BASE root's dir only — 0.2.101: the entry carrying
-  // `builtin: true`, whatever its identifier. A user root that happens to be
-  // called `pages` is not the flag's target.
-  const effectiveRoots: Root[] = bootConfig.roots.map((r) =>
-    r.builtin && deps.pagesDirOverride ? { ...r, dir: deps.pagesDirOverride } : r,
-  );
+  // 0.1.96: page roots come from config.roots[] — the file and the defaults
+  // alone (2.1.58: no start flag names a root's directory).
+  const effectiveRoots: Root[] = bootConfig.roots;
   // 2.1.8: the ROOT REGISTRY — the user roots above (kind `pages`) plus the five
   // system roots registered in code (plans, briefs, patches, entities, releases),
   // each at its fixed `.claude4spec/<kind>`. No directory is read from a config key.
@@ -441,8 +438,8 @@ async function buildInner(
     const { errors } = validateRootDirs(effectiveRoots);
     if (errors.length > 0) throw new Error(errors[0]);
   }
-  // M01 (0.1.36): resolve the remote base URL with precedence
-  // `--remote-url` flag (deps) > config.json > prod constant. The prod-constant
+  // M01 `3ebblo1q`: resolve the remote base URL with precedence
+  // `--remote-url` flag (process lifetime, deps) > config.json > prod constant. The prod-constant
   // fallback lives in RemoteHttpClient; here `null` means "use prod".
   // M24 (0.1.65): an explicit remoteApiUrl override (flag or config.json) is only
   // syntax-validated at config load; the client bootstrap is cold — no network probe
@@ -1260,8 +1257,8 @@ async function buildInner(
       cwd,
       skillRegistry,
       onContextConfigChanged,
-      // Validate overlaps against the roots THIS context runs on (`--pages` applied),
-      // so the route cannot accept a dir the next boot would reject.
+      // Validate overlaps against the roots THIS context runs on, so the route
+      // cannot accept a dir the next build would reject.
       effectiveRoots,
       onOnboardingCompleted: (effectivePagesDir) => ensureWelcomePage(cwd, effectivePagesDir),
       /**

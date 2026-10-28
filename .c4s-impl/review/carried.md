@@ -1,0 +1,6 @@
+# Carried non-blocking findings (user decision at the wave 1 gate, 2026-10-28)
+
+The user chose to fix these in the units that rework the same code. The named unit's implementer fixes the finding in its first round (with a test where behaviour changes); that unit's reviewer checks it is resolved.
+
+- **rev-0005** → unit `cli-workspace-resolution`. `src/core/workspace/resolve.ts:144` — inside a project of a broken home, a bare `c4s` returns PROJECT_NOT_FOUND with a misleading hint; the cwd-miss branch does not append the `unreadable: …` refusal the id-miss branches carry (dev-0103). Fix: the cwd-miss branch names the unreadable workspace.json the same way the id-miss branches do (or, where this unit's pages define `WORKSPACE_FILE_INVALID` for that read, return that).
+- **rev-0006** → unit `workspace-projects-api`. `src/server/workspace/registry.ts:381` — the home branch of registerProject no longer checks inside the registry lock that the entry still exists (the registry branch does); a stale view could write into the committed workspace.json of a workspace this machine detached. Fix: re-check the stored entry under the registry lock before writing workspace.json; refuse when it is gone.
