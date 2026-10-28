@@ -20,6 +20,7 @@ import { entryCacheBust } from './cache-bust.js';
 import { installPluginRuntimeResolver } from './plugin-runtime-resolver.js';
 import { discoverBuiltinEnvelopes } from './builtin-envelopes.js';
 import type { PluginRegistry } from './types.js';
+import type { BasePackageLocator } from './workspace-packages.js';
 
 /**
  * `incompatible` (M33) is distinct from `skipped`: it means the package
@@ -34,6 +35,8 @@ export type PluginLoadCode =
   | 'PLUGIN_ENGINE_UNSATISFIED'
   | 'PLUGIN_IMPORT_FAILED'
   | 'PLUGIN_INVALID_MANIFEST'
+  // Base layer (2.1.58): a listed package absent from the workspace `node_modules`.
+  | 'PLUGIN_NOT_INSTALLED'
   // Overlay layer:
   | 'PLUGIN_TYPE_CONFLICT'
   | 'PLUGIN_PROJECT_UNTRUSTED';
@@ -174,11 +177,21 @@ export function gateManifest(manifest: PluginManifest): GateResult | null {
 /**
  * Load and register the given workspace plugin packages onto `registry`.
  * Returns one record per package for the diagnostics route. Never throws.
+ *
+ * 2.1.58 (M33 `m33l2001` step 1 (iii)): with a `locator` — the base tier's
+ * workspace packages — each package is resolved in the workspace `node_modules`
+ * and the loader imports the very file the locator resolved (the same file
+ * whose directory the `plugins:base` mount watches). A listed package that is
+ * not installed there is `skipped` with `PLUGIN_NOT_INSTALLED` and a reason
+ * naming the directory — the diagnosis `c4s plugins status` prints — and the
+ * start goes on. The loader never installs it. Without a locator the specifier
+ * is imported as given (built-in envelopes pass `file://` URLs).
  */
 export async function loadWorkspacePlugins(
   registry: PluginRegistry,
   packageNames: string[],
   importer: PluginImporter = defaultImporter,
+  locator?: BasePackageLocator,
 ): Promise<PluginLoadResult> {
   const records: PluginLoadRecord[] = [];
 
@@ -189,9 +202,28 @@ export async function loadWorkspacePlugins(
   if (packageNames.length > 0) installPluginRuntimeResolver();
 
   for (const pkg of packageNames) {
+    let specifier = pkg;
+    if (locator) {
+      if (!locator.isInstalled(pkg)) {
+        // ASSUMPTION:dev-0301 — the diagnosis is `skipped` + PLUGIN_NOT_INSTALLED (an
+        // environment problem, like an `engines` miss), its reason naming the directory.
+        const reason = `package "${pkg}" is not installed in ${locator.nodeModulesDir} — install it there (npm install ${pkg}); the server never installs packages`;
+        console.warn(`[plugin-loader] PLUGIN_NOT_INSTALLED ${pkg}: ${reason}`);
+        records.push({ package: pkg, status: 'skipped', layer: 'base', code: 'PLUGIN_NOT_INSTALLED', reason });
+        continue;
+      }
+      const entry = locator.resolveEntry(pkg);
+      if (!entry) {
+        const reason = `package "${pkg}" in ${locator.nodeModulesDir} has no ESM entry (exports "." under import/node/default, or main)`;
+        console.warn(`[plugin-loader] PLUGIN_IMPORT_FAILED ${pkg}: ${reason}`);
+        records.push({ package: pkg, status: 'failed', code: 'PLUGIN_IMPORT_FAILED', reason });
+        continue;
+      }
+      specifier = pathToFileURL(entry).href;
+    }
     let mod: unknown;
     try {
-      mod = await importer(pkg);
+      mod = await importer(specifier);
     } catch (err) {
       const reason = (err as Error).message;
       console.warn(`[plugin-loader] PLUGIN_IMPORT_FAILED ${pkg}: ${reason}`);
@@ -305,9 +337,12 @@ export async function loadBuiltinEnvelopes(
  * `import`, no `require`/`default`) resolves where CJS `createRequire(...).resolve`
  * would throw `ERR_PACKAGE_PATH_NOT_EXPORTED`.
  *
- * Shared by the reload cache-bust (here, via `reloadPlugin`) and the base-watcher
- * dir discovery (`server/index.ts`) so load and watch can never drift: a package
- * that loads at bootstrap is observable by the base watcher, identically.
+ * 2.1.58: this is the host's OWN resolution — the one a predefined package
+ * (shipped in the distribution's `node_modules`) resolves with, through the
+ * base locator (`workspace-packages.ts`). A workspace-listed package resolves
+ * in the workspace `node_modules` instead; the server hands the locator's
+ * `resolveEntry` to `reloadPlugin` and to the base-watcher discovery, so load
+ * and watch still share one resolution.
  */
 export function resolveBaseEntry(pkg: string): string | null {
   try {
@@ -317,10 +352,15 @@ export function resolveBaseEntry(pkg: string): string | null {
   }
 }
 
-/** Seams for `reloadPlugin` — overridable in tests. */
+/** Seams for `reloadPlugin`. */
 export interface ReloadPluginOptions {
   importer?: PluginImporter;
-  resolveEntry?: (pkg: string) => string | null;
+  /**
+   * How the package's entry is resolved — the base locator's `resolveEntry`
+   * (the workspace `node_modules`, the same resolution the bootstrap load used).
+   * Required: a reload never falls back to the host's own resolution.
+   */
+  resolveEntry: (pkg: string) => string | null;
   cacheBust?: (entry: string) => string;
 }
 
@@ -348,10 +388,10 @@ export interface ReloadPluginOptions {
 export async function reloadPlugin(
   registry: PluginRegistry,
   pkg: string,
-  opts: ReloadPluginOptions = {},
+  opts: ReloadPluginOptions,
 ): Promise<PluginLoadRecord> {
   const importer = opts.importer ?? defaultImporter;
-  const resolveEntry = opts.resolveEntry ?? resolveBaseEntry;
+  const resolveEntry = opts.resolveEntry;
   const cacheBust = opts.cacheBust ?? entryCacheBust;
   const base: PluginLoadRecord = { package: pkg, status: 'loaded', layer: 'base' };
 
@@ -361,8 +401,16 @@ export async function reloadPlugin(
   // reloaded plugin keeps resolving to the same live facade instance.
   installPluginRuntimeResolver();
 
+  // 2.1.58: an unresolvable entry is a failed reload (old version retained),
+  // never a bare `import(pkg)` — that would resolve from the HOST's location,
+  // not from the workspace `node_modules` the package was loaded and watched in.
   const entry = resolveEntry(pkg);
-  const specifier = entry ? pathToFileURL(entry).href + cacheBust(entry) : pkg;
+  if (!entry) {
+    const reason = `package "${pkg}" no longer resolves to an ESM entry`;
+    console.warn(`[plugin-loader] reload PLUGIN_IMPORT_FAILED ${pkg}: ${reason} (old version retained)`);
+    return { ...base, status: 'failed', code: 'PLUGIN_IMPORT_FAILED', reason };
+  }
+  const specifier = pathToFileURL(entry).href + cacheBust(entry);
 
   let mod: unknown;
   try {

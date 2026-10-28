@@ -35,7 +35,9 @@ export const PLUGIN_HOST_SETTINGS: SettingsContribution = {
       anchor: 'plugin-pool',
       title: 'Plugin pool',
       description:
-        'What entity types and plugins are available to this project (base ∪ overlay). Read-only — the pool changes with the workspace switch (base) or in the project repository (overlay).',
+        // M13 `m26esec` (2.1.58): the base package list is a fact of the
+        // workspace (M31), not of the project config — and not edited here.
+        "What entity types and plugins are available to this project (base ∪ overlay). Read-only — the base is the workspace's plugin list, installed in the workspace's node_modules; the overlay lives in the project repository.",
       group: 'Plugins',
       weight: 10,
       owner: 'plugin-loader',

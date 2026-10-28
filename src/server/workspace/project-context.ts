@@ -155,8 +155,7 @@ import { projectPluginsDir, type PluginImporter } from '../core/plugin-host/over
 import { buildBasePluginPackages } from '../routes/plugins.js';
 import { logRefRegistrationWarnings, overlayRefWarnings } from '../core/plugin-host/ref-warnings.js';
 import { projectPluginsFrontendRouter } from '../routes/plugins-project.js';
-import type { WorkspaceRootResolver } from '../core/plugin-host/frontend-assets.js';
-import type { BuiltinEnvelope } from '../core/plugin-host/builtin-envelopes.js';
+import type { FrontendBaseTier } from '../core/plugin-host/frontend-assets.js';
 import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import type { ActiveAdapter, PendingInput } from '../routes/agent-turn.js';
 import { abortAllTurns } from '../routes/agent-turn.js';
@@ -212,15 +211,13 @@ export interface ProjectContextDeps {
   pluginRecords: PluginLoadRecord[];
   /**
    * M33 (2.1.22): the rest of the process's base frontend tier the project's
-   * manifest announces — the resolved workspace package list and the servable
-   * built-in envelopes. Absent ⇒ none (hand-built test contexts).
+   * manifest announces — the resolved workspace package list, the servable
+   * built-in envelopes and how a workspace package's root is found (the base
+   * locator's `packageRoot`, 2.1.58). Required, resolver included: the same
+   * object `startServer` hands the process-global asset route, so the manifest
+   * never announces what that route cannot serve.
    */
-  frontendBase?: {
-    workspacePackages?: string[];
-    envelopes?: BuiltinEnvelope[];
-    /** Test seam: how a workspace package's root is found. */
-    resolveWorkspaceRoot?: WorkspaceRootResolver;
-  };
+  frontendBase: FrontendBaseTier;
   /**
    * Test seam: how a TRUSTED overlay package's entry is imported (default: a
    * dynamic `import()`). The trust gate itself is not bypassable through it —
@@ -1280,12 +1277,7 @@ async function buildInner(
       cwd,
       isTrusted: () => registry.getProjectTrust(workspace, projectId) === true,
       overlayRecords,
-      base: {
-        pluginRecords: deps.pluginRecords,
-        workspacePackages: deps.frontendBase?.workspacePackages,
-        envelopes: deps.frontendBase?.envelopes,
-        resolveWorkspaceRoot: deps.frontendBase?.resolveWorkspaceRoot,
-      },
+      base: { pluginRecords: deps.pluginRecords, ...deps.frontendBase },
       // M13 `m13actv0`: one activation gate for the backend and the frontend.
       isTypeActive: (type) => pluginHost.isActive(type),
     }),

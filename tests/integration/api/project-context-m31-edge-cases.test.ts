@@ -87,11 +87,14 @@ describe('ProjectContext — M31 edge cases on a real build', () => {
     const gateway = new WsGateway(httpServer, () => true);
     watchRuntime = new FileWatchRuntime({ broadcaster: { broadcast: () => {} } });
 
+    // No workspace package is listed here: the base tier is the envelopes only.
+    const frontendBase = { workspacePackages: [], envelopes: [], resolveWorkspaceRoot: () => null };
     cache = new ProjectContextCache((project) =>
       buildProjectContext({
         registry,
         pluginRegistry,
         pluginRecords: envelopeLoad.records,
+        frontendBase,
         workspace,
         projectId: project.id,
         cwd: project.cwd,
@@ -106,7 +109,7 @@ describe('ProjectContext — M31 edge cases on a real build', () => {
 
     serverApp = express();
     serverApp.use(express.json());
-    serverApp.use('/api', pluginsRouter({ pluginRegistry, pluginRecords: envelopeLoad.records }));
+    serverApp.use('/api', pluginsRouter({ pluginRegistry, pluginRecords: envelopeLoad.records, ...frontendBase }));
     serverApp.use('/api/projects/:id', projectDispatchMiddleware(registry, workspace, cache));
     serverApp.use('/api', errorHandler);
   }, 60_000);

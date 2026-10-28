@@ -16,6 +16,10 @@ import { buildProjectContext } from '../../../src/server/workspace/project-conte
 import { WorkspaceRegistry } from '../../../src/server/workspace/registry.js';
 import { bootstrapProject } from '../../../src/server/workspace/bootstrap.js';
 import { pluginsRouter } from '../../../src/server/routes/plugins.js';
+import {
+  basePackageLocator,
+  workspaceNodeModulesDir,
+} from '../../../src/server/core/plugin-host/workspace-packages.js';
 import { errorHandler } from '../../../src/server/routes/errors.js';
 import { HOST_API_VERSION } from '../../../src/shared/plugin-host/manifest.js';
 import type { ProjectRecord, WorkspaceRecord } from '../../../src/server/workspace/types.js';
@@ -26,10 +30,12 @@ import type { ProjectRecord, WorkspaceRecord } from '../../../src/server/workspa
  * the same `/api/projects/:id` dispatch middleware and the same process-level
  * `/api` composition `startServer` mounts.
  *
- * The composition here has NO initial project: it is what a start without
- * `--cwd` mounts (`createProject: false` — nothing registered by the CLI start,
- * no eager warm, every project built lazily on its first request). Serving must
- * not depend on the project the process started with.
+ * The composition here has NO initial project (2.1.58: no start has one —
+ * every project is built lazily on its first request). Serving distinguishes
+ * no project: each project of the workspace gets its manifest and its overlay.
+ * The base-tier package lives where the start finds it — `node_modules` of the
+ * workspace's slots directory — and is found through the same base locator
+ * `startServer` builds.
  *
  * A trusted overlay package is imported through the context's `overlayImporter`
  * test seam (the trust gate is not bypassable through it), so no project-local
@@ -137,8 +143,10 @@ describe('plugin frontend serving per project — real contexts, no initial proj
     foreign = registry.registerProject(otherWs, path.join(home, 'foreign-project'));
     workspace = registry.getWorkspace('default')!;
 
-    // A base-tier (workspace npm) package with a built frontend and a loaded backend.
-    const baseDir = path.join(home, 'node_modules', 'base-glossary');
+    // A base-tier (workspace npm) package with a built frontend and a loaded
+    // backend, installed in the workspace `node_modules` (M31 `vzkw903j`).
+    const nodeModules = workspaceNodeModulesDir(registry.slotsDir(workspace));
+    const baseDir = path.join(nodeModules, 'base-glossary');
     writeTree(baseDir, {
       'package.json': JSON.stringify({ name: 'base-glossary', version: '1.4.0' }),
       'dist/frontend.js': 'export const FROM = "base";',
@@ -155,7 +163,7 @@ describe('plugin frontend serving per project — real contexts, no initial proj
     const frontendBase = {
       workspacePackages: ['base-glossary'],
       envelopes: [],
-      resolveWorkspaceRoot: (n: string) => (n === 'base-glossary' ? baseDir : null),
+      resolveWorkspaceRoot: basePackageLocator(nodeModules).packageRoot,
     };
 
     httpServer = http.createServer();
@@ -194,7 +202,7 @@ describe('plugin frontend serving per project — real contexts, no initial proj
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  it('[ac:ac-start-bez-cwd-manifest-oglasza-baze] after a start without --cwd, the frontend manifest of every project announces the frontend of base-tier plugins with a loaded backend', async () => {
+  it('[ac:ac-start-bez-cwd-manifest-oglasza-baze] after the process starts, the frontend manifest of every project announces the frontend of base-tier plugins with a loaded backend', async () => {
     for (const project of [projectA, projectB, revokeManifest]) {
       const base = (await manifestOf(project)).plugins.find((p) => p.name === 'base-glossary');
       expect(base, project.id).toEqual({
@@ -208,7 +216,7 @@ describe('plugin frontend serving per project — real contexts, no initial proj
     expect(served.text).toBe('export const FROM = "base";');
   }, 120_000);
 
-  it('[ac:ac-start-bez-cwd-manifest-oglasza-nakladke] after a start without --cwd, the frontend manifest of a project with a trusted overlay announces that overlay\'s frontend', async () => {
+  it('[ac:ac-start-bez-cwd-manifest-oglasza-nakladke] after the process starts, the frontend manifest of a project with a trusted overlay announces that overlay\'s frontend', async () => {
     const { plugins } = await manifestOf(projectA);
     const local = plugins.find((p) => p.name === 'local-a');
     expect(local).toEqual({

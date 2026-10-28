@@ -27,10 +27,11 @@ import {
   loadBuiltinEnvelopes,
   loadWorkspacePlugins,
   reloadPlugin,
-  resolveBaseEntry,
 } from './core/plugin-host/loader.js';
-import { resolvePluginPackages } from './workspace/registry.js';
+import { basePackageLocator, workspaceNodeModulesDir } from './core/plugin-host/workspace-packages.js';
+import { PREDEFINED_PLUGINS, resolvePluginPackages } from './workspace/registry.js';
 import { pluginsRouter } from './routes/plugins.js';
+import type { FrontendBaseTier } from './core/plugin-host/frontend-assets.js';
 import { errorHandler } from './routes/errors.js';
 import { buildImportMap } from './core/plugin-host/runtime-shims.js';
 import { discoverBuiltinEnvelopes, servableEnvelopes } from './core/plugin-host/builtin-envelopes.js';
@@ -98,7 +99,10 @@ async function listenOrExit(server: HttpServer, port: number, host: string): Pro
       server.once('listening', onListening);
       server.listen(port, host);
     });
-    return port;
+    // The port actually bound — the requested one, or the ephemeral port the OS
+    // picked for `port: 0`.
+    const address = server.address();
+    return typeof address === 'object' && address ? address.port : port;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
       console.error(
@@ -283,7 +287,18 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       `[plugin-host] envelope '${e.name}' did not load — its frontend bundle will NOT be served`,
     );
   }
-  const pluginLoad = await loadWorkspacePlugins(pluginRegistry, resolvePluginPackages(workspace));
+  // 2.1.58 (M33 `m33l2001` step 1 (iii), M31 `vzkw903j`): the package list is
+  // the workspace VIEW's (`workspace.json` in a workspace with a home), and every
+  // listed package resolves in ONE directory — `node_modules` of the workspace's
+  // slots directory. One locator answers load, watch and frontend discovery; a
+  // listed package missing there is skipped with PLUGIN_NOT_INSTALLED and the
+  // start goes on. The server never installs a package.
+  const basePackages = resolvePluginPackages(workspace);
+  const baseLocator = basePackageLocator(
+    workspaceNodeModulesDir(registry.slotsDir(workspace)),
+    PREDEFINED_PLUGINS,
+  );
+  const pluginLoad = await loadWorkspacePlugins(pluginRegistry, basePackages, undefined, baseLocator);
   pluginLoad.records.unshift(...envelopeLoad.records);
   // 2.1.41 (M13) — ref placement / unknown-target warnings, once the whole base
   // pool has registered (a plugin may load before the envelope it points at).
@@ -325,8 +340,15 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // M33 phase 3 / 0.2.2: the base frontend tier — workspace/npm packages (the
   // same resolved list `loadWorkspacePlugins` consumed) and the servable
   // envelopes — served ungated for every project: by the process-global asset
-  // route, and announced by every project's manifest (2.1.22).
-  const frontendBase = { workspacePackages: resolvePluginPackages(workspace), envelopes };
+  // route, and announced by every project's manifest (2.1.22). ONE object for
+  // both: the asset route below and every project context get the same tier,
+  // workspace-root resolver included, so what a manifest announces is what the
+  // route serves (L11 `9g96q3pp`).
+  const frontendBase: FrontendBaseTier = {
+    workspacePackages: basePackages,
+    envelopes,
+    resolveWorkspaceRoot: baseLocator.packageRoot,
+  };
 
   // M31 `m31ctx001` / M01 `dsh8ezbz`: lazily-built, cached per-project
   // contexts. Every project — none is an exception — is activated and built on
@@ -369,15 +391,18 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // `pluginRegistry` (unregister old → register new) and invalidates ALL cached
   // contexts; each live project room is told to remount.
   //
-  // M33 (0.1.92): discovery uses `resolveBaseEntry` — the SAME ESM resolution
-  // (`import.meta.resolve`) as the bootstrap `import(pkg)`, not CJS
-  // `createRequire(...).resolve`. So an ESM-only package (only an `import`
+  // M33 L7 `m33l7wch` (2.1.58): discovery uses the base locator — the SAME ESM
+  // resolution, counted from the SAME workspace `node_modules`, as the file the
+  // bootstrap imported (the loader imports exactly `resolveEntry(pkg)`), never
+  // CJS `createRequire(...).resolve`. So an ESM-only package (only an `import`
   // condition in `exports`) that loads at bootstrap is ALSO watched here — load
-  // and watch can't drift. `dirname` of the resolved entry is the dist dir; an
-  // unresolvable package (not installed) resolves to null and is simply not watched.
+  // and watch can't drift. `dirname` of the resolved entry is the dist dir; a
+  // package not installed resolves to null and is simply not watched.
+  // ASSUMPTION:dev-0302 — only the packages resolved at start are watched; one
+  // installed (or listed) later takes effect from the next start.
   const baseDirByPkg = new Map<string, string>();
-  for (const pkg of resolvePluginPackages(workspace)) {
-    const entry = resolveBaseEntry(pkg);
+  for (const pkg of basePackages) {
+    const entry = baseLocator.resolveEntry(pkg);
     if (entry) baseDirByPkg.set(pkg, path.dirname(entry));
   }
   // Serialize reload runs so overlapping flushes never interleave
@@ -413,7 +438,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       .then(async () => {
         const reloaded = [];
         for (const pkg of affected) {
-          const rec = await reloadPlugin(pluginRegistry, pkg);
+          const rec = await reloadPlugin(pluginRegistry, pkg, { resolveEntry: baseLocator.resolveEntry });
           // 2.1.20: keep the base records current — the frontend manifest
           // announces only packages whose backend is `loaded`. A failed reload
           // retains the old version, so only a `loaded` outcome replaces it.
@@ -461,12 +486,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // nothing here is bound to the project the process started with.
   app.use(
     '/api',
-    pluginsRouter({
-      pluginRegistry,
-      pluginRecords: pluginLoad.records,
-      workspacePackages: frontendBase.workspacePackages,
-      envelopes: frontendBase.envelopes,
-    }),
+    pluginsRouter({ pluginRegistry, pluginRecords: pluginLoad.records, ...frontendBase }),
   );
   app.use('/api/projects/:id', projectDispatchMiddleware(registry, workspace, cache));
   // M49: the envelope is the layer's, not the module's. Anything a route under

@@ -1,1 +1,2 @@
 app-config-response → src/server/routes/config.ts (GET/PATCH /config response) + src/client/lib/api.ts (ConfigResponse); test src/server/workspace/lazy-activation.test.ts [entity:app-config-response]
+get-api-plugins-frontend-manifest → src/server/routes/plugins-project.ts (GET /plugins/frontend-manifest on the project router, under /api/projects/:id) + src/server/core/plugin-host/frontend-manifest.ts; tests src/server/routes/plugins.frontend.test.ts [entity:get-api-plugins-frontend-manifest]

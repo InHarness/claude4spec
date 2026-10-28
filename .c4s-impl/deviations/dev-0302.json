@@ -1,0 +1,16 @@
+{
+  "id": "dev-0302",
+  "kind": "clarification",
+  "blocking": false,
+  "address": "workspace-plugin-pool/m33l7wch",
+  "slugs": [
+    "section:m33l7wch",
+    "section:m26esec"
+  ],
+  "text": "L7 `m33l7wch` gives the `plugins:base` mount the directory 'katalogi pakietów-pluginów w katalogu `node_modules` workspace'u', and M13 `m26esec` says adding, removing or updating a base package works without a restart. The base mount is discovered from the packages the start resolved (the directory of each resolved ESM entry), so an update or a removal of an installed package reloads live, but a listed package that was missing at start and is installed later — or a package added to the list (`workspace.json` is read once per process, M31 view) — is neither mounted nor loaded until the next start. The pages do not say whether 'adding a package' means installing a package already on the list (which would need the whole workspace `node_modules` observed, plus a load path for a package that never loaded) or only replacing an installed one. Assumed: only the packages resolved at start are watched; a package installed or listed later takes effect from the next start (behaviour unchanged by this window, now counted from the workspace `node_modules`).",
+  "assumption": "ASSUMPTION:dev-0302 — only the packages resolved at start are watched; one installed (or listed) later takes effect from the next start.",
+  "unit": "workspace-plugin-pool",
+  "portion": "workspace-plugin-pool/p1-l2-l11",
+  "sent": true,
+  "patchPath": "2-1-57-to-2-1-58-workspace-plugin-pool-m33l7wch-l7-m33l7wch-gives-the-plugins-base-mount-the-dire.md"
+}

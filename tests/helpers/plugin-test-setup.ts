@@ -168,6 +168,8 @@ export async function createPluginTestApp(
       registry,
       pluginRegistry,
       pluginRecords: records,
+      // The harness lists no workspace package, so no workspace root is ever asked for.
+      frontendBase: { workspacePackages: [], envelopes: [], resolveWorkspaceRoot: () => null },
       workspace,
       projectId: project.id,
       cwd: project.cwd,

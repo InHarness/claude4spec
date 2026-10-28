@@ -22,9 +22,9 @@
  * types is active in this project's `config.entities` (`isTypeActive`, the
  * context's host). The asset route does not consult it.
  *
- * Nothing here depends on the project the process started with: a start
- * without `--cwd` serves every registered project's manifest and overlay the
- * same way.
+ * 2.1.58 (L11 `9g96q3pp`): no project is distinguished at start — every
+ * project of the workspace gets its manifest and its overlay, and the answer
+ * depends on no project but `:id`.
  */
 
 import { Router, type Request, type Response } from 'express';

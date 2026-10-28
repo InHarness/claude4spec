@@ -646,7 +646,7 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "workspace-plugin-pool/p1-l2-l11",
@@ -668,18 +668,18 @@
             "m33l7wch",
             "m26esec"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "2d63153286e479eab17ae655730aefb1ba7f54e4",
+      "baseCommit": "2d63153286e479eab17ae655730aefb1ba7f54e4",
       "rounds": {
-        "review": 0,
-        "unit": 0
+        "review": 2,
+        "unit": 2
       },
       "jobs": []
     },
