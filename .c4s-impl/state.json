@@ -938,7 +938,7 @@
         }
       ],
       "wave": 2,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "cli-workspace-resolution/p1-l3-l14",
@@ -978,14 +978,20 @@
             "section:sws0pnrn",
             "section:zvd7wn4t"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 2,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "regression"
+          ],
+          "only": [
+            {
+              "slug": "regression"
+            }
+          ]
         }
       ],
-      "startCommit": "9d33eee0b78c7b8ec5b8c1c304859065983751e5",
+      "startCommit": "bc78ed1e0baa4cf35ed7d0ccdd602b517782dc6f",
       "baseCommit": "9d33eee0b78c7b8ec5b8c1c304859065983751e5",
       "rounds": {
         "review": 2,
@@ -1199,7 +1205,7 @@
         }
       ],
       "wave": 3,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "workspace-selection-at-start/p1-l2-l2",
@@ -1241,14 +1247,20 @@
             "ac-workspace-x-cwd-y-gdy-x-ma-inny-katal",
             "ac-workspace-x-uruchomione-wewnatrz-kata"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 3,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "regression"
+          ],
+          "only": [
+            {
+              "slug": "regression"
+            }
+          ]
         }
       ],
-      "startCommit": "541167de3cae8ec21226b57b3825a7b86a018595",
+      "startCommit": "bc78ed1e0baa4cf35ed7d0ccdd602b517782dc6f",
       "baseCommit": "541167de3cae8ec21226b57b3825a7b86a018595",
       "rounds": {
         "review": 3,
@@ -2114,7 +2126,7 @@
         }
       ],
       "wave": 5,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "workspace-settings-split/p1-l5-l17",
@@ -2130,14 +2142,20 @@
             "ac-strona-ustawien-workspace-u-workspace",
             "m26-requires-m31"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 3,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "regression"
+          ],
+          "only": [
+            {
+              "slug": "regression"
+            }
+          ]
         }
       ],
-      "startCommit": "4098782f4922d0fd6d3aa0bd5fe379b46649309c",
+      "startCommit": "bc78ed1e0baa4cf35ed7d0ccdd602b517782dc6f",
       "baseCommit": "4098782f4922d0fd6d3aa0bd5fe379b46649309c",
       "rounds": {
         "review": 3,
