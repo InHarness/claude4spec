@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,7 +7,8 @@ import { applyNetworkFlags } from '../server/workspace/network-flags.js';
 import { bootstrapProject } from '../server/workspace/bootstrap.js';
 import { configPath } from '../server/config.js';
 import { openDb } from '../server/db/index.js';
-import { parseLaunchArgs, printStartWarnings, projectStartUrl, workspaceOnlyLaunch } from './launch.js';
+import { WorkspaceFileError, workspaceFilePath } from '../server/workspace/home-workspace.js';
+import { openStartWorkspace, parseLaunchArgs, prepareStart, printStartWarnings, projectStartUrl } from './launch.js';
 
 /**
  * 2.1.12 — M31 edge cases of the launcher (`npx claude4spec`): the bare command
@@ -36,7 +37,10 @@ describe('claude4spec launcher — M31 edge cases', () => {
     expect(args.cwd).toBe(repo);
     expect(args.createProject).toBe(false);
 
-    const ws = workspaceOnlyLaunch(registry, args);
+    const prepared = prepareStart(registry, args);
+    expect(prepared.boot).toBeNull();
+    expect(prepared.options.initialProject).toBeNull();
+    const ws = prepared.workspace;
     const stored = registry.getWorkspace(ws.name)!;
     expect(stored.projects).toEqual([]);
     expect(stored.projects.some((p) => p.cwd === repo)).toBe(false);
@@ -51,7 +55,7 @@ describe('claude4spec launcher — M31 edge cases', () => {
 
   it('[ac:ac-start-z-nasluchem-poza-loopbackiem-i] a start listening beyond loopback with no publicUrl warns that handed-out addresses will point at localhost', () => {
     const registry = new WorkspaceRegistry(path.join(tmp, 'home'));
-    const base = workspaceOnlyLaunch(registry, { port: 4590 });
+    const base = openStartWorkspace(registry, { port: 4590 });
     const ws = applyNetworkFlags(registry, base, { host: '0.0.0.0' });
     expect(ws.publicUrl).toBeUndefined();
 
@@ -162,7 +166,7 @@ describe('claude4spec launcher — create-project flags (M01)', () => {
     // The db slot lives in the workspace home, keyed by workspace and project id — never in the CWD.
     const slot = registry.slotDir(ws, boot.project.id);
     expect(slot).toBe(path.join(home, 'default', boot.project.id));
-    const db = openDb(ws, boot.project.id, home);
+    const db = openDb(slot);
     try {
       expect(fs.existsSync(path.join(slot, 'db.sqlite'))).toBe(true);
     } finally {
@@ -180,5 +184,121 @@ describe('claude4spec launcher — create-project flags (M01)', () => {
     const namedBoot = bootstrapProject(registry, ws, named.cwd, { name: named.name });
     expect(namedBoot.configCreated).toBe(true);
     expect((JSON.parse(fs.readFileSync(configPath(viaName), 'utf8')) as { name: string }).name).toBe('Named');
+  });
+});
+
+/**
+ * 2.1.58 (M31 `ssn335r8`) — the start of a workspace with a home, through the
+ * launcher's own pre-listen sequence (`prepareStart`, which `claude4spec.ts`
+ * runs before `startServer(prepared.options)`): `workspace.json` is read once,
+ * strictly, after `.claude4spec/.gitignore` is ensured, and the server gets the
+ * launcher's registry and view, so it reads nothing again.
+ */
+describe('claude4spec launcher — the start of a workspace with a home (M31 ssn335r8)', () => {
+  let tmp: string;
+  let registryHome: string;
+  let home: string;
+  let file: string;
+  let gitignore: string;
+  let gitignoreAtRead: boolean[];
+  let read: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-launch-home-'));
+    registryHome = path.join(tmp, 'registry');
+    home = path.join(tmp, 'repo');
+    fs.mkdirSync(path.join(home, '.claude4spec'), { recursive: true });
+    fs.mkdirSync(registryHome, { recursive: true });
+    fs.writeFileSync(
+      path.join(registryHome, 'workspaces.json'),
+      JSON.stringify({ $schemaVersion: 3, workspaces: [{ name: 'team', mode: 'prod', defaultPort: 4611, home }] }),
+    );
+    file = workspaceFilePath(home);
+    fs.writeFileSync(file, JSON.stringify({ projects: [{ id: 'app', path: 'specs/app' }], plugins: [] }));
+    gitignore = path.join(home, '.claude4spec', '.gitignore');
+    // Whether .gitignore was already in place at each read of workspace.json.
+    gitignoreAtRead = [];
+    const origRead = fs.readFileSync.bind(fs);
+    read = vi.spyOn(fs, 'readFileSync').mockImplementation(((...a: Parameters<typeof fs.readFileSync>) => {
+      if (a[0] === file) gitignoreAtRead.push(fs.existsSync(gitignore));
+      return origRead(...a);
+    }) as typeof fs.readFileSync);
+  });
+  afterEach(() => {
+    read.mockRestore();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('[section:ssn335r8] a workspace-only start reads workspace.json once, after .gitignore, and hands its registry and view to startServer', () => {
+    const registry = new WorkspaceRegistry(registryHome);
+    const args = parseLaunchArgs(['--workspace', 'team', '--host', '0.0.0.0'], tmp);
+    expect(args.createProject).toBe(false);
+
+    const prepared = prepareStart(registry, args, (entry) => applyNetworkFlags(registry, entry, { host: args.host }));
+
+    expect(gitignoreAtRead).toEqual([true]);
+    expect(fs.readFileSync(gitignore, 'utf8')).toBe('local/\n');
+    // The server serves through the launcher's registry and the opened view.
+    expect(prepared.options.registry).toBe(registry);
+    expect(prepared.options.workspace).toBe(prepared.workspace);
+    expect(prepared.workspace.projects.map((p) => p.id)).toEqual(['app']);
+    // The network flag landed on the entry before the view was opened.
+    expect(prepared.workspace.bindHost).toBe('0.0.0.0');
+    expect(prepared.options.host).toBe('0.0.0.0');
+    expect(prepared.options.initialProject).toBeNull();
+    expect(prepared.boot).toBeNull();
+
+    // What startServer reads of the workspace afterwards reuses the view.
+    registry.getWorkspace('team');
+    registry.getProject(prepared.workspace, 'app');
+    registry.listWorkspaces();
+    expect(gitignoreAtRead).toEqual([true]);
+  });
+
+  it('[section:ssn335r8] a create-project start of a listed project reads workspace.json once, after .gitignore — the bootstrap and startServer read it no more', () => {
+    const registry = new WorkspaceRegistry(registryHome);
+    const cwd = path.join(home, 'specs', 'app');
+    const args = parseLaunchArgs(['--workspace', 'team', '--cwd', cwd], tmp);
+    expect(args.createProject).toBe(true);
+
+    const prepared = prepareStart(registry, args);
+
+    expect(gitignoreAtRead).toEqual([true]);
+    expect(prepared.boot?.project.id).toBe('app');
+    expect(prepared.options.initialProject?.id).toBe('app');
+    expect(prepared.options.registry).toBe(registry);
+    expect(prepared.options.workspace.projects.map((p) => p.id)).toEqual(['app']);
+    // The slot under local/ exists — created after local/ was ignored.
+    expect(fs.existsSync(path.join(home, '.claude4spec', 'local', 'app'))).toBe(true);
+    // The committed file is untouched.
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ projects: [{ id: 'app', path: 'specs/app' }], plugins: [] });
+    registry.getWorkspace('team');
+    expect(gitignoreAtRead).toEqual([true]);
+  });
+
+  it('[section:ssn335r8] a create-project start of a new project validates the file once before its registration — every read comes after .gitignore', () => {
+    const registry = new WorkspaceRegistry(registryHome);
+    const cwd = path.join(home, 'services', 'billing');
+    const prepared = prepareStart(registry, parseLaunchArgs(['--workspace', 'team', '--cwd', cwd], tmp));
+
+    // The view's strict read, then the registration's read-modify-write under
+    // the file's lock — no further read by the bootstrap or the server.
+    expect(gitignoreAtRead).toEqual([true, true]);
+    expect(prepared.options.initialProject?.id).toBe('billing');
+    expect(prepared.options.workspace.projects.map((p) => p.id)).toEqual(['app', 'billing']);
+    registry.getWorkspace('team');
+    expect(gitignoreAtRead).toEqual([true, true]);
+  });
+
+  it('[section:ssn335r8] a broken workspace.json refuses the start before anything is created under local/', () => {
+    fs.writeFileSync(file, '{ "projects": [ ');
+    const registry = new WorkspaceRegistry(registryHome);
+    const cwd = path.join(home, 'specs', 'app');
+    expect(() => prepareStart(registry, parseLaunchArgs(['--workspace', 'team', '--cwd', cwd], tmp))).toThrow(
+      WorkspaceFileError,
+    );
+    expect(gitignoreAtRead).toEqual([true]);
+    expect(fs.existsSync(path.join(home, '.claude4spec', 'local'))).toBe(false);
+    expect(fs.existsSync(path.join(cwd, '.claude4spec', 'config.json'))).toBe(false);
   });
 });

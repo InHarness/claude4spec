@@ -1,8 +1,12 @@
+import fs from 'node:fs';
 import path from 'node:path';
+import type { StartOptions } from '../server/index.js';
+import { migrateConfigToV3 } from '../server/config.js';
 import type { WorkspaceRegistry } from '../server/workspace/registry.js';
+import { bootstrapProject, type BootstrapResult } from '../server/workspace/bootstrap.js';
 import { startWarnings } from '../server/workspace/network-flags.js';
-import type { WorkspaceNetwork } from '../core/workspace/network.js';
-import type { WorkspaceRecord } from '../server/workspace/types.js';
+import { effectiveBindHost, type WorkspaceNetwork } from '../core/workspace/network.js';
+import type { StoredWorkspaceRecord, WorkspaceRecord } from '../server/workspace/types.js';
 
 /**
  * The launcher's argument parsing and the side-effect-light steps of a start,
@@ -135,19 +139,120 @@ export function projectStartUrl(localUrl: string, projectId: string): string {
   return `${localUrl}/p/${projectId}/`;
 }
 
+/** What the start selects a workspace by: `--workspace`, then the port, then the default. */
+export interface WorkspaceSelector {
+  name?: string;
+  port?: number;
+  mode?: 'dev' | 'prod';
+}
+
 /**
- * The workspace-only start (decision #11): the bare command, with no flag that
- * implies `--create-project`. It only selects (or creates) the workspace — it
- * never registers the CWD, even when the CWD already carries a
- * `.claude4spec/config.json`, and writes nothing into it. `network` persists
- * `--host` / `--public-url` on the selected workspace.
+ * Persist `--host` / `--public-url` on the selected entry (and print the start
+ * warnings). Works on the stored entry, so it reads no `workspace.json`.
  */
-export function workspaceOnlyLaunch(
+export type NetworkStep = (entry: StoredWorkspaceRecord) => StoredWorkspaceRecord;
+
+/**
+ * 2.1.58 (M31 `ssn335r8`): select the start's workspace and open its view —
+ * the ONLY read of a home's `workspace.json` before listen. The entry is
+ * selected (or created) from the registry alone, the network flags land on
+ * that entry, and only then does `openView` ensure `.claude4spec/.gitignore`
+ * and read and validate the file strictly (a `WorkspaceFileError` refuses the
+ * start). The view is handed to `startServer` together with this registry, so
+ * the server never reads the file again.
+ */
+export function openStartWorkspace(
   registry: WorkspaceRegistry,
-  args: Pick<CliArgs, 'workspace' | 'port' | 'mode'>,
-  network: (ws: WorkspaceRecord) => WorkspaceRecord = (ws) => ws,
+  select: WorkspaceSelector,
+  network: NetworkStep = (entry) => entry,
 ): WorkspaceRecord {
-  return network(registry.selectOrCreate({ name: args.workspace, port: args.port, mode: args.mode }));
+  const entry = network(registry.selectOrCreateEntry(select));
+  return registry.openView(entry.name);
+}
+
+/** Everything a start does before listen, and the options it then listens with. */
+export interface PreparedStart {
+  /** The view `startServer` serves (after the bootstrap's registration, on a create-project start). */
+  workspace: WorkspaceRecord;
+  /** The create-project activation; `null` on a workspace-only start. */
+  boot: BootstrapResult | null;
+  port: number;
+  mode: 'dev' | 'prod';
+  options: StartOptions;
+}
+
+/**
+ * The launcher's pre-listen sequence (`claude4spec.ts` runs exactly this, then
+ * `startServer(prepared.options)`):
+ *
+ *  - create-project (`--create-project` or an implying flag): mkdir the CWD,
+ *    peek the config-v3 migration (a pre-v3 `config.json.port` can still select
+ *    the workspace; the first-wins carry happens in the bootstrap), open the
+ *    workspace, then run the full per-project activation (M31 bootstrap);
+ *  - workspace-only (decision #11, the bare command): no mkdir, no config peek
+ *    (it would rewrite `config.json`), no bootstrap — nothing is written to the
+ *    CWD; the CWD is never registered, even when it already carries a
+ *    `.claude4spec/config.json`.
+ *
+ * Either way the workspace is opened by `openStartWorkspace`, and the server
+ * gets this registry and that view — not a second registry of its own.
+ */
+export function prepareStart(
+  registry: WorkspaceRegistry,
+  args: CliArgs,
+  network: NetworkStep = (entry) => entry,
+): PreparedStart {
+  if (!args.createProject) {
+    const workspace = openStartWorkspace(registry, { name: args.workspace, port: args.port, mode: args.mode }, network);
+    const port = args.port ?? workspace.defaultPort;
+    const mode = args.mode ?? workspace.mode;
+    return {
+      workspace,
+      boot: null,
+      port,
+      mode,
+      options: { cwd: args.cwd, registry, workspace, initialProject: null, port, host: effectiveBindHost(workspace), mode },
+    };
+  }
+  fs.mkdirSync(args.cwd, { recursive: true });
+  const peeked = migrateConfigToV3(args.cwd);
+  const opened = openStartWorkspace(
+    registry,
+    {
+      name: args.workspace,
+      port: args.port ?? peeked.carried.defaultPort,
+      mode: args.mode ?? peeked.carried.mode,
+    },
+    network,
+  );
+  const boot = bootstrapProject(registry, opened, args.cwd, {
+    name: args.name,
+    pagesDir: args.pagesDir,
+    remoteApiUrl: args.remoteUrl,
+  });
+  // The view after the registration (this registry's own write — no re-read).
+  const workspace = registry.getWorkspace(opened.name) ?? opened;
+  const port = args.port ?? opened.defaultPort;
+  const mode = args.mode ?? opened.mode;
+  return {
+    workspace,
+    boot,
+    port,
+    mode,
+    options: {
+      cwd: args.cwd,
+      registry,
+      workspace,
+      initialProject: boot.project,
+      port,
+      host: effectiveBindHost(workspace),
+      pagesDir: args.pagesDir,
+      mode,
+      // Resolved flag > config.json > null; startServer applies the prod-constant
+      // fallback inside RemoteHttpClient.
+      remoteApiUrl: boot.config.remoteApiUrl,
+    },
+  };
 }
 
 /**

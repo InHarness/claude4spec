@@ -1,0 +1,15 @@
+{
+  "id": "dev-0701",
+  "kind": "incorrect",
+  "blocking": false,
+  "address": "workspace-route-frame/m31l5001",
+  "slugs": [
+    "welcome-page"
+  ],
+  "text": "The unit goal says 'Usuwa: przełącznik projektów w nagłówku' (remove the project switcher from the header), and the build notes call src/client/components/ProjectSwitcher.tsx removed. But at 2.1.58 the pages still declare it on the project route: M50 8h2a734u (after_change) says 'na trasie projektu zębatka prowadzi do strony ustawień projektu; obok nich stoi wpis slotu Nagłówek z nazwą projektu i przełącznikiem projektu', and the first M31 m31l5001 slot row (unchanged) says 'nazwa projektu z przełącznikiem … zawsze na trasie projektu'. The change in the window only adds a workspace-route slot row (workspace name + last-opened-project entry). Assumed: the pages at <to> win. The switcher leaves the workspace-route frame, where the slot shows the workspace name and the last-opened-project entry. It stays in the project-route header. If the intent was to remove it everywhere, M50 8h2a734u and the M31 slot table must drop it.",
+  "assumption": "ASSUMPTION:dev-0701 project switcher removed only from the workspace-route frame; project-route header entry kept as M31 m31l5001 declares it at 2.1.58",
+  "unit": "workspace-route-frame",
+  "portion": "workspace-route-frame/p1-l2-l5",
+  "sent": true,
+  "patchPath": "2-1-57-to-2-1-58-workspace-route-frame-m31l5001-project-switcher-removed-only-from-workspace-fram.md"
+}

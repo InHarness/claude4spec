@@ -1,0 +1,12 @@
+{
+  "id": "dev-0103",
+  "kind": "missing",
+  "blocking": false,
+  "address": "workspace-home-model/4y64rsxf",
+  "text": "M31 lists the refusals of an invalid `<home>/.claude4spec/workspace.json` (WORKSPACE_FILE_INVALID / _PROJECT_ID_MISSING / _PROJECT_ID_DUPLICATE) as refusals of the START of that workspace, but says nothing about what every other reader of the registry sees while one home's file is broken: `c4s list-workspaces`, GET /api/workspaces of a server running for another workspace, `c4s` project resolution across workspaces, and registration in another workspace. Assumed: only the start of the owning workspace (and writes into that file) refuse. Every other read keeps answering: the broken entry is listed with its registry attributes (name, mode, defaultPort, lastOpened), no projects and no plugins (so `projectCount: 0` in `c4s list-workspaces` and GET /api/workspaces), and carries the refusal (code + message naming the file) in the view; `c4s list-workspaces` prints that refusal on stderr while its stdout rows stay complete, and a project-id miss in a resolution that covers the broken workspace appends the refusal to its PROJECT_ID_NOT_FOUND message. The failed read is kept for the process lifetime like any read of the file (its fix applies from the next start).",
+  "assumption": "ASSUMPTION:dev-0103 — a broken workspace.json refuses only its own workspace's start; other readers list it with no projects (projectCount 0) and the refusal on stderr / in the error message.",
+  "unit": "workspace-home-model",
+  "portion": "workspace-home-model/p1-l1-l2",
+  "sent": true,
+  "patchPath": "2-1-57-to-2-1-58-workspace-home-model-4y64rsxf-m31-lists-the-refusals-of-an-invalid-home-claude4s.md"
+}

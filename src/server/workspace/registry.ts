@@ -9,8 +9,25 @@ import {
   READABLE_IDS_SCHEMA_VERSION,
   type ProjectIdRename,
 } from './registry-migration.js';
-import { findSlotIdForCwd, listSlotIds, writeSlotMarker } from './slot-marker.js';
-import type { ProjectRecord, WorkspaceRecord, WorkspacesFile } from './types.js';
+import { findSlotIdForCwd, listSlotIds, readSlotMarker, writeSlotMarker } from './slot-marker.js';
+import { withAdvisoryLock, writeJsonAtomic } from './advisory-lock.js';
+import {
+  ensureHomeGitignore,
+  homeLocalDir,
+  mutateWorkspaceFile,
+  readWorkspaceFile,
+  sameProjectPath,
+  toProjectPath,
+  WorkspaceFileError,
+  type WorkspaceFile,
+} from './home-workspace.js';
+import type {
+  HomeProjectTrust,
+  ProjectRecord,
+  StoredWorkspaceRecord,
+  WorkspaceRecord,
+  WorkspacesFile,
+} from './types.js';
 
 // v2 (M33): WorkspaceRecord gains optional `plugins[]`. Legacy v1 records lack
 // the field and read as predefined-only — no rewrite needed on read.
@@ -22,7 +39,6 @@ import type { ProjectRecord, WorkspaceRecord, WorkspacesFile } from './types.js'
 export const WORKSPACES_SCHEMA_VERSION = READABLE_IDS_SCHEMA_VERSION;
 export const DEFAULT_WORKSPACE_PORT = 4500;
 const DEFAULT_WORKSPACE_NAME = 'default';
-const LOCK_STALE_MS = 5_000;
 
 /**
  * M33: plugin packages built into claude4spec core deps — always present in
@@ -117,17 +133,8 @@ export function workspaceBaseDir(): string {
   return process.env.C4S_HOME ?? path.join(os.homedir(), '.claude4spec');
 }
 
-/** DB slot of one project inside one workspace: `~/.claude4spec/<ws>/<id>/`. */
-export function slotDirFor(workspaceName: string, projectId: string): string {
-  return path.join(workspaceBaseDir(), workspaceName, projectId);
-}
-
 function nowIso(): string {
   return new Date().toISOString();
-}
-
-function sleepSync(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
 const WORKSPACE_NAME_RE = /^[a-zA-Z0-9._-]{1,40}$/;
@@ -145,10 +152,30 @@ function assertValidWorkspaceName(name: string): void {
  * Every mutation re-reads the file under an advisory lock (`wx` lock file,
  * pid content, ~5s stale timeout) and writes atomically (tmp + rename), so
  * N concurrent server processes can share the registry.
+ *
+ * 2.1.58 (M31 `fjsgq19h`, `t97gncju`): an entry is either a REGISTRY workspace
+ * (projects and plugins in the entry) or a workspace WITH A HOME (projects and
+ * plugins in the committed `<home>/.claude4spec/workspace.json`, the entry
+ * keeps only what belongs to the machine). Every read API returns the composed
+ * VIEW. The home file is read once per registry instance and kept: a change
+ * made from outside (`git pull`) applies from the next process start, while
+ * this registry's own writes (registration, removal) update the view at once.
+ *
+ * A home file that does not validate refuses only the START of its own
+ * workspace (`openView`) and the writes into it. Every other read keeps
+ * answering: the broken entry reads with no projects and no plugins and carries
+ * `fileError` (ASSUMPTION:dev-0103), so one broken repo never takes listing,
+ * resolution or registration in the other workspaces down with it.
  */
 export class WorkspaceRegistry {
   readonly baseDir: string;
   private readonly file: string;
+  /**
+   * The `workspace.json` of each home as this process sees it — or the refusal
+   * reading it produced, kept as well (a broken file is not re-read on every
+   * listing; like any outside change, its fix applies from the next start).
+   */
+  private readonly homeFiles = new Map<string, WorkspaceFile | WorkspaceFileError>();
 
   constructor(baseDir: string = workspaceBaseDir()) {
     this.baseDir = baseDir;
@@ -162,15 +189,17 @@ export class WorkspaceRegistry {
   // ─── read API ─────────────────────────────────────────────────────────────
 
   listWorkspaces(): WorkspaceRecord[] {
-    return this.read().workspaces;
+    return this.read().workspaces.map((w) => this.compose(w));
   }
 
   getWorkspace(name: string): WorkspaceRecord | null {
-    return this.read().workspaces.find((w) => w.name === name) ?? null;
+    const stored = this.read().workspaces.find((w) => w.name === name);
+    return stored ? this.compose(stored) : null;
   }
 
   findByPort(port: number): WorkspaceRecord | null {
-    return this.read().workspaces.find((w) => w.defaultPort === port) ?? null;
+    const stored = this.read().workspaces.find((w) => w.defaultPort === port);
+    return stored ? this.compose(stored) : null;
   }
 
   getProject(ws: WorkspaceRecord, id: string): ProjectRecord | null {
@@ -180,15 +209,86 @@ export class WorkspaceRegistry {
 
   /**
    * Every workspace containing a project for this cwd (0/1/N rule for the CLI).
-   * Matches the stored `cwd` field, so after a hand-edited `cwd` the project
-   * resolves from its new directory with its unchanged `id`.
+   * Matches the project path of each view — the stored `cwd` of a registry
+   * record, or a `workspace.json` path resolved against `home` — so after a
+   * hand-edited path the project resolves from its new directory with its
+   * unchanged `id`.
    */
   resolveWorkspacesForCwd(cwd: string): WorkspaceRecord[] {
-    return this.read().workspaces.filter((w) => findProjectByCwd(w.projects, cwd) !== undefined);
+    return this.listWorkspaces().filter((w) => findProjectByCwd(w.projects, cwd) !== undefined);
   }
 
-  slotDir(ws: WorkspaceRecord, projectId: string): string {
-    return path.join(this.baseDir, ws.name, projectId);
+  /**
+   * 2.1.58 (M31 `vzkw903j`): the workspace's SLOTS DIRECTORY — owned here, not
+   * by M41. Registry workspace: `~/.claude4spec/<workspace>/`; workspace with a
+   * home: `<home>/.claude4spec/local/`. It also holds the `node_modules` of the
+   * workspace's plugin packages (no clash: ids are `[a-z0-9-]` only).
+   */
+  slotsDir(ws: Pick<WorkspaceRecord, 'name' | 'home'>): string {
+    return ws.home !== undefined ? homeLocalDir(ws.home) : path.join(this.baseDir, ws.name);
+  }
+
+  /**
+   * The slots directory of every workspace in the registry, from the stored
+   * entries alone (name / home) — no `workspace.json` is read.
+   */
+  listSlotsDirs(): string[] {
+    return this.read().workspaces.map((w) => this.slotsDir(w));
+  }
+
+  /** DB slot of one project: `<slots directory>/<project-id>/`. */
+  slotDir(ws: Pick<WorkspaceRecord, 'name' | 'home'>, projectId: string): string {
+    return path.join(this.slotsDir(ws), projectId);
+  }
+
+  /**
+   * The slot a context build opens its database in, with its continuity
+   * checked (M31 `vzkw903j`). The slot records the directory it serves:
+   *  - registry workspace — the marker is (re)pointed at `cwd`, so a hand-edited
+   *    `cwd` (moved repo) keeps its slot and a later re-registration from the
+   *    new directory recovers it;
+   *  - workspace with a home — the `id` comes from `workspace.json`, never from a
+   *    slot. A slot whose recorded directory differs from the view's path for
+   *    this `id` is QUARANTINED: moved aside under `local/.quarantine/` (a name
+   *    no minted id can take), neither assigned nor deleted, and the project
+   *    starts on an empty slot. ASSUMPTION:dev-0102 — the quarantine is
+   *    `local/.quarantine/<id>-<epoch ms>/`; the spec names no location.
+   */
+  prepareSlot(ws: WorkspaceRecord, projectId: string, cwd: string): string {
+    const dir = this.slotDir(ws, projectId);
+    if (ws.home !== undefined) {
+      const marker = readSlotMarker(dir);
+      if (marker !== null && path.resolve(marker.cwd) !== path.resolve(cwd)) {
+        const quarantine = path.join(this.slotsDir(ws), '.quarantine');
+        fs.mkdirSync(quarantine, { recursive: true });
+        const target = path.join(quarantine, `${projectId}-${Date.now()}`);
+        fs.renameSync(dir, target);
+        console.warn(
+          `[workspace] slot of project '${projectId}' belonged to ${marker.cwd}, not ${path.resolve(cwd)} — quarantined to ${target}; the project starts with an empty slot`,
+        );
+      }
+    }
+    writeSlotMarker(dir, cwd);
+    return dir;
+  }
+
+  /**
+   * 2.1.58 (M31 `ssn335r8`): build the workspace VIEW eagerly, before listen.
+   * For a workspace with a home this ensures `<home>/.claude4spec/.gitignore`
+   * carries `local/`, then reads and validates `workspace.json` — an unreadable
+   * or malformed file, an entry without `id`, or a repeated `id` throws a
+   * `WorkspaceFileError`, which refuses the start. A registry workspace has
+   * nothing to compose. The file is read once: a read this instance already
+   * made (or its refusal) is reused, never repeated.
+   */
+  openView(name: string): WorkspaceRecord {
+    const stored = this.read().workspaces.find((w) => w.name === name);
+    if (!stored) throw new Error(`workspace "${name}" does not exist in ${this.file}`);
+    if (stored.home !== undefined) {
+      ensureHomeGitignore(stored.home);
+      this.homeFile(stored.home);
+    }
+    return this.compose(stored);
   }
 
   // ─── mutations ────────────────────────────────────────────────────────────
@@ -200,9 +300,21 @@ export class WorkspaceRegistry {
    * workspace's defaultPort is never overwritten here).
    */
   selectOrCreate(opts: { name?: string; port?: number; mode?: 'dev' | 'prod' } = {}): WorkspaceRecord {
+    return this.compose(this.selectOrCreateEntry(opts));
+  }
+
+  /**
+   * `selectOrCreate` without the view: the stored entry only, so no
+   * `workspace.json` is read. The start (`openStartWorkspace` in
+   * `src/bin/launch.ts`) uses it and leaves the single eager read of the home
+   * file to `openView`, after `.gitignore` is ensured.
+   */
+  selectOrCreateEntry(
+    opts: { name?: string; port?: number; mode?: 'dev' | 'prod' } = {},
+  ): StoredWorkspaceRecord {
     if (opts.name != null) assertValidWorkspaceName(opts.name);
     return this.withLock((data) => {
-      let ws: WorkspaceRecord | undefined;
+      let ws: StoredWorkspaceRecord | undefined;
       if (opts.name != null) {
         ws = data.workspaces.find((w) => w.name === opts.name);
       } else if (opts.port != null) {
@@ -245,7 +357,7 @@ export class WorkspaceRegistry {
   /**
    * Idempotent: registers cwd into the workspace, creates the DB slot dir.
    *
-   * 2.1.0 id resolution, in order:
+   * Registry workspace — 2.1.0 id resolution, in order:
    *  1. a live record for this directory → reused as-is (id never recomputed);
    *  2. a slot in this workspace that belongs to this directory (a detached
    *     project) → its id is recovered, and so is the index in it;
@@ -255,16 +367,27 @@ export class WorkspaceRegistry {
    *     a detached one gets a suffix, never its slot.
    * Minting happens under the registry lock, whoever registers (server or
    * `c4s trust-plugins`).
+   *
+   * Workspace with a home (2.1.58, M31 `fzno8pd4`, `zovs1ohc`): the record goes
+   * to `workspace.json` — `id` + path relative to `home` — under that file's
+   * advisory lock. An entry with the same path is reused; otherwise the id is
+   * minted unique within `workspace.json`, from committed content only (no
+   * slots: they are per machine), so the whole team addresses the project by
+   * the same id. The in-memory view is updated at once.
+   *
+   * The kind is taken from the view passed in (`ws.home`) — no registry read.
    */
   registerProject(ws: WorkspaceRecord, cwd: string): ProjectRecord {
     const absCwd = path.resolve(cwd);
+    if (ws.home !== undefined) return this.registerHomeProject(ws, absCwd);
     const wsDir = path.join(this.baseDir, ws.name);
     const project = this.withLock((data) => {
       const target = data.workspaces.find((w) => w.name === ws.name);
       if (!target) throw new Error(`workspace "${ws.name}" no longer exists in ${this.file}`);
-      let p = findProjectByCwd(target.projects, absCwd);
+      const projects = (target.projects ??= []);
+      let p = findProjectByCwd(projects, absCwd);
       if (!p) {
-        const live = new Set(target.projects.map((x) => x.id));
+        const live = new Set(projects.map((x) => x.id));
         const recovered = findSlotIdForCwd(wsDir, absCwd);
         const name = readPeerConfigSummary(absCwd).name;
         const id =
@@ -275,7 +398,7 @@ export class WorkspaceRegistry {
                 new Set([...live, ...listSlotIds(wsDir)]),
               );
         p = { cwd: absCwd, id, addedAt: nowIso() };
-        target.projects.push(p);
+        projects.push(p);
       }
       return p;
     });
@@ -283,10 +406,68 @@ export class WorkspaceRegistry {
     return project;
   }
 
+  private registerHomeProject(ws: WorkspaceRecord, absCwd: string): ProjectRecord {
+    const home = ws.home!;
+    const rel = toProjectPath(home, absCwd);
+    if (rel === null) {
+      throw new Error(
+        `${absCwd} cannot join workspace "${ws.name}": a project of a workspace with a home lies inside the home (${home}) and is not the home itself`,
+      );
+    }
+    // This process's view already lists the path (the start's own view, or an
+    // earlier write here): nothing to write, so `workspace.json` is not read a
+    // second time — an outside change applies from the next start anyway.
+    const seen = this.homeFiles.get(home);
+    const listed =
+      seen && !(seen instanceof WorkspaceFileError)
+        ? seen.projects.find((p) => path.resolve(home, p.path) === absCwd)
+        : undefined;
+    if (listed) {
+      this.prepareSlot(ws, listed.id, absCwd);
+      return ws.projects.find((p) => p.id === listed.id && path.resolve(p.cwd) === absCwd) ?? { id: listed.id, cwd: absCwd };
+    }
+    const { file, result: id } = mutateWorkspaceFile(home, (data) => {
+      const existing = data.projects.find((p) => path.resolve(home, p.path) === absCwd);
+      if (existing) return { next: null, result: existing.id };
+      const name = readPeerConfigSummary(absCwd).name;
+      const minted = mintProjectId(
+        name && name.trim() !== '' ? name : path.basename(absCwd),
+        new Set(data.projects.map((p) => p.id)),
+      );
+      return { next: { ...data, projects: [...data.projects, { id: minted, path: rel }] }, result: minted };
+    });
+    this.homeFiles.set(home, file);
+    this.prepareSlot(ws, id, absCwd);
+    // The caller's view already folds in the machine-local trust of a project
+    // it lists under this path; a newly minted project has none yet.
+    return ws.projects.find((p) => p.id === id && path.resolve(p.cwd) === absCwd) ?? { id, cwd: absCwd };
+  }
+
+  /**
+   * Registry workspace: drop the record. Workspace with a home: drop the entry
+   * from `workspace.json` (under its lock; the view follows at once) and the
+   * project's machine-local trust from the registry entry.
+   */
   removeProject(ws: WorkspaceRecord, id: string): boolean {
+    if (ws.home !== undefined) {
+      const home = ws.home;
+      const { file, result } = mutateWorkspaceFile(home, (data) => {
+        const projects = data.projects.filter((p) => p.id !== id);
+        return projects.length < data.projects.length
+          ? { next: { ...data, projects }, result: true }
+          : { next: null, result: false };
+      });
+      this.homeFiles.set(home, file);
+      this.withLock((data) => {
+        const target = data.workspaces.find((w) => w.name === ws.name);
+        if (target?.projectTrust) delete target.projectTrust[id];
+        return null;
+      });
+      return result;
+    }
     return this.withLock((data) => {
       const target = data.workspaces.find((w) => w.name === ws.name);
-      if (!target) return false;
+      if (!target?.projects) return false;
       const before = target.projects.length;
       target.projects = target.projects.filter((p) => p.id !== id);
       return target.projects.length < before;
@@ -299,7 +480,8 @@ export class WorkspaceRegistry {
       if (!ws) return null;
       ws.lastOpened = nowIso();
       if (projectId) {
-        const p = ws.projects.find((x) => x.id === projectId);
+        ws.lastOpenedProject = projectId;
+        const p = ws.projects?.find((x) => x.id === projectId);
         if (p) p.lastOpened = nowIso();
       }
       return null;
@@ -309,6 +491,8 @@ export class WorkspaceRegistry {
   /**
    * M33 phase 2: read the machine-local plugin-trust decision for one project.
    * `undefined` = undecided (the loader shows a trust prompt on first open).
+   * For a workspace with a home, a consent given under another project path
+   * reads as undecided (folded in by the view, see `compose`).
    */
   getProjectTrust(ws: WorkspaceRecord, id: string): boolean | undefined {
     return this.getProject(ws, id)?.trustProjectPlugins;
@@ -316,18 +500,12 @@ export class WorkspaceRegistry {
 
   /**
    * M33 phase 2: persist the plugin-trust decision per `(workspace × project)`.
-   * Lives in `~/.claude4spec/workspaces.json`, NEVER in the repo. The caller is
-   * expected to trigger a `ProjectContext` rebuild so the overlay (un)loads
-   * without a process restart.
+   * Lives in `~/.claude4spec/workspaces.json`, NEVER in the repo (nor in
+   * `workspace.json`). The caller is expected to trigger a `ProjectContext`
+   * rebuild so the overlay (un)loads without a process restart.
    */
   setProjectTrust(ws: WorkspaceRecord, id: string, value: boolean): void {
-    this.withLock((data) => {
-      const target = data.workspaces.find((w) => w.name === ws.name);
-      if (!target) return null;
-      const p = target.projects.find((x) => x.id === id);
-      if (p) p.trustProjectPlugins = value;
-      return null;
-    });
+    this.setTrustFlag(ws, id, 'trustProjectPlugins', value);
   }
 
   /**
@@ -347,11 +525,37 @@ export class WorkspaceRegistry {
    * ASSUMPTION:dev-0002 — one confirmation for the whole attachment list.
    */
   setSpecSkillHooksTrust(ws: WorkspaceRecord, id: string, value: boolean): void {
+    this.setTrustFlag(ws, id, 'trustSpecSkillHooks', value);
+  }
+
+  /**
+   * One write path for both machine-local consents. Registry workspace: the
+   * flag on the `ProjectRecord`. Workspace with a home (M31 `44viw74p`): the
+   * entry's `projectTrust[id]`, stored together with the project's relative
+   * path in the view; a record left from another path is replaced, not merged,
+   * so no consent given for other code survives the move.
+   */
+  private setTrustFlag(
+    ws: WorkspaceRecord,
+    id: string,
+    key: 'trustProjectPlugins' | 'trustSpecSkillHooks',
+    value: boolean,
+  ): void {
+    const viewPath = ws.home !== undefined ? this.homeFile(ws.home).projects.find((p) => p.id === id)?.path : undefined;
     this.withLock((data) => {
       const target = data.workspaces.find((w) => w.name === ws.name);
       if (!target) return null;
-      const p = target.projects.find((x) => x.id === id);
-      if (p) p.trustSpecSkillHooks = value;
+      if (target.home === undefined) {
+        const p = target.projects?.find((x) => x.id === id);
+        if (p) p[key] = value;
+        return null;
+      }
+      if (viewPath === undefined) return null;
+      const trust = (target.projectTrust ??= {});
+      const current = trust[id];
+      const base: HomeProjectTrust =
+        current && sameProjectPath(current.path, viewPath) ? current : { path: viewPath };
+      trust[id] = { ...base, path: viewPath, [key]: value };
       return null;
     });
   }
@@ -360,8 +564,10 @@ export class WorkspaceRegistry {
    * 2.1.0: persist `--host` / `--public-url` on a workspace. `undefined` leaves
    * a field untouched; `''` removes it (back to the default: loopback /
    * `http://localhost:<defaultPort>`). Callers validate `publicUrl` first.
+   * Returns the stored entry — no view is composed, so no `workspace.json` is
+   * read (the start sets these before its single eager read in `openView`).
    */
-  setNetwork(wsName: string, net: { bindHost?: string; publicUrl?: string }): WorkspaceRecord | null {
+  setNetwork(wsName: string, net: { bindHost?: string; publicUrl?: string }): StoredWorkspaceRecord | null {
     return this.withLock((data) => {
       const ws = data.workspaces.find((w) => w.name === wsName);
       if (!ws) return null;
@@ -389,12 +595,12 @@ export class WorkspaceRegistry {
    * Every step is detectable from disk, so a run interrupted after any rename
    * is completed by the next start (the renamed slot's marker names its
    * directory, and the plan adopts it). Detached projects' slots are left as
-   * they are and recovered by their directory on re-registration.
+   * they are and recovered by their directory on re-registration. Entries with
+   * a home are not touched (M31 `9yq1j7e8`).
    */
   migrateIfNeeded(): ProjectIdRename[] {
     fs.mkdirSync(this.baseDir, { recursive: true });
-    this.acquireLock();
-    try {
+    return withAdvisoryLock(this.lockPath(), () => {
       const data = this.readRaw();
       if (!isMigrationPendingFor(data)) return [];
       const { file, renames } = planRegistryMigration(data, this.baseDir);
@@ -408,11 +614,9 @@ export class WorkspaceRegistry {
           writeSlotMarker(to, r.cwd);
         }
       }
-      this.writeAtomic(file);
+      writeJsonAtomic(this.file, file);
       return renames;
-    } finally {
-      this.releaseLock();
-    }
+    });
   }
 
   /**
@@ -439,6 +643,68 @@ export class WorkspaceRegistry {
 
   private portTakenUnsafe(data: WorkspacesFile, port: number, exceptName: string): boolean {
     return data.workspaces.some((w) => w.name !== exceptName && w.defaultPort === port);
+  }
+
+  // ─── view ────────────────────────────────────────────────────────────────
+
+  /**
+   * A home's `workspace.json` as this process sees it (read once, then kept),
+   * or the `WorkspaceFileError` reading it produced — kept too.
+   */
+  private homeFileOrError(home: string): WorkspaceFile | WorkspaceFileError {
+    let file = this.homeFiles.get(home);
+    if (!file) {
+      try {
+        file = readWorkspaceFile(home);
+      } catch (err) {
+        if (!(err instanceof WorkspaceFileError)) throw err;
+        file = err;
+      }
+      this.homeFiles.set(home, file);
+    }
+    return file;
+  }
+
+  /** The strict read: the start (`openView`) and writes into the file refuse on a broken one. */
+  private homeFile(home: string): WorkspaceFile {
+    const file = this.homeFileOrError(home);
+    if (file instanceof WorkspaceFileError) throw file;
+    return file;
+  }
+
+  /**
+   * Registry entry → view. A registry entry IS its view. An entry with a home
+   * takes `projects` and `plugins` from `workspace.json`; each project's cwd is
+   * its path resolved against `home`, and its trust is the entry's consent for
+   * that id ONLY while it was given under the same relative path — otherwise
+   * the project reads as undecided (M31 `44viw74p`).
+   *
+   * A `workspace.json` that does not validate does not throw here: the entry
+   * reads with no projects and no plugins and carries `fileError`
+   * (ASSUMPTION:dev-0103). Only `openView` — the start of that workspace —
+   * and the writes into the file refuse on it.
+   */
+  private compose(stored: StoredWorkspaceRecord): WorkspaceRecord {
+    const { projectTrust, projects, ...entry } = stored;
+    if (stored.home === undefined) return { ...entry, projects: projects ?? [] };
+    const home = stored.home;
+    const file = this.homeFileOrError(home);
+    if (file instanceof WorkspaceFileError) {
+      return { ...entry, plugins: [], projects: [], fileError: { code: file.code, message: file.message } };
+    }
+    return {
+      ...entry,
+      plugins: [...file.plugins],
+      projects: file.projects.map((p) => {
+        const record: ProjectRecord = { id: p.id, cwd: path.resolve(home, p.path) };
+        const trust = projectTrust?.[p.id];
+        if (trust && sameProjectPath(trust.path, p.path)) {
+          if (trust.trustProjectPlugins !== undefined) record.trustProjectPlugins = trust.trustProjectPlugins;
+          if (trust.trustSpecSkillHooks !== undefined) record.trustSpecSkillHooks = trust.trustSpecSkillHooks;
+        }
+        return record;
+      }),
+    };
   }
 
   // ─── persistence ─────────────────────────────────────────────────────────
@@ -484,17 +750,19 @@ export class WorkspaceRegistry {
     // this a workspace whose `projects` is not an array read through — a string
     // answered `.length`, so `c4s list-workspaces` printed the intact records
     // plus a garbage one instead of refusing: a partial answer is worse than none.
+    // 2.1.58: an entry with a home is recognised by an absolute `home` and
+    // carries no `projects` (its composition lives in `workspace.json`).
     data.workspaces.forEach((w, i) => {
       const rec = w as unknown as Record<string, unknown> | null;
+      const base = typeof rec === 'object' && rec !== null && typeof rec.name === 'string' && typeof rec.defaultPort === 'number';
       const ok =
-        typeof rec === 'object' &&
-        rec !== null &&
-        typeof rec.name === 'string' &&
-        typeof rec.defaultPort === 'number' &&
-        Array.isArray(rec.projects) &&
-        (rec.projects as unknown[]).every(
-          (p) => typeof p === 'object' && p !== null && typeof (p as { cwd?: unknown }).cwd === 'string',
-        );
+        base &&
+        (rec!.home !== undefined
+          ? typeof rec!.home === 'string' && path.isAbsolute(rec!.home) && rec!.projects === undefined
+          : Array.isArray(rec!.projects) &&
+            (rec!.projects as unknown[]).every(
+              (p) => typeof p === 'object' && p !== null && typeof (p as { cwd?: unknown }).cwd === 'string',
+            ));
       if (!ok) throw new Error(`${this.file}: workspaces[${i}] is not a workspace record`);
     });
     if (typeof data.$schemaVersion === 'number' && data.$schemaVersion > WORKSPACES_SCHEMA_VERSION) {
@@ -505,63 +773,22 @@ export class WorkspaceRegistry {
     return data;
   }
 
+  private lockPath(): string {
+    return this.file + '.lock';
+  }
+
   /** Re-read under lock → mutate → atomic write. Returns the mutator's value. */
   private withLock<T>(mutate: (data: WorkspacesFile) => T): T {
     fs.mkdirSync(this.baseDir, { recursive: true });
-    this.acquireLock();
-    try {
+    return withAdvisoryLock(this.lockPath(), () => {
       const data = this.readRaw();
       // Writing would persist ids nobody migrated the slots for — the server
       // migrates first (`migrateIfNeeded`), the CLI refuses.
       if (isMigrationPendingFor(data)) throw new RegistryMigrationPendingError(this.file);
       data.$schemaVersion = WORKSPACES_SCHEMA_VERSION;
       const result = mutate(data);
-      this.writeAtomic(data);
+      writeJsonAtomic(this.file, data);
       return result;
-    } finally {
-      this.releaseLock();
-    }
-  }
-
-  private writeAtomic(data: WorkspacesFile): void {
-    const tmp = this.file + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(data, null, 2) + '\n', 'utf8');
-    fs.renameSync(tmp, this.file);
-  }
-
-  private acquireLock(): void {
-    const lockPath = this.file + '.lock';
-    const deadline = Date.now() + LOCK_STALE_MS * 2;
-    for (;;) {
-      try {
-        const fd = fs.openSync(lockPath, 'wx');
-        fs.writeSync(fd, String(process.pid));
-        fs.closeSync(fd);
-        return;
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
-        try {
-          const stat = fs.statSync(lockPath);
-          if (Date.now() - stat.mtimeMs > LOCK_STALE_MS) {
-            fs.unlinkSync(lockPath);
-            continue;
-          }
-        } catch {
-          continue; // lock vanished between open and stat — retry immediately
-        }
-        if (Date.now() > deadline) {
-          throw new Error(`workspaces.json advisory lock held too long: ${lockPath}`);
-        }
-        sleepSync(25);
-      }
-    }
-  }
-
-  private releaseLock(): void {
-    try {
-      fs.unlinkSync(this.file + '.lock');
-    } catch {
-      /* already released / stale-reaped by a peer */
-    }
+    });
   }
 }

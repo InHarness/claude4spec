@@ -6,7 +6,6 @@ import {
   type WorkspaceNetwork,
 } from '../../core/workspace/network.js';
 import type { WorkspaceRegistry } from './registry.js';
-import type { WorkspaceRecord } from './types.js';
 
 /**
  * 2.1.0 (M01) — `--host <addr>` / `--public-url <url>` are ATTRIBUTES of the
@@ -23,11 +22,11 @@ export interface NetworkFlags {
 
 export class InvalidPublicUrlError extends Error {}
 
-export function applyNetworkFlags(
+export function applyNetworkFlags<W extends WorkspaceNetwork & { name: string }>(
   registry: WorkspaceRegistry,
-  workspace: WorkspaceRecord,
+  workspace: W,
   flags: NetworkFlags,
-): WorkspaceRecord {
+): W {
   let publicUrl = flags.publicUrl;
   if (publicUrl !== undefined && publicUrl !== '') {
     const checked = validatePublicUrl(publicUrl);
@@ -36,12 +35,19 @@ export function applyNetworkFlags(
   }
   const host = flags.host?.trim();
   if (host === undefined && publicUrl === undefined) return workspace;
-  return (
-    registry.setNetwork(workspace.name, {
-      ...(host !== undefined ? { bindHost: host } : {}),
-      ...(publicUrl !== undefined ? { publicUrl } : {}),
-    }) ?? workspace
-  );
+  // The stored entry comes back (no view composed — no `workspace.json` read);
+  // only its network attributes are carried onto the caller's record.
+  const stored = registry.setNetwork(workspace.name, {
+    ...(host !== undefined ? { bindHost: host } : {}),
+    ...(publicUrl !== undefined ? { publicUrl } : {}),
+  });
+  if (!stored) return workspace;
+  const next: W = { ...workspace };
+  delete next.bindHost;
+  delete next.publicUrl;
+  if (stored.bindHost !== undefined) next.bindHost = stored.bindHost;
+  if (stored.publicUrl !== undefined) next.publicUrl = stored.publicUrl;
+  return next;
 }
 
 /**

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { slotDirFor, type WorkspaceRegistry } from './registry.js';
+import type { WorkspaceRegistry } from './registry.js';
 import type { WorkspaceRecord } from './types.js';
 
 function moveFile(src: string, dest: string): void {
@@ -18,7 +18,9 @@ function moveFile(src: string, dest: string): void {
  * M31 first-registration hook: a pre-workspace project keeps its derived index
  * at `<cwd>/.claude4spec/db.sqlite`. If NO workspace anywhere owns a populated
  * slot for this project-id yet, the legacy DB (+ WAL sidecars) moves to
- * `~/.claude4spec/<ws>/<id>/db.sqlite`. A second workspace registering the
+ * the project's slot in the slots directory of the registering workspace
+ * (`registry.slotDir` — the registry home, or `<home>/.claude4spec/local/` for
+ * a workspace with a home, M29 `m29mig001`). A second workspace registering the
  * same cwd later starts with an empty slot (the index is derived — it rebuilds
  * from the committed entity files at boot).
  */
@@ -33,8 +35,10 @@ export function migrateLegacyDbIfNeeded(
 
   // Stable stored id — the slot key. Never derived from cwd.
   const id = projectId;
-  for (const w of registry.listWorkspaces()) {
-    if (fs.existsSync(path.join(slotDirFor(w.name, id), 'db.sqlite'))) return false;
+  // Slot directories come from the stored entries alone: no workspace.json of
+  // any home is read, so a broken one elsewhere cannot block this registration.
+  for (const dir of registry.listSlotsDirs()) {
+    if (fs.existsSync(path.join(dir, id, 'db.sqlite'))) return false;
   }
 
   const dest = registry.slotDir(ws, id);

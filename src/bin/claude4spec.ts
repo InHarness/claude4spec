@@ -1,17 +1,14 @@
 #!/usr/bin/env node
-import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import { startServer } from '../server/index.js';
-import { migrateConfigToV3 } from '../server/config.js';
 import { WorkspaceRegistry } from '../server/workspace/registry.js';
-import { bootstrapProject } from '../server/workspace/bootstrap.js';
 import {
   applyNetworkFlags,
   InvalidPublicUrlError,
 } from '../server/workspace/network-flags.js';
-import { effectiveBindHost, effectivePublicUrl } from '../core/workspace/network.js';
-import type { WorkspaceRecord } from '../server/workspace/types.js';
-import { parseLaunchArgs, printStartWarnings, projectStartUrl, workspaceOnlyLaunch } from './launch.js';
+import { effectivePublicUrl } from '../core/workspace/network.js';
+import type { StoredWorkspaceRecord } from '../server/workspace/types.js';
+import { parseLaunchArgs, prepareStart, printStartWarnings, projectStartUrl, type PreparedStart } from './launch.js';
 
 function openBrowser(url: string): void {
   const { platform } = process;
@@ -33,7 +30,7 @@ function openBrowser(url: string): void {
 }
 
 const args = parseLaunchArgs(process.argv.slice(2));
-const { port, cwd, pagesDir, mode, name, noOpen, remoteUrl, createProject } = args;
+const { port, cwd, pagesDir, noOpen } = args;
 
 const registry = new WorkspaceRegistry();
 
@@ -44,14 +41,14 @@ for (const r of registry.migrateIfNeeded()) {
 }
 
 /**
- * Persist `--host`/`--public-url` on the resolved workspace and print the
+ * Persist `--host`/`--public-url` on the selected workspace entry and print the
  * no-auth warning when it listens beyond loopback. An invalid `--public-url`
  * refuses the start before anything is written.
  */
-function withNetwork(ws: WorkspaceRecord): WorkspaceRecord {
-  let next: WorkspaceRecord;
+function withNetwork(entry: StoredWorkspaceRecord): StoredWorkspaceRecord {
+  let next: StoredWorkspaceRecord;
   try {
-    next = applyNetworkFlags(registry, ws, { host: args.host, publicUrl: args.publicUrl });
+    next = applyNetworkFlags(registry, entry, { host: args.host, publicUrl: args.publicUrl });
   } catch (err) {
     if (err instanceof InvalidPublicUrlError) {
       console.error(`\x1b[31mINVALID_ARGS\x1b[0m — ${err.message}`);
@@ -63,92 +60,48 @@ function withNetwork(ws: WorkspaceRecord): WorkspaceRecord {
   return next;
 }
 
-if (createProject) {
-  // ── Create-project path (explicit opt-in or an implying flag) ──────────────
-  fs.mkdirSync(cwd, { recursive: true });
+// Everything before listen — workspace selection, the single eager read of a
+// home's workspace.json (after its .gitignore), and on a create-project start
+// the per-project activation. startServer gets this registry and its view.
+let prepared: PreparedStart;
+try {
+  prepared = prepareStart(registry, args, withNetwork);
+} catch (err) {
+  failToStart(err);
+}
+const { workspace, boot } = prepared;
+const effectivePort = prepared.port;
+const effectiveMode = prepared.mode;
 
-  // M31: workspace select-or-create. Peek the config-v3 migration FIRST so a
-  // pre-v3 `config.json.port` can still select the right workspace when no
-  // --port/--workspace flag is given (first-wins carry happens in bootstrap).
-  const peeked = migrateConfigToV3(cwd);
-  const workspace = withNetwork(
-    registry.selectOrCreate({
-      name: args.workspace,
-      port: port ?? peeked.carried.defaultPort,
-      mode: mode ?? peeked.carried.mode,
-    }),
-  );
-
-  // M31: full per-project activation (config, gitignore, welcome page,
-  // registry registration, legacy-db relocation).
-  const boot = bootstrapProject(registry, workspace, cwd, {
-    name,
-    pagesDir,
-    remoteApiUrl: remoteUrl,
-  });
-
-  const effectivePort = port ?? workspace.defaultPort;
-  const effectiveMode = mode ?? workspace.mode;
-
-  startServer({
-    cwd,
-    workspace,
-    createProject: true,
-    port: effectivePort,
-    host: effectiveBindHost(workspace),
-    pagesDir,
-    mode: effectiveMode,
-    // Resolved flag > config.json > null; startServer applies the prod-constant
-    // fallback inside RemoteHttpClient.
-    remoteApiUrl: boot.config.remoteApiUrl,
-  })
-    .then((handle) => {
+startServer(prepared.options)
+  .then((handle) => {
+    const publicUrl = effectivePublicUrl({ ...workspace, defaultPort: effectivePort });
+    if (boot) {
       // `handle.url` is the LOCAL address (loopback or a concrete bindHost) —
       // the browser opens that, never `publicUrl`.
       const projectUrl = projectStartUrl(handle.url, boot.project.id);
       console.log(`\x1b[32m  claude4spec\x1b[0m  ready at \x1b[36m${projectUrl}\x1b[0m`);
       console.log(`  workspace: ${workspace.name}`);
-      console.log(`  public url: ${effectivePublicUrl({ ...workspace, defaultPort: effectivePort })}`);
+      console.log(`  public url: ${publicUrl}`);
       console.log(`  cwd: ${cwd}`);
       const baseRoot = boot.config.roots.find((r) => r.builtin);
       console.log(`  pages: ${pagesDir ?? baseRoot?.dir ?? '(none)'}${baseRoot ? ` (root id: ${baseRoot.id})` : ''}`);
       console.log(`  config: ${boot.configPath}${boot.configCreated ? ' (created)' : ''}`);
       console.log(`  writing style: ${handle.writingStyle ? `${handle.writingStyle.title} (${handle.writingStyle.slug})` : 'none'}`);
-
       if (!noOpen && effectiveMode === 'prod') openBrowser(projectUrl);
-      installShutdown(handle);
-    })
-    .catch(failToStart);
-} else {
-  // ── Workspace-only start (decision #11) ────────────────────────────────────
-  // No mkdir, no config-v3 peek (it would rewrite config.json), no bootstrap —
-  // nothing is written to the CWD. Select the workspace from CLI signals only
-  // and open `/welcome`. A project is registered later via /welcome or the
-  // switcher (POST /api/workspace/projects).
-  const workspace = workspaceOnlyLaunch(registry, args, withNetwork);
-  const effectivePort = port ?? workspace.defaultPort;
-  const effectiveMode = mode ?? workspace.mode;
-
-  startServer({
-    cwd,
-    workspace,
-    createProject: false,
-    port: effectivePort,
-    host: effectiveBindHost(workspace),
-    mode: effectiveMode,
-  })
-    .then((handle) => {
+    } else {
+      // Workspace-only start (decision #11): nothing was written to the CWD;
+      // a project is registered later via /welcome or the switcher.
       const welcomeUrl = `${handle.url}/welcome`;
       console.log(`\x1b[32m  claude4spec\x1b[0m  ready at \x1b[36m${welcomeUrl}\x1b[0m`);
       console.log(`  workspace: ${workspace.name} (workspace-only start — no project created)`);
-      console.log(`  public url: ${effectivePublicUrl({ ...workspace, defaultPort: effectivePort })}`);
+      console.log(`  public url: ${publicUrl}`);
       console.log(`  hint: pass --create-project to register this directory as a project`);
-
       if (!noOpen && effectiveMode === 'prod') openBrowser(welcomeUrl);
-      installShutdown(handle);
-    })
-    .catch(failToStart);
-}
+    }
+    installShutdown(handle);
+  })
+  .catch(failToStart);
 
 function installShutdown(handle: Awaited<ReturnType<typeof startServer>>): void {
   const close = async () => {

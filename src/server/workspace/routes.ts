@@ -179,8 +179,9 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
         // the map entry is dropped explicitly: without it, re-registering this
         // cwd would reuse a handle onto the deleted file. See `forgetDbSlot`.
         await cache.retire(id);
-        forgetDbSlot(workspace, id);
-        fs.rmSync(registry.slotDir(workspace, id), { recursive: true, force: true });
+        const slot = registry.slotDir(workspace, id);
+        forgetDbSlot(slot);
+        fs.rmSync(slot, { recursive: true, force: true });
       } else {
         // Context retires/disposes; the DB slot stays on disk (re-register = same index).
         cache.invalidate(id);

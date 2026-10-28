@@ -55,7 +55,6 @@ import { rootRenameRouter } from '../routes/config-rename.js';
 import { mcpConfigRouter } from '../routes/mcp-config.js';
 import { PROJECTION_IDS, ProjectionStatusRegistry, type ProjectionId } from '../services/projection-status.js';
 import { listProjects } from './list-projects.js';
-import { writeSlotMarker } from './slot-marker.js';
 import { readPeerConfigSummary } from './peer-config.js';
 import { PatchService } from '../services/patch.js';
 import { artifactsRouter } from '../routes/artifacts.js';
@@ -509,16 +508,16 @@ async function buildInner(
   }
   const skillResolver = new SkillResolver(skillRegistry, cwd);
 
-  // 2.1.17: under THIS registry's home, so the slot below and the handle agree
-  // (the plugin test harness builds contexts over a throwaway registry home).
-  const db: Db = openDb(workspace, projectId, registry.baseDir);
+  // 2.1.58 (M31 `vzkw903j`, M41 `yffftxih`): M31 names the slot — in THIS
+  // registry's slots directory (the plugin test harness builds contexts over a
+  // throwaway registry home) — and checks its continuity before the database
+  // opens: a hand-edited `cwd` re-points the marker of a registry workspace's
+  // slot; in a workspace with a home a slot recorded for another directory is
+  // quarantined and the project starts on an empty one. M41 opens `db.sqlite`
+  // in the directory it is handed.
+  const dbSlotDir = registry.prepareSlot(workspace, projectId, cwd);
+  const db: Db = openDb(dbSlotDir);
   cleanup.push(() => db.close());
-  const dbSlotDir = registry.slotDir(workspace, projectId);
-  // 2.1.0 slot continuity: the slot records the directory it serves. A
-  // hand-edited `cwd` (moved repo) re-points the marker on the next build, so a
-  // later detach + re-register from the NEW directory recovers this slot, and a
-  // new project at the OLD directory never inherits it.
-  writeSlotMarker(dbSlotDir, cwd);
 
   // ── M40 phase A: MOUNTS ────────────────────────────────────────────────────
   // Mount → bind is a contract per source, not a preference: binding a reaction

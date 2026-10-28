@@ -104,11 +104,14 @@ export function resolveWorkspaceProject(
       const available = candidates.flatMap((w) =>
         w.projects.map((p) => (opts.workspace ? p.id : `${p.id} (workspace '${w.name}')`)),
       );
+      // A workspace whose workspace.json does not validate lists no ids: say so
+      // rather than let the miss read as a stale id (ASSUMPTION:dev-0103).
+      const unreadable = candidates.flatMap((w) => (w.fileError ? [w.fileError.message] : []));
       throw new WorkspaceResolveError(
         'PROJECT_ID_NOT_FOUND',
         `no project with id '${opts.project}'${opts.workspace ? ` in workspace '${opts.workspace}'` : ''}; available ids: ${
           available.join(', ') || '(none)'
-        }`,
+        }${unreadable.length > 0 ? `; unreadable: ${unreadable.join('; ')}` : ''}`,
         'pass --project <id> exactly as the registry lists it (`c4s list-workspaces`); a skill carrying a stale id must be regenerated',
       );
     }
@@ -185,7 +188,9 @@ function resolveInServingWorkspace(
     throw new WorkspaceResolveError(
       'PROJECT_ID_NOT_FOUND',
       ws
-        ? `no project with id '${project}' in workspace '${ws.name}'; available ids: ${available.join(', ') || '(none)'}`
+        ? `no project with id '${project}' in workspace '${ws.name}'; available ids: ${available.join(', ') || '(none)'}${
+            ws.fileError ? `; unreadable: ${ws.fileError.message}` : ''
+          }`
         : `no project with id '${project}': workspace '${workspace ?? '(none)'}' is not registered`,
       'pass `project` exactly as <workspace_projects/> lists it, and `workspace` only to reach a peer in another workspace',
     );

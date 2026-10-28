@@ -1,5 +1,5 @@
 {
-  "iteration": 0,
+  "iteration": 10,
   "conventions": [
     {
       "label": "L5 (UI) — implementor M50: rodzaj trasy (projektu / workspace'u) deklarowany w opisie widoku",
@@ -32,7 +32,7 @@
       "units": [
         "workspace-home-model"
       ],
-      "startCommit": null
+      "startCommit": "bc9c146aebf39efb11a6a41d8d7a9fd639b4b6d2"
     },
     {
       "n": 2,
@@ -218,13 +218,34 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "workspace-home-model/p1-l1-l2",
+          "layers": [
+            "L1",
+            "L2"
+          ],
+          "slugs": [
+            "ac-workspace-json-nie-zawiera-zadnego-at",
+            "ac-start-procesu-w-workspace-ie-z-katalo",
+            "ac-nieczytelny-albo-niezgodny-z-ksztalte",
+            "ac-wpis-projektu-bez-id-w-workspace-json",
+            "ac-id-powtorzony-w-workspace-json-blokuj",
+            "ac-po-zmianie-sciezki-zaufanego-projektu"
+          ],
+          "status": "implemented",
+          "rounds": 3,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "75f7d9a5cba3059c3e7c69402c20c73026cf2e37",
+      "baseCommit": "bc9c146aebf39efb11a6a41d8d7a9fd639b4b6d2",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 3
       },
       "jobs": []
     },
@@ -416,7 +437,7 @@
               "ac-aktywacja-katalogu-ktorego-claude4spe",
               "ac-brak-uprawnien-do-zapisu-do-cwd-erro",
               "ac-config-json-malformed-json-hard-erro",
-              "ac-config-json-type-mismatch-np-sche",
+              "ac-config-json-type-mismatch-np-schem",
               "ac-projekt-z-nieprawidlowym-config-json",
               "ac-npx-inharness-ai-claude4spec-w-katalo",
               "ac-npx-inharness-ai-claude4spec-gola-ko",
@@ -433,7 +454,45 @@
       ],
       "wave": 2,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "lazy-project-activation/p1-l2-l10",
+          "layers": [
+            "L2",
+            "L4",
+            "L7",
+            "L10"
+          ],
+          "slugs": [
+            "app-config-response",
+            "m31-requires-m01",
+            "ac-aktywacja-katalogu-ktorego-claude4spe",
+            "ac-brak-uprawnien-do-zapisu-do-cwd-erro",
+            "ac-config-json-malformed-json-hard-erro",
+            "ac-config-json-type-mismatch-np-schem",
+            "ac-projekt-z-nieprawidlowym-config-json",
+            "ac-npx-inharness-ai-claude4spec-w-katalo",
+            "ac-npx-inharness-ai-claude4spec-gola-ko",
+            "ac-name-my-spec-w-pustym-katalogu-zap",
+            "section:85hp4f2v",
+            "section:7yzhxgmw",
+            "section:c0nf1g4a",
+            "section:3ebblo1q",
+            "section:v878dqht",
+            "section:cfg0gitw",
+            "section:dsh8ezbz",
+            "section:m31ctx001",
+            "section:m29idx001",
+            "section:m29krit1",
+            "section:za9e9492"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -588,7 +647,34 @@
       ],
       "wave": 2,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "workspace-plugin-pool/p1-l2-l11",
+          "layers": [
+            "L2",
+            "L7",
+            "L10",
+            "L11"
+          ],
+          "slugs": [
+            "get-api-plugins-frontend-manifest",
+            "ac-pakiet-z-listy-pluginow-workspace-u-k",
+            "ac-start-bez-cwd-manifest-oglasza-baze",
+            "ac-start-bez-cwd-manifest-oglasza-nakladke",
+            "m33l2001",
+            "m33trst0",
+            "m33l10sc",
+            "9g96q3pp",
+            "m33l7wch",
+            "m26esec"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -853,7 +939,52 @@
       ],
       "wave": 2,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "cli-workspace-resolution/p1-l3-l14",
+          "layers": [
+            "L3",
+            "L14",
+            "M22",
+            "M31"
+          ],
+          "slugs": [
+            "list-workspaces",
+            "trust-plugins",
+            "ask",
+            "ac-c4s-list-workspaces-oznacza-wpis-ktor",
+            "ac-c4s-list-workspaces-wypisuje-wszystki",
+            "ac-kazdy-wiersz-wyjscia-c4s-list-workspa",
+            "ac-c4s-trust-plugins-cwd-dir-dla-katalog",
+            "ac-c4s-trust-plugins-cwd-dir-true-fal",
+            "ac-c4s-uruchomione-w-samym-katalogu-domo",
+            "ac-c4s-w-katalogu-bez-projektu-walk-up-n",
+            "ac-jedyne-pliki-czytane-lokalnie-przez-b",
+            "ac-nieczytelny-albo-niezgodny-z-ksztalte-2",
+            "ac-resolver-projektu-jest-wspolny-dla-wszys",
+            "ac-walk-up-ktory-trafia-na-workspace-jso",
+            "ac-walk-up-w-projekcie-workspace-u-z-kat",
+            "section:m11dserv",
+            "section:m11pjres",
+            "section:m11wsres",
+            "section:euyb84yv",
+            "section:tcs1yuku",
+            "section:m11pkg00",
+            "section:459ucmfg",
+            "section:m31cli01",
+            "section:m22dserv",
+            "section:qv83eat4",
+            "section:sa9x6lzh",
+            "section:sws0pnrn",
+            "section:zvd7wn4t"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -1069,7 +1200,54 @@
       ],
       "wave": 3,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "workspace-selection-at-start/p1-l2-l2",
+          "layers": [
+            "L2"
+          ],
+          "slugs": [
+            "flagi-cli-m01",
+            "flagi-cli-m01#--cwd",
+            "flagi-cli-m01#--workspace",
+            "flagi-cli-m01#--port",
+            "flagi-cli-m01#--host",
+            "flagi-cli-m01#--public-url",
+            "flagi-cli-m01#--mode",
+            "flagi-cli-m01#--no-open",
+            "flagi-cli-m01#--remote-url",
+            "m01-requires-m31",
+            "ac-cwd-dir-na-katalogu-ktory-nie-jest-ho",
+            "ac-cwd-home-wybiera-workspace-default",
+            "ac-cwd-wskazujace-istniejacy-wpis-urucho",
+            "ac-cwd-wskazujace-katalog-projektu-z-cla",
+            "ac-cwd-wskazujace-podkatalog-katalogu-do",
+            "ac-cwd-wskazuje-na-nieistniejacy-katalo",
+            "ac-gola-komenda-npx-inharness-ai-claude4-2",
+            "ac-gola-komenda-npx-inharness-ai-claude4",
+            "ac-gola-komenda-uruchomiona-w-katalogu-z",
+            "ac-mode-dev-prod-seeduje-pole-mode-wy",
+            "ac-npx-inharness-ai-claude4spec-create",
+            "ac-pagesservice-walk-pomija-entry-name-s",
+            "ac-port-3000-uzywa-portu-3000-dla-insta",
+            "ac-port-n-podany-z-workspace-albo-cwd-gd",
+            "ac-port-n-wybiera-workspace-ktorego",
+            "ac-nowy-wpis-tworzony-z-cwd-ktorego-nazw",
+            "ac-start-procesu-ktorego-lastopenedproje",
+            "ac-start-procesu-otwiera-w-przegladarce",
+            "ac-start-procesu-w-workspace-ie-bez-osta",
+            "ac-start-z-create-project-lub-flaga-impl",
+            "ac-start-z-create-project-w-swiezym-kata",
+            "ac-workspace-x-cwd-y-gdy-x-ma-inny-katal",
+            "ac-workspace-x-uruchomione-wewnatrz-kata"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -1197,7 +1375,31 @@
       ],
       "wave": 3,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "workspace-projects-api/p1-l2-l4",
+          "layers": [
+            "L2",
+            "L4"
+          ],
+          "slugs": [
+            "get-api-workspace",
+            "get-api-workspace-fs",
+            "post-api-workspace-projects",
+            "workspace-response",
+            "ac-detach-projektu-w-workspace-ie-z-kata",
+            "ac-dodanie-projektu-spoza-katalogu-domow",
+            "ac-dodanie-samego-katalogu-domowego-work",
+            "ac-get-api-workspace-zwraca-nazwe-rodzaj",
+            "ac-projekt-dodany-w-workspace-ie-z-katal"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -1399,7 +1601,33 @@
       ],
       "wave": 4,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "workspace-route-frame/p1-l2-l5",
+          "layers": [
+            "L2",
+            "L5"
+          ],
+          "slugs": [
+            "welcome-page",
+            "ac-lista-projektow-na-welcome-nie-wyrozn",
+            "m31-requires-m50",
+            "section:1bd92aq2",
+            "section:8h2a734u",
+            "section:k4fhsrkz",
+            "section:l5stlocs",
+            "section:6z6uzzhv",
+            "section:eb95ery1",
+            "section:m31l5001",
+            "section:mbladez6"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -1492,7 +1720,29 @@
       ],
       "wave": 4,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "remote-session-issuer/p1-l1-l17",
+          "layers": [
+            "L1",
+            "L2",
+            "L10",
+            "L17"
+          ],
+          "slugs": [
+            "remote-session",
+            "ac-nieparsowalny-bez-schematu-remoteapiur",
+            "ac-remote-url-url-nie-zapisuje-wartosci",
+            "ac-remote-url-url-ustawia-effectivec",
+            "ac-sesja-wydana-pod-innym-adresem-zdalne"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -1865,7 +2115,28 @@
       ],
       "wave": 5,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "workspace-settings-split/p1-l5-l17",
+          "layers": [
+            "L5",
+            "L17"
+          ],
+          "slugs": [
+            "settings-page",
+            "workspace-settings-page",
+            "ac-ikona-zebatki-w-prawym-gornym-rogu",
+            "ac-strona-ustawien-projektu-settings-nie",
+            "ac-strona-ustawien-workspace-u-workspace",
+            "m26-requires-m31"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -1969,5 +2240,6 @@
         }
       ]
     }
-  ]
+  ],
+  "baselineGreen": true
 }

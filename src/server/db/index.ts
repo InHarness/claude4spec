@@ -2,8 +2,6 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import { runMigrations } from './migrate.js';
-import { slotDirFor } from '../workspace/registry.js';
-import type { WorkspaceRecord } from '../workspace/types.js';
 
 export interface Db {
   handle: Database.Database;
@@ -35,26 +33,22 @@ interface DbSlot {
 const openSlots = new Map<string, DbSlot>();
 
 /**
- * M31: the derived SQLite lives OUTSIDE the project dir, in the workspace slot
- * `~/.claude4spec/<workspace>/<project-id>/db.sqlite` — the same cwd can carry
- * an independent index per workspace. Keyed on the STABLE stored `projectId`,
- * not a re-hash of cwd, so editing a project's cwd keeps its DB slot.
+ * M41: the derived SQLite lives OUTSIDE the project dir, as `db.sqlite` in the
+ * project's SLOT DIRECTORY, which the caller passes. The slot stands for one
+ * `(workspace, project-id)` pair and is named by the STABLE stored
+ * `projectId`, not a re-hash of cwd, so editing a project's cwd keeps it.
+ *
+ * 2.1.58 (M41 `t25ut9qh`, `yffftxih`): M41 no longer decides where slot
+ * directories live — that is M31's (`WorkspaceRegistry.slotDir`: the registry
+ * home for a registry workspace, `<home>/.claude4spec/local/` for a workspace
+ * with a home). The same slot directory is the same key, so the map stays
+ * keyed `(workspace, project-id)` by construction.
  *
  * Idempotent per key: a second call for the same slot returns the same handle
  * and takes a reference rather than opening a second connection to one file.
- *
- * 2.1.17 (M33 L10): `baseDir` is the registry home the slot lives under. The
- * context build passes its own registry's `baseDir`, so the db slot and
- * `registry.slotDir()` (the pre-migration backup) name the same directory by
- * construction — the plugin test harness runs a registry in a throwaway home
- * and must not open its database under the developer's `~/.claude4spec`.
- * Absent ⇒ the process-wide home, as before.
  */
-export function openDb(workspace: WorkspaceRecord, projectId: string, baseDir?: string): Db {
-  const dir =
-    baseDir === undefined
-      ? slotDirFor(workspace.name, projectId)
-      : path.join(baseDir, workspace.name, projectId);
+export function openDb(slotDir: string): Db {
+  const dir = path.resolve(slotDir);
   fs.mkdirSync(dir, { recursive: true });
   const dbPath = path.join(dir, 'db.sqlite');
 
@@ -108,8 +102,8 @@ function sharedHandle(dbPath: string, slot: DbSlot): Db {
  * read from failing mid-statement); the NEXT `openDb` for this slot simply
  * opens the file afresh.
  */
-export function forgetDbSlot(workspace: WorkspaceRecord, projectId: string): void {
-  openSlots.delete(path.join(slotDirFor(workspace.name, projectId), 'db.sqlite'));
+export function forgetDbSlot(slotDir: string): void {
+  openSlots.delete(path.join(path.resolve(slotDir), 'db.sqlite'));
 }
 
 /**

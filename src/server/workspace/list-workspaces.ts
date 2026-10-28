@@ -44,7 +44,8 @@ export class WorkspaceRegistryReadError extends Error {
  * stops the file from being read (invalid JSON, a shape that is not a registry,
  * a schema version from a newer binary, `EACCES`) throws
  * `WorkspaceRegistryReadError` with NO partial result: the file is parsed in one
- * piece, and half the workspaces would be a worse answer than none.
+ * piece, and half the workspaces would be a worse answer than none. A broken
+ * `workspace.json` of one home is NOT such a failure: it concerns one row only.
  */
 export function listWorkspaces(registry: WorkspaceRegistry = new WorkspaceRegistry()): WorkspaceSummary[] {
   let records: WorkspaceRecord[];
@@ -58,6 +59,14 @@ export function listWorkspaces(registry: WorkspaceRegistry = new WorkspaceRegist
     throw new WorkspaceRegistryReadError(
       message.includes(registry.filePath) ? message : `${registry.filePath}: ${message}`,
     );
+  }
+
+  // A workspace with a home whose workspace.json does not validate is still a
+  // row (its registry attributes are intact) with no readable project, and the
+  // refusal its start would get goes to stderr — the other rows stay a complete
+  // answer. ASSUMPTION:dev-0103.
+  for (const w of records) {
+    if (w.fileError) console.warn(`[workspace] "${w.name}": ${w.fileError.message}`);
   }
 
   const rows = records.map<WorkspaceSummary>((w) => ({

@@ -9,8 +9,7 @@ import { WsGateway } from './ws/gateway.js';
 import { createRoomBroadcaster } from './ws/watch-broadcaster.js';
 import { FileWatchRuntime } from './fs/watcher.js';
 import { PLUGINS_BASE_SOURCE } from './fs/sources.js';
-import { WorkspaceRegistry, DEFAULT_WORKSPACE_PORT } from './workspace/registry.js';
-import { migrateLegacyDbIfNeeded } from './workspace/db-migration.js';
+import { type WorkspaceRegistry, DEFAULT_WORKSPACE_PORT } from './workspace/registry.js';
 import { bootstrapProject } from './workspace/bootstrap.js';
 import { readPeerConfigSummary } from './workspace/peer-config.js';
 import { checkRequest, hostOriginGuard } from './http/host-origin-guard.js';
@@ -19,7 +18,7 @@ import { buildProjectContext } from './workspace/project-context.js';
 import { ProjectBuildFailedError, ProjectContextCache } from './workspace/context-cache.js';
 import { projectDispatchMiddleware } from './workspace/middleware.js';
 import { workspaceRouter } from './workspace/routes.js';
-import type { WorkspaceRecord } from './workspace/types.js';
+import type { ProjectRecord, WorkspaceRecord } from './workspace/types.js';
 import { resolveSpaRoute } from './workspace/spa-route.js';
 import { PluginRegistryImpl } from './core/plugin-host/registry.js';
 import { registerAllPlugins } from './core/plugin-host/register-builtins.js';
@@ -40,16 +39,27 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export interface StartOptions {
   cwd: string;
-  /** M31: pre-selected workspace (CLI select-or-create). Absent ⇒ resolved here. */
-  workspace?: WorkspaceRecord;
   /**
-   * Decision #11 (0.1.57): register `cwd` as the initial project at start
-   * (CLI `--create-project` / an implying flag). `false` ⇒ workspace-only
-   * start — nothing is registered/activated, nothing is written to `cwd`, and
-   * the bare command lands on `/welcome`. Defaults to `true` for back-compat
-   * with callers that always meant "create".
+   * The launcher's registry (migrated, `src/bin/launch.ts` `prepareStart`).
+   * The server serves through it and never opens a second one, so the view's
+   * read of a home's `workspace.json` is not repeated.
    */
-  createProject?: boolean;
+  registry: WorkspaceRegistry;
+  /**
+   * 2.1.58 (M31 `ssn335r8`): the workspace VIEW, opened by `registry.openView`
+   * before listen — `.claude4spec/.gitignore` ensured, `workspace.json` read
+   * and validated once (a WorkspaceFileError refused the start already).
+   * Process-lifetime: an outside change to the file applies from the next
+   * start, this registry's own writes update it at once.
+   */
+  workspace: WorkspaceRecord;
+  /**
+   * Decision #11 (0.1.57): the project a create-project start (CLI
+   * `--create-project` / an implying flag) activated before listen, or `null`
+   * for a workspace-only start — nothing is registered/activated, nothing is
+   * written to `cwd`, and the bare command lands on `/welcome`.
+   */
+  initialProject: ProjectRecord | null;
   port?: number;
   /**
    * 2.1.0: listen address. Absent ⇒ the workspace's `bindHost` (loopback when
@@ -229,13 +239,10 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const mode = opts.mode ?? (process.env.NODE_ENV === 'production' ? 'prod' : 'dev');
   const portRef = { current: opts.port ?? DEFAULT_PORT };
 
-  // M31: workspace registry — DB lives in the workspace slot, not the project dir.
-  // 2.1.0: hash ids → readable ids first (no-op once migrated; the launcher
-  // normally did it already). Before listen, under the registry lock.
-  const registry = new WorkspaceRegistry();
-  registry.migrateIfNeeded();
-  const workspace =
-    opts.workspace ?? registry.selectOrCreate({ port: opts.port, mode: opts.mode });
+  // M31: the DB lives in the workspace slot, not the project dir. The launcher
+  // migrated the registry, selected the workspace and opened its view before
+  // calling here — nothing of it is read again.
+  const { registry, workspace } = opts;
   const liveWorkspace = () => {
     const ws = registry.getWorkspace(workspace.name) ?? workspace;
     // The port actually bound wins over the stored default (a non-sticky --port).
@@ -264,13 +271,9 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     });
   }
 
-  // Decision #11: a workspace-only start (`createProject === false`) registers
-  // and activates nothing — `cwd` stays untouched and the bare command lands on
-  // `/welcome`. Default `true` keeps the historic "always create" behavior.
-  const createProject = opts.createProject ?? true;
-  const initialProject = createProject ? registry.registerProject(workspace, cwd) : null;
-  if (createProject && initialProject)
-    migrateLegacyDbIfNeeded(registry, workspace, cwd, initialProject.id);
+  // Decision #11: a workspace-only start has no initial project — `cwd` stays
+  // untouched and the bare command lands on `/welcome`.
+  const initialProject = opts.initialProject;
 
   // M31: process-immutable plugin catalog, populated exactly once.
   const pluginRegistry = new PluginRegistryImpl();
