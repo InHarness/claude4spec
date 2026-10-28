@@ -270,7 +270,9 @@ export interface ProjectContextDeps {
   /** M31: pinged when an agent turn finishes — context-cache idle-retry hook. */
   onTurnFinished?: () => void;
   /**
-   * M31: PATCH /config touched a context-defining field → cache.invalidate(projectId).
+   * M31: a context-defining change (PATCH /config, a trust answer, an overlay
+   * reload, a HEAD change) → cache.invalidate(projectId), which rebuilds the
+   * context at once (2.1.60).
    * 2.1.16: `opts.reason` travels to this context's `project:disposed`.
    */
   onContextConfigChanged?: (opts?: ContextInvalidation) => void;
@@ -2239,6 +2241,9 @@ async function buildInner(
       specSkillTools.dispose();
       // M33 phase 2: drop references to dynamically imported project-local
       // modules (next rebuild re-imports), alongside the MCP factory release.
+      // ASSUMPTION:dev-0005 — the overlay has no reload pipeline of its own (its
+      // change IS a context rebuild), so this dispose runs the overlay plugins'
+      // `onUnregister`; the base tier's records are never touched here (M13 `m13plenv`).
       overlayResult?.dispose();
       gateway.closeRoom(projectId, opts?.reason);
       db.close();

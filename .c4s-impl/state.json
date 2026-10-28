@@ -1,5 +1,5 @@
 {
-  "iteration": 21,
+  "iteration": 26,
   "conventions": [
     {
       "label": "L10 (Project Scoping) — implementor M31",
@@ -39,7 +39,7 @@
         "U6-polaczenie-mcp-wobec-przebudowy",
         "U7-pomiary-obserwacji-i-zwalniania"
       ],
-      "startCommit": null
+      "startCommit": "278b4bcb91466a180b72a487a05422e96a02e77e"
     }
   ],
   "units": [
@@ -828,15 +828,40 @@
         }
       ],
       "wave": 4,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "U5-wyzwalacze-inwalidacji/p1-m13-m33",
+          "layers": [
+            "M13",
+            "M33"
+          ],
+          "slugs": [
+            "ac-aktywacja-bez-restartu-procesu-zmiana",
+            "ac-tura-w-locie-w-chwili-zmiany-config-e",
+            "ac-user-edytuje-config-json-przy-uruchomi",
+            "section:m13plenv",
+            "section:mbladez6",
+            "section:m13actv0",
+            "section:m33l7pln",
+            "section:m33trst0"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "b5bd84e9d1b8640a5e61f89e4cf6861cc31cdb31",
+      "baseCommit": "278b4bcb91466a180b72a487a05422e96a02e77e",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "U6-polaczenie-mcp-wobec-przebudowy",

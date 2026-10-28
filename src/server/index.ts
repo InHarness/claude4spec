@@ -24,11 +24,8 @@ import { resolveSpaRoute, spaDocument, type SpaResolution } from './workspace/sp
 import { PluginRegistryImpl } from './core/plugin-host/registry.js';
 import { registerAllPlugins } from './core/plugin-host/register-builtins.js';
 import { logRefRegistrationWarnings, refRegistrationWarnings } from './core/plugin-host/ref-warnings.js';
-import {
-  loadBuiltinEnvelopes,
-  loadWorkspacePlugins,
-  reloadPlugin,
-} from './core/plugin-host/loader.js';
+import { loadBuiltinEnvelopes, loadWorkspacePlugins } from './core/plugin-host/loader.js';
+import { reloadBasePackages } from './core/plugin-host/base-reload.js';
 import { basePackageLocator, workspaceNodeModulesDir } from './core/plugin-host/workspace-packages.js';
 import { PREDEFINED_PLUGINS, resolvePluginPackages } from './workspace/registry.js';
 import { pluginsRouter } from './routes/plugins.js';
@@ -442,33 +439,24 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const onBaseChange = (dir: string): void => {
     const affected = [...baseDirByPkg.entries()].filter(([, d]) => d === dir).map(([pkg]) => pkg);
     if (affected.length === 0) return;
+    // M33 L7 `m33l7pln` (2.1.60): the pipeline — reload, ONE invalidation of
+    // every project's context (each rebuilt at once, in the M31 queue's order),
+    // then `plugin:reloaded`. `plugins:base` is a `scope: 'process'` mount, so
+    // its event goes through the M40 runtime to the room of EVERY project of
+    // the process (2.1.22, M40 `kc23agex`).
     baseReloadChain = baseReloadChain
-      .then(async () => {
-        const reloaded = [];
-        for (const pkg of affected) {
-          const rec = await reloadPlugin(pluginRegistry, pkg, { resolveEntry: baseLocator.resolveEntry });
-          // 2.1.20: keep the base records current — the frontend manifest
-          // announces only packages whose backend is `loaded`. A failed reload
-          // retains the old version, so only a `loaded` outcome replaces it.
-          if (rec.status === 'loaded') {
-            const i = pluginLoad.records.findIndex((r) => r.package === pkg);
-            if (i >= 0) pluginLoad.records[i] = { ...pluginLoad.records[i], ...rec };
-            else pluginLoad.records.push(rec);
-          }
-          reloaded.push({ name: rec.manifestName ?? pkg, version: rec.manifestVersion ?? '' });
-        }
-        // Invalidate once (not per-package), then broadcast. 2.1.22 (M33/L7
-        // `m33l7pln` step 5, M40 `kc23agex`): `plugins:base` is a
-        // `scope: 'process'` mount, so its event goes through the M40 runtime
-        // to the room of EVERY project of the process — the gateway's rooms,
-        // not the context cache, whose contexts invalidateAll() has just retired
-        // (M31 2.1.60: every project is queued for its rebuild at once, in the
-        // composition order, behind the projects with a waiting request).
-        cache.invalidateAll();
-        for (const r of reloaded) {
-          watchRuntime.broadcast('process', { kind: 'plugin:reloaded', name: r.name, version: r.version, tier: 'base' });
-        }
-      })
+      .then(() =>
+        reloadBasePackages(
+          {
+            pluginRegistry,
+            records: pluginLoad.records,
+            resolveEntry: baseLocator.resolveEntry,
+            invalidateAll: () => cache.invalidateAll(),
+            broadcast: (event) => watchRuntime.broadcast('process', event),
+          },
+          affected,
+        ),
+      )
       .catch((err) => console.warn('[plugin-loader] base reload failed:', err));
   };
   for (const dir of new Set(baseDirByPkg.values())) {

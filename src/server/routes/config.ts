@@ -46,7 +46,8 @@ export interface ConfigRouterDeps {
   effectiveRoots?: Root[];
   /**
    * M31: PATCH touching a context-defining field invalidates the project
-   * context — the next request rebuilds it. No restart, no banner.
+   * context, and (2.1.60, M13 `m13actv0`, M31 `m31ctx001`) the invalidation
+   * rebuilds it at once, without waiting for a request. No restart, no banner.
    *
    * 0.2.113: the set is no longer a list here — it is every field whose declarant
    * gave it the `context-rebuild` effect class (see `settings/registry.ts`).
@@ -324,14 +325,19 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         }
       }
       // 0.1.56: create the deferred welcome page BEFORE invalidating the context,
-      // so the lazy rebuild's indexAll() picks it up. Runs on the effective
+      // so the rebuild's indexAll() picks it up. Runs on the effective
       // post-write pages root (a roots change in the same atomic body is already
       // persisted in `updated`).
       if (patch.onboardingCompleted === true) {
         const pagesDir = builtinRoot(updated.roots).dir;
         deps.onOnboardingCompleted?.(pagesDir);
       }
-      // M31 + 0.2.113: a save of any `context-rebuild` field invalidates the context; the next request rebuilds it.
+      // M31 + 0.2.113: a save of any `context-rebuild` field invalidates the context.
+      // 2.1.60 (M13 `m13actv0`, M31 `m31ctx001`): the invalidation rebuilds it at
+      // once, without waiting for a request — `consolidate` + `mountBackend` with
+      // the new set, no process restart; a turn in flight ends on the old context.
+      // Only this route triggers it: a hand edit of `config.json` while the server
+      // runs is not watched (`.claude4spec/` is an excluded subtree of every mount).
       const rebuilding = present.filter((d) => d.effect === 'context-rebuild');
       if (rebuilding.length > 0) {
         // 2.1.16 (M50 `8h2a734u`): an activation-only save (Settings → Entities)

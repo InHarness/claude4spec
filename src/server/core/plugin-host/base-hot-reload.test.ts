@@ -4,16 +4,18 @@
  * The brief's edge case: a base plugin whose `exports["."]` declares ONLY the
  * `import` condition (no `require`/`default`) is observable by the base watcher —
  * editing its `dist` triggers the reload pipeline without a process restart and
- * without a CJS condition. This wires the same pipeline as `server/index.ts`
- * (watcher → reloadPlugin → `plugin:reloaded` broadcast) against a real on-disk
- * ESM-only package built at runtime (the convention used by overlay-loader.test).
+ * without a CJS condition. The watcher subscription calls the production pipeline
+ * `reloadBasePackages` (reload → one `invalidateAll` → `plugin:reloaded`
+ * broadcast), as `server/index.ts` does, against a real on-disk ESM-only package
+ * built at runtime (the convention used by overlay-loader.test).
  */
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { loadWorkspacePlugins, reloadPlugin } from './loader.js';
+import { loadWorkspacePlugins } from './loader.js';
+import { reloadBasePackages, type PluginReloadedEvent } from './base-reload.js';
 import { FileWatchRuntime } from '../../fs/watcher.js';
 import { PLUGINS_BASE_SOURCE } from '../../fs/sources.js';
 import { PluginRegistryImpl } from './registry.js';
@@ -100,28 +102,34 @@ describe('M33 — base hot-reload of an ESM-only package', () => {
     // Seed v1.0.0 as the bootstrap would.
     const importer = (specifier: string) =>
       import(specifier === NAME ? pathToFileURL(entry).href : specifier);
-    await loadWorkspacePlugins(registry, [NAME], importer);
+    const { records } = await loadWorkspacePlugins(registry, [NAME], importer);
     expect(registry.listPluginRecords()[0]?.version).toBe('1.0.0');
 
-    // Replicate `server/index.ts`'s base reload subscription: a `reload`-phase
-    // reaction on the process-scope `plugins:base` mount reloads the package and
-    // records a `plugin:reloaded` broadcast. `reloadPlugin` uses the REAL dynamic import + content-hash
-    // cache-bust; `resolveEntry` points at the fixture's `import` entry — exactly
-    // what the base locator (`workspace-packages.ts`) yields for an ESM-only package
-    // installed in the workspace `node_modules`.
-    const broadcasts: Array<{ kind: string; name: string; version: string; tier: string }> = [];
+    // `server/index.ts`'s base reload subscription: a `reload`-phase reaction on
+    // the process-scope `plugins:base` mount runs the production pipeline
+    // `reloadBasePackages` — the REAL dynamic import + content-hash cache-bust,
+    // with `resolveEntry` pointing at the fixture's `import` entry (exactly what
+    // the base locator, `workspace-packages.ts`, yields for an ESM-only package
+    // installed in the workspace `node_modules`).
+    const broadcasts: PluginReloadedEvent[] = [];
+    let invalidations = 0;
     let chain: Promise<void> = Promise.resolve();
     const onChange = (): void => {
       chain = chain
-        .then(async () => {
-          const rec = await reloadPlugin(registry, NAME, { resolveEntry: () => entry });
-          broadcasts.push({
-            kind: 'plugin:reloaded',
-            name: rec.manifestName ?? NAME,
-            version: rec.manifestVersion ?? '',
-            tier: 'base',
-          });
-        })
+        .then(() =>
+          reloadBasePackages(
+            {
+              pluginRegistry: registry,
+              records,
+              resolveEntry: () => entry,
+              invalidateAll: () => {
+                invalidations += 1;
+              },
+              broadcast: (event) => broadcasts.push(event),
+            },
+            [NAME],
+          ),
+        )
         .catch(() => {});
     };
     watcher = new FileWatchRuntime();
@@ -137,7 +145,11 @@ describe('M33 — base hot-reload of an ESM-only package', () => {
     fs.writeFileSync(entry, moduleSource('2.0.0'));
 
     expect(await until(() => broadcasts.some((b) => b.version === '2.0.0'))).toBe(true);
+    await chain;
     expect(registry.listPluginRecords()[0]?.version).toBe('2.0.0');
+    expect(records[0]).toMatchObject({ status: 'loaded', manifestVersion: '2.0.0' });
+    expect(invalidations).toBeGreaterThanOrEqual(1);
+    expect(invalidations).toBe(broadcasts.length);
     expect(broadcasts.at(-1)).toEqual({
       kind: 'plugin:reloaded',
       name: NAME,
