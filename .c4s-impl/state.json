@@ -2114,7 +2114,7 @@
         }
       ],
       "wave": 5,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "workspace-settings-split/p1-l5-l17",
@@ -2130,18 +2130,18 @@
             "ac-strona-ustawien-workspace-u-workspace",
             "m26-requires-m31"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 3,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "4098782f4922d0fd6d3aa0bd5fe379b46649309c",
+      "baseCommit": "4098782f4922d0fd6d3aa0bd5fe379b46649309c",
       "rounds": {
-        "review": 0,
-        "unit": 0
+        "review": 3,
+        "unit": 3
       },
       "jobs": []
     }

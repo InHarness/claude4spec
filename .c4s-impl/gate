@@ -1,1 +1,1 @@
-wave 4 done — workspace-route-frame (11/11), remote-session-issuer (5/5) verified. No open non-blocking findings. Deviations sent: dev-0801, dev-0802.
+wave 5 done — workspace-settings-split (6/6 + completes route-frame gear) verified. All 9 units verified. Next: system verification (verifier-system + env-runner full npm test + test:e2e). Deviation sent: dev-0951 (no in-app path from a project route to /workspace/settings).

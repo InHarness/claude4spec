@@ -86,7 +86,7 @@ afterEach(() => {
 
 describe('External Integrations card (M26)', () => {
   it('[ac:ac-karta-external-integrations-nie-ma-pr] the External Integrations card has no [Save], and no action in either of its two blocks mutates config.json', async () => {
-    const [card] = assembleSettings([EXTERNAL_INTEGRATIONS_SETTINGS]);
+    const [card] = assembleSettings([EXTERNAL_INTEGRATIONS_SETTINGS], 'project');
     expect(card!.decl.anchor).toBe('external-integrations');
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     await act(async () => {

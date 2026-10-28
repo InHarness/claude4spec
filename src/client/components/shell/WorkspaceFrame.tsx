@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { Outlet } from '@tanstack/react-router';
+import { Link, Outlet } from '@tanstack/react-router';
+import { Settings as SettingsIcon } from 'lucide-react';
 import { AppBranding } from './AppBranding.js';
 import { WorkspaceHeaderEntry } from '../workspace/WorkspaceHeaderEntry.js';
 
@@ -12,10 +13,9 @@ import { WorkspaceHeaderEntry } from '../workspace/WorkspaceHeaderEntry.js';
  * project data to invalidate. One bar above the outlet: the application
  * branding (a shell element) and, beside it, the `Nagłówek` slot entries of the
  * workspace route, whose content their module declares (M31). One frame serves
- * every workspace route.
- *
- * The gear to the workspace settings page belongs in this bar too; its target
- * page arrives with the unit `workspace-settings-split`, which adds it here.
+ * every workspace route. The bar's other shell element is the gear to the
+ * workspace settings page (`/workspace/settings`, M26 `m26route`) — the way the
+ * project route's gear leads to `/settings`.
  */
 export function WorkspaceFrame() {
   // The theme needs nothing here: the document's inline theme script ran before
@@ -37,6 +37,15 @@ export function WorkspaceFrame() {
       >
         <AppBranding />
         <WorkspaceHeaderEntry />
+        <Link
+          to="/workspace/settings"
+          className="shrink-0 rounded p-1"
+          style={{ color: 'var(--c-muted)' }}
+          title="Workspace settings"
+          aria-label="Open workspace settings"
+        >
+          <SettingsIcon size={13} />
+        </Link>
       </header>
       <div className="flex-1 min-h-0 w-full flex">
         <Outlet />

@@ -24,6 +24,7 @@ export const REMOTE_ACCOUNT_SETTINGS: SettingsContribution = {
       group: 'Account',
       weight: 10,
       owner: 'remote-account',
+      scope: 'project',
     },
   ],
   elements: [

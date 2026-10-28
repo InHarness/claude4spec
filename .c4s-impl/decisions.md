@@ -150,3 +150,19 @@
 
 - rev-0030 (1): `isRemoteApiUrl` (src/server/config.ts) refuses an address with userinfo, so `config.remoteApiUrl` fails with `config.json: field 'remoteApiUrl': invalid URL` and `--remote-url` with `--remote-url must be an http(s) URL, got '…'` (ASSUMPTION:dev-0802, non-blocking `missing`). Userinfo assertions dropped from remote-http-client.test.ts; refusal cases added to config.test.ts and to the `[section:3ebblo1q]` test in launch.test.ts. `urlFor` comment no longer claims userinfo is kept.
 - rev-0030 (2): `effectiveRemoteUrl` strips trailing slashes from the part before `?`/`#` only; the query/fragment is kept character for character. Test now pins `…/api//?tenant=x//` → `…/api?tenant=x//` and `/?next=/` → `?next=/`.
+- 2026-10-28 (orchestrator): brama fali 4 — użytkownik: „continue”.
+
+## workspace-settings-split / p1-l5-l17 (implementer)
+
+- Scope is a card field, `SettingsCardDecl.scope?: 'project' | 'workspace'` (absent = project, `cardScope`). One registry, two pages: `assembleSettings(contributions, scope)` (scope now required at every call site) keeps only the cards of that scope, so anchor uniqueness is per page. Every declarant's card now states its scope explicitly as its `Zakres` cell does (10 × `project`, Appearance + Plugin pool `workspace`).
+- A workspace card must not need the project config: `assembleSettings` throws `SettingsRegistrationError` for a workspace card with `visible`, or an element on it that is not `custom`, has a `configKey`/`keys`, or a `visible` (L17 `ata1r5sz`: `poza plikiem` / `—`). That rule is what makes `WorkspaceSettingsPage` safe to render each element as `ComponentType<{ decl }>` — no `config`, no draft, no `SettingsCardFrame`, no [Save], no `useConfig`.
+- `SettingsPage.tsx` keeps the registry list and now exports `settingsCards(scope)` (per-scope lazy cache) and `useScrollToCardHash`, used by both pages.
+- Workspace page heading "Workspace settings" + the workspace name from the shared `useWorkspace()` (`['workspace']`, the frame header's query — no extra request); context m26-requires-m31.
+- Plugin pool card: `metaApi.basePlugins()` = plain `fetch('/api/_meta/plugins')` (process route, never the project prefix), query key `['plugins-base-meta']` (the project `['plugins-meta']` stays for the trust gate, which the WS invalidates; the workspace frame has no WS). Rows show package, state, contributed types, reason, migration hint — no layer/trust/shadowed. Client types trimmed to what is read: `PluginPackageRecord.trust` and `ProjectPluginsMeta.hostApiVersion/shadowed` removed.
+- Gear in `WorkspaceFrame` bar = `<Link to="/workspace/settings" aria-label="Open workspace settings">`, last in the bar (completes the deferred part of workspace-route-frame).
+- `ac-ikona-zebatki-w-prawym-gornym-rogu` removed from tests/ac-skiplist.json; now tested in src/client/components/Sidebar.branding-strip.render.test.ts.
+- e2e `settings-external-integrations`: the order check no longer expects `#plugin-pool` on /settings (asserts it absent, External Integrations before Agent).
+
+## workspace-settings-split / p1-l5-l17 round 2 (implementer)
+
+- rev-0032 (first option): card anchors are unique across both scopes. `assembleSettings` checks every card's anchor before filtering by scope, so a project card and a workspace card with one anchor throw `SettingsRegistrationError` (naming both owners), exactly like a same-page duplicate; the scope filter now runs on the assembled card list. Stricter than the page's "unikalna na stronie" and compatible with it: elements attach to a card by anchor alone (`byCard`, `checkWorkspaceCards`), so a shared anchor would mix elements across pages. The `[section:7f76eszm]` test in registry.test.ts now asserts the same-page duplicate AND the cross-page duplicate both throw (it previously asserted the cross-page one was allowed). Static catalog has no cross-scope duplicate (catalog.test.ts assembles both pages).

@@ -307,6 +307,7 @@ export const SPEC_SKILLS_SETTINGS: SettingsContribution = {
       group: 'Agent',
       weight: 20,
       owner: 'spec-skills',
+      scope: 'project',
     },
   ],
   elements: [

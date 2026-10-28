@@ -57,6 +57,7 @@ vi.mock('./ProjectSwitcher.js', () => ({
 }));
 
 import { Sidebar } from './Sidebar.js';
+import { APPEARANCE_SETTINGS } from './shell/AppearanceElement.js';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -136,5 +137,33 @@ describe('M50 project-route header — the Branding strip', () => {
       gear!.click();
     });
     expect(h.navigations).toEqual([{ to: '/settings' }]);
+  });
+
+  it('[ac:ac-ikona-zebatki-w-prawym-gornym-rogu] the header shows the gear icon (no text [Settings] button); a click navigates to /settings; the header has no light/dark toggle — the theme changes only on the Appearance card of the workspace settings page', async () => {
+    render();
+    const aside = host.querySelector('aside')!;
+    const strip = aside.firstElementChild as HTMLElement;
+
+    // The gear: an icon button at the end of the top strip, labelled for a11y, with no visible text.
+    const gear = strip.querySelector<HTMLButtonElement>('button[aria-label="Open settings"]')!;
+    expect(gear).not.toBeNull();
+    expect(gear.querySelector('svg')).not.toBeNull();
+    expect(gear.textContent).toBe('');
+    expect(strip.lastElementChild).toBe(gear);
+    expect([...aside.querySelectorAll('button')].some((b) => b.textContent?.trim() === 'Settings')).toBe(false);
+
+    await act(async () => {
+      gear.click();
+    });
+    expect(h.navigations).toEqual([{ to: '/settings' }]);
+
+    // No theme switch anywhere in the header.
+    expect(aside.querySelector('.lucide-sun, .lucide-moon, .lucide-monitor')).toBeNull();
+    for (const b of aside.querySelectorAll('button')) {
+      const label = `${b.getAttribute('aria-label') ?? ''} ${b.getAttribute('title') ?? ''} ${b.textContent ?? ''}`;
+      expect(label).not.toMatch(/\btheme\b|\bdark\b|\blight\b/i);
+    }
+    // The theme's one control is the Appearance card, which stands on the workspace settings page.
+    expect(APPEARANCE_SETTINGS.cards).toEqual([expect.objectContaining({ anchor: 'appearance', scope: 'workspace' })]);
   });
 });

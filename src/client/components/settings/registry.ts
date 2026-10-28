@@ -16,10 +16,21 @@ import type { ConfigResponse } from '../../lib/api.js';
  * Ordering: group (closed list) → card weight → element weight. Groups render no
  * headings. An element pointing at a card that does not exist — or is not
  * visible — simply does not render; that is not an error. Two cards with one
- * anchor IS: every anchor is a `#<kebab>` target and must be unique on the page.
+ * anchor IS: every anchor is a `#<kebab>` target, unique on its page and across
+ * the project and workspace pages (elements attach by anchor alone).
  */
 export const SETTINGS_GROUPS = ['Account', 'Project', 'Integrations', 'Plugins', 'Agent', 'System'] as const;
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
+
+/**
+ * 2.1.58 (M26 `7f76eszm`, L17 `ata1r5sz` — column `Zakres`): the scope of a card
+ * picks its PAGE. `project` cards render only on the project settings page
+ * (`/settings`), `workspace` cards only on the workspace settings page
+ * (`/workspace/settings`, a workspace route without a project). An undeclared
+ * scope means `project`. A workspace card's elements inherit its scope and hold
+ * no file key (`poza plikiem` / `—`): the config file is the project's.
+ */
+export type SettingsScope = 'project' | 'workspace';
 
 /**
  * Generated kinds render from the declaration alone; `custom` is the declaring
@@ -119,7 +130,7 @@ export interface AfterSaveEnv {
 }
 
 export interface SettingsCardDecl {
-  /** `#<kebab>` target, unique on the page. */
+  /** `#<kebab>` target, unique across the project and workspace pages. */
   anchor: string;
   title: string;
   description?: string;
@@ -127,7 +138,15 @@ export interface SettingsCardDecl {
   weight: number;
   owner: string;
   tone?: 'danger';
+  /** Absent = `project`. */
+  scope?: SettingsScope;
+  /** Project cards only: a workspace page has no project config to judge by. */
   visible?: (config: ConfigResponse) => boolean;
+}
+
+/** The page a card stands on — an undeclared scope is `project`. */
+export function cardScope(card: SettingsCardDecl): SettingsScope {
+  return card.scope ?? 'project';
 }
 
 export interface SettingsContribution {
@@ -150,13 +169,21 @@ export interface AssembledCard {
 const ANCHOR_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /**
- * The page, assembled: every card in group → weight order, each with its elements
- * in weight order. Throws on a malformed or colliding anchor, and on two elements
- * of one card sharing an id.
+ * One settings page, assembled: the cards of `scope` in group → weight order,
+ * each with its elements in weight order. Cards of the other scope belong to the
+ * other page and are left out. An anchor is unique across BOTH pages — elements
+ * attach to a card by anchor alone, so a cross-scope duplicate would hand each
+ * card the other's elements. Throws on a malformed or colliding anchor (same
+ * page or not), on two elements of one card sharing an id, and
+ * on a workspace card that would need the project config (a visibility
+ * predicate, or an element that is generated or writes a file key).
  */
-export function assembleSettings(contributions: SettingsContribution[]): AssembledCard[] {
+export function assembleSettings(contributions: SettingsContribution[], scope: SettingsScope): AssembledCard[] {
+  const allCards = contributions.flatMap((x) => x.cards ?? []);
+  const allElements = contributions.flatMap((x) => x.elements ?? []);
+  checkWorkspaceCards(allCards, allElements);
   const cards = new Map<string, SettingsCardDecl>();
-  for (const c of contributions.flatMap((x) => x.cards ?? [])) {
+  for (const c of allCards) {
     if (!ANCHOR_RE.test(c.anchor)) {
       throw new SettingsRegistrationError(`settings card anchor "#${c.anchor}" (${c.owner}) is not kebab-case`);
     }
@@ -169,7 +196,7 @@ export function assembleSettings(contributions: SettingsContribution[]): Assembl
     cards.set(c.anchor, c);
   }
   const byCard = new Map<string, SettingsElementDecl[]>();
-  for (const e of contributions.flatMap((x) => x.elements ?? [])) {
+  for (const e of allElements) {
     const list = byCard.get(e.card) ?? [];
     if (list.some((o) => o.id === e.id)) {
       throw new SettingsRegistrationError(`settings element "${e.id}" is declared twice on card "#${e.card}"`);
@@ -179,6 +206,7 @@ export function assembleSettings(contributions: SettingsContribution[]): Assembl
   }
   const groupIndex = (g: SettingsGroup) => SETTINGS_GROUPS.indexOf(g);
   return [...cards.values()]
+    .filter((c) => cardScope(c) === scope)
     .sort(
       (a, b) =>
         groupIndex(a.group) - groupIndex(b.group) || a.weight - b.weight || a.title.localeCompare(b.title),
@@ -187,6 +215,32 @@ export function assembleSettings(contributions: SettingsContribution[]): Assembl
       decl,
       elements: [...(byCard.get(decl.anchor) ?? [])].sort((a, b) => a.weight - b.weight),
     }));
+}
+
+/**
+ * L17 `ata1r5sz`: a workspace card stands on a page without a project, so it
+ * has no visibility predicate over the config, and each of its elements is a
+ * module's own component that writes no file key (`poza plikiem` / `—`).
+ */
+function checkWorkspaceCards(cards: readonly SettingsCardDecl[], elements: readonly SettingsElementDecl[]): void {
+  const workspaceAnchors = new Set<string>();
+  for (const c of cards) {
+    if (cardScope(c) !== 'workspace') continue;
+    if (c.visible) {
+      throw new SettingsRegistrationError(
+        `workspace settings card "#${c.anchor}" (${c.owner}) cannot have a visibility condition over the project config`,
+      );
+    }
+    workspaceAnchors.add(c.anchor);
+  }
+  for (const e of elements) {
+    if (!workspaceAnchors.has(e.card)) continue;
+    if (e.kind !== 'custom' || elementKeys(e).length > 0 || e.visible) {
+      throw new SettingsRegistrationError(
+        `settings element "${e.id}" on workspace card "#${e.card}" must be an own component writing no config key`,
+      );
+    }
+  }
 }
 
 /**

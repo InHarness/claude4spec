@@ -8,10 +8,10 @@ export const PROJECT_ROUTE_RE = /^\/p\/([a-z0-9][a-z0-9-]{0,47})(\/|$)/;
 /**
  * M31 `eb95ery1`: the client paths of the WORKSPACE routes — mounted outside the
  * project prefix, served without a project identity, in the workspace route
- * frame (M50 `1bd92aq2`). `/workspace/settings` joins with its page (unit
- * `workspace-settings-split`).
+ * frame (M50 `1bd92aq2`): the Welcome screen and the workspace settings page
+ * (M26 `m26route`).
  */
-export const WORKSPACE_ROUTE_PATHS: readonly string[] = ['/welcome'];
+export const WORKSPACE_ROUTE_PATHS: readonly string[] = ['/welcome', '/workspace/settings'];
 
 export type SpaResolution =
   | { kind: 'project'; project: ProjectRecord }

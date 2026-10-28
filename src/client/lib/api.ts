@@ -580,7 +580,7 @@ export const versionsApi = {
   },
 };
 
-/** One package row in the per-project `/_meta/plugins` diagnostics (M33 phase 2). */
+/** One package row of the `/_meta/plugins` diagnostics (M33) — base, or per project base ∪ overlay. */
 export interface PluginPackageRecord {
   package: string;
   /** 0.2.106: `incompatible` = a MAJOR `hostApiVersion` mismatch that has a migration path. */
@@ -592,18 +592,30 @@ export interface PluginPackageRecord {
   manifestName?: string;
   manifestVersion?: string;
   contributedTypes?: string[];
+  /** Per-project report only. */
   layer?: 'base' | 'overlay';
-  trust?: 'trusted' | 'untrusted';
   origin?: string;
 }
 
-/** Per-project plugin diagnostics: base ∪ overlay packages + trust + shadow report. */
+/**
+ * Per-project plugin diagnostics (`/api/projects/<id>/_meta/plugins`) — the part
+ * the client reads, for the trust gate: whether the project carries local
+ * plugins, the trust decision, and the packages (the window lists the overlay).
+ */
 export interface ProjectPluginsMeta {
-  hostApiVersion: string;
   localPluginsPresent: boolean;
   trust: boolean | undefined;
   packages: PluginPackageRecord[];
-  shadowed: { type: string; overlayOrigin: string; baseOrigin: string }[];
+}
+
+/**
+ * 2.1.58 (M33 `jz4lgiy7`) — `GET /api/_meta/plugins`, the PROCESS-level
+ * diagnostics of the base (the workspace's plugin pool): one record per base
+ * package, `loaded` or `skipped` with its reason. No project, no overlay.
+ */
+export interface BasePluginsMeta {
+  hostApiVersion: string;
+  packages: PluginPackageRecord[];
 }
 
 export const metaApi = {
@@ -613,6 +625,13 @@ export const metaApi = {
   /** M33 phase 2: per-project plugin pool (base/overlay), trust, shadowed types. */
   async plugins(): Promise<ProjectPluginsMeta> {
     return handle<ProjectPluginsMeta>(await apiFetch('/api/_meta/plugins'));
+  },
+  /**
+   * The process-level base diagnostics — a plain `fetch`, never the project
+   * prefix: it answers on the project-less workspace settings page as well.
+   */
+  async basePlugins(): Promise<BasePluginsMeta> {
+    return handle<BasePluginsMeta>(await fetch('/api/_meta/plugins'));
   },
   /** M33 phase 3: declarative editor slash-commands of loaded+trusted plugins. */
   async pluginCommands(): Promise<{ commands: PluginCommandContribution[] }> {

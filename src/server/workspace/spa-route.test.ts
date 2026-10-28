@@ -75,6 +75,21 @@ describe('resolveSpaRoute — root always lands on /welcome', () => {
     expect(resolveSpaRoute(registry, fresh, '/space/pages/index.md')).toEqual({ kind: 'redirect', to: '/' });
   });
 
+  it('[section:m26route] serves the workspace settings page /workspace/settings as a workspace route — no project identity, outside the prefix', () => {
+    const registry = new WorkspaceRegistry(dir);
+    const ws = registry.selectOrCreate({ name: 'default' });
+    const project = registry.registerProject(ws, path.join(dir, 'repo-a'));
+    const fresh = registry.getWorkspace('default')!;
+
+    expect(WORKSPACE_ROUTE_PATHS).toEqual(['/welcome', '/workspace/settings']);
+    expect(resolveSpaRoute(registry, fresh, '/workspace/settings')).toEqual({ kind: 'workspace' });
+    // The document of a workspace route carries no project global.
+    expect(spaDocument('<html><head></head></html>', null)).not.toContain('__C4S_PROJECT__');
+    // Under a project prefix the path is the project's document (whose client
+    // mounts no workspace route), never a project-less one.
+    expect(resolveSpaRoute(registry, fresh, `/p/${project.id}/workspace/settings`)).toEqual({ kind: 'project', project });
+  });
+
   it('[ac:ac-po-migracji-rejestru-stara-zakladka-p] after the registry migration an old /p/<hash id>/ bookmark ends on /welcome', () => {
     // A pre-2.1.0 registry: the project is stored under its hash id.
     const cwd = path.join(dir, 'repos', 'app-spec');

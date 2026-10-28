@@ -35,6 +35,7 @@ import { OnboardingPage } from './components/onboarding/OnboardingPage.js';
 import { needsOnboarding } from './components/onboarding/onboardingFlow.js';
 import { WelcomePage } from './components/onboarding/WelcomePage.js';
 import { SettingsPage } from './components/settings/SettingsPage.js';
+import { WorkspaceSettingsPage } from './components/settings/WorkspaceSettingsPage.js';
 import { usePages } from './hooks/usePages.js';
 import { useBaseRootId, useConfig, useRoots } from './hooks/useConfig.js';
 import { EditorBridgeProvider } from './tiptap/EditorContext.js';
@@ -188,6 +189,16 @@ const welcomeRoute = createRoute({
   staticData: { routeKind: 'workspace' },
 });
 
+// M26 ui-view `workspace-settings-page` (2.1.58): a WORKSPACE route — the
+// settings page of the workspace, opened without a project; only the cards of
+// scope `workspace` (M26 `m26route`).
+const workspaceSettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/workspace/settings',
+  component: WorkspaceSettingsPage,
+  staticData: { routeKind: 'workspace' },
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
@@ -246,6 +257,7 @@ export const BASE_ROUTE_CHILDREN = Object.freeze([
   planDetailRoute,
   onboardingRoute,
   welcomeRoute,
+  workspaceSettingsRoute,
   settingsRoute,
   releasesIndexRoute,
   releaseDetailRoute,
@@ -263,10 +275,11 @@ function isWorkspaceRoute(route: AnyRoute): boolean {
  * M31 `eb95ery1` / M50 `1bd92aq2`: the routes THIS document mounts. A route is
  * a project route unless it declares `routeKind: 'workspace'`. A document with
  * an injected project (`/p/<id>/…`) mounts the project routes under the
- * project basepath and no workspace route — so `/welcome` never appears under
- * the prefix. A document without one is served for a workspace route only and
- * mounts the workspace routes at `/` — no project route, since none of them
- * has a project to read (plugin routes neither: nothing mounts them there).
+ * project basepath and no workspace route — so `/welcome` and
+ * `/workspace/settings` never appear under the prefix. A document without
+ * one is served for a workspace route only and mounts the workspace routes at
+ * `/` — no project route, since none of them has a project to read (plugin
+ * routes neither: nothing mounts them there).
  */
 export function routesForDocument<T extends AnyRoute>(routes: readonly T[], projectId: string): T[] {
   const wantWorkspace = !projectId;

@@ -167,7 +167,7 @@ function MainShell({ projectName }: { projectName: string | null }) {
   useRegistryVersion();
   // M26 §7 — mount the theme hook here for its side-effects (subscribes to
   // OS-level `prefers-color-scheme` changes, toggles the `.dark` class on
-  // <html>). The selectable UI lives in /settings → Appearance.
+  // <html>). The selectable UI lives in /workspace/settings → Appearance.
   useTheme();
   const [sidebarW, setSidebarW] = usePersistedWidth('sidebar', 300);
   const rootRef = useRef<HTMLDivElement>(null);

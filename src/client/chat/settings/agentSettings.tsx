@@ -40,6 +40,7 @@ export const AGENT_SETTINGS: SettingsContribution = {
       group: 'Agent',
       weight: 10,
       owner: 'agent-chat',
+      scope: 'project',
     },
   ],
   elements: [

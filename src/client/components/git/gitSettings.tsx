@@ -36,6 +36,7 @@ export const GIT_SETTINGS: SettingsContribution = {
       group: 'Project',
       weight: 30,
       owner: 'git-sync',
+      scope: 'project',
     },
   ],
   elements: [

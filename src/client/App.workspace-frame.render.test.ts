@@ -135,13 +135,14 @@ describe('workspace routes are mounted outside the project prefix (M31 eb95ery1)
   });
 
   it('[section:eb95ery1] a document without a project mounts the workspace routes at the root and no project route; a project document mounts the project routes and no workspace route', () => {
-    expect(routesForDocument(BASE_ROUTE_CHILDREN, '').map(pathOf)).toEqual(['/welcome']);
+    expect(routesForDocument(BASE_ROUTE_CHILDREN, '').map(pathOf)).toEqual(['/welcome', '/workspace/settings']);
 
     const projectPaths = routesForDocument(BASE_ROUTE_CHILDREN, 'alpha').map(pathOf);
     expect(projectPaths).not.toContain('/welcome');
+    expect(projectPaths).not.toContain('/workspace/settings');
     expect(projectPaths).toEqual(expect.arrayContaining(['/', '/space/$rootId/$', '/settings', '/onboarding']));
     // Every base route is mounted by exactly one of the two documents.
-    expect(projectPaths.length + 1).toBe(BASE_ROUTE_CHILDREN.length);
+    expect(projectPaths.length + 2).toBe(BASE_ROUTE_CHILDREN.length);
   });
 });
 
@@ -169,6 +170,29 @@ describe('the workspace route frame (M50 1bd92aq2)', () => {
     expect(spies.chatOverlay).not.toHaveBeenCalled();
     expect(spies.chatHandle).not.toHaveBeenCalled();
     expect(spies.staleBar).not.toHaveBeenCalled();
+  });
+
+  it('[section:1bd92aq2] the bar carries the gear, a shell element leading to the workspace settings page; a click opens /workspace/settings in the same frame', async () => {
+    const router = await openWorkspaceDocument('/welcome');
+    const bar = host.querySelector('[data-testid="workspace-frame-bar"]')!;
+    const gear = bar.querySelector<HTMLAnchorElement>('a[aria-label="Open workspace settings"]');
+    expect(gear).not.toBeNull();
+    expect(gear!.getAttribute('href')).toBe('/workspace/settings');
+    // The gear sits after the branding and the header entry.
+    const kids = Array.from(bar.children);
+    expect(kids.indexOf(gear!)).toBe(kids.length - 1);
+
+    await act(async () => {
+      gear!.click();
+    });
+    await flush();
+    expect(router.state.location.pathname).toBe('/workspace/settings');
+    // Still the one workspace frame, now with the workspace settings page in its outlet.
+    expect(host.querySelectorAll('[data-testid="workspace-frame"]')).toHaveLength(1);
+    expect(host.querySelector('[data-testid="workspace-frame-bar"]')!.nextElementSibling?.textContent).toContain(
+      'Workspace settings',
+    );
+    expect(spies.sidebar).not.toHaveBeenCalled();
   });
 
   it('[section:1bd92aq2] the frame does not connect to the event channel and asks only the workspace-scope read, once for every reader on the page', async () => {

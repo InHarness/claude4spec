@@ -18,6 +18,7 @@ export const PROJECT_SETTINGS: SettingsContribution = {
       group: 'Project',
       weight: 10,
       owner: 'project',
+      scope: 'project',
     },
     {
       anchor: 'directories',
@@ -27,6 +28,7 @@ export const PROJECT_SETTINGS: SettingsContribution = {
       group: 'Project',
       weight: 40,
       owner: 'project',
+      scope: 'project',
     },
   ],
   elements: [

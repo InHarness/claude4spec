@@ -57,6 +57,7 @@ export const WORKSPACE_SETTINGS: SettingsContribution = {
       group: 'System',
       weight: 90,
       owner: 'workspace',
+      scope: 'project',
       tone: 'danger',
     },
   ],
