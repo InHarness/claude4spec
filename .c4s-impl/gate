@@ -1,1 +1,0 @@
-wave 5 done — workspace-settings-split (6/6 + completes route-frame gear) verified. All 9 units verified. Next: system verification (verifier-system + env-runner full npm test + test:e2e). Deviation sent: dev-0951 (no in-app path from a project route to /workspace/settings).

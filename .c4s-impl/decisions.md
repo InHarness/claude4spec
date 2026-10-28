@@ -166,3 +166,4 @@
 ## workspace-settings-split / p1-l5-l17 round 2 (implementer)
 
 - rev-0032 (first option): card anchors are unique across both scopes. `assembleSettings` checks every card's anchor before filtering by scope, so a project card and a workspace card with one anchor throw `SettingsRegistrationError` (naming both owners), exactly like a same-page duplicate; the scope filter now runs on the assembled card list. Stricter than the page's "unikalna na stronie" and compatible with it: elements attach to a card by anchor alone (`byCard`, `checkWorkspaceCards`), so a shared anchor would mix elements across pages. The `[section:7f76eszm]` test in registry.test.ts now asserts the same-page duplicate AND the cross-page duplicate both throw (it previously asserted the cross-page one was allowed). Static catalog has no cross-scope duplicate (catalog.test.ts assembles both pages).
+- 2026-10-28 (orchestrator): brama fali 5 — użytkownik: „continue” → weryfikacja systemowa.
