@@ -153,13 +153,11 @@ async function loadManifestPlugins(manifest: FrontendManifestResponse, router: A
 /**
  * Register the declarative `contributes.commands` of loaded+trusted plugins.
  *
- * Project-scoped: on the project-less `/welcome` (Decision #11, PROJECT_ID='')
- * there is no `/api/projects/<id>` prefix for `apiFetch` to build, so the call
- * would 404 — and since 0.1.137 `/welcome` is the unconditional root landing,
- * that would greet every start. Nothing there can host a plugin command anyway.
+ * Project-scoped: both callers (the boot and the WS plugin reload) return
+ * before it in a document without a project, which has no `/api/projects/<id>`
+ * prefix to ask and no editor to host a plugin command.
  */
 async function registerProjectPluginCommands(): Promise<void> {
-  if (!PROJECT_ID) return;
   try {
     const { commands } = await metaApi.pluginCommands();
     // 0.2.29 — `registerPluginCommands` REPLACES the whole `plugin-cmd:`
@@ -263,7 +261,7 @@ export async function reloadFrontendPlugins(
  * without a page reload and without a server restart.
  *
  * Called after a save on Settings → Entities (the `entity-types` element's
- * `afterSave`). It re-seeds the host's activation from `GET /api/_meta/entities`,
+ * `afterSave`) — a project route, so always in a project document. It re-seeds the host's activation from `GET /api/_meta/entities`,
  * refetches the frontend manifest and imports what is new. (A Trust plugins
  * answer does not use it: it swaps the overlay layer — commands, settings,
  * shadowing — so the server's `project:disposed` reloads the page instead.) No cache-bust: an entry this tab already imported resolves to the
@@ -278,10 +276,6 @@ export async function refreshPluginActivation(router: AppRouter | null = activeR
   clientPluginHost.applyActivation(await metaApi.entities());
   if (!router) return;
   activeRouter = router;
-  if (!PROJECT_ID) {
-    mountFrontend(router, clientPluginHost.listEntities());
-    return;
-  }
   let manifest: FrontendManifestResponse;
   try {
     manifest = await pluginsApi.frontendManifest();

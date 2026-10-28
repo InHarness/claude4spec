@@ -79,8 +79,10 @@ export { runAsk_cli as runAsk };
 /**
  * 2.1.26 — the `cli` rendering of the catalog operation `ask` (its record's
  * `cli: direct`), so the contribution names it rather than standing in the
- * NON_CATALOG_DELEGATING exceptions. Its codes are the operation's fifteen:
- * the shared resolver/server set plus `INVALID_ARGS` and `RESUME_CONFIG_LOCKED`.
+ * NON_CATALOG_DELEGATING exceptions. Its codes are the operation's seventeen
+ * (2.1.58: with WORKSPACE_NOT_REGISTERED and WORKSPACE_FILE_INVALID, which come
+ * with the shared resolver set): the shared resolver/server set plus
+ * `INVALID_ARGS` and `RESUME_CONFIG_LOCKED`.
  */
 export const askCommand: CliCommandContribution = {
   name: 'ask',

@@ -200,7 +200,7 @@ describe('workspace project registration routes', () => {
       hops.push(url);
       resolution = resolveSpaRoute(registry, workspace, url);
     }
-    expect(resolution).toEqual({ kind: 'welcome' });
+    expect(resolution).toEqual({ kind: 'workspace' });
     expect(hops).toEqual(['/', '/welcome']);
     // The purged project's route no longer opens anything — it chains back to /welcome.
     expect(resolveSpaRoute(registry, workspace, '/p/only/')).toEqual({ kind: 'redirect', to: '/' });

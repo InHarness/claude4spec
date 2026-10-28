@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { stripBase } from '../lib/api-core.js';
 import { ProjectSwitcher } from './ProjectSwitcher.js';
-import { C4sLogoIcon } from './C4sLogoIcon.js';
+import { AppBranding } from './shell/AppBranding.js';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import {
   ChevronDown,
@@ -126,16 +126,7 @@ export function Sidebar({
         className="flex items-center gap-2 px-3.5 pt-3 pb-2"
         style={{ borderBottom: '1px solid var(--c-hair)' }}
       >
-        <a
-          href="https://claude4spec.inharness.ai"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center justify-center"
-          style={{ width: 22, height: 22, flexShrink: 0 }}
-          title="claude4spec.inharness.ai"
-        >
-          <C4sLogoIcon size={22} />
-        </a>
+        <AppBranding />
         <ProjectSwitcher projectName={projectName} cwdPath={cwdPath} loading={headerLoading} />
         <button
           onClick={() => navigate({ to: '/settings' })}

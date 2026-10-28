@@ -169,5 +169,10 @@ regenerate the skill (see "Stale address" above). If \`c4s ask\` reports the ser
 as a claude4spec server, or that the project failed to build
 (\`PROJECT_BUILD_FAILED\`), that's a problem on the spec repo/server side —
 report it to the user; don't try to fix the spec repo from here.
+
+If \`c4s\` reports \`WORKSPACE_NOT_REGISTERED\`, the project lives in a workspace
+home directory that is not registered on this machine. Do not start the server
+yourself: tell the user to start it once with \`--cwd <home>\` (the directory
+holding \`.claude4spec/workspace.json\`), then retry.
 `;
 }

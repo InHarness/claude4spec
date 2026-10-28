@@ -37,7 +37,7 @@ describe('tags.json lives in the `entities` root of the project', () => {
   it('M29 m29l10001 / M18 9pvs31cv: a tag mutation writes tags.json into the registry `entities` root; a legacy `entitiesDir` key is ignored', () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-tags-root-'));
     dirs.push(cwd);
-    loadOrCreateConfig(cwd, {});
+    loadOrCreateConfig(cwd);
     // A pre-2.1.8 config still carrying the removed key, pointing elsewhere.
     const raw = JSON.parse(fs.readFileSync(configPath(cwd), 'utf8')) as Record<string, unknown>;
     fs.writeFileSync(configPath(cwd), JSON.stringify({ ...raw, entitiesDir: 'ents' }, null, 2));
@@ -75,7 +75,7 @@ describe('tags.json lives in the `entities` root of the project', () => {
   it('M18 91vuvf2u / m18l13rt: a tag slug rename rewrites tags.json and the entity files of the `entities` root, and tags="…" only in markdown of roots whose kind carries `references`', async () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-tags-rename-'));
     dirs.push(cwd);
-    loadOrCreateConfig(cwd, {});
+    loadOrCreateConfig(cwd);
     const cfg = JSON.parse(fs.readFileSync(configPath(cwd), 'utf8')) as { roots: Array<Record<string, unknown>> };
     cfg.roots.push({ id: 'adr', name: 'ADRs', dir: 'docs/adr', builtin: false });
     fs.writeFileSync(configPath(cwd), JSON.stringify(cfg, null, 2));

@@ -31,10 +31,22 @@ describe('listWorkspaces (M31 registry-read core)', () => {
     r.registerProject(ws, path.join(dir, 'proj-b'));
 
     const [row] = listWorkspaces(r);
-    expect(row).toMatchObject({ name: 'default', mode: 'prod', defaultPort: 4500, projectCount: 2 });
+    // 2.1.58 row shape: a registry entry without bindHost / stored publicUrl
+    // reports `kind: 'registry'`, the EFFECTIVE public address and `state: 'ok'`;
+    // no `home` (registry kind), no `bindHost` (loopback), never `projects` /
+    // `plugins`.
+    expect(row).toMatchObject({
+      name: 'default',
+      kind: 'registry',
+      mode: 'prod',
+      defaultPort: 4500,
+      publicUrl: 'http://localhost:4500',
+      projectCount: 2,
+      state: 'ok',
+    });
     expect(row!.lastOpened).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(Object.keys(row!).sort()).toEqual(
-      ['defaultPort', 'lastOpened', 'mode', 'name', 'projectCount'].sort(),
+      ['defaultPort', 'kind', 'lastOpened', 'mode', 'name', 'projectCount', 'publicUrl', 'state'].sort(),
     );
   });
 

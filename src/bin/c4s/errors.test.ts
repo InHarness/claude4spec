@@ -130,16 +130,20 @@ describe('the CLI error catalogue (2.1.26)', () => {
 
 /**
  * 2.1.26 (M11 L2 `m11dcore`) — `runAgent`'s rejected-promise codes are the same
- * fifteen for both transports, in three groups: 7 local, 6 HTTP-derived (now
- * with RESUME_CONFIG_LOCKED, the 409 for a changed session config), 2 from the
- * turn body. `c4s ask` declares exactly those fifteen.
+ * for both transports, in three groups: local, HTTP-derived (with
+ * RESUME_CONFIG_LOCKED, the 409 for a changed session config), and from the
+ * turn body. 2.1.58 (record `ask`) adds the two `cli`-only local resolver codes
+ * WORKSPACE_NOT_REGISTERED and WORKSPACE_FILE_INVALID: seventeen, 9 + 6 + 2.
+ * `c4s ask` declares exactly those seventeen.
  */
-describe('the agent-turn code catalogue (2.1.26)', () => {
+describe('the agent-turn code catalogue (2.1.26, 2.1.58)', () => {
   const LOCAL = [
     'PROJECT_NOT_FOUND',
     'PROJECT_ID_NOT_FOUND',
     'AMBIGUOUS_WORKSPACE',
     'AMBIGUOUS_PROJECT',
+    'WORKSPACE_NOT_REGISTERED',
+    'WORKSPACE_FILE_INVALID',
     'SERVER_NOT_RUNNING',
     'SERVER_NOT_RECOGNIZED',
     'INVALID_ARGS',
@@ -154,10 +158,10 @@ describe('the agent-turn code catalogue (2.1.26)', () => {
   ] as const satisfies readonly AgentErrorCode[];
   const LIFECYCLE = ['TIMEOUT', 'ABORTED'] as const satisfies readonly AgentErrorCode[];
 
-  it('[section:m11dcore] fifteen codes in three groups (7 + 6 + 2), and `c4s ask` declares exactly them', () => {
+  it('[section:m11dcore] seventeen codes in three groups (9 + 6 + 2), and `c4s ask` declares exactly them', () => {
     const all = [...LOCAL, ...HTTP, ...LIFECYCLE];
-    expect([LOCAL.length, HTTP.length, LIFECYCLE.length]).toEqual([7, 6, 2]);
-    expect(new Set(all).size).toBe(15);
+    expect([LOCAL.length, HTTP.length, LIFECYCLE.length]).toEqual([9, 6, 2]);
+    expect(new Set(all).size).toBe(17);
     const declared = new Set([...SHARED_RESOLVER_CODES, ...askCommand.errorCodes]);
     expect([...declared].sort()).toEqual([...all].sort());
   });
@@ -188,6 +192,15 @@ describe('environment codes → exit statuses (2.1.53)', () => {
     expect(codeToExit('SERVER_NOT_RUNNING')).toBe(8);
     expect(codeToExit('SERVER_NOT_RECOGNIZED')).toBe(8);
     expect(codeToExit('SOMETHING_UNMAPPED')).toBeGreaterThan(0);
+  });
+
+  it('[section:tcs1yuku] WORKSPACE_NOT_REGISTERED and WORKSPACE_FILE_INVALID are CLI resolver codes on exit 1, shared by every server-delegating command', () => {
+    const union = cliErrorCodeUnion();
+    for (const code of ['WORKSPACE_NOT_REGISTERED', 'WORKSPACE_FILE_INVALID'] as const) {
+      expect(union, code).toContain(code);
+      expect(codeToExit(code), code).toBe(1);
+      expect(SHARED_RESOLVER_CODES, code).toContain(code);
+    }
   });
 
   it('[section:m11dcore] ROOT_NOT_FOUND is no longer a CLI code', () => {

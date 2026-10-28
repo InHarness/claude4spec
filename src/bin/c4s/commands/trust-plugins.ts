@@ -1,42 +1,38 @@
-import path from 'node:path';
 import type { ParsedArgs } from '../args.js';
 import { optionalInt, optionalString } from '../args.js';
 import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
-import { WorkspaceRegistry } from '../../../server/workspace/registry.js';
+import { RegistryMigrationPendingError } from '../../../server/workspace/registry.js';
+import { setPluginTrustForDirectory, TrustPluginsError } from '../../../server/workspace/trust-plugins.js';
 import type { CliCommandContribution } from '../registry.js';
 
 /**
- * Docker plugin-smoke-test bootstrap: sets `trustProjectPlugins` for a
- * project BEFORE the server ever starts, by mutating `~/.claude4spec/
- * workspaces.json` (or `$C4S_HOME/workspaces.json`) directly — no running
- * server required. Unlike every other CLI command, this does NOT resolve an
- * EXISTING registered project (`resolveWorkspaceProject` throws
- * `PROJECT_NOT_FOUND` for one that isn't registered yet) — it mirrors the
- * server's own bootstrap (`registry.selectOrCreate` + `registry.registerProject`
- * in `src/server/index.ts`) so the project record exists (idempotently) with
- * trust already set, and the server's own boot-time `registerProject` call
- * later reuses that SAME record (matched by `cwd`) instead of creating a
- * fresh, untrusted one.
+ * Docker plugin-smoke-test bootstrap: sets the machine-local plugin trust of a
+ * project BEFORE the server ever starts, in the global workspace registry
+ * (`$C4S_HOME` honoured) — no running server required. Unlike every other CLI
+ * command, this does NOT resolve an EXISTING registered project: it mirrors the
+ * server's own registration so the project record exists (idempotently) with
+ * trust already set, and the server later reuses that SAME record.
  *
  *   c4s trust-plugins --cwd /workspace/project true
  *   c4s trust-plugins --cwd /workspace/project --port 3000 --mode prod true
  *
- * `--port`/`--mode` must match what the server passes to
- * `registry.selectOrCreate` at boot (see `docker/entrypoint.sh`'s
- * `--port`/`--mode prod` flags) so both resolve the SAME workspace — a
- * mismatch would set trust on a workspace the server never looks at.
+ * 2.1.58 (M31 `m31cli01`): a `--cwd` that is a project of a workspace with a
+ * home directory takes that workspace and the id its committed
+ * `workspace.json` gives it; a `--cwd` inside such a home that the file does
+ * not list is refused — the CLI never writes that file. Otherwise `--port`
+ * (default 4500) picks the registry workspace, as `docker/setup-plugin-env.sh`
+ * passes it. Every step lives in the M31 core (`setPluginTrustForDirectory`);
+ * this file only parses argv and maps the refusals.
  */
 export async function runTrustPlugins(args: ParsedArgs): Promise<void> {
-  const cwdRaw = optionalString(args, 'cwd');
-  if (!cwdRaw) throw new CliError('INVALID_ARGS', '--cwd is required');
-  const cwd = path.resolve(cwdRaw);
+  const cwd = optionalString(args, 'cwd');
+  if (!cwd) throw new CliError('INVALID_ARGS', '--cwd is required');
 
   const valueRaw = args.positional[0];
   if (valueRaw !== 'true' && valueRaw !== 'false') {
     throw new CliError('INVALID_ARGS', `expected a trailing 'true' or 'false', got '${valueRaw ?? ''}'`);
   }
-  const value = valueRaw === 'true';
 
   const port = optionalInt(args, 'port');
   const mode = optionalString(args, 'mode');
@@ -44,28 +40,36 @@ export async function runTrustPlugins(args: ParsedArgs): Promise<void> {
     throw new CliError('INVALID_ARGS', `--mode must be 'dev' or 'prod', got '${mode}'`);
   }
 
-  const registry = new WorkspaceRegistry();
-  // 2.1.0: only the server migrates hash ids (it renames the DB slots too). A
-  // write here would persist a registry whose ids no slot matches.
-  if (registry.isMigrationPending()) {
-    throw new CliError(
-      'REGISTRY_MIGRATION_PENDING',
-      `${registry.filePath} still uses pre-2.1.0 hash project ids`,
-      'start the claude4spec server once (`npx @inharness-ai/claude4spec`) — it migrates the registry — then re-run this command',
-      { steps: [{ action: 'start-server', command: 'npx @inharness-ai/claude4spec' }, { action: 'rerun' }] },
-    );
+  let result;
+  try {
+    result = setPluginTrustForDirectory({
+      cwd,
+      value: valueRaw === 'true',
+      ...(port !== undefined ? { port } : {}),
+      ...(mode !== undefined ? { mode } : {}),
+    });
+  } catch (err) {
+    if (err instanceof RegistryMigrationPendingError) {
+      throw new CliError(
+        'REGISTRY_MIGRATION_PENDING',
+        err.message,
+        'start the claude4spec server once (`npx @inharness-ai/claude4spec`) — it migrates the registry — then re-run this command',
+        { steps: [{ action: 'start-server', command: 'npx @inharness-ai/claude4spec' }, { action: 'rerun' }] },
+      );
+    }
+    if (err instanceof TrustPluginsError) {
+      throw new CliError(
+        err.code,
+        err.message,
+        err.hint,
+        err.code === 'PROJECT_NOT_IN_WORKSPACE_FILE'
+          ? { steps: [{ action: 'add-project', where: 'server UI or workspace.json' }, { action: 'rerun' }] }
+          : undefined,
+      );
+    }
+    throw err;
   }
-  // The record is minted by the SAME rule as the server's (config.json `name`,
-  // fallback directory name, `-2` on collision), so the server's own boot-time
-  // `registerProject` later reuses it by `cwd`.
-  const workspace = registry.selectOrCreate({ port, mode: mode as 'dev' | 'prod' | undefined });
-  const project = registry.registerProject(workspace, cwd);
-  registry.setProjectTrust(workspace, project.id, value);
-
-  writeOutput(
-    { workspace: workspace.name, projectId: project.id, cwd, trustProjectPlugins: value },
-    args,
-  );
+  writeOutput(result, args);
 }
 
 export const trustPluginsCommand: CliCommandContribution = {
@@ -74,6 +78,6 @@ export const trustPluginsCommand: CliCommandContribution = {
   // the workspace registry directly and creates the project record on demand.
   executionMode: 'registry-write',
   flags: ['cwd', 'port', 'mode'],
-  errorCodes: ['INVALID_ARGS', 'REGISTRY_MIGRATION_PENDING'],
+  errorCodes: ['INVALID_ARGS', 'REGISTRY_MIGRATION_PENDING', 'PROJECT_NOT_IN_WORKSPACE_FILE', 'WORKSPACE_FILE_INVALID'],
   handler: runTrustPlugins,
 };

@@ -199,6 +199,28 @@ describe('GET /api/projects/:id/plugins/frontend-manifest', () => {
     expect(bare.body?.hostApiVersion).toBeUndefined();
   });
 
+  it('[entity:get-api-plugins-frontend-manifest] the answer depends on no project but :id — the same body whichever other projects the process serves', async () => {
+    npmPackage('base-pkg', {}, { 'dist/frontend.js': 'export {}' });
+    overlayPlugin('local-a', '0.1.0', { 'dist/frontend.js': 'export {}' });
+    overlayPlugin('local-b', '0.2.0', { 'dist/frontend.js': 'export {}' }, cwdB);
+    const common = { records: [loaded('base-pkg')], workspacePackages: ['base-pkg'] };
+    const p2: ProjectOpts = { id: 'p2', cwd: cwdB, trusted: true, loaded: ['local-b'] };
+
+    const alone = await manifest(makeApp({ ...common, overlay: { trusted: true, loaded: ['local-a'] } }));
+    const withPeer = makeApp({ ...common, overlay: { trusted: true, loaded: ['local-a'] }, projects: [p2] });
+    expect(await manifest(withPeer, 'p1')).toEqual(alone);
+    expect(alone.plugins.map((p) => p.entry)).toEqual([
+      '/api/plugins/base-pkg/frontend.js',
+      '/api/projects/p1/plugins/local-a/frontend.js',
+    ]);
+    // p2 gets its own overlay and the same base entry; nothing of p1 leaks in.
+    const second = await manifest(withPeer, 'p2');
+    expect(second.plugins.map((p) => p.entry)).toEqual([
+      '/api/plugins/base-pkg/frontend.js',
+      '/api/projects/p2/plugins/local-b/frontend.js',
+    ]);
+  });
+
   it('[entity:frontend-manifest-response] hostApiVersion: string, importMap: Record<string,string>, plugins: PluginFrontendEntry[] { name, version, entry, css? } — no top-level css[], no project identity field; base entries under /api/plugins/<name>/, overlay entries under /api/projects/<id>/plugins/<name>/, a scoped name one %2F-encoded segment', async () => {
     npmPackage('@acme/styled', {}, { 'dist/frontend.js': 'export {}', 'dist/frontend.css': '.x{}' });
     npmPackage('plain', { version: '2.0.0' }, { 'dist/frontend.js': 'export {}' });

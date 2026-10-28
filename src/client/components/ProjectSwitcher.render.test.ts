@@ -8,6 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 vi.mock('../lib/api-core.js', () => ({ PROJECT_ID: 'p-25' }));
 vi.mock('../ui/events.js', () => ({ openModal: vi.fn(), toast: { error: vi.fn() } }));
@@ -26,13 +27,12 @@ const projects = Array.from({ length: 30 }, (_, i) => ({
 let host: HTMLDivElement;
 let root: Root;
 let scrolled: Element[];
+let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   scrolled = [];
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => new Response(JSON.stringify({ name: 'default', projects }), { status: 200 })),
-  );
+  fetchMock = vi.fn(async () => new Response(JSON.stringify({ name: 'default', projects }), { status: 200 }));
+  vi.stubGlobal('fetch', fetchMock);
   Element.prototype.scrollIntoView = function (this: Element) {
     scrolled.push(this);
   };
@@ -47,17 +47,38 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function openSwitcher() {
+async function flush() {
+  for (let i = 0; i < 5; i += 1) {
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  }
+}
+
+async function renderSwitcher() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   await act(async () => {
-    root.render(createElement(ProjectSwitcher, { projectName: 'Project 25', cwdPath: '/work/project-25' }));
+    root.render(
+      createElement(
+        QueryClientProvider,
+        { client: qc },
+        createElement(ProjectSwitcher, { projectName: 'Project 25', cwdPath: '/work/project-25' }),
+      ),
+    );
   });
+}
+
+async function clickToggle() {
   await act(async () => {
     host.querySelector<HTMLButtonElement>('button[aria-label="Switch project"]')!.click();
   });
-  // Let the /api/workspace fetch resolve and the list render.
-  await act(async () => {
-    await new Promise((r) => setTimeout(r, 0));
-  });
+  // Let the shared /api/workspace query resolve and the list render.
+  await flush();
+}
+
+async function openSwitcher() {
+  await renderSwitcher();
+  await clickToggle();
 }
 
 describe('ProjectSwitcher — large workspace', () => {
@@ -87,5 +108,21 @@ describe('ProjectSwitcher — large workspace', () => {
     const current = host.querySelector('[role="option"][aria-selected="true"]')!;
     expect(current.textContent).toContain('Project 25');
     expect(scrolled).toContain(current);
+  });
+
+  it('reads the list through the shared workspace query only when opened, and refreshes it on every open', async () => {
+    await renderSwitcher();
+    await flush();
+    // Closed: no workspace read on mount.
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await clickToggle();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/workspace');
+
+    await clickToggle(); // close
+    await clickToggle(); // reopen → the stale shared entry is refetched
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(host.querySelectorAll('[role="option"]')).toHaveLength(30);
   });
 });

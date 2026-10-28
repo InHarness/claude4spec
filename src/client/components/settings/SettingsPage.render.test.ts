@@ -2,7 +2,8 @@
 /**
  * 2.1.21 (M26 — ui-view `settings-page`, L17 `7f76eszm`): `/settings` is ONE
  * vertical stack of cards assembled from the declared card and element tables
- * plus the implementor's own cards (About, Index status). There is no plugin
+ * plus the implementor's own cards (About, Index status) — 2.1.58: only the
+ * cards of scope `project`; the `workspace` ones stand on `/workspace/settings`. There is no plugin
  * settings channel any more: no generated `#plugin-<name>` cards, and the page
  * never asks the plugin host for settings sections.
  *
@@ -108,20 +109,40 @@ async function render(): Promise<string[]> {
 describe('SettingsPage — composition without a plugin settings channel (2.1.21)', () => {
   it('[entity:settings-page] renders one stack of the declared cards in group → weight order, with no group headings and no generated plugin cards', async () => {
     const anchors = await render();
-    const expected = assembleSettings(staticSettingsContributions()).map((c) => c.decl.anchor);
+    const expected = assembleSettings(staticSettingsContributions(), 'project').map((c) => c.decl.anchor);
     expect(anchors).toEqual(expected);
     // The implementor's own diagnostic cards are part of the stack.
     expect(anchors).toContain('about');
     expect(anchors).toContain('index-status');
     // One stack: the only heading on the page is its title — groups order, they do not head.
     expect([...host.querySelectorAll('h1, h2, h3')].map((h) => h.textContent)).toEqual(['Settings']);
-    // No `#plugin-<name>` card: the one `plugin-` anchor left is the pool card the host declares.
-    expect(anchors.filter((a) => a.startsWith('plugin-'))).toEqual(['plugin-pool']);
+    // No `#plugin-<name>` card — and the pool card is a workspace card now.
+    expect(anchors.filter((a) => a.startsWith('plugin-'))).toEqual([]);
+  });
+
+  it('[ac:ac-strona-ustawien-projektu-settings-nie] the project settings page (/settings) renders no card of scope workspace', async () => {
+    const anchors = await render();
+    const workspaceCards = staticSettingsContributions()
+      .flatMap((c) => c.cards ?? [])
+      .filter((c) => c.scope === 'workspace')
+      .map((c) => c.anchor);
+    // The registry does hold workspace cards (Appearance, Plugin pool)…
+    expect(workspaceCards).toEqual(expect.arrayContaining(['appearance', 'plugin-pool']));
+    // …and none of them is on the page, while the project cards are.
+    expect(anchors.length).toBeGreaterThan(0);
+    for (const anchor of workspaceCards) expect(anchors, anchor).not.toContain(anchor);
+    expect(host.querySelector('#appearance')).toBeNull();
+    expect(host.querySelector('#plugin-pool')).toBeNull();
+    // Nothing on the page reads the base pool diagnostics of the workspace card.
+    expect(fetched.some((url) => url.includes('_meta/plugins'))).toBe(false);
   });
 
   it('[section:7f76eszm] the card registry is the declared cards plus About and Index status — nothing is generated for plugins, and the page never asks for plugin settings', async () => {
     const anchors = await render();
-    const declared = staticSettingsContributions().flatMap((c) => c.cards ?? []).map((c) => c.anchor);
+    const declared = staticSettingsContributions()
+      .flatMap((c) => c.cards ?? [])
+      .filter((c) => (c.scope ?? 'project') === 'project')
+      .map((c) => c.anchor);
     expect(new Set(anchors)).toEqual(new Set(declared));
     expect(anchors).toHaveLength(declared.length);
     expect(fetched.some((url) => url.includes('plugin-settings'))).toBe(false);

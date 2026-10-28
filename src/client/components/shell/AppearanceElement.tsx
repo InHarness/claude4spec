@@ -12,10 +12,14 @@ const OPTIONS: Array<{ value: Theme; label: string; Icon: typeof Sun; descriptio
  * 0.2.113 — the app shell's card. The theme lives OUTSIDE `config.json` — in
  * `themeStore` and localStorage (global, not per project) — so the card has no
  * [Save]: a choice applies at once, through `setTheme`.
+ *
+ * 2.1.58 (M50 `6tn2yf92`): scope `workspace` — the card stands on the workspace
+ * settings page. The theme stays global for the browser, independent of the
+ * project and of the workspace; the scope only says which page shows the card.
  */
 export const APPEARANCE_SETTINGS: SettingsContribution = {
   cards: [
-    { anchor: 'appearance', title: 'Appearance', group: 'Account', weight: 20, owner: 'app-shell' },
+    { anchor: 'appearance', title: 'Appearance', group: 'Account', weight: 20, owner: 'app-shell', scope: 'workspace' },
   ],
   elements: [
     { id: 'theme', card: 'appearance', weight: 10, kind: 'custom', owner: 'app-shell', component: AppearanceElement },

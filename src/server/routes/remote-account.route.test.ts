@@ -14,12 +14,14 @@ import { remoteAccountRouter } from './remote-account.js';
  * M24 — `POST /api/remote-account/logout`, the request the settings page's User
  * card sends after its ConfirmModal (the UI half is pinned in
  * `src/client/components/account/UserCardElement.render.test.ts`). The session is
- * a real `remote_session` table (migration 030); logout never calls the remote.
+ * a real `remote_session` table (migration 030 + 063's `issuer_url`); logout never
+ * calls the remote. 2.1.58: a session counts only under the address that issued
+ * it, so every fake client here stands on `ISSUER` and the seeded row records it.
  */
-const MIGRATION = fs.readFileSync(
-  fileURLToPath(new URL('../db/migrations/030_remote_session.sql', import.meta.url)),
-  'utf8',
+const MIGRATIONS = ['030_remote_session.sql', '063_remote_session_issuer_url.sql'].map((file) =>
+  fs.readFileSync(fileURLToPath(new URL(`../db/migrations/${file}`, import.meta.url)), 'utf8'),
 );
+const ISSUER = 'https://remote.example';
 
 // A login encrypts the token with the M05 keyring (`secret.key` under `C4S_HOME`) —
 // a throwaway home, never the real one.
@@ -40,15 +42,15 @@ const sessionCount = () => (db.prepare('SELECT COUNT(*) AS n FROM remote_session
 const app = () =>
   express()
     .use(express.json())
-    .use('/api/remote-account', remoteAccountRouter(new RemoteAuthService(db, {} as unknown as RemoteHttpClient)));
+    .use('/api/remote-account', remoteAccountRouter(new RemoteAuthService(db, { base: ISSUER } as unknown as RemoteHttpClient)));
 
 beforeEach(() => {
   db = new Database(':memory:');
-  db.exec(MIGRATION);
+  for (const sql of MIGRATIONS) db.exec(sql);
   db.prepare(
-    `INSERT INTO remote_session (access_token, token_id, issued_at, remote_account_id, account_email, account_status)
-     VALUES ('tok-1', 'tid-1', '2026-10-01T00:00:00Z', 'acc-1', 'ada@example.com', 'active')`,
-  ).run();
+    `INSERT INTO remote_session (access_token, issuer_url, token_id, issued_at, remote_account_id, account_email, account_status)
+     VALUES ('tok-1', ?, 'tid-1', '2026-10-01T00:00:00Z', 'acc-1', 'ada@example.com', 'active')`,
+  ).run(ISSUER);
 });
 
 afterEach(() => {
@@ -89,6 +91,7 @@ describe('HTTP 401 from an owner-only remote endpoint (M24)', () => {
   it('[ac:ac-po-http-401-z-owner-only-endpointu-zdaln] a 401 from GET /v1/account wipes the local remote_session and requires a new device flow', async () => {
     expect(sessionCount()).toBe(1);
     const client = {
+      base: ISSUER,
       startDeviceFlow: async () => ({
         device_code: 'dc-401',
         user_code: 'QRST-0401',
@@ -161,6 +164,7 @@ describe('GET /api/remote-account (M24)', () => {
   it('[ac:ac-konto-z-account-status-deactivated-po] a login whose account is deactivated still saves the remote_session row, and GET /api/remote-account reports it connected with accountStatus deactivated', async () => {
     db.prepare('DELETE FROM remote_session').run();
     const client = {
+      base: ISSUER,
       startDeviceFlow: async () => ({
         device_code: 'dc-1',
         user_code: 'WXYZ-1234',

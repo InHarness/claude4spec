@@ -4,11 +4,13 @@
  * screen: the workspace's projects listed neutrally, a click loads the
  * project's route, "Add project to workspace" opens the `project-create`
  * window; state `empty` (e.g. after purging the last project) — an empty list
- * and only the add action.
+ * and only the add action. 2.1.58: a workspace route — its kind, its frame and
+ * its document are pinned in src/client/App.workspace-frame.render.test.ts.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const nav = vi.hoisted(() => ({ hrefs: [] as string[] }));
 vi.mock('../../lib/document-nav.js', () => ({
@@ -39,7 +41,8 @@ async function flush() {
 
 async function render() {
   await act(async () => {
-    root.render(createElement(WelcomePage));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    root.render(createElement(QueryClientProvider, { client }, createElement(WelcomePage)));
   });
   await flush();
 }
@@ -75,6 +78,8 @@ describe('welcome-page (/welcome)', () => {
   it('[entity:welcome-page] default state: lists the workspace projects neutrally; a click loads /p/<id>/; "Add project to workspace" opens project-create', async () => {
     workspace = {
       name: 'default',
+      kind: 'registry',
+      lastOpenedProject: null,
       projects: [
         { id: 'alpha', name: 'Alpha', cwd: '/work/alpha', live: true },
         { id: 'beta', name: 'Beta', cwd: '/work/beta', live: false },
@@ -105,7 +110,7 @@ describe('welcome-page (/welcome)', () => {
   });
 
   it('[entity:welcome-page] state `empty`: the workspace registry has no project — an empty list and only the add-project action', async () => {
-    workspace = { name: 'default', projects: [] };
+    workspace = { name: 'default', kind: 'registry', lastOpenedProject: null, projects: [] };
     await render();
 
     expect(host.textContent).toContain('No projects registered yet — add a directory below.');
@@ -116,5 +121,32 @@ describe('welcome-page (/welcome)', () => {
     });
     expect(modals.map((m) => m.kind)).toEqual(['project-create']);
     expect(nav.hrefs).toEqual([]);
+  });
+
+  it('[ac:ac-lista-projektow-na-welcome-nie-wyrozn] the project list on /welcome marks no project — not the one in the directory the server was started in, not the last opened one', async () => {
+    // `alpha` lives in the directory the process was started in and is the
+    // workspace's last opened project; the screen must not tell it apart.
+    workspace = {
+      name: 'default',
+      kind: 'home',
+      lastOpenedProject: 'alpha',
+      projects: [
+        { id: 'alpha', name: 'Alpha', cwd: '/work/alpha', live: true },
+        { id: 'beta', name: 'Beta', cwd: '/work/beta', live: false },
+      ],
+    };
+    await render();
+
+    const rows = buttons().filter((b) => b.textContent?.includes('/work/'));
+    expect(rows).toHaveLength(2);
+    // Same markup for both rows once name and directory are masked: no mark,
+    // no accent, no selection state.
+    expect(rows[0]!.outerHTML.replace(/alpha|Alpha/g, 'x')).toBe(rows[1]!.outerHTML.replace(/beta|Beta/g, 'x'));
+    for (const row of rows) {
+      expect(row.getAttribute('aria-current')).toBeNull();
+      expect(row.getAttribute('aria-selected')).toBeNull();
+    }
+    // In list order, as the registry answers — the start directory's project is not moved up.
+    expect(rows.map((b) => b.textContent)).toEqual(['Alpha/work/alpha', 'Beta/work/beta']);
   });
 });

@@ -6,7 +6,6 @@ import {
   assetContentType,
   effectiveFrontendSources,
   envelopeFrontendSource,
-  nearestPackageRoot,
   npmFrontendSource,
   overlayFrontendSources,
   packageFrontendEntry,
@@ -15,6 +14,7 @@ import {
   type FrontendPool,
 } from './frontend-assets.js';
 import type { BuiltinEnvelope } from './builtin-envelopes.js';
+import { nearestPackageRoot } from './workspace-packages.js';
 
 /** Write `files` (relative path → content) under `dir`. */
 function writeTree(dir: string, files: Record<string, string>): void {
@@ -162,11 +162,10 @@ describe('frontend-assets — sources, effective pool, asset resolution', () => 
   });
 });
 
-// `defaultWorkspaceRoot` resolves a plugin's package root by walking up from the
-// `import.meta.resolve`d entry via this pure helper. The regression: it must NOT
-// gate on the manifest `name`, so a plugin installed under an unscoped dir name
-// whose real `package.json` `name` is scoped still resolves (else its frontend
-// is silently dropped — no manifest entry, no sidebar link).
+// A PREDEFINED base package's root is found by walking up from its resolved
+// entry (`basePackageLocator`, `workspace-packages.ts`) via this pure helper. It
+// must NOT gate on the manifest `name`, so a package installed under an
+// unscoped dir name whose real `package.json` `name` is scoped still resolves.
 describe('nearestPackageRoot', () => {
   let root: string;
 

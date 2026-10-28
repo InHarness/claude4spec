@@ -36,7 +36,8 @@ import type { ExternalSkillContext } from './types.js';
  * invariant.
  */
 // 2.1.14 (M22 `m22dserv`, page section `sws0pnrn`): one of the three blocks
-// shared by all three renderers, emitted verbatim.
+// shared by all three renderers, emitted verbatim. 2.1.58: three neighbouring
+// codes — `WORKSPACE_NOT_REGISTERED` joins the two.
 // ASSUMPTION:m22-dev-0002 — the brief-implementer and refactor renderers carry
 // these shared blocks (and never the workspace) although their own exact-text
 // pages at 2.1.14 still show per-skill paragraphs and `<workspace>`.
@@ -46,7 +47,14 @@ Every \`c4s\` command in this skill talks to a running \`npx @inharness-ai/claud
 
 \`SERVER_NOT_RUNNING\` **(exit 8) from any command — stop.** Ask the user to start the server, and wait. Do not start one yourself (a CLI-spawned server is an unsupervised second process on the user's machine), and do not work around the failure by reading or writing the spec repo's files by hand — that is the thing this skill exists to prevent, and the reason it is CLI-only.
 
-Two neighbouring codes mean something else, and starting a server will not fix either: \`SERVER_NOT_RECOGNIZED\` (something is listening, but it is not claude4spec) and \`PROJECT_NOT_IN_WORKSPACE\` (the server is fine, but it does not serve this skill's project — see "Stale address" below). Report those as they are.`;
+Three neighbouring codes mean something else, and starting a server will not fix any of them: \`SERVER_NOT_RECOGNIZED\` (something is listening, but it is not claude4spec), \`PROJECT_NOT_IN_WORKSPACE\` (the server is fine, but it does not serve this skill's project — see "Stale address" below) and \`WORKSPACE_NOT_REGISTERED\` (the project lies in a workspace home directory this machine has never registered). Report those as they are.`;
+
+/**
+ * 2.1.58 (M22 `m22dserv`; pages `qv83eat4`, `sa9x6lzh`, `zvd7wn4t`): what the
+ * new resolver code means for an agent holding the skill — stop, and ask for
+ * the one-time server start with the workspace home; never start it yourself.
+ */
+export const WORKSPACE_NOT_REGISTERED_STOP = `\`WORKSPACE_NOT_REGISTERED\` means the spec project lies in a workspace home directory this machine has never registered — stop and ask the user to start the server once with \`--cwd <home>\`; do not start it yourself.`;
 
 /**
  * 2.1.0 (M22) — the address every generated skill bakes into EVERY `c4s`

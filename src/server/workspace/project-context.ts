@@ -55,12 +55,11 @@ import { rootRenameRouter } from '../routes/config-rename.js';
 import { mcpConfigRouter } from '../routes/mcp-config.js';
 import { PROJECTION_IDS, ProjectionStatusRegistry, type ProjectionId } from '../services/projection-status.js';
 import { listProjects } from './list-projects.js';
-import { writeSlotMarker } from './slot-marker.js';
 import { readPeerConfigSummary } from './peer-config.js';
 import { PatchService } from '../services/patch.js';
 import { artifactsRouter } from '../routes/artifacts.js';
 import { RemoteAuthService } from '../services/remote-auth.js';
-import { RemoteHttpClient } from '../services/remote-http-client.js';
+import { RemoteHttpClient, effectiveRemoteUrl } from '../services/remote-http-client.js';
 import { remoteAccountRouter } from '../routes/remote-account.js';
 import { agentRouter } from '../routes/agent-credential.js';
 import { PagesFrontmatterIndexer } from '../services/pages-frontmatter-indexer.js';
@@ -156,8 +155,7 @@ import { projectPluginsDir, type PluginImporter } from '../core/plugin-host/over
 import { buildBasePluginPackages } from '../routes/plugins.js';
 import { logRefRegistrationWarnings, overlayRefWarnings } from '../core/plugin-host/ref-warnings.js';
 import { projectPluginsFrontendRouter } from '../routes/plugins-project.js';
-import type { WorkspaceRootResolver } from '../core/plugin-host/frontend-assets.js';
-import type { BuiltinEnvelope } from '../core/plugin-host/builtin-envelopes.js';
+import type { FrontendBaseTier } from '../core/plugin-host/frontend-assets.js';
 import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import type { ActiveAdapter, PendingInput } from '../routes/agent-turn.js';
 import { abortAllTurns } from '../routes/agent-turn.js';
@@ -213,15 +211,13 @@ export interface ProjectContextDeps {
   pluginRecords: PluginLoadRecord[];
   /**
    * M33 (2.1.22): the rest of the process's base frontend tier the project's
-   * manifest announces — the resolved workspace package list and the servable
-   * built-in envelopes. Absent ⇒ none (hand-built test contexts).
+   * manifest announces — the resolved workspace package list, the servable
+   * built-in envelopes and how a workspace package's root is found (the base
+   * locator's `packageRoot`, 2.1.58). Required, resolver included: the same
+   * object `startServer` hands the process-global asset route, so the manifest
+   * never announces what that route cannot serve.
    */
-  frontendBase?: {
-    workspacePackages?: string[];
-    envelopes?: BuiltinEnvelope[];
-    /** Test seam: how a workspace package's root is found. */
-    resolveWorkspaceRoot?: WorkspaceRootResolver;
-  };
+  frontendBase: FrontendBaseTier;
   /**
    * Test seam: how a TRUSTED overlay package's entry is imported (default: a
    * dynamic `import()`). The trust gate itself is not bypassable through it —
@@ -236,10 +232,13 @@ export interface ProjectContextDeps {
   /** M40: the process-wide file-watch runtime. Mounts made here carry `scope: 'context:<id>'`. */
   watchRuntime: FileWatchRuntime;
   mode: 'dev' | 'prod';
-  /** Resolved `--remote-url` value (flag > config.json); null/absent ⇒ prod constant. */
-  remoteApiUrl?: string | null;
-  /** CLI `--pages` override — effective only for the CLI-started project. */
-  pagesDirOverride?: string;
+  /**
+   * 2.1.58 (M01 `3ebblo1q`): the `--remote-url` start flag — the one start value
+   * that reaches a project, for every project of the process and for its
+   * lifetime, never written to `config.json`. Absent ⇒ `config.remoteApiUrl`,
+   * then the prod constant.
+   */
+  remoteApiUrl?: string;
   /** M31: pinged when an agent turn finishes — context-cache idle-retry hook. */
   onTurnFinished?: () => void;
   /**
@@ -372,25 +371,19 @@ async function buildInner(
   const pendingInputs = new Map<string, PendingInput>();
 
   const skillRegistry = SkillRegistry.load(findSkillsRoots(cwd));
-  // 0.2.8: config migrations belong to project ACTIVATION, not to bootstrap
-  // alone. `bootstrapProject` runs only for the CLI `--cwd` project and for
-  // freshly added ones, so a workspace's other projects — opened here, from the
-  // switcher — never saw a migration: the same workspace could hold one repaired
-  // project and two carrying the shape that no longer loads. Idempotent, and it
-  // writes only when something actually changed.
+  // 0.2.8: config migrations belong to project ACTIVATION. The server's cache
+  // runs the activation (`activateProject`) right before this build; the build
+  // keeps its own idempotent pass so a context built by any other caller never
+  // reads a shape that no longer loads. Writes only when something changed.
   // 0.2.101: finish or undo a rename interrupted between its two writes, before
   // anything reads `roots[]` (see `root-renames.ts`). Idempotent and a no-op
   // without a journal.
   recoverPendingRootRename(cwd);
   migrateConfigToV4(cwd);
   const bootConfig = readConfig(cwd);
-  // 0.1.96: page roots come from config.roots[]. The CLI --pages override
-  // applies to the BASE root's dir only — 0.2.101: the entry carrying
-  // `builtin: true`, whatever its identifier. A user root that happens to be
-  // called `pages` is not the flag's target.
-  const effectiveRoots: Root[] = bootConfig.roots.map((r) =>
-    r.builtin && deps.pagesDirOverride ? { ...r, dir: deps.pagesDirOverride } : r,
-  );
+  // 0.1.96: page roots come from config.roots[] — the file and the defaults
+  // alone (2.1.58: no start flag names a root's directory).
+  const effectiveRoots: Root[] = bootConfig.roots;
   // 2.1.8: the ROOT REGISTRY — the user roots above (kind `pages`) plus the five
   // system roots registered in code (plans, briefs, patches, entities, releases),
   // each at its fixed `.claude4spec/<kind>`. No directory is read from a config key.
@@ -442,14 +435,13 @@ async function buildInner(
     const { errors } = validateRootDirs(effectiveRoots);
     if (errors.length > 0) throw new Error(errors[0]);
   }
-  // M01 (0.1.36): resolve the remote base URL with precedence
-  // `--remote-url` flag (deps) > config.json > prod constant. The prod-constant
-  // fallback lives in RemoteHttpClient; here `null` means "use prod".
-  // M24 (0.1.65): an explicit remoteApiUrl override (flag or config.json) is only
-  // syntax-validated at config load; the client bootstrap is cold — no network probe
+  // M01 `3ebblo1q` / M24 `ux690pt2`: the effective remote address —
+  // `--remote-url` flag (process lifetime, deps) > config.json > prod constant.
+  // M24 (0.1.65): an explicit override (flag or config.json) is only
+  // syntax-validated (start / config load); the client bootstrap is cold — no network probe
   // here. An unreachable-but-valid host lets the project build succeed; the
   // reachability error surfaces at the first remote action as a graceful failure.
-  const remoteApiUrl = deps.remoteApiUrl ?? bootConfig.remoteApiUrl;
+  const remoteApiUrl = effectiveRemoteUrl(deps.remoteApiUrl, bootConfig.remoteApiUrl);
 
   // M33 phase 2: project-local plugin overlay, behind the machine-local
   // `trustProjectPlugins` gate (see `loadOverlayLayer`). The trust prompt surfaces
@@ -509,16 +501,16 @@ async function buildInner(
   }
   const skillResolver = new SkillResolver(skillRegistry, cwd);
 
-  // 2.1.17: under THIS registry's home, so the slot below and the handle agree
-  // (the plugin test harness builds contexts over a throwaway registry home).
-  const db: Db = openDb(workspace, projectId, registry.baseDir);
+  // 2.1.58 (M31 `vzkw903j`, M41 `yffftxih`): M31 names the slot — in THIS
+  // registry's slots directory (the plugin test harness builds contexts over a
+  // throwaway registry home) — and checks its continuity before the database
+  // opens: a hand-edited `cwd` re-points the marker of a registry workspace's
+  // slot; in a workspace with a home a slot recorded for another directory is
+  // quarantined and the project starts on an empty one. M41 opens `db.sqlite`
+  // in the directory it is handed.
+  const dbSlotDir = registry.prepareSlot(workspace, projectId, cwd);
+  const db: Db = openDb(dbSlotDir);
   cleanup.push(() => db.close());
-  const dbSlotDir = registry.slotDir(workspace, projectId);
-  // 2.1.0 slot continuity: the slot records the directory it serves. A
-  // hand-edited `cwd` (moved repo) re-points the marker on the next build, so a
-  // later detach + re-register from the NEW directory recovers this slot, and a
-  // new project at the OLD directory never inherits it.
-  writeSlotMarker(dbSlotDir, cwd);
 
   // ── M40 phase A: MOUNTS ────────────────────────────────────────────────────
   // Mount → bind is a contract per source, not a preference: binding a reaction
@@ -582,7 +574,8 @@ async function buildInner(
   // mutation captures a deterministic snapshot via host.snapshot(...).
   versionService.configureSnapshot(rawReader, pluginHost);
   // M24: remote-account identity (device flow + local session). Single HTTP
-  // client per project context; base URL from config.remoteApiUrl (or the prod constant).
+  // client per project context, on the effective remote address; the session
+  // counts only under the address that issued it (`remote_session.issuer_url`).
   const remoteHttpClient = new RemoteHttpClient(remoteApiUrl);
   const remoteAuthService = new RemoteAuthService(db.handle, remoteHttpClient);
   // `activeAdapters` (wyzej w tym pliku) jest jedynym zrodlem prawdy dla trzech rzeczy:
@@ -1261,8 +1254,8 @@ async function buildInner(
       cwd,
       skillRegistry,
       onContextConfigChanged,
-      // Validate overlaps against the roots THIS context runs on (`--pages` applied),
-      // so the route cannot accept a dir the next boot would reject.
+      // Validate overlaps against the roots THIS context runs on, so the route
+      // cannot accept a dir the next build would reject.
       effectiveRoots,
       onOnboardingCompleted: (effectivePagesDir) => ensureWelcomePage(cwd, effectivePagesDir),
       /**
@@ -1284,12 +1277,7 @@ async function buildInner(
       cwd,
       isTrusted: () => registry.getProjectTrust(workspace, projectId) === true,
       overlayRecords,
-      base: {
-        pluginRecords: deps.pluginRecords,
-        workspacePackages: deps.frontendBase?.workspacePackages,
-        envelopes: deps.frontendBase?.envelopes,
-        resolveWorkspaceRoot: deps.frontendBase?.resolveWorkspaceRoot,
-      },
+      base: { pluginRecords: deps.pluginRecords, ...deps.frontendBase },
       // M13 `m13actv0`: one activation gate for the backend and the frontend.
       isTypeActive: (type) => pluginHost.isActive(type),
     }),

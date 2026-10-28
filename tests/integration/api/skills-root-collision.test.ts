@@ -71,6 +71,7 @@ describe('M01 — a pre-`skills` project whose roots[] collides with the skills 
       registry,
       pluginRegistry,
       pluginRecords,
+      frontendBase: { workspacePackages: [], envelopes: [], resolveWorkspaceRoot: () => null },
       workspace,
       projectId: `collision-${seq}`,
       cwd,

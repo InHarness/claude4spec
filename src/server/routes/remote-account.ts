@@ -37,7 +37,8 @@ export function remoteAccountRouter(remote: RemoteAuthService): Router {
     }
   });
 
-  // POST /api/remote-account/logout — DELETE remote_session (idempotent).
+  // POST /api/remote-account/logout — deletes the remote_session row of the current
+  // effective address only; a session issued elsewhere stays (idempotent).
   router.post('/logout', (_req, res, next) => {
     try {
       res.json(remote.logout());

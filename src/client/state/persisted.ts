@@ -4,10 +4,14 @@ type Envelope<T> = { v: number; data: T };
 
 type PersistedKey = `c4s:${string}:${string}`;
 
-// Tozsamosc projektu wstrzyknieta przez serwer do HTML (server/index.ts → injectProjectGlobal),
+// Tozsamosc projektu wstrzyknieta przez serwer do HTML dokumentu trasy projektu
+// (server/workspace/spa-route.ts → `spaDocument`, `window.__C4S_PROJECT__`),
 // dostepna synchronicznie zanim zustand `persist` odczyta localStorage. Sluzy do suffiksowania
 // project-scoped kluczy, zeby nie wyciekaly miedzy projektami na tym samym host:port.
-// Brak globalu (legacy/stale cached HTML, testy) → scope 'default' (zachowanie jak przed zmiana).
+// Brak globalu → scope 'default'. 2.1.58 (M50 `l5stlocs`): to zakres trasy workspace'u
+// (`/welcome`), na ktorej globalu nie ma z konstrukcji — zwykly przebieg, nie przypadek
+// brzegowy; poza nia tylko testy i stale cached HTML. Ostatnio otwarty projekt nie jest
+// kluczem localStorage — to pole rejestru workspace'u (`GET /api/workspace`).
 declare global {
   interface Window {
     __C4S_PROJECT__?: { id: string; name?: string };

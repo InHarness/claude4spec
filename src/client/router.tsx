@@ -35,6 +35,7 @@ import { OnboardingPage } from './components/onboarding/OnboardingPage.js';
 import { needsOnboarding } from './components/onboarding/onboardingFlow.js';
 import { WelcomePage } from './components/onboarding/WelcomePage.js';
 import { SettingsPage } from './components/settings/SettingsPage.js';
+import { WorkspaceSettingsPage } from './components/settings/WorkspaceSettingsPage.js';
 import { usePages } from './hooks/usePages.js';
 import { useBaseRootId, useConfig, useRoots } from './hooks/useConfig.js';
 import { EditorBridgeProvider } from './tiptap/EditorContext.js';
@@ -179,12 +180,23 @@ const onboardingRoute = createRoute({
   staticData: { fullscreen: true, redirectIf: needsOnboarding },
 });
 
-// Decision #11: project-less route (basepath '/' when no PROJECT_ID is injected).
+// M31 ui-view `welcome-page`: a WORKSPACE route (2.1.58) — mounted outside the
+// project prefix, in the workspace route frame (M50 `1bd92aq2`).
 const welcomeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/welcome',
   component: WelcomePage,
-  staticData: { fullscreen: true },
+  staticData: { routeKind: 'workspace' },
+});
+
+// M26 ui-view `workspace-settings-page` (2.1.58): a WORKSPACE route — the
+// settings page of the workspace, opened without a project; only the cards of
+// scope `workspace` (M26 `m26route`).
+const workspaceSettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/workspace/settings',
+  component: WorkspaceSettingsPage,
+  staticData: { routeKind: 'workspace' },
 });
 
 const settingsRoute = createRoute({
@@ -245,6 +257,7 @@ export const BASE_ROUTE_CHILDREN = Object.freeze([
   planDetailRoute,
   onboardingRoute,
   welcomeRoute,
+  workspaceSettingsRoute,
   settingsRoute,
   releasesIndexRoute,
   releaseDetailRoute,
@@ -253,11 +266,31 @@ export const BASE_ROUTE_CHILDREN = Object.freeze([
   patchDetailRoute,
 ]);
 
+/** Whether a route declares itself a workspace route (L5 `tehej2wz`). */
+function isWorkspaceRoute(route: AnyRoute): boolean {
+  return (route.options as { staticData?: { routeKind?: string } }).staticData?.routeKind === 'workspace';
+}
+
+/**
+ * M31 `eb95ery1` / M50 `1bd92aq2`: the routes THIS document mounts. A route is
+ * a project route unless it declares `routeKind: 'workspace'`. A document with
+ * an injected project (`/p/<id>/…`) mounts the project routes under the
+ * project basepath and no workspace route — so `/welcome` and
+ * `/workspace/settings` never appear under the prefix. A document without
+ * one is served for a workspace route only and mounts the workspace routes at
+ * `/` — no project route, since none of them has a project to read (plugin
+ * routes neither: nothing mounts them there).
+ */
+export function routesForDocument<T extends AnyRoute>(routes: readonly T[], projectId: string): T[] {
+  const wantWorkspace = !projectId;
+  return routes.filter((r) => isWorkspaceRoute(r) === wantWorkspace);
+}
+
 export function createAppRouter(queryClient: QueryClient) {
   return createRouter({
     // Stand the host up with ONLY the base routes; plugin routes are mounted
     // afterwards via `rebuildRouteTree` (see `mountFrontend`).
-    routeTree: rootRoute.addChildren([...BASE_ROUTE_CHILDREN]),
+    routeTree: rootRoute.addChildren(routesForDocument(BASE_ROUTE_CHILDREN, PROJECT_ID)),
     context: { queryClient },
     defaultPreload: 'intent',
     /**
@@ -272,8 +305,9 @@ export function createAppRouter(queryClient: QueryClient) {
      * later. Wait out the boot instead, then let the router re-resolve.
      */
     defaultNotFoundComponent: PendingOrNotFound,
-    // M31: the SPA is served under /p/<project-id>/ — in-app routes stay
-    // basepath-relative ('/space/$rootId/$', '/settings', …).
+    // M31: a project document is served under /p/<project-id>/ — in-app routes
+    // stay basepath-relative ('/space/$rootId/$', '/settings', …); a workspace
+    // document (no project injected) mounts its routes at the root.
     basepath: PROJECT_ID ? `/p/${PROJECT_ID}` : '/',
   });
 }
@@ -353,7 +387,14 @@ export function rebuildRouteTree(router: AppRouter, pluginRoutes: AnyRoute[]): v
   // The combined tree is dynamic (plugin routes leave the static route-tree type),
   // so this branch is deliberately untyped — `addChildren` only needs the runtime
   // route objects, and `setRoutes`/`invalidate` re-derive matching from them.
-  rootRoute.addChildren([...BASE_ROUTE_CHILDREN, ...pluginRoutes] as unknown as AnyRoute[]);
+  // Plugin routes are project routes; only a project document mounts them:
+  // `main.tsx` and the plugin boot skip `mountFrontend` without a project, and
+  // the other callers (WS plugin reload, Settings → Entities refresh) run on a
+  // project route only.
+  rootRoute.addChildren([
+    ...routesForDocument(BASE_ROUTE_CHILDREN, PROJECT_ID),
+    ...pluginRoutes,
+  ] as unknown as AnyRoute[]);
   router.setRoutes(router.buildRouteTree());
   void router.invalidate();
 }
@@ -369,6 +410,12 @@ declare module '@tanstack/react-router' {
    * the regular shell, so the regular view never flashes first.
    */
   interface StaticDataRouteOption {
+    /**
+     * 2.1.58 M50 `1bd92aq2` — the route's kind (L5 `tehej2wz`): absent = a
+     * project route, mounted under the project prefix; `'workspace'` = a route
+     * without a project, mounted outside the prefix in the workspace frame.
+     */
+    routeKind?: 'workspace';
     fullscreen?: boolean;
     redirectIf?: (config: ConfigResponse) => boolean;
   }

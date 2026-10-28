@@ -1,6 +1,11 @@
 /**
  * M33 (0.1.92) — base load↔watch resolution invariant.
  *
+ * 2.1.58: `resolveBaseEntry` is the host's own resolution, used for PREDEFINED
+ * packages (the distribution's `node_modules`); a workspace-listed package
+ * resolves in the workspace `node_modules` through the base locator
+ * (`workspace-packages.test.ts`). The ESM-only guarantee below holds for both.
+ *
  * The base-watcher discovers a package's `dist` dir to observe by resolving its
  * main entry. That discovery MUST use the same ESM resolution as the bootstrap
  * `import(pkg)` — `import.meta.resolve` (honors the `import` condition) — not CJS

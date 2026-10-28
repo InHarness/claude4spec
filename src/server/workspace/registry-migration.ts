@@ -28,7 +28,7 @@ export interface ProjectIdRename {
 export function isMigrationPendingFor(data: WorkspacesFile): boolean {
   return (
     (typeof data.$schemaVersion !== 'number' || data.$schemaVersion < READABLE_IDS_SCHEMA_VERSION) &&
-    data.workspaces.some((w) => w.projects.length > 0)
+    data.workspaces.some((w) => (w.projects?.length ?? 0) > 0)
   );
 }
 
@@ -49,6 +49,9 @@ export function planRegistryMigration(
 ): { file: WorkspacesFile; renames: ProjectIdRename[] } {
   const renames: ProjectIdRename[] = [];
   const workspaces = data.workspaces.map((ws) => {
+    // 2.1.58 (M31 `9yq1j7e8`): only registry entries migrate — an entry with a
+    // home carries no hash ids, and its slots never move to `~/.claude4spec/`.
+    if (ws.home !== undefined || ws.projects === undefined) return ws;
     const slotIds = listSlotIds(path.join(baseDir, ws.name));
     const hashIds = new Set(ws.projects.map((p) => p.id));
     const assigned = new Set<string>();

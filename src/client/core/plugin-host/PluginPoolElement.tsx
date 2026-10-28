@@ -1,19 +1,21 @@
 import { useQuery } from '@tanstack/react-query';
 import { metaApi, type PluginPackageRecord } from '../../lib/api.js';
 
+/** The query of the base diagnostics — process-level, no project in the key. */
+export const BASE_PLUGINS_QUERY_KEY = ['plugins-base-meta'] as const;
+
 /**
- * M26 §6 — Entities section, axis B (pool composition). READ-ONLY in v1: the
- * composition of the effective entity pool (`base ∪ overlay`) is diagnostics
- * only — editing the pool from the UI is Phase 3. Surfaces, per package: load
- * status, layer (base/overlay), trust state, contributed types, and any
- * cross-layer `shadowed` types with both origins.
- *
- * Workspace/npm `plugins[]` changes need a process restart (v1); a committed
- * project-local plugin becomes available after a ProjectContext rebuild behind
- * the `trustProjectPlugins` gate. Neither is editable here.
+ * M33 `jz4lgiy7` (2.1.58) — the Plugin pool card of the WORKSPACE settings page:
+ * a read of the BASE, the workspace's plugin pool (axis B), from the
+ * process-level diagnostics `GET /api/_meta/plugins` — independent of any
+ * project. One row per base package with its state (`loaded` / `skipped` …)
+ * and reason; an `incompatible` one points at `c4s plugins doctor`. The card is
+ * not on a project page, so it shows no project overlay (the per-project
+ * `/_meta/plugins` reports that). Nothing is edited here: the package list is
+ * the workspace description's, packages are installed by the user.
  */
 export function PluginPoolElement() {
-  const { data, isLoading } = useQuery({ queryKey: ['plugins-meta'], queryFn: () => metaApi.plugins() });
+  const { data, isLoading } = useQuery({ queryKey: BASE_PLUGINS_QUERY_KEY, queryFn: () => metaApi.basePlugins() });
 
   return (
     <>
@@ -25,35 +27,12 @@ export function PluginPoolElement() {
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-2">
             {data.packages.map((p) => (
-              <PackageRow key={`${p.layer ?? 'base'}:${p.package}`} record={p} />
+              <PackageRow key={p.package} record={p} />
             ))}
           </div>
 
-          {data.shadowed.length > 0 ? (
-            <div
-              className="rounded-md px-3 py-2 text-[11.5px]"
-              style={{ background: 'rgba(168, 112, 51, 0.12)', border: '1px solid var(--c-hair)' }}
-            >
-              <div className="font-medium mb-1" style={{ color: '#a87033' }}>
-                Shadowed types (project-local overrides base)
-              </div>
-              {data.shadowed.map((s) => (
-                <div key={s.type} className="font-mono" style={{ color: 'var(--c-muted)' }}>
-                  {s.type}: {s.overlayOrigin} ▸ shadows {s.baseOrigin}
-                </div>
-              ))}
-            </div>
-          ) : null}
-
           <p className="text-[11px]" style={{ color: 'var(--c-subtle)' }}>
             Host API {data.hostApiVersion}
-            {data.localPluginsPresent
-              ? data.trust === true
-                ? ' · project plugins trusted'
-                : data.trust === false
-                  ? ' · project plugins not trusted'
-                  : ' · project plugins awaiting trust decision'
-              : ''}
           </p>
         </div>
       )}
@@ -69,25 +48,18 @@ const STATUS_STYLE: Record<PluginPackageRecord['status'], { bg: string; fg: stri
 };
 
 function PackageRow({ record }: { record: PluginPackageRecord }) {
-  const layer = record.layer ?? 'base';
   const status = STATUS_STYLE[record.status];
   return (
     <div
       className="rounded-md px-3 py-2"
       style={{ background: 'var(--c-bg)', border: '1px solid var(--c-hair)' }}
+      data-testid="plugin-pool-package"
+      data-package={record.package}
     >
       <div className="flex items-center gap-2">
         <span className="flex-1 min-w-0 truncate text-[13px] font-medium" style={{ color: 'var(--c-ink)' }}>
           {record.package}
         </span>
-        <Pill label={layer} bg="var(--c-hair)" fg="var(--c-muted)" />
-        {layer === 'overlay' && record.trust ? (
-          <Pill
-            label={record.trust}
-            bg={record.trust === 'trusted' ? 'var(--c-accent-soft)' : 'rgba(168, 112, 51, 0.18)'}
-            fg={record.trust === 'trusted' ? 'var(--c-accent)' : '#a87033'}
-          />
-        ) : null}
         <Pill label={record.status} bg={status.bg} fg={status.fg} />
       </div>
       {record.contributedTypes && record.contributedTypes.length > 0 ? (

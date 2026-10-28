@@ -107,7 +107,8 @@ describe('M33 — base hot-reload of an ESM-only package', () => {
     // reaction on the process-scope `plugins:base` mount reloads the package and
     // records a `plugin:reloaded` broadcast. `reloadPlugin` uses the REAL dynamic import + content-hash
     // cache-bust; `resolveEntry` points at the fixture's `import` entry — exactly
-    // what `resolveBaseEntry` yields for an installed ESM-only package.
+    // what the base locator (`workspace-packages.ts`) yields for an ESM-only package
+    // installed in the workspace `node_modules`.
     const broadcasts: Array<{ kind: string; name: string; version: string; tier: string }> = [];
     let chain: Promise<void> = Promise.resolve();
     const onChange = (): void => {

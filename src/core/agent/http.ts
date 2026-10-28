@@ -38,6 +38,9 @@ export type AgentErrorCode =
   | 'AMBIGUOUS_WORKSPACE'
   | 'PROJECT_ID_NOT_FOUND'
   | 'AMBIGUOUS_PROJECT'
+  // 2.1.58 (M11 `tcs1yuku`) — `cli` channel only, raised by the resolver.
+  | 'WORKSPACE_NOT_REGISTERED'
+  | 'WORKSPACE_FILE_INVALID'
   | 'PROJECT_NOT_IN_WORKSPACE'
   | 'SERVER_NOT_RUNNING'
   | 'SERVER_NOT_RECOGNIZED'
@@ -161,8 +164,10 @@ export function encodeArtifactPath(p: string): string {
  * Every URL is prefixed `/api/projects/<id>`, because a server serves N projects.
  *
  * The only files the `c4s` process reads locally: `.claude4spec/config.json`
- * (the marker) and `~/.claude4spec/workspaces.json`. They serve to FIND the
- * server, never to read content.
+ * (the marker, existence only), `~/.claude4spec/workspaces.json`, the
+ * `<home>/.claude4spec/workspace.json` of every registered workspace with a
+ * home, and files named in argv. They serve to FIND the server, never to read
+ * content.
  */
 export async function resolveServer(params: {
   project?: string;

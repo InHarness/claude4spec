@@ -161,6 +161,50 @@ describe('project-create window — invalid path (M31 m31l5001)', () => {
     expect((button('Add project') as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it('[section:m31l5001] the directory browser opens where the server starts it (the home directory of a workspace that has one): its first listing asks without a path', async () => {
+    await render();
+    const listings = requests.filter((r) => r.url.startsWith('/api/workspace/fs'));
+    expect(listings[0]).toEqual({ url: '/api/workspace/fs', method: 'GET', body: undefined });
+    // The window shows the directory the server answered with, and preselects it.
+    expect(host.textContent).toContain('/home/u');
+    expect(cwdInput().value).toBe('/home/u');
+  });
+
+  it('[section:m31l5001] in a workspace with a home directory the refusals PROJECT_PATH_OUTSIDE_HOME and PROJECT_PATH_IS_HOME are shown inline in the window, not as a toast', async () => {
+    postAnswer = {
+      status: 400,
+      body: {
+        error: {
+          code: 'PROJECT_PATH_OUTSIDE_HOME',
+          message: '/tmp/elsewhere lies outside the home directory of the workspace (/home/u); a project of a workspace with a home lies inside it',
+        },
+      },
+    };
+    await render();
+    await submitPath('/tmp/elsewhere');
+    expect(host.textContent).toContain('/tmp/elsewhere lies outside the home directory of the workspace (/home/u)');
+    expect(toasts).toEqual([]);
+    expect(closed).toEqual([]);
+    expect(nav.hrefs).toEqual([]);
+
+    postAnswer = {
+      status: 400,
+      body: {
+        error: {
+          code: 'PROJECT_PATH_IS_HOME',
+          message: '/home/u is the home directory of the workspace, which cannot be a project of it',
+        },
+      },
+    };
+    await submitPath('/home/u');
+    expect(host.textContent).toContain('/home/u is the home directory of the workspace, which cannot be a project of it');
+    expect(host.textContent).not.toContain('lies outside the home directory');
+    expect(toasts).toEqual([]);
+    expect(closed).toEqual([]);
+    expect(nav.hrefs).toEqual([]);
+    expect(posts().map((p) => p.body)).toEqual([{ cwd: '/tmp/elsewhere' }, { cwd: '/home/u' }]);
+  });
+
   it('a valid directory registers and loads the new project route', async () => {
     await render();
     await submitPath('/home/u/repo');

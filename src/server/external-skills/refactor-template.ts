@@ -1,5 +1,5 @@
 import type { ExternalSkillContext } from './types.js';
-import { SERVER_REQUIRED_BLOCK, skillIdentity, staleAddressBlock } from './server-required.js';
+import { SERVER_REQUIRED_BLOCK, skillIdentity, staleAddressBlock, WORKSPACE_NOT_REGISTERED_STOP } from './server-required.js';
 
 export const REFACTOR_FRONTMATTER = `---
 name: c4s-refactor
@@ -160,6 +160,8 @@ Print and **finish** (no execution):
 ${SERVER_REQUIRED_BLOCK}
 
 ${staleAddressBlock(ctx)}
+
+${WORKSPACE_NOT_REGISTERED_STOP}
 
 Reading the spec and analyzing the code are not an exception to it: \`resolve\`, the \`list-*\` readers and \`single_element\` delegate to the server exactly as \`c4s ask\` / \`c4s agent\` do. With the server down this skill cannot detect drift, let alone route it.
 

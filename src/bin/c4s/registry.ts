@@ -15,8 +15,10 @@ import type { CliErrorCode } from './errors.js';
  *   - `registry-write`    — mutates `~/.claude4spec/workspaces.json` directly (M31
  *                           `trust-plugins`): no project resolution, no db-slot, no
  *                           server; the project record is created on demand rather
- *                           than looked up.
- *   - `registry-read`     — server-free READ of the same global registry (M31
+ *                           than looked up. Never the committed `workspace.json`
+ *                           of a home — the CLI does not write it.
+ *   - `registry-read`     — server-free READ of the same global registry, with the
+ *                           `workspace.json` of every registered home (M31
  *                           `list-workspaces`): no server, no db-slot, no project
  *                           `cwd` files, no project/workspace resolver. The mirror
  *                           of `registry-write` minus the write path, and without
@@ -59,6 +61,9 @@ export const SHARED_RESOLVER_CODES: readonly CliErrorCode[] = [
   'PROJECT_ID_NOT_FOUND',
   'AMBIGUOUS_WORKSPACE',
   'AMBIGUOUS_PROJECT',
+  // 2.1.58 (M11 `tcs1yuku`): the views of a workspace with a home directory.
+  'WORKSPACE_NOT_REGISTERED',
+  'WORKSPACE_FILE_INVALID',
 ];
 
 /**

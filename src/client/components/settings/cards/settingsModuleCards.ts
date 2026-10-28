@@ -16,6 +16,7 @@ export const SETTINGS_MODULE_CARDS: SettingsContribution = {
       group: 'System',
       weight: 10,
       owner: 'settings',
+      scope: 'project',
     },
     {
       anchor: 'index-status',
@@ -25,6 +26,7 @@ export const SETTINGS_MODULE_CARDS: SettingsContribution = {
       group: 'System',
       weight: 20,
       owner: 'settings',
+      scope: 'project',
     },
   ],
   elements: [

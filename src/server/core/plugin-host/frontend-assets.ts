@@ -5,10 +5,12 @@
  * owns the rules the manifest builder (`frontend-manifest.ts`) and both asset
  * routes share, so they cannot diverge (L11 `9g96q3pp`):
  *
- *   • Three sources. A project-local OVERLAY (`<cwd>/.claude4spec/plugins/<folder>/`,
- *     behind `trustProjectPlugins`), an NPM PACKAGE of the workspace (ungated — a
- *     consciously installed package is trusted) and a BUILT-IN ENVELOPE (ungated —
- *     it lives in the host repo).
+ *   • Three sources. A project-local OVERLAY (`.claude4spec/plugins/<folder>/` of
+ *     the project directory, behind `trustProjectPlugins`), an NPM PACKAGE of the
+ *     workspace, installed in the workspace `node_modules` (2.1.58, M31
+ *     `vzkw903j`; ungated — a consciously installed package is trusted; the
+ *     server never installs one) and a BUILT-IN ENVELOPE (ungated — it lives in
+ *     the host repo).
  *   • Two addresses, one per tier (2.1.22). The base tier (npm package, envelope)
  *     is served by the process-global `GET /api/plugins/:name/:asset` and depends
  *     on no project; the overlay is served by the project route
@@ -44,7 +46,6 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   enumerateOverlayPackages,
   projectPluginsDir,
@@ -73,60 +74,16 @@ function packageVersion(pkg: PackageManifest | null): string {
   return pkg && typeof pkg.version === 'string' ? pkg.version : '0.0.0';
 }
 
-/**
- * Walk up from `startDir` to the NEAREST ancestor that owns a readable
- * `package.json` — the package root — or `null` if none within 12 levels. The
- * caller has already proved the package's identity (`import.meta.resolve`
- * resolved a DECLARED subpath of `packageName`), so we deliberately do NOT gate
- * on the manifest `name`: a workspace plugin whose install/dir name differs from
- * its real (e.g. scoped) `package.json` `name` must still resolve to its root.
- * The 12-level bound is a cheap runaway guard for a pathological deep tree.
- */
-export function nearestPackageRoot(startDir: string): string | null {
-  let dir = startDir;
-  for (let i = 0; i < 12; i++) {
-    if (readPackageJson(path.join(dir, 'package.json'))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return null;
-}
-
 // ─── Workspace tier (phase 3) ───────────────────────────────────────────────
 
-/** Resolve an installed workspace plugin package's absolute root dir, or null. */
-export type WorkspaceRootResolver = (packageName: string) => string | null;
-
 /**
- * Default resolver. Two reasons `createRequire(...).resolve` is wrong here:
- *   1. `require.resolve('<pkg>/package.json')` — a package with an `exports` map
- *      blocks undeclared subpaths like `./package.json`; and
- *   2. `require.resolve` uses CJS conditions (`require`/`node`/`default`), but a
- *      modern plugin's `exports` is import-only (`{ types, import }`) ⇒ "No
- *      exports main defined".
- * So resolve a DECLARED ESM subpath with `import.meta.resolve` (which uses the
- * `import` condition) — that resolution alone PROVES identity — then walk up to
- * the nearest directory owning a `package.json` (the package root) via
- * `nearestPackageRoot`. We do NOT re-check that `package.json`'s `name` equals
- * the requested id: a plugin installed under an unscoped dir name whose real
- * `name` is scoped (`@scope/pkg`) would otherwise never match and silently lose
- * its frontend. Try `./frontend` first (the only subpath we serve), then `.`.
+ * Resolve an installed workspace plugin package's absolute root dir, or null.
+ * 2.1.58: the server passes the base locator's `packageRoot`
+ * (`workspace-packages.ts`) — the package in the workspace `node_modules`,
+ * the same place the loader imported its backend from. There is no default:
+ * resolving from the host's own location would find a different package pool.
  */
-const defaultWorkspaceRoot: WorkspaceRootResolver = (packageName) => {
-  let entryUrl: string | undefined;
-  for (const spec of [`${packageName}/frontend`, packageName]) {
-    try {
-      entryUrl = import.meta.resolve(spec);
-      break;
-    } catch {
-      /* try the next entry specifier */
-    }
-  }
-  if (!entryUrl) return null;
-  return nearestPackageRoot(path.dirname(fileURLToPath(entryUrl)));
-};
-
+export type WorkspaceRootResolver = (packageName: string) => string | null;
 
 // ─── Sources ────────────────────────────────────────────────────────────────
 
@@ -209,10 +166,7 @@ export function overlayFrontendSources(cwd: string): FrontendSource[] {
 }
 
 /** The frontend of one workspace npm package (`listed` = its name in the workspace list). */
-export function npmFrontendSource(
-  listed: string,
-  resolveRoot: WorkspaceRootResolver = defaultWorkspaceRoot,
-): FrontendSource | null {
+export function npmFrontendSource(listed: string, resolveRoot: WorkspaceRootResolver): FrontendSource | null {
   const root = resolveRoot(listed);
   if (!root) return null;
   const pkg = readPackageJson(path.join(root, 'package.json'));
@@ -254,7 +208,7 @@ export interface FrontendPool {
   /** The project's overlay. Absent ⇒ base tier only (the process-global route). */
   overlay?: OverlayFrontendPool;
   /** Workspace npm packages (the resolved list `loadWorkspacePlugins` consumed). */
-  npm?: { packages: readonly string[]; loaded: ReadonlySet<string>; resolveRoot?: WorkspaceRootResolver };
+  npm?: { packages: readonly string[]; loaded: ReadonlySet<string>; resolveRoot: WorkspaceRootResolver };
   /** Built-in envelopes discovered under `<hostRoot>/plugins/`. */
   envelopes?: { list: readonly BuiltinEnvelope[]; loaded: ReadonlySet<string> };
 }
@@ -286,9 +240,21 @@ export interface FrontendBaseDeps {
   pluginRecords: ReadonlyArray<FrontendLoadRecord>;
   workspacePackages?: readonly string[];
   envelopes?: readonly BuiltinEnvelope[];
-  /** Test seam: how a workspace package's root is found (default: `import.meta.resolve`). */
-  resolveWorkspaceRoot?: WorkspaceRootResolver;
+  /**
+   * How a workspace package's root is found — the base locator's `packageRoot`
+   * (the workspace `node_modules`). Required: a route or a context without it
+   * would announce or serve no workspace package, silently — so a missing one is
+   * a type error, never a default.
+   */
+  resolveWorkspaceRoot: WorkspaceRootResolver;
 }
+
+/**
+ * The base tier without its load records — what `startServer` builds ONCE and
+ * hands, as the same object, to the process-global asset route and to every
+ * project context's manifest.
+ */
+export type FrontendBaseTier = Omit<FrontendBaseDeps, 'pluginRecords'>;
 
 /** The base part of the pool, read now from the base deps. */
 export function basePool(deps: FrontendBaseDeps): FrontendPool {

@@ -77,13 +77,6 @@ describe('bootstrapProject — system roots', () => {
     for (const dir of ['pages', 'docs/adr']) expect(fs.statSync(path.join(cwd, dir)).isDirectory()).toBe(true);
   });
 
-  it('the CLI --pages override names the base root dir the activation creates', () => {
-    const registry = new WorkspaceRegistry(dir);
-    const ws = registry.selectOrCreate({ name: 'default' });
-    bootstrapProject(registry, ws, cwd, { pagesDir: 'spec' });
-    expect(fs.statSync(path.join(cwd, 'spec')).isDirectory()).toBe(true);
-  });
-
   it('[ac:ac-bootstrap-tworzy-aktualizuje-gitignore] with git disabled the managed .gitignore block lists the gitignore-flagged roots, then *.deprecated', () => {
     boot();
     const text = fs.readFileSync(path.join(cwd, '.gitignore'), 'utf8');

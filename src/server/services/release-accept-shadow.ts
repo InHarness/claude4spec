@@ -56,7 +56,8 @@ import { readConfig } from '../config.js';
 import type { WatchEventKind } from '../fs/watcher.js';
 import type { SnapshotData } from '../serialization/types.js';
 import type { GitHeldRepo, GitLockHandle, GitService } from './git.js';
-import { acceptanceFlags, gitUnavailable, isInsideOrEqual, type ShadowDiffScope } from './release-shadow-diff.js';
+import { acceptanceFlags, gitUnavailable, type ShadowDiffScope } from './release-shadow-diff.js';
+import { isPathWithin } from '../workspace/registry.js';
 import { DomainError } from './tags.js';
 
 /** One entity version the shadow brings — written by the release transaction (`mghvzn0w`). */
@@ -184,9 +185,9 @@ const dirty = (paths: string[]): DomainError =>
  */
 function pendingPathspecs(scope: ShadowDiffScope, changedPaths: readonly string[]): string[] {
   const whole = scope.roots.pathspecs;
-  const others = scope.registryRoots.filter((root) => !whole.some((dir) => isInsideOrEqual(dir, root.dir)));
+  const others = scope.registryRoots.filter((root) => !whole.some((dir) => isPathWithin(dir, root.dir)));
   const colliding = changedPaths.filter(
-    (abs) => !whole.some((dir) => isInsideOrEqual(dir, abs)) && others.some((root) => isInsideOrEqual(root.dir, abs)),
+    (abs) => !whole.some((dir) => isPathWithin(dir, abs)) && others.some((root) => isPathWithin(root.dir, abs)),
   );
   return [...whole, ...colliding];
 }

@@ -2,7 +2,8 @@ import { RootRegistry } from '../roots/registry.js';
 import { PAGES_KIND } from '../../shared/root-kinds.js';
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadOrCreateConfig, migrateConfigToV3, migrateConfigToV4, readConfig, type Config } from '../config.js';
+import { loadOrCreateConfig, migrateConfigToV3, migrateConfigToV4, type NormalizedConfig } from '../config.js';
+import { toProjectPath, workspaceFilePath } from './home-workspace.js';
 import { ensureGitignore } from '../../bin/gitignore.js';
 import { BOOTSTRAP_TEMPLATE } from '../../bin/bootstrap-template.js';
 import { migrateLegacyDbIfNeeded } from './db-migration.js';
@@ -10,21 +11,16 @@ import { recoverPendingRootRename } from '../root-renames.js';
 import type { WorkspaceRegistry } from './registry.js';
 import type { ProjectRecord, WorkspaceRecord } from './types.js';
 
-export interface BootstrapOptions {
-  /** CLI `--name` (sticky config.name on first bootstrap). */
-  name?: string;
-  /** CLI `--pages` (sticky config.pagesDir on first bootstrap). */
-  pagesDir?: string;
-  /** CLI `--remote-url` (sticky config.remoteApiUrl on first bootstrap). */
-  remoteApiUrl?: string | null;
+/** What the activation's file steps (M01 `dsh8ezbz` steps 1–6) leave behind. */
+export interface ActivationResult {
+  config: NormalizedConfig;
+  configPath: string;
+  /** Did THIS activation write `config.json`? */
+  configCreated: boolean;
 }
 
-export interface BootstrapResult {
+export interface BootstrapResult extends ActivationResult {
   project: ProjectRecord;
-  config: Config;
-  configPath: string;
-  /** Did THIS run write `config.json`? Reported by the launcher (`(created)`). */
-  configCreated: boolean;
 }
 
 /**
@@ -51,94 +47,179 @@ export function ensureWelcomePage(cwd: string, pagesDir: string): void {
 }
 
 /**
- * M31: per-project activation hook (absorbed from src/bin/claude4spec.ts) —
- * runs for the CLI-started `--cwd` project AND for every
- * `POST /api/workspace/projects`. Idempotent end-to-end: re-activating an
- * existing project changes nothing.
- *
- * Sequence: mkdir cwd → config (create or load) → config v3 migration (carry
- * port/mode to the registry, first-wins) → .gitignore → mkdir of every root in
- * the root registry → welcome page (onboarding closed only) → registry
- * registration (creates the DB slot) → legacy DB relocation.
- * (0.2.93: no integration artifact for external agents lands on disk at all —
- * neither a skill nor an MCP config entry; the latter is served on demand by
- * `GET /api/projects/:id/_meta/mcp-config`.) (0.1.56: the welcome page is written
- * here only when onboarding is already closed — otherwise at onboarding close.
- * 0.1.104: external skills generation moved
- * off this bootstrap hook entirely — see `c4s install-skills` / M22's
- * `buildExternalSkillsBundle`, both on-demand.)
+ * 2.1.58 (M01 `7yzhxgmw`, `dsh8ezbz` step 1): a directory whose `.claude4spec/`
+ * carries `workspace.json` is the home of a workspace (M31 `k1gjmnhy`), not a
+ * project — its activation is refused before anything is written.
  */
-export function bootstrapProject(
+export class WorkspaceHomeNotProjectError extends Error {
+  readonly code = 'WORKSPACE_HOME_NOT_PROJECT';
+  constructor(readonly dir: string) {
+    super(`${dir} is the home directory of a workspace (its .claude4spec/ carries workspace.json), not a project`);
+    this.name = 'WorkspaceHomeNotProjectError';
+  }
+}
+
+/**
+ * 2.1.58 (M01 `dsh8ezbz`): the activation's file steps for one project
+ * directory — idempotent, each step creates only what is missing, and no flag
+ * is read: the directory comes from the workspace view, the config from the
+ * file and the defaults alone.
+ *
+ *  1. refuse a workspace home (`.claude4spec/workspace.json`);
+ *  2. create the internal `.claude4spec/` (`loadOrCreateConfig`);
+ *  3. merge the config — rename recovery, the v4/v3 migrations (v3 carries a
+ *     legacy port/mode to the registry, first-wins), then a missing file is an
+ *     empty contribution and a present one is validated (malformed JSON or a
+ *     type mismatch throws, never an empty config);
+ *  4. write a fresh file from the defaults (bootstrap key set only, onboarding
+ *     open) when there was none — an existing file is never rewritten;
+ *     the managed `.gitignore` block follows the roots;
+ *  5. create the directory of every registry root;
+ *  6. the welcome page, only once onboarding has closed.
+ *
+ * The database (step 7) and the context (8–9) follow in {@link activateProject}
+ * and the context build.
+ */
+export function activateProjectDir(
   registry: WorkspaceRegistry,
   workspace: WorkspaceRecord,
   cwd: string,
-  opts: BootstrapOptions = {},
-): BootstrapResult {
-  fs.mkdirSync(cwd, { recursive: true });
+): ActivationResult {
+  if (fs.existsSync(workspaceFilePath(cwd))) throw new WorkspaceHomeNotProjectError(cwd);
   // 0.2.8: migrations run BEFORE `loadOrCreateConfig`, not after. That function
   // validates the file it reads, so on exactly the outdated shapes a migration
-  // exists to repair it threw first and the repair never ran — the project
-  // stayed unloadable with the fix sitting one line below the throw. Both
-  // migrations no-op on a missing file, so a fresh bootstrap is unaffected.
+  // exists to repair it threw first and the repair never ran.
   //
   // v4 BEFORE v3, deliberately. Both end by reading the config back, so
   // whichever runs first must leave the file loadable — and v4 is the one that
-  // repairs the shapes the loader rejects (incomplete `roots[]`). Running v3
-  // first meant its own read threw on exactly those files. v3 still harvests
-  // `port`/`mode` correctly afterwards: its already-v3 check requires their
-  // absence, not just a version number.
+  // repairs the shapes the loader rejects (incomplete `roots[]`). v3 still
+  // harvests `port`/`mode` correctly afterwards: its already-v3 check requires
+  // their absence, not just a version number.
   //
-  // 0.1.96 config v4: map the legacy `pagesDir` scalar to the built-in `pages`
-  // root (config.roots[]); 0.2.8 also carries a legacy `git.syncCommitOnRelease`.
-  // Idempotent.
   // 0.2.101: a root rename commits the config and the transition registry as two
   // writes. If the process died between them, this replays the journal — finishing
   // the rename or undoing it entirely — BEFORE anything reads `roots[]`.
   recoverPendingRootRename(cwd);
   migrateConfigToV4(cwd);
-  // M31 config v3: physically remove pre-v3 port/mode; harvested values seed
-  // the workspace registry (first-wins — an existing defaultPort stays).
   const { carried } = migrateConfigToV3(cwd);
   registry.carryDefaults(workspace.name, carried);
-  const { created: configCreated, path: configFilePath } = loadOrCreateConfig(cwd, {
-    name: opts.name,
-    pagesDir: opts.pagesDir,
-    remoteApiUrl: opts.remoteApiUrl,
-  });
-  // Re-read AFTER loadOrCreateConfig so a freshly seeded file (and any CLI
-  // overrides it applied) is reflected — the migration's own return value
-  // predates that write.
-  const config = readConfig(cwd);
+  const { created: configCreated, path: configFilePath, config } = loadOrCreateConfig(cwd);
 
   const rootRegistry = new RootRegistry(config.roots);
   ensureGitignore(cwd, { roots: rootRegistry.list(), gitEnabled: config.git.enabled });
   // 2.1.8 (M31 bootstrap): activation creates the directory of EVERY registry
   // root — the user roots (`kind: pages`) and the system roots, none of the
   // latter written to `config.json`. 2.1.9: which roots are system roots is the
-  // registry's answer — every root of a kind with source `code`, at its fixed
-  // `.claude4spec/<kind>` — not a list kept here.
-  // The CLI `--pages` override names the base root's directory for this run, so
-  // that is the one created. The context build mkdirs again (idempotent) for
-  // roots added later without a re-activation. `tags.json` stays lazy.
+  // registry's answer. The context build mkdirs again (idempotent) for roots
+  // added later. `tags.json` stays lazy.
   let baseDir: string | null = null;
   for (const root of rootRegistry.list()) {
-    const isBase = root.kind === PAGES_KIND && root.builtin;
-    const dir = isBase && opts.pagesDir ? opts.pagesDir : root.dir;
-    if (isBase) baseDir = dir;
-    fs.mkdirSync(path.resolve(cwd, dir), { recursive: true });
+    if (root.kind === PAGES_KIND && root.builtin) baseDir = root.dir;
+    fs.mkdirSync(path.resolve(cwd, root.dir), { recursive: true });
   }
   // M01 activation, the welcome-page step: only once onboarding has closed. A
   // fresh file says it has not (onboarding writes the page when it closes); a
   // file without the field — a project from before onboarding — reads as closed
   // and gets the page here. `ensureWelcomePage` leaves a non-empty space alone.
   if (config.onboardingCompleted && baseDir !== null) ensureWelcomePage(cwd, baseDir);
+
+  return { config, configPath: configFilePath, configCreated };
+}
+
+/**
+ * 2.1.58 (M01 `dsh8ezbz`, M31 `m31ctx001`): the lazy activation of a REGISTERED
+ * project — run by the context cache's build on the first request to it, never
+ * before listen (no project is an exception). Its failure (a home directory, a
+ * broken `config.json`, EACCES) is that build's failure: the project answers
+ * `500 PROJECT_BUILD_FAILED`, the process and every other project keep serving.
+ * Step 7's legacy move: a database found in the project directory moves to the
+ * workspace slot, it is not rebuilt.
+ */
+export function activateProject(
+  registry: WorkspaceRegistry,
+  workspace: WorkspaceRecord,
+  project: ProjectRecord,
+): ActivationResult {
+  const result = activateProjectDir(registry, workspace, project.cwd);
+  migrateLegacyDbIfNeeded(registry, workspace, project.cwd, project.id);
+  return result;
+}
+
+/**
+ * The projects this process has activated — keyed by id AND directory, so a
+ * project whose directory changed is activated again. One record per process,
+ * shared by the registration route ({@link bootstrapProject}) and the cache's
+ * build ({@link activatingBuild}): a project added through
+ * `POST /api/workspace/projects` was activated there, so its first build only
+ * builds.
+ */
+export class ActivatedProjects {
+  private readonly keys = new Set<string>();
+  private key(project: ProjectRecord): string {
+    return `${project.id}\0${path.resolve(project.cwd)}`;
+  }
+  has(project: ProjectRecord): boolean {
+    return this.keys.has(this.key(project));
+  }
+  add(project: ProjectRecord): void {
+    this.keys.add(this.key(project));
+  }
+}
+
+/**
+ * 2.1.58 (M31 `m31ctx001`): the context cache's build — the activation, then the
+ * context. `startServer` hands the cache exactly this, so no project is
+ * activated before its first request, and an activation that throws (sync)
+ * rejects the build like any build failure (retried after the failed-build
+ * window). A project is activated once per process — a later rebuild of its
+ * context (invalidation, eviction) is a build, not a new activation — unless
+ * its directory changed meanwhile. ASSUMPTION:dev-0202 — the rebuild after an
+ * invalidation or LRU eviction does not re-run the activation's file steps.
+ * `activated` is the process's record, shared with {@link bootstrapProject}.
+ */
+export function activatingBuild<T>(
+  registry: WorkspaceRegistry,
+  workspace: WorkspaceRecord,
+  build: (project: ProjectRecord) => Promise<T>,
+  activated: ActivatedProjects = new ActivatedProjects(),
+): (project: ProjectRecord) => Promise<T> {
+  return async (project) => {
+    if (!activated.has(project)) {
+      activateProject(registry, workspace, project);
+      activated.add(project);
+    }
+    return build(project);
+  };
+}
+
+/**
+ * M31: registration with activation — `POST /api/workspace/projects`. In a
+ * workspace with a home the directory is checked against the home first
+ * (M31 `m31boot01`: outside it → `PROJECT_PATH_OUTSIDE_HOME`, the home itself →
+ * `PROJECT_PATH_IS_HOME`), so a refused path writes nothing at all; so is a
+ * workspace whose stored entry is gone (`WorkspaceEntryGoneError`). The file
+ * steps run BEFORE the registration, so a refused directory (a workspace home,
+ * a broken config) is never registered, and the id is minted from the name the
+ * config now carries. Idempotent end-to-end: re-activating an existing project
+ * changes nothing. The project lands in `activated` (the record the cache's
+ * build reads), so its first request builds without activating again.
+ * (0.2.93: no integration artifact lands on disk; 0.1.104: external skills are
+ * on-demand.)
+ */
+export function bootstrapProject(
+  registry: WorkspaceRegistry,
+  workspace: WorkspaceRecord,
+  cwd: string,
+  activated?: ActivatedProjects,
+): BootstrapResult {
+  if (workspace.home !== undefined) toProjectPath(workspace.home, cwd);
+  // rev-0022: a view whose stored entry is gone (detached by another process of
+  // this machine) is refused before the file steps touch the directory;
+  // `registerProject` re-checks under the registry lock for a racing detach.
+  registry.assertStoredEntry(workspace);
+  const activation = activateProjectDir(registry, workspace, cwd);
   const project = registry.registerProject(workspace, cwd);
   migrateLegacyDbIfNeeded(registry, workspace, cwd, project.id);
-
-  return {
-    project,
-    config,
-    configPath: configFilePath,
-    configCreated,
-  };
+  activated?.add(project);
+  return { project, ...activation };
 }

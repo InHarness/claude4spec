@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useConfig } from '../../hooks/useConfig.js';
 import { SettingsCardFrame } from './SettingsCardFrame.js';
-import { assembleSettings, type AssembledCard, type SettingsContribution } from './registry.js';
+import { assembleSettings, type AssembledCard, type SettingsContribution, type SettingsScope } from './registry.js';
 import { SETTINGS_MODULE_CARDS } from './cards/settingsModuleCards.js';
 import { REMOTE_ACCOUNT_SETTINGS } from '../account/UserCardElement.js';
 import { APPEARANCE_SETTINGS } from '../shell/AppearanceElement.js';
@@ -15,12 +15,13 @@ import { SPEC_SKILLS_SETTINGS } from '../spec-skills/specSkillsSettings.js';
 import { PLUGIN_HOST_SETTINGS } from '../../core/plugin-host/pluginSettings.js';
 
 /**
- * 0.2.113 — every module that declares something on `/settings`. The order here
- * is irrelevant: the page orders by group → card weight → element weight.
+ * 0.2.113 — every module that declares something on a settings page. The order
+ * here is irrelevant: a page orders by group → card weight → element weight.
  *
  * 2.1.21 (M26 `7f76eszm`): this list IS the card and element registry — the
  * layer's `Karty`/`Elementy` tables plus the implementor's own cards (About,
- * Index status). No cards are generated for plugins.
+ * Index status). No cards are generated for plugins. 2.1.58: one registry, two
+ * pages — each card's scope picks the project or the workspace settings page.
  *
  * 2.1.50: a function, not a module-level array. `pluginSettings.ts` reaches
  * this module back through `runtime/boot-plugins.ts` → `tiptap/mountFrontend.ts`
@@ -44,24 +45,20 @@ export function staticSettingsContributions(): SettingsContribution[] {
   ];
 }
 
-// Assembled once, on the page's first render (not at module load — see
+// Each page assembled once, on its first render (not at module load — see
 // `staticSettingsContributions`). A collision among the declarants is still a
 // registration error that fails loudly; `catalog.test.ts` assembles the same list.
-let cards: AssembledCard[] | null = null;
-function settingsCards(): AssembledCard[] {
-  return (cards ??= assembleSettings(staticSettingsContributions()));
+const assembled: Partial<Record<SettingsScope, AssembledCard[]>> = {};
+export function settingsCards(scope: SettingsScope): AssembledCard[] {
+  return (assembled[scope] ??= assembleSettings(staticSettingsContributions(), scope));
 }
 
 /**
- * M26 → 0.2.113 — the full-page Settings surface at `/settings`, ASSEMBLED from
- * the declared cards and elements. One generic hash parameter, `#<card anchor>`,
- * smooth-scrolls to that card.
+ * The page's one hash parameter, `#<card anchor>`: smooth-scroll to that card,
+ * on landing and on every hash change. `ready` re-runs it once the cards exist
+ * (a hard load of the project page lands before the config does).
  */
-export function SettingsPage() {
-  const { data: config } = useConfig();
-
-  const visibleCards = config ? settingsCards().filter((c) => !c.decl.visible || c.decl.visible(config)) : [];
-
+export function useScrollToCardHash(ready: unknown): void {
   useEffect(() => {
     const scrollToHash = () => {
       const hash = window.location.hash.replace(/^#/, '');
@@ -72,8 +69,21 @@ export function SettingsPage() {
     scrollToHash();
     window.addEventListener('hashchange', scrollToHash);
     return () => window.removeEventListener('hashchange', scrollToHash);
-    // Re-run once the cards exist: a hard load lands here before the config does.
-  }, [visibleCards.length]);
+  }, [ready]);
+}
+
+/**
+ * M26 → 0.2.113 — the PROJECT settings page at `/settings`, ASSEMBLED from the
+ * declared cards and elements of scope `project` (2.1.58: a `workspace` card
+ * never renders here — it stands on `/workspace/settings`). One generic hash
+ * parameter, `#<card anchor>`, smooth-scrolls to that card.
+ */
+export function SettingsPage() {
+  const { data: config } = useConfig();
+
+  const visibleCards = config ? settingsCards('project').filter((c) => !c.decl.visible || c.decl.visible(config)) : [];
+
+  useScrollToCardHash(visibleCards.length);
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto" style={{ background: 'var(--c-bg)' }}>

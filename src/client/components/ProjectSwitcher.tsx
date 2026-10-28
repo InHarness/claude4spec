@@ -3,24 +3,16 @@ import { ChevronsUpDown, Check, Plus } from 'lucide-react';
 import { PROJECT_ID } from '../lib/api-core.js';
 
 import { Skeleton } from '../ui/Skeleton.js';
+import { useWorkspace } from '../hooks/useWorkspace.js';
 import { openModal, toast } from '../ui/events.js';
 
-interface WorkspaceProject {
-  id: string;
-  name: string;
-  cwd: string;
-  live: boolean;
-}
-
-interface WorkspaceResponse {
-  name: string;
-  projects: WorkspaceProject[];
-}
-
 /**
- * M31: workspace project switcher — replaces the static project-name block in
- * the sidebar header. Lists `GET /api/workspace` projects (plain fetch —
- * workspace scope, NOT the project-prefixed apiFetch); picking one does a
+ * M31: workspace project switcher — the `Nagłówek` slot entry of the PROJECT
+ * route (sidebar header); the workspace route frame carries
+ * `WorkspaceHeaderEntry` instead (ASSUMPTION:dev-0701). Lists
+ * `GET /api/workspace` projects through the shared `useWorkspace()` query
+ * (workspace scope, NOT the project-prefixed apiFetch), fetched when the
+ * popover opens and refreshed on every open; picking one does a
  * full reload to `/p/<id>/`, required because PROJECT_ID / API_BASE /
  * PROJECT_SCOPE / router basepath are module-load constants.
  */
@@ -34,19 +26,10 @@ export function ProjectSwitcher({
   loading?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [workspace, setWorkspace] = useState<WorkspaceResponse | null>(null);
+  // Fetched only while open; each open refetches the (stale) shared entry.
+  const { data: workspace } = useWorkspace({ enabled: open });
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    fetch('/api/workspace')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: WorkspaceResponse | null) => d && setWorkspace(d))
-      .catch(() => {
-        /* keep empty — switcher degrades to the static label */
-      });
-  }, [open]);
 
   // Long workspaces scroll — bring the current project into view on open.
   useEffect(() => {

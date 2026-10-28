@@ -10,6 +10,7 @@ import ReactDOM from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import { createAppRouter } from './router.js';
+import { PROJECT_ID } from './lib/api-core.js';
 import './entities/index.js';
 import { clientPluginHost } from './core/plugin-host/host.js';
 import { mountFrontend } from './tiptap/mountFrontend.js';
@@ -19,10 +20,10 @@ import './styles/index.css';
 import 'highlight.js/styles/atom-one-dark.css';
 
 // Seed plugin host activation before React mounts. Failure is non-fatal —
-// host falls back to "all available active". Decision #11: `/welcome` runs
-// project-less (PROJECT_ID=''), where `apiFetch` cannot build a
-// `/api/projects/<id>` prefix — `seedPluginActivation` skips the request there
-// and applies the same fallback at once.
+// host falls back to "all available active". A workspace route (`/welcome`,
+// M50 `1bd92aq2`) runs project-less by construction (PROJECT_ID=''), where
+// `apiFetch` cannot build a `/api/projects/<id>` prefix — `seedPluginActivation`
+// skips the request there and applies the same fallback at once.
 const activationSeeded = seedPluginActivation();
 
 const router = createAppRouter(queryClient);
@@ -31,8 +32,12 @@ const router = createAppRouter(queryClient);
 // routes (e.g. the transitional `database-table` fragment) as soon as the
 // project's activation list is in — `mountFrontend` mounts only ACTIVE modules
 // (M13 `m13actv0`). A deep link that lands before then waits on the boot window
-// (`pluginBootPending`) instead of rendering "not found".
-void activationSeeded.then(() => mountFrontend(router, clientPluginHost.listEntities()));
+// (`pluginBootPending`) instead of rendering "not found". A workspace document
+// mounts no entity route (`routesForDocument`), so it skips the mount — the
+// ordinary path there (M13 `mbladez6` client step 1b), not an edge case.
+if (PROJECT_ID) {
+  void activationSeeded.then(() => mountFrontend(router, clientPluginHost.listEntities()));
+}
 
 // M33: load runtime plugins WITHOUT blocking first paint (the import map is
 // injected server-side). This re-runs `mountFrontend` once the manifest

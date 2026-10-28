@@ -80,7 +80,7 @@ describe('#skills — Used skill projects (M52 L17, 2.1.9)', () => {
   });
 
   it('the card: anchor #skills in the Agent group (weight 20) with its note; exposure fields only while exposed; the tooltip of Skill name', () => {
-    const [card] = assembleSettings([SPEC_SKILLS_SETTINGS]);
+    const [card] = assembleSettings([SPEC_SKILLS_SETTINGS], 'project');
     expect(card!.decl).toMatchObject({
       anchor: 'skills',
       title: 'Skills',
@@ -130,7 +130,7 @@ describe('#skills — Fork writing style locally (M52 L17, 2.1.9)', () => {
     expect(forkableWritingStyle({ active: 'team', available })).toBeNull();
     expect(forkableWritingStyle({ active: null, available })).toBeNull();
     expect(forkableWritingStyle(undefined)).toBeNull();
-    const [card] = assembleSettings([SPEC_SKILLS_SETTINGS]);
+    const [card] = assembleSettings([SPEC_SKILLS_SETTINGS], 'project');
     const el = card!.elements.find((e) => e.id === 'fork-writing-style')!;
     expect(el).toMatchObject({ kind: 'custom', weight: 80, label: 'Fork writing style locally' });
     // An action, not a config field: no key, so it never joins the card's save.
@@ -189,7 +189,7 @@ describe('#skills — Skill projects from this repository (M52 ybbal0vf, 2.1.57)
   });
 
   it('[section:ybbal0vf] the element sits on the #skills card before the list, shown only while the draft attaches a skill project, and never joins the card\'s save', () => {
-    const [card] = assembleSettings([SPEC_SKILLS_SETTINGS]);
+    const [card] = assembleSettings([SPEC_SKILLS_SETTINGS], 'project');
     const el = card!.elements.find((e) => e.id === 'skill-hook-trust')!;
     expect(el).toMatchObject({ kind: 'custom', weight: 65, label: 'Skill projects from this repository' });
     expect(el.configKey).toBeUndefined();

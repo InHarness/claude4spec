@@ -46,6 +46,8 @@ const REMOTE_SESSION_COLUMNS: Array<Omit<ColumnInfo, 'dflt_value'> & { dflt: str
   { name: 'connected_at', type: 'TEXT', notnull: 1, dflt: "datetime('now')", pk: 0 },
   { name: 'created_at', type: 'TEXT', notnull: 1, dflt: "datetime('now')", pk: 0 },
   { name: 'updated_at', type: 'TEXT', notnull: 1, dflt: "datetime('now')", pk: 0 },
+  // 2.1.58 (063): the issuer of the token, appended by ALTER TABLE — nullable, no default.
+  { name: 'issuer_url', type: 'TEXT', notnull: 0, dflt: null, pk: 0 },
 ];
 
 function expectRemoteSessionAsRecorded(db: Database.Database): void {
@@ -104,7 +106,7 @@ describe('059 — release_push dropped, remote_session as recorded', () => {
     db.close();
   });
 
-  it('[entity:remote-session] an existing database keeps remote_session as recorded across the drop, its row intact', () => {
+  it('[entity:remote-session] an existing database keeps remote_session as recorded across the drop and the later chain, its row intact', () => {
     const db = legacyDbBefore059();
     db.prepare(
       `INSERT INTO remote_session (access_token, token_id, issued_at, remote_account_id, account_email, account_status)
@@ -112,6 +114,14 @@ describe('059 — release_push dropped, remote_session as recorded', () => {
     ).run();
 
     db.exec(fs.readFileSync(path.join(MIGRATIONS_DIR, MIGRATION), 'utf-8'));
+    // … and the rest of the chain after it (063 adds `issuer_url`), so the upgraded
+    // table is compared with the record as it stands today.
+    for (const file of fs
+      .readdirSync(MIGRATIONS_DIR)
+      .filter((f) => f.endsWith('.sql') && f > MIGRATION)
+      .sort()) {
+      db.exec(fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf-8'));
+    }
 
     expectRemoteSessionAsRecorded(db);
     expect(db.prepare('SELECT remote_account_id, account_status FROM remote_session').all()).toEqual([

@@ -4,6 +4,7 @@ import { encrypt } from './agent-credential-crypto.js';
 import {
   RemoteHttpClient,
   RemoteUnauthorizedError,
+  remoteAddressIdentity,
   type AccountProfileResponse,
   type DeviceTokenError,
   type DeviceTokenResponse,
@@ -19,6 +20,8 @@ interface RemoteSessionRow {
   id: number;
   /** Ciphertext of the M05 secrets primitive (`agent-credential-crypto`), never the token itself. */
   access_token: string;
+  /** 2.1.58: the effective remote address the token was issued under; NULL = written before the column (logged out). */
+  issuer_url: string | null;
   token_id: string;
   issued_at: string;
   remote_account_id: string;
@@ -54,14 +57,32 @@ interface FlowState {
  * by the one-off data step of migration 062. ASSUMPTION:dev-0010 — no call reads
  * the stored token today (the only owner-only call, the post-login
  * `GET /v1/account`, uses the fresh token), so there is no decrypt path here yet.
+ *
+ * 2.1.58 (`ux690pt2`): the session remembers its issuer. A login records the
+ * client's effective address (its identity form) in `issuer_url`, and every read and delete of the
+ * session — the identity, the logout, the wipe on a 401 — is scoped to that
+ * issuer (`readSession`, `deleteSession`): under another effective address the project is logged out,
+ * and the row is neither sent nor deleted, so returning to the issuer restores
+ * the session. A row with `issuer_url` NULL never matches (logged out).
+ * ASSUMPTION:dev-0801 — logout and the 401 wipe delete only the session of the
+ * current effective address; a login elsewhere replaces the single row.
  */
 export class RemoteAuthService {
   private flow: FlowState | null = null;
+  /**
+   * The current effective address in its identity form (`remoteAddressIdentity`,
+   * computed once) — the value a login stores in `issuer_url` and every
+   * read/delete compares against, so two spellings of the same remote are the
+   * same issuer. Requests still go to `client.base` as configured.
+   */
+  private readonly issuer: string;
 
   constructor(
     private db: Database.Database,
     private client: RemoteHttpClient,
-  ) {}
+  ) {
+    this.issuer = remoteAddressIdentity(client.base);
+  }
 
   /** POST /api/remote-account/login/start. */
   async startDeviceFlow(): Promise<DeviceLoginStartResponse> {
@@ -110,19 +131,31 @@ export class RemoteAuthService {
     return row ? toRemoteAccount(row) : { connected: false };
   }
 
-  /** POST /api/remote-account/logout. Idempotent; also aborts an in-flight device flow. */
+  /**
+   * POST /api/remote-account/logout. Idempotent; also aborts an in-flight device
+   * flow. Deletes only the session of the current effective address — a session
+   * issued elsewhere is not this project's login here and stays for its issuer.
+   */
   logout(): RemoteAccountResponse {
     this.flow = null;
-    this.db.prepare('DELETE FROM remote_session').run();
+    this.deleteSession();
     return { connected: false };
   }
 
   // --- internals ----------------------------------------------------------
 
+  /** The session issued under the current effective address, or null (logged out here). */
   private readSession(): RemoteSessionRow | null {
     return (
-      (this.db.prepare('SELECT * FROM remote_session LIMIT 1').get() as RemoteSessionRow | undefined) ?? null
+      (this.db.prepare('SELECT * FROM remote_session WHERE issuer_url = ? LIMIT 1').get(this.issuer) as
+        | RemoteSessionRow
+        | undefined) ?? null
     );
+  }
+
+  /** Deletes the session of the current effective address; one issued elsewhere is kept. */
+  private deleteSession(): void {
+    this.db.prepare('DELETE FROM remote_session WHERE issuer_url = ?').run(this.issuer);
   }
 
   /**
@@ -138,22 +171,24 @@ export class RemoteAuthService {
       profile = await this.client.getAccount(token.access_token);
     } catch (err) {
       if (err instanceof RemoteUnauthorizedError) {
-        this.db.prepare('DELETE FROM remote_session').run();
+        this.deleteSession();
         this.flow = null;
         throw new DomainError('REMOTE_UNAUTHORIZED', 'remote session expired; log in again');
       }
       throw err;
     }
     const ciphertext = encrypt(token.access_token);
+    // Single-row store: a login replaces whatever row there is — also one issued
+    // under another address — and records the address that issued this token.
     const tx = this.db.transaction(() => {
       this.db.prepare('DELETE FROM remote_session').run();
       this.db
         .prepare(
           `INSERT INTO remote_session
-             (access_token, token_id, issued_at, remote_account_id, account_email, account_status)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+             (access_token, issuer_url, token_id, issued_at, remote_account_id, account_email, account_status)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(ciphertext, token.token_id, token.issued_at, token.account_id, profile.email, profile.status);
+        .run(ciphertext, this.issuer, token.token_id, token.issued_at, token.account_id, profile.email, profile.status);
     });
     tx();
     return this.getCurrentAccount();

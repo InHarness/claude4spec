@@ -20,25 +20,64 @@ import { staticSettingsContributions } from './SettingsPage.js';
  * assembled from declarations, so the catalog is checkable without a browser.
  */
 describe('/settings card catalog (0.2.113 §1.6)', () => {
-  const page = assembleSettings(staticSettingsContributions());
-  const byAnchor = new Map(page.map((c) => [c.decl.anchor, c]));
+  const page = assembleSettings(staticSettingsContributions(), 'project');
+  const workspacePage = assembleSettings(staticSettingsContributions(), 'workspace');
+  const byAnchor = new Map([...page, ...workspacePage].map((c) => [c.decl.anchor, c]));
 
   it('renders the core cards in group → weight order', () => {
     expect(page.map((c) => c.decl.anchor)).toEqual([
       'user-section',
-      'appearance',
       'project',
       'git',
       'directories',
       'entities',
       'external-integrations',
-      'plugin-pool',
       'agent',
       'skills',
       'about',
       'index-status',
       'danger-zone',
     ]);
+  });
+
+  /**
+   * 2.1.58 — the `Zakres` column of every declarant's card table: Appearance
+   * (M50) and Plugin pool (M33) move to the workspace settings page; every
+   * other module's card is declared `projekt` and stays on `/settings`.
+   */
+  it.each([
+    ['6tn2yf92', 'appearance', 'workspace'],
+    ['df0ri1ao', 'plugin-pool', 'workspace'],
+    ['va7hqsxc', 'user-section', 'project'],
+    ['m26psec', 'project', 'project'],
+    ['m26psec', 'directories', 'project'],
+    ['4cp5vqa6', 'git', 'project'],
+    ['4ckqwi8t', 'entities', 'project'],
+    ['9xlpfbip', 'external-integrations', 'project'],
+    ['m26agsec', 'agent', 'project'],
+    ['1osy2o5r', 'skills', 'project'],
+    ['7f76eszm', 'about', 'project'],
+    ['7f76eszm', 'index-status', 'project'],
+    ['nvqp58hv', 'danger-zone', 'project'],
+  ] as const)('[section:%s] card #%s declares scope %s', (_section, anchor, scope) => {
+    const decl = staticSettingsContributions()
+      .flatMap((c) => c.cards ?? [])
+      .find((c) => c.anchor === anchor);
+    expect(decl, anchor).toBeDefined();
+    expect(decl!.scope).toBe(scope);
+    expect((scope === 'workspace' ? workspacePage : page).some((c) => c.decl.anchor === anchor)).toBe(true);
+    expect((scope === 'workspace' ? page : workspacePage).some((c) => c.decl.anchor === anchor)).toBe(false);
+  });
+
+  it('[section:6tn2yf92] [section:df0ri1ao] the workspace settings page is Appearance then Plugin pool, neither with a file-backed element', () => {
+    expect(workspacePage.map((c) => c.decl.anchor)).toEqual(['appearance', 'plugin-pool']);
+    expect(workspacePage.flatMap((c) => c.elements).map((e) => [e.id, e.kind])).toEqual([
+      ['theme', 'custom'],
+      ['plugin-pool', 'custom'],
+    ]);
+    expect(workspacePage.flatMap((c) => c.elements).some((e) => e.configKey !== undefined || (e.keys?.length ?? 0) > 0)).toBe(
+      false,
+    );
   });
 
   it('the settings module owns only About and Index status', () => {

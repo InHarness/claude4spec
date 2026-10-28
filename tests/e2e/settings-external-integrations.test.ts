@@ -76,7 +76,7 @@ describe.skipIf(!BASE)('settings — External Integrations (0.2.93)', () => {
     }
   });
 
-  it('the card is renamed and sits between Entities and Plugin pool', async () => {
+  it('the card is renamed and sits between Entities and Agent (Plugin pool is a workspace card now)', async () => {
     const card = page.locator('#external-integrations');
     await expect.poll(() => card.count()).toBe(1);
     expect(await page.locator('#external-skills').count()).toBe(0);
@@ -86,7 +86,9 @@ describe.skipIf(!BASE)('settings — External Integrations (0.2.93)', () => {
     );
     const at = (id: string) => order.indexOf(id);
     expect(at('entities')).toBeLessThan(at('external-integrations'));
-    expect(at('external-integrations')).toBeLessThan(at('plugin-pool'));
+    expect(at('external-integrations')).toBeLessThan(at('agent'));
+    // 2.1.58: the Plugin pool card stands on the workspace settings page.
+    expect(at('plugin-pool')).toBe(-1);
     expect(at('about')).toBeLessThan(at('index-status'));
     expect(at('index-status')).toBeLessThan(at('danger-zone'));
     // No Save in the shared shell.

@@ -8,11 +8,14 @@ import { HOST_API_VERSION, type PluginManifest } from '../../../src/shared/plugi
 import { loadWorkspacePlugins } from '../../../src/server/core/plugin-host/loader.js';
 import { FIXTURE_DATA, FIXTURE_SLUG_PATTERN } from '../../helpers/fixture-module.js';
 
+/** These routers list no workspace package, so no workspace root is ever asked for. */
+const noWorkspacePackage = (): string | null => null;
+
 function makeApp(records: Parameters<typeof pluginsRouter>[0]['pluginRecords'] = []) {
   const pluginRegistry = new PluginRegistryImpl();
   registerAllPlugins(pluginRegistry);
   const app = express();
-  app.use('/api', pluginsRouter({ pluginRegistry, pluginRecords: records }));
+  app.use('/api', pluginsRouter({ pluginRegistry, pluginRecords: records, resolveWorkspaceRoot: noWorkspacePackage }));
   return app;
 }
 
@@ -89,7 +92,7 @@ describe('M33 plugins router', () => {
       expect(pluginRegistry.getAvailable('diagram')).not.toBeNull();
 
       const app = express();
-      app.use('/api', pluginsRouter({ pluginRegistry, pluginRecords: records }));
+      app.use('/api', pluginsRouter({ pluginRegistry, pluginRecords: records, resolveWorkspaceRoot: noWorkspacePackage }));
       const res = await request(app).get('/api/_meta/plugins').expect(200);
       const byPkg = new Map((res.body.packages as Array<{ package: string; status: string; code?: string }>).map((p) => [p.package, p]));
       expect(byPkg.get('pkg-old-major')).toMatchObject({ code: 'PLUGIN_HOST_API_MISMATCH' });

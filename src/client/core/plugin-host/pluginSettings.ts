@@ -8,13 +8,13 @@ import { ELEMENTS_MENU_KEY, SIDEBAR_MENU_HELP, SidebarMenuElement } from './Side
 import { EFFECT, type SettingsContribution } from '../../components/settings/registry.js';
 
 /**
- * 0.2.113 — what the plugin host declares on `/settings`. Two separate things,
- * kept apart on purpose:
+ * 0.2.113 — what the plugin host declares on the settings pages. Two separate
+ * things, kept apart on purpose:
  *
  *  - axis A — which entity types are ACTIVE in this project (`entities`), edited
- *    on the Entities card;
- *  - axis B — what the pool CONTAINS (`base ∪ overlay`), shown read-only on the
- *    Plugin pool card.
+ *    on the Entities card of the project settings page;
+ *  - axis B — what the pool CONTAINS; 2.1.58: the Plugin pool card shows the
+ *    workspace's base, read-only, on the workspace settings page (M33 `df0ri1ao`).
  *
  * 2.1.21 (M26 `7f76eszm`): there are no generated per-plugin settings cards —
  * plugins contribute no settings fields or elements to the page.
@@ -25,20 +25,25 @@ export const PLUGIN_HOST_SETTINGS: SettingsContribution = {
       anchor: 'entities',
       title: 'Entities',
       description:
-        'Which entity types are active in this project. This edits activation only — see Plugin pool for what is available.',
+        "Which entity types are active in this project. This edits activation only — the workspace settings page shows the workspace's plugin pool.",
       // The spec gives this card no group; it orders with the Project cards.
       group: 'Project',
       weight: 50,
       owner: 'entity-framework',
+      scope: 'project',
     },
     {
       anchor: 'plugin-pool',
       title: 'Plugin pool',
       description:
-        'What entity types and plugins are available to this project (base ∪ overlay). Read-only — the pool changes with the workspace switch (base) or in the project repository (overlay).',
+        // M13 `m26esec` / M33 `jz4lgiy7` (2.1.58): the card shows the BASE — the
+        // workspace's plugin pool — from the process-level diagnostics; it is
+        // on the workspace settings page, so no project overlay is shown here.
+        "The base of every project in this workspace: each package of the workspace's plugin list with its load state. Read-only — packages are installed in the workspace's node_modules; a project's overlay lives in its repository.",
       group: 'Plugins',
       weight: 10,
       owner: 'plugin-loader',
+      scope: 'workspace',
     },
   ],
   elements: [

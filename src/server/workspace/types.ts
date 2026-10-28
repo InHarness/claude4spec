@@ -1,3 +1,5 @@
+import type { WorkspaceFileErrorCode } from './home-workspace.js';
+
 /**
  * M31 / L1: workspace registry shapes persisted in `~/.claude4spec/workspaces.json`.
  * One file holds every workspace; workspace identity is the `name`.
@@ -17,8 +19,12 @@ export interface ProjectRecord {
    * name is NOT stored here — it always comes from `config.json`.
    */
   id: string;
-  /** ISO timestamp of registration. */
-  addedAt: string;
+  /**
+   * ISO timestamp of registration. Absent on a project of a home workspace:
+   * its record comes from the committed `workspace.json`, which carries no
+   * machine-local attribute.
+   */
+  addedAt?: string;
   /** ISO timestamp of the last SPA open / activation. */
   lastOpened?: string;
   /**
@@ -42,9 +48,33 @@ export interface ProjectRecord {
   trustSpecSkillHooks?: boolean;
 }
 
+/**
+ * 2.1.58 (M31 `44viw74p`): machine-local trust of one project of a home
+ * workspace, kept in the registry entry (keyed `(home, project-id)` — the entry
+ * carries the home) together with the project's relative path at the time the
+ * consent was given. A view path that no longer matches voids every flag here:
+ * the project reads as undecided until consent is given again.
+ */
+export interface HomeProjectTrust {
+  path: string;
+  trustProjectPlugins?: boolean;
+  trustSpecSkillHooks?: boolean;
+}
+
+/**
+ * The workspace VIEW (M31 `t97gncju`): what every reader sees. For a registry
+ * workspace it is the registry entry itself; for a workspace with a home it is
+ * the entry composed with `<home>/.claude4spec/workspace.json` — `projects` and
+ * `plugins` come from the file, trust is folded into each project record.
+ */
 export interface WorkspaceRecord {
   /** Identity. Path-safe (used as a directory segment under ~/.claude4spec/). */
   name: string;
+  /**
+   * 2.1.58: only a workspace with a home directory — the absolute path of that
+   * directory. Absent = a registry workspace.
+   */
+  home?: string;
   mode: 'dev' | 'prod';
   /** Port the server listens on when this workspace is started without --port. */
   defaultPort: number;
@@ -67,6 +97,13 @@ export interface WorkspaceRecord {
    * absent case explicitly rather than lean on a fallback string.
    */
   lastOpened?: string;
+  /**
+   * 2.1.58 (M31 `fjsgq19h`): id of the project opened last in this workspace,
+   * both kinds; set on every project open. Absent = no project opened yet; an
+   * id no longer in the workspace means the same as absent. Machine-local: it
+   * lives in the registry entry, never in `workspace.json`.
+   */
+  lastOpenedProject?: string;
   projects: ProjectRecord[];
   /**
    * M33: npm plugin package names loaded at process bootstrap, workspace-global
@@ -75,9 +112,35 @@ export interface WorkspaceRecord {
    * Absent on legacy records (schema < 2) = predefined-only.
    */
   plugins?: string[];
+  /**
+   * 2.1.58: only on the view of a workspace with a home whose `workspace.json`
+   * does not validate — the refusal its start gets (code + message naming the
+   * file). Such a view lists no projects and no plugins; the other workspaces
+   * read on unaffected. ASSUMPTION:dev-0103.
+   */
+  fileError?: { code: WorkspaceFileErrorCode; message: string };
+  /**
+   * 2.1.58 (M31 `459ucmfg`): only on the view of a workspace with a home whose
+   * home directory does not exist on this machine (a deleted or moved checkout).
+   * Such a view also carries `fileError` (the file cannot be read), but it is
+   * not a broken file: `c4s list-workspaces` shows it as `home-missing`, and the
+   * CLI resolver treats it as a workspace with no projects instead of refusing
+   * with WORKSPACE_FILE_INVALID.
+   */
+  homeMissing?: true;
+}
+
+/**
+ * A workspace entry as persisted in `workspaces.json`. A registry entry carries
+ * `projects[]` and `plugins[]`; an entry with `home` carries neither — they live
+ * in the committed `workspace.json` — and holds `projectTrust` instead.
+ */
+export interface StoredWorkspaceRecord extends Omit<WorkspaceRecord, 'projects'> {
+  projects?: ProjectRecord[];
+  projectTrust?: Record<string, HomeProjectTrust>;
 }
 
 export interface WorkspacesFile {
   $schemaVersion: number;
-  workspaces: WorkspaceRecord[];
+  workspaces: StoredWorkspaceRecord[];
 }

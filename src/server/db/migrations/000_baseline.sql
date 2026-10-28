@@ -172,7 +172,8 @@ CREATE TABLE remote_session (
   account_status    TEXT NOT NULL,
   connected_at      TEXT NOT NULL DEFAULT (datetime('now')),
   created_at        TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+  updated_at        TEXT NOT NULL DEFAULT (datetime('now')),
+  issuer_url        TEXT                           -- 063: effective remote address the token was issued under; NULL = logged out
 );
 CREATE TABLE section_entity_link (
   rootId TEXT NOT NULL DEFAULT 'pages',

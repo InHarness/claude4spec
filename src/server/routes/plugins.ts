@@ -25,7 +25,7 @@ import {
   assetContentType,
   basePool,
   resolveBaseAsset,
-  type WorkspaceRootResolver,
+  type FrontendBaseDeps,
 } from '../core/plugin-host/frontend-assets.js';
 import {
   PLUGIN_FRONTEND_NOT_FOUND,
@@ -36,30 +36,20 @@ import { getRuntimeShim } from '../core/plugin-host/runtime-shims.js';
 // the `c4s plugins` CLI reuses the SAME logic (no divergence). Re-exported here
 // for the existing `../routes/plugins.js` import sites (e.g. project-context).
 import { buildBasePluginPackages } from '../core/plugin-host/base-packages.js';
-import type { BuiltinEnvelope } from '../core/plugin-host/builtin-envelopes.js';
 export { buildBasePluginPackages } from '../core/plugin-host/base-packages.js';
 
-export interface PluginRoutesDeps {
+/**
+ * The process-level plugin routes' deps: the base frontend tier (the same
+ * `FrontendBaseTier` object `startServer` hands every project context, with its
+ * workspace-root resolver REQUIRED) plus the registry for the diagnostics.
+ */
+export interface PluginRoutesDeps extends FrontendBaseDeps {
   pluginRegistry: PluginRegistry;
   /**
    * Per-package outcomes from the M33 bootstrap loader (envelopes + workspace/npm
    * layer), kept current across base hot reloads — read per request.
    */
   pluginRecords: PluginLoadRecord[];
-  /**
-   * M33 phase 3: the process's resolved workspace plugin package names (the same
-   * list `loadWorkspacePlugins` consumed). Their frontends are served UNGATED.
-   * Empty by default.
-   */
-  workspacePackages?: string[];
-  /**
-   * 0.2.2: builtin envelopes discovered under `<hostRoot>/plugins/`. Ungated —
-   * an envelope is in the host repo, so this list IS its own allowlist and never
-   * comes from a request.
-   */
-  envelopes?: BuiltinEnvelope[];
-  /** Test seam: how a workspace package's root is found (default: `import.meta.resolve`). */
-  resolveWorkspaceRoot?: WorkspaceRootResolver;
 }
 
 /** The one 404 body of both plugin asset routes. */

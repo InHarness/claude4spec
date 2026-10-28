@@ -9,18 +9,17 @@ import { WsGateway } from './ws/gateway.js';
 import { createRoomBroadcaster } from './ws/watch-broadcaster.js';
 import { FileWatchRuntime } from './fs/watcher.js';
 import { PLUGINS_BASE_SOURCE } from './fs/sources.js';
-import { WorkspaceRegistry, DEFAULT_WORKSPACE_PORT } from './workspace/registry.js';
-import { migrateLegacyDbIfNeeded } from './workspace/db-migration.js';
-import { bootstrapProject } from './workspace/bootstrap.js';
+import { type WorkspaceRegistry, DEFAULT_WORKSPACE_PORT } from './workspace/registry.js';
+import { ActivatedProjects, activatingBuild, bootstrapProject } from './workspace/bootstrap.js';
 import { readPeerConfigSummary } from './workspace/peer-config.js';
 import { checkRequest, hostOriginGuard } from './http/host-origin-guard.js';
 import { effectiveBindHost, localServerUrl } from '../core/workspace/network.js';
 import { buildProjectContext } from './workspace/project-context.js';
-import { ProjectBuildFailedError, ProjectContextCache } from './workspace/context-cache.js';
+import { ProjectContextCache } from './workspace/context-cache.js';
 import { projectDispatchMiddleware } from './workspace/middleware.js';
 import { workspaceRouter } from './workspace/routes.js';
 import type { WorkspaceRecord } from './workspace/types.js';
-import { resolveSpaRoute } from './workspace/spa-route.js';
+import { resolveSpaRoute, spaDocument, type SpaResolution } from './workspace/spa-route.js';
 import { PluginRegistryImpl } from './core/plugin-host/registry.js';
 import { registerAllPlugins } from './core/plugin-host/register-builtins.js';
 import { logRefRegistrationWarnings, refRegistrationWarnings } from './core/plugin-host/ref-warnings.js';
@@ -28,10 +27,11 @@ import {
   loadBuiltinEnvelopes,
   loadWorkspacePlugins,
   reloadPlugin,
-  resolveBaseEntry,
 } from './core/plugin-host/loader.js';
-import { resolvePluginPackages } from './workspace/registry.js';
+import { basePackageLocator, workspaceNodeModulesDir } from './core/plugin-host/workspace-packages.js';
+import { PREDEFINED_PLUGINS, resolvePluginPackages } from './workspace/registry.js';
 import { pluginsRouter } from './routes/plugins.js';
+import type { FrontendBaseTier } from './core/plugin-host/frontend-assets.js';
 import { errorHandler } from './routes/errors.js';
 import { buildImportMap } from './core/plugin-host/runtime-shims.js';
 import { discoverBuiltinEnvelopes, servableEnvelopes } from './core/plugin-host/builtin-envelopes.js';
@@ -39,17 +39,25 @@ import { discoverBuiltinEnvelopes, servableEnvelopes } from './core/plugin-host/
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export interface StartOptions {
-  cwd: string;
-  /** M31: pre-selected workspace (CLI select-or-create). Absent ⇒ resolved here. */
-  workspace?: WorkspaceRecord;
   /**
-   * Decision #11 (0.1.57): register `cwd` as the initial project at start
-   * (CLI `--create-project` / an implying flag). `false` ⇒ workspace-only
-   * start — nothing is registered/activated, nothing is written to `cwd`, and
-   * the bare command lands on `/welcome`. Defaults to `true` for back-compat
-   * with callers that always meant "create".
+   * The directory the launcher was run in (never a project: the start
+   * registers none). Only the fallback of the package-root lookup for assets.
    */
-  createProject?: boolean;
+  cwd: string;
+  /**
+   * The launcher's registry (migrated, `src/bin/launch.ts` `prepareStart`).
+   * The server serves through it and never opens a second one, so the view's
+   * read of a home's `workspace.json` is not repeated.
+   */
+  registry: WorkspaceRegistry;
+  /**
+   * 2.1.58 (M31 `ssn335r8`): the workspace VIEW, opened by `registry.openView`
+   * before listen — `.claude4spec/.gitignore` ensured, `workspace.json` read
+   * and validated once (a WorkspaceFileError refused the start already).
+   * Process-lifetime: an outside change to the file applies from the next
+   * start, this registry's own writes update it at once.
+   */
+  workspace: WorkspaceRecord;
   port?: number;
   /**
    * 2.1.0: listen address. Absent ⇒ the workspace's `bindHost` (loopback when
@@ -57,19 +65,19 @@ export interface StartOptions {
    */
   host?: string;
   mode?: 'dev' | 'prod';
-  pagesDir?: string;
   /**
-   * M01 (0.1.36): resolved `--remote-url` value (flag > config.json). `null`/
-   * absent ⇒ fall back to `bootConfig.remoteApiUrl`, then the M24 prod constant
-   * (applied inside RemoteHttpClient). Drives the M24 auth client.
+   * 2.1.58 (M01 `3ebblo1q`): the `--remote-url` start flag. It overrides
+   * `config.remoteApiUrl` of EVERY project of the process for the process
+   * lifetime and is never written to a file. Absent ⇒ each project's
+   * `config.remoteApiUrl`, then the M24 prod constant — resolved per project
+   * by `effectiveRemoteUrl` (services/remote-http-client.ts).
    */
-  remoteApiUrl?: string | null;
+  remoteApiUrl?: string;
 }
 
 export interface ServerHandle {
   url: string;
   port: number;
-  writingStyle: { slug: string; title: string } | null;
   shutdown: () => Promise<void>;
 }
 
@@ -96,7 +104,10 @@ async function listenOrExit(server: HttpServer, port: number, host: string): Pro
       server.once('listening', onListening);
       server.listen(port, host);
     });
-    return port;
+    // The port actually bound — the requested one, or the ephemeral port the OS
+    // picked for `port: 0`.
+    const address = server.address();
+    return typeof address === 'object' && address ? address.port : port;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
       console.error(
@@ -118,26 +129,26 @@ async function listenOrExit(server: HttpServer, port: number, host: string): Pro
   }
 }
 
-// Wstrzykuje tozsamosc projektu do serwowanego HTML — zaraz po <head>, czyli PRZED
-// inline theme-scriptem i bundlem React. Klient czyta `window.__C4S_PROJECT__.id`
-// synchronicznie przy module-load, zeby suffiksowac project-scoped klucze localStorage
-// (`::<scope>`), zbudowac API_BASE `/api/projects/<id>` i basepath routera `/p/<id>`.
-// M31: id przychodzi z ROUTE (`/p/<id>/…` → registry lookup) i jest STABILNYM,
-// przechowywanym `project.id` — nie przeliczamy go z cwd, zeby edycja cwd w
-// workspaces.json nie rozjechala routera/basepath z URL-em.
-function injectProjectGlobal(html: string, id: string, name: string): string {
-  const payload = JSON.stringify({ id, name }).replace(/</g, '\\u003c');
-  return html.replace('<head>', `<head><script>window.__C4S_PROJECT__=${payload};</script>`);
-}
-
 // M33 "Option B": inject the plugin import map into <head> statically (before any
 // module script resolves), so a runtime plugin's bare imports (`react`, …) resolve
-// to the host's singleton shims. Applied to every SPA page (welcome + project).
+// to the host's singleton shims. Applied to every SPA page (workspace + project routes).
 const IMPORT_MAP_SCRIPT = `<script type="importmap">${JSON.stringify({
   imports: buildImportMap(),
 }).replace(/</g, '\\u003c')}</script>`;
 function injectImportMap(html: string): string {
   return html.replace('<head>', `<head>${IMPORT_MAP_SCRIPT}`);
+}
+
+/**
+ * The project identity a served document carries: the project of a `/p/<id>/…`
+ * route (opening it records the workspace's last opened project), `null` on a
+ * workspace route, which has no project (M50 `1bd92aq2`).
+ */
+function documentIdentity(deps: SpaDeps, resolution: Exclude<SpaResolution, { kind: 'redirect' }>) {
+  if (resolution.kind === 'workspace') return null;
+  const { project } = resolution;
+  deps.registry.touchLastOpened(deps.workspace.name, project.id);
+  return { id: project.id, name: readPeerConfigSummary(project.cwd).name ?? project.id };
 }
 
 interface SpaDeps {
@@ -169,15 +180,10 @@ async function mountDevVite(app: Express, deps: SpaDeps) {
       let html = await fs.promises.readFile(htmlPath, 'utf-8');
       html = await vite.transformIndexHtml(req.originalUrl, html);
       html = injectImportMap(html);
-      // `/welcome` runs the SPA project-less: no `window.__C4S_PROJECT__`, so the
-      // client computes PROJECT_ID='' → API_BASE='/api' → router basepath '/'.
-      if (resolution.kind === 'welcome') {
-        return res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
-      }
-      const { project } = resolution;
-      deps.registry.touchLastOpened(deps.workspace.name, project.id);
-      html = injectProjectGlobal(html, project.id, readPeerConfigSummary(project.cwd).name ?? project.id);
-      res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+      res
+        .status(200)
+        .set({ 'Content-Type': 'text/html' })
+        .end(spaDocument(html, documentIdentity(deps, resolution)));
     } catch (err) {
       vite.ssrFixStacktrace(err as Error);
       next(err);
@@ -198,16 +204,10 @@ function mountProd(app: Express, deps: SpaDeps) {
       const resolution = resolveSpaRoute(deps.registry, deps.workspace, urlPath);
       if (resolution.kind === 'redirect') return res.redirect(302, resolution.to);
       const raw = injectImportMap(fs.readFileSync(path.join(clientDist, 'index.html'), 'utf-8'));
-      // `/welcome` runs the SPA project-less (no `window.__C4S_PROJECT__`).
-      if (resolution.kind === 'welcome') {
-        return res.status(200).set({ 'Content-Type': 'text/html' }).end(raw);
-      }
-      const { project } = resolution;
-      deps.registry.touchLastOpened(deps.workspace.name, project.id);
       res
         .status(200)
         .set({ 'Content-Type': 'text/html' })
-        .end(injectProjectGlobal(raw, project.id, readPeerConfigSummary(project.cwd).name ?? project.id));
+        .end(spaDocument(raw, documentIdentity(deps, resolution)));
     } catch (err) {
       next(err);
     }
@@ -229,16 +229,13 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const mode = opts.mode ?? (process.env.NODE_ENV === 'production' ? 'prod' : 'dev');
   const portRef = { current: opts.port ?? DEFAULT_PORT };
 
-  // M31: workspace registry — DB lives in the workspace slot, not the project dir.
-  // 2.1.0: hash ids → readable ids first (no-op once migrated; the launcher
-  // normally did it already). Before listen, under the registry lock.
-  const registry = new WorkspaceRegistry();
-  registry.migrateIfNeeded();
-  const workspace =
-    opts.workspace ?? registry.selectOrCreate({ port: opts.port, mode: opts.mode });
+  // M31: the DB lives in the workspace slot, not the project dir. The launcher
+  // migrated the registry, selected the workspace and opened its view before
+  // calling here — nothing of it is read again.
+  const { registry, workspace } = opts;
   const liveWorkspace = () => {
     const ws = registry.getWorkspace(workspace.name) ?? workspace;
-    // The port actually bound wins over the stored default (a non-sticky --port).
+    // The port actually bound wins over the stored default (`port: 0` binds an ephemeral one).
     return { ...ws, defaultPort: portRef.current };
   };
 
@@ -264,14 +261,6 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     });
   }
 
-  // Decision #11: a workspace-only start (`createProject === false`) registers
-  // and activates nothing — `cwd` stays untouched and the bare command lands on
-  // `/welcome`. Default `true` keeps the historic "always create" behavior.
-  const createProject = opts.createProject ?? true;
-  const initialProject = createProject ? registry.registerProject(workspace, cwd) : null;
-  if (createProject && initialProject)
-    migrateLegacyDbIfNeeded(registry, workspace, cwd, initialProject.id);
-
   // M31: process-immutable plugin catalog, populated exactly once.
   const pluginRegistry = new PluginRegistryImpl();
   registerAllPlugins(pluginRegistry);
@@ -292,7 +281,18 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       `[plugin-host] envelope '${e.name}' did not load — its frontend bundle will NOT be served`,
     );
   }
-  const pluginLoad = await loadWorkspacePlugins(pluginRegistry, resolvePluginPackages(workspace));
+  // 2.1.58 (M33 `m33l2001` step 1 (iii), M31 `vzkw903j`): the package list is
+  // the workspace VIEW's (`workspace.json` in a workspace with a home), and every
+  // listed package resolves in ONE directory — `node_modules` of the workspace's
+  // slots directory. One locator answers load, watch and frontend discovery; a
+  // listed package missing there is skipped with PLUGIN_NOT_INSTALLED and the
+  // start goes on. The server never installs a package.
+  const basePackages = resolvePluginPackages(workspace);
+  const baseLocator = basePackageLocator(
+    workspaceNodeModulesDir(registry.slotsDir(workspace)),
+    PREDEFINED_PLUGINS,
+  );
+  const pluginLoad = await loadWorkspacePlugins(pluginRegistry, basePackages, undefined, baseLocator);
   pluginLoad.records.unshift(...envelopeLoad.records);
   // 2.1.41 (M13) — ref placement / unknown-target warnings, once the whole base
   // pool has registered (a plugin may load before the envelope it points at).
@@ -334,14 +334,29 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // M33 phase 3 / 0.2.2: the base frontend tier — workspace/npm packages (the
   // same resolved list `loadWorkspacePlugins` consumed) and the servable
   // envelopes — served ungated for every project: by the process-global asset
-  // route, and announced by every project's manifest (2.1.22).
-  const frontendBase = { workspacePackages: resolvePluginPackages(workspace), envelopes };
+  // route, and announced by every project's manifest (2.1.22). ONE object for
+  // both: the asset route below and every project context get the same tier,
+  // workspace-root resolver included, so what a manifest announces is what the
+  // route serves (L11 `9g96q3pp`).
+  const frontendBase: FrontendBaseTier = {
+    workspacePackages: basePackages,
+    envelopes,
+    resolveWorkspaceRoot: baseLocator.packageRoot,
+  };
 
-  // M31: lazily-built, cached per-project contexts. The CLI-only overrides
-  // (pagesDir flag, --remote-url) apply solely to the initial project.
-  const cache: ProjectContextCache = new ProjectContextCache(async (project) => {
-    const isInitial = initialProject != null && project.id === initialProject.id;
-    return buildProjectContext({
+  // M31 `m31ctx001` / M01 `dsh8ezbz`: lazily-built, cached per-project
+  // contexts. Every project — none is an exception — is activated and built on
+  // its FIRST REQUEST, never before listen: the activation (refusal of a
+  // workspace home, the config from the file and the defaults, the fresh file,
+  // the roots, the welcome page, the legacy db move) runs inside the build, so
+  // its failure is that project's `500 PROJECT_BUILD_FAILED` and the process
+  // keeps serving. No start flag reaches a project except `--remote-url`, for
+  // every project alike. `activated` is the process's record of activated
+  // projects, shared with the registration route below: a project added through
+  // POST /api/workspace/projects is not activated a second time by its first build.
+  const activated = new ActivatedProjects();
+  const cache: ProjectContextCache = new ProjectContextCache(activatingBuild(registry, workspace, (project) =>
+    buildProjectContext({
       registry,
       pluginRegistry,
       pluginRecords: pluginLoad.records,
@@ -352,8 +367,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       gateway,
       watchRuntime,
       mode,
-      remoteApiUrl: isInitial ? opts.remoteApiUrl : undefined,
-      pagesDirOverride: isInitial ? opts.pagesDir : undefined,
+      remoteApiUrl: opts.remoteApiUrl,
       onTurnFinished: () => cache.reapIdle(),
       onContextConfigChanged: (opts) => cache.invalidate(project.id, opts),
       // 2.1.9 (M52 `1v62dbhb`): a provider's context, on request, from this cache
@@ -363,23 +377,26 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
         if (!record) throw new Error(`project "${providerId}" is not in workspace "${workspace.name}"`);
         return cache.get(record);
       },
-    });
-  });
+    }),
+  activated));
 
   // M33 phase 3: process-global base (workspace/npm) plugin hot-reload watcher.
   // The base catalog is shared across projects, so a reload mutates the shared
   // `pluginRegistry` (unregister old → register new) and invalidates ALL cached
   // contexts; each live project room is told to remount.
   //
-  // M33 (0.1.92): discovery uses `resolveBaseEntry` — the SAME ESM resolution
-  // (`import.meta.resolve`) as the bootstrap `import(pkg)`, not CJS
-  // `createRequire(...).resolve`. So an ESM-only package (only an `import`
+  // M33 L7 `m33l7wch` (2.1.58): discovery uses the base locator — the SAME ESM
+  // resolution, counted from the SAME workspace `node_modules`, as the file the
+  // bootstrap imported (the loader imports exactly `resolveEntry(pkg)`), never
+  // CJS `createRequire(...).resolve`. So an ESM-only package (only an `import`
   // condition in `exports`) that loads at bootstrap is ALSO watched here — load
-  // and watch can't drift. `dirname` of the resolved entry is the dist dir; an
-  // unresolvable package (not installed) resolves to null and is simply not watched.
+  // and watch can't drift. `dirname` of the resolved entry is the dist dir; a
+  // package not installed resolves to null and is simply not watched.
+  // ASSUMPTION:dev-0302 — only the packages resolved at start are watched; one
+  // installed (or listed) later takes effect from the next start.
   const baseDirByPkg = new Map<string, string>();
-  for (const pkg of resolvePluginPackages(workspace)) {
-    const entry = resolveBaseEntry(pkg);
+  for (const pkg of basePackages) {
+    const entry = baseLocator.resolveEntry(pkg);
     if (entry) baseDirByPkg.set(pkg, path.dirname(entry));
   }
   // Serialize reload runs so overlapping flushes never interleave
@@ -415,7 +432,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       .then(async () => {
         const reloaded = [];
         for (const pkg of affected) {
-          const rec = await reloadPlugin(pluginRegistry, pkg);
+          const rec = await reloadPlugin(pluginRegistry, pkg, { resolveEntry: baseLocator.resolveEntry });
           // 2.1.20: keep the base records current — the frontend manifest
           // announces only packages whose backend is `loaded`. A failed reload
           // retains the old version, so only a `loaded` outcome replaces it.
@@ -446,12 +463,13 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     );
   }
 
-  // Per-project activation — POST /api/workspace/projects runs the SAME full
-  // bootstrap as a CLI start (M01 hooks + registration + db migration).
+  // Registration with activation — POST /api/workspace/projects (M01 file steps,
+  // then the registration and the legacy db move); the context itself is built
+  // on the project's first request, like every other.
   // 0.2.93: no integration artifact is written here — the MCP config is served
   // on demand by `GET /api/projects/:id/_meta/mcp-config`.
   const activateProject = async (projectCwd: string) => {
-    return bootstrapProject(registry, workspace, projectCwd).project;
+    return bootstrapProject(registry, workspace, projectCwd, activated).project;
   };
 
   app.use('/api', workspaceRouter({ registry, workspace, cache, mode, activateProject }));
@@ -462,12 +480,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // nothing here is bound to the project the process started with.
   app.use(
     '/api',
-    pluginsRouter({
-      pluginRegistry,
-      pluginRecords: pluginLoad.records,
-      workspacePackages: frontendBase.workspacePackages,
-      envelopes: frontendBase.envelopes,
-    }),
+    pluginsRouter({ pluginRegistry, pluginRecords: pluginLoad.records, ...frontendBase }),
   );
   app.use('/api/projects/:id', projectDispatchMiddleware(registry, workspace, cache));
   // M49: the envelope is the layer's, not the module's. Anything a route under
@@ -476,23 +489,8 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // `{ error: { code, message } }` instead of Express's HTML error page.
   app.use('/api', errorHandler);
 
-  // Eager warm of the CLI-started project: it is built before listen. A
-  // workspace-only start has no initial project to warm.
-  //
-  // 2.1.23 — a project whose context cannot be BUILT (an unresolvable
-  // `config.writingStyle`, say) blocks that project, not the process: the
-  // server serves many projects, so the failure is logged and the project
-  // answers `500 PROJECT_BUILD_FAILED` (retried after the failed-build window)
-  // until `config.json` is repaired. Any other error still fails the boot.
-  let initialCtx: Awaited<ReturnType<typeof cache.get>> | null = null;
-  if (initialProject) {
-    try {
-      initialCtx = await cache.get(initialProject);
-    } catch (err) {
-      if (!(err instanceof ProjectBuildFailedError)) throw err;
-      console.error(`[claude4spec] project '${initialProject.id}' failed to build — ${err.message}`);
-    }
-  }
+  // 2.1.58 (M31 `m31ctx001`): no project is built before listen — fail-fast of
+  // a broken project config at process start is given up deliberately.
 
   const spaDeps = { registry, workspace, startCwd: cwd };
   const closeAssets = mode === 'dev' ? await mountDevVite(app, spaDeps) : mountProd(app, spaDeps);
@@ -500,7 +498,6 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const host = opts.host ?? effectiveBindHost(liveWorkspace());
   const port = await listenOrExit(httpServer, portRef.current, host);
   portRef.current = port;
-  if (initialProject) registry.touchLastOpened(workspace.name, initialProject.id);
   // The LOCAL address (loopback, or a concrete bindHost) — what the launcher
   // opens in the browser. Never `publicUrl`.
   const url = localServerUrl({ defaultPort: port, bindHost: host });
@@ -508,7 +505,6 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   return {
     url,
     port,
-    writingStyle: initialCtx?.writingStyle ?? null,
     shutdown: async () => {
       /**
        * FIRST, before the watcher can hand out another event to reschedule one.

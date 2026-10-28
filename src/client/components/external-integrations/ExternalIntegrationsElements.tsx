@@ -33,6 +33,7 @@ export const EXTERNAL_INTEGRATIONS_SETTINGS: SettingsContribution = {
       group: 'Integrations',
       weight: 10,
       owner: 'external-mcp',
+      scope: 'project',
     },
   ],
   elements: [

@@ -136,7 +136,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const [ENTITIES_CARD] = assembleSettings([PLUGIN_HOST_SETTINGS]).filter((c) => c.decl.anchor === 'entities');
+const [ENTITIES_CARD] = assembleSettings([PLUGIN_HOST_SETTINGS], 'project').filter((c) => c.decl.anchor === 'entities');
 
 /** The settings page's `#entities` card and the shell's ELEMENTS section, on one page. */
 function Page() {
