@@ -702,10 +702,11 @@ describe('claude4spec launcher — the start of a workspace with a home (M31 ssn
     expect(prepared.workspace.name).toBe('team');
     expect(gitignoreAtRead).toEqual([true]);
     expect(prepared.options.workspace.projects.map((p) => p.id)).toEqual(['app']);
-    // The committed file is untouched.
-    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ projects: [{ id: 'app', path: 'specs/app' }], plugins: [] });
     registry.getWorkspace('team');
     expect(gitignoreAtRead).toEqual([true]);
+    // The committed file is untouched. Checked only after the count: this
+    // read is the test's own and goes through the same spy.
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ projects: [{ id: 'app', path: 'specs/app' }], plugins: [] });
 
     // A bare command inside the home (a fresh process): the walk-up selects, the view reads once.
     gitignoreAtRead.length = 0;
