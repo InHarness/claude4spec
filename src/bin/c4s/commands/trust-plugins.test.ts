@@ -6,6 +6,7 @@ import { parseArgs } from '../args.js';
 import { CliError, codeToExit } from '../errors.js';
 import { runTrustPlugins, trustPluginsCommand } from './trust-plugins.js';
 import { WorkspaceRegistry } from '../../../server/workspace/registry.js';
+import { dirEntries, snapshotDir } from '../../../../tests/helpers/dir-snapshot.js';
 
 /**
  * M31 `c4s trust-plugins` (mode `registry-write`), 2.1.58: a project of a
@@ -58,16 +59,6 @@ describe('c4s trust-plugins', () => {
       JSON.stringify({ $schemaVersion: 3, workspaces: [{ name: 'team', mode: 'prod', defaultPort: 4700, home }] }),
     );
     return { home, file };
-  }
-
-  /** Every file under `dir`, with its bytes — to prove nothing was written there. */
-  function snapshot(dir: string): Record<string, string> {
-    const out: Record<string, string> = {};
-    for (const entry of fs.readdirSync(dir, { recursive: true, encoding: 'utf8' })) {
-      const full = path.join(dir, entry);
-      if (fs.statSync(full).isFile()) out[entry] = fs.readFileSync(full, 'utf8');
-    }
-    return out;
   }
 
   const registryEntry = (name: string): Record<string, unknown> =>
@@ -124,7 +115,7 @@ describe('c4s trust-plugins', () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
     const { home, file } = teamHome([{ id: 'app', path: 'specs/app' }]);
-    const before = snapshot(home);
+    const before = snapshotDir(home);
 
     await runTrustPlugins(parseArgs(['trust-plugins', '--cwd', path.join(home, 'specs', 'app'), 'true']));
     expect(JSON.parse(stdout)).toEqual({
@@ -145,7 +136,7 @@ describe('c4s trust-plugins', () => {
 
     // Nothing in the home — workspace.json, the project's own files, a slot
     // under local/ — was written; no server was asked.
-    expect(snapshot(home)).toEqual(before);
+    expect(snapshotDir(home)).toEqual(before);
     expect(fs.existsSync(path.join(home, '.claude4spec', 'local'))).toBe(false);
     expect(fs.readFileSync(file, 'utf8')).toBe(before['.claude4spec/workspace.json']);
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -154,13 +145,13 @@ describe('c4s trust-plugins', () => {
     const solo = path.join(tmp, 'solo-spec');
     fs.mkdirSync(solo, { recursive: true });
     await runTrustPlugins(parseArgs(['trust-plugins', '--cwd', solo, '--port', '4612', 'true']));
-    expect(fs.readdirSync(solo)).toEqual([]);
+    expect(dirEntries(solo)).toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('[ac:ac-c4s-trust-plugins-cwd-dir-dla-katalog] a --cwd inside a home that workspace.json does not list → PROJECT_NOT_IN_WORKSPACE_FILE before any mutation', async () => {
     const { home } = teamHome([{ id: 'app', path: 'specs/app' }]);
-    const homeBefore = snapshot(home);
+    const homeBefore = snapshotDir(home);
     const registryBefore = fs.readFileSync(registryFile, 'utf8');
     const stray = path.join(home, 'specs', 'not-listed');
     fs.mkdirSync(stray, { recursive: true });
@@ -178,7 +169,7 @@ describe('c4s trust-plugins', () => {
     }
     // Before any mutation: neither the registry (not even lastOpened) nor the home changed.
     expect(fs.readFileSync(registryFile, 'utf8')).toBe(registryBefore);
-    expect(snapshot(home)).toEqual({ ...homeBefore });
+    expect(snapshotDir(home)).toEqual({ ...homeBefore });
     expect(stdout).toBe('');
   });
 
@@ -196,10 +187,10 @@ describe('c4s trust-plugins', () => {
 
   it('[section:m31cli01] a --port naming the workspace with a home, for a directory outside that home, is refused instead of writing workspace.json', async () => {
     const { home } = teamHome([{ id: 'app', path: 'specs/app' }]);
-    const homeBefore = snapshot(home);
+    const homeBefore = snapshotDir(home);
     const err = await refusal(['trust-plugins', '--cwd', path.join(tmp, 'elsewhere'), '--port', '4700', 'true']);
     expect(err.code).toBe('INVALID_ARGS');
     expect(err.message).toContain("workspace 'team'");
-    expect(snapshot(home)).toEqual(homeBefore);
+    expect(snapshotDir(home)).toEqual(homeBefore);
   });
 });

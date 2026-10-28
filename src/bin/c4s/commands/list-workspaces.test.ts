@@ -6,6 +6,7 @@ import { parseArgs } from '../args.js';
 import { CliError, codeToExit } from '../errors.js';
 import { listWorkspacesCommand, runListWorkspaces } from './list-workspaces.js';
 import type { WorkspacesFile } from '../../../server/workspace/types.js';
+import { dirEntries } from '../../../../tests/helpers/dir-snapshot.js';
 
 /**
  * M31 `c4s list-workspaces` — the one command whose whole point is answering
@@ -270,7 +271,7 @@ describe('c4s list-workspaces', () => {
       warn.mockRestore();
     }
     expect(fs.readFileSync(file, 'utf8')).toBe(before);
-    expect(fs.readdirSync(path.join(team, '.claude4spec'))).toEqual(['workspace.json']);
+    expect(dirEntries(path.join(team, '.claude4spec'))).toEqual(['workspace.json']);
   });
 
   it('[ac:ac-wyjscie-c4s-list-workspaces-jest-poso] sorts descending by lastOpened, never-opened workspaces last', async () => {
