@@ -46,6 +46,8 @@ let dir: string;
 let server: Server;
 let gateway: WsGateway;
 let cache: ProjectContextCache;
+/** The context the tab has been browsing — the one an invalidation retires. */
+let live: ProjectContext;
 let disposed: Array<ContextInvalidation | undefined>;
 let sockets: WebSocket[];
 
@@ -102,10 +104,12 @@ beforeEach(async () => {
   );
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
   // The project's context is live — the tab has been browsing it.
-  await cache.get({ id: PROJECT } as ProjectRecord);
+  live = await cache.get({ id: PROJECT } as ProjectRecord);
 });
 
 afterEach(async () => {
+  // The rebuild the invalidation started is released before the gateway closes.
+  await cache.disposeAll();
   for (const s of sockets) s.terminate();
   await gateway.close();
   await new Promise<void>((r) => server.close(() => r()));
@@ -146,9 +150,11 @@ describe('an activation change rebuilds the context without reloading the page (
     expect(res.status).toBe(200);
     expect(res.body.entities).toEqual(['dto']);
 
-    // The same process: the old context retired and disposed, the next request rebuilds it.
+    // The same process: the old context retired and disposed, and (2.1.60, M31
+    // `m31ctx001`) its successor built at once, without waiting for a request.
     expect(disposed).toEqual([{ reason: 'activation-changed' }]);
-    expect(cache.getLive(PROJECT)).toBeNull();
+    await vi.waitFor(() => expect(cache.getLive(PROJECT)).not.toBeNull());
+    expect(cache.getLive(PROJECT)).not.toBe(live);
 
     // The room still hears that its context is gone — and why.
     const event = await savingTab.disposedEvent;
@@ -166,9 +172,10 @@ describe('an activation change rebuilds the context without reloading the page (
 
     await request(server).post('/trust-plugins').send({ trust: true }).expect(200);
 
-    // Same process: the old context retired and disposed, rebuilt on the next request.
+    // Same process: the old context retired and disposed, and rebuilt at once.
     expect(disposed).toEqual([undefined]);
-    expect(cache.getLive(PROJECT)).toBeNull();
+    await vi.waitFor(() => expect(cache.getLive(PROJECT)).not.toBeNull());
+    expect(cache.getLive(PROJECT)).not.toBe(live);
     // Not presented as an activation-only change on the wire.
     const event = await tab.disposedEvent;
     expect(event).toEqual({ kind: 'project:disposed' });

@@ -71,10 +71,12 @@ function harness() {
       return fakeCtx(p.id);
     },
     {
-      background: (p) => {
+      background: (p, signal) => {
         started.push(p.id);
         const d = deferred<BackgroundBuildResult<ProjectContext>>();
         open.set(p.id, d);
+        // Like the real build: the shutdown (`disposeAll` in afterEach) aborts a build still open.
+        signal.addEventListener('abort', () => d.reject(signal.reason as Error));
         return d.promise;
       },
       now: () => now,
@@ -82,10 +84,12 @@ function harness() {
   );
   cache.onStateChange((c) => changes.push(c));
   caches.push(cache);
-  /** The background build of `id` (the one started last) ends ready. */
+  /** The background build of `id` (the one started last) ends ready; returns the context it built. */
   const finish = async (id: string) => {
-    open.get(id)!.resolve({ state: 'ready', context: fakeCtx(id) });
+    const context = fakeCtx(id);
+    open.get(id)!.resolve({ state: 'ready', context });
     await flush();
+    return context;
   };
   const fail = async (id: string, cause: string) => {
     open.get(id)!.reject(new Error(cause));
@@ -471,7 +475,7 @@ describe('M31 — the background build queue (2.1.60)', () => {
     expect(ids.filter((id) => h.cache.getLive(id) === null)).toEqual([]);
   });
 
-  it('[section:m31ctx001] an invalidated context is retired and disposed once idle; the next request builds the project again', async () => {
+  it('[section:m31ctx001] an invalidated context is retired and disposed only once its turns end; its successor is built meanwhile', async () => {
     const busy = { a: true };
     const built: ProjectContext[] = [];
     const cache = new ProjectContextCache(async (p) => {
@@ -483,13 +487,15 @@ describe('M31 — the background build queue (2.1.60)', () => {
     const first = await cache.get(record('a'));
     cache.invalidate('a');
     expect(cache.getLive('a')).toBeNull();
+    // The successor is built at once, while the predecessor's turn still runs.
+    const second = await cache.get(record('a'));
+    expect(second).not.toBe(first);
+    expect(built).toHaveLength(2);
     expect(first.dispose).not.toHaveBeenCalled(); // a turn is in flight
     busy.a = false;
     cache.reapIdle();
     expect(first.dispose).toHaveBeenCalledTimes(1);
-    const second = await cache.get(record('a'));
-    expect(second).not.toBe(first);
-    expect(built).toHaveLength(2);
+    expect(second.dispose).not.toHaveBeenCalled();
   });
 
   it('[section:m31ctx001] an invalidation leaves a queued project in the queue: an invalidateAll during the startup sweep drops no project from the background build', async () => {
@@ -504,18 +510,25 @@ describe('M31 — the background build queue (2.1.60)', () => {
     const states = h.cache.readStates();
     expect(states.get('b')).toBe('queued');
     expect(states.get('c')).toBe('queued');
-    await h.finish('a');
-    // `c` keeps its request-level position, `b` its place behind it.
+    // `a` was building: its successor is queued right away.
+    expect(states.get('a')).toBe('queued');
+    const stale = await h.finish('a');
+    // `c` keeps its request-level position; `a` (rebuilt on the current
+    // registry) and `b` follow on the invalidated level, in composition order.
     expect(h.started).toEqual(['a', 'c']);
     await h.finish('c');
     expect((await waiting).projectId).toBe('c');
-    expect(h.started).toEqual(['a', 'c', 'b']);
+    expect(h.started).toEqual(['a', 'c', 'a']);
+    const fresh = await h.finish('a');
+    expect(h.started).toEqual(['a', 'c', 'a', 'b']);
     await h.finish('b');
+    expect(h.cache.getLive('a')).toBe(fresh);
+    expect(stale.dispose).toHaveBeenCalledTimes(1);
     expect(h.cache.getLive('b')?.projectId).toBe('b');
     expect(h.cache.getLive('c')?.projectId).toBe('c');
   });
 
-  it('[section:m31ctx001] a project detached while it waits in the queue leaves the queue: it is never built, has no state, and its waiting request is rejected', async () => {
+  it('[ac:ac-projekt-odpiety-zanim-jego-budowa-w-t] [section:m31ctx001] [section:7fgfpqzf] a project detached while it waits in the queue leaves the queue: it is never built, has no state, and its waiting request is rejected', async () => {
     const h = harness();
     h.cache.start(['a', 'b'].map(record));
     await flush();
@@ -531,5 +544,224 @@ describe('M31 — the background build queue (2.1.60)', () => {
     expect(h.activated).toEqual([]);
     expect(h.cache.getLive('b')).toBeNull();
     expect([...h.cache.readStates()]).toEqual([['a', 'ready']]);
+  });
+});
+
+/**
+ * 2.1.60 — M31 `m31ctx001` (invalidation and release), `7fgfpqzf` (detach and
+ * purge): an invalidation queues the rebuild at once on the invalidated level;
+ * a context is released only at the detach, the invalidation (the predecessor,
+ * once its turns end) and the shutdown, which aborts the build in progress.
+ */
+describe('M31 — invalidation and release of contexts (2.1.60)', () => {
+  it('[ac:ac-inwalidacja-kontekstu-uruchamia-jego] [section:m31ctx001] an invalidation of a ready context starts its rebuild without waiting for a request', async () => {
+    const h = harness();
+    h.cache.start(['a', 'b'].map(record));
+    await flush();
+    const old = await h.finish('a');
+    await h.finish('b');
+    expect(h.started).toEqual(['a', 'b']);
+    h.cache.invalidate('a');
+    await flush();
+    // No request was made — the rebuild runs already, and the idle predecessor is released.
+    expect(h.started).toEqual(['a', 'b', 'a']);
+    expect(h.cache.readStates().get('a')).toBe('building');
+    expect(old.dispose).toHaveBeenCalledTimes(1);
+    const fresh = await h.finish('a');
+    expect(h.cache.getLive('a')).toBe(fresh);
+    expect(h.changes.filter((c) => c.projectId === 'a').map((c) => c.state)).toEqual([
+      'queued',
+      'building',
+      'ready',
+      'queued',
+      'building',
+      'ready',
+    ]);
+  });
+
+  it('[ac:ac-inwalidacja-projektu-w-stanie-bledu-u] [section:m31ctx001] an invalidation of a project in the error state starts its build without waiting for the window to expire', async () => {
+    const h = harness();
+    const project = record('a');
+    h.cache.start([project]);
+    await flush();
+    await h.fail('a', 'config.json: invalid JSON');
+    h.advance(1_000);
+    // Well within the ~15 s window: a request still gets the failure, no new attempt.
+    await expect(h.cache.get(project)).rejects.toBeInstanceOf(ProjectBuildFailedError);
+    expect(h.started).toEqual(['a']);
+    // The invalidation (the user fixed the config) clears the window: the build starts at once.
+    h.cache.invalidate('a');
+    await flush();
+    expect(h.started).toEqual(['a', 'a']);
+    expect(h.cache.readStates().get('a')).toBe('building');
+    const ctx = await h.finish('a');
+    expect(h.cache.getLive('a')).toBe(ctx);
+    expect((await h.cache.get(project)).projectId).toBe('a');
+  });
+
+  it('[ac:ac-inwalidacja-projektu-w-trakcie-jego-b] [section:m31ctx001] an invalidation during the project\'s build starts another build after it, on the current registry; the first result is retired, the waiting request gets the second', async () => {
+    let registryRoots = ['pages'];
+    const builds: Array<{ roots: string[]; done: Deferred<BackgroundBuildResult<ProjectContext>> }> = [];
+    const cache = new ProjectContextCache(
+      async () => {
+        throw new Error('no activation in this case');
+      },
+      {
+        background: (_p, signal) => {
+          // The build reads the registry when it starts.
+          const done = deferred<BackgroundBuildResult<ProjectContext>>();
+          builds.push({ roots: [...registryRoots], done });
+          signal.addEventListener('abort', () => done.reject(signal.reason as Error));
+          return done.promise;
+        },
+      },
+    );
+    caches.push(cache);
+    const ctxOver = (roots: string[]) => Object.assign(fakeCtx('a'), { roots });
+    cache.start([record('a')]);
+    await flush();
+    const waiting = cache.get(record('a'));
+    expect(builds).toHaveLength(1);
+
+    // A root is added (the registry switches) and the context invalidated while it builds.
+    registryRoots = ['pages', 'adr'];
+    cache.invalidate('a');
+    await flush();
+    expect(builds).toHaveLength(1); // the build in progress runs to its end
+    const first = ctxOver(builds[0]!.roots);
+    builds[0]!.done.resolve({ state: 'ready', context: first });
+    await flush();
+
+    // Its result goes to `retired` (idle → disposed), never served; the next build reads the current registry.
+    expect(first.dispose).toHaveBeenCalledTimes(1);
+    expect(builds).toHaveLength(2);
+    expect(builds[1]!.roots).toEqual(['pages', 'adr']);
+    const second = ctxOver(builds[1]!.roots);
+    builds[1]!.done.resolve({ state: 'ready', context: second });
+    await flush();
+    expect(await waiting).toBe(second);
+    expect(cache.getLive('a')).toBe(second);
+    expect(builds).toHaveLength(2);
+  });
+
+  it('[ac:ac-przy-jednoczesnej-inwalidacji-wielu-p] [section:m31ctx001] at a simultaneous invalidation of many projects the project with a waiting request builds first, then the others in the composition order', async () => {
+    const h = harness();
+    // The last opened project `c` built first — the entry order is not the composition order.
+    h.cache.start(['a', 'b', 'c', 'd'].map(record), 'c');
+    await flush();
+    for (const id of ['c', 'a', 'b', 'd']) await h.finish(id);
+    expect(h.started).toEqual(['c', 'a', 'b', 'd']);
+    // A project registered meanwhile is building when the base plugin pool changes.
+    h.cache.enqueue(record('e'));
+    await flush();
+    expect(h.started.slice(4)).toEqual(['e']);
+    h.cache.invalidateAll();
+    // A tab of `d` asks for it while everything waits for its rebuild.
+    const waiting = h.cache.get(record('d'));
+    await h.finish('e'); // the build in progress ends (its result is retired)
+    expect(h.started.slice(5)).toEqual(['d']);
+    await h.finish('d');
+    expect((await waiting).projectId).toBe('d');
+    for (const id of ['a', 'b', 'c']) await h.finish(id);
+    await h.finish('e');
+    expect(h.started.slice(5)).toEqual(['d', 'a', 'b', 'c', 'e']);
+    expect(['a', 'b', 'c', 'd', 'e'].every((id) => h.cache.getLive(id) !== null)).toBe(true);
+  });
+
+  it('[ac:ac-kontekst-projektu-odpietego-w-trakcie] [section:7fgfpqzf] the context of a project detached during its build is released right after that build ends; the waiting request is rejected at once (carried U4a rev-0003)', async () => {
+    const h = harness();
+    h.cache.start(['a', 'b'].map(record));
+    await flush();
+    const waiting = h.cache.get(record('a'));
+    h.cache.remove('a');
+    // The request is not handed to a next build — the project left the workspace.
+    await expect(waiting).rejects.toThrow("project 'a' was removed from the workspace");
+    expect(h.cache.readStates().has('a')).toBe(false);
+    const built = await h.finish('a');
+    // Released as soon as the build ended; never served, never rebuilt.
+    expect(built.dispose).toHaveBeenCalledTimes(1);
+    expect(h.cache.getLive('a')).toBeNull();
+    expect(h.started).toEqual(['a', 'b']);
+    await h.finish('b');
+    expect(h.started).toEqual(['a', 'b']);
+    expect([...h.cache.readStates().keys()]).toEqual(['b']);
+  });
+
+  it('[section:7fgfpqzf] carried U4a rev-0003: a detach after an invalidation during the build rejects the waiting request instead of handing it to a next build, and leaves no live context behind', async () => {
+    const h = harness();
+    h.cache.start([record('a')]);
+    await flush();
+    const waiting = h.cache.get(record('a'));
+    // The invalidation hands the request to the successor entry…
+    h.cache.invalidate('a');
+    // …and the detach drops that successor with the request.
+    h.cache.remove('a');
+    await expect(waiting).rejects.toThrow("project 'a' was removed from the workspace");
+    const built = await h.finish('a');
+    await flush();
+    expect(built.dispose).toHaveBeenCalledTimes(1);
+    expect(h.started).toEqual(['a']);
+    expect(h.cache.getLive('a')).toBeNull();
+    expect(h.cache.readStates().size).toBe(0);
+  });
+
+  it('[section:7fgfpqzf] [section:m31ctx001] a detach releases a ready context — at once when idle, after its turn when one is in flight', async () => {
+    const busy = { b: true };
+    const cache = new ProjectContextCache(async (p) => fakeCtx(p.id, () => p.id === 'b' && busy.b));
+    caches.push(cache);
+    const a = await cache.get(record('a'));
+    const b = await cache.get(record('b'));
+    cache.remove('a');
+    cache.remove('b');
+    expect(a.dispose).toHaveBeenCalledTimes(1);
+    expect(b.dispose).not.toHaveBeenCalled();
+    expect(cache.getLive('a')).toBeNull();
+    expect(cache.getLive('b')).toBeNull();
+    busy.b = false;
+    cache.reapIdle(); // the turn's `finally`
+    expect(b.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('[section:m31ctx001] the shutdown aborts the build in progress and waits until it has released what it held; every waiting request is rejected', async () => {
+    const released: string[] = [];
+    let signal!: AbortSignal;
+    const cache = new ProjectContextCache(
+      async () => {
+        throw new Error('no activation in this case');
+      },
+      {
+        background: async (_p, s) => {
+          signal = s;
+          const held: string[] = [];
+          try {
+            for (const resource of ['db', 'watch']) {
+              held.push(resource);
+              await flush();
+            }
+            await new Promise((_resolve, reject) => s.addEventListener('abort', () => reject(s.reason)));
+            throw new Error('unreachable');
+          } catch (err) {
+            for (const resource of held.reverse()) {
+              await flush();
+              released.push(resource);
+            }
+            throw err;
+          }
+        },
+      },
+    );
+    cache.start(['a', 'b'].map(record));
+    for (let i = 0; i < 4; i++) await flush();
+    // `a` is building, `b` waits in the queue — both with a request.
+    const rejectedA = expect(cache.get(record('a'))).rejects.toThrow('the server is shutting down');
+    const rejectedB = expect(cache.get(record('b'))).rejects.toThrow('the server is shutting down');
+    expect(released).toEqual([]);
+    await cache.disposeAll();
+    expect(signal.aborted).toBe(true);
+    // disposeAll returned only once the partial build released its resources, in reverse order.
+    expect(released).toEqual(['watch', 'db']);
+    await rejectedA;
+    await rejectedB;
+    expect(cache.readStates().size).toBe(0);
   });
 });

@@ -36,6 +36,7 @@ interface Waiter {
 interface Entry {
   project: ProjectRecord;
   state: ProjectBuildState;
+  /** The ready context — or the result of a build dropped by a purge or the shutdown, which disposes it. */
   ctx?: ProjectContext;
   cause?: string;
   failedAt?: number;
@@ -51,16 +52,23 @@ interface Entry {
   invalidation?: ContextInvalidation;
 }
 
+/** A build of the queue; `signal` aborts at the process shutdown (the build releases what it holds and rejects). */
+export type ContextBuild = (project: ProjectRecord, signal: AbortSignal) => Promise<ProjectContext>;
+
 export interface ProjectContextCacheOptions {
   /**
    * The background build (M01 `dsh8ezbz`): the activation's steps without
    * writes, then the context — «ready» or «needs activation»; a rejection is
    * the error state. Without it every build is `build` (a test composition).
    */
-  background?: (project: ProjectRecord) => Promise<BackgroundBuildResult<ProjectContext>>;
+  background?: (project: ProjectRecord, signal: AbortSignal) => Promise<BackgroundBuildResult<ProjectContext>>;
   /** Clock of the failed-build window — injectable for tests. */
   now?: () => number;
 }
+
+const removedFromWorkspace = (projectId: string) =>
+  new ProjectBuildFailedError(`project '${projectId}' was removed from the workspace`);
+const shuttingDown = () => new Error('the server is shutting down');
 
 /**
  * M31 `m31ctx001` (2.1.60): the cache of live contexts, the background build
@@ -71,14 +79,23 @@ export interface ProjectContextCacheOptions {
  *   composition order. Builds run ONE at a time, in their awaited part — the
  *   queue moves on when the current build resolves (its background projections
  *   may still run). Registration appends a project ({@link enqueue}).
- * - **Priority.** Two levels today: a project with a waiting request, then the
- *   rest. A request to a queued project moves it to the front; it builds right
- *   after the current build. (The level of invalidated projects sits between
- *   the two — `U4b`'s, not built here.)
+ * - **Priority.** Three levels: a project with a waiting request, an
+ *   invalidated project, the rest. A request to a queued project moves it to
+ *   the front; it builds right after the current build. Invalidated projects
+ *   keep the composition order among themselves.
  * - **Request.** {@link get} answers a ready context at once; a project being
  *   built or queued is waited for; «needs activation» runs the activation with
  *   writes (`build`) and then the context; a failed build within its window
  *   rejects with the cause; after the window the request starts the next try.
+ * - **Invalidation** ({@link invalidate}) puts the project in the queue at
+ *   once, on the invalidated level — the rebuild does not wait for a request.
+ *   It clears a failed build's window; during the project's build it sends that
+ *   build's result to `retired` and queues the next build (which reads the
+ *   current registry).
+ * - **Release.** A context is disposed at three moments only: the project's
+ *   detach or purge ({@link remove}, {@link retire}), its invalidation (the
+ *   predecessor, once its turns end — {@link reapIdle}) and the process
+ *   shutdown ({@link disposeAll}), which aborts the build in progress.
  * - **No limit.** The number of live contexts is not bounded — no eviction.
  * - **Failed build.** The error state holds at least {@link FAILED_BUILD_WINDOW_MS};
  *   the background never retries on its own (a permanently broken project would
@@ -87,23 +104,28 @@ export interface ProjectContextCacheOptions {
  */
 export class ProjectContextCache {
   private readonly entries = new Map<string, Entry>();
-  /** Queue levels, front first: projects with a waiting request, then the rest. */
+  /** The workspace's composition order — the order of invalidated projects in the queue. */
+  private composition: string[] = [];
+  /** Queue levels, front first: projects with a waiting request, invalidated projects, the rest. */
   private readonly requested: string[] = [];
+  private readonly invalidated: string[] = [];
   private readonly rest: string[] = [];
   private running = false;
   private closed = false;
+  /** The build in progress (one at a time) and the abort of its signal. */
+  private current?: { entry: Entry; abort: AbortController };
   /** Retired contexts awaiting idle, each with the invalidation that retired it. */
   private readonly retired = new Map<ProjectContext, ContextInvalidation | undefined>();
   private readonly listeners = new Set<(change: ProjectBuildStateChange) => void>();
-  private readonly background: (project: ProjectRecord) => Promise<BackgroundBuildResult<ProjectContext>>;
+  private readonly background: (project: ProjectRecord, signal: AbortSignal) => Promise<BackgroundBuildResult<ProjectContext>>;
   private readonly now: () => number;
 
   constructor(
-    private readonly build: (project: ProjectRecord) => Promise<ProjectContext>,
+    private readonly build: ContextBuild,
     opts: ProjectContextCacheOptions = {},
   ) {
     this.background =
-      opts.background ?? (async (project) => ({ state: 'ready', context: await build(project) }));
+      opts.background ?? (async (project, signal) => ({ state: 'ready', context: await build(project, signal) }));
     this.now = opts.now ?? (() => Date.now());
   }
 
@@ -119,6 +141,7 @@ export class ProjectContextCache {
    * then the composition order.
    */
   start(projects: readonly ProjectRecord[], lastOpenedProject?: string): void {
+    for (const p of projects) this.join(p.id);
     const first = projects.find((p) => p.id === lastOpenedProject);
     const ordered = first ? [first, ...projects.filter((p) => p !== first)] : [...projects];
     for (const project of ordered) this.enqueue(project);
@@ -127,6 +150,7 @@ export class ProjectContextCache {
   /** Registration (and the start): the project joins the end of the queue — unless it already has a state. */
   enqueue(project: ProjectRecord): void {
     if (this.closed || this.entries.has(project.id)) return;
+    this.join(project.id);
     const entry: Entry = { project, state: 'queued', activate: false, waiters: [] };
     this.entries.set(project.id, entry);
     this.rest.push(project.id);
@@ -148,7 +172,8 @@ export class ProjectContextCache {
       entry.activate = true;
       this.setQueued(entry);
     } else if (entry === undefined) {
-      if (this.closed) return Promise.reject(new Error('the server is shutting down'));
+      if (this.closed) return Promise.reject(shuttingDown());
+      this.join(id);
       entry = { project, state: 'queued', activate: false, waiters: [] };
       this.entries.set(id, entry);
       this.emit(entry);
@@ -185,75 +210,95 @@ export class ProjectContextCache {
   }
 
   /**
-   * Drop the entry; a ready context is parked in `retired` and disposed once
-   * idle. The next request builds again.
+   * M31 `m31ctx001` (2.1.60): the invalidation puts the project in the queue at
+   * once, on the invalidated level — the rebuild does not wait for a request:
    *
-   * A QUEUED entry is left as it is, queue position and waiters included: it
-   * has no context to invalidate and its build reads the fresh state anyway —
-   * dropping it would take the project out of the background build (an
-   * `invalidateAll` during the startup sweep would empty the queue).
+   * - a READY context is parked in `retired` (disposed once its turns end) and
+   *   the project is queued;
+   * - a FAILED build (or «needs activation») loses its window and is queued;
+   * - a QUEUED project stays an entry, its waiters included, and is raised to
+   *   the invalidated level (a request-level position is kept);
+   * - during the project's BUILD the result of that build goes to `retired` and
+   *   a successor entry — holding the waiting requests — is queued: the next
+   *   build reads the current registry.
    *
-   * 2.1.16 (M50 `8h2a734u`): `opts.reason` is handed to that context's
+   * 2.1.16 (M50 `8h2a734u`): `opts.reason` is handed to the retired context's
    * `dispose`, so its room hears WHY (`activation-changed` keeps the SPA page).
    */
   invalidate(projectId: string, opts?: ContextInvalidation): void {
     const entry = this.entries.get(projectId);
-    if (!entry || entry.state === 'queued') return;
-    this.entries.delete(projectId);
-    // Only a building entry has waiters here (a ready one resolved them, a failed
-    // one rejected them): they follow the project once the build settles.
-    if (entry.state === 'ready') this.retired.set(entry.ctx!, opts);
-    else if (entry.state === 'building') entry.invalidation = opts;
+    if (!entry || this.closed) return;
+    this.invalidateEntry(entry, opts);
     this.reapIdle();
-  }
-
-  /**
-   * Detach (the project left the workspace, its slot stays): a QUEUED entry is
-   * dropped — its queue position goes stale and its waiting requests are
-   * rejected with the removed-from-the-workspace error, as `retire` does — so
-   * the background sweep never builds a project that is no longer in the
-   * workspace. Any other state is invalidated.
-   */
-  remove(projectId: string): void {
-    const entry = this.entries.get(projectId);
-    if (entry?.state !== 'queued') return this.invalidate(projectId);
-    this.entries.delete(projectId);
-    this.rejectWaiters(entry, new ProjectBuildFailedError(`project '${projectId}' was removed from the workspace`));
+    this.pump();
   }
 
   /**
    * M33 phase 3: invalidate every cached context — used when the process-global
    * base plugin pool changes (the base catalog is shared, so a base reload
-   * invalidates ALL dependent contexts). Same fire-and-forget semantics as
-   * `invalidate`; in-flight turns finish on their captured (old) context.
+   * invalidates ALL dependent contexts). The projects line up in the
+   * composition order, behind the projects with a waiting request.
    */
   invalidateAll(): void {
-    for (const id of [...this.entries.keys()]) this.invalidate(id);
+    if (this.closed) return;
+    for (const entry of [...this.entries.values()]) this.invalidateEntry(entry, undefined);
+    this.reapIdle();
+    this.pump();
   }
 
   /**
-   * Purge path: drop the entry and AWAIT its dispose (unlike fire-and-forget
-   * `invalidate`) so the db handle is closed before the caller `fs.rm`s the
-   * slot dir. The caller guarantees no in-flight turn (409 otherwise).
+   * Detach (M31 `7fgfpqzf`: the project left the workspace, its slot stays):
+   * the project leaves the cache and the queue, and its waiting requests are
+   * rejected with the removed-from-the-workspace error — never handed to a
+   * next build. A ready context is released (parked in `retired`, disposed
+   * at once unless a turn is in flight); a build in progress ends, and its
+   * result is released right after it.
    */
-  async retire(projectId: string): Promise<void> {
+  remove(projectId: string): void {
+    this.composition = this.composition.filter((id) => id !== projectId);
     const entry = this.entries.get(projectId);
     if (!entry) return;
     this.entries.delete(projectId);
+    this.rejectWaiters(entry, removedFromWorkspace(projectId));
     if (entry.state === 'ready') {
-      await entry.ctx!.dispose();
-    } else if (entry.state === 'building') {
-      entry.purged = true;
-      await entry.settled;
-      await entry.ctx?.dispose();
-    } else {
-      this.rejectWaiters(entry, new ProjectBuildFailedError(`project '${projectId}' was removed from the workspace`));
+      this.retired.set(entry.ctx!, undefined);
+      this.reapIdle();
     }
+    // A `building` entry is no longer current: its result goes to `retired`
+    // when the build ends (settleDropped) and is disposed there.
+  }
+
+  /**
+   * Purge path: like the detach, but AWAITS the release so the db handle is
+   * closed before the caller `fs.rm`s the slot dir. A build in progress — the
+   * project's current entry, or an earlier one an invalidation left running —
+   * ends first and its result is disposed then: the slot is deleted only after
+   * that. The caller guarantees no in-flight turn (409 otherwise).
+   */
+  async retire(projectId: string): Promise<void> {
+    this.composition = this.composition.filter((id) => id !== projectId);
+    const entry = this.entries.get(projectId);
+    const disposals: Promise<void>[] = [];
+    const builds: Entry[] = [];
+    if (entry) {
+      this.entries.delete(projectId);
+      this.rejectWaiters(entry, removedFromWorkspace(projectId));
+      if (entry.state === 'ready') disposals.push(entry.ctx!.dispose());
+      else if (entry.state === 'building') builds.push(entry);
+    }
+    const running = this.current?.entry;
+    if (running && running !== entry && running.project.id === projectId) builds.push(running);
+    for (const build of builds) build.purged = true;
+    for (const build of builds) {
+      await build.settled;
+      if (build.ctx) disposals.push(build.ctx.dispose());
+    }
+    await Promise.all(disposals);
   }
 
   /**
    * Dispose retired contexts whose agent turns have all finished. Called on
-   * invalidate and from every turn's `finally` (onTurnFinished).
+   * invalidate, on detach and from every turn's `finally` (onTurnFinished).
    */
   reapIdle(): void {
     for (const [ctx, opts] of this.retired) {
@@ -266,22 +311,61 @@ export class ProjectContextCache {
     }
   }
 
-  /** Process shutdown: the queue stops; dispose everything (live + retired), ignoring in-flight guards. */
+  /**
+   * Process shutdown: the queue stops, every waiting request is rejected, the
+   * build in progress is aborted (it releases its partial resources in reverse
+   * acquisition order and rejects — or, done already, its context is disposed
+   * here), and every context — live and retired — is disposed, ignoring
+   * in-flight guards.
+   */
   async disposeAll(): Promise<void> {
     this.closed = true;
     this.requested.length = 0;
+    this.invalidated.length = 0;
     this.rest.length = 0;
-    const ctxs: ProjectContext[] = [...this.retired.keys()];
+    this.composition = [];
+    const disposals: Promise<void>[] = [...this.retired.keys()].map((c) => c.dispose());
     for (const entry of this.entries.values()) {
-      if (entry.state === 'ready') ctxs.push(entry.ctx!);
-      else if (entry.state !== 'building') this.rejectWaiters(entry, new Error('the server is shutting down'));
+      this.rejectWaiters(entry, shuttingDown());
+      if (entry.state === 'ready') disposals.push(entry.ctx!.dispose());
     }
     this.entries.clear();
     this.retired.clear();
-    await Promise.allSettled(ctxs.map((c) => c.dispose()));
+    const running = this.current;
+    if (running) {
+      running.abort.abort(shuttingDown());
+      await running.entry.settled;
+      // A purge awaiting the same build disposes its result itself.
+      if (running.entry.ctx && !running.entry.purged) disposals.push(running.entry.ctx.dispose());
+    }
+    await Promise.allSettled(disposals);
   }
 
   // ─── the queue ────────────────────────────────────────────────────────────
+
+  /** The project belongs to the composition (appended when new). */
+  private join(id: string): void {
+    if (!this.composition.includes(id)) this.composition.push(id);
+  }
+
+  private invalidateEntry(entry: Entry, opts: ContextInvalidation | undefined): void {
+    const id = entry.project.id;
+    if (entry.state === 'building') {
+      // The build's result is not served: it goes to `retired` (settleDropped).
+      entry.invalidation = opts;
+      const successor: Entry = { project: entry.project, state: 'queued', activate: false, waiters: entry.waiters.splice(0) };
+      this.entries.set(id, successor);
+      this.emit(successor);
+      if (successor.waiters.length > 0) return this.promote(id);
+    } else if (entry.state === 'ready') {
+      this.retired.set(entry.ctx!, opts);
+      entry.ctx = undefined;
+      this.setQueued(entry);
+    } else if (entry.state !== 'queued') {
+      this.setQueued(entry); // a failed build loses its window
+    }
+    this.raise(id);
+  }
 
   private setQueued(entry: Entry): void {
     entry.cause = undefined;
@@ -293,14 +377,27 @@ export class ProjectContextCache {
   /** Move a queued project to the request level (it builds right after the current build). */
   private promote(id: string): void {
     if (this.requested.includes(id)) return;
-    const at = this.rest.indexOf(id);
-    if (at >= 0) this.rest.splice(at, 1);
+    remove(this.invalidated, id);
+    remove(this.rest, id);
     this.requested.push(id);
+  }
+
+  /** Move a queued project to the invalidated level, in the composition order; a request-level position stays. */
+  private raise(id: string): void {
+    if (this.requested.includes(id) || this.invalidated.includes(id)) return;
+    remove(this.rest, id);
+    const rank = (x: string) => {
+      const at = this.composition.indexOf(x);
+      return at < 0 ? Number.MAX_SAFE_INTEGER : at;
+    };
+    const before = this.invalidated.findIndex((other) => rank(other) > rank(id));
+    if (before < 0) this.invalidated.push(id);
+    else this.invalidated.splice(before, 0, id);
   }
 
   private next(): Entry | undefined {
     for (;;) {
-      const id = this.requested.shift() ?? this.rest.shift();
+      const id = this.requested.shift() ?? this.invalidated.shift() ?? this.rest.shift();
       if (id === undefined) return undefined;
       const entry = this.entries.get(id);
       // A stale position: the project was dropped, or is already past the queue.
@@ -326,19 +423,21 @@ export class ProjectContextCache {
   private async runBuild(entry: Entry): Promise<void> {
     let settle!: () => void;
     entry.settled = new Promise<void>((resolve) => (settle = resolve));
+    const abort = new AbortController();
+    this.current = { entry, abort };
     entry.state = 'building';
     this.emit(entry);
     const { project } = entry;
     try {
       let ctx: ProjectContext | undefined;
       if (entry.activate) {
-        ctx = await this.build(project);
+        ctx = await this.build(project, abort.signal);
       } else {
-        const result = await this.background(project);
+        const result = await this.background(project, abort.signal);
         if (result.state === 'ready') ctx = result.context;
         // «Needs activation» with a request already waiting: that request is
         // the first one, so the activation and the build follow right here.
-        else if (entry.waiters.length > 0 && this.isCurrent(entry)) ctx = await this.build(project);
+        else if (entry.waiters.length > 0 && this.isCurrent(entry)) ctx = await this.build(project, abort.signal);
       }
       entry.activate = false;
       if (!this.isCurrent(entry)) return this.settleDropped(entry, ctx);
@@ -360,6 +459,7 @@ export class ProjectContextCache {
       this.emit(entry);
       this.rejectWaiters(entry, new ProjectBuildFailedError(entry.cause));
     } finally {
+      if (this.current?.entry === entry) this.current = undefined;
       settle();
     }
   }
@@ -369,27 +469,20 @@ export class ProjectContextCache {
   }
 
   /**
-   * A build whose entry was dropped while it ran (an invalidation, a purge, the
-   * shutdown): its context is not served. A purge disposes it itself
-   * (`retire`); otherwise it is parked in `retired` like any invalidated
-   * context. Waiting requests follow an invalidated project to its next build.
+   * A build whose entry left the cache while it ran — its context is never
+   * served, and it has no waiters left (an invalidation handed them to the
+   * successor; a detach, a purge or the shutdown rejected them). A purge or
+   * the shutdown disposes the result itself (`retire`, `disposeAll`); an
+   * invalidation or a detach parks it in `retired`, disposed at once when idle.
    */
   private settleDropped(entry: Entry, ctx: ProjectContext | undefined): void {
-    if (ctx && entry.purged) entry.ctx = ctx;
-    else if (ctx && this.closed) void ctx.dispose().catch(() => {});
-    else if (ctx) {
-      this.retired.set(ctx, entry.invalidation);
-      this.reapIdle();
+    if (!ctx) return;
+    if (entry.purged || this.closed) {
+      entry.ctx = ctx;
+      return;
     }
-    if (this.closed) this.rejectWaiters(entry, new Error('the server is shutting down'));
-    else if (entry.purged) {
-      this.rejectWaiters(entry, new ProjectBuildFailedError(`project '${entry.project.id}' was removed from the workspace`));
-    } else this.redispatch(entry);
-  }
-
-  /** Hand the waiting requests of an invalidated entry to the project's next build. */
-  private redispatch(entry: Entry): void {
-    for (const w of entry.waiters.splice(0)) this.get(entry.project).then(w.resolve, w.reject);
+    this.retired.set(ctx, entry.invalidation);
+    this.reapIdle();
   }
 
   private rejectWaiters(entry: Entry, err: Error): void {
@@ -407,4 +500,9 @@ export class ProjectContextCache {
       }
     }
   }
+}
+
+function remove(list: string[], id: string): void {
+  const at = list.indexOf(id);
+  if (at >= 0) list.splice(at, 1);
 }

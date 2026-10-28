@@ -32,6 +32,9 @@ import { SidebarAccordionsService } from './sidebar-accordions.js';
 import { SkillRegistry, SkillResolver, toPackageFiles } from './skill-registry.js';
 import { loadSkillFileLive } from './skill-operations.js';
 import { DomainError } from './tags.js';
+import { ProjectContextCache } from '../workspace/context-cache.js';
+import type { ProjectContext } from '../workspace/project-context.js';
+import type { ProjectRecord } from '../workspace/types.js';
 import { checkWritingStyleAtStart } from './writing-style-start.js';
 
 /**
@@ -352,6 +355,38 @@ describe('project-exposed source — reading (M52 + M37, 2.1.9)', () => {
     put(path.join(provider.pagesDir, 'modules/invoices.md'), '# Invoice lifecycle\n\nDraft, issued, paid, refunded.\n');
     expect((await loadSkillFileLive(registry, 'billing-rules')).content).toContain('# Billing rules v2');
     expect((await loadSkillFileLive(registry, 'billing-rules', 'modules/invoices.md')).content).toContain('refunded');
+  });
+
+  it('[section:1v62dbhb] the source holds no handle of the provider\'s context: after the implementor releases and rebuilds it, the next read reaches the new context', async () => {
+    // The layer's implementor — the M31 cache — hands out the provider's context on request.
+    let version = 0;
+    const cache = new ProjectContextCache(async (p) => {
+      const v = ++version;
+      return {
+        projectId: p.id,
+        hasInFlightTurn: () => false,
+        dispose: vi.fn(async () => {}),
+        readExposedSkill: async () => pkg(`# Billing rules v${v}\n`),
+      } as unknown as ProjectContext;
+    });
+    const provider: ProjectRecord = { id: 'billing', cwd: '/projects/billing', addedAt: '2026-10-28T00:00:00.000Z' };
+    try {
+      const { registry } = consumer({
+        uses: ['billing-rules'],
+        exposed: [BILLING],
+        packages: { billing: async () => (await cache.get(provider)).readExposedSkill() },
+      });
+      expect((await loadSkillFileLive(registry, 'billing-rules')).content).toContain('# Billing rules v1');
+      const first = cache.getLive('billing')!;
+
+      // The implementor releases the provider's context (an invalidation) and builds its successor.
+      cache.invalidate('billing');
+      expect(first.dispose).toHaveBeenCalledTimes(1);
+      expect((await loadSkillFileLive(registry, 'billing-rules')).content).toContain('# Billing rules v2');
+      expect(cache.getLive('billing')).not.toBe(first);
+    } finally {
+      await cache.disposeAll();
+    }
   });
 
   it('the content arrives expanded in the provider\'s context, without frontmatter and anchor lines; subfiles are the base-root pages by path', async () => {

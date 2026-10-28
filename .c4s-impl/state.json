@@ -1,5 +1,5 @@
 {
-  "iteration": 18,
+  "iteration": 21,
   "conventions": [
     {
       "label": "L10 (Project Scoping) — implementor M31",
@@ -30,7 +30,7 @@
       "units": [
         "U4b-inwalidacja-i-zwalnianie"
       ],
-      "startCommit": null
+      "startCommit": "63bc688360eb0da7f371176de0f70b0ba76cd8af"
     },
     {
       "n": 4,
@@ -689,15 +689,45 @@
         }
       ],
       "wave": 3,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "U4b-inwalidacja-i-zwalnianie/p1-m31-m52",
+          "layers": [
+            "M31",
+            "M52"
+          ],
+          "slugs": [
+            "ac-inwalidacja-kontekstu-uruchamia-jego",
+            "ac-inwalidacja-projektu-w-stanie-bledu-u",
+            "ac-inwalidacja-projektu-w-trakcie-jego-b",
+            "ac-kontekst-projektu-odpietego-w-trakcie",
+            "ac-projekt-odpiety-zanim-jego-budowa-w-t",
+            "ac-przy-jednoczesnej-inwalidacji-wielu-p",
+            "ac-purge-projektu-w-trakcie-jego-budowy",
+            "ac-zamkniecie-procesu-w-trakcie-budowy-z",
+            "section:7fgfpqzf",
+            "section:m31ctx001",
+            "section:fx7bhlre",
+            "section:1v62dbhb",
+            "carried:U4a-rev-0003"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "63bc688360eb0da7f371176de0f70b0ba76cd8af",
+      "baseCommit": "63bc688360eb0da7f371176de0f70b0ba76cd8af",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "U5-wyzwalacze-inwalidacji",

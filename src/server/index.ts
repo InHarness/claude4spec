@@ -359,7 +359,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // shared with the registration route below: a project added through
   // POST /api/workspace/projects is not activated a second time by its build.
   const activated = new ActivatedProjects();
-  const buildContext = (project: ProjectRecord, projectWrites: 'allowed' | 'none') =>
+  const buildContext = (project: ProjectRecord, projectWrites: 'allowed' | 'none', signal?: AbortSignal) =>
     buildProjectContext({
       registry,
       pluginRegistry,
@@ -373,6 +373,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       mode,
       remoteApiUrl: opts.remoteApiUrl,
       projectWrites,
+      signal,
       onTurnFinished: () => cache.reapIdle(),
       onContextConfigChanged: (opts) => cache.invalidate(project.id, opts),
       // 2.1.9 (M52 `1v62dbhb`): a provider's context, on request, from this cache
@@ -386,8 +387,10 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       },
     });
   const cache: ProjectContextCache = new ProjectContextCache(
-    activatingBuild(registry, workspace, (project) => buildContext(project, 'allowed'), activated),
-    { background: backgroundBuild(registry, (project, mode) => buildContext(project, mode.projectWrites)) },
+    activatingBuild(registry, workspace, (project, signal) => buildContext(project, 'allowed', signal), activated),
+    {
+      background: backgroundBuild(registry, (project, mode) => buildContext(project, mode.projectWrites, mode.signal)),
+    },
   );
 
   // M33 phase 3: process-global base (workspace/npm) plugin hot-reload watcher.
@@ -458,7 +461,9 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
         // `m33l7pln` step 5, M40 `kc23agex`): `plugins:base` is a
         // `scope: 'process'` mount, so its event goes through the M40 runtime
         // to the room of EVERY project of the process — the gateway's rooms,
-        // not the context cache, which invalidateAll() has just emptied.
+        // not the context cache, whose contexts invalidateAll() has just retired
+        // (M31 2.1.60: every project is queued for its rebuild at once, in the
+        // composition order, behind the projects with a waiting request).
         cache.invalidateAll();
         for (const r of reloaded) {
           watchRuntime.broadcast('process', { kind: 'plugin:reloaded', name: r.name, version: r.version, tier: 'base' });
@@ -544,8 +549,11 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       // from the queue instead of from a timer. A failed reload has already
       // been logged by the chain's own catch, so settling is enough.
       await baseReloadChain.catch(() => {});
-      await watchRuntime.close();
+      // M31 `m31ctx001` (2.1.60): the contexts go first — the build in progress
+      // is aborted and releases its partial resources (its watch scope among
+      // them) while the runtime still stands; then the process mounts close.
       await cache.disposeAll();
+      await watchRuntime.close();
       await gateway.close();
       await closeAssets();
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));

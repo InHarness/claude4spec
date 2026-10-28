@@ -583,9 +583,11 @@ describe('M01 lazy project activation (2.1.58)', () => {
   it('[ac:ac-serwer-przyjmuje-zadania-zanim-zbuduj] the server takes requests before the context of any project is built', async () => {
     const a = registry.registerProject(ws, dirOf('a'));
     const b = registry.registerProject(ws, dirOf('b'));
-    // Builds that have not finished — the state right after listen.
-    const never = new Promise<never>(() => {});
-    const cache = new ProjectContextCache(() => never, { background: () => never });
+    // Builds that have not finished — the state right after listen. They end
+    // only when the shutdown (`disposeAll` in afterEach) aborts them.
+    const unfinished = (_p: ProjectRecord, signal: AbortSignal) =>
+      new Promise<never>((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason as Error)));
+    const cache = new ProjectContextCache(unfinished, { background: unfinished });
     caches.push(cache);
     const app = express()
       .use(express.json())

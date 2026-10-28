@@ -10,7 +10,9 @@ import { workspaceFilePath } from '../workspace/home-workspace.js';
 import { workspaceRouter } from '../workspace/routes.js';
 import { errorHandler } from './errors.js';
 import { configPath } from '../config.js';
-import type { ProjectContextCache } from '../workspace/context-cache.js';
+import { ProjectContextCache } from '../workspace/context-cache.js';
+import type { BackgroundBuildResult } from '../workspace/bootstrap.js';
+import type { ProjectContext } from '../workspace/project-context.js';
 import type { WorkspaceRecord } from '../workspace/types.js';
 
 /**
@@ -73,7 +75,10 @@ describe('M31 workspace routes — workspace with a home and registry workspace 
   } as unknown as ProjectContextCache;
 
   /** The server's composition for one workspace: its start view, the POST through `bootstrapProject`. */
-  const appFor = (name: string): { app: express.Express; view: WorkspaceRecord } => {
+  const appFor = (
+    name: string,
+    contexts: ProjectContextCache = cache,
+  ): { app: express.Express; view: WorkspaceRecord } => {
     const view = registry.openView(name);
     const app = express()
       .use(express.json())
@@ -82,7 +87,7 @@ describe('M31 workspace routes — workspace with a home and registry workspace 
         workspaceRouter({
           registry,
           workspace: view,
-          cache,
+          cache: contexts,
           mode: 'prod',
           activateProject: async (cwd) => bootstrapProject(registry, view, cwd).project,
         }),
@@ -222,6 +227,62 @@ describe('M31 workspace routes — workspace with a home and registry workspace 
     expect(readWorkspaceJson().projects).toEqual([]);
     expect(fs.existsSync(billingSlot)).toBe(false);
     expect(fs.existsSync(path.join(home, 'services', 'billing'))).toBe(true);
+  });
+
+  it('[ac:ac-purge-projektu-w-trakcie-jego-budowy] [section:7fgfpqzf] a purge of a project during its build deletes the db slot only after the context that build produced is released', async () => {
+    // The real cache; the project's background build is held open by the test.
+    let finishBuild!: (result: BackgroundBuildResult<ProjectContext>) => void;
+    const contexts = new ProjectContextCache(
+      async () => {
+        throw new Error('no activation in this case');
+      },
+      { background: () => new Promise((resolve) => (finishBuild = resolve)) },
+    );
+    const tick = () => new Promise((resolve) => setImmediate(resolve));
+    try {
+      const { app, view } = appFor('team', contexts);
+      const api = path.join(home, 'services', 'api');
+      const apiSlot = registry.prepareSlot(view, 'api', api);
+      fs.writeFileSync(path.join(apiSlot, 'db.sqlite'), '');
+      contexts.start(view.projects);
+      await tick();
+      expect(contexts.readStates().get('api')).toBe('building');
+
+      let answered = false;
+      const purge = request(app)
+        .delete('/api/workspace/projects/api')
+        .query({ purgeData: 'true' })
+        .then((res) => {
+          answered = true;
+          return res;
+        });
+      // The route has removed the entry and now waits for the build to end:
+      // the slot is still there, and there is no answer yet.
+      while (readWorkspaceJson().projects.length > 0) await tick();
+      for (let i = 0; i < 5; i++) await tick();
+      expect(answered).toBe(false);
+      expect(fs.existsSync(path.join(apiSlot, 'db.sqlite'))).toBe(true);
+
+      // The build ends: its context is released first — the slot still on disk
+      // while it closes — and only then the slot goes.
+      const slotAtDispose: boolean[] = [];
+      const built = {
+        projectId: 'api',
+        hasInFlightTurn: () => false,
+        dispose: async () => {
+          slotAtDispose.push(fs.existsSync(path.join(apiSlot, 'db.sqlite')));
+        },
+      } as unknown as ProjectContext;
+      finishBuild({ state: 'ready', context: built });
+      const res = await purge;
+      expect(res.status).toBe(200);
+      expect(slotAtDispose).toEqual([true]);
+      expect(fs.existsSync(apiSlot)).toBe(false);
+      expect(contexts.getLive('api')).toBeNull();
+      expect(contexts.readStates().has('api')).toBe(false);
+    } finally {
+      await contexts.disposeAll();
+    }
   });
 
   it('[section:7fgfpqzf] rev-0021: when this machine dropped the stored entry after the start, detach, purge and registration are refused with 409 WORKSPACE_NOT_REGISTERED — workspace.json, the registry, the slot and the project directory (no .claude4spec/) stay as they were', async () => {

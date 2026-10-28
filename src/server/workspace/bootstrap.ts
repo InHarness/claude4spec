@@ -178,7 +178,8 @@ export type BackgroundBuildResult<T> =
  * 2.1.60 (M01 `dsh8ezbz`, M31 `m31ctx001`): one project's build in the
  * background mode — the activation's steps without writes
  * ({@link backgroundActivationSteps}), then the context build, which the caller
- * runs with `projectWrites: 'none'` (handed to `build`). Resolves «ready» with
+ * runs with `projectWrites: 'none'` (handed to `build`, with the queue's
+ * abort `signal` — the process shutdown interrupts the build). Resolves «ready» with
  * the context, or «needs activation» (from the steps, or from a build that met
  * a migration to text — the partial build is released by the build itself).
  * Rejects on any error: a missing directory is that build's
@@ -186,13 +187,13 @@ export type BackgroundBuildResult<T> =
  */
 export function backgroundBuild<T>(
   registry: WorkspaceRegistry,
-  build: (project: ProjectRecord, mode: { projectWrites: 'none' }) => Promise<T>,
-): (project: ProjectRecord) => Promise<BackgroundBuildResult<T>> {
-  return async (project) => {
+  build: (project: ProjectRecord, mode: { projectWrites: 'none'; signal?: AbortSignal }) => Promise<T>,
+): (project: ProjectRecord, signal?: AbortSignal) => Promise<BackgroundBuildResult<T>> {
+  return async (project, signal) => {
     const steps = backgroundActivationSteps(registry, project);
     if (steps.state === 'needs-activation') return steps;
     try {
-      return { state: 'ready', context: await build(project, { projectWrites: 'none' }) };
+      return { state: 'ready', context: await build(project, { projectWrites: 'none', signal }) };
     } catch (err) {
       if (err instanceof ProjectNeedsActivationError) return { state: 'needs-activation', needs: [...err.needs] };
       throw err;
@@ -329,15 +330,15 @@ export class ActivatedProjects {
 export function activatingBuild<T>(
   registry: WorkspaceRegistry,
   workspace: WorkspaceRecord,
-  build: (project: ProjectRecord) => Promise<T>,
+  build: (project: ProjectRecord, signal?: AbortSignal) => Promise<T>,
   activated: ActivatedProjects = new ActivatedProjects(),
-): (project: ProjectRecord) => Promise<T> {
-  return async (project) => {
+): (project: ProjectRecord, signal?: AbortSignal) => Promise<T> {
+  return async (project, signal) => {
     if (!activated.has(project)) {
       activateProject(registry, workspace, project);
       activated.add(project);
     }
-    return build(project);
+    return build(project, signal);
   };
 }
 

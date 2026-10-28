@@ -259,6 +259,14 @@ export interface ProjectContextDeps {
    * and the upgraded-payload rewrite are skipped, not «needs activation».
    */
   projectWrites?: 'allowed' | 'none';
+  /**
+   * 2.1.60 (M31 `m31ctx001`): the build queue's abort — the process shutdown
+   * interrupts the build in progress. The build checks it between its awaited
+   * steps (and stops the entity rebuild between slices); an aborted build
+   * releases its partial resources in reverse acquisition order and rejects
+   * with the signal's reason.
+   */
+  signal?: AbortSignal;
   /** M31: pinged when an agent turn finishes — context-cache idle-retry hook. */
   onTurnFinished?: () => void;
   /**
@@ -366,6 +374,7 @@ export async function buildProjectContext(deps: ProjectContextDeps): Promise<Pro
   // cached as a 500 for THIS project only and must leak nothing.
   const cleanup: Array<() => unknown> = [];
   try {
+    deps.signal?.throwIfAborted();
     return await buildInner(deps, cleanup);
   } catch (err) {
     for (const fn of cleanup.reverse()) {
@@ -483,6 +492,7 @@ async function buildInner(
   // on the client when `localPluginsPresent && trust === undefined`.
   const trust = registry.getProjectTrust(workspace, projectId);
   const overlayLayer = await loadOverlayLayer(cwd, trust, deps.overlayImporter);
+  deps.signal?.throwIfAborted();
   const { localPluginsPresent, overlayResult } = overlayLayer;
   const overlay: ProjectPluginOverlay | undefined = overlayResult?.overlay;
   const overlayRecords: PluginLoadRecord[] = overlayLayer.records;
@@ -576,6 +586,7 @@ async function buildInner(
   // services exist: mount → bind is a contract per source.
   const { rootRuntimes, artifactMounts, sourceByRootId, storeByRootId, writerByRootId, serializerByRootId } =
     await mountRegistryRoots({ cwd, registry: rootRegistry, userRoots: effectiveRoots, w });
+  deps.signal?.throwIfAborted();
   const rootById = new Map(rootRuntimes.map((rt) => [rt.root.id, rt]));
   // The BASE root's runtime backs the many single-root consumers that still take
   // one PagesService/FileSerializer (release restore, entity reference-tools,
@@ -603,6 +614,7 @@ async function buildInner(
     plansPages: plansMount.store,
     backupDb: () => backupDbBeforeMigration(dbSlotDir),
   });
+  deps.signal?.throwIfAborted();
 
   const tagsService = new TagsService(db.handle);
   tagsService.setHost(pluginHost);
@@ -810,6 +822,9 @@ async function buildInner(
   // 2.1.60: a rebuild between its read slices ends without a commit once the
   // context is released — before the db handle closes (reverse order).
   cleanup.push(() => entityIndexer.dispose());
+  // 2.1.60 (M31 `m31ctx001`): the shutdown stops the boot rebuild between its
+  // slices too — the build then throws at its next checkpoint (`interrupted`).
+  deps.signal?.addEventListener('abort', () => entityIndexer.dispose(), { once: true });
   // 0.1.118: sibling triad for the on-disk release-identity store — mirrors
   // the entities triad above exactly (its own registry root, atomic file store,
   // upsert-by-slug indexer keeping spec_release.id stable — see
@@ -1778,6 +1793,16 @@ async function buildInner(
    * directory that is gone.
    */
   const bootWork: Promise<unknown>[] = [];
+  /**
+   * 2.1.60 (M31 `m31ctx001`): a checkpoint once the boot passes run — the
+   * shutdown aborted the build: the passes settle first (so the partial
+   * build's cleanup closes no handle under them), then the build rejects.
+   */
+  const interrupted = async (): Promise<void> => {
+    if (!deps.signal?.aborted) return;
+    await Promise.allSettled(bootWork);
+    deps.signal.throwIfAborted();
+  };
   bootWork.push(sidebarAccordions.rebuildAll().catch((err) => {
     console.warn('[m02] sidebar accordions initial build failed:', (err as Error).message);
   }));
@@ -2019,6 +2044,7 @@ async function buildInner(
     // The DB→text export broke off: entities are still held only in the database.
     if (exportingToText) incompleteMigrations.push(MIGRATION_DB_ONLY_ENTITIES);
   }
+  await interrupted();
   // M29: enable tags.json persistence only AFTER the boot rebuild, so any
   // auto-created tag during indexAll does not write files mid-rebuild.
   tagsService.setEntityStore(entityStore);
@@ -2121,6 +2147,7 @@ async function buildInner(
     // thing — so its only scope is global.
     projectionStatus.markStale(PROJECTION_IDS.releases);
   }
+  await interrupted();
   // 2.1.49 (M17 m17ui001): from here on the store's own writes announce
   // `file:changed` in the `releases` root, so open tabs refresh the release list
   // (M49). Wired after the boot backfill and rebuild above: nothing listens while

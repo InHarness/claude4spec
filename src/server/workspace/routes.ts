@@ -214,7 +214,8 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
       registry.removeProject(workspace, id);
       if (purge) {
         // Await dispose (releases this context's db reference) before removing
-        // the slot dir. `retire` no longer guarantees the handle is CLOSED — a
+        // the slot dir — a build in progress ends first and its result is
+        // disposed then (M31 `7fgfpqzf`, 2.1.60). `retire` no longer guarantees the handle is CLOSED — a
         // retired predecessor may still hold a reference to the same slot — so
         // the map entry is dropped explicitly: without it, re-registering this
         // cwd would reuse a handle onto the deleted file. See `forgetDbSlot`.
@@ -223,8 +224,10 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
         forgetDbSlot(slot);
         fs.rmSync(slot, { recursive: true, force: true });
       } else {
-        // Context retires/disposes (a queued project leaves the queue); the DB
-        // slot stays on disk (re-register = same index).
+        // The project leaves the queue and its waiting requests are refused; a
+        // ready context is disposed (after its turn, if one is in flight), a
+        // build in progress is disposed when it ends. The DB slot stays on disk
+        // (re-register = same index).
         cache.remove(id);
       }
       const fresh = registry.getWorkspace(workspace.name) ?? workspace;
