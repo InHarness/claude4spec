@@ -1719,7 +1719,7 @@
         }
       ],
       "wave": 4,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "remote-session-issuer/p1-l1-l17",
@@ -1736,18 +1736,18 @@
             "ac-remote-url-url-ustawia-effectivec",
             "ac-sesja-wydana-pod-innym-adresem-zdalne"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 4,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "4366c1521a9e7f5d2dfa906960abd79f1b298d21",
+      "baseCommit": "4366c1521a9e7f5d2dfa906960abd79f1b298d21",
       "rounds": {
-        "review": 0,
-        "unit": 0
+        "review": 4,
+        "unit": 4
       },
       "jobs": []
     },

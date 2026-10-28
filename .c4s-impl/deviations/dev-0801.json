@@ -1,0 +1,16 @@
+{
+  "id": "dev-0801",
+  "kind": "clarification",
+  "blocking": false,
+  "address": "remote-session-issuer/ux690pt2",
+  "slugs": [
+    "remote-session",
+    "section:ux690pt2"
+  ],
+  "text": "`ux690pt2` says that under another effective address the token is neither sent nor deleted and that returning to the issuer restores the session, while `remote-session` keeps the table single-row (login = upsert, logout = delete, a 401 deletes the session). The pages do not say which session a logout or a 401 deletes when the stored row was issued under another address, nor whether a login under the other address may replace it. Assumed: logout and the 401 wipe delete only the row issued under the CURRENT effective address (a session issued elsewhere is not this project's login here and stays for its issuer); a successful login under another address replaces the single row as before (single-row upsert), so the return-to-issuer restore holds only while no login happened elsewhere.",
+  "assumption": "ASSUMPTION:dev-0801 — logout and the 401 wipe delete only the session of the current effective address; a login elsewhere replaces the single row.",
+  "unit": "remote-session-issuer",
+  "portion": "remote-session-issuer/p1-l1-l17",
+  "sent": true,
+  "patchPath": "2-1-57-to-2-1-58-remote-session-issuer-ux690pt2-ux690pt2-says-that-under-another-effective-addres.md"
+}

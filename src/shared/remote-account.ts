@@ -55,7 +55,11 @@ export interface DeviceLoginPollResponse {
  * (TanStack Query key `["remote-account"]`).
  */
 export interface RemoteAccountResponse {
-  /** `true` when a `remote_session` row exists. */
+  /**
+   * `true` when a `remote_session` row exists that was issued under the current
+   * effective remote address (`issuer_url` = that address); a row issued under
+   * another address, or with `issuer_url` NULL, reads `false`.
+   */
   connected: boolean;
   /** UUID of the remote account (`remote_session.remote_account_id`). For diagnostics. */
   remoteAccountId?: string;

@@ -106,6 +106,13 @@ describe('config — remoteApiUrl syntax-only validation (0.1.65)', () => {
     expect(() => readConfig(dir)).toThrow(INVALID_URL);
   });
 
+  it('rejects a URL carrying userinfo (ASSUMPTION:dev-0802)', () => {
+    write({ remoteApiUrl: 'https://user:secret@api.example.com' });
+    expect(() => readConfig(dir)).toThrow(INVALID_URL);
+    write({ remoteApiUrl: 'https://user@api.example.com' });
+    expect(() => readConfig(dir)).toThrow(INVALID_URL);
+  });
+
   it('rejects a non-string, non-null remoteApiUrl with a typed error', () => {
     write({ remoteApiUrl: 42 });
     expect(() => readConfig(dir)).toThrow(

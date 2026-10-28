@@ -254,6 +254,10 @@ describe('claude4spec launcher — start flags (M01 flagi-cli-m01)', () => {
     for (const argv of [['--remote-url', 'foo'], ['--remote-url=foo'], ['--remote-url', 'ftp://example.com']]) {
       expect(() => parseLaunchArgs(argv, tmp), argv.join(' ')).toThrow(/^--remote-url must be an http\(s\) URL, got '/);
     }
+    // An address carrying userinfo is refused the same way (ASSUMPTION:dev-0802).
+    for (const argv of [['--remote-url', 'https://user:secret@staging.example'], ['--remote-url=https://user@staging.example']]) {
+      expect(() => parseLaunchArgs(argv, tmp), argv.join(' ')).toThrow(/^--remote-url must be an http\(s\) URL, got '/);
+    }
     // An empty value is no override: config.remoteApiUrl still applies downstream (`??`).
     for (const argv of [['--remote-url='], ['--remote-url=  ']]) {
       const args = parseLaunchArgs(argv, tmp);

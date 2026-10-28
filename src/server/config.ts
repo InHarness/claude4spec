@@ -1375,8 +1375,13 @@ export function resolveDirAbs(cwd: string, dir: string, fieldName: string): stri
 
 /**
  * M24: the syntactic rule for a remote claude4spec-API base — parsable by
- * `new URL()` with an `http(s)://` scheme; reachability is never probed. One
- * rule for `config.remoteApiUrl` and the `--remote-url` start flag.
+ * `new URL()` with an `http(s)://` scheme and no userinfo; reachability is
+ * never probed. One rule for `config.remoteApiUrl` and the `--remote-url`
+ * start flag.
+ *
+ * ASSUMPTION:dev-0802 — an address carrying userinfo (`https://user:pw@host`)
+ * is refused: Node's fetch cannot send a request to such a URL, so it could
+ * never reach the remote.
  */
 export function isRemoteApiUrl(raw: string): boolean {
   let parsed: URL;
@@ -1385,5 +1390,6 @@ export function isRemoteApiUrl(raw: string): boolean {
   } catch {
     return false;
   }
+  if (parsed.username !== '' || parsed.password !== '') return false;
   return parsed.protocol === 'http:' || parsed.protocol === 'https:';
 }

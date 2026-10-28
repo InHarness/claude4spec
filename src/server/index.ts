@@ -69,7 +69,8 @@ export interface StartOptions {
    * 2.1.58 (M01 `3ebblo1q`): the `--remote-url` start flag. It overrides
    * `config.remoteApiUrl` of EVERY project of the process for the process
    * lifetime and is never written to a file. Absent ⇒ each project's
-   * `config.remoteApiUrl`, then the M24 prod constant (inside RemoteHttpClient).
+   * `config.remoteApiUrl`, then the M24 prod constant — resolved per project
+   * by `effectiveRemoteUrl` (services/remote-http-client.ts).
    */
   remoteApiUrl?: string;
 }

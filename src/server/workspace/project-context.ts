@@ -59,7 +59,7 @@ import { readPeerConfigSummary } from './peer-config.js';
 import { PatchService } from '../services/patch.js';
 import { artifactsRouter } from '../routes/artifacts.js';
 import { RemoteAuthService } from '../services/remote-auth.js';
-import { RemoteHttpClient } from '../services/remote-http-client.js';
+import { RemoteHttpClient, effectiveRemoteUrl } from '../services/remote-http-client.js';
 import { remoteAccountRouter } from '../routes/remote-account.js';
 import { agentRouter } from '../routes/agent-credential.js';
 import { PagesFrontmatterIndexer } from '../services/pages-frontmatter-indexer.js';
@@ -435,14 +435,13 @@ async function buildInner(
     const { errors } = validateRootDirs(effectiveRoots);
     if (errors.length > 0) throw new Error(errors[0]);
   }
-  // M01 `3ebblo1q`: resolve the remote base URL with precedence
-  // `--remote-url` flag (process lifetime, deps) > config.json > prod constant. The prod-constant
-  // fallback lives in RemoteHttpClient; here `null` means "use prod".
-  // M24 (0.1.65): an explicit remoteApiUrl override (flag or config.json) is only
-  // syntax-validated at config load; the client bootstrap is cold — no network probe
+  // M01 `3ebblo1q` / M24 `ux690pt2`: the effective remote address —
+  // `--remote-url` flag (process lifetime, deps) > config.json > prod constant.
+  // M24 (0.1.65): an explicit override (flag or config.json) is only
+  // syntax-validated (start / config load); the client bootstrap is cold — no network probe
   // here. An unreachable-but-valid host lets the project build succeed; the
   // reachability error surfaces at the first remote action as a graceful failure.
-  const remoteApiUrl = deps.remoteApiUrl ?? bootConfig.remoteApiUrl;
+  const remoteApiUrl = effectiveRemoteUrl(deps.remoteApiUrl, bootConfig.remoteApiUrl);
 
   // M33 phase 2: project-local plugin overlay, behind the machine-local
   // `trustProjectPlugins` gate (see `loadOverlayLayer`). The trust prompt surfaces
@@ -575,7 +574,8 @@ async function buildInner(
   // mutation captures a deterministic snapshot via host.snapshot(...).
   versionService.configureSnapshot(rawReader, pluginHost);
   // M24: remote-account identity (device flow + local session). Single HTTP
-  // client per project context; base URL from config.remoteApiUrl (or the prod constant).
+  // client per project context, on the effective remote address; the session
+  // counts only under the address that issued it (`remote_session.issuer_url`).
   const remoteHttpClient = new RemoteHttpClient(remoteApiUrl);
   const remoteAuthService = new RemoteAuthService(db.handle, remoteHttpClient);
   // `activeAdapters` (wyzej w tym pliku) jest jedynym zrodlem prawdy dla trzech rzeczy:
