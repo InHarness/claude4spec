@@ -938,7 +938,7 @@
         }
       ],
       "wave": 2,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "cli-workspace-resolution/p1-l3-l14",
@@ -1199,7 +1199,7 @@
         }
       ],
       "wave": 3,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "workspace-selection-at-start/p1-l2-l2",
@@ -2114,7 +2114,7 @@
         }
       ],
       "wave": 5,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "workspace-settings-split/p1-l5-l17",
