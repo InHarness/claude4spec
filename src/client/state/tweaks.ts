@@ -1,8 +1,8 @@
 import { migrateLegacyRawKey, usePersistedState } from './persisted.js';
 
 // M26 §7 — the theme preference moved to a shared zustand store (`themeStore`)
-// so that unrelated surfaces (shell, Appearance section, mermaid diagram
-// loader) observe the SAME `effectiveTheme`. Re-exported here because existing
+// so that unrelated surfaces (shell, Appearance section, plugin surfaces)
+// observe the SAME `effectiveTheme`. Re-exported here because existing
 // call sites import it from `state/tweaks.js`.
 export { useTheme, useThemeStore, type Theme, type EffectiveTheme } from './themeStore.js';
 

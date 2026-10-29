@@ -31,7 +31,6 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runMigrations } from '../../../src/server/db/migrate.js';
 import { PluginRegistryImpl } from '../../../src/server/core/plugin-host/registry.js';
-import { registerAllPlugins } from '../../../src/server/core/plugin-host/register-builtins.js';
 import { applyProjection } from '../../../src/server/db/projection.js';
 import { loadBuiltinEnvelopes } from '../../../src/server/core/plugin-host/loader.js';
 
@@ -123,16 +122,15 @@ function legacyDb(): Database.Database {
 
 /**
  * A fresh database: baseline, then the GENERATED projection of every module —
- * the four directly-built-in types AND the builtin envelopes, since `endpoint`,
- * `dto` and the junction moved into one. Loading the envelopes is what makes
- * this an apples-to-apples comparison with the chain.
+ * all of them builtin envelopes since 2.1.63 (the direct tier is empty).
+ * Loading the envelopes is what makes this an apples-to-apples comparison with
+ * the chain.
  */
 async function baselineDb(): Promise<Database.Database> {
   const db = new Database(':memory:');
   runMigrations(db);
 
   const registry = new PluginRegistryImpl();
-  registerAllPlugins(registry);
   await loadBuiltinEnvelopes(registry);
   const host = registry.consolidate(null);
   // The same call ProjectContext makes, over the same set.
@@ -176,11 +174,26 @@ const PROJECTED_TABLES = new Set([
   'ac',
   'ui_view',
   'design_system',
-  'diagram',
   'dto',
   'endpoint',
   'endpoint_dto',
 ]);
+
+/**
+ * Tables the historical chain created whose type is no longer described in
+ * this repository at all.
+ *
+ * 2.1.63 — `diagram` ships in the prebuilt `diagrams` envelope
+ * (`plugins/c4s-plugin-diagram/`), built outside this repo; its `data.schema` is
+ * the `diagrams` project's, and `040_diagram.sql` stays only as history. There
+ * is no host-side shape to hold the fresh table to, so it leaves the comparison
+ * on BOTH sides — and its presence in a fresh database is asserted below, so the
+ * exclusion cannot hide the envelope's projection going missing.
+ */
+const OWNED_OUTSIDE_THE_HOST = new Set(['diagram']);
+
+const withoutForeignTables = (schema: Record<string, TableShape>): Record<string, TableShape> =>
+  Object.fromEntries(Object.entries(schema).filter(([table]) => !OWNED_OUTSIDE_THE_HOST.has(table)));
 
 /**
  * Tables that exist ONLY in the fresh database, because their type shipped after
@@ -310,7 +323,9 @@ describe('000_baseline.sql', () => {
     const legacy = legacyDb();
     const fresh = await baselineDb();
     try {
-      expect(withoutNewTables(snapshotSchema(fresh))).toEqual(applyExpectedDeltas(snapshotSchema(legacy)));
+      expect(withoutForeignTables(withoutNewTables(snapshotSchema(fresh)))).toEqual(
+        applyExpectedDeltas(withoutForeignTables(snapshotSchema(legacy))),
+      );
     } finally {
       legacy.close();
       fresh.close();
@@ -325,6 +340,7 @@ describe('000_baseline.sql', () => {
     try {
       const tables = Object.keys(snapshotSchema(fresh));
       for (const table of NEW_SINCE_LEGACY) expect(tables).toContain(table);
+      for (const table of OWNED_OUTSIDE_THE_HOST) expect(tables).toContain(table);
     } finally {
       fresh.close();
     }

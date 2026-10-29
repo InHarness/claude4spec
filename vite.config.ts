@@ -13,10 +13,10 @@ export default defineConfig({
     middlewareMode: true,
   },
   optimizeDeps: {
-    // mermaid + gray-matter are loaded via runtime import(); pin them so Vite's dep
-    // optimizer bundles them in the first pass instead of re-optimizing mid-session
-    // (which produces "chunk-XXXX.js does not exist" warnings + full reloads).
-    include: ['mermaid', 'gray-matter'],
+    // gray-matter is loaded via runtime import(); pin it so Vite's dep optimizer
+    // bundles it in the first pass instead of re-optimizing mid-session (which
+    // produces "chunk-XXXX.js does not exist" warnings + full reloads).
+    include: ['gray-matter'],
   },
   appType: 'custom',
 });

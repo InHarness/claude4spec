@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
 /**
  * 2.1.20 — the L11 envelopes and L12 fullscreen forms of the HIDDEN types
- * (`diagram`, `code-snippet`, `spreadsheet`, and the host contract the
- * `spec-operation` presentation table relies on).
+ * (`code-snippet`, `spreadsheet`, and the host contract the `spec-operation`
+ * presentation table relies on). 2.1.63: `diagram` is no longer here — it ships
+ * in the prebuilt `diagrams` envelope, whose frontend is the `diagrams`
+ * project's.
  *
  * What the pages now say, per type:
  *   - the type's frontend is NOT in its contribution: a separate module of shape
@@ -10,16 +12,13 @@
  *     the type is hidden) and the two required hooks, and supplies no
  *     `sidebarTab`, `routes`, `detailPanel` or `renderRow`;
  *   - package types (`code-snippet`, `spreadsheet`) register it from their
- *     BROWSER entry via `registerFrontendModule`; `diagram`, built into the host
- *     bundle, enters the client registry through the host's own door;
+ *     BROWSER entry via `registerFrontendModule`;
  *   - a chip click is routed by the HOST to the `<type>-expand` window, whose
  *     content is the type's `renderOverlay` — the chip (and the card) opens
  *     nothing itself;
- *   - the fullscreen forms (`DiagramFullscreen` behind `DiagramOverlay`,
- *     `CodeSnippetFullscreen`) are that window's content; `DiagramFullscreen`
- *     resolves its record by `slug`, on open, while `CodeSnippetFullscreen` is
- *     one component with two inputs (`2i5ypc7q`): the card's ready record, or
- *     a fetch by `slug` when opened from the chip.
+ *   - the fullscreen form `CodeSnippetFullscreen` is that window's content: one
+ *     component with two inputs (`2i5ypc7q`): the card's ready record, or a
+ *     fetch by `slug` when opened from the chip.
  *
  * ASSUMPTION:dev-2005 — `code-snippet`'s `/code-snippet` trigger stays declared
  * once, in `contributes.commands` (as dev-2004 does for the visible package
@@ -34,17 +33,11 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { act, createElement, type ReactElement } from 'react';
 import { createRoot } from 'react-dom/client';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const registered = vi.hoisted(() => [] as Array<Record<string, unknown>>);
-const diagramHooks = vi.hoisted(() => ({
-  useDiagram: [] as Array<string | null>,
-  useDiagramSource: [] as Array<string | null>,
-}));
-const renderCalls = vi.hoisted(() => ({ count: 0 }));
 const snippetFetches = vi.hoisted(() => [] as string[]);
 
 vi.mock('@c4s/plugin-runtime', async (importOriginal) => {
@@ -83,37 +76,12 @@ vi.mock('../../../plugins/c4s-plugin-code-snippets/src/entity/code-snippet/front
   },
 }));
 
-const DIAGRAM = { slug: 'one', title: 'One', format: 'mermaid', hasSource: true, sourceBytes: 14 };
-vi.mock('../../../src/client/hooks/useDiagrams.js', () => ({
-  useDiagram: (slug: string | null) => {
-    diagramHooks.useDiagram.push(slug);
-    return { data: slug ? { ...DIAGRAM, slug } : null, isLoading: false };
-  },
-  useDiagramSource: (slug: string | null) => {
-    diagramHooks.useDiagramSource.push(slug);
-    return { data: slug ? 'graph TD; A-->B' : undefined };
-  },
-  useUpdateDiagram: () => ({ mutate: () => undefined }),
-}));
-vi.mock('../../../src/client/state/tweaks.js', () => ({ useTheme: () => ({ effectiveTheme: 'light' }) }));
-vi.mock('../../../src/client/tiptap/extensions/diagramRender.js', () => ({
-  renderDiagram: async () => {
-    renderCalls.count += 1;
-    return { ok: true, svg: '<svg data-testid="dgm-svg"></svg>' };
-  },
-  hashSource: () => 'h',
-  sanitizeRenderId: (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, '_'),
-  isSupportedFormat: () => true,
-}));
-
 import { clientPluginHost } from '../../../src/client/core/plugin-host/host.js';
 import { checkSlotShapes, isHiddenModule } from '../../../src/client/core/plugin-host/slot-rules.js';
 import type { FrontendModule } from '../../../src/client/core/plugin-host/types.js';
 import { openEntityHandler } from '../../../src/client/entities/openEntity.js';
 import { listPickerEntityTypes } from '../../../src/client/entities/registry.js';
 import { UI_EVENTS } from '../../../src/client/ui/events.js';
-import { diagramFrontendModule, diagramAuthoringExtension } from '../../../src/client/entities/diagram/plugin.js';
-import { DiagramCard, DiagramOverlay } from '../../../src/client/entities/diagram/DiagramCard.js';
 import { codeSnippetFrontendModule } from '../../../plugins/c4s-plugin-code-snippets/src/entity/code-snippet/frontend/module.js';
 import { CodeSnippetFullscreen } from '../../../plugins/c4s-plugin-code-snippets/src/entity/code-snippet/frontend/fullscreen.js';
 import { manifest as codeSnippetsManifest } from '../../../plugins/c4s-plugin-code-snippets/src/manifest.js';
@@ -227,131 +195,6 @@ async function flush(): Promise<void> {
 
 afterEach(() => {
   document.body.innerHTML = '';
-});
-
-// ─── diagram ────────────────────────────────────────────────────────────────
-
-describe('diagram — L11 envelope (frontend module through the host\'s own door)', () => {
-  it('[section:dgmmanifest] the frontend module has the FrontendModule shape, carries the slots the page lists, and is what the registry holds', () => {
-    expect(clientPluginHost.getAvailable('diagram')).toBe(diagramFrontendModule);
-    const mod = expectHiddenModule('diagram', DiagramOverlay);
-    expect(mod.renderCard).toBe(DiagramCard);
-    // editorExtensions — [diagramAuthoringExtension]: `/diagram`, no node of its own.
-    expect(mod.editorExtensions).toHaveLength(1);
-    const ext = mod.editorExtensions![0]!;
-    expect(ext.name).toBe(diagramAuthoringExtension.name);
-    expect(ext.slashCommand?.id).toBe('diagram');
-    expect(ext.slashCommand?.label).toBe('/diagram');
-    expect((ext as { extension?: unknown }).extension).toBeUndefined();
-  });
-
-  it('[section:dgmmanifest] the frontend is NOT in the type contribution, and the built-in type does not call the plugin runtime\'s registerFrontendModule', () => {
-    const contribution = codeOf('src/server/entities/diagram/plugin.ts');
-    expect(contribution).not.toMatch(/^\s*frontend\s*:/m);
-    expect(contribution).not.toMatch(/renderCard|renderChip|sidebarTab/);
-    const client = codeOf('src/client/entities/diagram/plugin.tsx');
-    expect(client).not.toMatch(/@c4s\/plugin-runtime/);
-    expect(client).toMatch(/clientPluginHost\.registerFrontendModule\(diagramFrontendModule\)/);
-  });
-
-  it('[section:dgmhead0] a hidden system entity: no ELEMENTS entry, no detail route; a chip click is routed by the host to `diagram-expand`', () => {
-    expectHiddenModule('diagram', DiagramOverlay);
-    expectHostRoutedExpand('diagram', DIAGRAM);
-  });
-
-  it('[section:dgmenv11] hidden: renderRow not supplied, so element_list / tagged_list do not offer it; chip slot routed by the host to `diagram-expand` with renderOverlay content', () => {
-    expectHiddenModule('diagram', DiagramOverlay);
-    expect(listPickerEntityTypes('element')).toContain('diagram');
-    expect(listPickerEntityTypes('list')).not.toContain('diagram');
-    expectHostRoutedExpand('diagram', DIAGRAM);
-  });
-
-  it('[section:dgmrefnode] DiagramChip draws no diagram itself — the SVG appears only in `diagram-expand`, to which the host routes the click; the card\'s expand button is the host\'s onOpen', () => {
-    const chip = renderToStaticMarkup(drawChip(diagramFrontendModule, DIAGRAM, () => {}));
-    expect(chip).not.toContain('c4s-diagram-svg');
-    expect(chip).not.toContain('dgm-svg');
-    expect(chip).toContain('One');
-
-    const onOpen = vi.fn();
-    const withHandler = renderToStaticMarkup(createElement(DiagramCard as never, { slug: 'one', entity: DIAGRAM, onOpen }));
-    const withoutHandler = renderToStaticMarkup(createElement(DiagramCard as never, { slug: 'one', entity: DIAGRAM }));
-    expect(withHandler).toContain('aria-label="Expand diagram one"');
-    expect(withoutHandler).not.toContain('aria-label="Expand diagram one"');
-    // The card never mounts the fullscreen itself.
-    expect(withHandler).not.toContain('Diagram fullscreen');
-    expect(codeOf('src/client/entities/diagram/DiagramCard.tsx').match(/<DiagramFullscreen\b/g)).toHaveLength(1);
-  });
-});
-
-describe('diagram — L12 (DiagramFullscreen as the `diagram-expand` content)', () => {
-  it('[section:rgczgux0] DiagramFullscreen renders the `diagram-expand` content through renderOverlay — the same read-only pan+zoom shell whatever the click came from', async () => {
-    const onClose = vi.fn();
-    const Overlay = diagramFrontendModule.renderOverlay!;
-    const host = document.createElement('div');
-    document.body.appendChild(host);
-    const r = createRoot(host);
-    await act(async () => {
-      r.render(createElement(Overlay, { slug: 'one', onClose }));
-    });
-    await flush();
-    const dialog = document.querySelector('[role="dialog"][aria-label="Diagram fullscreen"]') as HTMLElement | null;
-    expect(dialog).not.toBeNull();
-    expect(dialog!.style.position).toBe('fixed');
-    // read-only: no edit affordance inside the window
-    expect(document.querySelector('[aria-label^="Edit diagram"]')).toBeNull();
-    await act(async () => r.unmount());
-  });
-
-  it('[section:dgmfull000] the window content resolves the record by slug and renders the SVG once, on open; Esc closes', async () => {
-    diagramHooks.useDiagram.length = 0;
-    diagramHooks.useDiagramSource.length = 0;
-    renderCalls.count = 0;
-    const onClose = vi.fn();
-    const host = document.createElement('div');
-    document.body.appendChild(host);
-    const r = createRoot(host);
-    await act(async () => {
-      r.render(createElement(DiagramOverlay, { slug: 'one', caption: 'Checkout', onClose }));
-    });
-    await flush();
-    expect(diagramHooks.useDiagram).toContain('one');
-    expect(diagramHooks.useDiagramSource).toContain('one');
-    expect(renderCalls.count).toBe(1);
-    const dialog = document.querySelector('[aria-label="Diagram fullscreen"]') as HTMLElement;
-    expect(dialog.style.position).toBe('fixed');
-    // On the design-system `z-modal` layer (1200) — above popovers (1100), below
-    // toasts (1300) — not on the toast tier it used to share with a literal 1300.
-    expect(dialog.style.zIndex).toBe('1200');
-    expect(dialog.querySelector('[data-testid="dgm-svg"]')).not.toBeNull();
-    expect(dialog.textContent).toContain('Checkout');
-
-    await act(async () => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-    });
-    expect(onClose).toHaveBeenCalledTimes(1);
-    await act(async () => r.unmount());
-  });
-
-  it('[ac:ac-diagram-toast-nad-otwartym-fullscreenem] a toast shown while DiagramFullscreen is open renders above the overlay', async () => {
-    const host = document.createElement('div');
-    document.body.appendChild(host);
-    const r = createRoot(host);
-    await act(async () => {
-      r.render(createElement(DiagramOverlay, { slug: 'one', onClose: () => {} }));
-    });
-    await flush();
-    const overlayZ = Number((document.querySelector('[aria-label="Diagram fullscreen"]') as HTMLElement).style.zIndex);
-    // The toast viewport sits on the bridge's `--z-toast` tier; the popover tier is below the overlay.
-    const theme = readFileSync(root('src/client/styles/theme.css'), 'utf8');
-    const tier = (name: string) => Number(new RegExp(`--${name}:\\s*(\\d+)`).exec(theme)![1]);
-    expect(readFileSync(root('src/client/host-ui-kit/overlay-feedback/ToastViewport.tsx'), 'utf8')).toContain(
-      "zIndex: 'var(--z-toast)'",
-    );
-    expect(tier('z-toast')).toBeGreaterThan(overlayZ);
-    expect(overlayZ).toBeGreaterThan(tier('z-popover'));
-    await act(async () => r.unmount());
-    host.remove();
-  });
 });
 
 // ─── code-snippet ───────────────────────────────────────────────────────────
@@ -523,10 +366,12 @@ describe('spec-operation — the presentation table\'s slot set', () => {
 // ─── the criterion ──────────────────────────────────────────────────────────
 
 describe('hidden entity — criterion', () => {
-  it('[ac:ac-encja-ukryta-bez-sidebartab-i-trasy-d] diagram and spreadsheet supply renderCard, renderChip (a click opens `<type>-expand` with renderOverlay content instead of bridge.openEntity) and renderOverlay, but not renderRow — element_list and tagged_list do not support them', () => {
+  // 2.1.63 — `diagram` left the host for its prebuilt envelope; the two hidden
+  // types this repo still builds stand for the rule.
+  it('[ac:ac-encja-ukryta-bez-sidebartab-i-trasy-d] hidden types (spreadsheet, code-snippet) supply renderCard, renderChip (a click opens `<type>-expand` with renderOverlay content instead of bridge.openEntity) and renderOverlay, but not renderRow — element_list and tagged_list do not support them', () => {
     for (const [type, overlay, entity] of [
-      ['diagram', DiagramOverlay, DIAGRAM],
       ['spreadsheet', SpreadsheetFullscreen, { slug: 'one', nRows: 2, nCols: 2 }],
+      ['code-snippet', CodeSnippetFullscreen, { slug: 'one', title: 'One', language: 'ts', code: 'export const x = 1;' }],
     ] as const) {
       const mod = expectHiddenModule(type, overlay);
       expect(typeof mod.renderCard).toBe('function');
@@ -535,11 +380,34 @@ describe('hidden entity — criterion', () => {
       // Without renderRow neither list form offers the type …
       expect(listPickerEntityTypes('list')).not.toContain(type);
     }
-    // … and both list views answer a row-less type with the not-listable placeholder.
+    // … and both list views answer a row-less type with the "has no list view"
+    // information block (2.1.63, rendered in `NoListView.render.test.ts`).
     for (const view of ['ElementList.tsx', 'TaggedList.tsx']) {
-      expect(codeOf(`src/client/xml-markup/tags/references/${view}`)).toMatch(
-        /if \(!def\.renderRow\) return <NotListable/,
-      );
+      const code = codeOf(`src/client/xml-markup/tags/references/${view}`);
+      expect(code).toMatch(/const noListView = !!def && !def\.renderRow;/);
+      expect(code).toMatch(/if \(noListView\) \{[\s\S]*?return <NoListView /);
+    }
+  });
+
+  // 2.1.63 — the criterion no longer names `diagram` (a prebuilt envelope type
+  // now) nor "lists unsupported": the chip click is the host's, to `<type>-expand`.
+  it('[ac:m19-hidden-entities-render-slots] hidden types (spreadsheet, code-snippet) supply renderCard and renderChip — a clickable pill whose click the host routes to the read-only `<type>-expand` window — and do not supply renderRow', () => {
+    for (const [type, overlay, entity] of [
+      ['spreadsheet', SpreadsheetFullscreen, { slug: 'one', nRows: 2, nCols: 2 }],
+      ['code-snippet', CodeSnippetFullscreen, { slug: 'one', title: 'One', language: 'ts', code: 'export const x = 1;' }],
+    ] as const) {
+      const mod = clientPluginHost.getEntity(type);
+      expect(mod, type).not.toBeNull();
+      expect(isHiddenModule(mod!)).toBe(true);
+      expect(typeof mod!.renderCard, `${type}.renderCard`).toBe('function');
+      expect(typeof mod!.renderChip, `${type}.renderChip`).toBe('function');
+      expect(mod!.renderRow, `${type}.renderRow`).toBeUndefined();
+      // The window's content is the type's renderOverlay.
+      expect(mod!.renderOverlay).toBe(overlay);
+      // The pill is clickable only through the host's `onOpen`, and that click
+      // opens `<type>-expand` with `{ slug }` alone — no write callback reaches
+      // the window, so it is read-only — never `bridge.openEntity`.
+      expectHostRoutedExpand(type, entity);
     }
   });
 });

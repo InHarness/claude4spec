@@ -58,7 +58,7 @@ const UNDECIDED_META = {
       contributedTypes: ['example-entity'],
     },
   ],
-  shadowed: [],
+  types: [],
 };
 
 /** Opens the app with the plugins-meta response pinned to the undecided state. */

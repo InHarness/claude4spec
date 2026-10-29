@@ -604,16 +604,16 @@ describe('slugPattern', () => {
   /**
    * 0.2.22 — `nanoid(n)` left the grammar, so an optional-only pattern has ONE
    * escape rather than two: a literal prefix. The alternative it used to have —
-   * ending the chain in a random suffix — is exactly what `diagram` did, and
-   * dropping it is what turns a repeated title into a visible `SLUG_CONFLICT`
-   * instead of two entities nobody knows were meant to be one.
+   * ending the chain in a random suffix — is not part of the grammar, which is
+   * what turns a repeated title into a visible `SLUG_CONFLICT` instead of two
+   * entities nobody knows were meant to be one.
    */
   it('no longer accepts a random suffix as the escape from an optional-only pattern', () => {
     const data: DataDeclaration = { schema: { caption: { type: 'string' } } };
     expect(
       check(data, [
         [{ op: 'slugify', field: 'caption' }],
-        [{ op: 'literal', value: 'diagram-' }],
+        [{ op: 'literal', value: 'sketch-' }],
       ]),
     ).not.toThrow();
   });

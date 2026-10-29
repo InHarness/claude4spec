@@ -88,9 +88,8 @@ interface ThemeState {
  * M26 §7 — three-state theme preference as a SHARED store.
  *
  * It has to be a store rather than per-component `useState`: several unrelated
- * surfaces now observe `effectiveTheme` (the shell, the Appearance section, and
- * — since 0.1.141 — the mermaid diagram loader, which must re-`initialize()`
- * and re-render on every switch). With `usePersistedState` each consumer held
+ * surfaces observe `effectiveTheme` (the shell, the Appearance section, and any
+ * plugin surface that must re-render on every switch). With `usePersistedState` each consumer held
  * its own copy, so a change made in Settings was invisible to the others.
  *
  * Persistence: `c4s:settings:theme` envelope `{v:1, data:<Theme>}` — the same

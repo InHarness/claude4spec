@@ -28,7 +28,7 @@ import { fetchModuleDependency, listModuleDependenciesByTags, type ModuleDepende
  * independent, and this is the one place this type diverges from every hidden
  * type before it. `diagram`, `code-snippet` and `spreadsheet` are all hidden and
  * all three omit `renderRow` on purpose, so their tagged lists fall through to
- * the host's `NotListable` placeholder. This one lists.
+ * the host's "has no list view" information block. This one lists.
  *
  * No `editorExtensions` and no `stateSlice`: edges are created in a workflow
  * step, after the prose is written, not while writing it. So the type

@@ -6,7 +6,6 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { PluginRegistryImpl } from '../../../src/server/core/plugin-host/registry.js';
-import { registerAllPlugins } from '../../../src/server/core/plugin-host/register-builtins.js';
 import { loadBuiltinEnvelopes, type PluginLoadRecord } from '../../../src/server/core/plugin-host/loader.js';
 import { FileWatchRuntime } from '../../../src/server/fs/watcher.js';
 import { WsGateway } from '../../../src/server/ws/gateway.js';
@@ -52,7 +51,6 @@ describe('M13/M33 — invalidation triggers rebuild the context at once', () => 
     registry = new WorkspaceRegistry(process.env.C4S_HOME);
     registry.selectOrCreate({ name: 'default' });
     pluginRegistry = new PluginRegistryImpl();
-    registerAllPlugins(pluginRegistry);
     pluginRecords = (await loadBuiltinEnvelopes(pluginRegistry)).records;
     // A base package holding resources of its own: its `onUnregister` belongs to
     // the pool's composition (axis B), never to a context's lifecycle.
@@ -130,7 +128,7 @@ describe('M13/M33 — invalidation triggers rebuild the context at once', () => 
     return cache!.getLive(project.id)!;
   }
 
-  /** A type to switch off: `diagram` (a built-in direct module nothing depends on) when active. */
+  /** A type to switch off: `diagram` (the prebuilt envelope's type, nothing depends on it) when active. */
   function typeToDrop(active: string[]): string {
     return active.includes('diagram') ? 'diagram' : active[active.length - 1]!;
   }

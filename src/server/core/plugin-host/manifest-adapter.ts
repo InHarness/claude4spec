@@ -40,6 +40,25 @@ export class PluginManifestError extends Error {
   }
 }
 
+/**
+ * 2.1.63 (M13 `m13pool0`) — a type contributed twice within ONE layer. The base
+ * enforces the rule the overlay always had: the second contribution is rejected
+ * (`PLUGIN_TYPE_CONFLICT`), never a silent last-wins over the first. The direct
+ * registration tier that justified last-wins (idempotent re-registration of
+ * built-in types) is empty since 2.1.63.
+ */
+export class PluginTypeConflictError extends Error {
+  readonly code = 'PLUGIN_TYPE_CONFLICT' as const;
+  constructor(
+    message: string,
+    /** The entity type contributed twice. */
+    public readonly type: string,
+  ) {
+    super(`PLUGIN_TYPE_CONFLICT: ${message}`);
+    this.name = 'PluginTypeConflictError';
+  }
+}
+
 /** The closed enum `PluginSkillContribution.contextTypes` selects over. */
 const CONTEXT_TYPES: readonly ContextType[] = ['chat', 'brief', 'patch', 'ask'];
 

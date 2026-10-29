@@ -49,7 +49,7 @@ export function PatchEditor({ patchPath }: Props) {
           qc,
           currentPath: patchPath,
           onSlashInvoke: (editor, command) =>
-            void invokeSlash(editor, command, { qc, currentPath: patchPath }),
+            void invokeSlash(editor, command, { currentPath: patchPath }),
           getAnnotations: () => [],
         },
       ),

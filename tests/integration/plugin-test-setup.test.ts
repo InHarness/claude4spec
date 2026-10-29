@@ -68,7 +68,8 @@ describe('createPluginTestApp (internal test setup) — a real host in process',
     // Active on the host facade…
     expect(t.host.isActive('gadget')).toBe(true);
     expect(t.host.partition().active).toContain('gadget');
-    // …next to the directly built-in types, which keep their default activation.
+    // …next to the built-in envelopes' types (here `diagram`, from the prebuilt
+    // envelope), which keep their default activation.
     expect(t.host.isActive('diagram')).toBe(true);
 
     // …and served: the generated CRUD route of an active type answers over HTTP.

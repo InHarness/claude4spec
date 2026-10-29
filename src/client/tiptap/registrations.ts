@@ -129,10 +129,6 @@ registerEditorExtension({
   },
 });
 
-// A diagram is embedded as `<single_element type="diagram" …/>`; the diagram
-// entity module registers only its AUTHORING half — the `/diagram` slash
-// command and its popover (`client/entities/diagram/plugin.tsx`).
-
 // M20 — the raw code node. Gate 1: unknown `.mdx` JSX component tags (name
 // outside the tag registry) preserved byte-perfect and serialized verbatim (no
 // fence). Gate 2 (`ctx4prof` rule 6): a registered tag whose node is NOT in

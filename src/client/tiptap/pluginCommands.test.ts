@@ -1,6 +1,5 @@
 import { describe, expect, it, vi, beforeAll } from 'vitest';
 import type { Editor } from '@tiptap/core';
-import type { QueryClient } from '@tanstack/react-query';
 import { registerPluginCommands } from './pluginCommands.js';
 import { getRegisteredSlashCommandsForContext } from './registry.js';
 
@@ -74,7 +73,7 @@ describe('M33 — plugin command routing', () => {
     await invokeSlash(
       {} as Editor,
       { id: 'foo-insert', label: 'Insert Foo', description: 'Insert Foo', hint: '/foo', pluginPopoverKind: 'foo' },
-      { qc: {} as QueryClient },
+      {},
     );
     expect(dispatched).toHaveLength(1);
     expect(dispatched[0]?.type).toBe(PLUGIN_COMMAND_EVENT);

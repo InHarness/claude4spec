@@ -2392,10 +2392,12 @@ export function registerCoreOperations(): void {
   typeOp('link_dto', 'Bind a DTO to an endpoint in one relation role. Idempotent — an identical binding already present is a no-op.', 'write', true, DTO_LINK_SHAPE, dtoLinkOverrides('link_dto'));
   typeOp('unlink_dto', 'Remove a DTO binding from an endpoint; without statusCode every binding of the pair in that relation. Idempotent — nothing to remove is a no-op.', 'write', true, DTO_LINK_SHAPE, dtoLinkOverrides('unlink_dto'));
 
-  // ac / diagram — read-only analysis. `analyze_ac_against_entities` is
-  // idempotent in STATE but not in content: its answer comes from an LLM.
+  // ac — read-only analysis. `analyze_ac_against_entities` is idempotent in
+  // STATE but not in content: its answer comes from an LLM.
+  // 2.1.63 — no `validate_diagram` row: `diagram-tools` ships in the prebuilt
+  // `diagrams` envelope, whose contract is the `diagrams` project's, not this
+  // catalog's. Undeclared, it follows the fail-closed rule for plugin tools.
   typeOp('analyze_ac_against_entities', 'Analyse acceptance criteria against the entity graph. Unanalysable input lands in `skipped_reasons[]`, not in an error.', 'read', true);
-  typeOp('validate_diagram', 'Validate diagram source. Pure; bad syntax is a warning, not an error.', 'read', true);
 
   /**
    * 2.1.28 (c4s-plugin-host-ui-kit-components `6o1rfh21`) — the one operation of

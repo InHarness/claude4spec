@@ -10,9 +10,8 @@ import { chromium, type Browser, type Page } from 'playwright';
  *
  *  - the card is dispatched at RUNTIME off the client plugin host — `type=` in
  *    the markdown, `renderCard` in the registry — so the thing under test is a
- *    registration that only exists once the app has booted;
- *  - `diagram` renders through a LAZY mermaid import, so "does the card draw"
- *    is a question about a dynamic import resolving in a real bundle;
+ *    registration that only exists once the app has booted (since 2.1.63 the
+ *    `diagram` module comes from the prebuilt `diagrams` envelope's bundle);
  *  - the chip's click must NOT navigate. Diagram has no detail route, so the
  *    old `bridge.openEntity` behaviour pointed at a URL that does not exist —
  *    a failure that looks like nothing at all in a unit test and like a blank
@@ -150,67 +149,36 @@ describe.skipIf(!BASE)('generic entity embed — a hidden type renders and opens
     await browser?.close();
   });
 
-  it('renders the diagram as an SVG through the generic single_element card', async () => {
-    // Not a placeholder, not a raw tag: the lazy mermaid import resolved and
-    // drew. `<svg>` inside the card is the only proof of that which survives a
-    // bundler change.
-    await expect.poll(() => page.locator('.c4s-diagram-svg svg').count(), { timeout: 20_000 }).toBeGreaterThan(0);
-    // The old per-entity tag must not survive as literal text on the page.
-    expect(await page.locator('body').innerText()).not.toContain('<diagram');
-  });
+  /*
+   * 2.1.63 — what the diagram card, its caption and its fullscreen LOOK like is
+   * no longer the host's: `diagram` ships in the prebuilt `diagrams` envelope,
+   * whose own suite owns its render (SVG, figcaption, pan+zoom). What stays here
+   * is the host's half of the contract — the generic tags, the row refusal, the
+   * inert broken chip, the round trip and a clean console.
+   */
+  it('dispatches the hidden type through the generic tags — no per-type tag survives as text', async () => {
+    const body = await page.locator('body').innerText();
+    expect(body).not.toContain('<diagram');
 
-  it('puts the reference caption in a figcaption, not on the entity', async () => {
-    await expect.poll(() => page.locator('figcaption').first().innerText()).toContain(CAPTION);
+    // The host's half: the `single_element` node view (the host-owned
+    // `data-xml-tag` wrapper of XmlTagView) actually mounted the type's
+    // registered `renderCard`. The absence of `<diagram` text alone would also
+    // hold if no card rendered at all — e.g. the envelope's frontend bundle
+    // failed to load. A card is a `<figure>`; none of the host's own fallbacks
+    // (the broken-reference block, the "Loading …" placeholder, the missing-
+    // entity badge) is one, so its presence proves the dispatch reached
+    // `renderCard` with a resolved entity — without looking at how the envelope
+    // draws the diagram inside it.
+    const embed = page.locator('[data-xml-tag="single_element"]');
+    expect(await embed.count()).toBe(1);
+    await embed.locator('figure').first().waitFor({ state: 'attached', timeout: 10_000 });
+    expect(await embed.locator('[data-broken-category]').count()).toBe(0);
+
     // The caption belongs to THIS reference — the entity never received it.
     const entity = (await (
       await fetch(`${BASE}/api/projects/${project.id}/diagrams/${DIAGRAM_SLUG}`)
     ).json()) as Record<string, unknown>;
     expect(JSON.stringify(entity)).not.toContain(CAPTION);
-  });
-
-  it('opens a fullscreen overlay from the card, and closes it on Escape, without navigating', async () => {
-    /**
-     * The behaviour the release exists for. `diagram` has no detail route, so
-     * the pre-0.2.15 click handler navigated to a URL that does not exist. The
-     * URL assertion is the real one here: an overlay that renders while the
-     * router has moved is still a bug.
-     */
-    const before = page.url();
-    await page.locator('figure button[aria-label*="Expand"]').first().click();
-    await expect.poll(() => page.locator('[role="dialog"][aria-label*="Diagram"]').count()).toBeGreaterThan(0);
-    expect(page.url()).toBe(before);
-
-    /**
-     * The overlay must FIT the diagram, which is a race rather than a layout
-     * question: it is opened from an event carrying only `{ slug, caption }`
-     * (so a chat chip can open it too) and renders the SVG afterwards, so a
-     * fit that runs only on mount measures an empty stage and does nothing —
-     * leaving the diagram at 100% in the corner of a full-screen surface, which
-     * looks like the overlay is broken rather than unfitted.
-     */
-    await expect
-      .poll(() => page.locator('[role="dialog"] svg').count(), { timeout: 15_000 })
-      .toBeGreaterThan(0);
-    // Read the stage TRANSFORM, not the toolbar text: the footer's help line
-    // ("0 = 100%") contains the same string the zoom readout does, so a text
-    // assertion passes while measuring nothing.
-    await expect
-      .poll(
-        async () =>
-          await page
-            .locator('[role="dialog"] .c4s-diagram-svg > div')
-            .first()
-            .evaluate((el) => {
-              const m = /scale\(([\d.]+)\)/.exec((el as HTMLElement).style.transform ?? '');
-              return m ? Number(m[1]) : 1;
-            }),
-        { timeout: 10_000 },
-      )
-      .not.toBe(1);
-
-    await page.keyboard.press('Escape');
-    await expect.poll(() => page.locator('[role="dialog"][aria-label*="Diagram"]').count()).toBe(0);
-    expect(page.url()).toBe(before);
   });
 
   /**
@@ -226,10 +194,11 @@ describe.skipIf(!BASE)('generic entity embed — a hidden type renders and opens
     const body = await page.locator('body').innerText();
     // element_list of a VISIBLE type → renderRow, with the entity's own text.
     expect(body).toContain(AC_TEXT);
-    // element_list of a HIDDEN type → the contract, stated inline. The failure
-    // this replaces is an empty list frame, which reads as "nothing matched".
-    expect(body).toContain('cannot be listed');
-    expect(body).toContain('single_element type="diagram"');
+    // element_list of a type without renderRow (2.1.63: `diagram`, from its
+    // prebuilt envelope) → one information block with the type and the count
+    // of matching entities, not an empty list frame that reads as "nothing matched".
+    expect(body).toContain('has no list view');
+    expect(body).toContain('1 matching entity');
   });
 
   it('renders a broken reference as a chip whose click does nothing', async () => {
@@ -243,7 +212,7 @@ describe.skipIf(!BASE)('generic entity embed — a hidden type renders and opens
     if ((await broken.count()) > 0) await broken.click({ force: true }).catch(() => {});
     await page.waitForTimeout(600);
     expect(page.url()).toBe(before);
-    expect(await page.locator('[role="dialog"][aria-label*="Diagram"]').count()).toBe(0);
+    expect(await page.locator('[role="dialog"]').count()).toBe(0);
   });
 
   it('round-trips a caption-less single_element without inventing an empty caption', async () => {

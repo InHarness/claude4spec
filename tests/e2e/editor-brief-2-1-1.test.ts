@@ -5,8 +5,8 @@ import { chromium, type Browser, type Page } from 'playwright';
  * E2E (brief 2-1-0-to-2-1-1): M20 editor behaviour stated as what the user sees.
  *
  * - `[ac:m20-picker-element-typ-ukryty-dostepny]` / `[ac:m20-picker-list-typ-bez-wiersza-niedostepny]`
- *   the type picker of `/element` offers the hidden `diagram`; the one of
- *   `/list` does not (a diagram has no list row).
+ *   the type picker of `/element` offers the hidden `spreadsheet`; the one of
+ *   `/list` does not (a spreadsheet has no list row).
  * - `[ac:m20-outline-click-scrolls-to-heading]` clicking a heading in the
  *   outline gutter scrolls the document to it.
  * - 2.1.8: a freshly added user root gets the full page lifecycle — the outline
@@ -99,7 +99,7 @@ describe.skipIf(!BASE)('editor — brief 2.1.1', () => {
     return options;
   }
 
-  it('[ac:m20-picker-element-typ-ukryty-dostepny] [ac:m20-picker-list-typ-bez-wiersza-niedostepny] /element offers diagram, /list does not', async () => {
+  it('[ac:m20-picker-element-typ-ukryty-dostepny] [ac:m20-picker-list-typ-bez-wiersza-niedostepny] /element offers spreadsheet, /list does not', async () => {
     const path = `e2e-pickers-${stamp}.md`;
     const { page, editor, consoleErrors, badResponses } = await openPage('pages', path, `# Pickers ${stamp}\n\nText.\n`);
     try {
@@ -107,14 +107,14 @@ describe.skipIf(!BASE)('editor — brief 2.1.1', () => {
       await page.keyboard.press('End');
       await page.keyboard.press('Enter');
       const element = await pickerOptions(page, '/element');
-      expect(element, `/element options: ${element.join(',')}`).toContain('diagram');
+      expect(element, `/element options: ${element.join(',')}`).toContain('spreadsheet');
 
       await editor.locator('p').last().click();
       await page.keyboard.press('End');
       await page.keyboard.press('Enter');
       const list = await pickerOptions(page, '/list');
       expect(list.length, `/list options: ${list.join(',')}`).toBeGreaterThan(0);
-      expect(list, `/list options: ${list.join(',')}`).not.toContain('diagram');
+      expect(list, `/list options: ${list.join(',')}`).not.toContain('spreadsheet');
 
       expect(consoleErrors, 'console errors').toEqual([]);
       expect(badResponses, 'responses >= 400').toEqual([]);

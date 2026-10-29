@@ -70,9 +70,9 @@ export interface FieldFlags {
    */
   systemManaged?: boolean;
   /**
-   * An input that feeds the slug but never reaches the entity file (diagram's
-   * `caption`). Present in the create schema, absent from the projection and
-   * from the snapshot.
+   * An input that feeds the slug but never reaches the entity file. No type of
+   * this host declares one today. Present in the create schema, absent from the
+   * projection and from the snapshot.
    */
   transientInput?: boolean;
   /**

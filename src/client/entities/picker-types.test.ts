@@ -2,10 +2,10 @@
  * 2.1.1 — which entity types a type picker offers.
  *
  * `/element` (and the edit popover of a chip or card) offers every ACTIVE type,
- * hidden ones included: a hidden type like `diagram` has a card and a chip, just
- * no route. `/list` (and `/tagged`, and the edit popover of a list node) offers
- * only the types that render a list row — a `diagram` list would only ever show
- * the "not listable" placeholder.
+ * hidden ones included: a hidden type like `spreadsheet` has a card and a chip,
+ * just no route. `/list` (and `/tagged`, and the edit popover of a list node)
+ * offers only the types that render a list row — a `spreadsheet` list would only
+ * ever show the host's "has no list view" information block.
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -41,7 +41,7 @@ describe('type pickers', () => {
   clientPluginHost.registerFrontendModule(moduleOf('picker-hidden-no-row', { row: false }));
   clientPluginHost.registerFrontendModule(moduleOf('picker-with-row', { row: true }));
 
-  it('[ac:m20-picker-element-typ-ukryty-dostepny] /element offers a hidden type', () => {
+  it('[ac:m20-picker-element-typ-ukryty-dostepny] /element offers a hidden type (one shaped like `spreadsheet`: card and chip, no list row, no route)', () => {
     expect(listPickerEntityTypes('element')).toContain('picker-hidden-no-row');
     expect(listPickerEntityTypes('element')).toContain('picker-with-row');
   });
@@ -51,10 +51,13 @@ describe('type pickers', () => {
     expect(listPickerEntityTypes('list')).toContain('picker-with-row');
   });
 
-  it('the built-in diagram is offered by /element and not by /list', async () => {
+  it('the host registers no entity type of its own — every picker entry comes from a registered module', async () => {
+    // 2.1.63: `diagram` left the host bundle for its prebuilt envelope; loading
+    // the client entity index registers nothing.
+    const before = listPickerEntityTypes('element');
     await import('./index.js');
-    expect(listPickerEntityTypes('element')).toContain('diagram');
-    expect(listPickerEntityTypes('list')).not.toContain('diagram');
+    expect(listPickerEntityTypes('element')).toEqual(before);
+    expect(listPickerEntityTypes('element')).not.toContain('diagram');
   });
 
   it('neither picker offers an inactive type', () => {

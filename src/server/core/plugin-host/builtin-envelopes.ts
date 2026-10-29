@@ -1,14 +1,19 @@
 /**
- * 0.2.2 — tier (b): BUILT-IN ENVELOPES, the third discovery sub-source of the
- * M33 loader (brief item 10).
+ * 0.2.2 — BUILT-IN ENVELOPES, a discovery sub-source of the M33 loader
+ * (brief item 10).
  *
- * Entity types now register at three tiers:
- *   (a) built-in direct   — `core/plugin-host/register-builtins.ts` calls
- *                           `registerEntityModule(...)` outright at process start.
- *   (b) built-in envelope — THIS module: a real plugin package living inside the
+ * Since 2.1.63 (M13 `mbladez6`) the host registers no entity type outright —
+ * every type comes from a plugin package, in two tiers:
+ *   (a) built-in envelope — THIS module: a real plugin package living inside the
  *                           host repo under `plugins/<name>/`, discovered and
  *                           registered through the ordinary loader pipeline.
- *   (c) external package  — `node_modules` or a workspace `plugins[]` entry.
+ *                           Built from source (`plugins/<name>/src/`, vite emits
+ *                           into `dist/plugins/<name>/`) or PREBUILT (a committed
+ *                           `package.json` + `dist/` the host never builds;
+ *                           `scripts/copy-prebuilt-envelopes.mjs` copies it into
+ *                           `dist/plugins/<name>/`). Discovery cannot tell the
+ *                           two apart, and both sit outside the trust gate.
+ *   (b) external package  — `node_modules` or a workspace `plugins[]` entry.
  *
  * Why a middle tier exists at all: an envelope is structurally identical to the
  * output of `c4s create-plugin` and imports the host ONLY through
@@ -18,10 +23,10 @@
  * gate the project-local overlay under `<cwd>/.claude4spec/plugins/`.
  *
  * ORDER MATTERS: envelopes are registered BEFORE `node_modules` packages and
- * before the workspace registry, so core code registers first and nothing external
- * can shadow a core type by accident. Collision semantics are unchanged — the
- * silent last-wins of `registerEntityModule` — so an external package still *can*
- * deliberately shadow an envelope.
+ * before the workspace registry, so core code registers first and claims its
+ * types. 2.1.63 (M13 `m13pool0`): a later base package contributing the same type
+ * is rejected with `PLUGIN_TYPE_CONFLICT` — no silent last-wins within the base.
+ * A project overlay contributing it shadows the envelope in that project only.
  *
  * M31 orthogonality: an envelope is NOT a workspace-registry entry. `plugins[]`
  * stays a list of npm packages only, not a catalogue of everything the process
@@ -136,14 +141,18 @@ export function discoverBuiltinEnvelopes(root: string | null = hostPackageRoot()
   //     artifact outside it is silently absent — discovery finds nothing, raises
   //     nothing, and the host simply has no `endpoint` and no `dto`.
   //  2. `plugins/<name>/` — an envelope carrying its own built `dist/`, the
-  //     shape an extracted package has when vendored back in. Kept so a
-  //     hand-placed package works, and it is what the fixture tests use.
+  //     shape an extracted package has when vendored back in — which is exactly
+  //     what a committed prebuilt envelope is before the build copies it into
+  //     (1). Kept so a hand-placed package works, and it is what the fixture
+  //     tests use.
   //
   // First hit wins, so (1) beats (2). That is not a preference, it is a
-  // correctness requirement: `plugins/<name>/dist` is gitignored build output
-  // that may be left over from an older layout, and a stale copy there would
-  // otherwise shadow what was actually just built — locally only, while the
-  // container silently ran something else.
+  // correctness requirement: (1) is what a packaged host actually ships, so a
+  // local run must load the same copy. For a source-built envelope a
+  // `plugins/<name>/dist` is stale output that would otherwise shadow what was
+  // just built — locally only, while the container silently ran something else.
+  // For a prebuilt envelope `plugins/<name>/dist/` is committed and is the source
+  // of truth, and (1) is its verbatim copy, so the order changes nothing there.
   const byName = new Map<string, BuiltinEnvelope>();
   for (const pluginsDir of [path.join(root, 'dist', 'plugins'), path.join(root, 'plugins')]) {
     let entries: fs.Dirent[];

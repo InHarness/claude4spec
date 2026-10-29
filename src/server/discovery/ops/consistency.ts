@@ -96,7 +96,7 @@ const RULES: Record<string, RuleDef> = {
   'module-without-ac': { id: 11, bucket: 'modulesWithoutAc' },
   /**
    * Rule 12 is a GUARANTEE rather than a detector: a reference to a hidden type
-   * (`diagram`, `code-snippet` — types without routes/detail panel of their own)
+   * (`code-snippet`, `spreadsheet` — types without routes/detail panel of their own)
    * is validated exactly like any other, resolving its type from the tag's
    * `type` attribute, and lands in `brokenReferences` under the same three
    * reasons. The server carries no "hidden" flag to split on (hiddenness is a

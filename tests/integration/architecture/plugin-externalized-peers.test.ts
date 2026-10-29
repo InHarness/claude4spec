@@ -40,7 +40,14 @@ const envelopes = fs
   .map((d) => {
     const dir = path.join(pluginsDir, d.name);
     const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')) as PkgJson;
-    return { dir, pkg, hasFrontend: Boolean(pkg.exports && './frontend' in pkg.exports) };
+    return {
+      dir,
+      pkg,
+      hasFrontend: Boolean(pkg.exports && './frontend' in pkg.exports),
+      // A prebuilt envelope (M13 `m13plenv`) ships only `package.json` + `dist/`:
+      // its source and Vite config live in the plugin's own repository.
+      prebuilt: !fs.existsSync(path.join(dir, 'vite.config.ts')),
+    };
   });
 
 const SINGLETONS = ['react', 'react-dom'];
@@ -57,15 +64,35 @@ async function rollupExternal(dir: string): Promise<External> {
   return () => false;
 }
 
+/** React's own internals — present only in a bundle that inlined a copy of React. */
+const REACT_INTERNALS = /__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED|__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE|ReactCurrentDispatcher/;
+
+/**
+ * A prebuilt envelope has no build config to read, so the bundle itself is the
+ * evidence: an id is external when the bundle imports it as a bare specifier.
+ */
+function bundleExternal(dir: string): { external: External; inlinesReact: boolean } {
+  const distDir = path.join(dir, 'dist');
+  const code = fs
+    .readdirSync(distDir)
+    .filter((f) => f.endsWith('.js'))
+    .map((f) => fs.readFileSync(path.join(distDir, f), 'utf8'))
+    .join('\n');
+  const imported = new Set(
+    [...code.matchAll(/(?:from\s*|import\s*\(?\s*)["']([^"'./][^"']*)["']/g)].map((m) => m[1]!),
+  );
+  return { external: (id) => imported.has(id), inlinesReact: REACT_INTERNALS.test(code) };
+}
+
 describe('plugins keep React/Tiptap external — detected at publication, not at load', () => {
   it('[ac:ac-build-frontendu-pluginu-wygenerowaneg] every plugin in the starter layout declares the host peers (React, Tiptap) as peers and its frontend build leaves them external, so the bundle carries no own copy', async () => {
     const withFrontend = envelopes.filter((e) => e.hasFrontend);
     expect(withFrontend.length).toBeGreaterThan(0);
 
-    for (const { dir, pkg } of withFrontend) {
+    for (const { dir, pkg, prebuilt } of withFrontend) {
       const peers = Object.keys(pkg.peerDependencies ?? {});
       const deps = Object.keys(pkg.dependencies ?? {});
-      const external = await rollupExternal(dir);
+      const external = prebuilt ? bundleExternal(dir).external : await rollupExternal(dir);
 
       const usesTiptap = peers.includes('@tiptap/core');
       const singletons = [...SINGLETONS, ...(usesTiptap ? ['@tiptap/core'] : [])];
@@ -76,9 +103,22 @@ describe('plugins keep React/Tiptap external — detected at publication, not at
         // …and left out of the bundle by the build.
         expect(external(id), `${pkg.name}: build must keep ${id} external`).toBe(true);
       }
-      for (const id of ['react/jsx-runtime', 'react-dom/client', '@c4s/plugin-runtime']) {
+      // A prebuilt bundle may import only the entries it uses; what it must never
+      // do is carry its own React. Source envelopes are checked on the full set.
+      const runtimeIds = prebuilt ? ['react/jsx-runtime', '@c4s/plugin-runtime'] : ['react/jsx-runtime', 'react-dom/client', '@c4s/plugin-runtime'];
+      for (const id of runtimeIds) {
         expect(external(id), `${pkg.name}: build must keep ${id} external`).toBe(true);
       }
+      if (prebuilt) expect(bundleExternal(dir).inlinesReact, `${pkg.name}: bundle must not inline React`).toBe(false);
+    }
+  });
+
+  it('[section:m13plenv] the prebuilt envelope is checked through its bundle — it ships no Vite config', () => {
+    const prebuilt = envelopes.filter((e) => e.prebuilt);
+    expect(prebuilt.map((e) => e.pkg.name)).toContain('@inharness-ai/c4s-plugin-diagram');
+    for (const { dir } of prebuilt) {
+      expect(fs.existsSync(path.join(dir, 'dist', 'frontend.js'))).toBe(true);
+      expect(bundleExternal(dir).external('react')).toBe(true);
     }
   });
 

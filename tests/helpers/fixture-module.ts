@@ -1,6 +1,7 @@
 import type { BackendModule, MountContext } from '../../src/server/core/plugin-host/types.js';
 import type { DataDeclaration } from '../../src/shared/plugin-host/data-schema.js';
 import type { SlugPattern } from '../../src/shared/plugin-host/slug-pattern.js';
+import type { SystemPromptContribution } from '../../src/shared/plugin-host/types.js';
 
 export interface FixtureModuleOpts {
   /**
@@ -37,6 +38,77 @@ export const FIXTURE_DATA: DataDeclaration = {
 };
 
 export const FIXTURE_SLUG_PATTERN: SlugPattern = [{ op: 'slugify', field: 'title' }];
+
+/**
+ * A host-owned test type with a little more shape than `FIXTURE_DATA`: a
+ * required, length-capped `title`, an `enum` with a default, a
+ * `contentBearing` body defaulting to `''`, and the two `systemManaged`
+ * timestamps.
+ *
+ * 2.1.63 — the host tests that needed this shape used to read the real
+ * `diagram` declaration, the last type registered directly by the host. That
+ * type left for its prebuilt envelope (`plugins/c4s-plugin-diagram/`, whose
+ * source and suite live in the plugin's own repository), so the projection
+ * golden, the CRUD-schema golden and the slug-pattern tests assert the same
+ * HOST mechanisms on this fixture instead. What they prove is a property of the
+ * generator, not of any one contributor.
+ */
+export const SKETCH_FIXTURE_DATA: DataDeclaration = {
+  schema: {
+    title: {
+      type: 'string',
+      required: true,
+      maxLength: 200,
+      description: 'Label, e.g. "Checkout sketch".',
+    },
+    format: {
+      type: 'enum',
+      values: ['plain', 'rich'],
+      required: true,
+      default: 'plain',
+      description: "Sketch format (default 'plain').",
+    },
+    body: {
+      type: 'string',
+      required: true,
+      default: '',
+      contentBearing: true,
+      description: 'Sketch body. May be empty. Content-bearing: read it with get_field_content.',
+    },
+    createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+    updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+  },
+};
+
+/** `slugify(title)`, truncated — a single alternative, no random step. */
+export const SKETCH_FIXTURE_SLUG_PATTERN: SlugPattern = [
+  { op: 'slugify', field: 'title' },
+  { op: 'truncate', n: 60 },
+];
+
+/**
+ * The system-prompt contribution of the `sketch` test type: a narrative catalogue
+ * row that points at the type's own prompt block, and that block.
+ *
+ * 2.1.63 — the prompt tests (`system-prompt.golden.test.ts`,
+ * `prompt-block-templates.test.ts`, `chat-context.test.ts`) used the host's own
+ * `diagram` contribution as their "type that brings a block" example. That
+ * contribution left with the type for the prebuilt envelope, so the composer's
+ * handling of a contributed row + block is asserted on this fixture: what the
+ * tests prove is how the HOST places a contributor's text, not the text itself.
+ */
+export const SKETCH_REFERENCES_BLOCK = `<sketch_references>
+  <single_element type="sketch" slug="..." caption="..."/>
+A \`sketch\` is embedded with the generic reference tags. This block exists only while the type is active.
+</sketch_references>`;
+
+export const SKETCH_SYSTEM_PROMPT: SystemPromptContribution = {
+  roleNoun: 'Sketches',
+  mcpToolsLine: 'sketch-tools: validate_sketch',
+  narrativeBlock:
+    'Sketches live in the entity, never pasted into the page. Embed one with the generic reference tags; the grammar is in `<sketch_references>`.',
+  promptBlocks: [{ name: 'sketch_references', body: SKETCH_REFERENCES_BLOCK }],
+};
 
 /**
  * A minimal, real (non-core) plugin module — distinct from every

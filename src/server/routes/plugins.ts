@@ -35,7 +35,7 @@ import { getRuntimeShim } from '../core/plugin-host/runtime-shims.js';
 // M33 phase 3: base-package assembly lives in a shared, express-free module so
 // the `c4s plugins` CLI reuses the SAME logic (no divergence). Re-exported here
 // for the existing `../routes/plugins.js` import sites (e.g. project-context).
-import { buildBasePluginPackages } from '../core/plugin-host/base-packages.js';
+import { buildBasePluginPackages, poolTypeStates, type PoolTypeState } from '../core/plugin-host/base-packages.js';
 export { buildBasePluginPackages } from '../core/plugin-host/base-packages.js';
 
 /**
@@ -108,10 +108,15 @@ export async function sendPluginAsset(req: Request, res: Response, abs: string |
   res.status(200).end(body);
 }
 
-/** Diagnostics response — array of per-package records, extensible for phase 2. */
+/**
+ * Diagnostics response — the two axes of M13 `m13pool0`: the package axis
+ * (`packages[]`, one load record each) and the type axis (`types[]`, one state
+ * per type of the base pool — always `active` here: the base has no overlay).
+ */
 export interface PluginsMetaResponse {
   hostApiVersion: string;
   packages: PluginLoadRecord[];
+  types: PoolTypeState[];
 }
 
 export function pluginsRouter(deps: PluginRoutesDeps): Router {
@@ -152,9 +157,14 @@ export function pluginsRouter(deps: PluginRoutesDeps): Router {
   });
 
   router.get('/_meta/plugins', (_req, res) => {
+    const packages = buildBasePluginPackages(pluginRegistry, pluginRecords);
     const response: PluginsMetaResponse = {
       hostApiVersion: HOST_API_VERSION,
-      packages: buildBasePluginPackages(pluginRegistry, pluginRecords),
+      packages,
+      types: poolTypeStates(
+        pluginRegistry.listAvailable().map((m) => m.type),
+        packages,
+      ),
     };
     res.json(response);
   });

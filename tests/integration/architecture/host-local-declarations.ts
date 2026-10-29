@@ -303,24 +303,8 @@ export const HOST_LOCAL_DECLARATIONS: readonly HostLocalDeclaration[] = [
       'plugins/c4s-plugin-code-snippets/src/frontend-kit/slash-create.tsx',
     ],
   },
-  // diagram `rgczgux0`
-  {
-    section: 'rgczgux0',
-    consumer: 'diagram',
-    kind: 'local',
-    components: ['DiagramView'],
-    replacedBy: [],
-    files: ['src/client/entities/diagram/DiagramCard.tsx'],
-  },
-  {
-    section: 'rgczgux0',
-    consumer: 'diagram',
-    kind: 'debt',
-    // The fullscreen shell; no catalog replacement yet — trajectory candidate `fullscreen-overlay`.
-    components: ['DiagramFullscreen'],
-    replacedBy: [],
-    files: ['src/client/components/DiagramFullscreen.tsx'],
-  },
+  // 2.1.63 — no `diagram` (`rgczgux0`) declarations: the type's UI ships in the
+  // prebuilt `diagrams` envelope, outside the files this gate scans.
 ];
 
 /** The declarations one consumer section makes. */

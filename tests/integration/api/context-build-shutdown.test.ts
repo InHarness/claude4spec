@@ -5,7 +5,6 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { PluginRegistryImpl } from '../../../src/server/core/plugin-host/registry.js';
-import { registerAllPlugins } from '../../../src/server/core/plugin-host/register-builtins.js';
 import { loadBuiltinEnvelopes } from '../../../src/server/core/plugin-host/loader.js';
 import { FileWatchRuntime, type MountSourceOptions, type WatchScope } from '../../../src/server/fs/watcher.js';
 import { WsGateway } from '../../../src/server/ws/gateway.js';
@@ -13,7 +12,7 @@ import { ProjectContextCache } from '../../../src/server/workspace/context-cache
 import { buildProjectContext } from '../../../src/server/workspace/project-context.js';
 import { WorkspaceRegistry } from '../../../src/server/workspace/registry.js';
 import { bootstrapProject } from '../../../src/server/workspace/bootstrap.js';
-import type { PluginLoadRecord } from '../../../src/server/core/plugin-host/types.js';
+import type { PluginLoadRecord } from '../../../src/server/core/plugin-host/loader.js';
 import type { ProjectRecord } from '../../../src/server/workspace/types.js';
 
 /**
@@ -42,7 +41,6 @@ describe('M31 — the shutdown during a context build', () => {
     const workspace = registry.selectOrCreate({ name: 'default' });
     project = bootstrapProject(registry, workspace, path.join(home, 'project')).project;
     pluginRegistry = new PluginRegistryImpl();
-    registerAllPlugins(pluginRegistry);
     pluginRecords = (await loadBuiltinEnvelopes(pluginRegistry)).records;
     httpServer = http.createServer();
     gateway = new WsGateway(httpServer, () => true);

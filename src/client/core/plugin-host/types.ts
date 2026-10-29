@@ -27,6 +27,7 @@ import type {
   EntityChipProps,
   EntityCardProps,
   EntityRowProps,
+  EntityOverlayProps,
   EntityDetailProps,
 } from '../../entities/registry.js';
 import type { EditorExtensionRegistration } from '../../tiptap/registry.js';
@@ -50,7 +51,7 @@ export interface SidebarTabSlot {
  * Re-exported here so plugins can satisfy the slot shape without depending on
  * the legacy entity registry directly.
  */
-export type { EntityChipProps, EntityCardProps, EntityRowProps, EntityDetailProps };
+export type { EntityChipProps, EntityCardProps, EntityRowProps, EntityOverlayProps, EntityDetailProps };
 
 /**
  * L? (M33 phase 3) — a plugin's page-routing contribution. A FACTORY, not a
@@ -111,7 +112,7 @@ export interface FrontendModule extends EntityModuleManifest {
    * That split is the same one `renderChip` already lives under: a slot stays
    * declarative, the host-resolver keeps the wiring.
    */
-  renderOverlay?: ComponentType<{ slug: string; caption?: string; onClose: () => void }>;
+  renderOverlay?: ComponentType<EntityOverlayProps>;
 
   /**
    * REQUIRED — TanStack Query hook resolving an entity by slug. Called by the

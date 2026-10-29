@@ -17,7 +17,7 @@ import { chromium, type Browser, type Page } from 'playwright';
  *    `src/client/entities/openEntity.test.ts` pins the helper; only a browser
  *    can show that the row actually goes through it and that the reader stays on
  *    the page;
- *  - "the embed rendered rows rather than the host's NotListable placeholder" is
+ *  - "the embed rendered rows rather than the host's no-list-view block" is
  *    a question about which component won a runtime dispatch.
  *
  * The console-error and failed-response assertions are the cheap half and the
@@ -143,15 +143,15 @@ describe.skipIf(!BASE)('module-dependency — a hidden type that lists', () => {
 
   /**
    * THE claim of the type. `renderRow` is what makes a hidden type listable, and
-   * the visible failure of not declaring it is the host's `NotListable`
-   * placeholder where the rows should be.
+   * the visible failure of not declaring it is the host's "has no list view"
+   * information block where the rows should be.
    */
-  it('renders the tagged list as ROWS, not as the NotListable placeholder', async () => {
+  it('renders the tagged list as ROWS, not as the no-list-view block', async () => {
     const rows = page.locator('[data-testid="module-dependency-row"]');
     await expect.poll(() => rows.count()).toBeGreaterThan(0);
 
     const body = await page.locator('body').innerText();
-    expect(body).not.toContain('not listable');
+    expect(body).not.toContain('has no list view');
     expect(body).not.toContain('<tagged_list');
 
     // The row reads as a sentence: the two parties and the reason.

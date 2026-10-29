@@ -104,7 +104,7 @@ function DocEditorImpl({ value, onChange, onBlur, readOnly, placeholder }: DocEd
           qc,
           currentPath: null,
           onSlashInvoke: (editor, command) =>
-            void invokeSlash(editor, command, { qc, currentPath: null }),
+            void invokeSlash(editor, command, { currentPath: null }),
           getAnnotations: () => [],
         },
         { placeholder: placeholder ?? 'Description…' },

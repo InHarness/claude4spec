@@ -16,8 +16,8 @@
  *   - a visible type orders itself through `sidebarTab.order`; a hidden type's
  *     frontend module declares neither a tab nor any `order`.
  *
- * `diagram` is a built-in type (a `BackendModule` written by hand, with its
- * frontend module in the host bundle), so it is checked on the module itself.
+ * `diagram` is not here since 2.1.63: it ships in the prebuilt `diagrams`
+ * envelope, whose declarations are the `diagrams` project's.
  *
  * Lives under `tests/` because it imports the envelopes' own sources next to
  * the host's, which no single envelope config compiles together.
@@ -30,7 +30,6 @@ import { describe, expect, it } from 'vitest';
 
 import { lowerEntityContribution } from '../../../src/server/core/plugin-host/manifest-adapter.js';
 import type { EntityContribution } from '../../../src/shared/plugin-host/manifest.js';
-import { diagramBackendModule } from '../../../src/server/entities/diagram/plugin.js';
 import { manifest as acManifest } from '../../../plugins/c4s-plugin-ac/src/manifest.js';
 import { manifest as apiContractsManifest } from '../../../plugins/c4s-plugin-api-contracts/src/manifest.js';
 import { manifest as codeSnippetsManifest } from '../../../plugins/c4s-plugin-code-snippets/src/manifest.js';
@@ -185,16 +184,6 @@ describe('2.1.26 — displayOrder retired from every type package manifest', () 
   it('[section:ityp8g1r] database-table: the manifest declares no displayOrder; the ELEMENTS order is the frontend module\'s sidebarTab.order', () => {
     expectIdentityWithoutDisplayOrder(DATABASE_TABLE);
     expectOrderedBySidebarTab(DATABASE_TABLE);
-  });
-
-  it('[section:dgmmanifest] diagram: the built-in module declares no displayOrder and, being hidden, no order at all', () => {
-    expect('displayOrder' in (diagramBackendModule as unknown as Record<string, unknown>)).toBe(false);
-    for (const file of ['src/server/entities/diagram/plugin.ts', 'src/client/entities/diagram/plugin.tsx']) {
-      expect(declarations(file), `${file} declares displayOrder`).not.toMatch(/\bdisplayOrder\b/);
-    }
-    const client = declarations('src/client/entities/diagram/plugin.tsx');
-    expect(client).not.toMatch(/\bsidebarTab\s*:/);
-    expect(client).not.toMatch(/\border\s*:/);
   });
 
   it('[section:dsmanifest] design-system: the manifest declares no displayOrder; the ELEMENTS order is the frontend module\'s sidebarTab.order', () => {

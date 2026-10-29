@@ -64,5 +64,11 @@ c4s-cpanel/package.json
 !docker/environments/*/seed/project/.claude4spec/
 !docker/environments/*/seed/project/.claude4spec/**
 
+# Prebuilt envelopes ship their ready dist/ in the repo (the host copies it,
+# never builds it — the source lives in the plugin's own repo). Source maps stay out.
+!plugins/c4s-plugin-diagram/dist/
+!plugins/c4s-plugin-diagram/dist/**
+plugins/c4s-plugin-diagram/dist/**/*.map
+
 # One-off local migration script (0.2.24 name→title); never part of the source tree.
 fix-name.sh

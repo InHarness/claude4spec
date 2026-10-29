@@ -64,8 +64,8 @@ export function legacyRegisterClientEntity(def: EntityDef<unknown>): void {
     // A legacy def cannot contribute `routes` (the shape predates them), so one
     // carrying a `detailPanel` now fails the both-or-neither rule at
     // registration. Nothing in-tree does: since 2.1.20 no def reaches this
-    // adapter at all (`diagram`, the last one, registers a real `FrontendModule`
-    // through the host's own door). A legacy type that grows a detail panel has
+    // adapter at all (and since 2.1.63 the host registers no type of its own —
+    // `diagram` arrives from its prebuilt envelope). A legacy type that grows a detail panel has
     // outgrown the adapter and wants a real module.
     ...(def.detailPanel ? { detailPanel: def.detailPanel } : {}),
     ...(def.renderOverlay ? { renderOverlay: def.renderOverlay } : {}),

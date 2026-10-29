@@ -93,8 +93,8 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
    * `ac` threw `SLUG_CONFLICT` when the caller named the slug, and landing
    * somewhere other than where you were told to is worse than failing. A DERIVED
    * collision follows the type's declared `slugCollision`, which defaults to the
-   * same refusal (`widget` declares nothing); `ac` and `diagram` opt into the
-   * suffix because their slugs are slugified prose.
+   * same refusal (`widget` declares nothing); `ac` opts into the suffix because
+   * its slugs are slugified prose.
    */
   it('an explicit slug wins, and a collision on one is refused rather than renamed', async () => {
     expect((await request(t.app).post('/api/widgets').send({ title: 'A', slug: 'pinned' })).body.data.slug).toBe('pinned');
@@ -539,55 +539,5 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
     const ep = await request(t.app).post('/api/endpoints').send({ method: 'GET', path: '/x', summary: '' });
     expect(ep.status).toBe(201);
     expect(ep.body.data.summary).toBe('');
-  });
-
-  /**
-   * Item 56, and the brief's headline example.
-   *
-   * `DiagramService.readFormat` mapped everything that was not `'d2'` onto
-   * `'mermaid'`, so `POST /api/diagrams` with `format: 'graphviz'` answered 201
-   * and stored a diagram in a language the author did not ask for — a silent
-   * rewrite of the payload, discoverable only by re-reading the entity. The
-   * declaration already said `enum ['mermaid','d2']`; deleting the coercion is
-   * what lets it be enforced.
-   */
-  it('rejects a diagram format the declaration does not name, instead of coercing it', async () => {
-    const coerced = await request(t.app)
-      .post('/api/diagrams')
-      .send({ title: 'Flow', format: 'graphviz', source: 'digraph { a -> b }' });
-    expect(coerced.status).toBe(400);
-
-    for (const format of ['mermaid', 'd2']) {
-      const ok = await request(t.app)
-        .post('/api/diagrams')
-        .send({ title: `Flow ${format}`, format, source: 'x' });
-      expect(ok.status).toBe(201);
-      expect(ok.body.data.format).toBe(format);
-    }
-  });
-
-  /**
-   * The other half of what left with `DiagramService`: it ran `validateDiagram
-   * Source` on every create/update and answered `{ slug, warnings }`.
-   *
-   * Item 56 puts that validator in `validate_diagram` alone — a PRE-flight tool
-   * the author calls with a source string, before an entity exists. So the write
-   * path accepts an unparseable source verbatim and says nothing about it, which
-   * is the same move `ui-view` and `design-system` made in K2: linting belongs
-   * where the result is read, not on the one code path that happens to write.
-   */
-  it('stores an unparseable diagram source verbatim, and says nothing about it', async () => {
-    const res = await request(t.app)
-      .post('/api/diagrams')
-      .send({ title: 'Broken', source: 'not a diagram at all' });
-    expect(res.status).toBe(201);
-    expect(res.body.data).not.toHaveProperty('warnings');
-    // 0.2.22 — `source` is content-bearing, so the create response (a generic
-    // read) reports its SIZE, not its text. The body itself comes back from
-    // `GET /api/entities/diagram/:slug/content/source`.
-    expect(res.body.data.hasSource).toBe(true);
-    expect(res.body.data.sourceBytes).toBe('not a diagram at all'.length);
-    // Default format still applies — it is `default: 'mermaid'` on the field.
-    expect(res.body.data.format).toBe('mermaid');
   });
 });

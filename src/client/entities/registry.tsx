@@ -34,14 +34,16 @@ export interface EntityCardProps<T> extends EntityChipProps<T> {
   /**
    * 0.2.15 — the `caption` written on THIS `<single_element/>` reference.
    * Advisory prose belonging to the reference, not to the entity, and absent
-   * whenever the tag omitted it. It is never written onto the entity — two
-   * embeds of one diagram may carry two different captions.
+   * whenever the tag omitted it (no prop, not `''`). It is never written onto
+   * the entity — two embeds of one entity may carry two different captions.
    */
   caption?: string;
   /**
-   * 0.2.26 — write the caption back onto the REFERENCE this card was rendered
-   * from. Supplied only where there is a reference to write to (the
-   * `single_element` node view); a card on a list page has no caption to own.
+   * 2.1.63 — write the caption back onto the REFERENCE this card was rendered
+   * from: the host stores it in the `caption` attribute of the page's
+   * `single_element` tag, never on the entity. Supplied only where there is a
+   * reference to write to (the editor's `single_element` node view); a read-only
+   * context (chat, a release diff, a tool card) gets no callback.
    *
    * `null` clears the attribute rather than storing `''`, which is what keeps
    * the serializer from emitting `caption=""` on the round-trip.
@@ -49,6 +51,18 @@ export interface EntityCardProps<T> extends EntityChipProps<T> {
   onCaptionChange?: (caption: string | null) => void;
   /** 2.1.41 — the `refLookup` built for this card's one entity (`useRefLookup`); empty when nothing resolves. */
   refLookup: ReadonlyMap<string, RefLookupEntry>;
+}
+
+/**
+ * 2.1.63 — props of the `renderOverlay` slot, the content of the host's
+ * `<type>-expand` window (M13 chipprops). `caption` is the reference's own
+ * caption when the window opens from a card carrying one — absent otherwise;
+ * `onClose` closes the window.
+ */
+export interface EntityOverlayProps {
+  slug: string;
+  caption?: string;
+  onClose: () => void;
 }
 
 /**
@@ -77,7 +91,7 @@ export interface EntityDef<T = unknown> {
   /** Optional: a hidden type has no detail route to put a panel on. */
   detailPanel?: ComponentType<EntityDetailProps>;
   /** Required on a hidden type (0.2.16); read-only fullscreen surface. */
-  renderOverlay?: ComponentType<{ slug: string; caption?: string; onClose: () => void }>;
+  renderOverlay?: ComponentType<EntityOverlayProps>;
   useGetBySlug: (slug: string | null) => { data: T | null | undefined; isLoading: boolean };
 }
 
@@ -102,11 +116,12 @@ export function getEntityDef<T = unknown>(type: string): EntityDef<T> | null {
  * Which picker a type is offered in.
  *
  *  - `element` — `/element`, `/mention` and the edit popover of a chip or card:
- *    every ACTIVE type, hidden ones (e.g. `diagram`) included. A hidden type has
- *    no route, but it does have a card and a chip.
+ *    every ACTIVE type, hidden ones (e.g. `spreadsheet`) included. A hidden type
+ *    has no route, but it does have a card and a chip.
  *  - `list` — `/list`, `/tagged` and the edit popover of a list node: only the
  *    active types that render a list row. A type without `renderRow` (e.g.
- *    `diagram`) would only ever produce a "not listable" placeholder.
+ *    `code-snippet`) has no list view and would only ever produce the host's
+ *    "has no list view" information block.
  */
 export type EntityPickerKind = 'element' | 'list';
 

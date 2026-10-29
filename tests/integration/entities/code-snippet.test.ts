@@ -2,7 +2,7 @@
  * The `code-snippet` type, exercised through the doors it actually has.
  *
  * The module under test is the REAL contribution from
- * `plugins/c4s-plugin-code-snippets` — imported, not re-declared. That matters:
+ * `plugins/c4s-plugin-code-snippets` — loaded as its envelope, not re-declared. That matters:
  * a fixture copy would let the package's schema drift while these stayed green,
  * and the whole claim of this type is that the declaration IS the implementation.
  *
@@ -19,11 +19,14 @@ import { createTestApp } from '../../helpers/test-app.js';
 import { buildSystemPrompt } from '../../../src/server/services/chat-context.js';
 import { diffEntity, snapshotEntity } from '../../../src/server/serialization/snapshot.js';
 import { codeSnippetEntity } from '../../../plugins/c4s-plugin-code-snippets/src/entity/code-snippet/index.js';
-import type { BackendModule } from '../../../src/server/core/plugin-host/types.js';
 import type { Root } from '../../../src/shared/types.js';
 
-const codeSnippet = codeSnippetEntity as unknown as BackendModule;
-const app = () => createTestApp({ extraModules: [codeSnippet] });
+// The type comes from the `c4s-plugin-code-snippets` envelope the harness loads
+// (its build of this package's source). Registering the source module beside it
+// would contribute `code-snippet` to the base twice — `PLUGIN_TYPE_CONFLICT`
+// since 2.1.63. The source declaration is still imported, read-only, for the
+// assertions about the declaration itself (payload version, no `backend` slot).
+const app = () => createTestApp();
 
 type T = Awaited<ReturnType<typeof app>>;
 

@@ -1,0 +1,36 @@
+{
+  "name": "@inharness-ai/c4s-plugin-diagram",
+  "version": "0.1.0",
+  "description": "claude4spec plugin contributing the `diagram` entity type — a Mermaid diagram kept as a record and embedded in specification pages.",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./frontend": {
+      "import": "./dist/frontend.js",
+      "default": "./dist/frontend.js"
+    }
+  },
+  "peerDependencies": {
+    "@c4s/plugin-runtime": "*",
+    "@tanstack/react-query": "^5.0.0",
+    "lucide-react": "*",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@c4s/plugin-runtime": {
+      "optional": true
+    },
+    "@tanstack/react-query": {
+      "optional": true
+    },
+    "lucide-react": {
+      "optional": true
+    }
+  }
+}

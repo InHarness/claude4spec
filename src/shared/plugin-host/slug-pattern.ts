@@ -28,10 +28,11 @@
  *   - `raw(field)` exists, because a TITLE keeps spaces and case where a slug
  *     may not. `endpoint.title` is `GET /orders/{id}`, whose slug is
  *     `get-orders-id`; the same grammar has to be able to say both.
- *   - `nanoid(n)` is GONE. A title is not allowed to be random — it is the
- *     entity's label — and `diagram`, its only consumer, now derives its slug
- *     from `title` and reports a duplicate as `SLUG_CONFLICT` rather than
- *     quietly minting a second entity behind a random suffix.
+ *   - `nanoid(n)` is not part of the grammar. A title is not allowed to be
+ *     random — it is the entity's label — and no type derives a slug from
+ *     content or a random suffix: every type has a `title` the host derives the
+ *     slug from, so under the default collision policy a duplicate is
+ *     `SLUG_CONFLICT` rather than a second entity behind a random suffix.
  */
 
 import { slugify } from '../slug.js';
@@ -65,7 +66,7 @@ export type SlugStep =
  * producing a non-empty result wins. A single-alternative pattern is the common
  * case and is written as a bare step list.
  *
- * The chain existed for `diagram`'s three-step fallback ending in `nanoid(8)`.
+ * The chain once carried a three-step fallback ending in `nanoid(8)`.
  * With `title` required on every type, every in-repo pattern is now a single
  * alternative — but the chain stays in the shape, because a plugin deriving a
  * slug from an optional field still needs somewhere to fall back to.

@@ -1,7 +1,8 @@
 /**
  * 2.1.20 (M13 chipprops) — the `<type>-expand` window of a HIDDEN type, asserted
- * on the four real hidden types whose L5 pages name it: `diagram` (built into
- * the host bundle), `code-snippet`, `spreadsheet` and `module-dependency`.
+ * on the real hidden types this repo builds whose L5 pages name it:
+ * `code-snippet`, `spreadsheet` and `module-dependency` (2.1.63: `diagram` ships
+ * in the prebuilt `diagrams` envelope and is not built here).
  *
  * What each page now says: the window's name and the way it opens come from the
  * M13 convention, its content from the type's `renderOverlay` slot. So, per type:
@@ -16,23 +17,12 @@
  * which the client tsconfig does not compile. Runs under `node`, like
  * `src/client/entities/openEntity.test.ts`: `openEntityOverlay` only
  * dispatches a window event, so a `window` / `CustomEvent` stub is all it needs.
- * The diagram card module is replaced by stubs (its form is the diagram page's
- * business, not this one's); what is asserted is that the registered overlay
- * IS the module's `DiagramOverlay` export.
  */
 
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-vi.mock('../../../src/client/entities/diagram/DiagramCard.js', () => ({
-  DiagramCard: function DiagramCard() {
-    return null;
-  },
-  DiagramOverlay: function DiagramOverlay() {
-    return null;
-  },
-}));
 vi.mock('../../../src/client/tiptap/registry.js', () => ({ registerEditorExtension: () => {} }));
 
 import { clientPluginHost } from '../../../src/client/core/plugin-host/host.js';
@@ -40,8 +30,6 @@ import { isHiddenModule } from '../../../src/client/core/plugin-host/slot-rules.
 import type { FrontendModule } from '../../../src/client/core/plugin-host/types.js';
 import { openEntityHandler } from '../../../src/client/entities/openEntity.js';
 import { UI_EVENTS } from '../../../src/client/ui/events.js';
-import * as diagramCard from '../../../src/client/entities/diagram/DiagramCard.js';
-import '../../../src/client/entities/diagram/plugin.js';
 import { codeSnippetFrontendModule } from '../../../plugins/c4s-plugin-code-snippets/src/entity/code-snippet/frontend/module.js';
 import { CodeSnippetFullscreen } from '../../../plugins/c4s-plugin-code-snippets/src/entity/code-snippet/frontend/fullscreen.js';
 import { spreadsheetFrontendModule } from '../../../plugins/c4s-plugin-spreadsheets/src/entity/spreadsheet/frontend/module.js';
@@ -112,14 +100,6 @@ function assertExpandConvention(type: string, expectedOverlay: unknown, entity: 
 }
 
 describe('hidden types — the `<type>-expand` window is the host\'s, its content the type\'s renderOverlay', () => {
-  it('[section:dgml5000] diagram: a click opens `diagram-expand` through the host; the chip opens nothing itself', () => {
-    assertExpandConvention('diagram', diagramCard.DiagramOverlay, {
-      slug: 'one',
-      title: 'One',
-      format: 'mermaid',
-    });
-  });
-
   it('[section:c8sqlv76] code-snippet: a click opens `code-snippet-expand` through the host; neither chip nor card opens it itself', () => {
     assertExpandConvention('code-snippet', CodeSnippetFullscreen, {
       slug: 'one',

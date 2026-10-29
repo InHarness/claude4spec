@@ -354,6 +354,23 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
     expect(JSON.stringify(migrationsBetween(0, Number.MAX_SAFE_INTEGER))).not.toMatch(/slugCollision|PLUGIN_TOOL_CONFLICT/);
   });
 
+  it('[section:m33load01] 2.1.63: onCaptionChange in EntityCardProps and the EntityOverlayProps name are an unversioned addition after the 2.1.57 entries, with no bump', () => {
+    const added = HOST_API_UNVERSIONED_CHANGES.filter((c) => c.release === '2.1.63');
+    expect(added).toHaveLength(1);
+    expect(added[0]!.kind).toBe('slot-added');
+    for (const name of ['EntityCardProps.onCaptionChange', 'EntityOverlayProps', '@c4s/plugin-runtime']) {
+      expect(added[0]!.slot).toContain(name);
+    }
+    expect(added[0]!.summary).toMatch(/additive/i);
+    expect(added[0]!.summary).toMatch(/never onto the entity/);
+    expect(added[0]!.uiKitStable).toBeUndefined();
+    const releases = HOST_API_UNVERSIONED_CHANGES.map((c) => c.release);
+    expect(releases.indexOf('2.1.63')).toBe(releases.lastIndexOf('2.1.57') + 1);
+    expect(HOST_API_VERSION).toBe('2.1.0');
+    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0']);
+    expect(JSON.stringify(migrationsBetween(0, Number.MAX_SAFE_INTEGER))).not.toMatch(/onCaptionChange|EntityOverlayProps/);
+  });
+
   it('[section:m33load01] the composition of UI_KIT_STABLE_COMPONENTS is exactly what the registries record', () => {
     expect(sorted(recordedUiKitStableComponents())).toEqual(sorted(UI_KIT_STABLE_COMPONENTS));
   });

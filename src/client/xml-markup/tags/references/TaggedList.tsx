@@ -5,7 +5,7 @@ import { useRegistryVersion } from '../../../core/plugin-host/useRegistryVersion
 import { openEntityHandler } from '../../../entities/openEntity.js';
 import { editorBridge } from '../../../runtime/editor-bridge.js';
 import { BlockBrokenChip } from '../../../tiptap/extensions/views/BrokenChip.js';
-import { NotListable } from '../../../tiptap/extensions/views/NotListable.js';
+import { NoListView } from '../../../tiptap/extensions/views/NoListView.js';
 import { useListTagLookup } from '../../../entities/useListTagLookup.js';
 import { useListRefLookup } from '../../../entities/useRefLookup.js';
 import type { TagRenderProps } from '../../renders.js';
@@ -27,6 +27,10 @@ export function TaggedListRender({ attrs, variant }: TagRenderProps) {
   const tags = csv(attr(attrs, 'tags'));
   const def = getEntityDef(type);
   const tagLookup = useListTagLookup();
+  // 2.1.63 (M19 `m19hidden`) — an ACTIVE type without `renderRow` has no list
+  // view: one information block with the number of matching entities, in both
+  // variants (the chat's inline one included), no rows and no pill.
+  const noListView = !!def && !def.renderRow;
 
   const mod = clientPluginHost.getEntity(type);
   // Keyed under `['entities']`: every entity / tag change already invalidates
@@ -34,10 +38,16 @@ export function TaggedListRender({ attrs, variant }: TagRenderProps) {
   const { data: results = [], isLoading } = useQuery<Listed[]>({
     queryKey: ['entities', 'tagged-list', type, tags, filter],
     queryFn: async () => (mod ? ((await mod.listByTags({ tags, filter })) as Listed[]) : []),
-    enabled: variant === 'block' && tags.length > 0 && Boolean(mod),
+    enabled: (variant === 'block' || noListView) && tags.length > 0 && Boolean(mod),
   });
-  // 2.1.41 — one refLookup for the whole list, like tagLookup.
-  const refLookup = useListRefLookup(results.map((r) => ({ type, slug: r.slug })));
+  // 2.1.41 — one refLookup for the whole list, like tagLookup. Nothing to
+  // resolve where no row is drawn.
+  const refLookup = useListRefLookup(noListView ? [] : results.map((r) => ({ type, slug: r.slug })));
+
+  if (noListView) {
+    const count = tags.length === 0 ? 0 : isLoading ? null : results.length;
+    return <NoListView type={type} count={count} variant={variant} />;
+  }
 
   if (variant === 'inline') return <TaggedPill tags={attr(attrs, 'tags')} filter={filter} typeLabel={type} />;
 
@@ -45,8 +55,7 @@ export function TaggedListRender({ attrs, variant }: TagRenderProps) {
     const category = categoriseBrokenChip(type) ?? 'unknown-type';
     return <BlockBrokenChip category={category} type={type} />;
   }
-  if (!def.renderRow) return <NotListable type={type} label={def.labelPlural} />;
-  const RowComp = def.renderRow;
+  const RowComp = def.renderRow!;
 
   return (
     <div className="rounded-md" style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}>

@@ -2,7 +2,6 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 import { PluginRegistryImpl } from '../../../src/server/core/plugin-host/registry.js';
-import { registerAllPlugins } from '../../../src/server/core/plugin-host/register-builtins.js';
 import { pluginsRouter } from '../../../src/server/routes/plugins.js';
 import { HOST_API_VERSION, type PluginManifest } from '../../../src/shared/plugin-host/manifest.js';
 import { loadWorkspacePlugins } from '../../../src/server/core/plugin-host/loader.js';
@@ -13,7 +12,6 @@ const noWorkspacePackage = (): string | null => null;
 
 function makeApp(records: Parameters<typeof pluginsRouter>[0]['pluginRecords'] = []) {
   const pluginRegistry = new PluginRegistryImpl();
-  registerAllPlugins(pluginRegistry);
   const app = express();
   app.use('/api', pluginsRouter({ pluginRegistry, pluginRecords: records, resolveWorkspaceRoot: noWorkspacePackage }));
   return app;
@@ -56,15 +54,16 @@ describe('M33 plugins router', () => {
     const builtin = res.body.packages.find((p: { package: string }) => p.package === '@c4s/builtin');
     expect(builtin.status).toBe('loaded');
     /*
-     * 0.2.80: the built-in record is down to `diagram` alone.
+     * 2.1.63: the built-in record carries no type at all.
      *
-     * Every other type is contributed by an envelope, each of which is its own
+     * Every type is contributed by an envelope, each of which is its own
      * record: `endpoint`/`dto` since 0.2.2, `database-table` and `spreadsheet`
-     * since 0.2.11, `ui-view`/`design-system` since 0.2.18, and `ac` since
-     * 0.2.80. Asserting the exact set rather than one member is what makes a
-     * type silently slipping back into the core bootstrap fail here.
+     * since 0.2.11, `ui-view`/`design-system` since 0.2.18, `ac` since 0.2.80,
+     * and `diagram` — the last one on the direct tier — since 2.1.63, from the
+     * prebuilt `diagrams` envelope. Asserting the exact (empty) set is what
+     * makes a type silently slipping back into the core bootstrap fail here.
      */
-    expect([...builtin.contributedTypes].sort()).toEqual(['diagram']);
+    expect(builtin.contributedTypes).toEqual([]);
 
     expect(res.body.packages.some((p: { package: string }) => p.package === 'pkg-x')).toBe(true);
   });
@@ -73,7 +72,6 @@ describe('M33 plugins router', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       const pluginRegistry = new PluginRegistryImpl();
-      registerAllPlugins(pluginRegistry);
       const modules: Record<string, PluginManifest> = {
         'pkg-old-major': glossaryManifest('@acme/old', '^1.0.0', 'old-glossary'),
         'pkg-good': glossaryManifest('@acme/good', `^${HOST_API_VERSION}`, 'good-glossary'),
@@ -85,11 +83,10 @@ describe('M33 plugins router', () => {
       expect(records[0]).toMatchObject({ package: 'pkg-old-major', code: 'PLUGIN_HOST_API_MISMATCH' });
       expect(['skipped', 'incompatible']).toContain(records[0]!.status);
       expect(warn.mock.calls.flat().join(' ')).toMatch(/PLUGIN_HOST_API_MISMATCH pkg-old-major/);
-      // The other plugin and the host's own types load normally.
+      // The other plugin loads normally.
       expect(records[1]).toMatchObject({ package: 'pkg-good', status: 'loaded' });
       expect(pluginRegistry.getAvailable('good-glossary')).not.toBeNull();
       expect(pluginRegistry.getAvailable('old-glossary')).toBeNull();
-      expect(pluginRegistry.getAvailable('diagram')).not.toBeNull();
 
       const app = express();
       app.use('/api', pluginsRouter({ pluginRegistry, pluginRecords: records, resolveWorkspaceRoot: noWorkspacePackage }));

@@ -1,0 +1,234 @@
+/* `diagram` embeds. Every class carries the package prefix `diagrams-`; colours,
+   fonts and text sizes come from host tokens. */
+
+.diagrams-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 40ch;
+  vertical-align: middle;
+  padding: 1px 6px;
+  border: 1px solid var(--c-hair);
+  border-radius: 4px;
+  background: var(--c-card);
+  color: var(--c-ink);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.diagrams-chip:hover {
+  border-color: var(--c-hair-strong);
+}
+.diagrams-chip__icon {
+  flex: none;
+  color: var(--c-accent);
+}
+.diagrams-chip__title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.diagrams-card {
+  position: relative;
+  margin: 0;
+}
+/* The pencil, in the card's top-right corner over the diagram. */
+.diagrams-card__edit {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  border: 1px solid var(--c-hair);
+  border-radius: 3px;
+  background: var(--c-card);
+  opacity: 0.75;
+}
+.diagrams-card__edit:hover {
+  opacity: 1;
+}
+
+/* The `/diagram` form: fields on the left, live preview on the right. */
+.diagrams-form__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  min-height: 360px;
+}
+.diagrams-form--fullscreen .diagrams-form__grid {
+  min-height: calc(90vh - 140px);
+}
+.diagrams-form__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.diagrams-form__row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.diagrams-form__spacer {
+  flex: 1;
+}
+.diagrams-form__input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--c-hair);
+  border-radius: 4px;
+  background: var(--c-bg);
+  color: var(--c-ink);
+  font-size: var(--text-sm);
+  outline: none;
+}
+.diagrams-form__input:focus {
+  border-color: var(--c-hair-strong);
+}
+.diagrams-form__format {
+  width: 150px;
+}
+.diagrams-form__source {
+  min-height: 220px;
+  resize: none;
+  white-space: pre;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+.diagrams-form--fullscreen .diagrams-form__source {
+  min-height: calc(90vh - 330px);
+}
+.diagrams-form__preview {
+  box-sizing: border-box;
+  min-height: 220px;
+  padding: 8px;
+  border: 1px solid var(--c-hair);
+  border-radius: 4px;
+  overflow: auto;
+}
+.diagrams-form--fullscreen .diagrams-form__preview {
+  min-height: calc(90vh - 180px);
+}
+.diagrams-form__preview--note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-subtle);
+  font-size: var(--text-xs);
+}
+.diagrams-form__preview--error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-red);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+.diagrams-card__caption {
+  margin-top: 6px;
+  color: var(--c-muted);
+  font-style: italic;
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.diagrams-render__svg {
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--c-hair);
+  border-radius: 4px;
+}
+.diagrams-render--empty {
+  padding: 24px 0;
+  border: 1px dashed var(--c-hair);
+  border-radius: 4px;
+  background: var(--c-panel);
+  color: var(--c-muted);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+.diagrams-render--error {
+  padding: 8px 12px;
+  border: 1px solid var(--c-red);
+  border-radius: 4px;
+  background: var(--c-red-soft);
+  color: var(--c-red);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+.diagrams-render__source {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+/* `DiagramFullscreen`: the body of the kit `Dialog`. It fills the Dialog's
+   height cap (`100vh - 48px`, minus the panel's 20px padding). */
+.diagrams-fullscreen {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 96px);
+  margin: 0;
+}
+.diagrams-fullscreen__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--c-hair);
+}
+.diagrams-fullscreen__label {
+  color: var(--c-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.diagrams-fullscreen__spacer {
+  flex: 1;
+}
+.diagrams-fullscreen__percent {
+  min-width: 48px;
+  color: var(--c-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+.diagrams-fullscreen__stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--c-card);
+  cursor: grab;
+  touch-action: none;
+}
+.diagrams-fullscreen__stage--dragging {
+  cursor: grabbing;
+}
+.diagrams-fullscreen__content {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  user-select: none;
+  pointer-events: none;
+}
+.diagrams-fullscreen__caption {
+  padding-top: 8px;
+  color: var(--c-muted);
+  font-style: italic;
+  font-size: var(--text-sm);
+  text-align: center;
+}
+.diagrams-fullscreen__hint {
+  padding-top: 6px;
+  border-top: 1px solid var(--c-hair);
+  color: var(--c-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}

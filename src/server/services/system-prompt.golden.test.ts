@@ -3,7 +3,7 @@ import { buildSystemPrompt, type SystemPromptInput, type PeerProject } from './c
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import type { Annotation, Brief, Plan } from '../../shared/entities.js';
 import type { PatchDetail } from './patch.js';
-import { diagramSystemPrompt } from '../entities/diagram/system-prompt.js';
+import { SKETCH_SYSTEM_PROMPT } from '../../../tests/helpers/fixture-module.js';
 import { INTERACTION_RULES } from './interaction-rules.js';
 import type { Root } from '../../shared/types.js';
 
@@ -30,7 +30,11 @@ function rootAt(dir: string, id = 'pages'): Root {
 
 const emptyHost = { listEntities: () => [] } as unknown as ProjectPluginHost;
 
-/** An endpoint-like type with a narrative row, a type that opts out (no roleNoun), and diagram. */
+/**
+ * An endpoint-like type with a narrative row, a type that opts out (no roleNoun),
+ * and a type that brings its own prompt block (the `sketch` fixture — 2.1.63:
+ * it replaced the host's `diagram`, which left for its prebuilt envelope).
+ */
 const typedHost = {
   listEntities: () => [
     {
@@ -42,7 +46,7 @@ const typedHost = {
       },
     },
     { type: 'ui-view', systemPrompt: { roleNoun: '' } },
-    { type: 'diagram', systemPrompt: diagramSystemPrompt },
+    { type: 'sketch', systemPrompt: SKETCH_SYSTEM_PROMPT },
   ],
 } as unknown as ProjectPluginHost;
 

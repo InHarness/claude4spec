@@ -4,7 +4,6 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { PluginRegistryImpl } from '../../../src/server/core/plugin-host/registry.js';
-import { registerAllPlugins } from '../../../src/server/core/plugin-host/register-builtins.js';
 import { loadBuiltinEnvelopes, type PluginLoadRecord } from '../../../src/server/core/plugin-host/loader.js';
 import { FileWatchRuntime } from '../../../src/server/fs/watcher.js';
 import { WsGateway } from '../../../src/server/ws/gateway.js';
@@ -87,7 +86,6 @@ describe('M01 — a pre-`skills` project whose roots[] collides with the skills 
     registry = new WorkspaceRegistry(process.env.C4S_HOME);
     workspace = registry.selectOrCreate({ name: 'default' });
     pluginRegistry = new PluginRegistryImpl();
-    registerAllPlugins(pluginRegistry);
     pluginRecords = (await loadBuiltinEnvelopes(pluginRegistry)).records;
     httpServer = http.createServer();
     gateway = new WsGateway(httpServer, () => true);

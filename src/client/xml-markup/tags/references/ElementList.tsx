@@ -1,10 +1,12 @@
+import { useQuery } from '@tanstack/react-query';
 import { getEntityDef } from '../../../entities/registry.js';
 import { categoriseBrokenChip } from '../../../core/plugin-host/host.js';
 import { useRegistryVersion } from '../../../core/plugin-host/useRegistryVersion.js';
 import { openEntityHandler } from '../../../entities/openEntity.js';
 import { editorBridge } from '../../../runtime/editor-bridge.js';
+import { entitiesApi } from '../../../lib/api.js';
 import { BlockBrokenChip } from '../../../tiptap/extensions/views/BrokenChip.js';
-import { NotListable } from '../../../tiptap/extensions/views/NotListable.js';
+import { NoListView } from '../../../tiptap/extensions/views/NoListView.js';
 import { useListTagLookup } from '../../../entities/useListTagLookup.js';
 import { useListRefLookup } from '../../../entities/useRefLookup.js';
 import type { RefLookupEntry } from '../../../host-ui-kit/actions/EntityRefValue.js';
@@ -17,8 +19,11 @@ import { attr, csv, EntityChip } from './shared.js';
  * of `slugs`. A slug with no entity (deleted) renders no row at all — it is
  * skipped, never degraded to a chip, and `renderRow` only ever receives a
  * resolved entity, so the slot has no `null` branch (M19 `m19broken`, 2.1.16;
- * the consistency check reports the slug). A type without a row slot (hidden
- * types) cannot be listed. Inline: one chip per slug.
+ * the consistency check reports the slug). Inline: one chip per slug.
+ *
+ * 2.1.63 (M19 `m19hidden`): an ACTIVE type without a row slot has no list view —
+ * in both variants the list is one information block naming the type, with the
+ * number of its listed slugs that name an existing entity, and no rows or chips.
  *
  * 2.1.40: every row gets the same `tagLookup`, from one `['tags']` query made
  * here, once for the whole list. 2.1.41: and the same `refLookup`, built once
@@ -29,9 +34,25 @@ export function ElementListRender({ attrs, variant }: TagRenderProps) {
   const tagLookup = useListTagLookup();
   const type = attr(attrs, 'type');
   const slugs = csv(attr(attrs, 'slugs'));
-  // 2.1.41 — one refLookup for the whole list, like tagLookup.
-  const refLookup = useListRefLookup(variant === 'inline' ? [] : slugs.map((slug) => ({ type, slug })));
   const def = getEntityDef(type);
+  const noListView = !!def && !def.renderRow;
+  // 2.1.41 — one refLookup for the whole list, like tagLookup. Nothing to
+  // resolve where no row is drawn.
+  const refLookup = useListRefLookup(
+    variant === 'inline' || noListView ? [] : slugs.map((slug) => ({ type, slug })),
+  );
+  // 2.1.63 — the info block's count: ONE "read by slugs" for the whole list,
+  // only for a type without a list view. Keyed under `['entities']`, so every
+  // entity change refreshes it with no key of its own.
+  const { data: found } = useQuery({
+    queryKey: ['entities', 'no-list-view', type, slugs],
+    queryFn: async () => (await entitiesApi.getBySlugs(type, slugs)).filter((r) => r.entity !== null).length,
+    enabled: noListView && slugs.length > 0,
+  });
+
+  if (noListView) {
+    return <NoListView type={type} count={slugs.length === 0 ? 0 : (found ?? null)} variant={variant} />;
+  }
 
   if (variant === 'inline') {
     return (
@@ -47,10 +68,6 @@ export function ElementListRender({ attrs, variant }: TagRenderProps) {
     const category = categoriseBrokenChip(type) ?? 'unknown-type';
     return <BlockBrokenChip category={category} type={type} />;
   }
-
-  // An embed-only type has no row; say so instead of drawing an empty frame
-  // that reads as "no results".
-  if (!def.renderRow) return <NotListable type={type} label={def.labelPlural} />;
 
   return (
     <div className="rounded-md" style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}>
@@ -106,8 +123,8 @@ function Row({
   // A slug with no entity yields no row — not a broken chip, not a `null` entity
   // handed to `renderRow`; check_consistency reports it.
   if (!data) return null;
-  // Non-null by the guard in ElementListRender, which never renders a Row for a
-  // type without one.
+  // Non-null: ElementListRender answers a type without one with the info block
+  // and never renders a Row for it.
   const RowComp = def.renderRow!;
   return (
     <li>

@@ -16,14 +16,23 @@
  * it cannot drift into being accidental: the `slug` PK gains `NOT NULL` on the
  * tables that lacked it.
  *
- * SCOPE: the ONE type this repo contributes directly. Every other type lives in
- * an envelope and is covered by the same assertions in that workspace's own
- * suite (`plugins/<name>/test/projection-golden.test.ts`) — `dto`/`endpoint`
- * since 0.2.2, `ui-view`/`design-system` since 0.2.18, `ac` since 0.2.80.
- * Importing their source here would pull files that import
- * `@c4s/plugin-runtime` into the root TS program, where the specifier resolves
- * to the BUILT `dist/` .d.ts rather than to source, making this file's typecheck
- * depend on build order.
+ * SCOPE: no type this repo contributes directly. Every type lives in an
+ * envelope and is covered by the same assertions in that workspace's own suite
+ * (`plugins/<name>/test/projection-golden.test.ts`) — `dto`/`endpoint` since
+ * 0.2.2, `ui-view`/`design-system` since 0.2.18, `ac` since 0.2.80; `diagram`,
+ * the last type on the direct tier, left in 2.1.63 for its prebuilt envelope,
+ * whose suite lives in the plugin's own repository. Importing their source here
+ * would pull files that import `@c4s/plugin-runtime` into the root TS program,
+ * where the specifier resolves to the BUILT `dist/` .d.ts rather than to source,
+ * making this file's typecheck depend on build order.
+ *
+ * So the golden below is frozen for a host-owned test type, `sketch`
+ * (`tests/helpers/fixture-module.ts`), declared with exactly the shape the
+ * departed `diagram` had — a required `title`, an `enum` with a default, a
+ * content-bearing body defaulting to `''`, two timestamps. The DDL it must
+ * generate is spelled out by hand, which keeps the claim the golden exists for:
+ * the generator's order, nullability, defaults and indexes do not drift
+ * unannounced.
  *
  * `ac` still appears BELOW the golden, as the reconciliation block's subject —
  * but as a synthetic fixture (`tests/helpers/ac-fixture.ts`), not as the real
@@ -37,7 +46,7 @@ import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
 import { applyProjection, generateProjectionDDL, type ProjectableModule } from './projection.js';
 import { acFixtureData as acData } from '../../../tests/helpers/ac-fixture.js';
-import { diagramData } from '../../shared/entities/diagram/schema.js';
+import { SKETCH_FIXTURE_DATA as sketchData } from '../../../tests/helpers/fixture-module.js';
 
 /**
  * The DDL as the deleted `migrations.ts` files wrote it, carried forward through
@@ -58,12 +67,12 @@ import { diagramData } from '../../shared/entities/diagram/schema.js';
  * is exercised further down.
  */
 const RETIRED_DDL: Record<string, string> = {
-  diagram: `
-    CREATE TABLE IF NOT EXISTS diagram (
+  sketch: `
+    CREATE TABLE IF NOT EXISTS sketch (
       slug       TEXT NOT NULL PRIMARY KEY,
       title      TEXT NOT NULL,
-      format     TEXT NOT NULL DEFAULT 'mermaid',
-      source     TEXT NOT NULL DEFAULT '',
+      format     TEXT NOT NULL DEFAULT 'plain',
+      body       TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -71,27 +80,27 @@ const RETIRED_DDL: Record<string, string> = {
 };
 
 /**
- * What the GOLDEN compares: the types whose retired DDL is frozen above.
+ * What the GOLDEN compares: the types whose DDL is frozen above.
  *
  * `ac` left this list in 0.2.80 with the rest of its vertical. Its retired DDL
  * and the index assertion travelled to
  * `plugins/c4s-plugin-ac/test/projection-golden.test.ts`, where they can read
- * the real declaration.
+ * the real declaration. `diagram` left in 2.1.63; `sketch` holds its shape.
  */
-const MODULES: ProjectableModule[] = [{ type: 'diagram', data: diagramData }];
+const MODULES: ProjectableModule[] = [{ type: 'sketch', data: sketchData }];
 
 /**
  * What the RECONCILIATION block operates on.
  *
- * An ac-shaped fixture rather than `diagram`, deliberately: these cases need a
+ * An ac-shaped fixture rather than `sketch`, deliberately: these cases need a
  * table with an enum, an embedded collection and generated indexes, and
- * `diagram` has none of the three. What they assert is the generator's
+ * `sketch` has no collection and no index. What they assert is the generator's
  * behaviour on a populated database, which is a property of the generator and
  * not of any one contributor's schema.
  */
 const RECONCILE_MODULES: ProjectableModule[] = [
   { type: 'ac', data: acData },
-  { type: 'diagram', data: diagramData },
+  { type: 'sketch', data: sketchData },
 ];
 
 interface ColumnInfo {
@@ -148,8 +157,9 @@ describe('projection generator — equivalence with the retired hand-written DDL
        * Nullability matches everywhere EXCEPT the primary key, which the
        * generator now always writes `NOT NULL`. In SQLite that is not redundant:
        * a `TEXT PRIMARY KEY` column accepts NULL, a long-standing compatibility
-       * quirk, and only `diagram` had ever spelled the constraint out. This is
-       * the one deliberate strengthening, so it is asserted rather than skipped.
+       * quirk, and only `diagram` (whose shape `sketch` keeps) had ever spelled
+       * the constraint out. This is the one deliberate strengthening, so it is
+       * asserted rather than skipped.
        */
       for (const [i, col] of after.entries()) {
         const golden = before[i] as ColumnInfo;
@@ -173,12 +183,12 @@ describe('projection generator — equivalence with the retired hand-written DDL
         )
         .sort();
 
-    // `diagram` declares no `access` hints, so neither database creates an
+    // `sketch` declares no `access` hints, so neither database creates an
     // index — the assertion is that the generator agrees about the ABSENCE too.
     // The `access`-driven case (`idx_ac_status` / `idx_ac_kind`) travelled with
     // `ac` into its envelope's copy of this file.
-    expect(coveredColumns(generatedDb(), 'diagram')).toEqual(
-      coveredColumns(retiredDb(), 'diagram'),
+    expect(coveredColumns(generatedDb(), 'sketch')).toEqual(
+      coveredColumns(retiredDb(), 'sketch'),
     );
   });
 });
