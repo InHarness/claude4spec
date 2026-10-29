@@ -1,0 +1,5 @@
+# diagram-out — non-blocking review findings
+
+- **rev-0001** `src/server/operations/core-operations.ts:2397`: the `validate_diagram` catalog row was removed. The profile gate fails closed on undeclared plugin tools, so the read-only `validate_diagram` is now hidden in the `ask`/`brief` profiles. Other built-in envelopes (`ac-tools`, `spreadsheet-tools`, `endpoint-tools`, `ui-kit-component-tools`) keep `typeOp` rows with `contributedBy: 'plugin'`. To decide: confirm the loss is intended, or restore the row on the envelope's behalf.
+- **rev-0002** `tests/e2e/generic-entity-embed.test.ts:159`: the replacement e2e test only checks that `<diagram` is absent from the text. That is also true when no card renders at all. Add a host-level assertion that the generic `single_element` card mounted.
+- **rev-0003** `src/server/core/plugin-host/builtin-envelopes.ts:151` and lines 5–7: two comments are stale. One still says `plugins/<name>/dist` is gitignored build output, which is no longer true for prebuilt. The other still names tier (a) "built-in direct" as existing.

@@ -1,5 +1,5 @@
 {
-  "iteration": 4,
+  "iteration": 5,
   "conventions": [
     {
       "label": "L11 (Plugin Runtime Surface) — implementor M33",
@@ -351,7 +351,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "in-progress",
+      "status": "verified",
       "blockedBy": null,
       "startCommit": "c6c6a391",
       "baseCommit": "c6c6a391",
@@ -438,9 +438,11 @@
       ],
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "container-env",
