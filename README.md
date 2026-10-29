@@ -165,6 +165,10 @@ The rename propagates across every `pages/*.md` file via the reference layer. In
 - Issues: <https://github.com/InHarness/claude4spec/issues>
 - Changelog: [`CHANGELOG.md`](./CHANGELOG.md)
 
+## Repository
+
+This repository is a read-only mirror. Development happens in a private repository and every change is published here with its full history, so `main` only moves forward. Issues are welcome; pull requests opened here are not merged directly — describe the change in an issue instead.
+
 ## License
 
 MIT — see [LICENSE](./LICENSE).
