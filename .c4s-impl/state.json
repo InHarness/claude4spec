@@ -482,12 +482,13 @@
       "wave": 1,
       "status": "in-progress",
       "blockedBy": null,
-      "startCommit": "fcc7f2d1",
+      "startCommit": "4dff10b6",
       "baseCommit": "fcc7f2d1",
-      "portions": [{"name":"container-env/p1-m01-domain-m01-edge","layers":["M01 Domain","M01 Przypadki brzegowe"],"slugs":["ac-kontener-uruchomiony-z-port-startuje","ac-kontener-uruchomiony-z-ustawiona-publ","ac-kontener-uruchomiony-bez-public-url-s","ac-kontener-uruchomiony-z-ustawiona-remo","ac-kontener-uruchomiony-bez-remote-api-u","ac-remote-api-url-ustawiona-na-pusty-cia","ac-kontener-z-ustawiona-remote-api-url-k","ac-po-starcie-kontenera-katalog-wskazany"],"status":"implemented","rounds":1,"partial":0,"uncovered":[],"only":[]}],
+      "lastBlocking": 1,
+      "portions": [{"name":"container-env/p1-m01-domain-m01-edge","layers":["M01 Domain","M01 Przypadki brzegowe"],"slugs":["ac-kontener-uruchomiony-z-port-startuje","ac-kontener-uruchomiony-z-ustawiona-publ","ac-kontener-uruchomiony-bez-public-url-s","ac-kontener-uruchomiony-z-ustawiona-remo","ac-kontener-uruchomiony-bez-remote-api-u","ac-remote-api-url-ustawiona-na-pusty-cia","ac-kontener-z-ustawiona-remote-api-url-k","ac-po-starcie-kontenera-katalog-wskazany"],"status":"pending","rounds":1,"partial":0,"uncovered":[],"only":[{"finding":"rev-0001"}]}],
       "rounds": {
-        "review": 0,
-        "unit": 0
+        "review": 1,
+        "unit": 1
       },
       "jobs": []
     },
