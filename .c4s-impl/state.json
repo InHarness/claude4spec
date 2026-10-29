@@ -867,10 +867,10 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
+      "status": "in-progress",
       "blockedBy": null,
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "8287f6b0",
+      "baseCommit": "8287f6b0",
       "portions": [
         {
           "name": "card-caption-callback/p1-l2-l11",
