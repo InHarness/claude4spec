@@ -135,6 +135,10 @@ ENV NODE_ENV=production \
 
 COPY --from=build /app/package.json /app/package-lock.json ./
 COPY --from=build /app/node_modules ./node_modules
+# The whole built dist/, including dist/plugins/<name>: built-in envelopes,
+# both those built from source and the prebuilt ones (M13 `m13plenv`) that
+# `npm run build` → `build:envelopes` copied there from the committed
+# plugins/<name>/dist/. Narrowing this copy drops envelopes silently.
 COPY --from=build /app/dist ./dist
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY docker/init-git.sh /usr/local/bin/init-git.sh

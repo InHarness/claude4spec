@@ -19,10 +19,27 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 const REPO_ROOT = path.join(import.meta.dirname, '../../..');
+
+/**
+ * The tarball's file list, computed once for the whole file. `--dry-run
+ * --json` lists the file set without writing a tarball; it is slow (npm walks
+ * the tree), so every check below reads the same list.
+ */
+let packedFiles: string[] = [];
+beforeAll(() => {
+  const raw = execFileSync('npm', ['pack', '--dry-run', '--json'], {
+    cwd: REPO_ROOT,
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  const [tarball] = JSON.parse(raw) as Array<{ files: Array<{ path: string }> }>;
+  packedFiles = (tarball?.files ?? []).map((f) => f.path);
+}, 120_000);
 
 /** Every envelope in `plugins/` must reach the tarball on the same terms. */
 const ENVELOPES = [
@@ -40,15 +57,7 @@ const ENVELOPES = [
 
 describe('npm package contents', () => {
   it('ships every builtin envelope’s built bundles', () => {
-    // `--dry-run --json` lists the file set without writing a tarball. Slow
-    // (npm walks the tree), hence the raised timeout rather than a smaller check.
-    const raw = execFileSync('npm', ['pack', '--dry-run', '--json'], {
-      cwd: REPO_ROOT,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    const [tarball] = JSON.parse(raw) as Array<{ files: Array<{ path: string }> }>;
-    const files = (tarball?.files ?? []).map((f) => f.path);
+    const files = packedFiles;
 
     for (const name of ENVELOPES) {
       // The backend entry the loader imports, and the frontend bundle the asset
@@ -69,7 +78,97 @@ describe('npm package contents', () => {
         `${name} code-split chunks`,
       ).toBeGreaterThan(2);
     }
-  }, 120_000);
+  });
+});
+
+/**
+ * 2.1.63 (M13 `m13plenv` — „Dystrybucja”, „Mapy źródłowe”): a PREBUILT
+ * envelope is committed as `plugins/<name>/{package.json,dist/}` and copied by
+ * `scripts/copy-prebuilt-envelopes.mjs` (the last step of `build:envelopes`,
+ * run by `prebuild` / `pretest`) into `dist/plugins/<name>/`. From there it
+ * travels exactly like an envelope built from source: `files` names `dist`, and
+ * the container image copies `/app/dist`. Without this the envelope works only
+ * from a checkout.
+ */
+const PREBUILT = 'c4s-plugin-diagram';
+const PREBUILT_DIST = path.join(REPO_ROOT, 'plugins', PREBUILT, 'dist');
+
+/** Files under `dir`, relative, `/`-separated. */
+function filesUnder(dir: string): string[] {
+  return (fs.readdirSync(dir, { recursive: true, withFileTypes: true }) as fs.Dirent[])
+    .filter((e) => e.isFile())
+    .map((e) => path.relative(dir, path.join(e.parentPath, e.name)).split(path.sep).join('/'));
+}
+
+describe('prebuilt envelope distribution', () => {
+  it('[ac:ac-paczka-npm-hosta-zawiera-koperte-preb] the host npm package carries the prebuilt envelope — every bundle file of it — and no `*.map` file of it', () => {
+    // The committed prebuilt is a non-empty bundle with both entries; otherwise
+    // "every file of it is packed" below would hold vacuously.
+    const bundle = filesUnder(PREBUILT_DIST).filter((f) => !f.endsWith('.map'));
+    expect(bundle).toEqual(expect.arrayContaining(['index.js', 'frontend.js']));
+
+    // `package.json#files` covers the copy target `dist/plugins/<name>`.
+    const files = (JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8')) as {
+      files: string[];
+    }).files;
+    expect(files).toContain('dist');
+
+    // (1) The package contains the envelope: its rewritten manifest (what
+    // discovery reads) and every bundle file, chunks included — a missing
+    // chunk loads the entry and then 404s mid-import.
+    const prefix = `dist/plugins/${PREBUILT}/`;
+    const packed = packedFiles.filter((f) => f.startsWith(prefix)).map((f) => f.slice(prefix.length));
+    expect(packed).toContain('package.json');
+    expect(packed).toEqual(expect.arrayContaining(bundle));
+
+    // (2) No source map of the envelope is shipped.
+    expect(packed.filter((f) => f.endsWith('.map'))).toEqual([]);
+  });
+
+  it('[section:m13plenv] the container image carries the prebuilt envelope: the build stage gets plugins/<name>/dist, builds (copy step included) and the runtime copies /app/dist', () => {
+    const dockerfile = fs.readFileSync(path.join(REPO_ROOT, 'docker', 'Dockerfile'), 'utf8');
+    const lines = dockerfile.split('\n').map((l) => l.trim());
+    const buildStage = lines.findIndex((l) => /^FROM \S+ AS build$/.test(l));
+    expect(buildStage).toBeGreaterThanOrEqual(0);
+    const copySources = lines.indexOf('COPY . .', buildStage);
+    const runBuild = lines.indexOf('RUN npm run build', buildStage);
+    expect(copySources).toBeGreaterThan(buildStage);
+    expect(runBuild).toBeGreaterThan(copySources);
+    expect(lines.slice(buildStage + 1, runBuild).some((l) => l.startsWith('FROM '))).toBe(false);
+    // The runtime image takes the whole built `dist/`, so `dist/plugins/<name>` with it.
+    expect(lines.indexOf('COPY --from=build /app/dist ./dist')).toBeGreaterThan(runBuild);
+
+    // `npm run build` → `prebuild` → `build:envelopes`, whose last step is the copy.
+    const scripts = (JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>;
+    }).scripts;
+    expect(scripts.prebuild).toBe('npm run build:envelopes');
+    expect(scripts['build:envelopes']).toMatch(/&& node scripts\/copy-prebuilt-envelopes\.mjs$/);
+
+    // `COPY . .` must not drop the committed bundle: no `.dockerignore` rule
+    // (root-anchored, `*` within a segment, `**` across segments) matches
+    // `plugins/<name>/dist` or a directory above it. The root `dist` rule
+    // excludes only the host's own build output.
+    const target = `plugins/${PREBUILT}/dist/index.js`;
+    const segments = target.split('/');
+    const covered = segments.map((_, i) => segments.slice(0, i + 1).join('/'));
+    const rules = fs
+      .readFileSync(path.join(REPO_ROOT, '.dockerignore'), 'utf8')
+      .split('\n')
+      .map((l) => l.trim().replace(/^\/+/, '').replace(/\/+$/, ''))
+      .filter((l) => l !== '' && !l.startsWith('#') && !l.startsWith('!'));
+    const toRegExp = (rule: string) =>
+      new RegExp(
+        `^${rule
+          .split('**')
+          .map((part) => part.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]'))
+          .join('.*')}$`,
+      );
+    for (const rule of rules) {
+      const re = toRegExp(rule);
+      expect(covered.filter((p) => re.test(p)), `.dockerignore rule "${rule}"`).toEqual([]);
+    }
+  });
 });
 
 /**
