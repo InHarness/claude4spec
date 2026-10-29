@@ -27,20 +27,37 @@ function keyringPath(): string {
   return path.join(workspaceBaseDir(), 'secret.key');
 }
 
-/** Lazily create the 32-byte keyring on first use; read it on subsequent calls. */
+function readKeyring(file: string): Buffer {
+  const key = fs.readFileSync(file);
+  if (key.length !== KEY_BYTES) {
+    throw new Error(`secret.key is corrupt: expected ${KEY_BYTES} bytes, got ${key.length}`);
+  }
+  return key;
+}
+
+/**
+ * Lazily create the 32-byte keyring on first use; read it on subsequent calls.
+ * 2.1.62 (M54 writes from several processes): the key is written to a private
+ * temp file and published with `link`, which fails if `secret.key` already
+ * exists — so two processes making their first write at once agree on ONE key
+ * (the loser reads the winner's) and nobody ever sees a half-written file.
+ */
 function loadKeyring(): Buffer {
   const file = keyringPath();
-  if (fs.existsSync(file)) {
-    const key = fs.readFileSync(file);
-    if (key.length !== KEY_BYTES) {
-      throw new Error(`secret.key is corrupt: expected ${KEY_BYTES} bytes, got ${key.length}`);
-    }
-    return key;
-  }
-  const key = crypto.randomBytes(KEY_BYTES);
+  if (fs.existsSync(file)) return readKeyring(file);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, key, { mode: 0o600 });
-  return key;
+  const tmp = `${file}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+  const key = crypto.randomBytes(KEY_BYTES);
+  fs.writeFileSync(tmp, key, { mode: 0o600 });
+  try {
+    fs.linkSync(tmp, file);
+    return key;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+    return readKeyring(file);
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
 }
 
 /** Encrypt plaintext → base64 `iv | authTag | ciphertext`. */

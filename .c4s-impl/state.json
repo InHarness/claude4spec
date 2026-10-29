@@ -1,5 +1,5 @@
 {
-  "iteration": 5,
+  "iteration": 9,
   "conventions": [
     {
       "label": "L4 (API) — implementor M49",
@@ -51,7 +51,7 @@
       "units": [
         "m54-host-records"
       ],
-      "startCommit": null
+      "startCommit": "41a93b1fbb6c95397cb5166d654c2b169dbcc05c"
     },
     {
       "n": 3,
@@ -292,7 +292,7 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "m54-host-records/p1-l10-l10",
@@ -310,20 +310,21 @@
             "ac-rownolegle-dodanie-w-dwoch-procesach",
             "ac-usuniecie-rekordu-w-jednym-procesie-i"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 1,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "41a93b1fbb6c95397cb5166d654c2b169dbcc05c",
+      "baseCommit": "41a93b1fbb6c95397cb5166d654c2b169dbcc05c",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0
     },
     {
       "id": "m54-supervisor",

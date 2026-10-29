@@ -762,6 +762,16 @@ export class WorkspaceRegistry {
   }
 
   /**
+   * 2.1.62: the stored registry entry of a workspace (matched by name and home),
+   * read fresh from `workspaces.json` without the lock and without composing a
+   * view — the read side of `updateEntry` for a module that keeps its own data
+   * in the entry (M54 lists `runnerHosts[]` through it). `null` = entry gone.
+   */
+  readStoredEntry(ws: Pick<WorkspaceRecord, 'name' | 'home'>): StoredWorkspaceRecord | null {
+    return this.readRaw().workspaces.find((w) => isStoredEntryOf(w, ws)) ?? null;
+  }
+
+  /**
    * 2.1.62 (M31 `zovs1ohc`, entry-write guarantee): the one write path into a
    * workspace's registry entry for a module that is not the registry (M54
    * writes `runnerHosts[]` through it). `mutate` runs on the entry of the FRESHLY
