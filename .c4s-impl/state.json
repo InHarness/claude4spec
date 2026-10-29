@@ -746,7 +746,7 @@
         }
       ],
       "wave": 2,
-      "status": "in-progress",
+      "status": "verified",
       "blockedBy": null,
       "startCommit": "6ab20367",
       "baseCommit": "17feb274",
@@ -765,19 +765,17 @@
           "status": "implemented",
           "rounds": 2,
           "partial": 0,
-          "uncovered": [
-            "ac-snapshot-niesie-pelne-code-przy-pusty",
-            "ac-koperta-wnosi-pelen-vertical-slice-ty"
-          ],
+          "uncovered": [],
           "only": []
         }
       ],
       "rounds": {
         "review": 0,
-        "unit": 1
+        "unit": 2
       },
       "jobs": [],
-      "lastUncovered": 2
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "card-caption-callback",
