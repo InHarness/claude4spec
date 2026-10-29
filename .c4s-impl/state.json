@@ -746,10 +746,10 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
+      "status": "in-progress",
       "blockedBy": null,
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "17feb274",
+      "baseCommit": "17feb274",
       "portions": [
         {
           "name": "type-state-shadowed/p1-l2-l11",
