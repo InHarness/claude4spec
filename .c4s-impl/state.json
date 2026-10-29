@@ -486,7 +486,30 @@
       "baseCommit": "fcc7f2d1",
       "lastBlocking": 0,
       "lastUncovered": 0,
-      "portions": [{"name":"container-env/p1-m01-domain-m01-edge","layers":["M01 Domain","M01 Przypadki brzegowe"],"slugs":["ac-kontener-uruchomiony-z-port-startuje","ac-kontener-uruchomiony-z-ustawiona-publ","ac-kontener-uruchomiony-bez-public-url-s","ac-kontener-uruchomiony-z-ustawiona-remo","ac-kontener-uruchomiony-bez-remote-api-u","ac-remote-api-url-ustawiona-na-pusty-cia","ac-kontener-z-ustawiona-remote-api-url-k","ac-po-starcie-kontenera-katalog-wskazany"],"status":"implemented","rounds":2,"partial":0,"uncovered":[],"only":[]}],
+      "portions": [
+        {
+          "name": "container-env/p1-m01-domain-m01-edge",
+          "layers": [
+            "M01 Domain",
+            "M01 Przypadki brzegowe"
+          ],
+          "slugs": [
+            "ac-kontener-uruchomiony-z-port-startuje",
+            "ac-kontener-uruchomiony-z-ustawiona-publ",
+            "ac-kontener-uruchomiony-bez-public-url-s",
+            "ac-kontener-uruchomiony-z-ustawiona-remo",
+            "ac-kontener-uruchomiony-bez-remote-api-u",
+            "ac-remote-api-url-ustawiona-na-pusty-cia",
+            "ac-kontener-z-ustawiona-remote-api-url-k",
+            "ac-po-starcie-kontenera-katalog-wskazany"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "rounds": {
         "review": 0,
         "unit": 2
@@ -538,14 +561,31 @@
         }
       ],
       "wave": 2,
-      "status": "in-progress",
+      "status": "verified",
       "blockedBy": null,
       "startCommit": "8cff53a7",
       "baseCommit": "8cff53a7",
-      "portions": [{"name":"prebuilt-distribution/p1-l2-l2","layers":["L2"],"slugs":["ac-paczka-npm-hosta-zawiera-koperte-preb"],"status":"implemented","rounds":1,"partial":0,"uncovered":[],"only":[]}],
+      "lastBlocking": 0,
+      "lastUncovered": 0,
+      "portions": [
+        {
+          "name": "prebuilt-distribution/p1-l2-l2",
+          "layers": [
+            "L2"
+          ],
+          "slugs": [
+            "ac-paczka-npm-hosta-zawiera-koperte-preb"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },
@@ -625,11 +665,29 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
+      "status": "in-progress",
       "blockedBy": null,
-      "startCommit": null,
-      "baseCommit": null,
-      "portions": [],
+      "startCommit": "b4991252",
+      "baseCommit": "b4991252",
+      "portions": [
+        {
+          "name": "list-info-block/p1-l2-l8",
+          "layers": [
+            "L2",
+            "L8"
+          ],
+          "slugs": [
+            "ac-element-list-albo-tagged-list-na-typ",
+            "ac-check-consistency-zglasza-ostrzezenie",
+            "m19-hidden-entities-render-slots"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "rounds": {
         "review": 0,
         "unit": 0
@@ -692,7 +750,25 @@
       "blockedBy": null,
       "startCommit": null,
       "baseCommit": null,
-      "portions": [],
+      "portions": [
+        {
+          "name": "type-state-shadowed/p1-l2-l11",
+          "layers": [
+            "L2",
+            "L4",
+            "L11"
+          ],
+          "slugs": [
+            "section:m13pool0",
+            "section:m13plenv"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "rounds": {
         "review": 0,
         "unit": 0
@@ -793,7 +869,25 @@
       "blockedBy": null,
       "startCommit": null,
       "baseCommit": null,
-      "portions": [],
+      "portions": [
+        {
+          "name": "card-caption-callback/p1-l2-l11",
+          "layers": [
+            "L2",
+            "L8",
+            "L11"
+          ],
+          "slugs": [
+            "ac-zmiana-podpisu-przez-oncaptionchange",
+            "ac-karta-osadzona-znacznikiem-single-ele"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "rounds": {
         "review": 0,
         "unit": 0
