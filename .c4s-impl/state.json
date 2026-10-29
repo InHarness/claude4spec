@@ -986,9 +986,7 @@
           "status": "implemented",
           "rounds": 2,
           "partial": 0,
-          "uncovered": [
-            "regression"
-          ],
+          "uncovered": [],
           "only": []
         }
       ],
@@ -996,7 +994,7 @@
       "baseCommit": "2f9e630c4bcccab45c35cb5374e3f89a1377452a",
       "rounds": {
         "review": 0,
-        "unit": 1
+        "unit": 2
       },
       "jobs": [],
       "lastUncovered": 0,
