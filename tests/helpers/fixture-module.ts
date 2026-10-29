@@ -39,6 +39,53 @@ export const FIXTURE_DATA: DataDeclaration = {
 export const FIXTURE_SLUG_PATTERN: SlugPattern = [{ op: 'slugify', field: 'title' }];
 
 /**
+ * A host-owned test type with a little more shape than `FIXTURE_DATA`: a
+ * required, length-capped `title`, an `enum` with a default, a
+ * `contentBearing` body defaulting to `''`, and the two `systemManaged`
+ * timestamps.
+ *
+ * 2.1.63 — the host tests that needed this shape used to read the real
+ * `diagram` declaration, the last type registered directly by the host. That
+ * type left for its prebuilt envelope (`plugins/c4s-plugin-diagram/`, whose
+ * source and suite live in the plugin's own repository), so the projection
+ * golden, the CRUD-schema golden and the slug-pattern tests assert the same
+ * HOST mechanisms on this fixture instead. What they prove is a property of the
+ * generator, not of any one contributor.
+ */
+export const SKETCH_FIXTURE_DATA: DataDeclaration = {
+  schema: {
+    title: {
+      type: 'string',
+      required: true,
+      maxLength: 200,
+      description: 'Label, e.g. "Checkout sketch".',
+    },
+    format: {
+      type: 'enum',
+      values: ['plain', 'rich'],
+      required: true,
+      default: 'plain',
+      description: "Sketch format (default 'plain').",
+    },
+    body: {
+      type: 'string',
+      required: true,
+      default: '',
+      contentBearing: true,
+      description: 'Sketch body. May be empty. Content-bearing: read it with get_field_content.',
+    },
+    createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+    updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+  },
+};
+
+/** `slugify(title)`, truncated — a single alternative, no random step. */
+export const SKETCH_FIXTURE_SLUG_PATTERN: SlugPattern = [
+  { op: 'slugify', field: 'title' },
+  { op: 'truncate', n: 60 },
+];
+
+/**
  * A minimal, real (non-core) plugin module — distinct from every
  * `RawEntityType` — with a generated projection and a real serializer.
  *

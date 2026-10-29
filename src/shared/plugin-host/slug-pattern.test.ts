@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 import { evaluateSlugPattern, previewSlugPattern, type SlugPattern } from './slug-pattern.js';
 import { slugify } from '../slug.js';
 import { acFixtureSlugPattern as acSlugPattern } from '../../../tests/helpers/ac-fixture.js';
-import { diagramSlugPattern } from '../entities/diagram/schema.js';
+import { SKETCH_FIXTURE_SLUG_PATTERN as sketchSlugPattern } from '../../../tests/helpers/fixture-module.js';
 
 /**
  * `ui-view` and `design-system` moved into the `c4s-plugin-frontend-mockups`
@@ -88,10 +88,8 @@ describe('slugPattern — the grammar', () => {
   });
 
   /**
-   * 0.2.22 — `diagram` no longer HAS a chain. Its three alternatives existed
-   * because it had no name of its own: a transient caption, then a guess at the
-   * first identifier in the DSL, then a random suffix. It slugifies `title` now,
-   * so a fallback chain is asserted on a pattern written here instead.
+   * 0.2.22 — no in-repo type declares a chain any more: every type slugifies
+   * its `title`, so a fallback chain is asserted on a pattern written here.
    */
   it('takes the first non-empty alternative of a fallback chain', () => {
     const chain: SlugPattern = [
@@ -153,12 +151,12 @@ describe('previewSlugPattern', () => {
   /**
    * The preview used to substitute `########` for a random step. With `nanoid`
    * out of the grammar there is no random step to substitute for, so preview and
-   * evaluation are the same function — asserted on the type whose pattern was
-   * the only consumer.
+   * evaluation are the same function — asserted on a `slugify(title)` +
+   * `truncate` pattern, the form that replaced the only chain that had one.
    */
-  it('matches evaluation for the pattern that used to carry a random step', () => {
-    expect(previewSlugPattern(diagramSlugPattern, { title: 'Auth Flow' })).toBe(
-      evaluate(diagramSlugPattern, { title: 'Auth Flow' }),
+  it('matches evaluation for a slugify + truncate pattern', () => {
+    expect(previewSlugPattern(sketchSlugPattern, { title: 'Auth Flow' })).toBe(
+      evaluate(sketchSlugPattern, { title: 'Auth Flow' }),
     );
   });
 

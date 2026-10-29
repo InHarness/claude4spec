@@ -1,5 +1,5 @@
 {
-  "iteration": 1,
+  "iteration": 2,
   "conventions": [
     {
       "label": "L11 (Plugin Runtime Surface) — implementor M33",
@@ -367,8 +367,8 @@
             "ac-diagram-slug-jawny-wygrywa-nad-wyprow",
             "ac-dwa-diagramy-o-tym-samym-tytule-daja"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 1,
           "partial": 0,
           "uncovered": [],
           "only": []

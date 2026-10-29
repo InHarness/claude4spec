@@ -1,12 +1,16 @@
--- v0.1.64 — Diagram entity (seventh entity type).
--- Derived index (M29): rebuilt from .claude4spec/entities/diagram/<slug>.json.
--- slug is the natural PK (kebab-case; explicit | slugify(caption) | diagram-<nanoid(8)>)
--- — no integer id. `source` is the literal DSL body (mermaid); kept verbatim (no trim),
--- may be empty (placeholder). NO `caption` column — caption lives only as the
--- `<diagram caption="…"/>` reference attribute on a page. Diagram is a graph leaf:
--- zero junction tables, references no other entity.
--- Polymorphic entity_tag (001_endpoint.sql) and entity_version (017_entity_version_m17.sql)
--- handle entity_type='diagram' without extra schema.
+-- v0.1.64 — Diagram entity. HISTORICAL migration, kept frozen in the legacy chain.
+--
+-- It predates the 0.2.2 baseline cut: a fresh database never runs it (the
+-- baseline pre-seeds its ledger row), and only an old database replaying the
+-- chain ever did. The host does not declare a `diagram` table. Since 2.1.63
+-- `diagram` is a plugin type, delivered by the prebuilt envelope
+-- `plugins/c4s-plugin-diagram/`, and its table — like every entity table — is a
+-- projection the host GENERATES from that type's `data.schema` (M13 L1); the
+-- host migration chain holds host tables only (`tag`/`entity_tag`,
+-- `entity_version`/`file_version`/`spec_release`, `section_index`, runtime
+-- state). The DDL below is what v0.1.64 wrote, not the current shape, and is
+-- not to be edited: an already-applied migration that changes is a silent
+-- divergence between installations.
 
 CREATE TABLE IF NOT EXISTS diagram (
   slug       TEXT NOT NULL PRIMARY KEY,

@@ -20,6 +20,12 @@
  *
  * Every difference is ENUMERATED below and asserted. A delta that is not in
  * that table fails the test — that is the only way a golden earns its keep.
+ *
+ * 2.1.63 — `diagram` left the host for its prebuilt envelope, so its frozen pair
+ * is gone with it (the type's suite lives in the plugin's own repository). The
+ * second case is now `sketch`, a host-owned test type declared with the very
+ * shape `diagram` had (`tests/helpers/fixture-module.ts`), against a hand-written
+ * zod pair frozen the same way.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -28,7 +34,7 @@ import type { ZodRawShape } from 'zod';
 
 import { buildCreateShape, buildUpdateShape } from './crud-schema-gen.js';
 import { acFixtureData as acData } from '../../../../tests/helpers/ac-fixture.js';
-import { diagramData } from '../../../shared/entities/diagram/schema.js';
+import { SKETCH_FIXTURE_DATA as sketchData } from '../../../../tests/helpers/fixture-module.js';
 import type { DataDeclaration } from '../../../shared/plugin-host/data-schema.js';
 import type { SlugPattern } from '../../../shared/plugin-host/slug-pattern.js';
 
@@ -64,21 +70,20 @@ const acUpdateSchema: ZodRawShape = {
   tags: z.array(z.string()).optional(),
 };
 
-const diagramCreateSchema: ZodRawShape = {
-  // 0.2.22 — `title` arrives, `caption` leaves. The caption was a transient that
-  // existed only to seed the slug; the slug comes from the title now, and the
-  // caption survives outside the entity as an attribute of the reference tag.
-  title: z.string().describe('Label, e.g. "Checkout sequence".'),
-  source: z.string().optional().describe('DSL body (mermaid). May be empty (placeholder).'),
-  format: z.enum(['mermaid', 'd2']).optional().describe("Diagram language (default 'mermaid')."),
-  slug: z.string().optional().describe('Explicit slug; collisions get a -2/-3 suffix.'),
+// FROZEN for the host-owned test type `sketch` — the shape `diagram`'s retired
+// hand-written pair had, with the type's own field names.
+const sketchCreateSchema: ZodRawShape = {
+  title: z.string().describe('Label, e.g. "Checkout sketch".'),
+  body: z.string().optional().describe('Sketch body. May be empty.'),
+  format: z.enum(['plain', 'rich']).optional().describe("Sketch format (default 'plain')."),
+  slug: z.string().optional().describe('Optional explicit slug; otherwise auto-generated.'),
   tags: z.array(z.string()).optional().describe('Tag slugs; non-existent tags are auto-created.'),
 };
 
-const diagramUpdateSchema: ZodRawShape = {
+const sketchUpdateSchema: ZodRawShape = {
   title: z.string().optional(),
-  source: z.string().optional(),
-  format: z.enum(['mermaid', 'd2']).optional(),
+  body: z.string().optional(),
+  format: z.enum(['plain', 'rich']).optional(),
   tags: z.array(z.string()).optional(),
 };
 
@@ -143,9 +148,10 @@ interface Case {
 }
 
 /**
- * The two in-repo types. Every other type lives in an envelope and is covered by
- * that package's own suite — importing across the workspace boundary here is
- * exactly the coupling the envelope exists to prevent.
+ * Two host-owned shapes: the `ac`-shaped fixture and `sketch`. Every real type
+ * lives in an envelope and is covered by that package's own suite — importing
+ * across the workspace boundary here is exactly the coupling the envelope exists
+ * to prevent.
  */
 const CASES: Case[] = [
   {
@@ -157,14 +163,10 @@ const CASES: Case[] = [
     updateAdds: [],
   },
   {
-    type: 'diagram',
-    data: diagramData,
-    create: diagramCreateSchema,
-    update: diagramUpdateSchema,
-    /**
-     * `firstSourceIdentifier` went with `caption` in 0.2.22 — both were
-     * transients feeding a slug chain that collapsed to `slugify(title)`.
-     */
+    type: 'sketch',
+    data: sketchData,
+    create: sketchCreateSchema,
+    update: sketchUpdateSchema,
     createAdds: [],
     updateAdds: [],
   },
@@ -209,11 +211,11 @@ describe('item 27 — generated CRUD schemas vs the hand-written ones they repla
   });
 
   it('rejects an unknown enum value rather than coercing it', () => {
-    // `diagram.format` is the case the brief names: the retired read path
-    // mapped everything that was not `d2` onto `mermaid`, silently.
-    const create = z.object(buildCreateShape(diagramData));
-    expect(create.safeParse({ title: 'Flow', source: 'graph TD', format: 'graphviz' }).success).toBe(false);
-    expect(create.safeParse({ title: 'Flow', source: 'graph TD', format: 'd2' }).success).toBe(true);
+    // A declared `enum` is enforced, never mapped onto a default: the retired
+    // per-type read path of `diagram.format` coerced unknown values, silently.
+    const create = z.object(buildCreateShape(sketchData));
+    expect(create.safeParse({ title: 'Flow', body: 'a -> b', format: 'graphviz' }).success).toBe(false);
+    expect(create.safeParse({ title: 'Flow', body: 'a -> b', format: 'rich' }).success).toBe(true);
   });
 
   it('omits systemManaged timestamps from both shapes', () => {

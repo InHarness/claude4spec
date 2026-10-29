@@ -61,6 +61,39 @@ function gadgetManifest(mount: (ctx: Record<string, unknown>) => void): PluginMa
   };
 }
 
+/**
+ * A second, unrelated plugin whose type carries its own content-bearing field —
+ * the "every type the same way" claim needs a type the gadget plugin does not
+ * own. (Until 2.1.63 the host's directly registered `diagram` played this part;
+ * it left for its prebuilt envelope.)
+ */
+function sketchManifest(): PluginManifest {
+  return {
+    name: '@acme/c4s-plugin-sketches',
+    version: '1.0.0',
+    hostApiVersion: '^2.0.0',
+    contributes: {
+      entities: [
+        {
+          type: 'sketch',
+          data: {
+            schema: {
+              title: { type: 'string', required: true, maxLength: 200 },
+              source: { type: 'string', required: true, default: '', contentBearing: true },
+            },
+          },
+          slugPattern: [{ op: 'slugify', field: 'title' }],
+          payloadVersion: 1,
+          label: 'Sketch',
+          labelPlural: 'Sketches',
+          pathPrefix: '/sketches',
+          systemPrompt: { roleNoun: 'sketch', mcpToolsLine: 'sketch-tools: none' },
+        },
+      ],
+    },
+  };
+}
+
 const READ_OPS = [
   'getEntities',
   'listEntities',
@@ -82,9 +115,11 @@ describe('get_field_content — one generic operation, the sixth on the plugin r
     for (const t of opened.splice(0)) await t.cleanup();
   });
 
-  async function openWithGadget(): Promise<{ t: PluginTestApp; ctx: Record<string, unknown>; slug: string }> {
+  async function openWithGadget(
+    others: PluginManifest[] = [],
+  ): Promise<{ t: PluginTestApp; ctx: Record<string, unknown>; slug: string }> {
     let seen: Record<string, unknown> | null = null;
-    const t = await createPluginTestApp([gadgetManifest((ctx) => void (seen = ctx))]);
+    const t = await createPluginTestApp([gadgetManifest((ctx) => void (seen = ctx)), ...others]);
     opened.push(t);
     expect(seen).not.toBeNull();
     const created = await request(t.app).post(`${t.baseUrl}/gadgets`).send({ title: 'First gadget', body: BODY });
@@ -129,7 +164,7 @@ describe('get_field_content — one generic operation, the sixth on the plugin r
   }, 60_000);
 
   it('[section:v0fldrd8] the operation answers every type the same way — a non-content field is INVALID_ARGUMENT naming the covered fields, an unknown slug ENTITY_NOT_FOUND', async () => {
-    const { ctx, slug } = await openWithGadget();
+    const { ctx, slug } = await openWithGadget([sketchManifest()]);
     const read = ctx as unknown as ReadSurface;
     const thrown = (fn: () => unknown): Record<string, unknown> => {
       try {
@@ -146,9 +181,9 @@ describe('get_field_content — one generic operation, the sixth on the plugin r
     expect(thrown(() => read.getFieldContent({ type: 'gadget', slug: 'no-such-gadget', field: 'body' }))).toMatchObject({
       code: 'ENTITY_NOT_FOUND',
     });
-    // A built-in type with its own content-bearing field goes through the very same function.
-    const diagram = read.describeTypes({ types: ['diagram'] }).types[0]!;
-    expect(diagram.contentFields).toEqual([{ field: 'source', operation: 'get_field_content' }]);
+    // Another plugin's type with its own content-bearing field goes through the very same function.
+    const sketch = read.describeTypes({ types: ['sketch'] }).types[0]!;
+    expect(sketch.contentFields).toEqual([{ field: 'source', operation: 'get_field_content' }]);
   }, 60_000);
 
   it('[section:gz7q92lz] MountContext binds exactly the six entity read operations, getFieldContent among them, and no page/section/tag/reference read', async () => {
