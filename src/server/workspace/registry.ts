@@ -124,7 +124,7 @@ export class WorkspaceEntryGoneError extends Error {
  * The stored entry a view was taken from: by name, with the same home (a
  * registry entry has none, so `undefined === undefined` there).
  */
-function isStoredEntryOf(stored: StoredWorkspaceRecord, ws: WorkspaceRecord): boolean {
+function isStoredEntryOf(stored: StoredWorkspaceRecord, ws: Pick<WorkspaceRecord, 'name' | 'home'>): boolean {
   return stored.name === ws.name && stored.home === ws.home;
 }
 
@@ -758,6 +758,24 @@ export class WorkspaceRegistry {
         current && sameProjectPath(current.path, viewPath) ? current : { path: viewPath };
       trust[id] = { ...base, path: viewPath, [key]: value };
       return null;
+    });
+  }
+
+  /**
+   * 2.1.62 (M31 `zovs1ohc`, entry-write guarantee): the one write path into a
+   * workspace's registry entry for a module that is not the registry (M54
+   * writes `runnerHosts[]` through it). `mutate` runs on the entry of the FRESHLY
+   * read `workspaces.json`, under the registry's advisory lock, and changes it in
+   * place; the whole file is then written back atomically. Fields of the entry
+   * that neither this process nor `mutate` knows are kept as they were read.
+   * The entry is matched like every other write — by name, with the same home —
+   * and a gone entry is refused (`WorkspaceEntryGoneError`) with nothing written.
+   */
+  updateEntry<T>(ws: Pick<WorkspaceRecord, 'name' | 'home'>, mutate: (entry: StoredWorkspaceRecord) => T): T {
+    return this.withLock((data) => {
+      const target = data.workspaces.find((w) => isStoredEntryOf(w, ws));
+      if (!target) throw new WorkspaceEntryGoneError(ws.name, this.file);
+      return mutate(target);
     });
   }
 

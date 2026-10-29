@@ -1,5 +1,5 @@
 {
-  "iteration": 0,
+  "iteration": 5,
   "conventions": [
     {
       "label": "L4 (API) — implementor M49",
@@ -44,7 +44,7 @@
       "units": [
         "m31-registry-entry-write"
       ],
-      "startCommit": null
+      "startCommit": "461b246c87460e7e4d4738d540a7c714552841d1"
     },
     {
       "n": 2,
@@ -131,15 +131,31 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "m31-registry-entry-write/p1-l10-l10",
+          "layers": [
+            "L10"
+          ],
+          "slugs": [
+            "ac-zapis-wpisu-rejestru-zachowuje-pola-w"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "461b246c87460e7e4d4738d540a7c714552841d1",
+      "baseCommit": "461b246c87460e7e4d4738d540a7c714552841d1",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0
     },
     {
       "id": "m54-host-records",
@@ -277,7 +293,30 @@
       ],
       "wave": 2,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "m54-host-records/p1-l10-l10",
+          "layers": [
+            "L10"
+          ],
+          "slugs": [
+            "m54-requires-m31",
+            "m54-requires-m05",
+            "ac-dodany-host-nie-pojawia-sie-w-config",
+            "ac-dodany-host-nie-pojawia-sie-w-workspa",
+            "ac-dodany-host-nie-pojawia-sie-w-zadnym",
+            "ac-dodany-host-pojawia-sie-w-runnerhosts",
+            "ac-plik-rejestru-nie-zawiera-tokenu-jawn",
+            "ac-rownolegle-dodanie-w-dwoch-procesach",
+            "ac-usuniecie-rekordu-w-jednym-procesie-i"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -460,7 +499,70 @@
       ],
       "wave": 3,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "m54-supervisor/p1-l10-l10",
+          "layers": [
+            "L10"
+          ],
+          "slugs": [
+            "ac-brak-pierwszego-zdarzenia-host-w-3-s",
+            "ac-brak-pliku-klucza-przy-istniejacych-s",
+            "ac-brak-pola-protocol-w-hostinfo-daje-bl",
+            "ac-brak-polaczenia-tcp-daje-nieosiagalny",
+            "ac-brak-zdarzenia-przez-20-s-daje-ponawi",
+            "ac-closing-revoked-daje-odrzucony-token",
+            "ac-closing-shutdown-daje-zatrzymany",
+            "ac-closing-z-nieznanym-powodem-daje-pona",
+            "ac-heartbeat-nie-zapisuje-pliku-rejestru",
+            "ac-hostid-inny-niz-powiazany-daje-inny-h",
+            "ac-inny-hostid-bez-zmiany-tokenu-daje-in",
+            "ac-inny-startedat-przy-tym-samym-hostid-2",
+            "ac-lasterror-nie-zawiera-tokenu-takze-gd",
+            "ac-log-serwera-nie-zawiera-tokenu-przy-z",
+            "ac-niekompletne-hostinfo-w-odpowiedzi-ge",
+            "ac-nieosiagalny-host-nie-opoznia-startu",
+            "ac-nieudane-ponowienie-po-closing-shutdo",
+            "ac-nieznane-pole-hostinfo-nie-zmienia-st",
+            "ac-nieznane-zdarzenie-strumienia-nie-zmi",
+            "ac-odpowiedz-200-bez-strumienia-zdarzen",
+            "ac-odpowiedz-3xx-daje-bledna-odpowiedz",
+            "ac-odpowiedz-401-daje-odrzucony-token",
+            "ac-odpowiedz-404-na-get-host-daje-bledna",
+            "ac-odpowiedz-502-daje-ponawianie",
+            "ac-odpowiedz-5xx-daje-ponawianie",
+            "ac-odstep-miedzy-kolejnymi-ponowieniami",
+            "ac-pierwsza-udana-proba-zapisuje-hostid",
+            "ac-po-401-nie-ma-kolejnej-proby-bez-akcj",
+            "ac-po-closing-revoked-nie-ma-ponowienia",
+            "ac-po-closing-shutdown-polaczenie-jest-p",
+            "ac-po-odpowiedzi-3xx-zadne-zadanie-nie-i",
+            "ac-po-zdarzeniu-closing-status-zmienia-s",
+            "ac-prefiks-sciezki-w-url-u-jest-zachowan",
+            "ac-protocol-1-daje-niezgodny-protokol",
+            "ac-protocol-niebedacy-liczba-calkowita-d",
+            "ac-protocol-rozny-od-1-daje-niezgodny-pr",
+            "ac-przed-wynikiem-pierwszej-proby-status",
+            "ac-przy-statusie-inny-host-strumien-nie",
+            "ac-przy-token-nieczytelny-do-hosta-nie-w",
+            "ac-rekord-dodany-w-innym-procesie-nie-je",
+            "ac-restartedat-nie-trafia-do-pliku-rejes",
+            "ac-status-inny-host-przy-niezmienionym-t",
+            "ac-strumien-urwany-bez-closing-daje-pona",
+            "ac-szyfrogram-nieczytelny-daje-token-nie",
+            "ac-udany-test-po-statusie-bez-ponawiania",
+            "ac-usuniecie-rekordu-zamyka-jego-subskry",
+            "ac-zmiana-samej-etykiety-nie-przerywa-st",
+            "ac-zmiana-tokenu-po-odrzucony-token-wzna",
+            "ac-zmiana-url-zachowuje-powiazanie"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -597,7 +699,58 @@
       ],
       "wave": 4,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "m54-api/p1-l4-l4",
+          "layers": [
+            "L4"
+          ],
+          "slugs": [
+            "create-runner-host-request",
+            "update-runner-host-request",
+            "test-runner-host-request",
+            "runner-host-response",
+            "remove-runner-host-response",
+            "get-api-workspace-runner-hosts",
+            "post-api-workspace-runner-hosts",
+            "patch-api-workspace-runner-hosts-id",
+            "post-api-workspace-runner-hosts-id-test",
+            "delete-api-workspace-runner-hosts-id",
+            "ac-dodanie-nieosiagalnego-hosta-konczy-s",
+            "ac-dodanie-osiagalnego-hosta-konczy-sie",
+            "ac-dodanie-osiagalnego-hosta-zwraca-stat",
+            "ac-dodanie-url-a-rownego-istniejacemu-po",
+            "ac-edycja-z-pustym-polem-tokenu-zostawia",
+            "ac-inny-startedat-przy-tym-samym-hostid",
+            "ac-odczyt-listy-nie-wysyla-zadania-do-za",
+            "ac-odpowiedz-listy-nie-zawiera-szyfrogra",
+            "ac-odpowiedz-listy-nie-zawiera-tokenu",
+            "ac-odpowiedz-listy-podaje-dla-tokenu-wyl",
+            "ac-pierwsze-powiazanie-hosta-zostawia-re",
+            "ac-przy-odpowiedzi-404-lasterror-mowi-ze",
+            "ac-test-nieosiagalnego-hosta-konczy-sie",
+            "ac-test-nieznanego-id-daje-404",
+            "ac-test-z-rebind-zapisuje-nowe-powiazani",
+            "ac-token-bez-prefiksu-tokenu-mastera-daj",
+            "ac-token-ze-znakiem-spoza-drukowalnego-a",
+            "ac-url-niebedacy-absolutnym-http-s-daje",
+            "ac-url-z-adresem-0-0-0-0-daje-400",
+            "ac-url-z-fragmentem-daje-400",
+            "ac-url-z-query-daje-400",
+            "ac-url-z-userinfo-daje-400",
+            "ac-usuniecie-nieznanego-id-daje-404",
+            "ac-zmiana-nieznanego-id-daje-404",
+            "ac-zmiana-tokenu-po-ktorej-host-odpowiad",
+            "ac-zmiana-tokenu-po-ktorej-host-odpowiad-2",
+            "ac-zmiana-url-a-na-url-innego-rekordu-da"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -719,7 +872,32 @@
       ],
       "wave": 5,
       "status": "pending",
-      "portions": [],
+      "portions": [
+        {
+          "name": "m54-settings-ui/p1-l5-l17",
+          "layers": [
+            "L5",
+            "L10",
+            "L12",
+            "L17"
+          ],
+          "slugs": [
+            "moduly-feature",
+            "ac-bind-to-this-host-jest-widoczny-tylko",
+            "ac-karta-runner-hosts-nie-renderuje-sie",
+            "ac-karta-runner-hosts-renderuje-sie-na-w",
+            "ac-po-restarcie-runnera-wiersz-pokazuje",
+            "ac-przy-statusie-token-rejected-wiersz-p",
+            "ac-status-w-karcie-zmienia-sie-bez-przel",
+            "ac-token-w-liscie-jest-maskowany-last4"
+          ],
+          "status": "pending",
+          "rounds": 0,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "startCommit": null,
       "baseCommit": null,
       "rounds": {
@@ -785,5 +963,6 @@
         }
       ]
     }
-  ]
+  ],
+  "baselineGreen": true
 }

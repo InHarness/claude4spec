@@ -104,6 +104,14 @@ export interface WorkspaceRecord {
    * lives in the registry entry, never in `workspace.json`.
    */
   lastOpenedProject?: string;
+  /**
+   * 2.1.62 (M31 `fjsgq19h`, `t97gncju`): runner-host records, both kinds, a
+   * machine-local attribute — it lives in the registry entry, never in
+   * `workspace.json`. The record shape, its writes and its supervision belong
+   * to the runner-hosts module (M54 `fo9bukuw`); M31 only carries the array and
+   * writes it with the entry-write guarantee (`WorkspaceRegistry.updateEntry`).
+   */
+  runnerHosts?: unknown[];
   projects: ProjectRecord[];
   /**
    * M33: npm plugin package names loaded at process bootstrap, workspace-global
