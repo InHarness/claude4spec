@@ -22,7 +22,6 @@ import { workspaceRouter } from './workspace/routes.js';
 import type { ProjectRecord, WorkspaceRecord } from './workspace/types.js';
 import { resolveSpaRoute, spaDocument, type SpaResolution } from './workspace/spa-route.js';
 import { PluginRegistryImpl } from './core/plugin-host/registry.js';
-import { registerAllPlugins } from './core/plugin-host/register-builtins.js';
 import { logRefRegistrationWarnings, refRegistrationWarnings } from './core/plugin-host/ref-warnings.js';
 import { loadBuiltinEnvelopes, loadWorkspacePlugins } from './core/plugin-host/loader.js';
 import { reloadBasePackages } from './core/plugin-host/base-reload.js';
@@ -260,14 +259,18 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   }
 
   // M31: process-immutable plugin catalog, populated exactly once.
+  // 2.1.63 (M13 `mbladez6`) — the direct-registration tier is empty: `diagram`,
+  // its last type, now arrives as a prebuilt built-in envelope. Every type the
+  // host carries registers through the loader below.
   const pluginRegistry = new PluginRegistryImpl();
-  registerAllPlugins(pluginRegistry);
   // M33: load workspace-declared npm plugin packages onto the same catalog,
   // before any ProjectContext consolidates against it. Per-package failures are
   // isolated (skipped/failed records) — one bad plugin never crashes bootstrap.
-  // 0.2.2 — tier (b) FIRST: built-in envelopes from `<hostRoot>/plugins/*` register
-  // before node_modules and before the workspace registry, so core code claims its
-  // types before anything external could shadow them.
+  // 0.2.2 — tier (b) FIRST: built-in envelopes (built from source or prebuilt,
+  // `dist/plugins/*` then `<hostRoot>/plugins/*`) register before node_modules
+  // and before the workspace registry, so core code claims its types before
+  // anything external could shadow them. They sit outside the
+  // `trustProjectPlugins` gate — they ship in the host package.
   const discoveredEnvelopes = discoverBuiltinEnvelopes();
   const envelopeLoad = await loadBuiltinEnvelopes(pluginRegistry);
   // Serve an envelope's FRONTEND only if its backend actually registered — see

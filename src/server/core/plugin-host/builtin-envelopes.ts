@@ -2,12 +2,19 @@
  * 0.2.2 — tier (b): BUILT-IN ENVELOPES, the third discovery sub-source of the
  * M33 loader (brief item 10).
  *
- * Entity types now register at three tiers:
- *   (a) built-in direct   — `core/plugin-host/register-builtins.ts` calls
- *                           `registerEntityModule(...)` outright at process start.
+ * Entity types register at three tiers:
+ *   (a) built-in direct   — EMPTY since 2.1.63 (M13 `mbladez6`): `diagram`, its
+ *                           last type, moved to a prebuilt envelope, and the
+ *                           host no longer registers any type outright.
  *   (b) built-in envelope — THIS module: a real plugin package living inside the
  *                           host repo under `plugins/<name>/`, discovered and
  *                           registered through the ordinary loader pipeline.
+ *                           Built from source (`plugins/<name>/src/`, vite emits
+ *                           into `dist/plugins/<name>/`) or PREBUILT (a committed
+ *                           `package.json` + `dist/` the host never builds;
+ *                           `scripts/copy-prebuilt-envelopes.mjs` copies it into
+ *                           `dist/plugins/<name>/`). Discovery cannot tell the
+ *                           two apart, and both sit outside the trust gate.
  *   (c) external package  — `node_modules` or a workspace `plugins[]` entry.
  *
  * Why a middle tier exists at all: an envelope is structurally identical to the
@@ -136,8 +143,10 @@ export function discoverBuiltinEnvelopes(root: string | null = hostPackageRoot()
   //     artifact outside it is silently absent — discovery finds nothing, raises
   //     nothing, and the host simply has no `endpoint` and no `dto`.
   //  2. `plugins/<name>/` — an envelope carrying its own built `dist/`, the
-  //     shape an extracted package has when vendored back in. Kept so a
-  //     hand-placed package works, and it is what the fixture tests use.
+  //     shape an extracted package has when vendored back in — which is exactly
+  //     what a committed prebuilt envelope is before the build copies it into
+  //     (1). Kept so a hand-placed package works, and it is what the fixture
+  //     tests use.
   //
   // First hit wins, so (1) beats (2). That is not a preference, it is a
   // correctness requirement: `plugins/<name>/dist` is gitignored build output

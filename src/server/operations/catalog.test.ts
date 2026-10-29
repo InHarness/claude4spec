@@ -646,8 +646,8 @@ describe('the profile gate', () => {
   });
 
   it('derives plugin server names the same way the host mounts them', () => {
-    expect([...pluginServerNamesFor(['spreadsheet', 'diagram'])].sort()).toEqual([
-      'diagram-tools',
+    expect([...pluginServerNamesFor(['spreadsheet', 'ac'])].sort()).toEqual([
+      'ac-tools',
       'spreadsheet-tools',
     ]);
   });
@@ -1773,7 +1773,6 @@ describe("the catalogue against the window's 77 records", () => {
     'insert_row',
     'set_cell',
     'set_range',
-    'validate_diagram',
   ];
   /** The identifiers of M43's domain section (`ke1jxhqh`), as the page declares them. */
   const M43_RULE_IDS = [
@@ -1823,7 +1822,6 @@ describe("the catalogue against the window's 77 records", () => {
     'endpoint-tools': ['plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/mcp.ts'],
     'spreadsheet-tools': ['plugins/c4s-plugin-spreadsheets/src/entity/spreadsheet/mcp.ts'],
     'ac-tools': ['plugins/c4s-plugin-ac/src/entity/ac/backend/mcp.ts'],
-    'diagram-tools': ['src/server/entities/diagram/mcp-server.ts'],
     // The server and tool names are constants in the package's `identity.ts`
     // (`UI_KIT_TOOLS_SERVER`, `UI_KIT_AUDIT_TOOL`), which `mcp.ts` registers by name.
     'ui-kit-component-tools': [
@@ -1832,7 +1830,9 @@ describe("the catalogue against the window's 77 records", () => {
     ],
   };
   /** The plugin `${type}-tools` servers whose tools the record-less plugin rows name. */
-  const PLUGIN_TYPE_SERVERS = ['endpoint-tools', 'spreadsheet-tools', 'ac-tools', 'diagram-tools', 'ui-kit-component-tools'];
+  // 2.1.63 — no `diagram-tools`: it ships in the prebuilt `diagrams` envelope,
+  // and the host catalog declares none of its tools.
+  const PLUGIN_TYPE_SERVERS = ['endpoint-tools', 'spreadsheet-tools', 'ac-tools', 'ui-kit-component-tools'];
   const sourceOf = (server: string): string | undefined => {
     const files = SERVER_SOURCES[server];
     return files?.map((f) => fs.readFileSync(path.join(repoRoot, f), 'utf-8')).join('\n');

@@ -91,7 +91,7 @@ export const ChatInputEditor = forwardRef<ChatInputEditorHandle, Props>(
             // `/section` — the one fixed slash command of `chat-input` (M20 `ctxregst`);
             // the `spec-skills` source (M52) hands its picks to its own `onSelect`.
             onSlashInvoke: (editor, command) =>
-              void invokeSlash(editor, command, { qc, currentPath: null }),
+              void invokeSlash(editor, command, { currentPath: null }),
             getAnnotations: () => [],
           },
           { placeholder: () => placeholderRef.current ?? "Message…" },

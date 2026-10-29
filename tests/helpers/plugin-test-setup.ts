@@ -17,9 +17,9 @@
  * `createPluginTestApp(manifests)` stands a REAL host up in this process on a
  * throwaway project. Fidelity, and where it stops:
  *   - every manifest registers through `registry.registerPlugin(manifest)` — the
- *     registration point and fan-out the loader uses — next to the directly
- *     built-in types and the built-in envelopes (`registerAllPlugins`, then
- *     `loadBuiltinEnvelopes`), exactly as `startServer` lays the catalog out;
+ *     registration point and fan-out the loader uses — next to the built-in
+ *     envelopes (`loadBuiltinEnvelopes`), exactly as `startServer` lays the
+ *     catalog out;
  *   - the project context is built by `buildProjectContext`, the runtime's own
  *     build, not by a test-only composition;
  *   - the host-owned `@c4s/plugin-runtime` resolver is installed the way the
@@ -50,7 +50,6 @@ import type Database from 'better-sqlite3';
 import type { PluginManifest } from '../../src/shared/plugin-host/manifest.js';
 import type { WsEvent } from '../../src/shared/types.js';
 import { PluginRegistryImpl } from '../../src/server/core/plugin-host/registry.js';
-import { registerAllPlugins } from '../../src/server/core/plugin-host/register-builtins.js';
 import { loadBuiltinEnvelopes, type PluginLoadRecord } from '../../src/server/core/plugin-host/loader.js';
 import { installPluginRuntimeResolver } from '../../src/server/core/plugin-host/plugin-runtime-resolver.js';
 import type { CrudFacade, ProjectPluginHost } from '../../src/server/core/plugin-host/types.js';
@@ -124,11 +123,10 @@ export async function createPluginTestApp(
   const removeTmp = () => fs.rmSync(tmp, { recursive: true, force: true });
 
   try {
-    // The process-wide catalog, laid out as `startServer` lays it out: directly
-    // built-in types, then the built-in envelopes, then the packages — here, the
-    // manifests under test, through the loader's registration point.
+    // The process-wide catalog, laid out as `startServer` lays it out: the
+    // built-in envelopes, then the packages — here, the manifests under test,
+    // through the loader's registration point.
     const pluginRegistry = new PluginRegistryImpl();
-    registerAllPlugins(pluginRegistry);
     const envelopeLoad = await loadBuiltinEnvelopes(pluginRegistry);
     const records: PluginLoadRecord[] = [...envelopeLoad.records];
     for (const manifest of manifests) {

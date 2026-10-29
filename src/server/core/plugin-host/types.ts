@@ -509,7 +509,7 @@ export interface UnloadedSkillSlug {
 
 /**
  * M31 split: process-immutable plugin catalog. Populated once at process
- * start via `registerAllPlugins(registry)`; `consolidate` is a PURE factory —
+ * start by the loader (built-in envelopes, then packages); `consolidate` is a PURE factory —
  * it derives a per-project ProjectPluginHost and mutates nothing here.
  */
 export interface PluginRegistry {

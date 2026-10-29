@@ -1,7 +1,8 @@
 /**
  * 2.1.57 — the M13 plugin registration contract, checked on the REAL type
- * declarations (every built-in envelope plus the directly registered
- * `diagram`), not on fixtures:
+ * declarations (every built-in envelope built from source in this repo; since
+ * 2.1.63 `diagram` ships prebuilt and its declaration is the `diagrams`
+ * project's), not on fixtures:
  *
  *   - `x2nr826t` — the slug-collision policy is declared per type on the
  *     identity (`slugCollision?: 'error' | 'suffix'`, omitted = `'error'`), and
@@ -10,8 +11,8 @@
  *   - `l4crudhl` — there is no generic CRUD route helper: the host generates
  *     CRUD REST, a plugin's `backend.routes` router carries domain routes only,
  *     and a type without domain routes declares no router;
- *   - `m13pool0` — the silent last-wins of the BASE registry stays (it lasts
- *     until the last directly registered type leaves); nothing changes in code.
+ *   - `m13pool0` — the silent last-wins of the BASE registry stays; nothing
+ *     changes in code.
  *
  * Lives under `tests/` because it imports the envelopes' own sources next to
  * the host's, which no single envelope config compiles together (the pattern of
@@ -25,10 +26,8 @@ import { describe, expect, it } from 'vitest';
 
 import { lowerEntityContribution } from '../../../src/server/core/plugin-host/manifest-adapter.js';
 import { PluginRegistryImpl } from '../../../src/server/core/plugin-host/registry.js';
-import { registerAllPlugins } from '../../../src/server/core/plugin-host/register-builtins.js';
 import type { BackendModule, MountContext } from '../../../src/server/core/plugin-host/types.js';
 import type { EntityContribution } from '../../../src/shared/plugin-host/manifest.js';
-import { diagramBackendModule } from '../../../src/server/entities/diagram/plugin.js';
 import { fixtureModule } from '../../helpers/fixture-module.js';
 import { manifest as acManifest } from '../../../plugins/c4s-plugin-ac/src/manifest.js';
 import { manifest as apiContractsManifest } from '../../../plugins/c4s-plugin-api-contracts/src/manifest.js';
@@ -82,10 +81,9 @@ describe('[section:x2nr826t] slug collision — every type declares its policy o
   });
 
   it("the suffixing types declare slugCollision: 'suffix'; every other type refuses ('error' or omitted)", () => {
-    const modules: Array<{ type: string; slugCollision?: string }> = [
-      ...CONTRIBUTIONS.map((c) => lowerEntityContribution(c)),
-      diagramBackendModule,
-    ];
+    const modules: Array<{ type: string; slugCollision?: string }> = CONTRIBUTIONS.map((c) =>
+      lowerEntityContribution(c),
+    );
     for (const m of modules) {
       const effective = m.slugCollision ?? 'error';
       expect(effective, m.type).toBe(SUFFIXING_TYPES.includes(m.type) ? 'suffix' : 'error');
@@ -97,7 +95,6 @@ describe('[section:x2nr826t] slug collision — every type declares its policy o
     for (const c of CONTRIBUTIONS) {
       expect('slugConflict' in (c as unknown as Record<string, unknown>), c.type).toBe(false);
     }
-    expect('slugConflict' in (diagramBackendModule as unknown as Record<string, unknown>)).toBe(false);
   });
 });
 
@@ -154,8 +151,6 @@ describe('[section:l4crudhl] no generic CRUD route helper — a plugin router ca
         expect(GENERATED_ROUTE_PATHS.has(r.path), `${c.type} router spells ${r.path}`).toBe(false);
       }
     }
-    // `diagram` (registered directly) declares no router either.
-    expect((diagramBackendModule.backend as { routes?: unknown } | undefined)?.routes).toBeUndefined();
     // Sanity: the scan reached the two types that do carry domain routes.
     expect(withRouter.sort()).toEqual(['endpoint', 'ui-view']);
   });
@@ -170,7 +165,7 @@ describe('[section:l4crudhl] no generic CRUD route helper — a plugin router ca
   });
 });
 
-describe('[section:m13pool0] base registry collision stays a silent last-wins (until the last direct type leaves)', () => {
+describe('[section:m13pool0] base registry collision stays a silent last-wins', () => {
   it('registerEntityModule with a type already in the base replaces it without throwing', () => {
     const registry = new PluginRegistryImpl();
     const first: BackendModule = fixtureModule('glossary');
@@ -181,12 +176,6 @@ describe('[section:m13pool0] base registry collision stays a silent last-wins (u
     expect(registry.listAvailable().filter((m) => m.type === 'glossary')).toHaveLength(1);
   });
 
-  it('the directly registered built-ins register idempotently — a second start does not throw', () => {
-    const registry = new PluginRegistryImpl();
-    registerAllPlugins(registry);
-    expect(() => registerAllPlugins(registry)).not.toThrow();
-    expect(registry.listAvailable().filter((m) => m.type === 'diagram')).toHaveLength(1);
-  });
 });
 
 /**

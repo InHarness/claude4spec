@@ -94,7 +94,7 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
           currentPath: path,
           rootId,
           onSlashInvoke: (editor, command) =>
-            void invokeSlash(editor, command, { qc, currentPath: path }),
+            void invokeSlash(editor, command, { currentPath: path }),
           getAnnotations: () => useChatStore.getState().annotations,
         },
         {},

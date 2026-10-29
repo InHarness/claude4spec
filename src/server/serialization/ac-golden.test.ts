@@ -52,9 +52,9 @@ async function buildFixture() {
     }
   };
 
-  // A diagram to be the one verify target that actually resolves. `diagram` is
-  // the type that STAYS built in directly, so it is available on every
-  // registration path this golden might be run under.
+  // A diagram to be the one verify target that actually resolves. `diagram`
+  // arrives from the prebuilt built-in envelope (2.1.63), which `createTestApp`
+  // loads with the other envelopes.
   await post('/api/diagrams', {
     slug: 'flow-checkout',
     title: 'FlowCheckout',

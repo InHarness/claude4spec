@@ -5,7 +5,6 @@ import path from 'node:path';
 import { createTestDb } from './test-db.js';
 import { applyProjection } from '../../src/server/db/projection.js';
 import { PluginRegistryImpl } from '../../src/server/core/plugin-host/registry.js';
-import { registerAllPlugins } from '../../src/server/core/plugin-host/register-builtins.js';
 import { loadBuiltinEnvelopes } from '../../src/server/core/plugin-host/loader.js';
 import { entitiesRouter } from '../../src/server/core/plugin-host/entities-router.js';
 import { metaRouter } from '../../src/server/routes/meta.js';
@@ -99,10 +98,10 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
   const db = createTestDb();
 
   const registry = new PluginRegistryImpl();
-  registerAllPlugins(registry);
-  // 0.2.2: `endpoint` and `dto` arrive through the loader now, not
-  // `registerAllPlugins`. Loading the envelopes keeps every test that writes one
-  // exercising the real registration path. Requires the built bundle — `pretest`.
+  // Every type arrives through the loader (2.1.63: the direct tier is empty —
+  // `diagram` comes from the prebuilt envelope). Loading the envelopes keeps
+  // every test that writes one exercising the real registration path. Requires
+  // the built bundles — `pretest`.
   await loadBuiltinEnvelopes(registry);
   // Test-only fixture types (e.g. proving generic capture works for a
   // plugin-contributed type) are registered before consolidate() so they

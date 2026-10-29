@@ -508,7 +508,7 @@ describe('[section:lg0e57j1] c4s-plugin-spreadsheets Host UI Kit slice', () => {
   });
 });
 
-/** The three fullscreen shells the 2.1.28 slices record as one debt (trajectory `fullscreen-overlay`). */
+/** The fullscreen shells the 2.1.28 slices record as one debt (trajectory `fullscreen-overlay`). */
 function assertFullscreenShellDebt(section: string, component: string, file: string): void {
   const d = declarationsOf(section).find((x) => x.components.includes(component));
   expect(d, `${section} declares ${component}`).toBeDefined();
@@ -533,25 +533,5 @@ describe('[section:jsejrh30] c4s-plugin-code-snippets Host UI Kit slice', () => 
     assertFullscreenShellDebt('jsejrh30', 'CodeSnippetFullscreen', fullscreen);
     expect(readSource(view)).not.toMatch(DEBT_MARKER);
     assertStruck('jsejrh30', ['CodeSnippetCard', 'CodeSnippetChip']);
-  });
-});
-
-describe('[section:rgczgux0] diagram Host UI Kit slice', () => {
-  it('[section:rgczgux0] DiagramView is local, DiagramFullscreen is a DŁUG shell with no catalog replacement (trajectory candidate fullscreen-overlay)', () => {
-    expect(entries('rgczgux0')).toEqual([
-      { kind: 'local', components: ['DiagramView'], replacedBy: [] },
-      debt(['DiagramFullscreen']),
-    ]);
-    assertFullscreenShellDebt('rgczgux0', 'DiagramFullscreen', 'src/client/components/DiagramFullscreen.tsx');
-    expect(readSource('src/client/entities/diagram/DiagramCard.tsx')).not.toMatch(DEBT_MARKER);
-  });
-
-  it('[section:dgmfull000] the diagram fullscreen sits on the design-system z-modal layer (1200), not on a literal toast-tier z-index', () => {
-    const src = readSource('src/client/components/DiagramFullscreen.tsx');
-    expect(src).toMatch(/export const DIAGRAM_FULLSCREEN_LAYER = 1200;/);
-    expect(src).toMatch(/zIndex: DIAGRAM_FULLSCREEN_LAYER,/);
-    expect(src).not.toMatch(/zIndex:\s*\d/);
-    // No longer reported as a Dialog twin by its z-index spelling.
-    expect(scanFindings().filter((f) => f.file === 'src/client/components/DiagramFullscreen.tsx')).toEqual([]);
   });
 });

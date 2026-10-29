@@ -7,6 +7,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type Database from 'better-sqlite3';
 import { createTestDb } from '../../../tests/helpers/test-db.js';
+import { applyProjection } from '../db/projection.js';
 import { createReferenceToolsServer, type ReferenceToolsDeps } from './reference-tools.js';
 import { PagesService } from '../services/pages.js';
 import type { ProjectPluginHost, BackendModule } from '../core/plugin-host/types.js';
@@ -35,6 +36,11 @@ import { expectToolMatchesRecord } from '../../../tests/helpers/read-tool-record
  * These cases stay, rewritten onto `<single_element type="diagram" …/>`, because
  * the property under test never was about the tag's spelling — it is that a
  * hidden type gets the same reference checking as a visible one.
+ *
+ * 2.1.63 — `diagram` below is a FIXTURE type of that name (title only), not the
+ * real one: the real type ships in the prebuilt `diagrams` envelope, and the
+ * test database no longer projects it. Its table is generated here from the
+ * fixture's own declaration.
  */
 
 function diagramModule(): BackendModule {
@@ -101,6 +107,7 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
   beforeEach(async () => {
     cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-reference-tools-test-'));
     db = createTestDb();
+    applyProjection(db, fakeHost().listAvailable());
     pagesService = new PagesService(cwd, 'pages', 'pages');
     await pagesService.ensureRoot();
   });
@@ -146,7 +153,7 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
   });
 
   it('does not flag a valid diagram reference, and marks the diagram as referenced', async () => {
-    db.prepare(`INSERT INTO diagram (slug, title, format, source) VALUES ('flow', 'flow', 'mermaid', 'graph TD; A-->B')`).run();
+    db.prepare(`INSERT INTO diagram (slug, title) VALUES ('flow', 'flow')`).run();
     await pagesService.write('page.md', {
       body: '# Page\n\n<single_element type="diagram" slug="flow" caption="x"/>\n',
     });
@@ -197,8 +204,8 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
   // 0.2.92 — the backtick in `caption` used to pair with a later prose backtick,
   // and everything in between — this tagged_list included — was read as code.
   it('[ac:m19-rule3-backtick-tagged-list] a tagged_list in a paragraph with backticks still marks its entities referenced', async () => {
-    db.prepare(`INSERT INTO diagram (slug, title, format, source) VALUES ('flow', 'flow', 'mermaid', 'graph TD; A-->B')`).run();
-    db.prepare(`INSERT INTO diagram (slug, title, format, source) VALUES ('keys', 'keys', 'mermaid', 'graph TD; A-->B')`).run();
+    db.prepare(`INSERT INTO diagram (slug, title) VALUES ('flow', 'flow')`).run();
+    db.prepare(`INSERT INTO diagram (slug, title) VALUES ('keys', 'keys')`).run();
     db.prepare(`INSERT INTO tag (slug, name) VALUES ('auth', 'Auth')`).run();
     db.prepare(`INSERT INTO entity_tag (entity_type, entity_slug, tag_slug) VALUES ('diagram', 'flow', 'auth')`).run();
     // `flow` is surfaced ONLY by the tagged_list, which stands between the
@@ -234,7 +241,7 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
   });
 
   it('an unreferenced diagram entity is reported as unreferenced', async () => {
-    db.prepare(`INSERT INTO diagram (slug, title, format, source) VALUES ('orphan', 'orphan', 'mermaid', 'graph TD; A-->B')`).run();
+    db.prepare(`INSERT INTO diagram (slug, title) VALUES ('orphan', 'orphan')`).run();
     const client = await connectClient(deps());
 
     const result = await checkConsistency(client);

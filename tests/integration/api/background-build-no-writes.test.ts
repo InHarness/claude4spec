@@ -6,7 +6,6 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { PluginRegistryImpl } from '../../../src/server/core/plugin-host/registry.js';
-import { registerAllPlugins } from '../../../src/server/core/plugin-host/register-builtins.js';
 import { loadBuiltinEnvelopes } from '../../../src/server/core/plugin-host/loader.js';
 import { FileWatchRuntime } from '../../../src/server/fs/watcher.js';
 import { WsGateway } from '../../../src/server/ws/gateway.js';
@@ -47,7 +46,6 @@ describe('M01 — the background context build writes nothing into the project',
     const workspace = registry.selectOrCreate({ name: 'default' });
 
     const pluginRegistry = new PluginRegistryImpl();
-    registerAllPlugins(pluginRegistry);
     const envelopeLoad = await loadBuiltinEnvelopes(pluginRegistry);
     httpServer = http.createServer();
     const gateway = new WsGateway(httpServer, () => true);

@@ -24,7 +24,6 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runMigrations } from '../../../src/server/db/migrate.js';
 import { PluginRegistryImpl } from '../../../src/server/core/plugin-host/registry.js';
-import { registerAllPlugins } from '../../../src/server/core/plugin-host/register-builtins.js';
 import { loadBuiltinEnvelopes } from '../../../src/server/core/plugin-host/loader.js';
 import { applyProjection } from '../../../src/server/db/projection.js';
 
@@ -68,7 +67,6 @@ describe('upgrading a pre-0.2.2 database', () => {
       // The upgrade itself: host chain first, then the generated projection.
       const applied = runMigrations(db);
       const registry = new PluginRegistryImpl();
-      registerAllPlugins(registry);
       await loadBuiltinEnvelopes(registry);
       const host = registry.consolidate(null);
       let result!: ReturnType<typeof applyProjection>;
@@ -179,7 +177,6 @@ describe('upgrading a pre-0.2.2 database', () => {
     const db = legacyInstallation();
     try {
       const registry = new PluginRegistryImpl();
-      registerAllPlugins(registry);
       await loadBuiltinEnvelopes(registry);
       const modules = registry.consolidate(null).listAvailable();
 
@@ -217,7 +214,6 @@ describe('a deactivated type keeps its (empty) table', () => {
     try {
       runMigrations(db);
       const registry = new PluginRegistryImpl();
-      registerAllPlugins(registry);
       await loadBuiltinEnvelopes(registry);
 
       // A project that enables only `endpoint` — everything else is available

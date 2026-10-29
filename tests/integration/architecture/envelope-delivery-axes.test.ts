@@ -27,14 +27,12 @@ import path from 'node:path';
 import { SkillRegistry, SkillResolver, findSkillsRoots } from '../../../src/server/services/skill-registry.js';
 import { loadBuiltinEnvelopes } from '../../../src/server/core/plugin-host/loader.js';
 import { PluginRegistryImpl } from '../../../src/server/core/plugin-host/registry.js';
-import { registerAllPlugins } from '../../../src/server/core/plugin-host/register-builtins.js';
 
 const ENVELOPE = 'c4s-plugin-frontend-mockups';
 const PAIR = ['design-system', 'ui-view'];
 
 async function loadedRegistry(): Promise<PluginRegistryImpl> {
   const registry = new PluginRegistryImpl();
-  registerAllPlugins(registry);
   await loadBuiltinEnvelopes(registry);
   return registry;
 }
@@ -45,14 +43,13 @@ describe('axis A — registration is per envelope', () => {
     registry = await loadedRegistry();
   });
 
-  it('the core bootstrap alone contributes neither type', () => {
-    // `registerAllPlugins` is the whole of tier (a), and as of 0.2.80 it holds
-    // exactly ONE type. If any other came back into it, this is where a
-    // "convenient" import would show up.
-    const coreOnly = new PluginRegistryImpl();
-    registerAllPlugins(coreOnly);
-    const types = coreOnly.listAvailable().map((m) => m.type).sort();
-    expect(types).toEqual(['diagram']);
+  it('no type arrives outside an envelope — the direct tier is empty', () => {
+    // 2.1.63 (M13 `mbladez6`): `diagram`, the last type the core bootstrap
+    // registered directly, ships in the prebuilt `diagrams` envelope. Every
+    // available type is claimed by some envelope's record; a type registered
+    // past the loader would carry no record and show up here.
+    const claimed = new Set(registry.listPluginRecords().flatMap((p) => p.contributedTypes));
+    for (const { type } of registry.listAvailable()) expect(claimed.has(type), type).toBe(true);
   });
 
   it('both types arrive through the envelope loader', () => {

@@ -261,7 +261,13 @@ describe('builtin envelope — real load path', () => {
     //
     // 2.1.28 grew BOTH by one, to TEN: `c4s-plugin-host-ui-kit-components` is a
     // new package contributing a new type, `ui-kit-component`.
+    //
+    // 2.1.63 grew BOTH by one, to ELEVEN: `c4s-plugin-diagram` is the first
+    // PREBUILT envelope — a committed bundle the host never builds — and its
+    // `diagram` left the direct tier, so the type now comes through this path
+    // too. Its backend imports the bare `@c4s/plugin-runtime` like every other.
     expect(parsed.statuses).toEqual([
+      'loaded',
       'loaded',
       'loaded',
       'loaded',
@@ -278,6 +284,7 @@ describe('builtin envelope — real load path', () => {
       'code-snippet',
       'database-table',
       'design-system',
+      'diagram',
       'dto',
       'endpoint',
       'module-dependency',

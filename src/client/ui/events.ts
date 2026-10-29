@@ -185,25 +185,6 @@ export interface NewPageResult {
 /** An XML tag's attributes as the `xml-tag` popover reads and writes them; absent = `null`. */
 export type XmlTagAttrs = Record<string, string | null>;
 
-/**
- * `title` and `caption` are two different facts, not one field spelled twice.
- *
- * `title` belongs to the ENTITY — it is the label every chip and row shows, and
- * it seeds the slug. `caption` belongs to THIS EMBEDDING and is written as an
- * attribute of the reference tag, so one diagram referenced on two pages may be
- * captioned differently on each. Until 0.2.22 `caption` did both jobs, which is
- * how the diagram type ended up as the only one with no name of its own.
- */
-export interface DiagramInitial {
-  format: string;
-  title: string;
-  caption: string;
-  source: string;
-}
-export type DiagramResult =
-  | { format: string; title: string; caption: string; source: string }
-  | { __action: 'remove' };
-
 /** A window with no props of its own (the position is not a prop). */
 export type NoProps = Record<never, never>;
 
@@ -243,16 +224,6 @@ export type PopoverMap = {
   'xml-tag': {
     props: { name: string; mode: 'create' | 'edit'; attrs: XmlTagAttrs; onRemove?: () => void };
     result: XmlTagAttrs;
-  };
-  diagram: {
-    /**
-     * `captionEditable` is false where the card has no reference node behind it
-     * — a chat tool result, say. The caption lives on the reference, so with
-     * nowhere to write it the field would take input and drop it; hiding it is
-     * the honest surface. Defaults to true (the editor's own cards).
-     */
-    props: { mode: 'create' | 'edit'; initial?: DiagramInitial; captionEditable?: boolean };
-    result: DiagramResult;
   };
 };
 

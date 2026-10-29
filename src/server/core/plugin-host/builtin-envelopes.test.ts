@@ -234,8 +234,8 @@ describe('loadBuiltinEnvelopes', () => {
   it('[ac:ac-koperta-wbudowana-z-plugins-src-wno] an envelope type already in the base follows the base collision rule — silent last-wins; envelopes are discovered FIRST, so an external package shadows them', async () => {
     writeEnvelope('c4s-plugin-api-contracts', { entry: '' });
     const registry = new PluginRegistryImpl();
-    // A preinstalled module of the same type, registered before discovery
-    // (the `registerAllPlugins` step).
+    // A module of the same type already in the base, registered before
+    // discovery.
     const preinstalled = { ...entity('endpoint'), label: 'preinstalled' };
     registry.registerPlugin({ name: '@c4s/builtin-like', version: '1.0.0', hostApiVersion: '^2.0.0', contributes: { entities: [preinstalled] } });
 

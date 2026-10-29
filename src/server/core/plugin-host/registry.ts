@@ -1,7 +1,7 @@
 /**
  * M31: process-level plugin catalog. Replaces the mutable `pluginHost`
- * singleton — the registry is immutable after `registerAllPlugins(registry)`
- * runs at process start, and `consolidate(config.entities)` is a pure factory
+ * singleton — the registry is immutable after the loader fills it at process
+ * start (built-in envelopes, then packages), and `consolidate(config.entities)` is a pure factory
  * producing one ProjectPluginHost per project context.
  *
  * M33: the base layer is no longer process-immutable — the hot-reload

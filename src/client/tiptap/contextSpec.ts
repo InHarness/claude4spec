@@ -184,7 +184,6 @@ const SLASH_COMMAND_GATES: Record<string, keyof RootEditorProps | null> = {
   list: 'referenceValidated',
   tagged: 'referenceValidated',
   'tagged-mixed': 'referenceValidated',
-  diagram: 'referenceValidated',
   section: 'sectionIndexed',
   todo: null,
 };

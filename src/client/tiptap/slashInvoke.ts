@@ -1,12 +1,13 @@
 import type { Editor } from '@tiptap/core';
-import type { QueryClient } from '@tanstack/react-query';
 import type { SlashCommand } from './extensions/SlashMenu.js';
-import { diagramsApi } from '../entities/diagram/api.js';
-import type { DiagramFormat } from '../../shared/entities.js';
-import { openPopover, toast } from '../ui/events.js';
+import { openPopover } from '../ui/events.js';
 
+/**
+ * 2.1.63 — no `qc`: its one reader was the host's `/diagram` arm, gone with the
+ * type (the prebuilt `diagrams` envelope dispatches through
+ * `c4s:plugin-command` like every other plugin command).
+ */
 export interface SlashInvokeDeps {
-  qc: QueryClient;
   /**
    * Page path the editor is currently mounted on.
    *
@@ -77,9 +78,6 @@ export async function invokeSlash(
     case 'todo':
       await runTodo(editor);
       return;
-    case 'diagram':
-      await runDiagram(editor, deps);
-      return;
     case 'section':
       await runSection(editor);
       return;
@@ -133,77 +131,6 @@ function coordsAt(editor: Editor): { x: number; y: number } {
   const view = editor.view;
   const coords = view.coordsAtPos(view.state.selection.from);
   return { x: coords.left, y: coords.bottom + 6 };
-}
-
-async function runDiagram(editor: Editor, deps: SlashInvokeDeps): Promise<void> {
-  const coords = coordsAt(editor);
-  const result = await popoverFromEditor(editor, () => openPopover('diagram', { ...coords, mode: 'create' }));
-  if (!result) return;
-  if ('__action' in result) return;
-  let diagram: Awaited<ReturnType<typeof diagramsApi.create>>;
-  try {
-    /**
-     * v0.1.64: the DSL `source` is the truth — create the diagram entity, then
-     * insert a reference to it on the page.
-     *
-     * 0.2.15: that reference is the GENERIC block tag rather than a `<diagram/>`
-     * of its own — `<single_element type="diagram" slug caption/>`.
-     *
-     * 0.2.22: `title` and `caption` are now two different things, asked for
-     * separately. `title` names the ENTITY and seeds its slug; `caption`
-     * describes this EMBEDDING of it and lives only as an attribute of the tag,
-     * which is why the same diagram referenced on two pages can carry two
-     * captions. Before this, `caption` did both jobs and the entity ended up
-     * with no name of its own.
-     */
-    diagram = await diagramsApi.create({
-      title: result.title,
-      source: result.source,
-      format: result.format as DiagramFormat,
-    });
-  } catch (err) {
-    toast.error((err as Error).message);
-    return;
-  }
-  deps.qc.invalidateQueries({ queryKey: ['diagrams'] });
-  /**
-   * A refused insert returns `false` rather than throwing, and a throw here
-   * leaves the same state — the diagram exists, nothing references it. Either
-   * way the user is told, with the name and slug to embed it by hand; the entity
-   * is kept (no cleanup), and the message differs from a create failure above.
-   */
-  const inserted = tryInsert(editor, {
-    type: 'single_element',
-    attrs: {
-      type: 'diagram',
-      slug: diagram.slug,
-      caption: result.caption ? result.caption : null,
-    },
-  });
-  if (!inserted) toast.warning(notEmbeddedMessage(diagram.title || result.title, diagram.slug), { durationMs: 10_000 });
-}
-
-/**
- * Insert at the caret and say whether it landed. A destroyed editor (the user
- * left the page while the create was in flight) drops the transaction silently
- * yet still answers `true`, so it counts as not inserted; so does a throw.
- * Mirrors the plugin kit's `runInsert`.
- */
-function tryInsert(editor: Editor, content: Parameters<Editor['commands']['insertContent']>[0]): boolean {
-  if (editor.isDestroyed) return false;
-  try {
-    return editor.chain().focus().insertContent(content).run();
-  } catch {
-    return false;
-  }
-}
-
-/** Mirrors the plugin kit's `notEmbeddedMessage` (`plugins/*\/src/frontend-kit/slash-create.tsx`). */
-function notEmbeddedMessage(name: string, slug: string): string {
-  return (
-    `Entity “${name}” (slug: ${slug}) was created but could not be embedded in the document. ` +
-    'You can embed it manually.'
-  );
 }
 
 async function runTodo(editor: Editor): Promise<void> {

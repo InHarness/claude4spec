@@ -50,7 +50,7 @@ export function PlanEditor({ content, onChange, currentPage }: Props) {
           qc,
           currentPath: currentPage,
           onSlashInvoke: (editor, command) =>
-            void invokeSlash(editor, command, { qc, currentPath: currentPage }),
+            void invokeSlash(editor, command, { currentPath: currentPage }),
           getAnnotations: () => useChatStore.getState().annotations,
         },
         {

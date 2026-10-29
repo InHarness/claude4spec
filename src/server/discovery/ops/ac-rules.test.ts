@@ -33,23 +33,38 @@ import { classifyVerifies, readActiveAcs } from './ac-rules.js';
 import { applyProjection } from '../../db/projection.js';
 import { RawEntityReader } from '../raw-entity-reader.js';
 import { PluginRegistryImpl } from '../../core/plugin-host/registry.js';
-import { diagramBackendModule } from '../../entities/diagram/plugin.js';
 import type { BackendModule, ProjectPluginHost } from '../../core/plugin-host/types.js';
+import {
+  SKETCH_FIXTURE_DATA,
+  SKETCH_FIXTURE_SLUG_PATTERN,
+  fixtureModule,
+} from '../../../../tests/helpers/fixture-module.js';
 
 /**
- * A REAL host holding `diagram` — with its index wired and, deliberately, no
- * entity service registered.
+ * A type that declares its data and registers no `EntityService`.
  *
  * It was `design-system` until 0.2.18 moved that type into the
- * `c4s-plugin-frontend-mockups` envelope, out of the host's reach. `diagram` is
- * the same shape for this test's purposes: a type the host still contributes
- * that registers no `EntityService`. `mount` is never called, which is exactly the
- * shape of a type that declares its data and contributes no service.
+ * `c4s-plugin-frontend-mockups` envelope, then `diagram` until 2.1.63 moved that
+ * one into its prebuilt envelope. The host test type `sketch` is the same shape
+ * for this test's purposes — and it is the host's own, so no contributor moving
+ * out can take it away again.
+ */
+const sketchModule: BackendModule = fixtureModule('sketch', {
+  data: SKETCH_FIXTURE_DATA,
+  slugPattern: SKETCH_FIXTURE_SLUG_PATTERN,
+});
+
+/**
+ * A REAL host holding `module` — with its projection generated, its index wired
+ * and, deliberately, no entity service registered. `mount` is never called,
+ * which is exactly the shape of a type that declares its data and contributes
+ * no service.
  */
 function serviceLessHost(db: ReturnType<typeof createTestDb>, module: BackendModule): ProjectPluginHost {
   const registry = new PluginRegistryImpl();
   registry.registerEntityModule(module);
   const host = registry.consolidate(null);
+  applyProjection(db, host.listAvailable());
   host.setRawReader(new RawEntityReader(db, host));
   return host;
 }
@@ -58,12 +73,12 @@ describe('ProjectPluginHost.entityExists', () => {
   it('falls back to the projection row when the type registered no service', () => {
     const db = createTestDb();
     try {
-      const host = serviceLessHost(db, diagramBackendModule);
-      expect(host.getEntityService('diagram')).toBeNull();
+      const host = serviceLessHost(db, sketchModule);
+      expect(host.getEntityService('sketch')).toBeNull();
 
-      expect(host.entityExists('diagram', 'flow')).toBe(false);
-      db.prepare("INSERT INTO diagram (slug, title, source) VALUES ('flow', 'flow', 'graph TD')").run();
-      expect(host.entityExists('diagram', 'flow')).toBe(true);
+      expect(host.entityExists('sketch', 'flow')).toBe(false);
+      db.prepare("INSERT INTO sketch (slug, title, body) VALUES ('flow', 'flow', 'a body')").run();
+      expect(host.entityExists('sketch', 'flow')).toBe(true);
     } finally {
       db.close();
     }
@@ -72,7 +87,7 @@ describe('ProjectPluginHost.entityExists', () => {
   it('is false for a type with no table and no service', () => {
     const db = createTestDb();
     try {
-      const host = serviceLessHost(db, diagramBackendModule);
+      const host = serviceLessHost(db, sketchModule);
       expect(host.entityExists('nope', 'x')).toBe(false);
     } finally {
       db.close();
@@ -82,13 +97,14 @@ describe('ProjectPluginHost.entityExists', () => {
 
 describe('classifyVerifies', () => {
   const hostOver = (db: ReturnType<typeof createTestDb>): ProjectPluginHost =>
-    serviceLessHost(db, diagramBackendModule);
+    serviceLessHost(db, sketchModule);
 
   it('accepts a reference to an indexed entity whose type has no entity service', () => {
     const db = createTestDb();
     try {
-      db.prepare("INSERT INTO diagram (slug, title, source) VALUES ('flow', 'flow', 'graph TD')").run();
-      expect(classifyVerifies(hostOver(db), [{ type: 'diagram', slug: 'flow' }])).toEqual([]);
+      const host = hostOver(db);
+      db.prepare("INSERT INTO sketch (slug, title, body) VALUES ('flow', 'flow', 'a body')").run();
+      expect(classifyVerifies(host, [{ type: 'sketch', slug: 'flow' }])).toEqual([]);
     } finally {
       db.close();
     }
@@ -97,8 +113,8 @@ describe('classifyVerifies', () => {
   it('still reports a reference to a slug that is not in the table', () => {
     const db = createTestDb();
     try {
-      expect(classifyVerifies(hostOver(db), [{ type: 'diagram', slug: 'ghost' }])).toEqual([
-        { type: 'diagram', slug: 'ghost', reason: 'missing' },
+      expect(classifyVerifies(hostOver(db), [{ type: 'sketch', slug: 'ghost' }])).toEqual([
+        { type: 'sketch', slug: 'ghost', reason: 'missing' },
       ]);
     } finally {
       db.close();
@@ -111,15 +127,16 @@ describe('classifyVerifies', () => {
     const db = createTestDb();
     try {
       const registry = new PluginRegistryImpl();
-      registry.registerEntityModule(diagramBackendModule);
-      // Whitelist a type that is not this one: `diagram` stays AVAILABLE but
+      registry.registerEntityModule(sketchModule);
+      // Whitelist a type that is not this one: `sketch` stays AVAILABLE but
       // not active.
       const host = registry.consolidate({ entities: ['ac'] } as never);
+      applyProjection(db, host.listAvailable());
       host.setRawReader(new RawEntityReader(db, host));
 
-      db.prepare("INSERT INTO diagram (slug, title, source) VALUES ('flow', 'flow', 'graph TD')").run();
-      expect(classifyVerifies(host, [{ type: 'diagram', slug: 'flow' }])).toEqual([
-        { type: 'diagram', slug: 'flow', reason: 'inactive' },
+      db.prepare("INSERT INTO sketch (slug, title, body) VALUES ('flow', 'flow', 'a body')").run();
+      expect(classifyVerifies(host, [{ type: 'sketch', slug: 'flow' }])).toEqual([
+        { type: 'sketch', slug: 'flow', reason: 'inactive' },
       ]);
       expect(classifyVerifies(host, [{ type: 'nope', slug: 'x' }])).toEqual([
         { type: 'nope', slug: 'x', reason: 'unknown' },

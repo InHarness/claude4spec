@@ -341,11 +341,13 @@ describe('the plugin-tool proxy', () => {
   });
   afterEach(() => t.cleanup());
 
+  // 2.1.63 — the example type is `ui-kit-component` (`audit_ui_kit_components`,
+  // read-only): `diagram`'s `validate_diagram` left the host with the type.
   it('[section:v0v4ku5d] lists a type\'s declared operations from the same registry the host mounts MCP from', async () => {
-    const res = await request(t.app).get('/api/entities/diagram/tools').expect(200);
+    const res = await request(t.app).get('/api/entities/ui-kit-component/tools').expect(200);
     const names = res.body.tools.map((x: { name: string }) => x.name);
-    expect(names).toContain('validate_diagram');
-    const tool = res.body.tools.find((x: { name: string }) => x.name === 'validate_diagram');
+    expect(names).toContain('audit_ui_kit_components');
+    const tool = res.body.tools.find((x: { name: string }) => x.name === 'audit_ui_kit_components');
     expect(tool.description.length).toBeGreaterThan(0);
     // The zod raw shape is projected to JSON Schema, not leaked as zod internals.
     expect(tool.inputSchema).toHaveProperty('type', 'object');
@@ -358,8 +360,8 @@ describe('the plugin-tool proxy', () => {
 
   it('[section:v0v4ku5d] executes an operation through the very handler the tool channel calls', async () => {
     const res = await request(t.app)
-      .post('/api/entities/diagram/tools/validate_diagram')
-      .send({ source: 'graph TD;\n  A-->B;' })
+      .post('/api/entities/ui-kit-component/tools/audit_ui_kit_components')
+      .send({})
       .expect(200);
     // The response is the tool result VERBATIM — a packing layer, not a second shape.
     expect(res.body).toHaveProperty('content');
@@ -368,17 +370,17 @@ describe('the plugin-tool proxy', () => {
 
   it('[section:v0v4ku5d] refuses an unknown operation with NOT_FOUND naming the ones that exist', async () => {
     const res = await request(t.app)
-      .post('/api/entities/diagram/tools/no_such_tool')
+      .post('/api/entities/ui-kit-component/tools/no_such_tool')
       .send({})
       .expect(404);
     expect(res.body.error.code).toBe('NOT_FOUND');
-    expect(res.body.error.message).toMatch(/validate_diagram/);
+    expect(res.body.error.message).toMatch(/audit_ui_kit_components/);
   });
 
   it('[section:v0v4ku5d] input that does not match the tool schema is refused with VALIDATION — the SAME schema the tool channel validates against', async () => {
     const res = await request(t.app)
-      .post('/api/entities/diagram/tools/validate_diagram')
-      .send({ source: 12345 })
+      .post('/api/entities/ui-kit-component/tools/audit_ui_kit_components')
+      .send({ slugs: 12345 })
       .expect(400);
     expect(res.body.error.code).toBe('VALIDATION');
   });
@@ -399,16 +401,13 @@ describe('the plugin-tool proxy', () => {
     // An MCP handler reports failure in-band (`isError: true`), so forwarding the
     // envelope verbatim made every refusal a 200 and a client branching on
     // `response.ok` recorded a failed operation as a success.
+    // An unknown rule passes the schema (`rules` is a string list) and is
+    // refused by the handler, in-band.
     const res = await request(t.app)
-      .post('/api/entities/diagram/tools/validate_diagram')
-      .send({ source: 'graph TD;\n  A-->B;', format: 'not-a-real-format' });
-    if (res.status === 200) {
-      // The tool accepted it — then it must not be flagged as an error.
-      expect(res.body.isError).not.toBe(true);
-    } else {
-      expect(res.status).toBeGreaterThanOrEqual(400);
-      expect(res.body.error?.code).toBeTruthy();
-    }
+      .post('/api/entities/ui-kit-component/tools/audit_ui_kit_components')
+      .send({ rules: ['not-a-real-rule'] });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.body.error?.code).toBeTruthy();
   });
 
   it('[section:v0v4ku5d] refuses an inactive type with INVALID_TYPE on both halves of the proxy', async () => {

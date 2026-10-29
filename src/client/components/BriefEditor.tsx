@@ -63,7 +63,7 @@ export function BriefEditor({ briefPath }: Props) {
           qc,
           currentPath: briefPath,
           onSlashInvoke: (editor, command) =>
-            void invokeSlash(editor, command, { qc, currentPath: briefPath }),
+            void invokeSlash(editor, command, { currentPath: briefPath }),
           getAnnotations: () => [],
         },
       ),
