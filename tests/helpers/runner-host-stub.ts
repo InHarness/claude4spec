@@ -52,9 +52,13 @@ export class RunnerHostStub {
     });
   }
 
-  static async start(): Promise<RunnerHostStub> {
+  /**
+   * `bindHost` defaults to loopback; the e2e suite binds every interface, so an
+   * app running elsewhere (another container) can reach the stub too.
+   */
+  static async start(bindHost = '127.0.0.1'): Promise<RunnerHostStub> {
     const stub = new RunnerHostStub();
-    await new Promise<void>((resolve) => stub.server.listen(0, '127.0.0.1', () => resolve()));
+    await new Promise<void>((resolve) => stub.server.listen(0, bindHost, () => resolve()));
     return stub;
   }
 

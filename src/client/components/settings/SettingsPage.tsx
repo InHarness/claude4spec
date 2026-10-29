@@ -13,6 +13,7 @@ import { WORKSPACE_SETTINGS } from '../workspace/DangerZoneElement.js';
 import { AGENT_SETTINGS } from '../../chat/settings/agentSettings.js';
 import { SPEC_SKILLS_SETTINGS } from '../spec-skills/specSkillsSettings.js';
 import { PLUGIN_HOST_SETTINGS } from '../../core/plugin-host/pluginSettings.js';
+import { RUNNER_HOSTS_SETTINGS } from '../runner-hosts/runnerHostsSettings.js';
 
 /**
  * 0.2.113 — every module that declares something on a settings page. The order
@@ -42,6 +43,7 @@ export function staticSettingsContributions(): SettingsContribution[] {
     SPEC_SKILLS_SETTINGS,
     SETTINGS_MODULE_CARDS,
     WORKSPACE_SETTINGS,
+    RUNNER_HOSTS_SETTINGS,
   ];
 }
 

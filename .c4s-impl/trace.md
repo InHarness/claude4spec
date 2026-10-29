@@ -8,3 +8,11 @@ post-api-workspace-runner-hosts → src/server/routes/runner-hosts.ts (POST /) �
 patch-api-workspace-runner-hosts-id → src/server/routes/runner-hosts.ts (PATCH /:id) · test: src/server/routes/runner-hosts.route.test.ts "[endpoint:patch-api-workspace-runner-hosts-id]"
 post-api-workspace-runner-hosts-id-test → src/server/routes/runner-hosts.ts (POST /:id/test) · test: src/server/routes/runner-hosts.route.test.ts "[endpoint:post-api-workspace-runner-hosts-id-test]"
 delete-api-workspace-runner-hosts-id → src/server/routes/runner-hosts.ts (DELETE /:id) · test: src/server/routes/runner-hosts.route.test.ts "[endpoint:delete-api-workspace-runner-hosts-id]"
+moduly-feature#M54 → context only (spreadsheet part `context`, not built)
+ac-karta-runner-hosts-renderuje-sie-na-w → src/client/components/runner-hosts/runnerHostsSettings.ts (card #runner-hosts, scope workspace) · test: tests/e2e/runner-hosts.test.ts "[ac:ac-karta-runner-hosts-renderuje-sie-na-w]"
+ac-karta-runner-hosts-nie-renderuje-sie → src/client/components/runner-hosts/runnerHostsSettings.ts (scope workspace ⇒ absent from /settings) · test: tests/e2e/runner-hosts.test.ts "[ac:ac-karta-runner-hosts-nie-renderuje-sie]"
+ac-token-w-liscie-jest-maskowany-last4 → src/client/lib/runner-hosts.ts (maskedToken) + src/client/components/runner-hosts/RunnerHostsElement.tsx · test: tests/e2e/runner-hosts.test.ts "[ac:ac-token-w-liscie-jest-maskowany-last4]"
+ac-bind-to-this-host-jest-widoczny-tylko → src/client/components/runner-hosts/RunnerHostsElement.tsx (RunnerHostRow, status other-host) · test: tests/e2e/runner-hosts.test.ts "[ac:ac-bind-to-this-host-jest-widoczny-tylko]"
+ac-po-restarcie-runnera-wiersz-pokazuje → src/client/components/runner-hosts/RunnerHostsElement.tsx (restartedAt marker) · test: tests/e2e/runner-hosts.test.ts "[ac:ac-po-restarcie-runnera-wiersz-pokazuje]"
+ac-przy-statusie-token-rejected-wiersz-p → src/client/components/runner-hosts/RunnerHostsElement.tsx (TOKEN_REJECTED_HINT) · test: tests/e2e/runner-hosts.test.ts "[ac:ac-przy-statusie-token-rejected-wiersz-p]"
+ac-status-w-karcie-zmienia-sie-bez-przel → src/client/components/runner-hosts/RunnerHostsElement.tsx (useQuery ["runner-hosts"], refetchInterval 5 s while on screen) · test: tests/e2e/runner-hosts.test.ts "[ac:ac-status-w-karcie-zmienia-sie-bez-przel]"

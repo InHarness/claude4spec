@@ -1,5 +1,5 @@
 {
-  "iteration": 23,
+  "iteration": 27,
   "conventions": [
     {
       "label": "L4 (API) — implementor M49",
@@ -72,7 +72,7 @@
       "units": [
         "m54-settings-ui"
       ],
-      "startCommit": null
+      "startCommit": "5060e80d4560cf4c7e692b4a3fb84fa8d9f5fc5e"
     }
   ],
   "units": [
@@ -874,7 +874,7 @@
         }
       ],
       "wave": 5,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "m54-settings-ui/p1-l5-l17",
@@ -894,20 +894,21 @@
             "ac-status-w-karcie-zmienia-sie-bez-przel",
             "ac-token-w-liscie-jest-maskowany-last4"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 1,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "5060e80d4560cf4c7e692b4a3fb84fa8d9f5fc5e",
+      "baseCommit": "5060e80d4560cf4c7e692b4a3fb84fa8d9f5fc5e",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0
     }
   ],
   "entityTypes": [
