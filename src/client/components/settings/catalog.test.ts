@@ -48,6 +48,8 @@ describe('/settings card catalog (0.2.113 §1.6)', () => {
   it.each([
     ['6tn2yf92', 'appearance', 'workspace'],
     ['df0ri1ao', 'plugin-pool', 'workspace'],
+    // 2.1.62 (M54 L17): the Runner hosts card is a workspace card.
+    ['cx6b7xjn', 'runner-hosts', 'workspace'],
     ['va7hqsxc', 'user-section', 'project'],
     ['m26psec', 'project', 'project'],
     ['m26psec', 'directories', 'project'],
@@ -69,10 +71,11 @@ describe('/settings card catalog (0.2.113 §1.6)', () => {
     expect((scope === 'workspace' ? page : workspacePage).some((c) => c.decl.anchor === anchor)).toBe(false);
   });
 
-  it('[section:6tn2yf92] [section:df0ri1ao] the workspace settings page is Appearance then Plugin pool, neither with a file-backed element', () => {
-    expect(workspacePage.map((c) => c.decl.anchor)).toEqual(['appearance', 'plugin-pool']);
+  it('[section:6tn2yf92] [section:df0ri1ao] [section:cx6b7xjn] the workspace settings page is Appearance, Runner hosts (Integrations) then Plugin pool, none with a file-backed element', () => {
+    expect(workspacePage.map((c) => c.decl.anchor)).toEqual(['appearance', 'runner-hosts', 'plugin-pool']);
     expect(workspacePage.flatMap((c) => c.elements).map((e) => [e.id, e.kind])).toEqual([
       ['theme', 'custom'],
+      ['runner-host-list', 'custom'],
       ['plugin-pool', 'custom'],
     ]);
     expect(workspacePage.flatMap((c) => c.elements).some((e) => e.configKey !== undefined || (e.keys?.length ?? 0) > 0)).toBe(
@@ -126,7 +129,7 @@ describe('/settings card catalog (0.2.113 §1.6)', () => {
       byAnchor.get(anchor)!.elements.some((e) => e.configKey !== undefined || (e.keys?.length ?? 0) > 0);
     expect(['project', 'directories', 'git', 'entities', 'agent', 'skills'].every(fileBacked)).toBe(true);
     expect(
-      ['user-section', 'appearance', 'external-integrations', 'plugin-pool', 'about', 'index-status', 'danger-zone'].some(
+      ['user-section', 'appearance', 'external-integrations', 'plugin-pool', 'runner-hosts', 'about', 'index-status', 'danger-zone'].some(
         fileBacked,
       ),
     ).toBe(false);

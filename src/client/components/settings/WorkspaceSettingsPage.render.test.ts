@@ -49,6 +49,9 @@ const basePool = {
   ],
 };
 
+/** 2.1.62 (M54): the list read of the Runner hosts card — workspace scope, no project prefix. */
+const RUNNER_HOSTS_URL = '/api/workspace/runner-hosts?limit=200';
+
 const pathOf = (route: unknown): string | undefined => (route as { options?: { path?: string } }).options?.path;
 
 async function flush() {
@@ -89,6 +92,7 @@ beforeEach(() => {
       requests.push(String(url));
       if (String(url) === '/api/workspace') return new Response(JSON.stringify(workspace), { status: 200 });
       if (String(url) === '/api/_meta/plugins') return new Response(JSON.stringify(basePool), { status: 200 });
+      if (String(url) === RUNNER_HOSTS_URL) return new Response(JSON.stringify({ data: [], total: 0 }), { status: 200 });
       return new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: String(url) } }), { status: 404 });
     }),
   );
@@ -146,17 +150,17 @@ describe('ui-view workspace-settings-page', () => {
     expect(host.querySelector('[data-testid="workspace-frame"]')).not.toBeNull();
     expect(host.querySelector('h1')?.textContent).toBe('Workspace settings');
     expect(host.querySelector('[data-testid="workspace-settings-name"]')?.textContent).toBe('team-ws');
-    expect(cardAnchors()).toEqual(['appearance', 'plugin-pool']);
+    expect(cardAnchors()).toEqual(['appearance', 'runner-hosts', 'plugin-pool']);
     expect(host.textContent).not.toContain('Could not load this project');
     // It asks only the workspace-scope reads — nothing under a project prefix, no project config.
-    expect(new Set(requests)).toEqual(new Set(['/api/workspace', '/api/_meta/plugins']));
+    expect(new Set(requests)).toEqual(new Set(['/api/workspace', '/api/_meta/plugins', RUNNER_HOSTS_URL]));
     expect(requests.some((u) => u.startsWith('/api/projects/') || u === '/api/config')).toBe(false);
   });
 
   it('[section:7f76eszm] [section:m26route] only the cards of scope workspace render here — no project card', async () => {
     await openWorkspaceDocument('/workspace/settings');
     const anchors = cardAnchors();
-    expect(anchors).toEqual(['appearance', 'plugin-pool']);
+    expect(anchors).toEqual(['appearance', 'runner-hosts', 'plugin-pool']);
     for (const projectCard of ['user-section', 'project', 'git', 'directories', 'entities', 'agent', 'skills', 'about', 'danger-zone']) {
       expect(anchors, projectCard).not.toContain(projectCard);
     }
