@@ -480,15 +480,16 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "in-progress",
+      "status": "verified",
       "blockedBy": null,
       "startCommit": "4dff10b6",
       "baseCommit": "fcc7f2d1",
-      "lastBlocking": 1,
+      "lastBlocking": 0,
+      "lastUncovered": 0,
       "portions": [{"name":"container-env/p1-m01-domain-m01-edge","layers":["M01 Domain","M01 Przypadki brzegowe"],"slugs":["ac-kontener-uruchomiony-z-port-startuje","ac-kontener-uruchomiony-z-ustawiona-publ","ac-kontener-uruchomiony-bez-public-url-s","ac-kontener-uruchomiony-z-ustawiona-remo","ac-kontener-uruchomiony-bez-remote-api-u","ac-remote-api-url-ustawiona-na-pusty-cia","ac-kontener-z-ustawiona-remote-api-url-k","ac-po-starcie-kontenera-katalog-wskazany"],"status":"implemented","rounds":2,"partial":0,"uncovered":[],"only":[]}],
       "rounds": {
-        "review": 1,
-        "unit": 1
+        "review": 0,
+        "unit": 2
       },
       "jobs": []
     },
