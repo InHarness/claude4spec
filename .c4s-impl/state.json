@@ -748,7 +748,7 @@
       "wave": 2,
       "status": "in-progress",
       "blockedBy": null,
-      "startCommit": "17feb274",
+      "startCommit": "6ab20367",
       "baseCommit": "17feb274",
       "portions": [
         {
@@ -762,18 +762,29 @@
             "section:m13pool0",
             "section:m13plenv"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "ac-snapshot-niesie-pelne-code-przy-pusty",
+            "ac-koperta-wnosi-pelen-vertical-slice-ty"
+          ],
+          "only": [
+            {
+              "slug": "ac-snapshot-niesie-pelne-code-przy-pusty"
+            },
+            {
+              "slug": "ac-koperta-wnosi-pelen-vertical-slice-ty"
+            }
+          ]
         }
       ],
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 2
     },
     {
       "id": "card-caption-callback",
