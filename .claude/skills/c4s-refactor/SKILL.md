@@ -18,22 +18,10 @@ and hands off:
 Execution is downstream: a human continues the spec plan thread, and the
 `c4s-brief-implementer` skill implements the brief.
 
-**Never implement the fix yourself, even mid-conversation.** The whole point of
-this skill is that it classifies and hands off — it does not edit code or spec,
-no matter how obvious the fix looks once you've found it. This holds even when
-the drift surfaces *after* an initial verdict: e.g. you report "none" for the
-original topic, then a follow-up question or a concrete repro from the user
-reveals a real, separate defect. Treat that as a **new finding** — go back to
-step 4, classify it, and route it via Path 1 or Path 2 like anything else.
-Don't slide into "well, I already know the fix, let me just make the edit."
-The only exception is the user explicitly telling you, for that turn, to
-implement directly instead of routing — that overrides this default, but only
-for what they asked for.
-
 **CLI only — never call `curl` or the HTTP API directly.**
 
 This skill is bound to one specification project — every `c4s` command below
-carries its identity (`--project 'app-spec' --workspace 'default'`), so it works from any cwd. Do NOT `cd`
+carries its identity (`--server 'http://localhost:4508' --project 'app-spec'`), so it works from any cwd. Do NOT `cd`
 into the spec repo; the identity is baked in, not derived from cwd.
 
 ## Input — a topic is required
@@ -55,11 +43,11 @@ Read the spec through the `c4s` reader — see the `c4s-spec-reader` skill for t
 full command reference. In short:
 
 ```sh
-c4s catalog --project 'app-spec' --workspace 'default'                                   # entity types + schemas
-c4s list-tags --with-counts --project 'app-spec' --workspace 'default'                   # tags + counts (counts are opt-in)
-c4s list-entities --type endpoint --project 'app-spec' --workspace 'default'             # { slug, title } rows for a type
-c4s single_element --type endpoint --slug <x> --project 'app-spec' --workspace 'default'
-c4s resolve modules/<module>.md --project 'app-spec' --workspace 'default'               # expand a page's tags inline
+c4s catalog --server 'http://localhost:4508' --project 'app-spec'                                   # entity types + schemas
+c4s list-tags --with-counts --server 'http://localhost:4508' --project 'app-spec'                   # tags + counts (counts are opt-in)
+c4s list-entities --type endpoint --server 'http://localhost:4508' --project 'app-spec'             # { slug, title } rows for a type
+c4s single_element --type endpoint --slug <x> --server 'http://localhost:4508' --project 'app-spec'
+c4s resolve modules/<module>.md --server 'http://localhost:4508' --project 'app-spec'               # expand a page's tags inline
 ```
 
 **CLI-only — no filesystem fallback.** If `c4s` isn't installed, STOP and ask
@@ -89,20 +77,11 @@ exactly one bucket:
 
 - **spec-fix** — the code is the intended/current behavior; the spec is missing it
   or describes it incorrectly → **Path 1**.
-- **code-fix** — the spec is the intended contract and is correctly written, but
-  the code doesn't meet it (real drift), OR the topic is genuinely outside the
-  spec's scope (nothing meaningful to add/change there) → **Path 2**.
+- **code-fix** — the spec is the intended contract; the code doesn't meet it →
+  **Path 2**.
+- **both** — run both paths; note the priority (usually reconcile the spec first,
+  then the code).
 - **none** — report "in sync" and **STOP**.
-
-**Never route the same difference to both paths.** If a topic has multiple
-distinct differences, split it into separate sub-issues and classify each one
-into exactly one bucket. If a single difference genuinely needs a spec change,
-it goes to Path 1 **only** — do not also file a Path 2 brief for it. The code
-side of a spec-fix is handled later, downstream: a human resolves the spec plan
-thread, and either turns the result into a brief themselves or re-runs this
-skill afterward (at which point the code will correctly classify as drift
-against the now-updated spec, or as "none" if it already matches). Path 2 is
-reserved for differences that are *not* a spec problem at all.
 
 ### 5. Path 1 — spec-fix → read-only plan (`c4s ask`)
 
@@ -112,7 +91,7 @@ reserved for differences that are *not* a spec problem at all.
 ```sh
 c4s ask "Spec drift on <topic>: <description>. Create a plan of specification \
 changes — list the entities/pages to change and the exact edits. Plan only, do \
-not execute." --project 'app-spec' --workspace 'default'
+not execute." --server 'http://localhost:4508' --project 'app-spec'
 ```
 
 **Record the returned `threadId`.** This skill does **not** apply the plan — a human
@@ -138,7 +117,7 @@ Four parts, in this order:
 **Step 2 — save the brief.** One call, no turn:
 
 ```sh
-c4s create-brief --body-file /tmp/drift-<topic>.md --project 'app-spec' --workspace 'default'
+c4s create-brief --body-file /tmp/drift-<topic>.md --server 'http://localhost:4508' --project 'app-spec'
 ```
 
 It prints `briefPath` (and the brief's `hash`). Passing no release window is
@@ -165,9 +144,9 @@ Hard rules for this path:
 
 Print and **finish** (no execution):
 
-- the topic and the drift classification (spec-fix / code-fix / none),
-- the created `threadId` (Path 1) or the `briefPath` returned by
-  `c4s create-brief` (Path 2) — never both for the same difference,
+- the topic and the drift classification (spec-fix / code-fix / both / none),
+- the created `threadId` (Path 1) and/or the `briefPath` returned by
+  `c4s create-brief` (Path 2),
 - next step: a human continues the spec plan thread;
   `c4s-brief-implementer` implements the brief.
 
@@ -175,15 +154,21 @@ Print and **finish** (no execution):
 
 Every `c4s` command in this skill talks to a running `npx @inharness-ai/claude4spec` server. There is no filesystem-scoped subset: since 0.2.13 the CLI opens no database and reads no specification file, so reading a brief, listing entities and running an agent turn all fail the same way when the server is down.
 
-**`SERVER_NOT_RUNNING` (exit 8) from any command — stop.** Ask the user to start the server, and wait. Do not start one yourself (a CLI-spawned server is an unsupervised second process on the user's machine), and do not work around the failure by reading or writing the spec repo's files by hand — that is the thing this skill exists to prevent, and the reason it is CLI-only.
+`SERVER_NOT_RUNNING` **(exit 8) from any command — stop.** Ask the user to start the server, and wait. Do not start one yourself (a CLI-spawned server is an unsupervised second process on the user's machine), and do not work around the failure by reading or writing the spec repo's files by hand — that is the thing this skill exists to prevent, and the reason it is CLI-only.
 
-Two neighbouring codes mean something else, and starting a server will not fix either: `SERVER_NOT_RECOGNIZED` (something is listening, but it is not claude4spec) and `PROJECT_NOT_IN_WORKSPACE` (the server is fine; this project is not registered in the workspace you named). Report those as they are.
+Three neighbouring codes mean something else, and starting a server will not fix any of them: `SERVER_NOT_RECOGNIZED` (something is listening, but it is not claude4spec), `PROJECT_NOT_IN_WORKSPACE` (the server is fine, but it does not serve this skill's project — see "Stale address" below) and `WORKSPACE_NOT_REGISTERED` (the project lies in a workspace home directory this machine has never registered). Report those as they are.
+
+## Stale address — `PROJECT_NOT_IN_WORKSPACE`
+
+`PROJECT_NOT_IN_WORKSPACE` means the server at `http://localhost:4508` does not serve the project `app-spec` — the address baked into this skill is stale. **Stop and ask the user to regenerate this skill** (Settings → External Integrations, or `c4s install-skills`). Do not guess another `--project` or `--server` value.
+
+`WORKSPACE_NOT_REGISTERED` means the spec project lies in a workspace home directory this machine has never registered — stop and ask the user to start the server once with `--cwd <home>`; do not start it yourself.
 
 Reading the spec and analyzing the code are not an exception to it: `resolve`, the `list-*` readers and `single_element` delegate to the server exactly as `c4s ask` / `c4s agent` do. With the server down this skill cannot detect drift, let alone route it.
 
 ## Hard dependency & gotchas
 
-- **The identity is baked in — never `cd`.** `--project 'app-spec' --workspace 'default'` is injected into every
+- **The identity is baked in — never `cd`.** `--server 'http://localhost:4508' --project 'app-spec'` is injected into every
   command above; `cd`-ing into the spec repo is unnecessary and, if it's reached
   through a symlink, can even break resolution.
 - **`c4s ask` is read-only** — it yields a plan only and never mutates the spec;
@@ -193,8 +178,6 @@ Reading the spec and analyzing the code are not an exception to it: `resolve`, t
   the file and then asked a brief-scoped turn to fill it, is not an alternative
   here: such a turn sees only `release_diff`, so it can legitimately decline and
   leave you a heading.
-- **Never file the same difference to both Path 1 and Path 2**, and never
-  implement a fix directly in this skill's session — classify, route, stop.
 
 ## Notes
 
