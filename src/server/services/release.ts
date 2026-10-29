@@ -1677,7 +1677,7 @@ export class ReleaseService {
   /**
    * Restore a single page. Looks up the latest file_version snapshot at-or-
    * before the release and writes its content via PagesService. The watcher
-   * suppresses the resulting chokidar event; the REST capture path then
+   * suppresses the resulting fs watch event; the REST capture path then
    * records a fresh file_version row with `release_id = NULL` and
    * `changed_by = 'user'`.
    */

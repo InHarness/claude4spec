@@ -639,7 +639,7 @@ export class BriefService {
     );
     await this.deps.frontmatterIndexer.indexPage(this.rootId, opts.path);
     // The indexer only broadcasts `briefs:changed` when *frontmatter* changes; a
-    // body-only edit (the common agent case) emits nothing, and the chokidar event
+    // body-only edit (the common agent case) emits nothing, and the fs watch event
     // is suppressed above. Broadcast explicitly so open BriefEditors refresh.
     // `agent` writes are external from the editor's POV (reload/conflict-dialog);
     // a `user` write is this editor's own save (silent reconcile) — mirrors Pages.

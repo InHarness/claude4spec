@@ -15,6 +15,25 @@ function moveFile(src: string, dest: string): void {
 }
 
 /**
+ * 2.1.60 (M01 `dsh8ezbz` step 7, M41 `yffftxih`): the legacy database in the
+ * project directory that the activation would MOVE to the slot, or `null` when
+ * there is none or a workspace already owns a populated slot for this
+ * project-id. Reads only — the background context build's check («needs
+ * activation» when non-null).
+ */
+export function legacyDbToMove(registry: WorkspaceRegistry, cwd: string, projectId: string): string | null {
+  const legacyDb = path.join(cwd, '.claude4spec', 'db.sqlite');
+  if (!fs.existsSync(legacyDb)) return null;
+  // Slot directories come from the stored entries alone: no workspace.json of
+  // any home is read, so a broken one elsewhere cannot block this registration.
+  // Stable stored id — the slot key. Never derived from cwd.
+  for (const dir of registry.listSlotsDirs()) {
+    if (fs.existsSync(path.join(dir, projectId, 'db.sqlite'))) return null;
+  }
+  return legacyDb;
+}
+
+/**
  * M31 first-registration hook: a pre-workspace project keeps its derived index
  * at `<cwd>/.claude4spec/db.sqlite`. If NO workspace anywhere owns a populated
  * slot for this project-id yet, the legacy DB (+ WAL sidecars) moves to
@@ -30,18 +49,11 @@ export function migrateLegacyDbIfNeeded(
   cwd: string,
   projectId: string,
 ): boolean {
-  const legacyDb = path.join(cwd, '.claude4spec', 'db.sqlite');
-  if (!fs.existsSync(legacyDb)) return false;
+  const legacyDb = legacyDbToMove(registry, cwd, projectId);
+  if (legacyDb === null) return false;
 
   // Stable stored id — the slot key. Never derived from cwd.
-  const id = projectId;
-  // Slot directories come from the stored entries alone: no workspace.json of
-  // any home is read, so a broken one elsewhere cannot block this registration.
-  for (const dir of registry.listSlotsDirs()) {
-    if (fs.existsSync(path.join(dir, id, 'db.sqlite'))) return false;
-  }
-
-  const dest = registry.slotDir(ws, id);
+  const dest = registry.slotDir(ws, projectId);
   fs.mkdirSync(dest, { recursive: true });
   for (const suffix of ['', '-wal', '-shm']) {
     const src = legacyDb + suffix;

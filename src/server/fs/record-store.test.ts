@@ -11,7 +11,7 @@ import { markdownAdapter, jsonAdapter, type MarkdownRecord } from './record-adap
  * run under one lock.
  *
  * Driven with `fsEvents: false`: nothing here is about the file provider. The
- * primitive's contract is stated without reference to chokidar, and the cases
+ * primitive's contract is stated without reference to the fs provider, and the cases
  * that genuinely need a provider live in `watcher.fs.test.ts`.
  */
 

@@ -187,7 +187,7 @@ describe('2.1.8 — root-registry runtime per ProjectContext (M02 m02multidir, L
       const ctx = { projectId: 'p1', hasInFlightTurn: () => false, dispose: vi.fn(async () => {}) };
       built.push(ctx);
       return ctx as unknown as ProjectContext;
-    }, 4);
+    });
     const project = { id: 'p1' } as ProjectRecord;
     await cache.get(project);
     cache.invalidate('p1');

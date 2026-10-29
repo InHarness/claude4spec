@@ -29,13 +29,15 @@
  * `404 PROJECT_NOT_IN_WORKSPACE` for an unknown `:id` and
  * `500 PROJECT_BUILD_FAILED` for a project whose build fails — the two codes this
  * release adds to the external catalog — and already resolves the context through
- * the cache on every request, which is where "rebuilt lazily" comes from.
+ * the cache on every request: a call during a rebuild waits for the successor,
+ * and a call on a project detached meanwhile is refused as one outside the
+ * workspace (M31 `xocjjal4`).
  */
 
 import { Router } from 'express';
 import type { Request } from 'express';
 import type { ChatContextType } from '../../shared/entities.js';
-import { mcpRequestHandler } from '../mcp/http-mount.js';
+import { mcpRequestHandler, releaseMcpSessionSurfaces } from '../mcp/http-mount.js';
 import {
   bindProjectPerCall,
   composeExternalSurface,
@@ -45,19 +47,36 @@ import {
   type ProjectCallTarget,
 } from '../mcp/surface.js';
 import { listProjects } from '../workspace/list-projects.js';
-import type { ProjectContextCache } from '../workspace/context-cache.js';
+import { ProjectRemovedError, type ProjectContextCache } from '../workspace/context-cache.js';
 import type { WorkspaceRegistry } from '../workspace/registry.js';
 import type { WorkspaceRecord } from '../workspace/types.js';
+
+/** The binding a project-bound session is pinned to. */
+const projectBinding = (projectId: string) => `project:${projectId}`;
+
+/**
+ * The project-bound mount of ONE context. `releaseSurfaces` is called by that
+ * context on its release: the sessions still holding the surface composed from
+ * it drop it, so an idle connection does not keep the released context
+ * reachable (carried U6 rev-0001); the next request re-syncs from the
+ * successor. A session that already re-synced to the successor is left alone —
+ * a retired context is disposed late, once its last turn ends.
+ */
+export type ProjectMcpRouter = Router & { releaseSurfaces(): void };
 
 /** `/api/projects/:id/mcp` — mounted on the per-project router. */
 export function projectMcpRouter(
   packageVersion: string,
   projectId: string,
   surfaceDeps: (profile: ChatContextType) => ExternalSurfaceDeps,
-): Router {
+): ProjectMcpRouter {
   const router = Router();
+  // One token per context (this router is built once per build): what a session
+  // remembers about the surface it holds, without holding the context.
+  const owner = Symbol(`mcp-surface:${projectId}`);
   const handler = mcpRequestHandler({
     packageVersion,
+    owner,
     // The project is already resolved — this router only exists inside a built
     // context. Re-reading it per request is the middleware's job, and it has
     // done it before this line runs.
@@ -73,12 +92,14 @@ export function projectMcpRouter(
      * B's — a DIFFERENT router instance, whose constant compared equal. The
      * whole pin was a no-op on this mount, which is the one most clients use.
      */
-    binding: () => `project:${projectId}`,
+    binding: () => projectBinding(projectId),
   });
   router.post('/', handler);
   router.get('/', handler);
   router.delete('/', handler);
-  return router;
+  return Object.assign(router, {
+    releaseSurfaces: () => releaseMcpSessionSurfaces(projectBinding(projectId), owner),
+  });
 }
 
 export interface WorkspaceMcpDeps {
@@ -138,6 +159,11 @@ export function workspaceMcpRouter(deps: WorkspaceMcpDeps): Router {
       const ctx = await deps.cache.get(project);
       return { ok: true, projectId: project.id, surface: composeExternalSurface(ctx.mcpSurfaceDeps(profile)) };
     } catch (err) {
+      // Detached while this call waited for its build (M31 `xocjjal4`): the
+      // refusal of a project outside the workspace, not a failed build.
+      if (err instanceof ProjectRemovedError) {
+        return { ok: false, code: 'PROJECT_NOT_IN_WORKSPACE', message: notFoundMessage(deps, id) };
+      }
       return { ok: false, code: 'PROJECT_BUILD_FAILED', message: err instanceof Error ? err.message : String(err) };
     }
   };

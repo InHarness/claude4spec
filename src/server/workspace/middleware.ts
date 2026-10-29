@@ -1,5 +1,5 @@
 import type { RequestHandler } from 'express';
-import { ProjectBuildFailedError, type ProjectContextCache } from './context-cache.js';
+import { ProjectRemovedError, type ProjectContextCache } from './context-cache.js';
 import type { WorkspaceRegistry } from './registry.js';
 import type { WorkspaceRecord } from './types.js';
 
@@ -14,13 +14,17 @@ export function projectNotInWorkspaceMessage(ws: WorkspaceRecord, id: string): s
 
 /**
  * M31 transport middleware — mounted at `/api/projects/:id`. Resolves the
- * project from the URL prefix, lazily builds/fetches its context, and
+ * project from the URL prefix, takes its context — ready from the cache, or
+ * at the end of its build (preceded by the activation when the project needs
+ * one), which the request waits for (M31 `l4txpfx0`, `m31ctx001`) — and
  * dispatches into the per-context router (Express strips the mount path, so
  * ctx routers are mounted `/api`-less).
  *
- * - unknown id → 404 PROJECT_NOT_IN_WORKSPACE, before any handler
- * - build failure → 500 PROJECT_BUILD_FAILED for that project only;
- *   the process keeps serving the rest
+ * - unknown id → 404 PROJECT_NOT_IN_WORKSPACE, before any handler — and the
+ *   same refusal for a request that waited for a project detached meanwhile
+ *   (M31 `xocjjal4`)
+ * - failed build → 500 PROJECT_BUILD_FAILED for that project only, the cause
+ *   in the envelope's message; the process keeps serving the rest
  */
 export function projectDispatchMiddleware(
   registry: WorkspaceRegistry,
@@ -29,23 +33,22 @@ export function projectDispatchMiddleware(
 ): RequestHandler {
   return async (req, res, next) => {
     const id = req.params.id ?? '';
-    const project = registry.getProject(workspace, id);
-    if (!project) {
-      return res.status(404).json({
+    const notInWorkspace = () =>
+      res.status(404).json({
         error: {
           code: 'PROJECT_NOT_IN_WORKSPACE',
           message: projectNotInWorkspaceMessage(registry.getWorkspace(workspace.name) ?? workspace, id),
         },
       });
-    }
+    const project = registry.getProject(workspace, id);
+    if (!project) return notInWorkspace();
     try {
       const ctx = await cache.get(project);
       ctx.router(req, res, next);
     } catch (err) {
-      const message =
-        err instanceof ProjectBuildFailedError ? err.message : err instanceof Error ? err.message : String(err);
+      if (err instanceof ProjectRemovedError) return notInWorkspace();
       res.status(500).json({
-        error: { code: 'PROJECT_BUILD_FAILED', message },
+        error: { code: 'PROJECT_BUILD_FAILED', message: err instanceof Error ? err.message : String(err) },
       });
     }
   };

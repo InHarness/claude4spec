@@ -1,8 +1,15 @@
 import { Router } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
-import { builtinRoot, migrateConfigToV4, normalizeSkillConfig, readConfig, validateRootDirs } from '../config.js';
-import { recoverPendingRootRename, rootIdChain, readRootRenames } from '../root-renames.js';
+import {
+  builtinRoot,
+  configMigrationPending,
+  migrateConfigToV4,
+  normalizeSkillConfig,
+  readConfig,
+  validateRootDirs,
+} from '../config.js';
+import { readRenameJournal, recoverPendingRootRename, rootIdChain, readRootRenames } from '../root-renames.js';
 import type { ContextInvalidation, Root } from '../../shared/types.js';
 import { resolveAgentTurnScope } from '../services/agent-execution-scope.js';
 import type { PageRootRuntime } from '../routes/pages.js';
@@ -44,8 +51,8 @@ import { PlanService } from '../services/plan.js';
 import { artifactAnchorInjectionSubscriber } from '../services/anchor-injection.js';
 import { plansRouter } from '../routes/plans.js';
 import { skillsRouter } from '../routes/skills.js';
-import { backfillPlansToFilesystem } from './plan-migration.js';
-import { backfillEntityTimestamps } from './entity-timestamp-backfill.js';
+import { backfillPlansToFilesystem, legacyPlanRowsPending } from './plan-migration.js';
+import { backfillEntityTimestamps, entityTimestampsPending } from './entity-timestamp-backfill.js';
 import { BriefService } from '../services/brief.js';
 import { briefsRouter } from '../routes/briefs.js';
 import { patchesRouter } from '../routes/patches.js';
@@ -102,6 +109,7 @@ import { registerCoreReactions, type CoreReactionContext } from './core-reaction
 import { mountRegistryRoots, bindRegistryReactions } from './root-registry-runtime.js';
 import { RootRegistry, rootDirAbs } from '../roots/registry.js';
 import { headChangeOriginMarker } from '../fs/head-change-origin.js';
+import { isExcludedSubtree } from '../fs/watch-ignore.js';
 import { mountRelPaths } from '../fs/mount-paths.js';
 import { kindSelects, type RegistryRoot } from '../../shared/root-kinds.js';
 import { FileVersionCapture } from '../services/file-version-capture.js';
@@ -160,7 +168,7 @@ import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import type { ActiveAdapter, PendingInput } from '../routes/agent-turn.js';
 import { abortAllTurns } from '../routes/agent-turn.js';
 import { ProjectWsEmitter } from '../ws/project-emitter.js';
-import { ensureWelcomePage } from './bootstrap.js';
+import { ensureWelcomePage, ProjectNeedsActivationError } from './bootstrap.js';
 import type { WorkspaceRegistry } from './registry.js';
 import type { WorkspaceRecord } from './types.js';
 
@@ -239,17 +247,39 @@ export interface ProjectContextDeps {
    * then the prod constant.
    */
   remoteApiUrl?: string;
+  /**
+   * 2.1.60 (M01 `dsh8ezbz`): `'none'` — the background build, which writes
+   * nothing into the project directory except the missing directories of its
+   * registry roots: a step that would write (a config migration, the migration
+   * to text) throws {@link ProjectNeedsActivationError} before any boot work
+   * starts, and the boot passes skip their write-backs (anchor injection, the
+   * rewrite of an upgraded entity payload). `'allowed'` (default) — the build
+   * that follows an activation. ASSUMPTION:dev-0003 — legacy plan/release rows
+   * and unstamped entity files count as the migration to text; anchor injection
+   * and the upgraded-payload rewrite are skipped, not «needs activation».
+   */
+  projectWrites?: 'allowed' | 'none';
+  /**
+   * 2.1.60 (M31 `m31ctx001`): the build queue's abort — the process shutdown
+   * interrupts the build in progress. The build checks it between its awaited
+   * steps (and stops the entity rebuild between slices); an aborted build
+   * releases its partial resources in reverse acquisition order and rejects
+   * with the signal's reason.
+   */
+  signal?: AbortSignal;
   /** M31: pinged when an agent turn finishes — context-cache idle-retry hook. */
   onTurnFinished?: () => void;
   /**
-   * M31: PATCH /config touched a context-defining field → cache.invalidate(projectId).
+   * M31: a context-defining change (PATCH /config, a trust answer, an overlay
+   * reload, a HEAD change) → cache.invalidate(projectId), which rebuilds the
+   * context at once (2.1.60).
    * 2.1.16: `opts.reason` travels to this context's `project:disposed`.
    */
   onContextConfigChanged?: (opts?: ContextInvalidation) => void;
   /**
    * 2.1.9 (M52 `1v62dbhb`): the layer's implementor hands out ANOTHER project's
-   * context on request (the M31 cache — lazily built, its lifetime and eviction
-   * are the cache's). The `project-exposed` source asks for its provider's
+   * context on request (the M31 cache — built in the background, a request
+   * waits for its build; its lifetime is the cache's). The `project-exposed` source asks for its provider's
    * context on every read and keeps no handle. Absent ⇒ no provider is readable
    * (attachments still list; their reads refuse as unreachable).
    */
@@ -287,7 +317,7 @@ export interface ProjectContext {
   activeAdapters: Map<string, ActiveAdapter>;
   pendingInputs: Map<string, PendingInput>;
   writingStyle: { slug: string; title: string } | null;
-  /** True while any agent turn runs in this project (LRU dispose guard). */
+  /** True while any agent turn runs in this project (guards the dispose of a retired context). */
   hasInFlightTurn: () => boolean;
   /**
    * 0.2.13: everything the external MCP surface needs, for one profile.
@@ -335,12 +365,18 @@ function nextContextInstance(): number {
   return ++contextInstanceSeq;
 }
 
+/** 2.1.60 (M01 `dsh8ezbz` step 8): the migrations to text, as a build error names them. */
+const MIGRATION_DB_ONLY_ENTITIES = 'entities held only in the database';
+const MIGRATION_RELEASES_WITHOUT_SLUG = 'releases without a slug';
+const MIGRATION_UNSTAMPED_ENTITIES = 'entity files without createdAt/updatedAt';
+
 export async function buildProjectContext(deps: ProjectContextDeps): Promise<ProjectContext> {
   // Partial-build cleanup: resources acquired before a build failure (db
   // handle, watcher fds) are released in reverse order — a failed build is
   // cached as a 500 for THIS project only and must leak nothing.
   const cleanup: Array<() => unknown> = [];
   try {
+    deps.signal?.throwIfAborted();
     return await buildInner(deps, cleanup);
   } catch (err) {
     for (const fn of cleanup.reverse()) {
@@ -359,6 +395,8 @@ async function buildInner(
   cleanup: Array<() => unknown>,
 ): Promise<ProjectContext> {
   const { registry, workspace, projectId, cwd, gateway, mode } = deps;
+  /** 2.1.60 (M01 `dsh8ezbz`): the background build — no write into the project directory. */
+  const noProjectWrites = deps.projectWrites === 'none';
   const router = Router();
   const onContextConfigChanged = (opts?: ContextInvalidation): void => {
     deps.onContextConfigChanged?.(opts);
@@ -378,8 +416,16 @@ async function buildInner(
   // 0.2.101: finish or undo a rename interrupted between its two writes, before
   // anything reads `roots[]` (see `root-renames.ts`). Idempotent and a no-op
   // without a journal.
-  recoverPendingRootRename(cwd);
-  migrateConfigToV4(cwd);
+  // 2.1.60: the background build migrates nothing — a pending rewrite is the
+  // activation's (M26 `hozcm4w5`), checked here before anything is acquired.
+  if (noProjectWrites) {
+    if (readRenameJournal(cwd) !== null || configMigrationPending(cwd)) {
+      throw new ProjectNeedsActivationError(['config-migration']);
+    }
+  } else {
+    recoverPendingRootRename(cwd);
+    migrateConfigToV4(cwd);
+  }
   const bootConfig = readConfig(cwd);
   // 0.1.96: page roots come from config.roots[] — the file and the defaults
   // alone (2.1.58: no start flag names a root's directory).
@@ -448,6 +494,7 @@ async function buildInner(
   // on the client when `localPluginsPresent && trust === undefined`.
   const trust = registry.getProjectTrust(workspace, projectId);
   const overlayLayer = await loadOverlayLayer(cwd, trust, deps.overlayImporter);
+  deps.signal?.throwIfAborted();
   const { localPluginsPresent, overlayResult } = overlayLayer;
   const overlay: ProjectPluginOverlay | undefined = overlayResult?.overlay;
   const overlayRecords: PluginLoadRecord[] = overlayLayer.records;
@@ -541,6 +588,7 @@ async function buildInner(
   // services exist: mount → bind is a contract per source.
   const { rootRuntimes, artifactMounts, sourceByRootId, storeByRootId, writerByRootId, serializerByRootId } =
     await mountRegistryRoots({ cwd, registry: rootRegistry, userRoots: effectiveRoots, w });
+  deps.signal?.throwIfAborted();
   const rootById = new Map(rootRuntimes.map((rt) => [rt.root.id, rt]));
   // The BASE root's runtime backs the many single-root consumers that still take
   // one PagesService/FileSerializer (release restore, entity reference-tools,
@@ -557,11 +605,18 @@ async function buildInner(
   // the `plans` root (`.claude4spec/plans/*.md`) — must run before the initial-sync IIFE below (~line
   // 962) so its file_version capture picks up these files, and before
   // PlanService is constructed since it reads exclusively through plansMount now.
+  // 2.1.60: legacy plan ROWS would be written as files into the project — the
+  // background build leaves that migration to text to the activation. (An
+  // empty legacy table is dropped in the slot alone.)
+  if (noProjectWrites && legacyPlanRowsPending(db.handle)) {
+    throw new ProjectNeedsActivationError(['text-migration']);
+  }
   await backfillPlansToFilesystem({
     db: db.handle,
     plansPages: plansMount.store,
     backupDb: () => backupDbBeforeMigration(dbSlotDir),
   });
+  deps.signal?.throwIfAborted();
 
   const tagsService = new TagsService(db.handle);
   tagsService.setHost(pluginHost);
@@ -616,6 +671,66 @@ async function buildInner(
   });
   // M34/L11: wire version-restore deps now that entityStore exists.
   versionService.configureRestore(entityStore, tagsService);
+  /**
+   * M29 entity store boot inputs — is there text, and does the database hold
+   * entities the text lacks? Read by the entity boot below.
+   */
+  const readEntityBootCounts = () => ({
+    fileEntityCount: entityStore.listAll().length,
+    hasTagsFile: entityStore.readTags().length > 0,
+    dbEntityCount: rawReader
+      .listTypes()
+      .filter((t) => pluginHost.getEntity(t))
+      .reduce((n, t) => n + rawReader.listSlugs(t).length, 0),
+  });
+  /**
+   * 2.1.60 (M01 `dsh8ezbz` step 8): the background build stops at «needs
+   * activation» on any migration to text — BEFORE any boot work starts, so the
+   * partial build releases nothing still running. Read once here and handed to
+   * the entity boot below. An unreadable store is left to that boot, which
+   * fails the same way before it would write.
+   */
+  const tryEntityBootCounts = (): ReturnType<typeof readEntityBootCounts> | undefined => {
+    try {
+      return readEntityBootCounts();
+    } catch {
+      return undefined;
+    }
+  };
+  const releasesWithoutSlugPending = (): boolean =>
+    db.handle.prepare(`SELECT 1 FROM spec_release WHERE slug IS NULL LIMIT 1`).get() !== undefined;
+  /**
+   * The migrations to text still due in this project — each one a write into
+   * the project directory: entities held only in the database (the DB→text
+   * export), legacy releases without a slug (their files), entity files
+   * without timestamps (the 0.2.4 backfill). Legacy plan rows are checked at
+   * their own cutover above. Empty when none is due.
+   */
+  const pendingTextMigrations = (counts: ReturnType<typeof readEntityBootCounts> | undefined): string[] => {
+    const pending: string[] = [];
+    const { fileEntityCount = 0, hasTagsFile = false, dbEntityCount = 0 } = counts ?? {};
+    if (fileEntityCount === 0 && !hasTagsFile && dbEntityCount > 0) pending.push(MIGRATION_DB_ONLY_ENTITIES);
+    if (releasesWithoutSlugPending()) pending.push(MIGRATION_RELEASES_WITHOUT_SLUG);
+    if (entityTimestampsPending(entityStore)) pending.push(MIGRATION_UNSTAMPED_ENTITIES);
+    return pending;
+  };
+  let entityBootCounts: ReturnType<typeof readEntityBootCounts> | undefined;
+  /**
+   * 2.1.60 (carried U3 rev-0001): the migrations to text the build with writes
+   * left incomplete — read off the outcome of its own write steps below, never
+   * by walking the store again.
+   */
+  const incompleteMigrations: string[] = [];
+  /** The DB→text export has started and not finished. */
+  let exportingToText = false;
+  /** The timestamp backfill ran (to its end or to its own error). */
+  let timestampBackfillRan = false;
+  if (noProjectWrites) {
+    entityBootCounts = tryEntityBootCounts();
+    if (pendingTextMigrations(entityBootCounts).length > 0) {
+      throw new ProjectNeedsActivationError(['text-migration']);
+    }
+  }
   /**
    * 0.2.77 — where projection freshness is kept for this project.
    *
@@ -706,6 +821,12 @@ async function buildInner(
     rawReader,
     projectionStatus,
   );
+  // 2.1.60: a rebuild between its read slices ends without a commit once the
+  // context is released — before the db handle closes (reverse order).
+  cleanup.push(() => entityIndexer.dispose());
+  // 2.1.60 (M31 `m31ctx001`): the shutdown stops the boot rebuild between its
+  // slices too — the build then throws at its next checkpoint (`interrupted`).
+  deps.signal?.addEventListener('abort', () => entityIndexer.dispose(), { once: true });
   // 0.1.118: sibling triad for the on-disk release-identity store — mirrors
   // the entities triad above exactly (its own registry root, atomic file store,
   // upsert-by-slug indexer keeping spec_release.id stable — see
@@ -1536,7 +1657,8 @@ async function buildInner(
   });
   // `project-bound`: the project parameter's default comes from the URL this
   // router is already mounted under. See `routes/mcp.ts`.
-  router.use('/mcp', projectMcpRouter(readPackageVersion(), projectId, mcpSurfaceDeps));
+  const mcpRouter = projectMcpRouter(readPackageVersion(), projectId, mcpSurfaceDeps);
+  router.use('/mcp', mcpRouter);
   router.use('/threads', threadsRouter(agentDeps));
   router.use('/sections', sectionsRouter(sectionsService, discovery, sectionWriteDeps));
   router.use('/todos', todosRouter(todosIndexer));
@@ -1674,6 +1796,16 @@ async function buildInner(
    * directory that is gone.
    */
   const bootWork: Promise<unknown>[] = [];
+  /**
+   * 2.1.60 (M31 `m31ctx001`): a checkpoint once the boot passes run — the
+   * shutdown aborted the build: the passes settle first (so the partial
+   * build's cleanup closes no handle under them), then the build rejects.
+   */
+  const interrupted = async (): Promise<void> => {
+    if (!deps.signal?.aborted) return;
+    await Promise.allSettled(bootWork);
+    deps.signal.throwIfAborted();
+  };
   bootWork.push(sidebarAccordions.rebuildAll().catch((err) => {
     console.warn('[m02] sidebar accordions initial build failed:', (err as Error).message);
   }));
@@ -1686,7 +1818,8 @@ async function buildInner(
   // re-invalidating the projectId the new context now owns — dispose unmounts
   // this source.
   if (overlayMounted) {
-    w.mountSource({ source: PLUGINS_OVERLAY_SOURCE, dir: projectPluginsDir(cwd) });
+    // M33 declares the excluded subtrees of its source (2.1.60).
+    w.mountSource({ source: PLUGINS_OVERLAY_SOURCE, dir: projectPluginsDir(cwd), exclude: isExcludedSubtree });
     let overlayFired = false;
     const onOverlayChange = (relPath: string): void => {
       // Fire ONCE. Invalidating this context retires it, and the rebuilt context
@@ -1735,8 +1868,10 @@ async function buildInner(
   const indexedRows = (db.handle.prepare('SELECT COUNT(*) AS n FROM section_index').get() as { n: number }).n;
   if (indexedRows === 0) projectionStatus.markStale(PROJECTION_IDS.sections);
   const sectionsBootPass = projectionStatus.beginRebuild();
+  // 2.1.60: the background build indexes the pages as they are on disk — no
+  // anchor is minted into a file (`indexAll` without `suppress` writes nothing).
   bootWork.push(sectionIndexer
-    .indexAll((source, relPath) => w.suppress(source, relPath))
+    .indexAll(noProjectWrites ? undefined : (source, relPath) => w.suppress(source, relPath))
     /**
      * `finishRebuild`, not `markFresh` — the boot rebuild is slow and mounts are
      * already live, so a reaction can fail on some page while it runs. Clearing
@@ -1838,17 +1973,13 @@ async function buildInner(
   // text" (entity files or `tags.json`) — activation mkdirs every registry root
   // (M31 bootstrap) before this runs, so the bare directory is always there.
   try {
-    const fileEntityCount = entityStore.listAll().length;
-    const hasTagsFile = entityStore.readTags().length > 0;
-    const dbEntityCount = rawReader
-      .listTypes()
-      .filter((t) => pluginHost.getEntity(t))
-      .reduce((n, t) => n + rawReader.listSlugs(t).length, 0);
+    const { fileEntityCount, hasTagsFile, dbEntityCount } = entityBootCounts ?? readEntityBootCounts();
     const filesPresent = fileEntityCount > 0 || hasTagsFile;
 
     if (!filesPresent && dbEntityCount > 0) {
       // Pre-M29 project: entities live only in SQLite → export to text once.
       console.log(`[m29] exporting ${dbEntityCount} entities DB→text into ${entitiesRootDir} ...`);
+      exportingToText = true;
       backupDbBeforeMigration(dbSlotDir);
       for (const type of rawReader.listTypes()) {
         if (!pluginHost.getEntity(type)) continue;
@@ -1861,6 +1992,7 @@ async function buildInner(
         for (const slug of rawReader.listSlugs(type)) entityStore.persist(type, slug);
       }
       entityStore.persistTags();
+      exportingToText = false;
     } else if (filesPresent && dbEntityCount > 0 && fileEntityCount !== dbEntityCount) {
       // Edge (brief migrt001 §3): committed files differ from a non-empty DB
       // (e.g. a git pull dropped/added entities). Files win on rebuild — back up
@@ -1885,12 +2017,19 @@ async function buildInner(
      * fields short-circuits before any `git` spawn, so this costs one directory
      * walk per boot forever after.
      */
-    try {
-      backfillEntityTimestamps(db.handle, entityStore, cwd, entitiesRootDir);
-    } catch (err) {
-      // A missing timestamp degrades ordering; it does not stop the project
-      // from serving. Never let the backfill be the reason boot fails.
-      console.warn('[timestamp-backfill] skipped:', (err as Error).message);
+    // 2.1.60: skipped by the background build — it was refused above when a
+    // file lacked its timestamps, so there is nothing to stamp.
+    if (!noProjectWrites) {
+      try {
+        const { unwritten } = backfillEntityTimestamps(db.handle, entityStore, cwd, entitiesRootDir);
+        if (unwritten > 0) incompleteMigrations.push(MIGRATION_UNSTAMPED_ENTITIES);
+      } catch (err) {
+        // Logged here; the files it left unstamped fail this build further down
+        // (the migration-to-text check after the release backfill), with its cause.
+        console.warn('[timestamp-backfill] skipped:', (err as Error).message);
+        incompleteMigrations.push(MIGRATION_UNSTAMPED_ENTITIES);
+      }
+      timestampBackfillRan = true;
     }
 
     /**
@@ -1900,12 +2039,15 @@ async function buildInner(
      * here would erase the very fact it just recorded.
      */
     const pass = projectionStatus.beginRebuild();
-    await entityIndexer.indexAll();
+    await entityIndexer.indexAll({ persistUpgrades: !noProjectWrites });
     projectionStatus.finishRebuild(PROJECTION_IDS.entities, pass);
   } catch (err) {
     console.error('[entity-indexer] boot indexAll failed:', err);
     projectionStatus.markStale(PROJECTION_IDS.entities);
+    // The DB→text export broke off: entities are still held only in the database.
+    if (exportingToText) incompleteMigrations.push(MIGRATION_DB_ONLY_ENTITIES);
   }
+  await interrupted();
   // M29: enable tags.json persistence only AFTER the boot rebuild, so any
   // auto-created tag during indexAll does not write files mid-rebuild.
   tagsService.setEntityStore(entityStore);
@@ -1969,6 +2111,32 @@ async function buildInner(
   } catch (err) {
     console.error('[release-backfill] boot migration failed:', err);
   }
+  /**
+   * 2.1.60 (carried U3 rev-0001): the build with writes leaves no migration to
+   * text half done. The background build stops at «needs activation» on
+   * {@link pendingTextMigrations}, so one the activation could not complete (a
+   * release without a free slug, an entity file whose timestamps could not be
+   * written, a failed DB→text export) would keep the project there forever: it
+   * is this build's error instead — the error state, its cause in
+   * `PROJECT_BUILD_FAILED`. Derived from the write steps' own outcomes.
+   * The boot passes already running settle first, so the partial build's
+   * cleanup closes no handle under them.
+   */
+  if (!noProjectWrites) {
+    // A release row the backfill above left without a slug — one cheap SELECT.
+    if (releasesWithoutSlugPending()) incompleteMigrations.push(MIGRATION_RELEASES_WITHOUT_SLUG);
+    // The timestamp backfill never ran (the entity boot broke off before it):
+    // only then is its outcome unknown and the store walked to learn it.
+    if (!timestampBackfillRan && entityTimestampsPending(entityStore)) {
+      incompleteMigrations.push(MIGRATION_UNSTAMPED_ENTITIES);
+    }
+    if (incompleteMigrations.length > 0) {
+      await Promise.allSettled(bootWork);
+      throw new Error(
+        `the migration to text could not complete (${incompleteMigrations.join(', ')}) — see the server log for the failed writes`,
+      );
+    }
+  }
 
   // 0.1.118: boot rebuild of the spec_release derived cache from the `releases` root.
   // Order relative to the entity rebuild doesn't matter (independent tables).
@@ -1982,6 +2150,7 @@ async function buildInner(
     // thing — so its only scope is global.
     projectionStatus.markStale(PROJECTION_IDS.releases);
   }
+  await interrupted();
   // 2.1.49 (M17 m17ui001): from here on the store's own writes announce
   // `file:changed` in the `releases` root, so open tabs refresh the release list
   // (M49). Wired after the boot backfill and rebuild above: nothing listens while
@@ -2039,9 +2208,9 @@ async function buildInner(
        * The turn registries are context-lifetime state keyed by `threadId`, and
        * until now nothing released them: dispose closed the db and left every
        * entry in place. That was safe only by accident — `ProjectContextCache`
-       * refuses to EVICT a context with an in-flight turn, so the leak was
-       * covered by somebody else's guard rather than by this module's own
-       * cleanup. The two paths that ignore that guard, `retire()` (project
+       * refuses to dispose a retired context with an in-flight turn, so the
+       * leak was covered by somebody else's guard rather than by this module's
+       * own cleanup. The two paths that ignore that guard, `retire()` (project
        * purge) and `disposeAll()` (process shutdown), disposed underneath a
        * running turn, whose `finally` then mutated a disposed context and wrote
        * through a closed handle.
@@ -2059,6 +2228,9 @@ async function buildInner(
        * disposed around, which is where this code stood before.
        */
       await abortAllTurns(activeAdapters, pendingInputs);
+      // 2.1.60: an entity rebuild in flight (a manual projection rebuild) ends
+      // between its slices without committing through the handle closed below.
+      entityIndexer.dispose();
       // One call retires every mount and subscription of THIS context —
       // pages, artifacts, entities, releases and the plugin overlay — and settles
       // its pending debounce timers. `scope: 'process'` mounts (the base plugin
@@ -2066,10 +2238,18 @@ async function buildInner(
       // pre-0.2.10 gap where `releasesWatcher` was never closed on dispose.
       await w.dispose();
       pluginHost.clearMcpFactories();
+      // An open MCP connection holds the surface composed from this context
+      // until its next request — dropped here, so an idle session does not
+      // keep the released context reachable (carried U6 rev-0001). Only the
+      // sessions still on THIS context: one re-synced to the successor keeps it.
+      mcpRouter.releaseSurfaces();
       // 2.1.9 (M52 L10): the context-scoped write channel is released explicitly.
       specSkillTools.dispose();
       // M33 phase 2: drop references to dynamically imported project-local
       // modules (next rebuild re-imports), alongside the MCP factory release.
+      // ASSUMPTION:dev-0005 — the overlay has no reload pipeline of its own (its
+      // change IS a context rebuild), so this dispose runs the overlay plugins'
+      // `onUnregister`; the base tier's records are never touched here (M13 `m13plenv`).
       overlayResult?.dispose();
       gateway.closeRoom(projectId, opts?.reason);
       db.close();

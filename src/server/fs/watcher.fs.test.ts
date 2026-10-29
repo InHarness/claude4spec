@@ -8,10 +8,10 @@ import { FileWatchRuntime, type WatchSubscriber, type WatchScope } from './watch
  * The handful of M40 properties that genuinely need a real fs provider.
  *
  * Kept in their OWN file, deliberately small and short-sleeping: every case here
- * holds a live chokidar instance, and the vitest fork pool is shared with
+ * holds live system watches, and the vitest fork pool is shared with
  * timing-sensitive suites elsewhere. Everything that can be proven without a
  * provider lives in `watcher.test.ts`, driven by `flush()`. This is the same
- * reasoning that keeps `tests/helpers/test-app.ts` from ever starting chokidar.
+ * reasoning that keeps `tests/helpers/test-app.ts` from ever starting an fs provider.
  */
 
 const tmpDirs: string[] = [];
@@ -65,7 +65,7 @@ describe('M40 — flush vs the fs echo', () => {
     await r.flush(CTX, 'pages:pages', 'a.md');
     expect(log).toEqual(['capture']);
 
-    // The chokidar echo lands ~100ms later; it must be swallowed.
+    // The provider's echo lands after write stabilisation; it must be swallowed.
     await new Promise((res) => setTimeout(res, 550));
     expect(log).toEqual(['capture']);
   });
@@ -104,7 +104,7 @@ describe('M40 — fs provider behaviour', () => {
 
   it('a second save inside the self-write window still dispatches', async () => {
     // Regression for the defect that made `capture` lose an edit outright: the
-    // route write and the anchor write-back both touch the same file, chokidar
+    // route write and the anchor write-back both touch the same file, the provider
     // coalesces them into ONE event, and the old token queue was left holding a
     // live `suppress`. The next save then popped that stale token and never
     // dispatched — no version row, no reindex, HTTP 200 all the same.
@@ -183,12 +183,11 @@ describe('M40 — fs provider behaviour', () => {
       { id: 'm06-index', phase: 'projection', scope: CTX },
     );
 
-    // Wait until the provider is live. The mount runs with `ignoreInitial`, so a
-    // file written before chokidar finishes its initial scan is folded into that
-    // scan and never reported — on Linux (inotify) the scan routinely outlasts a
-    // write issued right after `mountSource`, and the control below was lost
-    // that way. A probe rewritten until it dispatches proves the watcher sees
-    // writes (and knows `b.md`, so its unlink is reported) before the operation.
+    // Wait until the provider is live. Its first listing records what exists
+    // without reporting it, so a file the listing has not reached yet cannot be
+    // reported as removed — on a slow provider the listing may outlast a write
+    // issued right after `mountSource`. A probe rewritten until it dispatches
+    // proves the watcher sees writes (and knows `b.md`, so its unlink is reported) before the operation.
     // Each rewrite waits out a full debounce + write-stabilisation window, so the
     // rewrites themselves never keep re-arming the per-file debounce.
     const probe = path.join(dir, 'probe.md');
@@ -293,4 +292,45 @@ describe('M40 — fs provider behaviour', () => {
     expect(await until(() => seen.length >= 2)).toBe(true);
     expect(seen.sort()).toEqual(['sub/a.md', 'sub/b.md']);
   });
+});
+
+/** System watch handles the process holds right now (one per `fs.watch`). */
+function watchHandles(): number {
+  return process.getActiveResourcesInfo().filter((r) => r === 'FSEventWrap').length;
+}
+
+describe('M40 2.1.60 — the cost of a mount does not grow with the number of files', () => {
+  it('[ac:ac-dodanie-1000-plikow-do-istniejacego-k] adding 1000 files to an existing dir of an observed root does not increase the watch resources the process holds', async () => {
+    const dir = tmp();
+    fs.mkdirSync(path.join(dir, 'existing'));
+    fs.writeFileSync(path.join(dir, 'existing', 'seed.md'), 'seed\n');
+    const r = runtime();
+    r.mountSource({ source: 'pages:pages', dir, scope: CTX });
+    const seen = new Set<string>();
+    r.subscribe(
+      'pages:pages',
+      { onChange: (_s, _src, rel) => void seen.add(rel), onUnlink: () => {} },
+      { id: 'm06-index', phase: 'projection', scope: CTX },
+    );
+
+    // The provider is live (and has listed the tree) once a probe dispatches.
+    const probe = path.join(dir, 'probe.md');
+    let live = false;
+    for (let n = 0; n < 10 && !live; n++) {
+      fs.writeFileSync(probe, `probe ${n}\n`);
+      live = await until(() => seen.has('probe.md'), 1000);
+    }
+    expect(live).toBe(true);
+    const before = watchHandles();
+    expect(before).toBeGreaterThan(0); // the mount does observe through a system watch
+
+    for (let i = 0; i < 1000; i++) {
+      fs.writeFileSync(path.join(dir, 'existing', `f${i}.md`), `# ${i}\n`);
+    }
+    // Every one of them is observed…
+    expect(await until(() => [...seen].filter((p) => p.startsWith('existing/f')).length === 1000, 20_000)).toBe(true);
+    // …and the process holds no more watch resources than before the 1000 files.
+    // (`<=`: a handle closed by an earlier test may still be draining at `before`.)
+    expect(watchHandles()).toBeLessThanOrEqual(before);
+  }, 40_000);
 });

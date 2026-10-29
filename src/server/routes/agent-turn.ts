@@ -87,7 +87,7 @@ export interface AgentTurnDeps {
   pendingInputs: Map<string, PendingInput>;
   /**
    * M31: pinged in the turn's `finally` — the context cache uses it to retry
-   * disposing retired/evicted contexts once they go idle.
+   * disposing retired (invalidated) contexts once they go idle.
    */
   onTurnFinished?: () => void;
   chatService: ChatService;
@@ -867,7 +867,7 @@ export async function runAgentTurn(
    * statement that can throw between the `set` and the `try` was a permanent
    * leak: the thread keeps an `activeAdapters` entry with no turn behind it, so
    * `POST /api/chat` answers 409 STREAM_IN_PROGRESS forever and
-   * `hasInFlightTurn()` pins the whole `ProjectContext` against eviction — the
+   * `hasInFlightTurn()` pins the whole `ProjectContext` against disposal — the
    * "wedged until the process restarts" state, reachable from any throw during
    * setup. Registering here makes the register/release pair span exactly one
    * try/finally.

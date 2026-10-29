@@ -3,10 +3,14 @@
  * committed entity files. Hybrid SQLite-primary indexer modelled on
  * SectionIndexerService (M06): queries go to the DB, no in-memory map.
  *
- *   - indexAll()      full rebuild at boot, dependency-ordered (tags.json → the
- *                     `dependsOn` topological order of the ACTIVE modules).
- *                     Awaited BEFORE app.listen(); does NOT broadcast (no client
- *                     connected).
+ *   - indexAll()      full rebuild at EVERY ProjectContext build (in the
+ *                     background after the process start, after an activation,
+ *                     and on the rebuild after an invalidation), dependency-
+ *                     ordered (tags.json → the `dependsOn` topological order of
+ *                     the ACTIVE modules). Awaited by the build, so it holds back
+ *                     THIS project's readiness; does NOT broadcast. It reads the
+ *                     files in slices and yields the event loop between them, so
+ *                     one project's build never stalls requests to the others.
  *
  * 0.2.2: neither the order nor the table names are hardcoded here any more. The
  * order comes from each module's declared `dependsOn` (so `dto` precedes
@@ -43,7 +47,41 @@ import {
 } from '../serialization/payload-upgrade.js';
 import type { WatchSubscriber, WatchScope } from '../fs/watcher.js';
 
+/**
+ * 2.1.60 (M29 `m29idx001`) — how many entity files `indexAll()` reads and parses
+ * before it hands the event loop back. The build runs in the background while
+ * other projects serve requests, so the rebuild may not be one uninterrupted
+ * stretch of synchronous work proportional to the project's size.
+ */
+export const INDEX_SLICE_FILES = 64;
+
+/** One turn of the event loop: pending I/O callbacks (other requests) run first. */
+const yieldEventLoop = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+/** An entity file read, parsed and brought to the current payload shape — not yet written. */
+interface PreparedEntity {
+  type: RawEntityType;
+  slug: string;
+  snap: unknown;
+  upgraded: boolean;
+}
+
 export class EntityIndexerService implements WatchSubscriber {
+  /**
+   * The paths a watch event touched while the `indexAll()` in flight was
+   * between its read slices. Such a path was read BEFORE the event (or not
+   * listed at all, if it is new), so the commit re-reads it rather than writing
+   * the stale copy over the reaction's fresher row. `null` when no rebuild runs.
+   */
+  private touchedDuringRebuild: Set<string> | null = null;
+  /**
+   * The rebuild in flight. `indexAll()` yields between slices, so a second call
+   * (the manual projection rebuild during the build's own pass) would
+   * interleave with the first: it reuses this promise instead.
+   */
+  private rebuild: Promise<void> | null = null;
+  /** Set by {@link dispose}: a rebuild between its slices ends without a commit. */
+  private disposed = false;
 
   constructor(
     private db: Database.Database,
@@ -174,7 +212,32 @@ export class EntityIndexerService implements WatchSubscriber {
     return out;
   }
 
-  async indexAll(): Promise<void> {
+  /**
+   * `persistUpgrades: false` (2.1.60, M01 `dsh8ezbz`) — the background context
+   * build writes nothing into the project: an entity file in an older payload
+   * shape is indexed in its upgraded shape, and the file keeps its old shape
+   * until a build with writes (an activation) or the file's next write.
+   */
+  indexAll(opts: { persistUpgrades?: boolean } = {}): Promise<void> {
+    if (this.rebuild) return this.rebuild;
+    const run = this.runIndexAll(opts).finally(() => {
+      this.rebuild = null;
+    });
+    this.rebuild = run;
+    return run;
+  }
+
+  /**
+   * The context is released (its dispose, or the cleanup of a failed build):
+   * a rebuild still between its read slices ends early — it never commits
+   * through a database handle that is about to close.
+   */
+  dispose(): void {
+    this.disposed = true;
+  }
+
+  private async runIndexAll(opts: { persistUpgrades?: boolean }): Promise<void> {
+    const persistUpgrades = opts.persistUpgrades ?? true;
     const startedAt = performance.now();
     let count = 0;
     /**
@@ -197,6 +260,36 @@ export class EntityIndexerService implements WatchSubscriber {
     // entity_version (the log) and section_entity_link (derived from pages) are NOT
     // cleared. The whole restore chain is synchronous, so it fits in one transaction.
     const ordered = this.orderedModules();
+    /**
+     * 2.1.60 — two steps. The files are read and parsed in slices that yield the
+     * event loop; the database is then written in ONE synchronous transaction.
+     * The transaction does not span the yields on purpose: this connection is
+     * shared with the context's other writers (section/todo/link indexers, the
+     * reaction chain), so an open transaction across a yield would absorb their
+     * writes as savepoints — and lose them on a rollback — and would show a
+     * half-cleared index to this context's own readers during a manual rebuild.
+     */
+    const touched = new Set<string>();
+    this.touchedDuringRebuild = touched;
+    let prepared: Map<string, Map<string, PreparedEntity | null>>;
+    try {
+      prepared = await this.readSliced(ordered);
+      if (this.disposed) return;
+      // A watch event between the slices means the copy read earlier may be
+      // stale, or the file is new. From here to the commit nothing yields, so
+      // this re-read is the last word.
+      for (const relPath of touched) {
+        const parsed = this.store.parseRelPath(relPath);
+        const forType = parsed ? prepared.get(parsed.type) : undefined;
+        if (!parsed || !forType) continue; // not a type this rebuild refills
+        forType.set(
+          parsed.slug,
+          this.store.exists(parsed.type, parsed.slug) ? this.prepareEntity(parsed.type, parsed.slug) : null,
+        );
+      }
+    } finally {
+      this.touchedDuringRebuild = null;
+    }
     this.db
       .transaction(() => {
         // Children before parents. Entity tables are cleared in REVERSE dependency
@@ -293,9 +386,8 @@ export class EntityIndexerService implements WatchSubscriber {
          */
         this.indexTagsFile({ reconcile: true }); // tags first — so entity tag refs resolve to real rows
         for (const m of ordered) {
-          const type = m.type as RawEntityType;
-          for (const slug of this.store.listType(type)) {
-            if (this.indexEntity(type, slug, false)) count += 1;
+          for (const entity of prepared.get(m.type)?.values() ?? []) {
+            if (entity && this.applyEntity(entity, false, persistUpgrades)) count += 1;
           }
         }
       })();
@@ -309,15 +401,50 @@ export class EntityIndexerService implements WatchSubscriber {
     console.log(`[entity-indexer] indexed ${count} entities from ${this.store.root} in ${ms}ms`);
   }
 
+  /**
+   * Read and parse every entity file of the rebuilt types, `INDEX_SLICE_FILES` at
+   * a time, yielding the event loop between slices. Per type, in the rebuild's
+   * dependency order; `null` marks a file that is skipped (unreadable, not
+   * upgradable, or gone).
+   */
+  private async readSliced(
+    ordered: Array<{ type: string }>,
+  ): Promise<Map<string, Map<string, PreparedEntity | null>>> {
+    const out = new Map<string, Map<string, PreparedEntity | null>>();
+    let inSlice = 0;
+    for (const m of ordered) {
+      const type = m.type as RawEntityType;
+      const forType = new Map<string, PreparedEntity | null>();
+      out.set(type, forType);
+      for (const slug of this.store.listType(type)) {
+        if (inSlice === INDEX_SLICE_FILES) {
+          await yieldEventLoop();
+          if (this.disposed) return out; // the caller ends without a commit
+          inSlice = 0;
+        }
+        inSlice += 1;
+        forType.set(slug, this.prepareEntity(type, slug));
+      }
+    }
+    return out;
+  }
+
   // ─── incremental (file-watch) ─────────────────────────────────────────────
 
   /** M40 subscriber contract. Debounce lives in the mount, not here. */
   onChange(_scope: WatchScope, _source: string, relPath: string): void {
+    this.noteTouched(relPath);
     this.indexFromWatch(relPath);
   }
 
   onUnlink(_scope: WatchScope, _source: string, relPath: string): Promise<void> {
+    this.noteTouched(relPath);
     return this.handleUnlink(relPath);
+  }
+
+  /** Record a watched path against the `indexAll()` currently between read slices. */
+  private noteTouched(relPath: string): void {
+    this.touchedDuringRebuild?.add(relPath);
   }
 
   async handleUnlink(relPath: string): Promise<void> {
@@ -375,13 +502,23 @@ export class EntityIndexerService implements WatchSubscriber {
 
   /** Returns true if the entity was (re)indexed; false if skipped (inactive/error). */
   private indexEntity(type: RawEntityType, slug: string, broadcast: boolean): boolean {
-    if (!this.host.getEntity(type)) return false; // inactive type
+    const entity = this.prepareEntity(type, slug);
+    return entity !== null && this.applyEntity(entity, broadcast, true);
+  }
+
+  /**
+   * The read half of a reindex: the file parsed and upgraded, nothing written.
+   * `null` when the entity is skipped (inactive type, unreadable or
+   * non-upgradable payload).
+   */
+  private prepareEntity(type: RawEntityType, slug: string): PreparedEntity | null {
+    if (!this.host.getEntity(type)) return null; // inactive type
     let snap: unknown;
     try {
       snap = this.store.read(type, slug);
     } catch (err) {
       console.warn(`[entity-indexer] skip ${type}/${slug}: ${(err as Error).message}`);
-      return false;
+      return null;
     }
 
     /**
@@ -414,9 +551,17 @@ export class EntityIndexerService implements WatchSubscriber {
       // A payload the chain cannot honestly produce is SKIPPED, not guessed at.
       // One such entity must not abort the rebuild of its siblings.
       console.warn(`[entity-indexer] skip ${type}/${slug}: ${(err as Error).message}`);
-      return false;
+      return null;
     }
+    return { type, slug, snap, upgraded };
+  }
 
+  /** The write half of a reindex: restore the prepared payload into the index. */
+  private applyEntity(
+    { type, slug, snap, upgraded }: PreparedEntity,
+    broadcast: boolean,
+    persistUpgrades: boolean,
+  ): boolean {
     try {
       // 0.2.2: `restore` no longer throws when a type has no registered entity
       // service — it returns `{op:'noop'}` so one unwritable type cannot abort a
@@ -457,7 +602,7 @@ export class EntityIndexerService implements WatchSubscriber {
      * stamp projection above, so the regenerated file carries the timestamps the
      * old one did rather than the ones a mid-restore row briefly held.
      */
-    if (upgraded) {
+    if (upgraded && persistUpgrades) {
       try {
         this.store.persist(type, slug);
       } catch (err) {

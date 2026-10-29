@@ -301,9 +301,10 @@ export class RecordStore<T> {
     this.opts.registrar.suppress(this.opts.source, relPath, owner);
     // 3 — THE COMMIT POINT.
     /**
-     * DOT-PREFIXED, and that is not cosmetic: `makeWatchIgnore` skips dotfile
-     * basenames, so the temp file produces no chokidar event and no per-path
-     * bookkeeping in a directory the provider is watching. A plain `foo.md.tmp`
+     * DOT-PREFIXED, and that is not cosmetic: a registry root's mount excludes
+     * every dot-segment subtree (`isExcludedSubtree`, its namespace), so the
+     * temp file produces no fs event and no per-path bookkeeping in a directory
+     * the provider is watching. A plain `foo.md.tmp`
      * sitting next to `foo.md` would also be a visible artefact in the user's
      * own pages directory if a crash landed between the write and the rename.
      */

@@ -12,9 +12,9 @@ import {
 /**
  * M40 runtime tests. Two modes, deliberately:
  *  - `fsEvents: false` + `flush()` for everything about ordering, validation and
- *    self-writes — deterministic, no chokidar, no wall-clock debounce.
- *  - real chokidar + polling for the handful of properties that are genuinely
- *    about the fs provider (debounce coalescing, per-file unlink on rmdir).
+ *    self-writes — deterministic, no fs provider, no wall-clock debounce.
+ *  - a real fs provider (`watcher.fs.test.ts`, `dir-watch.test.ts`) + polling
+ *    for the handful of properties that are genuinely about the fs provider (debounce coalescing, per-file unlink on rmdir).
  */
 
 const tmpDirs: string[] = [];

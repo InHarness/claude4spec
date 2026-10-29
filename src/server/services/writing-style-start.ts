@@ -5,7 +5,9 @@
  * An unresolvable writing style FAILS THE PROJECT CONTEXT BUILD (2.1.23: that
  * one project, never the process — every request to it, settings included,
  * answers `500 PROJECT_BUILD_FAILED` until `config.json` is repaired by hand or
- * the style's carrier is restored). The message tells the two causes apart,
+ * the style's carrier is restored; 2.1.60: the build retries — and fails again —
+ * at the first request or read of the workspace's project states after the
+ * failed-build window, M31 `m31ctx001`). The message tells the two causes apart,
  * because they ask the user for two different actions:
  *
  * - `outside-registry` — the slug is not among the selectable styles: a typo, a

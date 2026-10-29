@@ -1,43 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import path from 'node:path';
-import { makeWatchIgnore } from './watch-ignore.js';
+import { isExcludedSubtree } from './watch-ignore.js';
 
-describe('makeWatchIgnore', () => {
-  const root = '/repo/pages';
-  const ignore = makeWatchIgnore(root);
-
-  it('ignores heavy directories under the root', () => {
-    expect(ignore(path.join(root, 'node_modules'))).toBe(true);
-    expect(ignore(path.join(root, '.git'))).toBe(true);
-    expect(ignore(path.join(root, 'sub', 'dist'))).toBe(true);
-    expect(ignore(path.join(root, 'coverage'))).toBe(true);
+describe('isExcludedSubtree — the exclusion owners declare at mount (relative to the mount dir)', () => {
+  it('excludes heavy directories at any depth', () => {
+    expect(isExcludedSubtree('node_modules')).toBe(true);
+    expect(isExcludedSubtree('node_modules/pkg/index.js')).toBe(true);
+    expect(isExcludedSubtree('sub/dist')).toBe(true);
+    expect(isExcludedSubtree('coverage/lcov.info')).toBe(true);
   });
 
-  it('ignores dotfile/dot-dir basenames', () => {
-    expect(ignore(path.join(root, '.DS_Store'))).toBe(true);
-    expect(ignore(path.join(root, 'foo', '.bar.json.swp'))).toBe(true);
+  it('excludes every dot-segment subtree (the registry root namespace), including temp files', () => {
+    expect(isExcludedSubtree('.DS_Store')).toBe(true);
+    expect(isExcludedSubtree('foo/.bar.json.swp')).toBe(true);
+    expect(isExcludedSubtree('.git/HEAD')).toBe(true);
+    expect(isExcludedSubtree('a/.page.md.tmp')).toBe(true);
   });
 
-  it('does not ignore normal files under the root', () => {
-    expect(ignore(path.join(root, 'index.md'))).toBe(false);
-    expect(ignore(path.join(root, 'entities', 'endpoint', 'foo.json'))).toBe(false);
-  });
-
-  it('never ignores a watch root, even one named like a heavy dir', () => {
-    // PluginWatcher resolves a package to `<pkg>/dist` — that root must be watched.
-    const distRoot = '/repo/node_modules/@scope/pkg/dist';
-    const ig = makeWatchIgnore(distRoot);
-    expect(ig(distRoot)).toBe(false);
-    // …but a nested node_modules under it is still ignored.
-    expect(ig(path.join(distRoot, 'node_modules'))).toBe(true);
-  });
-
-  it('accepts multiple roots', () => {
-    const a = '/repo/a/dist';
-    const b = '/repo/b/build';
-    const ig = makeWatchIgnore([a, b]);
-    expect(ig(a)).toBe(false);
-    expect(ig(b)).toBe(false);
-    expect(ig(path.join(a, 'node_modules'))).toBe(true);
+  it('does not exclude normal files and dirs', () => {
+    expect(isExcludedSubtree('index.md')).toBe(false);
+    expect(isExcludedSubtree('entities/endpoint/foo.json')).toBe(false);
+    expect(isExcludedSubtree('distribution/notes.md')).toBe(false);
   });
 });

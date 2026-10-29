@@ -41,10 +41,11 @@ describe('workspace project registration routes', () => {
       slotDir: () => path.join(tmp, 'slot'),
     } as unknown as WorkspaceRegistry;
     const cache = {
-      isLive: () => false,
+      readStates: () => new Map(),
+      enqueue: () => {},
       getLive: () => null,
       retire: (id: string) => retire(id),
-      invalidate: () => {},
+      remove: () => {},
     } as unknown as ProjectContextCache;
     const a = express();
     a.use(express.json());

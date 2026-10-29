@@ -1,7 +1,8 @@
 /**
  * 2.1.58 — M29 `m29idx001` / `m29krit1`, M31 `m31ctx001`: no project is built
  * before `app.listen()`; `indexAll()` is awaited inside the context build, and
- * the context build runs only through the cache, on a project's first request.
+ * the context build runs only through the cache — 2.1.60: its background build
+ * queue, started right after the listen.
  *
  * The behaviour is pinned by `src/server/workspace/lazy-activation.test.ts`
  * (the cache's `activatingBuild` activates on the first request, a broken project
@@ -33,9 +34,9 @@ function codeLines(file: string): Array<{ line: number; text: string }> {
     });
 }
 
-/** A context read, an activation or a build — none may run before the listen. */
+/** A context read, an activation, a build or the start of the build queue — none may run before the listen. */
 const FORBIDDEN_BEFORE_LISTEN =
-  /^(?:cache\.(?:get|getLive)|buildProjectContext|activateProject|activateProjectDir|bootstrapProject|activatingBuild\([\s\S]*\)|loadOrCreateConfig|.*\.indexAll)$/;
+  /^(?:cache\.(?:get|getLive|start|enqueue)|buildContext|buildProjectContext|activateProject|activateProjectDir|bootstrapProject|activatingBuild\([\s\S]*\)|backgroundBuild\([\s\S]*\)|loadOrCreateConfig|.*\.indexAll)$/;
 
 /** Array methods that invoke their callback before they return. */
 const SYNC_CALLBACK_METHODS = new Set(['forEach', 'map', 'flatMap', 'filter', 'some', 'every', 'find', 'findIndex', 'reduce']);
@@ -104,27 +105,45 @@ function eagerCallsBeforeListen(file: string, fn: string): string[] {
 describe('2.1.58 — no project is built before listen (source)', () => {
   it('[section:m29idx001] [section:m29krit1] the context build awaits entityIndexer.indexAll() — for every project, the one place a project gets its index', () => {
     const lines = codeLines(PROJECT_CONTEXT);
-    expect(lines.some(({ text }) => /\bawait entityIndexer\.indexAll\s*\(\s*\)/.test(text))).toBe(true);
+    // 2.1.60: the background build passes `{ persistUpgrades: false }` — still awaited, every build.
+    expect(lines.some(({ text }) => /\bawait entityIndexer\.indexAll\s*\(/.test(text))).toBe(true);
     // The build is one function for every project: no "start project" branch in it.
     expect(lines.filter(({ text }) => /initialProject|isInitial|pagesDirOverride/.test(text))).toEqual([]);
   });
 
-  it('[section:m31ctx001] [section:m29idx001] startServer reads no context before listenOrExit, and its cache builds through activatingBuild', () => {
+  it('[section:m31ctx001] [section:m29idx001] [section:r7ozfsa9] [ac:ac-serwer-przyjmuje-zadania-zanim-zbuduj] startServer builds no context before listenOrExit; the background build queue starts right after it, its builds through backgroundBuild and activatingBuild', () => {
     const eager = eagerCallsBeforeListen(SERVER_INDEX, 'startServer');
     // The walk sees the start path: the plugin pool is loaded there (a sanity
     // check that the statements before the listen were reached at all).
     expect(eager).toContain('loadWorkspacePlugins');
-    // No warm-up read of the cache, no activation and no build executed on the
-    // start path. A closure (the cache's builder, its `providerContext`, a
-    // router callback) runs on a request, not here — it is not walked unless
-    // something before the listen invokes it.
+    // No warm-up read of the cache, no queue start, no activation and no build
+    // executed on the start path. A closure (the cache's builders, its
+    // `providerContext`, a router callback) runs later, not here — it is not
+    // walked unless something before the listen invokes it.
     expect(eager.filter((callee) => FORBIDDEN_BEFORE_LISTEN.test(callee))).toEqual([]);
     const lines = codeLines(SERVER_INDEX);
     expect(lines.filter(({ text }) => /\binitialProject\b|\bwritingStyle:\s*initialCtx/.test(text))).toEqual([]);
-    // The one build site is the cache's, wrapped by the activation.
+    // The one build site is the cache's: the build with writes wrapped by the
+    // activation, the background build without writes.
     const builds = lines.filter(({ text }) => /\bbuildProjectContext\s*\(/.test(text));
     expect(builds).toHaveLength(1);
-    expect(lines.some(({ text }) => /new ProjectContextCache\(activatingBuild\(registry, workspace,/.test(text))).toBe(true);
+    // Both carry the build's abort signal (a disposed/retired build ends early).
+    expect(
+      lines.some(({ text }) =>
+        /activatingBuild\(registry, workspace, \(project, signal\) => buildContext\(project, 'allowed', signal\), activated\)/.test(text),
+      ),
+    ).toBe(true);
+    expect(
+      lines.some(({ text }) =>
+        /background: backgroundBuild\(registry, \(project, mode\) => buildContext\(project, mode\.projectWrites, mode\.signal\)\)/.test(text),
+      ),
+    ).toBe(true);
+    // The queue gets the composition only AFTER the listen — last opened project first.
+    const listenAt = lines.find(({ text }) => /await listenOrExit\(/.test(text))!.line;
+    const startAt = lines.filter(({ text }) => /\bcache\.start\(/.test(text));
+    expect(startAt).toHaveLength(1);
+    expect(startAt[0]!.line).toBeGreaterThan(listenAt);
+    expect(startAt[0]!.text).toMatch(/cache\.start\(startView\.projects, startView\.lastOpenedProject\)/);
   });
 
   it('[section:m29krit1] the launcher\'s pre-listen sequence activates and builds nothing', () => {

@@ -37,6 +37,11 @@ type Rung = 'entity_version' | 'git' | 'mtime' | 'placeholder';
 export interface BackfillReport {
   scanned: number;
   written: number;
+  /**
+   * 2.1.60: candidates whose write failed — they stay unstamped. The build with
+   * writes reads it instead of walking the store a second time.
+   */
+  unwritten: number;
   byRung: Record<Rung, number>;
 }
 
@@ -138,6 +143,65 @@ function gitDatesByPath(cwd: string, entitiesRootDir: string): Map<string, { fir
   return out;
 }
 
+interface UnstampedEntity {
+  type: string;
+  slug: string;
+  relPath: string;
+  data: Record<string, unknown>;
+}
+
+/**
+ * The entity files the backfill would stamp, with the number of files scanned.
+ */
+function collectUnstampedEntities(store: EntityStore): { candidates: UnstampedEntity[]; scanned: number } {
+  let scanned = 0;
+  /**
+   * Candidates first — a project already on 0.2.4 must not spawn `git`.
+   *
+   * A candidate must be STAMPABLE, not merely unstamped. A snapshot that is not
+   * a plain object cannot carry the flat envelope at all (`attachSystemFields`
+   * documents that it passes arrays and scalars through untouched), so such a
+   * file would be re-detected as unstamped on every single boot — and because
+   * the early return below is what keeps this cheap, one such file would
+   * re-spawn the full `git log` pass over the entities directory forever. It is
+   * not a candidate; it is a type whose snapshot shape has no room for the
+   * envelope, which is a different fact and not this module's to fix.
+   */
+  const candidates: UnstampedEntity[] = [];
+  let unstampable = 0;
+  for (const file of store.listAll()) {
+    scanned += 1;
+    let data: SnapshotData;
+    try {
+      data = store.readRel(file.relPath);
+    } catch {
+      continue; // unreadable/invalid JSON — the indexer reports it, not us
+    }
+    if (readSystemFields(data)) continue;
+    if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+      unstampable += 1;
+      continue;
+    }
+    candidates.push({ ...file, data: data as Record<string, unknown> });
+  }
+  if (unstampable) {
+    console.warn(
+      `[timestamp-backfill] ${unstampable} entity file(s) have a non-object snapshot and cannot ` +
+        `carry createdAt/updatedAt — they will order by slug alone`,
+    );
+  }
+  return { candidates, scanned };
+}
+
+/**
+ * 2.1.60 (M01 `dsh8ezbz` step 8): would {@link backfillEntityTimestamps} write
+ * an entity file? Reads only — the background context build's check («needs
+ * activation» when true).
+ */
+export function entityTimestampsPending(store: EntityStore): boolean {
+  return collectUnstampedEntities(store).candidates.length > 0;
+}
+
 /**
  * Backfill `createdAt`/`updatedAt` into every entity file missing either.
  *
@@ -164,44 +228,12 @@ export function backfillEntityTimestamps(
   const report: BackfillReport = {
     scanned: 0,
     written: 0,
+    unwritten: 0,
     byRung: { entity_version: 0, git: 0, mtime: 0, placeholder: 0 },
   };
 
-  /**
-   * Candidates first — a project already on 0.2.4 must not spawn `git`.
-   *
-   * A candidate must be STAMPABLE, not merely unstamped. A snapshot that is not
-   * a plain object cannot carry the flat envelope at all (`attachSystemFields`
-   * documents that it passes arrays and scalars through untouched), so such a
-   * file would be re-detected as unstamped on every single boot — and because
-   * the early return below is what keeps this cheap, one such file would
-   * re-spawn the full `git log` pass over the entities directory forever. It is
-   * not a candidate; it is a type whose snapshot shape has no room for the
-   * envelope, which is a different fact and not this module's to fix.
-   */
-  const candidates: Array<{ type: string; slug: string; relPath: string; data: Record<string, unknown> }> = [];
-  let unstampable = 0;
-  for (const file of store.listAll()) {
-    report.scanned += 1;
-    let data: SnapshotData;
-    try {
-      data = store.readRel(file.relPath);
-    } catch {
-      continue; // unreadable/invalid JSON — the indexer reports it, not us
-    }
-    if (readSystemFields(data)) continue;
-    if (data === null || typeof data !== 'object' || Array.isArray(data)) {
-      unstampable += 1;
-      continue;
-    }
-    candidates.push({ ...file, data: data as Record<string, unknown> });
-  }
-  if (unstampable) {
-    console.warn(
-      `[timestamp-backfill] ${unstampable} entity file(s) have a non-object snapshot and cannot ` +
-        `carry createdAt/updatedAt — they will order by slug alone`,
-    );
-  }
+  const { candidates, scanned } = collectUnstampedEntities(store);
+  report.scanned = scanned;
   if (!candidates.length) return report;
 
   const versionDates = db
@@ -218,7 +250,6 @@ export function backfillEntityTimestamps(
   const realCwd = realpathOr(cwd);
   const gitDates = gitDatesByPath(realCwd, entitiesRootDir);
   const placeholder = placeholderStamp();
-  let failedWrites = 0;
   // git prints repo-root-relative paths; build the lookup key the same way.
   // Falls back to `cwd` when there is no work tree, which is harmless — the
   // git map is empty in that case anyway.
@@ -273,7 +304,7 @@ export function backfillEntityTimestamps(
       // Non-kebab slug, unwritable path. Never fail boot over it — but this
       // file stays unstamped, so say so once rather than silently retrying the
       // whole pass on every future boot.
-      failedWrites += 1;
+      report.unwritten += 1;
       continue;
     }
     report.byRung[rung] += 1;
@@ -285,9 +316,9 @@ export function backfillEntityTimestamps(
       `(entity_version: ${report.byRung.entity_version}, git: ${report.byRung.git}, ` +
       `mtime: ${report.byRung.mtime}, placeholder: ${report.byRung.placeholder})`,
   );
-  if (failedWrites) {
+  if (report.unwritten) {
     console.warn(
-      `[timestamp-backfill] ${failedWrites} entity file(s) could not be written and remain ` +
+      `[timestamp-backfill] ${report.unwritten} entity file(s) could not be written and remain ` +
         `unstamped — this pass will run again on the next boot until they are fixed or removed`,
     );
   }

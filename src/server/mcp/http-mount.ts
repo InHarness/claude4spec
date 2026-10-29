@@ -11,23 +11,28 @@
  * The single most important property here, and the one most likely to be broken
  * later by someone adding a reasonable-looking line. An open MCP connection:
  *
- *   - does NOT raise `hasInFlightTurn()`, so it never blocks a purge or a
- *     config reload;
- *   - does NOT pin the `ProjectContext` against LRU eviction;
- *   - does NOT count toward the `maxLive` budget.
+ *   - does NOT raise `hasInFlightTurn()`, so it never holds back the release
+ *     of a context — a detach, a purge, an invalidation's predecessor
+ *     (M31 `xocjjal4`, M12 `reys7qo4`).
  *
  * An editor left open overnight with `c4s-spec-reader` configured would
- * otherwise hold a project live forever. The context is resolved per REQUEST,
- * through the normal cache, so a call arriving after an eviction rebuilds and
- * answers the operation — it does not fail the connection.
+ * otherwise hold a stale or removed context forever. The context is resolved
+ * per REQUEST, through the normal cache: a `tools/call` arriving while an
+ * invalidation's rebuild runs waits for the successor — the same path a REST
+ * request takes — and answers the operation from it, without failing the
+ * connection. A call on a project detached meanwhile is refused as a project
+ * outside the workspace (`PROJECT_NOT_IN_WORKSPACE`).
  *
  * ## Sessions outlive contexts, so tools are re-bound not re-created
  *
  * The session registry is process-wide and keyed by MCP session id. Tool
  * IDENTITY (name, description, schema) is registered once on the session's
  * `McpServer`; the HANDLER dispatches through `session.current`, a map refreshed
- * from the live context before every request reaches the transport. That is what
- * "the context is rebuilt lazily at `tools/call`" means in code.
+ * from the live context before every request reaches the transport — so a call
+ * after a rebuild dispatches into the successor context, never the released one.
+ * When a context is released, the map of every session still holding its surface
+ * is emptied (`releaseMcpSessionSurfaces`), so an idle connection keeps no
+ * handler of it — and a session already re-synced to the successor keeps its own.
  *
  * `tools/list_changed` is sent only when the name set actually differs — a plugin
  * activated or deactivated. A plain rebuild of the same pool changes nothing the
@@ -81,6 +86,14 @@ export interface McpMountOptions {
    * (ids only, never directories).
    */
   notFoundMessage?: (req: Request) => string;
+  /**
+   * Opaque identity of what this mount's surfaces are composed from — set by the
+   * project-bound mount, one token per context. A session remembers the token of
+   * the surface it holds, so a release names exactly the sessions still holding
+   * THAT context's handlers ({@link releaseMcpSessionSurfaces}). A token, never
+   * the context itself: the session must not keep what it identifies reachable.
+   */
+  owner?: symbol;
 }
 
 interface Session {
@@ -102,6 +115,8 @@ interface Session {
   binding: string;
   /** Refreshed before every request — what the handlers dispatch through. */
   current: ExternalSurface;
+  /** The {@link McpMountOptions.owner} of the mount that composed `current`. */
+  owner: symbol | undefined;
   registered: Map<string, RegisteredTool>;
   /** Epoch ms of the last request on this session — input to the idle reaper. */
   lastSeen: number;
@@ -123,7 +138,7 @@ interface Session {
 export const MCP_SESSION_IDLE_MS = 30 * 60 * 1000;
 
 /**
- * Process-wide, deliberately: a session must survive the eviction and rebuild of
+ * Process-wide, deliberately: a session must survive the release and rebuild of
  * the `ProjectContext` it was opened against. Keying it on anything derived from
  * a context would tie the connection's life to the context's, which is the
  * coupling this whole design exists to avoid.
@@ -146,6 +161,37 @@ export function activeMcpSessionCount(): number {
  */
 export function ageAllMcpSessions(byMs: number): void {
   for (const session of SESSIONS.values()) session.lastSeen -= byMs;
+}
+
+/**
+ * Let go of the surface composed by `owner` that sessions bound to `binding`
+ * still hold — called when the context behind `owner` is released (carried U6
+ * rev-0001).
+ *
+ * `session.current` is refreshed before every request, so between requests it
+ * still holds the LAST context's handlers — and through them that context's db
+ * handle, plugin host and indexes. An idle connection (an editor left open) would
+ * keep a released context reachable until its next request or the idle reap:
+ * one whole context per idle session, which a repeated rebuild of the project
+ * must not leave behind (M31 `m31ctx001`, open question #67).
+ *
+ * Only the handlers go; the advertised NAME set stays, so the next request's
+ * re-sync compares against what the client was told and sends
+ * `tools/list_changed` only on a real pool change. No call can reach the emptied
+ * map: every request re-syncs from the live context before the transport
+ * dispatches it.
+ *
+ * Only a session whose surface `owner` composed: a retired context is disposed
+ * late — once its last turn ends — when its successor is already serving and a
+ * session may have re-synced to it. Emptying that session would take the
+ * SUCCESSOR's handlers from a call already past its re-sync, which then answers
+ * NOT_FOUND for a tool the live context has.
+ */
+export function releaseMcpSessionSurfaces(binding: string, owner: symbol): void {
+  for (const session of SESSIONS.values()) {
+    if (session.binding !== binding || session.owner !== owner) continue;
+    session.current = { tools: [], byName: new Map(), toolNames: session.current.toolNames, scopeByName: new Map() };
+  }
 }
 
 /**
@@ -209,9 +255,10 @@ function jsonRpcError(res: Response, status: number, code: string, message: stri
  * which this replaces. Only a genuine change in the NAME SET touches the
  * `McpServer`'s registry, and only that sends `tools/list_changed`.
  */
-function syncTools(session: Session, surface: ExternalSurface): void {
+function syncTools(session: Session, surface: ExternalSurface, owner: symbol | undefined): void {
   const before = session.current.toolNames;
   session.current = surface;
+  session.owner = owner;
 
   const wanted = new Set(surface.toolNames);
   let changed = false;
@@ -246,11 +293,11 @@ function registerOne(session: Session, decl: McpToolDeclaration): RegisteredTool
    * comment says why — but capturing `decl` to read `decl.name` kept the whole
    * declaration alive for the session's lifetime, and `decl.handler` closes over
    * the `ProjectContext` that was live at first registration: its db handle, its
-   * plugin host, its indexes. So the context could be evicted and disposed and
+   * plugin host, its indexes. So the context could be retired and disposed and
    * still never be collected, and a long-lived editor connection leaked one whole
-   * context per eviction — defeating the LRU budget this mount's own header
-   * claims a connection does not consume. Reaching for one field of an object is
-   * enough to retain all of it.
+   * context per rebuild — the very retention this mount's own header claims a
+   * connection does not cause. Reaching for one field of an object is enough to
+   * retain all of it.
    */
   const name = decl.name;
   const description = decl.description;
@@ -275,6 +322,76 @@ function registerOne(session: Session, decl: McpToolDeclaration): RegisteredTool
       return live.handler(args, extra);
     }) as never,
   );
+}
+
+/**
+ * The standalone GET stream (server→client notifications) lives as long as the
+ * connection — it is the one request an idle session keeps open. Served so that
+ * it holds nothing of the context the request was routed through (carried U6
+ * rev-0001):
+ *
+ *   - NOT awaited by the mount's handler: a pending frame of that handler would
+ *     keep its options alive, and the project-bound mount's options close over
+ *     the context it was built in;
+ *   - with the router state express leaves on the request cleared — `req.next`
+ *     (the per-context router's continuation) and `req.route` (the route whose
+ *     stack holds that same handler). The handler never calls `next`, so nothing
+ *     reads them after this point.
+ *
+ * Module-level on purpose: a closure here would capture the options this
+ * function exists to let go of.
+ */
+function serveStandaloneStream(transport: StreamableHTTPServerTransport, req: Request, res: Response): void {
+  const routed = req as Request & { next?: unknown; route?: unknown };
+  routed.next = undefined;
+  routed.route = undefined;
+  transport.handleRequest(req, res).catch((err: unknown) => {
+    if (!res.headersSent) jsonRpcError(res, 500, 'INTERNAL', err instanceof Error ? err.message : String(err));
+  });
+}
+
+/**
+ * A new session's server, transport and registry entry — built here, at module
+ * level, and NOT inline in the mount's request handler (carried U6 rev-0001).
+ *
+ * The transport keeps its callbacks (`onsessioninitialized`, `onsessionclosed`,
+ * `onclose`) for the session's whole life, and a closure keeps its ENTIRE scope
+ * chain, not just the variables it names: created inside the handler, they held
+ * the handler's scope and, one level up, the mount's `opts` — whose `surface`
+ * resolver on the project-bound mount closes over the context the mount was built
+ * in. So every session kept the context it was OPENED on reachable for its life,
+ * whatever `releaseMcpSessionSurfaces` emptied: one released context per idle
+ * connection. Here the callbacks' scope is this function's — three plain values
+ * and the session itself.
+ */
+function openSession(packageVersion: string, profile: ChatContextType, binding: string): Session {
+  const server = new McpServer(
+    { name: EXTERNAL_MCP_SERVER_NAME, version: packageVersion },
+    { capabilities: { tools: { listChanged: true } } },
+  );
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: () => randomUUID(),
+    onsessioninitialized: (id) => {
+      SESSIONS.set(id, session);
+    },
+    onsessionclosed: (id) => {
+      SESSIONS.delete(id);
+    },
+  });
+  transport.onclose = () => {
+    if (transport.sessionId) SESSIONS.delete(transport.sessionId);
+  };
+  const session: Session = {
+    server,
+    transport,
+    profile,
+    binding,
+    current: { tools: [], byName: new Map(), toolNames: [], scopeByName: new Map() },
+    owner: undefined,
+    registered: new Map(),
+    lastSeen: Date.now(),
+  };
+  return session;
 }
 
 /**
@@ -361,7 +478,11 @@ function mcpRequestHandlerUnguarded(opts: McpMountOptions) {
     }
 
     if (existing) {
-      syncTools(existing, surface);
+      syncTools(existing, surface, opts.owner);
+      if (req.method === 'GET') {
+        serveStandaloneStream(existing.transport, req, res);
+        return;
+      }
       await existing.transport.handleRequest(req, res, req.body);
       return;
     }
@@ -376,37 +497,12 @@ function mcpRequestHandlerUnguarded(opts: McpMountOptions) {
       return;
     }
 
-    const server = new McpServer(
-      { name: EXTERNAL_MCP_SERVER_NAME, version: opts.packageVersion },
-      { capabilities: { tools: { listChanged: true } } },
-    );
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
-      onsessioninitialized: (id) => {
-        SESSIONS.set(id, session);
-      },
-      onsessionclosed: (id) => {
-        SESSIONS.delete(id);
-      },
-    });
-    transport.onclose = () => {
-      if (transport.sessionId) SESSIONS.delete(transport.sessionId);
-    };
-
-    const session: Session = {
-      server,
-      transport,
-      profile: chosen.profile,
-      binding: opts.binding(req),
-      current: { tools: [], byName: new Map(), toolNames: [], scopeByName: new Map() },
-      registered: new Map(),
-      lastSeen: Date.now(),
-    };
+    const session = openSession(opts.packageVersion, chosen.profile, opts.binding(req));
 
     // Registered BEFORE connect, so the initial set is the handshake's answer
     // rather than a change notification the client cannot have subscribed to yet.
-    syncTools(session, surface);
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
+    syncTools(session, surface, opts.owner);
+    await session.server.connect(session.transport);
+    await session.transport.handleRequest(req, res, req.body);
   };
 }

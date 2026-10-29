@@ -521,7 +521,12 @@ describe('POST /api/git/sync (2.1.10)', () => {
      * the context is built. `onHeadChanged` is wired exactly as
      * `buildProjectContext` wires it in production: the cache's `invalidate`.
      */
-    function reloadingApp(svc: GitService): { app: express.Express; entityTitle: () => Promise<string>; builds: () => number } {
+    function reloadingApp(svc: GitService): {
+      app: express.Express;
+      entityTitle: () => Promise<string>;
+      builds: () => number;
+      cache: ProjectContextCache;
+    } {
       let builds = 0;
       const cache = new ProjectContextCache(async (p: ProjectRecord) => {
         builds++;
@@ -538,6 +543,7 @@ describe('POST /api/git/sync (2.1.10)', () => {
         app: appFor(svc, () => cache.invalidate('proj-1')),
         entityTitle: async () => ((await cache.get(project)) as unknown as { entityTitle: string }).entityTitle,
         builds: () => builds,
+        cache,
       };
     }
 
@@ -568,6 +574,29 @@ describe('POST /api/git/sync (2.1.10)', () => {
       expect(res.body.status).toBe('merged');
       expect(await t.entityTitle()).toBe('List all users');
       expect(t.builds()).toBe(2);
+    });
+
+    it('[section:fx7bhlre] the rebuild a HEAD change starts through the invalidation runs without waiting for a request, and reads the new content of the disk', async () => {
+      await commitFiles(work, { [ENTITY]: '{"slug":"get-users","title":"List users"}\n' }, 'entity v1');
+      await git(['push', 'origin', 'main'], work);
+      await git(['pull', 'origin', 'main'], other);
+      await teammatePushes(other, { [ENTITY]: '{"slug":"get-users","title":"List all users"}\n' }, 'entity v2');
+
+      const t = reloadingApp(new GitService(work, [work]));
+      try {
+        expect(await t.entityTitle()).toBe('List users');
+        const old = t.cache.getLive('proj-1');
+        const res = await request(t.app).post('/api/git/sync');
+        expect(res.body.status).toBe('fast-forwarded');
+        // No request to the project follows — the rebuild has run all the same.
+        await vi.waitFor(() => expect(t.builds()).toBe(2));
+        await vi.waitFor(() => expect(t.cache.getLive('proj-1')).not.toBeNull());
+        const live = t.cache.getLive('proj-1') as unknown as { entityTitle: string };
+        expect(live).not.toBe(old);
+        expect(live.entityTitle).toBe('List all users');
+      } finally {
+        await t.cache.disposeAll();
+      }
     });
 
     it('results that leave HEAD alone do not reload the project', async () => {

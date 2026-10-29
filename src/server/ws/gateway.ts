@@ -166,7 +166,7 @@ export class WsGateway {
    * outside the rooms, a process event simply reaches the room of every project.
    *
    * Every room the gateway holds, not only projects with a live context: a tab
-   * whose project context is evicted or not yet built is still a tab on that
+   * whose project context is retired or not yet built is still a tab on that
    * project, and the shared resource changed for it too.
    */
   broadcastToEveryRoom(event: WsEvent): void {

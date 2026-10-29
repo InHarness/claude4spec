@@ -9,8 +9,9 @@ import { WsGateway } from './ws/gateway.js';
 import { createRoomBroadcaster } from './ws/watch-broadcaster.js';
 import { FileWatchRuntime } from './fs/watcher.js';
 import { PLUGINS_BASE_SOURCE } from './fs/sources.js';
+import { isExcludedSubtree } from './fs/watch-ignore.js';
 import { type WorkspaceRegistry, DEFAULT_WORKSPACE_PORT } from './workspace/registry.js';
-import { ActivatedProjects, activatingBuild, bootstrapProject } from './workspace/bootstrap.js';
+import { ActivatedProjects, activatingBuild, backgroundBuild, bootstrapProject } from './workspace/bootstrap.js';
 import { readPeerConfigSummary } from './workspace/peer-config.js';
 import { checkRequest, hostOriginGuard } from './http/host-origin-guard.js';
 import { effectiveBindHost, localServerUrl } from '../core/workspace/network.js';
@@ -18,16 +19,13 @@ import { buildProjectContext } from './workspace/project-context.js';
 import { ProjectContextCache } from './workspace/context-cache.js';
 import { projectDispatchMiddleware } from './workspace/middleware.js';
 import { workspaceRouter } from './workspace/routes.js';
-import type { WorkspaceRecord } from './workspace/types.js';
+import type { ProjectRecord, WorkspaceRecord } from './workspace/types.js';
 import { resolveSpaRoute, spaDocument, type SpaResolution } from './workspace/spa-route.js';
 import { PluginRegistryImpl } from './core/plugin-host/registry.js';
 import { registerAllPlugins } from './core/plugin-host/register-builtins.js';
 import { logRefRegistrationWarnings, refRegistrationWarnings } from './core/plugin-host/ref-warnings.js';
-import {
-  loadBuiltinEnvelopes,
-  loadWorkspacePlugins,
-  reloadPlugin,
-} from './core/plugin-host/loader.js';
+import { loadBuiltinEnvelopes, loadWorkspacePlugins } from './core/plugin-host/loader.js';
+import { reloadBasePackages } from './core/plugin-host/base-reload.js';
 import { basePackageLocator, workspaceNodeModulesDir } from './core/plugin-host/workspace-packages.js';
 import { PREDEFINED_PLUGINS, resolvePluginPackages } from './workspace/registry.js';
 import { pluginsRouter } from './routes/plugins.js';
@@ -344,18 +342,21 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     resolveWorkspaceRoot: baseLocator.packageRoot,
   };
 
-  // M31 `m31ctx001` / M01 `dsh8ezbz`: lazily-built, cached per-project
-  // contexts. Every project — none is an exception — is activated and built on
-  // its FIRST REQUEST, never before listen: the activation (refusal of a
-  // workspace home, the config from the file and the defaults, the fresh file,
-  // the roots, the welcome page, the legacy db move) runs inside the build, so
-  // its failure is that project's `500 PROJECT_BUILD_FAILED` and the process
-  // keeps serving. No start flag reaches a project except `--remote-url`, for
-  // every project alike. `activated` is the process's record of activated
-  // projects, shared with the registration route below: a project added through
-  // POST /api/workspace/projects is not activated a second time by its first build.
+  // M31 `m31ctx001` / M01 `dsh8ezbz` (2.1.60): the cache of live contexts and
+  // the background build queue. No project — none is an exception — is built
+  // before listen; after it, `cache.start` queues the whole composition (the
+  // last opened project first) and the contexts build one at a time in the
+  // background: the activation's steps WITHOUT writes (`backgroundBuild`), then
+  // the context with `projectWrites: 'none'`. A project that needs a write ends
+  // in «needs activation»; the first request to it runs the activation with
+  // writes (`activatingBuild`) and the build. A failure is that project's error
+  // state (`500 PROJECT_BUILD_FAILED` with its cause) and the process keeps
+  // serving. No start flag reaches a project except `--remote-url`, for every
+  // project alike. `activated` is the process's record of activated projects,
+  // shared with the registration route below: a project added through
+  // POST /api/workspace/projects is not activated a second time by its build.
   const activated = new ActivatedProjects();
-  const cache: ProjectContextCache = new ProjectContextCache(activatingBuild(registry, workspace, (project) =>
+  const buildContext = (project: ProjectRecord, projectWrites: 'allowed' | 'none', signal?: AbortSignal) =>
     buildProjectContext({
       registry,
       pluginRegistry,
@@ -368,17 +369,26 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       watchRuntime,
       mode,
       remoteApiUrl: opts.remoteApiUrl,
+      projectWrites,
+      signal,
       onTurnFinished: () => cache.reapIdle(),
       onContextConfigChanged: (opts) => cache.invalidate(project.id, opts),
       // 2.1.9 (M52 `1v62dbhb`): a provider's context, on request, from this cache
       // — the `project-exposed` source of a consumer holds no handle of its own.
+      // Read at a turn, never during a build (a build waiting on the queue it
+      // runs in would never end).
       providerContext: async (providerId) => {
         const record = registry.getWorkspace(workspace.name)?.projects.find((p) => p.id === providerId);
         if (!record) throw new Error(`project "${providerId}" is not in workspace "${workspace.name}"`);
         return cache.get(record);
       },
-    }),
-  activated));
+    });
+  const cache: ProjectContextCache = new ProjectContextCache(
+    activatingBuild(registry, workspace, (project, signal) => buildContext(project, 'allowed', signal), activated),
+    {
+      background: backgroundBuild(registry, (project, mode) => buildContext(project, mode.projectWrites, mode.signal)),
+    },
+  );
 
   // M33 phase 3: process-global base (workspace/npm) plugin hot-reload watcher.
   // The base catalog is shared across projects, so a reload mutates the shared
@@ -405,7 +415,8 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // M33: the base pool is the one `scope: 'process'` mount in the system — it
   // survives every ProjectContext rebuild, because it belongs to no project.
   for (const dir of new Set(baseDirByPkg.values())) {
-    watchRuntime.mountSource({ source: `${PLUGINS_BASE_SOURCE}:${dir}`, dir, scope: 'process' });
+    // M33 declares the excluded subtrees of its source (2.1.60).
+    watchRuntime.mountSource({ source: `${PLUGINS_BASE_SOURCE}:${dir}`, dir, scope: 'process', exclude: isExcludedSubtree });
   }
   // The runtime debounces PER FILE, but a plugin rebuild rewrites a whole dist/
   // at once — without a burst-level coalesce that is one reloadPlugin() and one
@@ -428,31 +439,24 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const onBaseChange = (dir: string): void => {
     const affected = [...baseDirByPkg.entries()].filter(([, d]) => d === dir).map(([pkg]) => pkg);
     if (affected.length === 0) return;
+    // M33 L7 `m33l7pln` (2.1.60): the pipeline — reload, ONE invalidation of
+    // every project's context (each rebuilt at once, in the M31 queue's order),
+    // then `plugin:reloaded`. `plugins:base` is a `scope: 'process'` mount, so
+    // its event goes through the M40 runtime to the room of EVERY project of
+    // the process (2.1.22, M40 `kc23agex`).
     baseReloadChain = baseReloadChain
-      .then(async () => {
-        const reloaded = [];
-        for (const pkg of affected) {
-          const rec = await reloadPlugin(pluginRegistry, pkg, { resolveEntry: baseLocator.resolveEntry });
-          // 2.1.20: keep the base records current — the frontend manifest
-          // announces only packages whose backend is `loaded`. A failed reload
-          // retains the old version, so only a `loaded` outcome replaces it.
-          if (rec.status === 'loaded') {
-            const i = pluginLoad.records.findIndex((r) => r.package === pkg);
-            if (i >= 0) pluginLoad.records[i] = { ...pluginLoad.records[i], ...rec };
-            else pluginLoad.records.push(rec);
-          }
-          reloaded.push({ name: rec.manifestName ?? pkg, version: rec.manifestVersion ?? '' });
-        }
-        // Invalidate once (not per-package), then broadcast. 2.1.22 (M33/L7
-        // `m33l7pln` step 5, M40 `kc23agex`): `plugins:base` is a
-        // `scope: 'process'` mount, so its event goes through the M40 runtime
-        // to the room of EVERY project of the process — the gateway's rooms,
-        // not the context cache, which invalidateAll() has just emptied.
-        cache.invalidateAll();
-        for (const r of reloaded) {
-          watchRuntime.broadcast('process', { kind: 'plugin:reloaded', name: r.name, version: r.version, tier: 'base' });
-        }
-      })
+      .then(() =>
+        reloadBasePackages(
+          {
+            pluginRegistry,
+            records: pluginLoad.records,
+            resolveEntry: baseLocator.resolveEntry,
+            invalidateAll: () => cache.invalidateAll(),
+            broadcast: (event) => watchRuntime.broadcast('process', event),
+          },
+          affected,
+        ),
+      )
       .catch((err) => console.warn('[plugin-loader] base reload failed:', err));
   };
   for (const dir of new Set(baseDirByPkg.values())) {
@@ -464,8 +468,8 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   }
 
   // Registration with activation — POST /api/workspace/projects (M01 file steps,
-  // then the registration and the legacy db move); the context itself is built
-  // on the project's first request, like every other.
+  // then the registration and the legacy db move); the route then appends the
+  // project to the background build queue, like every other project.
   // 0.2.93: no integration artifact is written here — the MCP config is served
   // on demand by `GET /api/projects/:id/_meta/mcp-config`.
   const activateProject = async (projectCwd: string) => {
@@ -498,6 +502,11 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const host = opts.host ?? effectiveBindHost(liveWorkspace());
   const port = await listenOrExit(httpServer, portRef.current, host);
   portRef.current = port;
+  // 2.1.60 (M31 `m31ctx001`, M01 `r7ozfsa9`): after listen, the background
+  // build queue gets the workspace's composition — the last opened project
+  // first, whether or not the start opens a browser, then the composition order.
+  const startView = registry.getWorkspace(workspace.name) ?? workspace;
+  cache.start(startView.projects, startView.lastOpenedProject);
   // The LOCAL address (loopback, or a concrete bindHost) — what the launcher
   // opens in the browser. Never `publicUrl`.
   const url = localServerUrl({ defaultPort: port, bindHost: host });
@@ -528,8 +537,11 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       // from the queue instead of from a timer. A failed reload has already
       // been logged by the chain's own catch, so settling is enough.
       await baseReloadChain.catch(() => {});
-      await watchRuntime.close();
+      // M31 `m31ctx001` (2.1.60): the contexts go first — the build in progress
+      // is aborted and releases its partial resources (its watch scope among
+      // them) while the runtime still stands; then the process mounts close.
       await cache.disposeAll();
+      await watchRuntime.close();
       await gateway.close();
       await closeAssets();
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));

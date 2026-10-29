@@ -13,7 +13,7 @@ import {
  * The registries are context-lifetime state keyed by `threadId`, and until this
  * existed nothing released them: dispose closed the database and left every
  * entry in place. That was safe only by accident — `ProjectContextCache`
- * refuses to EVICT a context with an in-flight turn, so the leak was covered by
+ * refuses to DISPOSE a retired context with an in-flight turn, so the leak was covered by
  * someone else's guard. The two paths that ignore that guard, project purge and
  * process shutdown, disposed underneath a running turn whose `finally` then
  * mutated a disposed context and wrote through a closed handle.

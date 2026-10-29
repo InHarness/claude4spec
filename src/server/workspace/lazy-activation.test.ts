@@ -10,10 +10,11 @@ import {
   activateProject,
   activateProjectDir,
   activatingBuild,
+  backgroundBuild,
   bootstrapProject,
   WorkspaceHomeNotProjectError,
 } from './bootstrap.js';
-import { ProjectBuildFailedError, ProjectContextCache } from './context-cache.js';
+import { ProjectBuildFailedError, ProjectContextCache, type ProjectBuildStateChange } from './context-cache.js';
 import { projectDispatchMiddleware } from './middleware.js';
 import { workspaceFilePath } from './home-workspace.js';
 import type { ProjectContext } from './project-context.js';
@@ -58,7 +59,10 @@ describe('M01 lazy project activation (2.1.58)', () => {
     registry = new WorkspaceRegistry(registryHome);
     ws = registry.selectOrCreate({ name: 'default' });
   });
-  afterEach(() => {
+  /** Every cache a test composed — its queue is stopped before the directories go. */
+  const caches: ProjectContextCache[] = [];
+  afterEach(async () => {
+    for (const cache of caches.splice(0)) await cache.disposeAll();
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -97,6 +101,30 @@ describe('M01 lazy project activation (2.1.58)', () => {
         return stubContext(project);
       }),
     );
+    caches.push(cache);
+    const app = express().use('/api/projects/:id', projectDispatchMiddleware(registry, view(), cache));
+    return { app, cache };
+  };
+
+  /**
+   * The server's composition since 2.1.60: the background build (the
+   * activation's steps without writes, `backgroundBuild`) for the queue, the
+   * activation with writes (`activatingBuild`) for a request that needs it.
+   */
+  const serveBackground = (built: string[]) => {
+    const cache = new ProjectContextCache(
+      activatingBuild(registry, view(), async (project) => {
+        built.push(project.id);
+        return stubContext(project);
+      }),
+      {
+        background: backgroundBuild(registry, async (project) => {
+          built.push(project.id);
+          return stubContext(project);
+        }),
+      },
+    );
+    caches.push(cache);
     const app = express().use('/api/projects/:id', projectDispatchMiddleware(registry, view(), cache));
     return { app, cache };
   };
@@ -118,6 +146,7 @@ describe('M01 lazy project activation (2.1.58)', () => {
         activated,
       ),
     );
+    caches.push(cache);
     const app = express()
       .use(express.json())
       .use(
@@ -133,6 +162,21 @@ describe('M01 lazy project activation (2.1.58)', () => {
       .use('/api/projects/:id', projectDispatchMiddleware(registry, view(), cache))
       .use('/api', errorHandler);
     return { app, cache };
+  };
+
+  /** Records the terminal build state of every project; `until(...ids)` resolves once each has one. */
+  const settledStates = (cache: ProjectContextCache) => {
+    const outcomes = new Map<string, ProjectBuildStateChange>();
+    const waiters: Array<() => void> = [];
+    cache.onStateChange((change) => {
+      if (change.state === 'queued' || change.state === 'building') return;
+      outcomes.set(change.projectId, change);
+      for (const w of waiters.splice(0)) w();
+    });
+    const until = async (...ids: string[]): Promise<void> => {
+      while (!ids.every((id) => outcomes.has(id))) await new Promise<void>((resolve) => waiters.push(resolve));
+    };
+    return { get: (id: string) => outcomes.get(id), until };
   };
 
   /** Every file under `dir`, relative, sorted (directories omitted). */
@@ -285,7 +329,7 @@ describe('M01 lazy project activation (2.1.58)', () => {
     expect(fs.readFileSync(configPath(cwd), 'utf8')).toBe(broken);
   });
 
-  it('[ac:ac-config-json-type-mismatch-np-schem] a config.json type mismatch is a hard error naming the field at activation — no conversion is guessed — while the start goes through', () => {
+  it('[ac:ac-config-json-type-mismatch-np-schem] a config.json type mismatch is a hard error naming the field in the cause of the project\'s failed build — no conversion is guessed — while the start goes through', async () => {
     const cases: Array<[string, Record<string, unknown>, string]> = [
       ['schema-string', { $schemaVersion: '3', name: 'x', roots: [BASE_ROOT] }, "config.json: field '$schemaVersion' expected number, got string"],
       ['entities-string', { $schemaVersion: 4, name: 'x', roots: [BASE_ROOT], entities: 'endpoint' }, "config.json: field 'entities' expected string[], got string"],
@@ -299,17 +343,30 @@ describe('M01 lazy project activation (2.1.58)', () => {
       const project = registry.registerProject(view(), cwd);
       const prepared = prepareStart(registry, parseLaunchArgs(['--workspace', 'default'], tmp));
       expect(prepared.workspace.projects.some((p) => p.id === project.id), name).toBe(true);
-      // …the activation is, with the field's name.
+      // …the project's build is: its background build fails with the field's name as the cause…
+      const built: string[] = [];
+      const { app, cache } = serveBackground(built);
+      const outcomes = settledStates(cache);
+      cache.start([project]);
+      await outcomes.until(project.id);
+      expect(outcomes.get(project.id), name).toEqual({ projectId: project.id, state: 'failed', cause: message });
+      expect(built, name).toEqual([]);
+      // …which a request to the project answers with.
+      const res = await request(app).get(`/api/projects/${project.id}/ping`);
+      expect(res.status, name).toBe(500);
+      expect(res.body.error, name).toEqual({ code: 'PROJECT_BUILD_FAILED', message });
+      // The activation with writes refuses it the same way.
       expect(() => activateProject(registry, prepared.workspace, project), name).toThrow(message);
       // `"3"` was not "converted" to a number: the file is untouched.
       expect(fs.readFileSync(configPath(cwd), 'utf8'), name).toBe(text);
     }
   });
 
-  it('[ac:ac-projekt-z-nieprawidlowym-config-json] a project with an invalid config.json does not block the process start — the error comes at that project\'s activation, the others serve', async () => {
+  it('[ac:ac-projekt-z-nieprawidlowym-config-json] a project with an invalid config.json does not block the process start — it ends in the failed-build state, the others build and serve', async () => {
     const broken = dirOf('broken');
     writeRawConfig(broken, '{ "name": ');
     const fine = dirOf('fine');
+    writeRawConfig(fine, JSON.stringify({ $schemaVersion: 4, name: 'fine', roots: [BASE_ROOT] }));
     const brokenProject = registry.registerProject(ws, broken);
     const fineProject = registry.registerProject(ws, fine);
 
@@ -319,9 +376,17 @@ describe('M01 lazy project activation (2.1.58)', () => {
     expect(prepared.workspace.projects.map((p) => p.id)).toEqual([brokenProject.id, fineProject.id]);
     expect(fs.readFileSync(configPath(broken), 'utf8')).toBe('{ "name": ');
 
-    // The first request activates: the broken project answers 500, the other serves.
+    // After listen the queue builds both: the broken one fails, the next one is built all the same.
     const built: string[] = [];
-    const { app } = serve(built);
+    const { app, cache } = serveBackground(built);
+    const outcomes = settledStates(cache);
+    cache.start(prepared.workspace.projects);
+    await outcomes.until(brokenProject.id, fineProject.id);
+    expect(outcomes.get(brokenProject.id)?.state).toBe('failed');
+    expect(outcomes.get(brokenProject.id)?.cause).toContain('config.json: invalid JSON');
+    expect(outcomes.get(fineProject.id)?.state).toBe('ready');
+    expect(built).toEqual([fineProject.id]);
+
     const bad = await request(app).get(`/api/projects/${brokenProject.id}/ping`);
     expect(bad.status).toBe(500);
     expect(bad.body.error.code).toBe('PROJECT_BUILD_FAILED');
@@ -398,10 +463,12 @@ describe('M01 lazy project activation (2.1.58)', () => {
   });
 
   it('[section:85hp4f2v] the start writes nothing into a project of the workspace; its first activation gives it a config file of defaults, and the index lives in the workspace slot', () => {
-    const cwd = path.join(tmp, 'goal');
+    // 2.1.60 (M01 `dsh8ezbz` step 1): the directory exists — one that does not
+    // is refused by the activation, never created.
+    const cwd = dirOf('goal');
     const project = registry.registerProject(ws, cwd);
     const prepared = prepareStart(registry, parseLaunchArgs(['--workspace', 'default'], tmp));
-    expect(fs.existsSync(cwd)).toBe(false);
+    expect(fs.readdirSync(cwd)).toEqual([]);
 
     const activation = activateProject(registry, prepared.workspace, project);
     expect(activation.configCreated).toBe(true);
@@ -482,7 +549,7 @@ describe('M01 lazy project activation (2.1.58)', () => {
     expect(files).toEqual(['config.json']);
   });
 
-  it('[section:m31ctx001] no context is built before its first request; a failed activation is cached as that project\'s PROJECT_BUILD_FAILED, the others serve', async () => {
+  it('[section:m31ctx001] no context is built before the queue starts (after listen); then every project builds in the background without a request — a failed build is that project\'s PROJECT_BUILD_FAILED, the others serve', async () => {
     const good = dirOf('good');
     const bad = dirOf('bad');
     writeRawConfig(bad, '[]');
@@ -491,19 +558,86 @@ describe('M01 lazy project activation (2.1.58)', () => {
 
     const built: string[] = [];
     const { app, cache } = serve(built);
-    // Nothing built, nothing activated yet.
-    expect(cache.isLive(goodProject.id)).toBe(false);
+    // Nothing built, nothing activated before the start of the queue.
+    expect(cache.getLive(goodProject.id)).toBeNull();
     expect(fs.readdirSync(good)).toEqual([]);
+
+    const outcomes = settledStates(cache);
+    cache.start(view().projects);
+    await outcomes.until(goodProject.id, badProject.id);
+    // Built without any request.
+    expect(built).toEqual([goodProject.id]);
+    expect(outcomes.get(badProject.id)?.state).toBe('failed');
+    expect(cache.getLive(goodProject.id)).not.toBeNull();
 
     const first = await request(app).get(`/api/projects/${badProject.id}/ping`);
     expect(first.status).toBe(500);
     expect(first.body.error.code).toBe('PROJECT_BUILD_FAILED');
-    // Within the failed-build window the result is cached: no second activation attempt.
+    // Within the failed-build window the result is held: no second attempt.
     await expect(cache.get(badProject)).rejects.toBeInstanceOf(ProjectBuildFailedError);
 
     expect((await request(app).get(`/api/projects/${goodProject.id}/ping`)).status).toBe(200);
-    expect(cache.isLive(goodProject.id)).toBe(true);
     expect(built).toEqual([goodProject.id]);
+  });
+
+  it('[ac:ac-serwer-przyjmuje-zadania-zanim-zbuduj] the server takes requests before the context of any project is built', async () => {
+    const a = registry.registerProject(ws, dirOf('a'));
+    const b = registry.registerProject(ws, dirOf('b'));
+    // Builds that have not finished — the state right after listen. They end
+    // only when the shutdown (`disposeAll` in afterEach) aborts them.
+    const unfinished = (_p: ProjectRecord, signal: AbortSignal) =>
+      new Promise<never>((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason as Error)));
+    const cache = new ProjectContextCache(unfinished, { background: unfinished });
+    caches.push(cache);
+    const app = express()
+      .use(express.json())
+      .use(
+        '/api',
+        workspaceRouter({
+          registry,
+          workspace: view(),
+          cache,
+          mode: 'prod',
+          activateProject: async (cwd) => bootstrapProject(registry, view(), cwd).project,
+        }),
+      )
+      .use('/api/projects/:id', projectDispatchMiddleware(registry, view(), cache));
+    cache.start(view().projects);
+    expect(cache.readStates()).toEqual(
+      new Map([
+        [a.id, 'building'],
+        [b.id, 'queued'],
+      ]),
+    );
+
+    const health = await request(app).get('/api/health');
+    expect(health.status).toBe(200);
+    expect(health.body.ok).toBe(true);
+    const workspace = await request(app).get('/api/workspace');
+    expect(workspace.status).toBe(200);
+    expect(workspace.body.projects.map((p: { id: string; live: boolean }) => [p.id, p.live])).toEqual([
+      [a.id, false],
+      [b.id, false],
+    ]);
+  });
+
+  it('[ac:ac-projekt-zarejestrowany-po-starcie-pro] [section:m31boot01] a project registered through POST /api/workspace/projects after the start builds in the background without a request', async () => {
+    const existing = registry.registerProject(ws, dirOf('existing'));
+    writeRawConfig(existing.cwd, JSON.stringify({ $schemaVersion: 4, name: 'existing', roots: [BASE_ROOT] }));
+    const built: string[] = [];
+    const { app, cache } = serveWithRegistration(built);
+    const outcomes = settledStates(cache);
+    cache.start(view().projects);
+    await outcomes.until(existing.id);
+
+    const added = await request(app).post('/api/workspace/projects').send({ cwd: dirOf('late') });
+    expect(added.status).toBe(201);
+    const lateId = added.body.projectId as string;
+    // No request to the project: the registration queued it, and it builds.
+    await outcomes.until(lateId);
+    expect(outcomes.get(lateId)?.state).toBe('ready');
+    expect(built).toEqual([existing.id, lateId]);
+    expect(cache.getLive(lateId)).not.toBeNull();
   });
 
   it('[section:za9e9492] [entity:app-config-response] the activation writes the project directory name, which GET /config returns as `name` for the onboarding pre-fill — every response field with its type', async () => {

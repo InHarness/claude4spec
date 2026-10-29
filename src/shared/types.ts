@@ -225,7 +225,7 @@ export type WsEvent =
   // 0.1.127 M36/M10: plans, filesystem-backed like briefs/patches.
   | { kind: 'plans:changed'; path?: string }
   | { kind: 'hello'; ts: number }
-  // M31: sent to a room right before its sockets close (context invalidated/evicted/removed).
+  // M31: sent to a room right before its sockets close (context invalidated/removed).
   // 2.1.16 (M50 `8h2a734u`): `reason: 'activation-changed'` — the context was
   // rebuilt because a Settings → Entities save changed which entity types are
   // active (a Trust plugins answer sends no reason). The SPA keeps the page:

@@ -304,9 +304,9 @@ describe('composeExternalSurface', () => {
 /**
  * Composition is memoized on the plugin host's identity.
  *
- * The mount recomposes before every request — that is what makes lazy rebuild
- * work — and composing costs ~5.7 ms, which on every `tools/call` is waste when
- * nothing changed. These pin that the cache does not buy speed by giving up the
+ * The mount recomposes before every request — that is what makes a call after a
+ * rebuild reach the successor context — and composing costs ~5.7 ms, which on
+ * every `tools/call` is waste when nothing changed. These pin that the cache does not buy speed by giving up the
  * rebuild it exists alongside.
  */
 describe('surface memoization', () => {

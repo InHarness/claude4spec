@@ -20,7 +20,7 @@ import type { WorkspaceRecord } from '../../../src/server/workspace/types.js';
  * connection carries no project: every project-scoped call names one in its
  * `project` argument, and workspace-scoped ones (`list_projects`) need none.
  * The tests are about where the project comes from and what happens when it is
- * absent, wrong, or evicted mid-connection — not about the surface, which
+ * absent, wrong, or invalidated mid-connection — not about the surface, which
  * `mcp-over-http.test.ts` already covers.
  */
 describe('workspace-bound MCP mount', () => {
@@ -243,7 +243,7 @@ describe('workspace-bound MCP mount', () => {
       await client.callTool({ name: 'overview', arguments: { project: 'proj-a' } });
       await client.callTool({ name: 'overview', arguments: { project: 'twin-2' } });
       // An MCP connection that counted as a turn would block a purge and pin the
-      // context against LRU eviction for as long as an editor stayed open.
+      // retired context against disposal for as long as an editor stayed open.
       expect(inFlight).toBe(false);
     });
 
@@ -252,7 +252,7 @@ describe('workspace-bound MCP mount', () => {
       await client.callTool({ name: 'overview', arguments: { project: 'twin-2' } });
       const buildsBefore = builds;
 
-      // What eviction looks like from the mount's side: the cache hands back a
+      // What an invalidation looks like from the mount's side: the cache hands back a
       // NEW context on the next request. The call must answer the operation, not
       // fail the connection — a resume-SSE client holds nothing but this session.
       live.clear();
