@@ -159,6 +159,21 @@ describe.skipIf(!BASE)('generic entity embed — a hidden type renders and opens
   it('dispatches the hidden type through the generic tags — no per-type tag survives as text', async () => {
     const body = await page.locator('body').innerText();
     expect(body).not.toContain('<diagram');
+
+    // The host's half: the `single_element` node view (the host-owned
+    // `data-xml-tag` wrapper of XmlTagView) actually mounted the type's
+    // registered `renderCard`. The absence of `<diagram` text alone would also
+    // hold if no card rendered at all — e.g. the envelope's frontend bundle
+    // failed to load. A card is a `<figure>`; none of the host's own fallbacks
+    // (the broken-reference block, the "Loading …" placeholder, the missing-
+    // entity badge) is one, so its presence proves the dispatch reached
+    // `renderCard` with a resolved entity — without looking at how the envelope
+    // draws the diagram inside it.
+    const embed = page.locator('[data-xml-tag="single_element"]');
+    expect(await embed.count()).toBe(1);
+    await embed.locator('figure').first().waitFor({ state: 'attached', timeout: 10_000 });
+    expect(await embed.locator('[data-broken-category]').count()).toBe(0);
+
     // The caption belongs to THIS reference — the entity never received it.
     const entity = (await (
       await fetch(`${BASE}/api/projects/${project.id}/diagrams/${DIAGRAM_SLUG}`)

@@ -665,8 +665,8 @@
         }
       ],
       "wave": 2,
-      "status": "blocked",
-      "blockedBy": "dev-0004",
+      "status": "verified",
+      "blockedBy": null,
       "startCommit": "b4991252",
       "baseCommit": "b4991252",
       "portions": [
@@ -681,8 +681,8 @@
             "ac-check-consistency-zglasza-ostrzezenie",
             "m19-hidden-entities-render-slots"
           ],
-          "status": "in-progress",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 1,
           "partial": 0,
           "uncovered": [],
           "only": []

@@ -1,12 +1,10 @@
 /**
- * 0.2.2 — tier (b): BUILT-IN ENVELOPES, the third discovery sub-source of the
- * M33 loader (brief item 10).
+ * 0.2.2 — BUILT-IN ENVELOPES, a discovery sub-source of the M33 loader
+ * (brief item 10).
  *
- * Entity types register at three tiers:
- *   (a) built-in direct   — EMPTY since 2.1.63 (M13 `mbladez6`): `diagram`, its
- *                           last type, moved to a prebuilt envelope, and the
- *                           host no longer registers any type outright.
- *   (b) built-in envelope — THIS module: a real plugin package living inside the
+ * Since 2.1.63 (M13 `mbladez6`) the host registers no entity type outright —
+ * every type comes from a plugin package, in two tiers:
+ *   (a) built-in envelope — THIS module: a real plugin package living inside the
  *                           host repo under `plugins/<name>/`, discovered and
  *                           registered through the ordinary loader pipeline.
  *                           Built from source (`plugins/<name>/src/`, vite emits
@@ -15,7 +13,7 @@
  *                           `scripts/copy-prebuilt-envelopes.mjs` copies it into
  *                           `dist/plugins/<name>/`). Discovery cannot tell the
  *                           two apart, and both sit outside the trust gate.
- *   (c) external package  — `node_modules` or a workspace `plugins[]` entry.
+ *   (b) external package  — `node_modules` or a workspace `plugins[]` entry.
  *
  * Why a middle tier exists at all: an envelope is structurally identical to the
  * output of `c4s create-plugin` and imports the host ONLY through
@@ -149,10 +147,12 @@ export function discoverBuiltinEnvelopes(root: string | null = hostPackageRoot()
   //     tests use.
   //
   // First hit wins, so (1) beats (2). That is not a preference, it is a
-  // correctness requirement: `plugins/<name>/dist` is gitignored build output
-  // that may be left over from an older layout, and a stale copy there would
-  // otherwise shadow what was actually just built — locally only, while the
-  // container silently ran something else.
+  // correctness requirement: (1) is what a packaged host actually ships, so a
+  // local run must load the same copy. For a source-built envelope a
+  // `plugins/<name>/dist` is stale output that would otherwise shadow what was
+  // just built — locally only, while the container silently ran something else.
+  // For a prebuilt envelope `plugins/<name>/dist/` is committed and is the source
+  // of truth, and (1) is its verbatim copy, so the order changes nothing there.
   const byName = new Map<string, BuiltinEnvelope>();
   for (const pluginsDir of [path.join(root, 'dist', 'plugins'), path.join(root, 'plugins')]) {
     let entries: fs.Dirent[];
