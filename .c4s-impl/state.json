@@ -1,5 +1,5 @@
 {
-  "iteration": 34,
+  "iteration": 35,
   "conventions": [
     {
       "label": "L10 (Project Scoping) — implementor M31",
@@ -476,7 +476,7 @@
         }
       ],
       "wave": 2,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "U4a-kolejka-budowy-w-tle/p1-m01-m41",
@@ -522,14 +522,20 @@
             "carried:U3-rev-0001",
             "carried:U2-rev-0002"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 3,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "regression"
+          ],
+          "only": [
+            {
+              "slug": "regression"
+            }
+          ]
         }
       ],
-      "startCommit": "b992bc557eb8ea83f4da1da5c95432d3bff45a72",
+      "startCommit": "7c76c319f686bb1d92d496199b48bb101bdd89c6",
       "baseCommit": "c9f82376ba61b6d0e1cb69f16eec6e4a6dddd7c1",
       "rounds": {
         "review": 0,
@@ -964,7 +970,7 @@
         }
       ],
       "wave": 4,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "U6-polaczenie-mcp-wobec-przebudowy/p1-m12-m31",
@@ -983,14 +989,20 @@
             "section:m12edge0",
             "section:m12krit0"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "regression"
+          ],
+          "only": [
+            {
+              "slug": "regression"
+            }
+          ]
         }
       ],
-      "startCommit": "2f9e630c4bcccab45c35cb5374e3f89a1377452a",
+      "startCommit": "7c76c319f686bb1d92d496199b48bb101bdd89c6",
       "baseCommit": "2f9e630c4bcccab45c35cb5374e3f89a1377452a",
       "rounds": {
         "review": 0,
@@ -1033,7 +1045,7 @@
         }
       ],
       "wave": 4,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "U7-pomiary-obserwacji-i-zwalniania/p1-l10-l10",
@@ -1044,14 +1056,20 @@
             "section:bp5rw59k",
             "carried:U6-rev-0001"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 2,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "regression"
+          ],
+          "only": [
+            {
+              "slug": "regression"
+            }
+          ]
         }
       ],
-      "startCommit": "eb55630833aeeadd6bb62fdc7817b09bd085c55d",
+      "startCommit": "7c76c319f686bb1d92d496199b48bb101bdd89c6",
       "baseCommit": "41db4000759ef4a93b55e45884439744a77be853",
       "rounds": {
         "review": 0,
@@ -1082,5 +1100,6 @@
     }
   ],
   "entityParts": [],
-  "baselineGreen": true
+  "baselineGreen": true,
+  "systemVerified": false
 }
