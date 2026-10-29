@@ -41,8 +41,9 @@ export const M13_PROMPT_BLOCKS: readonly PromptBlock[] = [
   { name: 'entities', render: (c) => buildEntitiesBlock(c.host) },
   /**
    * Blocks contributed by the ACTIVE entity types, in `listEntities()` order.
-   * `<diagram_references>` is the first migrant: it used to be hardcoded in the
-   * composer and emitted even for projects with no `diagram` type mounted.
+   * The host composes no type's block of its own: a block exists only while the
+   * type contributing it is active (2.1.63 — the last host-written one,
+   * `<diagram_references>`, left with `diagram` for its prebuilt envelope).
    */
   {
     name: 'plugin_prompt_blocks',

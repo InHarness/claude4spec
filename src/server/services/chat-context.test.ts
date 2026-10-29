@@ -14,7 +14,6 @@ import { validateSubagents } from '@inharness-ai/agent-adapters';
 import { DEFAULT_SUBAGENT_TURNS } from './plugin-subagents.js';
 import type { PluginSubagentContribution } from '../../shared/plugin-host/manifest.js';
 import { acFixtureSystemPrompt as acSystemPrompt } from '../../../tests/helpers/ac-fixture.js';
-import { diagramSystemPrompt } from '../entities/diagram/system-prompt.js';
 import type { Root } from '../../shared/types.js';
 import { PROMPT_BLOCKS } from './system-prompt/registry.js';
 import { DEFAULT_COMPOSITION } from './system-prompt/compositions/default.js';
@@ -156,7 +155,6 @@ describe('buildSystemPrompt — <entities> states rules, not shapes (0.2.50)', (
   const realHost = {
     listEntities: () => [
       { type: 'ac', systemPrompt: acSystemPrompt },
-      { type: 'diagram', systemPrompt: diagramSystemPrompt },
     ],
   } as unknown as ProjectPluginHost;
 
@@ -173,14 +171,6 @@ describe('buildSystemPrompt — <entities> states rules, not shapes (0.2.50)', (
     for (const shape of ['verifies[]', 'requirement/edge-case', 'active/deprecated']) {
       expect({ shape, present: block.includes(shape) }).toEqual({ shape, present: false });
     }
-  });
-
-  it('does not restate a convention block emitted beside it', () => {
-    // diagram's own <diagram_references> carries the reference grammar; the row
-    // must point at it rather than spell the two tags out a second time.
-    const out = build({ host: realHost, mcpInventory: CHAT_INVENTORY });
-    expect(out).toContain('<diagram_references>');
-    expect(entitiesBlock(out)).not.toContain('<single_element type="diagram"');
   });
 });
 
@@ -1663,35 +1653,34 @@ describe('buildSystemPrompt — no project or phantom-tool leaks (0.2.50)', () =
  * 0.2.50 — a type's `promptBlocks` reach the writing-conventions layer, and only
  * while the type is active.
  *
- * `<diagram_references>` is the first migrant. It was hardcoded in the core
- * builder and emitted unconditionally — so a project with no `diagram` type got
- * a screenful of instructions for embedding diagrams it cannot create — while
- * the diagram's own `narrativeBlock` ended by pointing at it. One convention,
- * two files, neither owning it.
+ * The first migrant was `<diagram_references>`, hardcoded in the core builder
+ * and emitted unconditionally. Since 2.1.63 the host composes no type's block of
+ * its own (that one left with `diagram` for its prebuilt envelope), so the
+ * mechanism is asserted on a fixture type.
  */
 describe('buildSystemPrompt — plugin promptBlocks (0.2.50)', () => {
   const hostWith = (blocks: Array<{ name: string; body: string }>) =>
     ({
       listEntities: () => [
-        { type: 'diagram', systemPrompt: { roleNoun: 'Diagrams', promptBlocks: blocks } },
+        { type: 'sketch', systemPrompt: { roleNoun: 'Sketches', promptBlocks: blocks } },
       ],
     }) as unknown as ProjectPluginHost;
 
   it('emits an active type\'s block, in the conventions layer', () => {
     const out = build({
       contextType: 'chat',
-      host: hostWith([{ name: 'diagram_references', body: '<diagram_references>D</diagram_references>' }]),
+      host: hostWith([{ name: 'sketch_references', body: '<sketch_references>D</sketch_references>' }]),
       currentPagePath: 'guide.md',
       currentPageBody: 'body',
     });
-    expect(out).toContain('<diagram_references>D</diagram_references>');
-    expect(out.indexOf('<diagram_references>')).toBeGreaterThan(out.indexOf('<entity_embeds'));
-    expect(out.indexOf('<diagram_references>')).toBeLessThan(out.indexOf('<current_page '));
+    expect(out).toContain('<sketch_references>D</sketch_references>');
+    expect(out.indexOf('<sketch_references>')).toBeGreaterThan(out.indexOf('<entity_embeds'));
+    expect(out.indexOf('<sketch_references>')).toBeLessThan(out.indexOf('<current_page '));
   });
 
   it('emits nothing when no active type contributes one', () => {
     const out = build({ contextType: 'chat' });
-    expect(out).not.toContain('<diagram_references>');
+    expect(out).not.toContain('<sketch_references>');
   });
 });
 

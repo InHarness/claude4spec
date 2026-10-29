@@ -31,6 +31,8 @@ import {
 import { basePackageLocator, workspaceNodeModulesDir } from '../../../src/server/core/plugin-host/workspace-packages.js';
 import { CATALOG } from '../../../src/server/operations/catalog.js';
 import { registerCoreOperations } from '../../../src/server/operations/core-operations.js';
+import { buildSystemPrompt } from '../../../src/server/services/chat-context.js';
+import type { BackendModule, ProjectPluginHost } from '../../../src/server/core/plugin-host/types.js';
 import { FileWatchRuntime } from '../../../src/server/fs/watcher.js';
 import { WsGateway } from '../../../src/server/ws/gateway.js';
 import { ProjectContextCache } from '../../../src/server/workspace/context-cache.js';
@@ -159,14 +161,42 @@ describe('[entity:encje-pluginy#c4s-plugin-diagram] diagram ships as a prebuilt 
     expect(record?.commands?.map((c) => c.trigger)).toContain('diagram');
   }, 60_000);
 
+  it('[entity:encje-pluginy#c4s-plugin-diagram] the diagram row and `<diagram_references>` block of the prompt come with the envelope\'s type; the host alone composes neither', async () => {
+    const registry = new PluginRegistryImpl();
+    await loadBuiltinEnvelopes(registry);
+    const diagram = registry.getAvailable('diagram');
+    expect(diagram?.systemPrompt.promptBlocks?.map((b) => b.name)).toEqual(['diagram_references']);
+
+    const prompt = (types: BackendModule[]): string =>
+      buildSystemPrompt({
+        host: { listEntities: () => types } as unknown as ProjectPluginHost,
+        projectName: 'p',
+        cwd: '/tmp/p',
+        roots: [{ id: 'pages', name: 'pages', dir: 'pages', builtin: true }],
+        currentPagePath: null,
+        currentPageBody: null,
+        contextType: 'chat',
+      });
+    const withEnvelope = prompt(registry.listAvailable());
+    expect(withEnvelope).toContain('<diagram_references>');
+    expect(withEnvelope).toContain('<entity type="diagram">');
+    // Every other base type, as the host would compose them — the envelope's
+    // type is the only carrier of either.
+    const hostAlone = prompt(registry.listAvailable().filter((m) => m.type !== 'diagram'));
+    expect(hostAlone).not.toContain('<diagram_references>');
+    expect(hostAlone).not.toContain('<entity type="diagram">');
+    // …and no host source writes the block or the row itself.
+    for (const file of [...sourcesUnder('src/server'), ...sourcesUnder('src/shared')]) {
+      expect(codeOf(file), path.relative(REPO_ROOT, file)).not.toMatch(
+        /['"`]diagram_references['"`]|<single_element type="diagram"|<entity type="diagram">/,
+      );
+    }
+  }, 60_000);
+
   it('[entity:encje-pluginy#c4s-plugin-diagram] host code registers no `diagram`: no direct-registration module, no diagram module, no bootstrap call', () => {
     for (const gone of [
       'src/server/core/plugin-host/register-builtins.ts',
-      'src/server/entities/diagram/plugin.ts',
-      'src/server/entities/diagram/mcp-server.ts',
-      'src/server/entities/diagram/validate.ts',
-      'src/server/entities/diagram/serializer.ts',
-      'src/server/entities/diagram/upgrades.ts',
+      'src/server/entities/diagram',
       'src/shared/entities/diagram',
       'src/client/entities/diagram',
     ]) {
@@ -310,5 +340,14 @@ describe('the host carries no diagram tooling of its own', () => {
     // The page context's slash gates name no `/diagram`: a plugin command takes
     // the reference gate by default (M33 `m33l8cmd`).
     expect(codeOf(path.join(REPO_ROOT, 'src/client/tiptap/contextSpec.ts'))).not.toMatch(/\bdiagram\s*:/);
+    // No render surface of its own either: the host stylesheet keeps no diagram
+    // SVG hook, and the host does not depend on the renderer the envelope bundles.
+    expect(fs.readFileSync(path.join(REPO_ROOT, 'src/client/styles/theme.css'), 'utf8')).not.toMatch(/c4s-diagram/);
+    const pkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    expect(pkg.dependencies?.mermaid).toBeUndefined();
+    expect(pkg.devDependencies?.mermaid).toBeUndefined();
   });
 });

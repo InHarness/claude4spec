@@ -284,36 +284,8 @@ body {
   }
 }
 
-/* Diagram render surfaces — background follows the `color-card` token (light
-   #fffdf8 / dark #2c2b27) instead of a literal, so the mermaid SVG blends into
-   the light and dark shells alike. Applied on all four surfaces: the embedded
-   NodeView, the fullscreen stage, the popover live-preview and the entity
-   detail panel. */
-.c4s-diagram-svg {
-  background: var(--c-card);
-}
-
-/* Invariant: app typography does NOT style rendered diagram SVG content.
-   Mermaid puts HTML labels inside <foreignObject> and wraps them in a real
-   <p>, which `.prose-spec p` (0,1,1) would otherwise recolor with --c-ink —
-   invisible in light, unreadable in dark — overriding the diagram theme's own
-   label color. At (0,1,2) these win. The appearance of SVG content belongs
-   solely to the diagram's themeVariables; element selectors (not
-   `foreignObject`) keep this immune to SVG's case-sensitive type matching. */
-.c4s-diagram-svg svg p,
-.c4s-diagram-svg svg div,
-.c4s-diagram-svg svg span {
-  color: inherit;
-  font-family: inherit;
-  font-size: inherit;
-  line-height: inherit;
-  font-style: inherit;
-  margin: 0;
-}
-
 /* Invariant: app typography does NOT style the inside of a code-snippet block.
-   The SAME rule the diagram guard above states, for the same reason. A snippet
-   card is a Tiptap node view living inside `.prose-spec`, so `.prose-spec pre`
+   A snippet card is a Tiptap node view living inside `.prose-spec`, so `.prose-spec pre`
    (0,1,1) and `.prose-spec code` would otherwise repaint the block's background,
    put a border and 10px of padding around the highlighted body, and override the
    syntax colours with `--c-accent-ink`. The block's own appearance belongs to

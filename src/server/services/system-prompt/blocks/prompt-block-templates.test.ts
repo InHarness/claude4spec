@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildSystemPrompt, type SystemPromptInput } from '../../chat-context.js';
 import { INTERACTION_RULES } from '../../interaction-rules.js';
-import { diagramSystemPrompt } from '../../../entities/diagram/system-prompt.js';
+import { SKETCH_SYSTEM_PROMPT } from '../../../../../tests/helpers/fixture-module.js';
 import type { ProjectPluginHost } from '../../../core/plugin-host/types.js';
 import type { PatchDetail, PatchService } from '../../patch.js';
 import type { CapturedMcpServer } from '../../../plugin-runtime/index.js';
@@ -113,19 +113,6 @@ const T = {
     "specification (edit the relevant pages/entities).",
     "`applied` says whether this patch was already folded into the spec once.",
   ].join('\n'),
-  /** `szablon-diagram-references` */
-  DIAGRAM_REFERENCES: [
-    "<diagram_references>",
-    "  <single_element type=\"diagram\" slug=\"...\" caption=\"...\"/>",
-    "  <inline_mention type=\"diagram\" slug=\"...\"/>",
-    "A `diagram` is embedded with the GENERIC reference tags, like every other entity type. The Mermaid DSL `source` is the entity's truth (stored in `.claude4spec/entities/diagram/<slug>.json`), NOT inline in the page. The page tag carries `type`, `slug` (which diagram) and an optional `caption` — caption is per-reference prose, so the same diagram can show different captions in different places. Tiptap fetches the source by slug and renders it live, with a fallback `<pre>` on parse error. Create and edit diagrams through the generic `entity-tools` CRUD; `diagram-tools` keeps only `validate_diagram` (DSL pre-flight). Insertable via slash command `/diagram` (authors the source, creates the entity, inserts the reference) in page and plan editors.",
-    "",
-    "`diagram` is a HIDDEN type: it has no sidebar tab and no detail page, so `<element_list type=\"diagram\" .../>` and `<tagged_list type=\"diagram\" .../>` are NOT supported — embed diagrams one at a time.",
-    "",
-    "Example:",
-    "  <single_element type=\"diagram\" slug=\"auth-flow\" caption=\"Auth flow\"/>",
-    "</diagram_references>",
-  ].join('\n'),
   /** `szablon-discovery-and-impact` */
   DISCOVERY_AND_IMPACT: [
     "<discovery_and_impact severity=\"mandatory\">",
@@ -159,10 +146,6 @@ const T = {
     "(jeden wiersz na aktywny typ encji, w kolejności listy typów hosta; typ o pustym rzeczowniku roli",
     "wiersza nie dostaje wcale — brak rzeczownika jest rezygnacją z wiersza, nie wierszem pustym.",
     "Brzmienie konkretnego wiersza należy do typu, którego dotyczy, i tutaj nie stoi.)",
-  ].join('\n'),
-  /** `szablon-entities-wiersz-diagram` */
-  ENTITIES_WIERSZ_DIAGRAM: [
-    "  <entity type=\"diagram\">Diagrams are hoisted out to entities — the Mermaid DSL lives in the entity, NEVER pasted into the page. Embed one with the generic reference tags; the grammar is in `<diagram_references>`.</entity>",
   ].join('\n'),
   /** `szablon-entity-embeds` */
   ENTITY_EMBEDS: [
@@ -282,13 +265,17 @@ function fill(template: string, pairs: ReadonlyArray<readonly [string, string]>)
 
 const emptyHost = { listEntities: () => [] } as unknown as ProjectPluginHost;
 
-/** A narrative row, a roleNoun-only row, an opted-out type (empty roleNoun) and diagram. */
+/**
+ * A narrative row, a roleNoun-only row, an opted-out type (empty roleNoun) and a
+ * type that brings its own block (the `sketch` fixture; 2.1.63 — it replaced the
+ * host's `diagram`, whose row and block left with the type for its envelope).
+ */
 const typedHost = {
   listEntities: () => [
     { type: 'endpoint', systemPrompt: { roleNoun: 'Endpoints', narrativeBlock: 'HTTP endpoints; link DTOs.' } },
     { type: 'dto', systemPrompt: { roleNoun: 'DTOs' } },
     { type: 'ui-view', systemPrompt: { roleNoun: '' } },
-    { type: 'diagram', systemPrompt: diagramSystemPrompt },
+    { type: 'sketch', systemPrompt: SKETCH_SYSTEM_PROMPT },
   ],
 } as unknown as ProjectPluginHost;
 
@@ -460,7 +447,7 @@ describe('M48 — the frame blocks', () => {
 
   it('[entity:szablon-entity-embeds] renders the template verbatim, the inline-mention type union being the active types that keep a catalogue row', () => {
     const b = block(build({ host: typedHost }), 'entity_embeds');
-    expect(b).toBe(fill(T.ENTITY_EMBEDS, [['{aktywne typy encji, rozdzielone |}', 'endpoint|dto|diagram']]));
+    expect(b).toBe(fill(T.ENTITY_EMBEDS, [['{aktywne typy encji, rozdzielone |}', 'endpoint|dto|sketch']]));
   });
 
   it('[entity:szablon-discovery-and-impact] renders the template verbatim', () => {
@@ -522,17 +509,12 @@ describe('M13 — the entity catalogue', () => {
         ['{narrativeBlock ?? roleNoun}', 'DTOs'],
       ]),
     ]);
-    expect(rows.map((l) => /type="([^"]+)"/.exec(l)?.[1])).toEqual(['endpoint', 'dto', 'diagram']);
+    expect(rows.map((l) => /type="([^"]+)"/.exec(l)?.[1])).toEqual(['endpoint', 'dto', 'sketch']);
   });
 
-  it('[entity:szablon-entities-wiersz-diagram] the diagram type\'s row is the template verbatim', () => {
-    const rows = block(build({ host: typedHost }), 'entities').split('\n');
-    expect(rows).toContain(T.ENTITIES_WIERSZ_DIAGRAM);
-  });
-
-  it('[entity:szablon-diagram-references] the diagram type contributes the template verbatim as its own block', () => {
-    expect(block(build({ host: typedHost }), 'diagram_references')).toBe(T.DIAGRAM_REFERENCES);
-    expect(build({})).not.toContain('<diagram_references>');
+  it('a type\'s own block is the contributor\'s text verbatim, emitted only while the type is active', () => {
+    expect(block(build({ host: typedHost }), 'sketch_references')).toBe(SKETCH_SYSTEM_PROMPT.promptBlocks![0]!.body);
+    expect(build({})).not.toContain('<sketch_references>');
   });
 });
 

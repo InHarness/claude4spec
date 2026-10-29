@@ -1,6 +1,7 @@
 import type { BackendModule, MountContext } from '../../src/server/core/plugin-host/types.js';
 import type { DataDeclaration } from '../../src/shared/plugin-host/data-schema.js';
 import type { SlugPattern } from '../../src/shared/plugin-host/slug-pattern.js';
+import type { SystemPromptContribution } from '../../src/shared/plugin-host/types.js';
 
 export interface FixtureModuleOpts {
   /**
@@ -84,6 +85,30 @@ export const SKETCH_FIXTURE_SLUG_PATTERN: SlugPattern = [
   { op: 'slugify', field: 'title' },
   { op: 'truncate', n: 60 },
 ];
+
+/**
+ * The system-prompt contribution of the `sketch` test type: a narrative catalogue
+ * row that points at the type's own prompt block, and that block.
+ *
+ * 2.1.63 — the prompt tests (`system-prompt.golden.test.ts`,
+ * `prompt-block-templates.test.ts`, `chat-context.test.ts`) used the host's own
+ * `diagram` contribution as their "type that brings a block" example. That
+ * contribution left with the type for the prebuilt envelope, so the composer's
+ * handling of a contributed row + block is asserted on this fixture: what the
+ * tests prove is how the HOST places a contributor's text, not the text itself.
+ */
+export const SKETCH_REFERENCES_BLOCK = `<sketch_references>
+  <single_element type="sketch" slug="..." caption="..."/>
+A \`sketch\` is embedded with the generic reference tags. This block exists only while the type is active.
+</sketch_references>`;
+
+export const SKETCH_SYSTEM_PROMPT: SystemPromptContribution = {
+  roleNoun: 'Sketches',
+  mcpToolsLine: 'sketch-tools: validate_sketch',
+  narrativeBlock:
+    'Sketches live in the entity, never pasted into the page. Embed one with the generic reference tags; the grammar is in `<sketch_references>`.',
+  promptBlocks: [{ name: 'sketch_references', body: SKETCH_REFERENCES_BLOCK }],
+};
 
 /**
  * A minimal, real (non-core) plugin module — distinct from every
