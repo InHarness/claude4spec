@@ -5,6 +5,7 @@ import type {
   HttpMethod,
 } from '../../shared/entities.js';
 import type { GitErrorRecovery } from '../../shared/git.js';
+import type { RunnerHostResponse } from '../../shared/runner-hosts.js';
 import type { PageRefSyntax } from '../tiptap/extensions/PageRefNode.js';
 
 // ---------- Toasts ----------
@@ -103,6 +104,8 @@ export type ConfirmKind =
   | 'project-purge'
   | 'account-logout'
   | 'agent-credential-remove'
+  // 2.1.62 (M54 L5 `wzku2ck1`): payload `{ id }` — the record the action removes.
+  | 'runner-host-remove'
   | (string & {});
 
 export interface ConfirmRequest extends ConfirmInput {
@@ -326,6 +329,17 @@ export type ModalMap = {
     result: { name: string; description: string };
   };
   'project-create': { props: NoProps; result: { id: string } };
+  /**
+   * 2.1.62 (M54 L5 `wzku2ck1`) — the runner-host windows of the `#runner-hosts`
+   * card. Each sends its own request (payload `create-runner-host-request` /
+   * `update-runner-host-request`) so a refusal stays under its field; the
+   * result is the saved record, plus — for an edit — whether a new token went out.
+   */
+  'runner-host-create': { props: NoProps; result: RunnerHostResponse };
+  'runner-host-edit': {
+    props: { host: RunnerHostResponse };
+    result: { host: RunnerHostResponse; tokenChanged: boolean };
+  };
   'page-resolve': {
     props: { rootId: string; path: string; currentHash?: string; currentContent?: string };
     result: 'reload' | 'keep';

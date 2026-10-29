@@ -8,6 +8,7 @@ import { PageChanged } from './PageChanged.js';
 import { ChoiceModal } from './ChoiceModal.js';
 import { ProjectCreate } from './ProjectCreate.js';
 import { TrustPluginsModal } from '../../components/TrustPluginsModal.js';
+import { RunnerHostCreateDialog, RunnerHostEditDialog } from '../../components/runner-hosts/RunnerHostDialog.js';
 
 type HostModalKind = Exclude<ModalKind, `${string}-expand`>;
 
@@ -28,4 +29,6 @@ export const MODAL_RENDERERS: RendererMap = {
   'onboarding-skip': ChoiceModal,
   'project-create': ProjectCreate,
   'project-plugins-trust': TrustPluginsModal,
+  'runner-host-create': RunnerHostCreateDialog,
+  'runner-host-edit': RunnerHostEditDialog,
 };

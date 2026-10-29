@@ -27,20 +27,37 @@ function keyringPath(): string {
   return path.join(workspaceBaseDir(), 'secret.key');
 }
 
-/** Lazily create the 32-byte keyring on first use; read it on subsequent calls. */
+function readKeyring(file: string): Buffer {
+  const key = fs.readFileSync(file);
+  if (key.length !== KEY_BYTES) {
+    throw new Error(`secret.key is corrupt: expected ${KEY_BYTES} bytes, got ${key.length}`);
+  }
+  return key;
+}
+
+/**
+ * Lazily create the 32-byte keyring on first use; read it on subsequent calls.
+ * 2.1.62 (M54 writes from several processes): the key is written to a private
+ * temp file and published with `link`, which fails if `secret.key` already
+ * exists — so two processes making their first write at once agree on ONE key
+ * (the loser reads the winner's) and nobody ever sees a half-written file.
+ */
 function loadKeyring(): Buffer {
   const file = keyringPath();
-  if (fs.existsSync(file)) {
-    const key = fs.readFileSync(file);
-    if (key.length !== KEY_BYTES) {
-      throw new Error(`secret.key is corrupt: expected ${KEY_BYTES} bytes, got ${key.length}`);
-    }
-    return key;
-  }
-  const key = crypto.randomBytes(KEY_BYTES);
+  if (fs.existsSync(file)) return readKeyring(file);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, key, { mode: 0o600 });
-  return key;
+  const tmp = `${file}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+  const key = crypto.randomBytes(KEY_BYTES);
+  fs.writeFileSync(tmp, key, { mode: 0o600 });
+  try {
+    fs.linkSync(tmp, file);
+    return key;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+    return readKeyring(file);
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
 }
 
 /** Encrypt plaintext → base64 `iv | authTag | ciphertext`. */
@@ -53,9 +70,15 @@ export function encrypt(plaintext: string): string {
   return Buffer.concat([iv, authTag, ciphertext]).toString('base64');
 }
 
-/** Decrypt a base64 `iv | authTag | ciphertext` blob back to plaintext. */
+/**
+ * Decrypt a base64 `iv | authTag | ciphertext` blob back to plaintext.
+ * 2.1.62 (M54 `qc6t2y7m`): a read never creates the keyring — the primitive
+ * creates a key at the first WRITE only. A missing `secret.key` makes every
+ * stored ciphertext unreadable (this throws), and no key file appears as a
+ * side effect of reading.
+ */
 export function decrypt(stored: string): string {
-  const key = loadKeyring();
+  const key = readKeyring(keyringPath());
   const buf = Buffer.from(stored, 'base64');
   const iv = buf.subarray(0, IV_BYTES);
   const authTag = buf.subarray(IV_BYTES, IV_BYTES + AUTH_TAG_BYTES);
