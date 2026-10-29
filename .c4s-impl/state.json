@@ -762,21 +762,14 @@
             "section:m13pool0",
             "section:m13plenv"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [
             "ac-snapshot-niesie-pelne-code-przy-pusty",
             "ac-koperta-wnosi-pelen-vertical-slice-ty"
           ],
-          "only": [
-            {
-              "slug": "ac-snapshot-niesie-pelne-code-przy-pusty"
-            },
-            {
-              "slug": "ac-koperta-wnosi-pelen-vertical-slice-ty"
-            }
-          ]
+          "only": []
         }
       ],
       "rounds": {

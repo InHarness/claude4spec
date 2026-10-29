@@ -18,12 +18,14 @@ import request from 'supertest';
 import { createTestApp } from '../../helpers/test-app.js';
 import { buildSystemPrompt } from '../../../src/server/services/chat-context.js';
 import { diffEntity, snapshotEntity } from '../../../src/server/serialization/snapshot.js';
+import { codeSnippetEntity } from '../../../plugins/c4s-plugin-code-snippets/src/entity/code-snippet/index.js';
 import type { Root } from '../../../src/shared/types.js';
 
 // The type comes from the `c4s-plugin-code-snippets` envelope the harness loads
 // (its build of this package's source). Registering the source module beside it
 // would contribute `code-snippet` to the base twice — `PLUGIN_TYPE_CONFLICT`
-// since 2.1.63.
+// since 2.1.63. The source declaration is still imported, read-only, for the
+// assertions about the declaration itself (payload version, no `backend` slot).
 const app = () => createTestApp();
 
 type T = Awaited<ReturnType<typeof app>>;
