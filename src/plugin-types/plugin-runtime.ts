@@ -582,15 +582,33 @@ export interface EntityCardProps<T = unknown> extends EntityChipProps<T> {
   /**
    * 0.2.15 — the `caption` written on THIS `<single_element/>` reference.
    * Advisory prose belonging to the reference, not to the entity, so it is never
-   * synced back and is absent whenever the tag omitted it.
+   * synced back and is absent whenever the tag omitted it (no prop, not `''`).
    */
   caption?: string;
+  /**
+   * 2.1.63 — change the caption of THIS reference. The host writes the new value
+   * into the `caption` attribute of the page's `single_element` tag, never onto
+   * the entity; `null` removes the attribute. Passed only where the reference is
+   * editable (the page editor) — a read-only context such as chat gets none.
+   */
+  onCaptionChange?: (caption: string | null) => void;
   /**
    * 2.1.41 — `${type}:${slug}` of a TARGET record → its `RefLookupEntry`, built by
    * the host for this card's one entity; always present, empty when nothing
    * resolves. Draw a value with `EntityRefValue`.
    */
   refLookup: ReadonlyMap<string, RefLookupEntry>;
+}
+/**
+ * 2.1.63 — props of the `renderOverlay` slot: the content of the host's
+ * `<type>-expand` window of a hidden entity. `caption` comes from the reference
+ * when the window opens from a card carrying one (absent otherwise); `onClose`
+ * closes the window.
+ */
+export interface EntityOverlayProps {
+  slug: string;
+  caption?: string;
+  onClose: () => void;
 }
 /**
  * Props of the `renderRow` slot. `entity` is always resolved: for a missing
@@ -706,7 +724,7 @@ export interface FrontendModule extends EntityModuleManifest {
    * with a detail route must send its clicks to `editorBridge.openEntity`, and an
    * overlay beside that route would be a second answer to where a click goes.
    */
-  renderOverlay?: ComponentType<{ slug: string; caption?: string; onClose: () => void }>;
+  renderOverlay?: ComponentType<EntityOverlayProps>;
   useGetBySlug: (slug: string | null) => {
     data: unknown | null | undefined;
     isLoading: boolean;

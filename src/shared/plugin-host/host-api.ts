@@ -790,6 +790,21 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       'did not work anyway and no external plugin is published: `HOST_API_VERSION` is unchanged and ' +
       'there is no `migrations[]` descriptor.',
   },
+  {
+    release: '2.1.63',
+    slot: 'EntityCardProps.onCaptionChange + @c4s/plugin-runtime: EntityOverlayProps (renderOverlay)',
+    kind: 'slot-added',
+    summary:
+      '`onCaptionChange` in `EntityCardProps` and the name `EntityOverlayProps` — additive within the ' +
+      'current baseline. The `renderCard` slot receives from the host an optional `onCaptionChange` ' +
+      'callback that changes the caption of THIS reference: the host writes it into the `caption` ' +
+      'attribute of the page\'s `single_element` tag, never onto the entity, and passes no callback in a ' +
+      'read-only context (chat). The props shape of the `renderOverlay` slot, `{ slug, caption?, onClose }`, ' +
+      'gets the name `EntityOverlayProps` and joins the versioned surface. An optional field added to the ' +
+      'props the host hands a slot does not break an existing slot — the `refLookup` precedent — and naming ' +
+      'a shape that was already passed changes nothing in it. The change is purely additive (rule (2)) and ' +
+      'fits within the current baseline, with no bump. `HOST_API_VERSION` stays `2.1.0`.',
+  },
 ];
 
 /**

@@ -883,8 +883,8 @@
             "ac-zmiana-podpisu-przez-oncaptionchange",
             "ac-karta-osadzona-znacznikiem-single-ele"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 1,
           "partial": 0,
           "uncovered": [],
           "only": []
