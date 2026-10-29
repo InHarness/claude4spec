@@ -127,8 +127,17 @@ describe('2.1.58 — no project is built before listen (source)', () => {
     // activation, the background build without writes.
     const builds = lines.filter(({ text }) => /\bbuildProjectContext\s*\(/.test(text));
     expect(builds).toHaveLength(1);
-    expect(lines.some(({ text }) => /activatingBuild\(registry, workspace, \(project\) => buildContext\(project, 'allowed'\)/.test(text))).toBe(true);
-    expect(lines.some(({ text }) => /background: backgroundBuild\(registry, \(project, mode\) => buildContext\(project, mode\.projectWrites\)\)/.test(text))).toBe(true);
+    // Both carry the build's abort signal (a disposed/retired build ends early).
+    expect(
+      lines.some(({ text }) =>
+        /activatingBuild\(registry, workspace, \(project, signal\) => buildContext\(project, 'allowed', signal\), activated\)/.test(text),
+      ),
+    ).toBe(true);
+    expect(
+      lines.some(({ text }) =>
+        /background: backgroundBuild\(registry, \(project, mode\) => buildContext\(project, mode\.projectWrites, mode\.signal\)\)/.test(text),
+      ),
+    ).toBe(true);
     // The queue gets the composition only AFTER the listen — last opened project first.
     const listenAt = lines.find(({ text }) => /await listenOrExit\(/.test(text))!.line;
     const startAt = lines.filter(({ text }) => /\bcache\.start\(/.test(text));

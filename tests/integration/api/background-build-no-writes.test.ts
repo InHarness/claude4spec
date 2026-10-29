@@ -200,7 +200,7 @@ describe('M01 — the background context build writes nothing into the project',
       const seeded = await cache.get(project);
       seeded.db.handle
         .prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES (?, NULL, ?, ?, ?)`)
-        .run('Legacy release', '', 'user', '2026-01-01T00:00:00.000Z');
+        .run('Legacy release', 'A release recorded before slugs existed', 'user', '2026-01-01T00:00:00.000Z');
       await seeded.bootSettled;
       await cache.retire(project.id);
       expect(await background(project)).toEqual({ state: 'needs-activation', needs: ['text-migration'] });
