@@ -1,0 +1,16 @@
+{
+  "id": "dev-5401",
+  "kind": "missing",
+  "blocking": false,
+  "address": "m54-supervisor/m9e73y05",
+  "slugs": [
+    "ac-zmiana-tokenu-po-odrzucony-token-wzna",
+    "ac-zmiana-url-zachowuje-powiazanie"
+  ],
+  "text": "Cykl nadzoru mówi przy zmianie tokenu i `url`: „zamknij subskrypcję, … wykonaj nową próbę”, a „Próba i timeouty” wylicza próby synchroniczne tylko dla dodania i testu po statusie bez żywej subskrypcji. Nie jest ustalone, czy próba po zmianie `url`/tokenu odpowiada na PATCH synchronicznie, czy biegnie w tle (odpowiedź PATCH ze statusem `connecting`). Przyjęte: próba po zmianie `url` lub tokenu jest synchroniczna z tym samym budżetem 15 s co dodanie — odpowiedź PATCH niesie jej wynik (albo `connecting` po przekroczeniu budżetu, próba kończy się w tle). Zmiana samej etykiety nie wykonuje próby.",
+  "assumption": "ASSUMPTION:dev-5401 — the attempt after a url/token change answers the PATCH like the add's synchronous attempt (same 15 s budget).",
+  "unit": "m54-supervisor",
+  "portion": "m54-supervisor/p1-l10-l10",
+  "sent": true,
+  "patchPath": "2-1-60-to-2-1-62-m54-supervisor-m9e73y05-cykl-nadzoru-mowi-przy-zmianie-tokenu-i-url-zamknij-subs.md"
+}

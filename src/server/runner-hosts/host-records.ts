@@ -55,6 +55,14 @@ function isRecord(value: unknown): value is RunnerHostRecord {
   return typeof r.id === 'string' && typeof r.url === 'string';
 }
 
+/**
+ * The runner-host records of an entry's `runnerHosts[]` (the stored entry, or
+ * the workspace view at start): entries that are not records are skipped.
+ */
+export function runnerHostRecordsOf(hosts: unknown[] | undefined): RunnerHostRecord[] {
+  return (hosts ?? []).filter(isRecord).map(copy);
+}
+
 function sameUrl(stored: string, normalized: string): boolean {
   try {
     return normalizeHostUrl(stored) === normalized;
@@ -97,7 +105,7 @@ export class RunnerHostStore {
   list(): RunnerHostRecord[] {
     const entry = this.registry.readStoredEntry(this.workspace);
     if (!entry) throw new WorkspaceEntryGoneError(this.workspace.name, this.registry.filePath);
-    return (entry.runnerHosts ?? []).filter(isRecord).map(copy);
+    return runnerHostRecordsOf(entry.runnerHosts);
   }
 
   add(input: AddRunnerHostInput): RunnerHostRecord {

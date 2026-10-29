@@ -1,5 +1,5 @@
 {
-  "iteration": 9,
+  "iteration": 16,
   "conventions": [
     {
       "label": "L4 (API) — implementor M49",
@@ -58,7 +58,7 @@
       "units": [
         "m54-supervisor"
       ],
-      "startCommit": null
+      "startCommit": "0c98a094da50edca8003bfaf258e704f2f1ac060"
     },
     {
       "n": 4,
@@ -499,7 +499,7 @@
         }
       ],
       "wave": 3,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "m54-supervisor/p1-l10-l10",
@@ -557,20 +557,21 @@
             "ac-zmiana-tokenu-po-odrzucony-token-wzna",
             "ac-zmiana-url-zachowuje-powiazanie"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "edfc241adc0d787e1779354732c5cd285365b323",
+      "baseCommit": "0c98a094da50edca8003bfaf258e704f2f1ac060",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0
     },
     {
       "id": "m54-api",

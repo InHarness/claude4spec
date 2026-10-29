@@ -33,6 +33,8 @@ import type { FrontendBaseTier } from './core/plugin-host/frontend-assets.js';
 import { errorHandler } from './routes/errors.js';
 import { buildImportMap } from './core/plugin-host/runtime-shims.js';
 import { discoverBuiltinEnvelopes, servableEnvelopes } from './core/plugin-host/builtin-envelopes.js';
+import { RunnerHostStore, runnerHostRecordsOf } from './runner-hosts/host-records.js';
+import { RunnerHostSupervisor } from './runner-hosts/supervisor.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -499,6 +501,17 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const spaDeps = { registry, workspace, startCwd: cwd };
   const closeAssets = mode === 'dev' ? await mountDevVite(app, spaDeps) : mountProd(app, spaDeps);
 
+  // M54 L10 `i58ogfc2` (2.1.62): the runner-host supervisor — one per process,
+  // created eagerly before listen from the records of the workspace VIEW (a
+  // record another process adds is supervised from this process's next start).
+  // Every record starts `connecting` and connects in the background: listen
+  // never waits for a host.
+  const runnerHosts = new RunnerHostSupervisor({
+    store: new RunnerHostStore(registry, workspace),
+    records: runnerHostRecordsOf(workspace.runnerHosts),
+  });
+  runnerHosts.start();
+
   const host = opts.host ?? effectiveBindHost(liveWorkspace());
   const port = await listenOrExit(httpServer, portRef.current, host);
   portRef.current = port;
@@ -537,6 +550,8 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       // from the queue instead of from a timer. A failed reload has already
       // been logged by the chain's own catch, so settling is enough.
       await baseReloadChain.catch(() => {});
+      // M54: every runner-host stream closes, every attempt and retry is cancelled.
+      await runnerHosts.close();
       // M31 `m31ctx001` (2.1.60): the contexts go first — the build in progress
       // is aborted and releases its partial resources (its watch scope among
       // them) while the runtime still stands; then the process mounts close.

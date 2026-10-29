@@ -70,9 +70,15 @@ export function encrypt(plaintext: string): string {
   return Buffer.concat([iv, authTag, ciphertext]).toString('base64');
 }
 
-/** Decrypt a base64 `iv | authTag | ciphertext` blob back to plaintext. */
+/**
+ * Decrypt a base64 `iv | authTag | ciphertext` blob back to plaintext.
+ * 2.1.62 (M54 `qc6t2y7m`): a read never creates the keyring — the primitive
+ * creates a key at the first WRITE only. A missing `secret.key` makes every
+ * stored ciphertext unreadable (this throws), and no key file appears as a
+ * side effect of reading.
+ */
 export function decrypt(stored: string): string {
-  const key = loadKeyring();
+  const key = readKeyring(keyringPath());
   const buf = Buffer.from(stored, 'base64');
   const iv = buf.subarray(0, IV_BYTES);
   const authTag = buf.subarray(IV_BYTES, IV_BYTES + AUTH_TAG_BYTES);
