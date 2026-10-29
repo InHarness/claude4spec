@@ -1,0 +1,10 @@
+create-runner-host-request → src/shared/runner-hosts.ts (CreateRunnerHostRequest) + parseCreate in src/server/routes/runner-hosts.ts · test: src/server/routes/runner-hosts.route.test.ts "[dto:create-runner-host-request] POST adds a host…"
+update-runner-host-request → src/shared/runner-hosts.ts (UpdateRunnerHostRequest) + parseUpdate in src/server/routes/runner-hosts.ts · test: src/server/routes/runner-hosts.route.test.ts "[dto:update-runner-host-request] PATCH changes a host…"
+test-runner-host-request → src/shared/runner-hosts.ts (TestRunnerHostRequest) + parseTest in src/server/routes/runner-hosts.ts · test: src/server/routes/runner-hosts.route.test.ts "[dto:test-runner-host-request] POST …/:id/test…"
+runner-host-response → src/shared/runner-hosts.ts (RunnerHostResponse) + toRunnerHostResponse in src/server/routes/runner-hosts.ts · test: src/server/routes/runner-hosts.route.test.ts "[dto:runner-host-response] GET lists the hosts…"
+remove-runner-host-response → src/shared/runner-hosts.ts (RemoveRunnerHostResponse) · test: src/server/routes/runner-hosts.route.test.ts "[dto:remove-runner-host-response] DELETE removes the host…"
+get-api-workspace-runner-hosts → src/server/routes/runner-hosts.ts (GET /, mounted at /api/workspace/runner-hosts in src/server/index.ts) · test: src/server/routes/runner-hosts.route.test.ts "[endpoint:get-api-workspace-runner-hosts]" (2 tests)
+post-api-workspace-runner-hosts → src/server/routes/runner-hosts.ts (POST /) · test: src/server/routes/runner-hosts.route.test.ts "[endpoint:post-api-workspace-runner-hosts]"
+patch-api-workspace-runner-hosts-id → src/server/routes/runner-hosts.ts (PATCH /:id) · test: src/server/routes/runner-hosts.route.test.ts "[endpoint:patch-api-workspace-runner-hosts-id]"
+post-api-workspace-runner-hosts-id-test → src/server/routes/runner-hosts.ts (POST /:id/test) · test: src/server/routes/runner-hosts.route.test.ts "[endpoint:post-api-workspace-runner-hosts-id-test]"
+delete-api-workspace-runner-hosts-id → src/server/routes/runner-hosts.ts (DELETE /:id) · test: src/server/routes/runner-hosts.route.test.ts "[endpoint:delete-api-workspace-runner-hosts-id]"

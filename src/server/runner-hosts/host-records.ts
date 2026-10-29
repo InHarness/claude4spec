@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { encrypt } from '../services/agent-credential-crypto.js';
-import { WorkspaceEntryGoneError, type WorkspaceRegistry } from '../workspace/registry.js';
+import type { WorkspaceRegistry } from '../workspace/registry.js';
 import type { StoredWorkspaceRecord, WorkspaceRecord } from '../workspace/types.js';
 import { normalizeHostUrl, normalizeMasterToken, RunnerHostError, tokenLast4 } from './host-input.js';
 
@@ -100,13 +100,6 @@ export class RunnerHostStore {
     private readonly registry: WorkspaceRegistry,
     private readonly workspace: WorkspaceKey,
   ) {}
-
-  /** The records as they are in the file now (one lock-free read). */
-  list(): RunnerHostRecord[] {
-    const entry = this.registry.readStoredEntry(this.workspace);
-    if (!entry) throw new WorkspaceEntryGoneError(this.workspace.name, this.registry.filePath);
-    return runnerHostRecordsOf(entry.runnerHosts);
-  }
 
   add(input: AddRunnerHostInput): RunnerHostRecord {
     const url = normalizeHostUrl(input.url);

@@ -7,21 +7,10 @@
  * "Strumienie"). Pure functions — no I/O, no clock.
  */
 
-/** The closed set of ten statuses, as they leave through the API (column "Wartość `status`"). */
-export const RUNNER_HOST_STATUSES = [
-  'connecting',
-  'connected',
-  'unreachable',
-  'retrying',
-  'stopped',
-  'token-rejected',
-  'token-unreadable',
-  'protocol-mismatch',
-  'other-host',
-  'bad-response',
-] as const;
+import type { RunnerHostStatus } from '../../shared/runner-hosts.js';
 
-export type RunnerHostStatus = (typeof RUNNER_HOST_STATUSES)[number];
+/** The closed set of ten statuses, as they leave through the API (column "Wartość `status`"). */
+export type { RunnerHostStatus };
 
 /** The statuses retried with backoff (`hzcwlgln`); every other failure waits for the user (`spxxz1ph`). */
 export const RETRIED_STATUSES: ReadonlySet<RunnerHostStatus> = new Set(['unreachable', 'retrying', 'stopped']);

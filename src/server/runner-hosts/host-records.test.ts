@@ -8,7 +8,7 @@ import { decrypt } from '../services/agent-credential-crypto.js';
 import { WorkspaceRegistry } from '../workspace/registry.js';
 import type { WorkspaceRecord } from '../workspace/types.js';
 import { RunnerHostError } from './host-input.js';
-import { RunnerHostStore, type RunnerHostBinding } from './host-records.js';
+import { RunnerHostStore, runnerHostRecordsOf, type RunnerHostBinding } from './host-records.js';
 
 const pexecFile = promisify(execFile);
 
@@ -32,6 +32,9 @@ describe('M54 runner-host records (fo9bukuw, 4pxwyo22)', () => {
   };
 
   const registryFile = () => path.join(registryDir, 'workspaces.json');
+  /** The runner-host records of `ws`'s entry as `registry` reads them from the file now. */
+  const storedRecords = (registry: WorkspaceRegistry, ws: Pick<WorkspaceRecord, 'name' | 'home'>) =>
+    runnerHostRecordsOf(registry.readStoredEntry(ws)?.runnerHosts);
   const readEntry = (name: string) =>
     JSON.parse(fs.readFileSync(registryFile(), 'utf8')).workspaces.find((w: { name: string }) => w.name === name);
   /** Every file under `root`, recursively, as text. */
@@ -96,7 +99,7 @@ describe('M54 runner-host records (fo9bukuw, 4pxwyo22)', () => {
     // Only the current workspace's entry got the record.
     expect(readEntry('other').runnerHosts).toBeUndefined();
     // The store reads it back from the file.
-    expect(new RunnerHostStore(new WorkspaceRegistry(registryDir), current).list()).toEqual([added]);
+    expect(storedRecords(new WorkspaceRegistry(registryDir), current)).toEqual([added]);
   });
 
   it('[ac:ac-dodany-host-nie-pojawia-sie-w-config] an added host does not appear in the config.json of any project (registry and home workspaces)', () => {
@@ -238,8 +241,8 @@ describe('M54 runner-host records (fo9bukuw, 4pxwyo22)', () => {
     const storeA = new RunnerHostStore(first, ws);
     const storeB = new RunnerHostStore(second, viewOfSecond);
     // Both "processes" list before anything is added: their views are empty.
-    expect(storeA.list()).toEqual([]);
-    expect(storeB.list()).toEqual([]);
+    expect(storedRecords(first, ws)).toEqual([]);
+    expect(storedRecords(second, viewOfSecond)).toEqual([]);
 
     const a = storeA.add({ url: 'http://runner-a.local:7000', token: TOKEN });
     const b = storeB.add({ url: 'http://runner-b.local:7000', token: TOKEN });
@@ -267,7 +270,7 @@ describe('M54 runner-host records (fo9bukuw, 4pxwyo22)', () => {
     // The other process took its view while the record still existed.
     const binder = new WorkspaceRegistry(registryDir);
     const binderStore = new RunnerHostStore(binder, binder.getWorkspace('default') as WorkspaceRecord);
-    const view = binderStore.list();
+    const view = storedRecords(binder, binder.getWorkspace('default') as WorkspaceRecord);
     expect(view.map((h) => h.id)).toEqual([doomed.id, kept.id]);
 
     removerStore.remove(doomed.id);

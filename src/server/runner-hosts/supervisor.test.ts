@@ -7,8 +7,8 @@ import path from 'node:path';
 import { WorkspaceRegistry } from '../workspace/registry.js';
 import type { WorkspaceRecord } from '../workspace/types.js';
 import { EventStreamParser, MAX_HOST_TEXT, MSG_INVALID_HOST_INFO, MSG_NOT_FOUND, MSG_REDIRECT } from './host-checks.js';
-import { RunnerHostStore } from './host-records.js';
-import { RunnerHostSupervisor, type RunnerHostSupervisorOptions } from './supervisor.js';
+import { RunnerHostStore, runnerHostRecordsOf } from './host-records.js';
+import { RunnerHostSupervisor, type RunnerHostSupervisorOptions, type RunnerHostView } from './supervisor.js';
 import {
   closedPort,
   ManualClock,
@@ -58,7 +58,12 @@ describe('M54 runner-host supervisor', () => {
     (JSON.parse(registryText()).workspaces as Array<{ name: string; runnerHosts?: Array<Record<string, unknown>> }>).find(
       (w) => w.name === 'default',
     )?.runnerHosts ?? [];
-  const status = (sup: RunnerHostSupervisor, id: string) => sup.get(id)?.state.status;
+  /** The records as they are in the registry file now (a fresh read, as at a process start). */
+  const storedRecords = (reg: WorkspaceRegistry = registry) => runnerHostRecordsOf(reg.readStoredEntry(ws)?.runnerHosts);
+  /** One supervised host's view, found by id in `list()`; `null` when it is not supervised. */
+  const viewOf = (sup: RunnerHostSupervisor, id: string): RunnerHostView | null =>
+    sup.list().find((v) => v.record.id === id) ?? null;
+  const status = (sup: RunnerHostSupervisor, id: string) => viewOf(sup, id)?.state.status;
   /** A host added through the supervisor and connected to `stub`, its stream open. */
   const connected = async (sup: RunnerHostSupervisor, stub: RunnerHostStub, url = stub.url()) => {
     const view = await sup.add({ url, token: TOKEN });
@@ -105,7 +110,7 @@ describe('M54 runner-host supervisor', () => {
     const stub = await newStub();
     stub.onHost = () => {}; // holds GET /host without an answer
     const record = store.add({ url: stub.url(), token: TOKEN });
-    const sup = supervisor({ records: store.list(), clock: new ManualClock() });
+    const sup = supervisor({ records: storedRecords(), clock: new ManualClock() });
 
     expect(status(sup, record.id)).toBe('connecting');
     sup.start();
@@ -113,14 +118,14 @@ describe('M54 runner-host supervisor', () => {
     await until(() => stub.count('/host') === 1, 5_000, 'GET /host');
     // The request is in flight, no result yet.
     expect(status(sup, record.id)).toBe('connecting');
-    expect(sup.get(record.id)?.state.lastError).toBeNull();
+    expect(viewOf(sup, record.id)?.state.lastError).toBeNull();
   });
 
   it('[ac:ac-nieosiagalny-host-nie-opoznia-startu] an unreachable host does not delay the server starting to listen', async () => {
     const stub = await newStub();
     stub.onHost = () => {}; // never answers: the attempt can only end by its timeout
     const record = store.add({ url: stub.url(), token: TOKEN });
-    const sup = supervisor({ records: store.list(), clock: new ManualClock() });
+    const sup = supervisor({ records: storedRecords(), clock: new ManualClock() });
 
     const t0 = performance.now();
     sup.start(); // returns at once — the attempt is scheduled in the background
@@ -141,7 +146,7 @@ describe('M54 runner-host supervisor', () => {
     const mine = await newStub();
     const theirs = await newStub();
     const own = store.add({ url: mine.url(), token: TOKEN });
-    const sup = supervisor({ records: store.list() });
+    const sup = supervisor({ records: storedRecords() });
     sup.start();
     await until(() => status(sup, own.id) === 'connected', 5_000, 'own host connected');
 
@@ -151,12 +156,12 @@ describe('M54 runner-host supervisor', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(sup.list().map((v) => v.record.id)).toEqual([own.id]);
-    expect(sup.get(other.id)).toBeNull();
+    expect(viewOf(sup, other.id)).toBeNull();
     expect(theirs.connections).toBe(0);
 
     // After a restart (a new supervisor over the fresh view) it is supervised.
     await sup.close();
-    const restarted = supervisor({ records: new RunnerHostStore(new WorkspaceRegistry(registryDir), ws).list() });
+    const restarted = supervisor({ records: storedRecords(new WorkspaceRegistry(registryDir)) });
     restarted.start();
     await until(() => status(restarted, other.id) === 'connected', 5_000, 'other host connected after restart');
     expect(theirs.count('/host')).toBe(1);
@@ -177,7 +182,7 @@ describe('M54 runner-host supervisor', () => {
     stub.onEvents = (_req, res, s) => s.openStream(res, null); // 200 event-stream, no event
     const record = store.add({ url: stub.url(), token: TOKEN });
     const clock = new ManualClock();
-    const sup = supervisor({ records: store.list(), clock });
+    const sup = supervisor({ records: storedRecords(), clock });
     sup.start();
     await until(() => stub.streams.size === 1, 5_000, 'stream opened');
     // Only the first-event wait is pending: 3 s from sending the request.
@@ -381,7 +386,7 @@ describe('M54 runner-host supervisor', () => {
         startedAt: STUB_HOST_INFO.startedAt,
       },
     });
-    expect(sup.get(id)?.record.binding?.hostId).toBe(STUB_HOST_INFO.hostId);
+    expect(viewOf(sup, id)?.record.binding?.hostId).toBe(STUB_HOST_INFO.hostId);
   });
 
   /** A record bound to the stub's host, then supervised by a fresh process whose host answers with another hostId. */
@@ -394,7 +399,7 @@ describe('M54 runner-host supervisor', () => {
     const bindingBefore = storedHosts()[0]!.binding;
     stub.hostInfo = { ...STUB_HOST_INFO, hostId: 'h_rebuilt0', startedAt: '2026-10-29T07:00:00Z' };
     stub.requests.length = 0;
-    const sup = supervisor({ records: store.list(), clock: new ManualClock() });
+    const sup = supervisor({ records: storedRecords(), clock: new ManualClock() });
     sup.start();
     await until(() => status(sup, id) === 'other-host', 5_000, 'other-host');
     return { stub, sup, id, bindingBefore };
@@ -402,8 +407,8 @@ describe('M54 runner-host supervisor', () => {
 
   it('[ac:ac-hostid-inny-niz-powiazany-daje-inny-h] a `hostId` other than the bound one gives status `other-host`', async () => {
     const { sup, id } = await boundThenOtherHost();
-    expect(sup.get(id)?.state.status).toBe('other-host');
-    expect(sup.get(id)?.state.lastError?.code).toBe('other_host');
+    expect(viewOf(sup, id)?.state.status).toBe('other-host');
+    expect(viewOf(sup, id)?.state.lastError?.code).toBe('other_host');
   });
 
   it('[ac:ac-inny-hostid-bez-zmiany-tokenu-daje-in] another `hostId` without a token change gives status `other-host` — also on the stream of a live subscription', async () => {
@@ -415,14 +420,14 @@ describe('M54 runner-host supervisor', () => {
     stub.hostInfo = { ...STUB_HOST_INFO, hostId: 'h_rebuilt0' };
     stub.send('host', stub.hostInfo);
     await until(() => status(sup, id) === 'other-host', 5_000, 'other-host');
-    expect(sup.get(id)?.record.tokenLast4).toBe(TOKEN.slice(-4));
+    expect(viewOf(sup, id)?.record.tokenLast4).toBe(TOKEN.slice(-4));
   });
 
   it('[ac:ac-status-inny-host-przy-niezmienionym-t] status `other-host` with an unchanged token does not change the stored binding', async () => {
     const { sup, id, bindingBefore } = await boundThenOtherHost();
     expect(bindingBefore).toMatchObject({ hostId: STUB_HOST_INFO.hostId });
     expect(storedHosts()[0]!.binding).toEqual(bindingBefore);
-    expect(sup.get(id)?.record.binding).toEqual(bindingBefore);
+    expect(viewOf(sup, id)?.record.binding).toEqual(bindingBefore);
   });
 
   it('[ac:ac-przy-statusie-inny-host-strumien-nie] with status `other-host` the stream is not kept', async () => {
@@ -439,7 +444,7 @@ describe('M54 runner-host supervisor', () => {
     await first.close();
     await until(() => stub2.streams.size === 0, 5_000, 'closed');
     stub2.onEvents = (_req, res, s) => s.openStream(res, { event: 'host', data: { ...STUB_HOST_INFO, hostId: 'h_other' } });
-    const sup2 = supervisor({ records: store.list().filter((r) => r.id === id2), clock: new ManualClock() });
+    const sup2 = supervisor({ records: storedRecords().filter((r) => r.id === id2), clock: new ManualClock() });
     sup2.start();
     await until(() => status(sup2, id2) === 'other-host', 5_000, 'other-host on stream');
     await until(() => stub2.streams.size === 0, 5_000, 'stream dropped');
@@ -456,10 +461,10 @@ describe('M54 runner-host supervisor', () => {
     await until(() => status(sup, id) === 'stopped', 5_000, 'stopped');
     clock.advance(clock.pending()[0]!.ms);
     await until(() => status(sup, id) === 'connected', 5_000, 'reconnected');
-    const state = sup.get(id)!.state;
+    const state = viewOf(sup, id)!.state;
     expect(state.status).toBe('connected');
     expect(state.restartedAt).toBe(new Date(clock.now()).toISOString());
-    expect(sup.get(id)!.record.binding?.startedAt).toBe('2026-10-29T11:00:00Z');
+    expect(viewOf(sup, id)!.record.binding?.startedAt).toBe('2026-10-29T11:00:00Z');
   });
 
   it('[ac:ac-restartedat-nie-trafia-do-pliku-rejes] `restartedAt` is not written to the registry file', async () => {
@@ -469,7 +474,7 @@ describe('M54 runner-host supervisor', () => {
     const id = await connected(sup, stub);
     stub.hostInfo = { ...STUB_HOST_INFO, startedAt: '2026-10-29T11:00:00Z' };
     stub.send('host', stub.hostInfo); // a restart seen on the stream
-    await until(() => sup.get(id)?.state.restartedAt !== null, 5_000, 'restart noticed');
+    await until(() => viewOf(sup, id)?.state.restartedAt !== null, 5_000, 'restart noticed');
 
     const text = registryText();
     // The binding's startedAt is updated in the file…
@@ -494,7 +499,7 @@ describe('M54 runner-host supervisor', () => {
       clock.advance(5_000);
       stub.send('heartbeat', {});
       const expected = new Date(clock.now()).toISOString();
-      await until(() => sup.get(id)?.state.lastEventAt === expected, 5_000, `heartbeat ${i}`);
+      await until(() => viewOf(sup, id)?.state.lastEventAt === expected, 5_000, `heartbeat ${i}`);
     }
     expect(status(sup, id)).toBe('connected');
     expect(registryText()).toBe(bytesBefore);
@@ -506,12 +511,12 @@ describe('M54 runner-host supervisor', () => {
     const clock = new ManualClock();
     const sup = supervisor({ clock });
     const id = await connected(sup, stub);
-    const before = sup.get(id)!.state;
+    const before = viewOf(sup, id)!.state;
     clock.advance(1_000);
     stub.send('run-started', { runId: 'r1' });
     const expected = new Date(clock.now()).toISOString();
-    await until(() => sup.get(id)?.state.lastEventAt === expected, 5_000, 'event seen');
-    const after = sup.get(id)!.state;
+    await until(() => viewOf(sup, id)?.state.lastEventAt === expected, 5_000, 'event seen');
+    const after = viewOf(sup, id)!.state;
     expect(after.status).toBe('connected');
     expect(after.statusSince).toBe(before.statusSince);
     expect(after.lastError).toBeNull();
@@ -527,7 +532,7 @@ describe('M54 runner-host supervisor', () => {
     expect(status(sup, id)).toBe('connected');
     clock.advance(1);
     await until(() => status(sup, id) === 'retrying', 5_000, 'retrying');
-    expect(sup.get(id)?.state.lastError?.code).toBe('liveness_timeout');
+    expect(viewOf(sup, id)?.state.lastError?.code).toBe('liveness_timeout');
     await until(() => stub.streams.size === 0, 5_000, 'stream closed as a break');
   });
 
@@ -537,7 +542,7 @@ describe('M54 runner-host supervisor', () => {
     const id = await connected(sup, stub);
     stub.dropStreams();
     await until(() => status(sup, id) === 'retrying', 5_000, 'retrying');
-    expect(sup.get(id)?.state.lastError?.code).toBe('stream_ended');
+    expect(viewOf(sup, id)?.state.lastError?.code).toBe('stream_ended');
   });
 
   it('a stream sending more than 64 KiB without completing an event is closed and gives status `retrying`', async () => {
@@ -547,7 +552,7 @@ describe('M54 runner-host supervisor', () => {
     // One unfinished `data` line past the cap — no newline ever arrives.
     for (const res of stub.streams) res.write(`data: ${'x'.repeat(MAX_HOST_TEXT)}`);
     await until(() => status(sup, id) === 'retrying', 5_000, 'retrying');
-    expect(sup.get(id)?.state.lastError?.code).toBe('stream_overflow');
+    expect(viewOf(sup, id)?.state.lastError?.code).toBe('stream_overflow');
     // The supervisor closed the connection itself; nothing is kept buffering.
     await until(() => stub.streams.size === 0, 5_000, 'stream closed');
   });
@@ -614,7 +619,7 @@ describe('M54 runner-host supervisor', () => {
     await until(() => status(sup, id) !== 'connected', 5_000, 'status change');
     expect(status(sup, id)).toBe('stopped');
     expect(clock.now() - connectedAt).toBeLessThan(20_000);
-    expect(sup.get(id)?.state.statusSince).toBe(new Date(connectedAt).toISOString());
+    expect(viewOf(sup, id)?.state.statusSince).toBe(new Date(connectedAt).toISOString());
   });
 
   it('[ac:ac-po-closing-shutdown-polaczenie-jest-p] after `closing: shutdown` the connection is retried', async () => {
@@ -646,12 +651,12 @@ describe('M54 runner-host supervisor', () => {
       res.end();
     };
     clock.advance(clock.pending()[0]!.ms);
-    await until(() => sup.get(id)?.state.lastError?.code === 'http_503', 5_000, 'failed retry');
+    await until(() => viewOf(sup, id)?.state.lastError?.code === 'http_503', 5_000, 'failed retry');
     expect(status(sup, id)).toBe('stopped');
     await stub.close();
     stubs.splice(stubs.indexOf(stub), 1);
     clock.advance(clock.pending()[0]!.ms);
-    await until(() => sup.get(id)?.state.lastError?.code === 'unreachable', 5_000, 'second failed retry');
+    await until(() => viewOf(sup, id)?.state.lastError?.code === 'unreachable', 5_000, 'second failed retry');
     expect(status(sup, id)).toBe('stopped');
   });
 
@@ -764,7 +769,7 @@ describe('M54 runner-host supervisor', () => {
     const id = await connected(sup, stub);
     sup.remove(id);
     await until(() => stub.streams.size === 0, 5_000, 'stream closed');
-    expect(sup.get(id)).toBeNull();
+    expect(viewOf(sup, id)).toBeNull();
     expect(storedHosts()).toEqual([]);
     expect(clock.pending()).toEqual([]);
     clock.advance(10 * 60_000);
@@ -783,11 +788,11 @@ describe('M54 runner-host supervisor', () => {
     entry.runnerHosts[0].tokenCiphertext = Buffer.from('not a ciphertext of this key').toString('base64');
     fs.writeFileSync(registry.filePath, JSON.stringify(file, null, 2));
 
-    const [record] = store.list();
+    const [record] = storedRecords();
     const sup = supervisor({ records: [record!], clock: new ManualClock() });
     sup.start();
     await until(() => status(sup, record!.id) === 'token-unreadable', 5_000, 'token-unreadable');
-    expect(sup.get(record!.id)?.state.lastError?.code).toBe('token_unreadable');
+    expect(viewOf(sup, record!.id)?.state.lastError?.code).toBe('token_unreadable');
   });
 
   it('[ac:ac-brak-pliku-klucza-przy-istniejacych-s] a missing key file with existing ciphertexts gives status `token-unreadable`', async () => {
@@ -797,7 +802,7 @@ describe('M54 runner-host supervisor', () => {
     expect(fs.existsSync(keyFile)).toBe(true);
     fs.rmSync(keyFile);
 
-    const sup = supervisor({ records: store.list(), clock: new ManualClock() });
+    const sup = supervisor({ records: storedRecords(), clock: new ManualClock() });
     sup.start();
     await until(() => status(sup, record.id) === 'token-unreadable', 5_000, 'token-unreadable');
     // Reading never creates a new key.
@@ -810,7 +815,7 @@ describe('M54 runner-host supervisor', () => {
     const record = store.add({ url: stub.url(), token: TOKEN });
     fs.rmSync(path.join(registryDir, 'secret.key'));
     const clock = new ManualClock();
-    const sup = supervisor({ records: store.list(), clock });
+    const sup = supervisor({ records: storedRecords(), clock });
     sup.start();
     await until(() => status(sup, record.id) === 'token-unreadable', 5_000, 'token-unreadable');
     // Not retried, and a test does not send anything either.
@@ -876,7 +881,7 @@ describe('M54 runner-host supervisor', () => {
     // unreachable and token-unreadable
     await sup.update(id, { url: `http://127.0.0.1:${await closedPort()}` });
     fs.rmSync(path.join(registryDir, 'secret.key'));
-    const unreadable = supervisor({ records: store.list(), clock: new ManualClock() });
+    const unreadable = supervisor({ records: storedRecords(), clock: new ManualClock() });
     unreadable.start();
     await until(() => status(unreadable, id) === 'token-unreadable', 5_000, 'token-unreadable');
 

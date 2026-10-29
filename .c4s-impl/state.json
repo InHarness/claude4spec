@@ -1,5 +1,5 @@
 {
-  "iteration": 16,
+  "iteration": 23,
   "conventions": [
     {
       "label": "L4 (API) — implementor M49",
@@ -65,7 +65,7 @@
       "units": [
         "m54-api"
       ],
-      "startCommit": null
+      "startCommit": "839f12407a2ede11cb7a93e2fa0463c456ded28d"
     },
     {
       "n": 5,
@@ -700,7 +700,7 @@
         }
       ],
       "wave": 4,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "m54-api/p1-l4-l4",
@@ -746,20 +746,21 @@
             "ac-zmiana-tokenu-po-ktorej-host-odpowiad-2",
             "ac-zmiana-url-a-na-url-innego-rekordu-da"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "bf464c71e8ca1f594e44a18833bc2cf714337254",
+      "baseCommit": "839f12407a2ede11cb7a93e2fa0463c456ded28d",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0
     },
     {
       "id": "m54-settings-ui",

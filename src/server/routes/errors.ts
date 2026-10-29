@@ -5,6 +5,14 @@ import { BriefFsError } from '../../core/briefs/types.js';
 import { isDiscoveryError } from '../discovery/errors.js';
 import { STATUS_FOR_CODE, STATUS_FOR_DISCOVERY_CODE, httpStatusForCode } from '../operations/error-codes.js';
 import { refusalBehind } from '../fs/multi-file-operation.js';
+import { RunnerHostError, type RunnerHostErrorCode } from '../runner-hosts/host-input.js';
+
+/** 2.1.62 (M54 L4): a refused runner-host write — a malformed input, an unknown `id`, a duplicate `url`. */
+const STATUS_FOR_RUNNER_HOST_CODE: Record<RunnerHostErrorCode, number> = {
+  VALIDATION: 400,
+  NOT_FOUND: 404,
+  RUNNER_HOST_DUPLICATE: 409,
+};
 
 /**
  * The status for a `DomainError`'s code: this channel's own table first, the
@@ -82,6 +90,10 @@ export const errorHandler: ErrorRequestHandler = (thrown, _req, res, next) => {
       currentHash: err.currentHash,
       ...(err.currentContent !== undefined ? { currentContent: err.currentContent } : {}),
     });
+  }
+  if (err instanceof RunnerHostError) {
+    // The message names the broken rule, never the token (`qc6t2y7m`).
+    return res.status(STATUS_FOR_RUNNER_HOST_CODE[err.code]).json({ error: { code: err.code, message: err.message } });
   }
   if (isDiscoveryError(err)) {
     return res

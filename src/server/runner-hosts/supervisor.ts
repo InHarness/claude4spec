@@ -154,11 +154,6 @@ export class RunnerHostSupervisor {
     return [...this.hosts.values()].map((h) => this.view(h));
   }
 
-  get(id: string): RunnerHostView | null {
-    const h = this.hosts.get(id);
-    return h ? this.view(h) : null;
-  }
-
   /**
    * Add (`m9e73y05`): the record is written, then the synchronous attempt runs
    * within the 15 s budget. A retried status or `connected` leaves the

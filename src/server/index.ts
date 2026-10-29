@@ -35,6 +35,7 @@ import { buildImportMap } from './core/plugin-host/runtime-shims.js';
 import { discoverBuiltinEnvelopes, servableEnvelopes } from './core/plugin-host/builtin-envelopes.js';
 import { RunnerHostStore, runnerHostRecordsOf } from './runner-hosts/host-records.js';
 import { RunnerHostSupervisor } from './runner-hosts/supervisor.js';
+import { runnerHostsRouter } from './routes/runner-hosts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -478,7 +479,19 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     return bootstrapProject(registry, workspace, projectCwd, activated).project;
   };
 
+  // M54 L10 `i58ogfc2` (2.1.62): the runner-host supervisor — one per process,
+  // created eagerly before listen from the records of the workspace VIEW (a
+  // record another process adds is supervised from this process's next start).
+  // Created here, before the routes that read it; `start()` stays right before
+  // listen. Every record starts `connecting` and connects in the background:
+  // listen never waits for a host.
+  const runnerHosts = new RunnerHostSupervisor({
+    store: new RunnerHostStore(registry, workspace),
+    records: runnerHostRecordsOf(workspace.runnerHosts),
+  });
   app.use('/api', workspaceRouter({ registry, workspace, cache, mode, activateProject }));
+  // M54 L4 `pyxt16pa` (2.1.62): the workspace's runner hosts — no project prefix.
+  app.use('/api/workspace/runner-hosts', runnerHostsRouter({ supervisor: runnerHosts }));
   // M33: process-level plugin endpoints (runtime shims, BASE-tier frontend
   // assets, loader diagnostics) — before the project dispatch so they stay
   // prefix-free. 2.1.22: the frontend manifest and the overlay assets are the
@@ -501,15 +514,6 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const spaDeps = { registry, workspace, startCwd: cwd };
   const closeAssets = mode === 'dev' ? await mountDevVite(app, spaDeps) : mountProd(app, spaDeps);
 
-  // M54 L10 `i58ogfc2` (2.1.62): the runner-host supervisor — one per process,
-  // created eagerly before listen from the records of the workspace VIEW (a
-  // record another process adds is supervised from this process's next start).
-  // Every record starts `connecting` and connects in the background: listen
-  // never waits for a host.
-  const runnerHosts = new RunnerHostSupervisor({
-    store: new RunnerHostStore(registry, workspace),
-    records: runnerHostRecordsOf(workspace.runnerHosts),
-  });
   runnerHosts.start();
 
   const host = opts.host ?? effectiveBindHost(liveWorkspace());
