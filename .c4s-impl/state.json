@@ -49,7 +49,7 @@
         "type-state-shadowed",
         "card-caption-callback"
       ],
-      "startCommit": null
+      "startCommit": "8cff53a7"
     }
   ],
   "entityTypes": [
@@ -538,11 +538,11 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
+      "status": "in-progress",
       "blockedBy": null,
-      "startCommit": null,
-      "baseCommit": null,
-      "portions": [],
+      "startCommit": "8cff53a7",
+      "baseCommit": "8cff53a7",
+      "portions": [{"name":"prebuilt-distribution/p1-l2-l2","layers":["L2"],"slugs":["ac-paczka-npm-hosta-zawiera-koperte-preb"],"status":"pending","rounds":0,"partial":0,"uncovered":[],"only":[]}],
       "rounds": {
         "review": 0,
         "unit": 0
