@@ -62,12 +62,18 @@ describe('MCP connection vs. the context lifecycle', () => {
 
   const ofProject = (id: string) => generations.filter((g) => g.projectId === id);
 
-  /** A plugin of the changed pool: its own server with one tool. */
-  const spreadsheetServer = () => ({
-    name: 'spreadsheet-tools',
+  /**
+   * A plugin of the changed pool: its own server with one tool. Test-only
+   * names — the base plugins installed where the suite runs (e.g. spreadsheets'
+   * `set_cell`) must not already carry them, so the change is provably new.
+   */
+  const PROBE_TYPE = 'c4s-test-pool-probe';
+  const PROBE_TOOL = 'c4s_test_pool_probe';
+  const probeServer = () => ({
+    name: `${PROBE_TYPE}-tools`,
     server: createMcpServer({
-      name: 'spreadsheet-tools',
-      tools: [mcpTool('set_cell', 'set_cell description', { x: z.string().optional() }, async () => ({ content: [] }))],
+      name: `${PROBE_TYPE}-tools`,
+      tools: [mcpTool(PROBE_TOOL, 'test-only pool probe', { x: z.string().optional() }, async () => ({ content: [] }))],
     }) as unknown as McpServerFactory,
   });
 
@@ -76,9 +82,9 @@ describe('MCP connection vs. the context lifecycle', () => {
     ({
       buildMcpServers: (o?: { include?: (name: string) => boolean }) => [
         ...app.host.buildMcpServers(o),
-        ...(withPlugin ? [spreadsheetServer()].filter((s) => !o?.include || o.include(s.name)) : []),
+        ...(withPlugin ? [probeServer()].filter((s) => !o?.include || o.include(s.name)) : []),
       ],
-      listEntities: () => [...app.host.listEntities(), ...(withPlugin ? [{ type: 'spreadsheet' }] : [])],
+      listEntities: () => [...app.host.listEntities(), ...(withPlugin ? [{ type: PROBE_TYPE }] : [])],
     }) as unknown as ExternalSurfaceDeps['pluginHost'];
 
   const build = async (project: ProjectRecord): Promise<ProjectContext> => {
@@ -279,7 +285,8 @@ describe('MCP connection vs. the context lifecycle', () => {
     let notified = 0;
     const { client } = await connect(`${base}/api/projects/app-spec/mcp`, () => notified++);
     const before = (await client.listTools()).tools.map((t) => t.name);
-    expect(before).not.toContain('set_cell');
+    // The probe is provably absent before the change, whatever base plugins are installed.
+    expect(before).not.toContain(PROBE_TOOL);
     // Counted server-side, from here on: the handshake's own registration is not a change.
     const sent = vi.spyOn(McpServer.prototype, 'sendToolListChanged');
 
@@ -302,7 +309,10 @@ describe('MCP connection vs. the context lifecycle', () => {
     expect(ofProject('app-spec')).toHaveLength(3);
     expect(sent).toHaveBeenCalled();
     await vi.waitFor(() => expect(notified).toBeGreaterThan(0));
-    expect((await client.listTools()).tools.map((t) => t.name)).toContain('set_cell');
+    // The real change, as a diff of tool names: exactly the probe joined, nothing left.
+    const after = (await client.listTools()).tools.map((t) => t.name);
+    expect(after.filter((n) => !before.includes(n))).toEqual([PROBE_TOOL]);
+    expect(before.filter((n) => !after.includes(n))).toEqual([]);
   });
 
   it('[ac:ac-otwarte-polaczenie-mcp-nie-chroni-pro] [section:xocjjal4] [section:kl277elf] detaching a project with open MCP connections releases its context, and the next call is refused as a project outside the workspace', async () => {
