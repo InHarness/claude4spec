@@ -380,11 +380,34 @@ describe('hidden entity — criterion', () => {
       // Without renderRow neither list form offers the type …
       expect(listPickerEntityTypes('list')).not.toContain(type);
     }
-    // … and both list views answer a row-less type with the not-listable placeholder.
+    // … and both list views answer a row-less type with the "has no list view"
+    // information block (2.1.63, rendered in `NoListView.render.test.ts`).
     for (const view of ['ElementList.tsx', 'TaggedList.tsx']) {
-      expect(codeOf(`src/client/xml-markup/tags/references/${view}`)).toMatch(
-        /if \(!def\.renderRow\) return <NotListable/,
-      );
+      const code = codeOf(`src/client/xml-markup/tags/references/${view}`);
+      expect(code).toMatch(/const noListView = !!def && !def\.renderRow;/);
+      expect(code).toMatch(/if \(noListView\) \{[\s\S]*?return <NoListView /);
+    }
+  });
+
+  // 2.1.63 — the criterion no longer names `diagram` (a prebuilt envelope type
+  // now) nor "lists unsupported": the chip click is the host's, to `<type>-expand`.
+  it('[ac:m19-hidden-entities-render-slots] hidden types (spreadsheet, code-snippet) supply renderCard and renderChip — a clickable pill whose click the host routes to the read-only `<type>-expand` window — and do not supply renderRow', () => {
+    for (const [type, overlay, entity] of [
+      ['spreadsheet', SpreadsheetFullscreen, { slug: 'one', nRows: 2, nCols: 2 }],
+      ['code-snippet', CodeSnippetFullscreen, { slug: 'one', title: 'One', language: 'ts', code: 'export const x = 1;' }],
+    ] as const) {
+      const mod = clientPluginHost.getEntity(type);
+      expect(mod, type).not.toBeNull();
+      expect(isHiddenModule(mod!)).toBe(true);
+      expect(typeof mod!.renderCard, `${type}.renderCard`).toBe('function');
+      expect(typeof mod!.renderChip, `${type}.renderChip`).toBe('function');
+      expect(mod!.renderRow, `${type}.renderRow`).toBeUndefined();
+      // The window's content is the type's renderOverlay.
+      expect(mod!.renderOverlay).toBe(overlay);
+      // The pill is clickable only through the host's `onOpen`, and that click
+      // opens `<type>-expand` with `{ slug }` alone — no write callback reaches
+      // the window, so it is read-only — never `bridge.openEntity`.
+      expectHostRoutedExpand(type, entity);
     }
   });
 });

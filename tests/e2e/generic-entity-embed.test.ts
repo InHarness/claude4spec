@@ -179,10 +179,11 @@ describe.skipIf(!BASE)('generic entity embed — a hidden type renders and opens
     const body = await page.locator('body').innerText();
     // element_list of a VISIBLE type → renderRow, with the entity's own text.
     expect(body).toContain(AC_TEXT);
-    // element_list of a HIDDEN type → the contract, stated inline. The failure
-    // this replaces is an empty list frame, which reads as "nothing matched".
-    expect(body).toContain('cannot be listed');
-    expect(body).toContain('single_element type="diagram"');
+    // element_list of a type without renderRow (2.1.63: `diagram`, from its
+    // prebuilt envelope) → one information block with the type and the count
+    // of matching entities, not an empty list frame that reads as "nothing matched".
+    expect(body).toContain('has no list view');
+    expect(body).toContain('1 matching entity');
   });
 
   it('renders a broken reference as a chip whose click does nothing', async () => {

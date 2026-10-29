@@ -1,0 +1,12 @@
+{
+  "id": "dev-0004",
+  "unit": "list-info-block",
+  "portion": "list-info-block/p1-l2-l8",
+  "kind": "missing",
+  "blocking": true,
+  "address": "list-info-block/k88vwlpj",
+  "slugs": ["ac-check-consistency-zglasza-ostrzezenie"],
+  "text": "Rule 17 of check_consistency (M19 k88vwlpj; also m19hidden, M13 z7l89jhf renderRow row) reports element_list/tagged_list on an active type that does not declare the renderRow slot. check_consistency runs on the server, but renderRow is a slot of the browser-side FrontendModule (registerFrontendModule, M13 mbladez6), which the server never loads. The server-bound EntityContribution carries no frontend slot (m13plenv), and the frontend manifest and discovery (M33 m33l5man, 9g96q3pp) declare no slots. The spec at 2.1.63 gives the server no source for 'declares renderRow' (confirmed via c4s ask). Every way to close the gap is a Host API contract choice: an EntityContribution or package.json declaration with a default that either misses the read-only prebuilt diagram envelope or false-flags listable external plugins, or importing browser entries in Node. Needed: a decision in M13 z7l89jhf/m13plenv (and M33 if a manifest field) on how the host learns that an active type has no renderRow, its default when undeclared, and how the prebuilt diagrams envelope is covered. The client half of the unit (info block in both pipelines; host-routed <type>-expand) is built. Rule 17 is not. See dev-0004.md.",
+  "sent": true,
+  "patchPath": "2-1-62-to-2-1-63-list-info-block-k88vwlpj-server-has-no-source-for-type-declares-renderrow.md"
+}

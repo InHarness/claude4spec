@@ -22,8 +22,9 @@ import { fetchCodeSnippet, type CodeSnippet } from './hooks.js';
  *
  * `renderRow` IS ALSO OMITTED, and that omission is load-bearing in its own
  * right: without it `<element_list type="code-snippet"/>` and
- * `<tagged_list type="code-snippet"/>` fall through to the host's `NotListable`
- * placeholder. They are unsupported embedding paths BY CONTRACT rather than by
+ * `<tagged_list type="code-snippet"/>` fall through to the host's "has no list
+ * view" information block, with the count of matching snippets. They are
+ * unsupported embedding paths BY CONTRACT rather than by
  * accident — a snippet is cited, one at a time, in the place its shape is being
  * discussed; a list of them is a list of things nobody asked to see together.
  *

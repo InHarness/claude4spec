@@ -8,7 +8,7 @@
  * `renderRow` is its whole answer — the tagged-list component delegates each row
  * here and never needs a detail route. `code-snippet` is the same kind of hidden
  * type and omits this slot, which is exactly why its tagged lists fall through
- * to the host's `NotListable` placeholder.
+ * to the host's "has no list view" information block.
  *
  * PURE REACT: the host injects an already-resolved, non-null `entity`, so the
  * row never fetches and owns no broken state — a broken slug inside an embedded

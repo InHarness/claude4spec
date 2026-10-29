@@ -5,7 +5,7 @@
  * hidden ones included: a hidden type like `spreadsheet` has a card and a chip,
  * just no route. `/list` (and `/tagged`, and the edit popover of a list node)
  * offers only the types that render a list row — a `spreadsheet` list would only
- * ever show the "not listable" placeholder.
+ * ever show the host's "has no list view" information block.
  */
 
 import { afterEach, describe, expect, it } from 'vitest';

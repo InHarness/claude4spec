@@ -102,11 +102,12 @@ export function getEntityDef<T = unknown>(type: string): EntityDef<T> | null {
  * Which picker a type is offered in.
  *
  *  - `element` — `/element`, `/mention` and the edit popover of a chip or card:
- *    every ACTIVE type, hidden ones (e.g. `diagram`) included. A hidden type has
- *    no route, but it does have a card and a chip.
+ *    every ACTIVE type, hidden ones (e.g. `spreadsheet`) included. A hidden type
+ *    has no route, but it does have a card and a chip.
  *  - `list` — `/list`, `/tagged` and the edit popover of a list node: only the
  *    active types that render a list row. A type without `renderRow` (e.g.
- *    `diagram`) would only ever produce a "not listable" placeholder.
+ *    `code-snippet`) has no list view and would only ever produce the host's
+ *    "has no list view" information block.
  */
 export type EntityPickerKind = 'element' | 'list';
 
