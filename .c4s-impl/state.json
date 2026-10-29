@@ -1,5 +1,5 @@
 {
-  "iteration": 38,
+  "iteration": 39,
   "conventions": [
     {
       "label": "L10 (Project Scoping) — implementor M31",
@@ -1083,5 +1083,5 @@
   ],
   "entityParts": [],
   "baselineGreen": true,
-  "systemVerified": false
+  "systemVerified": true
 }
