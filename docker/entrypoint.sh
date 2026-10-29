@@ -64,7 +64,7 @@ until PROJECT_DIR="$PROJECT_DIR" PORT="$PORT" node -e '
       process.exit(res.status >= 500 ? 1 : 2);
     })
     .catch(() => process.exit(1));
-' || { status=$?; [ "$status" -eq 2 ] && { kill -TERM "$SERVER_PID" 2>/dev/null || true; exit 1; }; false; }; do
+' || { status=$?; [ "$status" -eq 2 ] && { kill -TERM "$SERVER_PID" 2>/dev/null || true; wait "$SERVER_PID" 2>/dev/null || true; exit 1; }; false; }; do
   if ! kill -0 "$SERVER_PID" 2>/dev/null; then
     wait "$SERVER_PID"
     exit $?

@@ -71,6 +71,21 @@ const STUB_MKDIR = `#!/usr/bin/env bash
 echo "$@" >> "$STUB_MKDIR_RECORD"
 `;
 
+/**
+ * A stub `node` (first on PATH) for the default-port case, which cannot use a
+ * free port: the entrypoint's registration call (`node -e …`) is recorded with
+ * the PORT it targets and answered as a success without any network traffic,
+ * so the test never talks to whatever listens on 127.0.0.1:3000. Every other
+ * invocation (the server start) runs the real node.
+ */
+const STUB_NODE = `#!/usr/bin/env bash
+if [ "\${1:-}" = "-e" ]; then
+  echo "\${PORT:-}" >> "$STUB_NODE_RECORD"
+  exit 0
+fi
+exec "$STUB_REAL_NODE" "$@"
+`;
+
 interface StartRecord {
   argv?: string[];
   pid?: number;
@@ -190,12 +205,34 @@ describe('container entrypoint — environment contract (M01 mcdkzcb6)', () => {
   });
 
   it('[section:mcdkzcb6] an unset or empty PORT starts with --port 3000', async () => {
+    // Port 3000 may belong to a real app here: the stub server does not listen
+    // and the registration call never leaves the stubbed `node`.
+    const binDir = path.join(scratch, 'bin');
+    fs.mkdirSync(binDir);
+    fs.writeFileSync(path.join(binDir, 'node'), STUB_NODE, { mode: 0o755 });
     for (const env of [{}, { PORT: '' }] as Record<string, string>[]) {
-      const argv = await startArgv({ ...env, PROJECT_DIR: path.join(scratch, 'project'), STUB_NO_LISTEN: '1' });
+      const nodeRecord = path.join(scratch, 'node.log');
+      const argv = await startArgv(
+        {
+          ...env,
+          PROJECT_DIR: path.join(scratch, 'project'),
+          STUB_NO_LISTEN: '1',
+          STUB_REAL_NODE: process.execPath,
+          STUB_NODE_RECORD: nodeRecord,
+        },
+        binDir,
+      );
       expect(flagValue(argv, '--port'), JSON.stringify(env)).toBe('3000');
+      // The registration targets the same default port.
+      const ports = await waitFor(
+        () => (fs.existsSync(nodeRecord) ? fs.readFileSync(nodeRecord, 'utf-8').trim() || undefined : undefined),
+        'the registration call',
+      );
+      expect(ports.split('\n'), JSON.stringify(env)).toEqual(['3000']);
       child!.kill('SIGTERM');
       await exited;
       fs.rmSync(recordPath, { force: true });
+      fs.rmSync(nodeRecord, { force: true });
     }
   });
 
