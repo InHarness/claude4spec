@@ -1,1 +1,0 @@
-encje-pluginy#c4s-plugin-diagram → plugins/c4s-plugin-diagram/ (committed prebuilt, read-only) + scripts/copy-prebuilt-envelopes.mjs (copy into dist/plugins/<name>, run at the end of package.json `build:envelopes`); loaded by src/server/core/plugin-host/loader.ts `loadBuiltinEnvelopes` (base tier, no trust gate); test tests/integration/entities/prebuilt-diagram-envelope.test.ts
