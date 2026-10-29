@@ -12,7 +12,7 @@ import { ProjectContextCache } from '../../../src/server/workspace/context-cache
 import { buildProjectContext } from '../../../src/server/workspace/project-context.js';
 import { WorkspaceRegistry } from '../../../src/server/workspace/registry.js';
 import { bootstrapProject } from '../../../src/server/workspace/bootstrap.js';
-import type { PluginLoadRecord } from '../../../src/server/core/plugin-host/types.js';
+import type { PluginLoadRecord } from '../../../src/server/core/plugin-host/loader.js';
 import type { ProjectRecord } from '../../../src/server/workspace/types.js';
 
 /**
