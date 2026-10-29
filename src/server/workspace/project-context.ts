@@ -1657,7 +1657,8 @@ async function buildInner(
   });
   // `project-bound`: the project parameter's default comes from the URL this
   // router is already mounted under. See `routes/mcp.ts`.
-  router.use('/mcp', projectMcpRouter(readPackageVersion(), projectId, mcpSurfaceDeps));
+  const mcpRouter = projectMcpRouter(readPackageVersion(), projectId, mcpSurfaceDeps);
+  router.use('/mcp', mcpRouter);
   router.use('/threads', threadsRouter(agentDeps));
   router.use('/sections', sectionsRouter(sectionsService, discovery, sectionWriteDeps));
   router.use('/todos', todosRouter(todosIndexer));
@@ -2237,6 +2238,11 @@ async function buildInner(
       // pre-0.2.10 gap where `releasesWatcher` was never closed on dispose.
       await w.dispose();
       pluginHost.clearMcpFactories();
+      // An open MCP connection holds the surface composed from this context
+      // until its next request — dropped here, so an idle session does not
+      // keep the released context reachable (carried U6 rev-0001). Only the
+      // sessions still on THIS context: one re-synced to the successor keeps it.
+      mcpRouter.releaseSurfaces();
       // 2.1.9 (M52 L10): the context-scoped write channel is released explicitly.
       specSkillTools.dispose();
       // M33 phase 2: drop references to dynamically imported project-local

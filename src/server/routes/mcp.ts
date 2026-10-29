@@ -37,7 +37,7 @@
 import { Router } from 'express';
 import type { Request } from 'express';
 import type { ChatContextType } from '../../shared/entities.js';
-import { mcpRequestHandler } from '../mcp/http-mount.js';
+import { mcpRequestHandler, releaseMcpSessionSurfaces } from '../mcp/http-mount.js';
 import {
   bindProjectPerCall,
   composeExternalSurface,
@@ -51,15 +51,32 @@ import { ProjectRemovedError, type ProjectContextCache } from '../workspace/cont
 import type { WorkspaceRegistry } from '../workspace/registry.js';
 import type { WorkspaceRecord } from '../workspace/types.js';
 
+/** The binding a project-bound session is pinned to. */
+const projectBinding = (projectId: string) => `project:${projectId}`;
+
+/**
+ * The project-bound mount of ONE context. `releaseSurfaces` is called by that
+ * context on its release: the sessions still holding the surface composed from
+ * it drop it, so an idle connection does not keep the released context
+ * reachable (carried U6 rev-0001); the next request re-syncs from the
+ * successor. A session that already re-synced to the successor is left alone —
+ * a retired context is disposed late, once its last turn ends.
+ */
+export type ProjectMcpRouter = Router & { releaseSurfaces(): void };
+
 /** `/api/projects/:id/mcp` — mounted on the per-project router. */
 export function projectMcpRouter(
   packageVersion: string,
   projectId: string,
   surfaceDeps: (profile: ChatContextType) => ExternalSurfaceDeps,
-): Router {
+): ProjectMcpRouter {
   const router = Router();
+  // One token per context (this router is built once per build): what a session
+  // remembers about the surface it holds, without holding the context.
+  const owner = Symbol(`mcp-surface:${projectId}`);
   const handler = mcpRequestHandler({
     packageVersion,
+    owner,
     // The project is already resolved — this router only exists inside a built
     // context. Re-reading it per request is the middleware's job, and it has
     // done it before this line runs.
@@ -75,12 +92,14 @@ export function projectMcpRouter(
      * B's — a DIFFERENT router instance, whose constant compared equal. The
      * whole pin was a no-op on this mount, which is the one most clients use.
      */
-    binding: () => `project:${projectId}`,
+    binding: () => projectBinding(projectId),
   });
   router.post('/', handler);
   router.get('/', handler);
   router.delete('/', handler);
-  return router;
+  return Object.assign(router, {
+    releaseSurfaces: () => releaseMcpSessionSurfaces(projectBinding(projectId), owner),
+  });
 }
 
 export interface WorkspaceMcpDeps {

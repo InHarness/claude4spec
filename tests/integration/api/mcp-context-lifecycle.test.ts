@@ -1,11 +1,14 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import http from 'node:http';
+import v8 from 'node:v8';
+import { runInNewContext } from 'node:vm';
 import type { AddressInfo } from 'node:net';
 import { z } from 'zod';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { createTestApp, type TestApp } from '../../helpers/test-app.js';
 import { projectMcpRouter, workspaceMcpRouter } from '../../../src/server/routes/mcp.js';
@@ -46,6 +49,8 @@ describe('MCP connection vs. the context lifecycle', () => {
     gen: number;
     disposed: boolean;
     activeAdapters: Map<string, unknown>;
+    /** The generation's plugin host — reachable only through its context and the surfaces composed from it. */
+    host: WeakRef<object>;
   }
   let generations: Generation[] = [];
   let counter = 0;
@@ -78,16 +83,23 @@ describe('MCP connection vs. the context lifecycle', () => {
 
   const build = async (project: ProjectRecord): Promise<ProjectContext> => {
     if (gate) await gate;
-    const record: Generation = { projectId: project.id, gen: ++counter, disposed: false, activeAdapters: new Map() };
-    generations.push(record);
     const host = hostFor(poolChanged);
+    const record: Generation = {
+      projectId: project.id,
+      gen: ++counter,
+      disposed: false,
+      activeAdapters: new Map(),
+      host: new WeakRef(host as object),
+    };
+    generations.push(record);
     const surfaceDeps = (profile: ChatContextType): ExternalSurfaceDeps => ({
       ...app.mcpSurfaceDeps(profile),
       pluginHost: host,
       listProjects: () => ({ workspace: 'default', projects: [{ id: project.id, name: `generation-${record.gen}` }] }),
     });
     const router = express.Router();
-    router.use('/mcp', projectMcpRouter('0.0.0-test', project.id, surfaceDeps));
+    const mcp = projectMcpRouter('0.0.0-test', project.id, surfaceDeps);
+    router.use('/mcp', mcp);
     return {
       projectId: project.id,
       cwd: app.cwd,
@@ -96,6 +108,8 @@ describe('MCP connection vs. the context lifecycle', () => {
       hasInFlightTurn: () => record.activeAdapters.size > 0,
       dispose: async () => {
         record.disposed = true;
+        // The step of the real context's dispose (`buildProjectContext`) under test here.
+        mcp.releaseSurfaces();
       },
     } as unknown as ProjectContext;
   };
@@ -351,5 +365,91 @@ describe('MCP connection vs. the context lifecycle', () => {
     releaseBuilds();
     await vi.waitFor(() => expect(ofProject('app-spec')).toHaveLength(2));
     await vi.waitFor(() => expect(ofProject('app-spec')[1]!.disposed).toBe(true));
+  });
+  it('[carried:U6-rev-0001] an idle open MCP session does not keep the released context reachable: after the rebuild its plugin host is collected, and the session answers from the successor', async () => {
+    // `--expose-gc` for this worker only: the observable is reachability itself.
+    v8.setFlagsFromString('--expose_gc');
+    const gc = runInNewContext('gc') as () => void;
+    const collect = async () => {
+      // A WeakRef target stays alive until the end of the job that read it — let
+      // the job end before collecting, and again before reading.
+      for (let i = 0; i < 3; i++) {
+        await new Promise((resolve) => setImmediate(resolve));
+        gc();
+      }
+      await new Promise((resolve) => setImmediate(resolve));
+    };
+
+    let notified = 0;
+    const { client, transport } = await connect(`${base}/api/projects/app-spec/mcp`, () => notified++);
+    const before = (await client.listTools()).tools.map((t) => t.name);
+    // The session has synced to generation 1: its surface's handlers close over generation 1's host.
+    expect(text(await client.callTool({ name: 'list_projects', arguments: {} }))).toContain('generation-1');
+
+    // The rebuild, with the connection left IDLE — no request on it from here on.
+    cache.invalidate('app-spec');
+    await cache.get(workspace.projects.find((p) => p.id === 'app-spec')!);
+    const [first, second] = ofProject('app-spec');
+    expect(first!.disposed).toBe(true);
+    expect(second!.disposed).toBe(false);
+
+    await collect();
+    // The released generation is gone although the session is still open…
+    expect(first!.host.deref()).toBeUndefined();
+    // …while the live one is held by its context, as it should be.
+    expect(second!.host.deref()).toBeDefined();
+
+    // The idle session still works: the next call re-syncs and answers from the
+    // successor, on the same session, with no tools/list_changed for an unchanged pool.
+    const sessionId = transport.sessionId;
+    const after = await client.callTool({ name: 'list_projects', arguments: {} });
+    expect(after.isError).toBeFalsy();
+    expect(text(after)).toContain('generation-2');
+    expect(transport.sessionId).toBe(sessionId);
+    expect((await client.listTools()).tools.map((t) => t.name)).toEqual(before);
+    expect(notified).toBe(0);
+  });
+
+  it('[carried:U6-rev-0001] a deferred dispose of the predecessor leaves a session already re-synced to the successor intact: a call past its re-sync answers from the successor', async () => {
+    const { client } = await connect(`${base}/api/projects/app-spec/mcp`);
+    expect(text(await client.callTool({ name: 'list_projects', arguments: {} }))).toContain('generation-1');
+
+    // A turn in flight on generation 1: the invalidation retires it, but its
+    // dispose waits for the turn's end (`reapIdle` from the turn's finally).
+    const [first] = ofProject('app-spec');
+    first!.activeAdapters.set('turn-1', {});
+    cache.invalidate('app-spec');
+    await cache.get(workspace.projects.find((p) => p.id === 'app-spec')!);
+    const [, second] = ofProject('app-spec');
+    expect(first!.disposed).toBe(false);
+    expect(second!.disposed).toBe(false);
+
+    // The session re-syncs to the successor on its next request.
+    expect(text(await client.callTool({ name: 'list_projects', arguments: {} }))).toContain('generation-2');
+
+    // The next tools/call is held between its re-sync and its handler lookup —
+    // exactly there the predecessor's turn ends and the deferred dispose runs.
+    const original = StreamableHTTPServerTransport.prototype.handleRequest;
+    let disposedMidCall = false;
+    vi.spyOn(StreamableHTTPServerTransport.prototype, 'handleRequest').mockImplementation(async function (
+      this: StreamableHTTPServerTransport,
+      ...args: Parameters<StreamableHTTPServerTransport['handleRequest']>
+    ) {
+      const body = args[2] as { method?: string } | undefined;
+      if (!disposedMidCall && body?.method === 'tools/call') {
+        disposedMidCall = true;
+        first!.activeAdapters.clear();
+        cache.reapIdle();
+        expect(first!.disposed).toBe(true);
+      }
+      return original.apply(this, args);
+    });
+
+    const during = await client.callTool({ name: 'list_projects', arguments: {} });
+    expect(disposedMidCall).toBe(true);
+    // The predecessor's release did not empty the successor's handlers.
+    expect(during.isError).toBeFalsy();
+    expect(text(during)).toContain('generation-2');
+    expect(second!.disposed).toBe(false);
   });
 });

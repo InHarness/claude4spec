@@ -30,6 +30,9 @@
  * `McpServer`; the HANDLER dispatches through `session.current`, a map refreshed
  * from the live context before every request reaches the transport — so a call
  * after a rebuild dispatches into the successor context, never the released one.
+ * When a context is released, the map of every session still holding its surface
+ * is emptied (`releaseMcpSessionSurfaces`), so an idle connection keeps no
+ * handler of it — and a session already re-synced to the successor keeps its own.
  *
  * `tools/list_changed` is sent only when the name set actually differs — a plugin
  * activated or deactivated. A plain rebuild of the same pool changes nothing the
@@ -83,6 +86,14 @@ export interface McpMountOptions {
    * (ids only, never directories).
    */
   notFoundMessage?: (req: Request) => string;
+  /**
+   * Opaque identity of what this mount's surfaces are composed from — set by the
+   * project-bound mount, one token per context. A session remembers the token of
+   * the surface it holds, so a release names exactly the sessions still holding
+   * THAT context's handlers ({@link releaseMcpSessionSurfaces}). A token, never
+   * the context itself: the session must not keep what it identifies reachable.
+   */
+  owner?: symbol;
 }
 
 interface Session {
@@ -104,6 +115,8 @@ interface Session {
   binding: string;
   /** Refreshed before every request — what the handlers dispatch through. */
   current: ExternalSurface;
+  /** The {@link McpMountOptions.owner} of the mount that composed `current`. */
+  owner: symbol | undefined;
   registered: Map<string, RegisteredTool>;
   /** Epoch ms of the last request on this session — input to the idle reaper. */
   lastSeen: number;
@@ -148,6 +161,37 @@ export function activeMcpSessionCount(): number {
  */
 export function ageAllMcpSessions(byMs: number): void {
   for (const session of SESSIONS.values()) session.lastSeen -= byMs;
+}
+
+/**
+ * Let go of the surface composed by `owner` that sessions bound to `binding`
+ * still hold — called when the context behind `owner` is released (carried U6
+ * rev-0001).
+ *
+ * `session.current` is refreshed before every request, so between requests it
+ * still holds the LAST context's handlers — and through them that context's db
+ * handle, plugin host and indexes. An idle connection (an editor left open) would
+ * keep a released context reachable until its next request or the idle reap:
+ * one whole context per idle session, which a repeated rebuild of the project
+ * must not leave behind (M31 `m31ctx001`, open question #67).
+ *
+ * Only the handlers go; the advertised NAME set stays, so the next request's
+ * re-sync compares against what the client was told and sends
+ * `tools/list_changed` only on a real pool change. No call can reach the emptied
+ * map: every request re-syncs from the live context before the transport
+ * dispatches it.
+ *
+ * Only a session whose surface `owner` composed: a retired context is disposed
+ * late — once its last turn ends — when its successor is already serving and a
+ * session may have re-synced to it. Emptying that session would take the
+ * SUCCESSOR's handlers from a call already past its re-sync, which then answers
+ * NOT_FOUND for a tool the live context has.
+ */
+export function releaseMcpSessionSurfaces(binding: string, owner: symbol): void {
+  for (const session of SESSIONS.values()) {
+    if (session.binding !== binding || session.owner !== owner) continue;
+    session.current = { tools: [], byName: new Map(), toolNames: session.current.toolNames, scopeByName: new Map() };
+  }
 }
 
 /**
@@ -211,9 +255,10 @@ function jsonRpcError(res: Response, status: number, code: string, message: stri
  * which this replaces. Only a genuine change in the NAME SET touches the
  * `McpServer`'s registry, and only that sends `tools/list_changed`.
  */
-function syncTools(session: Session, surface: ExternalSurface): void {
+function syncTools(session: Session, surface: ExternalSurface, owner: symbol | undefined): void {
   const before = session.current.toolNames;
   session.current = surface;
+  session.owner = owner;
 
   const wanted = new Set(surface.toolNames);
   let changed = false;
@@ -277,6 +322,32 @@ function registerOne(session: Session, decl: McpToolDeclaration): RegisteredTool
       return live.handler(args, extra);
     }) as never,
   );
+}
+
+/**
+ * The standalone GET stream (server→client notifications) lives as long as the
+ * connection — it is the one request an idle session keeps open. Served so that
+ * it holds nothing of the context the request was routed through (carried U6
+ * rev-0001):
+ *
+ *   - NOT awaited by the mount's handler: a pending frame of that handler would
+ *     keep its options alive, and the project-bound mount's options close over
+ *     the context it was built in;
+ *   - with the router state express leaves on the request cleared — `req.next`
+ *     (the per-context router's continuation) and `req.route` (the route whose
+ *     stack holds that same handler). The handler never calls `next`, so nothing
+ *     reads them after this point.
+ *
+ * Module-level on purpose: a closure here would capture the options this
+ * function exists to let go of.
+ */
+function serveStandaloneStream(transport: StreamableHTTPServerTransport, req: Request, res: Response): void {
+  const routed = req as Request & { next?: unknown; route?: unknown };
+  routed.next = undefined;
+  routed.route = undefined;
+  transport.handleRequest(req, res).catch((err: unknown) => {
+    if (!res.headersSent) jsonRpcError(res, 500, 'INTERNAL', err instanceof Error ? err.message : String(err));
+  });
 }
 
 /**
@@ -363,7 +434,11 @@ function mcpRequestHandlerUnguarded(opts: McpMountOptions) {
     }
 
     if (existing) {
-      syncTools(existing, surface);
+      syncTools(existing, surface, opts.owner);
+      if (req.method === 'GET') {
+        serveStandaloneStream(existing.transport, req, res);
+        return;
+      }
       await existing.transport.handleRequest(req, res, req.body);
       return;
     }
@@ -401,13 +476,14 @@ function mcpRequestHandlerUnguarded(opts: McpMountOptions) {
       profile: chosen.profile,
       binding: opts.binding(req),
       current: { tools: [], byName: new Map(), toolNames: [], scopeByName: new Map() },
+      owner: undefined,
       registered: new Map(),
       lastSeen: Date.now(),
     };
 
     // Registered BEFORE connect, so the initial set is the handshake's answer
     // rather than a change notification the client cannot have subscribed to yet.
-    syncTools(session, surface);
+    syncTools(session, surface, opts.owner);
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
   };

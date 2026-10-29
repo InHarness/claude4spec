@@ -1,5 +1,5 @@
 {
-  "iteration": 29,
+  "iteration": 34,
   "conventions": [
     {
       "label": "L10 (Project Scoping) — implementor M31",
@@ -1033,15 +1033,33 @@
         }
       ],
       "wave": 4,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "U7-pomiary-obserwacji-i-zwalniania/p1-l10-l10",
+          "layers": [
+            "L10"
+          ],
+          "slugs": [
+            "section:bp5rw59k",
+            "carried:U6-rev-0001"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "eb55630833aeeadd6bb62fdc7817b09bd085c55d",
+      "baseCommit": "41db4000759ef4a93b55e45884439744a77be853",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     }
   ],
   "entityTypes": [
