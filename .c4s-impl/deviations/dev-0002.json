@@ -1,0 +1,11 @@
+{
+  "id": "dev-0002",
+  "unit": "container-env",
+  "kind": "clarification",
+  "blocking": false,
+  "address": "container-env/gpn0fopo",
+  "slugs": ["ac-po-starcie-kontenera-katalog-wskazany"],
+  "text": "## What I found\n\nSection `gpn0fopo` of `pages/modules/m01-project.md` (Start w kontenerze › Pytania otwarte) leaves open whether the image's entrypoint forwards extra container arguments (`$@`) to the server. Section `uxlvmu4n` also says the entrypoint retries the project registration \"until it succeeds\", but it does not say what happens when the server answers and refuses the directory (a `400` from `POST /api/workspace/projects`, e.g. a path that is not usable). No retry changes that answer.\n\n## What the build assumes (non-blocking)\n\n- Extra container arguments are **not** forwarded. The variable contract (`mcdkzcb6`) is the only input of the start.\n- The registration is retried on a refused connection and on a `5xx`. A `4xx` is a final refusal of the directory: the entrypoint logs it, stops the server and the container exits with code 1. It does not retry forever without a message.\n\n## Suggestion\n\nSettle the `$@` question in `gpn0fopo`. Add one sentence to `uxlvmu4n`, or an edge case in `3zqke46q`, saying how the container ends when the registration is refused.",
+  "sent": true,
+  "patchPath": "2-1-62-to-2-1-63-container-env-gpn0fopo-entrypoint-args-forwarding-and-refused-registration.md"
+}

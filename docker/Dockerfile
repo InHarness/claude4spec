@@ -142,6 +142,10 @@ RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/init-git.sh
 
 VOLUME ["/data", "/workspace"]
 EXPOSE 3000
+# 2.1.63 (M01 `uxlvmu4n`): the entrypoint is the only way to start the image.
+# A start is configured through PORT, PUBLIC_URL, REMOTE_API_URL and
+# PROJECT_DIR (the contract is documented in docker/entrypoint.sh) — never by
+# overriding the entrypoint, and there is no CMD carrying start flags.
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 FROM runtime-base AS runtime-registry
