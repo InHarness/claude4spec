@@ -1,5 +1,5 @@
 {
-  "iteration": 37,
+  "iteration": 38,
   "conventions": [
     {
       "label": "L10 (Project Scoping) — implementor M31",
@@ -1046,17 +1046,13 @@
             "section:bp5rw59k",
             "carried:U6-rev-0001"
           ],
-          "status": "pending",
-          "rounds": 2,
+          "status": "implemented",
+          "rounds": 3,
           "partial": 0,
           "uncovered": [
             "regression"
           ],
-          "only": [
-            {
-              "slug": "regression"
-            }
-          ]
+          "only": []
         }
       ],
       "startCommit": "7c76c319f686bb1d92d496199b48bb101bdd89c6",

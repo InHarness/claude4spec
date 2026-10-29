@@ -351,6 +351,50 @@ function serveStandaloneStream(transport: StreamableHTTPServerTransport, req: Re
 }
 
 /**
+ * A new session's server, transport and registry entry — built here, at module
+ * level, and NOT inline in the mount's request handler (carried U6 rev-0001).
+ *
+ * The transport keeps its callbacks (`onsessioninitialized`, `onsessionclosed`,
+ * `onclose`) for the session's whole life, and a closure keeps its ENTIRE scope
+ * chain, not just the variables it names: created inside the handler, they held
+ * the handler's scope and, one level up, the mount's `opts` — whose `surface`
+ * resolver on the project-bound mount closes over the context the mount was built
+ * in. So every session kept the context it was OPENED on reachable for its life,
+ * whatever `releaseMcpSessionSurfaces` emptied: one released context per idle
+ * connection. Here the callbacks' scope is this function's — three plain values
+ * and the session itself.
+ */
+function openSession(packageVersion: string, profile: ChatContextType, binding: string): Session {
+  const server = new McpServer(
+    { name: EXTERNAL_MCP_SERVER_NAME, version: packageVersion },
+    { capabilities: { tools: { listChanged: true } } },
+  );
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: () => randomUUID(),
+    onsessioninitialized: (id) => {
+      SESSIONS.set(id, session);
+    },
+    onsessionclosed: (id) => {
+      SESSIONS.delete(id);
+    },
+  });
+  transport.onclose = () => {
+    if (transport.sessionId) SESSIONS.delete(transport.sessionId);
+  };
+  const session: Session = {
+    server,
+    transport,
+    profile,
+    binding,
+    current: { tools: [], byName: new Map(), toolNames: [], scopeByName: new Map() },
+    owner: undefined,
+    registered: new Map(),
+    lastSeen: Date.now(),
+  };
+  return session;
+}
+
+/**
  * The express handler for one mount point. Handles POST (client→server), GET
  * (server→client SSE) and DELETE (session teardown) — the three verbs the
  * Streamable HTTP transport defines.
@@ -453,38 +497,12 @@ function mcpRequestHandlerUnguarded(opts: McpMountOptions) {
       return;
     }
 
-    const server = new McpServer(
-      { name: EXTERNAL_MCP_SERVER_NAME, version: opts.packageVersion },
-      { capabilities: { tools: { listChanged: true } } },
-    );
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
-      onsessioninitialized: (id) => {
-        SESSIONS.set(id, session);
-      },
-      onsessionclosed: (id) => {
-        SESSIONS.delete(id);
-      },
-    });
-    transport.onclose = () => {
-      if (transport.sessionId) SESSIONS.delete(transport.sessionId);
-    };
-
-    const session: Session = {
-      server,
-      transport,
-      profile: chosen.profile,
-      binding: opts.binding(req),
-      current: { tools: [], byName: new Map(), toolNames: [], scopeByName: new Map() },
-      owner: undefined,
-      registered: new Map(),
-      lastSeen: Date.now(),
-    };
+    const session = openSession(opts.packageVersion, chosen.profile, opts.binding(req));
 
     // Registered BEFORE connect, so the initial set is the handshake's answer
     // rather than a change notification the client cannot have subscribed to yet.
     syncTools(session, surface, opts.owner);
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
+    await session.server.connect(session.transport);
+    await session.transport.handleRequest(req, res, req.body);
   };
 }
