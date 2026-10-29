@@ -264,10 +264,15 @@ export async function loadProjectOverlay(
       continue;
     }
 
-    // Enforce within-overlay (same-layer) type uniqueness.
-    const conflict = lowered.find((m) => modules.has(m.type));
+    // Enforce within-overlay (same-layer) type uniqueness — against the other
+    // project-local plugins, and (2.1.63) within this one manifest, so no
+    // `modules.set` below ever overwrites a type silently.
+    const twice = lowered.find((m, i) => lowered.findIndex((o) => o.type === m.type) !== i);
+    const conflict = twice ?? lowered.find((m) => modules.has(m.type));
     if (conflict) {
-      const reason = `type "${conflict.type}" already provided by another project-local plugin (origin ${originByType.get(conflict.type)})`;
+      const reason = twice
+        ? `type "${conflict.type}" is contributed twice by this project-local plugin`
+        : `type "${conflict.type}" already provided by another project-local plugin (origin ${originByType.get(conflict.type)})`;
       console.warn(`[overlay-loader] PLUGIN_TYPE_CONFLICT ${pkg}: ${reason}`);
       records.push({ ...base, status: 'failed', code: 'PLUGIN_TYPE_CONFLICT', reason });
       continue;

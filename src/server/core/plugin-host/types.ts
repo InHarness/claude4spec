@@ -513,14 +513,20 @@ export interface UnloadedSkillSlug {
  * it derives a per-project ProjectPluginHost and mutates nothing here.
  */
 export interface PluginRegistry {
-  /** Register a plugin manifest. Idempotent on `module.type`. */
+  /**
+   * Register one entity module directly. 2.1.63 (M13 `m13pool0`): a type the
+   * base already holds throws `PluginTypeConflictError` (`PLUGIN_TYPE_CONFLICT`)
+   * — no silent last-wins.
+   */
   registerEntityModule(module: BackendModule): void;
 
   /**
    * M33: register a runtime plugin manifest. Validates the manifest shape and
    * fans `contributes.entities[]` out to `registerEntityModule(...)` (each
    * lowered from its authoring shape). Throws `PluginManifestError` on a
-   * structurally invalid manifest — the loader catches this per-package. Does
+   * structurally invalid manifest, and `PluginTypeConflictError` when a type it
+   * contributes is already in the base (or declared twice in the manifest) —
+   * the loader catches both per-package. Does
    * NOT gate on hostApiVersion/engines (that is the loader's job).
    */
   registerPlugin(manifest: PluginManifest): void;
@@ -529,7 +535,9 @@ export interface PluginRegistry {
    * M33 — validate a manifest's shape + lower all its contributions
    * WITHOUT mutating the registry; throws on a structural problem. The reload
    * pipeline calls this before `unregisterPlugin` so a structurally-broken new
-   * version never leaves the pool missing a type (atomic "old stays").
+   * version never leaves the pool missing a type (atomic "old stays"). The types
+   * the same-named plugin already holds are its own, not a conflict; a type
+   * held by any other registration is `PLUGIN_TYPE_CONFLICT`.
    */
   validatePlugin(manifest: PluginManifest): void;
 
@@ -642,8 +650,8 @@ export interface ProjectPluginHost {
 
   /**
    * M33: overlay types that shadow a same-named base type. Empty when
-   * there is no overlay or no cross-layer collision. Feeds the per-project
-   * `/_meta/plugins` shadow report and the M19 consistency check.
+   * there is no overlay or no cross-layer collision. Decides the `shadowed`
+   * state of the type axis (`types[]`) of the per-project `/_meta/plugins`.
    */
   shadowReport(): ShadowedType[];
 

@@ -231,7 +231,11 @@ describe('loadBuiltinEnvelopes', () => {
     expect(result.records[0]!.reason).toContain('kaboom');
   });
 
-  it('[ac:ac-koperta-wbudowana-z-plugins-src-wno] an envelope type already in the base follows the base collision rule — silent last-wins; envelopes are discovered FIRST, so an external package shadows them', async () => {
+  // 2.1.63 (M13 `m13pool0`): no silent last-wins inside the base any more — the
+  // envelope is just another base registration under the same rule.
+  // ASSUMPTION:dev-0005 — `ac-koperta-wbudowana-z-plugins-src-wno` still states the
+  // retired last-wins; the changed section wins, the AC is skiplisted.
+  it('[section:m13pool0] an envelope type already in the base is PLUGIN_TYPE_CONFLICT; envelopes are discovered FIRST, so an external package contributing their type is the one refused', async () => {
     writeEnvelope('c4s-plugin-api-contracts', { entry: '' });
     const registry = new PluginRegistryImpl();
     // A module of the same type already in the base, registered before
@@ -244,18 +248,24 @@ describe('loadBuiltinEnvelopes', () => {
       async () => ({ manifest: manifest({ contributes: { entities: [{ ...entity('endpoint'), label: 'envelope' }] } }) }),
       root,
     );
-    // Same semantics as the rest of the base: no error, the later registration wins.
-    expect(envelopeLoad.records[0]).toMatchObject({ status: 'loaded' });
-    expect(registry.getAvailable('endpoint')?.label).toBe('envelope');
+    // Same rule as the rest of the base: the second contribution is refused.
+    expect(envelopeLoad.records[0]).toMatchObject({ status: 'failed', code: 'PLUGIN_TYPE_CONFLICT' });
+    expect(registry.getAvailable('endpoint')?.label).toBe('preinstalled');
 
-    // An external (workspace / npm) package loads AFTER the envelopes and so
-    // shadows the envelope's type, again without an error.
-    const external = await loadWorkspacePlugins(registry, ['@acme/endpoint'], async () => ({
+    // At the real bootstrap the envelope is first, so it keeps its type and an
+    // external (workspace / npm) package loading AFTER it is the one refused.
+    const fresh = new PluginRegistryImpl();
+    await loadBuiltinEnvelopes(
+      fresh,
+      async () => ({ manifest: manifest({ contributes: { entities: [{ ...entity('endpoint'), label: 'envelope' }] } }) }),
+      root,
+    );
+    const external = await loadWorkspacePlugins(fresh, ['@acme/endpoint'], async () => ({
       manifest: manifest({ name: '@acme/endpoint', contributes: { entities: [{ ...entity('endpoint'), label: 'external' }] } }),
     }));
-    expect(external.records[0]).toMatchObject({ status: 'loaded' });
-    expect(registry.getAvailable('endpoint')?.label).toBe('external');
-    expect(registry.listAvailable().filter((m) => m.type === 'endpoint')).toHaveLength(1);
+    expect(external.records[0]).toMatchObject({ status: 'failed', code: 'PLUGIN_TYPE_CONFLICT' });
+    expect(fresh.getAvailable('endpoint')?.label).toBe('envelope');
+    expect(fresh.listAvailable().filter((m) => m.type === 'endpoint')).toHaveLength(1);
 
     // Discovery order at the real bootstrap: envelopes before workspace packages.
     const bootstrap = fs.readFileSync(path.resolve(import.meta.dirname, '../../index.ts'), 'utf8');

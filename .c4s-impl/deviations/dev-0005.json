@@ -1,0 +1,13 @@
+{
+  "id": "dev-0005",
+  "unit": "type-state-shadowed",
+  "portion": "type-state-shadowed/p1-l2-l11",
+  "kind": "incorrect",
+  "blocking": false,
+  "address": "type-state-shadowed/m13pool0",
+  "slugs": ["ac-dwa-pakiety-bazy-workspace-npm-wnoszac", "ac-koperta-wbudowana-z-plugins-src-wno"],
+  "text": "## What I found\n\nAt `2.1.63`, section `m13pool0` (M13 L2, changed in this window) says a duplicate type within the base is `PLUGIN_TYPE_CONFLICT`, the same as within the overlay. The silent last-wins (`registerEntityModule` = `Map.set`) is removed.\n\nTwo active criteria were not changed in the window, and both still state the retired rule:\n\n- `ac-dwa-pakiety-bazy-workspace-npm-wnoszac`: \"two base packages (workspace/npm) contributing the same `type` → silent last-wins (`Map.set` by type), not a hard error\".\n- `ac-koperta-wbudowana-z-plugins-src-wno`: \"a built-in envelope contributing a type already in the base follows the same collision semantics as the rest of the base — silent last-wins `registerEntityModule`; built-in envelopes are discovered FIRST, so an external package can shadow them\".\n\nM33 `m33edge0` is cited in `m13pool0` as the source of the last-wins requirement. It may say the same thing. I did not read it, because it is outside this unit's recipe.\n\n## What the build assumes (non-blocking)\n\nThe changed section wins, because the unit's goal names exactly this removal. In the code, a duplicate base type is now `PLUGIN_TYPE_CONFLICT`:\n\n- The second package's load record is `failed` with that code, and the first registration keeps the type.\n- Envelopes load first, so an external package that contributes an envelope's type is the one that gets refused.\n\nThe two criteria's tests were rewritten to assert the new rule under `[section:m13pool0]`. Their `[ac:]` markers were removed, and both slugs are in `tests/ac-skiplist.json` with a pointer to this deviation.\n\n## Suggestion\n\nRewrite both criteria to the `m13pool0` rule, or deprecate them:\n\n- A second base package with an already-held type → `PLUGIN_TYPE_CONFLICT`. Only a project overlay may shadow a base type.\n\nAlso check `m33edge0` for the same stale wording.",
+  "assumption": "ASSUMPTION:dev-0005 — the changed m13pool0 wins over the two stale ACs (a duplicate base type is PLUGIN_TYPE_CONFLICT); both ACs are skiplisted",
+  "sent": true,
+  "patchPath": "2-1-62-to-2-1-63-type-state-shadowed-m13pool0-two-active-criteria-still-state-base-last-wins.md"
+}

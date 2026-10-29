@@ -268,8 +268,9 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // isolated (skipped/failed records) — one bad plugin never crashes bootstrap.
   // 0.2.2 — tier (b) FIRST: built-in envelopes (built from source or prebuilt,
   // `dist/plugins/*` then `<hostRoot>/plugins/*`) register before node_modules
-  // and before the workspace registry, so core code claims its types before
-  // anything external could shadow them. They sit outside the
+  // and before the workspace registry, so core code claims its types first; a
+  // later base package contributing one of them is PLUGIN_TYPE_CONFLICT (2.1.63),
+  // only a project overlay may shadow them. They sit outside the
   // `trustProjectPlugins` gate — they ship in the host package.
   const discoveredEnvelopes = discoverBuiltinEnvelopes();
   const envelopeLoad = await loadBuiltinEnvelopes(pluginRegistry);

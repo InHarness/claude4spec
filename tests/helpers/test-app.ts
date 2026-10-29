@@ -105,7 +105,9 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
   await loadBuiltinEnvelopes(registry);
   // Test-only fixture types (e.g. proving generic capture works for a
   // plugin-contributed type) are registered before consolidate() so they
-  // behave identically to core types for the rest of this function.
+  // behave identically to core types for the rest of this function. A fixture
+  // reusing an envelope's type is `PLUGIN_TYPE_CONFLICT` (2.1.63) — use the
+  // envelope's type as loaded instead.
   for (const mod of opts.extraModules ?? []) registry.registerEntityModule(mod);
   const host = registry.consolidate(null);
 

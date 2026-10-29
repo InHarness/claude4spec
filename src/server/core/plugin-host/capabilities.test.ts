@@ -83,17 +83,28 @@ describe('M33 — registry capability records', () => {
     expect(() => registry.unregisterPlugin('@c4s/nope')).not.toThrow();
   });
 
-  it('unregisterPlugin does NOT delete a type now owned by a later same-typed plugin', () => {
+  it('[section:m13pool0] a second base plugin contributing a held type is refused — the slot stays its first owner\'s until that one unregisters', () => {
     const registry = new PluginRegistryImpl();
-    // Two base plugins both contribute type 'widget' (base layer allows it — the
-    // second overwrites the module slot).
     registry.registerPlugin(entityManifest({ name: '@c4s/plugin-a' }));
-    registry.registerPlugin(entityManifest({ name: '@c4s/plugin-b' }));
-    const moduleB = registry.getAvailable('widget');
+    const moduleA = registry.getAvailable('widget');
 
-    // Unregistering A must leave B's 'widget' module intact (identity check).
+    // 2.1.63: no silent overwrite of the slot — PLUGIN_TYPE_CONFLICT, nothing committed.
+    expect(() => registry.registerPlugin(entityManifest({ name: '@c4s/plugin-b' }))).toThrow(
+      /PLUGIN_TYPE_CONFLICT: plugin "@c4s\/plugin-b" contributes type "widget", already registered in the base \(by plugin "@c4s\/plugin-a"\)/,
+    );
+    expect(registry.getAvailable('widget')).toBe(moduleA);
+    expect(registry.listPluginRecords().map((r) => r.name)).toEqual(['@c4s/plugin-a']);
+
+    // Re-registering the SAME plugin without unregistering it first is a duplicate too.
+    expect(() => registry.registerPlugin(entityManifest({ name: '@c4s/plugin-a' }))).toThrow(/PLUGIN_TYPE_CONFLICT/);
+    // …but validating it as its own replacement (the reload pipeline) is not.
+    expect(() => registry.validatePlugin(entityManifest({ name: '@c4s/plugin-a', version: '2.0.0' }))).not.toThrow();
+    expect(() => registry.validatePlugin(entityManifest({ name: '@c4s/plugin-b' }))).toThrow(/PLUGIN_TYPE_CONFLICT/);
+
+    // Once A unregisters, the type is free for B.
     registry.unregisterPlugin('@c4s/plugin-a');
-    expect(registry.getAvailable('widget')).toBe(moduleB);
+    expect(registry.getAvailable('widget')).toBeNull();
+    registry.registerPlugin(entityManifest({ name: '@c4s/plugin-b' }));
     expect(registry.listPluginRecords().map((r) => r.name)).toEqual(['@c4s/plugin-b']);
   });
 

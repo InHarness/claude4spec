@@ -4,7 +4,7 @@
  * diagnostics + the machine-local trust gate:
  *
  *   GET  /_meta/entities  → activation partition (active/inactive/unknown)
- *   GET  /_meta/plugins   → base ∪ overlay package diagnostics + shadow report
+ *   GET  /_meta/plugins   → base ∪ overlay package diagnostics + per-type state (active/shadowed)
  *   POST /trust-plugins   → persist trustProjectPlugins, trigger context rebuild
  */
 
@@ -12,19 +12,19 @@ import { Router } from 'express';
 import { HOST_API_VERSION } from '../../../shared/plugin-host/manifest.js';
 import type { PluginHost } from './types.js';
 import type { PluginLoadRecord } from './loader.js';
+import { poolTypeStates, type PoolTypeState } from './base-packages.js';
 import { overlayRefWarnings, withRefWarnings } from './ref-warnings.js';
 import type { WorkspaceRegistry } from '../../workspace/registry.js';
 import type { WorkspaceRecord } from '../../workspace/types.js';
 import type { ContextInvalidation } from '../../../shared/types.js';
 
-/** One shadowed type with both layers' origins (cross-layer collision). */
-export interface ShadowedReportEntry {
-  type: string;
-  overlayOrigin: string;
-  baseOrigin: string;
-}
-
-/** Per-project `/_meta/plugins` payload (extends the process-global shape). */
+/**
+ * Per-project `/_meta/plugins` payload (extends the process-global shape). Two
+ * axes, never mixed (M13 `m13pool0`): `packages[].status` says whether an
+ * envelope entered its layer; `types[]` says which module backs each type of
+ * the effective pool — `shadowed` (with the origin of both layers) where an
+ * overlay type shadows a base one, `active` otherwise.
+ */
 export interface ProjectPluginsMetaResponse {
   hostApiVersion: string;
   /** True when `<cwd>/.claude4spec/plugins/` ships at least one package. */
@@ -32,7 +32,7 @@ export interface ProjectPluginsMetaResponse {
   /** Machine-local trust decision: undefined = undecided (prompt). */
   trust: boolean | undefined;
   packages: PluginLoadRecord[];
-  shadowed: ShadowedReportEntry[];
+  types: PoolTypeState[];
 }
 
 export interface PluginHostRouterDeps {
@@ -87,20 +87,16 @@ export function pluginHostRouter(deps: PluginHostRouterDeps): Router {
     withRefWarnings(overlayRecords, overlayRefWarnings(host.listAvailable(), overlayRecords));
 
   router.get('/_meta/plugins', (_req, res) => {
-    const baseOriginForType = (type: string): string =>
-      basePackages.find((p) => p.contributedTypes?.includes(type))?.package ?? '@c4s/builtin';
-    const shadowed: ShadowedReportEntry[] = host.shadowReport().map((s) => ({
-      type: s.type,
-      overlayOrigin: s.overlayOrigin,
-      baseOrigin: baseOriginForType(s.type),
-    }));
     const response: ProjectPluginsMetaResponse = {
       hostApiVersion: HOST_API_VERSION,
       localPluginsPresent,
       trust,
       // 2.1.41 — an overlay type's ref warnings are judged against base ∪ overlay.
       packages: [...basePackages, ...overlayWithWarnings()],
-      shadowed,
+      types: poolTypeStates(host.listAvailable().map((m) => m.type), basePackages, {
+        records: overlayRecords,
+        shadowed: host.shadowReport(),
+      }),
     };
     res.json(response);
   });

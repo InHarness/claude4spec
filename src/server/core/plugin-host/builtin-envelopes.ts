@@ -25,10 +25,10 @@
  * gate the project-local overlay under `<cwd>/.claude4spec/plugins/`.
  *
  * ORDER MATTERS: envelopes are registered BEFORE `node_modules` packages and
- * before the workspace registry, so core code registers first and nothing external
- * can shadow a core type by accident. Collision semantics are unchanged — the
- * silent last-wins of `registerEntityModule` — so an external package still *can*
- * deliberately shadow an envelope.
+ * before the workspace registry, so core code registers first and claims its
+ * types. 2.1.63 (M13 `m13pool0`): a later base package contributing the same type
+ * is rejected with `PLUGIN_TYPE_CONFLICT` — no silent last-wins within the base.
+ * A project overlay contributing it shadows the envelope in that project only.
  *
  * M31 orthogonality: an envelope is NOT a workspace-registry entry. `plugins[]`
  * stays a list of npm packages only, not a catalogue of everything the process

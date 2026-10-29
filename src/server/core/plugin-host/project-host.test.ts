@@ -175,8 +175,12 @@ describe('consolidate — overlay', () => {
     );
     const res = await request(app).get('/_meta/plugins');
     expect(res.status).toBe(200);
-    expect(res.body.shadowed).toEqual([
-      { type: 'endpoint', overlayOrigin: '.claude4spec/plugins/endpoint-pkg', baseOrigin: '@acme/c4s-plugin-api' },
+    expect(res.body.types).toEqual([
+      {
+        type: 'endpoint',
+        state: 'shadowed',
+        origin: { base: '@acme/c4s-plugin-api', overlay: '.claude4spec/plugins/endpoint-pkg' },
+      },
     ]);
     // Both packages stay loaded — shadowing is a report, not a rejection.
     expect((res.body.packages as Array<{ status: string }>).map((p) => p.status)).toEqual(['loaded', 'loaded']);

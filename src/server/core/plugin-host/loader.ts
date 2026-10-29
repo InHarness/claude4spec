@@ -19,6 +19,7 @@ import { buildMigrationInfo, type PluginMigrationInfo } from '../../../shared/pl
 import { entryCacheBust } from './cache-bust.js';
 import { installPluginRuntimeResolver } from './plugin-runtime-resolver.js';
 import { discoverBuiltinEnvelopes } from './builtin-envelopes.js';
+import { PluginTypeConflictError } from './manifest-adapter.js';
 import type { PluginRegistry } from './types.js';
 import type { BasePackageLocator } from './workspace-packages.js';
 
@@ -37,8 +38,9 @@ export type PluginLoadCode =
   | 'PLUGIN_INVALID_MANIFEST'
   // Base layer (2.1.58): a listed package absent from the workspace `node_modules`.
   | 'PLUGIN_NOT_INSTALLED'
-  // Overlay layer:
+  // Both layers (2.1.63 — the base too): a type already provided within the layer.
   | 'PLUGIN_TYPE_CONFLICT'
+  // Overlay layer:
   | 'PLUGIN_PROJECT_UNTRUSTED';
 
 /** Which layer a record belongs to — base (workspace/npm) vs overlay (project-local). */
@@ -126,6 +128,18 @@ export function contributedSkillSlugs(manifest: PluginManifest): string[] {
     if (typeof slug === 'string' && slug.length > 0 && !slugs.includes(slug)) slugs.push(slug);
   }
   return slugs;
+}
+
+/**
+ * The load record's code for a registration the registry refused: a type the
+ * base already holds is `PLUGIN_TYPE_CONFLICT` (2.1.63, M13 `m13pool0`); every
+ * other refusal is a manifest the registry could not lower.
+ */
+function registrationFailure(err: unknown): { code: PluginLoadCode; reason: string } {
+  if (err instanceof PluginTypeConflictError) {
+    return { code: 'PLUGIN_TYPE_CONFLICT', reason: err.message.replace(`${err.code}: `, '') };
+  }
+  return { code: 'PLUGIN_INVALID_MANIFEST', reason: (err as Error).message };
 }
 
 /** engines.node satisfied by the running node? Missing constraint = satisfied. */
@@ -272,9 +286,9 @@ export async function loadWorkspacePlugins(
     try {
       registry.registerPlugin(manifest);
     } catch (err) {
-      const reason = (err as Error).message;
-      console.warn(`[plugin-loader] PLUGIN_INVALID_MANIFEST ${pkg}: ${reason}`);
-      records.push({ ...base, status: 'failed', code: 'PLUGIN_INVALID_MANIFEST', reason });
+      const { code, reason } = registrationFailure(err);
+      console.warn(`[plugin-loader] ${code} ${pkg}: ${reason}`);
+      records.push({ ...base, status: 'failed', code, reason });
       continue;
     }
 
@@ -292,10 +306,11 @@ export async function loadWorkspacePlugins(
  * envelopes from `<hostRoot>/plugins/*`, registered BEFORE `node_modules` packages
  * and before the workspace registry (M31).
  *
- * The ordering is deliberate, not incidental: core code registers first so nothing
- * external shadows a core type by accident. Collision semantics are untouched
- * (silent last-wins in `registerEntityModule`), so an external package still can
- * deliberately shadow an envelope.
+ * The ordering is deliberate, not incidental: core code registers first and so
+ * claims its types. A later base package contributing one of them is rejected with
+ * `PLUGIN_TYPE_CONFLICT` (2.1.63, M13 `m13pool0` — no silent last-wins within the
+ * base); replacing an envelope's type is the project overlay's job, which shadows
+ * it per project.
  *
  * Envelopes are trusted by virtue of living in the host repo and are therefore NOT
  * subject to `trustProjectPlugins` — that gate wraps only the project-local overlay
@@ -441,9 +456,9 @@ export async function reloadPlugin(
   try {
     registry.validatePlugin(manifest);
   } catch (err) {
-    const reason = (err as Error).message;
-    console.warn(`[plugin-loader] reload PLUGIN_INVALID_MANIFEST ${pkg}: ${reason} (old version retained)`);
-    return { ...named, status: 'failed', code: 'PLUGIN_INVALID_MANIFEST', reason };
+    const { code, reason } = registrationFailure(err);
+    console.warn(`[plugin-loader] reload ${code} ${pkg}: ${reason} (old version retained)`);
+    return { ...named, status: 'failed', code, reason };
   }
   // Fresh, compatible, valid: tear the old version down, then register the new.
   // 2a — the OLD, mounted instance's hook (the one that actually allocated any

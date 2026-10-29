@@ -161,7 +161,7 @@ describe('loadWorkspacePlugins', () => {
     }
   });
 
-  it('[ac:ac-dwa-pakiety-bazy-workspace-npm-wnoszac] two base packages contributing the same entity type — silent last-wins, both load, no error', async () => {
+  it('[section:m13pool0] two base packages contributing the same entity type — the second is PLUGIN_TYPE_CONFLICT, the first keeps the type, the start goes on', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       const registry = new PluginRegistryImpl();
@@ -169,22 +169,52 @@ describe('loadWorkspacePlugins', () => {
       const second = { ...entity('glossary'), label: 'Glossary (second)' };
       const importer = fakeImporter({
         'pkg-first': { manifest: manifest({ name: 'first', contributes: { entities: [first] } }) },
-        'pkg-second': { manifest: manifest({ name: 'second', contributes: { entities: [second] } }) },
+        'pkg-second': {
+          manifest: manifest({ name: 'second', contributes: { entities: [second, entity('lexicon')] } }),
+        },
+        'pkg-third': { manifest: manifest({ name: 'third', contributes: { entities: [entity('term')] } }) },
       });
 
-      const { records } = await loadWorkspacePlugins(registry, ['pkg-first', 'pkg-second'], importer);
+      const { records } = await loadWorkspacePlugins(registry, ['pkg-first', 'pkg-second', 'pkg-third'], importer);
 
-      // Not a hard error: both packages load and both report the type.
-      expect(records.map((r) => [r.package, r.status])).toEqual([
-        ['pkg-first', 'loaded'],
-        ['pkg-second', 'loaded'],
+      // A hard error of the second package only: no silent last-wins.
+      expect(records.map((r) => [r.package, r.status, r.code])).toEqual([
+        ['pkg-first', 'loaded', undefined],
+        ['pkg-second', 'failed', 'PLUGIN_TYPE_CONFLICT'],
+        ['pkg-third', 'loaded', undefined],
       ]);
-      // Last-wins: the slot keyed by type holds the module registered last.
-      expect(registry.getAvailable('glossary')?.label).toBe('Glossary (second)');
-      expect(registry.listAvailable().filter((m) => m.type === 'glossary')).toHaveLength(1);
-      // Silent: nothing is reported about the collision (the runtime resolver
-      // may log its own install notice under the test runner — not this).
-      expect(warn.mock.calls.flat().join(' ')).not.toMatch(/glossary|conflict|collision|PLUGIN_TYPE/i);
+      expect(records[1]?.reason).toBe(
+        'plugin "second" contributes type "glossary", already registered in the base (by plugin "first")',
+      );
+      expect(records[1]?.contributedTypes).toBeUndefined();
+      // The first registration keeps the slot; the rejected package commits nothing
+      // (its second, non-conflicting type is not registered either).
+      expect(registry.getAvailable('glossary')?.label).toBe('glossary');
+      expect(registry.getAvailable('lexicon')).toBeNull();
+      expect(registry.listPluginRecords().map((r) => r.name)).toEqual(['first', 'third']);
+      expect(warn.mock.calls.flat().join(' ')).toMatch(/PLUGIN_TYPE_CONFLICT pkg-second/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('[section:m13pool0] a manifest declaring one type twice is PLUGIN_TYPE_CONFLICT — nothing of it is registered', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const registry = new PluginRegistryImpl();
+      const importer = fakeImporter({
+        'pkg-twice': { manifest: manifest({ name: 'twice', contributes: { entities: [entity('glossary'), entity('glossary')] } }) },
+      });
+
+      const { records } = await loadWorkspacePlugins(registry, ['pkg-twice'], importer);
+
+      expect(records[0]).toMatchObject({
+        status: 'failed',
+        code: 'PLUGIN_TYPE_CONFLICT',
+        reason: 'plugin "twice" contributes type "glossary" twice',
+      });
+      expect(registry.getAvailable('glossary')).toBeNull();
+      expect(registry.listPluginRecords()).toEqual([]);
     } finally {
       warn.mockRestore();
     }

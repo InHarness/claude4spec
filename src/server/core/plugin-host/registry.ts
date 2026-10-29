@@ -29,6 +29,7 @@ import type {
 import { ProjectPluginHostImpl } from './project-host.js';
 import {
   PluginManifestError,
+  PluginTypeConflictError,
   lowerEntityContribution,
   synthesizeMount,
   admitSkillContextTypes,
@@ -47,6 +48,11 @@ interface InternalPluginRecord extends RegisteredPluginRecord {
   /** Slugs of `contributes.skills` entries the `contextTypes` check rejected (2.1.9). */
   rejectedSkills: string[];
   entityModules: BackendModule[];
+}
+
+/** " (by plugin "x")" / " (direct registration)" — who holds a type, for a conflict message. */
+function ownerSuffix(owner: string | null): string {
+  return owner ? ` (by plugin "${owner}")` : ' (direct registration)';
 }
 
 /** Outcome of validating + lowering a manifest, ready to commit to the registry. */
@@ -87,6 +93,17 @@ export class PluginRegistryImpl implements PluginRegistry {
       module as unknown as Record<string, unknown>,
       module.payloadVersion,
     );
+    // 2.1.63 (M13 `m13pool0`) — a type already in the base is a hard
+    // `PLUGIN_TYPE_CONFLICT`, not a silent last-wins over the module that holds
+    // it. `registerPlugin` checks the same rule up front (atomically, before any
+    // of its modules is committed); this is the choke point a direct caller hits.
+    const existing = this.modules.get(module.type);
+    if (existing) {
+      throw new PluginTypeConflictError(
+        `type "${module.type}" is already registered in the base${ownerSuffix(this.ownerOf(existing))}`,
+        module.type,
+      );
+    }
     // 0.2.51 — resolve the host's default `title` bound before anything reads
     // the declaration, so a type that widened it, a type that narrowed it and a
     // type that said nothing are all one shape from here on.
@@ -104,7 +121,7 @@ export class PluginRegistryImpl implements PluginRegistry {
    * BEFORE tearing the old version down, so a structurally-broken new version
    * never leaves the pool missing a type ("old stays").
    */
-  private validateAndLower(manifest: PluginManifest): LoweredPlugin {
+  private validateAndLower(manifest: PluginManifest, replacing = false): LoweredPlugin {
     if (!manifest || typeof manifest !== 'object') {
       throw new PluginManifestError('plugin manifest must be an object');
     }
@@ -129,12 +146,28 @@ export class PluginRegistryImpl implements PluginRegistry {
     // modules AND against the ones earlier in this same batch — two entities of
     // one manifest claiming the same table must be rejected as surely as a
     // cross-plugin collision, and neither is committed yet at this point.
+    // 2.1.63 (M13 `m13pool0`): the same goes for the TYPE itself — a type the
+    // base already holds, or one this manifest declares twice, is a
+    // `PLUGIN_TYPE_CONFLICT` raised here, before anything is committed. Only a
+    // replacement (`validatePlugin`, the reload pipeline validating a new version
+    // before tearing the old one down) may reuse the types its own name holds.
+    const own = replacing ? this.plugins.get(manifest.name) : undefined;
     const batch: BackendModule[] = [];
     const entityModules = (manifest.contributes.entities ?? [])
       .map(lowerEntityContribution)
       .map(applyReservedTitleDefault)
       .map(synthesizeMount)
       .map((m) => {
+        if (batch.some((b) => b.type === m.type)) {
+          throw new PluginTypeConflictError(`plugin "${manifest.name}" contributes type "${m.type}" twice`, m.type);
+        }
+        const existing = this.modules.get(m.type);
+        if (existing && !own?.entityModules.includes(existing)) {
+          throw new PluginTypeConflictError(
+            `plugin "${manifest.name}" contributes type "${m.type}", already registered in the base${ownerSuffix(this.ownerOf(existing))}`,
+            m.type,
+          );
+        }
         const validated = attachComposition(m, [...this.modules.values(), ...batch]);
         batch.push(validated);
         return validated;
@@ -188,7 +221,15 @@ export class PluginRegistryImpl implements PluginRegistry {
   }
 
   validatePlugin(manifest: PluginManifest): void {
-    this.validateAndLower(manifest);
+    this.validateAndLower(manifest, true);
+  }
+
+  /** Name of the base plugin whose record holds `module`; `null` for a direct registration. */
+  private ownerOf(module: BackendModule): string | null {
+    for (const record of this.plugins.values()) {
+      if (record.entityModules.includes(module)) return record.name;
+    }
+    return null;
   }
 
   registerPlugin(manifest: PluginManifest): void {
@@ -204,8 +245,9 @@ export class PluginRegistryImpl implements PluginRegistry {
     for (const module of record.entityModules) {
       this.registerEntityModule(module);
     }
-    // Re-registration (hot-reload) overwrites the prior record; Map keeps the
-    // first-seen insertion order, which is what we want for stable section order.
+    // A re-registration under the same name (hot reload) comes after
+    // `unregisterPlugin`, so its types are free again; Map keeps the first-seen
+    // insertion order, which is what we want for stable section order.
     this.plugins.set(record.name, record);
     this.gateSkippedSkills.delete(record.name);
   }
@@ -252,14 +294,10 @@ export class PluginRegistryImpl implements PluginRegistry {
     const record = this.plugins.get(name);
     // Idempotency lives here: an unknown name is a no-op, not an error.
     if (!record) return;
-    for (const module of record.entityModules) {
-      // Only drop the module if it is STILL the one this plugin contributed — a
-      // later same-typed registration (another base plugin contributing the same
-      // type) would have overwritten the slot, and must not be clobbered here.
-      if (this.modules.get(module.type) === module) {
-        this.modules.delete(module.type);
-      }
-    }
+    // 2.1.63 — the slot of each type is this plugin's own: a second base plugin
+    // contributing the same type is rejected (`PLUGIN_TYPE_CONFLICT`), never
+    // written over it, so there is no later owner to protect here.
+    for (const module of record.entityModules) this.modules.delete(module.type);
     this.plugins.delete(name);
   }
 

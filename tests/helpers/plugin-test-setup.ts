@@ -128,8 +128,16 @@ export async function createPluginTestApp(
     // through the loader's registration point.
     const pluginRegistry = new PluginRegistryImpl();
     const envelopeLoad = await loadBuiltinEnvelopes(pluginRegistry);
-    const records: PluginLoadRecord[] = [...envelopeLoad.records];
+    let records: PluginLoadRecord[] = [...envelopeLoad.records];
     for (const manifest of manifests) {
+      // An envelope's own suite hands in the manifest of the envelope already
+      // loaded from its built bundle. It is the same package, so it REPLACES the
+      // loaded version (as a reload does: unregister, then register) — the base
+      // allows no second contribution of a type (2.1.63, `PLUGIN_TYPE_CONFLICT`).
+      if (pluginRegistry.listPluginRecords().some((r) => r.name === manifest.name)) {
+        pluginRegistry.unregisterPlugin(manifest.name);
+        records = records.filter((r) => r.manifestName !== manifest.name);
+      }
       // Not caught: the registration point's own error IS the harness's answer.
       pluginRegistry.registerPlugin(manifest);
       records.push({

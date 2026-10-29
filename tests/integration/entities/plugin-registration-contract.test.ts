@@ -10,9 +10,11 @@
  *     in the same round — so the host default refuses for everybody else;
  *   - `l4crudhl` — there is no generic CRUD route helper: the host generates
  *     CRUD REST, a plugin's `backend.routes` router carries domain routes only,
- *     and a type without domain routes declares no router;
- *   - `m13pool0` — the silent last-wins of the BASE registry stays; nothing
- *     changes in code.
+ *     and a type without domain routes declares no router.
+ *
+ * (`m13pool0` — the base collision rule — is no longer here: since 2.1.63 a
+ * duplicate type within the base is `PLUGIN_TYPE_CONFLICT`, proven in
+ * `src/server/core/plugin-host/pool-type-state.test.ts`.)
  *
  * Lives under `tests/` because it imports the envelopes' own sources next to
  * the host's, which no single envelope config compiles together (the pattern of
@@ -25,10 +27,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { lowerEntityContribution } from '../../../src/server/core/plugin-host/manifest-adapter.js';
-import { PluginRegistryImpl } from '../../../src/server/core/plugin-host/registry.js';
-import type { BackendModule, MountContext } from '../../../src/server/core/plugin-host/types.js';
+import type { MountContext } from '../../../src/server/core/plugin-host/types.js';
 import type { EntityContribution } from '../../../src/shared/plugin-host/manifest.js';
-import { fixtureModule } from '../../helpers/fixture-module.js';
 import { manifest as acManifest } from '../../../plugins/c4s-plugin-ac/src/manifest.js';
 import { manifest as apiContractsManifest } from '../../../plugins/c4s-plugin-api-contracts/src/manifest.js';
 import { manifest as codeSnippetsManifest } from '../../../plugins/c4s-plugin-code-snippets/src/manifest.js';
@@ -163,19 +163,6 @@ describe('[section:l4crudhl] no generic CRUD route helper — a plugin router ca
       .sort();
     expect(routes).toEqual(['DELETE /:slug/dtos/:dtoSlug/:relation', 'POST /:slug/dtos']);
   });
-});
-
-describe('[section:m13pool0] base registry collision stays a silent last-wins', () => {
-  it('registerEntityModule with a type already in the base replaces it without throwing', () => {
-    const registry = new PluginRegistryImpl();
-    const first: BackendModule = fixtureModule('glossary');
-    const second: BackendModule = { ...fixtureModule('glossary'), label: 'Glossary (second)' };
-    registry.registerEntityModule(first);
-    expect(() => registry.registerEntityModule(second)).not.toThrow();
-    expect(registry.getAvailable('glossary')?.label).toBe('Glossary (second)');
-    expect(registry.listAvailable().filter((m) => m.type === 'glossary')).toHaveLength(1);
-  });
-
 });
 
 /**
