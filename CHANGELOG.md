@@ -5,7 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.64] - 2026-11-01
+
+Covers 2.1.12–2.1.64: the intermediate versions were never published to npm.
+
+### Added
+
+- **Runs (M55).** A top-level chat agent can order a plan or a prompt to run in shadow mode on an external runner host with `run_remote`, hand the conversation back before the work ends, then poll it with `get_run` and stop it with `cancel_run`. The result reaches the master only as a shadow a human accepts. The `run-tools` MCP server is mounted only in a top-level chat thread. A workspace with a home directory gets its own SQLite database with a separate migration chain.
+- **Runner hosts (M54).** The workspace settings card `#runner-hosts` and `/api/workspace/runner-hosts` register external `c4s-runner` hosts. The server authenticates with a token (stored encrypted, masked in the UI), keeps a listening connection to each host and shows its status.
+- **Shadows.** Foreign, not yet accepted versions of the specification live under the shadow ref namespace. The Releases screen gains a Shadows tab with a trial-merge diff and Accept (`POST /api/shadow-accept`), which ends in a new release and a merge commit, or in the state from before the click on any failure before the point of no return. Work in progress in `plans`, `briefs`, `patches` and `skills` blocks an accept only when it collides with the shadow's paths; pending changes in release content still block it.
+- **Team-defined sidebar layout (`elementsMenu`).** A committed project config orders, groups and hides entity types in the ELEMENTS section; it is edited on the `#entities` settings card.
+- **Plugin testing harness.** `createPluginTestApp` under `@inharness-ai/claude4spec/plugin-testing`.
+- **`c4s agent --plan <planPath>`** starts an execution turn on an existing plan; `c4s create-plan` prints its threads.
+- **Unreleased-changes counter.** One number behind the Compare tab label, the create-release warning and the release banner.
+- **Plugin UI kit.** `refLookup` / `useRefLookup` and `EntityRefValue` for `ref: <type>` fields across packages, `tagLookup` in `renderRow` props, a public `Tag` type, and the `--text-sm` / `--text-xs` / `--text-2xs` theme tokens. The kit catalog is kept as `ui-kit-component` records.
+- Artifact detail projections and whole-file artifact screens.
 
 ### Changed
 
@@ -21,6 +35,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The scheduling tools (`ScheduleWakeup`, `CronCreate`, `CronList`, `CronDelete`) are no longer listed in the system prompt's built-in inventory or plan mode's "Available" line — the adapter always suppresses them, so the prompt no longer advertises tools the model can never call.
   - MCP tools are callable under soft path-scope (no OS sandbox) without "don't ask mode" refusals; shell and web stay withheld.
   - A plugin registering an MCP server under the CLI-reserved key `workspace` is refused at registration with an explicit error.
+- **Project contexts build in the background.** The server listens immediately and builds the contexts of all workspace projects one at a time, from a priority queue with five project states.
+- **Plugin frontends are served per project.** Each project has its own frontend manifest; project-local overlay assets sit under a project prefix behind a trust gate read live.
+- **Workspace-bound MCP takes `project` per call,** not per connection, and a workspace mount can no longer take the process down.
+- **Chat contract.** Agent Runtime (M05) and Agent Chat Shell (M53) are split; stream ends, the replay header, migration batches and role validation are settled; the plan-mode toggle shows a "checking" state until enforceability is confirmed.
+- **`c4s` error and addressing surface.** Peer consultation through the MCP `ask` tool stays in the serving workspace when `workspace` is omitted; the `--server` hints and argv `INVALID_ARGS` are consistent. Reserved names (`current`, `initial`, `null`) always mean states, not releases.
+- **List screens.** `EntityListHeader` has an explicit shrink order, `TagFilterBar` keeps to one line with a "+N" popover and narrows by `entityType`, `/tags` uses the kit header and empty state, and version history names releases. A sidebar side menu opened on hover is a preview; one opened by click is pinned.
+- Operation catalog rows follow the `spec-operation` records in every channel; pages read and write with unparsable frontmatter tolerated.
+
+### Removed
+
+- **BREAKING: remote publishing.** Release push (M25), clone (M27) and the tar.gz bundle are gone; a release goes out through `git push`.
+- **BREAKING: the `mcp-tool` entity type is no longer part of the host.** A project that needs it brings it through a project-local plugin.
+
+### Fixed
+
+- REST tag create, update and delete broadcast `tag:changed`; `/tags` re-reads the type registry after plugin boot and lists only non-zero per-type counters.
+- The chat tab that ordered a Run does not reload on its own plan publication, so its turn's stream is not cut.
+- The project switcher popover is bounded in height and scrolls.
+- `refLookup` maps rebuild when the plugin registry changes.
 
 ## [2.1.11] - 2026-10-09
 
@@ -512,3 +545,4 @@ Initial public release.
 [1.0.24]: https://github.com/InHarness/claude4spec/compare/v1.0.23...v1.0.24
 
 [2.1.11]: https://github.com/InHarness/claude4spec/compare/v2.1.0...v2.1.11
+[2.1.64]: https://github.com/InHarness/claude4spec/compare/v2.1.11...v2.1.64
