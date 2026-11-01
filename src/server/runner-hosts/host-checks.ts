@@ -37,6 +37,22 @@ export interface HostInfo {
   runnerVersion: string;
   protocol: number;
   startedAt: string;
+  /**
+   * `i084ojn6` (2.1.64): the host's capabilities (`c4s-runner` dto `host-info`,
+   * field `capabilities`). A HostInfo without the field gives an empty list.
+   */
+  capabilities: string[];
+}
+
+/**
+ * `i084ojn6`: `capabilities` is not ignored — a missing field is an empty list.
+ * ASSUMPTION:dev-0003 — a value that is not an array, and any
+ * non-string item, is dropped rather than failing the HostInfo: only
+ * `protocol` and the binding fields decide `bad-response` (`o0qdti8z`).
+ */
+function capabilitiesOf(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((c): c is string => typeof c === 'string');
 }
 
 // `npul32ax` — the module's own strings for a classification without `ApiError`.
@@ -148,6 +164,7 @@ export function checkHostInfo(value: unknown): { ok: true; info: HostInfo } | { 
       runnerVersion: v.runnerVersion as string,
       protocol: v.protocol,
       startedAt: v.startedAt as string,
+      capabilities: capabilitiesOf(v.capabilities),
     },
   };
 }

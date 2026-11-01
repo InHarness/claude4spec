@@ -56,7 +56,7 @@ import { readConfig } from '../config.js';
 import type { WatchEventKind } from '../fs/watcher.js';
 import type { SnapshotData } from '../serialization/types.js';
 import type { GitHeldRepo, GitLockHandle, GitService } from './git.js';
-import { acceptanceFlags, gitUnavailable, type ShadowDiffScope } from './release-shadow-diff.js';
+import { acceptanceFlags, gitUnavailable, ownRunRecordDir, type ShadowDiffScope } from './release-shadow-diff.js';
 import { isPathWithin } from '../workspace/registry.js';
 import { DomainError } from './tags.js';
 
@@ -118,6 +118,7 @@ export interface AcceptShadowDeps<R extends { name: string; description: string 
     | 'mergeIntoIndex'
     | 'abortMerge'
     | 'commitOnRelease'
+    | 'workspaceHomePath'
     | 'notifyStatusChanged'
   >;
   runtime: AcceptShadowRuntime;
@@ -290,7 +291,10 @@ async function sequence<R extends { name: string; description: string }>(
   if (pending.status !== 'clean') {
     throw new Error(`Accepting the shadow failed: the pending-changes test failed (${pending.status === 'error' ? pending.message : pending.status}).`);
   }
-  const flags = acceptanceFlags(changedPaths, scope.registryRoots, gate.root);
+  // 2.1.64 (`nemiv2qh`): the own Run's record directory of a `<runId>/work`
+  // shadow is not outside the specification; the merge commit brings it in.
+  const exemptDir = await ownRunRecordDir(git, shadow.id, scope.workspaceHome, gate.root);
+  const flags = acceptanceFlags(changedPaths, scope.registryRoots, gate.root, exemptDir);
   if (flags.outsideSpecFiles.length > 0) {
     throw refuse(
       'ACCEPT_OUTSIDE_SPEC',
@@ -341,7 +345,10 @@ async function sequence<R extends { name: string; description: string }>(
     let release: R;
     try {
       // 6. Capture of the merged paths, in-band.
-      const shadowEntityVersions = await captureMerged(deps, paths, existedBefore);
+      // The own Run's record directory lies in no root: the merge commit
+      // brings it in, without capture (`nemiv2qh`).
+      const captured = exemptDir === null ? paths : paths.filter((p) => !isPathWithin(exemptDir, p));
+      const shadowEntityVersions = await captureMerged(deps, captured, existedBefore);
       // 7. The release — acceptance variant; its transaction is the point of no return.
       release = deps.createRelease(input, {
         acceptedShadow: { id: shadow.id, tipSha: request.expectedTipSha },

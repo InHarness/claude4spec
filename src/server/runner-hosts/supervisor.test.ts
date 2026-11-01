@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { WorkspaceRegistry } from '../workspace/registry.js';
 import type { WorkspaceRecord } from '../workspace/types.js';
-import { EventStreamParser, MAX_HOST_TEXT, MSG_INVALID_HOST_INFO, MSG_NOT_FOUND, MSG_REDIRECT } from './host-checks.js';
+import { checkHostInfo, EventStreamParser, MAX_HOST_TEXT, MSG_INVALID_HOST_INFO, MSG_NOT_FOUND, MSG_REDIRECT } from './host-checks.js';
 import { RunnerHostStore, runnerHostRecordsOf } from './host-records.js';
 import { RunnerHostSupervisor, type RunnerHostSupervisorOptions, type RunnerHostView } from './supervisor.js';
 import {
@@ -895,5 +895,114 @@ describe('M54 runner-host supervisor', () => {
       expect(line).not.toContain(TOKEN.slice(5));
       expect(line).toContain(id); // the log carries id, url and code
     }
+  });
+
+  // --- capabilities and the in-process read (2.1.64) ----------------------
+
+  it('[ac:ac-hostinfo-bez-pola-capabilities-daje-p] a HostInfo without the `capabilities` field gives an empty capabilities list', async () => {
+    // The pure check: no field → [].
+    const parsed = checkHostInfo({ ...STUB_HOST_INFO });
+    expect(parsed.ok).toBe(true);
+    expect(parsed.ok && parsed.info.capabilities).toEqual([]);
+
+    // Through the supervisor: a host whose HostInfo has no `capabilities`.
+    const stub = await newStub();
+    stub.hostInfo = { ...STUB_HOST_INFO };
+    const sup = supervisor({ clock: new ManualClock() });
+    const id = await connected(sup, stub);
+    expect(sup.readHost(id)?.capabilities).toEqual([]);
+    expect(viewOf(sup, id)?.state.capabilities).toEqual([]);
+
+    // A list seen earlier is overwritten by a later HostInfo without the field.
+    stub.hostInfo = { ...STUB_HOST_INFO, capabilities: ['runs'] };
+    stub.send('host', stub.hostInfo);
+    await until(() => sup.readHost(id)?.capabilities.length === 1, 5_000, 'capabilities [runs]');
+    stub.hostInfo = { ...STUB_HOST_INFO };
+    stub.send('host', stub.hostInfo);
+    await until(() => sup.readHost(id)?.capabilities.length === 0, 5_000, 'capabilities emptied');
+    expect(sup.readHost(id)?.capabilities).toEqual([]);
+    expect(status(sup, id)).toBe('connected');
+  });
+
+  it('[ac:ac-odczyt-hosta-w-procesie-zwraca-capabi] the in-process host read returns `capabilities` of the last HostInfo', async () => {
+    const stub = await newStub();
+    stub.hostInfo = { ...STUB_HOST_INFO, capabilities: ['runs', 'shell'] };
+    const sup = supervisor({ clock: new ManualClock() });
+    const id = await connected(sup, stub);
+    expect(sup.readHost(id)?.capabilities).toEqual(['runs', 'shell']);
+
+    // The last HostInfo (a `host` event on the stream) wins.
+    stub.hostInfo = { ...STUB_HOST_INFO, capabilities: ['runs'] };
+    stub.send('host', stub.hostInfo);
+    await until(() => sup.readHost(id)?.capabilities.length === 1, 5_000, 'last HostInfo applied');
+    expect(sup.readHost(id)?.capabilities).toEqual(['runs']);
+    expect(sup.readHosts().find((r) => r.id === id)?.capabilities).toEqual(['runs']);
+    // A copy: the caller cannot change the supervisor's memory.
+    sup.readHost(id)!.capabilities.push('mutated');
+    expect(sup.readHost(id)?.capabilities).toEqual(['runs']);
+  });
+
+  it('a token change clears the previous host\'s capabilities together with the binding (review rev-0001)', async () => {
+    const stub = await newStub();
+    stub.hostInfo = { ...STUB_HOST_INFO, capabilities: ['runs', 'shell'] };
+    const sup = supervisor({ clock: new ManualClock() });
+    const id = await connected(sup, stub);
+    expect(sup.readHost(id)?.capabilities).toEqual(['runs', 'shell']);
+
+    // The new token is rejected: no HostInfo is accepted after the change.
+    stub.acceptedToken = TOKEN;
+    const updated = await sup.update(id, { token: TOKEN_2 });
+    expect(updated.state.status).toBe('token-rejected');
+    expect(updated.state.capabilities).toEqual([]);
+    expect(updated.state.restartedAt).toBeNull();
+    expect(sup.readHost(id)).toMatchObject({ hostId: null, capabilities: [] });
+
+    // The next accepted HostInfo sets them anew.
+    stub.acceptedToken = TOKEN_2;
+    stub.hostInfo = { ...STUB_HOST_INFO, capabilities: ['runs'] };
+    const tested = await sup.test(id);
+    expect(tested.state.status).toBe('connected');
+    expect(sup.readHost(id)?.capabilities).toEqual(['runs']);
+  });
+
+  it('[43dazlrg] the in-process read gives url, decrypted token, status, hostId and capabilities from memory — no request, no status change', async () => {
+    const stub = await newStub();
+    stub.hostInfo = { ...STUB_HOST_INFO, capabilities: ['runs'] };
+    const sup = supervisor({ clock: new ManualClock() });
+    const id = await connected(sup, stub);
+    const requestsBefore = stub.requests.length;
+    const connectionsBefore = stub.connections;
+    const since = viewOf(sup, id)!.state.statusSince;
+
+    expect(sup.readHost(id)).toEqual({
+      id,
+      url: viewOf(sup, id)!.record.url,
+      token: TOKEN,
+      status: 'connected',
+      hostId: STUB_HOST_INFO.hostId,
+      capabilities: ['runs'],
+    });
+    expect(sup.readHosts()).toEqual([sup.readHost(id)]);
+    expect(sup.readHost('rh_unknown')).toBeNull();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(stub.requests.length).toBe(requestsBefore);
+    expect(stub.connections).toBe(connectionsBefore);
+    expect(viewOf(sup, id)!.state.status).toBe('connected');
+    expect(viewOf(sup, id)!.state.statusSince).toBe(since);
+    // The capabilities stay in memory: not in the registry file.
+    expect(registryText()).not.toContain('capabilities');
+
+    // A record without a binding has an empty hostId (read before any attempt).
+    const unbound = store.add({ url: 'http://127.0.0.1:1/', token: TOKEN_2 });
+    const fresh = supervisor({ records: [unbound], clock: new ManualClock() });
+    expect(fresh.readHost(unbound.id)).toMatchObject({ hostId: null, token: TOKEN_2, status: 'connecting', capabilities: [] });
+    expect(fresh.readHost(unbound.id)?.status).toBe('connecting'); // reading did not start an attempt
+
+    // A record whose token does not decrypt has no token and status `token-unreadable`.
+    fs.rmSync(path.join(registryDir, 'secret.key'));
+    const unreadable = supervisor({ records: [unbound], clock: new ManualClock() });
+    expect(unreadable.readHost(unbound.id)).toMatchObject({ token: null, status: 'token-unreadable' });
+    // …while the supervisor's own status is left as it was (reading changes no status).
+    expect(status(unreadable, unbound.id)).toBe('connecting');
   });
 });

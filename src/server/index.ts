@@ -35,6 +35,7 @@ import { discoverBuiltinEnvelopes, servableEnvelopes } from './core/plugin-host/
 import { RunnerHostStore, runnerHostRecordsOf } from './runner-hosts/host-records.js';
 import { RunnerHostSupervisor } from './runner-hosts/supervisor.js';
 import { runnerHostsRouter } from './routes/runner-hosts.js';
+import { runHostsFromSupervisor } from './runs/run-remote.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -362,6 +363,28 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // project alike. `activated` is the process's record of activated projects,
   // shared with the registration route below: a project added through
   // POST /api/workspace/projects is not activated a second time by its build.
+  // M54 L10 `i58ogfc2` (2.1.62): the runner-host supervisor — one per process,
+  // created eagerly before listen from the records of the workspace VIEW (a
+  // record another process adds is supervised from this process's next start).
+  // Created here, before the routes that read it and before the project
+  // contexts (2.1.64: `run-tools` reads it); `start()` stays right before
+  // listen. Every record starts `connecting` and connects in the background:
+  // listen never waits for a host.
+  const runnerHosts = new RunnerHostSupervisor({
+    store: new RunnerHostStore(registry, workspace),
+    records: runnerHostRecordsOf(workspace.runnerHosts),
+  });
+  // 2.1.64 (M55 `7bo43wak`): the process-level sources of `run-tools` — the
+  // hosts with their names, and every built project of the workspace with its
+  // own shadow list (a project whose context is not built yet is left out).
+  const runSources = {
+    hosts: () => runHostsFromSupervisor(runnerHosts),
+    projects: () =>
+      (registry.getWorkspace(workspace.name) ?? workspace).projects.flatMap((p) => {
+        const live = cache.getLive(p.id)?.runProject;
+        return live ? [live] : [];
+      }),
+  };
   const activated = new ActivatedProjects();
   const buildContext = (project: ProjectRecord, projectWrites: 'allowed' | 'none', signal?: AbortSignal) =>
     buildProjectContext({
@@ -379,6 +402,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       projectWrites,
       signal,
       onTurnFinished: () => cache.reapIdle(),
+      runs: runSources,
       onContextConfigChanged: (opts) => cache.invalidate(project.id, opts),
       // 2.1.9 (M52 `1v62dbhb`): a provider's context, on request, from this cache
       // — the `project-exposed` source of a consumer holds no handle of its own.
@@ -483,16 +507,6 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     return bootstrapProject(registry, workspace, projectCwd, activated).project;
   };
 
-  // M54 L10 `i58ogfc2` (2.1.62): the runner-host supervisor — one per process,
-  // created eagerly before listen from the records of the workspace VIEW (a
-  // record another process adds is supervised from this process's next start).
-  // Created here, before the routes that read it; `start()` stays right before
-  // listen. Every record starts `connecting` and connects in the background:
-  // listen never waits for a host.
-  const runnerHosts = new RunnerHostSupervisor({
-    store: new RunnerHostStore(registry, workspace),
-    records: runnerHostRecordsOf(workspace.runnerHosts),
-  });
   app.use('/api', workspaceRouter({ registry, workspace, cache, mode, activateProject }));
   // M54 L4 `pyxt16pa` (2.1.62): the workspace's runner hosts — no project prefix.
   app.use('/api/workspace/runner-hosts', runnerHostsRouter({ supervisor: runnerHosts }));

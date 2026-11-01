@@ -59,6 +59,10 @@ import { z } from 'zod';
 import { PATCH_KINDS } from '../../core/briefs/types.js';
 import { CATALOG, direct, na, via, type ContentInputMode, type OperationDeclaration } from './catalog.js';
 import { OPERATION_RULES } from './operation-rules.js';
+import { RUN_REMOTE_ERROR_CODES } from '../runs/run-remote.js';
+import { RUN_REMOTE_INPUT_SCHEMA, RUN_REMOTE_SUMMARY } from '../runs/run-remote-schema.js';
+import { RUN_READ_ERROR_CODES } from '../runs/run-read.js';
+import { CANCEL_RUN_SUMMARY, GET_RUN_SUMMARY, RUN_ID_INPUT_SCHEMA } from '../runs/run-read-schema.js';
 
 /**
  * 2.1.26 — every row is registered with its record's `reguly` (`rules`), from
@@ -2903,7 +2907,7 @@ export function registerCoreOperations(): void {
     scope: 'project',
     mediation: 'direct',
     opClass: 'read',
-    inputSchema: { ref: z.string().describe('The shadow id — the ref name without the refs/runs/ prefix, e.g. `<runId>/spec`.') },
+    inputSchema: { ref: z.string().describe('The shadow id — the ref name without the refs/runs/ prefix, e.g. `<runId>/work`.') },
     errorCodes: ['SHADOW_NOT_FOUND', 'GIT_UNAVAILABLE', 'VALIDATION'],
     sideEffects: ['none'],
     idempotent: true,
@@ -2934,7 +2938,7 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'write',
     inputSchema: {
-      ref: z.string().describe('The shadow id — the ref name without the refs/runs/ prefix, e.g. `<runId>/spec`.'),
+      ref: z.string().describe('The shadow id — the ref name without the refs/runs/ prefix, e.g. `<runId>/work`.'),
       name: z.string().describe('The name of the release accepting the shadow — non-empty, unique, not reserved.'),
       description: z.string().describe('The description of the release — non-empty, at most 500 characters after trim.'),
       expectedTipSha: z.string().describe('The shadow tip SHA the preview was computed on — the SHA that is merged.'),
@@ -2968,5 +2972,87 @@ export function registerCoreOperations(): void {
       mcp: na(ACCEPT_SHADOW_UI_ONLY),
       rest: direct(),
     },
+  });
+  /**
+   * 2.1.64 — `run_remote` (record `run-remote`, M55 `veec5qxa`): dispatch a Run
+   * to a runner host and return before it finishes — the catalog's first
+   * asynchronous operation (its state is a separate read). Owning core:
+   * `runRemote` (`src/server/runs/run-remote.ts`), rendered only in `internal`
+   * by `run-tools.run_remote`: a Run is ordered only by the agent of a
+   * top-level chat thread. Workspace scope (the Run's subject is the whole
+   * workspace), agent-mediated (it costs a remote agent turn), effect `db` (the
+   * Runs registry row), not idempotent (every call mints a new runId). The
+   * `n/a` reasons are the record's `powody`, verbatim.
+   */
+  registerRow({
+    name: 'run_remote',
+    summary: RUN_REMOTE_SUMMARY,
+    scope: 'workspace',
+    mediation: 'agent-mediated',
+    opClass: 'turn',
+    inputSchema: RUN_REMOTE_INPUT_SCHEMA,
+    errorCodes: [...RUN_REMOTE_ERROR_CODES],
+    sideEffects: ['db'],
+    idempotent: false,
+    channels: {
+      internal: direct(),
+      cli: na('Run zleca wyłącznie agent wątku czatu najwyższego poziomu; wiersz poleceń nie ma wątku ani planu przypiętego do wątku'),
+      mcp: na('Run zleca wyłącznie agent wątku czatu najwyższego poziomu; konsument zewnętrzny nie zleca pracy na cudzej maszynie'),
+      rest: na('Run zleca wyłącznie agent wątku czatu najwyższego poziomu; operacja nie ma trasy dla interfejsu'),
+    },
+    renderings: { internal: ['run-tools.run_remote'] },
+  });
+  /**
+   * 2.1.64 — `get_run` (record `get-run`, M55 `veec5qxa`): the read of the
+   * asynchronous pattern `run_remote` opens — the Run's concise state (never
+   * logs) and where its shadow `<runId>/work` stands per project. Owning core:
+   * `getRun` (`src/server/runs/run-read.ts`), rendered only in `internal` by
+   * `run-tools.get_run`. Workspace scope, direct mediation, effect `db` (the
+   * one write: the registry row restored from the Run record), idempotent. The
+   * `n/a` reasons are the record's `powody`, verbatim.
+   */
+  registerRow({
+    name: 'get_run',
+    summary: GET_RUN_SUMMARY,
+    scope: 'workspace',
+    mediation: 'direct',
+    opClass: 'turn',
+    inputSchema: RUN_ID_INPUT_SCHEMA,
+    errorCodes: [...RUN_READ_ERROR_CODES],
+    sideEffects: ['db'],
+    idempotent: true,
+    channels: {
+      internal: direct(),
+      cli: na('operacje Runu mają wyłącznie kanał agenta wątku czatu najwyższego poziomu, który Run zlecił'),
+      mcp: na('operacje Runu mają wyłącznie kanał agenta wątku czatu najwyższego poziomu, który Run zlecił'),
+      rest: na('moduł nie wnosi ekranu; stan Runu podaje agent na prośbę użytkownika'),
+    },
+    renderings: { internal: ['run-tools.get_run'] },
+  });
+  /**
+   * 2.1.64 — `cancel_run` (record `cancel-run`, M55 `veec5qxa`): cancel a Run;
+   * a repeated call and a finished Run return it unchanged (the runner's
+   * idempotence). Owning core: `cancelRun` (`src/server/runs/run-read.ts`),
+   * rendered only in `internal` by `run-tools.cancel_run`. Workspace scope,
+   * direct mediation, effect `db` (the registry row restored from the
+   * record), idempotent. The `n/a` reasons are the record's `powody`, verbatim.
+   */
+  registerRow({
+    name: 'cancel_run',
+    summary: CANCEL_RUN_SUMMARY,
+    scope: 'workspace',
+    mediation: 'direct',
+    opClass: 'turn',
+    inputSchema: RUN_ID_INPUT_SCHEMA,
+    errorCodes: [...RUN_READ_ERROR_CODES],
+    sideEffects: ['db'],
+    idempotent: true,
+    channels: {
+      internal: direct(),
+      cli: na('operacje Runu mają wyłącznie kanał agenta wątku czatu najwyższego poziomu, który Run zlecił'),
+      mcp: na('operacje Runu mają wyłącznie kanał agenta wątku czatu najwyższego poziomu, który Run zlecił'),
+      rest: na('moduł nie wnosi ekranu; anulowanie zleca agent na prośbę użytkownika'),
+    },
+    renderings: { internal: ['run-tools.cancel_run'] },
   });
 }

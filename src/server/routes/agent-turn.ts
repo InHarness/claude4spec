@@ -34,6 +34,7 @@ import { buildBriefToolsServer } from '../mcp/brief-tools.js';
 import { buildC4sToolsServer } from '../mcp/c4s-tools.js';
 import { buildWorkspaceToolsServer } from '../mcp/workspace-tools.js';
 import { SPEC_SKILL_TOOLS_SERVER, type SpecSkillTools } from '../mcp/spec-skill-tools.js';
+import { RUN_TOOLS_SERVER, type RunToolsFactory } from '../mcp/run-tools.js';
 import { pluginServerNamesFor } from '../operations/profile-gate.js';
 import { assembleTurnMcpServers, type TurnServerEntry } from '../services/turn-mcp-servers.js';
 import type { ListProjectsResult } from '../workspace/list-projects.js';
@@ -151,6 +152,14 @@ export interface AgentTurnDeps {
    * column says so (`chat`, `patch`). Absent ⇒ not mounted (hand-built test rigs).
    */
   specSkillTools?: Pick<SpecSkillTools, 'build'>;
+  /**
+   * 2.1.64 (M55 `7bo43wak`, M44 `3f5ej79s`): the `run-tools` server (`run_remote`,
+   * `get_run`, `cancel_run`), built fresh per query for the calling thread.
+   * Mounted where the registry's `runTools` column says so (`chat`) and only on
+   * a thread with `parent_thread_id IS NULL`. Absent ⇒ not mounted (hand-built
+   * test rigs).
+   */
+  runTools?: RunToolsFactory;
 }
 
 import { ALLOWED_MODELS, type Model } from './models.js';
@@ -1592,6 +1601,16 @@ export async function runAgentTurn(
         ctx.mcp.specSkillTools && deps.specSkillTools ? deps.specSkillTools.build() : null;
 
       /**
+       * 2.1.64 (M55 `7bo43wak`, M44 `3f5ej79s`) run-tools: ordering, reading and
+       * cancelling a Run on a runner host. The same gate as `transagent-tools` —
+       * the registry's DECLARED `runTools` column (`chat` only; `patch`, `ask`,
+       * `brief` and a new context type never) and `parent_thread_id IS NULL` —
+       * and NOT plan mode: plan mode gates built-ins, never MCP, so a top-level
+       * `chat` thread in plan mode keeps these tools.
+       */
+      const runTools = ctx.mcp.runTools && !isChildBanka && deps.runTools ? deps.runTools.build(thread.id) : null;
+
+      /**
        * Step 2 — the handler's own servers, each already behind its registry
        * gate above. On a name collision with a pool entry the handler's entry
        * wins. `workspace-tools` and `skill-tools` are unconditional: both are
@@ -1606,6 +1625,7 @@ export async function runAgentTurn(
         handlerEntries.push({ name: 'transagent-tools', server: transagentTools });
       if (workspaceTools) handlerEntries.push({ name: 'workspace-tools', server: workspaceTools });
       if (specSkillTools) handlerEntries.push({ name: SPEC_SKILL_TOOLS_SERVER, server: specSkillTools });
+      if (runTools) handlerEntries.push({ name: RUN_TOOLS_SERVER, server: runTools });
       handlerEntries.push({ name: 'skill-tools', server: skillTools });
 
       /**

@@ -678,6 +678,15 @@ export class ReleaseService {
    * acceptance is unavailable (500): it would merge files no chain captures.
    */
   private acceptRuntime: AcceptShadowRuntime | null = null;
+  /**
+   * 2.1.64 (M17 `nemiv2qh`): the home directory of the project's workspace,
+   * read per call — `null` for a workspace without one. Gates the exemption of
+   * the own Run's record directory in the shadow comparison and acceptance.
+   */
+  private workspaceHome: () => string | null = () => null;
+  setWorkspaceHome(read: () => string | null): void {
+    this.workspaceHome = read;
+  }
   setAcceptShadowRuntime(runtime: AcceptShadowRuntime): void {
     this.acceptRuntime = runtime;
   }
@@ -1201,7 +1210,7 @@ export class ReleaseService {
       ...this.pagesKindRootDirs.map((d) => ({ kind: PAGES_KIND, dir: realpathOrSelf(nodePath.resolve(this.cwd, d)) })),
       ...SYSTEM_ROOTS.map((r) => ({ kind: r.kind, dir: storeDirs[r.kind] ?? realpathOrSelf(nodePath.resolve(this.cwd, r.dir)) })),
     ];
-    return { roots, registryRoots };
+    return { roots, registryRoots, workspaceHome: this.workspaceHome() };
   }
 
   /**

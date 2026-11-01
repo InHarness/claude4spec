@@ -43,8 +43,10 @@ import type {
   GitShadow,
   GitSyncResponse,
   GitPushResult,
+  GitPublishResult,
   GitRefDiff,
   GitRepoInfo,
+  GitUpstreamPathResult,
 } from '../../shared/git.js';
 import { renderCommitTargetTemplate, localDateYYYYMMDD } from '../../shared/git.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
@@ -168,6 +170,56 @@ function lockForKey(key: string): GitRepoLock {
 }
 
 const BUSY_MESSAGE = 'A background task is running — try again in a moment.';
+
+/** 2.1.64 (M28 ejwze5r4): the fixed subject of a `publishFile` commit; its body carries the path. */
+export const PUBLISH_FILE_SUBJECT = 'c4s: publish file for remote run';
+
+/**
+ * 2.1.64 (M28 xp56ebqc, "Oczyszczony remote"): a remote address without
+ * credentials. `http(s)`: the whole userinfo goes. SSH (`ssh://` or the
+ * scp-like `user@host:path`): the user stays, the password goes. Anything
+ * else (a local path, `file://`) is returned as it is.
+ */
+export function sanitizeRemoteUrl(url: string): string {
+  const trimmed = url.trim();
+  const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(trimmed);
+  if (scheme) {
+    const proto = scheme[1]!.toLowerCase();
+    const rest = trimmed.slice(scheme[0].length);
+    const slash = rest.indexOf('/');
+    const authority = slash === -1 ? rest : rest.slice(0, slash);
+    const tail = slash === -1 ? '' : rest.slice(slash);
+    const at = authority.lastIndexOf('@');
+    if (at === -1) return trimmed;
+    const userinfo = authority.slice(0, at);
+    const host = authority.slice(at + 1);
+    if (proto === 'http' || proto === 'https') return `${scheme[0]}${host}${tail}`;
+    if (proto === 'ssh' || proto === 'git+ssh' || proto === 'ssh+git') {
+      const user = userinfo.split(':')[0] ?? '';
+      return `${scheme[0]}${user ? `${user}@` : ''}${host}${tail}`;
+    }
+    return trimmed;
+  }
+  // scp-like SSH: `[user[:password]@]host:path` (no scheme, a colon before any slash).
+  const scp = /^([^@/]+)@([^/:]+:.*)$/.exec(trimmed);
+  if (scp) {
+    const user = scp[1]!.split(':')[0] ?? '';
+    return user ? `${user}@${scp[2]}` : scp[2]!;
+  }
+  return trimmed;
+}
+
+/**
+ * A path relative to the repository root, `/`-separated, without `./` — or
+ * `null` when it is absolute, empty or climbs out of the root.
+ */
+function normalizeRepoRelPath(p: string): string | null {
+  const unified = p.replace(/\\/g, '/');
+  if (!unified || path.posix.isAbsolute(unified) || path.win32.isAbsolute(p)) return null;
+  const norm = path.posix.normalize(unified).replace(/\/+$/, '');
+  if (norm === '.' || norm === '..' || norm.startsWith('../')) return null;
+  return norm;
+}
 
 /**
  * 2.1.46 (M28 eu1rffp6 / dadc3w49 / 5eyq89gb): the shadow-ref namespace —
@@ -405,10 +457,15 @@ export class GitService {
     this.emitStatusChanged(headChanged);
   }
 
-  /** 2.1.10 (M49 7xmafzkd): `git:status-changed` to the project's room. */
-  private emitStatusChanged(headChanged: boolean): void {
+  /**
+   * 2.1.10 (M49 7xmafzkd): `git:status-changed` to the project's room.
+   * `threadId` — the agent thread whose turn made the change (a plan
+   * publication by `run_remote`), so the tab showing that thread does not
+   * reload under its own running turn.
+   */
+  private emitStatusChanged(headChanged: boolean, threadId?: string | null): void {
     try {
-      this.ws?.broadcast({ kind: 'git:status-changed', headChanged });
+      this.ws?.broadcast({ kind: 'git:status-changed', headChanged, ...(threadId ? { threadId } : {}) });
     } catch (err) {
       console.warn('[git] git:status-changed broadcast failed:', errMessage(err));
     }
@@ -2035,6 +2092,209 @@ export class GitService {
         .catch(() => null);
     const [remote, merge] = await Promise.all([get(`branch.${branch}.remote`), get(`branch.${branch}.merge`)]);
     return remote && merge ? { remote, merge } : null;
+  }
+
+  // --- 2.1.64 (M28): handing work to another machine — a path on the upstream,
+  // publishing one file, the workspace home relative to the repository root ---
+
+  /**
+   * The gate shared by `checkPathOnUpstream` and `publishFile`:
+   * `config.git.enabled`, a detected repository and a named branch (else
+   * `skipped`), then the branch's upstream (else `no-upstream`). Never throws.
+   */
+  private async upstreamGate(): Promise<
+    | { root: string; branch: string; upstream: { remote: string; merge: string } }
+    | { refusal: 'skipped' | 'no-upstream' }
+  > {
+    if (!this.gitEnabled()) return { refusal: 'skipped' };
+    const root = await this.probeRoot();
+    if (!root) return { refusal: 'skipped' };
+    const branch = await this.currentBranch(root);
+    if (!branch) return { refusal: 'skipped' };
+    const upstream = await this.branchUpstream(root, branch);
+    if (!upstream) return { refusal: 'no-upstream' };
+    return { root, branch, upstream };
+  }
+
+  /** Blob sha of `relPath` at `rev`, `null` when the file is not there. */
+  private async blobAt(root: string, rev: string, relPath: string): Promise<string | null> {
+    return this.git(['rev-parse', '--verify', '--quiet', `${rev}:${relPath}`], root)
+      .then((r) => r.stdout.trim() || null)
+      .catch(() => null);
+  }
+
+  /** `git status --porcelain` for one path (untracked included): changed against HEAD in the index or the working tree. */
+  private async pathChanged(root: string, relPath: string): Promise<boolean> {
+    const { stdout } = await this.git(
+      ['--no-optional-locks', 'status', '--porcelain', '--untracked-files=all', '--', `:(literal)${relPath}`],
+      root,
+    );
+    return stdout.trim().length > 0;
+  }
+
+  /**
+   * 2.1.64 (M28 xp56ebqc): is the file at `relPath` (relative to `rootPath`)
+   * on the current branch's upstream in the same form as on HEAD? Guards, first
+   * match wins: gate (as `fetch()`) → `skipped`; `no-upstream`; `busy` (the
+   * repository lock is taken — an agent turn does not block it); fetch of the
+   * upstream's remote, without the shadow namespace (failure → `error`);
+   * `path-dirty` (changed in the working tree or the index against HEAD, or
+   * untracked); `path-differs` (the blob at HEAD differs from the blob at the
+   * upstream tip, or the file is missing on either side); else `on-upstream`
+   * with the upstream's remote cleared of credentials, the branch on the remote
+   * and the full tip sha. One blob is compared, never the whole tree. The raw
+   * `remoteUrl` of `detect()` is left as it is. Never throws.
+   */
+  async checkPathOnUpstream(relPath: string): Promise<GitUpstreamPathResult> {
+    try {
+      const gate = await this.upstreamGate();
+      if ('refusal' in gate) return { status: gate.refusal };
+      const { root, branch, upstream } = gate;
+      const rel = normalizeRepoRelPath(relPath);
+      if (rel === null) return { status: 'error', message: `path '${relPath}' is not inside the repository` };
+
+      const run = lockForKey(root).tryRun(async (): Promise<GitUpstreamPathResult> => {
+        try {
+          await this.gitNetwork(['fetch', upstream.remote], root);
+        } catch (err) {
+          return { status: 'error', message: errMessage(err) };
+        }
+        // The fetch moved remote-tracking refs — never HEAD.
+        this.emitStatusChanged(false);
+        try {
+          if (await this.pathChanged(root, rel)) return { status: 'path-dirty' };
+          const tipSha = (await this.git(['rev-parse', '--verify', `${branch}@{upstream}`], root)).stdout.trim();
+          const [headBlob, tipBlob] = await Promise.all([this.blobAt(root, 'HEAD', rel), this.blobAt(root, tipSha, rel)]);
+          if (!headBlob || !tipBlob || headBlob !== tipBlob) return { status: 'path-differs' };
+          const remoteUrl = await this.git(['remote', 'get-url', upstream.remote], root)
+            .then((r) => r.stdout.trim() || upstream.remote)
+            .catch(() => upstream.remote);
+          return {
+            status: 'on-upstream',
+            remote: sanitizeRemoteUrl(remoteUrl),
+            branch: upstream.merge.replace(/^refs\/heads\//, ''),
+            tipSha,
+          };
+        } catch (err) {
+          return { status: 'error', message: errMessage(err) };
+        }
+      });
+      if (!run) return { status: 'busy' };
+      return await run;
+    } catch (err) {
+      return { status: 'error', message: errMessage(err) };
+    }
+  }
+
+  /**
+   * 2.1.64 (M28 ejwze5r4): commit exactly `relPath` (relative to `rootPath`)
+   * and push the current branch to its upstream. Every other change in the
+   * index and the working tree stays as it was — out of the commit, still
+   * staged where it was staged (`git commit --only`). Gate as the release
+   * commit's in mode `current` (no push switches: the caller publishes
+   * explicitly) → `skipped`; no upstream → `no-upstream`. The commit runs
+   * under the repository lock and refuses `busy` without waiting when it is
+   * taken; an agent turn does not block it (the turn itself calls it). A file
+   * unchanged against HEAD gives a push alone; with nothing ahead of the
+   * upstream → `nothing-to-publish`. The push runs after the commit's lock is
+   * released (like the push after a release commit), non-interactive and
+   * time-limited. A failed push — non-fast-forward rejection (`recovery.kind:
+   * 'non-fast-forward'`), missing credentials, network — is `error`; no
+   * `sync()` follows, the local commit stays ahead of the upstream. Never throws.
+   * ASSUMPTION:dev-0008 — `opts.threadId`: the agent thread that asked for
+   * the publication; its commit's `git:status-changed` carries it.
+   */
+  async publishFile(relPath: string, opts: { threadId?: string | null } = {}): Promise<GitPublishResult> {
+    try {
+      const gate = await this.upstreamGate();
+      if ('refusal' in gate) return { status: gate.refusal };
+      const { root, branch } = gate;
+      const rel = normalizeRepoRelPath(relPath);
+      if (rel === null) {
+        const message = `path '${relPath}' is not inside the repository`;
+        return { status: 'error', message, recovery: this.publishRecovery(new Error(message), root) };
+      }
+
+      type CommitStep = { committed: boolean } | { error: GitPublishResult };
+      const run = lockForKey(root).tryRun(async (): Promise<CommitStep> => {
+        try {
+          if (!(await this.pathChanged(root, rel))) return { committed: false };
+          // Stage the one path (a new or deleted file included), then commit
+          // only it: `--only` leaves the rest of the index as it was.
+          await this.git(['add', '-A', '--', `:(literal)${rel}`], root);
+          const staged = await this.git(['diff', '--cached', '--quiet', 'HEAD', '--', `:(literal)${rel}`], root)
+            .then(() => false)
+            .catch(() => true);
+          if (!staged) return { committed: false };
+          await this.git(
+            ['commit', '--only', '-m', PUBLISH_FILE_SUBJECT, '-m', rel, '--', `:(literal)${rel}`],
+            root,
+          );
+          return { committed: true };
+        } catch (err) {
+          return { error: { status: 'error', message: errMessage(err), recovery: this.publishRecovery(err, root) } };
+        }
+      });
+      if (!run) return { status: 'busy' };
+      const step = await run;
+      if ('error' in step) return step.error;
+      // The commit moved the current branch's HEAD — as after commit()/commitPull().
+      if (step.committed) this.emitStatusChanged(true, opts.threadId);
+
+      if (!step.committed) {
+        const { ahead } = await this.aheadBehindAt(root, branch);
+        if (ahead === 0) return { status: 'nothing-to-publish' };
+      }
+
+      // After the commit's lock is released — `push()` takes it again, waiting
+      // like the push after a release commit. Never followed by `sync()`.
+      const pushed = await this.push(branch);
+      if (pushed.status === 'error') {
+        return {
+          status: 'error',
+          message: pushed.message ?? 'git push failed',
+          recovery: pushed.recovery ?? this.publishRecovery(new Error(pushed.message ?? 'git push failed'), root),
+        };
+      }
+      if (pushed.status === 'skipped') return { status: 'skipped' };
+      if (pushed.status === 'nothing-to-push' && !step.committed) return { status: 'nothing-to-publish' };
+      const sha = (await this.git(['rev-parse', 'HEAD'], root)).stdout.trim();
+      return { status: 'published', sha, branch };
+    } catch (err) {
+      const message = errMessage(err);
+      return { status: 'error', message, recovery: this.publishRecovery(err, this.cwd) };
+    }
+  }
+
+  /**
+   * ASSUMPTION:dev-0002 — `GitErrorRecovery.operation` has no value for a
+   * publication; a failed `publishFile` commit (or a path outside the
+   * repository) reports `operation: 'push'`, the operation the primitive exists for.
+   */
+  private publishRecovery(err: unknown, root: string): GitErrorRecovery {
+    return this.buildRecovery('push', err, root);
+  }
+
+  /**
+   * 2.1.64 (M28 tmrix8ji): the workspace home directory relative to
+   * `rootPath` — `"."` when both are the same directory, `null` when the home
+   * lies outside the repository or there is no repository. Touches git through
+   * `detect()` only; takes no lock. Never throws.
+   */
+  async workspaceHomePath(home: string): Promise<string | null> {
+    try {
+      const info = await this.detect();
+      if (!info.detected || !info.rootPath) return null;
+      const realRoot = realpathOfNearestAncestor(info.rootPath);
+      const realHome = realpathOfNearestAncestor(path.resolve(this.cwd, home));
+      if (!realRoot || !realHome) return null;
+      const rel = path.relative(realRoot, realHome);
+      if (rel === '') return '.';
+      if (path.isAbsolute(rel) || rel === '..' || rel.startsWith(`..${path.sep}`)) return null;
+      return rel.split(path.sep).join('/');
+    } catch {
+      return null;
+    }
   }
 
   /**

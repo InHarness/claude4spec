@@ -136,7 +136,8 @@ export const CONTEXT_TYPE_REGISTRY: Record<ChatContextType, ContextTypeEntry> = 
   },
   ask: {
     // Full `chat` toolset MINUS c4s-tools MINUS transagent-tools (recursion guard: a consulted
-    // peer cannot consult/delegate to another peer). Read-only enforced via forced plan-mode.
+    // peer cannot consult/delegate to another peer) MINUS run-tools (2.1.64, M44 `3f5ej79s`:
+    // a Run is ordered only from a top-level `chat` thread). Read-only enforced via forced plan-mode.
     //
     // 0.2.13 sharpens that from a posture into a gate: the `ask` profile admits
     // only the `read` and `plan` operation classes, so the WRITE tools of the

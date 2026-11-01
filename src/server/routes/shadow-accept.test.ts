@@ -638,6 +638,98 @@ describe('M17 shadow acceptance — POST /api/shadow-accept (2.1.47)', () => {
     await expectUntouched(res, 'ACCEPT_OUTSIDE_SPEC', before, dbBefore);
   });
 
+  // ─── 2.1.64 (M17 nemiv2qh / rnwev4kg): the own Run's record directory ─────────
+  // The workspace's home is the repository root (`dir`); the project lives there too.
+
+  it('[ac:ac-cien-runid-work-zmieniajacy-specyfika] [entity:accept-shadow] a `<runId>/work` shadow changing the project specification and its own Run record directory is accepted — 201, the record directory lands with the merge commit, without capture', async () => {
+    releaseService.setWorkspaceHome(() => dir);
+    const chained: string[] = [];
+    chainHook = (abs) => void chained.push(abs);
+    tip = await shadow('run-7/work', c1, () => {
+      write('pages/a.md', '# A\n\nA shadow\n');
+      write('.claude4spec/runs/run-7/run.json', JSON.stringify({ runId: 'run-7' }) + '\n');
+      write('.claude4spec/runs/run-7/report.md', '# Run 7\n');
+    });
+    headSha = await head();
+    const res = await accept({ ref: 'run-7/work' });
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({
+      acceptedShadow: { id: 'run-7/work', tipSha: tip },
+      gitSync: { status: 'committed' },
+    });
+    // The merge commit (two parents) carries both record files and the page.
+    const parents = (await git(['rev-list', '--parents', '-n', '1', 'HEAD'], dir)).trim().split(' ');
+    expect(parents.slice(1)).toEqual([headSha, tip]);
+    const tree = (await git(['ls-tree', '-r', '--name-only', 'HEAD'], dir)).trim().split('\n');
+    expect(tree).toEqual(expect.arrayContaining(['.claude4spec/runs/run-7/run.json', '.claude4spec/runs/run-7/report.md', 'pages/a.md']));
+    expect(read('pages/a.md')).toBe('# A\n\nA shadow\n');
+    // Without capture: the in-band chain never ran for the record directory, no version row names it.
+    const runsDir = path.join(dir, '.claude4spec', 'runs');
+    expect(chained.some((abs) => abs.startsWith(runsDir))).toBe(false);
+    expect(chained).toContain(path.join(dir, 'pages', 'a.md'));
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM file_version WHERE path LIKE '%runs/run-7%'`).get()).toEqual({ n: 0 });
+    // Clean afterwards: no open merge, nothing pending.
+    expect(fs.existsSync(path.join(dir, '.git', 'MERGE_HEAD'))).toBe(false);
+  });
+
+  it('[ac:ac-cien-runid-work-zmieniajacy-specyfika] the exemption needs both conditions — the same record change under a `<runId>/spec` id, or in a workspace without a home, is ACCEPT_OUTSIDE_SPEC', async () => {
+    const edit = () => {
+      write('pages/a.md', '# A\n\nA shadow\n');
+      write('.claude4spec/runs/run-7/run.json', JSON.stringify({ runId: 'run-7' }) + '\n');
+    };
+    // Home present, but the id is not `<runId>/work`.
+    releaseService.setWorkspaceHome(() => dir);
+    tip = await shadow('run-7/spec', c1, edit);
+    headSha = await head();
+    const notWork = await accept({ ref: 'run-7/spec' });
+    expect(notWork.status).toBe(409);
+    expect((notWork.body as ErrorBody).error.code).toBe('ACCEPT_OUTSIDE_SPEC');
+    expect((notWork.body as ErrorBody).error.details).toEqual(['.claude4spec/runs/run-7/run.json']);
+    // `<runId>/work`, but the workspace has no home.
+    releaseService.setWorkspaceHome(() => null);
+    tip = await shadow('run-7/work', c1, edit);
+    const noHome = await accept({ ref: 'run-7/work' });
+    expect(noHome.status).toBe(409);
+    expect((noHome.body as ErrorBody).error.code).toBe('ACCEPT_OUTSIDE_SPEC');
+    expect((noHome.body as ErrorBody).error.details).toEqual(['.claude4spec/runs/run-7/run.json']);
+  });
+
+  it('[ac:ac-cien-zmieniajacy-katalog-rekordu-inne] a `<runId>/work` shadow changing the record directory of ANOTHER Run → 409 ACCEPT_OUTSIDE_SPEC, the repository untouched', async () => {
+    releaseService.setWorkspaceHome(() => dir);
+    tip = await shadow('run-7/work', c1, () => {
+      write('pages/a.md', '# A\n\nA shadow\n');
+      write('.claude4spec/runs/run-7/run.json', JSON.stringify({ runId: 'run-7' }) + '\n');
+      write('.claude4spec/runs/run-8/run.json', JSON.stringify({ runId: 'run-8' }) + '\n');
+    });
+    headSha = await head();
+    const before = await repoState();
+    const dbBefore = dbState();
+    const res = await accept({ ref: 'run-7/work' });
+    expect(res.status).toBe(409);
+    // Only the other Run's record is outside the specification; the own one stays exempt.
+    expect((res.body as ErrorBody).error.details).toEqual(['.claude4spec/runs/run-8/run.json']);
+    await expectUntouched(res, 'ACCEPT_OUTSIDE_SPEC', before, dbBefore);
+  });
+
+  it('[ac:ac-cien-zmieniajacy-korzen-innego-projek] a `<runId>/work` shadow changing a root of ANOTHER project of the workspace → 409 ACCEPT_OUTSIDE_SPEC, the repository untouched', async () => {
+    releaseService.setWorkspaceHome(() => dir);
+    // Another project of the workspace, `other/`, with its own `pages` root — not a root of this project's registry.
+    write('other/pages/x.md', '# X\n\nX one\n');
+    const base = await commitAll('other project');
+    tip = await shadow('run-7/work', base, () => {
+      write('pages/a.md', '# A\n\nA shadow\n');
+      write('.claude4spec/runs/run-7/run.json', JSON.stringify({ runId: 'run-7' }) + '\n');
+      write('other/pages/x.md', '# X\n\nX shadow\n');
+    });
+    headSha = await head();
+    const before = await repoState();
+    const dbBefore = dbState();
+    const res = await accept({ ref: 'run-7/work' });
+    expect(res.status).toBe(409);
+    expect((res.body as ErrorBody).error.details).toEqual(['other/pages/x.md']);
+    await expectUntouched(res, 'ACCEPT_OUTSIDE_SPEC', before, dbBefore);
+  });
+
   it('[ac:ac-cien-dodajacy-plik-do-korzenia-releas] a shadow adding a file to the releases root → 409 ACCEPT_RELEASES_IN_SHADOW', async () => {
     tip = await shadow('run-1/spec', c1, () => {
       write('pages/a.md', '# A\n\nA shadow\n');

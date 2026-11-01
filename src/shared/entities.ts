@@ -338,7 +338,7 @@ export interface CreateReleaseResponse extends ReleaseDetail {
  * operation sets them.
  */
 export interface ShadowAcceptRequest {
-  /** The shadow id — the ref name without `refs/runs/`, e.g. `<runId>/spec`; in the body because it may contain `/`. */
+  /** The shadow id — the ref name without `refs/runs/`, e.g. `<runId>/work`; in the body because it may contain `/`. */
   ref: string;
   name: string;
   description: string;

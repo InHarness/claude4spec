@@ -62,6 +62,36 @@ export interface RunnerHostState {
   lastError: RunnerHostLastError | null;
   /** ISO-8601 of the runner restart seen last (same `hostId`, other `startedAt`); `null` after every binding change. */
   restartedAt: string | null;
+  /**
+   * `fo9bukuw`, `i084ojn6` (2.1.64): `capabilities` of the last accepted
+   * HostInfo — every HostInfo overwrites it, one without the field gives `[]`;
+   * a token change (binding cleared) empties it until the next accepted HostInfo.
+   * Memory only (`4pxwyo22`): never in the registry file, never in the REST DTO.
+   */
+  capabilities: string[];
+}
+
+/**
+ * M54 `43dazlrg` (2.1.64) — the in-process read of a host, for another module
+ * of the same process (the Runs module, M55). Built from the supervisor's
+ * memory: reading sends nothing to the host and changes no status. Not an
+ * operation and not a route — never in REST or MCP. It carries the DECRYPTED
+ * token, which must not leave the process (`qc6t2y7m`): never put it into a
+ * response, an MCP tool result or a log.
+ */
+export interface RunnerHostRead {
+  /** The record's local `id`. */
+  id: string;
+  /** The normalized base URL. */
+  url: string;
+  /** The decrypted token; `null` when the ciphertext does not decrypt. */
+  token: string | null;
+  /** The supervisor's status; `token-unreadable` whenever `token` is `null`. */
+  status: RunnerHostStatus;
+  /** `hostId` of the binding; `null` for a record without one. */
+  hostId: string | null;
+  /** `capabilities` of the last HostInfo (`[]` before any, or when the HostInfo had none). */
+  capabilities: string[];
 }
 
 /** One supervised host: its record (configuration + binding, as stored) and its state. */
@@ -116,10 +146,12 @@ const copyRecord = (r: RunnerHostRecord): RunnerHostRecord => ({ ...r, binding: 
  * remove for the API.
  *
  * Only configuration and binding are ever written (through the store); the
- * status, `statusSince`, `lastEventAt`, `lastError` and `restartedAt` live
- * here, so a heartbeat never writes the registry (`4pxwyo22`). The plain token
- * is decrypted per attempt, held only for the connection, and never logged —
- * a log line carries `id`, `url`, status and code (`qc6t2y7m`).
+ * status, `statusSince`, `lastEventAt`, `lastError`, `restartedAt` and the
+ * `capabilities` of the last HostInfo live here, so a heartbeat never writes
+ * the registry (`4pxwyo22`). Other modules of the process read a host through
+ * `readHost` / `readHosts` (`43dazlrg`). The plain token is decrypted per
+ * attempt or read, never logged and never sent out of the process — a log
+ * line carries `id`, `url`, status and code (`qc6t2y7m`).
  */
 export class RunnerHostSupervisor {
   private readonly hosts = new Map<string, Supervised>();
@@ -155,6 +187,21 @@ export class RunnerHostSupervisor {
   }
 
   /**
+   * The in-process read of one host by its local `id` (`43dazlrg`); `null`
+   * when this process supervises no such record. Sends nothing to the host
+   * and changes no status.
+   */
+  readHost(id: string): RunnerHostRead | null {
+    const h = this.hosts.get(id);
+    return h ? this.read(h) : null;
+  }
+
+  /** The in-process read of every host of the workspace (`43dazlrg`), in the order they were added. */
+  readHosts(): RunnerHostRead[] {
+    return [...this.hosts.values()].map((h) => this.read(h));
+  }
+
+  /**
    * Add (`m9e73y05`): the record is written, then the synchronous attempt runs
    * within the 15 s budget. A retried status or `connected` leaves the
    * subscription in the background.
@@ -177,7 +224,12 @@ export class RunnerHostSupervisor {
     h.record = copyRecord(record);
     const tokenChanged = input.token !== undefined;
     if (!tokenChanged && record.url === before.url) return this.view(h);
-    if (tokenChanged) h.state.restartedAt = null;
+    if (tokenChanged) {
+      // The binding is cleared: what the previous host reported goes with it,
+      // so the in-process read never pairs `hostId: null` with its capabilities.
+      h.state.restartedAt = null;
+      h.state.capabilities = [];
+    }
     h.retries = 0;
     h.stopped = false;
     // ASSUMPTION:dev-5401 — the attempt after a url/token change answers the
@@ -229,6 +281,7 @@ export class RunnerHostSupervisor {
         lastEventAt: null,
         lastError: null,
         restartedAt: null,
+        capabilities: [],
       },
       epoch: 0,
       abort: null,
@@ -251,7 +304,34 @@ export class RunnerHostSupervisor {
   private view(h: Supervised): RunnerHostView {
     return {
       record: copyRecord(h.record),
-      state: { ...h.state, lastError: h.state.lastError ? { ...h.state.lastError } : null },
+      state: {
+        ...h.state,
+        lastError: h.state.lastError ? { ...h.state.lastError } : null,
+        capabilities: [...h.state.capabilities],
+      },
+    };
+  }
+
+  /**
+   * `43dazlrg`: the read from memory. The token is decrypted here and handed
+   * to the caller only; a ciphertext that does not decrypt gives no token and
+   * the status `token-unreadable` in the read — the supervisor's own status is
+   * left as it is (reading changes no status).
+   */
+  private read(h: Supervised): RunnerHostRead {
+    let token: string | null;
+    try {
+      token = decrypt(h.record.tokenCiphertext);
+    } catch {
+      token = null;
+    }
+    return {
+      id: h.record.id,
+      url: h.record.url,
+      token,
+      status: token === null ? 'token-unreadable' : h.state.status,
+      hostId: h.record.binding?.hostId ?? null,
+      capabilities: [...h.state.capabilities],
     };
   }
 
@@ -466,6 +546,8 @@ export class RunnerHostSupervisor {
         },
       };
     }
+    // `i084ojn6`: every accepted HostInfo overwrites the list (none → `[]`).
+    h.state.capabilities = [...info.capabilities];
     const next: RunnerHostBinding = {
       hostId: info.hostId,
       hostName: info.name,

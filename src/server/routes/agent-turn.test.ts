@@ -105,6 +105,7 @@ import {
 } from '@inharness-ai/agent-adapters';
 import { abortChildTurns, runAgentTurn, type ActiveAdapter, type AgentTurnDeps, type AgentTurnInput } from './agent-turn.js';
 import { SpecSkillTools } from '../mcp/spec-skill-tools.js';
+import { buildRunToolsServer, type RunToolsFactory } from '../mcp/run-tools.js';
 import { buildC4sToolsServer } from '../mcp/c4s-tools.js';
 import { createMcpServer, mcpTool } from '../plugin-runtime/index.js';
 import { z } from 'zod';
@@ -4321,5 +4322,110 @@ describe('runAgentTurn — the turn stream (2.1.56)', () => {
       expect(after.status).toBe(409);
       expect(after.body.error.code).toBe('NO_ACTIVE_STREAM');
     });
+  });
+});
+
+/**
+ * 2.1.64 (M44 `3f5ej79s`, M55 `7bo43wak`) — `run-tools` (`run_remote`, `get_run`,
+ * `cancel_run`) is mounted ONLY in a `chat` thread with `parent_thread_id IS NULL`,
+ * whatever its plan mode, under the same gate as `transagent-tools`. `patch`, `ask`,
+ * `brief` and every child thread do not get it. The server is built fresh per query
+ * for the calling thread by the context's factory.
+ */
+describe('runAgentTurn — run-tools only on a top-level chat thread (2.1.64)', () => {
+  const RUN_TOOLS = ['cancel_run', 'get_run', 'run_remote'];
+
+  async function turnFor(
+    contextType: string,
+    opts: { patchPath?: string | null; parentThreadId?: string | null; briefPath?: string | null; planMode?: boolean } = {},
+  ): Promise<{ mounted: string[]; prompt: string; builtFor: string[]; tools: string[] | null }> {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    const builtFor: string[] = [];
+    const factory: RunToolsFactory = {
+      build: (threadId) => {
+        builtFor.push(threadId);
+        // The real server; its handlers are never called here, so the deps are inert.
+        return buildRunToolsServer({
+          deps: {} as unknown as Parameters<typeof buildRunToolsServer>[0]['deps'],
+          readDeps: {} as unknown as Parameters<typeof buildRunToolsServer>[0]['readDeps'],
+          threadId,
+        });
+      },
+    };
+    (deps as unknown as { runTools: RunToolsFactory }).runTools = factory;
+    const input = makeInput();
+    const thread = input.thread as unknown as {
+      contextType: string;
+      patchPath: string | null;
+      parentThreadId: string | null;
+      briefPath: string | null;
+      planMode: boolean;
+    };
+    thread.contextType = contextType;
+    thread.patchPath = opts.patchPath ?? null;
+    thread.briefPath = opts.briefPath ?? null;
+    thread.parentThreadId = opts.parentThreadId ?? null;
+    thread.planMode = opts.planMode ?? false;
+    await runAgentTurn(deps, input);
+    const servers = (hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>;
+    const prompt = String(hoisted.lastExecute?.systemPrompt);
+    const listed = prompt.match(/<mcp name="run-tools">([^<]*)<\/mcp>/);
+    return {
+      mounted: Object.keys(servers).sort(),
+      prompt,
+      builtFor,
+      tools: listed ? listed[1]!.split(',').map((t) => t.trim()).sort() : null,
+    };
+  }
+
+  it('[section:3f5ej79s] a top-level chat thread has run-tools mounted with run_remote, get_run and cancel_run, built for that thread', async () => {
+    const top = await turnFor('chat', { parentThreadId: null });
+    expect(top.mounted).toContain('run-tools');
+    expect(top.tools).toEqual(RUN_TOOLS);
+    expect(new Set(top.builtFor)).toEqual(new Set(['t1']));
+  });
+
+  it('[section:3f5ej79s] plan mode does not take run-tools away: a top-level chat thread in plan mode keeps all three tools', async () => {
+    const planned = await turnFor('chat', { parentThreadId: null, planMode: true });
+    expect(planned.mounted).toContain('run-tools');
+    expect(planned.tools).toEqual(RUN_TOOLS);
+  });
+
+  it('[section:7bo43wak] a child chat thread does not get run-tools — the server is not even built', async () => {
+    for (const planMode of [false, true]) {
+      const child = await turnFor('chat', { parentThreadId: 'parent-1', planMode });
+      expect(child.mounted).not.toContain('run-tools');
+      expect(child.prompt).not.toMatch(/<mcp name="run-tools"/);
+      expect(child.builtFor).toEqual([]);
+    }
+  });
+
+  it('[section:3f5ej79s] patch, ask and brief threads do not get run-tools, whatever their plan mode', async () => {
+    const cases: Array<[string, { patchPath?: string; briefPath?: string }]> = [
+      ['patch', { patchPath: 'p.md' }],
+      ['ask', {}],
+      ['brief', { briefPath: 'b.md' }],
+    ];
+    for (const [contextType, extra] of cases) {
+      for (const planMode of [false, true]) {
+        const t = await turnFor(contextType, { ...extra, planMode });
+        expect(t.mounted, `${contextType} planMode=${planMode}`).not.toContain('run-tools');
+        expect(t.prompt).not.toMatch(/<mcp name="run-tools"/);
+        expect(t.builtFor).toEqual([]);
+      }
+    }
+  });
+
+  it('[section:3f5ej79s] patch keeps the rest of the chat set (c4s-tools, patch-tools) without transagent-tools and without run-tools', async () => {
+    const patch = await turnFor('patch', { patchPath: 'p.md' });
+    expect(patch.mounted).toEqual(expect.arrayContaining(['c4s-tools', 'patch-tools']));
+    expect(patch.mounted).not.toContain('transagent-tools');
+    expect(patch.mounted).not.toContain('run-tools');
+  });
+
+  it('[section:3f5ej79s] the run-tools gate is the registry column plus the per-thread rule: only the chat row declares it', () => {
+    expect(CONTEXT_TYPE_REGISTRY.chat.mcp.runTools).toBe(true);
+    for (const t of ['patch', 'ask', 'brief'] as const) expect(CONTEXT_TYPE_REGISTRY[t].mcp.runTools).toBe(false);
   });
 });

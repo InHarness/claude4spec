@@ -210,7 +210,7 @@ describe('the seeded catalog', () => {
    * (`describe_entity_type` renders `describe_types` internally), and the alias
    * is written down here rather than inferred.
    */
-  it('every internal/mcp `direct` cell of an M39 row has a tool registered on its server (the whole-catalogue check is in `the catalogue against the window\'s 77 records`)', () => {
+  it('every internal/mcp `direct` cell of an M39 row has a tool registered on its server (the whole-catalogue check is in `the catalogue against the window\'s 78 records`)', () => {
     const mcpDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../mcp');
     const declared = (file: string): Set<string> =>
       new Set(
@@ -416,6 +416,7 @@ describe('context profiles', () => {
       briefTools: false,
       c4sTools: true,
       transagentTools: true,
+      runTools: true,
       specSkillTools: true,
     });
     expect(mcpServerSetForProfile('brief')).toEqual({
@@ -424,17 +425,24 @@ describe('context profiles', () => {
       briefTools: true,
       c4sTools: false,
       transagentTools: false,
+      runTools: false,
       specSkillTools: false,
     });
     // 2.1.18 (M44 `3f5ej79s`): `patch` is `chat`'s set WITHOUT transagent-tools —
     // declared per profile, so admitting the `turn` class does not mount it.
-    expect(mcpServerSetForProfile('patch')).toEqual({ ...mcpServerSetForProfile('chat'), transagentTools: false });
+    // 2.1.64 (M44 `3f5ej79s`): and without run-tools, under the same declared rule.
+    expect(mcpServerSetForProfile('patch')).toEqual({
+      ...mcpServerSetForProfile('chat'),
+      transagentTools: false,
+      runTools: false,
+    });
     expect(mcpServerSetForProfile('ask')).toEqual({
       pluginServers: 'all',
       planTools: true,
       briefTools: false,
       c4sTools: false,
       transagentTools: false,
+      runTools: false,
       specSkillTools: false,
     });
   });
@@ -1750,13 +1758,13 @@ describe('the M18 tag write rows as their 2.1.26 records declare them', () => {
 });
 
 /**
- * 2.1.26 — the whole code catalogue against the window's 78 `spec-operation`
+ * 2.1.26 — the whole code catalogue against the window's 80 `spec-operation`
  * records (`tests/helpers/spec-operation-records.ts`), not a sample: every record
  * has its row and every row but the plugin ones the window has no record for has
  * a record; each row answers for the record's fields; and the four L3/M43
  * criteria on `reguly` and `narzedzia` hold for every row at once.
  */
-describe("the catalogue against the window's 77 records", () => {
+describe("the catalogue against the window's 80 records", () => {
   const RECORD_CHANNEL: Record<ChannelCell['kind'], string> = { direct: 'direct', via: 'via', na: 'n/a' };
   const EFFECT: Record<string, string> = { brak: 'none', plik: 'file', db: 'db', 'ui-notify': 'ui-notify' };
   const IDEMPOTENCE: Record<string, boolean | 'conditional'> = { tak: true, nie: false, warunkowa: 'conditional' };
@@ -1818,6 +1826,7 @@ describe("the catalogue against the window's 77 records", () => {
     'skill-tools': ['src/server/mcp/skill-tools.ts'],
     'spec-skill-tools': ['src/server/mcp/spec-skill-tools.ts'],
     'workspace-tools': ['src/server/mcp/workspace-tools.ts'],
+    'run-tools': ['src/server/mcp/run-tools.ts'],
     'release-tools': ['src/server/mcp/release-tools/index.ts'],
     'endpoint-tools': ['plugins/c4s-plugin-api-contracts/src/entity/endpoint/backend/mcp.ts'],
     'spreadsheet-tools': ['plugins/c4s-plugin-spreadsheets/src/entity/spreadsheet/mcp.ts'],
@@ -1851,9 +1860,9 @@ describe("the catalogue against the window's 77 records", () => {
 
   const byName = new Map(SPEC_OPERATION_RECORDS.map((r) => [r.nazwa, r]));
 
-  it('every one of the 77 records has its row, and every other row is a plugin row the window has no record for', () => {
-    expect(SPEC_OPERATION_RECORDS).toHaveLength(77);
-    expect(byName.size).toBe(77);
+  it('every one of the 80 records has its row, and every other row is a plugin row the window has no record for', () => {
+    expect(SPEC_OPERATION_RECORDS).toHaveLength(80);
+    expect(byName.size).toBe(80);
     for (const record of SPEC_OPERATION_RECORDS) expect(CATALOG.has(record.nazwa), record.nazwa).toBe(true);
     const withoutRecord = CATALOG.list()
       .filter((op) => !byName.has(op.name))
@@ -2209,5 +2218,52 @@ describe('the 2.1.47 accept_shadow row', () => {
     expect([...op.errorCodes].sort()).toEqual(Object.keys(statuses).sort());
     expect(new Set(op.errorCodes).size).toBe(op.errorCodes.length);
     for (const [code, status] of Object.entries(statuses)) expect(httpStatusForCode(code), code).toBe(status);
+  });
+});
+
+/**
+ * 2.1.64 (M43 `l3admit0`, `hueys3ol`; M44 `3f5ej79s`; M55 `7bo43wak`) — the
+ * catalog recognises a Run on a runner host as the third form of an agent turn
+ * ordered as an operation, and the registry mounts its server only in `chat`.
+ */
+describe('Run on a runner host — the third form of a turn (2.1.64)', () => {
+  registerCoreOperations();
+
+  it('[section:l3admit0] the catalog has the three turn forms as rows of class `turn`: run_turn (child), ask (peer) and run_remote (Run on a runner host), with get_run and cancel_run', () => {
+    expect(CATALOG.require('run_turn').opClass).toBe('turn');
+    expect(CATALOG.require('ask').opClass).toBe('peer');
+    for (const name of ['run_remote', 'get_run', 'cancel_run']) {
+      const row = CATALOG.require(name);
+      expect(row.opClass).toBe('turn');
+      // The subject of a Run is the whole workspace's specification.
+      expect(row.scope).toBe('workspace');
+      // Ordered from inside a turn: the internal channel, rendered on run-tools.
+      expect(row.channels.internal.kind).toBe('direct');
+      expect(row.renderings?.internal).toEqual([`run-tools.${name}`]);
+    }
+  });
+
+  it('[section:hueys3ol] git under a Run does not take the order out of the catalog: run_remote stays a row while git as such has no row', () => {
+    // run_remote may commit and push the plan file before the Run starts, and is still in the catalog.
+    expect(CATALOG.get('run_remote')).toBeDefined();
+    expect(CATALOG.require('run_remote').mediation).toBe('agent-mediated');
+    // Git stays outside the catalog: no operation names a commit, a push or a git primitive.
+    const names = CATALOG.list().map((op) => op.name);
+    expect(names.filter((n) => /(^|_)(git|commit|push|publish_file)(_|$)/.test(n))).toEqual([]);
+  });
+
+  it('[section:3f5ej79s] run-tools is a declared registry column: chat only — patch, ask and brief never, whatever classes they admit', () => {
+    expect(PROFILES.chat.runTools).toBe(true);
+    expect(mcpServerSetForProfile('chat').runTools).toBe(true);
+    for (const p of ['patch', 'ask', 'brief'] as const) {
+      expect(PROFILES[p].runTools).toBe(false);
+      expect(mcpServerSetForProfile(p).runTools).toBe(false);
+    }
+    // `patch` admits the `turn` class of the three run rows and still does not mount the server.
+    expect(profileAdmits('patch', CATALOG.require('run_remote'))).toBe(true);
+    // The profile gate lets the three tools through in `chat` (class `turn`), so the mount alone decides.
+    for (const name of ['run_remote', 'get_run', 'cancel_run']) {
+      expect(toolAdmittedByProfile('chat', name)).toBe(true);
+    }
   });
 });

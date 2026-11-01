@@ -28,7 +28,8 @@ export interface WriteToolRecord {
     | 'workspace-tools'
     | 'spec-skill-tools'
     | 'c4s-tools'
-    | 'reference-tools';
+    | 'reference-tools'
+    | 'run-tools';
   name: string;
   description: string;
   params: Array<{ name: string; type: string; required: boolean; description?: string }>;

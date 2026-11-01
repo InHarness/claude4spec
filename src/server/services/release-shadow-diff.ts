@@ -38,6 +38,7 @@ import {
 } from './git-two-state-delta.js';
 import { DomainError } from './tags.js';
 import { isPathWithin } from '../workspace/registry.js';
+import { homeRunsDir } from '../workspace/home-workspace.js';
 
 /** Where the comparison looks — resolved by the release service from the root registry. */
 export interface ShadowDiffScope {
@@ -54,10 +55,45 @@ export interface ShadowDiffScope {
    * kind `releases` sets `touchesReleases` — gated by the KIND (L13), never by a dir.
    */
   registryRoots: ReadonlyArray<{ kind: RootKind; dir: string }>;
+  /**
+   * 2.1.64 (`nemiv2qh`): the home directory of the project's workspace, `null`
+   * when the workspace has none — the precondition of the exemption of the own
+   * Run's record directory (`ownRunRecordDir`).
+   */
+  workspaceHome: string | null;
+}
+
+/**
+ * 2.1.64 (M17 L2 `nemiv2qh`, `rnwev4kg`): the exemption of the record directory
+ * of the shadow's OWN Run. A shadow whose id has the form `<runId>/work`, in a
+ * workspace with a home directory, may change `<home>/.claude4spec/runs/<runId>/`
+ * (both record files) without those paths counting as `outsideSpecFiles`. The
+ * home's place in the repository is computed by M28 (`workspaceHomePath`,
+ * `tmrix8ji`); a home outside the repository has no path a shadow could change.
+ * Returns the ABSOLUTE exempted directory under `rootPath`, or `null` when the
+ * exemption does not apply. The record directory of another `runId` and the
+ * roots of another project of the workspace are never exempted.
+ */
+export async function ownRunRecordDir(
+  git: Pick<GitService, 'workspaceHomePath'>,
+  shadowId: string,
+  workspaceHome: string | null,
+  rootPath: string,
+): Promise<string | null> {
+  const match = /^([^/]+)\/work$/.exec(shadowId);
+  if (!match || workspaceHome === null) return null;
+  const runId = match[1]!;
+  if (runId === '.' || runId === '..') return null;
+  const homeRel = await git.workspaceHomePath(workspaceHome);
+  if (homeRel === null) return null;
+  return nodePath.join(homeRunsDir(nodePath.join(rootPath, homeRel)), runId);
 }
 
 export interface ShadowDiffDeps {
-  git: Pick<GitService, 'probeRepo' | 'resolveShadow' | 'mergeTree' | 'listCommits' | 'diffRefs' | 'showFile'>;
+  git: Pick<
+    GitService,
+    'probeRepo' | 'resolveShadow' | 'mergeTree' | 'listCommits' | 'diffRefs' | 'showFile' | 'workspaceHomePath'
+  >;
   pageSerializer: DeltaDeps['pageSerializer'];
   host: DeltaDeps['host'];
   scope: () => ShadowDiffScope;
@@ -69,15 +105,19 @@ export interface ShadowDiffDeps {
  * no registry root, repository-relative and sorted; `touchesReleases` — a path
  * inside a root of kind `releases`. Shared by the comparison and by the
  * acceptance's guards, so both read the same flags off the same paths.
+ * `exemptDir` (2.1.64, `ownRunRecordDir`) — the own Run's record directory:
+ * a path inside it is not `outsideSpecFiles`.
  */
 export function acceptanceFlags(
   absPaths: readonly string[],
   registryRoots: ShadowDiffScope['registryRoots'],
   rootPath: string,
+  exemptDir: string | null = null,
 ): { outsideSpecFiles: string[]; touchesReleases: boolean } {
   const outside = new Set<string>();
   let touchesReleases = false;
   for (const abs of absPaths) {
+    if (exemptDir !== null && isPathWithin(exemptDir, abs)) continue;
     const owners = registryRoots.filter((root) => isPathWithin(root.dir, abs));
     if (owners.length === 0) outside.add(nodePath.relative(rootPath, abs).split(nodePath.sep).join('/'));
     else if (owners.some((root) => root.kind === 'releases')) touchesReleases = true;
@@ -154,10 +194,12 @@ export async function computeShadowDiff(deps: ShadowDiffDeps, ref: unknown): Pro
   if (!shadowFiles) throw gitFailed('the files of the shadow could not be read');
   if (!commits) throw gitFailed('the commits of the shadow could not be read');
 
+  const exemptDir = await ownRunRecordDir(deps.git, shadow.id, scope.workspaceHome, rootPath);
   const { outsideSpecFiles, touchesReleases } = acceptanceFlags(
     shadowFiles.files.map((f) => f.path),
     scope.registryRoots,
     rootPath,
+    exemptDir,
   );
 
   return {

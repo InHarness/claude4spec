@@ -3,7 +3,7 @@
  * `reguly` (identifiers of the M43 vocabulary; an exclusion carries the
  * record's `wykluczenie` verbatim). Keyed by canonical name and attached by
  * `registerCoreOperations()`; `register()` validates every list against
- * `rules.ts`. One entry per record of the window — 77 (2.1.46 adds `shadow_diff`, 2.1.47 `accept_shadow`, 2.1.55 drops the three M25 release-push rows) — and none for the plugin
+ * `rules.ts`. One entry per record of the window — 77 (2.1.46 adds `shadow_diff`, 2.1.47 `accept_shadow`, 2.1.55 drops the three M25 release-push rows; 80 since 2.1.64 adds `run_remote`, `get_run`, `cancel_run`) — and none for the plugin
  * rows the window has no record for.
  */
 
@@ -76,6 +76,9 @@ export const OPERATION_RULES: Readonly<Record<string, readonly RuleCitation[]>> 
   release_update: [{ id: 'error-code-once' }, { id: 'echo-free' }],
   resolve_identity: [{ id: 'error-code-once' }, { id: 'echo-free', exclusion: 'nie mutuje' }],
   restore_entity_version: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'explicit-addressing' }, { id: 'destructive-declared' }, { id: 'operation-only-write' }],
+  run_remote: [{ id: 'error-code-once' }, { id: 'echo-free' }, { id: 'explicit-addressing' }],
+  get_run: [{ id: 'error-code-once' }, { id: 'echo-free' }, { id: 'explicit-addressing' }],
+  cancel_run: [{ id: 'error-code-once' }, { id: 'echo-free' }, { id: 'explicit-addressing' }],
   run_turn: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'explicit-addressing' }],
   search_entities: [{ id: 'error-code-once' }, { id: 'echo-free', exclusion: 'nie mutuje' }],
   search_link_targets: [{ id: 'echo-free' }, { id: 'error-code-once' }, { id: 'explicit-addressing' }],

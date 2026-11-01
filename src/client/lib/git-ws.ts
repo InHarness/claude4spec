@@ -1,4 +1,5 @@
 import type { QueryKey } from '@tanstack/react-query';
+import { useChatStore } from '../state/chat.js';
 import { useGitOpsStore } from '../state/gitOps.js';
 import { setGitFlashToast } from './git-flash.js';
 import { SYNC_UPDATED_TOAST } from './git-results.js';
@@ -30,14 +31,19 @@ export const GIT_SHADOWS_KEY = ['git-shadows'] as const;
  *   either way it is attributed to the acceptance (`claimHeadChange`), and
  *   each own operation absorbs one HEAD event only — the next one is another
  *   client's and reloads.
+ *   2.1.64 — an event naming the thread open in this tab's chat (`threadId`:
+ *   `run_remote` published its plan) comes from that thread's own turn and
+ *   does not reload: a reload would cut the turn's stream mid-way. It claims
+ *   no own operation. ASSUMPTION:dev-0008.
  */
 export function handleGitStatusChanged(
-  event: { headChanged: boolean },
+  event: { headChanged: boolean; threadId?: string },
   deps: { queue(queryKey: QueryKey): void },
 ): void {
   deps.queue([...GIT_STATUS_KEY]);
   deps.queue([...GIT_SHADOWS_KEY]);
   if (!event.headChanged) return;
+  if (event.threadId !== undefined && event.threadId === useChatStore.getState().chatThreadId) return;
   const own = useGitOpsStore.getState().claimHeadChange();
   if (own === 'sync') {
     setGitFlashToast({ ...SYNC_UPDATED_TOAST });

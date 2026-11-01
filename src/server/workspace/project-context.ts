@@ -135,6 +135,11 @@ import { createEntityToolsServer } from '../mcp/entity-tools.js';
 import { SkillRegistry, SkillResolver, findSkillsRoots } from '../services/skill-registry.js';
 import { registerProjectRootedSkills, SKILLS_ROOT_KIND } from '../services/project-rooted-skills.js';
 import { SpecSkillTools } from '../mcp/spec-skill-tools.js';
+import { buildRunToolsServer, type RunToolsFactory } from '../mcp/run-tools.js';
+import { runPlansFromService, type RunRemoteHost } from '../runs/run-remote.js';
+import type { RunReadProject } from '../runs/run-read.js';
+import { remoteRunRegistry } from '../runs/remote-run-registry.js';
+import { openWorkspaceDb } from '../db/workspace-db.js';
 import {
   ProjectExposedSkillSource,
   exposedReadOnlyReason,
@@ -284,6 +289,13 @@ export interface ProjectContextDeps {
    * (attachments still list; their reads refuse as unreachable).
    */
   providerContext?: (projectId: string) => Promise<ProjectContext>;
+  /**
+   * 2.1.64 (M55 `7bo43wak`): the process-level sources of `run-tools` — the
+   * runner hosts (the M54 supervisor's in-process read, with names) and every
+   * project of the workspace with its own shadow list (L10). Both read per call.
+   * Absent ⇒ the context hands the turn no `run-tools` (hand-built rigs).
+   */
+  runs?: { hosts(): RunRemoteHost[]; projects(): RunReadProject[] };
 }
 
 export interface ProjectContext {
@@ -348,6 +360,12 @@ export interface ProjectContext {
    * `cleanup()` never removes a directory a boot pass is still reading.
    */
   bootSettled: Promise<void>;
+  /**
+   * 2.1.64 (M55, L10) — this project as one entry of `get_run`'s per-project
+   * shadow list: its id and its own `GitService` (its own release-flag roots).
+   * Optional so hand-built test contexts need not supply it.
+   */
+  runProject?: RunReadProject;
   /** 2.1.16: `opts.reason` (from the invalidation) rides on the room's `project:disposed`. */
   dispose: (opts?: ContextInvalidation) => Promise<void>;
 }
@@ -1290,6 +1308,9 @@ async function buildInner(
   );
   // 0.1.118: needed for the git-anchored getReleaseDiff branch.
   releaseService.setGitService(gitService);
+  // 2.1.64 (M17 nemiv2qh): the workspace home gates the exemption of the own
+  // Run's record directory (`<home>/.claude4spec/runs/<runId>/`) — re-read per call.
+  releaseService.setWorkspaceHome(() => (registry.getWorkspace(workspace.name) ?? workspace).home ?? null);
   // 2.1.47 (M17 aae2vgem / mghvzn0w, M40 c38qf5p5): the shadow acceptance's
   // file-watch side, on THIS context's mounts (the registry roots) — the
   // operation suppression of the merged paths, their chain run in-band as the
@@ -1584,6 +1605,43 @@ async function buildInner(
     );
   };
 
+  /**
+   * 2.1.64 (M55 `7bo43wak`, M44 `3f5ej79s`) — `run-tools`: a fresh server per
+   * query for the calling thread. The turn mounts it only in a top-level `chat`
+   * thread. The operation runs over this project's repository (the plan's and
+   * the Run record's), the workspace read per call, and the Runs registry in the
+   * workspace DB — opened only when a row is read or written.
+   */
+  const liveWorkspaceRecord = () => registry.getWorkspace(workspace.name) ?? workspace;
+  const runSources = deps.runs;
+  const runTools: RunToolsFactory | undefined = runSources
+    ? (() => {
+        const runsRegistry = remoteRunRegistry(() => openWorkspaceDb(liveWorkspaceRecord()));
+        const plans = runPlansFromService(planService);
+        return {
+          build: (threadId: string) =>
+            buildRunToolsServer({
+              deps: {
+                workspace: liveWorkspaceRecord,
+                projectId,
+                git: gitService,
+                plans,
+                hosts: () => runSources.hosts(),
+                registry: () => runsRegistry,
+              },
+              readDeps: {
+                workspace: liveWorkspaceRecord,
+                git: gitService,
+                projects: () => runSources.projects(),
+                hosts: () => runSources.hosts(),
+                registry: () => runsRegistry,
+              },
+              threadId,
+            }),
+        };
+      })()
+    : undefined;
+
   // Wspolne deps tury agenta — `threadsRouter` (POST /:id/ask) i `chatRouter`
   // (POST /chat, SSE) dziela ten sam runtime i rejestr `activeAdapters`.
   const agentDeps = {
@@ -1625,6 +1683,7 @@ async function buildInner(
      */
     listWorkspaceProjects: () => listProjects(registry.getWorkspace(workspace.name) ?? workspace),
     specSkillTools,
+    runTools,
   };
 
   /**
@@ -2200,6 +2259,7 @@ async function buildInner(
     hasInFlightTurn: () => activeAdapters.size > 0,
     mcpSurfaceDeps,
     readExposedSkill,
+    runProject: { projectId, git: gitService },
     bootSettled: Promise.allSettled(bootWork).then(() => undefined),
     // M31 dispose sequence: turn registries → this scope's mounts → MCP
     // factories → room → db handle.

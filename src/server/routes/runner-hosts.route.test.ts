@@ -570,4 +570,32 @@ describe('M54 runner-host routes — /api/workspace/runner-hosts', () => {
   it('[ac:ac-token-ze-znakiem-spoza-drukowalnego-a] a token with a character outside printable ASCII gives 400', async () => {
     await refusedOnAddAndChange('token', ['c4sr_Q1w2é3r4', 'c4sr_Q1w2\u0001E3r4', 'c4sr_Q1w2\tE3r4', 'c4sr_Q1w2E3r4🔑']);
   });
+
+  it('[ac:ac-odpowiedz-rest-hosta-nie-zawiera-odsz] [dto:runner-host-response] a REST host answer does not contain the decrypted token', async () => {
+    const stub = await newStub();
+    stub.hostInfo = { ...STUB_HOST_INFO, capabilities: ['runs'] };
+    const answers: request.Response[] = [];
+    const added = await request(app).post(BASE).send({ url: stub.url(), token: TOKEN });
+    expect(added.status).toBe(201);
+    answers.push(added);
+    const id = added.body.data.id as string;
+    await until(() => stub.streams.size === 1, 5_000, 'open stream');
+    answers.push(await request(app).get(BASE));
+    answers.push(await request(app).patch(`${BASE}/${id}`).send({ label: 'renamed' }));
+    answers.push(await request(app).post(`${BASE}/${id}/test`).send({}));
+
+    // The token is decrypted inside the process (the in-process read has it)…
+    expect(supervisor.readHost(id)?.token).toBe(TOKEN);
+    expect(supervisor.readHost(id)?.capabilities).toEqual(['runs']);
+    // …but no REST answer carries it, nor the in-memory `capabilities`.
+    for (const res of answers) {
+      expect(res.status).toBeLessThan(300);
+      expect(res.text).not.toContain(TOKEN);
+      expect(res.text).not.toContain(TOKEN.slice(0, -4));
+      expect(res.text).not.toContain('capabilities');
+      const data = Array.isArray(res.body.data) ? (res.body.data as Body[])[0]! : (res.body.data as Body);
+      expect(Object.keys(data).sort()).toEqual(RESPONSE_FIELDS);
+      expect(data.token).toEqual({ isSet: true, last4: TOKEN.slice(-4) });
+    }
+  });
 });

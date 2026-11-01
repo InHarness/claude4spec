@@ -94,6 +94,17 @@ export interface McpServerSet {
    */
   transagentTools: boolean;
   /**
+   * 2.1.64 (M44 `3f5ej79s`, M55 `7bo43wak`) — `run-tools` (`run_remote`,
+   * `get_run`, `cancel_run`: ordering, reading and cancelling a Run on a runner
+   * host). DECLARED per profile under the same rule as `transagentTools`: only
+   * `chat` names it — `patch` admits the `turn` class and still does not get it,
+   * and a new context type does not inherit it, not even by declaring "the full
+   * `chat` set". The per-thread half (`parent_thread_id IS NULL`) is applied by
+   * the turn builder on top. Plan mode does not touch it: the plan-mode posture
+   * gates built-ins only, never MCP.
+   */
+  runTools: boolean;
+  /**
    * 2.1.9 (M52 `hdkx97wq`, M44 `3f5ej79s`) — `spec-skill-tools`, the write channel
    * of the project's own skill packages (`update_skill_file`). DECLARED per
    * profile, never derived from `write`: a new context type does not inherit it
@@ -147,6 +158,13 @@ export interface ProfileDefinition {
    * only. Orchestration belongs to the top-level `chat` thread alone.
    */
   readonly transagentTools: boolean;
+  /**
+   * 2.1.64 (M44 `3f5ej79s`, M55 `7bo43wak`) — whether the turn mounts `run-tools`.
+   * Declared, not derived (see `McpServerSet.runTools`): `chat` only. A Run
+   * orders work on another machine and pushes the plan file, so it belongs to
+   * the top-level `chat` thread alone.
+   */
+  readonly runTools: boolean;
 }
 
 const ALL_CLASSES: readonly OperationClass[] = ['read', 'write', 'brief', 'plan', 'turn', 'peer'];
@@ -167,6 +185,7 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
     backgroundTasks: 'allowed',
     specSkillTools: true,
     transagentTools: true,
+    runTools: true,
   },
   brief: {
     operationClasses: new Set<OperationClass>(['read', 'brief']),
@@ -177,6 +196,7 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
     backgroundTasks: 'allowed',
     specSkillTools: false,
     transagentTools: false,
+    runTools: false,
   },
   patch: {
     operationClasses: new Set(CHAT_CLASSES),
@@ -187,6 +207,7 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
     backgroundTasks: 'allowed',
     specSkillTools: true,
     transagentTools: false,
+    runTools: false,
   },
   ask: {
     // A consulted peer reads and may leave a plan. It cannot mutate the spec, and
@@ -204,6 +225,7 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
     backgroundTasks: 'disabled',
     specSkillTools: false,
     transagentTools: false,
+    runTools: false,
   },
 };
 
@@ -231,6 +253,8 @@ export function mcpServerSetForProfile(profile: ChatContextType): McpServerSet {
     c4sTools: operationClasses.has('peer'),
     // Declared, not derived — see `McpServerSet.transagentTools`.
     transagentTools: PROFILES[profile].transagentTools,
+    // Declared, not derived — see `McpServerSet.runTools`.
+    runTools: PROFILES[profile].runTools,
     // Declared, not derived — see `McpServerSet.specSkillTools`.
     specSkillTools: PROFILES[profile].specSkillTools,
   };

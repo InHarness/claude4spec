@@ -281,7 +281,9 @@ export class WorkspaceRegistry {
    * 2.1.58 (M31 `vzkw903j`): the workspace's SLOTS DIRECTORY — owned here, not
    * by M41. Registry workspace: `~/.claude4spec/<workspace>/`; workspace with a
    * home: `<home>/.claude4spec/local/`. It also holds the `node_modules` of the
-   * workspace's plugin packages (no clash: ids are `[a-z0-9-]` only).
+   * workspace's plugin packages and (2.1.64, a home only) the workspace database
+   * `workspace.sqlite` (M41 `zyj684t8`, `openWorkspaceDb`) — no clash: ids are
+   * `[a-z0-9-]` only. A registry workspace has no workspace database.
    */
   slotsDir(ws: Pick<WorkspaceRecord, 'name' | 'home'>): string {
     return ws.home !== undefined ? homeLocalDir(ws.home) : path.join(this.baseDir, ws.name);

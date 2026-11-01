@@ -13,7 +13,12 @@ import { PROJECT_ID_RE } from './project-id.js';
  * `lastOpenedProject`, project trust) stays in the registry entry: the writer
  * below serializes exactly these two keys, so nothing else can reach the file.
  * `<home>/.claude4spec/local/` (git-ignored) holds the workspace's slots
- * directory and the lock file of `workspace.json`.
+ * directory, the lock file of `workspace.json` and (2.1.64) the workspace
+ * database `workspace.sqlite` (M41 `zyj684t8`).
+ *
+ * 2.1.64 (M31 `t97gncju`): `<home>/.claude4spec/` holds three committed things
+ * — `workspace.json`, `.gitignore` and the `runs/` directory — and one local
+ * one, `local/`.
  */
 
 export interface WorkspaceFileProject {
@@ -72,9 +77,24 @@ export function workspaceFilePath(home: string): string {
   return path.join(homeConfigDir(home), 'workspace.json');
 }
 
-/** The git-ignored part: the workspace's slots directory and the lock file. */
+/**
+ * The git-ignored part: the workspace's slots directory, the lock file and the
+ * workspace database `workspace.sqlite`.
+ */
 export function homeLocalDir(home: string): string {
   return path.join(homeConfigDir(home), 'local');
+}
+
+/**
+ * 2.1.64 (M31 `t97gncju`): the COMMITTED place reserved for Run records — one
+ * `<runId>/` subdirectory per Run that left a record. The place belongs to this
+ * module, the content format to `c4s-runner` (M07). Only a Run writes there,
+ * and it reaches `main` only through accepting a shadow (M17): neither the
+ * server nor a human writes it directly, so nothing here creates it — this
+ * function only names it, and `.gitignore` never covers it.
+ */
+export function homeRunsDir(home: string): string {
+  return path.join(homeConfigDir(home), 'runs');
 }
 
 function lockPath(home: string): string {

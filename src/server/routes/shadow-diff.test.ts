@@ -255,6 +255,36 @@ describe('M17 shadow diff — GET /api/shadow-diff (2.1.46)', () => {
     expect(off.body.error.code).toBe('GIT_UNAVAILABLE');
   });
 
+  it('[entity:get-api-shadow-diff] [section:nemiv2qh] GET /api/shadow-diff?ref=<runId>/work (2.1.64) — in a workspace with a home, outsideSpecFiles skips the own Run record directory and keeps another Run\'s record directory, a root of another project and other files', async () => {
+    // The workspace home is the repository root; another project of the workspace lives in `other/`.
+    releaseService.setWorkspaceHome(() => dir);
+    const tip = await shadow('run-7/work', c1, [
+      {
+        edit: () => {
+          write('pages/a.md', 'A shadow');
+          write('.claude4spec/runs/run-7/run.json', '{"runId":"run-7"}\n');
+          write('.claude4spec/runs/run-7/report.md', '# Run 7\n');
+          write('.claude4spec/runs/run-8/run.json', '{"runId":"run-8"}\n');
+          write('other/pages/x.md', 'X shadow');
+          write('src/app.ts', 'export {};\n');
+        },
+        message: 'Run turn',
+      },
+    ]);
+    const res = await get('run-7/work');
+    expect(res.status).toBe(200);
+    expect(res.body.shadow).toEqual({ id: 'run-7/work', tipSha: tip });
+    expect(res.body.outsideSpecFiles).toEqual(['.claude4spec/runs/run-8/run.json', 'other/pages/x.md', 'src/app.ts']);
+    expect(res.body.touchesReleases).toBe(false);
+
+    // Without a home there is no exemption: the own record directory is outside the specification too.
+    releaseService.setWorkspaceHome(() => null);
+    const noHome = await get('run-7/work');
+    expect(noHome.body.outsideSpecFiles).toEqual(
+      expect.arrayContaining(['.claude4spec/runs/run-7/report.md', '.claude4spec/runs/run-7/run.json']),
+    );
+  });
+
   it('[entity:shadow-diff-response] the payload carries every required field with its type — mode, shadow, head, base, masterAhead, conflicts, mergePreview, outsideSpecFiles, touchesReleases, commits, entities, pages, before — and nothing else', async () => {
     const tip = await baseScenario();
     const res = await get('run-1/spec');

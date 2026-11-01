@@ -9,7 +9,7 @@ import type { ReleaseService } from '../services/release.js';
  * delta of one shadow.
  *
  * `GET /?ref=<shadow id>` — the id (ref name without `refs/runs/`, e.g.
- * `<runId>/spec`) travels percent-encoded in the query, never in a path segment,
+ * `<runId>/work`) travels percent-encoded in the query, never in a path segment,
  * because it may contain `/`. The route is the only rendering of the operation
  * `shadow_diff` and adds no semantics of its own: refusals (`VALIDATION`,
  * `GIT_UNAVAILABLE`, `SHADOW_NOT_FOUND`) come from the service and are rendered

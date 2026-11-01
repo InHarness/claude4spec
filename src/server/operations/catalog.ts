@@ -32,6 +32,18 @@
  * specification content, but without it a project-scoped catalog is unreachable
  * from outside.
  *
+ * 2.1.64 (M43 `l3admit0`, `hueys3ol`): an agent turn is ordered AS AN
+ * OPERATION in three forms — a child turn ordered from inside a turn
+ * (`run_turn`), a peer's turn in the peer's project (`ask`), and a **Run on a
+ * runner host** (`run_remote`, with its reads `get_run` / `cancel_run`): an
+ * agent turn over the whole workspace's specification, executed on a remote
+ * host and ordered from inside a turn. A turn the caller holds in its own
+ * top-level thread has no row. Git under a Run does not take the order out of
+ * the catalog: ordering a Run may commit and push the plan file before the Run
+ * starts, but that commit and push are an effect of a lower layer — the
+ * subject stays the turn over the specification, so `run_remote` stays in the
+ * catalog while git as such stays outside it.
+ *
  * 0.2.99 adds the instruction exception: an operation whose subject is the
  * instruction governing how this specification is written — the convention its
  * content must obey, with the methodology of applying it — belongs to the catalog

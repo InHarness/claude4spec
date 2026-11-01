@@ -194,6 +194,34 @@ export interface GitPushResult {
 }
 
 /**
+ * 2.1.64 (M28 xp56ebqc, `checkPathOnUpstream(path)`): is one file — path
+ * relative to `rootPath` — on the current branch's upstream in the same form
+ * as on HEAD? `on-upstream` carries the upstream's remote address with its
+ * credentials removed (`http(s)`: no userinfo; SSH: user kept, password
+ * dropped), the branch name on the remote and the full sha of the upstream tip.
+ */
+export type GitUpstreamPathResult =
+  | { status: 'on-upstream'; remote: string; branch: string; tipSha: string }
+  | { status: 'skipped' }
+  | { status: 'no-upstream' }
+  | { status: 'busy' }
+  | { status: 'path-dirty' }
+  | { status: 'path-differs' }
+  | { status: 'error'; message: string };
+
+/**
+ * 2.1.64 (M28 ejwze5r4, `publishFile(path)`): commit of exactly one path and a
+ * push of the current branch to its upstream, without any later sync.
+ */
+export type GitPublishResult =
+  | { status: 'published'; sha: string; branch: string }
+  | { status: 'nothing-to-publish' }
+  | { status: 'skipped' }
+  | { status: 'no-upstream' }
+  | { status: 'busy' }
+  | { status: 'error'; message: string; recovery: GitErrorRecovery };
+
+/**
  * 0.1.124: shared shape for the `gitSync` field riding the synchronous
  * create/update-release responses — `CreateReleaseResponse`,
  * `UpdateReleaseResponse`. 2.1.14: on create `null` means the gated entry
@@ -238,7 +266,7 @@ export interface GitRefDiff {
  * whose commits live in a ref of the `refs/runs/` namespace.
  */
 export interface GitShadow {
-  /** The ref name without the `refs/runs/` prefix, e.g. `'<runId>/spec'`. */
+  /** The ref name without the `refs/runs/` prefix, e.g. `'<runId>/work'`. */
   id: string;
   /** SHA of the commit the ref points at. */
   tipSha: string;
