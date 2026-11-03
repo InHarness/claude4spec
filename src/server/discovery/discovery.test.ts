@@ -2617,6 +2617,68 @@ describe('discovery core', () => {
   });
 
   /**
+   * 2.1.65 (M19 `q91m4kgl`, `2apqeg9q`) — `check_consistency` and
+   * `find_references` read every page whole: there is no byte threshold past
+   * which content stops being read. The page is prose only (no JSX, no
+   * backticks) and over 1 MiB in UTF-8 bytes; the tags sit in its LAST section.
+   */
+  describe('2.1.65 — whole-page reads, no byte threshold', () => {
+    const MIB = 1024 * 1024;
+
+    /** A prose page over 1 MiB in UTF-8 bytes, `last` closing its last section; returns the body and the 1-based line of `last`. */
+    function hugePage(last: string): { body: string; lastLine: number } {
+      const lines: string[] = ['# Duża strona', ''];
+      const prose = 'Zażółć gęślą jaźń — zwykła proza bez kodu i bez znaczników, wiersz numer';
+      let section = 0;
+      while (Buffer.byteLength(lines.join('\n'), 'utf8') <= MIB + 4096) {
+        lines.push(`## Sekcja ${++section}`, '');
+        for (let i = 0; i < 200; i++) lines.push(`${prose} ${section}.${i}.`);
+        lines.push('');
+      }
+      lines.push('## Ostatnia sekcja', '', 'Ostatni akapit przed znacznikami.', '');
+      lines.push(last);
+      const lastLine = lines.length;
+      lines.push('');
+      return { body: lines.join('\n'), lastLine };
+    }
+
+    // ASSUMPTION:dev-0004 — the criterion names rule 1 for a broken `<section_ref/>`, which
+    // the catalogue files under rule 8; both are asserted from the same last line.
+    it('[ac:m19-consistency-no-size-limit] rule 1 (and rule 8) report the broken refs in the last section of a page over 1 MiB', async () => {
+      const { body, lastLine } = hugePage(
+        'Zobacz <inline_mention type="widget" slug="ghost"/> oraz <section_ref anchor="zzzzzz99"/>.',
+      );
+      expect(Buffer.byteLength(body, 'utf8')).toBeGreaterThan(MIB);
+      expect(body).not.toContain('`');
+      await writePage('pages', 'huge.md', body);
+      const c = core([pagesRoot()]);
+
+      // Rule 1 — the missing entity in the last section.
+      const rule1 = await c.checkConsistency({ rule: 1 });
+      expect(rule1.brokenReferences).toEqual([
+        expect.objectContaining({ rootId: 'pages', pagePath: 'huge.md', type: 'widget', slug: 'ghost', line: lastLine, reason: 'missing' }),
+      ]);
+      // Rule 8 — the broken `<section_ref/>` on the same line.
+      const rule8 = await c.checkConsistency({ rule: 8 });
+      expect(rule8.brokenExtensionReferences).toEqual([
+        expect.objectContaining({ rootId: 'pages', pagePath: 'huge.md', anchor: 'zzzzzz99', line: lastLine }),
+      ]);
+    });
+
+    it('[ac:m19-references-no-size-limit] find_references returns the section_ref in the last section of a page over 1 MiB', async () => {
+      const { body, lastLine } = hugePage('Odsyłacz <section_ref anchor="cel12345"/> na samym końcu.');
+      expect(Buffer.byteLength(body, 'utf8')).toBeGreaterThan(MIB);
+      await writePage('pages', 'huge.md', body);
+
+      const found = await core([pagesRoot()]).findReferences({ target: 'section', anchor: 'cel12345' });
+      expect(found.total).toBe(1);
+      expect(found.references).toEqual([
+        expect.objectContaining({ rootId: 'pages', pagePath: 'huge.md', tagType: 'section_ref', line: lastLine }),
+      ]);
+    });
+  });
+
+  /**
    * Rule 14 — a tag entities carry that no embed selects on.
    *
    * The rule exists because a tag is only worth assigning where something reads

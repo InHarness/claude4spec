@@ -5,31 +5,58 @@ import { RawEntityReader } from '../../../src/server/discovery/raw-entity-reader
 
 // R3: GET /api/entities/counts — one light aggregate feeding the sidebar ELEMENTS
 // badges instead of fetching every entity's full list per page view.
-describe('GET /api/entities/counts', () => {
+// 2.1.65 (endpoint `get-api-entities-counts`): the body is ONE map, `{ counts }`,
+// keyed by the project's ACTIVE types only.
+describe('[entity:get-api-entities-counts] GET /api/entities/counts', () => {
   let t: TestApp;
 
   beforeEach(async () => {
     t = await createTestApp();
   });
-  afterEach(() => t.cleanup());
-
-  it('returns a per-type count map, zero for empty types', async () => {
-    const res = await request(t.app).get('/api/entities/counts');
-    expect(res.status).toBe(200);
-    expect(res.body.endpoint).toBe(0);
-    expect(res.body.dto).toBe(0);
-    expect(res.body['ui-view']).toBe(0);
+  afterEach(() => {
+    vi.restoreAllMocks();
+    t.cleanup();
   });
 
-  it('reflects created entities', async () => {
+  it('[entity:get-api-entities-counts] answers 200 with exactly one map `{ counts }` — type → number, zero for empty types', async () => {
+    const res = await request(t.app).get('/api/entities/counts');
+    expect(res.status).toBe(200);
+    expect(Object.keys(res.body)).toEqual(['counts']);
+    expect(res.body.counts.endpoint).toBe(0);
+    expect(res.body.counts.dto).toBe(0);
+    expect(res.body.counts['ui-view']).toBe(0);
+    for (const [type, n] of Object.entries(res.body.counts as Record<string, unknown>)) {
+      expect({ type, integer: Number.isInteger(n) }).toEqual({ type, integer: true });
+    }
+  });
+
+  it('[entity:get-api-entities-counts] reflects created entities', async () => {
     expect((await request(t.app).post('/api/ui-views').send({ title: 'Profile' })).status).toBe(201);
     expect((await request(t.app).post('/api/ui-views').send({ title: 'Settings' })).status).toBe(201);
 
     const res = await request(t.app).get('/api/entities/counts');
     expect(res.status).toBe(200);
-    expect(res.body['ui-view']).toBe(2);
-    expect(res.body.endpoint).toBe(0);
-    expect(res.body.dto).toBe(0);
+    expect(res.body.counts['ui-view']).toBe(2);
+    expect(res.body.counts.endpoint).toBe(0);
+    expect(res.body.counts.dto).toBe(0);
+  });
+
+  it('[entity:get-api-entities-counts] the map holds the active types and nothing else — one entry per type of host.listEntities()', async () => {
+    const res = await request(t.app).get('/api/entities/counts');
+    expect(Object.keys(res.body.counts).sort()).toEqual(t.host.listEntities().map((m) => m.type).sort());
+  });
+
+  it('[entity:get-api-entities-counts] counts each type under its manifest default predicate, without loading entity data', async () => {
+    expect((await request(t.app).post('/api/acs').send({ title: 'kept active' })).status).toBe(201);
+    expect((await request(t.app).post('/api/acs').send({ title: 'deprecated one', status: 'deprecated' })).status).toBe(201);
+    const loads = ['getEntity', 'getEntities', 'findByTag', 'listSlugs'] as const;
+    const spies = loads.map((m) => vi.spyOn(RawEntityReader.prototype, m));
+    const count = vi.spyOn(RawEntityReader.prototype, 'count');
+    const res = await request(t.app).get('/api/entities/counts');
+    // `ac` declares `status in [active]` as its default predicate.
+    expect(res.body.counts.ac).toBe(1);
+    expect(count).toHaveBeenCalledWith('ac');
+    for (const spy of spies) expect(spy).not.toHaveBeenCalled();
   });
 });
 
@@ -73,7 +100,7 @@ describe('entity counts — one number per type, whoever asks', () => {
     expect(acB.status).toBe(201);
 
     const count = vi.spyOn(RawEntityReader.prototype, 'count');
-    const sidebar = (await request(t.app).get('/api/entities/counts')).body as Record<string, number>;
+    const sidebar = (await request(t.app).get('/api/entities/counts')).body.counts as Record<string, number>;
     const sidebarCalls = new Set(count.mock.calls.map((c) => c[0]));
     count.mockClear();
 
@@ -100,12 +127,12 @@ describe('entity counts — one number per type, whoever asks', () => {
     expect(count).not.toHaveBeenCalled();
   });
 
-  it('a deactivated type drops out of the sidebar aggregate', async () => {
-    const before = (await request(t.app).get('/api/entities/counts')).body as Record<string, number>;
+  it('[entity:get-api-entities-counts] a deactivated type drops out of the sidebar aggregate — no entry, not a zero', async () => {
+    const before = (await request(t.app).get('/api/entities/counts')).body.counts as Record<string, number>;
     expect(before).toHaveProperty('ui-view');
     const listEntities = t.host.listEntities.bind(t.host);
     vi.spyOn(t.host, 'listEntities').mockImplementation(() => listEntities().filter((m) => m.type !== 'ui-view'));
-    const after = (await request(t.app).get('/api/entities/counts')).body as Record<string, number>;
+    const after = (await request(t.app).get('/api/entities/counts')).body.counts as Record<string, number>;
     expect(after).not.toHaveProperty('ui-view');
     expect(after).toHaveProperty('dto');
   });

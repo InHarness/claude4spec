@@ -3,7 +3,11 @@ import { ReactNodeViewRenderer } from '@tiptap/react';
 import { serializeXmlTag } from '../../../shared/xml-tags.js';
 import { maskTagAttributeValues } from '../../../shared/code-ranges.js';
 import { getXmlTag, listXmlTags } from '../../../shared/xml-markup/registry.js';
-import { registeredTagRegexAnchored } from '../../../shared/xml-markup/pattern.js';
+import {
+  XML_BLOCK_RULE_NAME,
+  matchRegisteredTagAt,
+  registeredTagBlockRule,
+} from '../../../shared/xml-markup/block-rule.js';
 import { XmlTagView } from './views/XmlTagView.js';
 import { provideXmlTagNodes } from '../registry.js';
 
@@ -35,7 +39,7 @@ function toPairedHtml(kind: string, attrs: string | undefined): string {
 
 /** A registered tag matching at the start of `text`, or null. */
 export function matchXmlTagAt(text: string): RegExpExecArray | null {
-  return registeredTagRegexAnchored()?.exec(text) ?? null;
+  return matchRegisteredTagAt(text);
 }
 
 // These rules cover EVERY registered name at once, whichever node installed
@@ -47,32 +51,14 @@ function setupXmlMarkdownRules(md: any) {
   if (md.__claude4specXmlRules) return;
   md.__claude4specXmlRules = true;
 
+  // The block rule is M51's, shared with the server scanner
+  // (`shared/xml-markup/block-rule.ts`): a block-form tag alone on its line is
+  // a block node; an INLINE tag opening a line is prose and starts a paragraph,
+  // where `xml_inline` turns it into its node.
   md.block.ruler.before(
     'html_block',
-    'xml_block',
-    (state: any, startLine: number, endLine: number, silent: boolean) => {
-      const pos = state.bMarks[startLine] + state.tShift[startLine];
-      const max = state.eMarks[startLine];
-      const line = state.src.slice(pos, max);
-      const match = matchXmlTagAt(line);
-      if (!match) return false;
-      if (getXmlTag(match[1]!)?.form !== 'block') {
-        // An INLINE tag opening a line is prose: it belongs to a paragraph,
-        // where `xml_inline` turns it into its node. Without this, a name
-        // markdown-it accepts as an HTML tag (`todo` has no underscore) alone
-        // on its line would be taken by `html_block` as raw HTML — unpaired —
-        // and the DOM would nest what follows inside it. Never a terminator.
-        if (silent) return false;
-        return paragraphRule(state)(state, startLine, endLine, false);
-      }
-      if (line.slice(match[0].length).trim() !== '') return false;
-      if (silent) return true;
-      const token = state.push('html_block', '', 0);
-      token.content = toPairedHtml(match[1]!, match[2]);
-      token.map = [startLine, startLine + 1];
-      state.line = startLine + 1;
-      return true;
-    },
+    XML_BLOCK_RULE_NAME,
+    registeredTagBlockRule({ tokenType: 'html_block', content: toPairedHtml }),
   );
 
   // A backtick inside a tag's attribute value is not an inline-code delimiter.
@@ -126,12 +112,6 @@ function setupXmlMarkdownRules(md: any) {
     state.pos += match[0].length;
     return true;
   });
-}
-
-/** markdown-it's own `paragraph` block rule. */
-function paragraphRule(state: any): (state: any, start: number, end: number, silent: boolean) => boolean {
-  const rule = state.md.block.ruler.__rules__.find((r: { name: string }) => r.name === 'paragraph');
-  return rule.fn;
 }
 
 /** The paragraph with tag attribute values masked; null when masking is a no-op. */

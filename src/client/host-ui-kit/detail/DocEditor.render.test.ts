@@ -61,54 +61,9 @@ vi.mock('@tiptap/react', async (importOriginal) => {
 import { DocEditor, type DocEditorProps } from './DocEditor.js';
 import type * as Published from '../../../plugin-types/ui.js';
 import type { PopoverRequest } from '../../ui/events.js';
+import { withUnderscoreTypeSelectors } from '../../../../tests/helpers/underscore-type-selectors.js';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
-// ── happy-dom: bare type selectors with an underscore ──
-const UNDERSCORE_TYPE = /^[a-zA-Z][\w-]*_[\w-]*$/;
-function splitSelectorList(selector: string): string[] {
-  const parts: string[] = [];
-  let depth = 0;
-  let quote: string | null = null;
-  let current = '';
-  for (const ch of selector) {
-    if (quote) {
-      if (ch === quote) quote = null;
-    } else if (ch === '"' || ch === "'") quote = ch;
-    else if (ch === '[' || ch === '(') depth++;
-    else if (ch === ']' || ch === ')') depth--;
-    else if (ch === ',' && depth === 0) {
-      parts.push(current.trim());
-      current = '';
-      continue;
-    }
-    current += ch;
-  }
-  parts.push(current.trim());
-  return parts.filter(Boolean);
-}
-function withUnderscoreTypeSelectors(): () => void {
-  const proto = Element.prototype;
-  const nativeMatches = proto.matches;
-  const nativeQueryAll = proto.querySelectorAll;
-  const needsShim = (selector: string) => splitSelectorList(selector).some((p) => UNDERSCORE_TYPE.test(p));
-  function matches(this: Element, selector: string): boolean {
-    if (!needsShim(selector)) return nativeMatches.call(this, selector);
-    return splitSelectorList(selector).some((part) =>
-      UNDERSCORE_TYPE.test(part) ? this.tagName.toLowerCase() === part.toLowerCase() : nativeMatches.call(this, part),
-    );
-  }
-  function querySelectorAll(this: Element, selector: string) {
-    if (!needsShim(selector)) return nativeQueryAll.call(this, selector);
-    return Array.from(nativeQueryAll.call(this, '*')).filter((el) => matches.call(el, selector));
-  }
-  proto.matches = matches;
-  (proto as { querySelectorAll: unknown }).querySelectorAll = querySelectorAll;
-  return () => {
-    proto.matches = nativeMatches;
-    proto.querySelectorAll = nativeQueryAll;
-  };
-}
 
 let restoreSelectors: (() => void) | null = null;
 beforeAll(() => {

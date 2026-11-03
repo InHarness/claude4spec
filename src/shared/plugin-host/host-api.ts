@@ -805,6 +805,58 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       'a shape that was already passed changes nothing in it. The change is purely additive (rule (2)) and ' +
       'fits within the current baseline, with no bump. `HOST_API_VERSION` stays `2.1.0`.',
   },
+  /*
+   * 2.1.65 (M33 `m33load01`) — four changelog entries the specification moved
+   * out of M13's Version surface paragraph into the Host API changelog. The
+   * surfaces themselves shipped earlier; what is new is the changelog entry,
+   * and "changelog and both registries describe the same set of changes" makes
+   * each of them owe a record here. None bumps `HOST_API_VERSION`.
+   */
+  {
+    release: '2.1.65',
+    slot:
+      '@c4s/plugin-runtime: versionService / tagsService / referencesService / releasesService ' +
+      '(+ hooks, incl. useVersions, useVersionDiff, useReleases) / lineDiffHunks',
+    kind: 'slot-added',
+    summary:
+      'Frontend data services and the line-diff util — additive within the current baseline. The browser ' +
+      'leg of `@c4s/plugin-runtime` carries the frontend data services `versionService`, `tagsService`, ' +
+      '`referencesService` and `releasesService` with their hooks, among them `useVersions`, ' +
+      '`useVersionDiff` and `useReleases`, and the pure line-diff util `lineDiffHunks`. They enter the ' +
+      'published type surface as typed signatures beside the existing names, so no existing call changes. ' +
+      'Purely additive (rule (2)), no bump; `HOST_API_VERSION` stays `2.1.0`.',
+  },
+  {
+    release: '2.1.65',
+    slot: '@c4s/plugin-runtime: McpServerFactory / createMcpServer / mcpTool (facade signatures)',
+    kind: 'slot-added',
+    summary:
+      'The facade type `McpServerFactory` — the return type of the `backend.mcpServer` slot — and the facade ' +
+      'signatures of the `createMcpServer` / `mcpTool` builder re-exported from `@c4s/plugin-runtime` enter ' +
+      'the published surface. The types belong to C4S; the vendor types of `@inharness-ai/agent-adapters` ' +
+      'behind the facade do not enter it. Additive (rule (2)), no bump; `HOST_API_VERSION` stays `2.1.0`.',
+  },
+  {
+    release: '2.1.65',
+    slot: 'ProjectPluginHost.getEntityService(type) / EntityWriter.upsert(type, slug, input, actor, opts)',
+    kind: 'slot-added',
+    summary:
+      'The project activation host gains the optional method `getEntityService(type)`, resolving a ' +
+      'type\'s domain-method service by shape, and the versioned write gets the generic ' +
+      '`upsert(type, slug, input, actor, opts)` instead of per-type methods. The withdrawn per-type ' +
+      'methods were host-internal and no published plugin consumes them. Additive (rule (2)), no bump; ' +
+      '`HOST_API_VERSION` stays `2.1.0`.',
+  },
+  {
+    release: '2.1.65',
+    slot: 'PluginSubagentContribution.maxTurns (omitted → host default; excess clamped)',
+    kind: 'behaviour-changed',
+    summary:
+      'An omitted `maxTurns` in a subagent contribution means the host\'s default turn budget, and an ' +
+      'excess is clamped to the ceiling instead of rejected. The shape of the field does not change — it ' +
+      'was optional and stays optional — only what the host does with its absence. Within the current ' +
+      'baseline, no bump; `HOST_API_VERSION` stays `2.1.0`.',
+  },
 ];
 
 /**

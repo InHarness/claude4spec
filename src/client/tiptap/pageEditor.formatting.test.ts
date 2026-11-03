@@ -27,6 +27,7 @@ import { EditorFactory } from './EditorFactory.js';
 import { FULL_ROOT_EDITOR_PROPS } from './contextSpec.js';
 import type { RegistryContext } from './registry.js';
 import type { PageDetail } from '../../shared/types.js';
+import { withUnderscoreTypeSelectors } from '../../../tests/helpers/underscore-type-selectors.js';
 
 const ctx: RegistryContext = {
   qc: {} as RegistryContext['qc'],
@@ -74,58 +75,6 @@ const detail: PageDetail = {
   body: BODY,
   content: BODY,
 } as PageDetail;
-
-/** A bare type selector happy-dom cannot parse: an element name with an underscore. */
-const UNDERSCORE_TYPE = /^[a-zA-Z][\w-]*_[\w-]*$/;
-
-/** Split a selector list on its top-level commas (none inside `[...]`, `(...)` or quotes). */
-function splitSelectorList(selector: string): string[] {
-  const parts: string[] = [];
-  let depth = 0;
-  let quote: string | null = null;
-  let current = '';
-  for (const ch of selector) {
-    if (quote) {
-      if (ch === quote) quote = null;
-    } else if (ch === '"' || ch === "'") quote = ch;
-    else if (ch === '[' || ch === '(') depth++;
-    else if (ch === ']' || ch === ')') depth--;
-    else if (ch === ',' && depth === 0) {
-      parts.push(current.trim());
-      current = '';
-      continue;
-    }
-    current += ch;
-  }
-  parts.push(current.trim());
-  return parts.filter(Boolean);
-}
-
-function withUnderscoreTypeSelectors(): () => void {
-  const proto = Element.prototype;
-  const nativeMatches = proto.matches;
-  const nativeQueryAll = proto.querySelectorAll;
-  const needsShim = (selector: string) => splitSelectorList(selector).some((p) => UNDERSCORE_TYPE.test(p));
-  function matches(this: Element, selector: string): boolean {
-    if (!needsShim(selector)) return nativeMatches.call(this, selector);
-    return splitSelectorList(selector).some((part) =>
-      UNDERSCORE_TYPE.test(part)
-        ? this.tagName.toLowerCase() === part.toLowerCase()
-        : nativeMatches.call(this, part),
-    );
-  }
-  function querySelectorAll(this: Element, selector: string) {
-    if (!needsShim(selector)) return nativeQueryAll.call(this, selector);
-    // Every descendant in document order, kept when it matches the list.
-    return Array.from(nativeQueryAll.call(this, '*')).filter((el) => matches.call(el, selector));
-  }
-  proto.matches = matches;
-  (proto as { querySelectorAll: unknown }).querySelectorAll = querySelectorAll;
-  return () => {
-    proto.matches = nativeMatches;
-    proto.querySelectorAll = nativeQueryAll;
-  };
-}
 
 let restoreSelectors: (() => void) | null = null;
 beforeAll(() => {

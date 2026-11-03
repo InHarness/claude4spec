@@ -89,6 +89,21 @@ describe('parseSections — excluded ranges', () => {
     expect(r.diagnostics.unclosedCodeBlocks).toEqual([{ openLine: 6 }]);
   });
 
+  it('[entity:check-consistency] 2.1.65 — a fence ended only by its list item or block quote is reported like one open to the end of the page', () => {
+    // M19 rule 16 (`q91m4kgl`): the text after the container is read live, but
+    // what the fence swallowed up to the container's end is lost to the author.
+    const inList = parseSections('## A\n- item\n  ```\n  ## B\n\n## C\n');
+    expect(inList.sections.map((s) => s.heading)).toEqual(['A', 'C']);
+    expect(inList.diagnostics.unclosedCodeBlocks).toEqual([{ openLine: 3 }]);
+
+    const inQuote = parseSections('## A\n> ```\n> ## B\n## C\n');
+    expect(inQuote.sections.map((s) => s.heading)).toEqual(['A', 'C']);
+    expect(inQuote.diagnostics.unclosedCodeBlocks).toEqual([{ openLine: 2 }]);
+
+    // A fence closed inside its container is not reported.
+    expect(parseSections('## A\n- item\n  ```\n  x\n  ```\n## C\n').diagnostics.unclosedCodeBlocks).toEqual([]);
+  });
+
   it('fences are recognised in CRLF text', () => {
     const r = parseSections('## Real\r\n```bash\r\n# comment\r\n```\r\n');
     expect(r.sections.map((s) => s.heading)).toEqual(['Real']);

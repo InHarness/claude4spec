@@ -371,6 +371,30 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
     expect(JSON.stringify(migrationsBetween(0, Number.MAX_SAFE_INTEGER))).not.toMatch(/onCaptionChange|EntityOverlayProps/);
   });
 
+  it('[section:m33load01] 2.1.65: the four in-baseline changelog entries moved into the M33 changelog — data services + lineDiffHunks, the MCP facade, getEntityService + generic upsert, maxTurns — each have an unversioned record, and the Host API version does not grow', () => {
+    const added = HOST_API_UNVERSIONED_CHANGES.filter((c) => c.release === '2.1.65');
+    expect(added.map((c) => c.kind)).toEqual(['slot-added', 'slot-added', 'slot-added', 'behaviour-changed']);
+    const [services, facade, writer, turns] = added;
+    for (const name of ['versionService', 'tagsService', 'referencesService', 'releasesService', 'useVersions', 'useVersionDiff', 'useReleases', 'lineDiffHunks']) {
+      expect(services!.slot).toContain(name);
+    }
+    for (const name of ['McpServerFactory', 'createMcpServer', 'mcpTool']) expect(facade!.slot).toContain(name);
+    expect(facade!.summary).toMatch(/vendor types .* do not enter/);
+    expect(writer!.slot).toContain('getEntityService(type)');
+    expect(writer!.slot).toContain('upsert(type, slug, input, actor, opts)');
+    expect(turns!.slot).toContain('maxTurns');
+    for (const c of added) {
+      expect(c.summary).toMatch(/no bump/);
+      expect(c.uiKitStable).toBeUndefined();
+    }
+    // Recorded after the 2.1.63 entry; no release was cut and no migration descriptor names them.
+    const releases = HOST_API_UNVERSIONED_CHANGES.map((c) => c.release);
+    expect(releases.indexOf('2.1.65')).toBe(releases.lastIndexOf('2.1.63') + 1);
+    expect(HOST_API_VERSION).toBe('2.1.0');
+    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0']);
+    expect(JSON.stringify(migrationsBetween(0, Number.MAX_SAFE_INTEGER))).not.toMatch(/lineDiffHunks|getEntityService|maxTurns/);
+  });
+
   it('[section:m33load01] the composition of UI_KIT_STABLE_COMPONENTS is exactly what the registries record', () => {
     expect(sorted(recordedUiKitStableComponents())).toEqual(sorted(UI_KIT_STABLE_COMPONENTS));
   });

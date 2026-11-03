@@ -35,6 +35,7 @@ import { loadProjectOverlay } from './overlay-loader.js';
 import { PluginRegistryImpl } from './registry.js';
 import type { ProjectPluginHost } from './types.js';
 import { pluginsRouter } from '../../routes/plugins.js';
+import { registerFixtureEnvelope } from '../../../../tests/helpers/fixture-envelope.js';
 
 const PREBUILT = 'c4s-plugin-diagram';
 const FROM_SOURCE = 'c4s-plugin-spreadsheets';
@@ -270,21 +271,21 @@ describe('the real base: built-in envelopes, the prebuilt one included', () => {
 });
 
 describe('[section:m13pool0] a duplicate type within one layer is PLUGIN_TYPE_CONFLICT', () => {
-  it('[section:m13pool0] in the base: registerEntityModule with a type already registered throws PLUGIN_TYPE_CONFLICT — no silent last-wins Map.set; the first module stays', () => {
+  it('[section:m13pool0] in the base: a second envelope contributing a type already registered throws PLUGIN_TYPE_CONFLICT — no silent last-wins Map.set; the first module stays', () => {
     const registry = new PluginRegistryImpl();
     const first = fixtureModule('glossary');
-    registry.registerEntityModule(first);
+    registerFixtureEnvelope(registry, first, '@fixture/first');
 
     let thrown: unknown;
     try {
-      registry.registerEntityModule({ ...fixtureModule('glossary'), label: 'Glossary (second)' });
+      registerFixtureEnvelope(registry, { ...fixtureModule('glossary'), label: 'Glossary (second)' }, '@fixture/second');
     } catch (err) {
       thrown = err;
     }
     expect(thrown).toBeInstanceOf(PluginTypeConflictError);
     expect(thrown).toMatchObject({ code: 'PLUGIN_TYPE_CONFLICT', type: 'glossary' });
     expect((thrown as Error).message).toBe(
-      'PLUGIN_TYPE_CONFLICT: type "glossary" is already registered in the base (direct registration)',
+      'PLUGIN_TYPE_CONFLICT: plugin "@fixture/second" contributes type "glossary", already registered in the base (by plugin "@fixture/first")',
     );
     expect(registry.getAvailable('glossary')?.label).toBe('glossary');
     expect(registry.listAvailable().filter((m) => m.type === 'glossary')).toHaveLength(1);

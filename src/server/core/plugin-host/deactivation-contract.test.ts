@@ -6,6 +6,7 @@ import { buildSystemPrompt } from '../../services/chat-context.js';
 import { upgradeCapture } from '../../serialization/payload-upgrade.js';
 import type { BackendModule } from './types.js';
 import type { RawEntityReader } from '../../discovery/raw-entity-reader.js';
+import { registerFixtureEnvelope } from '../../../../tests/helpers/fixture-envelope.js';
 
 /**
  * 0.2.90 — deactivating a type takes its renderer AND its payload timeline off
@@ -29,8 +30,8 @@ function mod(type: string, over: Partial<BackendModule> = {}): BackendModule {
 
 function hostWith(active: string[]) {
   const registry = new PluginRegistryImpl();
-  registry.registerEntityModule(mod('keeper'));
-  registry.registerEntityModule(mod('widget'));
+  registerFixtureEnvelope(registry, mod('keeper'));
+  registerFixtureEnvelope(registry, mod('widget'));
   return registry.consolidate({ entities: active });
 }
 

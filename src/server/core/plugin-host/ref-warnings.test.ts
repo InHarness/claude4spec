@@ -10,6 +10,7 @@ import { buildBasePluginPackages } from './base-packages.js';
 import { logRefRegistrationWarnings, refRegistrationWarnings } from './ref-warnings.js';
 import type { PluginManifest } from '../../../shared/plugin-host/manifest.js';
 import type { FieldNode } from '../../../shared/plugin-host/data-schema.js';
+import { registerFixtureEnvelope } from '../../../../tests/helpers/fixture-envelope.js';
 
 const REF = { onMissing: 'warn', onDelete: 'leave-dangling' } as const;
 
@@ -39,7 +40,7 @@ function opsPlugin(fields: Record<string, FieldNode>): PluginManifest {
 /** The pool as the server builds it: a built-in `endpoint` first, then the external package. */
 function poolWith(manifest: PluginManifest): PluginRegistryImpl {
   const registry = new PluginRegistryImpl();
-  registry.registerEntityModule(fixtureModule('endpoint'));
+  registerFixtureEnvelope(registry, fixtureModule('endpoint'));
   registry.registerPlugin(manifest);
   return registry;
 }

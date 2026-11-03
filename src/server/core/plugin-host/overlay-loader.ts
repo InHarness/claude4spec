@@ -227,10 +227,11 @@ export async function loadProjectOverlay(
     const rejectedSkills: string[] = [];
     try {
       // M13: synthesizeMount is the same choke point registry.ts's
-      // registerEntityModule uses for base-layer plugins — apply it here too,
-      // or an overlay entity authored with the declarative backend.{service,
-      // crud,routes,mcpServer} style would register successfully but never
-      // get a mount, silently going inert (no DI, no REST, no MCP tools).
+      // `validateAndLower` (and its commit-time slot) uses for base-layer
+      // envelopes — apply it here too, or an overlay entity authored with the
+      // declarative backend.{service,routes,mcpServer} style would register
+      // successfully but never get a mount, silently going inert (no DI, no
+      // REST, no MCP tools).
       // 0.2.4: and so is `attachComposition`, for the same reason. A descriptor
       // is a licence to DELETE from named tables; an overlay plugin is
       // project-committed code that arrives with a `git clone`, so it is the

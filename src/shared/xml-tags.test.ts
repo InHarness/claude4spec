@@ -161,9 +161,9 @@ describe('the M51 pattern', () => {
     expect(parseXmlTags(md).map((t) => t.attrs.comment)).toEqual(['y']);
   });
 
-  it('a tag in a 4-space indented block stays live (not a non-content range)', () => {
+  it('2.1.65 — a tag in a 4-space indented block is code, as in the editor', () => {
     const md = 'para\n\n    <inline_mention type="dto" slug="indented"/>\n';
-    expect(parseXmlTags(md).map((t) => t.attrs.slug)).toEqual(['indented']);
+    expect(parseXmlTags(md).map((t) => t.attrs.slug)).toEqual([]);
   });
 
   it('an unclosed fence hides every tag below it', () => {

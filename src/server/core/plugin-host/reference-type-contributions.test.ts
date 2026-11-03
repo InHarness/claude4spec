@@ -10,6 +10,7 @@ import { loadProjectOverlay } from './overlay-loader.js';
 import { getXmlTag, listXmlTags } from '../../../shared/xml-markup/registry.js';
 import type { EntityContribution, PluginManifest } from '../../../shared/plugin-host/manifest.js';
 import type { BackendModule } from './types.js';
+import { registerFixtureEnvelope } from '../../../../tests/helpers/fixture-envelope.js';
 
 /**
  * 0.2.15 — this file used to cover the two declarative reference-type
@@ -85,9 +86,9 @@ beforeEach(() => {
 });
 
 describe('an entity module contributes no XML tag', () => {
-  it('registerEntityModule registers nothing in the XML markup registry', () => {
+  it('an entity module registered through its envelope registers nothing in the XML markup registry', () => {
     const registry = new PluginRegistryImpl();
-    registry.registerEntityModule(widgetModule());
+    registerFixtureEnvelope(registry, widgetModule());
     expect(hostTagNames()).toEqual(before);
   });
 

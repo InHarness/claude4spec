@@ -1,18 +1,24 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
-import { isPassthroughTag, matchJsxTagOpen, findJsxSpanEnd } from '../../../shared/jsx-passthrough.js';
+import {
+  JSX_BLOCK_RULE_NAME,
+  findJsxSpanEnd,
+  isPassthroughTag,
+  jsxBlockRule,
+  matchJsxTagOpen,
+} from '../../../shared/jsx-passthrough.js';
 import { isRegisteredXmlTag } from '../../../shared/xml-markup/registry.js';
 import { escapeRawAttr } from '../../../shared/raw-jsx-escape.js';
 import { matchXmlTagAt } from './xmlNodes.js';
 import { RawJsxView } from './views/RawJsxView.js';
 
 /**
- * M20 — unknown `.mdx` JSX component tags (name outside the M51 registry) are
- * preserved BYTE-PERFECT in a dedicated raw code node rather than passed through
- * to tiptap-markdown (which would map/strip them). This reactivates the dormant
- * L8 contract `markdownIt = { kind: 'block_content' }` as the fallback for
- * unknown tags (its previous consumer, the content-bearing `<diagram>`, moved to
- * an entity in v0.1.64).
+ * M20 — unknown JSX component tags (name outside the M51 registry), in EVERY
+ * markdown content of the editor — `.md`, `.mdx`, entity descriptions, plans —
+ * not only `.mdx` (`m20mdxjsx`), are preserved BYTE-PERFECT in a dedicated raw
+ * code node rather than passed through to tiptap-markdown (which would
+ * map/strip them). The L8 contract `markdownIt = { kind: 'block_content' }` is
+ * the fallback for unknown tags.
  *
  * Roundtrip mechanism: tiptap-markdown roundtrips through the DOM, not through
  * markdown-it tokens, so the verbatim bytes are smuggled in a `data-c4s-raw`
@@ -20,9 +26,16 @@ import { RawJsxView } from './views/RawJsxView.js';
  * back on parse) and re-emitted by a custom serializer that writes them verbatim
  * — crucially WITHOUT a ``` fence, which would change the file and break MDX.
  *
- * Mapping: self-closing tags (anywhere) and mid-prose paired tags → inline node
- * (inline `<code>`); a paired `<Tag>…</Tag>` opening at line start and closing a
- * line → block node (code block).
+ * Two parser rules (`wry28ibe`):
+ *  - BLOCK — M51's block rule of a JSX region (`jsxBlockRule`, shared with the
+ *    server scanner, nesting counted by name in the same container) → block
+ *    node with the region's bytes;
+ *  - INLINE — in front of `backticks` (`lb9dq0ed`), closing searched only in
+ *    the current inline block → inline node: a self-closing tag, a pair with
+ *    its inner text, or — for an unpaired tag and each half of a pair split by
+ *    an inline-block, table-cell or container boundary — the tag alone, the
+ *    rest of the paragraph staying markdown with live chips (M51 `c1m5maz3`).
+ * A tag quoted in inline code is code, never a raw node.
  *
  * Three disjoint gates route a tag here (M20 `m20mdxjsx`, `ctx4prof` rule 6):
  *   1. `isPassthroughTag(name)` — component-shaped name outside the registry
@@ -78,76 +91,94 @@ function isUnrecognisedTagShape(src: string, pos: number, name: string): boolean
   return isRegisteredXmlTag(name) && matchXmlTagAt(src.slice(pos)) === null;
 }
 
+/** A closing tag `</Name>` anchored at the start of `text`. */
+const CLOSE_AT_START_RE = /^<\/([A-Za-z][\w.-]*)\s*>/;
+
+/** markdown-it's own `paragraph` block rule of the parser `state` belongs to. */
+function paragraphRule(state: any): (state: any, start: number, end: number, silent: boolean) => boolean {
+  const rule = state.md.block.ruler.__rules__.find((r: { name: string }) => r.name === 'paragraph');
+  return rule.fn;
+}
+
+/** Block rule name: an unpaired raw tag opening a line starts a paragraph. */
+export const RAW_JSX_LINE_RULE_NAME = 'raw_jsx_line';
+/** Inline rule name: the raw JSX rule in front of `backticks` (M20 `lb9dq0ed`). */
+export const RAW_JSX_INLINE_RULE_NAME = 'raw_jsx_inline';
+
 export function setupRawJsxRules(md: any, isRaw: RawTagPredicate = isPassthroughTag): void {
   if (md.__claude4specRawJsxRules) return;
   md.__claude4specRawJsxRules = true;
 
-  // BLOCK: a component tag that owns its line — a self-closing `<Name …/>` alone
-  // on the line, or a paired `<Name …>…</Name>` opening at line start and closing
-  // a line (depth-counting nested same-name pairs). Claimed here so it does not
-  // fall through to stock `html_block` (which would drop the unknown element).
-  // Mid-prose tags are left to the inline rule.
+  /** Does the opening tag named `name` at `pos` go to the raw node (gates 1–3)? */
+  const acceptsOpen = (name: string, src: string, pos: number): boolean =>
+    isRaw(name) || isUnrecognisedTagShape(src, pos, name);
+
+  // BLOCK: M51's block rule of a JSX region (`61f2qnb2`), the SAME rule the
+  // server scanner's tokenizer runs (`sjjkc8bt`) — a self-closing tag alone on
+  // its line, or a pair opening a line and closed in the same container with
+  // nothing after the closing tag. Only what the region becomes is the
+  // editor's: a block raw node with the region's exact bytes.
   md.block.ruler.before(
     'html_block',
-    'raw_jsx_block',
-    (state: any, startLine: number, endLine: number, silent: boolean) => {
-      const pos = state.bMarks[startLine] + state.tShift[startLine];
-      if (state.src.charCodeAt(pos) !== 0x3c /* < */) return false;
-      const open = matchJsxTagOpen(state.src, pos);
-      if (!open || !(isRaw(open.name) || isUnrecognisedTagShape(state.src, pos, open.name))) return false;
-
-      // Self-closing alone on its own line → block raw node.
-      if (open.selfClosing) {
-        if (state.src.slice(open.openEnd, state.eMarks[startLine]).trim() !== '') return false;
-        if (silent) return true;
-        const token = state.push('html_block', '', 0);
-        token.content = emitBlock(state.src.slice(pos, open.openEnd));
-        token.map = [startLine, startLine + 1];
-        state.line = startLine + 1;
-        return true;
-      }
-
-      const spanEnd = findJsxSpanEnd(state.src, pos, open.name);
-      if (spanEnd === -1) return false;
-
-      // Locate the line the close tag ends on; require nothing but whitespace
-      // after it (otherwise it's an inline-in-prose case → let the inline rule handle).
-      let closeLine = startLine;
-      for (let i = startLine; i < endLine; i++) {
-        if (spanEnd - 1 >= state.bMarks[i] && spanEnd - 1 <= state.eMarks[i]) {
-          closeLine = i;
-          break;
-        }
-      }
-      if (state.src.slice(spanEnd, state.eMarks[closeLine]).trim() !== '') return false;
-      if (silent) return true;
-
-      const token = state.push('html_block', '', 0);
-      token.content = emitBlock(state.src.slice(pos, spanEnd));
-      token.map = [startLine, closeLine + 1];
-      state.line = closeLine + 1;
-      return true;
-    },
+    JSX_BLOCK_RULE_NAME,
+    jsxBlockRule({ accepts: acceptsOpen, emit: emitBlock }),
   );
 
-  // INLINE: self-closing `<Name …/>` anywhere, or a paired `<Name …>…</Name>`
-  // embedded in prose (the block rule already claimed own-line paired blocks).
-  md.inline.ruler.before('html_inline', 'raw_jsx_inline', (state: any, silent: boolean) => {
+  // An opening the block rule declined (unpaired, or its pair split by a
+  // container boundary) and a lone closing tag opening a line are prose: they
+  // start a paragraph, where the inline rule turns the tag alone into a raw
+  // node and the rest of the paragraph stays markdown with live chips (M51
+  // `c1m5maz3`). Without this, markdown-it's `html_block` would take the line
+  // up to the next blank one as raw HTML, and the unknown element — with the
+  // tags after it — would be dropped by the DOM step. Never a terminator: in
+  // no `alt` chain, so it does not interrupt a paragraph.
+  md.block.ruler.before('html_block', RAW_JSX_LINE_RULE_NAME, (state: any, startLine: number, endLine: number, silent: boolean) => {
+    if (state.sCount[startLine] - state.blkIndent >= 4) return false;
+    const src: string = state.src;
+    const pos: number = state.bMarks[startLine] + state.tShift[startLine];
+    if (src.charCodeAt(pos) !== 0x3c /* < */) return false;
+    const line = src.slice(pos, state.eMarks[startLine]);
+    const close = CLOSE_AT_START_RE.exec(line);
+    const open = close ? null : matchJsxTagOpen(src, pos);
+    if (close ? !isRaw(close[1]!) : !open || !acceptsOpen(open.name, src, pos)) return false;
+    if (silent) return false;
+    return paragraphRule(state)(state, startLine, endLine, false);
+  });
+
+  // INLINE: in front of `backticks` (M20 `lb9dq0ed`): between inline code and
+  // a tag the construct that starts earlier wins — a tag quoted in inline code
+  // is code (`backticks` took it at its earlier backtick), and a backtick after
+  // a tag's `<` opens no code. Closing is searched only in the current inline
+  // block (M51 `5wf420mr`): `state.src` is that block's text.
+  //  - a self-closing `<Name …/>` anywhere → raw node of the tag;
+  //  - a pair `<Name …>…</Name>` closed in this inline block → raw node of the region;
+  //  - an unpaired opening (no close in this inline block — also one half of a
+  //    pair split by an inline-block, table-cell or container boundary) → raw
+  //    node of the tag alone; the rest stays markdown (M51 `c1m5maz3`);
+  //  - a lone closing `</Name>` (the other half) → raw node of the tag alone.
+  md.inline.ruler.before('backticks', RAW_JSX_INLINE_RULE_NAME, (state: any, silent: boolean) => {
     const pos = state.pos;
-    if (state.src.charCodeAt(pos) !== 0x3c /* < */) return false;
-    const open = matchJsxTagOpen(state.src, pos);
-    if (!open || !(isRaw(open.name) || isUnrecognisedTagShape(state.src, pos, open.name))) return false;
+    const src: string = state.src;
+    if (src.charCodeAt(pos) !== 0x3c /* < */) return false;
 
     let end: number;
-    if (open.selfClosing) {
-      end = open.openEnd;
+    const open = matchJsxTagOpen(src, pos);
+    if (open) {
+      if (!acceptsOpen(open.name, src, pos) || open.openEnd > state.posMax) return false;
+      if (open.selfClosing) {
+        end = open.openEnd;
+      } else {
+        const spanEnd = findJsxSpanEnd(src, pos, open.name, [], state.posMax);
+        end = spanEnd === -1 ? open.openEnd : spanEnd;
+      }
     } else {
-      end = findJsxSpanEnd(state.src, pos, open.name);
-      if (end === -1 || end > state.posMax) return false;
+      const close = CLOSE_AT_START_RE.exec(src.slice(pos, state.posMax));
+      if (!close || !isRaw(close[1]!)) return false;
+      end = pos + close[0].length;
     }
     if (!silent) {
       const token = state.push('html_inline', '', 0);
-      token.content = emitInline(state.src.slice(pos, end));
+      token.content = emitInline(src.slice(pos, end));
     }
     state.pos = end;
     return true;
@@ -177,6 +208,13 @@ export const RawJsxInlineNode = Node.create<RawJsxOptions>({
   atom: true,
   selectable: true,
   draggable: true,
+  // The node's text is its raw bytes. tiptap-markdown's table serializer
+  // writes a cell only when its `textContent` is not blank — without this a
+  // cell holding nothing but a raw tag (`| <Callout> | </Callout> |`) would be
+  // saved empty.
+  extendNodeSchema() {
+    return { leafText: (node: { attrs: Record<string, unknown> }) => String(node.attrs.raw ?? '') };
+  },
   addOptions() {
     return { mountedTags: null };
   },

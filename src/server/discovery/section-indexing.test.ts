@@ -245,6 +245,23 @@ describe('discovery core over the real section indexer', () => {
       }
     });
 
+    it('[entity:check-consistency] 2.1.65 — rule 16 also reports a fence that only the end of its list item or block quote ends', async () => {
+      await index('in-list.md', ['# Top', '', '- item', '  ```', '  ## Swallowed', '', 'after the list', ''].join('\n'));
+      await index('in-quote.md', ['# Top', '', '> ```', '> ## Swallowed', 'plain', ''].join('\n'));
+      await index('closed-in-list.md', ['# Top', '', '- item', '  ```', '  x', '  ```', '', 'after', ''].join('\n'));
+      const report = await core.checkConsistency({ rule: 16 });
+      const rows = report.unclosedCodeBlocks as Array<{ rootId: string; pagePath: string; line: number }>;
+      expect(rows.map((r) => r.pagePath).sort()).toEqual(['in-list.md', 'in-quote.md']);
+      for (const r of rows) {
+        expect(r.rootId).toBe('pages');
+        // `line` is the fence's opening line, in the page body's coordinates.
+        const body = (await pages.read(r.pagePath)).body.split('\n');
+        expect(body[r.line - 1]!.trim().replace(/^>\s*/, '')).toBe('```');
+      }
+      // Informational, never an error.
+      expect(report.summary.errors).toBe(0);
+    });
+
     it('rule accepts 1–16; anything else is INVALID_ARGUMENT naming the catalogue', async () => {
       await expect(core.checkConsistency({ rule: 17 })).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
       for (let r = 1; r <= 16; r++) await expect(core.checkConsistency({ rule: r })).resolves.toBeTruthy();

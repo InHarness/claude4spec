@@ -29,6 +29,7 @@ import { PluginRegistryImpl } from './registry.js';
 import { compositionOf } from '../../../shared/plugin-host/composition.js';
 import type { BackendModule } from './types.js';
 import type { DataDeclaration } from '../../../shared/plugin-host/data-schema.js';
+import { registerFixtureEnvelope } from '../../../../tests/helpers/fixture-envelope.js';
 
 const BASE_DATA: DataDeclaration = { schema: { title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' }, name: { type: 'string', required: true } } };
 
@@ -63,12 +64,12 @@ function withJunction(type: string, projectionTable?: string): BackendModule {
 }
 
 const register = (m: BackendModule, registry = new PluginRegistryImpl()) => () =>
-  registry.registerEntityModule(m);
+  registerFixtureEnvelope(registry, m);
 
 describe('composition descriptor — derived from data.schema', () => {
   it('names the main table after the type slug, underscored', () => {
     const registry = new PluginRegistryImpl();
-    registry.registerEntityModule(mod('ui-view'));
+    registerFixtureEnvelope(registry, mod('ui-view'));
 
     expect(compositionOf(registry.getAvailable('ui-view'))).toMatchObject({
       type: 'ui-view',
@@ -81,7 +82,7 @@ describe('composition descriptor — derived from data.schema', () => {
 
   it('gives every type a scoped entity_tag entry', () => {
     const registry = new PluginRegistryImpl();
-    registry.registerEntityModule(mod('glossary'));
+    registerFixtureEnvelope(registry, mod('glossary'));
 
     expect(compositionOf(registry.getAvailable('glossary'))?.sharedTables).toEqual([
       { table: 'entity_tag', scopePredicate: "entity_type = 'glossary'" },
@@ -98,7 +99,7 @@ describe('composition descriptor — derived from data.schema', () => {
    */
   it('derives a junction with a KNOWN binding column', () => {
     const registry = new PluginRegistryImpl();
-    registry.registerEntityModule(withJunction('widget'));
+    registerFixtureEnvelope(registry, withJunction('widget'));
 
     expect(compositionOf(registry.getAvailable('widget'))?.derivedTables).toEqual([
       { table: 'widget_links', bindingColumn: 'widget_slug' },
@@ -107,7 +108,7 @@ describe('composition descriptor — derived from data.schema', () => {
 
   it('honours an explicit projectionTable override', () => {
     const registry = new PluginRegistryImpl();
-    registry.registerEntityModule(withJunction('widget', 'widget_link'));
+    registerFixtureEnvelope(registry, withJunction('widget', 'widget_link'));
 
     expect(compositionOf(registry.getAvailable('widget'))?.derivedTables).toEqual([
       { table: 'widget_link', bindingColumn: 'widget_slug' },
@@ -118,7 +119,7 @@ describe('composition descriptor — derived from data.schema', () => {
     const registry = new PluginRegistryImpl();
     const module = withJunction('widget');
     const beforeRegistration = compositionOf(module);
-    registry.registerEntityModule(module);
+    registerFixtureEnvelope(registry, module);
 
     expect(compositionOf(registry.getAvailable('widget'))).toEqual(beforeRegistration);
   });
@@ -126,7 +127,8 @@ describe('composition descriptor — derived from data.schema', () => {
   it('leaves an embedded collection out of the descriptor entirely', () => {
     // No `keyFields` ⇒ embedded JSON on the parent row ⇒ no table to clear.
     const registry = new PluginRegistryImpl();
-    registry.registerEntityModule(
+    registerFixtureEnvelope(
+      registry,
       mod('widget', {
         schema: {
           title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
@@ -163,7 +165,7 @@ describe('composition descriptor — rejection at registration', () => {
 
   it('rejects two types deriving the same projection table', () => {
     const registry = new PluginRegistryImpl();
-    registry.registerEntityModule(withJunction('widget', 'widget_links'));
+    registerFixtureEnvelope(registry, withJunction('widget', 'widget_links'));
 
     expect(register(withJunction('widget_links', 'widget_links_x'), registry)).toThrow(
       /already declared by entity type "widget"/,

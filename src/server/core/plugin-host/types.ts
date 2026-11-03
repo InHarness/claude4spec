@@ -513,17 +513,19 @@ export interface UnloadedSkillSlug {
  * it derives a per-project ProjectPluginHost and mutates nothing here.
  */
 export interface PluginRegistry {
-  /**
-   * Register one entity module directly. 2.1.63 (M13 `m13pool0`): a type the
-   * base already holds throws `PluginTypeConflictError` (`PLUGIN_TYPE_CONFLICT`)
-   * — no silent last-wins.
+  /*
+   * 2.1.65 (M13 `tvqcehf5`, `mzjftvzp`) — no `registerEntityModule` here. It is
+   * the registry's internal fan-out slot, called only by `registerPlugin`:
+   * there is no direct registration of a type bypassing the envelope.
    */
-  registerEntityModule(module: BackendModule): void;
 
   /**
-   * M33: register a runtime plugin manifest. Validates the manifest shape and
-   * fans `contributes.entities[]` out to `registerEntityModule(...)` (each
-   * lowered from its authoring shape). Throws `PluginManifestError` on a
+   * M33: register a runtime plugin manifest — the ONLY way a type enters the
+   * registry. Validates the manifest shape and fans `contributes.entities[]`
+   * out to the internal `registerEntityModule` slot (each lowered from its
+   * authoring shape). 2.1.63 (M13 `m13pool0`): a type the base already holds
+   * throws `PluginTypeConflictError` (`PLUGIN_TYPE_CONFLICT`) — no silent
+   * last-wins. Throws `PluginManifestError` on a
    * structurally invalid manifest, and `PluginTypeConflictError` when a type it
    * contributes is already in the base (or declared twice in the manifest) —
    * the loader catches both per-package. Does

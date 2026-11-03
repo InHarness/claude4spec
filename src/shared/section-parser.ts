@@ -26,7 +26,7 @@ export interface LineRange {
   end: number;
 }
 
-export type ExcludedRangeKind = 'fence' | 'jsx' | 'html-comment';
+export type ExcludedRangeKind = 'fence' | 'indented-code' | 'jsx' | 'html-comment';
 
 export interface ParsedPreamble {
   /** Reserved key, outside the anchor alphabet. */
@@ -77,7 +77,11 @@ export interface SectionParseResult {
   diagnostics: {
     orphanAnchors: OrphanAnchor[];
     anchorLinesInCode: AnchorLineInCode[];
-    /** Also a multi-line HTML comment nothing closes (`openLine` — the `<!--` line). */
+    /**
+     * Code blocks nothing closes — to the end of the page or (2.1.65) only by
+     * the end of the list item / block quote they opened in — and multi-line
+     * HTML comments likewise (`openLine` — the `<!--` line).
+     */
     unclosedCodeBlocks: Array<{ openLine: number }>;
   };
 }

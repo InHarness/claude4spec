@@ -96,6 +96,24 @@ describe('SectionsService.propagateAnchorChange', () => {
       'see @a.md#newanch1 and [x](a.md#newanch1)',
     );
   });
+
+  it('leaves a tag and a page link inside a 4-space indented code block alike (2.1.65)', async () => {
+    const body = [
+      '# One',
+      '',
+      'see <section_ref anchor="oldanch1"/> and @a.md#oldanch1',
+      '',
+      '    <section_ref anchor="oldanch1"/> and @a.md#oldanch1',
+      '',
+    ].join('\n');
+    write('one.md', body);
+
+    await sections.propagateAnchorChange('oldanch1', 'newanch1');
+
+    const out = fs.readFileSync(path.join(pages.root, 'one.md'), 'utf-8').split('\n');
+    expect(out[2]).toBe('see <section_ref anchor="newanch1"/> and @a.md#newanch1');
+    expect(out[4]).toBe('    <section_ref anchor="oldanch1"/> and @a.md#oldanch1');
+  });
 });
 
 describe('rewritePageLinkAnchor', () => {
@@ -117,6 +135,15 @@ describe('rewritePageLinkAnchor', () => {
         '```',
         '',
       ].join('\n'),
+    );
+  });
+});
+
+describe('rewritePageLinkAnchor — indented code blocks (2.1.65)', () => {
+  it('leaves an @path#anchor link inside a 4-space indented block alone, as fenced code', () => {
+    const src = ['@a.md#oldanch1', '', '    @a.md#oldanch1 [c](c.md#oldanch1)', '', 'after @b.md#oldanch1', ''].join('\n');
+    expect(rewritePageLinkAnchor(src, 'oldanch1', 'newanch1')).toBe(
+      ['@a.md#newanch1', '', '    @a.md#oldanch1 [c](c.md#oldanch1)', '', 'after @b.md#newanch1', ''].join('\n'),
     );
   });
 });

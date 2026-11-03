@@ -220,6 +220,22 @@ async function bootFrontendPluginsInner(router: AppRouter): Promise<void> {
 }
 
 /**
+ * Re-read the project's activation from `GET /api/_meta/entities` and apply it
+ * to the client host. A failed read keeps the activation the tab has: nothing
+ * is applied, so nothing is announced.
+ */
+async function reapplyActivation(reason: string): Promise<void> {
+  let state: Awaited<ReturnType<typeof metaApi.entities>>;
+  try {
+    state = await metaApi.entities();
+  } catch (err) {
+    console.warn(`[plugin-host] ${reason} — /api/_meta/entities refetch failed; keeping the current activation`, err);
+    return;
+  }
+  clientPluginHost.applyActivation(state);
+}
+
+/**
  * M33 (`m33l7pln` step 5) — react to a `plugin:reloaded` WS event.
  *
  * Refetch the manifest of this tab's project and import the frontends it newly
@@ -239,6 +255,14 @@ export async function reloadFrontendPlugins(
     return;
   }
   if (!PROJECT_ID) return;
+  // 2.1.65 (M13 `m13l11sc`, Runtime binding): a plugin reload is one of the
+  // moments the client APPLIES ACTIVATION again — with the initial seed, the
+  // Settings → Entities refresh and the trust decision. The pool changed on the
+  // server, so the active set is re-read and applied, and the client registry's
+  // version grows with it (`applyActivation` bumps it on every application);
+  // `onRegistryChanged` subscribers hear it. Before the manifest refetch, so a
+  // newly contributed type is already active when its frontend registers.
+  await reapplyActivation('plugin reload');
   if (reloaded) {
     const imported = importedEntries.get(reloaded.name);
     if (imported !== undefined && (reloaded.tier === undefined || entryTier(imported) === reloaded.tier)) {
@@ -268,9 +292,15 @@ export async function reloadFrontendPlugins(
  * module it has, so only the newly advertised frontends load. `mountFrontend`
  * then re-pins the routes, so a re-activated type gets its tab AND its route.
  *
- * Deliberately NOT wired to any WS event: a change saved in another browser tab
- * or a hand edit of `config.json` leaves this tab's ELEMENTS as they are until
- * the page is reloaded (M50 `6z6uzzhv`).
+ * This function itself is not wired to any WS event: no event announces an
+ * activation change, so a change saved in another browser tab or a hand edit of
+ * `config.json` leaves this tab's ELEMENTS as they are (M50 `6z6uzzhv`) —
+ * UNTIL the next moment the client applies activation again. Since 2.1.65
+ * (M13 `m13l11sc`, Runtime binding) one of those moments is a `plugin:reloaded`
+ * event: `reloadFrontendPlugins` re-reads `GET /api/_meta/entities` and applies
+ * it too, so such a change also lands in this tab on the next plugin reload,
+ * not only on a page reload. ASSUMPTION:dev-0003 — M50 `6z6uzzhv` still says
+ * "until the page is reloaded"; the M13 runtime binding is followed here.
  */
 export async function refreshPluginActivation(router: AppRouter | null = activeRouter): Promise<void> {
   clientPluginHost.applyActivation(await metaApi.entities());

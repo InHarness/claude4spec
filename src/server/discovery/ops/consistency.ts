@@ -715,9 +715,11 @@ interface StructureRows {
  * heading-shaped line in that block (the trace of a failed injection); without
  * the heading line below it there is no row. Rule 16 — a fence or multi-line
  * HTML comment nothing closes, `line` being its opening line: it runs to the
- * end of the page, so every XML tag below it drops out of slug rewrites, rules
- * 1 and 3, find_references and the todo index (M51) — this row is how the
- * author learns that visibility was lost. Both are
+ * end of the page, or ends only with the list item or block quote it was
+ * opened in. Every XML tag up to that end drops out of slug rewrites, rules
+ * 1 and 3, find_references and the todo index (M51); text after the container
+ * is read as usual — this row is how the author learns that visibility was
+ * lost. Both are
  * informational and never block a write; both run on every scanned root.
  */
 function collectStructure(

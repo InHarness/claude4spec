@@ -333,3 +333,11 @@ describe('cross-root resolution (2.1.8)', () => {
     expect(fs.readFileSync(path.join(services.get('c')!.root, 'src.md'), 'utf-8')).toContain('@x2.md');
   });
 });
+
+describe('parseLinks — code blocks are not links (2.1.65)', () => {
+  it('skips a link inside a 4-space indented code block, as inside a fence', () => {
+    const body = ['@a.md#kkz1e7d6', '', '    @b.md#kkz1e7d6 [x](c.md)', '', '```', '@d.md', '```', '', '@e.md', ''].join('\n');
+    const { candidates } = parseLinks(body);
+    expect(candidates.map((c) => c.targetPath).sort()).toEqual(['a.md', 'e.md']);
+  });
+});

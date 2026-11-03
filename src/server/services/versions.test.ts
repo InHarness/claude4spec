@@ -10,6 +10,7 @@ import { fixtureModule } from '../../../tests/helpers/fixture-module.js';
 import type { MountContext, PluginHost } from '../core/plugin-host/types.js';
 import type { EntityStore } from './entity-store.js';
 import type { TagsService } from './tags.js';
+import { registerFixtureEnvelope } from '../../../tests/helpers/fixture-envelope.js';
 
 describe('VersionService.restore', () => {
   let db: Database.Database;
@@ -139,7 +140,7 @@ describe('VersionService.captureEntitySnapshot — generic plugin types (M17)', 
     const db = new Database(':memory:');
     runMigrations(db);
     const registry = new PluginRegistryImpl();
-    registry.registerEntityModule(fixtureModule(type, opts));
+    registerFixtureEnvelope(registry, fixtureModule(type, opts));
     const host = registry.consolidate({ entities: [type] });
     // 2.0.0: the fixture's table comes from its `data.schema`, generated here
     // exactly as ProjectContext generates it — before mount, not by it.

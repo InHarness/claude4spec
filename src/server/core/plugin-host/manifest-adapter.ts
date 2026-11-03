@@ -8,10 +8,12 @@
  * narrows the authoring `backend.{service,routes,mcpServer}` slots (typed
  * `unknown` in the shared/dep-free `EntityContribution`) into their typed
  * `BackendModule` counterparts; `synthesizeMount` (below) is the single choke
- * point — called uniformly by `PluginRegistryImpl.registerEntityModule` for
- * BOTH externally-loaded plugins (via this file) AND in-repo entities (whose
- * `plugin.ts` builds a `BackendModule` directly, bypassing `EntityContribution`)
- * — that turns those slots into an equivalent imperative `mount`. An explicit
+ * point that turns those slots into an equivalent imperative `mount`.
+ * 2.1.65 (M13 `tvqcehf5`, `mzjftvzp`): every type — built-in or external —
+ * enters through its package's envelope, so every module reaching the registry
+ * was lowered here first (`registerPlugin` → `validateAndLower`, and the
+ * overlay loader likewise); there is no hand-built `BackendModule` registered
+ * directly, bypassing `EntityContribution`, any more. An explicit
  * `backend.mount` (full-power escape hatch) always takes precedence and is
  * passed through untouched.
  */
@@ -291,14 +293,13 @@ const REMOVED_SERIALIZER_SLOTS: ReadonlyArray<[string, string]> = [
 ];
 
 /**
- * The M13 half of registration, exported because it must run for EVERY module,
- * not only for one lowered from an `EntityContribution`.
+ * The M13 half of registration, exported because the registry runs it at
+ * commit time, in its internal `registerEntityModule` slot.
  *
- * In-repo entities build a `BackendModule` by hand and never pass through
- * `assertContribution`, so the checks below were reaching exactly the plugins
- * least likely to need them and skipping the four types shipped in this repo.
- * `PluginRegistryImpl.registerEntityModule` is the choke point both origins do
- * share, and it calls this.
+ * 2.1.65 (M13 `tvqcehf5`, `mzjftvzp`): every module that reaches that slot was
+ * lowered from an `EntityContribution` by `registerPlugin` — there is no direct
+ * registration of a hand-built `BackendModule` any more — so the slot is the
+ * commit-time backstop that what `registerPlugin` validated is what lands.
  */
 export function assertSerializationContribution(
   type: string,
@@ -486,9 +487,10 @@ function assertContribution(c: EntityContribution): void {
 /**
  * Convert one `EntityContribution` (shared authoring shape with `unknown`
  * server payloads) into a fully-typed `BackendModule`. Narrows the declarative
- * slots into their typed counterparts but does NOT synthesize `mount` —
- * `PluginRegistryImpl.registerEntityModule` applies `synthesizeMount`
- * uniformly to every module regardless of origin (see module docstring).
+ * slots into their typed counterparts but does NOT synthesize `mount` — the
+ * caller (`PluginRegistryImpl.validateAndLower`, the overlay loader) applies
+ * `synthesizeMount` next, and the registry reapplies it at commit time (a no-op
+ * once `mount` is set).
  */
 export function lowerEntityContribution(c: EntityContribution): BackendModule {
   assertContribution(c);
@@ -511,8 +513,9 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
         | undefined,
       // No `auxTables`: `REMOVED_BACKEND_SLOTS` above throws on it, so a
       // contribution carrying one never reaches this line. The slot survives on
-      // the server-side `BackendModule` for in-repo modules built by hand — it
-      // is only the AUTHORING surface that stopped offering it.
+      // the server-side `BackendModule` type only; since 2.1.65 (M13
+      // `tvqcehf5`) every module is lowered from an envelope, so no
+      // registration path fills it any more.
     };
   }
 
@@ -569,10 +572,12 @@ export function applyReservedTitleDefault(module: BackendModule): BackendModule 
  * M13 — the single lowering choke point: turn a module's declarative backend
  * slots (`service`/`routes`/`mcpServer`) into an equivalent imperative
  * `mount`, iff no explicit `mount` was already supplied (the escape hatch
- * always wins, unchanged). Called by `PluginRegistryImpl.registerEntityModule`
- * for every module — both in-repo entities (hand-built `BackendModule`, no
- * `EntityContribution` involved) and externally-loaded plugins (already run
- * through `lowerEntityContribution` first).
+ * always wins, unchanged). Called for every module after
+ * `lowerEntityContribution` — by `PluginRegistryImpl.validateAndLower` and the
+ * overlay loader — and again by the registry's internal `registerEntityModule`
+ * slot at commit time. 2.1.65 (M13 `tvqcehf5`): every module, built-in ones
+ * included, comes from an envelope; there is no hand-built `BackendModule`
+ * registered directly.
  *
  * Idempotent / side-effect-free at registration time: it only builds a new
  * `mount` closure, never calls it. Throws `PluginManifestError` if

@@ -56,6 +56,7 @@ import type { ExternalSurfaceDeps } from '../../src/server/mcp/surface.js';
 import type { ChatContextType } from '../../src/shared/entities.js';
 import { SkillRegistry, SkillResolver } from '../../src/server/services/skill-registry.js';
 import { skillsRouter } from '../../src/server/routes/skills.js';
+import { registerFixtureEnvelope } from './fixture-envelope.js';
 
 /** One synthetic context scope for the whole harness — production uses `context:<projectId>`. */
 const TEST_SCOPE: WatchScope = 'context:test';
@@ -108,7 +109,7 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
   // behave identically to core types for the rest of this function. A fixture
   // reusing an envelope's type is `PLUGIN_TYPE_CONFLICT` (2.1.63) — use the
   // envelope's type as loaded instead.
-  for (const mod of opts.extraModules ?? []) registry.registerEntityModule(mod);
+  for (const mod of opts.extraModules ?? []) registerFixtureEnvelope(registry, mod);
   const host = registry.consolidate(null);
 
   /**

@@ -398,7 +398,7 @@ describe('Dialog — sm tier and the destructive confirm (M34/L12)', () => {
     act(() => root.render(createElement(ConfirmLayer)));
     let answer: Promise<boolean> | undefined;
     act(() => {
-      answer = confirmDestructive('entity-delete', { title: 'Delete endpoint?', body: 'This cannot be undone.' });
+      answer = confirmDestructive('endpoint-delete', { title: 'Delete endpoint?', body: 'This cannot be undone.' });
     });
     expect(part('panel')!.style.width).toBe('400px');
     // The 400px comes from `width`, not from retuning a tier: no tier is 400.

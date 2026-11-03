@@ -8,13 +8,15 @@
  * Pure string functions (no DOM, no Node-only APIs); compiled into both the
  * client and server builds via `src/shared`.
  *
- * A 4-space indented code block is deliberately NOT a range here (M51), even
- * though the editor's markdown-it tokenizer recognises it: an entity tag in
- * such a block stays live for the server and `find_references` returns it.
+ * Block boundaries come from the block tokenizer shared with the editor
+ * (`markdown-blocks.ts`); positions inside a block are computed here, char by
+ * char, because the byte-exact rewrite contract needs them (`sjjkc8bt`). A
+ * 4-space indented block is a code block, as in the editor (2.1.65).
  */
 
-import { findUnknownJsxRanges } from './jsx-passthrough.js';
-import { findXmlTagCandidates } from './xml-tags.js';
+import { findJsxSpanEnd, isAsciiPunct, isPassthroughTag, matchJsxTagOpen } from './jsx-passthrough.js';
+import { scanBlockStructure } from './markdown-blocks.js';
+import { findXmlTagCandidates, type XmlTag } from './xml-tags.js';
 
 export type CodeRange = [start: number, end: number]; // half-open [start, end)
 
@@ -27,212 +29,45 @@ export interface InlineCodeSpan {
 
 /**
  * 2.0.0 — one block of text the reader never treats as live markdown: a fenced
- * code block, or a multi-line HTML comment. `startLine`/`endLine` are 1-based
- * and inclusive; `start`/`end` are half-open char offsets (`end` stops before
- * the newline of the last line). `closed: false` — nothing closes the block, so
- * it runs to end of document.
+ * or (2.1.65) indented code block, or a multi-line HTML comment.
+ * `startLine`/`endLine` are 1-based and inclusive; `start`/`end` are half-open
+ * char offsets (`end` stops before the newline of the last line).
+ * `closed: false` — nothing closes the block, so it runs to end of document.
+ * `endsWithContainer: true` — nothing of its own closes the block either (no
+ * closing fence, no `-->`), but the list item or block quote it opened in ends
+ * it before the end of the document (`closed` stays true: the text after the
+ * container is read live).
  */
 export interface ExcludedBlock {
-  kind: 'fence' | 'html-comment';
+  kind: 'fence' | 'indented-code' | 'html-comment';
   start: number;
   end: number;
   startLine: number;
   endLine: number;
   closed: boolean;
-}
-
-interface LineSplit {
-  /** Offset of each line's first char. */
-  starts: number[];
-  lines: string[];
-}
-
-function splitLines(text: string): LineSplit {
-  const lines = text.split('\n');
-  const starts: number[] = [];
-  let off = 0;
-  for (const l of lines) {
-    starts.push(off);
-    off += l.length + 1;
-  }
-  return { starts, lines };
-}
-
-const QUOTE_RE = /^ {0,3}> ?/;
-const LIST_MARKER_RE = /^( {0,3})([-*+]|\d{1,9}[.)])( {1,4}|$)/;
-
-/** Strip up to `max` block-quote markers (`>`); returns the count and the rest. */
-function stripQuotes(line: string, max = Infinity): { quotes: number; body: string } {
-  let body = line;
-  let quotes = 0;
-  while (quotes < max) {
-    const m = QUOTE_RE.exec(body);
-    if (!m) break;
-    body = body.slice(m[0].length);
-    quotes++;
-  }
-  return { quotes, body };
-}
-
-function leadingSpaces(s: string): number {
-  let i = 0;
-  while (i < s.length && s[i] === ' ') i++;
-  return i;
-}
-
-const FENCE_OPEN_RE = /^(`{3,}|~{3,})(.*)$/;
-
-/**
- * A CRLF file splits on `\n` into lines ending in `\r`, and `$` (no `m` flag)
- * does not match before a `\r` — without this every fence of such a file would
- * go unrecognized. Classification only: offsets still come from the raw lines.
- */
-function dropCR(line: string): string {
-  return line.endsWith('\r') ? line.slice(0, -1) : line;
-}
-
-interface FenceOpen {
-  char: string;
-  len: number;
-  quotes: number;
-  /** Column (after quote markers) where the owning list item's content starts; 0 outside lists. */
-  base: number;
+  endsWithContainer: boolean;
 }
 
 /**
- * Does `line` open a fence? CommonMark rules: ≥3 backticks or tildes, at most 3
- * spaces of indent relative to the enclosing container, and a backtick fence's
- * info string may not contain a backtick (that line is inline code, not a
- * fence). The opening fence may follow a container marker (`- `, `1. `, `> `)
- * on the same line, or sit on a continuation line of a list item — then its
- * indent is measured from that item's content column (`itemIndents`).
- */
-function matchFenceOpen(line: string, itemIndents: readonly number[]): FenceOpen | null {
-  const { quotes, body } = stripQuotes(dropCR(line));
-  let rest = body;
-  let base = 0;
-  // Same-line list markers (possibly nested: `- 1. ```).
-  for (;;) {
-    const m = LIST_MARKER_RE.exec(rest);
-    if (!m || m[3] === '') break;
-    const w = m[0].length;
-    base += w;
-    rest = rest.slice(w);
-  }
-  let indent = leadingSpaces(rest);
-  if (base === 0) {
-    // Continuation line: measure from the innermost list item that still owns it.
-    let owner = 0;
-    for (const w of itemIndents) if (w <= indent && w > owner) owner = w;
-    base = owner;
-    indent -= owner;
-  }
-  if (indent > 3) return null;
-  const m = FENCE_OPEN_RE.exec(rest.slice(leadingSpaces(rest)));
-  if (!m) return null;
-  const run = m[1]!;
-  if (run[0] === '`' && m[2]!.includes('`')) return null;
-  return { char: run[0]!, len: run.length, quotes, base };
-}
-
-type FenceStep = 'content' | 'close' | 'ends-before';
-
-/** Classify a line inside an open fence: still content, the closing fence, or a container end. */
-function fenceStep(line: string, open: FenceOpen): FenceStep {
-  const { quotes, body } = stripQuotes(dropCR(line), open.quotes);
-  if (quotes < open.quotes) {
-    // Leaving the block quote ends the fence (no lazy continuation for code).
-    return 'ends-before';
-  }
-  const blank = body.trim() === '';
-  const indent = leadingSpaces(body);
-  if (open.base > 0 && !blank && indent < open.base) return 'ends-before';
-  const rel = indent - open.base;
-  if (rel < 0 || rel > 3) return 'content';
-  const closeRe = new RegExp(`^\\${open.char}{${open.len},}[ \\t]*$`);
-  return closeRe.test(body.slice(indent)) ? 'close' : 'content';
-}
-
-const COMMENT_OPEN_RE = /^ {0,3}<!--/;
-
-/**
- * Fenced code blocks and multi-line HTML comments, in document order. A block
- * nothing closes runs to end of document (`closed: false`).
+ * Code blocks (fenced and indented) and multi-line HTML comments, in document
+ * order, with the boundaries the shared block tokenizer gives them
+ * (`markdown-blocks.ts`). A fence follows CommonMark: it may open after a list
+ * or quote marker, its closing indent is measured from the container's
+ * content, a shorter or different fence inside is content; a fence nothing
+ * closes ends with the container it opened in, or with the document
+ * (`closed: false` only for the latter).
  *
- * Multi-line HTML comment: a line indented at most 3 spaces that starts with
- * `<!--` and carries no `-->`; it runs through the first later line containing
- * `-->`. A one-line comment (an anchor line included) is NOT a block.
+ * Multi-line HTML comment: a block opening with `<!--` whose first line carries
+ * no `-->`; it runs through the first later line containing `-->`. A one-line
+ * comment (an anchor line included) is NOT a block.
  */
 export function scanExcludedBlocks(
   text: string,
   opts: { htmlComments?: boolean } = {},
 ): ExcludedBlock[] {
   const withComments = opts.htmlComments ?? true;
-  const { starts, lines } = splitLines(text);
-  const lineEnd = (i: number) => starts[i]! + lines[i]!.length;
-  const blocks: ExcludedBlock[] = [];
-  /** Content columns of the list items open around the current line. */
-  let itemIndents: number[] = [];
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i]!;
-    const fence = matchFenceOpen(line, itemIndents);
-    if (fence) {
-      let j = i + 1;
-      let endIdx = lines.length - 1;
-      let closed = false;
-      while (j < lines.length) {
-        const step = fenceStep(lines[j]!, fence);
-        if (step === 'close') {
-          endIdx = j;
-          closed = true;
-          break;
-        }
-        if (step === 'ends-before') {
-          endIdx = j - 1;
-          closed = true;
-          break;
-        }
-        j++;
-      }
-      blocks.push({
-        kind: 'fence',
-        start: starts[i]!,
-        end: lineEnd(endIdx),
-        startLine: i + 1,
-        endLine: endIdx + 1,
-        closed,
-      });
-      i = endIdx + 1;
-      continue;
-    }
-    if (withComments && COMMENT_OPEN_RE.test(line) && !line.includes('-->')) {
-      let j = i + 1;
-      while (j < lines.length && !lines[j]!.includes('-->')) j++;
-      const closed = j < lines.length;
-      const endIdx = closed ? j : lines.length - 1;
-      blocks.push({
-        kind: 'html-comment',
-        start: starts[i]!,
-        end: lineEnd(endIdx),
-        startLine: i + 1,
-        endLine: endIdx + 1,
-        closed,
-      });
-      i = endIdx + 1;
-      continue;
-    }
-    // Track list-item content columns for continuation-line fences.
-    const { body } = stripQuotes(line);
-    if (body.trim() !== '') {
-      const indent = leadingSpaces(body);
-      itemIndents = itemIndents.filter((w) => w <= indent);
-      const m = LIST_MARKER_RE.exec(body.slice(0));
-      if (m && m[3] !== '') itemIndents.push(m[0].length);
-    }
-    i++;
-  }
-  return blocks;
+  const { blocks } = scanBlockStructure(text);
+  return withComments ? blocks : blocks.filter((b) => b.kind !== 'html-comment');
 }
 
 function gapsBetween(len: number, blocks: ReadonlyArray<{ start: number; end: number }>): CodeRange[] {
@@ -251,18 +86,34 @@ function gapsBetween(len: number, blocks: ReadonlyArray<{ start: number; end: nu
 
 /**
  * Scan fenced code blocks (``` / ~~~), returning the fenced ranges and the
- * gaps between them. An unclosed fence extends to end-of-string — matching how
- * react-markdown parses a mid-stream message (everything after an open fence is
- * code until it closes), so the streaming-transient case shows the raw tag.
+ * gaps between them. A fence nothing closes ends with the container it opened
+ * in (list item, block quote) or, at top level, with the end of the string —
+ * matching how react-markdown parses a mid-stream message (everything after an
+ * open top-level fence is code until it closes), so the streaming-transient
+ * case shows the raw tag.
  *
  * 2.0.0 — CommonMark fences: the opening fence may follow a list / quote marker
  * and a backtick fence's info string may not contain a backtick. Tilde fences
  * are handled; tildes never start inline code.
  */
 export function scanFences(text: string): { fenced: CodeRange[]; gaps: CodeRange[] } {
-  const blocks = scanExcludedBlocks(text, { htmlComments: false });
+  const blocks = scanExcludedBlocks(text, { htmlComments: false }).filter((b) => b.kind === 'fence');
   return {
     fenced: blocks.map((b) => [b.start, b.end] as CodeRange),
+    gaps: gapsBetween(text.length, blocks),
+  };
+}
+
+/**
+ * Code blocks of both kinds — fenced and (2.1.65) 4-space indented — returning
+ * their ranges and the gaps between them. What a server-side rewrite or link
+ * scan skips, so that it treats an indented block exactly as the tag parser
+ * does (a `<section_ref>` and an `@path#anchor` link in it are both examples).
+ */
+export function scanCodeBlocks(text: string): { code: CodeRange[]; gaps: CodeRange[] } {
+  const blocks = scanExcludedBlocks(text, { htmlComments: false });
+  return {
+    code: blocks.map((b) => [b.start, b.end] as CodeRange),
     gaps: gapsBetween(text.length, blocks),
   };
 }
@@ -336,58 +187,186 @@ export function maskTagAttributeValues(text: string, gaps?: CodeRange[]): string
 
 /** One excluded region with its kind — the section parser's `excludedRanges` source. */
 export interface ExcludedRegion {
-  kind: 'fence' | 'jsx' | 'html-comment';
+  kind: 'fence' | 'indented-code' | 'jsx' | 'html-comment';
   start: number;
   end: number;
 }
 
 export interface ExcludedScan {
-  /** Block-level regions (fences, multi-line HTML comments, unknown JSX), sorted by start. */
+  /** Regions (code blocks, multi-line HTML comments, block and inline JSX), sorted by start. */
   regions: ExcludedRegion[];
-  /** Blocks nothing closes — they run to end of document. */
+  /**
+   * Blocks without a closing line of their own — those running to the end of
+   * the document and (2.1.65, M19 rule 16) those ended only by the end of the
+   * container they opened in. Both hide what lies under them up to that end.
+   */
   unclosed: ExcludedBlock[];
   /** Every excluded char range incl. inline code spans, sorted — what tag filters test against. */
   ranges: CodeRange[];
 }
 
+const ATTR = `\\s+[a-zA-Z_:][a-zA-Z0-9:._-]*(?:\\s*=\\s*(?:[^"'=<>\`\\x00-\\x20]+|'[^']*'|"[^"]*"))?`;
 /**
- * M51 — THE non-content scanner. One pass, one resolution order, one result
- * for every server consumer (tag parser and section parser alike):
- *  1. fenced code blocks, unknown-JSX component regions (in every markdown
- *     file — the extension is not an input, 2.1.7) and multi-line HTML
- *     comments;
- *  2. tag candidates (`findXmlTagCandidates`) in the text left over;
- *  3. backtick-pair scan over that text with the candidates' attribute values
- *     masked (a backtick in `caption="…"` is not a code delimiter);
- *  4. callers drop the candidates the resulting ranges intersect.
- * A 4-space indented block is NOT a range on the server side.
+ * The `<…>` constructs the editor's inline tokenizer consumes besides registered
+ * tags and JSX regions (CommonMark raw HTML and autolinks): an HTML open or
+ * closing tag (a stray JSX closing tag too), a one-line comment, a processing
+ * instruction, a declaration, CDATA, a URI or an e-mail autolink.
  */
-export function scanExcluded(text: string): ExcludedScan {
-  const blocks = scanExcludedBlocks(text);
-  const regions: ExcludedRegion[] = blocks.map((b) => ({ kind: b.kind, start: b.start, end: b.end }));
-  const blockRanges: CodeRange[] = blocks.map((b) => [b.start, b.end] as CodeRange);
-  for (const [start, end] of findUnknownJsxRanges(text, blockRanges)) {
-    regions.push({ kind: 'jsx', start, end });
+const INLINE_ANGLE_RE = new RegExp(
+  [
+    `<[A-Za-z][A-Za-z0-9-]*(?:${ATTR})*\\s*\\/?>`,
+    `<\\/[A-Za-z][\\w.-]*\\s*>`,
+    `<!---?>|<!--(?:[^-]|-[^-]|--[^>])*-->`,
+    `<[?][\\s\\S]*?[?]>`,
+    `<![A-Za-z][^>]*>`,
+    `<!\\[CDATA\\[[\\s\\S]*?\\]\\]>`,
+    `<[a-zA-Z][a-zA-Z0-9+.\\-]{1,31}:[^<>\\x00-\\x20]*>`,
+    `<[a-zA-Z0-9.!#$%&'*+/=?^_\`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*>`,
+  ].join('|'),
+  'y',
+);
+
+/** `text` with the backtick-carrying attribute values of `candidates` blanked (same length). */
+function maskCandidates(text: string, candidates: readonly XmlTag[]): string {
+  let out = text;
+  for (const tag of candidates) {
+    if (!tag.raw.includes('`')) continue;
+    ATTR_VALUE_REGEX.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = ATTR_VALUE_REGEX.exec(tag.raw)) !== null) {
+      const value = m[1]!;
+      if (!value.includes('`')) continue;
+      const vStart = tag.start + m.index + m[0].length - 1 - value.length;
+      out = out.slice(0, vStart) + ' '.repeat(value.length) + out.slice(vStart + value.length);
+    }
   }
-  regions.sort((a, b) => a.start - b.start);
-  const gaps = gapsBetweenRanges(text.length, regions);
-  const ranges: CodeRange[] = regions.map((r) => [r.start, r.end] as CodeRange);
-  const masked = maskTagAttributeValues(text, gaps);
-  for (const span of findInlineCodeSpans(masked, gaps)) ranges.push([span.start, span.end]);
-  ranges.sort((a, b) => a[0] - b[0]);
-  return { regions, unclosed: blocks.filter((b) => !b.closed), ranges };
+  return out;
 }
 
-/** Exact gaps between (sorted, possibly mid-line) ranges. */
-function gapsBetweenRanges(len: number, ranges: ReadonlyArray<{ start: number; end: number }>): CodeRange[] {
-  const gaps: CodeRange[] = [];
-  let cursor = 0;
-  for (const r of ranges) {
-    if (r.start > cursor) gaps.push([cursor, r.start]);
-    cursor = Math.max(cursor, r.end);
+/** Offset of the next backtick run of exactly `len` in `[from, end)`, or -1. */
+function closingRun(text: string, from: number, end: number, len: number): number {
+  let j = from;
+  while (j < end) {
+    if (text.charCodeAt(j) !== 0x60) {
+      j++;
+      continue;
+    }
+    let k = j;
+    while (k < end && text.charCodeAt(k) === 0x60) k++;
+    if (k - j === len) return j;
+    j = k;
   }
-  if (cursor < len) gaps.push([cursor, len]);
-  return gaps;
+  return -1;
+}
+
+/**
+ * Step 3 of the scan inside ONE inline block `[start, end)` of the masked text:
+ * a walk by position in which the construct that starts earlier wins
+ * (`m6t9i6z9`). A run of N backticks opens inline code closed by the nearest
+ * later run of exactly N in the same block, else it is literal; a backslash
+ * before ASCII punctuation escapes it. A registered tag candidate, an HTML
+ * construct or an autolink is skipped whole, so a backtick inside it opens
+ * nothing. A component-shaped tag outside the registry opens an inline JSX
+ * region: self-closing, or paired with a close in the same block (nesting
+ * counted by name); an unpaired opening is plain text and defines no range.
+ */
+function scanInlineBlock(
+  masked: string,
+  start: number,
+  end: number,
+  candidateEnd: ReadonlyMap<number, number>,
+  code: CodeRange[],
+  jsx: CodeRange[],
+): void {
+  let i = start;
+  while (i < end) {
+    const ch = masked.charCodeAt(i);
+    if (ch === 0x5c /* \ */) {
+      i += i + 1 < end && isAsciiPunct(masked.charCodeAt(i + 1)) ? 2 : 1;
+      continue;
+    }
+    if (ch === 0x60 /* ` */) {
+      let runEnd = i;
+      while (runEnd < end && masked.charCodeAt(runEnd) === 0x60) runEnd++;
+      const len = runEnd - i;
+      const closer = closingRun(masked, runEnd, end, len);
+      if (closer === -1) {
+        i = runEnd;
+        continue;
+      }
+      code.push([i, closer + len]);
+      i = closer + len;
+      continue;
+    }
+    if (ch === 0x3c /* < */) {
+      const cand = candidateEnd.get(i);
+      if (cand !== undefined && cand <= end) {
+        i = cand;
+        continue;
+      }
+      const open = matchJsxTagOpen(masked, i);
+      if (open && open.openEnd <= end && isPassthroughTag(open.name)) {
+        if (open.selfClosing) {
+          jsx.push([i, open.openEnd]);
+          i = open.openEnd;
+          continue;
+        }
+        const close = findJsxSpanEnd(masked, i, open.name, [], end);
+        if (close !== -1) {
+          jsx.push([i, close]);
+          i = close;
+          continue;
+        }
+        i = open.openEnd;
+        continue;
+      }
+      INLINE_ANGLE_RE.lastIndex = 0;
+      const m = INLINE_ANGLE_RE.exec(masked.slice(i, end));
+      if (m) {
+        i += m[0].length;
+        continue;
+      }
+    }
+    i++;
+  }
+}
+
+/**
+ * M51 — THE non-content scanner. One pass, one resolution order, one result
+ * for every server consumer (tag parser and section parser alike), in the
+ * order `sjjkc8bt` fixes:
+ *  1. block structure from the tokenizer shared with the editor: code blocks
+ *     (fenced and indented), multi-line HTML comments, block JSX regions and
+ *     the boundaries of inline blocks (`markdown-blocks.ts`). Other HTML blocks
+ *     are no range. The extension is not an input (2.1.7);
+ *  2. registered tag candidates (`findXmlTagCandidates`);
+ *  3. inside every inline block, over the text with the candidates' attribute
+ *     values masked, a walk by position: inline code, inline JSX regions and
+ *     the other `<…>` constructs — the earlier one wins
+ *     ({@link scanInlineBlock});
+ *  4. callers drop the candidates the resulting ranges intersect.
+ * No range ever crosses an inline block, and no JSX region runs to the end of
+ * a document or container: an unpaired opening defines none.
+ */
+export function scanExcluded(text: string): ExcludedScan {
+  const { blocks, jsxBlocks, inlineBlocks } = scanBlockStructure(text);
+  const regions: ExcludedRegion[] = blocks.map((b) => ({ kind: b.kind, start: b.start, end: b.end }));
+  for (const [start, end] of jsxBlocks) regions.push({ kind: 'jsx', start, end });
+
+  const candidates = findXmlTagCandidates(text);
+  const candidateEnd = new Map<number, number>();
+  for (const c of candidates) candidateEnd.set(c.start, c.end);
+  const masked = text.includes('`') ? maskCandidates(text, candidates) : text;
+  const code: CodeRange[] = [];
+  const jsx: CodeRange[] = [];
+  for (const [start, end] of inlineBlocks) scanInlineBlock(masked, start, end, candidateEnd, code, jsx);
+  for (const [start, end] of jsx) regions.push({ kind: 'jsx', start, end });
+
+  regions.sort((a, b) => a.start - b.start);
+  const ranges: CodeRange[] = regions.map((r) => [r.start, r.end] as CodeRange);
+  for (const span of code) ranges.push(span);
+  ranges.sort((a, b) => a[0] - b[0]);
+  return { regions, unclosed: blocks.filter((b) => !b.closed || b.endsWithContainer), ranges };
 }
 
 /** True when [start, end) overlaps any of the (sorted) code ranges. */

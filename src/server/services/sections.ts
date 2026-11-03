@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { SectionIndexEntry } from '../../shared/entities.js';
 import { parseXmlTags, serializeXmlTag } from '../../shared/xml-tags.js';
-import { scanFences } from '../../shared/code-ranges.js';
+import { scanCodeBlocks } from '../../shared/code-ranges.js';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import { slugifyHeading } from '../../shared/section-parser.js';
 import type { MarkdownFileStore } from './markdown-file-store.js';
@@ -248,17 +248,19 @@ function rewriteSectionRefAnchor(body: string, oldAnchor: string, newAnchor: str
 }
 
 /**
- * The `#anchor` suffix of the three page-link spellings, outside fenced code.
+ * The `#anchor` suffix of the three page-link spellings, outside code blocks
+ * (fenced and, 2.1.65, indented — as `parseXmlTags` skips a `<section_ref>`
+ * in either, so the tag and the link in one block are treated alike).
  * Anchors are globally unique, so the suffix alone identifies the section — the
  * path in front of it needs no resolving.
  */
 export function rewritePageLinkAnchor(body: string, oldAnchor: string, newAnchor: string): string {
   const esc = oldAnchor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const re = new RegExp(`((?<![\\w])@[\\w][\\w/.-]*|\`[^\`\\n#]+|\\]\\([^)\\s#]+)#${esc}(?![a-z0-9])`, 'g');
-  // 2.0.0 — fences from the shared excluded-range scanner; only the gaps are rewritten.
+  // 2.0.0 — code blocks from the shared excluded-range scanner; only the gaps are rewritten.
   let out = '';
   let cursor = 0;
-  for (const [start, end] of scanFences(body).fenced) {
+  for (const [start, end] of scanCodeBlocks(body).code) {
     out += body.slice(cursor, start).replace(re, `$1#${newAnchor}`) + body.slice(start, end);
     cursor = end;
   }

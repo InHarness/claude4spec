@@ -93,13 +93,17 @@ export interface ConfirmInput {
 /**
  * 0.2.110 M50 — every destructive confirm is a named window. Host kinds are
  * listed; a plugin passes its own `<type>-delete` / `dto-example-delete` etc.
+ *
+ * 2.1.65 (M13 `m13ui000`, `z5jthgfh`): the host has NO window of its own for
+ * confirming an entity delete — `entity-delete` is gone from the host kinds.
+ * The delete confirm of an entity (`<type>-delete`) belongs to its plugin, which
+ * opens it through the runtime facade `confirmDestructive`.
  */
 export type ConfirmKind =
   | 'thread-delete'
   | 'page-overwrite'
   | 'brief-reload'
   | 'release-restore'
-  | 'entity-delete'
   | 'project-detach'
   | 'project-purge'
   | 'account-logout'

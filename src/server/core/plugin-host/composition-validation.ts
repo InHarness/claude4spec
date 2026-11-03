@@ -227,9 +227,10 @@ export function validateComposition(
 
 /**
  * Validate and cache the descriptor on the module. Idempotent and called from
- * both choke points (`validateAndLower` and `registerEntityModule`), mirroring
- * `synthesizeMount`, so in-repo modules and plugin-contributed ones are held to
- * exactly the same bar.
+ * both choke points (`validateAndLower` and the registry's commit-time
+ * `registerEntityModule` slot), mirroring `synthesizeMount`. Since 2.1.65 (M13
+ * `tvqcehf5`) every module — built-in or external — comes through an envelope,
+ * so all are held to exactly the same bar.
  */
 export function attachComposition(module: BackendModule, peers: Iterable<BackendModule>): BackendModule {
   /**
@@ -238,11 +239,12 @@ export function attachComposition(module: BackendModule, peers: Iterable<Backend
    * malformed schema would otherwise be reported as a malformed descriptor,
    * naming a table the author never wrote.
    *
-   * Attached at the same choke point rather than in a fourth caller: all three
-   * registration paths — in-repo `registerEntityModule`, the package loader's
-   * `validateAndLower`, and the project overlay — already funnel through here,
-   * which is exactly what stops a plugin-contributed type from being held to a
-   * lower bar than a built-in one.
+   * Attached at the same choke point rather than in another caller: both
+   * registration paths — the base registry (`validateAndLower`, then its
+   * commit-time `registerEntityModule` slot) and the project overlay — already
+   * funnel through here, which is exactly what stops a plugin-contributed type
+   * from being held to a lower bar than a built-in one. (2.1.65, M13
+   * `tvqcehf5`: there is no direct registration path any more.)
    */
   validateDataDeclaration(
     module.type,

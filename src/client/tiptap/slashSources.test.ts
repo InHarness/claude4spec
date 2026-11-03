@@ -28,6 +28,7 @@ import { EditorFactory } from './EditorFactory.js';
 import { xmlTagNode } from './extensions/xmlNodes.js';
 import { buildMarkdownIt } from './markdown/buildMarkdownIt.js';
 import { listXmlTags } from '../../shared/xml-markup/registry.js';
+import { JSX_BLOCK_RULE_NAME } from '../../shared/jsx-passthrough.js';
 
 const ctx: RegistryContext = {
   qc: {} as RegistryContext['qc'],
@@ -264,16 +265,32 @@ describe('M20 contribution sheet — wklad-do-edytora-m20', () => {
     expect((md.block.ruler as unknown as { __rules__: { name: string }[] }).__rules__.map((r) => r.name)).toContain('xml_block');
   });
 
-  it('[entity:wklad-do-edytora-m20#surowy węzeł kodu JSX] the raw JSX code nodes are registered directly, block_content parser, mounted in every context', () => {
+  it('[entity:wklad-do-edytora-m20#surowy węzeł kodu JSX] the raw JSX code nodes are registered directly: `block_content` + the raw JSX inline rule, block region rule from M51, mounted in every context', () => {
     expect(getEditorExtensionRegistration('raw_jsx_block')?.markdownIt?.kind).toBe('block_content');
     expect(getEditorExtensionRegistration('raw_jsx_inline')?.markdownIt?.kind).toBe('inline');
+    // Every markdown content, not only `.mdx`: mounted in every context.
     for (const context of ['page', 'artifact', 'description', 'plan', 'chat-input'] as const) {
       expect(names(getEditorExtensionsForContext(ctx, context)), context).toEqual(
         expect.arrayContaining(['raw_jsx_block', 'raw_jsx_inline']),
       );
     }
     const md = buildMarkdownIt();
-    expect((md.block.ruler as unknown as { __rules__: { name: string }[] }).__rules__.map((r) => r.name)).toContain('raw_jsx_block');
+    const blockRules = (md.block.ruler as unknown as { __rules__: { name: string }[] }).__rules__.map((r) => r.name);
+    const inlineRules = (md.inline.ruler as unknown as { __rules__: { name: string }[] }).__rules__.map((r) => r.name);
+    // The block rule sits under M51's name, ahead of `html_block`.
+    expect(blockRules).toContain(JSX_BLOCK_RULE_NAME);
+    expect(blockRules.indexOf(JSX_BLOCK_RULE_NAME)).toBeLessThan(blockRules.indexOf('html_block'));
+    // The inline raw JSX rule stands, like the tag rules, in front of inline code.
+    expect(inlineRules).toContain('raw_jsx_inline');
+    expect(inlineRules.indexOf('raw_jsx_inline')).toBeLessThan(inlineRules.indexOf('backticks'));
+    // It is M51's region rule: a pair is closed only inside its container, so a
+    // pair split by a block-quote boundary is no block region; each half is an
+    // inline raw node, the tag alone.
+    const split = md.render('> <Callout>\n> quoted\n\n</Callout>');
+    expect(split).not.toContain('<raw_jsx_block');
+    expect(split.match(/<raw_jsx_inline /g)).toHaveLength(2);
+    // And a pair closed in its container is one block raw node.
+    expect(md.render('<Callout>\n\nbody\n\n</Callout>').match(/<raw_jsx_block /g)).toHaveLength(1);
   });
 
   it('[entity:wklad-do-edytora-m20#listy zadań GFM] GFM task lists are registered directly and mounted where the content uses them', () => {

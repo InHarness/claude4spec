@@ -1,4 +1,4 @@
-import { scanFences } from '../../shared/code-ranges.js';
+import { scanCodeBlocks } from '../../shared/code-ranges.js';
 import path from 'node:path';
 import type { MarkdownFileStore } from './markdown-file-store.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
@@ -530,7 +530,7 @@ function extractAnchors(body: string): string[] {
  * not be parsing markdown itself, and neither must a second module here.
  */
 export function parseLinks(body: string): { candidates: PageLink[] } {
-  const masked = maskFences(body);
+  const masked = maskCodeBlocks(body);
   const lineOffsets = computeLineOffsets(masked);
   const candidates: PageLink[] = [];
   const covered: Array<[number, number]> = [];
@@ -601,11 +601,13 @@ function splitAnchor(target: string): { hashIdx: number; pathPart: string; ancho
   return { hashIdx: idx, pathPart: target.slice(0, idx), anchor: target.slice(idx + 1) };
 }
 
-function maskFences(body: string): string {
+function maskCodeBlocks(body: string): string {
   // 2.0.0 — the shared excluded-range scanner (CommonMark fences: ``` and ~~~,
-  // run length, list/quote containers, unclosed → end of document).
+  // run length, list/quote containers; an unclosed fence ends with its
+  // container, or with the document at top level). 2.1.65 — 4-space indented
+  // code blocks are masked too, as the tag parser skips them.
   let out = body;
-  for (const [start, end] of scanFences(body).fenced) {
+  for (const [start, end] of scanCodeBlocks(body).code) {
     out = out.slice(0, start) + body.slice(start, end).replace(/[^\n]/g, ' ') + out.slice(end);
   }
   return out;

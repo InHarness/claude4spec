@@ -192,7 +192,7 @@ describe.skipIf(!BASE)('generated SQLite projection — end to end', () => {
     // The walker that used to 500 the whole sidebar when one type had no table.
     const res = await api(`/api/projects/${projectId}/entities/counts`);
     expect(res.status).toBe(200);
-    for (const type of ALL_TYPES) expect(res.body[type]).toBeGreaterThan(0);
+    for (const type of ALL_TYPES) expect(res.body.counts[type]).toBeGreaterThan(0);
   });
 
   it('reports every contributed type as ACTIVE, not merely loaded', async () => {

@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   trustCalls: [] as boolean[],
   actionButtons: [] as ActionButtonProps[],
   opened: [] as Array<{ kind: string; props: unknown; options: unknown }>,
+  applied: [] as unknown[],
 }));
 
 vi.mock('../host-ui-kit/actions/ActionButton.js', async (importOriginal) => {
@@ -32,7 +33,9 @@ vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: async () => {} }),
   useQuery: () => ({ data: undefined }),
 }));
-vi.mock('../core/plugin-host/host.js', () => ({ clientPluginHost: { applyActivation: () => {} } }));
+vi.mock('../core/plugin-host/host.js', () => ({
+  clientPluginHost: { applyActivation: (state: unknown) => void h.applied.push(state) },
+}));
 vi.mock('../lib/api.js', () => ({
   ApiError: class ApiError extends Error {},
   metaApi: {
@@ -40,7 +43,7 @@ vi.mock('../lib/api.js', () => ({
       h.trustCalls.push(trust);
       return { trust };
     },
-    entities: async () => ({}),
+    entities: async () => ({ active: ['endpoint', 'evil-type'], inactive: [], unknown: [] }),
     plugins: async () => ({}),
   },
 }));
@@ -63,6 +66,7 @@ let onClose: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   h.trustCalls = [];
   h.actionButtons = [];
+  h.applied = [];
   onClose = vi.fn();
   host = document.createElement('div');
   document.body.appendChild(host);
@@ -148,4 +152,26 @@ describe('[section:gox0ptn4] M33 Host UI Kit slice — the trust form consumes t
     expect(buttons.map((b) => b.textContent?.trim())).toEqual(["Don't trust", 'Trust & load']);
     for (const b of buttons) expect(footer.contains(b)).toBe(true);
   });
+});
+
+/**
+ * 2.1.65 (M13 `m13l11sc`, Runtime binding) — the trust decision is one of the
+ * moments the client APPLIES ACTIVATION, and every application grows the client
+ * registry's version (`applyActivation` bumps it; the host-level test is in
+ * `core/plugin-host/registry-version.test.ts`).
+ */
+describe('[section:m13l11sc] a trust decision applies activation to the client registry', () => {
+  for (const [label, trust] of [
+    ['Trust & load', true],
+    ["Don't trust", false],
+  ] as const) {
+    it(`[section:m13l11sc] "${label}" re-reads the activation and applies it to clientPluginHost once`, async () => {
+      render();
+      await act(async () => {
+        button(label)!.click();
+      });
+      expect(h.trustCalls).toEqual([trust]);
+      expect(h.applied).toEqual([{ active: ['endpoint', 'evil-type'], inactive: [], unknown: [] }]);
+    });
+  }
 });

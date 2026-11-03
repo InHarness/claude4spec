@@ -114,7 +114,7 @@ describe.skipIf(!BASE)('caption with backticks — chip, not code', () => {
   it('the sidebar counts aggregate answers and carries type names as keys', async () => {
     const res = await fetch(api(project.id, '/entities/counts'));
     expect(res.status).toBe(200);
-    const counts = (await res.json()) as Record<string, number>;
+    const { counts } = (await res.json()) as { counts: Record<string, number> };
     expect(counts['code-snippet']).toBeGreaterThanOrEqual(1);
     expect(Object.keys(counts).some((k) => /\(/.test(k))).toBe(false);
   });

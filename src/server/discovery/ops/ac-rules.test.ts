@@ -39,6 +39,7 @@ import {
   SKETCH_FIXTURE_SLUG_PATTERN,
   fixtureModule,
 } from '../../../../tests/helpers/fixture-module.js';
+import { registerFixtureEnvelope } from '../../../../tests/helpers/fixture-envelope.js';
 
 /**
  * A type that declares its data and registers no `EntityService`.
@@ -62,7 +63,7 @@ const sketchModule: BackendModule = fixtureModule('sketch', {
  */
 function serviceLessHost(db: ReturnType<typeof createTestDb>, module: BackendModule): ProjectPluginHost {
   const registry = new PluginRegistryImpl();
-  registry.registerEntityModule(module);
+  registerFixtureEnvelope(registry, module);
   const host = registry.consolidate(null);
   applyProjection(db, host.listAvailable());
   host.setRawReader(new RawEntityReader(db, host));
@@ -127,7 +128,7 @@ describe('classifyVerifies', () => {
     const db = createTestDb();
     try {
       const registry = new PluginRegistryImpl();
-      registry.registerEntityModule(sketchModule);
+      registerFixtureEnvelope(registry, sketchModule);
       // Whitelist a type that is not this one: `sketch` stays AVAILABLE but
       // not active.
       const host = registry.consolidate({ entities: ['ac'] } as never);
@@ -166,7 +167,7 @@ describe('classifyVerifies', () => {
  */
 function readerOver(db: ReturnType<typeof createTestDb>): RawEntityReader {
   const registry = new PluginRegistryImpl();
-  registry.registerEntityModule(acFixtureModule);
+  registerFixtureEnvelope(registry, acFixtureModule);
   const host = registry.consolidate(null);
   applyProjection(db, host.listAvailable());
   return new RawEntityReader(db, host);

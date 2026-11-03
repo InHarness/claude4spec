@@ -129,11 +129,14 @@ registerEditorExtension({
   },
 });
 
-// M20 — the raw code node. Gate 1: unknown `.mdx` JSX component tags (name
-// outside the tag registry) preserved byte-perfect and serialized verbatim (no
-// fence). Gate 2 (`ctx4prof` rule 6): a registered tag whose node is NOT in
-// this context's whitelist passes through the same node instead of being
-// dropped by ProseMirror. Mounted in EVERY context for that reason, and at a
+// M20 — the raw code node. Gate 1: unknown JSX component tags (name outside
+// the tag registry) in every markdown content — not only `.mdx` — self-closing,
+// paired and unpaired, preserved byte-perfect and serialized verbatim (no
+// fence); a tag quoted in inline code stays code. Two parser rules: the block
+// one is M51's JSX region rule, shared with the server (`jsxBlockRule`), the
+// inline one sits in front of `backticks`. Gate 2 (`ctx4prof` rule 6): a
+// registered tag whose node is NOT in this context's whitelist passes through
+// the same node instead of being dropped by ProseMirror. Mounted in EVERY context for that reason, and at a
 // priority below every XML node so its markdown-it rules sit ahead of theirs.
 // The `markdownIt` field is declarative — the real rules are wired via
 // buildMarkdownIt → setupRawJsxRules.
@@ -152,7 +155,7 @@ registerEditorExtension({
     RawJsxInlineNode.configure({ mountedTags: ctx.contextSpec?.extensions ?? null }),
   priority: 301,
   availableIn: ['page', 'description', 'plan', 'chat-input'],
-  markdownIt: { kind: 'inline', pattern: /^<[A-Z][\w.-]*(\s[^>]*?)?\/?\s*>/ },
+  markdownIt: { kind: 'inline', pattern: /^<\/?[A-Z][\w.-]*(\s[^>]*?)?\/?\s*>/ },
 });
 
 // M14 — the page-ref node. In the chat composer (`chat-input`) the submit

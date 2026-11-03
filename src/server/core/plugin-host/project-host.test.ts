@@ -7,6 +7,7 @@ import { PluginRegistryImpl } from './registry.js';
 import { pluginHostRouter } from './cross-cutting.js';
 import type { BackendModule, MountContext, ProjectPluginOverlay } from './types.js';
 import { createMcpServer, mcpTool, z } from '../../plugin-runtime/index.js';
+import { registerFixtureEnvelope } from '../../../../tests/helpers/fixture-envelope.js';
 
 /** Minimal BackendModule for pool/activation assertions. */
 function mod(type: string): BackendModule {
@@ -28,7 +29,7 @@ function mod(type: string): BackendModule {
 
 function baseRegistry(...types: string[]): PluginRegistryImpl {
   const registry = new PluginRegistryImpl();
-  for (const t of types) registry.registerEntityModule(mod(t));
+  for (const t of types) registerFixtureEnvelope(registry, mod(t));
   return registry;
 }
 
@@ -58,7 +59,7 @@ describe('consolidate — overlay', () => {
     const baseEndpoint = mod('endpoint');
     const overlayEndpoint = mod('endpoint');
     const registry = new PluginRegistryImpl();
-    registry.registerEntityModule(baseEndpoint);
+    registerFixtureEnvelope(registry, baseEndpoint);
     const host = registry.consolidate({}, overlayOf([overlayEndpoint]));
 
     // The overlay module wins the lookup.
@@ -141,7 +142,7 @@ describe('consolidate — overlay', () => {
     const baseEndpoint = mod('endpoint');
     const overlayEndpoint = mod('endpoint');
     const registry = new PluginRegistryImpl();
-    registry.registerEntityModule(baseEndpoint);
+    registerFixtureEnvelope(registry, baseEndpoint);
     let host!: ReturnType<PluginRegistryImpl['consolidate']>;
     expect(() => {
       host = registry.consolidate({}, overlayOf([overlayEndpoint]));
@@ -436,7 +437,7 @@ describe('[section:m33load01] PLUGIN_TOOL_CONFLICT — tool server refusals at p
 
   it('[section:m33load01] mounting a plugin whose tool server declares a tool twice is refused at load, naming the server', () => {
     const registry = new PluginRegistryImpl();
-    registry.registerEntityModule(modWithServer('glossary', ['lookup', 'lookup']));
+    registerFixtureEnvelope(registry, modWithServer('glossary', ['lookup', 'lookup']));
     const host = registry.consolidate({});
     let caught: unknown;
     try {
@@ -469,16 +470,16 @@ describe('[section:m33load01] PLUGIN_TOOL_CONFLICT — tool server refusals at p
 
   it('[section:m33load01] two plugins mounting a server under the same name — the second is refused at load', () => {
     const registry = new PluginRegistryImpl();
-    registry.registerEntityModule(modMounting('alpha', 'shared-tools'));
-    registry.registerEntityModule(modMounting('beta', 'shared-tools'));
+    registerFixtureEnvelope(registry, modMounting('alpha', 'shared-tools'));
+    registerFixtureEnvelope(registry, modMounting('beta', 'shared-tools'));
     const host = registry.consolidate({});
     expect(() => host.mountBackend(mountCtx(host))).toThrow(/PLUGIN_TOOL_CONFLICT.*"shared-tools"/);
   });
 
   it('[section:m33load01] distinct tool and server names load, and every other factory failure keeps its per-turn posture', () => {
     const registry = new PluginRegistryImpl();
-    registry.registerEntityModule(modWithServer('glossary', ['lookup', 'define']));
-    registry.registerEntityModule({
+    registerFixtureEnvelope(registry, modWithServer('glossary', ['lookup', 'define']));
+    registerFixtureEnvelope(registry, {
       ...mod('broken'),
       backend: {
         mcpServer: () => {

@@ -24,6 +24,7 @@ import { registerRefRewriteListeners, synthesizeMount } from '../core/plugin-hos
 import type { EntityStore } from './entity-store.js';
 import type { DataDeclaration } from '../../shared/plugin-host/data-schema.js';
 import type { BackendModule, EntityRenamedEvent, MountContext } from '../core/plugin-host/types.js';
+import { registerFixtureEnvelope } from '../../../tests/helpers/fixture-envelope.js';
 
 /** `FIXTURE_DATA` plus one scalar reference to `dto` — the minimum that earns a listener. */
 const REFERENCING_DATA: DataDeclaration = {
@@ -49,7 +50,7 @@ function fixture(type: string, data: DataDeclaration): BackendModule {
 
 function mountWith(modules: BackendModule[], activeTypes?: string[]) {
   const registry = new PluginRegistryImpl();
-  for (const m of modules) registry.registerEntityModule(m);
+  for (const m of modules) registerFixtureEnvelope(registry, m);
   const host = registry.consolidate(activeTypes ? { entities: activeTypes } : null);
   const db = createTestDb();
   applyProjection(db, modules);

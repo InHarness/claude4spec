@@ -292,7 +292,7 @@ describe.skipIf(!BASE)('envelope-contributed entity pages', () => {
     const raw = await res.text();
     expect(res.status, raw).toBe(200);
 
-    const counts = JSON.parse(raw) as Record<string, number>;
+    const { counts } = JSON.parse(raw) as { counts: Record<string, number> };
     // The two the envelope contributes.
     expect(Object.keys(counts)).toEqual(expect.arrayContaining(['endpoint', 'dto']));
     // Every value is a real number — a missing table cannot masquerade as absent.

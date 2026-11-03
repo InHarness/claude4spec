@@ -22,11 +22,16 @@ export type ChangedBy = 'user' | 'agent';
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 /**
- * Response of `GET /api/entities/counts` (spec DTO `entity-counts-response`):
- * a map of entity type → row count, feeding the sidebar ELEMENTS badges so a
- * page view doesn't fetch full entity lists just to read their length.
+ * Response of `GET /api/entities/counts` (endpoint `get-api-entities-counts`):
+ * ONE map `{ counts: { [entityType]: number } }` — type → number of entities —
+ * for the types ACTIVE in the current project only (an inactive type has no
+ * entry), each counted under its manifest's default predicate. Feeds the
+ * sidebar ELEMENTS badges so a page view doesn't fetch full entity lists just
+ * to read their length.
  */
-export type EntityCountsResponse = Record<string, number>;
+export interface EntityCountsResponse {
+  counts: Record<string, number>;
+}
 
 export type EndpointDtoRelation = 'request' | 'response' | 'error';
 

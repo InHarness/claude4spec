@@ -46,7 +46,7 @@ export function buildMarkdownIt(options: BuildMarkdownItOptions = {}): MarkdownI
   // first — it round-trips as text instead of becoming a node with no
   // matching editor schema.
   const mounted = options.context ? getContextSpec(options.context).extensions : null;
-  setupRawJsxRules(md, rawTagPredicate(mounted)); // raw mdx JSX + gated / malformed tags — base
+  setupRawJsxRules(md, rawTagPredicate(mounted)); // raw JSX (any markdown) + gated / malformed tags — base
   setupXmlMarkdownRules(md); // every registered XML tag (M51)
   if (!mounted || mounted.includes('anchor_marker')) setupAnchorMarkerRule(md); // anchors (kind's anchor layer)
   // @path.md links — where the context mounts the page-ref node (2.1.9: a

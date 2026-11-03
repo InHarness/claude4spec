@@ -202,11 +202,19 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
   // feeds the sidebar ELEMENTS badges, so a plain page view no longer pulls full
   // entity lists just to read their `.length`. Static `/counts` segment, declared
   // before `/:type/...` so it can never be captured as a `:type` param.
+  //
+  // 2.1.65 (endpoint `get-api-entities-counts`): ONE map, `{ counts }`, keyed by
+  // the types ACTIVE in this project (`reader.listTypes()` walks the project
+  // host's active pool, so an inactive type has no entry), each counted by
+  // `reader.count(type)` under its manifest's default predicate — no entity
+  // data is loaded. The client refreshes the map whole; there is no per-type
+  // count route.
   router.get('/counts', (_req, res, next) => {
     try {
-      const counts: EntityCountsResponse = {};
+      const counts: Record<string, number> = {};
       for (const type of reader.listTypes()) counts[type] = reader.count(type);
-      res.json(counts);
+      const body: EntityCountsResponse = { counts };
+      res.json(body);
     } catch (err) {
       next(err);
     }
@@ -513,9 +521,11 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
    * keeps its 400. The message is the core's either way, so it still carries the
    * covered field names and a caller can fix the URL from the response.
    *
-   * ASSUMPTION:dev-2601 — the cross-cutting content route is the one rest
-   * rendering of the generic get_field_content; its 404 remap stays as M13
-   * `tnpe8kzk` states it at 2.1.26 (the record says INVALID_ARGUMENT).
+   * 2.1.65 — the pattern record `get-api-entities-type-slug-content-field`
+   * carries these rules itself (M13 `tnpe8kzk` points at it): `:field` outside
+   * the schema or without the flag → `404`. The route only reads: writing the
+   * field is the ordinary entity update (`PATCH /api/<pathPrefix>/:slug`), the
+   * field staying part of the input schema — so no other verb is mounted here.
    */
   router.get('/:type/:slug/content/:field', (req, res, next) => {
     try {

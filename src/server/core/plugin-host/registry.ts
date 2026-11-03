@@ -50,9 +50,15 @@ interface InternalPluginRecord extends RegisteredPluginRecord {
   entityModules: BackendModule[];
 }
 
-/** " (by plugin "x")" / " (direct registration)" — who holds a type, for a conflict message. */
+/**
+ * " (by plugin "x")" — who holds a type, for a conflict message.
+ *
+ * 2.1.65 (M13 `tvqcehf5`, `mzjftvzp`): every module in the base belongs to the
+ * record of the envelope that contributed it — there is no direct registration
+ * any more, so an owner is always found; the empty suffix is defensive only.
+ */
 function ownerSuffix(owner: string | null): string {
-  return owner ? ` (by plugin "${owner}")` : ' (direct registration)';
+  return owner ? ` (by plugin "${owner}")` : '';
 }
 
 /** Outcome of validating + lowering a manifest, ready to commit to the registry. */
@@ -69,25 +75,26 @@ export class PluginRegistryImpl implements PluginRegistry {
   // 2.1.9: skill slugs of base packages the loader's gate skipped, by plugin name.
   private gateSkippedSkills = new Map<string, UnloadedSkillSlug[]>();
 
-  registerEntityModule(module: BackendModule): void {
+  /**
+   * The low-level slot of ONE "entity" capability — called only by
+   * `registerPlugin`, as the fan-out of `contributes.entities`.
+   *
+   * 2.1.65 (M13 `tvqcehf5`, `b2ahrh1b`, `mzjftvzp`): there is no direct
+   * registration of a type. The method is private and off the `PluginRegistry`
+   * interface, so the only way a type enters the base is the envelope of its
+   * package through `registerPlugin` — built-in types (criteria and diagrams
+   * included) as much as external ones. Tier (a) of the delivery table stays a
+   * class of delivery with no member.
+   */
+  private registerEntityModule(module: BackendModule): void {
     if (!module.type) {
       throw new Error('plugin-registry: module.type is required');
     }
-    // M13: lower declarative backend slots (service/crud/routes/mcpServer) into
-    // an equivalent `mount` for every module — in-repo entities build a
-    // `BackendModule` directly (never touching `EntityContribution`), so this
-    // is the one place both origins are guaranteed to pass through.
-    // 0.2.4: the composition descriptor is validated and cached here too, not
-    // only in `validateAndLower` — same reason as `synthesizeMount` above. A
-    // descriptor naming a baseline table or another type's table must reject
-    // the manifest, and a direct caller (a built-in's `onRegister`) has to hit
-    // the identical bar as one routed through `registerPlugin`.
-    // 0.2.9 — the M13 contract check runs HERE, not only in `validateAndLower`,
-    // for the same reason `synthesizeMount` and `attachComposition` do: an
-    // in-repo entity builds its `BackendModule` directly and would otherwise
-    // never be checked. A stale 1.x view slot or a `payloadVersion` that
-    // disagrees with the manifest has to fail identically whichever door the
-    // module came through.
+    // M13: lower declarative backend slots (service/routes/mcpServer) into an
+    // equivalent `mount`. `validateAndLower` already did it; reapplying it at
+    // commit time is a no-op once `mount` is set.
+    // The contract checks below repeat at commit for the same reason: whatever
+    // `registerPlugin` validated is exactly what lands in the slot.
     assertSerializationContribution(
       module.type,
       module as unknown as Record<string, unknown>,
@@ -96,7 +103,7 @@ export class PluginRegistryImpl implements PluginRegistry {
     // 2.1.63 (M13 `m13pool0`) — a type already in the base is a hard
     // `PLUGIN_TYPE_CONFLICT`, not a silent last-wins over the module that holds
     // it. `registerPlugin` checks the same rule up front (atomically, before any
-    // of its modules is committed); this is the choke point a direct caller hits.
+    // of its modules is committed); this is the commit-time backstop.
     const existing = this.modules.get(module.type);
     if (existing) {
       throw new PluginTypeConflictError(
@@ -224,7 +231,7 @@ export class PluginRegistryImpl implements PluginRegistry {
     this.validateAndLower(manifest, true);
   }
 
-  /** Name of the base plugin whose record holds `module`; `null` for a direct registration. */
+  /** Name of the base plugin whose record holds `module` (`null` only for a module mid-commit). */
   private ownerOf(module: BackendModule): string | null {
     for (const record of this.plugins.values()) {
       if (record.entityModules.includes(module)) return record.name;

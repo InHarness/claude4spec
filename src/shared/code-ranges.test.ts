@@ -166,6 +166,17 @@ describe('scanExcluded', () => {
     expect(withJsx.unclosed.map((b) => b.startLine)).toEqual([4]);
   });
 
+  it('2.1.65 — a fence ended by its container stays closed for the reader but counts as unclosed (M19 rule 16)', () => {
+    const text = '- item\n  ```\n  code\n\nafter';
+    const [fence] = scanExcludedBlocks(text);
+    expect(fence).toMatchObject({ kind: 'fence', startLine: 2, closed: true, endsWithContainer: true });
+    expect(scanExcluded(text).unclosed.map((b) => b.startLine)).toEqual([2]);
+    // A fence with its own closing line is neither.
+    const closedText = '- item\n  ```\n  code\n  ```\nafter';
+    expect(scanExcludedBlocks(closedText)[0]).toMatchObject({ closed: true, endsWithContainer: false });
+    expect(scanExcluded(closedText).unclosed).toEqual([]);
+  });
+
   it('scanExcluded drops a tag inside a multi-line HTML comment', () => {
     const text = '<!--\n<inline_mention type="ac" slug="x"/>\n-->';
     const ranges = scanExcluded(text).ranges;
