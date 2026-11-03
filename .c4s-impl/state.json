@@ -1,5 +1,5 @@
 {
-  "iteration": 18,
+  "iteration": 21,
   "conventions": [
     {
       "label": "L3 (Spec Operations) — implementor M43",
@@ -646,7 +646,7 @@
           {
             "key": "pages/modules/m43-spec-operations-core.md",
             "context": {
-              "offset": 26,
+              "offset": 25,
               "limit": 1,
               "anchors": [
                 "k0ddfllq"
@@ -740,13 +740,44 @@
         }
       ],
       "wave": 3,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u6-plan-execution-v3/p1-domain-l3",
+          "layers": [
+            "Domain",
+            "L3"
+          ],
+          "slugs": [
+            "accept-shadow",
+            "delete-thread",
+            "mark-brief-implemented",
+            "mark-patch-applied",
+            "mark-plan-applied",
+            "release-create",
+            "release-restore",
+            "release-update",
+            "m55-requires-m43",
+            "ac-kazdy-rekord-spec-operation-z-tagiem",
+            "ac-minimalna-wersja-c4s-definicji-plan-e",
+            "ac-rekord-mark-plan-applied-nosi-tag-dec",
+            "ac-rekord-release-create-nosi-tag-decyzj",
+            "ac-tresc-definicji-plan-execution-v3-kaz",
+            "ac-tresc-definicji-plan-execution-v3-wym",
+            "ac-tresc-definicji-plan-execution-wymien"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "ec9ea2cb765c8f9227d4370b37bdbab4af4924e2",
+      "baseCommit": "ec9ea2cb765c8f9227d4370b37bdbab4af4924e2",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     }

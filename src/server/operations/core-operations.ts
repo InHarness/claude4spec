@@ -57,7 +57,8 @@
 
 import { z } from 'zod';
 import { PATCH_KINDS } from '../../core/briefs/types.js';
-import { CATALOG, direct, na, via, type ContentInputMode, type OperationDeclaration } from './catalog.js';
+import { CATALOG, HUMAN_DECISION_TAG, direct, na, via, type ContentInputMode, type OperationDeclaration } from './catalog.js';
+import { HUMAN_DECISION_OPERATIONS } from './human-decision.js';
 import { OPERATION_RULES } from './operation-rules.js';
 import { RUN_REMOTE_ERROR_CODES } from '../runs/run-remote.js';
 import { RUN_REMOTE_INPUT_SCHEMA, RUN_REMOTE_SUMMARY } from '../runs/run-remote-schema.js';
@@ -73,7 +74,9 @@ import { CANCEL_RUN_SUMMARY, GET_RUN_SUMMARY, RUN_ID_INPUT_SCHEMA } from '../run
  */
 function registerRow(op: OperationDeclaration): OperationDeclaration {
   const rules = op.rules ?? OPERATION_RULES[op.name];
-  return CATALOG.register(rules ? { ...op, rules } : op);
+  // 2.1.67 — the record's `decyzja-czlowieka` tag (M43 `rp99fpc1`), from {@link HUMAN_DECISION_OPERATIONS}.
+  const tags = op.tags ?? (Object.hasOwn(HUMAN_DECISION_OPERATIONS, op.name) ? [HUMAN_DECISION_TAG] : undefined);
+  return CATALOG.register({ ...op, ...(rules ? { rules } : {}), ...(tags ? { tags } : {}) });
 }
 
 /**

@@ -1,5 +1,6 @@
 /**
- * M55 `e1dwekyc` — the fixed definition of the agent "plan-execution": a
+ * M55 `e1dwekyc` (2.1.67: subsections `nosqcr6z`, `41d3hcq3`, `6nyj9gs2`,
+ * `0e8792bl`) — the fixed definition of the agent "plan-execution": a
  * constant of the master's package (L10 `yopfnuxs`: process lifetime, no key —
  * it carries no project's data —, created at module import, released
  * implicitly by GC). It is the default Run type of `run_remote` (spec-operation
@@ -23,32 +24,63 @@ export interface RunAgentDefinition {
 export const DEFAULT_RUN_AGENT_NAME = 'plan-execution';
 
 /**
- * The lowest c4s release in which both `c4s agent --plan … --project …` and the
- * server start with `--no-open` work, read from the code: `--no-open` is in
- * `src/bin/launch.ts` since before 2.1.11, and `c4s agent --plan` (which takes
- * `--project` like every command) arrived in 2.1.64 (CHANGELOG `[2.1.64]`,
- * `src/bin/c4s/commands/agent.ts` at the release commit). Nothing on either
- * path changed since.
+ * The lowest c4s release in which `c4s agent --plan … --project …`, the server
+ * start with `--no-open`, `c4s register-home` and `c4s confirm-skill-uses` all
+ * work (M55 `nosqcr6z`), read from the code: `--no-open` is in
+ * `src/bin/launch.ts` since before 2.1.11, `c4s agent --plan` arrived in 2.1.64
+ * (CHANGELOG `[2.1.64]`), and the two registry commands
+ * (`src/bin/c4s/commands/register-home.ts`, `confirm-skill-uses.ts`) arrive
+ * with the release implementing specification 2.1.67 — the package version
+ * follows the specification release it implements, as 2.1.64 did.
+ *
+ * ASSUMPTION:dev-6707 — the first c4s release carrying the registry commands is
+ * numbered 2.1.67; `package.json` still reads 2.1.64 (2.1.65–2.1.66 were not
+ * published), so the number is not yet fixed by a published release.
  */
-export const PLAN_EXECUTION_MIN_C4S_VERSION = '2.1.64';
+export const PLAN_EXECUTION_MIN_C4S_VERSION = '2.1.67';
+
+/**
+ * M55 `nosqcr6z` — the operations of the human-decision catalog (M43
+ * `rp99fpc1`, tag `decyzja-czlowieka`) as they stood when version `3` was
+ * released, named in the definition's content one by one. A SNAPSHOT, not a
+ * read of the catalog: the Run Agent and the turn in the container do not
+ * read the master's specification, so they never see the tag. A change of the
+ * catalog's membership raises `version`.
+ */
+export const PLAN_EXECUTION_HUMAN_DECISION_OPERATIONS: readonly string[] = Object.freeze([
+  'release_create',
+  'release_restore',
+  'release_update',
+  'accept_shadow',
+  'mark_plan_applied',
+  'mark_brief_implemented',
+  'mark_patch_applied',
+  'delete_thread',
+]);
+
+const FORBIDDEN = PLAN_EXECUTION_HUMAN_DECISION_OPERATIONS.join(', ');
 
 export const PLAN_EXECUTION_AGENT: RunAgentDefinition = Object.freeze({
   name: DEFAULT_RUN_AGENT_NAME,
-  version: '2',
+  version: '3',
   minC4sVersion: PLAN_EXECUTION_MIN_C4S_VERSION,
   content: [
     'You are the Run Agent: you execute a plan or a prompt over the specification of the whole workspace by running a c4s turn.',
     '',
+    'Operations of human decision:',
+    `- The c4s turn does not perform these operations: ${FORBIDDEN}. Triggering any of them is a human's decision, made on the master after the shadow is accepted.`,
+    '',
     'Calling the c4s turn:',
-    '- With a plan: `c4s agent "Execute the plan without asking questions; where a choice is open, follow the recommendation. Do not call mark_plan_applied." --plan <path> --project <projectId>`.',
+    `- With a plan: \`c4s agent "Execute the plan; do not perform the operations: ${FORBIDDEN}. When the plan or the turn needs one of them, end the turn with a question." --plan <path> --project <projectId>\`.`,
     // ASSUMPTION:dev-5503 — `c4s agent` without `--plan` or `--thread` needs `--ct`; the spec form omits it.
-    '- With a prompt: `c4s agent "<prompt> Do not call mark_plan_applied." --ct chat --project <projectId>`, without `--plan`.',
+    `- With a prompt: \`c4s agent "<prompt> Do not perform the operations: ${FORBIDDEN}. When the prompt or the turn needs one of them, end the turn with a question." --ct chat --project <projectId>\`, without \`--plan\`.`,
     '- Take `path` and `projectId` from the Run context. Do not pass `--server`: the c4s server finds the workspace registry itself.',
-    '- The instruction for the c4s turn always forbids `mark_plan_applied`. The master marks the plan as applied after the shadow is accepted.',
+    '- The instruction for the c4s turn always forbids every operation of the list above, mark_plan_applied and release_create among them. The master marks the plan as applied after the shadow is accepted.',
     '- Choose `--model` and `--effort` for `c4s agent` yourself, from the models the c4s server offers for chat (a model outside them is refused before the turn starts).',
     '',
     'Continuation:',
-    '- When the turn ends with a question, continue the same thread with `c4s agent "Act according to your recommendation." --thread <id>`.',
+    '- When the turn ends with a question about an operation of the list above, do not continue the thread: stop the work on that point of the plan, write the turn\'s question and the operation into `conflicts` of the handoff, and end the Run according to the Run contract.',
+    '- When the turn ends with any other question, continue the same thread with `c4s agent "Act according to your recommendation." --thread <id>`.',
     '',
     'Deadline:',
     '- Watch the `deadline` from the Run context. Before it passes, leave your commits and a `partial` handoff: a Run stopped by its deadline leaves neither a result ref nor a record.',
@@ -61,6 +93,7 @@ export const PLAN_EXECUTION_AGENT: RunAgentDefinition = Object.freeze({
     '',
     'Handoff:',
     '- Write the handoff according to the Run contract.',
+    '- Where this definition contradicts a prohibition of the Run contract, the Run contract\'s prohibition holds.',
   ].join('\n'),
 });
 

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
   CATALOG,
+  HUMAN_DECISION_TAG,
   OperationCatalog,
   OperationCatalogError,
   direct,
@@ -21,6 +22,7 @@ import { pluginServerNamesFor, toolAdmittedByProfile, withheldTools } from './pr
 import { toolError, toolSuccess } from './envelope.js';
 import { STATUS_FOR_CODE, httpStatusForCode } from './error-codes.js';
 import { OPERATION_RULES } from './operation-rules.js';
+import { HUMAN_DECISION_OPERATIONS } from './human-decision.js';
 import { createC4sReaderServer } from '../mcp/c4s-reader.js';
 import { createReferenceToolsServer, type ReferenceToolsDeps } from '../mcp/reference-tools.js';
 import { buildEntityTools, type EntityToolsDeps } from '../mcp/entity-tools.js';
@@ -2265,5 +2267,98 @@ describe('Run on a runner host — the third form of a turn (2.1.64)', () => {
     for (const name of ['run_remote', 'get_run', 'cancel_run']) {
       expect(toolAdmittedByProfile('chat', name)).toBe(true);
     }
+  });
+});
+
+/**
+ * 2.1.67 — the catalog of human decisions (M43 `rp99fpc1`, L3 `g8adono9`): a
+ * record whose triggering is itself a human's decision carries the tag
+ * `decyzja-czlowieka` next to its one module tag; a record that does not meet
+ * the criterion does not.
+ */
+describe('the human-decision tag (M43 rp99fpc1)', () => {
+  const TAGGED: Record<string, string> = {
+    'accept-shadow': 'accept_shadow',
+    'delete-thread': 'delete_thread',
+    'mark-brief-implemented': 'mark_brief_implemented',
+    'mark-patch-applied': 'mark_patch_applied',
+    'mark-plan-applied': 'mark_plan_applied',
+    'release-create': 'release_create',
+    'release-restore': 'release_restore',
+    'release-update': 'release_update',
+  };
+
+  for (const [slug, name] of Object.entries(TAGGED)) {
+    it(`${slug}: the row ${name} carries the tag decyzja-czlowieka and keeps its record's mediation and channels`, () => {
+      const op = CATALOG.require(name);
+      expect(op.tags).toEqual([HUMAN_DECISION_TAG]);
+      const record = SPEC_OPERATION_RECORDS.find((r) => r.slug === slug)!;
+      expect(record).toBeDefined();
+      expect(op.mediation).toBe(record.mediacja);
+      expect(op.channels.rest.kind).toBe(record.rest === 'direct' ? 'direct' : record.rest === 'via' ? 'via' : 'na');
+    });
+  }
+
+  it('[ac:ac-rekord-mark-plan-applied-nosi-tag-dec] the mark_plan_applied record carries the tag decyzja-czlowieka', () => {
+    expect(CATALOG.require('mark_plan_applied').tags).toContain('decyzja-czlowieka');
+    expect(CATALOG.listTagged(HUMAN_DECISION_TAG).map((op) => op.name)).toContain('mark_plan_applied');
+  });
+
+  it('[ac:ac-rekord-release-create-nosi-tag-decyzj] the release_create record carries the tag decyzja-czlowieka', () => {
+    expect(CATALOG.require('release_create').tags).toContain('decyzja-czlowieka');
+    expect(CATALOG.listTagged(HUMAN_DECISION_TAG).map((op) => op.name)).toContain('release_create');
+  });
+
+  it('[ac:ac-kazdy-rekord-spec-operation-z-tagiem] every record tagged decyzja-czlowieka meets one premise of the human-decision criterion', () => {
+    const tagged = CATALOG.listTagged(HUMAN_DECISION_TAG);
+    expect(tagged.map((op) => op.name).sort()).toEqual(Object.values(TAGGED).sort());
+    const names = new Set(CATALOG.list().map((op) => op.name));
+    for (const op of tagged) {
+      const premise = HUMAN_DECISION_OPERATIONS[op.name];
+      expect(premise, op.name).toBeDefined();
+      // Every premise is about an act that changes state: none of them is a read.
+      expect(op.opClass, op.name).not.toBe('read');
+      expect(op.sideEffects, op.name).not.toContain('none');
+      switch (premise) {
+        case 'freezes-or-replaces-shared-state':
+          // A release or a release restore: it freezes or replaces what others see.
+          expect(op.name, op.name).toMatch(/^release_(create|update|restore)$/);
+          expect(op.sideEffects, op.name).toContain('db');
+          break;
+        case 'marks-others-work':
+          // Marks a plan, a brief, a patch as done, or accepts a shadow.
+          expect(op.name, op.name).toMatch(/^(mark_(plan_applied|brief_implemented|patch_applied)|accept_shadow)$/);
+          break;
+        case 'irreversible': {
+          // No catalog operation undoes it: it is declared destructive and nothing restores what it removed.
+          expect(op.rules?.map((r) => r.id), op.name).toContain('destructive-declared');
+          const noun = op.name.replace(/^delete_/, '');
+          for (const undo of [`restore_${noun}`, `undelete_${noun}`, `restore_${noun}_version`]) {
+            expect(names.has(undo), `${op.name}: ${undo}`).toBe(false);
+          }
+          break;
+        }
+        default:
+          throw new Error(`${op.name}: unknown premise ${String(premise)}`);
+      }
+    }
+    // Outside the catalog by its text: deleting a page or an entity (they come back through versions and releases).
+    for (const name of ['delete_page', 'delete_entities']) {
+      expect(CATALOG.require(name).tags ?? [], name).not.toContain(HUMAN_DECISION_TAG);
+    }
+  });
+
+  it('is an axis apart from mediation: a tagged row may be direct with an agentic channel, and the tag takes no tool away', () => {
+    const create = CATALOG.require('release_create');
+    expect(create.mediation).toBe('direct');
+    expect(create.channels.mcp.kind).toBe('direct');
+    expect(toolAdmittedByProfile('chat', 'release_create')).toBe(true);
+  });
+
+  it('register() refuses a tag outside the closed vocabulary and a repeated tag', () => {
+    const cat = new OperationCatalog();
+    expect(() => cat.register(decl({ name: 'get_a', tags: ['m43' as never] }))).toThrow(/unknown tag 'm43'/);
+    expect(() => cat.register(decl({ name: 'get_b', tags: [HUMAN_DECISION_TAG, HUMAN_DECISION_TAG] }))).toThrow(/tag twice/);
+    expect(cat.register(decl({ name: 'get_c', tags: [HUMAN_DECISION_TAG] })).tags).toEqual([HUMAN_DECISION_TAG]);
   });
 });

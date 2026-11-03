@@ -1,0 +1,13 @@
+{
+  "id": "dev-6705",
+  "kind": "clarification",
+  "blocking": false,
+  "address": "u6-plan-execution-v3/k0ddfllq",
+  "slugs": [
+    "k0ddfllq"
+  ],
+  "text": "Brief 2-1-66-to-2-1-67.md, unit u6-plan-execution-v3, Read: page `pages/modules/m43-spec-operations-core.md` context `sections 1–4, 26, 29` labels position 26 with anchor `k0ddfllq`, but at 2.1.67 position 26 is `l3chan00` (\"Cztery kanały\") and `k0ddfllq` (\"Spec Operations (L3)\") is at position 25. The loop corrected the address to offset 25 (the anchor decides), since it is a context read and changes nothing a user observes.",
+  "unit": "u6-plan-execution-v3",
+  "sent": true,
+  "patchPath": "2-1-66-to-2-1-67-u6-plan-execution-v3-k0ddfllq-adres-sekcji-kontekstu-m43-przesuniety-o-jeden-26-.md"
+}

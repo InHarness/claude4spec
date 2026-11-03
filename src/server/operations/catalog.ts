@@ -255,7 +255,24 @@ export interface OperationDeclaration {
    * that happens to share its name.
    */
   readonly contributedBy?: 'host' | 'plugin';
+  /**
+   * 2.1.67 (L3 `g8adono9`, M43 `rp99fpc1`) — the record's tags beyond its one
+   * module tag. The only one the catalog knows is {@link HUMAN_DECISION_TAG}:
+   * the operation is in the catalog of human decisions, because triggering it
+   * is itself a human's decision. An axis apart from `mediation` — a tagged
+   * operation may be `direct` and rendered in an agentic channel; the tag takes
+   * no tool away (only a profile's operation set does), it says an agent does
+   * not use or approve it without a human. Absent on an untagged row.
+   */
+  readonly tags?: readonly OperationTag[];
 }
+
+/** 2.1.67 — the tag of the human-decision catalog (M43 `rp99fpc1`). */
+export const HUMAN_DECISION_TAG = 'decyzja-czlowieka';
+
+/** The closed vocabulary of non-module tags a catalog row may carry. */
+export const OPERATION_TAGS = [HUMAN_DECISION_TAG] as const;
+export type OperationTag = (typeof OPERATION_TAGS)[number];
 
 const CHANNELS: readonly ChannelName[] = ['internal', 'cli', 'mcp', 'rest'];
 
@@ -312,6 +329,16 @@ export class OperationCatalog {
       const problem = rulesProblem(op.rules);
       if (problem) throw new OperationCatalogError(`operation '${op.name}': ${problem}`);
     }
+    if (op.tags !== undefined) {
+      for (const tag of op.tags) {
+        if (!(OPERATION_TAGS as readonly string[]).includes(tag)) {
+          throw new OperationCatalogError(`operation '${op.name}' carries unknown tag '${tag}'`);
+        }
+      }
+      if (new Set(op.tags).size !== op.tags.length) {
+        throw new OperationCatalogError(`operation '${op.name}' carries a tag twice`);
+      }
+    }
     this.byName.set(op.name, op);
     return op;
   }
@@ -334,6 +361,11 @@ export class OperationCatalog {
   /** Every operation the given channel renders itself. */
   listForChannel(channel: ChannelName): OperationDeclaration[] {
     return this.list().filter((op) => op.channels[channel].kind === 'direct');
+  }
+
+  /** Every operation carrying the tag — `listTagged(HUMAN_DECISION_TAG)` is the human-decision catalog. */
+  listTagged(tag: OperationTag): OperationDeclaration[] {
+    return this.list().filter((op) => op.tags?.includes(tag) === true);
   }
 
   has(name: string): boolean {
