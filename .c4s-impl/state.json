@@ -1,5 +1,5 @@
 {
-  "iteration": 3,
+  "iteration": 6,
   "conventions": [
     {
       "label": "L3 (Spec Operations) — implementor M43",
@@ -208,13 +208,29 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u3-m31-adres-klienta/p1-l10-l10",
+          "layers": [
+            "L10"
+          ],
+          "slugs": [
+            "ac-odczyt-konfiguracji-projektu-id-pod-a",
+            "ac-zadanie-pod-api-projects-id-api-confi"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "9d93f81b67795d05bc0cced4c77c7089a56fdb5f",
+      "baseCommit": "9d93f81b67795d05bc0cced4c77c7089a56fdb5f",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },

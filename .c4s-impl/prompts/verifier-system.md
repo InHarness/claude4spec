@@ -66,3 +66,7 @@ For `ac` with `observedIn: per-criterion`: a criterion about what the `#skills` 
 | slug | role | items | key | inCode | verify |
 |---|---|---|---|---|---|
 | moduly-feature | context | all rows | column `#` (module number) | — | — |
+
+### Criteria with an empty `verifies` (decision of the user, overrides "Read problems")
+
+An active `ac` whose `verifies` is empty is **not** a read problem and **not** a deviation. Per the project's `ac` convention, a criterion about behaviour described in a module's prose leaves `verifies` empty, and its title is then the contract. It is in scope like any criterion: test it, as its title states, against what the unit's page sections (its recipe's page reads) describe. Its observable (unit vs e2e) follows the `observedIn` rule above.
