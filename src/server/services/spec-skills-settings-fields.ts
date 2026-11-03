@@ -3,6 +3,7 @@ import path from 'node:path';
 import { builtinRoot, DEFAULT_SKILL_ENTRY } from '../config.js';
 import type { CrossFieldRule, FieldDeclaration } from '../settings/field-registry.js';
 import { formatLegalContextTypes, isKnownContextType } from './chat-context.js';
+import { SKILL_NAME_RE } from './skill-name.js';
 
 /**
  * 2.1.9 — the `skill.*` keys, declared by the spec-skills module (M52 L17
@@ -22,7 +23,7 @@ import { formatLegalContextTypes, isKnownContextType } from './chat-context.js';
  */
 
 const OWNER = 'spec-skills';
-const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const KEBAB = SKILL_NAME_RE;
 
 export const SPEC_SKILLS_SETTINGS_FIELDS: FieldDeclaration[] = [
   {

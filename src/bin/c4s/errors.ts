@@ -51,6 +51,15 @@ export type CliErrorCode =
   // 2.1.0 — a registry-writing command (`c4s trust-plugins`) met a registry that
   // still carries pre-2.1.0 hash ids. Only the server migrates; start it once.
   | 'REGISTRY_MIGRATION_PENDING'
+  // 2.1.67 (M31 `m31cli01`) — `c4s register-home`: the directory carries no
+  // `.claude4spec/workspace.json` (only an existing home is registered), and the
+  // four refusals of the start's flag-combination table it shares (`qglsgonq`).
+  // None has an exit status of its own: the generic 1 (`g24dkd8t`).
+  | 'WORKSPACE_FILE_MISSING'
+  | 'CWD_IS_PROJECT'
+  | 'CWD_INSIDE_HOME'
+  | 'WORKSPACE_HOME_MISMATCH'
+  | 'PORT_TAKEN_BY_WORKSPACE'
   // M33 phase 3 — `c4s plugins doctor` exits with this when a pool package was
   // built against an incompatible MAJOR Host API (the only non-zero plugins exit).
   | 'HOST_API_INCOMPATIBLE'

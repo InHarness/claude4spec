@@ -5,6 +5,7 @@ import path from 'node:path';
 import { parseArgs } from '../args.js';
 import { CliError, codeToExit } from '../errors.js';
 import { runTrustPlugins, trustPluginsCommand } from './trust-plugins.js';
+import { runRegisterHome } from './register-home.js';
 import { WorkspaceRegistry } from '../../../server/workspace/registry.js';
 import { dirEntries, snapshotDir } from '../../../../tests/helpers/dir-snapshot.js';
 
@@ -192,5 +193,90 @@ describe('c4s trust-plugins', () => {
     expect(err.code).toBe('INVALID_ARGS');
     expect(err.message).toContain("workspace 'team'");
     expect(snapshotDir(home)).toEqual(homeBefore);
+  });
+  /**
+   * 2.1.67 (M31 `m31cli01`): the registry built server-free in an empty HOME —
+   * `register-home` first, then the consent. A cloned team repo, no entry yet.
+   */
+  function clonedTeamRepo(): { home: string; projectDir: string } {
+    const home = path.join(tmp, 'team-clone');
+    const projectDir = path.join(home, 'specs', 'app');
+    fs.mkdirSync(path.join(projectDir, '.claude4spec'), { recursive: true });
+    fs.writeFileSync(path.join(projectDir, '.claude4spec', 'config.json'), '{}');
+    fs.writeFileSync(
+      path.join(home, '.claude4spec', 'workspace.json'),
+      JSON.stringify({ projects: [{ id: 'app', path: 'specs/app' }], plugins: [] }, null, 2),
+    );
+    return { home, projectDir };
+  }
+
+  const allEntries = (): Array<Record<string, unknown>> =>
+    (JSON.parse(fs.readFileSync(registryFile, 'utf8')) as { workspaces: Array<Record<string, unknown>> }).workspaces;
+
+  it('[ac:ac-po-c4s-register-home-cwd-home-komenda] after register-home --cwd <home>, trust-plugins --cwd <home>/<project> true writes the trust into the entry with home <home>', async () => {
+    const { home, projectDir } = clonedTeamRepo();
+    await runRegisterHome(parseArgs(['register-home', '--cwd', home]));
+    stdout = '';
+
+    await runTrustPlugins(parseArgs(['trust-plugins', '--cwd', projectDir, 'true']));
+
+    expect(JSON.parse(stdout)).toEqual({ workspace: 'team-clone', projectId: 'app', cwd: projectDir, trustProjectPlugins: true });
+    const entry = allEntries().find((w) => w.home === home)!;
+    expect(entry.name).toBe('team-clone');
+    expect(entry.projectTrust).toEqual({ app: { path: 'specs/app', trustProjectPlugins: true } });
+    expect(new WorkspaceRegistry(registryHome).getWorkspace('team-clone')!.projects[0]).toMatchObject({
+      id: 'app',
+      trustProjectPlugins: true,
+    });
+  });
+
+  it('[ac:ac-po-c4s-register-home-cwd-home-komenda-2] after register-home --cwd <home>, trust-plugins --cwd <home>/<project> true creates no registry workspace', async () => {
+    const { home, projectDir } = clonedTeamRepo();
+    await runRegisterHome(parseArgs(['register-home', '--cwd', home]));
+    const before = allEntries();
+    expect(before).toHaveLength(1);
+
+    await runTrustPlugins(parseArgs(['trust-plugins', '--cwd', projectDir, 'true']));
+
+    // Still exactly the one entry with the home — no entry without a home (a
+    // registry workspace, e.g. `default` on 4500) appeared.
+    const after = allEntries();
+    expect(after.map((w) => w.name)).toEqual(['team-clone']);
+    expect(after.filter((w) => w.home === undefined)).toEqual([]);
+    expect(new WorkspaceRegistry(registryHome).findByPort(4500)?.home).toBe(home);
+  });
+
+  it('[ac:ac-c4s-trust-plugins-cwd-home-projekt-tr] trust-plugins --cwd <home>/<project> true without --port, after register-home --cwd <home> --port <n>, writes the trust into the entry with home <home>', async () => {
+    const { home, projectDir } = clonedTeamRepo();
+    await runRegisterHome(parseArgs(['register-home', '--cwd', home, '--port', '4777']));
+    stdout = '';
+
+    // No --port: the default 4500 must not divert the write to a registry workspace.
+    await runTrustPlugins(parseArgs(['trust-plugins', '--cwd', projectDir, 'true']));
+
+    expect(JSON.parse(stdout)).toMatchObject({ workspace: 'team-clone', projectId: 'app', trustProjectPlugins: true });
+    const entries = allEntries();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ name: 'team-clone', home, defaultPort: 4777 });
+    expect(entries[0]!.projectTrust).toEqual({ app: { path: 'specs/app', trustProjectPlugins: true } });
+    expect(new WorkspaceRegistry(registryHome).findByPort(4500)).toBeUndefined();
+  });
+
+  it('[ac:ac-powtorzone-c4s-trust-plugins-cwd-dir] a repeated trust-plugins --cwd <dir> true ends with exit code 0', async () => {
+    const { home, projectDir } = clonedTeamRepo();
+    // Off 4500, so the registry workspace of `solo` (default --port) is free to be created.
+    await runRegisterHome(parseArgs(['register-home', '--cwd', home, '--port', '4777']));
+    const solo = path.join(tmp, 'solo-spec');
+    fs.mkdirSync(solo, { recursive: true });
+
+    for (const dir of [projectDir, solo]) {
+      await expect(runTrustPlugins(parseArgs(['trust-plugins', '--cwd', dir, 'true']))).resolves.toBeUndefined();
+      const firstText = fs.readFileSync(registryFile, 'utf8');
+      stdout = '';
+      // The repeat: resolves (the bin exits 0), same answer, no new record.
+      await expect(runTrustPlugins(parseArgs(['trust-plugins', '--cwd', dir, 'true']))).resolves.toBeUndefined();
+      expect(JSON.parse(stdout)).toMatchObject({ cwd: dir, trustProjectPlugins: true });
+      expect(JSON.parse(fs.readFileSync(registryFile, 'utf8'))).toEqual(JSON.parse(firstText));
+    }
   });
 });

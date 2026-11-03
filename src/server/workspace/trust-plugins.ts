@@ -1,10 +1,12 @@
 import path from 'node:path';
+import { SKILL_NAME_RE } from '../services/skill-name.js';
 import {
   DEFAULT_WORKSPACE_PORT,
   findProjectByCwd,
   isPathWithin,
   RegistryMigrationPendingError,
   WorkspaceRegistry,
+  type SkillUsesConfirmationResult,
 } from './registry.js';
 import type { WorkspaceRecord } from './types.js';
 
@@ -48,21 +50,24 @@ export interface TrustPluginsResult {
   trustProjectPlugins: boolean;
 }
 
-export function setPluginTrustForDirectory(
-  opts: { cwd: string; value: boolean; port?: number; mode?: 'dev' | 'prod' },
-  registry: WorkspaceRegistry = new WorkspaceRegistry(),
-): TrustPluginsResult {
+/**
+ * Steps 1–3 of the record's `logic`, shared by `trust-plugins` and (2.1.67)
+ * `confirm-skill-uses`: the workspace and the project id a `--cwd` names. A
+ * registry workspace's project is registered on demand (step 3); a project of
+ * a workspace with a home must already stand in its `workspace.json` (step 2).
+ * Every refusal is raised before anything is written.
+ */
+export function resolveProjectForDirectory(
+  opts: { cwd: string; port?: number; mode?: 'dev' | 'prod' },
+  registry: WorkspaceRegistry,
+): { ws: WorkspaceRecord; projectId: string; cwd: string } {
   // 2.1.0: only the server migrates hash ids (it renames the DB slots too). A
   // write here would persist a registry whose ids no slot matches.
   if (registry.isMigrationPending()) throw new RegistryMigrationPendingError(registry.filePath);
   const cwd = path.resolve(opts.cwd);
-  const done = (ws: WorkspaceRecord, projectId: string): TrustPluginsResult => {
-    registry.setProjectTrust(ws, projectId, opts.value);
-    return { workspace: ws.name, projectId, cwd, trustProjectPlugins: opts.value };
-  };
 
   // 1–2. The registered homes this directory lies in (a deleted checkout
-  // contains nothing).
+  // contains nothing) — an entry `register-home` wrote a moment ago included.
   const views = registry.listWorkspaces();
   const homes = views.filter((w) => w.home !== undefined && w.homeMissing !== true && isPathWithin(w.home, cwd));
   const broken = homes.filter((w) => w.fileError !== undefined);
@@ -75,7 +80,7 @@ export function setPluginTrustForDirectory(
   }
   for (const ws of homes) {
     const project = findProjectByCwd(ws.projects, cwd);
-    if (project) return done(ws, project.id);
+    if (project) return { ws, projectId: project.id, cwd };
   }
   if (homes.length > 0) {
     const ws = homes[0]!;
@@ -100,5 +105,41 @@ export function setPluginTrustForDirectory(
   }
   const ws = registry.selectOrCreate({ port, ...(opts.mode !== undefined ? { mode: opts.mode } : {}) });
   const project = registry.registerProject(ws, cwd);
-  return done(ws, project.id);
+  return { ws, projectId: project.id, cwd };
+}
+
+export function setPluginTrustForDirectory(
+  opts: { cwd: string; value: boolean; port?: number; mode?: 'dev' | 'prod' },
+  registry: WorkspaceRegistry = new WorkspaceRegistry(),
+): TrustPluginsResult {
+  const { ws, projectId, cwd } = resolveProjectForDirectory(opts, registry);
+  registry.setProjectTrust(ws, projectId, opts.value);
+  return { workspace: ws.name, projectId, cwd, trustProjectPlugins: opts.value };
+}
+
+/**
+ * 2.1.67 — M31 core of `c4s confirm-skill-uses` (record `confirm-skill-uses`,
+ * mode `registry-write`): steps 1–3 of `trust-plugins`, ending in
+ * `setSkillUsesConfirmation` instead of `setProjectTrust`. `names: []` is the
+ * `--clear` of the command. A name outside the `skill.name` syntax (kebab-case,
+ * M52) is refused with `INVALID_ARGS` before the registry is even read.
+ */
+export function confirmSkillUsesForDirectory(
+  opts: { cwd: string; names: readonly string[]; port?: number },
+  registry: WorkspaceRegistry = new WorkspaceRegistry(),
+): SkillUsesConfirmationResult {
+  const bad = opts.names.filter((n) => !SKILL_NAME_RE.test(n));
+  if (bad.length > 0) {
+    throw new TrustPluginsError(
+      'INVALID_ARGS',
+      `not a skill.name (kebab-case: lowercase letters, digits and single hyphens): ${bad.map((n) => `'${n}'`).join(', ')}`,
+      'pass the names exactly as the skill.uses of the project lists them',
+    );
+  }
+  const { ws, projectId } = resolveProjectForDirectory(opts, registry);
+  const result = registry.setSkillUsesConfirmation(ws, projectId, opts.names);
+  // The project was resolved (or registered) a moment ago; a null here means
+  // the entry vanished under us — a race, not a refusal of the contract.
+  if (!result) throw new Error(`project '${projectId}' of workspace '${ws.name}' disappeared while writing the confirmation`);
+  return result;
 }

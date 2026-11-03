@@ -1,5 +1,5 @@
 {
-  "iteration": 6,
+  "iteration": 9,
   "conventions": [
     {
       "label": "L3 (Spec Operations) — implementor M43",
@@ -53,7 +53,7 @@
         "u2-m31-komendy-rejestru",
         "u5-m55-zaufanie-w-zleceniu"
       ],
-      "startCommit": null
+      "startCommit": "d4ef8786d1a0dcc323156bfea170ca0b86957db6"
     },
     {
       "n": 3,
@@ -307,13 +307,43 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u2-m31-komendy-rejestru/p1-l14",
+          "layers": [
+            "L14"
+          ],
+          "slugs": [
+            "confirm-skill-uses",
+            "register-home",
+            "trust-plugins",
+            "ac-c4s-confirm-skill-uses-cwd-dir-name-z",
+            "ac-c4s-confirm-skill-uses-z-nazwa-spoza",
+            "ac-c4s-confirm-skill-uses-zwraca-w-notin",
+            "ac-c4s-register-home-cwd-dir-na-katalogu",
+            "ac-c4s-register-home-cwd-dir-w-pustym-ho",
+            "ac-c4s-register-home-cwd-home-konczy-sie",
+            "ac-c4s-register-home-nie-tworzy-ani-nie",
+            "ac-c4s-trust-plugins-cwd-home-projekt-tr",
+            "ac-po-c4s-register-home-cwd-home-komenda",
+            "ac-po-c4s-register-home-cwd-home-komenda-2",
+            "ac-powtorzone-c4s-register-home-cwd-dir",
+            "ac-powtorzone-c4s-trust-plugins-cwd-dir",
+            "ac-start-serwera-z-cwd-home-port-n-po-c4"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "d4ef8786d1a0dcc323156bfea170ca0b86957db6",
+      "baseCommit": "d4ef8786d1a0dcc323156bfea170ca0b86957db6",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },

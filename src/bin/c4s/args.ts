@@ -34,6 +34,9 @@ const KNOWN_BOOLEAN_FLAGS = new Set([
   'with-counts',
   // 2.1.11 — `c4s release-diff --summary-only --limit 3` must not swallow `--limit`'s neighbour.
   'summary-only',
+  // 2.1.67 (M31) — `c4s confirm-skill-uses --cwd <dir> --clear` must not swallow
+  // a following name as its value (the refusal of `--clear` WITH names needs it).
+  'clear',
 ]);
 
 export function parseArgs(argv: string[]): ParsedArgs {

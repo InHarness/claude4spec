@@ -34,6 +34,8 @@ import { agentCommand } from './c4s/commands/agent.js';
 import { askCommand } from './c4s/commands/ask.js';
 import { pluginsCommand } from './c4s/commands/plugins.js';
 import { trustPluginsCommand } from './c4s/commands/trust-plugins.js';
+import { registerHomeCommand } from './c4s/commands/register-home.js';
+import { confirmSkillUsesCommand } from './c4s/commands/confirm-skill-uses.js';
 import { createBriefCommand } from './c4s/commands/create-brief.js';
 import { listBriefsCommand } from './c4s/commands/list-briefs.js';
 import { getBriefCommand } from './c4s/commands/get-brief.js';
@@ -90,6 +92,8 @@ const COMMANDS: CliCommandContribution[] = [
   askCommand,
   pluginsCommand,
   trustPluginsCommand,
+  registerHomeCommand,
+  confirmSkillUsesCommand,
   createBriefCommand,
   listBriefsCommand,
   getBriefCommand,
@@ -255,6 +259,22 @@ Plugins (M33 — server-delegating: reports the SERVER host's loader, not a seco
                                     only; a <dir> inside that home its workspace.json does not list
                                     → PROJECT_NOT_IN_WORKSPACE_FILE (workspace.json is never written).
                                     Otherwise --port (default 4500) picks the registry workspace
+  register-home --cwd <dir> [--port <n>] [--workspace <name>]
+                                    server-free (2.1.67): registers the EXISTING workspace home <dir>
+                                    (it must carry .claude4spec/workspace.json — else
+                                    WORKSPACE_FILE_MISSING; $HOME → INVALID_ARGS) in workspaces.json;
+                                    writes nothing into <dir>. Prints { workspace, home, defaultPort,
+                                    created } — created: false when the entry was already there.
+                                    A later server start with --cwd <dir> --port <n> selects it
+  confirm-skill-uses --cwd <dir> (<name>... | --clear) [--port <n>]
+                                    server-free (2.1.67): stores the machine-local confirmation of the
+                                    project's skill attachments (names in skill.name syntax, the list
+                                    replaced whole; --clear empties it). <dir> resolves as in
+                                    trust-plugins. Prints { workspace, projectId, cwd,
+                                    confirmedSkillUses, notInSkillUses }
+                                    Build a registry in an empty HOME in this order:
+                                    register-home → trust-plugins → confirm-skill-uses. All three
+                                    exit 0 on a write and on an idempotent repeat.
 
 Brief/patch (M11 — server-delegating, like every read above):
   create-brief --body-file <f> [--from <release>] [--suffix <slug>]
@@ -318,7 +338,7 @@ Server required — for every step:
   ~/.claude4spec/workspaces.json, the <home>/.claude4spec/workspace.json of each
   registered home, defaultPort) and every command above delegates
   to \`npx @inharness-ai/claude4spec\`. Exceptions: install-skills, trust-plugins,
-  create-plugin, list-workspaces. Those four address the machine rather than a
+  register-home, confirm-skill-uses, create-plugin, list-workspaces. Those six address the machine rather than a
   specification — a code repo's skills directory, the workspace registry (written
   by one, read by the other), a new directory — so there is no specification for
   them to ask a server about. Note the boundary is "navigation vs registry

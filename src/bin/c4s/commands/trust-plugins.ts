@@ -2,8 +2,8 @@ import type { ParsedArgs } from '../args.js';
 import { optionalInt, optionalString } from '../args.js';
 import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
-import { RegistryMigrationPendingError } from '../../../server/workspace/registry.js';
-import { setPluginTrustForDirectory, TrustPluginsError } from '../../../server/workspace/trust-plugins.js';
+import { setPluginTrustForDirectory } from '../../../server/workspace/trust-plugins.js';
+import { registryWriteCliError } from './_registry-write.js';
 import type { CliCommandContribution } from '../registry.js';
 
 /**
@@ -49,25 +49,7 @@ export async function runTrustPlugins(args: ParsedArgs): Promise<void> {
       ...(mode !== undefined ? { mode } : {}),
     });
   } catch (err) {
-    if (err instanceof RegistryMigrationPendingError) {
-      throw new CliError(
-        'REGISTRY_MIGRATION_PENDING',
-        err.message,
-        'start the claude4spec server once (`npx @inharness-ai/claude4spec`) — it migrates the registry — then re-run this command',
-        { steps: [{ action: 'start-server', command: 'npx @inharness-ai/claude4spec' }, { action: 'rerun' }] },
-      );
-    }
-    if (err instanceof TrustPluginsError) {
-      throw new CliError(
-        err.code,
-        err.message,
-        err.hint,
-        err.code === 'PROJECT_NOT_IN_WORKSPACE_FILE'
-          ? { steps: [{ action: 'add-project', where: 'server UI or workspace.json' }, { action: 'rerun' }] }
-          : undefined,
-      );
-    }
-    throw err;
+    throw registryWriteCliError(err) ?? err;
   }
   writeOutput(result, args);
 }

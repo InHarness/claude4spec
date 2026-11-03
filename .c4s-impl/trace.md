@@ -1,0 +1,3 @@
+- register-home → src/bin/c4s/commands/register-home.ts (core: src/server/workspace/register-home.ts → WorkspaceRegistry.registerHome; test: src/bin/c4s/commands/register-home.test.ts)
+- confirm-skill-uses → src/bin/c4s/commands/confirm-skill-uses.ts (core: confirmSkillUsesForDirectory in src/server/workspace/trust-plugins.ts → setSkillUsesConfirmation; test: src/bin/c4s/commands/confirm-skill-uses.test.ts)
+- trust-plugins → src/bin/c4s/commands/trust-plugins.ts (core: setPluginTrustForDirectory / resolveProjectForDirectory in src/server/workspace/trust-plugins.ts; test: src/bin/c4s/commands/trust-plugins.test.ts)
