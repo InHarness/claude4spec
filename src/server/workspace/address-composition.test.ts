@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -27,10 +27,25 @@ import type { ProjectRecord, WorkspaceRecord } from './types.js';
  * `/api`-less, as `buildProjectContext` mounts it.
  */
 
-/** The client-side composition rule: replace the leading `/api/` of the endpoint path with the project prefix. */
-function composeProjectUrl(endpointPath: string, projectId: string): string {
-  if (!endpointPath.startsWith('/api/')) throw new Error(`not an /api path: ${endpointPath}`);
-  return `/api/projects/${encodeURIComponent(projectId)}/${endpointPath.slice('/api/'.length)}`;
+/**
+ * The real client composition: `apiFetch` of `src/client/lib/api-core.ts`, loaded
+ * fresh under a document carrying `window.__C4S_PROJECT__` (as the server injects
+ * it for `/p/<id>/`), with `fetch` stubbed to record the URL it is handed. The
+ * module is named through a variable so the server/test compile does not pull
+ * the client source into its graph (as `plugin-frontend-project-id.test.ts`).
+ */
+const API_CORE = '../../client/lib/api-core.js';
+async function clientUrlFor(endpointPath: string, projectId: string): Promise<string> {
+  const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+  vi.stubGlobal('fetch', fetchMock);
+  vi.stubGlobal('window', { __C4S_PROJECT__: { id: projectId } });
+  vi.resetModules();
+  const { apiFetch } = (await import(/* @vite-ignore */ API_CORE)) as {
+    apiFetch: (input: string, init?: RequestInit) => Promise<Response>;
+  };
+  await apiFetch(endpointPath);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  return String((fetchMock.mock.calls[0] as unknown[])[0]);
 }
 
 describe('M31 l4txpfx0 — the client composes the address by replacing /api/ with the project prefix (2.1.67)', () => {
@@ -45,6 +60,8 @@ describe('M31 l4txpfx0 — the client composes the address by replacing /api/ wi
   });
   afterEach(() => {
     fs.rmSync(dir, { recursive: true, force: true });
+    vi.unstubAllGlobals();
+    vi.resetModules();
   });
 
   function app() {
@@ -66,7 +83,8 @@ describe('M31 l4txpfx0 — the client composes the address by replacing /api/ wi
   }
 
   it('[ac:ac-odczyt-konfiguracji-projektu-id-pod-a] GET /api/projects/<id>/config — the composed address of `get-api-config` (/api/config) — answers 200 with the project config', async () => {
-    const url = composeProjectUrl('/api/config', projectId);
+    // The URL the client's real `apiFetch` sends for the entity path `/api/config`.
+    const url = await clientUrlFor('/api/config', projectId);
     expect(url).toBe('/api/projects/alpha/config');
     const res = await request(app()).get(url);
     expect(res.status).toBe(200);

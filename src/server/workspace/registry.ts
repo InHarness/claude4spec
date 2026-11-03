@@ -842,8 +842,9 @@ export class WorkspaceRegistry {
    * rebuild so the overlay (un)loads without a process restart.
    */
   setProjectTrust(ws: WorkspaceRecord, id: string, value: boolean): void {
-    this.setTrustFlag(ws, id, 'trustProjectPlugins', value);
-    this.emitConsentChanged(ws, id);
+    // Nothing written (unknown id, entry gone) → nothing invalidated, as in
+    // `setSkillUsesConfirmation`.
+    if (this.setTrustFlag(ws, id, 'trustProjectPlugins', value)) this.emitConsentChanged(ws, id);
   }
 
   /**

@@ -348,6 +348,8 @@ describe('M31 — registry consents and core operations (2.1.67)', () => {
     // A write refused (no such project) invalidates nothing; after shutdown nothing either.
     registry.setSkillUsesConfirmation(ws, 'nope', ['x']);
     expect(cache.invalidate).toHaveBeenCalledTimes(2);
+    registry.setProjectTrust(ws, 'nope', true);
+    expect(cache.invalidate).toHaveBeenCalledTimes(2);
     off();
     registry.setProjectTrust(ws, 'app', false);
     expect(cache.invalidate).toHaveBeenCalledTimes(2);
