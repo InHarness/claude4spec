@@ -1,0 +1,716 @@
+{
+  "iteration": 0,
+  "conventions": [
+    {
+      "label": "L3 (Spec Operations) — implementor M43",
+      "key": "pages/layers/L3-spec-operations.md",
+      "offset": 3,
+      "anchor": "g8adono9"
+    },
+    {
+      "label": "L4 (API) — implementor niepodany",
+      "key": "pages/layers/L4-api.md",
+      "offset": 2,
+      "anchor": "pondhd6o"
+    },
+    {
+      "label": "L10 (Project Scoping) — implementor niepodany",
+      "key": "pages/layers/L10-project-scoping.md",
+      "offset": 2,
+      "anchor": "l10slice0"
+    },
+    {
+      "label": "L14 (CLI Commands) — implementor M11",
+      "key": "pages/layers/L14-cli-commands.md",
+      "offset": 1,
+      "anchor": "flt0hm9r"
+    },
+    {
+      "label": "L17 (Project Settings) — implementor niepodany",
+      "key": "pages/layers/L17-project-settings.md",
+      "offset": 2,
+      "anchor": "ata1r5sz"
+    },
+    {
+      "label": "Tabela user jobs, dla weryfikatora systemu",
+      "key": "pages/SKILL.md",
+      "offset": 13,
+      "anchor": "oq23nb0j"
+    }
+  ],
+  "waves": [
+    {
+      "n": 1,
+      "units": [
+        "u1-m31-rejestr-zgod",
+        "u3-m31-adres-klienta"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 2,
+      "units": [
+        "u2-m31-komendy-rejestru",
+        "u5-m55-zaufanie-w-zleceniu"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 3,
+      "units": [
+        "u4-m52-potwierdzanie-podpiec",
+        "u6-plan-execution-v3"
+      ],
+      "startCommit": null
+    }
+  ],
+  "units": [
+    {
+      "id": "u1-m31-rejestr-zgod",
+      "goal": "Wpis rejestru workspace'ów z katalogiem domowym przechowuje zaufanie per projekt: zgodę na pluginy projektu oraz listę potwierdzonych na tej maszynie podpięć skilli. Core rejestru ma dwie nowe idempotentne mutacje: rejestrację istniejącego katalogu domowego bez uruchamiania serwera oraz zapis potwierdzeń podpięć, który zastępuje listę w całości. Każdy zapis wpisu, także z innych modułów, jest read-modify-write całego pliku rejestru pod blokadą i zachowuje pola, których piszący nie zna. Zmiana ścieżki projektu unieważnia obie zgody, a zapis potwierdzeń unieważnia kontekst projektu w procesie serwera. Nic nie jest usuwane: dotychczasowe operacje rejestru zostały tylko wydzielone do osobnych sekcji, bez zmiany zachowania.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 0,
+              "limit": 9,
+              "anchors": [
+                "whxy8m3r",
+                "bzgfftsf",
+                "e491l9fb",
+                "xurq19of",
+                "zktorogu",
+                "naxqsfra",
+                "fjsgq19h",
+                "44viw74p",
+                "zovs1ohc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 10,
+              "limit": 1,
+              "anchors": [
+                "m31ctx001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "m31purp01",
+                "m31deps01",
+                "m31l2001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 38,
+              "limit": 1,
+              "anchors": [
+                "ssn335r8"
+              ]
+            }
+          }
+        ],
+        "entities": []
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u3-m31-adres-klienta",
+      "goal": "Klient składa adres żądania do endpointu, zastępując początkowy segment API ścieżki endpointu prefiksem projektu, a middleware prefiksu odwraca to złożenie. Adres, w którym po prefiksie projektu znów stoi segment API, jest nieprawidłowy i kończy się 404. Nic nie jest usuwane.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 11,
+              "limit": 1,
+              "anchors": [
+                "l4txpfx0"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m31purp01",
+                "m31deps01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 38,
+              "limit": 1,
+              "anchors": [
+                "ssn335r8"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-odczyt-konfiguracji-projektu-id-pod-a",
+              "ac-zadanie-pod-api-projects-id-api-confi"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u2-m31-komendy-rejestru",
+      "goal": "CLI c4s dostaje dwie nowe komendy zapisu rejestru, które działają bez serwera: rejestrację katalogu domowego i potwierdzanie podpięć skilli. Komenda zaufania pluginów, wywołana po rejestracji katalogu domowego, zapisuje zgodę we wpisie z tym katalogiem i nie tworzy workspace'u rejestrowego. Wszystkie trzy komendy kończą się kodem 0 przy zapisie i przy idempotentnym powtórzeniu, a odmowę zgłaszają kopertą błędu z ogólnym kodem wyjścia większym od 0. Żadna nie zapisuje commitowanego pliku workspace'u. Wszystkie stoją poza katalogiem operacji specyfikacji, jako administracja rejestru. Start serwera z tym samym katalogiem i portem co przy rejestracji wybiera utworzony wpis. Nic nie jest usuwane.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 9,
+              "limit": 1,
+              "anchors": [
+                "e2b17vga"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 12,
+              "limit": 1,
+              "anchors": [
+                "m31cli01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m31purp01",
+                "m31deps01"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "cli-command",
+            "slugs": [
+              "confirm-skill-uses",
+              "register-home",
+              "trust-plugins"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-c4s-confirm-skill-uses-cwd-dir-name-z",
+              "ac-c4s-confirm-skill-uses-z-nazwa-spoza",
+              "ac-c4s-confirm-skill-uses-zwraca-w-notin",
+              "ac-c4s-register-home-cwd-dir-na-katalogu",
+              "ac-c4s-register-home-cwd-dir-w-pustym-ho",
+              "ac-c4s-register-home-cwd-home-konczy-sie",
+              "ac-c4s-register-home-nie-tworzy-ani-nie",
+              "ac-c4s-trust-plugins-cwd-home-projekt-tr",
+              "ac-po-c4s-register-home-cwd-home-komenda",
+              "ac-po-c4s-register-home-cwd-home-komenda-2",
+              "ac-powtorzone-c4s-register-home-cwd-dir",
+              "ac-powtorzone-c4s-trust-plugins-cwd-dir",
+              "ac-start-serwera-z-cwd-home-port-n-po-c4"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u1-m31-rejestr-zgod",
+          "why": "komendy delegują do nowych operacji core rejestru."
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u5-m55-zaufanie-w-zleceniu",
+      "goal": "Zlecenie Runu niesie lokalną zgodę wyłącznie projektu Runu, czyli zaufanie pluginów i potwierdzone podpięcia, i tylko wtedy, gdy ścieżka zgody jest równa ścieżce projektu w pliku workspace'u w sha bazy. W pozostałych przypadkach master nie wysyła nic o zaufaniu, a zwrot zlecenia dostaje nowe opcjonalne ostrzeżenia, które agent przekazuje w czacie. Zaufanie nie trafia do rejestru Runów ani do commitu. Przebieg zlecenia zyskuje krok zaufania między sprawdzeniem wersji a wpisem do rejestru. Odczyt Runu dokłada do powodu zakończenia, podanego dosłownie, wskazówkę mastera dla błędu c4s i dla niezgodności ścieżki zaufania. Nic nie jest usuwane.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m55-runs.md",
+            "change": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "361n2mqb"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m55-runs.md",
+            "change": {
+              "offset": 5,
+              "limit": 2,
+              "anchors": [
+                "jlgucjnq",
+                "d8r8kkrd"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m55-runs.md",
+            "change": {
+              "offset": 8,
+              "limit": 1,
+              "anchors": [
+                "55a63udm"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m55-runs.md",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "ewqj6w60",
+                "tq1frs04",
+                "95hkjvli"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m55-runs.md",
+            "context": {
+              "offset": 22,
+              "limit": 1,
+              "anchors": [
+                "veec5qxa"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "mcp-tool",
+            "slugs": [
+              "run-tools-run-remote"
+            ]
+          },
+          {
+            "type": "spec-operation",
+            "slugs": [
+              "get-run",
+              "run-remote"
+            ]
+          },
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m55-requires-m31"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-odczyt-runu-zakonczonego-powodem-trus",
+              "ac-zlecenie-runu-nie-niesie-zaufania-pro",
+              "ac-zlecenie-runu-projektu-ktorego-lokaln",
+              "ac-zlecenie-runu-projektu-z-lokalnym-zau",
+              "ac-zwrot-run-remote-dla-projektu-z-plugi"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u1-m31-rejestr-zgod",
+          "why": "master czyta z rejestru lokalną zgodę projektu razem z jej ścieżką."
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u4-m52-potwierdzanie-podpiec",
+      "goal": "Podpięcie z `skill.uses` projektu rozwiązuje się do dostawcy tylko wtedy, gdy jego nazwa jest potwierdzona na tej maszynie. Potwierdza się nazwę, nie całą listę. Nazwa dopisana commitem pozostaje niepotwierdzona, a usunięcie wpisu nie wymaga potwierdzenia. Niepotwierdzone podpięcie daje ostrzeżenie, nie blokuje startu projektu, a styl pisania takiego dostawcy nie trafia do wątku. Nowy endpoint zapisuje listę potwierdzeń w całości i osobno zwraca nazwy spoza `skill.uses`. Wiersz listy wystawionych projektów niesie flagę potwierdzenia. Karta `#skills` pokazuje przy niepotwierdzonym wierszu znacznik i akcję potwierdzenia, a dodanie podpięcia na karcie zapisuje je razem z potwierdzeniem. Zmiana ścieżki projektu konsumenta wyłącza wszystkie jego potwierdzenia. Nic nie jest usuwane.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "q7uurue4",
+                "cppnlv9z",
+                "dun7u18f"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "context": {
+              "offset": 7,
+              "limit": 1,
+              "anchors": [
+                "9j9cxrsr"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "context": {
+              "offset": 12,
+              "limit": 1,
+              "anchors": [
+                "84ae859b"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "context": {
+              "offset": 21,
+              "limit": 1,
+              "anchors": [
+                "vixysa1w"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "dto",
+            "slugs": [
+              "exposed-project-row",
+              "skill-uses-confirmation-request",
+              "skill-uses-confirmation-response"
+            ]
+          },
+          {
+            "type": "endpoint",
+            "slugs": [
+              "put-api-spec-skills-uses-confirmation"
+            ]
+          },
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m52-requires-m31"
+            ]
+          },
+          {
+            "type": "spreadsheet",
+            "slugs": [
+              "moduly-feature"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-nazwa-dopisana-commitem-do-skill-uses",
+              "ac-po-potwierdzeniu-nazwy-komenda-c4s-co",
+              "ac-podpiecie-dodane-na-karcie-skills-dzi",
+              "ac-podpiecie-z-skill-uses-ktorego-nazwa",
+              "ac-wiersz-niepotwierdzonego-podpiecia-na"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u1-m31-rejestr-zgod",
+          "why": "potwierdzenia leżą w rejestrze machine-local i zapisuje je operacja core rejestru"
+        },
+        {
+          "unit": "u2-m31-komendy-rejestru",
+          "why": "jedno z kryteriów wymaga potwierdzenia nadanego komendą CLI przed startem serwera."
+        }
+      ],
+      "wave": 3,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u6-plan-execution-v3",
+      "goal": "Specyfikacja prowadzi katalog operacji decyzji człowieka: tag na rekordach operacji, których samo wyzwolenie jest decyzją człowieka (osiem operacji wydań, przyjęcia cienia, oznaczeń planu, briefu i patcha oraz usunięcia wątku). Katalog jest osią niezależną od klasy mediacji. Definicja agenta `plan-execution` przechodzi na wersję 3. Wymienia te operacje z nazwy jako takie, których tura c4s nie wykonuje, i każe zakończyć Run wpisem w konfliktach handoffu, gdy tura o którąś pyta; pozostałe pytania tura kontynuuje według rekomendacji. Przy sprzeczności definicji z kontraktem runnera obowiązuje kontrakt. Minimalna wersja c4s definicji rośnie do wydania zawierającego nowe komendy rejestru. Nic nie jest usuwane; definicja została tylko podzielona na podsekcje.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m43-spec-operations-core.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m43-spec-operations-core.md",
+            "context": {
+              "offset": 1,
+              "limit": 4,
+              "anchors": [
+                "zpvxirvp",
+                "gkugsry5",
+                "ke1jxhqh",
+                "l3admit0"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m43-spec-operations-core.md",
+            "context": {
+              "offset": 26,
+              "limit": 1,
+              "anchors": [
+                "k0ddfllq"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m43-spec-operations-core.md",
+            "context": {
+              "offset": 29,
+              "limit": 1,
+              "anchors": [
+                "l3media0"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m55-runs.md",
+            "change": {
+              "offset": 1,
+              "limit": 4,
+              "anchors": [
+                "nosqcr6z",
+                "41d3hcq3",
+                "6nyj9gs2",
+                "0e8792bl"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m55-runs.md",
+            "change": {
+              "offset": 7,
+              "limit": 1,
+              "anchors": [
+                "e1dwekyc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m55-runs.md",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "ewqj6w60",
+                "tq1frs04",
+                "95hkjvli"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "spec-operation",
+            "slugs": [
+              "accept-shadow",
+              "delete-thread",
+              "mark-brief-implemented",
+              "mark-patch-applied",
+              "mark-plan-applied",
+              "release-create",
+              "release-restore",
+              "release-update"
+            ]
+          },
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m55-requires-m43"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-kazdy-rekord-spec-operation-z-tagiem",
+              "ac-minimalna-wersja-c4s-definicji-plan-e",
+              "ac-rekord-mark-plan-applied-nosi-tag-dec",
+              "ac-rekord-release-create-nosi-tag-decyzj",
+              "ac-tresc-definicji-plan-execution-v3-kaz",
+              "ac-tresc-definicji-plan-execution-v3-wym",
+              "ac-tresc-definicji-plan-execution-wymien"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u2-m31-komendy-rejestru",
+          "why": "minimalna wersja c4s definicji v3 to wydanie z komendami rejestracji katalogu domowego i potwierdzania podpięć."
+        }
+      ],
+      "wave": 3,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    }
+  ],
+  "entityTypes": [
+    {
+      "type": "ac",
+      "role": "criteria",
+      "checks": "verifies",
+      "observedIn": "per-criterion",
+      "links": [
+        "verifies"
+      ],
+      "inactive": "status = deprecated",
+      "version": 3
+    },
+    {
+      "type": "cli-command",
+      "role": "built",
+      "inCode": "a leaf command of the c4s binary in src/bin/c4s/commands/<name>.ts, registered in src/bin/c4s/registry.ts, with the record's mode, args, flags, input, payload (inside the M11 envelope) and CLI error codes with exit codes",
+      "verify": "src/bin/c4s/commands/<name>.test.ts invoking the command and asserting its flags/args parsing, payload shape and every errorCodes entry with its exit code",
+      "links": [],
+      "version": 1
+    },
+    {
+      "type": "mcp-tool",
+      "role": "built",
+      "inCode": "a tool definition in src/server/mcp/<group>-tools.ts with the record's name, description, params schema, annotation hints and returned payload",
+      "verify": "src/server/mcp/<group>-tools.test.ts asserting the tool's params schema, hints and payload shape",
+      "links": [],
+      "version": 1
+    },
+    {
+      "type": "spec-operation",
+      "role": "built",
+      "inCode": "the operation's entry in the operations catalog src/server/operations/ (catalog.ts / core-operations.ts) carrying scope, mediation, channels, idempotency, error codes and tags, plus its implementation behind the channels",
+      "verify": "src/server/operations/catalog.test.ts (or the operation's own test) asserting the catalog fields of the record and the behaviour stated in `zachowanie`",
+      "links": [
+        "cliCommands",
+        "mcpTools",
+        "restEndpoints",
+        "internalTools"
+      ],
+      "version": 2
+    },
+    {
+      "type": "endpoint",
+      "role": "built",
+      "inCode": "an Express route handler under src/server/routes/ with the endpoint's method, path (project-prefixed router), status codes and linked request/response/error DTOs",
+      "verify": "a supertest test in src/server/routes/<name>.route.test.ts hitting method+path and asserting the status codes and response shape named by the endpoint",
+      "links": [
+        "linkedDtos"
+      ],
+      "version": 3
+    },
+    {
+      "type": "dto",
+      "role": "built",
+      "inCode": "a TypeScript type in src/shared/ (request/response shape shared by server and client) plus the route's input validation for request DTOs",
+      "verify": "the route supertest asserts the response body has exactly the DTO's fields (required ones present) and that a request violating a request DTO's field rules is rejected",
+      "links": [],
+      "version": 2
+    },
+    {
+      "type": "module-dependency",
+      "role": "context",
+      "links": [],
+      "version": 1
+    },
+    {
+      "type": "spreadsheet",
+      "role": "per-entity",
+      "links": [],
+      "version": 3
+    }
+  ],
+  "entityParts": [
+    {
+      "slug": "moduly-feature",
+      "type": "spreadsheet",
+      "why": "Indeks modułów specyfikacji (nr, nazwa, złożoność, warstwy, zakres, plik) — opis zakresu, bez odpowiednika w kodzie i bez obserwowalnego oczekiwania.",
+      "parts": [
+        {
+          "role": "context",
+          "items": "all rows",
+          "key": "column `#` (module number)"
+        }
+      ]
+    }
+  ]
+}
