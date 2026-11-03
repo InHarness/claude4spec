@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { QueryClient } from '@tanstack/react-query';
+import { EXPOSED_PROJECTS_QUERY_KEY } from '../../lib/spec-skills-api.js';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ExposedProjectRow } from '../../../shared/spec-skills.js';
@@ -8,10 +10,10 @@ import {
   FORK_CONFLICT_MESSAGE,
   FORK_DONE_MESSAGE,
   ForkWritingStyleControl,
-  HOOK_TRUST_CONFIRMED_MESSAGE,
-  HOOK_TRUST_UNCONFIRMED_MESSAGE,
-  SkillHookTrustControl,
-  whenAttaching,
+  addedUses,
+  confirmAddedAfterSave,
+  confirmationAfter,
+  confirmationMarker,
   SPEC_SKILLS_SETTINGS,
   UsedSkillProjectsList,
   attachmentMarker,
@@ -29,9 +31,9 @@ import type { WritingStyleSummary } from '../../../shared/writing-styles.js';
  */
 
 const ROWS: ExposedProjectRow[] = [
-  { name: 'billing-rules', description: 'How billing works.', projectId: 'billing', uses: true, status: 'ok' },
-  { name: 'docs', uses: false, status: 'ambiguous' },
-  { name: 'ghost', uses: true, status: 'unavailable' },
+  { name: 'billing-rules', description: 'How billing works.', projectId: 'billing', uses: true, status: 'ok', confirmed: true },
+  { name: 'docs', uses: false, status: 'ambiguous', confirmed: false },
+  { name: 'ghost', uses: true, status: 'unavailable', confirmed: true },
 ];
 
 function draftOver(values: Record<string, unknown>): CardDraft {
@@ -156,48 +158,90 @@ describe('#skills — Fork writing style locally (M52 L17, 2.1.9)', () => {
 });
 
 /**
- * 2.1.57 — M52 `ybbal0vf`: the #skills card asks this machine to confirm the
- * attachments the repository's config carries (ASSUMPTION:dev-0002 — one
- * confirmation for the whole list, outside the card's shared save).
+ * 2.1.67 — M52 `qtq9iusb` / `uluzymnm`: a name is confirmed, not the list. An
+ * attached row without a confirmation on this machine carries `Unconfirmed` and
+ * a "Confirm" action; a row ticked on the card is confirmed with the save. What
+ * the running card shows is covered end-to-end (tests/e2e/spec-skills.test.ts);
+ * these cases pin the helpers the card is built from.
  */
-describe('#skills — Skill projects from this repository (M52 ybbal0vf, 2.1.57)', () => {
-  it('[section:ybbal0vf] the card warns that unconfirmed attachments are not used and offers one confirmation for the whole list; confirmed, it offers to revoke', () => {
-    const render = (trusted: boolean, pending = false) =>
-      renderToStaticMarkup(createElement(SkillHookTrustControl, { trusted, pending, onChange: () => {} }));
-    const unconfirmed = render(false);
-    expect(unconfirmed).toContain('data-trusted="false"');
-    expect(unconfirmed).toContain(
-      'The skill projects in this repository&#x27;s config are not confirmed on this machine, so none of them is used.',
+describe('#skills — attachment confirmation helpers (M52 qtq9iusb, 2.1.67)', () => {
+  const MIXED: ExposedProjectRow[] = [
+    { name: 'billing-rules', projectId: 'billing', uses: true, status: 'ok', confirmed: true },
+    { name: 'legal-terms', projectId: 'legal', uses: true, status: 'ok', confirmed: false },
+    { name: 'docs-style', projectId: 'docs', uses: false, status: 'ok', confirmed: false },
+  ];
+
+  it('[section:qtq9iusb] only an attached, unconfirmed row is marked Unconfirmed, with a Confirm action; the marker leaves the checkbox live', () => {
+    expect(confirmationMarker({ uses: true, confirmed: false })).toBe('Unconfirmed');
+    expect(confirmationMarker({ uses: true, confirmed: true })).toBeNull();
+    expect(confirmationMarker({ uses: false, confirmed: false })).toBeNull();
+    const html = renderToStaticMarkup(
+      createElement(UsedSkillProjectsList, {
+        rows: MIXED,
+        uses: ['billing-rules', 'legal-terms'],
+        onToggle: () => {},
+        onConfirm: () => {},
+      }),
     );
-    expect(HOOK_TRUST_UNCONFIRMED_MESSAGE).toContain('not confirmed on this machine');
-    expect(unconfirmed).toContain('>Confirm skill projects</button>');
-    expect(unconfirmed).not.toContain('disabled');
-
-    const confirmed = render(true);
-    expect(confirmed).toContain('data-trusted="true"');
-    expect(confirmed).toContain(HOOK_TRUST_CONFIRMED_MESSAGE.replace("'", '&#x27;'));
-    expect(confirmed).toContain('>Revoke confirmation</button>');
-    // Blocked while the decision is being stored.
-    expect(render(false, true)).toMatch(/<button[^>]*disabled=""/);
-
-    // The button flips the current decision.
-    const seen: boolean[] = [];
-    const tree = SkillHookTrustControl({ trusted: false, pending: false, onChange: (v) => seen.push(v) });
-    const button = (tree.props.children as Array<{ props: { children: { props: { onClick: () => void } } } }>)[1]!.props.children;
-    button.props.onClick();
-    expect(seen).toEqual([true]);
+    expect(html).toMatch(/data-skill-name="legal-terms"[\s\S]*?data-marker="Unconfirmed"[^>]*>Unconfirmed</);
+    expect(html).toContain('data-confirm-skill-use="legal-terms"');
+    expect(html.match(/data-marker="Unconfirmed"/g)).toHaveLength(1);
+    expect(html).not.toContain('data-confirm-skill-use="billing-rules"');
+    expect(html).not.toContain('data-confirm-skill-use="docs-style"');
   });
 
-  it('[section:ybbal0vf] the element sits on the #skills card before the list, shown only while the draft attaches a skill project, and never joins the card\'s save', () => {
+  it('[section:qtq9iusb] a confirmation write carries the confirmed names over and adds the new ones once; the added names are the draft\'s names not attached yet', () => {
+    expect(confirmationAfter(MIXED, ['legal-terms'])).toEqual(['billing-rules', 'legal-terms']);
+    expect(confirmationAfter(MIXED, ['billing-rules'])).toEqual(['billing-rules']);
+    expect(addedUses(MIXED, ['billing-rules', 'legal-terms', 'docs-style'])).toEqual(['docs-style']);
+    expect(addedUses(MIXED, ['billing-rules'])).toEqual([]);
+  });
+
+  it('[section:qtq9iusb] while one confirmation is in flight every Confirm is disabled, so a second write cannot overwrite the first', () => {
+    const TWO: ExposedProjectRow[] = [
+      ...MIXED,
+      { name: 'tax-rules', projectId: 'tax', uses: true, status: 'ok', confirmed: false },
+    ];
+    const render = (confirming: string | null) =>
+      renderToStaticMarkup(
+        createElement(UsedSkillProjectsList, {
+          rows: TWO,
+          uses: ['billing-rules', 'legal-terms', 'tax-rules'],
+          onToggle: () => {},
+          onConfirm: () => {},
+          confirming,
+        }),
+      );
+    const confirmButton = (html: string, name: string) =>
+      html.match(new RegExp(`<button[^>]*data-confirm-skill-use="${name}"[^>]*>`))?.[0];
+    // Idle: both Confirm actions are live.
+    const idle = render(null);
+    expect(confirmButton(idle, 'legal-terms')).toBeDefined();
+    expect(confirmButton(idle, 'legal-terms')).not.toMatch(/\sdisabled/);
+    expect(confirmButton(idle, 'tax-rules')).not.toMatch(/\sdisabled/);
+    // legal-terms in flight: the OTHER row's Confirm is disabled too — its write,
+    // built from the same rows, would replace the list without legal-terms.
+    expect(confirmationAfter(TWO, ['tax-rules'])).not.toContain('legal-terms');
+    const busy = render('legal-terms');
+    expect(confirmButton(busy, 'legal-terms')).toMatch(/\sdisabled/);
+    expect(confirmButton(busy, 'tax-rules')).toMatch(/\sdisabled/);
+  });
+
+  it('[section:qtq9iusb] afterSave without an added row writes no confirmation and re-reads the list', async () => {
+    const qc = new QueryClient();
+    qc.setQueryData(EXPOSED_PROJECTS_QUERY_KEY, MIXED);
+    const writes: string[][] = [];
+    await confirmAddedAfterSave(qc, async (names) => {
+      writes.push(names);
+    });
+    expect(writes).toEqual([]);
+    expect(qc.getQueryState(EXPOSED_PROJECTS_QUERY_KEY)?.isInvalidated).toBe(true);
+  });
+
+  it('[section:qtq9iusb] the card element "Used skill projects" confirms through afterSave; the old whole-list confirmation element is gone', () => {
     const [card] = assembleSettings([SPEC_SKILLS_SETTINGS], 'project');
-    const el = card!.elements.find((e) => e.id === 'skill-hook-trust')!;
-    expect(el).toMatchObject({ kind: 'custom', weight: 65, label: 'Skill projects from this repository' });
-    expect(el.configKey).toBeUndefined();
-    expect(el.keys).toBeUndefined();
-    expect(el.visible).toBe(whenAttaching);
-    const config = {} as ConfigResponse;
-    expect(whenAttaching({ config, draft: draftOver({ 'skill.uses': ['billing-rules'] }) })).toBe(true);
-    expect(whenAttaching({ config, draft: draftOver({ 'skill.uses': [] }) })).toBe(false);
-    expect(whenAttaching({ config, draft: draftOver({}) })).toBe(false);
+    expect(card!.elements.find((e) => e.id === 'skill-hook-trust')).toBeUndefined();
+    const el = card!.elements.find((e) => e.id === 'used-skill-projects')!;
+    expect(el.afterSave).toBeTypeOf('function');
   });
 });

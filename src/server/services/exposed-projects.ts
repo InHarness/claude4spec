@@ -76,7 +76,7 @@ export type AttachmentResolution =
   | { name: string; status: 'unavailable' }
   | { name: string; status: 'ambiguous'; providers: ExposedProject[] }
   | { name: string; status: 'self' }
-  | { name: string; status: 'untrusted' };
+  | { name: string; status: 'unconfirmed' };
 
 /**
  * Resolve the consumer's attachments against the exposed projects. `self` — the
@@ -84,11 +84,12 @@ export type AttachmentResolution =
  * reported apart (ignored with a warning by the callers), whatever other project
  * shares the name.
  *
- * 2.1.57 (M52 `ybbal0vf`): `trusted` is the machine-local confirmation of the
- * attachments the project's committed config carries (M31 `44viw74p`). Not
- * confirmed ⇒ every other attachment is `untrusted`: it resolves to no provider,
- * whatever the workspace exposes, and the callers warn as for a dangling one.
- * ASSUMPTION:dev-0002 — one confirmation covers the whole list.
+ * 2.1.67 (M52 `uluzymnm`, `ybbal0vf`): `confirmed` is the list of attachment
+ * NAMES this machine confirmed for the project (`confirmedSkillUses`, M31
+ * `44viw74p`). A name is confirmed, not the list: an attachment whose name is not
+ * on it — one a commit added next to confirmed ones included — is `unconfirmed`:
+ * it resolves to no provider, whatever the workspace exposes, and the callers
+ * warn as for a dangling one. A confirmed name absent from `uses` does nothing.
  *
  * Duplicate names in `uses` collapse to one attachment.
  */
@@ -97,16 +98,17 @@ export function resolveAttachments(
   uses: readonly string[],
   ownName: string | null,
   exposed: readonly ExposedProject[],
-  trusted: boolean,
+  confirmed: readonly string[],
 ): AttachmentResolution[] {
+  const ok = new Set(confirmed);
   const out: AttachmentResolution[] = [];
   for (const name of new Set(uses)) {
     if (ownName !== null && name === ownName) {
       out.push({ name, status: 'self' });
       continue;
     }
-    if (!trusted) {
-      out.push({ name, status: 'untrusted' });
+    if (!ok.has(name)) {
+      out.push({ name, status: 'unconfirmed' });
       continue;
     }
     const providers = exposed.filter((p) => p.name === name && p.projectId !== consumerId);
@@ -130,13 +132,20 @@ export function resolveAttachments(
  * has its own name when it sits in its `uses`. Sorted by name; one answer, no
  * paging — the list is short by nature and an incomplete one would be useless
  * for choosing attachments.
+ *
+ * 2.1.67 (M52 `uluzymnm`): each row carries `confirmed` — the name is attached
+ * AND confirmed on this machine (`confirmedSkillUses`); a row the project does
+ * not attach is never confirmed.
  */
 export function listExposedProjectRows(
   consumerId: string,
   uses: readonly string[],
   exposed: readonly ExposedProject[],
+  confirmedNames: readonly string[],
 ): ExposedProjectRow[] {
   const used = new Set(uses);
+  const confirmedSet = new Set(confirmedNames);
+  const confirmed = (name: string): boolean => used.has(name) && confirmedSet.has(name);
   const own = exposed.find((p) => p.projectId === consumerId)?.name ?? null;
   const byName = new Map<string, ExposedProject[]>();
   for (const p of exposed) {
@@ -154,14 +163,15 @@ export function listExposedProjectRows(
         projectId: p.projectId,
         uses: used.has(name),
         status: 'ok',
+        confirmed: confirmed(name),
       });
     } else {
-      rows.push({ name, uses: used.has(name), status: 'ambiguous' });
+      rows.push({ name, uses: used.has(name), status: 'ambiguous', confirmed: confirmed(name) });
     }
   }
   for (const name of used) {
     if (name === own || byName.has(name)) continue;
-    rows.push({ name, uses: true, status: 'unavailable' });
+    rows.push({ name, uses: true, status: 'unavailable', confirmed: confirmed(name) });
   }
   return rows.sort((a, b) => a.name.localeCompare(b.name));
 }

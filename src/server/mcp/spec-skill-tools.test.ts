@@ -275,7 +275,7 @@ describe('spec-skill-tools · update_skill_file (M52, 2.1.9)', () => {
       new ProjectExposedSkillSource('p1', {
         own: () => ({ uses: ['billing-rules'], name: null }),
         workspace: () => ({
-          trusted: true,
+          confirmed: ['billing-rules'],
           listExposed: () => [
             { projectId: 'billing', name: 'billing-rules', description: 'How billing works.', entry: 'index.md', scope: 'contextual', contextTypes: undefined },
           ],

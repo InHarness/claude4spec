@@ -117,8 +117,7 @@ describe('/settings card catalog (0.2.113 §1.6)', () => {
       ['skill-entry', 'text', 40],
       ['skill-scope', 'select', 50],
       ['skill-context-types', 'multiselect', 60],
-      // 2.1.57 (M52 `ybbal0vf`): the confirmation of the repository's attachments.
-      ['skill-hook-trust', 'custom', 65],
+      // 2.1.67 (M52 `qtq9iusb`): the confirmation is per name, on the rows of the list.
       ['used-skill-projects', 'custom', 70],
       ['fork-writing-style', 'custom', 80],
     ]);

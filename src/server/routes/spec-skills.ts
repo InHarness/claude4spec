@@ -15,13 +15,15 @@
  * `{ slug, path }`; refusals through the shared error handler —
  * `SKILL_ALREADY_EXISTS` 409, `SKILL_NOT_FOUND` 404, `INVALID_ARGUMENT` 400.
  *
- *   GET  /spec-skills/hook-trust  → SpecSkillHookTrust
- *   PUT  /spec-skills/hook-trust  → SpecSkillHookTrust (body `{ trusted: boolean }`)
+ *   PUT  /spec-skills/uses-confirmation → 200 { data: SkillUsesConfirmationResponse }
  *
- * 2.1.57 (M52 `ybbal0vf`, M31 `44viw74p`): the machine-local confirmation of the
- * attachments the project's committed config carries, read and set by the
- * `#skills` card. A non-boolean `trusted` is `INVALID_ARGUMENT` 400.
- * ASSUMPTION:dev-0002 — one confirmation for the whole attachment list.
+ * 2.1.67 (M52 `uluzymnm`, `qtq9iusb`; endpoint `put-api-spec-skills-uses-confirmation`):
+ * the machine-local confirmation of the project's attachment NAMES. Body
+ * `SkillUsesConfirmationRequest` `{ names }` replaces the stored list whole
+ * (`[]` withdraws all); the write delegates to M31's `setSkillUsesConfirmation`
+ * (the registry record, never the repository). Names the project's `skill.uses`
+ * does not carry are accepted and returned apart (`notInSkillUses`). `names` not
+ * an array of strings in the `skill.name` syntax is `INVALID_ARGUMENT` 400.
  */
 
 import express, { Router } from 'express';
@@ -29,8 +31,10 @@ import type {
   ExposedProjectRow,
   ForkWritingStyleRequest,
   ForkWritingStyleResponse,
-  SpecSkillHookTrust,
+  SkillUsesConfirmationRequest,
+  SkillUsesConfirmationResponse,
 } from '../../shared/spec-skills.js';
+import { SKILL_NAME_RE } from '../services/skill-name.js';
 import { DomainError } from '../services/tags.js';
 import { errorHandler } from './errors.js';
 
@@ -39,8 +43,27 @@ export interface SpecSkillsRouterDeps {
   listExposedProjects: () => ExposedProjectRow[];
   /** `fork_writing_style`, bound to the current project (its registry and its `skills` root). */
   forkWritingStyle?: (input: Partial<ForkWritingStyleRequest>) => Promise<ForkWritingStyleResponse>;
-  /** The machine-local confirmation of the current project's committed attachments (ASSUMPTION:dev-0002). */
-  hookTrust?: { get(): boolean; set(value: boolean): void };
+  /**
+   * 2.1.67: write the current project's confirmed attachment names
+   * (M31 `setSkillUsesConfirmation`, bound to this project and its workspace).
+   */
+  confirmSkillUses?: (names: string[]) => SkillUsesConfirmationResponse;
+}
+
+/** The request DTO's rule: `names` is an array of `skill.name`s. */
+function parseConfirmationRequest(body: unknown): SkillUsesConfirmationRequest {
+  const names = (body as Partial<SkillUsesConfirmationRequest> | undefined)?.names;
+  if (!Array.isArray(names) || names.some((n) => typeof n !== 'string')) {
+    throw new DomainError('INVALID_ARGUMENT', 'names must be an array of skill names');
+  }
+  const bad = (names as string[]).filter((n) => !SKILL_NAME_RE.test(n));
+  if (bad.length > 0) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      `not a skill.name (kebab-case: lowercase letters, digits and single hyphens): ${bad.map((n) => `'${n}'`).join(', ')}`,
+    );
+  }
+  return { names: names as string[] };
 }
 
 export function specSkillsRouter(deps: SpecSkillsRouterDeps): Router {
@@ -67,25 +90,17 @@ export function specSkillsRouter(deps: SpecSkillsRouterDeps): Router {
     });
   }
 
-  if (deps.hookTrust) {
-    const trust = deps.hookTrust;
-    router.get('/hook-trust', (_req, res, next) => {
+  if (deps.confirmSkillUses) {
+    const confirm = deps.confirmSkillUses;
+    router.put('/uses-confirmation', express.json(), (req, res, next) => {
       try {
-        const body: SpecSkillHookTrust = { trusted: trust.get() };
-        res.json(body);
-      } catch (err) {
-        next(err);
-      }
-    });
-    router.put('/hook-trust', express.json(), (req, res, next) => {
-      try {
-        const value = (req.body as Partial<SpecSkillHookTrust> | undefined)?.trusted;
-        if (typeof value !== 'boolean') {
-          throw new DomainError('INVALID_ARGUMENT', 'trusted must be a boolean');
-        }
-        trust.set(value);
-        const body: SpecSkillHookTrust = { trusted: value };
-        res.json(body);
+        const { names } = parseConfirmationRequest(req.body);
+        const result = confirm(names);
+        const data: SkillUsesConfirmationResponse = {
+          confirmedSkillUses: result.confirmedSkillUses,
+          notInSkillUses: result.notInSkillUses,
+        };
+        res.json({ data });
       } catch (err) {
         next(err);
       }

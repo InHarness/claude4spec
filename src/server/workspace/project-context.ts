@@ -474,9 +474,9 @@ async function buildInner(
   skillRegistry.registerSource(
     new ProjectExposedSkillSource(
       projectId,
-      // 2.1.57 (M52 `ybbal0vf`, M31 `44viw74p`): the machine-local confirmation
-      // of the committed attachment list comes from the same registry read as the
-      // project list; unconfirmed, no peer config is read. ASSUMPTION:dev-0002.
+      // 2.1.67 (M52 `uluzymnm`, M31 `44viw74p`): the machine-local confirmed
+      // attachment names come from the same registry read as the project list;
+      // with none confirmed, no peer config is read.
       workspaceExposedSkillAccess({
         consumerId: projectId,
         readOwnSkill: readOwnSkillConfig,
@@ -1739,13 +1739,25 @@ async function buildInner(
   router.use(
     '/spec-skills',
     specSkillsRouter({
-      listExposedProjects: () =>
-        listExposedProjectRows(projectId, readOwnSkillConfig().uses, listExposedProjects(workspaceProjects())),
-      // 2.1.57 (M52 `ybbal0vf`): the #skills card's confirmation of the committed
-      // attachment list, machine-local (M31 `44viw74p`). ASSUMPTION:dev-0002.
-      hookTrust: {
-        get: () => registry.getSpecSkillHooksTrust(workspace, projectId),
-        set: (value) => registry.setSpecSkillHooksTrust(workspace, projectId, value),
+      // 2.1.67 (M52 `uluzymnm`): each row carries whether its name is confirmed
+      // on this machine — from the same registry read as the project list.
+      listExposedProjects: () => {
+        const projects = workspaceProjects();
+        return listExposedProjectRows(
+          projectId,
+          readOwnSkillConfig().uses,
+          listExposedProjects(projects),
+          projects.find((p) => p.id === projectId)?.confirmedSkillUses ?? [],
+        );
+      },
+      // 2.1.67 (M52 `uluzymnm`, `qtq9iusb`): `PUT /uses-confirmation` — the
+      // confirmed attachment names, machine-local, written by M31's core
+      // (`setSkillUsesConfirmation`, M31 `naxqsfra`), which also invalidates this
+      // context through the consent listener.
+      confirmSkillUses: (names) => {
+        const result = registry.setSkillUsesConfirmation(workspace, projectId, names);
+        if (!result) throw new Error(`project '${projectId}' is no longer a project of workspace '${workspace.name}'`);
+        return { confirmedSkillUses: result.confirmedSkillUses, notInSkillUses: result.notInSkillUses };
       },
       // 2.1.9 (M52 row 3): `fork_writing_style` over this context's registry and
       // the facade of its root of kind `skills`; `config.writingStyle` untouched.

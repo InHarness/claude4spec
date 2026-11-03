@@ -71,7 +71,7 @@ async function rig(opts: { writingStyle?: string | null } = {}) {
     new ProjectExposedSkillSource('consumer', {
       own: () => ({ uses: ['house-rules'], name: null }),
       workspace: () => ({
-        trusted: true,
+        confirmed: ['house-rules'],
         listExposed: () => [
           { projectId: 'house', name: 'house-rules', description: 'The house rules.', entry: 'index.md', scope: 'writing-style', contextTypes: undefined },
         ],

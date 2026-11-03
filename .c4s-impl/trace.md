@@ -4,3 +4,7 @@
 - run-remote → src/server/runs/run-remote.ts (step 6 `trustOf`, `c4sTrust` in the order, `warnings` in the result; consent read: `runLocalConsentOf`, needs: src/server/runs/run-consent-needs.ts; wiring: src/server/workspace/project-context.ts; test: src/server/runs/run-remote.test.ts "the trust in the order (jlgucjnq)")
 - get-run → src/server/runs/run-read.ts (`RUN_REASON_HINTS`, `reasonHint`; test: src/server/runs/run-read.test.ts)
 - run-tools-run-remote → src/server/mcp/run-tools.ts (payload `{ runId, host, unconfirmed?, warnings? }` from `RunRemoteResult`; test: src/server/mcp/run-tools.test.ts)
+- exposed-project-row → src/shared/spec-skills.ts `ExposedProjectRow.confirmed` (rows: `listExposedProjectRows` in src/server/services/exposed-projects.ts; wiring: src/server/workspace/project-context.ts; test: src/server/routes/spec-skills.route.test.ts)
+- skill-uses-confirmation-request → src/shared/spec-skills.ts `SkillUsesConfirmationRequest` (validation: `parseConfirmationRequest` in src/server/routes/spec-skills.ts; test: src/server/routes/spec-skills.route.test.ts)
+- skill-uses-confirmation-response → src/shared/spec-skills.ts `SkillUsesConfirmationResponse` (test: src/server/routes/spec-skills.route.test.ts)
+- put-api-spec-skills-uses-confirmation → src/server/routes/spec-skills.ts `PUT /uses-confirmation` (delegates to `WorkspaceRegistry.setSkillUsesConfirmation` in src/server/workspace/project-context.ts; client: `specSkillsApi.confirmSkillUses` in src/client/lib/spec-skills-api.ts; test: src/server/routes/spec-skills.route.test.ts)

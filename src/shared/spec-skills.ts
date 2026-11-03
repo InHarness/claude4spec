@@ -23,6 +23,12 @@ export interface ExposedProjectRow {
   /** Whether the current project has this name in `skill.uses`. */
   uses: boolean;
   status: ExposedProjectStatus;
+  /**
+   * 2.1.67 (M52 `uluzymnm`): whether the name is confirmed on this machine in the
+   * project's trust (`confirmedSkillUses`, M31 registry); `false` for the row of
+   * a project that is not attached.
+   */
+  confirmed: boolean;
 }
 
 /**
@@ -50,12 +56,21 @@ export interface ForkWritingStyleResponse {
 }
 
 /**
- * 2.1.57 (M52 `ybbal0vf`, M31 `44viw74p`) — `GET|PUT /api/spec-skills/hook-trust`:
- * whether this machine confirmed the skill attachments (`skill.uses`) of the
- * project's committed config. Machine-local (the workspace registry record), never
- * in the repository. ASSUMPTION:dev-0002 — one confirmation for the whole list,
- * given on the `#skills` settings card.
+ * 2.1.67 (M52 `uluzymnm`, `qtq9iusb`) — DTO `skill-uses-confirmation-request`,
+ * the body of `PUT /api/spec-skills/uses-confirmation`: the attachment names
+ * confirmed on this machine for the current project. It REPLACES the stored list
+ * whole; `[]` withdraws every confirmation. Each name in the `skill.name` syntax.
  */
-export interface SpecSkillHookTrust {
-  trusted: boolean;
+export interface SkillUsesConfirmationRequest {
+  names: string[];
+}
+
+/**
+ * DTO `skill-uses-confirmation-response` — the project's confirmations after the
+ * write: the stored list, and apart the confirmed names the project's
+ * `skill.uses` does not carry (not an error).
+ */
+export interface SkillUsesConfirmationResponse {
+  confirmedSkillUses: string[];
+  notInSkillUses: string[];
 }

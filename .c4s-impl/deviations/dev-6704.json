@@ -1,0 +1,17 @@
+{
+  "id": "dev-6704",
+  "kind": "missing",
+  "blocking": false,
+  "address": "u4-m52-potwierdzanie-podpiec/qtq9iusb",
+  "slugs": [
+    "qtq9iusb",
+    "put-api-spec-skills-uses-confirmation",
+    "exposed-project-row"
+  ],
+  "text": "`PUT /api/spec-skills/uses-confirmation` replaces the confirmed list whole, and the only read the #skills card has is `exposed-project-row.confirmed` — which is `false` for a name the project does not attach. So the card cannot see a name confirmed on this machine but absent from `skill.uses` (e.g. confirmed with `c4s confirm-skill-uses` ahead of a commit, or left after an attachment was taken off). Assumed: the card's Confirm action and the confirmation written with the save of a newly ticked row send every attached, confirmed name (as the rows show it) plus the new one; a confirmed name outside `skill.uses` is not carried and is dropped by such a write. The CLI is unaffected (it passes its names explicitly).",
+  "assumption": "ASSUMPTION:dev-6704 — a confirmed name outside `skill.uses` has no row, so a write from the card does not carry it.",
+  "unit": "u4-m52-potwierdzanie-podpiec",
+  "portion": "u4-m52-potwierdzanie-podpiec/p1-l2-l17",
+  "sent": true,
+  "patchPath": "2-1-66-to-2-1-67-u4-m52-potwierdzanie-podpiec-qtq9iusb-zapis-potwierdzen-z-karty-skills-gubi-potw.md"
+}

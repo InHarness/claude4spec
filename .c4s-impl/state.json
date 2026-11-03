@@ -1,5 +1,5 @@
 {
-  "iteration": 14,
+  "iteration": 18,
   "conventions": [
     {
       "label": "L3 (Spec Operations) — implementor M43",
@@ -61,7 +61,7 @@
         "u4-m52-potwierdzanie-podpiec",
         "u6-plan-execution-v3"
       ],
-      "startCommit": null
+      "startCommit": "49f462bc90759bd308a6d29afbef6d675358a363"
     }
   ],
   "units": [
@@ -581,13 +581,43 @@
         }
       ],
       "wave": 3,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u4-m52-potwierdzanie-podpiec/p1-l2-l17",
+          "layers": [
+            "L2",
+            "L3",
+            "L4",
+            "L10",
+            "L14",
+            "L17"
+          ],
+          "slugs": [
+            "exposed-project-row",
+            "skill-uses-confirmation-request",
+            "skill-uses-confirmation-response",
+            "put-api-spec-skills-uses-confirmation",
+            "m52-requires-m31",
+            "moduly-feature",
+            "ac-nazwa-dopisana-commitem-do-skill-uses",
+            "ac-po-potwierdzeniu-nazwy-komenda-c4s-co",
+            "ac-podpiecie-dodane-na-karcie-skills-dzi",
+            "ac-podpiecie-z-skill-uses-ktorego-nazwa",
+            "ac-wiersz-niepotwierdzonego-podpiecia-na"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "45bd9fb5aec9495fe79834f055133845d6623942",
+      "baseCommit": "49f462bc90759bd308a6d29afbef6d675358a363",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
       "jobs": []
     },

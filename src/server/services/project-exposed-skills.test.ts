@@ -19,7 +19,7 @@ import { PagesService } from './pages.js';
 import {
   EXPOSED_SKILL_MANIFEST_LIMIT,
   ProjectExposedSkillSource,
-  UNTRUSTED_DETAIL,
+  UNCONFIRMED_DETAIL,
   exposedReadOnlyReason,
   readExposedPackage,
   stripForSkill,
@@ -35,6 +35,10 @@ import { DomainError } from './tags.js';
 import { ProjectContextCache } from '../workspace/context-cache.js';
 import type { ProjectContext } from '../workspace/project-context.js';
 import type { ProjectRecord } from '../workspace/types.js';
+import { WorkspaceRegistry } from '../workspace/registry.js';
+import { parseArgs } from '../../bin/c4s/args.js';
+import { runConfirmSkillUses } from '../../bin/c4s/commands/confirm-skill-uses.js';
+import { runRegisterHome } from '../../bin/c4s/commands/register-home.js';
 import { checkWritingStyleAtStart } from './writing-style-start.js';
 
 /**
@@ -103,20 +107,28 @@ function consumer(initial: {
   uses?: string[];
   exposed?: ExposedProject[];
   packages?: Record<string, () => ExposedSkillPackage | Promise<ExposedSkillPackage>>;
-  /** The machine-local confirmation of the attachments (2.1.57); confirmed unless a case says otherwise. */
-  trusted?: boolean;
+  /**
+   * 2.1.67: the attachment names confirmed on this machine (`confirmedSkillUses`);
+   * absent = every name of `uses` confirmed, unless a case says otherwise.
+   */
+  confirmed?: string[];
 }) {
-  const state = {
+  const state: {
+    uses: string[];
+    exposed: ExposedProject[];
+    packages: Record<string, () => ExposedSkillPackage | Promise<ExposedSkillPackage>>;
+    confirmed: string[] | undefined;
+  } = {
     uses: initial.uses ?? [],
     exposed: initial.exposed ?? [],
     packages: initial.packages ?? {},
-    trusted: initial.trusted ?? true,
+    confirmed: initial.confirmed,
   };
   const reads: string[] = [];
   const access: ExposedSkillAccess = {
     // The consumer's own exposed name, as its own config would give it.
     own: () => ({ uses: state.uses, name: state.exposed.find((p) => p.projectId === 'consumer')?.name ?? null }),
-    workspace: () => ({ trusted: state.trusted, listExposed: () => state.exposed }),
+    workspace: () => ({ confirmed: state.confirmed ?? state.uses, listExposed: () => state.exposed }),
     readProvider: async (id) => {
       reads.push(id);
       const read = state.packages[id];
@@ -255,7 +267,7 @@ describe('project-exposed source — listing and precedence (M52 + M37, 2.1.9)',
     registry.registerSource(
       new ProjectExposedSkillSource('consumer', {
         own: () => ({ uses: exposure.uses, name: null }),
-        workspace: () => ({ trusted: true, listExposed: () => [{ ...BILLING, name: 'house-style', scope: 'writing-style' }] }),
+        workspace: () => ({ confirmed: ['house-style'], listExposed: () => [{ ...BILLING, name: 'house-style', scope: 'writing-style' }] }),
         readProvider: async () => pkg('exposed'),
       }),
     );
@@ -286,7 +298,7 @@ describe('project-exposed source — listing and precedence (M52 + M37, 2.1.9)',
     registry.registerSource(
       new ProjectExposedSkillSource('consumer', {
         own: () => ({ uses: [], name: null }),
-        workspace: () => ({ trusted: true, listExposed: () => [BILLING] }),
+        workspace: () => ({ confirmed: [], listExposed: () => [BILLING] }),
         readProvider: async () => pkg('never read'),
       }),
     );
@@ -306,7 +318,7 @@ describe('project-exposed source — listing and precedence (M52 + M37, 2.1.9)',
     // Ignored, not dangling: no source reports the slug as unresolved.
     expect(registry.unresolvedReason('my-skill')?.reason).toBe('outside-registry');
     expect(warn.mock.calls.some(([m]) => String(m).includes('attaching oneself is ignored'))).toBe(true);
-    expect(listExposedProjectRows('consumer', ['my-skill'], [own, BILLING]).map((r) => r.name)).toEqual(['billing-rules']);
+    expect(listExposedProjectRows('consumer', ['my-skill'], [own, BILLING], ['my-skill']).map((r) => r.name)).toEqual(['billing-rules']);
   });
 });
 
@@ -469,7 +481,7 @@ describe('attachments against real project configs (M52, 2.1.9)', () => {
     writeConfig(consumerCwd, { name: 'Shop', skill: { uses: ['billing-rules'] } });
     const projects = [
       { id: 'billing', cwd: providerCwd },
-      { id: 'shop', cwd: consumerCwd, trustSpecSkillHooks: true },
+      { id: 'shop', cwd: consumerCwd, confirmedSkillUses: ['billing-rules'] },
     ];
     const registry = SkillRegistry.load([], { rescanTtlMs: 0 });
     registry.registerSource(
@@ -483,7 +495,8 @@ describe('attachments against real project configs (M52, 2.1.9)', () => {
         }),
       ),
     );
-    const rows = () => listExposedProjectRows('shop', readConfig(consumerCwd).skill?.uses ?? [], listExposedProjects(projects));
+    const rows = () =>
+      listExposedProjectRows('shop', readConfig(consumerCwd).skill?.uses ?? [], listExposedProjects(projects), projects[1]!.confirmedSkillUses!);
     return { providerCwd, consumerCwd, registry, rows };
   }
 
@@ -491,14 +504,14 @@ describe('attachments against real project configs (M52, 2.1.9)', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const ws = workspace();
     expect(ws.rows()).toEqual([
-      { name: 'billing-rules', description: 'How billing works.', projectId: 'billing', uses: true, status: 'ok' },
+      { name: 'billing-rules', description: 'How billing works.', projectId: 'billing', uses: true, status: 'ok', confirmed: true },
     ]);
     expect(ws.registry.has('billing-rules')).toBe(true);
 
     writeConfig(ws.providerCwd, { skill: { name: 'billing-v2' } });
     expect(ws.rows()).toEqual([
-      { name: 'billing-rules', uses: true, status: 'unavailable' },
-      { name: 'billing-v2', description: 'How billing works.', projectId: 'billing', uses: false, status: 'ok' },
+      { name: 'billing-rules', uses: true, status: 'unavailable', confirmed: true },
+      { name: 'billing-v2', description: 'How billing works.', projectId: 'billing', uses: false, status: 'ok', confirmed: false },
     ]);
     // No redirect: the old name is dangling for the registry too.
     expect(ws.registry.has('billing-rules')).toBe(false);
@@ -570,20 +583,21 @@ describe('update_skill_file read-only rule (M52, 2.1.9)', () => {
 });
 
 /**
- * 2.1.57 — M52 `ybbal0vf`: the trust gate of attachments from the repository.
- * The attachment list rides in the committed `config.json`, so it works only once
- * this machine confirmed it (M31 `44viw74p`, `trustSpecSkillHooks`). Until then
- * no attachment resolves to a provider, and each warns like a dangling one.
- * ASSUMPTION:dev-0002 — one confirmation for the whole list.
+ * 2.1.67 — M52 `uluzymnm` / `ybbal0vf` / `rkbsi6ky` 15: the trust gate of
+ * attachments from the repository. The attachment list rides in the committed
+ * `config.json`, so an attachment works only once this machine confirmed its NAME
+ * (`confirmedSkillUses` in the M31 registry record). A name is confirmed, not the
+ * list: a name a commit adds stays unconfirmed. An unconfirmed attachment resolves
+ * to no provider and warns like a dangling one; the start never fails on it.
  */
-describe('attachments from the repository need a machine-local confirmation (M52 ybbal0vf, 2.1.57)', () => {
-  it('[section:ybbal0vf] an unconfirmed attachment resolves to no provider and warns like a dangling one; once confirmed it resolves, read live without a rebuild', async () => {
+describe('attachments from the repository need their name confirmed on this machine (M52 uluzymnm, 2.1.67)', () => {
+  it('[ac:ac-podpiecie-z-skill-uses-ktorego-nazwa] an attachment of `skill.uses` whose name is not confirmed on this machine does not resolve to its provider; confirmed, it does — read live without a rebuild', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const c = consumer({
       uses: ['billing-rules'],
       exposed: [BILLING],
       packages: { billing: () => pkg('# Billing rules\n') },
-      trusted: false,
+      confirmed: [],
     });
 
     // Not confirmed: the provider exists and is unique, yet the attachment resolves to none.
@@ -592,7 +606,7 @@ describe('attachments from the repository need a machine-local confirmation (M52
     // Like a dangling attachment: known, unresolved, `provider-unreachable` — a warning, not an error.
     const unresolved = c.registry.unresolvedReason('billing-rules');
     expect(unresolved?.reason).toBe('provider-unreachable');
-    expect(unresolved?.detail).toContain('not confirmed on this machine');
+    expect(unresolved?.detail).toBe(UNCONFIRMED_DETAIL);
     const err = await refusal(loadSkillFileLive(c.registry, 'billing-rules'));
     expect(err.code).toBe('SKILL_NOT_FOUND');
     // The provider's content never reaches the consumer.
@@ -600,37 +614,98 @@ describe('attachments from the repository need a machine-local confirmation (M52
     const messages = warn.mock.calls.map((args) => String(args[0]));
     expect(messages.some((m) => m.includes('skill.uses "billing-rules"') && m.includes('not confirmed on this machine'))).toBe(true);
 
-    // Confirmed on this machine: the same attachment resolves to its provider, no context rebuild.
-    c.state.trusted = true;
+    // The name confirmed on this machine: the same attachment resolves to its provider.
+    c.state.confirmed = ['billing-rules'];
     expect(c.registry.has('billing-rules')).toBe(true);
     expect(c.registry.unresolvedReason('billing-rules')).toBeNull();
     expect((await loadSkillFileLive(c.registry, 'billing-rules')).content).toContain('# Billing rules');
     expect(c.reads).toEqual(['billing']);
 
     // Withdrawn: back to unresolved.
-    c.state.trusted = false;
+    c.state.confirmed = [];
     expect(c.registry.has('billing-rules')).toBe(false);
     expect(c.registry.unresolvedReason('billing-rules')?.reason).toBe('provider-unreachable');
   });
 
-  it('[section:ybbal0vf] one confirmation covers the whole list, and an unconfirmed list leaves the dangling and self rules as they are', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const LEGAL: ExposedProject = { ...BILLING, projectId: 'legal', name: 'legal-terms', description: 'Terms.' };
-    const OWN: ExposedProject = { ...BILLING, projectId: 'consumer', name: 'consumer-skill' };
-    const c = consumer({ uses: ['billing-rules', 'legal-terms', 'consumer-skill'], exposed: [BILLING, LEGAL, OWN], trusted: false });
-    expect(c.resolver.resolveForContext('chat', { writingStyle: null }).listing).toEqual([]);
-    for (const slug of ['billing-rules', 'legal-terms']) {
-      expect(c.registry.unresolvedReason(slug)?.reason, slug).toBe('provider-unreachable');
-    }
-    // Attaching oneself stays ignored — not reported as an unreachable attachment.
-    expect(c.registry.unresolvedReason('consumer-skill')?.reason).toBe('outside-registry');
+  it('[ac:ac-nazwa-dopisana-commitem-do-skill-uses] a name a commit adds to the `skill.uses` of a project with other attachments confirmed is unconfirmed: it resolves to none and its row reads `confirmed: false`, while the confirmed one keeps working', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const billingCwd = tmp();
+    const legalCwd = tmp();
+    const shopCwd = tmp();
+    writeConfig(billingCwd, { name: 'Billing', skill: { exposed: true, name: 'billing-rules', description: 'How billing works.' } });
+    writeConfig(legalCwd, { name: 'Legal', skill: { exposed: true, name: 'legal-terms', description: 'Terms.' } });
+    writeConfig(shopCwd, { name: 'Shop', skill: { uses: ['billing-rules'] } });
+    // The registry record of this machine: `billing-rules` confirmed.
+    const projects: ProjectRecord[] = [
+      { id: 'billing', cwd: billingCwd },
+      { id: 'legal', cwd: legalCwd },
+      { id: 'shop', cwd: shopCwd, confirmedSkillUses: ['billing-rules'] },
+    ];
+    const registry = SkillRegistry.load([], { rescanTtlMs: 0 });
+    const source = new ProjectExposedSkillSource(
+      'shop',
+      workspaceExposedSkillAccess({
+        consumerId: 'shop',
+        readOwnSkill: () => normalizeSkillConfig(readConfig(shopCwd)),
+        readWorkspaceProjects: () => projects,
+        readProvider: async (id) => pkg(`# ${id}\n`),
+      }),
+    );
+    registry.registerSource(source);
+    const rows = () =>
+      listExposedProjectRows(
+        'shop',
+        readConfig(shopCwd).skill?.uses ?? [],
+        listExposedProjects(projects),
+        projects[2]!.confirmedSkillUses ?? [],
+      );
+    expect(registry.has('billing-rules')).toBe(true);
 
-    c.state.trusted = true;
-    expect(c.resolver.resolveForContext('chat', { writingStyle: null }).listing.map((e) => e.slug).sort()).toEqual([
-      'billing-rules',
-      'legal-terms',
+    // A commit (pulled into the working tree) appends `legal-terms` to `skill.uses`.
+    writeConfig(shopCwd, { skill: { uses: ['billing-rules', 'legal-terms'] } });
+    expect(readConfig(shopCwd).skill?.uses).toEqual(['billing-rules', 'legal-terms']);
+
+    // The confirmed name still works; the appended one does not resolve to its (unique, existing) provider.
+    expect(registry.has('billing-rules')).toBe(true);
+    expect(registry.has('legal-terms')).toBe(false);
+    expect(source.unresolved()).toEqual([{ slug: 'legal-terms', reason: 'provider-unreachable', detail: UNCONFIRMED_DETAIL }]);
+    expect(rows()).toEqual([
+      { name: 'billing-rules', description: 'How billing works.', projectId: 'billing', uses: true, status: 'ok', confirmed: true },
+      { name: 'legal-terms', description: 'Terms.', projectId: 'legal', uses: true, status: 'ok', confirmed: false },
     ]);
-    expect(warn).toHaveBeenCalled();
+  });
+
+  it('[section:uluzymnm] a confirmed name absent from `skill.uses` does nothing and is no error; taking an attachment off needs no confirmation', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const LEGAL: ExposedProject = { ...BILLING, projectId: 'legal', name: 'legal-terms', description: 'Terms.' };
+    const c = consumer({ uses: ['billing-rules'], exposed: [BILLING, LEGAL], confirmed: ['billing-rules', 'legal-terms'] });
+    // `legal-terms` is confirmed but not attached: nothing on the listing, nothing unresolved.
+    expect(c.resolver.resolveForContext('chat', { writingStyle: null }).listing.map((e) => e.slug)).toEqual(['billing-rules']);
+    expect(c.registry.unresolvedReason('legal-terms')?.reason).toBe('outside-registry');
+    // Taking `billing-rules` off: no confirmation involved, it simply leaves the listing.
+    c.state.uses = [];
+    expect(c.resolver.resolveForContext('chat', { writingStyle: null }).listing).toEqual([]);
+    // The rows of a not-attached project are never confirmed.
+    expect(listExposedProjectRows('consumer', [], [BILLING, LEGAL], ['billing-rules', 'legal-terms']).map((r) => r.confirmed)).toEqual([
+      false,
+      false,
+    ]);
+  });
+
+  it('[section:rkbsi6ky] an unconfirmed attachment warns and the start does not fail; the writing style of such a provider stays out of the thread', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const c = consumer({
+      uses: ['house-style'],
+      exposed: [{ ...BILLING, name: 'house-style', scope: 'writing-style' }],
+      packages: { billing: () => pkg('# House style\n') },
+      confirmed: [],
+    });
+    const verdict = checkWritingStyleAtStart(c.registry, 'house-style');
+    expect(verdict.ok).toBe(true);
+    expect(verdict.ok && verdict.warning).toBeTruthy();
+    const { writingStyle } = c.resolver.resolveForContext('chat', { writingStyle: 'house-style' });
+    expect(writingStyle).toBeNull();
+    expect(prompt({ writingStyleSkill: writingStyle })).not.toContain('<project_writing_skill');
   });
 
   it('[section:ybbal0vf] a project without attachments needs no confirmation and reads nothing to decide it', () => {
@@ -643,7 +718,7 @@ describe('attachments from the repository need a machine-local confirmation (M52
         workspace: () => {
           workspaceReads += 1;
           return {
-            trusted: false,
+            confirmed: [],
             listExposed: () => {
               exposedReads += 1;
               return [BILLING];
@@ -659,7 +734,7 @@ describe('attachments from the repository need a machine-local confirmation (M52
     expect(exposedReads).toBe(0);
   });
 
-  it('[section:ybbal0vf] an unconfirmed project reads no peer config (no listExposed); a confirmed one reads the registry once per query', () => {
+  it('[section:ybbal0vf] a project with no attachment confirmed reads no peer config (no listExposed); with one confirmed it reads the registry once per query', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const providerCwd = tmp();
     const otherCwd = tmp();
@@ -667,11 +742,12 @@ describe('attachments from the repository need a machine-local confirmation (M52
     writeConfig(providerCwd, { name: 'Billing', skill: { exposed: true, name: 'billing-rules', description: 'How billing works.' } });
     writeConfig(otherCwd, { name: 'Legal', skill: { exposed: true, name: 'legal-terms' } });
     writeConfig(consumerCwd, { name: 'Shop', skill: { exposed: true, name: 'shop-skill', uses: ['billing-rules', 'shop-skill'] } });
-    const record = {
+    const record: { projects: ProjectRecord[] } = {
       projects: [
         { id: 'billing', cwd: providerCwd },
         { id: 'legal', cwd: otherCwd },
-        { id: 'shop', cwd: consumerCwd, trustSpecSkillHooks: false },
+        // Confirming its own name changes nothing: attaching oneself is ignored.
+        { id: 'shop', cwd: consumerCwd, confirmedSkillUses: ['shop-skill'] },
       ],
     };
     let registryReads = 0;
@@ -695,19 +771,19 @@ describe('attachments from the repository need a machine-local confirmation (M52
       }),
     );
 
-    // Not confirmed: each query reads the registry once and no peer config at all.
+    // Nothing confirmed: each query reads the registry once and no peer config at all.
     expect(source.list().entries).toEqual([]);
     expect(registryReads).toBe(1);
     expect(source.unresolved()).toEqual([
-      { slug: 'billing-rules', reason: 'provider-unreachable', detail: UNTRUSTED_DETAIL },
+      { slug: 'billing-rules', reason: 'provider-unreachable', detail: UNCONFIRMED_DETAIL },
     ]);
     expect(registryReads).toBe(2);
     expect(peerReads).toEqual([]);
     // The self rule still holds, from the consumer's own config: `shop-skill` is not reported as unreachable.
     expect(source.unresolved().map((u) => u.slug)).not.toContain('shop-skill');
 
-    // Confirmed: one registry read per query (trust and project list together); each peer read once, never the consumer itself.
-    record.projects[2]!.trustSpecSkillHooks = true;
+    // `billing-rules` confirmed: one registry read per query; each peer read once, never the consumer itself.
+    record.projects[2]!.confirmedSkillUses = ['billing-rules'];
     registryReads = 0;
     expect(source.list().entries.map((e) => [e.slug, e.project])).toEqual([['billing-rules', 'billing']]);
     expect(registryReads).toBe(1);
@@ -716,6 +792,79 @@ describe('attachments from the repository need a machine-local confirmation (M52
     expect(source.unresolved()).toEqual([]);
     expect(registryReads).toBe(2);
     expect([...peerReads].sort()).toEqual([providerCwd, otherCwd].sort());
+  });
+});
+
+/**
+ * 2.1.67 — M52 `uluzymnm` "Chwila": a name confirmed with `c4s confirm-skill-uses`
+ * (M31, server-free, into the machine-local registry) BEFORE the server starts
+ * is what the server reads: the attached provider's writing style is in the
+ * project's first thread. Runs against a throwaway `C4S_HOME` and a throwaway
+ * home workspace of two projects.
+ */
+describe('a name confirmed by the CLI before the server starts (M52 uluzymnm, 2.1.67)', () => {
+  let prevHome: string | undefined;
+  afterEach(() => {
+    if (prevHome === undefined) delete process.env.C4S_HOME;
+    else process.env.C4S_HOME = prevHome;
+  });
+
+  it('[ac:ac-po-potwierdzeniu-nazwy-komenda-c4s-co] after `c4s confirm-skill-uses <name>` before the server starts, the attached provider\'s writing style is in the first thread of the project', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const root = fs.realpathSync(tmp());
+    prevHome = process.env.C4S_HOME;
+    process.env.C4S_HOME = path.join(root, 'registry');
+    const home = path.join(root, 'team-repo');
+    const providerDir = path.join(home, 'specs', 'style');
+    const consumerDir = path.join(home, 'specs', 'app');
+    writeConfig(providerDir, {
+      name: 'Style',
+      skill: { exposed: true, name: 'house-style', description: 'The house writing style.', scope: 'writing-style' },
+    });
+    writeConfig(consumerDir, { name: 'App', writingStyle: 'house-style', skill: { uses: ['house-style'] } });
+    put(
+      path.join(home, '.claude4spec', 'workspace.json'),
+      JSON.stringify({ projects: [{ id: 'style', path: 'specs/style' }, { id: 'app', path: 'specs/app' }], plugins: [] }, null, 2),
+    );
+
+    // The CLI, server-free: register the home, then confirm the name.
+    let stdout = '';
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: unknown) => {
+      stdout += String(chunk);
+      return true;
+    });
+    try {
+      await runRegisterHome(parseArgs(['register-home', '--cwd', home, '--port', '4711']));
+      stdout = '';
+      await runConfirmSkillUses(parseArgs(['confirm-skill-uses', 'house-style', '--cwd', consumerDir, '--port', '4711']));
+    } finally {
+      write.mockRestore();
+    }
+    const confirmedByCli = JSON.parse(stdout) as { workspace: string; projectId: string; confirmedSkillUses: string[] };
+    expect(confirmedByCli).toMatchObject({ projectId: 'app', confirmedSkillUses: ['house-style'] });
+
+    // The server starts: a fresh registry reader, the project context's own wiring of the source.
+    const wsRegistry = new WorkspaceRegistry();
+    const workspaceProjects = () => wsRegistry.getWorkspace(confirmedByCli.workspace)?.projects ?? [];
+    expect(workspaceProjects().find((p) => p.id === 'app')?.confirmedSkillUses).toEqual(['house-style']);
+    const registry = SkillRegistry.load([], { rescanTtlMs: 0 });
+    registry.registerSource(
+      new ProjectExposedSkillSource(
+        'app',
+        workspaceExposedSkillAccess({
+          consumerId: 'app',
+          readOwnSkill: () => normalizeSkillConfig(readConfig(consumerDir)),
+          readWorkspaceProjects: workspaceProjects,
+          readProvider: async () => pkg('# House style\n'),
+        }),
+      ),
+    );
+    // The start check passes with no warning: the style resolves.
+    expect(checkWritingStyleAtStart(registry, 'house-style')).toEqual({ ok: true });
+    // The first thread: its prompt carries the provider's writing style.
+    const first = new SkillResolver(registry, consumerDir).resolveForContext('chat', { writingStyle: readConfig(consumerDir).writingStyle ?? null });
+    expect(first.writingStyle).toEqual({ slug: 'house-style', title: 'house-style' });
+    expect(prompt({ writingStyleSkill: first.writingStyle })).toContain('<project_writing_skill');
   });
 });
 

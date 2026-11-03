@@ -1,9 +1,9 @@
-import { useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { ExposedProjectRow } from '../../../shared/spec-skills.js';
 import type { WritingStylesResponse } from '../../../shared/writing-styles.js';
 import { ApiError } from '../../lib/api-core.js';
-import { EXPOSED_PROJECTS_QUERY_KEY, SPEC_SKILL_HOOK_TRUST_QUERY_KEY, specSkillsApi } from '../../lib/spec-skills-api.js';
+import { EXPOSED_PROJECTS_QUERY_KEY, specSkillsApi } from '../../lib/spec-skills-api.js';
 import { useWritingStyles } from '../../hooks/useWritingStyles.js';
 import { ElementField } from '../settings/controls.js';
 import { EFFECT, type ElementContext, type SettingsContribution, type SettingsElementDecl } from '../settings/registry.js';
@@ -34,6 +34,64 @@ export function attachmentMarker(row: Pick<ExposedProjectRow, 'status'>): 'Unava
   return null;
 }
 
+/**
+ * 2.1.67 (M52 `qtq9iusb`): the marker of an attachment of `skill.uses` whose
+ * name is not confirmed on this machine — beside the status marker, never
+ * blocking a save. A row the project does not attach has none.
+ */
+export function confirmationMarker(row: Pick<ExposedProjectRow, 'uses' | 'confirmed'>): 'Unconfirmed' | null {
+  return row.uses && !row.confirmed ? 'Unconfirmed' : null;
+}
+
+/**
+ * The confirmation list to write when `names` get confirmed: every attached name
+ * already confirmed (as the rows show it) plus `names` — order kept, a name once.
+ * `PUT /uses-confirmation` replaces the stored list whole, so the confirmed ones
+ * are carried over. ASSUMPTION:dev-6704 — a confirmed name outside `skill.uses`
+ * has no row, so a write from the card does not carry it.
+ */
+export function confirmationAfter(rows: readonly ExposedProjectRow[], names: readonly string[]): string[] {
+  const kept = rows.filter((r) => r.uses && r.confirmed).map((r) => r.name);
+  return [...new Set([...kept, ...names])];
+}
+
+/**
+ * The names the draft adds to `skill.uses` — ticked now, not attached in the
+ * saved config (the rows' `uses`). Adding a row on the card confirms its name
+ * together with the save (M52 `qtq9iusb` "Dodanie potwierdza").
+ */
+export function addedUses(rows: readonly ExposedProjectRow[], draftUses: readonly string[]): string[] {
+  const saved = new Set(rows.filter((r) => r.uses).map((r) => r.name));
+  return draftUses.filter((n) => !saved.has(n));
+}
+
+/**
+ * The names the draft of the card adds, kept for the element's `afterSave` (which
+ * gets no draft). Per query client, so two apps in one page never share it.
+ */
+const pendingAdded = new WeakMap<QueryClient, string[]>();
+
+/**
+ * `afterSave` of "Used skill projects": the save wrote `skill.uses`; the names it
+ * added are confirmed right after, by `PUT /api/spec-skills/uses-confirmation`,
+ * then the list is re-read. Nothing added → no confirmation write.
+ */
+export async function confirmAddedAfterSave(
+  queryClient: QueryClient,
+  confirm: (names: string[]) => Promise<unknown> = (names) => specSkillsApi.confirmSkillUses(names),
+): Promise<void> {
+  const added = pendingAdded.get(queryClient) ?? [];
+  pendingAdded.delete(queryClient);
+  try {
+    if (added.length > 0) {
+      const rows = queryClient.getQueryData<ExposedProjectRow[]>(EXPOSED_PROJECTS_QUERY_KEY) ?? [];
+      await confirm(confirmationAfter(rows, added));
+    }
+  } finally {
+    await queryClient.invalidateQueries({ queryKey: EXPOSED_PROJECTS_QUERY_KEY });
+  }
+}
+
 /** `skill.uses` after (un)ticking `name` — order kept, a name once. */
 export function toggleUse(uses: readonly string[], name: string, on: boolean): string[] {
   const without = uses.filter((u) => u !== name);
@@ -50,11 +108,21 @@ export function UsedSkillProjectsList({
   uses,
   disabled,
   onToggle,
+  onConfirm,
+  confirming,
 }: {
   rows: readonly ExposedProjectRow[];
   uses: readonly string[];
   disabled?: boolean;
   onToggle: (name: string, on: boolean) => void;
+  /** The confirmation action of an `Unconfirmed` row. */
+  onConfirm?: (name: string) => void;
+  /**
+   * The name whose confirmation is being written. While one is in flight every
+   * Confirm is disabled: `PUT /uses-confirmation` replaces the list whole, so a
+   * second write built from the same (stale) rows would drop the first name.
+   */
+  confirming?: string | null;
 }) {
   if (rows.length === 0) {
     return (
@@ -67,6 +135,7 @@ export function UsedSkillProjectsList({
     <div className="flex flex-col gap-1.5" data-testid="used-skill-projects">
       {rows.map((row) => {
         const marker = attachmentMarker(row);
+        const unconfirmed = confirmationMarker(row);
         return (
           <label
             key={row.name}
@@ -93,6 +162,15 @@ export function UsedSkillProjectsList({
                     {marker}
                   </span>
                 ) : null}
+                {unconfirmed ? (
+                  <span
+                    className="rounded px-1.5 py-0.5 text-[10.5px] font-medium uppercase tracking-wide"
+                    style={{ border: '1px solid var(--c-hair)', color: '#a86a1a' }}
+                    data-marker={unconfirmed}
+                  >
+                    {unconfirmed}
+                  </span>
+                ) : null}
               </span>
               {row.description ? (
                 <span className="block text-[11.5px] mt-0.5" style={{ color: 'var(--c-subtle)' }}>
@@ -100,6 +178,22 @@ export function UsedSkillProjectsList({
                 </span>
               ) : null}
             </span>
+            {unconfirmed && onConfirm ? (
+              <button
+                type="button"
+                className="rounded-md px-2 py-1 text-[11.5px] font-medium"
+                style={{ border: '1px solid var(--c-hair)', color: 'var(--c-ink)', background: 'var(--c-bg)' }}
+                disabled={disabled || (confirming ?? null) !== null}
+                data-confirm-skill-use={row.name}
+                onClick={(e) => {
+                  // Inside the row's <label>: the click confirms, it never (un)ticks the row.
+                  e.preventDefault();
+                  onConfirm(row.name);
+                }}
+              >
+                Confirm
+              </button>
+            ) : null}
           </label>
         );
       })}
@@ -107,13 +201,50 @@ export function UsedSkillProjectsList({
   );
 }
 
-/** The custom element "Used skill projects": the list, wired to the card's draft. */
+/**
+ * The custom element "Used skill projects": the list, wired to the card's draft.
+ * 2.1.67 (M52 `qtq9iusb`): an `Unconfirmed` row has a "Confirm" action — a
+ * machine-local write outside the card's shared save — and a row ticked here is
+ * confirmed together with the save (`afterSave` → {@link confirmAddedAfterSave}).
+ */
 function UsedSkillProjectsElement({ draft, decl }: ElementContext & { decl: SettingsElementDecl }) {
+  const queryClient = useQueryClient();
   const { data: rows } = useQuery({ queryKey: EXPOSED_PROJECTS_QUERY_KEY, queryFn: () => specSkillsApi.exposedProjects() });
   const raw = draft.get(USES);
   const uses = Array.isArray(raw) ? (raw as string[]) : [];
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const added = rows ? addedUses(rows, uses) : [];
+  const addedKey = added.join('\n');
+  useEffect(() => {
+    pendingAdded.set(queryClient, addedKey === '' ? [] : addedKey.split('\n'));
+  }, [queryClient, addedKey]);
+  // One confirmation at a time (the write replaces the list whole): a click while
+  // one is in flight is dropped, even before the disabled buttons re-render.
+  const inFlight = useRef(false);
+  const onConfirm = (name: string) => {
+    if (!rows || inFlight.current) return;
+    inFlight.current = true;
+    setConfirming(name);
+    setConfirmError(null);
+    specSkillsApi.confirmSkillUses(confirmationAfter(rows, [name])).then(
+      async () => {
+        try {
+          await queryClient.invalidateQueries({ queryKey: EXPOSED_PROJECTS_QUERY_KEY });
+        } finally {
+          inFlight.current = false;
+          setConfirming(null);
+        }
+      },
+      (err: unknown) => {
+        setConfirmError(err instanceof Error ? err.message : String(err));
+        inFlight.current = false;
+        setConfirming(null);
+      },
+    );
+  };
   return (
-    <ElementField label={decl.label} help={decl.help} error={draft.error(USES)} asLabel={false}>
+    <ElementField label={decl.label} help={decl.help} error={draft.error(USES) ?? confirmError} asLabel={false}>
       {rows === undefined ? (
         <span className="text-[12px]" style={{ color: 'var(--c-subtle)' }}>
           Loading…
@@ -124,84 +255,10 @@ function UsedSkillProjectsElement({ draft, decl }: ElementContext & { decl: Sett
           uses={uses}
           disabled={draft.saving}
           onToggle={(name, on) => draft.set(USES, toggleUse(uses, name, on))}
+          onConfirm={onConfirm}
+          confirming={confirming}
         />
       )}
-    </ElementField>
-  );
-}
-
-/**
- * 2.1.57 (M52 `ybbal0vf`, M31 `44viw74p`) — the confirmation of the attachments
- * the repository's config carries. Until this machine confirms them, none
- * resolves to its provider (each warns like a dangling one). The decision is
- * machine-local (the workspace registry), never written to the repository, and
- * outside the card's shared save. ASSUMPTION:dev-0002 — one confirmation for
- * the whole list, asked here.
- */
-export const HOOK_TRUST_UNCONFIRMED_MESSAGE =
-  "The skill projects in this repository's config are not confirmed on this machine, so none of them is used. Confirm only if you trust this repository.";
-export const HOOK_TRUST_CONFIRMED_MESSAGE = "The skill projects in this repository's config are confirmed on this machine.";
-
-/** Visible while the draft attaches at least one skill project. */
-export const whenAttaching = ({ draft }: ElementContext): boolean => {
-  const raw = draft.get(USES);
-  return Array.isArray(raw) && raw.length > 0;
-};
-
-/** The confirmation, presentational: the state line and one button that flips it. */
-export function SkillHookTrustControl({
-  trusted,
-  pending,
-  onChange,
-}: {
-  trusted: boolean;
-  pending: boolean;
-  onChange: (trusted: boolean) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-1.5" data-testid="skill-hook-trust" data-trusted={trusted ? 'true' : 'false'}>
-      <span className="text-[12px]" style={{ color: trusted ? 'var(--c-muted)' : '#a86a1a' }}>
-        {trusted ? HOOK_TRUST_CONFIRMED_MESSAGE : HOOK_TRUST_UNCONFIRMED_MESSAGE}
-      </span>
-      <div>
-        <button
-          type="button"
-          className="rounded-md px-3 py-1.5 text-[12.5px] font-medium"
-          style={{ border: '1px solid var(--c-hair)', color: 'var(--c-ink)', background: 'var(--c-bg)' }}
-          disabled={pending}
-          onClick={() => onChange(!trusted)}
-        >
-          {trusted ? 'Revoke confirmation' : 'Confirm skill projects'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/** "Skill projects from this repository": reads and sets `GET|PUT /api/spec-skills/hook-trust`. */
-function SkillHookTrustElement({ decl }: ElementContext & { decl: SettingsElementDecl }) {
-  const queryClient = useQueryClient();
-  const { data } = useQuery({ queryKey: SPEC_SKILL_HOOK_TRUST_QUERY_KEY, queryFn: () => specSkillsApi.hookTrust() });
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  if (data === undefined) return null;
-  const onChange = (trusted: boolean) => {
-    setPending(true);
-    setError(null);
-    specSkillsApi.setHookTrust(trusted).then(
-      (next) => {
-        queryClient.setQueryData(SPEC_SKILL_HOOK_TRUST_QUERY_KEY, next);
-        setPending(false);
-      },
-      (err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err));
-        setPending(false);
-      },
-    );
-  };
-  return (
-    <ElementField label={decl.label} help={decl.help} error={error} asLabel={false}>
-      <SkillHookTrustControl trusted={data.trusted} pending={pending} onChange={onChange} />
     </ElementField>
   );
 }
@@ -390,19 +447,6 @@ export const SPEC_SKILLS_SETTINGS: SettingsContribution = {
       visible: whenExposed,
     },
     {
-      // 2.1.57 (M52 `ybbal0vf`): ASSUMPTION:dev-0002 — an action, no config key.
-      id: 'skill-hook-trust',
-      card: 'skills',
-      weight: 65,
-      kind: 'custom',
-      owner: 'spec-skills',
-      label: 'Skill projects from this repository',
-      // An action outside the save: no toast, so the timing is said here.
-      help: 'Applies from the next new conversation.',
-      component: SkillHookTrustElement,
-      visible: whenAttaching,
-    },
-    {
       id: 'used-skill-projects',
       card: 'skills',
       weight: 70,
@@ -412,7 +456,8 @@ export const SPEC_SKILLS_SETTINGS: SettingsContribution = {
       label: 'Used skill projects',
       effectMessage: EFFECT.newThread,
       component: UsedSkillProjectsElement,
-      afterSave: ({ queryClient }) => queryClient.invalidateQueries({ queryKey: EXPOSED_PROJECTS_QUERY_KEY }),
+      // 2.1.67 (M52 `qtq9iusb`): a row added here is confirmed with the save.
+      afterSave: ({ queryClient }) => confirmAddedAfterSave(queryClient),
     },
     {
       id: 'fork-writing-style',

@@ -49,8 +49,9 @@ function workspace() {
   const app = express().use(
     '/api/spec-skills',
     specSkillsRouter({
+      // 2.1.67: this machine confirmed `billing-rules` and `ghost`, not `docs`.
       listExposedProjects: () =>
-        listExposedProjectRows('shop', readConfig(shop).skill?.uses ?? [], listExposedProjects(projects)),
+        listExposedProjectRows('shop', readConfig(shop).skill?.uses ?? [], listExposedProjects(projects), ['billing-rules', 'ghost']),
     }),
   );
   return { app, shop, projects };
@@ -70,21 +71,23 @@ describe('GET /api/spec-skills/exposed-projects (M52 L4, 2.1.9)', () => {
     expect((await request(app).post('/api/spec-skills/exposed-projects').send({})).status).toBe(404);
   });
 
-  it('[entity:exposed-project-row] each row carries name, description?, projectId?, uses and status (ok | unavailable | ambiguous)', async () => {
+  it('[entity:exposed-project-row] each row carries name, description?, projectId?, uses, status (ok | unavailable | ambiguous) and confirmed (false for a project not attached)', async () => {
     const { app } = workspace();
     const res = await request(app).get('/api/spec-skills/exposed-projects');
     expect(res.body.data).toEqual([
-      { name: 'billing-rules', description: 'How billing works.', projectId: 'billing', uses: true, status: 'ok' },
-      // Ambiguous: two projects expose `docs` — no projectId, no description.
-      { name: 'docs', uses: true, status: 'ambiguous' },
+      { name: 'billing-rules', description: 'How billing works.', projectId: 'billing', uses: true, status: 'ok', confirmed: true },
+      // Ambiguous: two projects expose `docs` — no projectId, no description. Attached, not confirmed.
+      { name: 'docs', uses: true, status: 'ambiguous', confirmed: false },
       // Dangling: nobody exposes `ghost` — the name written in skill.uses, no description, no projectId.
-      { name: 'ghost', uses: true, status: 'unavailable' },
-      { name: 'legal-terms', description: 'Terms.', projectId: 'legal', uses: false, status: 'ok' },
+      { name: 'ghost', uses: true, status: 'unavailable', confirmed: true },
+      // Not attached: never confirmed.
+      { name: 'legal-terms', description: 'Terms.', projectId: 'legal', uses: false, status: 'ok', confirmed: false },
     ]);
     for (const row of res.body.data as Array<Record<string, unknown>>) {
-      expect(Object.keys(row).every((k) => ['name', 'description', 'projectId', 'uses', 'status'].includes(k))).toBe(true);
+      expect(Object.keys(row).every((k) => ['name', 'description', 'projectId', 'uses', 'status', 'confirmed'].includes(k))).toBe(true);
       expect(typeof row.name).toBe('string');
       expect(typeof row.uses).toBe('boolean');
+      expect(typeof row.confirmed).toBe('boolean');
       expect(['ok', 'unavailable', 'ambiguous']).toContain(row.status);
     }
     // The current project never has a row — not even by its own name sitting in its `uses`.
@@ -94,13 +97,13 @@ describe('GET /api/spec-skills/exposed-projects (M52 L4, 2.1.9)', () => {
   it('[ac:m52-dangling-attachment-marked-unavailable] a dangling attachment comes back with status `unavailable` — the #skills card marks it Unavailable', async () => {
     const { app, projects } = workspace();
     const ghost = (await request(app).get('/api/spec-skills/exposed-projects')).body.data.find((r: { name: string }) => r.name === 'ghost');
-    expect(ghost).toEqual({ name: 'ghost', uses: true, status: 'unavailable' });
+    expect(ghost).toEqual({ name: 'ghost', uses: true, status: 'unavailable', confirmed: true });
     // The provider of `billing-rules` stops exposing itself: that attachment is dangling now, too.
     writeConfig(projects[1]!.cwd, { skill: { exposed: false } });
     const billing = (await request(app).get('/api/spec-skills/exposed-projects')).body.data.find(
       (r: { name: string }) => r.name === 'billing-rules',
     );
-    expect(billing).toEqual({ name: 'billing-rules', uses: true, status: 'unavailable' });
+    expect(billing).toEqual({ name: 'billing-rules', uses: true, status: 'unavailable', confirmed: true });
   });
 
   /**
@@ -458,65 +461,108 @@ describe('POST /api/spec-skills/style-forks (M52 L4, 2.1.9)', () => {
 });
 
 /**
- * 2.1.57 — M52 `ybbal0vf` / M31 `44viw74p`: `GET|PUT /api/spec-skills/hook-trust`,
- * the #skills card's confirmation of the attachments the repository's config
- * carries. Bound, as the project context binds it, to the machine-local workspace
- * registry record. ASSUMPTION:dev-0002 — one confirmation for the whole list.
+ * 2.1.67 — M52 `uluzymnm` / `qtq9iusb`: `PUT /api/spec-skills/uses-confirmation`
+ * (endpoint `put-api-spec-skills-uses-confirmation`, DTOs
+ * `skill-uses-confirmation-request` / `-response`). Bound as the project context
+ * binds it: the write goes to M31's `setSkillUsesConfirmation` on the
+ * machine-local workspace registry, and the rows of `exposed-projects` read
+ * `confirmed` from the same registry record.
  */
-describe('GET|PUT /api/spec-skills/hook-trust (M52 ybbal0vf, 2.1.57)', () => {
-  async function trustRig() {
+describe('PUT /api/spec-skills/uses-confirmation (M52 uluzymnm, 2.1.67)', () => {
+  async function confirmationRig() {
     const { WorkspaceRegistry } = await import('../workspace/registry.js');
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-hook-trust-home-'));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-uses-confirmation-home-'));
     tmpDirs.push(home);
-    const shop = project('Shop', { uses: ['billing-rules'] });
+    const shop = project('Shop', { uses: ['billing-rules', 'legal-terms'] });
+    const billing = project('Billing', { exposed: true, name: 'billing-rules', description: 'How billing works.' });
     const registry = new WorkspaceRegistry(home);
     const ws = registry.selectOrCreate({ name: 'default' });
     const rec = registry.registerProject(ws, shop);
+    registry.registerProject(ws, billing);
+    const projects = () => registry.getWorkspace(ws.name)?.projects ?? [];
     const app = express().use(
       '/api/spec-skills',
       specSkillsRouter({
-        listExposedProjects: () => [],
-        hookTrust: {
-          get: () => registry.getSpecSkillHooksTrust(ws, rec.id),
-          set: (value) => registry.setSpecSkillHooksTrust(ws, rec.id, value),
+        listExposedProjects: () =>
+          listExposedProjectRows(
+            rec.id,
+            readConfig(shop).skill?.uses ?? [],
+            listExposedProjects(projects()),
+            projects().find((p) => p.id === rec.id)?.confirmedSkillUses ?? [],
+          ),
+        confirmSkillUses: (names) => {
+          const result = registry.setSkillUsesConfirmation(ws, rec.id, names);
+          if (!result) throw new Error('gone');
+          return { confirmedSkillUses: result.confirmedSkillUses, notInSkillUses: result.notInSkillUses };
         },
       }),
     );
-    return { app, shop, home, registry, ws, id: rec.id };
+    const stored = () => projects().find((p) => p.id === rec.id)?.confirmedSkillUses;
+    return { app, shop, home, stored };
   }
 
-  it('[section:ybbal0vf] the card reads "not confirmed" until it confirms; PUT stores the decision in the machine-local registry, never in the repository config, and can withdraw it', async () => {
-    const r = await trustRig();
+  it('[entity:put-api-spec-skills-uses-confirmation] PUT answers 200 { data } and REPLACES the confirmed names in the machine-local registry — never in the repository config; [] withdraws them all; no other verb', async () => {
+    const r = await confirmationRig();
     const configBefore = fs.readFileSync(path.join(r.shop, '.claude4spec', 'config.json'), 'utf8');
+    expect(r.stored()).toBeUndefined();
 
-    const first = await request(r.app).get('/api/spec-skills/hook-trust');
+    const first = await request(r.app).put('/api/spec-skills/uses-confirmation').send({ names: ['billing-rules', 'legal-terms'] });
     expect(first.status).toBe(200);
-    expect(first.body).toEqual({ trusted: false });
+    expect(Object.keys(first.body)).toEqual(['data']);
+    expect(first.body.data).toEqual({ confirmedSkillUses: ['billing-rules', 'legal-terms'], notInSkillUses: [] });
+    expect(r.stored()).toEqual(['billing-rules', 'legal-terms']);
 
-    const put = await request(r.app).put('/api/spec-skills/hook-trust').send({ trusted: true });
-    expect(put.status).toBe(200);
-    expect(put.body).toEqual({ trusted: true });
-    expect((await request(r.app).get('/api/spec-skills/hook-trust')).body).toEqual({ trusted: true });
-    // Machine-local: the workspace registry record carries it…
-    const onDisk = JSON.parse(fs.readFileSync(path.join(r.home, 'workspaces.json'), 'utf8'));
-    expect(onDisk.workspaces[0].projects[0]).toMatchObject({ id: r.id, trustSpecSkillHooks: true });
-    // …and the repository's config is byte-identical, the attachment list untouched.
+    // A second write replaces the list whole — it does not merge.
+    const second = await request(r.app).put('/api/spec-skills/uses-confirmation').send({ names: ['legal-terms'] });
+    expect(second.body.data.confirmedSkillUses).toEqual(['legal-terms']);
+    expect(r.stored()).toEqual(['legal-terms']);
+
+    // Machine-local: the registry file carries it; the repository's config is byte-identical.
+    expect(fs.readFileSync(path.join(r.home, 'workspaces.json'), 'utf8')).toContain('confirmedSkillUses');
     expect(fs.readFileSync(path.join(r.shop, '.claude4spec', 'config.json'), 'utf8')).toBe(configBefore);
-    expect(readConfig(r.shop).skill?.uses).toEqual(['billing-rules']);
 
-    const withdraw = await request(r.app).put('/api/spec-skills/hook-trust').send({ trusted: false });
-    expect(withdraw.body).toEqual({ trusted: false });
-    expect(r.registry.getSpecSkillHooksTrust(r.ws, r.id)).toBe(false);
+    const cleared = await request(r.app).put('/api/spec-skills/uses-confirmation').send({ names: [] });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.data).toEqual({ confirmedSkillUses: [], notInSkillUses: [] });
+    expect(r.stored()).toEqual([]);
+
+    expect((await request(r.app).get('/api/spec-skills/uses-confirmation')).status).toBe(404);
+    expect((await request(r.app).post('/api/spec-skills/uses-confirmation').send({ names: [] })).status).toBe(404);
   });
 
-  it('[section:ybbal0vf] a PUT whose `trusted` is not a boolean is a 400 INVALID_ARGUMENT and changes nothing', async () => {
-    const r = await trustRig();
-    for (const body of [{}, { trusted: 'yes' }, { trusted: 1 }]) {
-      const res = await request(r.app).put('/api/spec-skills/hook-trust').send(body);
+  it('[entity:skill-uses-confirmation-request] `names` is required, an array of `skill.name`s; any other body is a 400 INVALID_ARGUMENT that writes nothing', async () => {
+    const r = await confirmationRig();
+    await request(r.app).put('/api/spec-skills/uses-confirmation').send({ names: ['billing-rules'] });
+    for (const body of [{}, { names: 'billing-rules' }, { names: [1] }, { names: ['Billing Rules'] }, { names: ['billing--rules'] }, { names: null }]) {
+      const res = await request(r.app).put('/api/spec-skills/uses-confirmation').send(body);
       expect(res.status, JSON.stringify(body)).toBe(400);
       expect(res.body.error.code).toBe('INVALID_ARGUMENT');
     }
-    expect(r.registry.getSpecSkillHooksTrust(r.ws, r.id)).toBe(false);
+    expect(r.stored()).toEqual(['billing-rules']);
+  });
+
+  it('[entity:skill-uses-confirmation-response] the answer carries exactly confirmedSkillUses and notInSkillUses; a confirmed name outside `skill.uses` is accepted and returned apart', async () => {
+    const r = await confirmationRig();
+    const res = await request(r.app)
+      .put('/api/spec-skills/uses-confirmation')
+      .send({ names: ['billing-rules', 'future-skill', 'billing-rules'] });
+    expect(res.status).toBe(200);
+    expect(Object.keys(res.body.data).sort()).toEqual(['confirmedSkillUses', 'notInSkillUses']);
+    expect(res.body.data).toEqual({ confirmedSkillUses: ['billing-rules', 'future-skill'], notInSkillUses: ['future-skill'] });
+    expect(r.stored()).toEqual(['billing-rules', 'future-skill']);
+  });
+
+  it('[section:qtq9iusb] after a PUT the rows of exposed-projects read the confirmation: an attached name not confirmed reads `confirmed: false` until it is', async () => {
+    const r = await confirmationRig();
+    const row = async (name: string) =>
+      ((await request(r.app).get('/api/spec-skills/exposed-projects')).body.data as Array<{ name: string; confirmed: boolean }>).find(
+        (x) => x.name === name,
+      );
+    expect((await row('billing-rules'))?.confirmed).toBe(false);
+    await request(r.app).put('/api/spec-skills/uses-confirmation').send({ names: ['billing-rules'] });
+    expect((await row('billing-rules'))?.confirmed).toBe(true);
+    // `legal-terms` (attached, dangling here) stays unconfirmed: a name is confirmed, not the list.
+    expect((await row('legal-terms'))?.confirmed).toBe(false);
   });
 });
 
