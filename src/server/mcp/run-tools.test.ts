@@ -11,23 +11,29 @@ import { expectToolMatchesToolRecord, type WriteToolRecord } from '../../../test
 import { expectOperationMatchesRecord, type OperationRecord } from '../../../tests/helpers/operation-records.js';
 import { host, makeRunRemoteFixture, RunsApiStub, type RunRemoteFixture } from '../../../tests/helpers/run-remote-fixture.js';
 
-/** mcp-tool `run-tools-run-remote` (2.1.64), verbatim. */
+/** mcp-tool `run-tools-run-remote` (2.1.66), verbatim. */
 const RUN_TOOL_RECORDS: Record<string, WriteToolRecord> = {
   'run-tools-run-remote': {
     server: 'run-tools',
     name: 'run_remote',
     description:
-      'Starts a Run on a runner host: an agent turn over the specification of the whole workspace, executed on a remote machine. Use it when the user asks to execute a plan (or a prompt) in shadow mode. The call returns as soon as the host accepts the Run; it does not wait for the Run to finish. The result reaches the master only as a shadow that a human accepts in Releases → Shadows. Use get_run later to report its state.',
+      'Starts a Run on a runner host: an agent turn over the specification of the whole workspace, executed on a remote machine. Use it when the user asks to execute a plan (or a prompt) remotely (Remote execution). The call returns as soon as the host accepts the Run; it does not wait for the Run to finish. The result reaches the master only as a shadow that a human accepts in Releases → Shadows. Use get_run later to report its state.',
     params: [
       {
         name: 'planPath',
         type: 'string',
         required: false,
         description:
-          'Path of the plan file to execute, relative to the plans root. Omit to execute the plan attached to the current thread. Not together with `prompt`.',
+          'Path of the plan file, relative to the plans directory of the project. Omit to execute the plan attached to the current thread. Not together with `prompt`.',
       },
       { name: 'prompt', type: 'string', required: false, description: 'Free-form instruction to execute instead of a plan. Not together with `planPath`.' },
-      { name: 'projectId', type: 'string', required: false, description: 'Project the prompt is addressed to. Only with `prompt`; defaults to the current project.' },
+      {
+        name: 'projectId',
+        type: 'string',
+        required: false,
+        description:
+          'Project the plan or the prompt belongs to. Defaults to the current project. With the plan attached to the thread it must be the current project.',
+      },
       { name: 'agent', type: 'string', required: false, description: 'Name of the agent definition the Run executes.' },
       {
         name: 'host',
@@ -98,7 +104,7 @@ describe('run-tools · run_remote (mcp-tool run-tools-run-remote)', () => {
     fx.dispose();
   });
 
-  it('[entity:run-tools-run-remote] lists run_remote with the record\'s name, description, parameters (all optional, `agent` defaulting to "shadow") and openWorldHint alone; master-computed fields are not parameters', async () => {
+  it('[entity:run-tools-run-remote] lists run_remote with the record\'s name, description, parameters (all optional, `agent` defaulting to "plan-execution") and openWorldHint alone; master-computed fields are not parameters', async () => {
     const { client, server } = await connectTo(fx.deps(), fx.readDeps())();
     expect(server.tools.map((t) => t.name)).toEqual(['run_remote', 'get_run', 'cancel_run']);
     expectToolMatchesToolRecord(server.tools[0], RUN_TOOL_RECORDS['run-tools-run-remote']!);
@@ -106,8 +112,10 @@ describe('run-tools · run_remote (mcp-tool run-tools-run-remote)', () => {
     expect(listed.map((t) => t.name)).toEqual(['run_remote', 'get_run', 'cancel_run']);
     expect(listed[0]!.annotations).toEqual({ openWorldHint: true });
     const props = listed[0]!.inputSchema.properties as Record<string, { default?: unknown }>;
-    expect(props.agent?.default).toBe('shadow');
+    expect(props.agent?.default).toBe('plan-execution');
     for (const computed of ['repo', 'home', 'baseSha']) expect(props).not.toHaveProperty(computed);
+    // `projectId` is a parameter, but optional: the master computes it when it is not given.
+    expect(props).toHaveProperty('projectId');
     expect(listed[0]!.inputSchema.required ?? []).toEqual([]);
   });
 
@@ -117,19 +125,27 @@ describe('run-tools · run_remote (mcp-tool run-tools-run-remote)', () => {
     expect(isError).toBe(false);
     expect(body.runId).toMatch(RUN_ID_PATTERN);
     expect(body.host).toEqual({ id: 'a', name: 'name-a' });
-    expect(stub.requests[0]!.body.input).toEqual({ kind: 'plan', path: 'app/plans/p1.md' });
-    expect(stub.requests[0]!.body.agent).toMatchObject({ name: 'shadow' });
+    expect(stub.requests[0]!.body.input).toEqual({ kind: 'plan', projectId: 'app', path: 'p1.md' });
+    expect(stub.requests[0]!.body.agent).toMatchObject({ name: 'plan-execution' });
   });
 
-  it('[entity:run-tools-run-remote] planPath with prompt, and projectId without prompt, are refused with INVALID_ARGS', async () => {
+  it('[entity:run-tools-run-remote] planPath with prompt, and the plan attached to the thread with the projectId of another project, are refused with INVALID_ARGS', async () => {
+    fx.addProject('docs');
     const { client } = await connectTo(fx.deps(), fx.readDeps())();
     const both = await call(client, { planPath: 'p1.md', prompt: 'x' });
     expect(both.isError).toBe(true);
     expect(both.body.code).toBe('INVALID_ARGS');
-    const orphan = await call(client, { projectId: 'app' });
-    expect(orphan.isError).toBe(true);
-    expect(orphan.body.code).toBe('INVALID_ARGS');
+    const foreign = await call(client, { projectId: 'docs' });
+    expect(foreign.isError).toBe(true);
+    expect(foreign.body.code).toBe('INVALID_ARGS');
     expect(stub.requests).toHaveLength(0);
+  });
+
+  it('[entity:run-tools-run-remote] projectId is accepted with the plan attached to the thread when it is the current project', async () => {
+    const { client } = await connectTo(fx.deps(), fx.readDeps())();
+    const { isError } = await call(client, { projectId: 'app' });
+    expect(isError).toBe(false);
+    expect(stub.requests[0]!.body.input).toEqual({ kind: 'plan', projectId: 'app', path: 'p1.md' });
   });
 
   it('[entity:run-tools-run-remote] a refusal carries its remedy: the host list of RUN_HOST_REQUIRED, the field of RUN_REJECTED', async () => {
@@ -258,7 +274,7 @@ describe('the catalog rows get_run and cancel_run (spec-operations get-run, canc
 });
 
 describe('the catalog row run_remote (spec-operation run-remote)', () => {
-  it('[entity:run-remote] run_remote: workspace, agent-mediated, internal direct rendered by run-tools.run_remote, cli/mcp/rest n/a with the record\'s reasons, effect db, not idempotent, the record\'s 21 codes, rules error-code-once/echo-free/explicit-addressing', () => {
+  it('[entity:run-remote] run_remote: workspace, agent-mediated, internal direct rendered by run-tools.run_remote, cli/mcp/rest n/a with the record\'s reasons, effect db, not idempotent, the record\'s 22 codes (RUN_PROJECT_NOT_FOUND in, RUN_HOST_GATEWAY_UNAVAILABLE out), rules error-code-once/echo-free/explicit-addressing', () => {
     const op = expectOperationMatchesRecord(
       {
         nazwa: 'run_remote',
@@ -283,6 +299,7 @@ describe('the catalog row run_remote (spec-operation run-remote)', () => {
           'GIT_UNAVAILABLE',
           'RUN_WORKSPACE_WITHOUT_HOME',
           'RUN_PROJECT_OUTSIDE_HOME',
+          'RUN_PROJECT_NOT_FOUND',
           'RUN_NO_HOST',
           'RUN_HOST_REQUIRED',
           'RUN_HOST_NOT_FOUND',
@@ -313,5 +330,56 @@ describe('the catalog row run_remote (spec-operation run-remote)', () => {
     // The row's input is the tool's wire contract.
     expect(Object.keys(op.inputSchema).sort()).toEqual(RUN_TOOL_RECORDS['run-tools-run-remote']!.params.map((p) => p.name).sort());
     expect(CATALOG.require('run_remote').opClass).toBe('turn');
+  });
+});
+
+describe('job:M55 — ordering a Run from the chat and reporting it (through the run-tools server, the module\'s only channel)', () => {
+  let fx: RunRemoteFixture;
+  let stub: RunsApiStub;
+
+  beforeEach(async () => {
+    fx = await makeRunRemoteFixture();
+    stub = new RunsApiStub();
+    fx.hosts.push(host('a', await stub.listen()));
+  });
+
+  afterEach(async () => {
+    await stub.close();
+    fx.dispose();
+  });
+
+  it('[job:M55] the chat agent orders the thread\'s plan with run_remote (default definition "plan-execution"), gets the runId back before the Run ends, then reports its state with get_run and stops it with cancel_run', async () => {
+    let runId = '';
+    stub.reply = (req) => {
+      if (req.method === 'PUT') return { status: 202, body: { runId: req.url.split('/').pop(), state: 'queued' } };
+      if (req.method === 'GET') return { status: 200, body: { runId, hostId: 'h_a', state: 'running' } };
+      return { status: 200, body: { runId, hostId: 'h_a', state: 'finished', outcome: 'cancelled', resultRef: `refs/runs/${runId}/work` } };
+    };
+    const { client } = await connectTo(fx.deps(), fx.readDeps())();
+
+    // 1. Order: no parameter at all — the plan pinned to the thread, its project, the default agent.
+    const ordered = await call(client, {});
+    expect(ordered.isError).toBe(false);
+    runId = ordered.body.runId as string;
+    expect(runId).toMatch(RUN_ID_PATTERN);
+    expect(ordered.body.host).toEqual({ id: 'a', name: 'name-a' });
+    const order = stub.requests[0]!;
+    expect(order).toMatchObject({ method: 'PUT', url: `/runs/${runId}` });
+    expect(order.body.input).toEqual({ kind: 'plan', projectId: 'app', path: 'p1.md' });
+    expect((order.body.agent as { name: string }).name).toBe('plan-execution');
+    // The master remembers on which host the Run runs.
+    expect(fx.rows()).toEqual([{ run_id: runId, host_id: 'h_a' }]);
+
+    // 2. Later, on request: the state of the ordered Run, from its host.
+    const state = await call(client, { runId }, 'get_run');
+    expect(state.isError).toBe(false);
+    expect(state.body).toMatchObject({ runId, source: 'host', state: 'running' });
+    expect(stub.requests[1]).toMatchObject({ method: 'GET', url: `/runs/${runId}` });
+
+    // 3. On request: stop it.
+    const cancelled = await call(client, { runId }, 'cancel_run');
+    expect(cancelled.isError).toBe(false);
+    expect(stub.requests[2]).toMatchObject({ method: 'POST', url: `/runs/${runId}/cancel` });
+    expect(cancelled.body).toMatchObject({ runId, state: 'finished', outcome: 'cancelled', resultRef: `refs/runs/${runId}/work` });
   });
 });

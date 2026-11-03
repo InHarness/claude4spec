@@ -64,6 +64,9 @@ export const MSG_REDIRECT = 'Redirect received — this address is not a c4s-run
 export const MSG_INVALID_HOST_INFO = 'Response is not valid c4s-runner HostInfo.';
 export const msgUnexpectedHttp = (status: number) => `Unexpected HTTP ${status} — probably a proxy, not c4s-runner.`;
 export const msgTls = (reason: string) => `TLS error: ${reason.replace(/\.+$/, '')}.`;
+/** `npul32ax` (2.1.66): a `protocol` other than the one this master supports — the runner's version, then the master's. */
+export const msgProtocolMismatch = (runnerProtocol: number) =>
+  `Runner speaks protocol ${runnerProtocol}; this master supports protocol ${KNOWN_PROTOCOL}.`;
 
 const REDACTED = '[redacted]';
 
@@ -148,7 +151,7 @@ export function checkHostInfo(value: unknown): { ok: true; info: HostInfo } | { 
         status: 'protocol-mismatch',
         error: {
           code: 'protocol_mismatch',
-          message: `The runner host speaks control protocol ${v.protocol}; this server knows protocol ${KNOWN_PROTOCOL}.`,
+          message: msgProtocolMismatch(v.protocol),
         },
       },
     };

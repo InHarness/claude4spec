@@ -1419,6 +1419,8 @@ export const SPEC_OPERATION_RECORDS: readonly SpecOperationRecord[] = [
       'GIT_UNAVAILABLE',
       'RUN_WORKSPACE_WITHOUT_HOME',
       'RUN_PROJECT_OUTSIDE_HOME',
+      // 2.1.66: the order's `projectId` outside the workspace (M55 `55a63udm` step 4).
+      'RUN_PROJECT_NOT_FOUND',
       'RUN_NO_HOST',
       'RUN_HOST_REQUIRED',
       'RUN_HOST_NOT_FOUND',

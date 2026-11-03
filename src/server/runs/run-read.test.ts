@@ -174,7 +174,32 @@ describe('get_run / cancel_run (spec-operations get-run, cancel-run)', () => {
       expect((await getRun(deps, { runId: RUN })).reason).toBe('timeout');
     });
 
-    it('[ac:ac-cancel-run-runu-zakonczonego-zwraca-g] cancel_run of a finished Run returns it unchanged — a repeat too', async () => {
+    it('[ac:ac-get-run-ze-stanem-nieznanym-masterowi] get_run with a state this master does not know reports that state verbatim, marked as unknown to the master, and still reads the shadow by resultSha alone', async () => {
+      register();
+      // A known state carries no marker.
+      stub.reply = () => ({ status: 200, body: runBody({ state: 'running', outcome: undefined, handoff: undefined }) });
+      const known = await getRun(deps, { runId: RUN });
+      expect(known.state).toBe('running');
+      expect(known).not.toHaveProperty('stateUnknown');
+
+      // Unknown state, no resultSha: verbatim, marked, the shadow is not read — the same path as any state.
+      const listSpy = vi.spyOn(fx.git, 'listShadows');
+      stub.reply = () => ({ status: 200, body: runBody({ state: 'suspended-by-operator', outcome: undefined, handoff: undefined }) });
+      const bare = await getRun(deps, { runId: RUN });
+      expect(bare).toMatchObject({ runId: RUN, source: 'host', state: 'suspended-by-operator', stateUnknown: true, shadow: null, hint: null });
+      expect(listSpy).not.toHaveBeenCalled();
+
+      // Unknown state with resultSha: still verbatim and marked, and the shadow is read as for any state.
+      const sha = await fx.pushRunRecord(RUN, record(), { 'ws/app/pages/run.md': '# by the Run\n' });
+      stub.reply = () => ({ status: 200, body: runBody({ state: 'archived', resultSha: sha }) });
+      const withResult = await getRun(deps, { runId: RUN });
+      expect(withResult.state).toBe('archived');
+      expect(withResult.stateUnknown).toBe(true);
+      expect(withResult.outcome).toBe('done');
+      expect(withResult.shadow).toEqual({ id: `${RUN}/work`, accepted: false, projects: [{ projectId: 'app', visible: true }] });
+    });
+
+    it('[ac:ac-cancel-run-runu-zakonczonego-zwraca-g]cancel_run of a finished Run returns it unchanged — a repeat too', async () => {
       register();
       stub.reply = () => ({ status: 200, body: runBody({ outcome: 'done' }) });
       const first = await cancelRun(deps, { runId: RUN });

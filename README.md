@@ -38,7 +38,7 @@ claude4spec
 ## Requirements
 
 - Node.js 20+
-- `claude` CLI installed and signed in — required only for the in-app agent; the editor, entities, and graph work standalone.
+- For the in-app agent: no separate Claude Code install — the agent CLI ships with `@anthropic-ai/claude-agent-sdk`, a dependency of this package. A turn authenticates with the API key saved in agent settings, else `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` from the server's environment, else your local Claude Code login. The editor, entities, and graph work standalone.
 - macOS, Linux, Windows.
 - Zero extra cost if you already run Claude Code.
 

@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { WorkspaceRegistry } from '../workspace/registry.js';
-import { MSG_NOT_FOUND } from '../runner-hosts/host-checks.js';
+import { MSG_INVALID_HOST_INFO, MSG_NOT_FOUND } from '../runner-hosts/host-checks.js';
 import { RunnerHostStore } from '../runner-hosts/host-records.js';
 import { RunnerHostSupervisor } from '../runner-hosts/supervisor.js';
 import { errorHandler } from './errors.js';
@@ -332,6 +332,31 @@ describe('M54 runner-host routes — /api/workspace/runner-hosts', () => {
     expect((listed!.lastError as Body).message).toBe(MSG_NOT_FOUND);
   });
 
+  it('[ac:ac-test-hosta-z-protocol-roznym-od-1-zos] testing a host whose `protocol` is not 1 leaves in `lastError` a text with the runner version', async () => {
+    const stub = await newStub();
+    const added = await addConnected(stub);
+    for (const protocol of [2, 7]) {
+      stub.hostInfo = { ...STUB_HOST_INFO, protocol };
+      const res = await request(app).post(`${BASE}/${added.id}/test`).send({});
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe('protocol-mismatch');
+      // The module's own text (`npul32ax`, 2.1.66): the runner's version, then the master's.
+      expect(res.body.data.lastError).toEqual({
+        code: 'protocol_mismatch',
+        message: `Runner speaks protocol ${protocol}; this master supports protocol 1.`,
+      });
+      const [listed] = await list();
+      expect((listed!.lastError as Body).message).toBe(`Runner speaks protocol ${protocol}; this master supports protocol 1.`);
+    }
+    // The other classifications do not change: no `protocol` is still the HostInfo text.
+    const info: Record<string, unknown> = { ...STUB_HOST_INFO };
+    delete info.protocol;
+    stub.hostInfo = info;
+    const invalid = await request(app).post(`${BASE}/${added.id}/test`).send({});
+    expect(invalid.body.data.status).toBe('bad-response');
+    expect(invalid.body.data.lastError).toEqual({ code: 'invalid_host_info', message: MSG_INVALID_HOST_INFO });
+  });
+
   it('[ac:ac-dodanie-url-a-rownego-istniejacemu-po] adding a URL equal to an existing one after normalization gives 409', async () => {
     const stub = await newStub();
     await addConnected(stub);
@@ -598,4 +623,29 @@ describe('M54 runner-host routes — /api/workspace/runner-hosts', () => {
       expect(data.token).toEqual({ isSet: true, last4: TOKEN.slice(-4) });
     }
   });
+
+  // --- job ------------------------------------------------------------------
+
+  it('[job:M54] the owner registers a runner host with its token, the server supervises the connection and shows its status, a test reports a protocol mismatch', async () => {
+    const stub = await newStub();
+    // Register: the host is saved in the workspace, the token never comes back.
+    const created = await request(app).post(BASE).send({ url: stub.url(), token: TOKEN, label: 'build-box' });
+    expect(created.status).toBe(201);
+    expect(created.body.data).toMatchObject({ label: 'build-box', status: 'connected', token: { isSet: true, last4: TOKEN.slice(-4) } });
+    expect(created.text).not.toContain(TOKEN);
+    expect(storedHosts()).toHaveLength(1);
+    // Supervise: the server keeps a standing listening connection to the host.
+    await until(() => stub.streams.size === 1, 5_000, 'open stream');
+    const [listed] = await list();
+    expect(listed).toMatchObject({ id: created.body.data.id, status: 'connected', lastError: null });
+    // The runner is replaced by one of another protocol: a test shows the status and why.
+    stub.hostInfo = { ...STUB_HOST_INFO, protocol: 2 };
+    const tested = await request(app).post(`${BASE}/${created.body.data.id}/test`).send({});
+    expect(tested.status).toBe(200);
+    expect(tested.body.data.status).toBe('protocol-mismatch');
+    expect(tested.body.data.lastError.message).toBe('Runner speaks protocol 2; this master supports protocol 1.');
+    const [after] = await list();
+    expect(after).toMatchObject({ status: 'protocol-mismatch' });
+  });
+
 });

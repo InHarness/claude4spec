@@ -14,6 +14,7 @@ import { assertKnownContextType } from '../services/chat-context.js';
 import { ASK_TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
 import { DEFAULT_MODEL } from '../../core/agent/run-agent.js';
 import { finalizeAskAnswer, plansLeftByTurn, snapshotPlans } from '../services/ask-answer.js';
+import { createHeadlessUserInputHandler, HEADLESS_TURN_PROMPT_NOTE } from './headless-user-input.js';
 import type { ChatThreadDetail } from '../../shared/entities.js';
 
 export function threadsRouter(deps: AgentTurnDeps): Router {
@@ -245,7 +246,14 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
         consoleObserver: null,
         // Headless: stream kolapsowany serwerowo, brak transportu eventow.
         onEvent: () => {},
-        // Brak interaktywnego kanalu — patrz patch `headless-onuserinput`.
+        // 2.1.66 (M05 `dhf17oo0`): no consumer can answer here and `c4s` has no
+        // answer route, so the route itself answers every question — `decline` at
+        // the moment it is written, both written to the thread, nothing parked.
+        onUserInput: createHeadlessUserInputHandler({ chat, threadId: thread.id, activeAdapters }),
+        headless: true,
+        // The decline has no text field in the adapter (dev-0508), so the guidance
+        // "act on your own recommendation" rides on the prompt the agent receives.
+        agentPromptNote: HEADLESS_TURN_PROMPT_NOTE,
         // Headless-only bound: no human is present to keep a stuck turn alive,
         // so this route (unlike interactive POST /api/chat) opts into a timeout.
         timeoutMs: ASK_TURN_TIMEOUT_MS,

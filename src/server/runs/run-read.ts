@@ -32,7 +32,9 @@ import {
  *
  * The answer is concise and carries no logs: state, outcome, reason, handoff
  * and `resultRef`, as the runner (or the record) gives them, never rewritten.
- * An unknown reason is reported as the general outcome (`h6qxem12`).
+ * An unknown reason is reported as the general outcome (`h6qxem12`). A state
+ * this master does not know is reported verbatim, marked `stateUnknown`, with
+ * no separate branch (`d8r8kkrd`).
  *
  * `get_run` reads the shadow `<runId>/work` (`zozdbd1a`) only when the
  * runner's answer carries `resultSha`: `fetch()`, then the shadow list in
@@ -99,6 +101,15 @@ export const KNOWN_RUN_REASONS: ReadonlySet<string> = new Set([
   'runner-restart',
 ]);
 
+/**
+ * `c4s-runner` dto `run`, field `state`: the states this master knows. A state
+ * outside this set is reported verbatim and marked `stateUnknown: true`
+ * (`d8r8kkrd`, `get-run` `zachowanie`) — no separate branch: the shadow is
+ * still read by `resultSha` alone (`zozdbd1a`).
+ * ASSUMPTION:dev-5502 — the set and the marker's name are not in the specification.
+ */
+export const KNOWN_RUN_STATES: ReadonlySet<string> = new Set(['queued', 'preparing', 'running', 'finished']);
+
 /** The record file inside the Run's record directory (`c4s-runner` dto `run-record`). */
 export const RUN_RECORD_FILE = 'run.json';
 
@@ -114,7 +125,10 @@ export interface RunView {
   runId: string;
   /** Where the answer comes from: the runner host or the Run record in git. */
   source: 'host' | 'record';
+  /** The runner's state, verbatim — also one this master does not know. */
   state: string;
+  /** Present (`true`) only when `state` is not one of `KNOWN_RUN_STATES`: unknown to this master. */
+  stateUnknown?: true;
   outcome?: string;
   /** Absent when the runner gave none, or gave one this master does not know (the general outcome). */
   reason?: string;
@@ -220,6 +234,7 @@ function knownReason(v: unknown): string | undefined {
 
 function viewOf(runId: string, source: RunView['source'], fields: Record<string, unknown>, state: string): RunView {
   const view: RunView = { runId, source, state };
+  if (!KNOWN_RUN_STATES.has(state)) view.stateUnknown = true;
   if (typeof fields.outcome === 'string') view.outcome = fields.outcome;
   const reason = knownReason(fields.reason);
   if (reason !== undefined) view.reason = reason;

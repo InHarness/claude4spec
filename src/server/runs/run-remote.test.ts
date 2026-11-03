@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PUBLISH_FILE_SUBJECT } from '../services/git.js';
 import { RUN_ID_PATTERN } from './run-id.js';
 import { compareVersions, runHostsFromSupervisor, runRemote, RunRemoteError, type RunRemoteDeps, type RunRemoteInput } from './run-remote.js';
-import { SHADOW_AGENT } from './shadow-agent.js';
+import { PLAN_EXECUTION_AGENT } from './plan-execution-agent.js';
 import {
   deadUrl,
   git,
@@ -79,14 +79,67 @@ describe('run_remote (M55)', () => {
     expect(stub.requests.map((r) => r.url)).toEqual([`/runs/${first.runId}`, `/runs/${second.runId}`]);
   });
 
-  it('ac-sciezka-planu-w-zleceniu-jest-wzgledn: the plan path in the order is relative to the workspace home, and `home` is the home relative to the repository root', async () => {
-    await run(fx.deps(), { planPath: 'p1.md' });
+  it('[ac:ac-sciezka-planu-w-zleceniu-jest-wzgledn] the plan path in the order is relative to the plans directory of the project — the value the thread holds, not recomputed', async () => {
+    write(fx.plansDir, 'sub/p2.md', '---\ntype: plan\ntitle: P2\n---\n# P2\n');
+    await fx.pushAll('add sub/p2.md');
+    // The pinned plan: the thread holds `sub/p2.md`, and that is what the order carries.
+    await run(fx.deps({ pinned: 'sub/p2.md' }), {});
     const { body } = put();
-    // repository-relative: ws/app/plans/p1.md; the home is ws/.
+    expect(body.input).toEqual({ kind: 'plan', projectId: 'app', path: 'sub/p2.md' });
+    // Not repository- or home-relative (ws/app/plans/sub/p2.md, app/plans/sub/p2.md).
     expect(body.home).toBe('ws');
-    expect(body.input).toEqual({ kind: 'plan', path: 'app/plans/p1.md' });
-    // <repo>/<home>/<input.path> is the plan file.
-    expect(fs.existsSync(path.join(fx.repo, body.home as string, (body.input as { path: string }).path))).toBe(true);
+    // <plans directory of the project>/<input.path> is the plan file.
+    expect(fs.existsSync(path.join(fx.plansDir, (body.input as { path: string }).path))).toBe(true);
+    expect(fs.existsSync(path.join(fx.repo, body.home as string, (body.input as { path: string }).path))).toBe(false);
+
+    // A plan named explicitly in another project: relative to THAT project's plans directory.
+    const docs = fx.addProject('docs');
+    await fx.pushAll('add project docs');
+    stub.requests.length = 0;
+    await run(fx.deps(), { planPath: 'p1.md', projectId: 'docs' });
+    expect(put().body.input).toEqual({ kind: 'plan', projectId: 'docs', path: 'p1.md' });
+    expect(fs.existsSync(path.join(docs.plansDir, 'p1.md'))).toBe(true);
+  });
+
+  it('[ac:ac-zlecenie-z-planem-przypietym-do-watku] the order of the plan pinned to the thread carries the projectId of the thread\'s project', async () => {
+    fx.addProject('docs');
+    await fx.pushAll('add project docs');
+    await run(fx.deps(), {});
+    expect(put().body.input).toEqual({ kind: 'plan', projectId: 'app', path: 'p1.md' });
+    // The same with the thread's project passed explicitly.
+    stub.requests.length = 0;
+    await run(fx.deps(), { projectId: 'app' });
+    expect(put().body.input).toMatchObject({ kind: 'plan', projectId: 'app' });
+  });
+
+  it('[ac:ac-zlecenie-z-promptem-bez-parametru-pro] a prompt without the projectId parameter carries the projectId of the thread\'s project', async () => {
+    await run(fx.deps(), { prompt: 'Tidy the glossary.' });
+    const { input } = put().body as { input: Record<string, unknown> };
+    expect(input).toEqual({ kind: 'prompt', projectId: 'app', text: 'Tidy the glossary.' });
+    expect(input.projectId).toBe('app');
+  });
+
+  it('[ac:ac-run-remote-z-projectid-spoza-workspac] a projectId outside the workspace ends with RUN_PROJECT_NOT_FOUND — with a prompt and with a plan — and leaves no row and no PUT', async () => {
+    for (const input of [{ prompt: 'x', projectId: 'ghost' }, { planPath: 'p1.md', projectId: 'ghost' }]) {
+      const err = await refusal(run(fx.deps(), input));
+      expect(err.code).toBe('RUN_PROJECT_NOT_FOUND');
+      expect(err.message).toContain('ghost');
+    }
+    expect(fx.rows()).toEqual([]);
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it('[ac:ac-run-remote-z-planem-przypietym-do-wat] the plan pinned to the thread with the projectId of another project ends with INVALID_ARGS, with no publication, no row and no PUT', async () => {
+    fx.addProject('docs');
+    await fx.pushAll('add project docs');
+    // A pinned plan that is not pushed: a refusal must come before its publication.
+    write(fx.plansDir, 'p1.md', '---\ntype: plan\ntitle: P1\n---\n# P1 — edited\n');
+    const before = await fx.upstreamTip();
+    const err = await refusal(run(fx.deps(), { projectId: 'docs' }));
+    expect(err.code).toBe('INVALID_ARGS');
+    expect(await fx.upstreamTip()).toBe(before);
+    expect(fx.rows()).toEqual([]);
+    expect(stub.requests).toHaveLength(0);
   });
 
   it('ac-sha-bazy-w-zleceniu-rowna-sie-sha-tip: the base sha in the order equals the upstream tip — also when the upstream moved past the local HEAD', async () => {
@@ -243,12 +296,12 @@ describe('run_remote (M55)', () => {
       await fx.pushAll('recipe');
       const err = await refusal(run(fx.deps(), {}));
       expect(err.code).toBe('RUN_C4S_VERSION_INCOMPATIBLE');
-      expect(compareVersions('2.0.0', SHADOW_AGENT.minC4sVersion)).toBeLessThan(0);
+      expect(compareVersions('2.0.0', PLAN_EXECUTION_AGENT.minC4sVersion)).toBeLessThan(0);
       expect(stub.requests).toHaveLength(0);
       expect(fx.rows()).toEqual([]);
 
       // The minimum itself passes.
-      recipe({ schemaVersion: 1, c4sVersion: SHADOW_AGENT.minC4sVersion, image: 'node:22' });
+      recipe({ schemaVersion: 1, c4sVersion: PLAN_EXECUTION_AGENT.minC4sVersion, image: 'node:22' });
       await fx.pushAll('recipe at the minimum');
       await run(fx.deps(), {});
       expect(stub.requests).toHaveLength(1);
@@ -348,19 +401,42 @@ describe('run_remote (M55)', () => {
     const before = await fx.upstreamTip();
     await run(fx.deps(), { prompt: 'Tidy the glossary.' });
     expect(await fx.upstreamTip()).toBe(before);
-    expect(put().body.input).toEqual({ kind: 'prompt', text: 'Tidy the glossary.', projectId: 'app' });
+    expect(put().body.input).toEqual({ kind: 'prompt', projectId: 'app', text: 'Tidy the glossary.' });
 
     write(fx.home, '.claude4spec/workspace.json', '{"projects":[]}');
     const err = await refusal(run(fx.deps(), { prompt: 'x' }));
     expect(err.code).toBe('RUN_PLAN_NOT_ON_UPSTREAM');
   });
 
-  it('addressing: planPath with prompt, and projectId without prompt, are INVALID_ARGS; an unknown plan is PLAN_NOT_FOUND; an unknown agent RUN_AGENT_NOT_FOUND', async () => {
+  it('addressing: planPath with prompt, and no plan at all, are INVALID_ARGS; an unknown plan is PLAN_NOT_FOUND (also in the plans directory of an explicit project); an unknown agent RUN_AGENT_NOT_FOUND', async () => {
+    fx.addProject('docs');
+    write(fx.plansDir, 'only-in-app.md', '# app only\n');
     expect((await refusal(run(fx.deps(), { planPath: 'p1.md', prompt: 'x' }))).code).toBe('INVALID_ARGS');
-    expect((await refusal(run(fx.deps(), { projectId: 'app' }))).code).toBe('INVALID_ARGS');
     expect((await refusal(run(fx.deps({ pinned: null }), {}))).code).toBe('INVALID_ARGS');
     expect((await refusal(run(fx.deps(), { planPath: 'nope.md' }))).code).toBe('PLAN_NOT_FOUND');
+    // An explicit plan is looked up in the plans directory of the project named, not the thread's.
+    expect((await refusal(run(fx.deps(), { planPath: 'only-in-app.md', projectId: 'docs' }))).code).toBe('PLAN_NOT_FOUND');
+    expect((await refusal(run(fx.deps(), { planPath: '../../../app/plans/p1.md', projectId: 'docs' }))).code).toBe('PLAN_NOT_FOUND');
     expect((await refusal(run(fx.deps(), { agent: 'other' }))).code).toBe('RUN_AGENT_NOT_FOUND');
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it('a plan of another project reached through a symlink inside its plans directory that points outside it is PLAN_NOT_FOUND, with no publication, no row and no PUT (rev-0001)', async () => {
+    const docs = fx.addProject('docs');
+    await fx.pushAll('add project docs');
+    // A file of the repository outside docs' plans directory, and a link to it from inside.
+    write(fx.repo, 'secret.md', '# not a plan\n');
+    await fx.pushAll('add secret.md');
+    fs.symlinkSync(path.join(fx.repo, 'secret.md'), path.join(docs.plansDir, 'escape.md'));
+    // A symlinked directory inside the plans directory pointing at another project's plans.
+    fs.symlinkSync(fx.plansDir, path.join(docs.plansDir, 'linked'));
+    const headBefore = await git(['rev-parse', 'HEAD'], fx.repo);
+    for (const planPath of ['escape.md', 'linked/p1.md']) {
+      const err = await refusal(run(fx.deps(), { planPath, projectId: 'docs' }));
+      expect(err.code).toBe('PLAN_NOT_FOUND');
+    }
+    expect(await git(['rev-parse', 'HEAD'], fx.repo)).toBe(headBefore);
+    expect(fx.rows()).toEqual([]);
     expect(stub.requests).toHaveLength(0);
   });
 
@@ -373,7 +449,7 @@ describe('run_remote (M55)', () => {
     expect(stub.requests).toHaveLength(0);
   });
 
-  it('a plan under a home directory whose name begins with two dots (`..drafts/`) is inside the home, not RUN_PROJECT_OUTSIDE_HOME', async () => {
+  it('a plans directory under a home directory whose name begins with two dots (`..drafts/`) is in the repository, not RUN_PROJECT_OUTSIDE_HOME', async () => {
     const drafts = path.join(fx.home, '..drafts');
     write(drafts, 'plan.md', '---\ntype: plan\ntitle: Draft\n---\n# Draft\n');
     await fx.pushAll('add ..drafts/plan.md');
@@ -383,12 +459,25 @@ describe('run_remote (M55)', () => {
     await run(deps, { planPath: 'plan.md' });
     const { body } = put();
     expect(body.home).toBe('ws');
-    expect(body.input).toEqual({ kind: 'plan', path: '..drafts/plan.md' });
+    expect(body.input).toEqual({ kind: 'plan', projectId: 'app', path: 'plan.md' });
+    // The publication and the upstream check took the file's repository path.
+    expect(body.baseSha).toBe(await fx.upstreamTip());
   });
 
-  it('the order carries the fixed "shadow" definition', async () => {
-    await run(fx.deps(), {});
-    expect(put().body.agent).toEqual({ name: 'shadow', version: SHADOW_AGENT.version, content: SHADOW_AGENT.content });
+  it('[ac:ac-run-remote-bez-parametru-agent-zleca] run_remote without the `agent` parameter orders the Run with the "plan-execution" definition', async () => {
+    const result = await run(fx.deps(), {});
+    expect(result.runId).toBeDefined();
+    expect(put().body.agent).toEqual({
+      name: 'plan-execution',
+      version: PLAN_EXECUTION_AGENT.version,
+      content: PLAN_EXECUTION_AGENT.content,
+    });
+  });
+
+  it('"plan-execution" replaces "shadow": an order naming the agent "shadow" is RUN_AGENT_NOT_FOUND, with no PUT', async () => {
+    const err = await refusal(run(fx.deps(), { agent: 'shadow' }));
+    expect(err.code).toBe('RUN_AGENT_NOT_FOUND');
+    expect(stub.requests).toHaveLength(0);
   });
 
   it('runHostsFromSupervisor names each host by its label, else the bound host name', () => {

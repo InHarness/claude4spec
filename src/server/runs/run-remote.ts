@@ -7,7 +7,7 @@ import type { RemoteRunRegistry } from './remote-run-registry.js';
 import { newRunId } from './run-id.js';
 import type { RunInput, RunRequest } from './run-request.js';
 import { mapRunnerApiCode, putRunOverHttp, type PutRun } from './runner-runs-client.js';
-import { RUN_AGENT_DEFINITIONS, type RunAgentDefinition } from './shadow-agent.js';
+import { DEFAULT_RUN_AGENT_NAME, RUN_AGENT_DEFINITIONS, type RunAgentDefinition } from './plan-execution-agent.js';
 
 /**
  * M55 — `run_remote` (spec-operation `run-remote`): dispatch a Run to a runner
@@ -19,7 +19,11 @@ import { RUN_AGENT_DEFINITIONS, type RunAgentDefinition } from './shadow-agent.j
  *  3. the path on the upstream with M28 `checkPathOnUpstream` — the base sha
  *     and the cleared remote (the plan's path, or `<home>/.claude4spec/workspace.json`
  *     for a prompt);
- *  4. the plan's path made relative to the workspace home;
+ *  4. the `projectId` of the order (`ffb3rhrs`): the parameter, else the
+ *     thread's project; an id outside the workspace is `RUN_PROJECT_NOT_FOUND`,
+ *     another project with the plan pinned to the thread is `INVALID_ARGS`;
+ *     the plan's path stays as the thread holds it — relative to the plans
+ *     directory of the project — and is not recomputed;
  *  5. the version check of the agent definition against the environment
  *     recipe (`kcxoa7qg`);
  *  6. the registry INSERT;
@@ -37,6 +41,7 @@ export type RunRemoteErrorCode =
   | 'GIT_UNAVAILABLE'
   | 'RUN_WORKSPACE_WITHOUT_HOME'
   | 'RUN_PROJECT_OUTSIDE_HOME'
+  | 'RUN_PROJECT_NOT_FOUND'
   | 'RUN_NO_HOST'
   | 'RUN_HOST_REQUIRED'
   | 'RUN_HOST_NOT_FOUND'
@@ -60,6 +65,7 @@ export const RUN_REMOTE_ERROR_CODES: readonly RunRemoteErrorCode[] = [
   'GIT_UNAVAILABLE',
   'RUN_WORKSPACE_WITHOUT_HOME',
   'RUN_PROJECT_OUTSIDE_HOME',
+  'RUN_PROJECT_NOT_FOUND',
   'RUN_NO_HOST',
   'RUN_HOST_REQUIRED',
   'RUN_HOST_NOT_FOUND',
@@ -127,6 +133,12 @@ export interface RunRemoteDeps {
   workspace(): { name: string; home?: string };
   /** The thread's project. */
   projectId: string;
+  /**
+   * The projects of the workspace (its `workspace.json` records, M31
+   * `fzno8pd4`), each with the absolute directory of its plans
+   * (`<project path>/.claude4spec/plans/`); read per call.
+   */
+  projects(): Array<{ id: string; plansRoot: string }>;
   git: RunRemoteGit;
   plans: RunRemotePlans;
   /** Every runner host of the workspace (M54 `43dazlrg`), read per call. */
@@ -312,11 +324,8 @@ export async function runRemote(deps: RunRemoteDeps, input: RunRemoteInput): Pro
   if (input.planPath !== undefined && input.prompt !== undefined) {
     fail('INVALID_ARGS', '`planPath` and `prompt` are mutually exclusive');
   }
-  if (input.projectId !== undefined && input.prompt === undefined) {
-    fail('INVALID_ARGS', '`projectId` is accepted only together with `prompt`');
-  }
   if (input.prompt !== undefined && input.prompt.trim() === '') fail('INVALID_ARGS', '`prompt` must not be empty');
-  const agentName = input.agent ?? 'shadow';
+  const agentName = input.agent ?? DEFAULT_RUN_AGENT_NAME;
   const agents = deps.agents ?? RUN_AGENT_DEFINITIONS;
   // Own keys only: `constructor`, `toString`, `__proto__` are no agent definitions.
   const agent = Object.hasOwn(agents, agentName) ? agents[agentName] : undefined;
@@ -334,20 +343,41 @@ export async function runRemote(deps: RunRemoteDeps, input: RunRemoteInput): Pro
   const rootPath = repo!.rootPath;
   if (!rootPath) return fail('GIT_UNAVAILABLE', 'the project is not in a repository');
 
-  // The input, resolved before anything leaves the machine.
+  // The input, resolved before anything leaves the machine. Step 4 (`55a63udm`,
+  // `ffb3rhrs`) — the order's `projectId` — is decided here, because the plan
+  // named explicitly is looked up in the plans directory of that project, and
+  // its file is what steps 2–3 publish and check (ASSUMPTION:dev-5501).
+  const projectId = input.projectId ?? deps.projectId;
+  const project = deps.projects().find((p) => p.id === projectId);
+  if (!project) {
+    fail(
+      'RUN_PROJECT_NOT_FOUND',
+      `project '${projectId}' is not in workspace '${workspace.name}'`,
+      'pass the `id` of a project of the workspace as `projectId`, or omit it for the current project',
+    );
+  }
+  let planPath: string | null = null;
   let planRepoPath: string | null = null;
-  let planHomePath: string | null = null;
   if (input.prompt === undefined) {
-    const planPath = input.planPath ?? (input.threadId ? await deps.plans.pinnedPlanPath(input.threadId) : null);
-    if (planPath === null) fail('INVALID_ARGS', 'no plan is attached to this thread — pass `planPath` or `prompt`');
-    if (!(await deps.plans.exists(planPath!))) fail('PLAN_NOT_FOUND', `plan '${planPath}' not found`);
-    planRepoPath = relativeInside(realpathOrSelf(rootPath), realpathOrSelf(path.join(deps.plans.rootDir, planPath!)));
-    if (planRepoPath === null) fail('RUN_PROJECT_OUTSIDE_HOME', 'the plan is not in the repository of the workspace home');
-    // Segment-correct: a first segment such as `..drafts` is inside the home.
-    planHomePath = relativeInside(path.join(rootPath, home!), path.join(rootPath, planRepoPath!));
-    if (planHomePath === null || planHomePath === '.') {
-      fail('RUN_PROJECT_OUTSIDE_HOME', 'the plan lies outside the workspace home');
+    const pinned = input.planPath === undefined;
+    if (pinned && projectId !== deps.projectId) {
+      fail('INVALID_ARGS', `the plan attached to this thread belongs to project '${deps.projectId}', not '${projectId}' — omit \`projectId\` or pass \`planPath\``);
     }
+    planPath = input.planPath ?? (input.threadId ? await deps.plans.pinnedPlanPath(input.threadId) : null);
+    if (planPath === null) fail('INVALID_ARGS', 'no plan is attached to this thread — pass `planPath` or `prompt`');
+    const own = projectId === deps.projectId;
+    const plansDir = own ? deps.plans.rootDir : project!.plansRoot;
+    const planAbs = path.join(plansDir, planPath!);
+    const found = own
+      ? await deps.plans.exists(planPath!)
+      : // Realpaths on both sides, as PlanService does for the own project: a
+        // symlink inside the plans directory that points outside it is refused.
+        relativeInside(realpathOrSelf(plansDir), realpathOrSelf(planAbs)) !== null &&
+        fs.existsSync(planAbs) &&
+        fs.statSync(planAbs).isFile();
+    if (!found) fail('PLAN_NOT_FOUND', `plan '${planPath}' not found in project '${projectId}'`);
+    planRepoPath = relativeInside(realpathOrSelf(rootPath), realpathOrSelf(planAbs));
+    if (planRepoPath === null) fail('RUN_PROJECT_OUTSIDE_HOME', 'the plan is not in the repository of the workspace home');
   }
 
   // 1. Host.
@@ -369,11 +399,12 @@ export async function runRemote(deps: RunRemoteDeps, input: RunRemoteInput): Pro
   }
   const onUpstream = upstream as Extract<GitUpstreamPathResult, { status: 'on-upstream' }>;
 
-  // 4. The input, with paths relative to the home.
+  // 4. The input: always the project; a plan's path as the thread holds it,
+  // relative to the plans directory of that project — the master recomputes nothing.
   const runInput: RunInput =
-    planHomePath !== null
-      ? { kind: 'plan', path: planHomePath }
-      : { kind: 'prompt', text: input.prompt!, projectId: input.projectId ?? deps.projectId };
+    planPath !== null
+      ? { kind: 'plan', projectId, path: planPath }
+      : { kind: 'prompt', projectId, text: input.prompt! };
 
   // 5. The definition's version against the recipe at the base sha.
   const recipeAbs = path.join(rootPath, home === '.' ? '' : home!, ENVIRONMENT_RECIPE_PATH);

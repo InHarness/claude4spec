@@ -480,8 +480,21 @@ export interface AgentTurnInput {
   consoleObserver: StreamObserver | null;
   /** Transport callera — SSE forwarder dla `POST /api/chat`, no-op dla `ask`. */
   onEvent: (event: TurnEvent) => void;
-  /** Interaktywny kanal user-input. Brak = headless (np. `ask`). */
+  /** Kanal user-input: interaktywny w czacie, odmowa trasy w turze headless (`ask`). */
   onUserInput?: UserInputHandler;
+  /**
+   * 2.1.66: the turn has no human on the other end (`POST /api/threads/:id/ask`).
+   * Its `onUserInput` is the route's own `decline` (see `headless-user-input.ts`),
+   * so a transagent child must not be made interactive by it.
+   */
+  headless?: boolean;
+  /**
+   * 2.1.66: text appended to the prompt the ADAPTER receives (every query of the
+   * turn, merged dispatch included), never to the persisted user message. The
+   * headless route passes `HEADLESS_TURN_PROMPT_NOTE` — the carrier that tells the
+   * agent to act on its own recommendation when its question is declined.
+   */
+  agentPromptNote?: string;
   /**
    * Bounds this turn's `adapter.execute()` call so the documented `TIMEOUT`
    * code is actually enforced/emitted, instead of the turn running unbounded.
@@ -1149,7 +1162,7 @@ export async function runAgentTurn(
           architectureConfig: input.architectureConfig,
           takeToolUseId: takeTransagentToolUse,
           runTurn: (childInput) => runAgentTurn(deps, childInput),
-          interactive: input.onUserInput != null,
+          interactive: input.onUserInput != null && input.headless !== true,
         })
       : null;
     /**
@@ -2254,7 +2267,9 @@ export async function runAgentTurn(
       if (deliveredError) throw deliveredError;
     };
 
-    await consume(prompt);
+    const toAgentPrompt = (p: string): string =>
+      input.agentPromptNote ? `${p}\n\n${input.agentPromptNote}` : p;
+    await consume(toAgentPrompt(prompt));
 
     // After-turn merged dispatch: whatever piled up in the queue while the turn
     // ran (push declined, or a non-streaming architecture) is delivered now as a
@@ -2298,7 +2313,7 @@ export async function runAgentTurn(
       lastMainAssistantRowId = null;
       lastToolResultRowId = null;
       emit(mergedTurnStart);
-      await consume(merged);
+      await consume(toAgentPrompt(merged));
       batch = deps.chatService.popAllQueued(thread.id);
     }
 

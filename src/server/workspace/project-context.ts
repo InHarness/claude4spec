@@ -1624,6 +1624,9 @@ async function buildInner(
               deps: {
                 workspace: liveWorkspaceRecord,
                 projectId,
+                // 2.1.66 (M55 `ffb3rhrs`): the workspace's projects, each with its plans directory.
+                projects: () =>
+                  liveWorkspaceRecord().projects.map((p) => ({ id: p.id, plansRoot: path.join(p.cwd, '.claude4spec', 'plans') })),
                 git: gitService,
                 plans,
                 hosts: () => runSources.hosts(),

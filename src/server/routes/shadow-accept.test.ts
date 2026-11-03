@@ -40,6 +40,7 @@ import { GitService } from '../services/git.js';
 import type { MarkdownFileStore } from '../services/markdown-file-store.js';
 import type { PagesService } from '../services/pages.js';
 import { ReleaseService } from '../services/release.js';
+import { parseShadowAcceptRequest } from '../services/release-accept-shadow.js';
 import { ReleaseFileStore } from '../services/release-store.js';
 import type { TagsService } from '../services/tags.js';
 import { VersionService } from '../services/versions.js';
@@ -368,6 +369,13 @@ describe('M17 shadow acceptance — POST /api/shadow-accept (2.1.47)', () => {
     const ok = await accept({ acceptedShadow: { id: 'forged', tipSha: 'f'.repeat(40) } });
     expect(ok.status).toBe(201);
     expect(ok.body.acceptedShadow).toEqual({ id: 'run-1/spec', tipSha: tip });
+  });
+
+  it('[entity:shadow-accept-request] `ref` is the shadow id — the ref name without `refs/runs/`, a Run\'s `<runId>/work` (the working branch get_run names) taken verbatim with its `/`', () => {
+    const runId = '01jb3k9x7q2m4n5p6r8s0t1v2w';
+    const body = { ref: `${runId}/work`, name: 'v1', description: 'Accept the Run', expectedTipSha: 'a'.repeat(40), expectedHeadSha: 'b'.repeat(40) };
+    expect(parseShadowAcceptRequest(body)).toEqual(body);
+    expect(Object.keys(parseShadowAcceptRequest(body)).sort()).toEqual(['description', 'expectedHeadSha', 'expectedTipSha', 'name', 'ref']);
   });
 
   it('[ac:ac-drugim-rodzicem-commita-przyjecia-jes] the second parent of the acceptance commit is the tip SHA from the request', async () => {

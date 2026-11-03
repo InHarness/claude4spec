@@ -117,6 +117,17 @@ export interface RunRemoteFixture {
   git: GitService;
   registry: RemoteRunRegistry;
   hosts: RunRemoteHost[];
+  /**
+   * The workspace's projects as `run_remote` reads them (`app` first, its plans
+   * in `plansDir`); {@link addProject} appends to it.
+   */
+  projects: Array<{ id: string; plansRoot: string }>;
+  /**
+   * Add a project `ws/<id>/` to the workspace (and to `workspace.json`), with a
+   * plan `p1.md` in its `.claude4spec/plans/`. Nothing is committed: call
+   * {@link pushAll} when the test needs it on the upstream.
+   */
+  addProject(id: string): { dir: string; plansDir: string };
   /** `homeless: true` makes `workspace()` a registry workspace. */
   deps(over?: Partial<RunRemoteDeps> & { homeless?: boolean; pinned?: string | null }): RunRemoteDeps;
   /** Commit every change and push it. */
@@ -178,6 +189,7 @@ export async function makeRunRemoteFixture(opts: { gitEnabled?: boolean } = {}):
   const gitService = new GitService(project, [path.join(project, 'pages')]);
   const registry = remoteRunRegistry(() => openWorkspaceDb({ name: 'ws', home }));
   const hosts: RunRemoteHost[] = [];
+  const projects: Array<{ id: string; plansRoot: string }> = [{ id: 'app', plansRoot: plansDir }];
 
   const fixture: RunRemoteFixture = {
     tmp,
@@ -189,6 +201,20 @@ export async function makeRunRemoteFixture(opts: { gitEnabled?: boolean } = {}):
     git: gitService,
     registry,
     hosts,
+    projects,
+    addProject(id) {
+      const dir = path.join(home, id);
+      const projectPlans = path.join(dir, '.claude4spec/plans');
+      write(dir, '.claude4spec/config.json', JSON.stringify({ $schemaVersion: 4, name: id }, null, 2));
+      write(projectPlans, 'p1.md', `---\ntype: plan\ntitle: ${id} P1\n---\n# ${id} P1\n`);
+      projects.push({ id, plansRoot: projectPlans });
+      write(
+        home,
+        '.claude4spec/workspace.json',
+        JSON.stringify({ projects: [{ id: 'app', path: 'app' }, ...projects.slice(1).map((p) => ({ id: p.id, path: p.id }))] }, null, 2),
+      );
+      return { dir, plansDir: projectPlans };
+    },
     deps(over = {}) {
       const { homeless, pinned, ...rest } = over;
       return {
@@ -200,6 +226,7 @@ export async function makeRunRemoteFixture(opts: { gitEnabled?: boolean } = {}):
           pinnedPlanPath: () => (pinned === undefined ? 'p1.md' : pinned),
           exists: async (p) => fs.existsSync(path.join(plansDir, p)),
         },
+        projects: () => projects,
         hosts: () => hosts,
         registry: () => registry,
         ...rest,

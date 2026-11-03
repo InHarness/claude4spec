@@ -1,9 +1,10 @@
 import { z } from 'zod';
+import { DEFAULT_RUN_AGENT_NAME } from './plan-execution-agent.js';
 
 /**
  * mcp-tool `run-tools-run-remote` — the wire contract of `run_remote`: its
  * parameters, verbatim from the record. The master computes `repo`, `home`,
- * `baseSha` and the plan's path relative to the home, so none of them is a
+ * `baseSha` and `projectId` when it is not given, so none of them is a
  * parameter. Shared by the catalog row (`core-operations.ts`) and the
  * `run-tools` server.
  */
@@ -12,14 +13,16 @@ export const RUN_REMOTE_INPUT_SCHEMA = {
     .string()
     .optional()
     .describe(
-      'Path of the plan file to execute, relative to the plans root. Omit to execute the plan attached to the current thread. Not together with `prompt`.',
+      'Path of the plan file, relative to the plans directory of the project. Omit to execute the plan attached to the current thread. Not together with `prompt`.',
     ),
   prompt: z.string().optional().describe('Free-form instruction to execute instead of a plan. Not together with `planPath`.'),
   projectId: z
     .string()
     .optional()
-    .describe('Project the prompt is addressed to. Only with `prompt`; defaults to the current project.'),
-  agent: z.string().default('shadow').describe('Name of the agent definition the Run executes.'),
+    .describe(
+      'Project the plan or the prompt belongs to. Defaults to the current project. With the plan attached to the thread it must be the current project.',
+    ),
+  agent: z.string().default(DEFAULT_RUN_AGENT_NAME).describe('Name of the agent definition the Run executes.'),
   host: z
     .string()
     .optional()
@@ -43,7 +46,7 @@ export const RUN_REMOTE_INPUT_SCHEMA = {
 };
 
 export const RUN_REMOTE_DESCRIPTION =
-  'Starts a Run on a runner host: an agent turn over the specification of the whole workspace, executed on a remote machine. Use it when the user asks to execute a plan (or a prompt) in shadow mode. The call returns as soon as the host accepts the Run; it does not wait for the Run to finish. The result reaches the master only as a shadow that a human accepts in Releases → Shadows. Use get_run later to report its state.';
+  'Starts a Run on a runner host: an agent turn over the specification of the whole workspace, executed on a remote machine. Use it when the user asks to execute a plan (or a prompt) remotely (Remote execution). The call returns as soon as the host accepts the Run; it does not wait for the Run to finish. The result reaches the master only as a shadow that a human accepts in Releases → Shadows. Use get_run later to report its state.';
 
 export const RUN_REMOTE_SUMMARY =
   "Zleca Run na hoście runnera — turę agenta nad specyfikacją całego workspace'u na zdalnej maszynie — i wraca, zanim Run się skończy.";

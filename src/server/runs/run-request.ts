@@ -1,11 +1,14 @@
 /**
  * `c4s-runner` dto `run-request` — the body of `PUT /runs/{runId}`, as the
- * master builds it. Paths are relative to the workspace home (`home` is the
- * home relative to the repository root, `.` when they are the same); `repo`,
- * `home` and `baseSha` are computed by the master (M55 `ffb3rhrs`). An absent
- * optional field is left out of the body, never sent as `null`.
+ * master builds it. `home` is the workspace home relative to the repository
+ * root (`.` when they are the same); `repo`, `home` and `baseSha` are computed
+ * by the master (M55 `ffb3rhrs`). Both inputs always carry `projectId`; a
+ * plan's `path` is relative to the plans directory of that project
+ * (`<project path>/.claude4spec/plans/`) — the thread's `planPath`, never
+ * recomputed. An absent optional field is left out of the body, never sent as
+ * `null`.
  */
-export type RunInput = { kind: 'plan'; path: string } | { kind: 'prompt'; text: string; projectId?: string };
+export type RunInput = { kind: 'plan'; projectId: string; path: string } | { kind: 'prompt'; projectId: string; text: string };
 
 export interface RunRequest {
   repo: string;
