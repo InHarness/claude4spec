@@ -1,0 +1,16 @@
+{
+  "id": "dev-6708",
+  "kind": "clarification",
+  "blocking": false,
+  "address": "u2-m31-komendy-rejestru/m31cli01",
+  "slugs": [
+    "trust-plugins",
+    "ac-powtorzone-c4s-trust-plugins-cwd-dir"
+  ],
+  "text": "A repeated `c4s trust-plugins --cwd <dir> true` for a project of a registry workspace (no home) ends with exit code 0 and leaves the trust, the projects and every other field unchanged, but rewrites the entry's `lastOpened`: step 3 of the record's logic selects the workspace through `WorkspaceRegistry.selectOrCreate`, which stamps `lastOpened` on every selection. This predates the branch (60a89c1d: `selectOrCreateEntry` already sets `ws.lastOpened = nowIso()`, and `trust-plugins` already went through it); the spec (M31 `m31cli01`, the AC and the cli-command record) asks only for exit code 0 on a repeat and does not say a repeat writes nothing. Assumed: the bump is acceptable; the test compares the registry ignoring `lastOpened`. If M31 means a registry-write command should not count as opening the workspace, say so and the selection will stop stamping it for these commands.",
+  "assumption": "ASSUMPTION:dev-6708 — a repeated trust-plugins may bump `lastOpened` of the selected registry workspace; no other field changes.",
+  "unit": "u2-m31-komendy-rejestru",
+  "portion": "u2-m31-komendy-rejestru/p1-l14",
+  "sent": true,
+  "patchPath": "2-1-66-to-2-1-67-u2-m31-komendy-rejestru-m31cli01-powtorzone-trust-plugins-bumpuje-lastopened-wor.md"
+}

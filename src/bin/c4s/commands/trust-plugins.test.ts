@@ -67,6 +67,12 @@ describe('c4s trust-plugins', () => {
       (w) => w.name === name,
     )!;
 
+  /** The registry file with every workspace's `lastOpened` dropped. */
+  const withoutLastOpened = (file: { workspaces: Array<Record<string, unknown>> }): unknown => ({
+    ...file,
+    workspaces: file.workspaces.map(({ lastOpened: _lastOpened, ...rest }) => rest),
+  });
+
   const refusal = async (argv: string[]): Promise<CliError> => {
     const err = await runTrustPlugins(parseArgs(argv)).then(
       () => null,
@@ -260,7 +266,7 @@ describe('c4s trust-plugins', () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({ name: 'team-clone', home, defaultPort: 4777 });
     expect(entries[0]!.projectTrust).toEqual({ app: { path: 'specs/app', trustProjectPlugins: true } });
-    expect(new WorkspaceRegistry(registryHome).findByPort(4500)).toBeUndefined();
+    expect(new WorkspaceRegistry(registryHome).findByPort(4500)).toBeNull();
   });
 
   it('[ac:ac-powtorzone-c4s-trust-plugins-cwd-dir] a repeated trust-plugins --cwd <dir> true ends with exit code 0', async () => {
@@ -272,12 +278,14 @@ describe('c4s trust-plugins', () => {
 
     for (const dir of [projectDir, solo]) {
       await expect(runTrustPlugins(parseArgs(['trust-plugins', '--cwd', dir, 'true']))).resolves.toBeUndefined();
-      const firstText = fs.readFileSync(registryFile, 'utf8');
+      const first = withoutLastOpened(JSON.parse(fs.readFileSync(registryFile, 'utf8')));
       stdout = '';
       // The repeat: resolves (the bin exits 0), same answer, no new record.
       await expect(runTrustPlugins(parseArgs(['trust-plugins', '--cwd', dir, 'true']))).resolves.toBeUndefined();
       expect(JSON.parse(stdout)).toMatchObject({ cwd: dir, trustProjectPlugins: true });
-      expect(JSON.parse(fs.readFileSync(registryFile, 'utf8'))).toEqual(JSON.parse(firstText));
+      // ASSUMPTION:dev-6708 — selecting a registry workspace bumps its
+      // `lastOpened` (pre-existing `selectOrCreate`); everything else is unchanged.
+      expect(withoutLastOpened(JSON.parse(fs.readFileSync(registryFile, 'utf8')))).toEqual(first);
     }
   });
 });

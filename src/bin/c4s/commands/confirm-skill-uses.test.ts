@@ -193,6 +193,8 @@ describe('c4s confirm-skill-uses', () => {
     const { projectDir } = await registeredTeamRepo(['spec-style']);
     await run(['confirm-skill-uses', '--cwd', projectDir, 'spec-style']);
     const before = fs.readFileSync(registryFile, 'utf8');
+    // Only the refused invocations' output is checked below, not the setup run's.
+    stdout = '';
 
     for (const bad of ['Spec_Style', 'spec--style', 'spec style', '-spec']) {
       const err = await refusal(['confirm-skill-uses', '--cwd', projectDir, 'shared-glossary', bad]);

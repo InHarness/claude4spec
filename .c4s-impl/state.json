@@ -1,5 +1,5 @@
 {
-  "iteration": 24,
+  "iteration": 25,
   "conventions": [
     {
       "label": "L3 (Spec Operations) — implementor M43",
@@ -307,7 +307,7 @@
         }
       ],
       "wave": 2,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "u2-m31-komendy-rejestru/p1-l14",
@@ -332,25 +332,11 @@
             "ac-powtorzone-c4s-trust-plugins-cwd-dir",
             "ac-start-serwera-z-cwd-home-port-n-po-c4"
           ],
-          "status": "pending",
-          "rounds": 2,
+          "status": "implemented",
+          "rounds": 3,
           "partial": 0,
-          "uncovered": [
-            "ac-c4s-confirm-skill-uses-z-nazwa-spoza",
-            "ac-c4s-trust-plugins-cwd-home-projekt-tr",
-            "ac-powtorzone-c4s-trust-plugins-cwd-dir"
-          ],
-          "only": [
-            {
-              "slug": "ac-c4s-confirm-skill-uses-z-nazwa-spoza"
-            },
-            {
-              "slug": "ac-c4s-trust-plugins-cwd-home-projekt-tr"
-            },
-            {
-              "slug": "ac-powtorzone-c4s-trust-plugins-cwd-dir"
-            }
-          ]
+          "uncovered": [],
+          "only": []
         }
       ],
       "startCommit": "f92639255d2b0fce37aa9b9324d084314bfb1d02",
