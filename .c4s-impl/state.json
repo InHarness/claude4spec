@@ -1,5 +1,5 @@
 {
-  "iteration": 21,
+  "iteration": 22,
   "conventions": [
     {
       "label": "L3 (Spec Operations) — implementor M43",
@@ -307,7 +307,7 @@
         }
       ],
       "wave": 2,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "u2-m31-komendy-rejestru/p1-l14",
@@ -332,14 +332,52 @@
             "ac-powtorzone-c4s-trust-plugins-cwd-dir",
             "ac-start-serwera-z-cwd-home-port-n-po-c4"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "confirm-skill-uses",
+            "ac-c4s-confirm-skill-uses-cwd-dir-name-z",
+            "ac-c4s-confirm-skill-uses-z-nazwa-spoza",
+            "ac-c4s-confirm-skill-uses-zwraca-w-notin",
+            "ac-powtorzone-c4s-register-home-cwd-dir",
+            "ac-po-c4s-register-home-cwd-home-komenda",
+            "ac-po-c4s-register-home-cwd-home-komenda-2",
+            "ac-c4s-trust-plugins-cwd-home-projekt-tr",
+            "ac-powtorzone-c4s-trust-plugins-cwd-dir"
+          ],
+          "only": [
+            {
+              "slug": "confirm-skill-uses"
+            },
+            {
+              "slug": "ac-c4s-confirm-skill-uses-cwd-dir-name-z"
+            },
+            {
+              "slug": "ac-c4s-confirm-skill-uses-z-nazwa-spoza"
+            },
+            {
+              "slug": "ac-c4s-confirm-skill-uses-zwraca-w-notin"
+            },
+            {
+              "slug": "ac-powtorzone-c4s-register-home-cwd-dir"
+            },
+            {
+              "slug": "ac-po-c4s-register-home-cwd-home-komenda"
+            },
+            {
+              "slug": "ac-po-c4s-register-home-cwd-home-komenda-2"
+            },
+            {
+              "slug": "ac-c4s-trust-plugins-cwd-home-projekt-tr"
+            },
+            {
+              "slug": "ac-powtorzone-c4s-trust-plugins-cwd-dir"
+            }
+          ]
         }
       ],
-      "startCommit": "d4ef8786d1a0dcc323156bfea170ca0b86957db6",
+      "startCommit": "257cf3a764f19b31aacdfc4739e58e1fc1c00892",
       "baseCommit": "d4ef8786d1a0dcc323156bfea170ca0b86957db6",
       "rounds": {
         "review": 0,
@@ -581,7 +619,7 @@
         }
       ],
       "wave": 3,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "u4-m52-potwierdzanie-podpiec/p1-l2-l17",
@@ -606,14 +644,24 @@
             "ac-podpiecie-z-skill-uses-ktorego-nazwa",
             "ac-wiersz-niepotwierdzonego-podpiecia-na"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 2,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "ac-wiersz-niepotwierdzonego-podpiecia-na",
+            "ac-podpiecie-dodane-na-karcie-skills-dzi"
+          ],
+          "only": [
+            {
+              "slug": "ac-wiersz-niepotwierdzonego-podpiecia-na"
+            },
+            {
+              "slug": "ac-podpiecie-dodane-na-karcie-skills-dzi"
+            }
+          ]
         }
       ],
-      "startCommit": "45bd9fb5aec9495fe79834f055133845d6623942",
+      "startCommit": "257cf3a764f19b31aacdfc4739e58e1fc1c00892",
       "baseCommit": "49f462bc90759bd308a6d29afbef6d675358a363",
       "rounds": {
         "review": 0,
