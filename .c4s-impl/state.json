@@ -1,5 +1,5 @@
 {
-  "iteration": 22,
+  "iteration": 23,
   "conventions": [
     {
       "label": "L3 (Spec Operations) — implementor M43",
@@ -307,7 +307,7 @@
         }
       ],
       "wave": 2,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "u2-m31-komendy-rejestru/p1-l14",
@@ -581,7 +581,7 @@
         }
       ],
       "wave": 3,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "u4-m52-potwierdzanie-podpiec/p1-l2-l17",
@@ -606,21 +606,11 @@
             "ac-podpiecie-z-skill-uses-ktorego-nazwa",
             "ac-wiersz-niepotwierdzonego-podpiecia-na"
           ],
-          "status": "pending",
-          "rounds": 2,
+          "status": "implemented",
+          "rounds": 3,
           "partial": 0,
-          "uncovered": [
-            "ac-wiersz-niepotwierdzonego-podpiecia-na",
-            "ac-podpiecie-dodane-na-karcie-skills-dzi"
-          ],
-          "only": [
-            {
-              "slug": "ac-wiersz-niepotwierdzonego-podpiecia-na"
-            },
-            {
-              "slug": "ac-podpiecie-dodane-na-karcie-skills-dzi"
-            }
-          ]
+          "uncovered": [],
+          "only": []
         }
       ],
       "startCommit": "257cf3a764f19b31aacdfc4739e58e1fc1c00892",

@@ -218,15 +218,19 @@ describe.skipIf(!BASE)('#skills — attachment confirmation (M52 uluzymnm, 2.1.6
     expect((await marker.innerText()).trim().toLowerCase()).toBe('unconfirmed');
     expect(await confirmed.locator('[data-marker="Unconfirmed"]').count()).toBe(0);
     // The marker never disables the row's checkbox.
-    expect(await pending.locator('input[type="checkbox"]').isDisabled()).toBe(false);
+    const checkbox = pending.locator('input[type="checkbox"]');
+    expect(await checkbox.isDisabled()).toBe(false);
+    // The tick follows the card's draft of `skill.uses` (the real config), not the
+    // stubbed rows: whatever it is now, Confirm must leave it as it is.
+    const tickedBefore = await checkbox.isChecked();
 
     // The confirmation action: one write, the already confirmed name carried over.
     await pending.locator(`[data-confirm-skill-use="${pendingName}"]`).click();
     await expect.poll(() => writes.length).toBe(1);
     expect(writes[0]!.names).toEqual([confirmedName, pendingName]);
-    // The list is re-read: the marker is gone, and the row is still ticked (the click never toggles it).
+    // The list is re-read: the marker is gone, and the row's tick is unchanged (the click never toggles it).
     await expect.poll(() => marker.count()).toBe(0);
-    expect(await pending.locator('input[type="checkbox"]').isChecked()).toBe(true);
+    expect(await checkbox.isChecked()).toBe(tickedBefore);
 
     expect(consoleErrors, 'console errors').toEqual([]);
     expect(badResponses, 'responses >= 400').toEqual([]);
@@ -260,11 +264,19 @@ describe.skipIf(!BASE)('#skills — attachment confirmation (M52 uluzymnm, 2.1.6
         stubbed = false;
       }
     });
-    page.on('response', async (r) => {
-      if (r.request().method() === 'PUT' && new URL(r.url()).pathname.endsWith('/spec-skills/uses-confirmation')) {
-        const body = (await r.json()) as { data: { confirmedSkillUses: string[]; notInSkillUses: string[] } };
-        confirmations.push({ request: r.request().postDataJSON() as { names: string[] }, status: r.status(), data: body.data });
-      }
+    // The confirmation write reaches the real server; its answer is read here, on
+    // the test's side. Reading it from the page (`response.json()`) races a reload:
+    // the write invalidates the project's context (M31), the server sends
+    // `project:disposed` and the tab reloads, after which the browser no longer
+    // holds the response body.
+    await page.route(confirmUrl(), async (route) => {
+      const request = route.request();
+      if (request.method() !== 'PUT') return route.fallback();
+      const response = await route.fetch();
+      const body = (await response.json()) as { data: { confirmedSkillUses: string[]; notInSkillUses: string[] } };
+      confirmations.push({ request: request.postDataJSON() as { names: string[] }, status: response.status(), data: body.data });
+      // The page may already be reloading (the request is gone): nothing left to answer.
+      await route.fulfill({ response }).catch(() => undefined);
     });
 
     try {
