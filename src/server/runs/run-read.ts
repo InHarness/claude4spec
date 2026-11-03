@@ -88,9 +88,11 @@ export const KNOWN_RUN_REASONS: ReadonlySet<string> = new Set([
   'workspace-invalid',
   'plan-not-found',
   'project-not-found',
+  'trust-path-mismatch',
   'recipe-not-found',
   'recipe-invalid',
   'prepare-failed',
+  'c4s-failed',
   'environment-failed',
   'no-handoff',
   'handoff-invalid',
@@ -100,6 +102,19 @@ export const KNOWN_RUN_REASONS: ReadonlySet<string> = new Set([
   'timeout',
   'runner-restart',
 ]);
+
+/**
+ * M55 `361n2mqb`: the master's hint for the two reasons whose cause lies on
+ * the c4s side. The reason itself goes verbatim; the hint stands next to it
+ * (`reasonHint`). A reason outside this table goes without a hint.
+ * ASSUMPTION:dev-6703 — the field's name (`reasonHint`) is not in the specification.
+ */
+export const RUN_REASON_HINTS: Readonly<Record<string, string>> = {
+  'c4s-failed':
+    "Check the recipe's `c4sVersion` against the agent definition's minimum version, and the Run's log with the host's operator.",
+  'trust-path-mismatch':
+    "The local approval is for another path than the project's path at the base sha; approve the current path on this machine, then order a new Run with a new runId.",
+};
 
 /**
  * `c4s-runner` dto `run`, field `state`: the states this master knows. A state
@@ -132,6 +147,8 @@ export interface RunView {
   outcome?: string;
   /** Absent when the runner gave none, or gave one this master does not know (the general outcome). */
   reason?: string;
+  /** The master's hint to `reason` (`361n2mqb`, {@link RUN_REASON_HINTS}); present only for a reason of that table. */
+  reasonHint?: string;
   handoff?: RunHandoff;
   resultRef?: string;
 }
@@ -238,6 +255,7 @@ function viewOf(runId: string, source: RunView['source'], fields: Record<string,
   if (typeof fields.outcome === 'string') view.outcome = fields.outcome;
   const reason = knownReason(fields.reason);
   if (reason !== undefined) view.reason = reason;
+  if (reason !== undefined && Object.hasOwn(RUN_REASON_HINTS, reason)) view.reasonHint = RUN_REASON_HINTS[reason];
   const handoff = pickHandoff(fields.handoff);
   if (handoff) view.handoff = handoff;
   if (typeof fields.resultRef === 'string') view.resultRef = fields.resultRef;

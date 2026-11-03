@@ -1,3 +1,6 @@
 - register-home → src/bin/c4s/commands/register-home.ts (core: src/server/workspace/register-home.ts → WorkspaceRegistry.registerHome; test: src/bin/c4s/commands/register-home.test.ts)
 - confirm-skill-uses → src/bin/c4s/commands/confirm-skill-uses.ts (core: confirmSkillUsesForDirectory in src/server/workspace/trust-plugins.ts → setSkillUsesConfirmation; test: src/bin/c4s/commands/confirm-skill-uses.test.ts)
 - trust-plugins → src/bin/c4s/commands/trust-plugins.ts (core: setPluginTrustForDirectory / resolveProjectForDirectory in src/server/workspace/trust-plugins.ts; test: src/bin/c4s/commands/trust-plugins.test.ts)
+- run-remote → src/server/runs/run-remote.ts (step 6 `trustOf`, `c4sTrust` in the order, `warnings` in the result; consent read: `runLocalConsentOf`, needs: src/server/runs/run-consent-needs.ts; wiring: src/server/workspace/project-context.ts; test: src/server/runs/run-remote.test.ts "the trust in the order (jlgucjnq)")
+- get-run → src/server/runs/run-read.ts (`RUN_REASON_HINTS`, `reasonHint`; test: src/server/runs/run-read.test.ts)
+- run-tools-run-remote → src/server/mcp/run-tools.ts (payload `{ runId, host, unconfirmed?, warnings? }` from `RunRemoteResult`; test: src/server/mcp/run-tools.test.ts)

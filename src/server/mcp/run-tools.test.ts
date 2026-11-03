@@ -2,14 +2,15 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { buildRunToolsServer } from './run-tools.js';
-import type { RunRemoteDeps } from '../runs/run-remote.js';
+import { runLocalConsentOf, TRUST_WARNING_PLUGINS, type RunRemoteDeps } from '../runs/run-remote.js';
+import { runConsentNeedsOf } from '../runs/run-consent-needs.js';
 import type { RunReadDeps } from '../runs/run-read.js';
 import { RUN_READ_ERROR_CODES } from '../runs/run-read.js';
 import { RUN_ID_PATTERN } from '../runs/run-id.js';
 import { CATALOG } from '../operations/catalog.js';
 import { expectToolMatchesToolRecord, type WriteToolRecord } from '../../../tests/helpers/write-tool-records.js';
 import { expectOperationMatchesRecord, type OperationRecord } from '../../../tests/helpers/operation-records.js';
-import { host, makeRunRemoteFixture, RunsApiStub, type RunRemoteFixture } from '../../../tests/helpers/run-remote-fixture.js';
+import { host, makeRunRemoteFixture, RunsApiStub, write, type RunRemoteFixture } from '../../../tests/helpers/run-remote-fixture.js';
 
 /** mcp-tool `run-tools-run-remote` (2.1.66), verbatim. */
 const RUN_TOOL_RECORDS: Record<string, WriteToolRecord> = {
@@ -162,6 +163,52 @@ describe('run-tools · run_remote (mcp-tool run-tools-run-remote)', () => {
     const rejected = await call(client, { host: 'a', timeoutMinutes: 100000 });
     expect(rejected.body.code).toBe('RUN_REJECTED');
     expect(rejected.body.field).toBe('timeoutMinutes');
+  });
+});
+
+describe('run-tools · run_remote warnings (mcp-tool run-tools-run-remote, returns `warnings?`)', () => {
+  let fx: RunRemoteFixture;
+  let stub: RunsApiStub;
+
+  beforeEach(async () => {
+    fx = await makeRunRemoteFixture();
+    stub = new RunsApiStub();
+    fx.hosts.push(host('a', await stub.listen()));
+  });
+
+  afterEach(async () => {
+    await stub.close();
+    fx.dispose();
+  });
+
+  it('[ac:ac-zwrot-run-remote-dla-projektu-z-plugi] the return of run_remote for a project with plugins and no local consent carries a warning — the Run is still ordered, without trust', async () => {
+    // A project plugin package in the repository, and no consent on this machine.
+    write(fx.project, '.claude4spec/plugins/acme/package.json', '{"name":"acme"}');
+    await fx.pushAll('project plugin');
+    const deps = fx.deps({ localConsent: (id) => runLocalConsentOf({}, id), consentNeeds: () => runConsentNeedsOf(fx.project) });
+    const { client } = await connectTo(deps, fx.readDeps())();
+    const { isError, body } = await call(client, {});
+    expect(isError).toBe(false);
+    expect(body.runId).toMatch(RUN_ID_PATTERN);
+    expect(body.host).toEqual({ id: 'a', name: 'name-a' });
+    expect(body.warnings).toEqual([TRUST_WARNING_PLUGINS]);
+    expect(stub.requests).toHaveLength(1);
+    expect(stub.requests[0]!.body).not.toHaveProperty('c4sTrust');
+  });
+
+  it('[entity:run-tools-run-remote] returns { runId, host } without `warnings` when the trust went with the order', async () => {
+    write(fx.project, '.claude4spec/plugins/acme/package.json', '{"name":"acme"}');
+    await fx.pushAll('project plugin');
+    const deps = fx.deps({
+      localConsent: (id) => runLocalConsentOf({ app: { path: 'app', trustProjectPlugins: true } }, id),
+      consentNeeds: () => runConsentNeedsOf(fx.project),
+    });
+    const { client } = await connectTo(deps, fx.readDeps())();
+    const { isError, body } = await call(client, {});
+    expect(isError).toBe(false);
+    expect(body).not.toHaveProperty('warnings');
+    expect(Object.keys(body).sort()).toEqual(['host', 'runId']);
+    expect(stub.requests[0]!.body.c4sTrust).toEqual({ projects: { app: { path: 'app', trustProjectPlugins: true } } });
   });
 });
 

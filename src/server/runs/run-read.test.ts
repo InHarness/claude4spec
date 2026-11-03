@@ -7,6 +7,7 @@ import {
   getRun,
   PLAN_HINT,
   RUN_HOST_WITHOUT_RUNS_MESSAGE,
+  RUN_REASON_HINTS,
   RUN_UNKNOWN_MESSAGE,
   RUN_UNTRACEABLE_MESSAGE,
   RunReadError,
@@ -172,6 +173,44 @@ describe('get_run / cancel_run (spec-operations get-run, cancel-run)', () => {
       expect(result).not.toHaveProperty('reason');
       stub.reply = () => ({ status: 200, body: runBody({ outcome: 'aborted', reason: 'timeout', handoff: undefined }) });
       expect((await getRun(deps, { runId: RUN })).reason).toBe('timeout');
+    });
+
+    it('[ac:ac-odczyt-runu-zakonczonego-powodem-trus] reading a Run finished with `trust-path-mismatch` gives the reason verbatim together with the hint to approve again', async () => {
+      register();
+      stub.reply = () => ({ status: 200, body: runBody({ outcome: 'failed', reason: 'trust-path-mismatch', handoff: undefined }) });
+      const result = await getRun(deps, { runId: RUN });
+      expect(result.outcome).toBe('failed');
+      // Verbatim: the runner's value, not rewritten.
+      expect(result.reason).toBe('trust-path-mismatch');
+      // And the master's hint next to it: approve the current path, then a new Run with a new runId.
+      expect(result.reasonHint).toBe(RUN_REASON_HINTS['trust-path-mismatch']);
+      expect(result.reasonHint).toMatch(/approve the current path/);
+      expect(result.reasonHint).toMatch(/new runId/);
+
+      // The same from the Run record in git (the runner no longer knows the Run).
+      stub.reply = () => apiError(404, 'run_not_found');
+      await fx.pushRunRecord(RUN, record({ outcome: 'failed', reason: 'trust-path-mismatch', handoff: undefined }));
+      const fromRecord = await getRun(deps, { runId: RUN });
+      expect(fromRecord).toMatchObject({ source: 'record', reason: 'trust-path-mismatch', reasonHint: RUN_REASON_HINTS['trust-path-mismatch'] });
+    });
+
+    it('[entity:get-run] the hint goes only with a reason of the table: `c4s-failed` gets its own, any other reason (known or not) none', async () => {
+      register();
+      stub.reply = () => ({ status: 200, body: runBody({ outcome: 'failed', reason: 'c4s-failed', handoff: undefined }) });
+      const c4s = await getRun(deps, { runId: RUN });
+      expect(c4s.reason).toBe('c4s-failed');
+      expect(c4s.reasonHint).toBe(RUN_REASON_HINTS['c4s-failed']);
+      expect(c4s.reasonHint).toMatch(/c4sVersion/);
+
+      stub.reply = () => ({ status: 200, body: runBody({ outcome: 'failed', reason: 'agent-failed', handoff: undefined }) });
+      const other = await getRun(deps, { runId: RUN });
+      expect(other.reason).toBe('agent-failed');
+      expect(other).not.toHaveProperty('reasonHint');
+
+      stub.reply = () => ({ status: 200, body: runBody({ outcome: 'failed', reason: 'quantum-flux', handoff: undefined }) });
+      const unknown = await getRun(deps, { runId: RUN });
+      expect(unknown).not.toHaveProperty('reason');
+      expect(unknown).not.toHaveProperty('reasonHint');
     });
 
     it('[ac:ac-get-run-ze-stanem-nieznanym-masterowi] get_run with a state this master does not know reports that state verbatim, marked as unknown to the master, and still reads the shadow by resultSha alone', async () => {

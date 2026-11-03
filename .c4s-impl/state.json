@@ -1,5 +1,5 @@
 {
-  "iteration": 9,
+  "iteration": 14,
   "conventions": [
     {
       "label": "L3 (Spec Operations) — implementor M43",
@@ -445,13 +445,37 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u5-m55-zaufanie-w-zleceniu/p1-l3-l4",
+          "layers": [
+            "L3",
+            "L4"
+          ],
+          "slugs": [
+            "run-tools-run-remote",
+            "get-run",
+            "run-remote",
+            "m55-requires-m31",
+            "ac-odczyt-runu-zakonczonego-powodem-trus",
+            "ac-zlecenie-runu-nie-niesie-zaufania-pro",
+            "ac-zlecenie-runu-projektu-ktorego-lokaln",
+            "ac-zlecenie-runu-projektu-z-lokalnym-zau",
+            "ac-zwrot-run-remote-dla-projektu-z-plugi"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "7c0d07665cd01e48df8a875041f877c25fba6278",
+      "baseCommit": "af8a32293a548c11feee81d6127411483eb34ca3",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
       "jobs": []
     },

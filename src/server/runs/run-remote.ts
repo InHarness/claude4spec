@@ -5,7 +5,9 @@ import type { GitRepoRoot } from '../services/git.js';
 import type { RunnerHostStatus } from '../../shared/runner-hosts.js';
 import type { RemoteRunRegistry } from './remote-run-registry.js';
 import { newRunId } from './run-id.js';
-import type { RunInput, RunRequest } from './run-request.js';
+import type { C4sTrust, RunInput, RunRequest } from './run-request.js';
+import { sameProjectPath } from '../workspace/home-workspace.js';
+import type { HomeProjectTrust } from '../workspace/types.js';
 import { mapRunnerApiCode, putRunOverHttp, type PutRun } from './runner-runs-client.js';
 import { DEFAULT_RUN_AGENT_NAME, RUN_AGENT_DEFINITIONS, type RunAgentDefinition } from './plan-execution-agent.js';
 
@@ -26,9 +28,14 @@ import { DEFAULT_RUN_AGENT_NAME, RUN_AGENT_DEFINITIONS, type RunAgentDefinition 
  *     directory of the project — and is not recomputed;
  *  5. the version check of the agent definition against the environment
  *     recipe (`kcxoa7qg`);
- *  6. the registry INSERT;
- *  7. `PUT /runs/{runId}`;
- *  8. `{ runId, host }`.
+ *  6. the trust in the order (`jlgucjnq`): the local consent of the Run's
+ *     project alone — plugin trust and confirmed skill attachments — sent
+ *     only when the path it was given for equals the project's path in
+ *     `workspace.json` at the base sha; otherwise nothing about trust is sent
+ *     and the answer carries `warnings`;
+ *  7. the registry INSERT (runId → hostId only: the trust is not stored);
+ *  8. `PUT /runs/{runId}`, with the trust of step 6;
+ *  9. `{ runId, host, warnings? }`.
  *
  * The conditions (`e9ce6072`) are checked before any of them. A refusal before
  * the `PUT` leaves no registry row. A host's `4xx` refusal deletes the row; a
@@ -128,6 +135,23 @@ export interface RunRemotePlans {
   exists(planPath: string): Promise<boolean>;
 }
 
+/**
+ * The machine-local consent of one project (M31 `44viw74p`), as the registry
+ * stores it: the path it was given for (relative to the workspace home), the
+ * plugin trust and the confirmed skill-attachment names (M52 `ybbal0vf`).
+ */
+export interface RunLocalConsent {
+  path: string;
+  trustProjectPlugins?: boolean;
+  confirmedSkillUses?: string[];
+}
+
+/** What the project's committed code asks a consent for: local plugin packages and `skill.uses` names. */
+export interface RunConsentNeeds {
+  plugins: boolean;
+  skillUses: string[];
+}
+
 export interface RunRemoteDeps {
   /** The workspace of this process, read per call. */
   workspace(): { name: string; home?: string };
@@ -145,6 +169,15 @@ export interface RunRemoteDeps {
   hosts(): RunRemoteHost[];
   /** The Runs registry; opened only once a row is written (a registry workspace has no workspace DB). */
   registry(): RemoteRunRegistry;
+  /**
+   * The stored local consent of a project with its path (M31, the registry
+   * entry's `projectTrust[id]`), read raw — NOT folded by the view, so a
+   * consent given for another path is seen as such. `null` = none. Omitted =
+   * no consent on this machine.
+   */
+  localConsent?(projectId: string): RunLocalConsent | null;
+  /** What the project asks a consent for. Omitted = nothing. */
+  consentNeeds?(projectId: string): RunConsentNeeds;
   putRun?: PutRun;
   newRunId?: () => string;
   agents?: Readonly<Record<string, RunAgentDefinition>>;
@@ -168,7 +201,16 @@ export interface RunRemoteResult {
   host: { id: string; name: string | null };
   /** Only when the order may not have reached the host (network error at the `PUT`). */
   unconfirmed?: true;
+  /**
+   * Only when not empty (`jlgucjnq`): the trust the order did not carry — the
+   * project's plugins or skill uses without a local consent for this path, or
+   * a consent given for another path. The thread's agent relays them in chat.
+   */
+  warnings?: string[];
 }
+
+/** `workspace.json` of the home, relative to the home. */
+const WORKSPACE_DESCRIPTION = '.claude4spec/workspace.json';
 
 /** `c4s-runner` `modules/M05-workspace-environment.md` #fovr3uty: the recipe, relative to the workspace home. */
 export const ENVIRONMENT_RECIPE_PATH = '.c4s-runner/environment.json';
@@ -319,6 +361,82 @@ function checkRecipeVersion(recipeText: string | null, agent: RunAgentDefinition
   }
 }
 
+/** The project's path in a `workspace.json` text, or `null` (unreadable, off the shape, not listed). */
+function projectPathIn(workspaceText: string | null, projectId: string): string | null {
+  if (workspaceText === null) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(workspaceText);
+  } catch {
+    return null;
+  }
+  const projects = (parsed as { projects?: unknown } | null)?.projects;
+  if (!Array.isArray(projects)) return null;
+  const entry = projects.find(
+    (p): p is { id: string; path: string } =>
+      !!p && typeof p === 'object' && (p as { id?: unknown }).id === projectId && typeof (p as { path?: unknown }).path === 'string',
+  );
+  return entry ? entry.path : null;
+}
+
+/** Warnings of `run_remote` (mcp-tool `run-tools-run-remote`, `returns`). */
+export const TRUST_WARNING_PLUGINS = 'trust not sent: project plugins without local approval for this path';
+export const TRUST_WARNING_SKILL_USES = 'trust not sent: skill uses without local approval for this path';
+export const trustPathMismatchWarning = (projectId: string, consentPath: string, basePath: string | null): string =>
+  `trust not sent: the local approval of project '${projectId}' is for path '${consentPath}', ` +
+  (basePath === null
+    ? `and the project is not in ${WORKSPACE_DESCRIPTION} at the base sha`
+    : `not '${basePath}' as in ${WORKSPACE_DESCRIPTION} at the base sha`) +
+  ' — approve the current path on this machine and order a new Run';
+
+/**
+ * Step 6 (`jlgucjnq`): the `c4sTrust` of the order and the warnings. Only the
+ * Run's project; only its local consent (the plugin trust when granted, the
+ * confirmed skill-attachment names); only when the consent's path equals the
+ * project's path in `workspace.json` at the base sha. A missing consent or one
+ * for another path never refuses: nothing is sent and a warning says why.
+ *
+ * ASSUMPTION:dev-6702 — what the project asks a consent for (local plugin
+ * packages, `skill.uses`) is read from the project's directory on this
+ * machine, not from the base sha; on a path mismatch the mismatch warning
+ * stands alone.
+ */
+function trustOf(
+  projectId: string,
+  consent: RunLocalConsent | null,
+  needs: RunConsentNeeds,
+  basePath: string | null,
+): { c4sTrust?: C4sTrust; warnings: string[] } {
+  const warnings: string[] = [];
+  const grantsAnything =
+    consent !== null && (consent.trustProjectPlugins === true || (consent.confirmedSkillUses ?? []).length > 0);
+  const samePath = consent !== null && basePath !== null && sameProjectPath(consent.path, basePath);
+  const plugins = samePath && consent!.trustProjectPlugins === true;
+  const attachments = samePath ? [...new Set(consent!.confirmedSkillUses ?? [])] : [];
+  if (grantsAnything && !samePath) {
+    // One cause, one warning: the approval exists, for another path — the
+    // "without local approval" warnings below would misstate that.
+    warnings.push(trustPathMismatchWarning(projectId, consent!.path, basePath));
+  } else {
+    if (needs.plugins && !plugins) warnings.push(TRUST_WARNING_PLUGINS);
+    const unconfirmed = needs.skillUses.filter((n) => !attachments.includes(n));
+    if (unconfirmed.length > 0) warnings.push(`${TRUST_WARNING_SKILL_USES}: ${unconfirmed.join(', ')}`);
+  }
+  if (!plugins && attachments.length === 0) return { warnings };
+  return {
+    c4sTrust: {
+      projects: {
+        [projectId]: {
+          path: consent!.path,
+          ...(plugins ? { trustProjectPlugins: true } : {}),
+          ...(attachments.length > 0 ? { skillAttachments: attachments } : {}),
+        },
+      },
+    },
+    warnings,
+  };
+}
+
 export async function runRemote(deps: RunRemoteDeps, input: RunRemoteInput): Promise<RunRemoteResult> {
   // Addressing (mcp-tool `run-tools-run-remote` logic).
   if (input.planPath !== undefined && input.prompt !== undefined) {
@@ -393,7 +511,7 @@ export async function runRemote(deps: RunRemoteDeps, input: RunRemoteInput): Pro
     }
     if (upstream.status !== 'on-upstream') upstreamRefusal(upstream, `plan file '${planRepoPath}'`);
   } else {
-    const description = joinRel(home!, '.claude4spec/workspace.json');
+    const description = joinRel(home!, WORKSPACE_DESCRIPTION);
     upstream = await deps.git.checkPathOnUpstream(description);
     if (upstream.status !== 'on-upstream') upstreamRefusal(upstream, `workspace description '${description}'`);
   }
@@ -407,8 +525,19 @@ export async function runRemote(deps: RunRemoteDeps, input: RunRemoteInput): Pro
       : { kind: 'prompt', projectId, text: input.prompt! };
 
   // 5. The definition's version against the recipe at the base sha.
-  const recipeAbs = path.join(rootPath, home === '.' ? '' : home!, ENVIRONMENT_RECIPE_PATH);
+  // The workspace home's directory, once, for both reads at the base sha (steps 5 and 6).
+  const homeAbs = path.join(rootPath, home === '.' ? '' : home!);
+  const recipeAbs = path.join(homeAbs, ENVIRONMENT_RECIPE_PATH);
   checkRecipeVersion(await deps.git.showFile(onUpstream.tipSha, recipeAbs, repo!), agent!);
+
+  // 6. The trust in the order: the Run's project alone, its local consent, the path at the base sha.
+  const consent = deps.localConsent?.(projectId) ?? null;
+  const needs = deps.consentNeeds?.(projectId) ?? { plugins: false, skillUses: [] };
+  const basePath =
+    consent !== null
+      ? projectPathIn(await deps.git.showFile(onUpstream.tipSha, path.join(homeAbs, WORKSPACE_DESCRIPTION), repo!), projectId)
+      : null;
+  const trust = trustOf(projectId, consent, needs, basePath);
 
   const body: RunRequest = {
     repo: onUpstream.remote,
@@ -420,15 +549,20 @@ export async function runRemote(deps: RunRemoteDeps, input: RunRemoteInput): Pro
     // `arzrwkiq`: no parameter → no field (the host's default applies); a given value passes unchanged.
     ...(input.timeoutMinutes !== undefined ? { timeoutMinutes: input.timeoutMinutes } : {}),
     ...(input.model !== undefined ? { model: input.model } : {}),
+    ...(trust.c4sTrust !== undefined ? { c4sTrust: trust.c4sTrust } : {}),
   };
 
-  // 6. Registry.
+  // 7. Registry — runId → hostId only; the trust stays out of it (`jlgucjnq`).
   const runId = (deps.newRunId ?? newRunId)();
   const registry = deps.registry();
   registry.insert(runId, host.hostId!);
-  const result: RunRemoteResult = { runId, host: { id: host.id, name: host.name } };
+  const result: RunRemoteResult = {
+    runId,
+    host: { id: host.id, name: host.name },
+    ...(trust.warnings.length > 0 ? { warnings: trust.warnings } : {}),
+  };
 
-  // 7. PUT — once; this operation never retries it.
+  // 8. PUT — once; this operation never retries it.
   const outcome = await (deps.putRun ?? putRunOverHttp)({ url: host.url, token: host.token! }, runId, body);
   if (outcome.kind === 'accepted') return result;
   if (outcome.kind === 'network') return { ...result, unconfirmed: true };
@@ -476,5 +610,20 @@ export function runPlansFromService(plans: {
         return false;
       }
     },
+  };
+}
+
+/**
+ * The local consent of one project as `run_remote` reads it (M31 `44viw74p`):
+ * the registry entry's `projectTrust[id]` as stored — with the path it was
+ * given for, never folded by the view. `null` = no consent on this machine.
+ */
+export function runLocalConsentOf(projectTrust: Record<string, HomeProjectTrust> | undefined, projectId: string): RunLocalConsent | null {
+  const t = projectTrust && Object.hasOwn(projectTrust, projectId) ? projectTrust[projectId] : undefined;
+  if (!t || typeof t.path !== 'string') return null;
+  return {
+    path: t.path,
+    ...(t.trustProjectPlugins !== undefined ? { trustProjectPlugins: t.trustProjectPlugins } : {}),
+    ...(t.confirmedSkillUses !== undefined ? { confirmedSkillUses: [...t.confirmedSkillUses] } : {}),
   };
 }

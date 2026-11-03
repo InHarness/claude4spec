@@ -3,7 +3,19 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PUBLISH_FILE_SUBJECT } from '../services/git.js';
 import { RUN_ID_PATTERN } from './run-id.js';
-import { compareVersions, runHostsFromSupervisor, runRemote, RunRemoteError, type RunRemoteDeps, type RunRemoteInput } from './run-remote.js';
+import {
+  compareVersions,
+  runHostsFromSupervisor,
+  runLocalConsentOf,
+  runRemote,
+  RunRemoteError,
+  TRUST_WARNING_PLUGINS,
+  TRUST_WARNING_SKILL_USES,
+  type RunLocalConsent,
+  type RunRemoteDeps,
+  type RunRemoteInput,
+} from './run-remote.js';
+import { runConsentNeedsOf } from './run-consent-needs.js';
 import { PLAN_EXECUTION_AGENT } from './plan-execution-agent.js';
 import {
   deadUrl,
@@ -491,5 +503,139 @@ describe('run_remote (M55)', () => {
       ],
     });
     expect(hosts.map((h) => h.name)).toEqual(['Lab', 'kb-ec2', null]);
+  });
+
+  describe('the trust in the order (jlgucjnq)', () => {
+    /** The registry's stored `projectTrust`, read the way the server reads it. */
+    const consentDeps = (projectTrust: Record<string, RunLocalConsent>, over: Partial<RunRemoteDeps> = {}) =>
+      fx.deps({
+        localConsent: (id) => runLocalConsentOf(projectTrust, id),
+        consentNeeds: (id) => runConsentNeedsOf(id === 'app' ? fx.project : path.join(fx.home, id)),
+        ...over,
+      });
+
+    it('[ac:ac-zlecenie-runu-projektu-z-lokalnym-zau] the order of a project with a local plugin trust for the path of workspace.json at the base sha carries that trust (and the confirmed skill attachments)', async () => {
+      write(fx.project, '.claude4spec/plugins/acme/package.json', '{"name":"acme"}');
+      await fx.pushAll('project plugin');
+      const result = await run(consentDeps({ app: { path: 'app', trustProjectPlugins: true, confirmedSkillUses: ['layered-vertical-slices'] } }), {});
+      expect(put().body.c4sTrust).toEqual({
+        projects: { app: { path: 'app', trustProjectPlugins: true, skillAttachments: ['layered-vertical-slices'] } },
+      });
+      // Granted and sent: nothing to warn about.
+      expect(result.warnings).toBeUndefined();
+      expect(result).toEqual({ runId: result.runId, host: { id: 'a', name: 'name-a' } });
+    });
+
+    it('[ac:ac-zlecenie-runu-projektu-z-lokalnym-zau] a path written differently (`./app`) is the same path; a plugin trust alone goes without skillAttachments, and a refused trust (false) sends nothing', async () => {
+      await run(consentDeps({ app: { path: './app', trustProjectPlugins: true } }), {});
+      expect(put().body.c4sTrust).toEqual({ projects: { app: { path: './app', trustProjectPlugins: true } } });
+
+      stub.requests.length = 0;
+      await run(consentDeps({ app: { path: 'app', trustProjectPlugins: false } }), {});
+      expect(put().body).not.toHaveProperty('c4sTrust');
+    });
+
+    it('[ac:ac-zlecenie-runu-nie-niesie-zaufania-pro] the order carries no trust of a project other than the Run\'s project', async () => {
+      fx.addProject('docs');
+      await fx.pushAll('add project docs');
+      const trust = {
+        app: { path: 'app', trustProjectPlugins: true, confirmedSkillUses: ['a-skill'] },
+        docs: { path: 'docs', trustProjectPlugins: true, confirmedSkillUses: ['d-skill'] },
+      };
+      // The thread's project: only `app`.
+      await run(consentDeps(trust), {});
+      expect(Object.keys((put().body.c4sTrust as { projects: object }).projects)).toEqual(['app']);
+      expect(JSON.stringify(put().body)).not.toContain('d-skill');
+
+      // A Run of `docs`: only `docs`, never the thread's project.
+      stub.requests.length = 0;
+      await run(consentDeps(trust), { prompt: 'Tidy docs.', projectId: 'docs' });
+      expect(put().body.c4sTrust).toEqual({ projects: { docs: { path: 'docs', trustProjectPlugins: true, skillAttachments: ['d-skill'] } } });
+      expect(JSON.stringify(put().body)).not.toContain('a-skill');
+
+      // A Run of a project with no consent of its own carries none, though another project has one.
+      stub.requests.length = 0;
+      await run(consentDeps({ docs: trust.docs }), {});
+      expect(put().body).not.toHaveProperty('c4sTrust');
+    });
+
+    it('[ac:ac-zlecenie-runu-projektu-ktorego-lokaln] the order of a project whose local consent is for another path than workspace.json at the base sha carries no trust — and warns, without refusing', async () => {
+      // The consent was given under `old-app`; the base sha lists the project under `app`.
+      const moved = await run(consentDeps({ app: { path: 'old-app', trustProjectPlugins: true, confirmedSkillUses: ['x'] } }), {});
+      expect(put().body).not.toHaveProperty('c4sTrust');
+      expect(moved.warnings).toHaveLength(1);
+      expect(moved.warnings![0]).toContain("'old-app'");
+      expect(moved.warnings![0]).toContain("'app'");
+      expect(fx.rows()).toEqual([{ run_id: moved.runId, host_id: 'h_a' }]);
+
+      // One cause, one warning: a project that also needs plugins and skill uses
+      // gets the mismatch warning alone, not the "without local approval" ones.
+      stub.requests.length = 0;
+      const movedNeeds = await run(
+        consentDeps(
+          { app: { path: 'old-app', trustProjectPlugins: true, confirmedSkillUses: ['x'] } },
+          { consentNeeds: () => ({ plugins: true, skillUses: ['x', 'y'] }) },
+        ),
+        {},
+      );
+      expect(put().body).not.toHaveProperty('c4sTrust');
+      expect(movedNeeds.warnings).toEqual([moved.warnings![0]]);
+      expect(movedNeeds.warnings![0]).not.toContain(TRUST_WARNING_PLUGINS);
+
+      // The path is read at the base sha, not in the working tree: the project
+      // renamed to `app2` in an uncommitted workspace.json, the consent given for
+      // `app2` — the base sha still says `app`, so no trust goes.
+      write(fx.home, '.claude4spec/workspace.json', JSON.stringify({ projects: [{ id: 'app', path: 'app2' }] }));
+      stub.requests.length = 0;
+      const local = await run(consentDeps({ app: { path: 'app2', trustProjectPlugins: true } }), {});
+      expect(put().body).not.toHaveProperty('c4sTrust');
+      expect(local.warnings![0]).toContain("'app2'");
+    });
+
+    it('[entity:run-remote] no consent and a project with plugins and skill uses: nothing about trust is sent, the answer warns, and nothing is refused', async () => {
+      const result = await run(consentDeps({}, { consentNeeds: () => ({ plugins: true, skillUses: ['s1', 's2'] }) }), {});
+      expect(put().body).not.toHaveProperty('c4sTrust');
+      expect(result.warnings).toEqual([TRUST_WARNING_PLUGINS, `${TRUST_WARNING_SKILL_USES}: s1, s2`]);
+
+      // Skill uses confirmed in part: the confirmed one goes, the other is warned about.
+      stub.requests.length = 0;
+      const partial = await run(
+        consentDeps({ app: { path: 'app', confirmedSkillUses: ['s1'] } }, { consentNeeds: () => ({ plugins: false, skillUses: ['s1', 's2'] }) }),
+        {},
+      );
+      expect(put().body.c4sTrust).toEqual({ projects: { app: { path: 'app', skillAttachments: ['s1'] } } });
+      expect(partial.warnings).toEqual([`${TRUST_WARNING_SKILL_USES}: s2`]);
+    });
+
+    it('[entity:run-remote] the trust step stands between the version check and the registry: a version refusal reads no consent; the trust reaches neither the registry nor a commit', async () => {
+      const localConsent = vi.fn((id: string) => runLocalConsentOf({ app: { path: 'app', trustProjectPlugins: true } }, id));
+      write(fx.home, '.c4s-runner/environment.json', JSON.stringify({ schemaVersion: 1, c4sVersion: '2.0.0' }));
+      await fx.pushAll('old recipe');
+      expect((await refusal(run(fx.deps({ localConsent }), {}))).code).toBe('RUN_C4S_VERSION_INCOMPATIBLE');
+      expect(localConsent).not.toHaveBeenCalled();
+
+      write(fx.home, '.c4s-runner/environment.json', JSON.stringify({ schemaVersion: 1, c4sVersion: PLAN_EXECUTION_AGENT.minC4sVersion }));
+      const tip = await fx.pushAll('recipe at the minimum');
+      let rowsAtPut: unknown[] = [];
+      stub.reply = (req) => {
+        rowsAtPut = fx.rows();
+        return { status: 202, body: { runId: req.url.split('/').pop(), state: 'queued' } };
+      };
+      const result = await run(fx.deps({ localConsent }), {});
+      expect(localConsent).toHaveBeenCalledWith('app');
+      expect(put().body.c4sTrust).toEqual({ projects: { app: { path: 'app', trustProjectPlugins: true } } });
+      // The row is written before the PUT and holds only runId → hostId.
+      expect(rowsAtPut).toEqual([{ run_id: result.runId, host_id: 'h_a' }]);
+      // No commit: the plan was pushed, so the upstream is where it was.
+      expect(await fx.upstreamTip()).toBe(tip);
+      expect(await git(['log', '-1', '--format=%H'], fx.repo)).toBe(tip);
+    });
+
+    it('[entity:run-remote] a network error at the PUT keeps the warnings next to `unconfirmed`', async () => {
+      fx.hosts.length = 0;
+      fx.hosts.push(host('gone', await deadUrl()));
+      const result = await run(consentDeps({}, { consentNeeds: () => ({ plugins: true, skillUses: [] }) }), {});
+      expect(result).toEqual({ runId: result.runId, host: { id: 'gone', name: 'name-gone' }, unconfirmed: true, warnings: [TRUST_WARNING_PLUGINS] });
+    });
   });
 });

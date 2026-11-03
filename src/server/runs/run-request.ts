@@ -10,6 +10,24 @@
  */
 export type RunInput = { kind: 'plan'; projectId: string; path: string } | { kind: 'prompt'; projectId: string; text: string };
 
+/**
+ * `c4s-runner` dto `run-request`, field `c4sTrust` (`c4s-runner` `modules/M06-runs.md`
+ * #m8krfttx): the c4s trust approved locally by the master, keyed by the
+ * `projectId` of `workspace.json`. `path` is the project path relative to the
+ * workspace home that the consent was given for; `trustProjectPlugins` the
+ * plugin trust; `skillAttachments` the confirmed skill-attachment names.
+ * M55 (`jlgucjnq`) sends at most one entry — the Run's project.
+ */
+export interface C4sTrustEntry {
+  path: string;
+  trustProjectPlugins?: boolean;
+  skillAttachments?: string[];
+}
+
+export interface C4sTrust {
+  projects: Record<string, C4sTrustEntry>;
+}
+
 export interface RunRequest {
   repo: string;
   home: string;
@@ -19,4 +37,6 @@ export interface RunRequest {
   notes?: string;
   timeoutMinutes?: number;
   model?: string;
+  /** Absent = the Run's c4s registry carries no trust (`jlgucjnq`). */
+  c4sTrust?: C4sTrust;
 }

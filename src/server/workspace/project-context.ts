@@ -136,7 +136,8 @@ import { SkillRegistry, SkillResolver, findSkillsRoots } from '../services/skill
 import { registerProjectRootedSkills, SKILLS_ROOT_KIND } from '../services/project-rooted-skills.js';
 import { SpecSkillTools } from '../mcp/spec-skill-tools.js';
 import { buildRunToolsServer, type RunToolsFactory } from '../mcp/run-tools.js';
-import { runPlansFromService, type RunRemoteHost } from '../runs/run-remote.js';
+import { runLocalConsentOf, runPlansFromService, type RunRemoteHost } from '../runs/run-remote.js';
+import { runConsentNeedsOf } from '../runs/run-consent-needs.js';
 import type { RunReadProject } from '../runs/run-read.js';
 import { remoteRunRegistry } from '../runs/remote-run-registry.js';
 import { openWorkspaceDb } from '../db/workspace-db.js';
@@ -1631,6 +1632,11 @@ async function buildInner(
                 plans,
                 hosts: () => runSources.hosts(),
                 registry: () => runsRegistry,
+                // 2.1.67 (M55 `jlgucjnq`): the stored local consent with its path — read
+                // raw from the registry entry (M31 `44viw74p`), not folded by the view,
+                // so a consent given for another path is seen as such.
+                localConsent: (id: string) => runLocalConsentOf(registry.readStoredEntry(liveWorkspaceRecord())?.projectTrust, id),
+                consentNeeds: (id: string) => runConsentNeedsOf(liveWorkspaceRecord().projects.find((x) => x.id === id)?.cwd ?? null),
               },
               readDeps: {
                 workspace: liveWorkspaceRecord,

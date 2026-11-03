@@ -1,0 +1,17 @@
+{
+  "id": "dev-6702",
+  "kind": "missing",
+  "blocking": false,
+  "address": "u5-m55-zaufanie-w-zleceniu/jlgucjnq",
+  "slugs": [
+    "run-remote",
+    "run-tools-run-remote",
+    "ac-zwrot-run-remote-dla-projektu-z-plugi"
+  ],
+  "text": "M55 jlgucjnq warns when 'the project has in the repository plugins or skill attachments without local consent', but does not say where the master reads that (the base sha, HEAD or the project's directory) nor the warning wording beyond the example in run-tools-run-remote `returns`. Assumed: the project's directory on this machine (`.claude4spec/plugins/<pkg>/` directories, `skill.uses` of its config.json) — the same reads that drive the local trust prompt. Warnings: one for plugins without granted plugin trust (the record's example wording), one listing the `skill.uses` names not among the confirmed ones that went with the order, and one when a consent exists but its path differs from the project's path in workspace.json at the base sha — that mismatch warning then stands alone (the two 'without local approval' warnings are left out, since an approval exists, for another path). A consent with `trustProjectPlugins: false` and no confirmed names sends nothing; `skillAttachments` is left out when empty.",
+  "assumption": "ASSUMPTION:dev-6702 — what the project asks a consent for (local plugin packages, `skill.uses`) is read from the project's directory on this machine, not from the base sha; on a path mismatch the mismatch warning stands alone.",
+  "unit": "u5-m55-zaufanie-w-zleceniu",
+  "portion": "u5-m55-zaufanie-w-zleceniu/p1-l3-l4",
+  "sent": true,
+  "patchPath": "2-1-66-to-2-1-67-u5-m55-zaufanie-w-zleceniu-jlgucjnq-zrod-o-i-tresc-ostrzezen-o-braku-lokalnej-zg.md"
+}
