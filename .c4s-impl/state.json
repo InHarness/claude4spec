@@ -332,49 +332,11 @@
             "ac-powtorzone-c4s-trust-plugins-cwd-dir",
             "ac-start-serwera-z-cwd-home-port-n-po-c4"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
-          "uncovered": [
-            "confirm-skill-uses",
-            "ac-c4s-confirm-skill-uses-cwd-dir-name-z",
-            "ac-c4s-confirm-skill-uses-z-nazwa-spoza",
-            "ac-c4s-confirm-skill-uses-zwraca-w-notin",
-            "ac-powtorzone-c4s-register-home-cwd-dir",
-            "ac-po-c4s-register-home-cwd-home-komenda",
-            "ac-po-c4s-register-home-cwd-home-komenda-2",
-            "ac-c4s-trust-plugins-cwd-home-projekt-tr",
-            "ac-powtorzone-c4s-trust-plugins-cwd-dir"
-          ],
-          "only": [
-            {
-              "slug": "confirm-skill-uses"
-            },
-            {
-              "slug": "ac-c4s-confirm-skill-uses-cwd-dir-name-z"
-            },
-            {
-              "slug": "ac-c4s-confirm-skill-uses-z-nazwa-spoza"
-            },
-            {
-              "slug": "ac-c4s-confirm-skill-uses-zwraca-w-notin"
-            },
-            {
-              "slug": "ac-powtorzone-c4s-register-home-cwd-dir"
-            },
-            {
-              "slug": "ac-po-c4s-register-home-cwd-home-komenda"
-            },
-            {
-              "slug": "ac-po-c4s-register-home-cwd-home-komenda-2"
-            },
-            {
-              "slug": "ac-c4s-trust-plugins-cwd-home-projekt-tr"
-            },
-            {
-              "slug": "ac-powtorzone-c4s-trust-plugins-cwd-dir"
-            }
-          ]
+          "uncovered": [],
+          "only": []
         }
       ],
       "startCommit": "257cf3a764f19b31aacdfc4739e58e1fc1c00892",

@@ -50,6 +50,7 @@ describe('c4s confirm-skill-uses', () => {
     const projectDir = path.join(home, 'specs', 'app');
     fs.mkdirSync(path.join(projectDir, '.claude4spec'), { recursive: true });
     fs.writeFileSync(path.join(projectDir, '.claude4spec', 'config.json'), JSON.stringify({ name: 'app', skill: { uses } }));
+    fs.mkdirSync(path.join(home, '.claude4spec'), { recursive: true });
     fs.writeFileSync(
       path.join(home, '.claude4spec', 'workspace.json'),
       JSON.stringify({ projects: [{ id: 'app', path: 'specs/app' }], plugins: [] }, null, 2),

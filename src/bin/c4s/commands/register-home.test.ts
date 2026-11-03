@@ -215,6 +215,7 @@ describe('c4s register-home', () => {
     const registryAfterFirst = fs.readFileSync(registryFile, 'utf8');
 
     // Resolves (exit 0) and reports the entry as already there.
+    stdout = '';
     await expect(runRegisterHome(parseArgs(['register-home', '--cwd', home]))).resolves.toBeUndefined();
     expect(JSON.parse(stdout)).toEqual({ workspace: 'team-repo', home, defaultPort: 4500, created: false });
     expect(fs.readFileSync(registryFile, 'utf8')).toBe(registryAfterFirst);
