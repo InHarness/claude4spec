@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { mintProjectId } from './project-id.js';
-import { readPeerConfigSummary } from './peer-config.js';
+import { readPeerConfigSummary, readPeerSkillConfig } from './peer-config.js';
 import {
   isMigrationPendingFor,
   planRegistryMigration,
@@ -29,6 +29,7 @@ import {
   sameProjectPath,
   toProjectPath,
   WorkspaceFileError,
+  workspaceFilePath,
   type WorkspaceFile,
 } from './home-workspace.js';
 import type {
@@ -136,6 +137,54 @@ export class RegistryMigrationPendingError extends Error {
 }
 
 /**
+ * 2.1.67 (M31 `zktorogu`): a refusal of `registerHome` that the start's
+ * selection rule does not have — `$HOME` (the start selects `default` there,
+ * the registration refuses: `INVALID_ARGS`, as is an invalid `name`), a
+ * directory without `<home>/.claude4spec/workspace.json`
+ * (`WORKSPACE_FILE_MISSING`) and a description that does not validate
+ * (`WORKSPACE_FILE_INVALID`). The selection rule's own refusals stay
+ * `WorkspaceSelectionError`. Every one is raised before anything is written.
+ */
+export type RegisterHomeErrorCode = 'INVALID_ARGS' | 'WORKSPACE_FILE_MISSING' | 'WORKSPACE_FILE_INVALID';
+
+export class RegisterHomeError extends Error {
+  constructor(
+    readonly code: RegisterHomeErrorCode,
+    message: string,
+    readonly hint?: string,
+  ) {
+    super(message);
+    this.name = 'RegisterHomeError';
+  }
+}
+
+/** `registerHome`: the stored entry, and whether this call created it. */
+export interface RegisterHomeResult {
+  entry: StoredWorkspaceRecord;
+  created: boolean;
+}
+
+/**
+ * `setSkillUsesConfirmation`: the list now stored (deduplicated, in the order
+ * given) and, separately, the names of it that the project's `skill.uses` does
+ * not carry — accepted all the same (M31 `naxqsfra`).
+ */
+export interface SkillUsesConfirmationResult {
+  workspace: string;
+  projectId: string;
+  cwd: string;
+  confirmedSkillUses: string[];
+  notInSkillUses: string[];
+}
+
+/**
+ * A machine-local consent of one project changed (`setProjectTrust`,
+ * `setSkillUsesConfirmation`). The server process subscribes and invalidates
+ * the project's context (M31 `m31ctx001`); a CLI process has no listener.
+ */
+export type ProjectConsentListener = (ws: Pick<WorkspaceRecord, 'name' | 'home'>, projectId: string) => void;
+
+/**
  * Effective workspace plugin package set = predefined ∪ user-added, deduped,
  * predefined first. This is what the M33 loader dynamic-imports at bootstrap.
  */
@@ -180,6 +229,21 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+/**
+ * The flag-combination table's port rule (M31 `qglsgonq`): a port that is the
+ * `defaultPort` of another entry than `self` is refused.
+ */
+function assertPortFreeIn(data: WorkspacesFile, port: number, self: string | null): void {
+  const owner = data.workspaces.find((w) => w.name !== self && w.defaultPort === port);
+  if (owner) {
+    throw new WorkspaceSelectionError(
+      'PORT_TAKEN_BY_WORKSPACE',
+      `port ${port} is the port of workspace '${owner.name}'`,
+      `pass another --port, or start workspace '${owner.name}' with --workspace ${owner.name}`,
+    );
+  }
+}
+
 const WORKSPACE_NAME_RE = /^[a-zA-Z0-9._-]{1,40}$/;
 
 function assertValidWorkspaceName(name: string): void {
@@ -221,6 +285,8 @@ export class WorkspaceRegistry {
   private readonly homeFiles = new Map<string, WorkspaceFile | WorkspaceFileError>();
   /** Homes whose directory was absent when their file failed to read (kept like the refusal). */
   private readonly missingHomes = new Set<string>();
+  /** Consent-change listeners of this process (the server's context cache). */
+  private readonly consentListeners = new Set<ProjectConsentListener>();
 
   constructor(baseDir: string = workspaceBaseDir()) {
     this.baseDir = baseDir;
@@ -403,16 +469,7 @@ export class WorkspaceRegistry {
     // `--port` is an override only when `--workspace` / `--cwd` select the entry.
     const override = sel.name != null || sel.cwd !== undefined ? sel.port : undefined;
     return this.withLock((data) => {
-      const assertPortFree = (port: number, self: string | null) => {
-        const owner = data.workspaces.find((w) => w.name !== self && w.defaultPort === port);
-        if (owner) {
-          throw new WorkspaceSelectionError(
-            'PORT_TAKEN_BY_WORKSPACE',
-            `port ${port} is the port of workspace '${owner.name}'`,
-            `pass another --port, or start workspace '${owner.name}' with --workspace ${owner.name}`,
-          );
-        }
-      };
+      const assertPortFree = (port: number, self: string | null) => assertPortFreeIn(data, port, self);
       const create = (name: string, port: number | undefined, home?: string): StoredWorkspaceRecord => {
         assertValidWorkspaceName(name);
         // Workspace identity is the name: a second entry with it would shadow the first.
@@ -548,6 +605,83 @@ export class WorkspaceRegistry {
       );
     }
     return { name: name ?? homeEntryName(dir, new Set(data.workspaces.map((w) => w.name))), home: dir };
+  }
+
+  /**
+   * 2.1.67 (M31 `zktorogu`): register an EXISTING workspace home without a
+   * server. The conditions and the outcome of `name` / `port` are those of
+   * step 2 of the selection rule (`m31wsel01`) and the flag-combination table
+   * (`qglsgonq`), with two differences: `$HOME` is refused (`INVALID_ARGS`), not
+   * the choice of `default`, and the directory must already carry
+   * `<home>/.claude4spec/workspace.json` (`WORKSPACE_FILE_MISSING`; a file that
+   * does not validate → `WORKSPACE_FILE_INVALID`).
+   *
+   * - Nothing is created on disk: no directory, no `.gitignore`, no
+   *   `workspace.json` — the committed description is written neither by the CLI
+   *   nor by the registry without a server.
+   * - An entry with this `home` already there → returned unchanged
+   *   (`created: false`), except `defaultPort`, overwritten by `port` as the
+   *   table says (same port: nothing; another one: overwritten and persisted;
+   *   another entry's `defaultPort`: `PORT_TAKEN_BY_WORKSPACE`).
+   * - A new entry: named `name` or after the directory (`-2`, `-3`… on a
+   *   collision), `defaultPort` = `port` or the first free one from 4500 among
+   *   the entries, `mode: prod`, and no `lastOpened` — it was never opened.
+   *   For the selection rule it is an ordinary entry with a home: a later start
+   *   with `--cwd <home>` selects it in step 2.
+   * - Written under the registry's advisory lock, with the entry-write
+   *   guarantee (fresh read-modify-write of the whole file).
+   */
+  registerHome(home: string, opts: { name?: string; port?: number; userHome?: string } = {}): RegisterHomeResult {
+    const dir = path.resolve(home);
+    const userHome = path.resolve(opts.userHome ?? os.homedir());
+    if (opts.name != null) {
+      try {
+        assertValidWorkspaceName(opts.name);
+      } catch (err) {
+        throw new RegisterHomeError('INVALID_ARGS', (err as Error).message);
+      }
+    }
+    if (dir === userHome) {
+      throw new RegisterHomeError(
+        'INVALID_ARGS',
+        `${dir} is your home directory — it cannot be registered as a workspace home`,
+        'pass the directory of the repository that carries .claude4spec/workspace.json',
+      );
+    }
+    const file = workspaceFilePath(dir);
+    if (!fs.existsSync(file)) {
+      throw new RegisterHomeError(
+        'WORKSPACE_FILE_MISSING',
+        `${dir} carries no ${file} — only an existing workspace home can be registered`,
+        `start the server with --cwd ${dir}, or add the workspace description to the repository`,
+      );
+    }
+    try {
+      readWorkspaceFile(dir);
+    } catch (err) {
+      if (!(err instanceof WorkspaceFileError)) throw err;
+      throw new RegisterHomeError('WORKSPACE_FILE_INVALID', err.message, 'fix the file by hand, then re-run');
+    }
+    return this.withLock((data) => {
+      const found = this.entryForHome(data, dir, opts.name ?? undefined, userHome);
+      if ('existing' in found) {
+        const entry = found.existing;
+        if (opts.port !== undefined && entry.defaultPort !== opts.port) {
+          assertPortFreeIn(data, opts.port, entry.name);
+          entry.defaultPort = opts.port;
+        }
+        return { entry, created: false };
+      }
+      if (opts.port !== undefined) assertPortFreeIn(data, opts.port, null);
+      const entry: StoredWorkspaceRecord = {
+        name: found.name,
+        home: found.home ?? dir,
+        mode: 'prod',
+        defaultPort: opts.port ?? firstFreePort(data.workspaces, DEFAULT_WORKSPACE_PORT),
+      };
+      data.workspaces.push(entry);
+      return { entry, created: true };
+    });
   }
 
   /**
@@ -709,6 +843,53 @@ export class WorkspaceRegistry {
    */
   setProjectTrust(ws: WorkspaceRecord, id: string, value: boolean): void {
     this.setTrustFlag(ws, id, 'trustProjectPlugins', value);
+    this.emitConsentChanged(ws, id);
+  }
+
+  /**
+   * 2.1.67 (M31 `naxqsfra`, `44viw74p`): write the project's confirmed
+   * skill-attachment names (`confirmedSkillUses`) — same key, lock and relative
+   * path as `setProjectTrust`, never into the repo or `workspace.json`.
+   *
+   * - The list REPLACES the stored one whole (deduplicated, in the order given;
+   *   `[]` clears it).
+   * - Names the project's `skill.uses` does not carry are accepted and returned
+   *   apart (`notInSkillUses`): a confirmation is not a validation of the config.
+   * - In the server process the call invalidates the project's context
+   *   (`m31ctx001`, through the consent listener).
+   *
+   * `null` = the id is not a project of the workspace; nothing written and
+   * nothing invalidated. ASSUMPTION:dev-6701 — the spec names no outcome for an
+   * unknown id; the CLI resolves the project before it calls.
+   */
+  setSkillUsesConfirmation(ws: WorkspaceRecord, id: string, names: readonly string[]): SkillUsesConfirmationResult | null {
+    const project = ws.projects.find((p) => p.id === id) ?? this.getProject(ws, id);
+    if (!project) return null;
+    const confirmed = [...new Set(names)];
+    if (!this.setTrustFlag(ws, id, 'confirmedSkillUses', confirmed)) return null;
+    const uses = new Set(readPeerSkillConfig(project.cwd)?.uses ?? []);
+    this.emitConsentChanged(ws, id);
+    return {
+      workspace: ws.name,
+      projectId: id,
+      cwd: project.cwd,
+      confirmedSkillUses: confirmed,
+      notInSkillUses: confirmed.filter((n) => !uses.has(n)),
+    };
+  }
+
+  /**
+   * Subscribe to the machine-local consent writes of THIS process (M31
+   * `m31ctx001`): the server invalidates the project's context on each. Returns
+   * the unsubscribe.
+   */
+  onProjectConsentChanged(listener: ProjectConsentListener): () => void {
+    this.consentListeners.add(listener);
+    return () => this.consentListeners.delete(listener);
+  }
+
+  private emitConsentChanged(ws: Pick<WorkspaceRecord, 'name' | 'home'>, id: string): void {
+    for (const listener of this.consentListeners) listener({ name: ws.name, home: ws.home }, id);
   }
 
   /**
@@ -732,34 +913,38 @@ export class WorkspaceRegistry {
   }
 
   /**
-   * One write path for both machine-local consents. Registry workspace: the
-   * flag on the `ProjectRecord`. Workspace with a home (M31 `44viw74p`): the
+   * One write path for every machine-local consent. Registry workspace: the
+   * field on the `ProjectRecord`. Workspace with a home (M31 `44viw74p`): the
    * entry's `projectTrust[id]`, stored together with the project's relative
    * path in the view; a record left from another path is replaced, not merged,
-   * so no consent given for other code survives the move.
+   * so no consent given for other code survives the move — the plugin consent
+   * and the confirmed skill attachments alike. A fresh read-modify-write of the
+   * whole registry file under its lock (`zovs1ohc`). `false` = nothing written
+   * (no such entry or project).
    */
-  private setTrustFlag(
+  private setTrustFlag<K extends 'trustProjectPlugins' | 'trustSpecSkillHooks' | 'confirmedSkillUses'>(
     ws: WorkspaceRecord,
     id: string,
-    key: 'trustProjectPlugins' | 'trustSpecSkillHooks',
-    value: boolean,
-  ): void {
+    key: K,
+    value: NonNullable<ProjectRecord[K]>,
+  ): boolean {
     const viewPath = ws.home !== undefined ? this.homeFile(ws.home).projects.find((p) => p.id === id)?.path : undefined;
-    this.withLock((data) => {
+    return this.withLock((data) => {
       const target = data.workspaces.find((w) => w.name === ws.name);
-      if (!target) return null;
+      if (!target) return false;
       if (target.home === undefined) {
         const p = target.projects?.find((x) => x.id === id);
-        if (p) p[key] = value;
-        return null;
+        if (!p) return false;
+        p[key] = value;
+        return true;
       }
-      if (viewPath === undefined) return null;
+      if (viewPath === undefined) return false;
       const trust = (target.projectTrust ??= {});
       const current = trust[id];
       const base: HomeProjectTrust =
         current && sameProjectPath(current.path, viewPath) ? current : { path: viewPath };
       trust[id] = { ...base, path: viewPath, [key]: value };
-      return null;
+      return true;
     });
   }
 
@@ -941,6 +1126,7 @@ export class WorkspaceRegistry {
         if (trust && sameProjectPath(trust.path, p.path)) {
           if (trust.trustProjectPlugins !== undefined) record.trustProjectPlugins = trust.trustProjectPlugins;
           if (trust.trustSpecSkillHooks !== undefined) record.trustSpecSkillHooks = trust.trustSpecSkillHooks;
+          if (trust.confirmedSkillUses !== undefined) record.confirmedSkillUses = [...trust.confirmedSkillUses];
         }
         return record;
       }),

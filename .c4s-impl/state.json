@@ -1,5 +1,5 @@
 {
-  "iteration": 0,
+  "iteration": 3,
   "conventions": [
     {
       "label": "L3 (Spec Operations) — implementor M43",
@@ -45,7 +45,7 @@
         "u1-m31-rejestr-zgod",
         "u3-m31-adres-klienta"
       ],
-      "startCommit": null
+      "startCommit": "60a89c1d11d045b0faf92b74ebb6b7f536cab258"
     },
     {
       "n": 2,
@@ -125,13 +125,37 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u1-m31-rejestr-zgod/p1-domain-l10",
+          "layers": [
+            "Domain",
+            "L10"
+          ],
+          "slugs": [
+            "whxy8m3r",
+            "bzgfftsf",
+            "e491l9fb",
+            "xurq19of",
+            "zktorogu",
+            "naxqsfra",
+            "44viw74p",
+            "zovs1ohc",
+            "m31ctx001"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "60a89c1d11d045b0faf92b74ebb6b7f536cab258",
+      "baseCommit": "60a89c1d11d045b0faf92b74ebb6b7f536cab258",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },

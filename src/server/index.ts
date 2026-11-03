@@ -27,6 +27,7 @@ import { loadBuiltinEnvelopes, loadWorkspacePlugins } from './core/plugin-host/l
 import { reloadBasePackages } from './core/plugin-host/base-reload.js';
 import { basePackageLocator, workspaceNodeModulesDir } from './core/plugin-host/workspace-packages.js';
 import { PREDEFINED_PLUGINS, resolvePluginPackages } from './workspace/registry.js';
+import { invalidateOnConsentChange } from './workspace/consent-invalidation.js';
 import { pluginsRouter } from './routes/plugins.js';
 import type { FrontendBaseTier } from './core/plugin-host/frontend-assets.js';
 import { errorHandler } from './routes/errors.js';
@@ -420,6 +421,10 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       background: backgroundBuild(registry, (project, mode) => buildContext(project, mode.projectWrites, mode.signal)),
     },
   );
+  // M31 `m31ctx001` (2.1.67): a machine-local consent written in THIS process —
+  // `setProjectTrust` or `setSkillUsesConfirmation` — invalidates the project's
+  // context. A write from a CLI process (another registry instance) does not.
+  const offConsentChanged = invalidateOnConsentChange(registry, workspace, cache);
 
   // M33 phase 3: process-global base (workspace/npm) plugin hot-reload watcher.
   // The base catalog is shared across projects, so a reload mutates the shared
@@ -574,6 +579,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       await baseReloadChain.catch(() => {});
       // M54: every runner-host stream closes, every attempt and retry is cancelled.
       await runnerHosts.close();
+      offConsentChanged();
       // M31 `m31ctx001` (2.1.60): the contexts go first — the build in progress
       // is aborted and releases its partial resources (its watch scope among
       // them) while the runtime still stands; then the process mounts close.

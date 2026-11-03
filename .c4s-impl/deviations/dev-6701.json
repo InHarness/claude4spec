@@ -1,0 +1,15 @@
+{
+  "id": "dev-6701",
+  "kind": "missing",
+  "blocking": false,
+  "address": "u1-m31-rejestr-zgod/naxqsfra",
+  "slugs": [
+    "naxqsfra"
+  ],
+  "text": "`setSkillUsesConfirmation(workspace, projectId, names)` — the section does not say what happens for a projectId that is not a project of the workspace (setProjectTrust silently writes nothing today). Assumed: nothing is written, the context is not invalidated, and the core returns null; the CLI command (confirm-skill-uses) resolves the project by --cwd before it calls, so its refusals are unaffected.",
+  "assumption": "ASSUMPTION:dev-6701 — the spec names no outcome for an unknown id; the CLI resolves the project before it calls.",
+  "unit": "u1-m31-rejestr-zgod",
+  "portion": "u1-m31-rejestr-zgod/p1-domain-l10",
+  "sent": true,
+  "patchPath": "2-1-66-to-2-1-67-u1-m31-rejestr-zgod-naxqsfra-wynik-zapisu-potwierdzen-dla-nieznanego-projectid.md"
+}

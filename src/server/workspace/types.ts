@@ -46,19 +46,31 @@ export interface ProjectRecord {
    * on the `#skills` settings card.
    */
   trustSpecSkillHooks?: boolean;
+  /**
+   * 2.1.67 (M31 `44viw74p`, `naxqsfra`): the skill-attachment names this
+   * machine confirmed for the project (`confirmedSkillUses`) — machine-local,
+   * never committed, written whole by `setSkillUsesConfirmation`. Its meaning
+   * (which attachment resolves) belongs to M52 `ybbal0vf`. Absent = nothing
+   * confirmed. On a workspace with a home it is voided by a change of the
+   * project's path, like `trustProjectPlugins`.
+   */
+  confirmedSkillUses?: string[];
 }
 
 /**
  * 2.1.58 (M31 `44viw74p`): machine-local trust of one project of a home
  * workspace, kept in the registry entry (keyed `(home, project-id)` — the entry
  * carries the home) together with the project's relative path at the time the
- * consent was given. A view path that no longer matches voids every flag here:
+ * consent was given: the plugin consent and (2.1.67) the confirmed skill
+ * attachments. A view path that no longer matches voids every consent here:
  * the project reads as undecided until consent is given again.
  */
 export interface HomeProjectTrust {
   path: string;
   trustProjectPlugins?: boolean;
   trustSpecSkillHooks?: boolean;
+  /** 2.1.67 (M31 `44viw74p`): the confirmed skill-attachment names, see `ProjectRecord`. */
+  confirmedSkillUses?: string[];
 }
 
 /**
