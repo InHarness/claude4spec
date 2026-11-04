@@ -108,7 +108,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "u1-m28-shadow-supersession/p1-domain-l4",
@@ -122,14 +122,32 @@
             "ac-pozycja-cienia-niebedacego-przodkiem",
             "ac-w-lancuchu-trzech-cieni-supersededby"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 2,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "ac-pozycja-cienia-ktorego-tip-jest-przod",
+            "ac-pozycja-cienia-niebedacego-przodkiem",
+            "ac-w-lancuchu-trzech-cieni-supersededby",
+            "git-shadows-response"
+          ],
+          "only": [
+            {
+              "slug": "ac-pozycja-cienia-ktorego-tip-jest-przod"
+            },
+            {
+              "slug": "ac-pozycja-cienia-niebedacego-przodkiem"
+            },
+            {
+              "slug": "ac-w-lancuchu-trzech-cieni-supersededby"
+            },
+            {
+              "slug": "git-shadows-response"
+            }
+          ]
         }
       ],
-      "startCommit": "b4c73d6b55b44ab8b7cf8e08c1e300b7c16307d2",
+      "startCommit": "0bce80ba3440cd43ceb9177ee8955d0e873f1f37",
       "baseCommit": "28288dfbb0af179c69c14208b4398fd6fed2f754",
       "rounds": {
         "review": 0,
@@ -369,7 +387,7 @@
         }
       ],
       "wave": 2,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "u3-m17-chain-accept/p1-l2-l5",
@@ -391,14 +409,20 @@
             "ac-przyjecie-konca-lancucha-ktorego-kata",
             "ac-przyjecie-konca-lancucha-ktorego-kata-2"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 2,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "accept-shadow"
+          ],
+          "only": [
+            {
+              "slug": "accept-shadow"
+            }
+          ]
         }
       ],
-      "startCommit": "149684de26584afbba0510a1691075b82421c733",
+      "startCommit": "0bce80ba3440cd43ceb9177ee8955d0e873f1f37",
       "baseCommit": "679b3be89edc53fac7001d4e289cba669c1cc938",
       "rounds": {
         "review": 0,
@@ -677,5 +701,11 @@
       ]
     }
   ],
-  "baselineGreen": true
+  "baselineGreen": true,
+  "system": {
+    "rounds": 1,
+    "suite": "env-runner impl-2-1-68-tests @0bce80ba: npm test 14 failed / 7940 passed; e2e 228/228",
+    "env": "impl-2-1-68-tests",
+    "thread": "BR9_pMY8LXPd"
+  }
 }

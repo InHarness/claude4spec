@@ -1,0 +1,86 @@
+env-runner impl-2-1-68-tests @0bce80ba — npm test: exit 1; in env 14 failed / 7940 passed (this local-copy json: 23 failed incl. 9 mcp-bridge needing a build, green in env); npm run test:e2e: exit 0, 228/228 passed.
+
+===== src/server/operations/catalog.test.ts | the catalogue against the window's 80 records every row answers for its record: scope, mediation, the four channel values (a via / n/a with the record's reason), effects, idempotence, error codes once each
+AssertionError: accept_shadow: expected [ 'ACCEPT_ABORT_FAILED', …(17) ] to deeply equal [ 'ACCEPT_ABORT_FAILED', …(16) ]
+    at /private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/src/server/operations/catalog.test.ts:1898:55
+    at file:///private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///private/tmp/claude-501/env-impl-2-1-6
+
+===== src/server/runs/run-read.test.ts | get_run / cancel_run (spec-operations get-run, cancel-run) continuation Runs (2.1.68: resultSha, parentRunId, supersededBy, parent reasons) [ac:ac-get-run-runu-ktorego-cien-ma-dziecko] get_run of a Run whose shadow has a child gives supersededBy with the child's runId — and no plan hint
+AssertionError: expected { …(3) } to deeply equal { …(4) }
+    at /private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/src/server/runs/run-read.test.ts:473:29
+    at file:///private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+===== src/server/runs/run-remote.test.ts | run_remote with fromRunId — the continuation (M55 fdu51xri) [ac:ac-run-remote-z-fromrunid-runu-ktorego-c] run_remote with fromRunId of a Run whose shadow is superseded ends with RUN_PARENT_SUPERSEDED, naming the child
+Error: expected a refusal
+    at refusal (/private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/src/server/runs/run-remote.test.ts:46:9)
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at /private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/src/server/runs/run-remote.test.ts:918:17
+    at file:///private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+===== src/server/runs/run-remote.test.ts | run_remote with fromRunId — the continuation (M55 fdu51xri) [ac:ac-odmowa-run-parent-nie-zostawia-wpisu] a RUN_PARENT_* refusal leaves no row in the registry
+Error: expected a refusal
+    at refusal (/private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/src/server/runs/run-remote.test.ts:46:9)
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at /private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/src/server/runs/run-remote.test.ts:943:19
+    at file:///private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+===== src/server/routes/git.test.ts | POST /api/git/fetch + GET /api/git/status (2.1.10) [section:5eyq89gb] [entity:git-shadows-response] a superseding shadow pruned by fetch() takes the relation with it — the superseded shadow stays listed and loses supersededBy
+AssertionError: expected undefined to deeply equal [ 'child/work' ]
+    at /private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/src/server/routes/git.test.ts:441:70
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at file:///private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+===== src/server/routes/git.test.ts | GET /api/git/shadows (2.1.46) [entity:git-shadows-response] [ac:ac-pozycja-cienia-ktorego-tip-jest-przod] a shadow whose tip is an ancestor of another, non-superseded listed shadow's tip carries supersededBy with that shadow's id
+AssertionError: expected { id: 'parent/work', …(3) } to deeply equal { id: 'parent/work', …(4) }
+    at /private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/src/server/routes/git.test.ts:613:35
+    at file:///private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+===== src/server/routes/git.test.ts | GET /api/git/shadows (2.1.46) [entity:git-shadows-response] [ac:ac-pozycja-cienia-niebedacego-przodkiem] a shadow that is not an ancestor of any other listed shadow carries no supersededBy
+AssertionError: expected undefined to deeply equal [ 'child/work' ]
+    at /private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/src/server/routes/git.test.ts:641:49
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at file:///private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+===== src/server/routes/git.test.ts | GET /api/git/shadows (2.1.46) [entity:git-shadows-response] [ac:ac-w-lancuchu-trzech-cieni-supersededby] in a chain of three shadows the first one's supersededBy holds only the last one's id — and two children of one parent give it both ids
+AssertionError: expected undefined to deeply equal [ 'child/work' ]
+    at /private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/src/server/routes/git.test.ts:650:47
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at file:///private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+===== src/server/routes/shadow-accept.test.ts | M17 shadow acceptance — POST /api/shadow-accept (2.1.47) [ac:ac-przyjecie-cienia-z-supersededby-koncz] [entity:accept-shadow] accepting a shadow with supersededBy (its child's shadow descends from its tip) → 409 ACCEPT_SUPERSEDED naming the end of the chain — checked before ACCEPT_STALE, the repository untouched
+AssertionError: expected undefined to deeply equal [ 'run-8/work' ]
+    at /private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/src/server/routes/shadow-accept.test.ts:775:70
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at file:///private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+===== src/server/routes/shadow-diff.test.ts | M17 shadow diff — GET /api/shadow-diff (2.1.46) [entity:shadow-diff-response] [entity:shadow-diff] a superseded shadow is compared, not refused: the answer carries supersededBy with the ids of the terminal shadows; the end of the chain carries no supersededBy
+AssertionError: expected undefined to deeply equal [ 'run-8/work' ]
+    at /private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/src/server/routes/shadow-diff.test.ts:366:38
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at file:///private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+===== src/server/routes/shadow-diff.test.ts | M17 shadow diff — GET /api/shadow-diff (2.1.46) [ac:ac-porownanie-cienia-ktorego-dziecko-zni] the comparison of a shadow whose child vanished from the remote carries no supersededBy
+AssertionError: expected undefined to deeply equal [ 'run-8/work' ]
+    at /private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/src/server/routes/shadow-diff.test.ts:393:59
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at file:///private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+===== src/server/services/git.test.ts | GitService — 2.1.46 shadow layer [section:ng0h4t5o] [section:dadc3w49] [entity:git-shadows-response] resolveShadow of a superseded shadow carries supersededBy (the terminal shadows of the list); a non-superseded one does not — read-only
+AssertionError: expected { id: 'grand/work', …(4) } to deeply equal { id: 'grand/work', …(5) }
+    at /private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/src/server/services/git.test.ts:2016:80
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at file:///private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+===== src/server/services/git.test.ts | GitService — 2.1.46 shadow layer [review:rev-0001] [section:dadc3w49] [entity:git-shadows-response] supersession on a chain and a fork takes about n+1 git calls (one merge-base --independent, one for-each-ref --contains per non-terminal tip, no pairwise --is-ancestor) and gives the same supersededBy as the pairwise rule
+AssertionError: expected { 'chain-1/work': undefined, …(7) } to deeply equal { …(8) }
+    at /private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/src/server/services/git.test.ts:2083:20
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at file:///private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+===== src/server/services/git.test.ts | GitService — 2.1.46 shadow layer [review:rev-0002] [section:ng0h4t5o] resolveShadow computes supersededBy only when asked — the default (shadow diff, Accept, Run read) runs no list filter and no supersession scan
+AssertionError: expected { id: 'parent/work', …(4) } to deeply equal { id: 'parent/work', …(5) }
+    at /private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/src/server/services/git.test.ts:2131:22
+    at file:///private/tmp/claude-501/env-impl-2-1-68-tests/codebase/apps/claude4spec-app/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
