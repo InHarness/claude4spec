@@ -738,6 +738,116 @@ describe('M17 shadow acceptance — POST /api/shadow-accept (2.1.47)', () => {
     await expectUntouched(res, 'ACCEPT_OUTSIDE_SPEC', before, dbBefore);
   });
 
+  // ─── 2.1.68 (M17 rnwev4kg / nemiv2qh / 3qrdxxh2): continuation chains ─────────
+  // A continuation Run's shadow grows from its parent Run's tip; each Run's own
+  // commit is `run <runId>: <outcome>` and carries its record `run.json`, whose
+  // `parentRunId` names the parent. The workspace home is the repository root.
+
+  /** One Run of a chain: `edit()` + its record on top of `from`, committed as `run <runId>: done`, ref `refs/runs/<runId>/work`. */
+  const chainRun = async (runId: string, from: string, parentRunId: string | null, edit: () => void = () => {}): Promise<string> => {
+    const tmp = `tmp-chain-${++n}`;
+    await git(['checkout', '-q', '-b', tmp, from], dir);
+    edit();
+    write(`.claude4spec/runs/${runId}/run.json`, JSON.stringify({ runId, ...(parentRunId ? { parentRunId } : {}), outcome: 'done' }) + '\n');
+    const runTip = await commitAll(`run ${runId}: done`);
+    await git(['update-ref', `refs/runs/${runId}/work`, runTip], dir);
+    await git(['checkout', '-q', 'main'], dir);
+    await git(['branch', '-q', '-D', tmp], dir);
+    return runTip;
+  };
+  /** parent `run-7` (edits a.md) ← child `run-8` (adds c.md); the master then edits b.md. */
+  let parentTip: string;
+  let childTip: string;
+  const chainScenario = async (childEdit: () => void = () => {}): Promise<void> => {
+    releaseService.setWorkspaceHome(() => dir);
+    parentTip = await chainRun('run-7', c1, null, () => write('pages/a.md', '# A\n\nA parent\n'));
+    childTip = await chainRun('run-8', parentTip, 'run-7', () => {
+      write('pages/c.md', '# C\n\nC child\n');
+      childEdit();
+    });
+    write('pages/b.md', '# B\n\nB master\n');
+    headSha = await commitAll('C2');
+  };
+
+  it('[ac:ac-przyjecie-cienia-z-supersededby-koncz] [entity:accept-shadow] accepting a shadow with supersededBy (its child\'s shadow descends from its tip) → 409 ACCEPT_SUPERSEDED naming the end of the chain — checked before ACCEPT_STALE, the repository untouched', async () => {
+    await chainScenario();
+    const shadows = (await request(app).get('/api/git/shadows')).body.shadows as Array<{ id: string; supersededBy?: string[] }>;
+    expect(shadows.find((s) => s.id === 'run-7/work')?.supersededBy).toEqual(['run-8/work']);
+
+    const before = await repoState();
+    const dbBefore = dbState();
+    const res = await accept({ ref: 'run-7/work', expectedTipSha: parentTip });
+    expect(res.status).toBe(409);
+    expect((res.body as ErrorBody).error.details).toEqual(['run-8/work']);
+    await expectUntouched(res, 'ACCEPT_SUPERSEDED', before, dbBefore);
+    // The guard runs right after the shadow is addressed: stale SHAs do not turn it into ACCEPT_STALE.
+    const stale = await accept({ ref: 'run-7/work', expectedTipSha: 'f'.repeat(40), expectedHeadSha: 'e'.repeat(40) });
+    expect(stale.status).toBe(409);
+    await expectUntouched(stale, 'ACCEPT_SUPERSEDED', before, dbBefore);
+  });
+
+  it('[ac:ac-przyjecie-konca-lancucha-ktorego-kata] [entity:accept-shadow] accepting the end of a chain whose every ancestor\'s record directory is the same in the shadow tip as in that ancestor\'s tip is not ACCEPT_OUTSIDE_SPEC — 201, also when an ancestor\'s ref is gone; the release records the end of the chain and the merge commit brings every record directory, without capture', async () => {
+    releaseService.setWorkspaceHome(() => dir);
+    const chained: string[] = [];
+    chainHook = (abs) => void chained.push(abs);
+    // grandparent run-6 ← parent run-7 ← child run-8 (the end of the chain).
+    const grandTip = await chainRun('run-6', c1, null, () => write('pages/a.md', '# A\n\nA grandparent\n'));
+    parentTip = await chainRun('run-7', grandTip, 'run-6', () => write('pages/b.md', '# B\n\nB parent\n'));
+    childTip = await chainRun('run-8', parentTip, 'run-7', () => write('pages/c.md', '# C\n\nC child\n'));
+    tip = childTip;
+    headSha = await head();
+    // The grandparent's ref is gone: its tip is still found by its commit subject in the child's history.
+    await git(['update-ref', '-d', 'refs/runs/run-6/work'], dir);
+
+    const res = await accept({ ref: 'run-8/work' });
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ acceptedShadow: { id: 'run-8/work', tipSha: childTip }, gitSync: { status: 'committed' } });
+    const committed = JSON.parse(await git(['show', 'HEAD:.claude4spec/releases/v1.json'], dir)) as { acceptedShadow: unknown };
+    expect(committed.acceptedShadow).toEqual({ id: 'run-8/work', tipSha: childTip });
+    const tree = (await git(['ls-tree', '-r', '--name-only', 'HEAD'], dir)).trim().split('\n');
+    expect(tree).toEqual(
+      expect.arrayContaining(['.claude4spec/runs/run-6/run.json', '.claude4spec/runs/run-7/run.json', '.claude4spec/runs/run-8/run.json']),
+    );
+    const runsDir = path.join(dir, '.claude4spec', 'runs');
+    expect(chained.some((abs) => abs.startsWith(runsDir))).toBe(false);
+  });
+
+  it('[ac:ac-przyjecie-konca-lancucha-ktorego-kata-2] accepting the end of a chain that changes its ancestor\'s record directory after the ancestor\'s tip → 409 ACCEPT_OUTSIDE_SPEC naming that directory\'s files; the own directory stays exempt, the repository untouched', async () => {
+    await chainScenario(() => write('.claude4spec/runs/run-7/notes.md', 'rewritten by the child\n'));
+    tip = childTip;
+    const before = await repoState();
+    const dbBefore = dbState();
+    const res = await accept({ ref: 'run-8/work' });
+    expect(res.status).toBe(409);
+    expect((res.body as ErrorBody).error.details).toEqual(['.claude4spec/runs/run-7/notes.md', '.claude4spec/runs/run-7/run.json']);
+    await expectUntouched(res, 'ACCEPT_OUTSIDE_SPEC', before, dbBefore);
+  });
+
+  it('[section:nemiv2qh] the ancestors are read from the records in the shadow tip: a record without a readable parentRunId ends the chain — the unnamed Run\'s directory stays outside the specification', async () => {
+    await chainScenario();
+    // Re-grow the child with a record that names no parent.
+    childTip = await chainRun('run-8', parentTip, null, () => write('pages/c.md', '# C\n\nC child\n'));
+    tip = childTip;
+    const res = await accept({ ref: 'run-8/work' });
+    expect(res.status).toBe(409);
+    expect((res.body as ErrorBody).error.code).toBe('ACCEPT_OUTSIDE_SPEC');
+    expect((res.body as ErrorBody).error.details).toEqual(['.claude4spec/runs/run-7/run.json']);
+  });
+
+  it('[ac:ac-po-przyjeciu-konca-lancucha-cienie-pr] [section:3qrdxxh2] after accepting the end of a chain the ancestors\' shadows are no longer on the shadow list', async () => {
+    await chainScenario();
+    tip = childTip;
+    const listed = async () =>
+      ((await request(app).get('/api/git/shadows')).body.shadows as Array<{ id: string }>).map((s) => s.id).sort();
+    expect(await listed()).toEqual(['run-7/work', 'run-8/work']);
+    const res = await accept({ ref: 'run-8/work' });
+    expect(res.status).toBe(201);
+    expect(await listed()).toEqual([]);
+    // The refs themselves stay: the ancestors left the list because their tips are ancestors of HEAD now.
+    expect((await git(['rev-parse', 'refs/runs/run-7/work'], dir)).trim()).toBe(parentTip);
+    await git(['merge-base', '--is-ancestor', parentTip, 'HEAD'], dir);
+  });
+
   it('[ac:ac-cien-dodajacy-plik-do-korzenia-releas] a shadow adding a file to the releases root → 409 ACCEPT_RELEASES_IN_SHADOW', async () => {
     tip = await shadow('run-1/spec', c1, () => {
       write('pages/a.md', '# A\n\nA shadow\n');

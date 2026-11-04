@@ -9,7 +9,9 @@
  *      repository (`hybasevj`);
  *   2. the release mutex (waits), then the repository lock (refuses `busy`),
  *      both held to the end of the sequence (`g4rsukyw`, M28 `ezudoqef`);
- *   3. the guards under the lock, in a fixed order (`rnwev4kg`): after the
+ *   3. the guards under the lock, in a fixed order (`rnwev4kg`; 2.1.68: a
+ *      superseded shadow — not the end of its continuation chain — is
+ *      `ACCEPT_SUPERSEDED` right after it is addressed): after the
  *      SHA guard the paths the shadow changes (`changedPaths`, base → tip of
  *      the preview) are read once; the strict pending-changes test checks the
  *      release content (the release-flag roots + `releases`) whole and the
@@ -56,7 +58,7 @@ import { readConfig } from '../config.js';
 import type { WatchEventKind } from '../fs/watcher.js';
 import type { SnapshotData } from '../serialization/types.js';
 import type { GitHeldRepo, GitLockHandle, GitService } from './git.js';
-import { acceptanceFlags, gitUnavailable, ownRunRecordDir, type ShadowDiffScope } from './release-shadow-diff.js';
+import { acceptanceFlags, exemptRecordDirs, gitUnavailable, type ShadowDiffScope } from './release-shadow-diff.js';
 import { isPathWithin } from '../workspace/registry.js';
 import { DomainError } from './tags.js';
 
@@ -119,6 +121,9 @@ export interface AcceptShadowDeps<R extends { name: string; description: string 
     | 'abortMerge'
     | 'commitOnRelease'
     | 'workspaceHomePath'
+    | 'showFile'
+    | 'commitBySubjectPrefix'
+    | 'treeEntrySha'
     | 'notifyStatusChanged'
   >;
   runtime: AcceptShadowRuntime;
@@ -266,12 +271,21 @@ async function sequence<R extends { name: string; description: string }>(
       'The merge commit of an acceptance lands on the current branch only — set the release commit target to the current branch.',
     );
   }
-  const shadow = await git.resolveShadow(request.ref, repo);
+  // 2.1.68: with the supersession (M28 `dadc3w49`) — only the end of a chain is accepted.
+  const shadow = await git.resolveShadow(request.ref, repo, { supersession: true });
   if (!shadow) {
     throw new DomainError(
       'SHADOW_NOT_FOUND',
       `No shadow '${request.ref}' to accept: the ref does not exist under refs/runs/, has no common ancestor with HEAD, or is already contained in HEAD (accepted).`,
       'List the shadows with GET /api/git/shadows.',
+    );
+  }
+  // 2.1.68 (`rnwev4kg`): right after addressing the shadow, before ACCEPT_STALE.
+  if (shadow.supersededBy && shadow.supersededBy.length > 0) {
+    throw refuse(
+      'ACCEPT_SUPERSEDED',
+      `The shadow '${shadow.id}' is superseded by ${shadow.supersededBy.join(', ')} — accept the end of the chain.`,
+      { details: shadow.supersededBy },
     );
   }
   if (shadow.tipSha !== request.expectedTipSha || shadow.headSha !== request.expectedHeadSha) {
@@ -293,8 +307,10 @@ async function sequence<R extends { name: string; description: string }>(
   }
   // 2.1.64 (`nemiv2qh`): the own Run's record directory of a `<runId>/work`
   // shadow is not outside the specification; the merge commit brings it in.
-  const exemptDir = await ownRunRecordDir(git, shadow.id, scope.workspaceHome, gate.root);
-  const flags = acceptanceFlags(changedPaths, scope.registryRoots, gate.root, exemptDir);
+  // 2.1.68: nor are the record directories of its continuation ancestors,
+  // each identical in the shadow's tip and in the ancestor's own tip.
+  const exemptDirs = await exemptRecordDirs(git, shadow, scope.workspaceHome, { detected: true, rootPath: gate.root });
+  const flags = acceptanceFlags(changedPaths, scope.registryRoots, gate.root, exemptDirs);
   if (flags.outsideSpecFiles.length > 0) {
     throw refuse(
       'ACCEPT_OUTSIDE_SPEC',
@@ -345,9 +361,9 @@ async function sequence<R extends { name: string; description: string }>(
     let release: R;
     try {
       // 6. Capture of the merged paths, in-band.
-      // The own Run's record directory lies in no root: the merge commit
-      // brings it in, without capture (`nemiv2qh`).
-      const captured = exemptDir === null ? paths : paths.filter((p) => !isPathWithin(exemptDir, p));
+      // The exempted record directories lie in no root: the merge commit
+      // brings them in, without capture (`nemiv2qh`).
+      const captured = paths.filter((p) => !exemptDirs.some((dir) => isPathWithin(dir, p)));
       const shadowEntityVersions = await captureMerged(deps, captured, existedBefore);
       // 7. The release — acceptance variant; its transaction is the point of no return.
       release = deps.createRelease(input, {

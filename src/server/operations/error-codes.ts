@@ -204,6 +204,8 @@ export const STATUS_FOR_CODE: Record<string, number> = {
   // leaves the repository untouched (409); a failure after it is rolled back
   // (500), or — `ACCEPT_ABORT_FAILED` — leaves the merge open for repair.
   ACCEPT_NO_BRANCH: 409,
+  // 2.1.68 — the shadow is superseded by its child's shadow (M28 `dadc3w49`); only the end of the chain is accepted.
+  ACCEPT_SUPERSEDED: 409,
   ACCEPT_TARGET_NOT_CURRENT: 409,
   ACCEPT_BUSY: 409,
   ACCEPT_STALE: 409,

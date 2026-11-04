@@ -1,5 +1,5 @@
 {
-  "iteration": 12,
+  "iteration": 17,
   "conventions": [
     {
       "label": "L1 (DB) — implementor M41",
@@ -53,7 +53,7 @@
         "u3-m17-chain-accept",
         "u4-m55-run-continuation"
       ],
-      "startCommit": null
+      "startCommit": "679b3be89edc53fac7001d4e289cba669c1cc938"
     }
   ],
   "units": [
@@ -319,7 +319,7 @@
           {
             "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
             "context": {
-              "offset": 44,
+              "offset": 45,
               "limit": 3,
               "anchors": [
                 "aae2vgem",
@@ -369,13 +369,40 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u3-m17-chain-accept/p1-l2-l5",
+          "layers": [
+            "L2",
+            "L3",
+            "L4",
+            "L5"
+          ],
+          "slugs": [
+            "shadow-diff-response",
+            "accept-shadow",
+            "shadow-diff",
+            "releases-list",
+            "ac-accept-cienia-z-supersededby-jest-nie",
+            "ac-po-przyjeciu-konca-lancucha-cienie-pr",
+            "ac-porownanie-cienia-ktorego-dziecko-zni",
+            "ac-przyjecie-cienia-z-supersededby-koncz",
+            "ac-przyjecie-konca-lancucha-ktorego-kata",
+            "ac-przyjecie-konca-lancucha-ktorego-kata-2"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "149684de26584afbba0510a1691075b82421c733",
+      "baseCommit": "679b3be89edc53fac7001d4e289cba669c1cc938",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
       "jobs": []
     },

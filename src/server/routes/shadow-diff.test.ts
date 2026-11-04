@@ -332,6 +332,78 @@ describe('M17 shadow diff — GET /api/shadow-diff (2.1.46)', () => {
 
   // ── modes ─────────────────────────────────────────────────────────────────
 
+  // ── 2.1.68: continuation chains (M28 dadc3w49, M17 nemiv2qh) ─────────────
+
+  /** parent `run-7` ← child `run-8` (grown from the parent's tip), each Run's commit `run <runId>: done` with its record. */
+  const chainScenario = async (): Promise<{ parentTip: string; childTip: string }> => {
+    releaseService.setWorkspaceHome(() => dir);
+    const parentTip = await shadow('run-7/work', c1, [
+      {
+        edit: () => {
+          write('pages/a.md', 'A parent');
+          write('.claude4spec/runs/run-7/run.json', '{"runId":"run-7","outcome":"done"}\n');
+        },
+        message: 'run run-7: done',
+      },
+    ]);
+    const childTip = await shadow('run-8/work', parentTip, [
+      {
+        edit: () => {
+          write('pages/c.md', 'C child');
+          write('.claude4spec/runs/run-8/run.json', '{"runId":"run-8","parentRunId":"run-7","outcome":"done"}\n');
+        },
+        message: 'run run-8: done',
+      },
+    ]);
+    return { parentTip, childTip };
+  };
+
+  it('[entity:shadow-diff-response] [entity:shadow-diff] a superseded shadow is compared, not refused: the answer carries supersededBy with the ids of the terminal shadows; the end of the chain carries no supersededBy', async () => {
+    const { parentTip, childTip } = await chainScenario();
+    const parent = await get('run-7/work');
+    expect(parent.status).toBe(200);
+    expect(parent.body.shadow).toEqual({ id: 'run-7/work', tipSha: parentTip });
+    expect(parent.body.supersededBy).toEqual(['run-8/work']);
+    const child = await get('run-8/work');
+    expect(child.status).toBe(200);
+    expect(child.body.shadow).toEqual({ id: 'run-8/work', tipSha: childTip });
+    expect(child.body).not.toHaveProperty('supersededBy');
+  });
+
+  it('[section:nemiv2qh] the comparison of the end of a chain: commits cover the whole chain from merge-base, and outsideSpecFiles skips the ancestor\'s record directory identical in both tips', async () => {
+    const { parentTip, childTip } = await chainScenario();
+    const res = await get('run-8/work');
+    expect(res.status).toBe(200);
+    expect((res.body as ShadowDiffResponse).commits.map((c) => [c.sha, c.subject])).toEqual([
+      [childTip, 'run run-8: done'],
+      [parentTip, 'run run-7: done'],
+    ]);
+    expect(res.body.outsideSpecFiles).toEqual([]);
+  });
+
+  it('[ac:ac-porownanie-cienia-ktorego-dziecko-zni] the comparison of a shadow whose child vanished from the remote carries no supersededBy', async () => {
+    const remote = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-shadow-diff-remote-')));
+    try {
+      await git(['init', '-q', '--bare', '-b', 'main'], remote);
+      await git(['remote', 'add', 'origin', remote], dir);
+      await git(['push', '-q', '-u', 'origin', 'main'], dir);
+      await chainScenario();
+      await git(['push', '-q', 'origin', 'refs/runs/run-7/work:refs/runs/run-7/work', 'refs/runs/run-8/work:refs/runs/run-8/work'], dir);
+      expect((await gitService.fetch()).status).toBe('fetched');
+      expect((await get('run-7/work')).body.supersededBy).toEqual(['run-8/work']);
+
+      // The child's ref disappears from the remote; fetch() prunes the local one.
+      await git(['push', '-q', 'origin', ':refs/runs/run-8/work'], dir);
+      expect((await gitService.fetch()).status).toBe('fetched');
+      expect((await git(['for-each-ref', '--format=%(refname)', 'refs/runs/'], dir)).trim()).toBe('refs/runs/run-7/work');
+      const res = await get('run-7/work');
+      expect(res.status).toBe(200);
+      expect(res.body).not.toHaveProperty('supersededBy');
+    } finally {
+      fs.rmSync(remote, { recursive: true, force: true });
+    }
+  });
+
   it('[ac:ac-bez-konfliktu-get-api-shadow-diff-zwr] without a conflict GET /api/shadow-diff answers mode: merge', async () => {
     await baseScenario();
     const res = await get('run-1/spec');

@@ -2910,6 +2910,51 @@ export class GitService {
   }
 
   /**
+   * 2.1.68 (M17 `nemiv2qh`): the newest commit in the history of `tip`
+   * (`git log <tip>`, `tip` included) whose SUBJECT starts with `prefix` —
+   * e.g. a Run's own commit `run <runId>: <outcome>`, which stays in the
+   * history of its continuation's shadow after the Run's ref is gone. The
+   * prefix is matched literally (never as a pattern). Read-only, no lock,
+   * never throws: `null` when there is no such commit or git fails.
+   */
+  async commitBySubjectPrefix(tip: string, prefix: string, precomputedStatus: GitRepoRoot): Promise<string | null> {
+    const root = precomputedStatus.rootPath;
+    if (!root || prefix.length === 0) return null;
+    try {
+      // `-F --grep` narrows git's walk literally; the subject check below is the exact rule.
+      const { stdout } = await this.git(['log', '--format=%H%x00%s', '-F', `--grep=${prefix}`, tip], root);
+      for (const line of stdout.split('\n')) {
+        const [sha, subject] = line.split('\0');
+        if (sha && subject !== undefined && subject.startsWith(prefix)) return sha;
+      }
+      return null;
+    } catch (err) {
+      console.warn('[git] commitBySubjectPrefix failed:', errMessage(err));
+      return null;
+    }
+  }
+
+  /**
+   * 2.1.68 (M17 `nemiv2qh`): the object id of the tree entry at the ABSOLUTE
+   * `absPath` in `commit` (`git rev-parse <commit>:<rel>`) — for a directory
+   * its tree SHA, so two commits hold an identical directory exactly when the
+   * ids are equal. `null` when the path is absent there, lies outside the
+   * repository, or git fails. Read-only, no lock, never throws.
+   */
+  async treeEntrySha(commit: string, absPath: string, precomputedStatus: GitRepoRoot): Promise<string | null> {
+    const root = precomputedStatus.rootPath;
+    if (!root) return null;
+    const rel = path.relative(root, absPath);
+    if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return null;
+    try {
+      const { stdout } = await this.git(['rev-parse', '--verify', '--quiet', `${commit}:${rel.split(path.sep).join('/')}`], root);
+      return stdout.trim() || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * 2.1.46 (M28 eu1rffp6, tech-stack row Git): trial merge —
    * `git merge-tree --write-tree <ours> <theirs>`. Touches neither the working
    * tree, HEAD, the index nor any ref; writes objects only (ordinary `gc`

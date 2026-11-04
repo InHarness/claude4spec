@@ -2955,6 +2955,7 @@ export function registerCoreOperations(): void {
       'RELEASE_DESCRIPTION_TOO_LONG',
       'GIT_UNAVAILABLE',
       'SHADOW_NOT_FOUND',
+      'ACCEPT_SUPERSEDED',
       'ACCEPT_NO_BRANCH',
       'ACCEPT_TARGET_NOT_CURRENT',
       'ACCEPT_BUSY',

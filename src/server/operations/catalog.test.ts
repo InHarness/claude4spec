@@ -2179,7 +2179,7 @@ describe('the 2.1.46 shadow_diff row', () => {
  * and DB next to the route (`src/server/routes/shadow-accept.test.ts`).
  */
 describe('the 2.1.47 accept_shadow row', () => {
-  it('[entity:accept-shadow] accept_shadow: project, direct, write, internal/cli/mcp n/a with the record\'s reason, rest direct (POST /api/shadow-accept), effects file+db+ui-notify, not idempotent, content n/a, the record\'s 17 codes once each with their REST statuses, rules destructive-declared + operation-only-write (excluded) + error-code-once + echo-free, no renderings, input ref + name + description + both preview SHAs', () => {
+  it('[entity:accept-shadow] accept_shadow: project, direct, write, internal/cli/mcp n/a with the record\'s reason, rest direct (POST /api/shadow-accept), effects file+db+ui-notify, not idempotent, content n/a, the record\'s 18 codes once each (2.1.68: ACCEPT_SUPERSEDED) with their REST statuses, rules destructive-declared + operation-only-write (excluded) + error-code-once + echo-free, no renderings, input ref + name + description + both preview SHAs', () => {
     registerCoreOperations();
     const op = CATALOG.require('accept_shadow');
     const reason = 'w tej iteracji wyłącznie interfejs; kanał agenta i wiersz poleceń odłożone (przegląd otwarty)';
@@ -2206,6 +2206,7 @@ describe('the 2.1.47 accept_shadow row', () => {
       RELEASE_DESCRIPTION_TOO_LONG: 400,
       GIT_UNAVAILABLE: 400,
       SHADOW_NOT_FOUND: 404,
+      ACCEPT_SUPERSEDED: 409,
       ACCEPT_NO_BRANCH: 409,
       ACCEPT_TARGET_NOT_CURRENT: 409,
       ACCEPT_BUSY: 409,

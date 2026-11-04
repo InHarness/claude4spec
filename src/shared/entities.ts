@@ -542,6 +542,13 @@ export interface ShadowDiffResponse {
   mode: 'merge' | 'shadow-only';
   /** The shadow id (ref name without `refs/runs/`) and the tip SHA the result was computed on. */
   shadow: { id: string; tipSha: string };
+  /**
+   * 2.1.68 (dto `shadow-diff-response`, M28 `dadc3w49`): the ids of the
+   * terminal shadows that supersede the compared one. Present only on a
+   * superseded shadow — a superseded shadow is not a refusal of the
+   * comparison, it can be compared but not accepted.
+   */
+  supersededBy?: string[];
   /** The HEAD SHA the result was computed on. */
   head: { sha: string };
   /** `merge-base(HEAD, tip)`. */

@@ -43,13 +43,20 @@ function recoveryOf(error: ApiError): GitErrorRecovery | null {
   return recovery && typeof recovery === 'object' ? (recovery as GitErrorRecovery) : null;
 }
 
+/** 2.1.68 — the picker's mark of a shadow with `supersededBy`. */
+export const SUPERSEDED_MARK = 'superseded';
+
 /**
  * Why Accept is inactive, or `null` when it is active: it needs no
- * `conflicts`, no `outsideSpecFiles` and `touchesReleases: false`. A conflict
- * names its files.
+ * `conflicts`, no `outsideSpecFiles`, `touchesReleases: false` and (2.1.68)
+ * no `supersededBy`. A conflict names its files; a superseded shadow names the
+ * shadows that supersede it („Superseded by {id} — accept the end of the chain”).
  */
 export function acceptBlockedReason(diff: ShadowDiffResponse): string | null {
   const reasons: string[] = [];
+  if (diff.supersededBy && diff.supersededBy.length > 0) {
+    reasons.push(`Superseded by ${diff.supersededBy.join(', ')} — accept the end of the chain`);
+  }
   if (diff.conflicts.length > 0) {
     reasons.push(`Conflicts with master in ${diff.conflicts.length} ${diff.conflicts.length === 1 ? 'file' : 'files'}:\n${diff.conflicts.join('\n')}`);
   }
@@ -66,9 +73,10 @@ const shortSha = (sha: string) => sha.slice(0, 7);
  * master's specification.
  *
  * 2.1.47 — and its acceptance: the only action of the tab. Accept in the
- * header is active only without `conflicts`, without `outsideSpecFiles` and
- * with `touchesReleases: false` (otherwise inactive, the reason — and the
- * conflicting files — in its hint); it opens the `shadow-accept` window and
+ * header is active only without `conflicts`, without `outsideSpecFiles`,
+ * with `touchesReleases: false` and (2.1.68) without `supersededBy`
+ * (otherwise inactive, the reason — the conflicting files, the superseding
+ * shadows — in its hint); a superseded shadow is marked in the picker; it opens the `shadow-accept` window and
  * sends `POST /api/shadow-accept`. While the request runs the tab is
  * `shadow-accepting`: a spinner, the picker locked (the screen locks the tab
  * switcher).
@@ -192,6 +200,8 @@ export function ReleasesShadowsTab({
   // picker shows what the tab is about.
   const listed = shadows.map((s) => s.id);
   const options = activeRef && !listed.includes(activeRef) ? [activeRef, ...listed] : listed;
+  // 2.1.68: a listed shadow with `supersededBy` is marked „superseded” in the picker.
+  const superseded = new Set(shadows.filter((s) => s.supersededBy && s.supersededBy.length > 0).map((s) => s.id));
 
   return (
     <Frame>
@@ -207,8 +217,8 @@ export function ReleasesShadowsTab({
           data-shadow-picker
         >
           {options.map((id) => (
-            <option key={id} value={id}>
-              {id}
+            <option key={id} value={id} data-superseded={superseded.has(id) ? '' : undefined}>
+              {superseded.has(id) ? `${id} (${SUPERSEDED_MARK})` : id}
             </option>
           ))}
         </select>

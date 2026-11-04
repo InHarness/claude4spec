@@ -114,6 +114,8 @@ const release = (over: Record<string, unknown> = {}) => ({
 });
 
 let diffBody: unknown;
+/** The entries of `GET /api/git/shadows`. */
+let shadowList: unknown[];
 let releases: unknown[];
 let acceptAnswer: { status: number; body: unknown };
 /** When set, `POST /api/shadow-accept` answers only once it resolves (an acceptance in flight). */
@@ -193,6 +195,7 @@ beforeEach(() => {
   takeGitFlashToast(); // no flash toast left over from another test
   cfg.gitEnabled = true;
   diffBody = shadowDiff();
+  shadowList = [{ id: SHADOW, tipSha: TIP, tipCommittedAt: '2026-10-23T10:00:00.000Z', tipSubject: 'Spec run' }];
   releases = [];
   acceptAnswer = { status: 201, body: { ...release(), gitSync: { status: 'committed', sha: 'f'.repeat(40) } } };
   acceptGate = null;
@@ -211,7 +214,7 @@ beforeEach(() => {
       return json({ detected: true, rootPath: '/repo', remoteUrl: null, branch: 'main', isDirty: false, ahead: null, behind: null, lastFetchedAt: null });
     }
     if (path === '/api/git/shadows') {
-      return json({ shadows: [{ id: SHADOW, tipSha: TIP, tipCommittedAt: '2026-10-23T10:00:00.000Z', tipSubject: 'Spec run' }] });
+      return json({ shadows: shadowList });
     }
     if (path.startsWith('/api/shadow-diff')) return json(diffBody);
     return json({});
@@ -257,6 +260,39 @@ describe('/releases Shadows tab — accepting a shadow (M17 releases-list, 2.1.4
     // An active Accept carries no reason hint: no reason marker, no title on its wrapper.
     expect(q('[data-shadow-accept-reason]')).toBeNull();
     expect(acceptButton()!.parentElement!.hasAttribute('title')).toBe(false);
+  });
+
+  it('[ac:ac-accept-cienia-z-supersededby-jest-nie] [entity:releases-list] Accept of a shadow whose preview carries supersededBy is inactive, with the hint "Superseded by {id} — accept the end of the chain"; the same shadow without supersededBy is active', async () => {
+    diffBody = shadowDiff({ supersededBy: ['run-2/work'] });
+    await mount();
+    expect(acceptButton()).not.toBeNull();
+    expect(acceptButton()!.disabled).toBe(true);
+    expect(q('[data-shadow-accept-reason]')!.getAttribute('title')).toBe('Superseded by run-2/work — accept the end of the chain');
+    // An inactive Accept opens nothing and sends nothing.
+    await click(acceptButton());
+    expect(modals).toEqual([]);
+    expect(acceptBodies).toEqual([]);
+
+    act(() => root.unmount());
+    root = createRoot(host);
+    qc.clear();
+    diffBody = shadowDiff();
+    await mount();
+    expect(acceptButton()!.disabled).toBe(false);
+  });
+
+  it('[entity:releases-list] the picker marks a shadow listed with supersededBy as "superseded"; a shadow without it carries no mark', async () => {
+    shadowList = [
+      { id: SHADOW, tipSha: TIP, tipCommittedAt: '2026-10-23T10:00:00.000Z', tipSubject: 'Spec run', supersededBy: ['run-2/work'] },
+      { id: 'run-2/work', tipSha: 'd'.repeat(40), tipCommittedAt: '2026-10-24T10:00:00.000Z', tipSubject: 'Continuation' },
+    ];
+    diffBody = shadowDiff({ supersededBy: ['run-2/work'] });
+    await mount();
+    const options = Array.from(host.querySelectorAll<HTMLOptionElement>('[data-shadow-picker] option'));
+    expect(options.map((o) => [o.value, o.textContent, o.hasAttribute('data-superseded')])).toEqual([
+      [SHADOW, `${SHADOW} (superseded)`, true],
+      ['run-2/work', 'run-2/work', false],
+    ]);
   });
 
   it('[entity:releases-list] Accept is inactive with files outside the specification or a change in the releases root, each with its reason; it stays active in "Shadows — no changes"', async () => {
