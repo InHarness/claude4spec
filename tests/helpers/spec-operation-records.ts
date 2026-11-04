@@ -1428,6 +1428,13 @@ export const SPEC_OPERATION_RECORDS: readonly SpecOperationRecord[] = [
       'RUN_HOST_NOT_FOUND',
       'RUN_HOST_NOT_CONNECTED',
       'RUN_HOST_WITHOUT_RUNS',
+      // 2.1.68: continuation (`fromRunId`) — the host's capability and the parent's refusals (M55 `55a63udm`).
+      'RUN_HOST_WITHOUT_CONTINUATION',
+      'RUN_PARENT_NOT_FOUND',
+      'RUN_PARENT_WITHOUT_RESULT',
+      'RUN_PARENT_PROMPT_INPUT',
+      'RUN_PARENT_RECIPE_MODIFIED',
+      'RUN_PARENT_SUPERSEDED',
       'RUN_AGENT_NOT_FOUND',
       'RUN_C4S_VERSION_INCOMPATIBLE',
       'INVALID_ARGS',

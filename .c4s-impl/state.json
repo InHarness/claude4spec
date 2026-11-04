@@ -1,5 +1,5 @@
 {
-  "iteration": 23,
+  "iteration": 24,
   "conventions": [
     {
       "label": "L1 (DB) — implementor M41",
@@ -550,7 +550,7 @@
         }
       ],
       "wave": 2,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "u4-m55-run-continuation/p1-l1-l15",
@@ -589,17 +589,11 @@
             "ac-zlecenie-z-fromrunid-niesie-continuat",
             "ac-zlecenie-z-fromrunid-niesie-projectid"
           ],
-          "status": "pending",
-          "rounds": 2,
+          "status": "implemented",
+          "rounds": 3,
           "partial": 0,
-          "uncovered": [
-            "run-remote"
-          ],
-          "only": [
-            {
-              "slug": "run-remote"
-            }
-          ]
+          "uncovered": [],
+          "only": []
         }
       ],
       "startCommit": "76d6d00aac5df8ed44ab10b6aa2433dd76a8e865",
