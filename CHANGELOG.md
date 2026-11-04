@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.68] - 2026-11-04
+
+Covers 2.1.65–2.1.68: the intermediate versions were never published to npm.
+
+### Added
+
+- **Continuation Runs (M55).** `run_remote` takes `fromRunId` and `instruction` to continue an earlier Run from the tip of its shadow ref. The base is that tip, and no plan is published. The master refuses a continuation before writing the record when the parent is unusable (`RUN_PARENT_*` codes), or when the parent's host lacks the `run-continuation` capability. `get_run` reports `resultSha`, `parentRunId` and the shadow's `supersededBy`.
+- **Shadow supersession and chain accept (M28, M17).** The shadow list and the shadow read compute `supersededBy` from the commit graph. Accepting a superseded shadow is refused with `ACCEPT_SUPERSEDED`, and its Accept is inactive on the Releases screen. Accepting the end of a chain releases the record directories of its ancestors.
+- **`plan-execution` agent definitions v3 and v4.** v3 adds a catalog of human-decision operations (tag `decyzja-czlowieka`). v4 adds the obligations of a continuation Run. Both require c4s 2.1.67 or later in the Run's environment recipe (`RUN_C4S_VERSION_INCOMPATIBLE` otherwise).
+- **Registry commands without a server.** `c4s register-home`, `c4s confirm-skill-uses` and `c4s trust-plugins` write the workspace registry. A registry entry with a home directory keeps trust per project: plugin consent and confirmed skill attachments.
+- **Skill attachment confirmation (M52).** An attachment from `skill.uses` resolves only after its name is confirmed on this machine. Confirmation uses `PUT` uses-confirmation, and the `#skills` card shows a row flag, a marker and an action.
+- **Local consent in a Run order.** A Run order carries the local consent of the Run's project only when the paths match. Warnings come back in the response, and `get_run` gives a hint to the reason.
+
+### Changed
+
+- **Client address (M31).** The client builds a request address by replacing the API segment with the project prefix; `/api` after the prefix is a 404.
+- Non-content ranges (M51), full reads (M06, M19), raw JSX in the editor (M20) and registration with an envelope (M13).
+- Headless question and CLI via the SDK (M05). A runner host with an incompatible protocol is reported as such (M54). The Run order carries its project (M55).
+
 ## [2.1.64] - 2026-11-01
 
 Covers 2.1.12–2.1.64: the intermediate versions were never published to npm.
@@ -546,3 +565,4 @@ Initial public release.
 
 [2.1.11]: https://github.com/InHarness/claude4spec/compare/v2.1.0...v2.1.11
 [2.1.64]: https://github.com/InHarness/claude4spec/compare/v2.1.11...v2.1.64
+[2.1.68]: https://github.com/InHarness/claude4spec/compare/v2.1.64...v2.1.68
