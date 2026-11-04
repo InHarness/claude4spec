@@ -1,5 +1,5 @@
 {
-  "iteration": 5,
+  "iteration": 9,
   "conventions": [
     {
       "label": "L1 (DB) — implementor M41",
@@ -212,13 +212,32 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u2-m55-plan-execution-v4/p1-domain",
+          "layers": [
+            "domain"
+          ],
+          "slugs": [
+            "ac-minimalna-wersja-c4s-definicji-plan-e",
+            "ac-tresc-definicji-plan-execution-v3-kaz",
+            "ac-tresc-definicji-plan-execution-v3-wym",
+            "ac-tresc-definicji-plan-execution-v4-kaz",
+            "ac-tresc-definicji-plan-execution-v4-kaz-2"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "757813a41abe30982e96a03751e30200018a334b",
+      "baseCommit": "757813a41abe30982e96a03751e30200018a334b",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },

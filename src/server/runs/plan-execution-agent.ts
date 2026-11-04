@@ -1,6 +1,6 @@
 /**
- * M55 `e1dwekyc` (2.1.67: subsections `nosqcr6z`, `41d3hcq3`, `6nyj9gs2`,
- * `0e8792bl`) — the fixed definition of the agent "plan-execution": a
+ * M55 `e1dwekyc` (2.1.68: subsections `fmzjz3kn`, `nosqcr6z`, `41d3hcq3`,
+ * `6nyj9gs2`, `0e8792bl`) — the fixed definition of the agent "plan-execution": a
  * constant of the master's package (L10 `yopfnuxs`: process lifetime, no key —
  * it carries no project's data —, created at module import, released
  * implicitly by GC). It is the default Run type of `run_remote` (spec-operation
@@ -41,8 +41,8 @@ export const PLAN_EXECUTION_MIN_C4S_VERSION = '2.1.67';
 
 /**
  * M55 `nosqcr6z` — the operations of the human-decision catalog (M43
- * `rp99fpc1`, tag `decyzja-czlowieka`) as they stood when version `3` was
- * released, named in the definition's content one by one. A SNAPSHOT, not a
+ * `rp99fpc1`, tag `decyzja-czlowieka`) as they stand at version `4` (the same
+ * membership as version `3`), named in the definition's content one by one. A SNAPSHOT, not a
  * read of the catalog: the Run Agent and the turn in the container do not
  * read the master's specification, so they never see the tag. A change of the
  * catalog's membership raises `version`.
@@ -62,7 +62,7 @@ const FORBIDDEN = PLAN_EXECUTION_HUMAN_DECISION_OPERATIONS.join(', ');
 
 export const PLAN_EXECUTION_AGENT: RunAgentDefinition = Object.freeze({
   name: DEFAULT_RUN_AGENT_NAME,
-  version: '3',
+  version: '4',
   minC4sVersion: PLAN_EXECUTION_MIN_C4S_VERSION,
   content: [
     'You are the Run Agent: you execute a plan or a prompt over the specification of the whole workspace by running a c4s turn.',
@@ -78,9 +78,19 @@ export const PLAN_EXECUTION_AGENT: RunAgentDefinition = Object.freeze({
     '- The instruction for the c4s turn always forbids every operation of the list above, mark_plan_applied and release_create among them. The master marks the plan as applied after the shadow is accepted.',
     '- Choose `--model` and `--effort` for `c4s agent` yourself, from the models the c4s server offers for chat (a model outside them is refused before the turn starts).',
     '',
-    'Continuation:',
+    'Continuing the turn\'s thread:',
     '- When the turn ends with a question about an operation of the list above, do not continue the thread: stop the work on that point of the plan, write the turn\'s question and the operation into `conflicts` of the handoff, and end the Run according to the Run contract.',
     '- When the turn ends with any other question, continue the same thread with `c4s agent "Act according to your recommendation." --thread <id>`.',
+    '',
+    'Continuation Run (when the Run context carries `continuation`):',
+    '- Establish what is already done from two sources:',
+    '  - the parent\'s handoff `continuation.parentHandoff`: its summary, decisions, `conflicts` and `commits`;',
+    '  - the parent\'s history `git log <continuation.parentBaseSha>..HEAD`. The runner fills `continuation.parentBaseSha` with the `baseSha` of the parent\'s record; at your start HEAD is the parent\'s tip, so the range holds exactly the parent\'s commits. Do not parse the parent\'s record.',
+    '  - The work of earlier ancestors is known from the parent\'s handoff, which describes it.',
+    '- Carry out the rest of the plan and the continuation instruction. Do not repeat the points the parent already did.',
+    '- Take up a point from the parent\'s `conflicts` only when the continuation instruction resolves it; otherwise move it into your own `conflicts`.',
+    '- Without a parent\'s handoff (a `failed` parent without a handoff), establish what is done only from `git log <continuation.parentBaseSha>..HEAD`.',
+    '- Do not change the records of other Runs: the Run contract forbids it.',
     '',
     'Deadline:',
     '- Watch the `deadline` from the Run context. Before it passes, leave your commits and a `partial` handoff: a Run stopped by its deadline leaves neither a result ref nor a record.',

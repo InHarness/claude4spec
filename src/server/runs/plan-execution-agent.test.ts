@@ -30,8 +30,8 @@ describe('agent definition "plan-execution" (M55 e1dwekyc)', () => {
     expect(Object.hasOwn(RUN_AGENT_DEFINITIONS, 'shadow')).toBe(false);
   });
 
-  it('is version 3 (nosqcr6z) and carries the minimal c4s version only', () => {
-    expect(PLAN_EXECUTION_AGENT.version).toBe('3');
+  it('is version 4 (nosqcr6z) and carries the minimal c4s version only', () => {
+    expect(PLAN_EXECUTION_AGENT.version).toBe('4');
     expect(PLAN_EXECUTION_AGENT.minC4sVersion).toBe(PLAN_EXECUTION_MIN_C4S_VERSION);
     expect(Object.keys(PLAN_EXECUTION_AGENT).sort()).toEqual(['content', 'minC4sVersion', 'name', 'version']);
   });
@@ -66,15 +66,15 @@ describe('agent definition "plan-execution" (M55 e1dwekyc)', () => {
   });
 });
 
-/** M55 `nosqcr6z`, `41d3hcq3` (2.1.67) — definition v3: the human-decision operations by name, and the minimal c4s version. */
-describe('agent definition "plan-execution" v3 (M55 nosqcr6z, 41d3hcq3)', () => {
+/** M55 `nosqcr6z`, `41d3hcq3` (2.1.68) — definition v4: the human-decision operations by name (the same list as v3), and the minimal c4s version. */
+describe('agent definition "plan-execution" v4 (M55 nosqcr6z, 41d3hcq3)', () => {
   const content = PLAN_EXECUTION_AGENT.content;
   const lines = content.split('\n');
   const planCommand = lines.find((l) => l.startsWith('- With a plan:'))!.split('`')[1]!;
   const promptCommand = lines.find((l) => l.startsWith('- With a prompt:'))!.split('`')[1]!;
 
-  it('[ac:ac-tresc-definicji-plan-execution-v3-wym] the v3 content names release_create and mark_plan_applied as operations the c4s turn does not perform', () => {
-    expect(PLAN_EXECUTION_AGENT.version).toBe('3');
+  it('[ac:ac-tresc-definicji-plan-execution-v3-wym] the v4 content names release_create and mark_plan_applied as operations the c4s turn does not perform', () => {
+    expect(PLAN_EXECUTION_AGENT.version).toBe('4');
     const rule = lines.find((l) => l.startsWith('- The c4s turn does not perform these operations:'))!;
     expect(rule).toMatch(/\brelease_create\b/);
     expect(rule).toMatch(/\bmark_plan_applied\b/);
@@ -88,8 +88,8 @@ describe('agent definition "plan-execution" v3 (M55 nosqcr6z, 41d3hcq3)', () => 
     expect(planCommand).toMatch(/end the turn with a question/);
   });
 
-  it('[ac:ac-tresc-definicji-plan-execution-v3-kaz] the v3 content ends the Run with an entry in `conflicts` when the turn asks about a human-decision operation', () => {
-    expect(PLAN_EXECUTION_AGENT.version).toBe('3');
+  it('[ac:ac-tresc-definicji-plan-execution-v3-kaz] the v4 content ends the Run with an entry in `conflicts` when the turn asks about a human-decision operation', () => {
+    expect(PLAN_EXECUTION_AGENT.version).toBe('4');
     const rule = lines.find((l) => l.includes('ends with a question about an operation of the list above'))!;
     expect(rule).toBeDefined();
     expect(rule).toMatch(/do not continue the thread/);
@@ -112,7 +112,8 @@ describe('agent definition "plan-execution" v3 (M55 nosqcr6z, 41d3hcq3)', () => 
     }
   });
 
-  it('[ac:ac-minimalna-wersja-c4s-definicji-plan-e] the minimal c4s version of v3 is a release containing `c4s register-home`', () => {
+  it('[ac:ac-minimalna-wersja-c4s-definicji-plan-e] the minimal c4s version of v4 is a release containing `c4s register-home`', () => {
+    expect(PLAN_EXECUTION_AGENT.version).toBe('4');
     const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
     // `register-home` (and `confirm-skill-uses`) are registered commands of this c4s.
     expect(registerHomeCommand.name).toBe('register-home');
@@ -123,5 +124,40 @@ describe('agent definition "plan-execution" v3 (M55 nosqcr6z, 41d3hcq3)', () => 
     expect(compareVersions(PLAN_EXECUTION_MIN_C4S_VERSION, '2.1.64')).toBeGreaterThan(0);
     // …and is the release that carries them (ASSUMPTION:dev-6707: numbered after specification 2.1.67).
     expect(PLAN_EXECUTION_MIN_C4S_VERSION).toBe('2.1.67');
+  });
+});
+
+/** M55 `fmzjz3kn` (2.1.68) — definition v4: the obligations of a continuation Run. */
+describe('agent definition "plan-execution" v4 — continuation Run (M55 fmzjz3kn)', () => {
+  const content = PLAN_EXECUTION_AGENT.content;
+  const lines = content.split('\n');
+  const start = lines.findIndex((l) => l.startsWith('Continuation Run'));
+  const end = lines.findIndex((l, i) => i > start && l === '');
+  const section = lines.slice(start, end);
+
+  it('[ac:ac-tresc-definicji-plan-execution-v4-kaz-2] the v4 content, under `continuation`, reads the parent\'s history as `git log <continuation.parentBaseSha>..HEAD`', () => {
+    expect(PLAN_EXECUTION_AGENT.version).toBe('4');
+    expect(start).toBeGreaterThan(-1);
+    expect(section[0]).toMatch(/when the Run context carries `continuation`/);
+    const history = section.find((l) => l.includes('the parent\'s history'))!;
+    expect(history).toMatch(/`git log <continuation\.parentBaseSha>\.\.HEAD`/);
+    expect(history).toMatch(/HEAD is the parent's tip, so the range holds exactly the parent's commits/);
+    expect(history).toMatch(/Do not parse the parent's record/);
+    // The handoff is the other source; without it, the history is the only one.
+    expect(section.some((l) => /`continuation\.parentHandoff`/.test(l))).toBe(true);
+    const noHandoff = section.find((l) => l.includes('Without a parent\'s handoff'))!;
+    expect(noHandoff).toMatch(/only from `git log <continuation\.parentBaseSha>\.\.HEAD`/);
+  });
+
+  it('[ac:ac-tresc-definicji-plan-execution-v4-kaz] the v4 content, under `continuation`, does not repeat the points the parent already did', () => {
+    expect(PLAN_EXECUTION_AGENT.version).toBe('4');
+    expect(start).toBeGreaterThan(-1);
+    const next = section.find((l) => l.includes('Carry out the rest of the plan'))!;
+    expect(next).toMatch(/the rest of the plan and the continuation instruction/);
+    expect(next).toMatch(/Do not repeat the points the parent already did/);
+    // The parent's conflicts are taken up only when the instruction resolves them, others are carried over.
+    const conflicts = section.find((l) => l.includes('parent\'s `conflicts`'))!;
+    expect(conflicts).toMatch(/only when the continuation instruction resolves it; otherwise move it into your own `conflicts`/);
+    expect(section.some((l) => /Do not change the records of other Runs/.test(l))).toBe(true);
   });
 });
