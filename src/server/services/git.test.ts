@@ -2003,6 +2003,38 @@ describe('GitService — 2.1.46 shadow layer', () => {
     expect(await repoState()).toEqual(before);
   });
 
+  it('[section:ng0h4t5o] [section:dadc3w49] [entity:git-shadows-response] resolveShadow of a superseded shadow carries supersededBy (the terminal shadows of the list); a non-superseded one does not — read-only', async () => {
+    const grand = await shadow('grand/work', first, { 'spec.md': '# spec (grandparent)\n' });
+    const parent = await shadow('parent/work', grand, { 'spec.md': '# spec (parent)\n' });
+    const child = await shadow('child/work', parent, { 'spec.md': '# spec (child)\n' });
+    // Same tip as `child/work`: neither supersedes the other (ASSUMPTION:dev-0001) — both are terminal.
+    await git(['update-ref', 'refs/runs/twin/work', child], dir);
+    const svc = new GitService(dir, [dir]);
+    const before = await repoState();
+
+    expect(await svc.resolveShadow('grand/work')).toEqual({
+      id: 'grand/work',
+      tipSha: grand,
+      baseSha: first,
+      masterAhead: 1,
+      headSha: second,
+      supersededBy: ['child/work', 'twin/work'],
+    });
+    expect((await svc.resolveShadow('parent/work'))?.supersededBy).toEqual(['child/work', 'twin/work']);
+    expect(await svc.resolveShadow('child/work')).toEqual({ id: 'child/work', tipSha: child, baseSha: first, masterAhead: 1, headSha: second });
+    expect(await svc.resolveShadow('twin/work')).not.toHaveProperty('supersededBy');
+
+    // The list answers the same, from the same graph.
+    const listed = Object.fromEntries((await svc.listShadows())!.map((s) => [s.id, s.supersededBy]));
+    expect(listed).toEqual({
+      'child/work': undefined,
+      'grand/work': ['child/work', 'twin/work'],
+      'parent/work': ['child/work', 'twin/work'],
+      'twin/work': undefined,
+    });
+    expect(await repoState()).toEqual(before);
+  });
+
   it('[section:eu1rffp6] the shadow layer is gated on config.git.enabled and a repository — null, never a throw', async () => {
     const tip = await shadow('run-1/spec', first, { 'spec.md': '# spec (shadow)\n' });
     writeConfigJson(dir, { enabled: false });

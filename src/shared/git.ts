@@ -274,12 +274,20 @@ export interface GitShadow {
   tipCommittedAt: string;
   /** Subject line of the tip commit. */
   tipSubject: string;
+  /**
+   * 2.1.68 (M28 dadc3w49, dto `git-shadows-response`): present only on a
+   * SUPERSEDED shadow — one whose tip is an ancestor of another listed
+   * shadow's tip. The ids of the terminal shadows (listed, descending from
+   * this tip, not superseded themselves). Computed from the commit graph only.
+   */
+  supersededBy?: string[];
 }
 
 /**
  * 2.1.46 (dto `git-shadows-response`) — `GET /api/git/shadows`: the result of
  * `gitService.listShadows()` as a DTO. Git off or no repository
- * (`listShadows() === null`) → an empty list.
+ * (`listShadows() === null`) → an empty list. 2.1.68: an entry carries
+ * `supersededBy?: string[]` when its shadow is superseded.
  */
 export interface GitShadowsResponse {
   shadows: GitShadow[];

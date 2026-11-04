@@ -426,6 +426,27 @@ describe('POST /api/git/fetch + GET /api/git/status (2.1.10)', () => {
     // The pruning did run — inside refs/runs/ only.
     expect(await refsUnderRuns()).toEqual([]);
   });
+
+  it('[section:5eyq89gb] [entity:git-shadows-response] a superseding shadow pruned by fetch() takes the relation with it — the superseded shadow stays listed and loses supersededBy', async () => {
+    fs.writeFileSync(path.join(other, 'page.md'), '# page (parent shadow)\n');
+    await git(['commit', '-q', '-am', 'parent turn'], other);
+    await git(['push', '-q', 'origin', 'HEAD:refs/runs/parent/work'], other);
+    fs.writeFileSync(path.join(other, 'page.md'), '# page (child shadow)\n');
+    await git(['commit', '-q', '-am', 'child turn'], other);
+    await git(['push', '-q', 'origin', 'HEAD:refs/runs/child/work'], other);
+
+    const app = appFor(new GitService(work, [work]));
+    expect((await request(app).post('/api/git/fetch')).body.status).toBe('fetched');
+    const before = (await request(app).get('/api/git/shadows')).body.shadows as Array<Record<string, unknown>>;
+    expect(before.find((s) => s.id === 'parent/work')?.supersededBy).toEqual(['child/work']);
+
+    await git(['push', '-q', 'origin', ':refs/runs/child/work'], other);
+    expect((await request(app).post('/api/git/fetch')).body.status).toBe('fetched');
+    expect(await refsUnderRuns()).toEqual(['refs/runs/parent/work']);
+    const after = (await request(app).get('/api/git/shadows')).body.shadows as Array<Record<string, unknown>>;
+    expect(after.map((s) => s.id)).toEqual(['parent/work']);
+    expect(after[0]).not.toHaveProperty('supersededBy');
+  });
 });
 
 /**
@@ -573,6 +594,70 @@ describe('GET /api/git/shadows (2.1.46)', () => {
     } finally {
       fs.rmSync(noRepo, { recursive: true, force: true });
     }
+  });
+
+  // 2.1.68 (M28 dadc3w49, dto git-shadows-response): supersession from the
+  // commit graph — `supersededBy?: string[]` on a superseded entry only.
+  const byId = (body: { shadows: Array<Record<string, unknown>> }): Record<string, Record<string, unknown>> =>
+    Object.fromEntries(body.shadows.map((s) => [String(s.id), s]));
+
+  it('[entity:git-shadows-response] [ac:ac-pozycja-cienia-ktorego-tip-jest-przod] a shadow whose tip is an ancestor of another, non-superseded listed shadow\'s tip carries supersededBy with that shadow\'s id', async () => {
+    const parentTip = await shadow('parent/work', first, { 'pages/spec.md': '# spec (parent)\n' });
+    const childTip = await shadow('child/work', parentTip, { 'pages/spec.md': '# spec (child)\n' });
+    const res = await request(appFor(service())).get('/api/git/shadows');
+    expect(res.status).toBe(200);
+    expect(Object.keys(res.body)).toEqual(['shadows']);
+    const listed = byId(res.body);
+    // The filter is unchanged: the superseded shadow stays on the list.
+    expect(Object.keys(listed).sort()).toEqual(['child/work', 'parent/work']);
+    expect(listed['parent/work']).toEqual({
+      id: 'parent/work',
+      tipSha: parentTip,
+      tipCommittedAt: (await git(['log', '-1', '--format=%cI', parentTip], work)).trim(),
+      tipSubject: 'shadow parent/work',
+      supersededBy: ['child/work'],
+    });
+    // The superseding shadow itself is not superseded → it carries exactly the DTO's required fields.
+    expect(listed['child/work']!.tipSha).toBe(childTip);
+    expect(Object.keys(listed['child/work']!).sort()).toEqual(['id', 'tipCommittedAt', 'tipSha', 'tipSubject']);
+    // Exactly the DTO's fields, the optional one included only where it applies.
+    expect(Object.keys(listed['parent/work']!).sort()).toEqual(['id', 'supersededBy', 'tipCommittedAt', 'tipSha', 'tipSubject']);
+  });
+
+  it('[entity:git-shadows-response] [ac:ac-pozycja-cienia-niebedacego-przodkiem] a shadow that is not an ancestor of any other listed shadow carries no supersededBy', async () => {
+    const parentTip = await shadow('parent/work', first, { 'pages/spec.md': '# spec (parent)\n' });
+    await shadow('child/work', parentTip, { 'pages/spec.md': '# spec (child)\n' });
+    await shadow('lone/work', first, { 'pages/other.md': '# other (lone)\n' });
+    // A sibling with the same base as `parent/work`, diverging from it — neither is an ancestor of the other.
+    await shadow('sibling/work', first, { 'pages/spec.md': '# spec (sibling)\n' });
+    const res = await request(appFor(service())).get('/api/git/shadows');
+    expect(res.status).toBe(200);
+    const listed = byId(res.body);
+    expect(Object.keys(listed).sort()).toEqual(['child/work', 'lone/work', 'parent/work', 'sibling/work']);
+    for (const id of ['child/work', 'lone/work', 'sibling/work']) {
+      expect(listed[id], id).not.toHaveProperty('supersededBy');
+      expect(Object.keys(listed[id]!).sort(), id).toEqual(['id', 'tipCommittedAt', 'tipSha', 'tipSubject']);
+    }
+    expect(listed['parent/work']!.supersededBy).toEqual(['child/work']);
+  });
+
+  it('[entity:git-shadows-response] [ac:ac-w-lancuchu-trzech-cieni-supersededby] in a chain of three shadows the first one\'s supersededBy holds only the last one\'s id — and two children of one parent give it both ids', async () => {
+    const grandTip = await shadow('grand/work', first, { 'pages/spec.md': '# spec (grandparent)\n' });
+    const parentTip = await shadow('parent/work', grandTip, { 'pages/spec.md': '# spec (parent)\n' });
+    await shadow('child/work', parentTip, { 'pages/spec.md': '# spec (child)\n' });
+    const chain = byId((await request(appFor(service())).get('/api/git/shadows')).body);
+    expect(Object.keys(chain).sort()).toEqual(['child/work', 'grand/work', 'parent/work']);
+    expect(chain['grand/work']!.supersededBy).toEqual(['child/work']);
+    expect(chain['parent/work']!.supersededBy).toEqual(['child/work']);
+    expect(chain['child/work']).not.toHaveProperty('supersededBy');
+
+    // A second child of the same parent: two terminal shadows.
+    await shadow('child2/work', parentTip, { 'pages/other.md': '# other (child 2)\n' });
+    const forked = byId((await request(appFor(service())).get('/api/git/shadows')).body);
+    expect([...(forked['parent/work']!.supersededBy as string[])].sort()).toEqual(['child/work', 'child2/work']);
+    expect([...(forked['grand/work']!.supersededBy as string[])].sort()).toEqual(['child/work', 'child2/work']);
+    expect(forked['child/work']).not.toHaveProperty('supersededBy');
+    expect(forked['child2/work']).not.toHaveProperty('supersededBy');
   });
 });
 

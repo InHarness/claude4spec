@@ -1,0 +1,1 @@
+git-shadows-response → src/shared/git.ts (GitShadow.supersededBy, GitShadowsResponse); src/server/services/git.ts (listShadows / resolveShadow / shadowSupersession); src/server/routes/git.ts (GET /api/git/shadows); tests src/server/routes/git.test.ts, src/server/services/git.test.ts

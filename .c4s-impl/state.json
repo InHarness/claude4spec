@@ -1,5 +1,5 @@
 {
-  "iteration": 0,
+  "iteration": 5,
   "conventions": [
     {
       "label": "L1 (DB) — implementor M41",
@@ -45,7 +45,7 @@
         "u1-m28-shadow-supersession",
         "u2-m55-plan-execution-v4"
       ],
-      "startCommit": null
+      "startCommit": "28288dfbb0af179c69c14208b4398fd6fed2f754"
     },
     {
       "n": 2,
@@ -108,13 +108,32 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u1-m28-shadow-supersession/p1-domain-l4",
+          "layers": [
+            "M28-domain",
+            "L4"
+          ],
+          "slugs": [
+            "git-shadows-response",
+            "ac-pozycja-cienia-ktorego-tip-jest-przod",
+            "ac-pozycja-cienia-niebedacego-przodkiem",
+            "ac-w-lancuchu-trzech-cieni-supersededby"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "28288dfbb0af179c69c14208b4398fd6fed2f754",
+      "baseCommit": "28288dfbb0af179c69c14208b4398fd6fed2f754",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },
@@ -567,5 +586,6 @@
         }
       ]
     }
-  ]
+  ],
+  "baselineGreen": true
 }
