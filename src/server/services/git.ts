@@ -228,6 +228,11 @@ function normalizeRepoRelPath(p: string): string | null {
  * `listShadows()`.
  */
 const SHADOW_REF_PREFIX = 'refs/runs/';
+/**
+ * A glob for the refspec and `--exclude` only — both match `*` across `/`, so
+ * it covers `refs/runs/<id>/work`. `for-each-ref` matches globs per path
+ * component (WM_PATHNAME): there, pass `SHADOW_REF_PREFIX` instead.
+ */
 const SHADOW_REF_PATTERN = `${SHADOW_REF_PREFIX}*`;
 /** Forced (`+`) — a shadow is rewritten now and then; `--prune` with it touches only this namespace. */
 const SHADOW_REFSPEC = `+${SHADOW_REF_PATTERN}:${SHADOW_REF_PATTERN}`;
@@ -2791,7 +2796,10 @@ export class GitService {
    */
   private async terminalTipsContaining(root: string, tip: string, terminal: ReadonlySet<string>): Promise<Set<string>> {
     try {
-      const { stdout } = await this.git(['for-each-ref', '--format=%(objectname)', `--contains=${tip}`, SHADOW_REF_PATTERN], root);
+      // The prefix, not SHADOW_REF_PATTERN: for-each-ref matches a glob with
+      // WM_PATHNAME, so `refs/runs/*` never reaches the nested
+      // `refs/runs/<id>/work` — a trailing-slash prefix matches every ref below.
+      const { stdout } = await this.git(['for-each-ref', '--format=%(objectname)', `--contains=${tip}`, SHADOW_REF_PREFIX], root);
       return new Set(stdout.split('\n').map((l) => l.trim()).filter((sha) => sha !== tip && terminal.has(sha)));
     } catch (err) {
       console.warn(`[git] shadow supersession: for-each-ref --contains ${tip} failed — treated as not superseded:`, errMessage(err));

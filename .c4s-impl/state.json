@@ -1,5 +1,5 @@
 {
-  "iteration": 22,
+  "iteration": 23,
   "conventions": [
     {
       "label": "L1 (DB) — implementor M41",
@@ -108,7 +108,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "u1-m28-shadow-supersession/p1-domain-l4",
@@ -122,29 +122,11 @@
             "ac-pozycja-cienia-niebedacego-przodkiem",
             "ac-w-lancuchu-trzech-cieni-supersededby"
           ],
-          "status": "pending",
-          "rounds": 2,
+          "status": "implemented",
+          "rounds": 3,
           "partial": 0,
-          "uncovered": [
-            "ac-pozycja-cienia-ktorego-tip-jest-przod",
-            "ac-pozycja-cienia-niebedacego-przodkiem",
-            "ac-w-lancuchu-trzech-cieni-supersededby",
-            "git-shadows-response"
-          ],
-          "only": [
-            {
-              "slug": "ac-pozycja-cienia-ktorego-tip-jest-przod"
-            },
-            {
-              "slug": "ac-pozycja-cienia-niebedacego-przodkiem"
-            },
-            {
-              "slug": "ac-w-lancuchu-trzech-cieni-supersededby"
-            },
-            {
-              "slug": "git-shadows-response"
-            }
-          ]
+          "uncovered": [],
+          "only": []
         }
       ],
       "startCommit": "0bce80ba3440cd43ceb9177ee8955d0e873f1f37",
@@ -387,7 +369,7 @@
         }
       ],
       "wave": 2,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "u3-m17-chain-accept/p1-l2-l5",
@@ -409,17 +391,11 @@
             "ac-przyjecie-konca-lancucha-ktorego-kata",
             "ac-przyjecie-konca-lancucha-ktorego-kata-2"
           ],
-          "status": "pending",
-          "rounds": 2,
+          "status": "implemented",
+          "rounds": 3,
           "partial": 0,
-          "uncovered": [
-            "accept-shadow"
-          ],
-          "only": [
-            {
-              "slug": "accept-shadow"
-            }
-          ]
+          "uncovered": [],
+          "only": []
         }
       ],
       "startCommit": "0bce80ba3440cd43ceb9177ee8955d0e873f1f37",

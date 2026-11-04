@@ -66,7 +66,8 @@ export const SPEC_OPERATION_RECORDS: readonly SpecOperationRecord[] = [
     kodyBledow: ['THREAD_NOT_FOUND', 'VALIDATION'],
     narzedzia: {},
   },
-  // 2.1.47 — the window 2.1.46 → 2.1.47 adds the M17 shadow acceptance.
+  // 2.1.47 — the window 2.1.46 → 2.1.47 adds the M17 shadow acceptance;
+  // 2.1.68 adds ACCEPT_SUPERSEDED after SHADOW_NOT_FOUND (the record's order).
   {
     slug: 'accept-shadow',
     nazwa: 'accept_shadow',
@@ -98,6 +99,7 @@ export const SPEC_OPERATION_RECORDS: readonly SpecOperationRecord[] = [
       'RELEASE_DESCRIPTION_TOO_LONG',
       'GIT_UNAVAILABLE',
       'SHADOW_NOT_FOUND',
+      'ACCEPT_SUPERSEDED',
       'ACCEPT_NO_BRANCH',
       'ACCEPT_TARGET_NOT_CURRENT',
       'ACCEPT_BUSY',
