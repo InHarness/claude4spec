@@ -28,6 +28,17 @@ export interface C4sTrust {
   projects: Record<string, C4sTrustEntry>;
 }
 
+/**
+ * `c4s-runner` dto `run-request`, field `continuation` (2.1.68, M55 `ffb3rhrs`):
+ * a continuation Run — `parentRunId` is the runId of the direct parent whose
+ * result is the Run's base (`baseSha` = the tip of the parent's result ref);
+ * `instruction` the optional instruction for the agent, left out when not given.
+ */
+export interface RunContinuation {
+  parentRunId: string;
+  instruction?: string;
+}
+
 export interface RunRequest {
   repo: string;
   home: string;
@@ -39,4 +50,6 @@ export interface RunRequest {
   model?: string;
   /** Absent = the Run's c4s registry carries no trust (`jlgucjnq`). */
   c4sTrust?: C4sTrust;
+  /** Only on a continuation Run (`fromRunId`); absent otherwise. */
+  continuation?: RunContinuation;
 }

@@ -154,7 +154,7 @@ describe('run_remote (M55)', () => {
     expect(stub.requests).toHaveLength(0);
   });
 
-  it('ac-sha-bazy-w-zleceniu-rowna-sie-sha-tip: the base sha in the order equals the upstream tip — also when the upstream moved past the local HEAD', async () => {
+  it('[ac:ac-sha-bazy-w-zleceniu-rowna-sie-sha-tip] the base sha in an order without fromRunId equals the upstream tip — also when the upstream moved past the local HEAD', async () => {
     const remoteTip = await fx.pushFromOtherClone('ws/app/pages/other.md', '# other\n');
     const localHead = await git(['rev-parse', 'HEAD'], fx.repo);
     expect(remoteTip).not.toBe(localHead);
@@ -165,6 +165,8 @@ describe('run_remote (M55)', () => {
     expect(body.baseSha).toBe(await fx.upstreamTip());
     // `repo` is the upstream's remote, computed by the master.
     expect(body.repo).toBe(fx.bare);
+    // Without fromRunId the order is no continuation.
+    expect(body).not.toHaveProperty('continuation');
   });
 
   it('ac-niewypchniety-plan-jest-publikowany-p: a plan that is not pushed is published (a commit of the plan file alone, pushed) before the order is sent', async () => {
@@ -199,6 +201,10 @@ describe('run_remote (M55)', () => {
       workspaceHomePath: (h) => realGit.workspaceHomePath(h),
       checkPathOnUpstream: (p) => realGit.checkPathOnUpstream(p),
       showFile: (s, a, r) => realGit.showFile(s, a, r),
+      fetch: () => realGit.fetch(),
+      shadowTip: (id, r) => realGit.shadowTip(id, r),
+      resolveShadow: (id, r, o) => realGit.resolveShadow(id, r, o),
+      upstreamRemoteUrl: () => realGit.upstreamRemoteUrl(),
       publishFile,
     };
     await run({ ...deps, git: git2 }, {});
@@ -215,6 +221,10 @@ describe('run_remote (M55)', () => {
       workspaceHomePath: (h) => realGit.workspaceHomePath(h),
       checkPathOnUpstream: (p) => realGit.checkPathOnUpstream(p),
       showFile: (s, a, r) => realGit.showFile(s, a, r),
+      fetch: () => realGit.fetch(),
+      shadowTip: (id, r) => realGit.shadowTip(id, r),
+      resolveShadow: (id, r, o) => realGit.resolveShadow(id, r, o),
+      upstreamRemoteUrl: () => realGit.upstreamRemoteUrl(),
       publishFile: async () => ({ status: 'published', sha: 'f'.repeat(40), branch: 'main' }),
     };
     const err = await refusal(run({ ...deps, git: git2 }, {}));
@@ -637,5 +647,349 @@ describe('run_remote (M55)', () => {
       const result = await run(consentDeps({}, { consentNeeds: () => ({ plugins: true, skillUses: [] }) }), {});
       expect(result).toEqual({ runId: result.runId, host: { id: 'gone', name: 'name-gone' }, unconfirmed: true, warnings: [TRUST_WARNING_PLUGINS] });
     });
+  });
+});
+
+/**
+ * 2.1.68 — the continuation of a Run (`fromRunId`, M55 `fdu51xri`): the parent
+ * recognized before any registry row, the base sha at the tip of the parent's
+ * result ref, the parent's host by default, no publication of the plan.
+ */
+describe('run_remote with fromRunId — the continuation (M55 fdu51xri)', () => {
+  const PARENT = '01jb3k9x7q2m4n5p6r8s0t1v2w';
+  const CONTINUATION = ['runs', 'run-continuation'];
+  let fx: RunRemoteFixture;
+  let stub: RunsApiStub;
+  let url: string;
+
+  /** `c4s-runner` dto `run-record` of the parent: a plan of `app`, run on host `h_a`. */
+  const parentRecord = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    runId: PARENT,
+    hostId: 'h_a',
+    runnerVersion: '0.6.0',
+    contractVersion: 1,
+    repo: 'github.com/acme/workspace',
+    baseSha: '3f2a9c1e7b4d6f8a0c2e4b6d8f1a3c5e7b9d0f2a',
+    resultRef: `refs/runs/${PARENT}/work`,
+    agent: { name: 'plan-execution', version: '4' },
+    input: { kind: 'plan', projectId: 'app', path: 'p1.md' },
+    model: 'opus',
+    startedAt: '2026-11-03T10:00:02Z',
+    finishedAt: '2026-11-03T10:41:05Z',
+    outcome: 'partial',
+    handoff: { summary: 'Did 4 of 6.', decisions: [], conflicts: [], commits: [] },
+    ...over,
+  });
+
+  /** A parent ordered from this workspace (row on `h_a`) that left its result ref; returns its `resultSha`. */
+  const parentWithResult = async (over: Record<string, unknown> = {}, id = PARENT): Promise<string> => {
+    fx.registry.insert(id, 'h_a');
+    return fx.pushRunRecord(id, parentRecord({ runId: id, resultRef: `refs/runs/${id}/work`, ...over }), {
+      [`ws/app/pages/${id}.md`]: `# by Run ${id}\n`,
+    });
+  };
+
+  const put = () => {
+    expect(stub.requests).toHaveLength(1);
+    return stub.requests[0]!;
+  };
+
+  beforeEach(async () => {
+    fx = await makeRunRemoteFixture();
+    stub = new RunsApiStub();
+    url = await stub.listen();
+    fx.hosts.push(host('a', url, { capabilities: CONTINUATION }));
+  });
+
+  afterEach(async () => {
+    await stub.close();
+    fx.dispose();
+  });
+
+  it('[ac:ac-sha-bazy-w-zleceniu-z-fromrunid-rowna] the base sha of an order with fromRunId equals the tip of refs/runs/<fromRunId>/work after fetch() — not the upstream tip', async () => {
+    const resultSha = await parentWithResult();
+    // Before the call the result ref is only on the remote: the operation's fetch() brings it.
+    expect(await fx.git.shadowTip(`${PARENT}/work`)).toBeNull();
+    const upstreamTip = await fx.pushFromOtherClone('ws/app/pages/other.md', '# other\n');
+
+    await run(fx.deps(), { fromRunId: PARENT });
+
+    const { body } = put();
+    expect(body.baseSha).toBe(resultSha);
+    expect(body.baseSha).toBe(await fx.git.shadowTip(`${PARENT}/work`));
+    expect(body.baseSha).not.toBe(upstreamTip);
+    // `repo` is still the upstream's remote, computed by the master.
+    expect(body.repo).toBe(fx.bare);
+  });
+
+  it('[ac:ac-zlecenie-z-fromrunid-niesie-continuat] the order with fromRunId carries continuation.parentRunId equal to fromRunId (no instruction when none is given)', async () => {
+    await parentWithResult();
+    await run(fx.deps(), { fromRunId: PARENT });
+    expect(put().body.continuation).toEqual({ parentRunId: PARENT });
+  });
+
+  it('[ac:ac-zlecenie-z-fromrunid-i-instruction-ni] the order with fromRunId and instruction carries continuation.instruction equal to instruction', async () => {
+    await parentWithResult();
+    const instruction = 'Finish entries 5 and 6; entry 5 now follows M12.';
+    await run(fx.deps(), { fromRunId: PARENT, instruction });
+    const { continuation } = put().body as { continuation: Record<string, unknown> };
+    expect(continuation.instruction).toBe(instruction);
+    expect(continuation).toEqual({ parentRunId: PARENT, instruction });
+  });
+
+  it('[ac:ac-zlecenie-z-fromrunid-niesie-projectid] the order with fromRunId carries the projectId and the plan path of the parent\'s record — not the thread\'s project or its pinned plan', async () => {
+    const docs = fx.addProject('docs');
+    write(docs.plansDir, 'q7.md', '---\ntype: plan\ntitle: Q7\n---\n# Q7\n');
+    await fx.pushAll('add project docs with plan q7.md');
+    await parentWithResult({ input: { kind: 'plan', projectId: 'docs', path: 'q7.md' } });
+
+    // The thread belongs to `app` and pins `p1.md`.
+    await run(fx.deps({ pinned: 'p1.md' }), { fromRunId: PARENT });
+
+    const { input } = put().body as { input: Record<string, unknown> };
+    expect(input).toEqual({ kind: 'plan', projectId: 'docs', path: 'q7.md' });
+    expect(input.projectId).toBe('docs');
+    expect(input.path).toBe('q7.md');
+  });
+
+  it('[ac:ac-zlecenie-z-fromrunid-nie-publikuje-pl] the order with fromRunId does not publish the plan — no commit, no push, no path check on the upstream — even with the plan edited locally', async () => {
+    await parentWithResult();
+    write(fx.plansDir, 'p1.md', '---\ntype: plan\ntitle: P1\n---\n# P1 — edited after the parent\n');
+    const tipBefore = await fx.upstreamTip();
+    const headBefore = await git(['rev-parse', 'HEAD'], fx.repo);
+    const publishFile = vi.spyOn(fx.git, 'publishFile');
+    const checkPath = vi.spyOn(fx.git, 'checkPathOnUpstream');
+
+    await run(fx.deps(), { fromRunId: PARENT });
+
+    expect(publishFile).not.toHaveBeenCalled();
+    expect(checkPath).not.toHaveBeenCalled();
+    expect(await fx.upstreamTip()).toBe(tipBefore);
+    expect(await git(['rev-parse', 'HEAD'], fx.repo)).toBe(headBefore);
+    expect(await git(['status', '--porcelain'], fx.repo)).toContain('ws/app/plans/p1.md');
+    expect(put().body.input).toEqual({ kind: 'plan', projectId: 'app', path: 'p1.md' });
+  });
+
+  it('[ac:ac-wiersz-rejestru-runu-kontynuacji-nies] the registry row of a continuation Run carries the runId of the parent; a Run without a parent carries none', async () => {
+    await parentWithResult();
+    const child = await run(fx.deps(), { fromRunId: PARENT });
+    const plain = await run(fx.deps(), {});
+    const rows = fx.rowsWithParent();
+    expect(rows.find((r) => r.run_id === child.runId)).toEqual({ run_id: child.runId, host_id: 'h_a', parent_run_id: PARENT });
+    expect(rows.find((r) => r.run_id === plain.runId)).toEqual({ run_id: plain.runId, host_id: 'h_a', parent_run_id: null });
+    expect(fx.registry.get(child.runId)?.parentRunId).toBe(PARENT);
+  });
+
+  it('[ac:ac-run-remote-z-fromrunid-bez-parametru] run_remote with fromRunId and no host parameter orders the Run on the parent\'s host — also with several connected hosts', async () => {
+    await parentWithResult();
+    const other = new RunsApiStub();
+    try {
+      fx.hosts.unshift(host('b', await other.listen(), { capabilities: CONTINUATION }));
+      const result = await run(fx.deps(), { fromRunId: PARENT });
+      expect(result.host).toEqual({ id: 'a', name: 'name-a' });
+      expect(put().url).toBe(`/runs/${result.runId}`);
+      expect(put().authorization).toBe('Bearer c4sr_token_a');
+      expect(other.requests).toHaveLength(0);
+      expect(fx.rowsWithParent().find((r) => r.run_id === result.runId)?.host_id).toBe('h_a');
+    } finally {
+      await other.close();
+    }
+  });
+
+  it('[ac:ac-run-remote-z-fromrunid-bez-parametru] without a registry row the parent\'s host is the record\'s hostId', async () => {
+    // The parent's row is gone (e.g. a new workspace DB); its record names h_a.
+    await fx.pushRunRecord(PARENT, parentRecord(), { 'ws/app/pages/x.md': '# x\n' });
+    fx.hosts.unshift(host('b', await deadUrl(), { capabilities: CONTINUATION }));
+    const result = await run(fx.deps(), { fromRunId: PARENT });
+    expect(result.host.id).toBe('a');
+    expect(put().body.continuation).toEqual({ parentRunId: PARENT });
+  });
+
+  it('[entity:run-remote] the parent\'s host without a host record ends with RUN_HOST_NOT_FOUND, with no row and no PUT', async () => {
+    await parentWithResult({ hostId: 'h_gone' });
+    fx.registry.delete(PARENT);
+    fx.registry.insert(PARENT, 'h_gone');
+    const err = await refusal(run(fx.deps(), { fromRunId: PARENT }));
+    expect(err.code).toBe('RUN_HOST_NOT_FOUND');
+    expect(fx.rows()).toEqual([{ run_id: PARENT, host_id: 'h_gone' }]);
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it('[ac:ac-run-remote-z-fromrunid-i-jawnym-hoste] run_remote with fromRunId and an explicit host other than the parent\'s orders the Run on that host', async () => {
+    await parentWithResult();
+    const other = new RunsApiStub();
+    try {
+      fx.hosts.push(host('b', await other.listen(), { capabilities: CONTINUATION }));
+      const result = await run(fx.deps(), { fromRunId: PARENT, host: 'b' });
+      expect(result.host).toEqual({ id: 'b', name: 'name-b' });
+      expect(stub.requests).toHaveLength(0);
+      expect(other.requests).toHaveLength(1);
+      expect(other.requests[0]!.authorization).toBe('Bearer c4sr_token_b');
+      expect(other.requests[0]!.body.continuation).toEqual({ parentRunId: PARENT });
+      expect(fx.rowsWithParent().find((r) => r.run_id === result.runId)).toEqual({ run_id: result.runId, host_id: 'h_b', parent_run_id: PARENT });
+    } finally {
+      await other.close();
+    }
+  });
+
+  it('[ac:ac-run-remote-z-fromrunid-na-hoscie-bez] run_remote with fromRunId on a host without `run-continuation` in its capabilities ends with RUN_HOST_WITHOUT_CONTINUATION — the parent\'s host and an explicit one — with no row and no PUT', async () => {
+    await parentWithResult();
+    fx.hosts.length = 0;
+    fx.hosts.push(host('a', url, { capabilities: ['runs'] }), host('b', url, { capabilities: ['runs'] }));
+    for (const input of [{ fromRunId: PARENT }, { fromRunId: PARENT, host: 'b' }]) {
+      const err = await refusal(run(fx.deps(), input));
+      expect(err.code).toBe('RUN_HOST_WITHOUT_CONTINUATION');
+    }
+    expect(fx.rows()).toEqual([{ run_id: PARENT, host_id: 'h_a' }]);
+    expect(stub.requests).toHaveLength(0);
+    // The host conditions still come first: a host without `runs` keeps its own code.
+    fx.hosts.length = 0;
+    fx.hosts.push(host('a', url, { capabilities: ['run-continuation'] }));
+    expect((await refusal(run(fx.deps(), { fromRunId: PARENT }))).code).toBe('RUN_HOST_WITHOUT_RUNS');
+  });
+
+  it('[ac:ac-run-remote-z-fromrunid-i-planpath-kon] run_remote with fromRunId and planPath ends with INVALID_ARGS — so do prompt and projectId with fromRunId — with no fetch, no row and no PUT', async () => {
+    await parentWithResult();
+    const fetch = vi.spyOn(fx.git, 'fetch');
+    for (const input of [
+      { fromRunId: PARENT, planPath: 'p1.md' },
+      { fromRunId: PARENT, prompt: 'x' },
+      { fromRunId: PARENT, projectId: 'app' },
+    ]) {
+      const err = await refusal(run(fx.deps(), input));
+      expect(err.code).toBe('INVALID_ARGS');
+    }
+    expect(fetch).not.toHaveBeenCalled();
+    expect(fx.rows()).toEqual([{ run_id: PARENT, host_id: 'h_a' }]);
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it('[ac:ac-run-remote-z-instruction-bez-fromruni] run_remote with instruction and no fromRunId ends with INVALID_ARGS, with no row and no PUT', async () => {
+    for (const input of [{ instruction: 'do more' }, { instruction: 'do more', prompt: 'x' }, { instruction: 'do more', planPath: 'p1.md' }]) {
+      const err = await refusal(run(fx.deps(), input));
+      expect(err.code).toBe('INVALID_ARGS');
+      expect(err.message).toContain('fromRunId');
+    }
+    expect(fx.rows()).toEqual([]);
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it('[ac:ac-run-remote-z-fromrunid-nieznanym-mast] run_remote with a fromRunId unknown to the master ends with RUN_PARENT_NOT_FOUND — no row and no record, a runId off the pattern, and a Run of another workspace', async () => {
+    expect((await refusal(run(fx.deps(), { fromRunId: '01jzzzzzzzzzzzzzzzzzzzzzzz' }))).code).toBe('RUN_PARENT_NOT_FOUND');
+    expect((await refusal(run(fx.deps(), { fromRunId: '../../etc' }))).code).toBe('RUN_PARENT_NOT_FOUND');
+    // A Run of another workspace in the same repository: its result ref exists, its record lies under another home.
+    const foreign = '01jforeign0000000000000000';
+    await fx.pushRunRecord(foreign, parentRecord({ runId: foreign }), { 'ws/app/pages/f.md': '# f\n' }, { home: 'other-ws' });
+    const err = await refusal(run(fx.deps(), { fromRunId: foreign }));
+    expect(err.code).toBe('RUN_PARENT_NOT_FOUND');
+    expect(err.message).toContain(foreign);
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it('[ac:ac-run-remote-z-fromrunid-runu-bez-refa] run_remote with fromRunId of a Run without a result ref ends with RUN_PARENT_WITHOUT_RESULT — also a parent still running', async () => {
+    // Ordered from this workspace (row), still running: no ref on the remote yet.
+    fx.registry.insert(PARENT, 'h_a');
+    const err = await refusal(run(fx.deps(), { fromRunId: PARENT }));
+    expect(err.code).toBe('RUN_PARENT_WITHOUT_RESULT');
+    expect(await fx.git.shadowTip(`${PARENT}/work`)).toBeNull();
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it('[ac:ac-run-remote-z-fromrunid-runu-z-wejscie] run_remote with fromRunId of a Run with a prompt input ends with RUN_PARENT_PROMPT_INPUT', async () => {
+    await parentWithResult({ input: { kind: 'prompt', projectId: 'app' } });
+    const err = await refusal(run(fx.deps(), { fromRunId: PARENT }));
+    expect(err.code).toBe('RUN_PARENT_PROMPT_INPUT');
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it('[ac:ac-run-remote-z-fromrunid-runu-ktorego-r] run_remote with fromRunId of a Run whose record has `reason` `recipe-modified` ends with RUN_PARENT_RECIPE_MODIFIED', async () => {
+    await parentWithResult({ outcome: 'failed', reason: 'recipe-modified', handoff: undefined });
+    const err = await refusal(run(fx.deps(), { fromRunId: PARENT }));
+    expect(err.code).toBe('RUN_PARENT_RECIPE_MODIFIED');
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it('[ac:ac-run-remote-z-fromrunid-runu-ktorego-c] run_remote with fromRunId of a Run whose shadow is superseded ends with RUN_PARENT_SUPERSEDED, naming the child', async () => {
+    await parentWithResult();
+    const CHILD = '01jchild0000000000000000ab';
+    fx.registry.insert(CHILD, 'h_a', PARENT);
+    await fx.pushRunRecord(CHILD, parentRecord({ runId: CHILD, parentRunId: PARENT, resultRef: `refs/runs/${CHILD}/work` }), {}, { base: PARENT });
+
+    const err = await refusal(run(fx.deps(), { fromRunId: PARENT }));
+    expect(err.code).toBe('RUN_PARENT_SUPERSEDED');
+    expect(err.extra).toEqual({ supersededBy: [CHILD] });
+    expect(stub.requests).toHaveLength(0);
+    // The child — the end of the chain — can be continued.
+    const next = await run(fx.deps(), { fromRunId: CHILD });
+    expect(put().body.continuation).toEqual({ parentRunId: CHILD });
+    expect(fx.registry.get(next.runId)?.parentRunId).toBe(CHILD);
+  });
+
+  it('[ac:ac-odmowa-run-parent-nie-zostawia-wpisu] a RUN_PARENT_* refusal leaves no row in the registry', async () => {
+    // Parents of every refusal, each already in the registry (or not, for NOT_FOUND).
+    const running = '01jrunning0000000000000000';
+    fx.registry.insert(running, 'h_a');
+    const prompt = '01jprompt00000000000000000';
+    await parentWithResult({ input: { kind: 'prompt', projectId: 'app' } }, prompt);
+    const recipe = '01jrecipe00000000000000000';
+    await parentWithResult({ outcome: 'failed', reason: 'recipe-modified' }, recipe);
+    await parentWithResult();
+    const child = '01jchild0000000000000000cd';
+    await fx.pushRunRecord(child, parentRecord({ runId: child, parentRunId: PARENT }), {}, { base: PARENT });
+    const before = fx.rowsWithParent();
+
+    const codes: string[] = [];
+    for (const fromRunId of ['01jnobody00000000000000000', running, prompt, recipe, PARENT]) {
+      codes.push((await refusal(run(fx.deps({ newRunId: () => '01jnewrun00000000000000000' }), { fromRunId }))).code);
+    }
+    expect(codes).toEqual([
+      'RUN_PARENT_NOT_FOUND',
+      'RUN_PARENT_WITHOUT_RESULT',
+      'RUN_PARENT_PROMPT_INPUT',
+      'RUN_PARENT_RECIPE_MODIFIED',
+      'RUN_PARENT_SUPERSEDED',
+    ]);
+    expect(fx.rowsWithParent()).toEqual(before);
+    expect(fx.registry.get('01jnewrun00000000000000000')).toBeNull();
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it('[section:7bo43wak] a thread without a plan must name a plan path, a prompt or a parent Run: fromRunId alone is enough, nothing at all is INVALID_ARGS', async () => {
+    await parentWithResult();
+    const none = await refusal(run(fx.deps({ pinned: null }), {}));
+    expect(none.code).toBe('INVALID_ARGS');
+    expect(none.message).toContain('fromRunId');
+    const result = await run(fx.deps({ pinned: null }), { fromRunId: PARENT });
+    expect(put().url).toBe(`/runs/${result.runId}`);
+    expect(put().body.input).toEqual({ kind: 'plan', projectId: 'app', path: 'p1.md' });
+  });
+
+  it('[entity:run-remote] a parent already accepted (its tip an ancestor of HEAD) is no refusal: the continuation starts from its result', async () => {
+    const resultSha = await parentWithResult();
+    await fx.acceptShadow(PARENT);
+    await run(fx.deps(), { fromRunId: PARENT });
+    expect(put().body.baseSha).toBe(resultSha);
+    expect(put().body.continuation).toEqual({ parentRunId: PARENT });
+  });
+
+  it('[entity:run-remote] the plan of the parent\'s record missing at the base sha ends with PLAN_NOT_FOUND; a project of the record outside the workspace with RUN_PROJECT_NOT_FOUND — no row, no PUT', async () => {
+    await parentWithResult({ input: { kind: 'plan', projectId: 'app', path: 'gone.md' } });
+    expect((await refusal(run(fx.deps(), { fromRunId: PARENT }))).code).toBe('PLAN_NOT_FOUND');
+    const other = '01jotherproject00000000000';
+    await parentWithResult({ input: { kind: 'plan', projectId: 'ghost', path: 'p1.md' } }, other);
+    expect((await refusal(run(fx.deps(), { fromRunId: other }))).code).toBe('RUN_PROJECT_NOT_FOUND');
+    expect(fx.rows().map((r) => r.run_id).sort()).toEqual([PARENT, other].sort());
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it('[entity:run-remote] the version check and the trust read the base sha of the continuation (the parent\'s result)', async () => {
+    // The parent's result pins a c4s lower than the definition's minimum; the upstream does not.
+    fx.registry.insert(PARENT, 'h_a');
+    await fx.pushRunRecord(PARENT, parentRecord(), {
+      'ws/.c4s-runner/environment.json': JSON.stringify({ schemaVersion: 1, c4sVersion: '0.0.1' }),
+    });
+    const err = await refusal(run(fx.deps(), { fromRunId: PARENT }));
+    expect(err.code).toBe('RUN_C4S_VERSION_INCOMPATIBLE');
+    expect(stub.requests).toHaveLength(0);
   });
 });

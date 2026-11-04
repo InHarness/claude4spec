@@ -142,12 +142,22 @@ export interface RunRemoteFixture {
    * tip that writes `files` (paths relative to the repository) and, as the tip,
    * the Run record `ws/.claude4spec/runs/<runId>/run.json`, pushed as
    * `refs/runs/<runId>/work`. Returns the tip sha (the runner's `resultSha`).
+   * `opts.base` (2.1.68): start from the tip of `refs/runs/<base>/work` on the
+   * remote instead of `main` — a continuation of that Run. `opts.home`: the
+   * record under another home directory (a Run of another workspace).
    */
-  pushRunRecord(runId: string, record: Record<string, unknown>, files?: Record<string, string>): Promise<string>;
+  pushRunRecord(
+    runId: string,
+    record: Record<string, unknown>,
+    files?: Record<string, string>,
+    opts?: { base?: string; home?: string },
+  ): Promise<string>;
   /** Fast-forward the local `main` onto the shadow and push it — the acceptance as git sees it. */
   acceptShadow(runId: string): Promise<void>;
   /** Rows of `remote_run`. */
   rows(): Array<{ run_id: string; host_id: string }>;
+  /** 2.1.68: rows of `remote_run` with `parent_run_id`. */
+  rowsWithParent(): Array<{ run_id: string; host_id: string; parent_run_id: string | null }>;
   dispose(): void;
 }
 
@@ -243,17 +253,21 @@ export async function makeRunRemoteFixture(opts: { gitEnabled?: boolean } = {}):
         ...rest,
       };
     },
-    async pushRunRecord(runId, record, files = {}) {
+    async pushRunRecord(runId, record, files = {}, opts = {}) {
       const other = path.join(tmp, `run-${runId}-${Math.random().toString(36).slice(2)}`);
       await pexec('git', ['clone', bare, other]);
       await git(['config', 'user.email', 'runner@example.com'], other);
       await git(['config', 'user.name', 'Runner'], other);
+      if (opts.base !== undefined) {
+        await git(['fetch', 'origin', `refs/runs/${opts.base}/work`], other);
+        await git(['checkout', '-q', 'FETCH_HEAD'], other);
+      }
       if (Object.keys(files).length > 0) {
         for (const [rel, content] of Object.entries(files)) write(other, rel, content);
         await git(['add', '-A'], other);
         await git(['commit', '-m', `run ${runId}: work`], other);
       }
-      write(other, `ws/.claude4spec/runs/${runId}/run.json`, JSON.stringify(record, null, 2));
+      write(other, `${opts.home ?? 'ws'}/.claude4spec/runs/${runId}/run.json`, JSON.stringify(record, null, 2));
       await git(['add', '-A'], other);
       await git(['commit', '-m', `run ${runId}: record`], other);
       await git(['push', 'origin', `HEAD:refs/runs/${runId}/work`], other);
@@ -286,6 +300,11 @@ export async function makeRunRemoteFixture(opts: { gitEnabled?: boolean } = {}):
       return openWorkspaceDb({ name: 'ws', home })
         .prepare('SELECT run_id, host_id FROM remote_run ORDER BY created_at, run_id')
         .all() as Array<{ run_id: string; host_id: string }>;
+    },
+    rowsWithParent() {
+      return openWorkspaceDb({ name: 'ws', home })
+        .prepare('SELECT run_id, host_id, parent_run_id FROM remote_run ORDER BY created_at, run_id')
+        .all() as Array<{ run_id: string; host_id: string; parent_run_id: string | null }>;
     },
     dispose() {
       closeWorkspaceDbs();

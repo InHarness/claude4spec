@@ -1,5 +1,5 @@
 {
-  "iteration": 17,
+  "iteration": 22,
   "conventions": [
     {
       "label": "L1 (DB) — implementor M41",
@@ -550,13 +550,57 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u4-m55-run-continuation/p1-l1-l15",
+          "layers": [
+            "L1",
+            "L3",
+            "L4",
+            "L15"
+          ],
+          "slugs": [
+            "remote-run",
+            "run-remote",
+            "get-run",
+            "run-tools-run-remote",
+            "run-tools-get-run",
+            "ac-get-run-runu-kontynuacji-podaje-paren",
+            "ac-get-run-runu-ktorego-cien-ma-dziecko",
+            "ac-get-run-runu-z-resultsha-podaje-resul",
+            "ac-odczyt-runu-zakonczonego-powodem-pare",
+            "ac-odmowa-run-parent-nie-zostawia-wpisu",
+            "ac-run-remote-z-fromrunid-bez-parametru",
+            "ac-run-remote-z-fromrunid-i-jawnym-hoste",
+            "ac-run-remote-z-fromrunid-i-planpath-kon",
+            "ac-run-remote-z-fromrunid-na-hoscie-bez",
+            "ac-run-remote-z-fromrunid-nieznanym-mast",
+            "ac-run-remote-z-fromrunid-runu-bez-refa",
+            "ac-run-remote-z-fromrunid-runu-ktorego-c",
+            "ac-run-remote-z-fromrunid-runu-ktorego-r",
+            "ac-run-remote-z-fromrunid-runu-z-wejscie",
+            "ac-run-remote-z-instruction-bez-fromruni",
+            "ac-sha-bazy-w-zleceniu-rowna-sie-sha-tip",
+            "ac-sha-bazy-w-zleceniu-z-fromrunid-rowna",
+            "ac-wiersz-rejestru-runu-kontynuacji-nies",
+            "ac-zlecenie-z-fromrunid-i-instruction-ni",
+            "ac-zlecenie-z-fromrunid-nie-publikuje-pl",
+            "ac-zlecenie-z-fromrunid-niesie-continuat",
+            "ac-zlecenie-z-fromrunid-niesie-projectid"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "76d6d00aac5df8ed44ab10b6aa2433dd76a8e865",
+      "baseCommit": "ac0dc69af9d961ff68c410b5dff53ecf16ef9489",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
       "jobs": []
     }

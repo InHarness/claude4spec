@@ -417,4 +417,98 @@ describe('get_run / cancel_run (spec-operations get-run, cancel-run)', () => {
       }
     });
   });
+  describe('continuation Runs (2.1.68: resultSha, parentRunId, supersededBy, parent reasons)', () => {
+    const PARENT = '01jparent0000000000000000p';
+    const CHILD = '01jchild00000000000000000c';
+
+    it('[ac:ac-get-run-runu-z-resultsha-podaje-resul] get_run of a Run with resultSha gives resultSha, verbatim; without it the field is absent', async () => {
+      register();
+      const sha = await fx.pushRunRecord(RUN, record(), { 'ws/app/pages/run.md': '# by the Run\n' });
+      stub.reply = () => ({ status: 200, body: runBody({ resultSha: sha }) });
+      const result = await getRun(deps, { runId: RUN });
+      expect(result.resultSha).toBe(sha);
+      expect(result.shadow?.id).toBe(`${RUN}/work`);
+
+      stub.reply = () => ({ status: 200, body: runBody({ state: 'running', outcome: undefined, handoff: undefined }) });
+      expect(await getRun(deps, { runId: RUN })).not.toHaveProperty('resultSha');
+    });
+
+    it('[ac:ac-get-run-runu-kontynuacji-podaje-paren] get_run of a continuation Run gives parentRunId — from the host and from the record — and a row restored from the record keeps the parent', async () => {
+      register();
+      stub.reply = () => ({ status: 200, body: runBody({ state: 'queued', outcome: undefined, handoff: undefined, parentRunId: PARENT }) });
+      const fromHost = await getRun(deps, { runId: RUN });
+      expect(fromHost.parentRunId).toBe(PARENT);
+      expect(fromHost.source).toBe('host');
+
+      // A Run without a parent has no parentRunId.
+      stub.reply = () => ({ status: 200, body: runBody({ state: 'queued', outcome: undefined, handoff: undefined }) });
+      expect(await getRun(deps, { runId: RUN })).not.toHaveProperty('parentRunId');
+
+      // From the record, with no registry row: the answer and the restored row carry the parent.
+      fx.registry.delete(RUN);
+      await fx.pushRunRecord(RUN, record({ parentRunId: PARENT }), { 'ws/app/pages/run.md': '# by the Run\n' });
+      const fromRecord = await getRun(deps, { runId: RUN });
+      expect(fromRecord).toMatchObject({ source: 'record', parentRunId: PARENT });
+      expect(fx.registry.get(RUN)).toMatchObject({ hostId: 'h_from_record', parentRunId: PARENT });
+    });
+
+    it('[ac:ac-get-run-runu-ktorego-cien-ma-dziecko] get_run of a Run whose shadow has a child gives supersededBy with the child\'s runId — and no plan hint', async () => {
+      fx.registry.insert(PARENT, HOST_ID);
+      const parentSha = await fx.pushRunRecord(
+        PARENT,
+        record({ runId: PARENT, outcome: 'done', resultRef: `refs/runs/${PARENT}/work` }),
+        { 'ws/app/pages/parent.md': '# by the parent\n' },
+      );
+      const childSha = await fx.pushRunRecord(
+        CHILD,
+        record({ runId: CHILD, parentRunId: PARENT, resultRef: `refs/runs/${CHILD}/work` }),
+        { 'ws/app/pages/child.md': '# by the child\n' },
+        { base: PARENT },
+      );
+      stub.reply = () => ({
+        status: 200,
+        body: runBody({ runId: PARENT, outcome: 'done', resultSha: parentSha, resultRef: `refs/runs/${PARENT}/work` }),
+      });
+      const result = await getRun(deps, { runId: PARENT });
+      expect(result.shadow).toEqual({
+        id: `${PARENT}/work`,
+        accepted: false,
+        projects: [{ projectId: 'app', visible: true }],
+        supersededBy: [CHILD],
+      });
+      expect(result.hint).toBeNull();
+
+      // The child — the end of the chain — is not superseded.
+      fx.registry.insert(CHILD, HOST_ID, PARENT);
+      stub.reply = () => ({ status: 200, body: runBody({ runId: CHILD, parentRunId: PARENT, resultSha: childSha, resultRef: `refs/runs/${CHILD}/work` }) });
+      const child = await getRun(deps, { runId: CHILD });
+      expect(child.parentRunId).toBe(PARENT);
+      expect(child.shadow).toEqual({ id: `${CHILD}/work`, accepted: false, projects: [{ projectId: 'app', visible: true }] });
+    });
+
+    it('[ac:ac-odczyt-runu-zakonczonego-powodem-pare] reading a Run finished with `parent-not-found` gives the reason verbatim together with the hint', async () => {
+      register();
+      stub.reply = () => ({ status: 200, body: runBody({ outcome: 'failed', reason: 'parent-not-found', handoff: undefined, parentRunId: PARENT }) });
+      const result = await getRun(deps, { runId: RUN });
+      expect(result.outcome).toBe('failed');
+      // Verbatim: the runner's value, not rewritten and not dropped as unknown.
+      expect(result.reason).toBe('parent-not-found');
+      // And the master's hint next to it: a new Run from the upstream, or a continuation of another Run of the chain.
+      expect(result.reasonHint).toBe(RUN_REASON_HINTS['parent-not-found']);
+      expect(result.reasonHint).toMatch(/new Run from the upstream/);
+      expect(result.reasonHint).toMatch(/another Run of the chain/);
+    });
+
+    it('[entity:get-run] the other parent reasons go verbatim with their hints: parent-mismatch (again, with a new runId) and parent-recipe-modified (a new Run from the upstream)', async () => {
+      register();
+      for (const reason of ['parent-mismatch', 'parent-recipe-modified']) {
+        stub.reply = () => ({ status: 200, body: runBody({ outcome: 'failed', reason, handoff: undefined }) });
+        const result = await getRun(deps, { runId: RUN });
+        expect(result.reason).toBe(reason);
+        expect(result.reasonHint).toBe(RUN_REASON_HINTS[reason]);
+      }
+      expect(RUN_REASON_HINTS['parent-mismatch']).toMatch(/new runId/);
+      expect(RUN_REASON_HINTS['parent-recipe-modified']).toMatch(/new Run from the upstream/);
+    });
+  });
 });

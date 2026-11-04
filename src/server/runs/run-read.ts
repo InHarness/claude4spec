@@ -39,6 +39,15 @@ import {
  * `get_run` reads the shadow `<runId>/work` (`zozdbd1a`) only when the
  * runner's answer carries `resultSha`: `fetch()`, then the shadow list in
  * every project of the workspace.
+ *
+ * 2.1.68: `get_run` also gives `resultSha` and `parentRunId` as the runner
+ * (or the record) gives them, a superseded shadow with `supersededBy` (the
+ * children's runIds) and no plan hint for it; hints for the parent reasons.
+ * Neither operation deletes a shadow ref (`1la4achf`): the retention of
+ * `refs/runs/<runId>/*` belongs to the master, which today deletes nothing —
+ * the protective rule of `28fe18e4` (never a ref of an unaccepted continuation
+ * chain, nor of a parent whose child is unfinished or unaccepted) binds any
+ * deletion that comes later.
  */
 
 export type RunReadErrorCode =
@@ -99,14 +108,20 @@ export const KNOWN_RUN_REASONS: ReadonlySet<string> = new Set([
   'agent-failed',
   'recipe-modified',
   'push-rejected',
+  // 2.1.68 — the reasons of a continuation's parent (`c4s-runner` M07 #h6qxem12, #i6rgoy6k).
+  'parent-not-found',
+  'parent-mismatch',
+  'parent-recipe-modified',
   'timeout',
   'runner-restart',
 ]);
 
 /**
- * M55 `361n2mqb`: the master's hint for the two reasons whose cause lies on
- * the c4s side. The reason itself goes verbatim; the hint stands next to it
- * (`reasonHint`). A reason outside this table goes without a hint.
+ * M55 `361n2mqb`: the master's hint for the reasons of the table — the two
+ * whose cause lies on the c4s side and, 2.1.68, the three of a continuation's
+ * parent. The reason itself goes verbatim; the hint stands next to it
+ * (`reasonHint`); the row carries only the master's hint, the reason's meaning
+ * stays with the runner. A reason outside this table goes without a hint.
  * ASSUMPTION:dev-6703 — the field's name (`reasonHint`) is not in the specification.
  */
 export const RUN_REASON_HINTS: Readonly<Record<string, string>> = {
@@ -114,6 +129,11 @@ export const RUN_REASON_HINTS: Readonly<Record<string, string>> = {
     "Check the recipe's `c4sVersion` against the agent definition's minimum version, and the Run's log with the host's operator.",
   'trust-path-mismatch':
     "The local approval is for another path than the project's path at the base sha; approve the current path on this machine, then order a new Run with a new runId.",
+  'parent-not-found':
+    'This parent cannot be continued; order a new Run from the upstream, or a continuation of another Run of the chain.',
+  'parent-mismatch':
+    'Order the continuation again, with a new runId; if the refusal repeats, order a new Run from the upstream.',
+  'parent-recipe-modified': 'The parent changed the environment recipe; order a new Run from the upstream.',
 };
 
 /**
@@ -153,6 +173,14 @@ export interface RunView {
   resultRef?: string;
 }
 
+/** 2.1.68 (`get-run` `zachowanie`): the Run's lineage and result as `get_run` reports them. */
+export interface RunLineage {
+  /** The runner's `resultSha` (`c4s-runner` dto `run`), verbatim; absent when the runner gave none. */
+  resultSha?: string;
+  /** The direct parent of a continuation Run — the runner's or the record's `parentRunId`; absent otherwise. */
+  parentRunId?: string;
+}
+
 export interface RunShadowProject {
   projectId: string;
   /** The shadow is on this project's shadow list (Releases → Shadows). */
@@ -169,12 +197,17 @@ export interface RunShadowView {
   projects: RunShadowProject[];
   /** The result ref is not in the local repository even after `fetch()`. */
   refMissing?: true;
+  /**
+   * 2.1.68 (`zozdbd1a`, M28 `dadc3w49`): present only on a superseded shadow —
+   * the runIds of the continuations that superseded it (`/work` cut off).
+   */
+  supersededBy?: string[];
 }
 
-export interface GetRunResult extends RunView {
+export interface GetRunResult extends RunView, RunLineage {
   /** `null` when the Run left no result (`resultSha` absent) — the shadow is not read then. */
   shadow: RunShadowView | null;
-  /** The plan-marking hint (outcome `done` and the shadow accepted); the operation marks nothing. */
+  /** The plan-marking hint (outcome `done` and the shadow accepted, not superseded); the operation marks nothing. */
   hint: string | null;
 }
 
@@ -232,6 +265,7 @@ interface RunRecord {
   handoff?: RunHandoff;
   resultRef?: string;
   input?: { kind?: unknown };
+  parentRunId?: unknown;
 }
 
 function isObject(v: unknown): v is Record<string, unknown> {
@@ -262,7 +296,24 @@ function viewOf(runId: string, source: RunView['source'], fields: Record<string,
   return view;
 }
 
-function parseRecord(text: string | null): RunRecord | null {
+/**
+ * The one reader of a Run record (`c4s-runner` dto `run-record`), shared by
+ * `get_run` / `cancel_run` here and by the parent recognition of a
+ * continuation (`run-remote.ts`, `fdu51xri` step 2). A record is a JSON object
+ * with a string `hostId`; anything else is no record.
+ *
+ * `requireOutcome` is the one place the two readers differ: `get_run` answers
+ * from the record and needs its `outcome` (a record without one is no record
+ * for it), while the parent recognition reads only `hostId`, `input` and
+ * `reason` and has never required `outcome` — keeping it a parameter keeps
+ * both acceptances exactly as they were.
+ */
+export interface RunRecordFields {
+  hostId: string;
+  [field: string]: unknown;
+}
+
+export function parseRunRecord(text: string | null, opts: { requireOutcome: boolean }): RunRecordFields | null {
   if (text === null) return null;
   let v: unknown;
   try {
@@ -270,8 +321,30 @@ function parseRecord(text: string | null): RunRecord | null {
   } catch {
     return null;
   }
-  if (!isObject(v) || typeof v.hostId !== 'string' || typeof v.outcome !== 'string') return null;
-  return v as unknown as RunRecord;
+  if (!isObject(v) || typeof v.hostId !== 'string') return null;
+  if (opts.requireOutcome && typeof v.outcome !== 'string') return null;
+  return v as RunRecordFields;
+}
+
+/** `<homeAbs>/runs/<runId>/run.json` — where a Run record lives inside the workspace home. */
+export function runRecordPath(homeAbs: string, runId: string): string {
+  return path.join(homeRunsDir(homeAbs), runId, RUN_RECORD_FILE);
+}
+
+/** The record at revision `rev` (a ref name, a sha or `HEAD`), parsed by {@link parseRunRecord}. */
+export async function readRunRecordAt(
+  showFile: (rev: string, absPath: string, precomputed?: GitRepoRoot) => Promise<string | null>,
+  rev: string,
+  recordAbs: string,
+  repo: GitRepoRoot | undefined,
+  opts: { requireOutcome: boolean },
+): Promise<RunRecordFields | null> {
+  return parseRunRecord(await showFile(rev, recordAbs, repo), opts);
+}
+
+/** `get_run` / `cancel_run` answer from the record, so its `outcome` is required. */
+async function readFinishedRecordAt(deps: RunReadDeps, rev: string, recordAbs: string, repo: GitRepoRoot): Promise<RunRecord | null> {
+  return (await readRunRecordAt((r, a, p) => deps.git.showFile(r, a, p), rev, recordAbs, repo, { requireOutcome: true })) as RunRecord | null;
 }
 
 /** The registry row's `hostId` — `null` without a home (no workspace DB) or for a runId the runner would never accept. */
@@ -296,7 +369,7 @@ async function recordFilePath(deps: RunReadDeps, rootPath: string | null | undef
   const home = deps.workspace().home;
   if (!rootPath || home === undefined || !recordAddressable(deps, runId)) return null;
   const homeRel = await deps.git.workspaceHomePath(home);
-  return homeRel === null ? null : path.join(homeRunsDir(path.join(rootPath, homeRel)), runId, RUN_RECORD_FILE);
+  return homeRel === null ? null : runRecordPath(path.join(rootPath, homeRel), runId);
 }
 
 /** `g9939pj0` steps 1–2: `fetch()`, then the record from the result ref, else from HEAD. */
@@ -308,9 +381,9 @@ async function readRecord(deps: RunReadDeps, runId: string): Promise<FoundRecord
   await deps.git.fetch();
   const recordAbs = await recordFilePath(deps, repo.rootPath, runId);
   if (recordAbs === null) return null;
-  const fromRef = parseRecord(await deps.git.showFile(`refs/runs/${runId}/work`, recordAbs, repo));
+  const fromRef = await readFinishedRecordAt(deps, `refs/runs/${runId}/work`, recordAbs, repo);
   if (fromRef) return { record: fromRef, from: 'ref' };
-  const fromHead = parseRecord(await deps.git.showFile('HEAD', recordAbs, repo));
+  const fromHead = await readFinishedRecordAt(deps, 'HEAD', recordAbs, repo);
   return fromHead ? { record: fromHead, from: 'head' } : null;
 }
 
@@ -323,8 +396,25 @@ async function recordPath(deps: RunReadDeps, runId: string, trigger: RecordTrigg
     return fail('RUN_UNKNOWN', RUN_UNKNOWN_MESSAGE);
   }
   const registry = deps.registry();
-  if (registry.hostOf(runId) === null) registry.insert(runId, found.record.hostId);
+  if (registry.hostOf(runId) === null) {
+    // 2.1.68 (`gsw1z1h3`): a row restored from the record takes `parent_run_id` from its `parentRunId`.
+    registry.insert(runId, found.record.hostId, parentOf(found.record));
+  }
   return found;
+}
+
+/** The record's `parentRunId` when it is a runId-shaped string; `null` otherwise. */
+function parentOf(fields: { parentRunId?: unknown }): string | null {
+  return typeof fields.parentRunId === 'string' && fields.parentRunId !== '' ? fields.parentRunId : null;
+}
+
+/** 2.1.68: `resultSha` and `parentRunId` as the source gives them — never rewritten, absent when not given. */
+function lineageOf(fields: Record<string, unknown>): RunLineage {
+  const lineage: RunLineage = {};
+  if (typeof fields.resultSha === 'string' && fields.resultSha !== '') lineage.resultSha = fields.resultSha;
+  const parent = parentOf(fields);
+  if (parent !== null) lineage.parentRunId = parent;
+  return lineage;
 }
 
 function recordView(runId: string, record: RunRecord): RunView {
@@ -367,11 +457,15 @@ async function readShadow(deps: RunReadDeps, runId: string, tip: string, recordA
     return { id, accepted: false, projects: [], refMissing: true };
   }
   const projects: RunShadowProject[] = [];
+  // 2.1.68 (`zozdbd1a`): the list of every project reports a superseded shadow with `supersededBy`.
+  const supersededBy = new Set<string>();
   for (const project of deps.projects()) {
     const listed = await project.git.listShadows();
     if (listed === null) continue; // git off for that project — it has no shadow list
-    if (listed.some((s) => s.id === id)) {
+    const entry = listed.find((s) => s.id === id);
+    if (entry) {
       projects.push({ projectId: project.projectId, visible: true });
+      for (const child of entry.supersededBy ?? []) supersededBy.add(child.replace(/\/work$/, ''));
       continue;
     }
     // Not an ancestor of HEAD (checked above): with a common ancestor the release-root diff filter rejected it.
@@ -382,7 +476,7 @@ async function readShadow(deps: RunReadDeps, runId: string, tip: string, recordA
       filter: resolved !== null ? FILTER_NO_RELEASE_CHANGE : FILTER_NO_COMMON_ANCESTOR,
     });
   }
-  return { id, accepted: false, projects };
+  return supersededBy.size > 0 ? { id, accepted: false, projects, supersededBy: [...supersededBy] } : { id, accepted: false, projects };
 }
 
 async function recordAbsPath(deps: RunReadDeps, runId: string): Promise<string | null> {
@@ -391,7 +485,8 @@ async function recordAbsPath(deps: RunReadDeps, runId: string): Promise<string |
 }
 
 function planHint(view: RunView, shadow: RunShadowView | null, input: unknown): string | null {
-  if (view.outcome !== 'done' || !shadow?.accepted) return null;
+  // 2.1.68: no hint for a superseded shadow.
+  if (view.outcome !== 'done' || !shadow?.accepted || shadow.supersededBy) return null;
   if (isObject(input) && input.kind !== undefined && input.kind !== 'plan') return null;
   return PLAN_HINT;
 }
@@ -409,7 +504,7 @@ export async function getRun(deps: RunReadDeps, input: { runId: string }): Promi
       }
       // ASSUMPTION:dev-0007 — git unavailable: the host's state is still reported, with `shadow: null`.
     }
-    return { ...view, shadow, hint: planHint(view, shadow, answer.body.input) };
+    return { ...view, ...lineageOf(answer.body), shadow, hint: planHint(view, shadow, answer.body.input) };
   }
   const found = await recordPath(deps, runId, answer.trigger);
   const view = recordView(runId, found.record);
@@ -417,7 +512,12 @@ export async function getRun(deps: RunReadDeps, input: { runId: string }): Promi
     found.from === 'head'
       ? { id: `${runId}/work`, accepted: true, projects: [] }
       : await readShadow(deps, runId, `refs/runs/${runId}/work`, null);
-  return { ...view, shadow, hint: planHint(view, shadow, found.record.input) };
+  return {
+    ...view,
+    ...lineageOf(found.record as unknown as Record<string, unknown>),
+    shadow,
+    hint: planHint(view, shadow, found.record.input),
+  };
 }
 
 export async function cancelRun(deps: RunReadDeps, input: { runId: string }): Promise<CancelRunResult> {

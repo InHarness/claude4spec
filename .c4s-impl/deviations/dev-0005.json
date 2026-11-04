@@ -1,0 +1,19 @@
+{
+  "id": "dev-0005",
+  "kind": "clarification",
+  "blocking": false,
+  "address": "u4-m55-run-continuation/fdu51xri",
+  "slugs": [
+    "run-remote",
+    "ac-sha-bazy-w-zleceniu-z-fromrunid-rowna",
+    "ac-zlecenie-z-fromrunid-nie-publikuje-pl",
+    "ac-run-remote-z-fromrunid-runu-ktorego-c",
+    "ac-run-remote-z-fromrunid-runu-bez-refa"
+  ],
+  "text": "Przebieg kontynuacji (fdu51xri) pomija sprawdzenie ścieżki na upstreamie (krok 5), a to ono w zwykłym przebiegu (55a63udm krok 3) daje pole `repo` zlecenia (oczyszczony remote). Sekcja nie mówi, skąd przy kontynuacji brać `repo`, co gdy gałąź nie ma upstreamu, co gdy `fetch()` z kroku 1 się nie uda (busy, sieć), ani co z rekordem rodzica, którego `input` nie jest czytelnym wejściem planu. Nie mówi też, wobec której listy cieni liczyć `supersededBy` rodzica. Kod: `repo` = remote upstreamu bieżącej gałęzi oczyszczony z poświadczeń (jak w zwykłym zleceniu, bez fetch i bez sprawdzenia ścieżki); brak upstreamu → `RUN_NO_UPSTREAM`; nieudany `fetch()` nie odmawia — rodzic jest rozpoznawany z lokalnych refów (jak `get_run`, dev-0007 z 2.1.64); rekord z wejściem innym niż `prompt` i bez czytelnych `projectId`/`path` → `RUN_PARENT_WITHOUT_RESULT`; `supersededBy` rodzica liczy M28 `resolveShadow(..., { supersession: true })` wobec listy cieni projektu wątku. Propozycja do fdu51xri: „Pole `repo` to remote upstreamu jak w zwykłym zleceniu; brak upstreamu daje `RUN_NO_UPSTREAM`. Nieudany `fetch()` nie daje odmowy, rodzic jest rozpoznawany z lokalnych refów.”",
+  "assumption": "ASSUMPTION:dev-0005 (2.1.68) — a continuation's `repo` is the upstream's remote (no upstream → RUN_NO_UPSTREAM); a failed fetch() does not refuse; a record without a readable plan input is RUN_PARENT_WITHOUT_RESULT; the parent's supersession is M28's for the thread project's shadow list.",
+  "unit": "u4-m55-run-continuation",
+  "portion": "u4-m55-run-continuation/p1-l1-l15",
+  "sent": true,
+  "patchPath": "2-1-67-to-2-1-68-u4-m55-run-continuation-fdu51xri-repo-brak-upstreamu-i-nieudany-fetch-przy-konty.md"
+}

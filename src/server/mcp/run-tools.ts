@@ -11,7 +11,8 @@
  * The rendering is a pure adapter: it maps the wire arguments onto
  * `runRemote` (the one function of the operation) and its result or refusal
  * back. A refusal carries its remedy — the host list of `RUN_HOST_REQUIRED`,
- * the refused `field` of `RUN_REJECTED`.
+ * the refused `field` of `RUN_REJECTED`, the children of `RUN_PARENT_SUPERSEDED`.
+ * 2.1.68: `run_remote` takes `fromRunId` and `instruction` (a continuation).
  */
 
 import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
@@ -47,6 +48,8 @@ export function buildRunToolsServer(opts: RunToolsOptions): CapturedMcpServer {
       planPath?: string;
       prompt?: string;
       projectId?: string;
+      fromRunId?: string;
+      instruction?: string;
       agent?: string;
       host?: string;
       notes?: string;

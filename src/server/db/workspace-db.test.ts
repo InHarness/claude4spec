@@ -9,6 +9,7 @@ import { openDb } from './index.js';
 import { WorkspaceRegistry } from '../workspace/registry.js';
 import { homeLocalDir, homeRunsDir } from '../workspace/home-workspace.js';
 import { listSlotIds } from '../workspace/slot-marker.js';
+import { remoteRunRegistry } from '../runs/remote-run-registry.js';
 
 /**
  * 2.1.64 — the workspace database (M41 `zyj684t8`, `8eat4b2c`, `3usphti7`,
@@ -166,7 +167,7 @@ describe('M55 remote_run — the Run registry table (database-table remote-run)'
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
-  it('[entity:remote-run] PRAGMA table_info matches the entity: run_id TEXT NOT NULL PK, host_id TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT datetime(\'now\')', () => {
+  it('[entity:remote-run] PRAGMA table_info matches the entity: run_id TEXT NOT NULL PK, host_id TEXT NOT NULL, parent_run_id TEXT NULL, created_at TEXT NOT NULL DEFAULT datetime(\'now\')', () => {
     const db = openWorkspaceDb({ name: 'team', home: tmp });
     const cols = db.pragma('table_info(remote_run)') as Array<{
       name: string;
@@ -179,7 +180,43 @@ describe('M55 remote_run — the Run registry table (database-table remote-run)'
       { name: 'run_id', type: 'TEXT', notnull: 1, dflt: null, pk: 1 },
       { name: 'host_id', type: 'TEXT', notnull: 1, dflt: null, pk: 0 },
       { name: 'created_at', type: 'TEXT', notnull: 1, dflt: "datetime('now')", pk: 0 },
+      // 2.1.68: added by `ALTER TABLE ... ADD COLUMN`, so it follows created_at physically; nullable, no default.
+      { name: 'parent_run_id', type: 'TEXT', notnull: 0, dflt: null, pk: 0 },
     ]);
+  });
+
+  it('[entity:remote-run] a workspace DB created before 2.1.68 (001 only) gets parent_run_id from 002, existing rows keep NULL, and the ledger records both versions', () => {
+    const file = path.join(tmp, 'old.sqlite');
+    const db = new Database(file);
+    try {
+      runWorkspaceMigrations(db, WORKSPACE_MIGRATIONS.slice(0, 1));
+      db.prepare('INSERT INTO remote_run (run_id, host_id) VALUES (?, ?)').run('01jold00000000000000000000', 'host-a');
+      expect(runWorkspaceMigrations(db)).toEqual(['002_remote_run_parent_run_id']);
+      expect(runWorkspaceMigrations(db)).toEqual([]);
+      const row = db.prepare('SELECT run_id, host_id, parent_run_id FROM remote_run').get();
+      expect(row).toEqual({ run_id: '01jold00000000000000000000', host_id: 'host-a', parent_run_id: null });
+      const versions = (db.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as Array<{ version: string }>).map((r) => r.version);
+      expect(versions).toEqual(['001_remote_run', '002_remote_run_parent_run_id']);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('[entity:remote-run] the registry writes and reads every column: run_id, host_id, parent_run_id (set for a continuation, NULL without a parent) and created_at by default', () => {
+    const db = openWorkspaceDb({ name: 'team', home: tmp });
+    const registry = remoteRunRegistry(() => db);
+    registry.insert('01jchild000000000000000000', 'host-a', '01jparent00000000000000000');
+    registry.insert('01jplain000000000000000000', 'host-b');
+    const child = registry.get('01jchild000000000000000000')!;
+    expect(child).toMatchObject({ runId: '01jchild000000000000000000', hostId: 'host-a', parentRunId: '01jparent00000000000000000' });
+    expect(child.createdAt).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+    expect(registry.get('01jplain000000000000000000')).toMatchObject({ hostId: 'host-b', parentRunId: null });
+    expect(registry.hostOf('01jchild000000000000000000')).toBe('host-a');
+    expect(db.prepare('SELECT parent_run_id FROM remote_run WHERE run_id = ?').get('01jchild000000000000000000')).toEqual({
+      parent_run_id: '01jparent00000000000000000',
+    });
+    registry.delete('01jchild000000000000000000');
+    expect(registry.get('01jchild000000000000000000')).toBeNull();
   });
 
   it('[entity:remote-run] PRAGMA index_list holds only the primary key — indexes: [] — and the table has no foreign key', () => {

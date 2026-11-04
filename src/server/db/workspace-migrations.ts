@@ -35,6 +35,17 @@ export const WORKSPACE_MIGRATIONS: readonly WorkspaceMigration[] = [
       );
     `,
   },
+  {
+    // 2.1.68 (M55 `gsw1z1h3`, database-table `remote-run`): `parent_run_id` —
+    // the runId of the parent of a continuation Run; NULL for a Run without a
+    // parent. Not a FK: the parent is sometimes known only from its record in
+    // git. Additive (`ADD COLUMN`), so the column follows `created_at` in the
+    // physical order; the ledger applies it exactly once.
+    version: '002_remote_run_parent_run_id',
+    sql: `
+      ALTER TABLE remote_run ADD COLUMN parent_run_id TEXT;
+    `,
+  },
 ];
 
 /**

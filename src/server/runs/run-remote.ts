@@ -5,7 +5,9 @@ import type { GitRepoRoot } from '../services/git.js';
 import type { RunnerHostStatus } from '../../shared/runner-hosts.js';
 import type { RemoteRunRegistry } from './remote-run-registry.js';
 import { newRunId } from './run-id.js';
-import type { C4sTrust, RunInput, RunRequest } from './run-request.js';
+import type { C4sTrust, RunContinuation, RunInput, RunRequest } from './run-request.js';
+import { RUN_ID_PATTERN } from './run-id.js';
+import { readRunRecordAt, runRecordPath } from './run-read.js';
 import { sameProjectPath } from '../workspace/home-workspace.js';
 import type { HomeProjectTrust } from '../workspace/types.js';
 import { mapRunnerApiCode, putRunOverHttp, type PutRun } from './runner-runs-client.js';
@@ -33,14 +35,25 @@ import { DEFAULT_RUN_AGENT_NAME, RUN_AGENT_DEFINITIONS, type RunAgentDefinition 
  *     only when the path it was given for equals the project's path in
  *     `workspace.json` at the base sha; otherwise nothing about trust is sent
  *     and the answer carries `warnings`;
- *  7. the registry INSERT (runId → hostId only: the trust is not stored);
+ *  7. the registry INSERT (runId → hostId, and `parent_run_id` — null for a
+ *     fresh Run, the parent's runId for a continuation; the trust is not stored);
  *  8. `PUT /runs/{runId}`, with the trust of step 6;
  *  9. `{ runId, host, warnings? }`.
  *
  * The conditions (`e9ce6072`) are checked before any of them. A refusal before
  * the `PUT` leaves no registry row. A host's `4xx` refusal deletes the row; a
  * network error at the `PUT` keeps it and answers `unconfirmed: true` — never
- * retried here. Every call mints a new runId.
+ * retried here. Every call mints a new runId. All of this holds for a fresh
+ * order and for a continuation alike.
+ *
+ * 2.1.68 — a continuation (`fromRunId`, `fdu51xri`) runs its own order of
+ * steps: `fetch()`; recognition of the parent (`RUN_PARENT_*`, before any
+ * registry row); the base sha = the tip of the local `refs/runs/<parent>/work`;
+ * the host — the parent's by default, any explicit one allowed, each needing
+ * `run-continuation` (`hcdxxeja`); no publication and no path check on the
+ * upstream — the plan is read at the base sha; the project and the plan's path
+ * from the parent's record; the version check and the trust at the base sha;
+ * the registry row with the parent's runId; the `PUT` with `continuation`.
  */
 
 /** The codes of the `run-remote` record (`kodyBledow`). */
@@ -54,6 +67,12 @@ export type RunRemoteErrorCode =
   | 'RUN_HOST_NOT_FOUND'
   | 'RUN_HOST_NOT_CONNECTED'
   | 'RUN_HOST_WITHOUT_RUNS'
+  | 'RUN_HOST_WITHOUT_CONTINUATION'
+  | 'RUN_PARENT_NOT_FOUND'
+  | 'RUN_PARENT_WITHOUT_RESULT'
+  | 'RUN_PARENT_PROMPT_INPUT'
+  | 'RUN_PARENT_RECIPE_MODIFIED'
+  | 'RUN_PARENT_SUPERSEDED'
   | 'RUN_AGENT_NOT_FOUND'
   | 'RUN_C4S_VERSION_INCOMPATIBLE'
   | 'INVALID_ARGS'
@@ -78,6 +97,12 @@ export const RUN_REMOTE_ERROR_CODES: readonly RunRemoteErrorCode[] = [
   'RUN_HOST_NOT_FOUND',
   'RUN_HOST_NOT_CONNECTED',
   'RUN_HOST_WITHOUT_RUNS',
+  'RUN_HOST_WITHOUT_CONTINUATION',
+  'RUN_PARENT_NOT_FOUND',
+  'RUN_PARENT_WITHOUT_RESULT',
+  'RUN_PARENT_PROMPT_INPUT',
+  'RUN_PARENT_RECIPE_MODIFIED',
+  'RUN_PARENT_SUPERSEDED',
   'RUN_AGENT_NOT_FOUND',
   'RUN_C4S_VERSION_INCOMPATIBLE',
   'INVALID_ARGS',
@@ -125,6 +150,14 @@ export interface RunRemoteGit {
   checkPathOnUpstream(relPath: string): Promise<GitUpstreamPathResult>;
   publishFile(relPath: string, opts?: { threadId?: string | null }): Promise<GitPublishResult>;
   showFile(sha: string, absPath: string, precomputed?: GitRepoRoot): Promise<string | null>;
+  /** 2.1.68 (`fdu51xri` step 1): M28 `fetch()` — the upstream and the shadow namespace. */
+  fetch(): Promise<{ status: string }>;
+  /** 2.1.68: the tip of the local `refs/runs/<id>`, `null` without the ref. */
+  shadowTip(id: string, precomputed?: GitRepoRoot): Promise<string | null>;
+  /** 2.1.68: M28 `resolveShadow` — with `supersession: true`, `supersededBy` of a superseded shadow. */
+  resolveShadow(id: string, precomputed?: GitRepoRoot, opts?: { supersession?: boolean }): Promise<{ supersededBy?: string[] } | null>;
+  /** 2.1.68: the upstream's remote cleared of credentials, without a fetch or a path check. */
+  upstreamRemoteUrl(): Promise<{ status: 'ok'; remote: string } | { status: 'skipped' } | { status: 'no-upstream' }>;
 }
 
 export interface RunRemotePlans {
@@ -192,6 +225,10 @@ export interface RunRemoteInput {
   notes?: string;
   timeoutMinutes?: number;
   model?: string;
+  /** 2.1.68: the runId of a finished Run to continue (`fdu51xri`). Not with `planPath`, `prompt` or `projectId`. */
+  fromRunId?: string;
+  /** 2.1.68: the continuation's instruction, passed as `continuation.instruction`. Only with `fromRunId`. */
+  instruction?: string;
   /** The calling thread — the address of the pinned plan. */
   threadId?: string | null;
 }
@@ -218,6 +255,8 @@ export const ENVIRONMENT_RECIPE_PATH = '.c4s-runner/environment.json';
 export const KNOWN_RECIPE_SCHEMA_VERSION = 1;
 /** The capability value of the runner's Runs API. */
 export const RUNS_CAPABILITY = 'runs';
+/** 2.1.68 (`hcdxxeja`): the host capability a continuation needs (`c4s-runner` M03 #30ufu17m). */
+export const RUN_CONTINUATION_CAPABILITY = 'run-continuation';
 
 const fail = (code: RunRemoteErrorCode, message: string, hint?: string, extra?: Record<string, unknown>): never => {
   throw new RunRemoteError(code, message, hint, extra);
@@ -245,17 +284,23 @@ function hostList(hosts: RunRemoteHost[]): Array<{ id: string; name: string | nu
   return hosts.map((h) => ({ id: h.id, name: h.name }));
 }
 
+const offersRuns = (h: RunRemoteHost) => h.capabilities.includes(RUNS_CAPABILITY);
+
+/** `hcdxxeja`: a host named (or, for a continuation, inherited) must be connected and offer `runs`. */
+function usableHost(host: RunRemoteHost): RunRemoteHost {
+  if (host.status !== 'connected' || host.hostId === null || host.token === null) {
+    return fail('RUN_HOST_NOT_CONNECTED', `runner host '${host.id}' is not connected (status: ${host.status})`);
+  }
+  if (!offersRuns(host)) return fail('RUN_HOST_WITHOUT_RUNS', `runner host '${host.id}' does not offer Runs`);
+  return host;
+}
+
 /** `hcdxxeja`. */
 function selectHost(hosts: RunRemoteHost[], requested: string | undefined): RunRemoteHost {
-  const offersRuns = (h: RunRemoteHost) => h.capabilities.includes(RUNS_CAPABILITY);
   if (requested !== undefined) {
     const host = hosts.find((h) => h.id === requested);
     if (!host) return fail('RUN_HOST_NOT_FOUND', `runner host '${requested}' does not exist`, undefined, { hosts: hostList(hosts) });
-    if (host.status !== 'connected' || host.hostId === null || host.token === null) {
-      return fail('RUN_HOST_NOT_CONNECTED', `runner host '${requested}' is not connected (status: ${host.status})`);
-    }
-    if (!offersRuns(host)) return fail('RUN_HOST_WITHOUT_RUNS', `runner host '${requested}' does not offer Runs`);
-    return host;
+    return usableHost(host);
   }
   const candidates = hosts.filter((h) => h.status === 'connected' && h.hostId !== null && h.token !== null && offersRuns(h));
   if (candidates.length === 0) return fail('RUN_NO_HOST', 'no connected runner host offers Runs');
@@ -437,10 +482,145 @@ function trustOf(
   };
 }
 
+/** The parent of a continuation as `fdu51xri` step 2 recognizes it. */
+interface ContinuationParent {
+  runId: string;
+  /** The tip of the local `refs/runs/<runId>/work` — the continuation's base sha (step 3). */
+  tipSha: string;
+  /** The parent's host: the registry row's `host_id`, else the record's `hostId` (`hcdxxeja`). */
+  hostId: string;
+  /** The `input` of the parent's record — a plan (a prompt input is refused). */
+  input: { projectId: string; path: string };
+}
+
+/**
+ * The parent's record, read by the shared reader of `run-read.ts`
+ * (`readRunRecordAt`) without requiring `outcome`: recognition needs only
+ * `hostId`, `input` and `reason`. It is read at the ref's tip sha — the very
+ * sha that becomes the continuation's base — not by the ref's name.
+ */
+const readParentRecordAt = (deps: RunRemoteDeps, rev: string, recordAbs: string, repo: GitRepoRoot) =>
+  readRunRecordAt((r, a, p) => deps.git.showFile(r, a, p), rev, recordAbs, repo, { requireOutcome: false });
+
+/**
+ * `fdu51xri` step 2 — the parent, in this order: not known (no registry row and
+ * no record in this workspace's home — also a Run of another workspace) →
+ * `RUN_PARENT_NOT_FOUND`; no local result ref (also a parent still running) →
+ * `RUN_PARENT_WITHOUT_RESULT`; a `prompt` input in the record →
+ * `RUN_PARENT_PROMPT_INPUT`; the record's `reason` `recipe-modified` →
+ * `RUN_PARENT_RECIPE_MODIFIED`; the parent's shadow with `supersededBy` (M28
+ * `dadc3w49`) → `RUN_PARENT_SUPERSEDED`. A parent already accepted (its tip an
+ * ancestor of HEAD) is no refusal. Every refusal comes before the registry row.
+ */
+async function recognizeParent(
+  deps: RunRemoteDeps,
+  repo: GitRepoRoot,
+  homeAbs: string,
+  parentRunId: string,
+): Promise<ContinuationParent> {
+  const notFound = (): never =>
+    fail(
+      'RUN_PARENT_NOT_FOUND',
+      `Run '${parentRunId}' is not known to this workspace: no registry row and no Run record in its home`,
+      'pass the runId of a Run ordered from this workspace',
+    );
+  // A runId the runner would never accept names no Run of this master.
+  if (!RUN_ID_PATTERN.test(parentRunId)) return notFound();
+  const recordAbs = runRecordPath(homeAbs, parentRunId);
+  const row = deps.registry().hostOf(parentRunId);
+  const tipSha = await deps.git.shadowTip(`${parentRunId}/work`, repo);
+  // The result ref exists iff its tip is the Run record (`c4s-runner` M07 #i6rgoy6k).
+  const fromRef = tipSha !== null ? await readParentRecordAt(deps, tipSha, recordAbs, repo) : null;
+  if (row === null && fromRef === null) {
+    // A record accepted into HEAD (the ref since gone) still makes the parent known.
+    const fromHead = await readParentRecordAt(deps, 'HEAD', recordAbs, repo);
+    if (fromHead === null) return notFound();
+  }
+  if (tipSha === null || fromRef === null) {
+    return fail(
+      'RUN_PARENT_WITHOUT_RESULT',
+      `Run '${parentRunId}' has no result ref refs/runs/${parentRunId}/work in this repository — it may still be running, or it left no result`,
+      'call get_run for its state; continue only a Run that left a result',
+    );
+  }
+  const input = fromRef.input as { kind?: unknown; projectId?: unknown; path?: unknown } | undefined;
+  if (input && typeof input === 'object' && input.kind === 'prompt') {
+    return fail(
+      'RUN_PARENT_PROMPT_INPUT',
+      `Run '${parentRunId}' executed a prompt — its record does not carry the prompt's text, so it cannot be continued`,
+      'order a new Run with `prompt`',
+    );
+  }
+  if (fromRef.reason === 'recipe-modified') {
+    return fail(
+      'RUN_PARENT_RECIPE_MODIFIED',
+      `Run '${parentRunId}' changed the environment recipe (reason recipe-modified) — it cannot be continued`,
+      'order a new Run from the upstream',
+    );
+  }
+  // ASSUMPTION:dev-0005 (2.1.68) — supersession as M28 reads it for this project's shadow list (`dadc3w49`).
+  const shadow = await deps.git.resolveShadow(`${parentRunId}/work`, repo, { supersession: true });
+  if (shadow?.supersededBy && shadow.supersededBy.length > 0) {
+    const children = shadow.supersededBy.map((id) => id.replace(/\/work$/, ''));
+    return fail(
+      'RUN_PARENT_SUPERSEDED',
+      `the shadow of Run '${parentRunId}' is superseded by ${children.join(', ')}`,
+      'continue the Run that superseded it',
+      { supersededBy: children },
+    );
+  }
+  if (!input || typeof input !== 'object' || typeof input.projectId !== 'string' || typeof input.path !== 'string') {
+    // ASSUMPTION:dev-0005 (2.1.68) — a record whose input is not a readable plan input is no result to continue from.
+    return fail('RUN_PARENT_WITHOUT_RESULT', `the record of Run '${parentRunId}' carries no readable plan input`);
+  }
+  return { runId: parentRunId, tipSha, hostId: row ?? fromRef.hostId, input: { projectId: input.projectId, path: input.path } };
+}
+
+/** `hcdxxeja`, continuation: the parent's host by default, any explicit one; each needs `run-continuation`. */
+function selectContinuationHost(hosts: RunRemoteHost[], requested: string | undefined, parentHostId: string): RunRemoteHost {
+  let host: RunRemoteHost;
+  if (requested !== undefined) {
+    host = selectHost(hosts, requested);
+  } else {
+    const parentHost = hosts.find((h) => h.hostId === parentHostId);
+    if (!parentHost) {
+      return fail('RUN_HOST_NOT_FOUND', `no runner host record has hostId '${parentHostId}', the host of the parent Run`, 'pass `host`', {
+        hosts: hostList(hosts),
+      });
+    }
+    host = usableHost(parentHost);
+  }
+  if (!host.capabilities.includes(RUN_CONTINUATION_CAPABILITY)) {
+    return fail(
+      'RUN_HOST_WITHOUT_CONTINUATION',
+      `runner host '${host.id}' does not offer Run continuation (no '${RUN_CONTINUATION_CAPABILITY}' in its capabilities)`,
+    );
+  }
+  return host;
+}
+
+/** What both orders share once their own steps are done: the host, the base, the input. */
+interface PreparedOrder {
+  host: RunRemoteHost;
+  repoUrl: string;
+  baseSha: string;
+  projectId: string;
+  runInput: RunInput;
+  continuation?: RunContinuation;
+}
+
 export async function runRemote(deps: RunRemoteDeps, input: RunRemoteInput): Promise<RunRemoteResult> {
   // Addressing (mcp-tool `run-tools-run-remote` logic).
   if (input.planPath !== undefined && input.prompt !== undefined) {
     fail('INVALID_ARGS', '`planPath` and `prompt` are mutually exclusive');
+  }
+  if (input.fromRunId !== undefined) {
+    const extra = (['planPath', 'prompt', 'projectId'] as const).filter((k) => input[k] !== undefined);
+    if (extra.length > 0) {
+      fail('INVALID_ARGS', `\`fromRunId\` takes the project and the plan from the parent's record — not together with ${extra.map((k) => `\`${k}\``).join(', ')}`);
+    }
+  } else if (input.instruction !== undefined) {
+    fail('INVALID_ARGS', '`instruction` is only for a continuation — pass it with `fromRunId`');
   }
   if (input.prompt !== undefined && input.prompt.trim() === '') fail('INVALID_ARGS', '`prompt` must not be empty');
   const agentName = input.agent ?? DEFAULT_RUN_AGENT_NAME;
@@ -460,7 +640,83 @@ export async function runRemote(deps: RunRemoteDeps, input: RunRemoteInput): Pro
   if (home === null) fail('RUN_PROJECT_OUTSIDE_HOME', 'the project and the workspace home are not in one repository');
   const rootPath = repo!.rootPath;
   if (!rootPath) return fail('GIT_UNAVAILABLE', 'the project is not in a repository');
+  // The workspace home's directory, for every read at the base sha.
+  const homeAbs = path.join(rootPath, home === '.' ? '' : home!);
 
+  const order =
+    input.fromRunId !== undefined
+      ? await prepareContinuation(deps, input, repo!, homeAbs, input.fromRunId)
+      : await prepareOrder(deps, input, home!, rootPath, workspace.name);
+
+  // The definition's version against the recipe at the base sha (`kcxoa7qg`).
+  const recipeAbs = path.join(homeAbs, ENVIRONMENT_RECIPE_PATH);
+  checkRecipeVersion(await deps.git.showFile(order.baseSha, recipeAbs, repo!), agent!);
+
+  // The trust in the order: the Run's project alone, its local consent, the path at the base sha.
+  const { projectId } = order;
+  const consent = deps.localConsent?.(projectId) ?? null;
+  const needs = deps.consentNeeds?.(projectId) ?? { plugins: false, skillUses: [] };
+  const basePath =
+    consent !== null
+      ? projectPathIn(await deps.git.showFile(order.baseSha, path.join(homeAbs, WORKSPACE_DESCRIPTION), repo!), projectId)
+      : null;
+  const trust = trustOf(projectId, consent, needs, basePath);
+
+  const body: RunRequest = {
+    repo: order.repoUrl,
+    home: home!,
+    baseSha: order.baseSha,
+    agent: { name: agent!.name, version: agent!.version, content: agent!.content },
+    input: order.runInput,
+    ...(input.notes !== undefined ? { notes: input.notes } : {}),
+    // `arzrwkiq`: no parameter → no field (the host's default applies); a given value passes unchanged.
+    ...(input.timeoutMinutes !== undefined ? { timeoutMinutes: input.timeoutMinutes } : {}),
+    ...(input.model !== undefined ? { model: input.model } : {}),
+    ...(trust.c4sTrust !== undefined ? { c4sTrust: trust.c4sTrust } : {}),
+    ...(order.continuation !== undefined ? { continuation: order.continuation } : {}),
+  };
+
+  // Registry — runId → hostId (and the parent of a continuation); the trust stays out of it (`jlgucjnq`).
+  const { host } = order;
+  const runId = (deps.newRunId ?? newRunId)();
+  const registry = deps.registry();
+  registry.insert(runId, host.hostId!, order.continuation?.parentRunId ?? null);
+  const result: RunRemoteResult = {
+    runId,
+    host: { id: host.id, name: host.name },
+    ...(trust.warnings.length > 0 ? { warnings: trust.warnings } : {}),
+  };
+
+  // PUT — once; this operation never retries it.
+  const outcome = await (deps.putRun ?? putRunOverHttp)({ url: host.url, token: host.token! }, runId, body);
+  if (outcome.kind === 'accepted') return result;
+  if (outcome.kind === 'network') return { ...result, unconfirmed: true };
+
+  const { status, error } = outcome;
+  if (status >= 400 && status < 500) registry.delete(runId);
+  const message = error.message ?? `runner host answered HTTP ${status}${error.code ? ` ${error.code}` : ''}`;
+  if (error.code === 'invalid_request') {
+    return fail('RUN_REJECTED', message, undefined, error.field !== null ? { field: error.field } : undefined);
+  }
+  if (error.code === 'conflict') {
+    // A fresh runId never names a known Run, so this is the master's own fault; never retried with this runId.
+    return fail('RUN_INTERNAL', `runner host reports a conflict for the new runId ${runId}: ${message}`);
+  }
+  return fail(mapRunnerApiCode(error.code), message);
+}
+
+/**
+ * `55a63udm` steps 1–4 of an order without a parent: the host, the publication
+ * of a plan not pushed, the path on the upstream (the base sha and the cleared
+ * remote), the `projectId` and the input.
+ */
+async function prepareOrder(
+  deps: RunRemoteDeps,
+  input: RunRemoteInput,
+  home: string,
+  rootPath: string,
+  workspaceName: string,
+): Promise<PreparedOrder> {
   // The input, resolved before anything leaves the machine. Step 4 (`55a63udm`,
   // `ffb3rhrs`) — the order's `projectId` — is decided here, because the plan
   // named explicitly is looked up in the plans directory of that project, and
@@ -470,7 +726,7 @@ export async function runRemote(deps: RunRemoteDeps, input: RunRemoteInput): Pro
   if (!project) {
     fail(
       'RUN_PROJECT_NOT_FOUND',
-      `project '${projectId}' is not in workspace '${workspace.name}'`,
+      `project '${projectId}' is not in workspace '${workspaceName}'`,
       'pass the `id` of a project of the workspace as `projectId`, or omit it for the current project',
     );
   }
@@ -482,7 +738,7 @@ export async function runRemote(deps: RunRemoteDeps, input: RunRemoteInput): Pro
       fail('INVALID_ARGS', `the plan attached to this thread belongs to project '${deps.projectId}', not '${projectId}' — omit \`projectId\` or pass \`planPath\``);
     }
     planPath = input.planPath ?? (input.threadId ? await deps.plans.pinnedPlanPath(input.threadId) : null);
-    if (planPath === null) fail('INVALID_ARGS', 'no plan is attached to this thread — pass `planPath` or `prompt`');
+    if (planPath === null) fail('INVALID_ARGS', 'no plan is attached to this thread — pass `planPath`, `prompt` or `fromRunId`');
     const own = projectId === deps.projectId;
     const plansDir = own ? deps.plans.rootDir : project!.plansRoot;
     const planAbs = path.join(plansDir, planPath!);
@@ -511,7 +767,7 @@ export async function runRemote(deps: RunRemoteDeps, input: RunRemoteInput): Pro
     }
     if (upstream.status !== 'on-upstream') upstreamRefusal(upstream, `plan file '${planRepoPath}'`);
   } else {
-    const description = joinRel(home!, WORKSPACE_DESCRIPTION);
+    const description = joinRel(home, WORKSPACE_DESCRIPTION);
     upstream = await deps.git.checkPathOnUpstream(description);
     if (upstream.status !== 'on-upstream') upstreamRefusal(upstream, `workspace description '${description}'`);
   }
@@ -523,61 +779,54 @@ export async function runRemote(deps: RunRemoteDeps, input: RunRemoteInput): Pro
     planPath !== null
       ? { kind: 'plan', projectId, path: planPath }
       : { kind: 'prompt', projectId, text: input.prompt! };
+  return { host, repoUrl: onUpstream.remote, baseSha: onUpstream.tipSha, projectId, runInput };
+}
 
-  // 5. The definition's version against the recipe at the base sha.
-  // The workspace home's directory, once, for both reads at the base sha (steps 5 and 6).
-  const homeAbs = path.join(rootPath, home === '.' ? '' : home!);
-  const recipeAbs = path.join(homeAbs, ENVIRONMENT_RECIPE_PATH);
-  checkRecipeVersion(await deps.git.showFile(onUpstream.tipSha, recipeAbs, repo!), agent!);
-
-  // 6. The trust in the order: the Run's project alone, its local consent, the path at the base sha.
-  const consent = deps.localConsent?.(projectId) ?? null;
-  const needs = deps.consentNeeds?.(projectId) ?? { plugins: false, skillUses: [] };
-  const basePath =
-    consent !== null
-      ? projectPathIn(await deps.git.showFile(onUpstream.tipSha, path.join(homeAbs, WORKSPACE_DESCRIPTION), repo!), projectId)
-      : null;
-  const trust = trustOf(projectId, consent, needs, basePath);
-
-  const body: RunRequest = {
-    repo: onUpstream.remote,
-    home: home!,
-    baseSha: onUpstream.tipSha,
-    agent: { name: agent!.name, version: agent!.version, content: agent!.content },
-    input: runInput,
-    ...(input.notes !== undefined ? { notes: input.notes } : {}),
-    // `arzrwkiq`: no parameter → no field (the host's default applies); a given value passes unchanged.
-    ...(input.timeoutMinutes !== undefined ? { timeoutMinutes: input.timeoutMinutes } : {}),
-    ...(input.model !== undefined ? { model: input.model } : {}),
-    ...(trust.c4sTrust !== undefined ? { c4sTrust: trust.c4sTrust } : {}),
-  };
-
-  // 7. Registry — runId → hostId only; the trust stays out of it (`jlgucjnq`).
-  const runId = (deps.newRunId ?? newRunId)();
-  const registry = deps.registry();
-  registry.insert(runId, host.hostId!);
-  const result: RunRemoteResult = {
-    runId,
-    host: { id: host.id, name: host.name },
-    ...(trust.warnings.length > 0 ? { warnings: trust.warnings } : {}),
-  };
-
-  // 8. PUT — once; this operation never retries it.
-  const outcome = await (deps.putRun ?? putRunOverHttp)({ url: host.url, token: host.token! }, runId, body);
-  if (outcome.kind === 'accepted') return result;
-  if (outcome.kind === 'network') return { ...result, unconfirmed: true };
-
-  const { status, error } = outcome;
-  if (status >= 400 && status < 500) registry.delete(runId);
-  const message = error.message ?? `runner host answered HTTP ${status}${error.code ? ` ${error.code}` : ''}`;
-  if (error.code === 'invalid_request') {
-    return fail('RUN_REJECTED', message, undefined, error.field !== null ? { field: error.field } : undefined);
+/**
+ * `fdu51xri` steps 1–6 of a continuation: `fetch()`, the parent, the base sha
+ * (the tip of the parent's local result ref), the host, no publication and no
+ * path check on the upstream, the project and the plan from the parent's
+ * record — the plan read at the base sha.
+ */
+async function prepareContinuation(
+  deps: RunRemoteDeps,
+  input: RunRemoteInput,
+  repo: GitRepoRoot,
+  homeAbs: string,
+  parentRunId: string,
+): Promise<PreparedOrder> {
+  // 1. ASSUMPTION:dev-0005 (2.1.68) — a fetch that fails (busy, network) does not refuse here:
+  // the parent is recognized from the local refs, as `get_run` reads them.
+  await deps.git.fetch();
+  // 2–3. The parent and the base sha.
+  const parent = await recognizeParent(deps, repo, homeAbs, parentRunId);
+  // 4. The host.
+  const host = selectContinuationHost(deps.hosts(), input.host, parent.hostId);
+  // ASSUMPTION:dev-0005 (2.1.68) — the order's `repo` is the upstream's remote cleared of credentials,
+  // as for any order — only the path check is skipped; no upstream is RUN_NO_UPSTREAM.
+  const upstream = await deps.git.upstreamRemoteUrl();
+  if (upstream.status === 'skipped') fail('GIT_UNAVAILABLE', 'git is disabled, there is no repository, or HEAD is not on a branch');
+  if (upstream.status === 'no-upstream') fail('RUN_NO_UPSTREAM', 'the current branch has no upstream');
+  // 6. The project of the parent's record (checked before the plan, whose directory it names).
+  const { projectId, path: planPath } = parent.input;
+  const project = deps.projects().find((p) => p.id === projectId);
+  if (!project) {
+    fail('RUN_PROJECT_NOT_FOUND', `project '${projectId}' of the parent Run '${parentRunId}' is not in this workspace`);
   }
-  if (error.code === 'conflict') {
-    // A fresh runId never names a known Run, so this is the master's own fault; never retried with this runId.
-    return fail('RUN_INTERNAL', `runner host reports a conflict for the new runId ${runId}: ${message}`);
+  // 5. No publication: the plan is the parent's plan at the base sha.
+  const planAbs = path.join(project!.plansRoot, planPath);
+  const inside = relativeInside(project!.plansRoot, planAbs) !== null;
+  if (!inside || (await deps.git.showFile(parent.tipSha, planAbs, repo)) === null) {
+    fail('PLAN_NOT_FOUND', `plan '${planPath}' of project '${projectId}' is not in the parent's result (${parent.tipSha})`);
   }
-  return fail(mapRunnerApiCode(error.code), message);
+  return {
+    host,
+    repoUrl: (upstream as { status: 'ok'; remote: string }).remote,
+    baseSha: parent.tipSha,
+    projectId,
+    runInput: { kind: 'plan', projectId, path: planPath },
+    continuation: { parentRunId, ...(input.instruction !== undefined ? { instruction: input.instruction } : {}) },
+  };
 }
 
 /**

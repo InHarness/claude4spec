@@ -12,13 +12,13 @@ import { expectToolMatchesToolRecord, type WriteToolRecord } from '../../../test
 import { expectOperationMatchesRecord, type OperationRecord } from '../../../tests/helpers/operation-records.js';
 import { host, makeRunRemoteFixture, RunsApiStub, write, type RunRemoteFixture } from '../../../tests/helpers/run-remote-fixture.js';
 
-/** mcp-tool `run-tools-run-remote` (2.1.66), verbatim. */
+/** mcp-tools `run-tools-run-remote`, `run-tools-get-run` (2.1.68) and `run-tools-cancel-run`, verbatim. */
 const RUN_TOOL_RECORDS: Record<string, WriteToolRecord> = {
   'run-tools-run-remote': {
     server: 'run-tools',
     name: 'run_remote',
     description:
-      'Starts a Run on a runner host: an agent turn over the specification of the whole workspace, executed on a remote machine. Use it when the user asks to execute a plan (or a prompt) remotely (Remote execution). The call returns as soon as the host accepts the Run; it does not wait for the Run to finish. The result reaches the master only as a shadow that a human accepts in Releases → Shadows. Use get_run later to report its state.',
+      'Starts a Run on a runner host: an agent turn over the specification of the whole workspace, executed on a remote machine. Use it when the user asks to execute a plan (or a prompt) remotely (Remote execution), or when the user asks to continue a Run that did not finish its work. The call returns as soon as the host accepts the Run; it does not wait for the Run to finish. The result reaches the master only as a shadow that a human accepts in Releases → Shadows. Use get_run later to report its state.',
     params: [
       {
         name: 'planPath',
@@ -35,13 +35,21 @@ const RUN_TOOL_RECORDS: Record<string, WriteToolRecord> = {
         description:
           'Project the plan or the prompt belongs to. Defaults to the current project. With the plan attached to the thread it must be the current project.',
       },
+      {
+        name: 'fromRunId',
+        type: 'string',
+        required: false,
+        description:
+          'Id of a finished Run to continue; the new Run starts from its result and gets its handoff. Not together with `planPath`, `prompt` or `projectId`.',
+      },
+      { name: 'instruction', type: 'string', required: false, description: "What the continuation should do beyond the parent's plan. Only with `fromRunId`." },
       { name: 'agent', type: 'string', required: false, description: 'Name of the agent definition the Run executes.' },
       {
         name: 'host',
         type: 'string',
         required: false,
         description:
-          'Local id of the runner host. Omit when exactly one connected host offers Runs; with several, the call is refused with the list of hosts to choose from.',
+          "Local id of the runner host. Omit when exactly one connected host offers Runs; with several, the call is refused with the list of hosts to choose from. With `fromRunId`, omit to use the parent's host.",
       },
       { name: 'notes', type: 'string', required: false, description: "Notes for the Run's agent, passed through unchanged. Field rules: c4s-runner dto run-request." },
       {
@@ -59,7 +67,7 @@ const RUN_TOOL_RECORDS: Record<string, WriteToolRecord> = {
     server: 'run-tools',
     name: 'get_run',
     description:
-      'Reports the state of a Run ordered earlier with run_remote: state, outcome, reason and the handoff when there is one — never logs. When the Run left a result, tells in which projects its shadow can be reviewed in Releases → Shadows, or that the shadow is already accepted. Use it when the user asks how a Run is doing.',
+      'Reports the state of a Run ordered earlier with run_remote: state, outcome, reason and the handoff when there is one — never logs. When the Run left a result, tells in which projects its shadow can be reviewed in Releases → Shadows, that the shadow is already accepted, or that it is superseded by a continuation. Use it when the user asks how a Run is doing.',
     params: [{ name: 'runId', type: 'string', required: true, description: 'Id returned by run_remote.' }],
     hints: { readOnlyHint: false, destructiveHint: null, idempotentHint: true, openWorldHint: true },
   },
@@ -147,6 +155,25 @@ describe('run-tools · run_remote (mcp-tool run-tools-run-remote)', () => {
     const { isError } = await call(client, { projectId: 'app' });
     expect(isError).toBe(false);
     expect(stub.requests[0]!.body.input).toEqual({ kind: 'plan', projectId: 'app', path: 'p1.md' });
+  });
+
+  it('[entity:run-tools-run-remote] fromRunId and instruction pass to the operation: the order is a continuation of the parent; instruction without fromRunId is INVALID_ARGS', async () => {
+    const PARENT = '01jparent0000000000000000p';
+    const url = fx.hosts[0]!.url;
+    fx.hosts.length = 0;
+    fx.hosts.push(host('a', url, { capabilities: ['runs', 'run-continuation'] }));
+    fx.registry.insert(PARENT, 'h_a');
+    const sha = await fx.pushRunRecord(PARENT, { runId: PARENT, hostId: 'h_a', outcome: 'partial', input: { kind: 'plan', projectId: 'app', path: 'p1.md' } }, {
+      'ws/app/pages/run.md': '# by the parent\n',
+    });
+    const { client } = await connectTo(fx.deps(), fx.readDeps())();
+    const ok = await call(client, { fromRunId: PARENT, instruction: 'finish it' });
+    expect(ok.isError).toBe(false);
+    expect(ok.body.host).toEqual({ id: 'a', name: 'name-a' });
+    expect(stub.requests[0]!.body).toMatchObject({ baseSha: sha, continuation: { parentRunId: PARENT, instruction: 'finish it' } });
+    const bad = await call(client, { instruction: 'finish it' });
+    expect(bad.isError).toBe(true);
+    expect(bad.body.code).toBe('INVALID_ARGS');
   });
 
   it('[entity:run-tools-run-remote] a refusal carries its remedy: the host list of RUN_HOST_REQUIRED, the field of RUN_REJECTED', async () => {
@@ -249,6 +276,23 @@ describe('run-tools · get_run and cancel_run (mcp-tools run-tools-get-run, run-
     expect(unknown.body.code).toBe('RUN_UNKNOWN');
   });
 
+  it('[entity:run-tools-get-run] get_run returns resultSha and parentRunId as the runner gives them (the record\'s `returns`), next to the shadow', async () => {
+    const PARENT = '01jparent0000000000000000p';
+    fx.registry.insert(RUN, 'h_a', PARENT);
+    const sha = await fx.pushRunRecord(RUN, { runId: RUN, hostId: 'h_a', outcome: 'partial', parentRunId: PARENT, input: { kind: 'plan', projectId: 'app', path: 'p1.md' } }, {
+      'ws/app/pages/run.md': '# by the Run\n',
+    });
+    stub.reply = () => ({
+      status: 200,
+      body: { runId: RUN, hostId: 'h_a', state: 'finished', outcome: 'partial', resultRef: `refs/runs/${RUN}/work`, resultSha: sha, parentRunId: PARENT },
+    });
+    const { client } = await connectTo(fx.deps(), fx.readDeps())();
+    const res = await call(client, { runId: RUN }, 'get_run');
+    expect(res.isError).toBe(false);
+    expect(res.body).toMatchObject({ runId: RUN, source: 'host', resultSha: sha, parentRunId: PARENT });
+    expect(res.body.shadow).toEqual({ id: `${RUN}/work`, accepted: false, projects: [{ projectId: 'app', visible: true }] });
+  });
+
   it('[entity:run-tools-cancel-run] lists cancel_run with the record\'s name, description, one required string `runId` and the hints destructiveHint, idempotentHint and openWorldHint true', async () => {
     const { client, server } = await connectTo(fx.deps(), fx.readDeps())();
     expectToolMatchesToolRecord(server.tools.find((t) => t.name === 'cancel_run'), RUN_TOOL_RECORDS['run-tools-cancel-run']!);
@@ -321,7 +365,7 @@ describe('the catalog rows get_run and cancel_run (spec-operations get-run, canc
 });
 
 describe('the catalog row run_remote (spec-operation run-remote)', () => {
-  it('[entity:run-remote] run_remote: workspace, agent-mediated, internal direct rendered by run-tools.run_remote, cli/mcp/rest n/a with the record\'s reasons, effect db, not idempotent, the record\'s 22 codes (RUN_PROJECT_NOT_FOUND in, RUN_HOST_GATEWAY_UNAVAILABLE out), rules error-code-once/echo-free/explicit-addressing', () => {
+  it('[entity:run-remote] run_remote: workspace, agent-mediated, internal direct rendered by run-tools.run_remote, cli/mcp/rest n/a with the record\'s reasons, effect db, not idempotent, the record\'s 28 codes (RUN_PROJECT_NOT_FOUND, RUN_HOST_WITHOUT_CONTINUATION and the five RUN_PARENT_* in, RUN_HOST_GATEWAY_UNAVAILABLE out), rules error-code-once/echo-free/explicit-addressing', () => {
     const op = expectOperationMatchesRecord(
       {
         nazwa: 'run_remote',
@@ -352,6 +396,12 @@ describe('the catalog row run_remote (spec-operation run-remote)', () => {
           'RUN_HOST_NOT_FOUND',
           'RUN_HOST_NOT_CONNECTED',
           'RUN_HOST_WITHOUT_RUNS',
+          'RUN_HOST_WITHOUT_CONTINUATION',
+          'RUN_PARENT_NOT_FOUND',
+          'RUN_PARENT_WITHOUT_RESULT',
+          'RUN_PARENT_PROMPT_INPUT',
+          'RUN_PARENT_RECIPE_MODIFIED',
+          'RUN_PARENT_SUPERSEDED',
           'RUN_AGENT_NOT_FOUND',
           'RUN_C4S_VERSION_INCOMPATIBLE',
           'INVALID_ARGS',

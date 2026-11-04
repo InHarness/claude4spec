@@ -10,7 +10,7 @@ export const RUN_ID_INPUT_SCHEMA = {
 };
 
 export const GET_RUN_DESCRIPTION =
-  'Reports the state of a Run ordered earlier with run_remote: state, outcome, reason and the handoff when there is one — never logs. When the Run left a result, tells in which projects its shadow can be reviewed in Releases → Shadows, or that the shadow is already accepted. Use it when the user asks how a Run is doing.';
+  'Reports the state of a Run ordered earlier with run_remote: state, outcome, reason and the handoff when there is one — never logs. When the Run left a result, tells in which projects its shadow can be reviewed in Releases → Shadows, that the shadow is already accepted, or that it is superseded by a continuation. Use it when the user asks how a Run is doing.';
 
 export const CANCEL_RUN_DESCRIPTION =
   'Cancels a Run ordered earlier with run_remote. Use it only when the user asks to stop the Run. Cancelling a Run that has already finished changes nothing and reports the Run as it is.';

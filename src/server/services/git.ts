@@ -2191,6 +2191,29 @@ export class GitService {
   }
 
   /**
+   * 2.1.68 (M55 `fdu51xri` / `ffb3rhrs`): the remote of the current branch's
+   * upstream as `checkPathOnUpstream` reports it on `on-upstream` — the URL of
+   * `git remote get-url`, cleared of credentials — without fetching and
+   * without checking any path. A continuation Run takes its base from the
+   * parent's result ref, so it skips the path check but still needs the
+   * order's `repo`. Gate as `checkPathOnUpstream` (`skipped`, `no-upstream`).
+   * Read-only, no lock, never throws.
+   */
+  async upstreamRemoteUrl(): Promise<{ status: 'ok'; remote: string } | { status: 'skipped' } | { status: 'no-upstream' }> {
+    try {
+      const gate = await this.upstreamGate();
+      if ('refusal' in gate) return { status: gate.refusal };
+      const { root, upstream } = gate;
+      const remoteUrl = await this.git(['remote', 'get-url', upstream.remote], root)
+        .then((r) => r.stdout.trim() || upstream.remote)
+        .catch(() => upstream.remote);
+      return { status: 'ok', remote: sanitizeRemoteUrl(remoteUrl) };
+    } catch {
+      return { status: 'skipped' };
+    }
+  }
+
+  /**
    * 2.1.64 (M28 ejwze5r4): commit exactly `relPath` (relative to `rootPath`)
    * and push the current branch to its upstream. Every other change in the
    * index and the working tree stays as it was — out of the commit, still
@@ -2879,6 +2902,22 @@ export class GitService {
     const set = listed.some((s) => s.id === id) ? listed : [...listed, self];
     const supersededBy = (await this.shadowSupersession(root, set)).get(id);
     return supersededBy ? { id, tipSha, baseSha, masterAhead, headSha, supersededBy } : { id, tipSha, baseSha, masterAhead, headSha };
+  }
+
+  /**
+   * 2.1.68 (M55 `fdu51xri`): the tip sha of the LOCAL shadow ref
+   * `refs/runs/<id>` — whatever HEAD is, also when the shadow is already
+   * accepted (its tip an ancestor of HEAD), which `resolveShadow` reports as
+   * `null`. The id names the ref exactly (`--verify`, `^{commit}`), never a
+   * revision expression. `null` when there is no such ref, git is off or no
+   * repository is detected. Read-only, no lock, never throws.
+   */
+  async shadowTip(id: string, precomputedStatus?: GitRepoRoot): Promise<string | null> {
+    const root = precomputedStatus ? precomputedStatus.rootPath : await this.shadowLayerRoot();
+    if (!root || id.length === 0 || /[\s~^:?*[\\]|@\{|\.\./.test(id)) return null;
+    return this.git(['rev-parse', '--verify', '--quiet', `${SHADOW_REF_PREFIX}${id}^{commit}`], root)
+      .then((r) => r.stdout.trim() || null)
+      .catch(() => null);
   }
 
   /**
