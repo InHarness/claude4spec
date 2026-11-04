@@ -679,8 +679,9 @@
   ],
   "baselineGreen": true,
   "system": {
-    "rounds": 2,
-    "suite": "env-runner impl-2-1-68-tests @0e275eba: npm test 2 failed / 7952 passed (catalog run_remote codes; git fetch 407 = proxy artifact, green alone); e2e 228/228 in round 1",
+    "rounds": 3,
+    "covered": true,
+    "suite": "env-runner @048ceb4e: npm test 7953/7954 (1 env artifact), e2e seed-dependent only",
     "env": "impl-2-1-68-tests",
     "thread": "BR9_pMY8LXPd"
   }
