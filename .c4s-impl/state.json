@@ -550,7 +550,7 @@
         }
       ],
       "wave": 2,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "u4-m55-run-continuation/p1-l1-l15",
@@ -589,11 +589,17 @@
             "ac-zlecenie-z-fromrunid-niesie-continuat",
             "ac-zlecenie-z-fromrunid-niesie-projectid"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 2,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "run-remote"
+          ],
+          "only": [
+            {
+              "slug": "run-remote"
+            }
+          ]
         }
       ],
       "startCommit": "76d6d00aac5df8ed44ab10b6aa2433dd76a8e865",
@@ -679,8 +685,8 @@
   ],
   "baselineGreen": true,
   "system": {
-    "rounds": 1,
-    "suite": "env-runner impl-2-1-68-tests @0bce80ba: npm test 14 failed / 7940 passed; e2e 228/228",
+    "rounds": 2,
+    "suite": "env-runner impl-2-1-68-tests @0e275eba: npm test 2 failed / 7952 passed (catalog run_remote codes; git fetch 407 = proxy artifact, green alone); e2e 228/228 in round 1",
     "env": "impl-2-1-68-tests",
     "thread": "BR9_pMY8LXPd"
   }
