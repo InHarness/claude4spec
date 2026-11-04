@@ -1,4 +1,0 @@
-wave 1 done: u1-m28-shadow-supersession (5/5), u2-m55-plan-execution-v4 (6/6) verified and reviewed.
-Non-blocking findings: .c4s-impl/review/u1-m28-shadow-supersession.md (rev-0001, rev-0002 — performance of the supersession scan).
-Deviations sent: dev-0001 (equal shadow tips do not supersede each other).
-Next: wave 2 — u3-m17-chain-accept, u4-m55-run-continuation. Say "continue" to go on.

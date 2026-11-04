@@ -1,0 +1,15 @@
+{
+  "id": "dev-0002",
+  "kind": "drift",
+  "blocking": false,
+  "address": "u1-m28-shadow-supersession/ng0h4t5o",
+  "slugs": [
+    "git-shadows-response"
+  ],
+  "text": "Sekcja ng0h4t5o opisuje `resolveShadow(id)` jako zwracające `supersededBy` przy każdym cieniu zastąpionym, a relację jako liczoną „istniejącym sprawdzeniem przodka, bez nowego prymitywu”. Na prośbę człowieka (findings przeglądu rev-0001, rev-0002) kod robi inaczej: (1) `resolveShadow(id, precomputedStatus?, { supersession: true })` liczy `supersededBy` tylko na żądanie — domyślnie (podgląd cienia, Accept, odczyt Runu, które pola dziś nie czytają) odpowiedź go nie niesie i nie płaci za filtr listy ani skan zastąpienia; `listShadows()` / `GET /api/git/shadows` liczą je zawsze. (2) Relacja nie jest już liczona sprawdzeniem przodka na każdą parę tipów (n·(n−1) procesów git), tylko jednym `git merge-base --independent <tipy>` (cienie końcowe) i jednym `git for-each-ref --contains <tip>` na tip niekońcowy (~n+1 procesów); wynik ten sam, bez nowej metody w kontrakcie gitService. Propozycja do ng0h4t5o: „`supersededBy` liczone na żądanie (opcja `supersession`); wywołania, które go nie czytają, nie płacą za skan”, oraz zdjęcie zdania o „istniejącym sprawdzeniu przodka” albo zastąpienie go „bez nowej metody kontraktu”.",
+  "assumption": "ASSUMPTION:dev-0002 — resolveShadow computes supersededBy only with opts.supersession: true; the default answer carries no supersededBy.",
+  "unit": "u1-m28-shadow-supersession",
+  "portion": "u1-m28-shadow-supersession/p1-domain-l4",
+  "sent": true,
+  "patchPath": "2-1-67-to-2-1-68-u1-m28-shadow-supersession-ng0h4t5o-supersededby-na-zadanie-w-resolveshadow-skan.md"
+}

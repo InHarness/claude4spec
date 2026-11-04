@@ -2716,51 +2716,63 @@ export class GitService {
    * superseded themselves (a chain grandparent → parent → child gives both
    * grandparent and parent `[child]`; two children of one parent give the
    * parent two ids), in `shadows` order. The map holds only superseded ids.
-   * One ancestor check (`merge-base --is-ancestor`, as `isAncestorOfHead`) per
-   * ordered pair of DISTINCT tips, at most `SHADOW_SCAN_CONCURRENCY` at once; a
-   * failed check counts as "not an ancestor", with a warning. Never throws.
+   * Never throws.
+   *
+   * Cost (review rev-0001): about n+1 git calls for n distinct tips, not one
+   * ancestor check per ordered pair. One `git merge-base --independent <tips…>`
+   * names the terminal tips (those no other tip descends from — exactly the
+   * not-superseded ones); then, per NON-terminal tip, at most
+   * `SHADOW_SCAN_CONCURRENCY` at once, one `git for-each-ref --contains <tip>`
+   * over the shadow namespace gives the tips that descend from it, of which the
+   * terminal ones are its `supersededBy`. A failed `--independent` → no
+   * supersession at all, a failed `--contains` → that shadow not superseded;
+   * each with a warning (as a failed ancestor check counts as "not an
+   * ancestor").
    *
    * ASSUMPTION:dev-0001 — two shadows with the SAME tip do not supersede each
    * other (each would otherwise be superseded with no terminal shadow left);
-   * only a strictly newer tip supersedes.
+   * only a strictly newer tip supersedes. Tips are deduplicated before the
+   * graph is asked, and a tip never counts as its own descendant.
    */
   private async shadowSupersession(root: string, shadows: readonly GitShadow[]): Promise<Map<string, string[]>> {
     const result = new Map<string, string[]>();
     const tips = [...new Set(shadows.map((s) => s.tipSha))];
     if (tips.length < 2) return result;
-    const pairs = tips.flatMap((a) => tips.filter((b) => b !== a).map((b) => [a, b] as const));
-    const answers = await mapBounded(pairs, SHADOW_SCAN_CONCURRENCY, ([a, b]) => this.isAncestorAt(root, a, b));
-    /** tip → the tips that descend from it (strictly). */
-    const descendants = new Map<string, Set<string>>();
-    pairs.forEach(([a, b], i) => {
-      if (!answers[i]) return;
-      let set = descendants.get(a);
-      if (!set) descendants.set(a, (set = new Set()));
-      set.add(b);
-    });
+    let terminal: Set<string>;
+    try {
+      const { stdout } = await this.git(['merge-base', '--independent', ...tips], root);
+      terminal = new Set(stdout.split('\n').map((l) => l.trim()).filter(Boolean));
+    } catch (err) {
+      console.warn('[git] shadow supersession: merge-base --independent failed — no shadow marked superseded:', errMessage(err));
+      return result;
+    }
+    const inner = tips.filter((t) => !terminal.has(t));
+    if (inner.length === 0) return result;
+    const above = await mapBounded(inner, SHADOW_SCAN_CONCURRENCY, (tip) => this.terminalTipsContaining(root, tip, terminal));
+    /** non-terminal tip → the terminal tips that descend from it. */
+    const terminalsAbove = new Map(inner.map((tip, i) => [tip, above[i]!] as const));
     for (const shadow of shadows) {
-      const below = descendants.get(shadow.tipSha);
-      if (!below || below.size === 0) continue;
-      const terminals = shadows.filter((o) => below.has(o.tipSha) && !(descendants.get(o.tipSha)?.size ?? 0)).map((o) => o.id);
-      if (terminals.length > 0) result.set(shadow.id, terminals);
+      const over = terminalsAbove.get(shadow.tipSha);
+      if (!over || over.size === 0) continue;
+      const ids = shadows.filter((o) => over.has(o.tipSha)).map((o) => o.id);
+      if (ids.length > 0) result.set(shadow.id, ids);
     }
     return result;
   }
 
   /**
-   * `git merge-base --is-ancestor <ancestor> <descendant>` at `root` — the
-   * ancestor check of `isAncestorOfHead`, between any two commits. Exit 1 →
-   * `false`; another failure → `false` with a warning. Never throws.
+   * The tips of `terminal` that descend strictly from `tip`: one
+   * `git for-each-ref --contains <tip>` over the shadow namespace (every listed
+   * shadow is a ref there), kept to the terminal tips. A failure → empty, with
+   * a warning. Never throws.
    */
-  private async isAncestorAt(root: string, ancestor: string, descendant: string): Promise<boolean> {
+  private async terminalTipsContaining(root: string, tip: string, terminal: ReadonlySet<string>): Promise<Set<string>> {
     try {
-      await this.git(['merge-base', '--is-ancestor', ancestor, descendant], root);
-      return true;
+      const { stdout } = await this.git(['for-each-ref', '--format=%(objectname)', `--contains=${tip}`, SHADOW_REF_PATTERN], root);
+      return new Set(stdout.split('\n').map((l) => l.trim()).filter((sha) => sha !== tip && terminal.has(sha)));
     } catch (err) {
-      if ((err as { code?: unknown }).code !== 1) {
-        console.warn(`[git] ancestor check ${ancestor}..${descendant} failed — treated as not an ancestor:`, errMessage(err));
-      }
-      return false;
+      console.warn(`[git] shadow supersession: for-each-ref --contains ${tip} failed — treated as not superseded:`, errMessage(err));
+      return new Set();
     }
   }
 
@@ -2823,10 +2835,17 @@ export class GitService {
    * failure → `null` with a warning. `precomputedStatus`: an already-taken
    * `probeRepo()` (a caller that goes on reading the repository does not probe
    * twice).
+   *
+   * 2.1.68 (M28 ng0h4t5o): `supersededBy` on a superseded shadow — computed
+   * only with `opts.supersession: true` (review rev-0002): it needs the whole
+   * list filter plus the supersession scan, which the shadow diff, Accept and
+   * the Run read do not use today, so the default keeps their old cost and
+   * the answer carries no `supersededBy`. ASSUMPTION:dev-0002.
    */
   async resolveShadow(
     id: string,
     precomputedStatus?: GitRepoRoot,
+    opts: { supersession?: boolean } = {},
   ): Promise<{ id: string; tipSha: string; baseSha: string; masterAhead: number; headSha: string; supersededBy?: string[] } | null> {
     const root = precomputedStatus ? precomputedStatus.rootPath : await this.shadowLayerRoot();
     if (!root) return null;
@@ -2850,6 +2869,7 @@ export class GitService {
       .then((r) => Number(r.stdout.trim()))
       .catch(() => NaN);
     if (!Number.isFinite(masterAhead)) return null;
+    if (!opts.supersession) return { id, tipSha, baseSha, masterAhead, headSha };
     // 2.1.68 (M28 dadc3w49 / ng0h4t5o): supersession against the shadows of
     // the list (the same filter, the same HEAD); this shadow joins the set
     // when the list leaves it out — it can then only be superseded, never

@@ -2012,7 +2012,8 @@ describe('GitService — 2.1.46 shadow layer', () => {
     const svc = new GitService(dir, [dir]);
     const before = await repoState();
 
-    expect(await svc.resolveShadow('grand/work')).toEqual({
+    const withSupersession = { supersession: true } as const;
+    expect(await svc.resolveShadow('grand/work', undefined, withSupersession)).toEqual({
       id: 'grand/work',
       tipSha: grand,
       baseSha: first,
@@ -2020,9 +2021,9 @@ describe('GitService — 2.1.46 shadow layer', () => {
       headSha: second,
       supersededBy: ['child/work', 'twin/work'],
     });
-    expect((await svc.resolveShadow('parent/work'))?.supersededBy).toEqual(['child/work', 'twin/work']);
-    expect(await svc.resolveShadow('child/work')).toEqual({ id: 'child/work', tipSha: child, baseSha: first, masterAhead: 1, headSha: second });
-    expect(await svc.resolveShadow('twin/work')).not.toHaveProperty('supersededBy');
+    expect((await svc.resolveShadow('parent/work', undefined, withSupersession))?.supersededBy).toEqual(['child/work', 'twin/work']);
+    expect(await svc.resolveShadow('child/work', undefined, withSupersession)).toEqual({ id: 'child/work', tipSha: child, baseSha: first, masterAhead: 1, headSha: second });
+    expect(await svc.resolveShadow('twin/work', undefined, withSupersession)).not.toHaveProperty('supersededBy');
 
     // The list answers the same, from the same graph.
     const listed = Object.fromEntries((await svc.listShadows())!.map((s) => [s.id, s.supersededBy]));
@@ -2032,6 +2033,105 @@ describe('GitService — 2.1.46 shadow layer', () => {
       'parent/work': ['child/work', 'twin/work'],
       'twin/work': undefined,
     });
+    expect(await repoState()).toEqual(before);
+  });
+
+  /** Brute-force oracle: the supersession rule of dadc3w49 by one `--is-ancestor` per ordered pair of distinct tips. */
+  async function supersessionOracle(shadows: { id: string; tipSha: string }[]): Promise<Record<string, string[] | undefined>> {
+    const isAncestor = async (a: string, b: string): Promise<boolean> =>
+      a !== b && (await git(['merge-base', '--is-ancestor', a, b], dir).then(() => true, () => false));
+    const below = new Map<string, string[]>();
+    for (const a of shadows) {
+      const over: string[] = [];
+      for (const b of shadows) if (await isAncestor(a.tipSha, b.tipSha)) over.push(b.tipSha);
+      below.set(a.id, over);
+    }
+    const out: Record<string, string[] | undefined> = {};
+    for (const a of shadows) {
+      const over = below.get(a.id)!;
+      const ids = shadows.filter((o) => over.includes(o.tipSha) && below.get(o.id)!.length === 0).map((o) => o.id);
+      out[a.id] = ids.length > 0 ? ids : undefined;
+    }
+    return out;
+  }
+
+  it('[review:rev-0001] [section:dadc3w49] [entity:git-shadows-response] supersession on a chain and a fork takes about n+1 git calls (one merge-base --independent, one for-each-ref --contains per non-terminal tip, no pairwise --is-ancestor) and gives the same supersededBy as the pairwise rule', async () => {
+    // Chain: a1 → a2 → a3.
+    const a1 = await shadow('chain-1/work', first, { 'spec.md': '# spec (chain 1)\n' });
+    const a2 = await shadow('chain-2/work', a1, { 'spec.md': '# spec (chain 2)\n' });
+    await shadow('chain-3/work', a2, { 'spec.md': '# spec (chain 3)\n' });
+    // Fork: f0 with two children f1, f2; f1 has a twin (same tip, ASSUMPTION:dev-0001).
+    const f0 = await shadow('fork-0/work', first, { 'spec.md': '# spec (fork 0)\n' });
+    const f1 = await shadow('fork-1/work', f0, { 'spec.md': '# spec (fork 1)\n' });
+    await shadow('fork-2/work', f0, { 'spec.md': '# spec (fork 2)\n' });
+    await git(['update-ref', 'refs/runs/fork-1-twin/work', f1], dir);
+    // A lone shadow, related to none of them.
+    await shadow('lone/work', first, { 'spec.md': '# spec (lone)\n' });
+
+    const proto = GitService.prototype as unknown as GitRunner;
+    const original = proto.git;
+    const calls: string[][] = [];
+    vi.spyOn(proto, 'git').mockImplementation(async function (this: unknown, ...args: Parameters<GitRunner['git']>) {
+      calls.push(args[0]);
+      return original.apply(this, args);
+    });
+
+    const svc = new GitService(dir, [dir]);
+    const before = await repoState();
+    const shadows = (await svc.listShadows())!;
+    const listed = Object.fromEntries(shadows.map((s) => [s.id, s.supersededBy]));
+    expect(listed).toEqual({
+      'chain-1/work': ['chain-3/work'],
+      'chain-2/work': ['chain-3/work'],
+      'chain-3/work': undefined,
+      'fork-0/work': ['fork-1-twin/work', 'fork-1/work', 'fork-2/work'],
+      'fork-1-twin/work': undefined,
+      'fork-1/work': undefined,
+      'fork-2/work': undefined,
+      'lone/work': undefined,
+    });
+    vi.restoreAllMocks();
+    expect(listed).toEqual(await supersessionOracle(shadows));
+
+    const distinctTips = new Set(shadows.map((s) => s.tipSha)).size; // 7 (the twin shares fork-1's tip)
+    const independent = calls.filter((a) => a[0] === 'merge-base' && a.includes('--independent'));
+    const contains = calls.filter((a) => a[0] === 'for-each-ref' && a.some((x) => x.startsWith('--contains')));
+    expect(calls.filter((a) => a[0] === 'merge-base' && a.includes('--is-ancestor'))).toHaveLength(0);
+    expect(independent).toHaveLength(1);
+    expect(independent[0]!.filter((x) => /^[0-9a-f]{40}$/.test(x))).toHaveLength(distinctTips);
+    expect(contains).toHaveLength(3); // chain-1, chain-2, fork-0 — the non-terminal tips
+    expect(independent.length + contains.length).toBeLessThanOrEqual(distinctTips + 1);
+    expect(await repoState()).toEqual(before);
+  });
+
+  it('[review:rev-0002] [section:ng0h4t5o] resolveShadow computes supersededBy only when asked — the default (shadow diff, Accept, Run read) runs no list filter and no supersession scan', async () => {
+    const parent = await shadow('parent/work', first, { 'spec.md': '# spec (parent)\n' });
+    const child = await shadow('child/work', parent, { 'spec.md': '# spec (child)\n' });
+    await shadow('other/work', first, { 'spec.md': '# spec (other)\n' });
+
+    const proto = GitService.prototype as unknown as GitRunner;
+    const original = proto.git;
+    const calls: string[][] = [];
+    vi.spyOn(proto, 'git').mockImplementation(async function (this: unknown, ...args: Parameters<GitRunner['git']>) {
+      calls.push(args[0]);
+      return original.apply(this, args);
+    });
+    const svc = new GitService(dir, [dir]);
+    const before = await repoState();
+
+    // Default — the cheap path: no supersededBy, and none of the list's per-ref work.
+    expect(await svc.resolveShadow('parent/work')).toEqual({ id: 'parent/work', tipSha: parent, baseSha: first, masterAhead: 1, headSha: second });
+    expect(calls.filter((a) => a[0] === 'diff')).toHaveLength(0);
+    expect(calls.filter((a) => a.includes('--independent') || a.some((x) => x.startsWith('--contains')) || a.some((x) => x.startsWith('--no-merged')))).toHaveLength(0);
+    expect(calls.filter((a) => a[0] === 'merge-base')).toHaveLength(1); // its own base only
+
+    // Opt-in — the computing path: the same answer the list gives.
+    calls.length = 0;
+    const resolved = await svc.resolveShadow('parent/work', undefined, { supersession: true });
+    expect(resolved).toEqual({ id: 'parent/work', tipSha: parent, baseSha: first, masterAhead: 1, headSha: second, supersededBy: ['child/work'] });
+    expect(calls.filter((a) => a.includes('--independent'))).toHaveLength(1);
+    expect((await svc.listShadows())!.find((s) => s.id === 'parent/work')?.supersededBy).toEqual(resolved!.supersededBy);
+    expect(await svc.resolveShadow('child/work', undefined, { supersession: true })).toEqual({ id: 'child/work', tipSha: child, baseSha: first, masterAhead: 1, headSha: second });
     expect(await repoState()).toEqual(before);
   });
 
