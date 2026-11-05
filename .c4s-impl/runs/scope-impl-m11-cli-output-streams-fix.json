@@ -1,0 +1,86 @@
+{
+ "unit": {
+  "id": "m11-cli-output-streams",
+  "goal": "Komenda `c4s` rozdziela strumienie bez wyjątków: sukces wychodzi wyłącznie na stdout, a stderr przy sukcesie nie niesie nic do parsowania; błąd zostawia stdout pusty, a na stderr wyłącznie kopertę błędu, bez wierszy logu przed nią i po niej. Bez usunięć.",
+  "recipe": {
+   "pages": [
+    {
+     "key": "pages/modules/m11-c4s/m11-c4s.md",
+     "change": "all"
+    },
+    {
+     "key": "pages/modules/m11-c4s/m11-c4s.md",
+     "context": {
+      "offset": 1,
+      "limit": 2,
+      "anchors": [
+       "m11cel00",
+       "m11dep00"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m11-c4s/m11-c4s.md",
+     "context": {
+      "offset": 17,
+      "limit": 1,
+      "anchors": [
+       "ihakwlks"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m11-c4s/m11-c4s.md",
+     "context": {
+      "offset": 24,
+      "limit": 1,
+      "anchors": [
+       "hy4dlema"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m11-c4s/m11-c4s.md",
+     "context": {
+      "offset": 33,
+      "limit": 3,
+      "anchors": [
+       "g24dkd8t",
+       "tcs1yuku",
+       "6j1zctfb"
+      ]
+     }
+    }
+   ],
+   "entities": [
+    {
+     "type": "ac",
+     "slugs": [
+      "ac-blad-komendy-zostawia-na-stderr-wylac",
+      "ac-blad-komendy-zostawia-stdout-pusty"
+     ]
+    }
+   ]
+  },
+  "jobs": []
+ },
+ "portion": {
+  "name": "m11-cli-output-streams/p1-l14-l14",
+  "layers": [
+   "L14"
+  ],
+  "slugs": [
+   "ac-blad-komendy-zostawia-na-stderr-wylac",
+   "ac-blad-komendy-zostawia-stdout-pusty"
+  ],
+  "packet": ".c4s-impl/packets/m11-cli-output-streams.md"
+ },
+ "only": [
+  {
+   "finding": "rev-0001"
+  }
+ ],
+ "findingSource": ".c4s-impl/review/m11-cli-output-streams.json",
+ "note": "the human at the wave gate asked for this non-blocking finding to be fixed",
+ "stateDir": ".c4s-impl/"
+}
