@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readPackageVersion } from './c4s/package-version.js';
 import { assertFlagValues, assertKnownFlags, parseArgs } from './c4s/args.js';
-import { CliError } from './c4s/errors.js';
+import { CliError, codeToExit } from './c4s/errors.js';
 import { runWithStreamDiscipline } from './c4s/streams.js';
 import { DEFAULT_MODEL } from '../core/agent/models.js';
 import type { CliCommandContribution } from './c4s/registry.js';
@@ -389,7 +389,8 @@ async function main(): Promise<void> {
 
 
 // 2.1.69 (M11 `hy4dlema`, `g24dkd8t`) — success on stdout only; an error leaves
-// stdout empty and stderr carrying the envelope alone (see `streams.ts`).
-runWithStreamDiscipline(main).then((exitCode) => {
+// stdout empty and stderr carrying the envelope alone (see `streams.ts`). Every
+// exit status comes from `codeToExit` (`./c4s/errors.js`), passed in here.
+runWithStreamDiscipline(main, codeToExit).then((exitCode) => {
   if (exitCode !== 0) process.exit(exitCode);
 });

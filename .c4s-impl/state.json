@@ -119,7 +119,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "m11-cli-output-streams/p1-l14-l14",
@@ -130,17 +130,11 @@
             "ac-blad-komendy-zostawia-na-stderr-wylac",
             "ac-blad-komendy-zostawia-stdout-pusty"
           ],
-          "status": "in-progress",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
-          "uncovered": [
-            "ac-komenda-o-trybie-server-delegating-pr"
-          ],
-          "only": [
-            {
-              "slug": "ac-komenda-o-trybie-server-delegating-pr"
-            }
-          ]
+          "uncovered": [],
+          "only": []
         }
       ],
       "startCommit": "f496931ff352a11fb52e739ba81105a723490964",

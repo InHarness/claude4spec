@@ -18,9 +18,14 @@ type Write = typeof process.stdout.write;
  * once the outcome is known. No command streams its output progressively, so
  * holding it costs nothing a caller could observe.
  *
- * Returns the process exit code: 0 on success, `codeToExit(code)` on error.
+ * Returns the process exit code: 0 on success, `toExit(code)` on error. The
+ * entry passes `codeToExit` from `./errors.js` explicitly — it is the one map
+ * every exit goes through; it is also the default.
  */
-export async function runWithStreamDiscipline(run: () => Promise<void>): Promise<number> {
+export async function runWithStreamDiscipline(
+  run: () => Promise<void>,
+  toExit: (code: string) => number = codeToExit,
+): Promise<number> {
   const stdoutWrite: Write = process.stdout.write;
   const stderrWrite: Write = process.stderr.write;
   const held = { stdout: [] as Array<string | Uint8Array>, stderr: [] as Array<string | Uint8Array> };
@@ -38,7 +43,7 @@ export async function runWithStreamDiscipline(run: () => Promise<void>): Promise
     release();
     const cliError = toCliError(err);
     writeError(cliError);
-    return codeToExit(cliError.code);
+    return toExit(cliError.code);
   }
 
   release();
