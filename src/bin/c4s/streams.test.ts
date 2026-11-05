@@ -63,7 +63,7 @@ describe('runWithStreamDiscipline — error path', () => {
     expect(stderrSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('[ac:ac-blad-komendy-zostawia-na-stderr-wylac] a log line written after an unexpected error does not precede the envelope', async () => {
+  it('[ac:ac-blad-komendy-zostawia-na-stderr-wylac] a log line written before an unexpected error does not reach stderr ahead of the envelope', async () => {
     await runWithStreamDiscipline(async () => {
       console.error('library diagnostic');
       throw new Error('boom');

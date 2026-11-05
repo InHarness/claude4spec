@@ -49,6 +49,14 @@ export function confirmationMarker(row: Pick<ExposedProjectRow, 'uses' | 'confir
  * order kept, a name once (M52 `qtq9iusb`, 2.1.69). `PUT /uses-confirmation`
  * replaces the stored list whole, so the confirmed ones are carried over and
  * unticking a row takes the attachment off, never its confirmation.
+ *
+ * ASSUMPTION:dev-6910 — the project's own exposed name has no row (M52
+ * `qtq9iusb`: "bieżący projekt nie ma wiersza na liście"), so a stored
+ * confirmation of that name is not "confirmed according to the list" and a card
+ * write drops it. Kept deliberately: carrying it would need a row for the
+ * current project or a server-side merge, and `PUT /uses-confirmation` replaces
+ * the list whole (M31 `naxqsfra`). The own name resolves as `self` before any
+ * confirmation check, so dropping it changes no attachment's status.
  */
 export function confirmationAfter(rows: readonly ExposedProjectRow[], names: readonly string[]): string[] {
   const kept = rows.filter((r) => r.confirmed).map((r) => r.name);
