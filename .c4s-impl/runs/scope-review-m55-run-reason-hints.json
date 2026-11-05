@@ -1,9 +1,0 @@
-{
- "unit": "m55-run-reason-hints",
- "goal": "Master rozpoznaje dwa nowe powody Runu: awarię środowiska po stronie hosta i zastrzeżony temat commita. Odczyt Runu podaje powód dosłownie i dokłada opcjonalną wskazówkę mastera, co zrobić dalej. Dla powodu spoza tabeli wskazówki nie ma. Bez usunięć.",
- "portions": [
-  "m55-run-reason-hints/p1-domain-mcp"
- ],
- "diff": "git diff bbde80254a855f234b6fee3abcce461c4db124fa..HEAD -- . ':!.c4s-impl'",
- "stateDir": ".c4s-impl/"
-}

@@ -1,9 +1,0 @@
-{
- "unit": "m55-trust-and-continuation",
- "goal": "Zlecenie Runu wysyła wpis zaufania tylko przy rzeczywistej zgodzie lokalnej i porównuje ścieżki w postaci kanonicznej. Zwraca najwyżej trzy rozróżnione ostrzeżenia, a przy zgodzie dla innej ścieżki tylko jedno. Kontynuacja nie odmawia przy nieudanym pobraniu ze zdalnego repozytorium i rozpoznaje rodzica z lokalnych refów. Odmawia, gdy rodzic nie ma czytelnego wyniku. Zastąpienie cienia rodzica liczy na żądanie. Kieruje zlecenie na upstream bieżącej gałęzi; bez upstreamu zwraca błąd braku upstreamu, a repozytorium spoza obsługiwanych przez bramę hosta daje synchroniczne odrzucenie. Usunięcie: dawny pojedynczy, ogólny komunikat o niewysłanym zaufaniu.",
- "portions": [
-  "m55-trust-and-continuation/p1-domain"
- ],
- "diff": "git diff c4d496910995014cb4e1306c13837469a5ae4e40..HEAD -- . ':!.c4s-impl'",
- "stateDir": ".c4s-impl/"
-}

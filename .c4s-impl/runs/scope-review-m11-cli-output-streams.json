@@ -1,9 +1,0 @@
-{
- "unit": "m11-cli-output-streams",
- "goal": "Komenda `c4s` rozdziela strumienie bez wyjątków: sukces wychodzi wyłącznie na stdout, a stderr przy sukcesie nie niesie nic do parsowania; błąd zostawia stdout pusty, a na stderr wyłącznie kopertę błędu, bez wierszy logu przed nią i po niej. Bez usunięć.",
- "portions": [
-  "m11-cli-output-streams/p1-l14-l14"
- ],
- "diff": "git diff bdabcd227df77e273d87ec6c2f709f0f4fd8285c..HEAD -- . ':!.c4s-impl'",
- "stateDir": ".c4s-impl/"
-}

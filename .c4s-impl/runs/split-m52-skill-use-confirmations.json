@@ -1,1 +1,0 @@
-{"role":"implementer","unit":"m52-skill-use-confirmations","packetBytes":42993,"portions":[{"name":"m52-skill-use-confirmations/p1-l2-l17","layers":["L2","L17"],"slugs":["exposed-project-row","get-api-spec-skills-exposed-projects","ac-zapis-potwierdzen-z-nazwa-poza-skladn","ac-zapis-potwierdzenia-z-karty-skills-za"]}],"deviations":[]}
