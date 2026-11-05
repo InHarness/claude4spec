@@ -130,9 +130,10 @@ function parentRunIdOf(text: string | null): string | null {
  * directories, the own one first; `[]` when the own exemption does not apply
  * (no `<runId>/work` id, no home, home outside the repository).
  *
- * ASSUMPTION:dev-0004 — with several `run <runId>: …` commits in the history
- * the NEWEST is the ancestor's tip; a `parentRunId` already visited ends the
- * chain.
+ * 2.1.69 (`cd3mxjn7`): the subject `run <runId>: ` is reserved for a Run's
+ * record commit. In an older chain the history may hold several matching
+ * commits — the NEWEST is the ancestor's tip; an ancestor with no such commit
+ * is not exempted; a repeated `parentRunId` ends the chain.
  */
 export async function exemptRecordDirs(
   git: Pick<GitService, 'workspaceHomePath' | 'showFile' | 'commitBySubjectPrefix' | 'treeEntrySha'>,

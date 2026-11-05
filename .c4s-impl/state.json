@@ -535,13 +535,29 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "m17-ancestor-record-release/p1-l2-l2",
+          "layers": [
+            "L2"
+          ],
+          "slugs": [
+            "ac-katalog-przodka-bez-commita-run-runid",
+            "ac-przy-kilku-commitach-run-runid-przodk"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "d91f974352e60dd5a241fdbd9b394835e1a2b347",
+      "baseCommit": "d91f974352e60dd5a241fdbd9b394835e1a2b347",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },

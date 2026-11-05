@@ -1,0 +1,77 @@
+{
+ "scope": "unit",
+ "unit": {
+  "id": "m17-ancestor-record-release",
+  "goal": "Przy porównaniu cienia z masterem katalog rekordu Runu-przodka jest zwolniony z flagi plików spoza specyfikacji tylko wtedy, gdy w historii tipu cienia jest commit o zastrzeżonym temacie rekordu tego przodka. Przy kilku takich commitach liczy się najnowszy, a przodek bez takiego commita nie jest zwolniony. Na końcu łańcucha kontynuacji flaga commitów obejmuje też commity przodków od merge-base, więc podpowiedź opisu wydania obejmuje cały łańcuch. Bez usunięć.",
+  "recipe": {
+   "pages": [
+    {
+     "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+     "change": "all"
+    },
+    {
+     "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+     "context": {
+      "offset": 0,
+      "limit": 1,
+      "anchors": [
+       "x62r1cd9"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+     "context": {
+      "offset": 39,
+      "limit": 8,
+      "anchors": [
+       "jssreefn",
+       "pu2g4dms",
+       "ce8plh8i",
+       "0xvhubti",
+       "nemiv2qh",
+       "arybnj78",
+       "cd3mxjn7",
+       "856sq0nw"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+     "context": {
+      "offset": 1,
+      "limit": 2,
+      "anchors": [
+       "xkpt256d",
+       "m17zal001"
+      ]
+     }
+    }
+   ],
+   "entities": [
+    {
+     "type": "ac",
+     "slugs": [
+      "ac-katalog-przodka-bez-commita-run-runid",
+      "ac-przy-kilku-commitach-run-runid-przodk"
+     ]
+    }
+   ]
+  },
+  "jobs": []
+ },
+ "portions": [
+  {
+   "name": "m17-ancestor-record-release/p1-l2-l2",
+   "layers": [
+    "L2"
+   ],
+   "slugs": [
+    "ac-katalog-przodka-bez-commita-run-runid",
+    "ac-przy-kilku-commitach-run-runid-przodk"
+   ]
+  }
+ ],
+ "app": null,
+ "stateDir": ".c4s-impl/"
+}

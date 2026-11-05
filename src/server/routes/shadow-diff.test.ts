@@ -381,6 +381,90 @@ describe('M17 shadow diff — GET /api/shadow-diff (2.1.46)', () => {
     expect(res.body.outsideSpecFiles).toEqual([]);
   });
 
+  // ── 2.1.69: the ancestor's tip is the newest commit with the reserved subject (M17 cd3mxjn7) ──
+
+  it('[ac:ac-katalog-przodka-bez-commita-run-runid] [section:cd3mxjn7] the record directory of an ancestor with no commit whose subject starts with `run <runId>: ` in the shadow tip\'s history stays in outsideSpecFiles', async () => {
+    releaseService.setWorkspaceHome(() => dir);
+    // The parent's history holds its record, but no commit whose subject STARTS with `run run-7: `
+    // (a near miss that only contains it does not count).
+    const parentTip = await shadow('run-7/work', c1, [
+      {
+        edit: () => write('.claude4spec/runs/run-7/run.json', '{"runId":"run-7","outcome":"done"}\n'),
+        message: 'Parent turn',
+      },
+      { edit: () => write('pages/a.md', 'A parent'), message: 'Re: run run-7: done' },
+    ]);
+    await shadow('run-8/work', parentTip, [
+      {
+        edit: () => {
+          write('pages/c.md', 'C child');
+          write('.claude4spec/runs/run-8/run.json', '{"runId":"run-8","parentRunId":"run-7","outcome":"done"}\n');
+        },
+        message: 'run run-8: done',
+      },
+    ]);
+    const res = await get('run-8/work');
+    expect(res.status).toBe(200);
+    // The ancestor's record directory is identical in both tips, yet without a reserved commit it is not exempt;
+    // the own Run's directory still is.
+    expect(res.body.outsideSpecFiles).toEqual(['.claude4spec/runs/run-7/run.json']);
+
+    // Contrast: the same chain WITH the reserved subject exempts the ancestor's directory.
+    const reservedTip = await shadow('run-17/work', c1, [
+      {
+        edit: () => write('.claude4spec/runs/run-17/run.json', '{"runId":"run-17","outcome":"done"}\n'),
+        message: 'run run-17: done',
+      },
+    ]);
+    await shadow('run-18/work', reservedTip, [
+      {
+        edit: () => write('.claude4spec/runs/run-18/run.json', '{"runId":"run-18","parentRunId":"run-17","outcome":"done"}\n'),
+        message: 'run run-18: done',
+      },
+    ]);
+    const exempt = await get('run-18/work');
+    expect(exempt.status).toBe(200);
+    expect(exempt.body.outsideSpecFiles).toEqual([]);
+  });
+
+  it('[ac:ac-przy-kilku-commitach-run-runid-przodk] [section:cd3mxjn7] with several `run <ancestor runId>: ` commits in the shadow tip\'s history the ancestor\'s record directory is compared with the newest of them', async () => {
+    releaseService.setWorkspaceHome(() => dir);
+    // An older chain: the parent's history carries two reserved commits, the older with record v1, the newer with v2.
+    const parentTip = await shadow('run-7/work', c1, [
+      {
+        edit: () => write('.claude4spec/runs/run-7/run.json', '{"runId":"run-7","outcome":"failed"}\n'),
+        message: 'run run-7: failed',
+      },
+      {
+        edit: () => write('.claude4spec/runs/run-7/run.json', '{"runId":"run-7","outcome":"done"}\n'),
+        message: 'run run-7: done',
+      },
+    ]);
+    const childRecord = (id: string) => `{"runId":"${id}","parentRunId":"run-7","outcome":"done"}\n`;
+
+    // The child keeps the ancestor's directory as at the NEWEST reserved commit → exempt.
+    await shadow('run-8/work', parentTip, [
+      { edit: () => write('.claude4spec/runs/run-8/run.json', childRecord('run-8')), message: 'run run-8: done' },
+    ]);
+    const newest = await get('run-8/work');
+    expect(newest.status).toBe(200);
+    expect(newest.body.outsideSpecFiles).toEqual([]);
+
+    // A child that puts the ancestor's directory back as at the OLDER reserved commit differs from the newest → not exempt.
+    await shadow('run-9/work', parentTip, [
+      {
+        edit: () => {
+          write('.claude4spec/runs/run-7/run.json', '{"runId":"run-7","outcome":"failed"}\n');
+          write('.claude4spec/runs/run-9/run.json', childRecord('run-9'));
+        },
+        message: 'run run-9: done',
+      },
+    ]);
+    const older = await get('run-9/work');
+    expect(older.status).toBe(200);
+    expect(older.body.outsideSpecFiles).toEqual(['.claude4spec/runs/run-7/run.json']);
+  });
+
   it('[ac:ac-porownanie-cienia-ktorego-dziecko-zni] the comparison of a shadow whose child vanished from the remote carries no supersededBy', async () => {
     const remote = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-shadow-diff-remote-')));
     try {

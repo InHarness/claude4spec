@@ -1,0 +1,9 @@
+{
+ "unit": "m17-ancestor-record-release",
+ "goal": "Przy porównaniu cienia z masterem katalog rekordu Runu-przodka jest zwolniony z flagi plików spoza specyfikacji tylko wtedy, gdy w historii tipu cienia jest commit o zastrzeżonym temacie rekordu tego przodka. Przy kilku takich commitach liczy się najnowszy, a przodek bez takiego commita nie jest zwolniony. Na końcu łańcucha kontynuacji flaga commitów obejmuje też commity przodków od merge-base, więc podpowiedź opisu wydania obejmuje cały łańcuch. Bez usunięć.",
+ "portions": [
+  "m17-ancestor-record-release/p1-l2-l2"
+ ],
+ "diff": "git diff d91f974352e60dd5a241fdbd9b394835e1a2b347..HEAD -- . ':!.c4s-impl'",
+ "stateDir": ".c4s-impl/"
+}
