@@ -536,9 +536,16 @@ describe('run_remote (M55)', () => {
       expect(result).toEqual({ runId: result.runId, host: { id: 'a', name: 'name-a' } });
     });
 
-    it('[ac:ac-zlecenie-runu-projektu-z-lokalnym-zau] a path written differently (`./app`) is the same path; a plugin trust alone goes without skillAttachments, and a refused trust (false) sends nothing', async () => {
-      await run(consentDeps({ app: { path: './app', trustProjectPlugins: true } }), {});
-      expect(put().body.c4sTrust).toEqual({ projects: { app: { path: './app', trustProjectPlugins: true } } });
+    it('[ac:ac-zlecenie-runu-projektu-z-lokalnym-zau] a path equal in its canonical form (`app/`) is the same path; a plugin trust alone goes without skillAttachments, and a refused trust (false) sends nothing', async () => {
+      // 2.1.69 (M31 `44viw74p`): the one tolerated trailing `/` is not part of the path.
+      await run(consentDeps({ app: { path: 'app/', trustProjectPlugins: true } }), {});
+      expect(put().body.c4sTrust).toEqual({ projects: { app: { path: 'app/', trustProjectPlugins: true } } });
+
+      // `./app` is not the canonical `app`: the consent is for another path.
+      stub.requests.length = 0;
+      const other = await run(consentDeps({ app: { path: './app', trustProjectPlugins: true } }), {});
+      expect(put().body).not.toHaveProperty('c4sTrust');
+      expect(other.warnings).toEqual([expect.stringContaining("is for path './app'")]);
 
       stub.requests.length = 0;
       await run(consentDeps({ app: { path: 'app', trustProjectPlugins: false } }), {});

@@ -23,7 +23,11 @@ import { PROJECT_ID_RE } from './project-id.js';
 
 export interface WorkspaceFileProject {
   id: string;
-  /** Relative to the home, inside it: never absolute, no `..`, never the home itself. */
+  /**
+   * Relative to the home, inside it, never the home itself, in the canonical
+   * form (M31 `t97gncju`, {@link isValidProjectPath}); may carry the one
+   * tolerated trailing `/`.
+   */
   path: string;
 }
 
@@ -101,13 +105,28 @@ function lockPath(home: string): string {
   return path.join(homeLocalDir(home), 'workspace.json.lock');
 }
 
-/** True when `rel` is a valid project path: relative, inside the home, not the home. */
+/**
+ * 2.1.69 (M31 `t97gncju`): the canonical form of a project path, the one
+ * `workspace.json` accepts — segments separated by `/`, no empty segment, no
+ * `.` and no `..`, no leading `/`. One trailing `/` is tolerated and is not
+ * part of the path, so `a/b/` is `a/b`. Anything else (`a/./b`, `./a`, `a//b`,
+ * `.`, `/a`, `a/b//`) is not canonical.
+ *
+ * ASSUMPTION:dev-6901 — a backslash is not a separator of the canonical form; a path
+ * carrying one is refused rather than read as a segment name, because on
+ * Windows it would name a different directory than on POSIX.
+ *
+ * ASSUMPTION:dev-6901 — a Windows drive prefix (`C:`, `C:/x`, `c:x`) as the
+ * first segment is refused too: on Windows `path.resolve(home, 'C:/x')` lands
+ * outside the home, so it is kept out at this trust boundary while the
+ * specification is silent on it (the containment guard the loose rule had).
+ */
 export function isValidProjectPath(rel: string): boolean {
-  if (rel.trim() === '') return false;
-  if (path.isAbsolute(rel) || path.win32.isAbsolute(rel)) return false;
-  const segments = rel.split(/[\\/]+/);
-  if (segments.includes('..')) return false;
-  return segments.some((s) => s !== '' && s !== '.');
+  if (rel.includes('\\')) return false;
+  if (/^[A-Za-z]:/.test(rel) || path.win32.isAbsolute(rel) || path.isAbsolute(rel)) return false;
+  const body = rel.endsWith('/') ? rel.slice(0, -1) : rel;
+  if (body === '') return false;
+  return body.split('/').every((seg) => seg !== '' && seg !== '.' && seg !== '..');
 }
 
 export type ProjectPathErrorCode = 'PROJECT_PATH_OUTSIDE_HOME' | 'PROJECT_PATH_IS_HOME';
@@ -146,14 +165,21 @@ export function toProjectPath(home: string, absDir: string): string {
   return rel.split(path.sep).join('/');
 }
 
-function canonicalProjectPath(rel: string): string {
-  return rel
-    .split(/[\\/]+/)
-    .filter((s) => s !== '' && s !== '.')
-    .join('/');
+/**
+ * 2.1.69 (M31 `t97gncju`, `44viw74p`): the canonical form of a project path —
+ * the one tolerated trailing `/` dropped. Nothing else is normalized: a path
+ * off the canonical form never passes `readWorkspaceFile`, and a stored consent
+ * under such a path simply does not match.
+ */
+export function canonicalProjectPath(rel: string): string {
+  return rel.endsWith('/') ? rel.slice(0, -1) : rel;
 }
 
-/** `a/b`, `./a/b` and `a//b/` name the same project directory. */
+/**
+ * 2.1.69 (M31 `44viw74p`): two project paths are equal when their canonical
+ * forms are equal character by character, case-sensitive — `a/b/` is `a/b`,
+ * `A/b` is not. The same equality decides whether a consent still holds.
+ */
 export function sameProjectPath(a: string, b: string): boolean {
   return canonicalProjectPath(a) === canonicalProjectPath(b);
 }
@@ -202,7 +228,7 @@ export function readWorkspaceFile(home: string): WorkspaceFile {
     const e = entry as Record<string, unknown>;
     if (typeof e.path !== 'string' || !isValidProjectPath(e.path)) {
       throw invalid(
-        `projects[${i}].path must be a path relative to the workspace home, inside it (not absolute, no "..", not the home itself)`,
+        `projects[${i}].path must be a canonical path relative to the workspace home: segments separated by "/", no empty, "." or ".." segment, no leading "/" (one trailing "/" is tolerated)`,
       );
     }
     if (e.id !== undefined && e.id !== '' && (typeof e.id !== 'string' || !PROJECT_ID_RE.test(e.id))) {

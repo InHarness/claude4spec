@@ -160,6 +160,87 @@ describe('M31 — workspace with a home directory', () => {
     },
   );
 
+  it('[ac:ac-sciezka-projektu-a-b-czyni-workspace] a project path a/./b makes workspace.json off the shape (WORKSPACE_FILE_INVALID)', () => {
+    const content = JSON.stringify({ projects: [{ id: 'b', path: 'a/./b' }], plugins: [] });
+    writeWorkspaceFile(content);
+
+    const err = startRefusal();
+    expect(err.code).toBe<WorkspaceFileErrorCode>('WORKSPACE_FILE_INVALID');
+    expect(err.message).toContain('projects[0].path');
+    // The view reads the file as off the shape too, and nothing is repaired.
+    expect(new WorkspaceRegistry(registryHome).getWorkspace('team')!.fileError?.code).toBe('WORKSPACE_FILE_INVALID');
+    expect(fs.readFileSync(workspaceFilePath(home), 'utf8')).toBe(content);
+  });
+
+  it.each([['a/./b'], ['./a'], ['a/.'], ['a//b'], ['a/b//'], ['/a'], ['//'], ['/'], ['.'], ['./'], ['a/../b'], ['a\\b'], ['C:/Users/x/proj'], ['C:/'], ['C:'], ['c:proj'], ['Z:/a/b/']])(
+    '[section:t97gncju] the non-canonical project path %j makes workspace.json off the shape',
+    (p) => {
+      writeWorkspaceFile({ projects: [{ id: 'x', path: p }], plugins: [] });
+      expect(startRefusal().code).toBe<WorkspaceFileErrorCode>('WORKSPACE_FILE_INVALID');
+    },
+  );
+
+  it('[section:t97gncju] canonical project paths pass, one trailing / is tolerated and not part of the path', () => {
+    fs.mkdirSync(path.join(home, 'a', 'b'), { recursive: true });
+    fs.mkdirSync(path.join(home, 'c'), { recursive: true });
+    writeWorkspaceFile({
+      projects: [
+        { id: 'ab', path: 'a/b/' },
+        { id: 'c', path: 'c' },
+      ],
+      plugins: [],
+    });
+    const ws = new WorkspaceRegistry(registryHome).openView('team');
+    expect(ws.fileError).toBeUndefined();
+    expect(ws.projects.map((p) => [p.id, p.cwd])).toEqual([
+      ['ab', path.join(home, 'a', 'b')],
+      ['c', path.join(home, 'c')],
+    ]);
+  });
+
+  it('[ac:ac-zgoda-zapisana-dla-a-b-obejmuje-proje] a consent stored for a/b/ covers the project whose path is a/b', () => {
+    writeWorkspaceFile({ projects: [{ id: 'ab', path: 'a/b' }], plugins: [] });
+    fs.writeFileSync(
+      path.join(registryHome, 'workspaces.json'),
+      JSON.stringify({
+        $schemaVersion: 3,
+        workspaces: [
+          {
+            name: 'team',
+            mode: 'prod',
+            defaultPort: 4601,
+            home,
+            projectTrust: { ab: { path: 'a/b/', trustProjectPlugins: true, confirmedSkillUses: ['s-one'] } },
+          },
+        ],
+      }),
+    );
+    const registry = new WorkspaceRegistry(registryHome);
+    const ws = registry.getWorkspace('team')!;
+    expect(ws.projects[0]).toMatchObject({ id: 'ab', trustProjectPlugins: true, confirmedSkillUses: ['s-one'] });
+    expect(registry.getProjectTrust(ws, 'ab')).toBe(true);
+
+    // The other way round: written while the file said a/b/ (stored canonical,
+    // a/b), the consent still covers the project after the file says a/b.
+    writeWorkspaceFile({ projects: [{ id: 'ab', path: 'a/b/' }], plugins: [] });
+    fs.writeFileSync(
+      path.join(registryHome, 'workspaces.json'),
+      JSON.stringify({ $schemaVersion: 3, workspaces: [{ name: 'team', mode: 'prod', defaultPort: 4601, home }] }),
+    );
+    const writer = new WorkspaceRegistry(registryHome);
+    writer.setProjectTrust(writer.getWorkspace('team')!, 'ab', true);
+    expect(readRegistryEntry().projectTrust).toEqual({ ab: { path: 'a/b', trustProjectPlugins: true } });
+    writeWorkspaceFile({ projects: [{ id: 'ab', path: 'a/b' }], plugins: [] });
+    expect(new WorkspaceRegistry(registryHome).getWorkspace('team')!.projects[0]).toMatchObject({
+      id: 'ab',
+      trustProjectPlugins: true,
+    });
+
+    // Equality is character by character, case-sensitive: A/b is another path.
+    writeWorkspaceFile({ projects: [{ id: 'ab', path: 'A/b' }], plugins: [] });
+    expect(new WorkspaceRegistry(registryHome).getWorkspace('team')!.projects[0]).not.toHaveProperty('trustProjectPlugins');
+  });
+
   it('[ac:ac-wpis-projektu-bez-id-w-workspace-json] a project entry without id refuses the start with WORKSPACE_PROJECT_ID_MISSING pointing at the entry', () => {
     const content = JSON.stringify({
       projects: [

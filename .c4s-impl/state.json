@@ -227,13 +227,32 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "m31-registry-canonical-paths/p1-l2-l14",
+          "layers": [
+            "L2",
+            "L14"
+          ],
+          "slugs": [
+            "trust-plugins",
+            "ac-sciezka-projektu-a-b-czyni-workspace",
+            "ac-zgoda-zapisana-dla-a-b-obejmuje-proje",
+            "ac-powtorzone-c4s-trust-plugins-nie-zmie"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "3b2d6ae681f1db332aaae30f8115d36723af5fa4",
+      "baseCommit": "18b759b8b09411d9e76646345719d53714a90703",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
       "jobs": []
     },

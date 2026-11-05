@@ -67,12 +67,6 @@ describe('c4s trust-plugins', () => {
       (w) => w.name === name,
     )!;
 
-  /** The registry file with every workspace's `lastOpened` dropped. */
-  const withoutLastOpened = (file: { workspaces: Array<Record<string, unknown>> }): unknown => ({
-    ...file,
-    workspaces: file.workspaces.map(({ lastOpened: _lastOpened, ...rest }) => rest),
-  });
-
   const refusal = async (argv: string[]): Promise<CliError> => {
     const err = await runTrustPlugins(parseArgs(argv)).then(
       () => null,
@@ -278,14 +272,59 @@ describe('c4s trust-plugins', () => {
 
     for (const dir of [projectDir, solo]) {
       await expect(runTrustPlugins(parseArgs(['trust-plugins', '--cwd', dir, 'true']))).resolves.toBeUndefined();
-      const first = withoutLastOpened(JSON.parse(fs.readFileSync(registryFile, 'utf8')));
+      const first = fs.readFileSync(registryFile, 'utf8');
       stdout = '';
       // The repeat: resolves (the bin exits 0), same answer, no new record.
       await expect(runTrustPlugins(parseArgs(['trust-plugins', '--cwd', dir, 'true']))).resolves.toBeUndefined();
       expect(JSON.parse(stdout)).toMatchObject({ cwd: dir, trustProjectPlugins: true });
-      // ASSUMPTION:dev-6708 — selecting a registry workspace bumps its
-      // `lastOpened` (pre-existing `selectOrCreate`); everything else is unchanged.
-      expect(withoutLastOpened(JSON.parse(fs.readFileSync(registryFile, 'utf8')))).toEqual(first);
+      // 2.1.69 (M31 `m31cli01`): the command does not open the workspace, so
+      // the idempotent repeat changes nothing in the registry — byte for byte.
+      expect(fs.readFileSync(registryFile, 'utf8')).toBe(first);
     }
+  });
+
+  it('[ac:ac-powtorzone-c4s-trust-plugins-nie-zmie] a repeated trust-plugins does not change the lastOpened of the workspace', async () => {
+    const opened = '2026-01-02T03:04:05.000Z';
+    const { home, projectDir } = clonedTeamRepo();
+    // A home workspace and a registry workspace (on the default 4500), both
+    // opened before by the server: `lastOpened` and `lastOpenedProject` set.
+    const solo = path.join(tmp, 'solo-spec');
+    fs.mkdirSync(solo, { recursive: true });
+    fs.mkdirSync(registryHome, { recursive: true });
+    fs.writeFileSync(
+      registryFile,
+      JSON.stringify({
+        $schemaVersion: 3,
+        workspaces: [
+          { name: 'team-clone', mode: 'prod', defaultPort: 4777, home, lastOpened: opened, lastOpenedProject: 'app' },
+          {
+            name: 'default',
+            mode: 'prod',
+            defaultPort: 4500,
+            lastOpened: opened,
+            lastOpenedProject: 'solo-spec',
+            projects: [{ id: 'solo-spec', cwd: solo, addedAt: opened }],
+          },
+        ],
+      }),
+    );
+
+    for (const [name, dir, last] of [
+      ['team-clone', projectDir, 'app'],
+      ['default', solo, 'solo-spec'],
+    ] as const) {
+      for (let i = 0; i < 2; i++) {
+        await runTrustPlugins(parseArgs(['trust-plugins', '--cwd', dir, 'true']));
+        expect(registryEntry(name).lastOpened, `${name} run ${i + 1}`).toBe(opened);
+        expect(registryEntry(name).lastOpenedProject, `${name} run ${i + 1}`).toBe(last);
+      }
+    }
+
+    // A registry workspace the command itself creates was never opened: no `lastOpened`.
+    await runTrustPlugins(parseArgs(['trust-plugins', '--cwd', path.join(tmp, 'fresh'), '--port', '4612', 'true']));
+    await runTrustPlugins(parseArgs(['trust-plugins', '--cwd', path.join(tmp, 'fresh'), '--port', '4612', 'true']));
+    const created = allEntries().find((w) => w.defaultPort === 4612)!;
+    expect(created).not.toHaveProperty('lastOpened');
+    expect(created).not.toHaveProperty('lastOpenedProject');
   });
 });

@@ -103,7 +103,10 @@ export function resolveProjectForDirectory(
       'pass the --port of a registry workspace, or run the command for a project listed in that workspace.json',
     );
   }
-  const ws = registry.selectOrCreate({ port, ...(opts.mode !== undefined ? { mode: opts.mode } : {}) });
+  // 2.1.69 (M31 `m31cli01`): a registry-write command does not open the
+  // workspace — neither `lastOpened` nor `lastOpenedProject` is stamped, so an
+  // idempotent repeat changes nothing in the registry.
+  const ws = registry.selectOrCreate({ port, open: false, ...(opts.mode !== undefined ? { mode: opts.mode } : {}) });
   const project = registry.registerProject(ws, cwd);
   return { ws, projectId: project.id, cwd };
 }

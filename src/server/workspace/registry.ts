@@ -26,6 +26,7 @@ import {
   homeLocalDir,
   mutateWorkspaceFile,
   readWorkspaceFile,
+  canonicalProjectPath,
   sameProjectPath,
   toProjectPath,
   WorkspaceFileError,
@@ -468,6 +469,7 @@ export class WorkspaceRegistry {
           : undefined;
     // `--port` is an override only when `--workspace` / `--cwd` select the entry.
     const override = sel.name != null || sel.cwd !== undefined ? sel.port : undefined;
+    const opens = sel.open !== false;
     return this.withLock((data) => {
       const assertPortFree = (port: number, self: string | null) => assertPortFreeIn(data, port, self);
       const create = (name: string, port: number | undefined, home?: string): StoredWorkspaceRecord => {
@@ -482,7 +484,7 @@ export class WorkspaceRegistry {
           ...(home !== undefined ? { home } : {}),
           mode: sel.mode ?? 'prod',
           defaultPort: port ?? firstFreePort(data.workspaces, DEFAULT_WORKSPACE_PORT),
-          lastOpened: nowIso(),
+          ...(opens ? { lastOpened: nowIso() } : {}),
           ...(home !== undefined ? {} : { projects: [] }),
         };
         // The home and its description exist before the entry naming them is written.
@@ -533,7 +535,7 @@ export class WorkspaceRegistry {
         assertPortFree(override, ws.name);
         ws.defaultPort = override;
       }
-      ws.lastOpened = nowIso();
+      if (opens) ws.lastOpened = nowIso();
       return ws;
     });
   }
@@ -942,9 +944,12 @@ export class WorkspaceRegistry {
       if (viewPath === undefined) return false;
       const trust = (target.projectTrust ??= {});
       const current = trust[id];
+      // 2.1.69 (M31 `44viw74p`): stored in the canonical form — a trailing `/`
+      // the file tolerates is not part of the path.
+      const canonical = canonicalProjectPath(viewPath);
       const base: HomeProjectTrust =
-        current && sameProjectPath(current.path, viewPath) ? current : { path: viewPath };
-      trust[id] = { ...base, path: viewPath, [key]: value };
+        current && sameProjectPath(current.path, canonical) ? current : { path: canonical };
+      trust[id] = { ...base, path: canonical, [key]: value };
       return true;
     });
   }
@@ -1226,9 +1231,12 @@ export class WorkspaceRegistry {
       // Writing would persist ids nobody migrated the slots for — the server
       // migrates first (`migrateIfNeeded`), the CLI refuses.
       if (isMigrationPendingFor(data)) throw new RegistryMigrationPendingError(this.file);
+      // 2.1.69 (M31 `m31cli01`): a mutation that changes nothing writes
+      // nothing — an idempotent repeat leaves the registry file as it was.
+      const before = JSON.stringify(data);
       data.$schemaVersion = WORKSPACES_SCHEMA_VERSION;
       const result = mutate(data);
-      writeJsonAtomic(this.file, data);
+      if (JSON.stringify(data) !== before) writeJsonAtomic(this.file, data);
       return result;
     });
   }

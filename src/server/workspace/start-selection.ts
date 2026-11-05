@@ -25,6 +25,13 @@ export interface WorkspaceSelection {
   launchDir?: string;
   /** `$HOME` (default `os.homedir()`): `--cwd $HOME` selects workspace `default`. */
   userHome?: string;
+  /**
+   * 2.1.69 (M31 `m31cli01`, `whxy8m3r`): whether the selection OPENS the
+   * workspace (default `true`, the start). A registry-write CLI command selects
+   * without opening (`false`): `lastOpened` is not stamped on the selected
+   * entry, and an entry it creates has none — it was never opened.
+   */
+  open?: boolean;
 }
 
 export type WorkspaceSelectionErrorCode =
