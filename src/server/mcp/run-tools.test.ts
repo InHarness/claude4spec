@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { buildRunToolsServer } from './run-tools.js';
-import { runLocalConsentOf, TRUST_WARNING_PLUGINS, type RunRemoteDeps } from '../runs/run-remote.js';
+import { runLocalConsentOf, TRUST_WARNING_PLUGINS, TRUST_WARNING_SKILL_USES, type RunRemoteDeps } from '../runs/run-remote.js';
 import { runConsentNeedsOf } from '../runs/run-consent-needs.js';
 import type { RunReadDeps } from '../runs/run-read.js';
 import { RUN_READ_ERROR_CODES, RUN_REASON_HINTS } from '../runs/run-read.js';
@@ -221,6 +221,35 @@ describe('run-tools · run_remote warnings (mcp-tool run-tools-run-remote, retur
     expect(body.warnings).toEqual([TRUST_WARNING_PLUGINS]);
     expect(stub.requests).toHaveLength(1);
     expect(stub.requests[0]!.body).not.toHaveProperty('c4sTrust');
+  });
+
+  it('[ac:ac-zwrot-run-remote-przy-zgodzie-dla-inn] the return of run_remote with a local consent for another path carries exactly one warning — the path one — though the project also has plugins and skill uses', async () => {
+    write(fx.project, '.claude4spec/plugins/acme/package.json', '{"name":"acme"}');
+    await fx.pushAll('project plugin');
+    // The consent was given under `old-app`; workspace.json at the base sha lists the project under `app`.
+    const deps = fx.deps({
+      localConsent: (id) => runLocalConsentOf({ app: { path: 'old-app', trustProjectPlugins: true, confirmedSkillUses: ['s1'] } }, id),
+      consentNeeds: () => ({ plugins: true, skillUses: ['s1', 's2'] }),
+    });
+    const { client } = await connectTo(deps, fx.readDeps())();
+    const { isError, body } = await call(client, {});
+    expect(isError).toBe(false);
+    expect(body.warnings).toHaveLength(1);
+    const [warning] = body.warnings as string[];
+    expect(warning).toContain("'old-app'");
+    expect(warning).toContain("'app'");
+    expect(warning).not.toContain(TRUST_WARNING_PLUGINS);
+    expect(warning).not.toContain(TRUST_WARNING_SKILL_USES);
+    expect(stub.requests[0]!.body).not.toHaveProperty('c4sTrust');
+  });
+
+  it('[entity:run-tools-run-remote] `warnings` (2.1.69 `returns`): without a consent, the plugins warning and the unconfirmed `skill.uses` names with their list — two distinct warnings', async () => {
+    const deps = fx.deps({ localConsent: (id) => runLocalConsentOf({}, id), consentNeeds: () => ({ plugins: true, skillUses: ['s1', 's2'] }) });
+    const { client } = await connectTo(deps, fx.readDeps())();
+    const { isError, body } = await call(client, {});
+    expect(isError).toBe(false);
+    expect(body.warnings).toEqual([TRUST_WARNING_PLUGINS, `${TRUST_WARNING_SKILL_USES}: s1, s2`]);
+    expect(TRUST_WARNING_PLUGINS).not.toBe(TRUST_WARNING_SKILL_USES);
   });
 
   it('[entity:run-tools-run-remote] returns { runId, host } without `warnings` when the trust went with the order', async () => {

@@ -6,8 +6,8 @@ import type { RunConsentNeeds } from './run-remote.js';
  * M55 `jlgucjnq`: what a project directory asks a local consent for — its
  * local plugin packages (`.claude4spec/plugins/`) and its `skill.uses` names.
  * Kept apart from `run-remote.ts` so the operation's module stays free of the
- * plugin loader. ASSUMPTION:dev-6702 — read from the project's directory on
- * this machine, not from the base sha.
+ * plugin loader. 2.1.69: read from the project's directory on this machine —
+ * the same reads that drive the local trust prompt (M01 `dsh8ezbz`).
  */
 export function runConsentNeedsOf(cwd: string | null): RunConsentNeeds {
   if (cwd === null) return { plugins: false, skillUses: [] };

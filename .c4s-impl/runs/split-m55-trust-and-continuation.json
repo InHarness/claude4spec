@@ -1,0 +1,1 @@
+{"role":"implementer","unit":"m55-trust-and-continuation","packetBytes":44325,"portions":[{"name":"m55-trust-and-continuation/p1-domain","layers":["Domain"],"slugs":["run-tools-run-remote","run-remote","ac-kontynuacja-bez-upstreamu-konczy-sie","ac-kontynuacja-z-repo-spoza-repozytoriow","ac-zwrot-run-remote-przy-zgodzie-dla-inn"]}],"deviations":[]}

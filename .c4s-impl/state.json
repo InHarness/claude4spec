@@ -50,7 +50,7 @@
       "units": [
         "m55-trust-and-continuation"
       ],
-      "startCommit": null
+      "startCommit": "c4d496910995014cb4e1306c13837469a5ae4e40"
     }
   ],
   "units": [
@@ -750,13 +750,32 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "m55-trust-and-continuation/p1-domain",
+          "layers": [
+            "Domain"
+          ],
+          "slugs": [
+            "run-tools-run-remote",
+            "run-remote",
+            "ac-kontynuacja-bez-upstreamu-konczy-sie",
+            "ac-kontynuacja-z-repo-spoza-repozytoriow",
+            "ac-zwrot-run-remote-przy-zgodzie-dla-inn"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "c4d496910995014cb4e1306c13837469a5ae4e40",
+      "baseCommit": "c4d496910995014cb4e1306c13837469a5ae4e40",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     }

@@ -648,6 +648,41 @@ describe('run_remote (M55)', () => {
       expect(await git(['log', '-1', '--format=%H'], fx.repo)).toBe(tip);
     });
 
+    it('[section:jlgucjnq] a consent with `trustProjectPlugins: false` and no confirmed names sends no trust entry; an empty attachment list never enters the entry', async () => {
+      // 2.1.69: nothing granted — no entry at all, and no path-mismatch warning either.
+      const nothing = await run(
+        consentDeps({ app: { path: 'app', trustProjectPlugins: false, confirmedSkillUses: [] } }, { consentNeeds: () => ({ plugins: false, skillUses: [] }) }),
+        {},
+      );
+      expect(put().body).not.toHaveProperty('c4sTrust');
+      expect(nothing.warnings).toBeUndefined();
+
+      // Plugin trust granted, attachment list empty: the entry goes without `skillAttachments`.
+      stub.requests.length = 0;
+      await run(consentDeps({ app: { path: 'app', trustProjectPlugins: true, confirmedSkillUses: [] } }), {});
+      const entry = (put().body.c4sTrust as { projects: Record<string, Record<string, unknown>> }).projects.app!;
+      expect(entry).toEqual({ path: 'app', trustProjectPlugins: true });
+      expect(entry).not.toHaveProperty('skillAttachments');
+    });
+
+    it('[section:jlgucjnq] at most three distinct warnings: plugins without a granted trust, unconfirmed `skill.uses` with their list, a consent for another path — which then stands alone', async () => {
+      const needs = { consentNeeds: () => ({ plugins: true, skillUses: ['s1', 's2'] }) };
+      // No consent: the plugins warning and the skill-uses warning, each its own text.
+      const none = await run(consentDeps({}, needs), {});
+      expect(none.warnings).toEqual([TRUST_WARNING_PLUGINS, `${TRUST_WARNING_SKILL_USES}: s1, s2`]);
+      expect(new Set(none.warnings).size).toBe(2);
+      expect(none.warnings!.some((w) => w.includes('is for path'))).toBe(false);
+
+      // A consent for another path: one warning, the path one, never the other two.
+      stub.requests.length = 0;
+      const moved = await run(consentDeps({ app: { path: 'old-app', trustProjectPlugins: true, confirmedSkillUses: ['s1'] } }, needs), {});
+      expect(moved.warnings).toHaveLength(1);
+      expect(moved.warnings![0]).toContain("is for path 'old-app'");
+      expect(moved.warnings![0]).not.toContain(TRUST_WARNING_PLUGINS);
+      expect(moved.warnings![0]).not.toContain(TRUST_WARNING_SKILL_USES);
+      expect(put().body).not.toHaveProperty('c4sTrust');
+    });
+
     it('[entity:run-remote] a network error at the PUT keeps the warnings next to `unconfirmed`', async () => {
       fx.hosts.length = 0;
       fx.hosts.push(host('gone', await deadUrl()));
@@ -987,6 +1022,80 @@ describe('run_remote with fromRunId — the continuation (M55 fdu51xri)', () => 
     expect((await refusal(run(fx.deps(), { fromRunId: other }))).code).toBe('RUN_PROJECT_NOT_FOUND');
     expect(fx.rows().map((r) => r.run_id).sort()).toEqual([PARENT, other].sort());
     expect(stub.requests).toHaveLength(0);
+  });
+
+  /** The parent's result ref brought into the local repository, as an earlier fetch would have left it. */
+  const fetchParentRef = (id = PARENT) => git(['fetch', 'origin', `+refs/runs/${id}/work:refs/runs/${id}/work`], fx.repo);
+
+  it('[ac:ac-kontynuacja-bez-upstreamu-konczy-sie] a continuation without an upstream of the current branch ends with RUN_NO_UPSTREAM — no row and no PUT', async () => {
+    await parentWithResult();
+    await fetchParentRef();
+    await git(['branch', '--unset-upstream'], fx.repo);
+    const err = await refusal(run(fx.deps(), { fromRunId: PARENT }));
+    expect(err.code).toBe('RUN_NO_UPSTREAM');
+    expect(fx.rows()).toEqual([{ run_id: PARENT, host_id: 'h_a' }]);
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it('[ac:ac-kontynuacja-z-repo-spoza-repozytoriow] a continuation on another host whose gateway does not serve the order\'s `repo` ends with RUN_REJECTED carrying the field `repo`', async () => {
+    await parentWithResult();
+    const other = new RunsApiStub();
+    try {
+      fx.hosts.push(host('b', await other.listen(), { capabilities: CONTINUATION }));
+      // Host b's gateway serves another repository only: the synchronous rejection names `repo`.
+      const gatewayRepos = new Set(['https://github.com/acme/elsewhere.git']);
+      other.reply = (req) =>
+        gatewayRepos.has(req.body.repo as string)
+          ? { status: 202, body: { runId: req.url.split('/').pop(), state: 'queued' } }
+          : { status: 400, body: { code: 'invalid_request', message: "The repository is not on this host's allowed list.", field: 'repo' } };
+      const err = await refusal(run(fx.deps({ newRunId: () => '01jrejected0000000000000000' }), { fromRunId: PARENT, host: 'b' }));
+      expect(err.code).toBe('RUN_REJECTED');
+      expect(err.extra).toEqual({ field: 'repo' });
+      expect(other.requests).toHaveLength(1);
+      // The order's `repo` is the cleared remote of the current branch's upstream.
+      expect(other.requests[0]!.body.repo).toBe(fx.bare);
+      expect(other.requests[0]!.body.continuation).toEqual({ parentRunId: PARENT });
+      // The `4xx` deletes the continuation's row; the parent's stays.
+      expect(fx.rows()).toEqual([{ run_id: PARENT, host_id: 'h_a' }]);
+    } finally {
+      await other.close();
+    }
+  });
+
+  it('[section:fdu51xri] a failed fetch() is no refusal: the parent is recognized from the local refs and the continuation is ordered', async () => {
+    const resultSha = await parentWithResult();
+    await fetchParentRef();
+    const fetch = vi.spyOn(fx.git, 'fetch').mockResolvedValue({ status: 'error', ahead: null, behind: null, message: 'network unreachable' });
+    const result = await run(fx.deps(), { fromRunId: PARENT });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(put().body.baseSha).toBe(resultSha);
+    expect(put().body.continuation).toEqual({ parentRunId: PARENT });
+    expect(fx.registry.get(result.runId)?.parentRunId).toBe(PARENT);
+  });
+
+  it('[section:fdu51xri] a parent record without a readable project or plan path in its input ends with RUN_PARENT_WITHOUT_RESULT — before the prompt, recipe and supersession checks', async () => {
+    const noPath = '01jnopath00000000000000000';
+    await parentWithResult({ input: { kind: 'plan', projectId: 'app' } }, noPath);
+    const noProject = '01jnoproject00000000000000';
+    await parentWithResult({ input: { kind: 'plan', path: 'p1.md' } }, noProject);
+    // Unreadable input and `recipe-modified`: the unreadable input is checked first.
+    const both = '01jboth0000000000000000000';
+    await parentWithResult({ input: { kind: 'plan', projectId: 7, path: 'p1.md' }, outcome: 'failed', reason: 'recipe-modified' }, both);
+    const before = fx.rowsWithParent();
+    for (const fromRunId of [noPath, noProject, both]) {
+      const err = await refusal(run(fx.deps(), { fromRunId }));
+      expect(err.code).toBe('RUN_PARENT_WITHOUT_RESULT');
+    }
+    expect(fx.rowsWithParent()).toEqual(before);
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it('[section:fdu51xri] the parent\'s supersession is computed on demand: resolveShadow is asked with `supersession: true`', async () => {
+    await parentWithResult();
+    const resolve = vi.spyOn(fx.git, 'resolveShadow');
+    await run(fx.deps(), { fromRunId: PARENT });
+    expect(resolve).toHaveBeenCalledWith(`${PARENT}/work`, expect.anything(), { supersession: true });
+    expect(put().body.continuation).toEqual({ parentRunId: PARENT });
   });
 
   it('[entity:run-remote] the version check and the trust read the base sha of the continuation (the parent\'s result)', async () => {

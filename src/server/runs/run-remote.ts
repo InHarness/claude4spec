@@ -239,9 +239,11 @@ export interface RunRemoteResult {
   /** Only when the order may not have reached the host (network error at the `PUT`). */
   unconfirmed?: true;
   /**
-   * Only when not empty (`jlgucjnq`): the trust the order did not carry — the
-   * project's plugins or skill uses without a local consent for this path, or
-   * a consent given for another path. The thread's agent relays them in chat.
+   * Only when not empty (`jlgucjnq`, 2.1.69): at most three distinct
+   * warnings — the project's plugins without a granted trust; the `skill.uses`
+   * names outside the confirmed ones, with their list; a consent given for
+   * another path than the project's in `workspace.json` at the base sha, which
+   * then stands alone. The thread's agent relays them in chat.
    */
   warnings?: string[];
 }
@@ -424,9 +426,13 @@ function projectPathIn(workspaceText: string | null, projectId: string): string 
   return entry ? entry.path : null;
 }
 
-/** Warnings of `run_remote` (mcp-tool `run-tools-run-remote`, `returns`). */
-export const TRUST_WARNING_PLUGINS = 'trust not sent: project plugins without local approval for this path';
-export const TRUST_WARNING_SKILL_USES = 'trust not sent: skill uses without local approval for this path';
+/**
+ * The three distinct warnings of `run_remote` (mcp-tool `run-tools-run-remote`,
+ * `returns`, 2.1.69): plugins without a granted trust; `skill.uses` names
+ * without a confirmation, followed by their list; a consent for another path.
+ */
+export const TRUST_WARNING_PLUGINS = 'trust not sent: project plugins without local approval';
+export const TRUST_WARNING_SKILL_USES = 'trust not sent: skill uses without local confirmation';
 export const trustPathMismatchWarning = (projectId: string, consentPath: string, basePath: string | null): string =>
   `trust not sent: the local approval of project '${projectId}' is for path '${consentPath}', ` +
   (basePath === null
@@ -438,13 +444,17 @@ export const trustPathMismatchWarning = (projectId: string, consentPath: string,
  * Step 6 (`jlgucjnq`): the `c4sTrust` of the order and the warnings. Only the
  * Run's project; only its local consent (the plugin trust when granted, the
  * confirmed skill-attachment names); only when the consent's path equals the
- * project's path in `workspace.json` at the base sha. A missing consent or one
- * for another path never refuses: nothing is sent and a warning says why.
+ * project's path in `workspace.json` at the base sha, compared in their
+ * canonical forms (M31 `44viw74p`, `sameProjectPath` — the registry's and the
+ * runner's rule). A consent with `trustProjectPlugins: false` and no confirmed
+ * names sends no entry; an empty attachment list never enters one. A missing
+ * consent or one for another path never refuses: nothing is sent and a
+ * warning says why.
  *
- * ASSUMPTION:dev-6702 — what the project asks a consent for (local plugin
+ * 2.1.69 (`jlgucjnq`): what the project asks a consent for (local plugin
  * packages, `skill.uses`) is read from the project's directory on this
- * machine, not from the base sha; on a path mismatch the mismatch warning
- * stands alone.
+ * machine — the reads of the local trust prompt; on a path mismatch the
+ * mismatch warning stands alone, since the consent exists, for another path.
  */
 function trustOf(
   projectId: string,
@@ -505,11 +515,13 @@ const readParentRecordAt = (deps: RunRemoteDeps, rev: string, recordAbs: string,
 /**
  * `fdu51xri` step 2 — the parent, in this order: not known (no registry row and
  * no record in this workspace's home — also a Run of another workspace) →
- * `RUN_PARENT_NOT_FOUND`; no local result ref (also a parent still running) →
+ * `RUN_PARENT_NOT_FOUND`; no local result ref (also a parent still running),
+ * or a record without a readable project or plan path in its input →
  * `RUN_PARENT_WITHOUT_RESULT`; a `prompt` input in the record →
  * `RUN_PARENT_PROMPT_INPUT`; the record's `reason` `recipe-modified` →
  * `RUN_PARENT_RECIPE_MODIFIED`; the parent's shadow with `supersededBy` (M28
- * `dadc3w49`) → `RUN_PARENT_SUPERSEDED`. A parent already accepted (its tip an
+ * `dadc3w49`, computed on demand — `resolveShadow(…, { supersession: true })`)
+ * → `RUN_PARENT_SUPERSEDED`. A parent already accepted (its tip an
  * ancestor of HEAD) is no refusal. Every refusal comes before the registry row.
  */
 async function recognizeParent(
@@ -544,7 +556,19 @@ async function recognizeParent(
     );
   }
   const input = fromRef.input as { kind?: unknown; projectId?: unknown; path?: unknown } | undefined;
-  if (input && typeof input === 'object' && input.kind === 'prompt') {
+  // 2.1.69: a record without a readable project, or (for a plan input) without
+  // a readable plan path, is no result to continue from — at the same place
+  // in the order as a missing result ref. A prompt input carries no path and
+  // keeps its own code below.
+  const isPrompt = !!input && typeof input === 'object' && input.kind === 'prompt';
+  if (!input || typeof input !== 'object' || typeof input.projectId !== 'string' || (!isPrompt && typeof input.path !== 'string')) {
+    return fail(
+      'RUN_PARENT_WITHOUT_RESULT',
+      `the record of Run '${parentRunId}' carries no readable project or plan path in its input`,
+      'continue only a Run that left a result',
+    );
+  }
+  if (isPrompt) {
     return fail(
       'RUN_PARENT_PROMPT_INPUT',
       `Run '${parentRunId}' executed a prompt — its record does not carry the prompt's text, so it cannot be continued`,
@@ -558,7 +582,7 @@ async function recognizeParent(
       'order a new Run from the upstream',
     );
   }
-  // ASSUMPTION:dev-0005 (2.1.68) — supersession as M28 reads it for this project's shadow list (`dadc3w49`).
+  // Supersession computed on demand against the shadow list of the thread's project (M28 `dadc3w49`, `ng0h4t5o`).
   const shadow = await deps.git.resolveShadow(`${parentRunId}/work`, repo, { supersession: true });
   if (shadow?.supersededBy && shadow.supersededBy.length > 0) {
     const children = shadow.supersededBy.map((id) => id.replace(/\/work$/, ''));
@@ -569,11 +593,7 @@ async function recognizeParent(
       { supersededBy: children },
     );
   }
-  if (!input || typeof input !== 'object' || typeof input.projectId !== 'string' || typeof input.path !== 'string') {
-    // ASSUMPTION:dev-0005 (2.1.68) — a record whose input is not a readable plan input is no result to continue from.
-    return fail('RUN_PARENT_WITHOUT_RESULT', `the record of Run '${parentRunId}' carries no readable plan input`);
-  }
-  return { runId: parentRunId, tipSha, hostId: row ?? fromRef.hostId, input: { projectId: input.projectId, path: input.path } };
+  return { runId: parentRunId, tipSha, hostId: row ?? fromRef.hostId, input: { projectId: input.projectId as string, path: input.path as string } };
 }
 
 /** `hcdxxeja`, continuation: the parent's host by default, any explicit one; each needs `run-continuation`. */
@@ -795,15 +815,17 @@ async function prepareContinuation(
   homeAbs: string,
   parentRunId: string,
 ): Promise<PreparedOrder> {
-  // 1. ASSUMPTION:dev-0005 (2.1.68) — a fetch that fails (busy, network) does not refuse here:
+  // 1. A fetch that fails (busy, network, no upstream) is no refusal (2.1.69):
   // the parent is recognized from the local refs, as `get_run` reads them.
   await deps.git.fetch();
   // 2–3. The parent and the base sha.
   const parent = await recognizeParent(deps, repo, homeAbs, parentRunId);
   // 4. The host.
   const host = selectContinuationHost(deps.hosts(), input.host, parent.hostId);
-  // ASSUMPTION:dev-0005 (2.1.68) — the order's `repo` is the upstream's remote cleared of credentials,
-  // as for any order — only the path check is skipped; no upstream is RUN_NO_UPSTREAM.
+  // 5. The order's `repo` is the cleared remote of the current branch's upstream, as for any
+  // order (M28 `xp56ebqc`) — without a fetch or a path check; no upstream is RUN_NO_UPSTREAM.
+  // A `repo` outside the host's gateway repositories is the runner's synchronous rejection
+  // with the field `repo` — RUN_REJECTED, mapped at the `PUT` like any order's.
   const upstream = await deps.git.upstreamRemoteUrl();
   if (upstream.status === 'skipped') fail('GIT_UNAVAILABLE', 'git is disabled, there is no repository, or HEAD is not on a branch');
   if (upstream.status === 'no-upstream') fail('RUN_NO_UPSTREAM', 'the current branch has no upstream');
