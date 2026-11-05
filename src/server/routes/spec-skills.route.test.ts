@@ -50,28 +50,43 @@ function workspace() {
     '/api/spec-skills',
     specSkillsRouter({
       // 2.1.67: this machine confirmed `billing-rules` and `ghost`, not `docs`.
+      // 2.1.69: also `legal-terms` (exposed, not attached), `retired-skill`
+      // (neither attached nor exposed) and the project's own `shop-skill`.
       listExposedProjects: () =>
-        listExposedProjectRows('shop', readConfig(shop).skill?.uses ?? [], listExposedProjects(projects), ['billing-rules', 'ghost']),
+        listExposedProjectRows('shop', readConfig(shop).skill?.uses ?? [], listExposedProjects(projects), [
+          'billing-rules',
+          'ghost',
+          'legal-terms',
+          'retired-skill',
+          'shop-skill',
+        ]),
     }),
   );
   return { app, shop, projects };
 }
 
 describe('GET /api/spec-skills/exposed-projects (M52 L4, 2.1.9)', () => {
-  it('[entity:get-api-spec-skills-exposed-projects] GET answers 200 { data: rows } — every exposed project of the workspace and every attachment of the current project, dangling included; read-only', async () => {
+  it('[entity:get-api-spec-skills-exposed-projects] GET answers 200 { data: rows } — every exposed project of the workspace, every attachment of the current project, dangling included, and every name confirmed on this machine outside `skill.uses`; read-only', async () => {
     const { app, shop } = workspace();
     const before = fs.readFileSync(path.join(shop, '.claude4spec', 'config.json'), 'utf8');
     const res = await request(app).get('/api/spec-skills/exposed-projects');
     expect(res.status).toBe(200);
     expect(Object.keys(res.body)).toEqual(['data']);
-    expect((res.body.data as Array<{ name: string }>).map((r) => r.name)).toEqual(['billing-rules', 'docs', 'ghost', 'legal-terms']);
+    expect((res.body.data as Array<{ name: string }>).map((r) => r.name)).toEqual([
+      'billing-rules',
+      'docs',
+      'ghost',
+      'legal-terms',
+      // 2.1.69: confirmed here, not in `skill.uses`, exposed by nobody — an unattached row.
+      'retired-skill',
+    ]);
     // Read-only: the current project's config is untouched.
     expect(fs.readFileSync(path.join(shop, '.claude4spec', 'config.json'), 'utf8')).toBe(before);
     // No other verb on the route.
     expect((await request(app).post('/api/spec-skills/exposed-projects').send({})).status).toBe(404);
   });
 
-  it('[entity:exposed-project-row] each row carries name, description?, projectId?, uses, status (ok | unavailable | ambiguous) and confirmed (false for a project not attached)', async () => {
+  it('[entity:exposed-project-row] each row carries name, description?, projectId?, uses, status (ok | unavailable | ambiguous) and confirmed (whether the name is confirmed on this machine, attached or not); a confirmed name outside `skill.uses` and the exposed set is `unavailable`, `uses: false`, `confirmed: true`', async () => {
     const { app } = workspace();
     const res = await request(app).get('/api/spec-skills/exposed-projects');
     expect(res.body.data).toEqual([
@@ -80,8 +95,10 @@ describe('GET /api/spec-skills/exposed-projects (M52 L4, 2.1.9)', () => {
       { name: 'docs', uses: true, status: 'ambiguous', confirmed: false },
       // Dangling: nobody exposes `ghost` — the name written in skill.uses, no description, no projectId.
       { name: 'ghost', uses: true, status: 'unavailable', confirmed: true },
-      // Not attached: never confirmed.
-      { name: 'legal-terms', description: 'Terms.', projectId: 'legal', uses: false, status: 'ok', confirmed: false },
+      // Not attached, but its name is confirmed on this machine.
+      { name: 'legal-terms', description: 'Terms.', projectId: 'legal', uses: false, status: 'ok', confirmed: true },
+      // Confirmed, neither attached nor exposed: an unattached row.
+      { name: 'retired-skill', uses: false, status: 'unavailable', confirmed: true },
     ]);
     for (const row of res.body.data as Array<Record<string, unknown>>) {
       expect(Object.keys(row).every((k) => ['name', 'description', 'projectId', 'uses', 'status', 'confirmed'].includes(k))).toBe(true);
@@ -90,7 +107,8 @@ describe('GET /api/spec-skills/exposed-projects (M52 L4, 2.1.9)', () => {
       expect(typeof row.confirmed).toBe('boolean');
       expect(['ok', 'unavailable', 'ambiguous']).toContain(row.status);
     }
-    // The current project never has a row — not even by its own name sitting in its `uses`.
+    // The current project never has a row — not even by its own name sitting in its `uses`
+    // or among the confirmed names.
     expect(JSON.stringify(res.body.data)).not.toContain('shop');
   });
 
@@ -563,6 +581,18 @@ describe('PUT /api/spec-skills/uses-confirmation (M52 uluzymnm, 2.1.67)', () => 
     expect((await row('billing-rules'))?.confirmed).toBe(true);
     // `legal-terms` (attached, dangling here) stays unconfirmed: a name is confirmed, not the list.
     expect((await row('legal-terms'))?.confirmed).toBe(false);
+  });
+
+  it('[section:qtq9iusb] unticking a row takes the attachment off, not the confirmation: the row stays, `uses: false`, `confirmed: true`; a confirmed name nobody exposes stays as an unattached row', async () => {
+    const r = await confirmationRig();
+    await request(r.app).put('/api/spec-skills/uses-confirmation').send({ names: ['billing-rules', 'legal-terms'] });
+    writeConfig(r.shop, { skill: { uses: [] } });
+    const rows = (await request(r.app).get('/api/spec-skills/exposed-projects')).body.data;
+    expect(rows).toEqual([
+      { name: 'billing-rules', description: 'How billing works.', projectId: expect.any(String), uses: false, status: 'ok', confirmed: true },
+      { name: 'legal-terms', uses: false, status: 'unavailable', confirmed: true },
+    ]);
+    expect(r.stored()).toEqual(['billing-rules', 'legal-terms']);
   });
 });
 

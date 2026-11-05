@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { SKILL_NAME_RE } from '../services/skill-name.js';
+import { invalidSkillNames, SkillNameSyntaxError } from '../services/skill-name.js';
 import {
   DEFAULT_WORKSPACE_PORT,
   findProjectByCwd,
@@ -131,16 +131,20 @@ export function confirmSkillUsesForDirectory(
   opts: { cwd: string; names: readonly string[]; port?: number },
   registry: WorkspaceRegistry = new WorkspaceRegistry(),
 ): SkillUsesConfirmationResult {
-  const bad = opts.names.filter((n) => !SKILL_NAME_RE.test(n));
-  if (bad.length > 0) {
-    throw new TrustPluginsError(
-      'INVALID_ARGS',
-      `not a skill.name (kebab-case: lowercase letters, digits and single hyphens): ${bad.map((n) => `'${n}'`).join(', ')}`,
-      'pass the names exactly as the skill.uses of the project lists them',
-    );
-  }
+  const refuse = (err: SkillNameSyntaxError): TrustPluginsError =>
+    new TrustPluginsError('INVALID_ARGS', err.message, 'pass the names exactly as the skill.uses of the project lists them');
+  const bad = invalidSkillNames(opts.names);
+  if (bad.length > 0) throw refuse(new SkillNameSyntaxError(bad));
   const { ws, projectId } = resolveProjectForDirectory(opts, registry);
-  const result = registry.setSkillUsesConfirmation(ws, projectId, opts.names);
+  let result: SkillUsesConfirmationResult | null;
+  try {
+    // The core validates the names itself (M31 `naxqsfra`, 2.1.69); the CLI's
+    // bad-argument code for its refusal is `INVALID_ARGS`.
+    result = registry.setSkillUsesConfirmation(ws, projectId, opts.names);
+  } catch (err) {
+    if (err instanceof SkillNameSyntaxError) throw refuse(err);
+    throw err;
+  }
   // The project was resolved (or registered) a moment ago; a null here means
   // the entry vanished under us — a race, not a refusal of the contract.
   if (!result) throw new Error(`project '${projectId}' of workspace '${ws.name}' disappeared while writing the confirmation`);

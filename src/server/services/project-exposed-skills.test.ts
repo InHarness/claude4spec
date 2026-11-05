@@ -685,10 +685,11 @@ describe('attachments from the repository need their name confirmed on this mach
     // Taking `billing-rules` off: no confirmation involved, it simply leaves the listing.
     c.state.uses = [];
     expect(c.resolver.resolveForContext('chat', { writingStyle: null }).listing).toEqual([]);
-    // The rows of a not-attached project are never confirmed.
-    expect(listExposedProjectRows('consumer', [], [BILLING, LEGAL], ['billing-rules', 'legal-terms']).map((r) => r.confirmed)).toEqual([
-      false,
-      false,
+    // 2.1.69 (M52 `qtq9iusb`): a row carries the confirmation of its name, attached or not —
+    // taking the attachment off leaves the confirmation in place.
+    expect(listExposedProjectRows('consumer', [], [BILLING, LEGAL], ['billing-rules', 'legal-terms']).map((r) => [r.uses, r.confirmed])).toEqual([
+      [false, true],
+      [false, true],
     ]);
   });
 

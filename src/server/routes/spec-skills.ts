@@ -34,7 +34,7 @@ import type {
   SkillUsesConfirmationRequest,
   SkillUsesConfirmationResponse,
 } from '../../shared/spec-skills.js';
-import { SKILL_NAME_RE } from '../services/skill-name.js';
+import { SkillNameSyntaxError } from '../services/skill-name.js';
 import { DomainError } from '../services/tags.js';
 import { errorHandler } from './errors.js';
 
@@ -50,19 +50,15 @@ export interface SpecSkillsRouterDeps {
   confirmSkillUses?: (names: string[]) => SkillUsesConfirmationResponse;
 }
 
-/** The request DTO's rule: `names` is an array of `skill.name`s. */
+/** The request DTO's rule: `names` is an array of strings (their syntax: the core's). */
 function parseConfirmationRequest(body: unknown): SkillUsesConfirmationRequest {
   const names = (body as Partial<SkillUsesConfirmationRequest> | undefined)?.names;
   if (!Array.isArray(names) || names.some((n) => typeof n !== 'string')) {
     throw new DomainError('INVALID_ARGUMENT', 'names must be an array of skill names');
   }
-  const bad = (names as string[]).filter((n) => !SKILL_NAME_RE.test(n));
-  if (bad.length > 0) {
-    throw new DomainError(
-      'INVALID_ARGUMENT',
-      `not a skill.name (kebab-case: lowercase letters, digits and single hyphens): ${bad.map((n) => `'${n}'`).join(', ')}`,
-    );
-  }
+  // The `skill.name` syntax of each name is the core's check (M31 `naxqsfra`,
+  // 2.1.69): `setSkillUsesConfirmation` refuses the whole write with
+  // `SkillNameSyntaxError`, which this channel reports as `INVALID_ARGUMENT`.
   return { names: names as string[] };
 }
 
@@ -95,7 +91,13 @@ export function specSkillsRouter(deps: SpecSkillsRouterDeps): Router {
     router.put('/uses-confirmation', express.json(), (req, res, next) => {
       try {
         const { names } = parseConfirmationRequest(req.body);
-        const result = confirm(names);
+        let result: SkillUsesConfirmationResponse;
+        try {
+          result = confirm(names);
+        } catch (err) {
+          if (err instanceof SkillNameSyntaxError) throw new DomainError('INVALID_ARGUMENT', err.message);
+          throw err;
+        }
         const data: SkillUsesConfirmationResponse = {
           confirmedSkillUses: result.confirmedSkillUses,
           notInSkillUses: result.notInSkillUses,

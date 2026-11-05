@@ -133,9 +133,13 @@ export function resolveAttachments(
  * paging — the list is short by nature and an incomplete one would be useless
  * for choosing attachments.
  *
- * 2.1.67 (M52 `uluzymnm`): each row carries `confirmed` — the name is attached
- * AND confirmed on this machine (`confirmedSkillUses`); a row the project does
- * not attach is never confirmed.
+ *  - 2.1.69 (M52 `qtq9iusb`): every name confirmed on this machine that the
+ *    project's `skill.uses` does not carry and no other project exposes — an
+ *    unattached row, `unavailable`, `uses: false`, `confirmed: true`.
+ *
+ * Each row carries `confirmed` — the name is confirmed on this machine in the
+ * project's trust (`confirmedSkillUses`), attached or not (2.1.69: unticking a
+ * row takes the attachment off, not the confirmation).
  */
 export function listExposedProjectRows(
   consumerId: string,
@@ -145,7 +149,7 @@ export function listExposedProjectRows(
 ): ExposedProjectRow[] {
   const used = new Set(uses);
   const confirmedSet = new Set(confirmedNames);
-  const confirmed = (name: string): boolean => used.has(name) && confirmedSet.has(name);
+  const confirmed = (name: string): boolean => confirmedSet.has(name);
   const own = exposed.find((p) => p.projectId === consumerId)?.name ?? null;
   const byName = new Map<string, ExposedProject[]>();
   for (const p of exposed) {
@@ -172,6 +176,10 @@ export function listExposedProjectRows(
   for (const name of used) {
     if (name === own || byName.has(name)) continue;
     rows.push({ name, uses: true, status: 'unavailable', confirmed: confirmed(name) });
+  }
+  for (const name of confirmedSet) {
+    if (name === own || byName.has(name) || used.has(name)) continue;
+    rows.push({ name, uses: false, status: 'unavailable', confirmed: true });
   }
   return rows.sort((a, b) => a.name.localeCompare(b.name));
 }

@@ -44,14 +44,14 @@ export function confirmationMarker(row: Pick<ExposedProjectRow, 'uses' | 'confir
 }
 
 /**
- * The confirmation list to write when `names` get confirmed: every attached name
- * already confirmed (as the rows show it) plus `names` — order kept, a name once.
- * `PUT /uses-confirmation` replaces the stored list whole, so the confirmed ones
- * are carried over. ASSUMPTION:dev-6704 — a confirmed name outside `skill.uses`
- * has no row, so a write from the card does not carry it.
+ * The confirmation list to write when `names` get confirmed: every name already
+ * confirmed according to the list — outside `skill.uses` too — plus `names`,
+ * order kept, a name once (M52 `qtq9iusb`, 2.1.69). `PUT /uses-confirmation`
+ * replaces the stored list whole, so the confirmed ones are carried over and
+ * unticking a row takes the attachment off, never its confirmation.
  */
 export function confirmationAfter(rows: readonly ExposedProjectRow[], names: readonly string[]): string[] {
-  const kept = rows.filter((r) => r.uses && r.confirmed).map((r) => r.name);
+  const kept = rows.filter((r) => r.confirmed).map((r) => r.name);
   return [...new Set([...kept, ...names])];
 }
 

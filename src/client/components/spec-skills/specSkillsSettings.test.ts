@@ -227,6 +227,38 @@ describe('#skills — attachment confirmation helpers (M52 qtq9iusb, 2.1.67)', (
     expect(confirmButton(busy, 'tax-rules')).toMatch(/\sdisabled/);
   });
 
+  it('[ac:ac-zapis-potwierdzenia-z-karty-skills-za] a confirmation write from the #skills card keeps a confirmed name outside skill.uses — the Confirm action and the confirmation of an added row alike; unticking takes the attachment off, not the confirmation', () => {
+    // Rows as the list answers them (2.1.69): `retired-skill` is confirmed here and not in
+    // skill.uses — an unattached row; `docs-style` was unticked, its name stays confirmed.
+    const ROWS_2169: ExposedProjectRow[] = [
+      { name: 'billing-rules', projectId: 'billing', uses: true, status: 'ok', confirmed: true },
+      { name: 'docs-style', projectId: 'docs', uses: false, status: 'ok', confirmed: true },
+      { name: 'legal-terms', projectId: 'legal', uses: true, status: 'ok', confirmed: false },
+      { name: 'retired-skill', uses: false, status: 'unavailable', confirmed: true },
+      { name: 'tax-rules', projectId: 'tax', uses: false, status: 'ok', confirmed: false },
+    ];
+    // The Confirm action of `legal-terms`: every confirmed name of the list plus the new one.
+    expect(confirmationAfter(ROWS_2169, ['legal-terms'])).toEqual(['billing-rules', 'docs-style', 'retired-skill', 'legal-terms']);
+
+    // Ticking `tax-rules` and saving: `afterSave` confirms the added names with
+    // `confirmationAfter(rows, added)` — the same confirmed names carried over.
+    const added = addedUses(ROWS_2169, ['billing-rules', 'legal-terms', 'tax-rules']);
+    expect(added).toEqual(['tax-rules']);
+    expect(confirmationAfter(ROWS_2169, added)).toEqual(['billing-rules', 'docs-style', 'retired-skill', 'tax-rules']);
+    // The unattached confirmed row is shown unticked, with no Unconfirmed marker and no Confirm.
+    const html = renderToStaticMarkup(
+      createElement(UsedSkillProjectsList, {
+        rows: ROWS_2169,
+        uses: ['billing-rules', 'legal-terms'],
+        onToggle: () => {},
+        onConfirm: () => {},
+      }),
+    );
+    expect(html).toMatch(/data-skill-name="retired-skill"[\s\S]*?<input type="checkbox"(?![^>]*checked)/);
+    expect(html).not.toContain('data-confirm-skill-use="retired-skill"');
+    expect(html).not.toContain('data-confirm-skill-use="docs-style"');
+  });
+
   it('[section:qtq9iusb] afterSave without an added row writes no confirmation and re-reads the list', async () => {
     const qc = new QueryClient();
     qc.setQueryData(EXPOSED_PROJECTS_QUERY_KEY, MIXED);

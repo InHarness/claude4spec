@@ -366,13 +366,32 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "m52-skill-use-confirmations/p1-l2-l17",
+          "layers": [
+            "L2",
+            "L17"
+          ],
+          "slugs": [
+            "exposed-project-row",
+            "get-api-spec-skills-exposed-projects",
+            "ac-zapis-potwierdzen-z-nazwa-poza-skladn",
+            "ac-zapis-potwierdzenia-z-karty-skills-za"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "ef49878b5513a88c0f36c4915fa66ae447e2f75f",
+      "baseCommit": "ef49878b5513a88c0f36c4915fa66ae447e2f75f",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },

@@ -7,6 +7,7 @@ import { WorkspaceSelectionError } from './start-selection.js';
 import { workspaceFilePath } from './home-workspace.js';
 import { invalidateOnConsentChange } from './consent-invalidation.js';
 import { writeConfig } from '../config.js';
+import { SkillNameSyntaxError } from '../services/skill-name.js';
 
 /**
  * 2.1.67 (M31 Domain + L10): the registry entry's per-project trust — the
@@ -284,6 +285,51 @@ describe('M31 — registry consents and core operations (2.1.67)', () => {
       });
       expect(fs.readFileSync(workspaceFilePath(home), 'utf8')).toBe(before);
       expect(fs.existsSync(registryFile() + '.lock')).toBe(false);
+    });
+
+    it('[ac:ac-zapis-potwierdzen-z-nazwa-poza-skladn] a confirmation list with one name outside the `skill.name` syntax is refused whole: the registry file is byte-identical and the context is not invalidated', () => {
+      projectDir('specs/app', ['spec-style']);
+      const { registry, ws } = openHome([{ id: 'app', path: 'specs/app' }]);
+      registry.setSkillUsesConfirmation(ws, 'app', ['spec-style']);
+      const cache = { invalidate: vi.fn() };
+      const off = invalidateOnConsentChange(registry, ws, cache);
+      const before = fs.readFileSync(registryFile(), 'utf8');
+
+      // Each one breaks the syntax `^[a-z0-9]+(-[a-z0-9]+)*$`; valid names next to it do not save the write.
+      for (const bad of ['Spec-Style', 'spec_style', '-spec', 'spec-', 'spec--style', 'spec style', 'spéc', '']) {
+        let thrown: unknown;
+        try {
+          registry.setSkillUsesConfirmation(ws, 'app', ['shared-glossary', bad, 'other-skill']);
+        } catch (err) {
+          thrown = err;
+        }
+        expect(thrown, JSON.stringify(bad)).toBeInstanceOf(SkillNameSyntaxError);
+        expect((thrown as SkillNameSyntaxError).names).toEqual([bad]);
+        expect(fs.readFileSync(registryFile(), 'utf8')).toBe(before);
+      }
+      expect(entryNamed('team').projectTrust.app.confirmedSkillUses).toEqual(['spec-style']);
+      expect(cache.invalidate).not.toHaveBeenCalled();
+      // Digits and single hyphens are in the syntax: the same write with valid names goes through.
+      expect(registry.setSkillUsesConfirmation(ws, 'app', ['shared-glossary', 'v2-rules'])!.confirmedSkillUses).toEqual([
+        'shared-glossary',
+        'v2-rules',
+      ]);
+      expect(cache.invalidate).toHaveBeenCalledTimes(1);
+      off();
+    });
+
+    it('[m31:naxqsfra] a project outside the workspace: nothing is written, the context is not invalidated, the result is none', () => {
+      projectDir('specs/app', ['spec-style']);
+      const { registry, ws } = openHome([{ id: 'app', path: 'specs/app' }]);
+      registry.setSkillUsesConfirmation(ws, 'app', ['spec-style']);
+      const cache = { invalidate: vi.fn() };
+      const off = invalidateOnConsentChange(registry, ws, cache);
+      const before = fs.readFileSync(registryFile(), 'utf8');
+      expect(registry.setSkillUsesConfirmation(ws, 'stranger', ['spec-style'])).toBeNull();
+      expect(fs.readFileSync(registryFile(), 'utf8')).toBe(before);
+      expect(entryNamed('team').projectTrust.stranger).toBeUndefined();
+      expect(cache.invalidate).not.toHaveBeenCalled();
+      off();
     });
   });
 

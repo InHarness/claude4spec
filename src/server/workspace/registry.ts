@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { mintProjectId } from './project-id.js';
+import { invalidSkillNames, SkillNameSyntaxError } from '../services/skill-name.js';
 import { readPeerConfigSummary, readPeerSkillConfig } from './peer-config.js';
 import {
   isMigrationPendingFor,
@@ -861,11 +862,17 @@ export class WorkspaceRegistry {
    * - In the server process the call invalidates the project's context
    *   (`m31ctx001`, through the consent listener).
    *
-   * `null` = the id is not a project of the workspace; nothing written and
-   * nothing invalidated. ASSUMPTION:dev-6701 — the spec names no outcome for an
-   * unknown id; the CLI resolves the project before it calls.
+   * - 2.1.69: a project outside the workspace — nothing is written, the context
+   *   is not invalidated, and the result is none (`null`). The CLI resolves the
+   *   project from `--cwd` before it calls, so its refusals do not change.
+   * - 2.1.69: every name is validated against the `skill.name` syntax (M52
+   *   `wqvq1esb`); one name outside it refuses the whole write with
+   *   {@link SkillNameSyntaxError} before anything reaches the registry — each
+   *   channel reports it with its own bad-argument code.
    */
   setSkillUsesConfirmation(ws: WorkspaceRecord, id: string, names: readonly string[]): SkillUsesConfirmationResult | null {
+    const bad = invalidSkillNames(names);
+    if (bad.length > 0) throw new SkillNameSyntaxError(bad);
     const project = ws.projects.find((p) => p.id === id) ?? this.getProject(ws, id);
     if (!project) return null;
     const confirmed = [...new Set(names)];

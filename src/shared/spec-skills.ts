@@ -5,7 +5,9 @@
 /**
  * DTO `exposed-project-row` — one row of the list of projects exposed as a skill,
  * seen from the current project. The list also carries the `skill.uses`
- * attachments that do not resolve.
+ * attachments that do not resolve and (2.1.69) the names confirmed on this
+ * machine that neither `skill.uses` carries nor any project exposes
+ * (`status: unavailable`, `uses: false`, `confirmed: true`).
  *
  *  - `ok` — the name resolves to exactly one provider;
  *  - `unavailable` — no project exposes this name (a dangling attachment);
@@ -25,8 +27,7 @@ export interface ExposedProjectRow {
   status: ExposedProjectStatus;
   /**
    * 2.1.67 (M52 `uluzymnm`): whether the name is confirmed on this machine in the
-   * project's trust (`confirmedSkillUses`, M31 registry); `false` for the row of
-   * a project that is not attached.
+   * project's trust (`confirmedSkillUses`, M31 registry) — attached or not (2.1.69).
    */
   confirmed: boolean;
 }

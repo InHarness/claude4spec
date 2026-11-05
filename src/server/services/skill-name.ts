@@ -5,3 +5,26 @@
  * server-free CLI path does not load the settings registry.
  */
 export const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/**
+ * 2.1.69 (M31 `naxqsfra`, M52 `wqvq1esb`): the names of a list that are not in
+ * the `skill.name` syntax, in the order given — empty when every one is.
+ */
+export function invalidSkillNames(names: readonly string[]): string[] {
+  return names.filter((n) => typeof n !== 'string' || !SKILL_NAME_RE.test(n));
+}
+
+/**
+ * 2.1.69 (M31 `naxqsfra`): thrown by the core `setSkillUsesConfirmation` when a
+ * name of the list is outside the `skill.name` syntax — the whole write is
+ * refused before anything reaches the registry. Each channel reports it with its
+ * own bad-argument code (`INVALID_ARGUMENT` on REST, `INVALID_ARGS` in the CLI).
+ */
+export class SkillNameSyntaxError extends Error {
+  constructor(readonly names: string[]) {
+    super(
+      `not a skill.name (kebab-case: lowercase letters, digits and single hyphens): ${names.map((n) => `'${n}'`).join(', ')}`,
+    );
+    this.name = 'SkillNameSyntaxError';
+  }
+}
