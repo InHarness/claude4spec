@@ -2007,7 +2007,7 @@ describe('GitService — 2.1.46 shadow layer', () => {
     const grand = await shadow('grand/work', first, { 'spec.md': '# spec (grandparent)\n' });
     const parent = await shadow('parent/work', grand, { 'spec.md': '# spec (parent)\n' });
     const child = await shadow('child/work', parent, { 'spec.md': '# spec (child)\n' });
-    // Same tip as `child/work`: neither supersedes the other (ASSUMPTION:dev-0001) — both are terminal.
+    // Same tip as `child/work`: neither supersedes the other (2.1.69 dadc3w49) — both are terminal.
     await git(['update-ref', 'refs/runs/twin/work', child], dir);
     const svc = new GitService(dir, [dir]);
     const before = await repoState();
@@ -2036,6 +2036,41 @@ describe('GitService — 2.1.46 shadow layer', () => {
     expect(await repoState()).toEqual(before);
   });
 
+  it('[ac:ac-dwa-cienie-o-tym-samym-tipie-sa-oba-c] [section:dadc3w49] two shadows with the same tip are both terminal shadows — neither supersedes the other, and a shadow below them is superseded by both', async () => {
+    const tip = await shadow('one/work', first, { 'spec.md': '# spec (same tip)\n' });
+    await git(['update-ref', 'refs/runs/two/work', tip], dir);
+    const svc = new GitService(dir, [dir]);
+    const before = await repoState();
+
+    // Alone on the list (read-only): both listed, neither carries supersededBy.
+    const alone = (await svc.listShadows())!;
+    expect(alone.map((s) => s.id).sort()).toEqual(['one/work', 'two/work']);
+    for (const s of alone) {
+      expect(s.tipSha, s.id).toBe(tip);
+      expect(s, s.id).not.toHaveProperty('supersededBy');
+    }
+    for (const id of ['one/work', 'two/work']) {
+      expect(await svc.resolveShadow(id, undefined, { supersession: true }), id).toEqual({ id, tipSha: tip, baseSha: first, masterAhead: 1, headSha: second });
+    }
+    expect(await repoState()).toEqual(before);
+
+    // With an older shadow whose tip is their ancestor: both are its terminal shadows, and still not superseded themselves.
+    const older = await shadow('older/work', first, { 'spec.md': '# spec (older)\n' });
+    const top = await shadow('three/work', older, { 'spec.md': '# spec (same tip, again)\n' });
+    await git(['update-ref', 'refs/runs/four/work', top], dir);
+    const listed = Object.fromEntries((await svc.listShadows())!.map((s) => [s.id, s.supersededBy]));
+    expect(listed).toEqual({
+      'four/work': undefined,
+      'older/work': ['four/work', 'three/work'],
+      'one/work': undefined,
+      'three/work': undefined,
+      'two/work': undefined,
+    });
+    expect((await svc.resolveShadow('older/work', undefined, { supersession: true }))?.supersededBy).toEqual(['four/work', 'three/work']);
+    expect(await svc.resolveShadow('three/work', undefined, { supersession: true })).not.toHaveProperty('supersededBy');
+    expect(await svc.resolveShadow('four/work', undefined, { supersession: true })).not.toHaveProperty('supersededBy');
+  });
+
   /** Brute-force oracle: the supersession rule of dadc3w49 by one `--is-ancestor` per ordered pair of distinct tips. */
   async function supersessionOracle(shadows: { id: string; tipSha: string }[]): Promise<Record<string, string[] | undefined>> {
     const isAncestor = async (a: string, b: string): Promise<boolean> =>
@@ -2060,7 +2095,7 @@ describe('GitService — 2.1.46 shadow layer', () => {
     const a1 = await shadow('chain-1/work', first, { 'spec.md': '# spec (chain 1)\n' });
     const a2 = await shadow('chain-2/work', a1, { 'spec.md': '# spec (chain 2)\n' });
     await shadow('chain-3/work', a2, { 'spec.md': '# spec (chain 3)\n' });
-    // Fork: f0 with two children f1, f2; f1 has a twin (same tip, ASSUMPTION:dev-0001).
+    // Fork: f0 with two children f1, f2; f1 has a twin (same tip, 2.1.69 dadc3w49).
     const f0 = await shadow('fork-0/work', first, { 'spec.md': '# spec (fork 0)\n' });
     const f1 = await shadow('fork-1/work', f0, { 'spec.md': '# spec (fork 1)\n' });
     await shadow('fork-2/work', f0, { 'spec.md': '# spec (fork 2)\n' });

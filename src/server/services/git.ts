@@ -2757,10 +2757,11 @@ export class GitService {
    * each with a warning (as a failed ancestor check counts as "not an
    * ancestor").
    *
-   * ASSUMPTION:dev-0001 — two shadows with the SAME tip do not supersede each
-   * other (each would otherwise be superseded with no terminal shadow left);
-   * only a strictly newer tip supersedes. Tips are deduplicated before the
-   * graph is asked, and a tip never counts as its own descendant.
+   * 2.1.69 (M28 dadc3w49): B supersedes A only when B's tip DIFFERS from A's
+   * tip — two shadows with the same tip do not supersede each other and both
+   * may be terminal. Tips are deduplicated before the graph is asked, and a
+   * tip never counts as its own descendant. The list always computes the
+   * relation, for every entry.
    */
   private async shadowSupersession(root: string, shadows: readonly GitShadow[]): Promise<Map<string, string[]>> {
     const result = new Map<string, string[]>();
@@ -2867,11 +2868,12 @@ export class GitService {
    * `probeRepo()` (a caller that goes on reading the repository does not probe
    * twice).
    *
-   * 2.1.68 (M28 ng0h4t5o): `supersededBy` on a superseded shadow — computed
-   * only with `opts.supersession: true` (review rev-0002): it needs the whole
-   * list filter plus the supersession scan, which the shadow diff, Accept and
-   * the Run read do not use today, so the default keeps their old cost and
-   * the answer carries no `supersededBy`. ASSUMPTION:dev-0002.
+   * 2.1.69 (M28 ng0h4t5o): `supersededBy` on a superseded shadow — only when
+   * the caller asks for it (`opts.supersession: true`). The default answer
+   * carries no `supersededBy` and pays for no list scan; the opt-in path
+   * computes it against the list without a new git-contract method: one
+   * `merge-base --independent` plus one `for-each-ref --contains` per
+   * non-terminal shadow (`shadowSupersession`).
    */
   async resolveShadow(
     id: string,
