@@ -4,8 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readPackageVersion } from './c4s/package-version.js';
 import { assertFlagValues, assertKnownFlags, parseArgs } from './c4s/args.js';
-import { CliError, cliErrorFromDiscovery, codeToExit } from './c4s/errors.js';
-import { writeError } from './c4s/output.js';
+import { CliError } from './c4s/errors.js';
+import { runWithStreamDiscipline } from './c4s/streams.js';
 import { DEFAULT_MODEL } from '../core/agent/models.js';
 import type { CliCommandContribution } from './c4s/registry.js';
 import { inlineMentionCommand } from './c4s/commands/inline-mention.js';
@@ -388,20 +388,8 @@ async function main(): Promise<void> {
 }
 
 
-main().catch((err) => {
-  if (err instanceof CliError) {
-    writeError(err);
-    process.exit(codeToExit(err.code));
-  }
-  // A core error reaches the user as itself, with its own code and its repair
-  // path — see `cliErrorFromDiscovery`.
-  const mapped = cliErrorFromDiscovery(err);
-  if (mapped) {
-    writeError(mapped);
-    process.exit(codeToExit(mapped.code));
-  }
-  const message = err instanceof Error ? err.message : String(err);
-  writeError(new CliError('UNKNOWN_COMMAND', message));
-  process.exit(1);
+// 2.1.69 (M11 `hy4dlema`, `g24dkd8t`) — success on stdout only; an error leaves
+// stdout empty and stderr carrying the envelope alone (see `streams.ts`).
+runWithStreamDiscipline(main).then((exitCode) => {
+  if (exitCode !== 0) process.exit(exitCode);
 });
-

@@ -43,7 +43,7 @@
         "m17-ancestor-record-release",
         "m55-run-reason-hints"
       ],
-      "startCommit": null
+      "startCommit": "bdabcd227df77e273d87ec6c2f709f0f4fd8285c"
     },
     {
       "n": 2,
@@ -119,13 +119,29 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "m11-cli-output-streams/p1-l14-l14",
+          "layers": [
+            "L14"
+          ],
+          "slugs": [
+            "ac-blad-komendy-zostawia-na-stderr-wylac",
+            "ac-blad-komendy-zostawia-stdout-pusty"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "bdabcd227df77e273d87ec6c2f709f0f4fd8285c",
+      "baseCommit": "bdabcd227df77e273d87ec6c2f709f0f4fd8285c",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },
@@ -715,5 +731,6 @@
       "version": 1
     }
   ],
-  "entityParts": []
+  "entityParts": [],
+  "baselineGreen": true
 }

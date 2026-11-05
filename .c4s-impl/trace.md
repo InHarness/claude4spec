@@ -1,0 +1,1 @@
+- m11-cli-output-streams (hy4dlema, g24dkd8t — stream discipline of the dispatcher) → src/bin/c4s/streams.ts (wired in src/bin/c4s.ts), test src/bin/c4s/streams.test.ts
