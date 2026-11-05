@@ -1,0 +1,75 @@
+{
+ "unit": {
+  "id": "m55-run-reason-hints",
+  "goal": "Master rozpoznaje dwa nowe powody Runu: awarię środowiska po stronie hosta i zastrzeżony temat commita. Odczyt Runu podaje powód dosłownie i dokłada opcjonalną wskazówkę mastera, co zrobić dalej. Dla powodu spoza tabeli wskazówki nie ma. Bez usunięć.",
+  "recipe": {
+   "pages": [
+    {
+     "key": "pages/modules/m55-runs.md",
+     "change": {
+      "offset": 0,
+      "limit": 1,
+      "anchors": [
+       "361n2mqb"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m55-runs.md",
+     "context": {
+      "offset": 1,
+      "limit": 2,
+      "anchors": [
+       "ewqj6w60",
+       "tq1frs04"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m55-runs.md",
+     "context": {
+      "offset": 4,
+      "limit": 2,
+      "anchors": [
+       "d8r8kkrd",
+       "361n2mqb"
+      ]
+     }
+    }
+   ],
+   "entities": [
+    {
+     "type": "mcp-tool",
+     "slugs": [
+      "run-tools-get-run"
+     ]
+    },
+    {
+     "type": "ac",
+     "slugs": [
+      "ac-get-run-z-powodem-environment-failed",
+      "ac-get-run-z-powodem-reserved-subject-ni",
+      "ac-get-run-z-powodem-reserved-subject-po"
+     ]
+    }
+   ]
+  },
+  "jobs": []
+ },
+ "portion": {
+  "name": "m55-run-reason-hints/p1-domain-mcp",
+  "layers": [
+   "L2 (Domain)",
+   "MCP tools"
+  ],
+  "slugs": [
+   "run-tools-get-run",
+   "ac-get-run-z-powodem-environment-failed",
+   "ac-get-run-z-powodem-reserved-subject-ni",
+   "ac-get-run-z-powodem-reserved-subject-po"
+  ],
+  "packet": ".c4s-impl/packets/m55-run-reason-hints.md"
+ },
+ "only": [],
+ "stateDir": ".c4s-impl/"
+}

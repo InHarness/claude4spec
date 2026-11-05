@@ -43,6 +43,8 @@ import {
  * 2.1.68: `get_run` also gives `resultSha` and `parentRunId` as the runner
  * (or the record) gives them, a superseded shadow with `supersededBy` (the
  * children's runIds) and no plan hint for it; hints for the parent reasons.
+ * 2.1.69: hints for `environment-failed` and `reserved-subject`; the latter
+ * is a known reason, so it goes verbatim, not as the general outcome.
  * Neither operation deletes a shadow ref (`1la4achf`): the retention of
  * `refs/runs/<runId>/*` belongs to the master, which today deletes nothing —
  * the protective rule of `28fe18e4` (never a ref of an unaccepted continuation
@@ -112,17 +114,21 @@ export const KNOWN_RUN_REASONS: ReadonlySet<string> = new Set([
   'parent-not-found',
   'parent-mismatch',
   'parent-recipe-modified',
+  // 2.1.69 — a commit of the Run's agent took the subject reserved for the record commit (M55 `361n2mqb`).
+  'reserved-subject',
   'timeout',
   'runner-restart',
 ]);
 
 /**
  * M55 `361n2mqb`: the master's hint for the reasons of the table — the two
- * whose cause lies on the c4s side and, 2.1.68, the three of a continuation's
- * parent. The reason itself goes verbatim; the hint stands next to it
- * (`reasonHint`); the row carries only the master's hint, the reason's meaning
- * stays with the runner. A reason outside this table goes without a hint.
- * ASSUMPTION:dev-6703 — the field's name (`reasonHint`) is not in the specification.
+ * whose cause lies on the c4s side, 2.1.68 the three of a continuation's
+ * parent and, 2.1.69, `environment-failed` (a failure of the Run's environment
+ * on the host) and `reserved-subject` (a commit with the subject reserved for
+ * the record commit). The reason itself goes verbatim; the hint stands next to
+ * it (`reasonHint`, mcp-tool `run-tools-get-run` `returns`); the row carries
+ * only the master's hint, the reason's meaning stays with the runner. A reason
+ * outside this table goes without a hint.
  */
 export const RUN_REASON_HINTS: Readonly<Record<string, string>> = {
   'c4s-failed':
@@ -134,6 +140,10 @@ export const RUN_REASON_HINTS: Readonly<Record<string, string>> = {
   'parent-mismatch':
     'Order the continuation again, with a new runId; if the refusal repeats, order a new Run from the upstream.',
   'parent-recipe-modified': 'The parent changed the environment recipe; order a new Run from the upstream.',
+  'environment-failed':
+    "The Run's environment failed on the host; the cause is in the Run's log with the host's operator. Order the Run again with a new runId once the failure was transient or the operator has fixed it.",
+  'reserved-subject':
+    "The Run's agent made a commit with the subject reserved for the record commit, so the Run left no result; fix the agent definition before ordering the Run again, with a new runId.",
 };
 
 /**

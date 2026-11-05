@@ -5,14 +5,14 @@ import { buildRunToolsServer } from './run-tools.js';
 import { runLocalConsentOf, TRUST_WARNING_PLUGINS, type RunRemoteDeps } from '../runs/run-remote.js';
 import { runConsentNeedsOf } from '../runs/run-consent-needs.js';
 import type { RunReadDeps } from '../runs/run-read.js';
-import { RUN_READ_ERROR_CODES } from '../runs/run-read.js';
+import { RUN_READ_ERROR_CODES, RUN_REASON_HINTS } from '../runs/run-read.js';
 import { RUN_ID_PATTERN } from '../runs/run-id.js';
 import { CATALOG } from '../operations/catalog.js';
 import { expectToolMatchesToolRecord, type WriteToolRecord } from '../../../tests/helpers/write-tool-records.js';
 import { expectOperationMatchesRecord, type OperationRecord } from '../../../tests/helpers/operation-records.js';
 import { host, makeRunRemoteFixture, RunsApiStub, write, type RunRemoteFixture } from '../../../tests/helpers/run-remote-fixture.js';
 
-/** mcp-tools `run-tools-run-remote`, `run-tools-get-run` (2.1.68) and `run-tools-cancel-run`, verbatim. */
+/** mcp-tools `run-tools-run-remote`, `run-tools-get-run` (2.1.69) and `run-tools-cancel-run`, verbatim. */
 const RUN_TOOL_RECORDS: Record<string, WriteToolRecord> = {
   'run-tools-run-remote': {
     server: 'run-tools',
@@ -291,6 +291,61 @@ describe('run-tools · get_run and cancel_run (mcp-tools run-tools-get-run, run-
     expect(res.isError).toBe(false);
     expect(res.body).toMatchObject({ runId: RUN, source: 'host', resultSha: sha, parentRunId: PARENT });
     expect(res.body.shadow).toEqual({ id: `${RUN}/work`, accepted: false, projects: [{ projectId: 'app', visible: true }] });
+  });
+
+  /** A finished, failed Run whose runner answer carries `reason` (`c4s-runner` dto `run`). */
+  async function getRunWithReason(reason: string) {
+    fx.registry.insert(RUN, 'h_a');
+    stub.reply = () => ({
+      status: 200,
+      body: { runId: RUN, hostId: 'h_a', state: 'finished', outcome: 'failed', reason, resultRef: `refs/runs/${RUN}/work` },
+    });
+    const { client } = await connectTo(fx.deps(), fx.readDeps())();
+    const res = await call(client, { runId: RUN }, 'get_run');
+    expect(res.isError).toBe(false);
+    return res.body;
+  }
+
+  it('[ac:ac-get-run-z-powodem-environment-failed] get_run with the reason `environment-failed` carries in `reasonHint` the hint to order the Run again with a new runId', async () => {
+    const body = await getRunWithReason('environment-failed');
+    expect(body.reason).toBe('environment-failed');
+    expect(body.reasonHint).toBe(RUN_REASON_HINTS['environment-failed']);
+    // The hint (M55 `361n2mqb`): a failure of the environment on the host, the cause in the Run's log, again with a new runId.
+    expect(body.reasonHint).toMatch(/environment failed on the host/);
+    expect(body.reasonHint).toMatch(/log with the host's operator/);
+    expect(body.reasonHint).toMatch(/again with a new runId/);
+  });
+
+  it('[ac:ac-get-run-z-powodem-reserved-subject-ni] get_run with the reason `reserved-subject` carries in `reasonHint` the hint to fix the agent definition before ordering the Run again', async () => {
+    const body = await getRunWithReason('reserved-subject');
+    expect(body.reasonHint).toBe(RUN_REASON_HINTS['reserved-subject']);
+    // The hint (M55 `361n2mqb`): the reserved subject left no result; fix the agent definition first, then again with a new runId.
+    expect(body.reasonHint).toMatch(/subject reserved for the record commit/);
+    expect(body.reasonHint).toMatch(/fix the agent definition before ordering the Run again/);
+    expect(body.reasonHint).toMatch(/new runId/);
+  });
+
+  it('[ac:ac-get-run-z-powodem-reserved-subject-po] get_run with the reason `reserved-subject` gives the reason verbatim, not as the general outcome', async () => {
+    const body = await getRunWithReason('reserved-subject');
+    // Verbatim: the runner's value is in the answer (an unknown reason would be left out — the general outcome).
+    expect(body.reason).toBe('reserved-subject');
+    expect(body.outcome).toBe('failed');
+    expect(body).toMatchObject({ runId: RUN, source: 'host', state: 'finished', outcome: 'failed', reason: 'reserved-subject' });
+  });
+
+  it('[entity:run-tools-get-run] get_run: a reason outside the table of `361n2mqb` goes without `reasonHint`, and a reason unknown to the master goes as the general outcome, without a hint', async () => {
+    const other = await getRunWithReason('agent-failed');
+    expect(other.reason).toBe('agent-failed');
+    expect(other).not.toHaveProperty('reasonHint');
+    stub.reply = () => ({
+      status: 200,
+      body: { runId: RUN, hostId: 'h_a', state: 'finished', outcome: 'failed', reason: 'quantum-flux', resultRef: `refs/runs/${RUN}/work` },
+    });
+    const { client } = await connectTo(fx.deps(), fx.readDeps())();
+    const unknown = (await call(client, { runId: RUN }, 'get_run')).body;
+    expect(unknown.outcome).toBe('failed');
+    expect(unknown).not.toHaveProperty('reason');
+    expect(unknown).not.toHaveProperty('reasonHint');
   });
 
   it('[entity:run-tools-cancel-run] lists cancel_run with the record\'s name, description, one required string `runId` and the hints destructiveHint, idempotentHint and openWorldHint true', async () => {
