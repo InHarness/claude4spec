@@ -138,6 +138,13 @@ export interface SystemPromptInput {
   /** 0.1.58: workspace name — the `workspace="…"` attr on `<workspace_projects>`. */
   workspaceName?: string;
   /**
+   * 2.1.70 (M55, L16): how many runner-host records (M54) the workspace holds —
+   * ALL of them, with no filter on connection status or capabilities. Half of
+   * the `<remote_execution>` emission condition (the other half: `run-tools` in
+   * `mcpInventory`). Absent = 0.
+   */
+  runnerHostCount?: number;
+  /**
    * M37 (0.2.19): the active writing style, or `null`. Zero or one — NOT a list.
    * This is the sole source of the prompt's `<project_writing_skill>` block, and there is
    * therefore at most one such block in every one of the four context types.
@@ -230,6 +237,7 @@ export interface PromptContext extends SystemPromptInput {
   availableSkills: AvailableSkillEntry[];
   mcpInventory: readonly McpInventoryEntry[];
   workspaceProjects: PeerProject[];
+  runnerHostCount: number;
   currentPageRootId: string;
   planMode: boolean;
   currentPlan: Plan | null;

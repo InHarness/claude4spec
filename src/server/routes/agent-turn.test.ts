@@ -106,6 +106,8 @@ import {
 import { abortChildTurns, runAgentTurn, type ActiveAdapter, type AgentTurnDeps, type AgentTurnInput } from './agent-turn.js';
 import { SpecSkillTools } from '../mcp/spec-skill-tools.js';
 import { buildRunToolsServer, type RunToolsFactory } from '../mcp/run-tools.js';
+import { REMOTE_EXECUTION_BLOCK } from '../services/system-prompt/blocks/m55-runs.js';
+import type { RunnerHostStatus } from '../../shared/runner-hosts.js';
 import { buildC4sToolsServer } from '../mcp/c4s-tools.js';
 import { createMcpServer, mcpTool } from '../plugin-runtime/index.js';
 import { z } from 'zod';
@@ -4427,5 +4429,64 @@ describe('runAgentTurn — run-tools only on a top-level chat thread (2.1.64)', 
   it('[section:3f5ej79s] the run-tools gate is the registry column plus the per-thread rule: only the chat row declares it', () => {
     expect(CONTEXT_TYPE_REGISTRY.chat.mcp.runTools).toBe(true);
     for (const t of ['patch', 'ask', 'brief'] as const) expect(CONTEXT_TYPE_REGISTRY[t].mcp.runTools).toBe(false);
+  });
+});
+
+/**
+ * 2.1.70 (M55, L16) — `<remote_execution>` in the composed prompt of a real turn.
+ * Emitted iff the workspace has ≥ 1 runner-host record (M54) AND `run-tools` is
+ * mounted in this turn — whatever the hosts' connection status.
+ */
+describe('runAgentTurn — <remote_execution> (M55, 2.1.70)', () => {
+  type HostFixture = { id: string; status: RunnerHostStatus; capabilities: string[] };
+
+  async function promptFor(opts: { hosts: HostFixture[]; runToolsMounted: boolean }): Promise<string> {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    const extra = deps as unknown as { runTools?: RunToolsFactory; runnerHosts?: () => readonly unknown[] };
+    extra.runnerHosts = () => opts.hosts;
+    if (opts.runToolsMounted) {
+      extra.runTools = {
+        build: (threadId) =>
+          buildRunToolsServer({
+            deps: {} as unknown as Parameters<typeof buildRunToolsServer>[0]['deps'],
+            readDeps: {} as unknown as Parameters<typeof buildRunToolsServer>[0]['readDeps'],
+            threadId,
+          }),
+      };
+    }
+    const input = makeInput();
+    const thread = input.thread as unknown as { contextType: string; parentThreadId: string | null };
+    thread.contextType = 'chat';
+    thread.parentThreadId = null;
+    await runAgentTurn(deps, input);
+    const mounted = Object.keys((hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>);
+    expect(mounted.includes('run-tools')).toBe(opts.runToolsMounted);
+    return String(hoisted.lastExecute?.systemPrompt);
+  }
+
+  const connected: HostFixture = { id: 'h1', status: 'connected', capabilities: ['run'] };
+
+  it('[ac:ac-przy-co-najmniej-jednym-rekordzie-hos] with ≥ 1 runner-host record and run-tools mounted, the prompt carries <remote_execution> verbatim', async () => {
+    const prompt = await promptFor({ hosts: [connected], runToolsMounted: true });
+    expect(prompt).toContain(REMOTE_EXECUTION_BLOCK);
+  });
+
+  it('[ac:ac-bez-rekordu-hosta-runnera-prompt-tury] with no runner-host record, a turn with run-tools mounted has no <remote_execution>', async () => {
+    const prompt = await promptFor({ hosts: [], runToolsMounted: true });
+    expect(prompt).toMatch(/<mcp name="run-tools"/);
+    expect(prompt).not.toContain('<remote_execution>');
+  });
+
+  it('[ac:ac-przy-rekordzie-hosta-runnera-bez-zamo] with a runner-host record but run-tools not mounted, the prompt has no <remote_execution>', async () => {
+    const prompt = await promptFor({ hosts: [connected], runToolsMounted: false });
+    expect(prompt).not.toContain('<remote_execution>');
+  });
+
+  it('[ac:ac-blok-remote-execution-jest-w-prompcie] the block is there even when the only runner-host record is not connected (no status/capabilities filter)', async () => {
+    for (const status of ['unreachable', 'stopped', 'token-rejected'] as const) {
+      const prompt = await promptFor({ hosts: [{ id: 'h1', status, capabilities: [] }], runToolsMounted: true });
+      expect(prompt, status).toContain(REMOTE_EXECUTION_BLOCK);
+    }
   });
 });

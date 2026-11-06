@@ -1693,6 +1693,8 @@ async function buildInner(
     listWorkspaceProjects: () => listProjects(registry.getWorkspace(workspace.name) ?? workspace),
     specSkillTools,
     runTools,
+    // 2.1.70 (M55): every runner-host record the supervisor tracks, connected or not.
+    runnerHosts: runSources ? () => runSources.hosts() : undefined,
   };
 
   /**

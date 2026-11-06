@@ -47,6 +47,9 @@ export const DEFAULT_COMPOSITION: readonly CompositionEntry[] = [
   { layer: 'C', block: 'tooling' },
   // Right behind `<tooling>`: the operation's contract before the data it consumes.
   { layer: 'C', block: 'workspace_projects' },
+  // 2.1.70 (M55): access to runner hosts through `run-tools` — behind whichever of
+  // `<tooling>` / `<workspace_projects>` rendered last, before the path scope.
+  { layer: 'C', block: 'remote_execution' },
   // Promoted out of layer E (it used to sit among the `<current_*>` blocks).
   { layer: 'C', block: 'agent_path_scope' },
   // Directly after the path scope: that block says WHERE, this one WHETHER.

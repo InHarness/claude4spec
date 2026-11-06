@@ -160,6 +160,12 @@ export interface AgentTurnDeps {
    * test rigs).
    */
   runTools?: RunToolsFactory;
+  /**
+   * 2.1.70 (M55): the runner-host records (M54) of the workspace — every record,
+   * whatever its connection status. Read per turn and COUNTED (never filtered) for
+   * the `<remote_execution>` emission condition. Absent ⇒ none (hand-built test rigs).
+   */
+  runnerHosts?: () => readonly unknown[];
 }
 
 import { ALLOWED_MODELS, type Model } from './models.js';
@@ -1233,6 +1239,9 @@ export async function runAgentTurn(
       // disk reads when c4s-tools is absent (the block would be gated out anyway).
       workspaceProjects: ctx.mcp.c4sTools ? (deps.listWorkspacePeers?.() ?? []) : [],
       workspaceName: deps.workspaceName,
+      // 2.1.70 (M55): `<remote_execution>` needs ≥ 1 runner-host record AND `run-tools`
+      // mounted; the records are counted only when the server is in this turn's mount.
+      runnerHostCount: mcpInventory.some((s) => s.name === RUN_TOOLS_SERVER) ? (deps.runnerHosts?.().length ?? 0) : 0,
       writingStyleSkill,
       // 0.2.36: the prompt is now the ONLY carrier of the fact that skills exist —
       // `adapter.execute` is handed no `skills` field below.

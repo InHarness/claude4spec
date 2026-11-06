@@ -11,6 +11,7 @@ import { M37_PROMPT_BLOCKS } from './blocks/m37-skills.js';
 import { M44_PROMPT_BLOCKS } from './blocks/m44-interaction-context.js';
 import { M48_PROMPT_BLOCKS } from './blocks/m48-own.js';
 import { M52_PROMPT_BLOCKS } from './blocks/m52-spec-skills.js';
+import { M55_PROMPT_BLOCKS } from './blocks/m55-runs.js';
 import type { PromptBlock } from './types.js';
 
 /**
@@ -39,6 +40,7 @@ const DECLARATIONS: readonly (readonly PromptBlock[])[] = [
   M44_PROMPT_BLOCKS,
   M48_PROMPT_BLOCKS,
   M52_PROMPT_BLOCKS,
+  M55_PROMPT_BLOCKS,
 ];
 
 function index(declarations: readonly (readonly PromptBlock[])[]): ReadonlyMap<string, PromptBlock> {
