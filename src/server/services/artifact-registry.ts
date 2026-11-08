@@ -57,7 +57,12 @@ export function artifactHeaderContract(kind: ArtifactKind): HeaderContract {
 export type ArtifactFrontmatterContract = Pick<HeaderContract, 'immutable' | 'mutable'>;
 
 export interface ArtifactBinding {
-  /** anchor = one required thread pointer set at create-time; attach = N:1, optional, mutable. */
+  /**
+   * anchor = each thread is anchored in one artifact, the binding is required and
+   * set at create-time (brief, patch); attach = the binding is optional and
+   * mutable (plan). 2.1.74: in BOTH modes an artifact holds N threads — every
+   * founding adds a new thread and leaves the earlier ones untouched.
+   */
   mode: 'anchor' | 'attach';
   /** ChatContextType this kind's threads carry (chat-context.ts CONTEXT_TYPE_REGISTRY key). */
   contextType?: string;
@@ -103,7 +108,7 @@ export const artifactRegistry: Readonly<Record<ArtifactRootKind, ArtifactRegistr
     binding: { mode: 'anchor', contextType: 'patch', threadColumn: 'patch_path' },
     danglingPolicy: 'invariant-banner',
   },
-  // 0.1.127: plan binds `attach` (N threads → 1 plan file, optional, any context
+  // 0.1.127: plan binds `attach` (optional binding — any context
   // carrying a plan_mode session) and degrades gracefully when its file is gone.
   plans: {
     binding: { mode: 'attach', threadColumn: 'plan_path' },

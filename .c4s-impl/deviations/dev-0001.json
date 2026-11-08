@@ -7,5 +7,6 @@
   "unit": "m23-patch-applied-agent",
   "text": "Brief 2-1-73-to-2-1-74.md, unit m23-patch-applied-agent, reads `pages/modules/m43-spec-operations-core.md` context: sections 30–31 labelled (`l3media0`, `rp99fpc1`). At 2.1.74 section 30 is `rp99fpc1` and section 31 is `l3route0`; `l3media0` is section 29. The range is off by one while the anchors are unambiguous. Set-up read the anchors as the intent and corrected the address to sections 29–30 (offset 29, limit 2), which reads back exactly `l3media0`, `rp99fpc1`. Suggestion: the brief generator should compute context ranges at <to> from the anchors it names (the change section `rp99fpc1` was likely counted as already present).",
   "assumption": "set-up: m43 context range corrected to sections 29–30 from the brief's anchors",
-  "sent": false
+  "sent": true,
+  "patchPath": "2-1-73-to-2-1-74-m23-patch-applied-agent-l3media0-m43-context-range-off-by-one-30-31-vs-anchors-l.md"
 }

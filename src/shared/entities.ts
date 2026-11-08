@@ -1212,6 +1212,12 @@ export interface ArtifactFrontmatterUpdateRequest {
   frontmatter: Record<string, unknown>;
 }
 
+/**
+ * Payload of `POST /api/artifacts/:kind/:path/threads` — founds a NEW thread at
+ * the artifact per its registry `binding` (anchor = required anchoring; attach =
+ * optional binding; N threads → 1 artifact in both). 2.1.74.
+ */
 export interface ArtifactThreadCreateRequest {
+  /** Optional thread name; absent → auto-title (as in M05). */
   name?: string;
 }

@@ -2634,7 +2634,7 @@ export function registerCoreOperations(): void {
   registerRow({
     name: 'create_thread',
     summary:
-      'Found a new conversation thread with the agent, at the user\'s request in the UI. A context other than chat or ask is refused with VALIDATION: brief and patch threads are founded with their artifact.',
+      'Found a new conversation thread with the agent, at the user\'s request in the UI. A context other than chat or ask is refused with VALIDATION: a brief or patch thread needs an existing artifact file, so the artifact kind\'s owner or the bubble dispatcher founds it, not this operation.',
     scope: 'project',
     mediation: 'human-mediated',
     opClass: 'turn',

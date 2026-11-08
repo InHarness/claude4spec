@@ -19,6 +19,7 @@ import { BriefService } from '../services/brief.js';
 import { PatchService } from '../services/patch.js';
 import { PlanService } from '../services/plan.js';
 import { artifactsRouter } from './artifacts.js';
+import { artifactRegistry } from '../services/artifact-registry.js';
 import { errorHandler } from './errors.js';
 import { systemRootId } from '../../shared/root-kinds.js';
 import type { ReleaseService } from '../services/release.js';
@@ -858,6 +859,152 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe('IMMUTABLE_FIELD');
+    });
+  });
+
+  /**
+   * 2.1.74 (M36 `m36reg01` / `m36bind01`) — `POST /api/artifacts/:kind/:path/threads`
+   * founds a NEW thread on every call, in both binding modes: `anchor` (brief,
+   * patch) anchors it to the artifact, `attach` (plan) attaches it. The
+   * artifact's earlier threads stay untouched, so every kind holds N threads → 1
+   * artifact.
+   */
+  describe('N threads per artifact, in both binding modes (2.1.74)', () => {
+    const PATCH = 'v1-to-v2-drift.md';
+    const BRIEF = 'v1-to-v2.md';
+
+    beforeEach(async () => {
+      await writeArtifact('brief', BRIEF, { type: 'brief', from_release: 'v1', to_release: 'v2', generated_at: '2026-01-01T00:00:00.000Z', implemented: false }, '# Brief\n');
+      await writeArtifact(
+        'patch',
+        PATCH,
+        { type: 'patch', brief: BRIEF, patch_kind: 'drift', created_at: '2026-01-02T00:00:00.000Z', created_by: 'agent', applied: false },
+        '# Patch — drift\n',
+      );
+    });
+
+    type Row = { id: string; title: string; context_type: string; brief_path: string | null; patch_path: string | null; plan_path: string | null };
+    const row = (id: string): Row =>
+      db.prepare('SELECT id, title, context_type, brief_path, patch_path, plan_path FROM chat_thread WHERE id = ?').get(id) as Row;
+
+    it('[ac:ac-po-dwoch-post-api-artifacts-patch-pat] after two POST /api/artifacts/patch/:path/threads on the same patch, the patch\'s thread list holds both threads', async () => {
+      const first = await request(app).post(`/api/artifacts/patch/${PATCH}/threads`).send({ name: 'first' });
+      const second = await request(app).post(`/api/artifacts/patch/${PATCH}/threads`).send({ name: 'second' });
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(200);
+      const a = first.body.data.threadId as string;
+      const b = second.body.data.threadId as string;
+      expect(a).not.toBe(b);
+
+      const listed = await request(app).get(`/api/artifacts/patch/${PATCH}/threads`);
+      expect(listed.status).toBe(200);
+      const ids = (listed.body.data as Array<{ id: string }>).map((t) => t.id);
+      expect(ids).toHaveLength(2);
+      expect(ids.sort()).toEqual([a, b].sort());
+      for (const item of listed.body.data as Array<{ contextType: string }>) expect(item.contextType).toBe('patch');
+    });
+
+    it('[entity:post-api-artifacts-kind-path-threads] anchor (brief, patch): each call founds a new thread with the kind\'s context_type and reference column set, and the earlier thread is left exactly as it was', async () => {
+      for (const [kind, p, column] of [['brief', BRIEF, 'brief_path'], ['patch', PATCH, 'patch_path']] as const) {
+        const first = await request(app).post(`/api/artifacts/${kind}/${p}/threads`).send({ name: `${kind} one` });
+        const before = row(first.body.data.threadId);
+        const second = await request(app).post(`/api/artifacts/${kind}/${p}/threads`).send({});
+        expect(second.status, kind).toBe(200);
+        expect(second.body.data).toEqual({ threadId: expect.any(String) });
+        expect(second.body.data.threadId, kind).not.toBe(first.body.data.threadId);
+
+        const fresh = row(second.body.data.threadId);
+        expect(fresh.context_type, kind).toBe(kind);
+        expect(fresh[column], kind).toBe(p);
+        // The earlier thread is untouched: same title, same binding.
+        expect(row(first.body.data.threadId), kind).toEqual(before);
+        expect(before[column], kind).toBe(p);
+      }
+    });
+
+    it('[entity:post-api-artifacts-kind-path-threads] attach (plan): each call attaches a new thread to the plan; the plan\'s carrier thread and earlier attached threads stay', async () => {
+      const created = await plans.create({ title: 'Many Threads', content: '## Step\n\nbody\n', changedBy: 'agent' });
+      const planPath = created.planPath;
+      const carrier = (await request(app).get(`/api/artifacts/plan/${planPath}/threads`)).body.data as Array<{ id: string }>;
+      expect(carrier).toHaveLength(1);
+      const carrierBefore = row(carrier[0].id);
+
+      const one = await request(app).post(`/api/artifacts/plan/${planPath}/threads`).send({});
+      const two = await request(app).post(`/api/artifacts/plan/${planPath}/threads`).send({});
+      expect(one.status).toBe(200);
+      expect(two.status).toBe(200);
+      expect(one.body.data.threadId).not.toBe(two.body.data.threadId);
+      const oneBefore = row(one.body.data.threadId);
+      expect(oneBefore.plan_path).toBe(planPath);
+
+      const listed = (await request(app).get(`/api/artifacts/plan/${planPath}/threads`)).body.data as Array<{ id: string }>;
+      expect(listed.map((t) => t.id).sort()).toEqual([carrier[0].id, one.body.data.threadId, two.body.data.threadId].sort());
+      expect(row(carrier[0].id)).toEqual(carrierBefore);
+      expect(row(one.body.data.threadId)).toEqual(oneBefore);
+    });
+
+    it('[entity:post-api-artifacts-kind-path-threads] a missing artifact file is 404 for every kind and founds no thread', async () => {
+      const count = () => (db.prepare('SELECT COUNT(*) AS n FROM chat_thread').get() as { n: number }).n;
+      const before = count();
+      for (const kind of ['brief', 'patch', 'plan']) {
+        const res = await request(app).post(`/api/artifacts/${kind}/no-such-file.md/threads`).send({});
+        expect(res.status, kind).toBe(404);
+      }
+      expect(count()).toBe(before);
+    });
+
+    it('[entity:artifact-thread-create-request] the request\'s only field is an optional string `name`: given, it titles the thread; absent, the kind\'s auto-title applies; a non-string name is 400 VALIDATION and founds nothing', async () => {
+      const named = await request(app).post(`/api/artifacts/patch/${PATCH}/threads`).send({ name: 'named thread' });
+      expect(named.status).toBe(200);
+      expect(row(named.body.data.threadId).title).toBe('named thread');
+
+      const unnamed = await request(app).post(`/api/artifacts/patch/${PATCH}/threads`).send({});
+      expect(unnamed.status).toBe(200);
+      expect(row(unnamed.body.data.threadId).title).toBe(`Patch: ${PATCH}`);
+
+      const count = () => (db.prepare('SELECT COUNT(*) AS n FROM chat_thread').get() as { n: number }).n;
+      const before = count();
+      for (const name of [42, true, { x: 1 }, ['a']]) {
+        const bad = await request(app).post(`/api/artifacts/brief/${BRIEF}/threads`).send({ name });
+        expect(bad.status, JSON.stringify(name)).toBe(400);
+        expect(bad.body.error.code, JSON.stringify(name)).toBe('VALIDATION');
+      }
+      expect(count()).toBe(before);
+      expectTypeOf<import('../../shared/entities.js').ArtifactThreadCreateRequest>().toEqualTypeOf<{ name?: string }>();
+    });
+
+    it('[ac:ac-wpis-rejestru-deklaruje-binding-mode] the registry declares binding.mode — anchor (required, brief/patch) or attach (optional, plan) — N threads → 1 artifact in both; the per-kind columns coexist on one thread; ask is a context type with no kind', async () => {
+      // The declaration.
+      expect(artifactRegistry.briefs.binding).toEqual({ mode: 'anchor', contextType: 'brief', threadColumn: 'brief_path' });
+      expect(artifactRegistry.patches.binding).toEqual({ mode: 'anchor', contextType: 'patch', threadColumn: 'patch_path' });
+      expect(artifactRegistry.plans.binding).toEqual({ mode: 'attach', threadColumn: 'plan_path' });
+
+      // N threads → 1 artifact, in both modes.
+      const planPath = (await plans.create({ title: 'Coexist', content: '## Step\n\nx\n', changedBy: 'agent' })).planPath;
+      for (const [kind, p] of [['brief', BRIEF], ['patch', PATCH], ['plan', planPath]] as const) {
+        const before = ((await request(app).get(`/api/artifacts/${kind}/${p}/threads`)).body.data as unknown[]).length;
+        await request(app).post(`/api/artifacts/${kind}/${p}/threads`).send({});
+        await request(app).post(`/api/artifacts/${kind}/${p}/threads`).send({});
+        const after = ((await request(app).get(`/api/artifacts/${kind}/${p}/threads`)).body.data as unknown[]).length;
+        expect(after, kind).toBe(before + 2);
+      }
+
+      // Anchor is required: an anchored thread is founded with its column set.
+      const anchored = (await request(app).post(`/api/artifacts/brief/${BRIEF}/threads`).send({})).body.data.threadId as string;
+      expect(row(anchored).brief_path).toBe(BRIEF);
+      expect(row(anchored).plan_path).toBeNull();
+      // Attach is optional and coexists with the anchor on the same thread.
+      new ChatService(db).attachPlanToThread(anchored, planPath);
+      expect(row(anchored)).toMatchObject({ brief_path: BRIEF, plan_path: planPath, context_type: 'brief' });
+      const briefIds = ((await request(app).get(`/api/artifacts/brief/${BRIEF}/threads`)).body.data as Array<{ id: string }>).map((t) => t.id);
+      const planIds = ((await request(app).get(`/api/artifacts/plan/${planPath}/threads`)).body.data as Array<{ id: string }>).map((t) => t.id);
+      expect(briefIds).toContain(anchored);
+      expect(planIds).toContain(anchored);
+
+      // ask has no kind: no registry entry binds it.
+      const contextTypes = Object.values(artifactRegistry).map((e) => e.binding.contextType);
+      expect(contextTypes).not.toContain('ask');
+      expect(contextTypes).not.toContain('chat');
     });
   });
 

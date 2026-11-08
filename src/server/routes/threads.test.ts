@@ -900,3 +900,61 @@ describe('GET /threads/:id — persisted history (M05 L1)', () => {
     }
   });
 });
+
+/**
+ * 2.1.74 — `create_thread`'s `zachowanie`: a context other than chat / ask is
+ * refused with VALIDATION, because a brief or patch thread needs an existing
+ * artifact file — the artifact kind's owner or the bubble dispatcher founds it,
+ * not this operation. Nothing is inserted on a refusal.
+ */
+describe('POST /threads — create_thread refuses brief / patch contexts (2.1.74)', () => {
+  let db: Database.Database;
+  let chat: ChatService;
+  let dir: string;
+
+  const app = () => {
+    const deps = {
+      chatService: chat,
+      agentCredentialService: { getDecrypted: () => null },
+      activeAdapters: new Map(),
+      cwd: dir,
+      roots: [],
+    } as unknown as AgentTurnDeps;
+    return express().use(express.json()).use('/threads', threadsRouter(deps));
+  };
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-threads-create-'));
+    db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    runMigrations(db);
+    chat = new ChatService(db);
+  });
+  afterEach(() => {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const rowCount = () => (db.prepare('SELECT COUNT(*) AS n FROM chat_thread').get() as { n: number }).n;
+
+  it('[entity:create-thread] a brief or patch context is 400 VALIDATION naming the existing artifact file and its founders (the kind\'s owner route, the bubble dispatcher); no row is inserted', async () => {
+    for (const contextType of ['brief', 'patch']) {
+      const res = await request(app()).post('/threads').send({ title: 't', context_type: contextType });
+      expect(res.status, contextType).toBe(400);
+      expect(res.body.error.code, contextType).toBe('VALIDATION');
+      expect(res.body.error.message, contextType).toMatch(/existing artifact file/);
+      expect(res.body.error.message, contextType).toContain('/api/artifacts/:kind/:path/threads');
+      expect(res.body.error.message, contextType).toMatch(/bubble dispatcher/);
+    }
+    expect(rowCount()).toBe(0);
+  });
+
+  it('[entity:create-thread] chat (the default) and ask are founded here with 201', async () => {
+    const plain = await request(app()).post('/threads').send({ title: 'plain' });
+    expect(plain.status).toBe(201);
+    const ask = await request(app()).post('/threads').send({ context_type: 'ask' });
+    expect(ask.status).toBe(201);
+    const types = (db.prepare('SELECT context_type FROM chat_thread ORDER BY context_type').all() as Array<{ context_type: string }>).map((r) => r.context_type);
+    expect(types).toEqual(['ask', 'chat']);
+  });
+});

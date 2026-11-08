@@ -42,8 +42,10 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
     try {
       const title = typeof req.body?.title === 'string' ? req.body.title : null;
       // 0.1.79: optional context_type. Only 'chat' (default) and 'ask' are
-      // accepted on THIS generic path; 'brief'/'patch' have a dedicated
-      // create-thread endpoint (POST /api/artifacts/:kind/:path/threads).
+      // accepted on THIS generic path. 2.1.74 (create_thread): a 'brief'/'patch'
+      // thread needs an existing artifact file, so the kind's owner
+      // (POST /api/artifacts/:kind/:path/threads) or the bubble (transagent)
+      // dispatcher founds it, never this route.
       const rawCt = req.body?.context_type;
       let contextType: 'chat' | 'ask' = 'chat';
       if (rawCt !== undefined) {
@@ -51,7 +53,7 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
           return res.status(400).json({
             error: {
               code: 'VALIDATION',
-              message: `context_type '${rawCt}' requires a dedicated create-thread endpoint`,
+              message: `context_type '${rawCt}' requires an existing artifact file — its thread is founded by the artifact kind's owner (POST /api/artifacts/:kind/:path/threads) or the bubble dispatcher, not here`,
             },
           });
         }

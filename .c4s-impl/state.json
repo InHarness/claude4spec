@@ -1,5 +1,5 @@
 {
-  "iteration": 0,
+  "iteration": 5,
   "conventions": [
     {
       "label": "L3 (Spec Operations) — implementor M43",
@@ -46,7 +46,7 @@
         "m23-list-patches",
         "m23-patch-applied-agent"
       ],
-      "startCommit": null
+      "startCommit": "ca76aaa2e89cd70139d064e62462b1a812e690f9"
     },
     {
       "n": 2,
@@ -121,15 +121,37 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "m36-n-threads-per-artifact/p1-l3-l4",
+          "layers": [
+            "L3",
+            "L4"
+          ],
+          "slugs": [
+            "post-api-artifacts-kind-path-threads",
+            "artifact-thread-create-request",
+            "create-thread",
+            "ac-po-dwoch-post-api-artifacts-patch-pat",
+            "ac-wpis-rejestru-deklaruje-binding-mode"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "ca76aaa2e89cd70139d064e62462b1a812e690f9",
+      "baseCommit": "ca76aaa2e89cd70139d064e62462b1a812e690f9",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "m23-list-patches",
@@ -556,5 +578,6 @@
       "version": 1
     }
   ],
-  "entityParts": []
+  "entityParts": [],
+  "baselineGreen": true
 }

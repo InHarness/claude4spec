@@ -1592,6 +1592,11 @@ describe('the turn and thread rows as their 2.1.26 records declare them', () => 
     );
     expect(Object.keys(op.inputSchema).sort()).toEqual(['context_type', 'title']);
     expect(op.summary).toMatch(/VALIDATION/);
+    // 2.1.74 — the refusal's reason: a brief / patch thread needs an existing
+    // artifact file, so the kind's owner or the bubble dispatcher founds it.
+    expect(op.summary).toMatch(/existing artifact file/);
+    expect(op.summary).toMatch(/kind's owner or the bubble dispatcher/);
+    expect(op.summary).not.toMatch(/founded with their artifact/);
   });
 
   it('[entity:delete-thread] delete_thread: project, human-mediated, internal/cli/mcp n/a, rest direct, db/ui-notify, idempotent, code NOT_FOUND, addressed by threadId, no renderings', () => {

@@ -1,0 +1,1 @@
+{"role":"implementer","unit":"m36-n-threads-per-artifact","packetBytes":30659,"portions":[{"name":"m36-n-threads-per-artifact/p1-l3-l4","layers":["L3","L4"],"slugs":["post-api-artifacts-kind-path-threads","artifact-thread-create-request","create-thread","ac-po-dwoch-post-api-artifacts-patch-pat","ac-wpis-rejestru-deklaruje-binding-mode"]}],"deviations":[]}

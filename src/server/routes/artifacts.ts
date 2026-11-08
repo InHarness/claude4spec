@@ -11,6 +11,7 @@ import type {
   ArtifactResponse,
   ArtifactWriteResponse,
   ArtifactThreadListItem,
+  ArtifactThreadCreateRequest,
 } from '../../shared/entities.js';
 import { DomainError } from '../services/tags.js';
 import type { ArtifactRange } from '../services/artifact-read.js';
@@ -339,6 +340,21 @@ function buildPlanAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
 }
 
 /**
+ * 2.1.74 — `ArtifactThreadCreateRequest`: an optional `name` (string). Absent or
+ * null falls back to the kind's auto-title; any other shape is VALIDATION.
+ */
+function parseThreadCreateRequest(raw: unknown): ArtifactThreadCreateRequest {
+  if (raw === undefined || raw === null) return {};
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new DomainError('VALIDATION', 'the request body must be an object');
+  }
+  const name = (raw as { name?: unknown }).name;
+  if (name === undefined || name === null) return {};
+  if (typeof name !== 'string') throw new DomainError('VALIDATION', 'name must be a string');
+  return { name };
+}
+
+/**
  * Express splat (`/*`) puts ONLY the matched wildcard portion in
  * `req.params[0]`. Literal segments (`/versions`, `:version`, etc.) are
  * stripped automatically.
@@ -564,12 +580,16 @@ export function artifactsRouter(deps: ArtifactsRouterDeps): Router {
     }
   });
 
-  // POST /api/artifacts/:kind/<path>/threads
+  // POST /api/artifacts/:kind/<path>/threads — 2.1.74 (M36 m36reg01): every
+  // call founds a NEW thread, in both binding modes — `anchor` (brief, patch)
+  // anchors it to the artifact, `attach` (plan) attaches it — and never touches
+  // the artifact's earlier threads, so every kind holds N threads → 1 artifact.
+  // A missing artifact file is a 404 before any row is inserted.
   router.post('/:kind/*/threads', async (req, res, next) => {
     try {
       const kind = req.params.kind as ArtifactKind;
       const path = extractPath(req.params);
-      const body = (req.body ?? {}) as { name?: string };
+      const body = parseThreadCreateRequest(req.body);
       const result = await adapters[kind].createThread(path, body.name ?? null);
       res.json({ data: result });
     } catch (err) {
