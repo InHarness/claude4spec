@@ -1090,13 +1090,20 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
     });
 
     it('[ac:ac-path-pozycji-z-c4s-list-patches-jest] the `path` of a list-patches row is taken by --patch untransformed', async () => {
-      await writePatch('nested/v1-to-v2-drift.md', false);
+      // The patches root serves `*.md` at its top level only (M23 file map), so a
+      // listed path is a bare file name; one that needs URL-encoding (a space)
+      // shows the row is passed through as printed, the encoding being the
+      // transport's business, not the caller's.
+      const FILE = 'v1-to-v2 drift (rev 2).md';
+      await writePatch(FILE, false);
       // `c4s list-patches` prints the route's rows untouched.
       const list = await request(app).get('/api/artifacts/patch');
-      const item = (list.body.data as Array<{ path: string }>).find((r) => r.path.endsWith('v1-to-v2-drift.md'))!;
-      expect(item.path).toBe('nested/v1-to-v2-drift.md');
+      expect(list.status).toBe(200);
+      const item = (list.body.data as Array<{ path: string }>).find((r) => r.path === FILE)!;
+      expect(item).toBeDefined();
       const result = await agentPatch(item.path);
-      expect(row(result.threadId).patch_path).toBe(item.path);
+      expect(row(result.threadId)).toEqual({ context_type: 'patch', patch_path: item.path });
+      expect(asks).toEqual([result.threadId]);
     });
 
     it('[ac:ac-path-zwrocony-przez-c4s-create-patch] the `path` create-patch returns is taken by --patch untransformed', async () => {
