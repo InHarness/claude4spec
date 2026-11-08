@@ -1,5 +1,5 @@
 {
-  "iteration": 25,
+  "iteration": 26,
   "conventions": [
     {
       "label": "L3 (Spec Operations) — implementor M43",
@@ -598,7 +598,7 @@
     }
   ],
   "errors": 0,
-  "systemVerified": false,
+  "systemVerified": true,
   "entityTypes": [
     {
       "type": "ac",
