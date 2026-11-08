@@ -1,0 +1,1 @@
+system verifier round 1 (static) @bbbfdf8a: 35 rows; all covered except ac-attach-mode-c4s-agent-msg-ct-bri (owner m11-agent-patch-thread: no test carries the slug; behaviour exercised unnamed at src/core/agent/run-agent.test.ts:325 'omits briefPath for attach-mode' — needs the slug and the run-turn POST /threads/<id>/ask assertion). Suite: pending env-runner @bbbfdf8a.

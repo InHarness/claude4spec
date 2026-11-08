@@ -1,5 +1,5 @@
 {
-  "iteration": 20,
+  "iteration": 21,
   "conventions": [
     {
       "label": "L3 (Spec Operations) — implementor M43",
@@ -549,7 +549,7 @@
         }
       ],
       "wave": 2,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "m11-agent-patch-thread/p1-l4-l16",
@@ -579,14 +579,20 @@
             "ac-path-pozycji-z-c4s-list-patches-jest",
             "ac-path-zwrocony-przez-c4s-create-patch"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "ac-attach-mode-c4s-agent-msg-ct-bri"
+          ],
+          "only": [
+            {
+              "slug": "ac-attach-mode-c4s-agent-msg-ct-bri"
+            }
+          ]
         }
       ],
-      "startCommit": "2a1c5826cb646f5a04bd51ce5e10f0df385e746a",
+      "startCommit": "bbbfdf8a4ab840b0a5f910f91beabdab71a352d8",
       "baseCommit": "2a1c5826cb646f5a04bd51ce5e10f0df385e746a",
       "rounds": {
         "review": 0,
