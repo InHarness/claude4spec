@@ -18,10 +18,12 @@ import { parseArgs } from '../args.js';
 import { CliError } from '../errors.js';
 import { WorkspaceRegistry } from '../../../server/workspace/registry.js';
 import { __resetDelegateTargets } from '../delegate.js';
-import { runListBriefs } from './list-briefs.js';
-import { runGetBrief } from './get-brief.js';
-import { runCreatePatch } from './create-patch.js';
-import { runCreateBrief } from './create-brief.js';
+import { listBriefsCommand, runListBriefs } from './list-briefs.js';
+import { getBriefCommand, runGetBrief } from './get-brief.js';
+import { createPatchCommand, runCreatePatch } from './create-patch.js';
+import { createBriefCommand, runCreateBrief } from './create-brief.js';
+import { listPatchesCommand, runListPatches } from './list-patches.js';
+import { systemRootId } from '../../../shared/root-kinds.js';
 import { runCreatePlan } from './create-plan.js';
 import { createTestApp, type TestApp } from '../../../../tests/helpers/test-app.js';
 import { DEFAULT_BUDGET_CHARS } from '../../../server/discovery/budget.js';
@@ -332,6 +334,143 @@ describe('[ac:ac-rodzina-brief-patch-list-briefs-read] the brief/patch family de
       expect(content.split('\n')).toEqual(file.split('\n').slice(0, 10));
       expect(content).not.toContain(file.split('\n')[10]!);
       expect(out.truncated).toBeUndefined();
+    });
+  });
+
+  it('[ac:ac-rodzina-brief-patch-list-briefs-read] all five commands of the family (create-brief/list-briefs/get-brief/create-patch/list-patches) are server-delegating and each renders its catalog operation', () => {
+    const family = [createBriefCommand, listBriefsCommand, getBriefCommand, createPatchCommand, listPatchesCommand];
+    expect(family.map((c) => c.name)).toEqual(['create-brief', 'list-briefs', 'get-brief', 'create-patch', 'list-patches']);
+    for (const c of family) expect(c.executionMode, c.name).toBe('server-delegating');
+    expect(family.map((c) => c.operation)).toEqual(['create_brief', 'list_briefs', 'get_brief', 'create_patch', 'list_patches']);
+  });
+
+  describe('list-patches (2.1.74)', () => {
+    const row = (p: string, applied?: boolean) => ({
+      path: p,
+      frontmatter: { type: 'patch', brief: 'v1-to-v2.md', patch_kind: 'drift', ...(applied === undefined ? {} : { applied }) },
+      hash: `h-${p}`,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const rows = [row('a.md', false), row('b.md', true), row('c.md')];
+
+    it('[entity:cli-command/list-patches] GETs /artifacts/patch, maps --brief to ?brief= and --status to ?applied=, prints { items, total, hasMore } with the route\'s rows untouched', async () => {
+      reply = { data: rows };
+      await runListPatches(args('list-patches'));
+      expect(seen).toHaveLength(1);
+      expect(seen[0]!.method).toBe('GET');
+      expect(seen[0]!.url).toMatch(/\/api\/projects\/[^/]+\/artifacts\/patch$/);
+      // No filtering, no sorting, no reshaping in the bin: the rows are the route's.
+      expect(printed()).toEqual({ items: rows, total: 3, hasMore: false });
+
+      seen = [];
+      await runListPatches(args('list-patches', '--brief', 'sub/v1-to-v2.md', '--status', 'applied'));
+      const q = new URL(seen[0]!.url, 'http://x').searchParams;
+      expect(q.get('brief')).toBe('sub/v1-to-v2.md');
+      expect(q.get('applied')).toBe('true');
+
+      seen = [];
+      await runListPatches(args('list-patches', '--status', 'pending'));
+      expect(new URL(seen[0]!.url, 'http://x').searchParams.get('applied')).toBe('false');
+    });
+
+    it('[entity:cli-command/list-patches] the window is the operation\'s: default limit 50, `total` before the window, `hasMore` after it', async () => {
+      const many = Array.from({ length: 60 }, (_, i) => row(`p${String(i).padStart(2, '0')}.md`));
+      reply = { data: many };
+      await runListPatches(args('list-patches'));
+      expect((printed().items as unknown[])).toHaveLength(50);
+      expect(printed().total).toBe(60);
+      expect(printed().hasMore).toBe(true);
+
+      stdout = '';
+      await runListPatches(args('list-patches', '--offset', '50'));
+      expect((printed().items as Array<{ path: string }>).map((i) => i.path)).toEqual(many.slice(50).map((r) => r.path));
+      expect(printed().hasMore).toBe(false);
+    });
+
+    it('[entity:cli-command/list-patches] refuses a nonsense window locally, and leaves an invalid --status to the server\'s VALIDATION', async () => {
+      await expect(runListPatches(args('list-patches', '--limit', '0'))).rejects.toMatchObject({ code: 'INVALID_ARGS' });
+      await expect(runListPatches(args('list-patches', '--offset', '-1'))).rejects.toMatchObject({ code: 'INVALID_ARGS' });
+      expect(seen).toEqual([]);
+
+      status = 400;
+      reply = { error: { code: 'VALIDATION', message: "?applied must be 'true' or 'false' (omit for all)" } };
+      await expect(runListPatches(args('list-patches', '--status', 'maybe'))).rejects.toMatchObject({ code: 'VALIDATION' });
+      expect(new URL(seen[0]!.url, 'http://x').searchParams.get('applied')).toBe('maybe');
+    });
+  });
+
+  describe('list-patches over the real patch route and service (2.1.74)', () => {
+    let testApp: TestApp;
+
+    const write = async (root: 'briefs' | 'patches', rel: string, frontmatter: string) => {
+      fs.writeFileSync(path.join(testApp.cwd, root, rel), `---\n${frontmatter}---\n# ${rel}\n`, 'utf8');
+      await testApp.frontmatterIndexer.indexPage(systemRootId(root), rel);
+    };
+    const paths = () => (printed().items as Array<{ path: string }>).map((i) => i.path);
+    /** The operation's own answer: `PatchService.listPatches`, the function REST and the agent tool call. */
+    const operation = (opts: { brief?: string; applied?: boolean }) =>
+      testApp.patchService.listPatches(opts).map((p) => p.path);
+
+    beforeEach(async () => {
+      testApp = await createTestApp();
+      forward = testApp.app;
+      await write('briefs', 'v1-to-v2.md', 'type: brief\nfrom_release: v1\nto_release: v2\n');
+      await write('briefs', 'v2-to-v3.md', 'type: brief\nfrom_release: v2\nto_release: v3\n');
+      // Declared brief, applied.
+      await write('patches', 'x-late.md', 'type: patch\nbrief: v1-to-v2.md\npatch_kind: drift\ncreated_at: 2026-01-05T00:00:00.000Z\napplied: true\n');
+      // Declared brief, pending.
+      await write('patches', 'x-early.md', 'type: patch\nbrief: v1-to-v2.md\npatch_kind: drift\ncreated_at: 2026-01-02T00:00:00.000Z\napplied: false\n');
+      // Brief by file-name prefix only, no `applied` field (counts as pending), undated.
+      await write('patches', 'v1-to-v2-undated.md', 'type: patch\npatch_kind: missing\n');
+      // Another brief, pending.
+      await write('patches', 'y-other.md', 'type: patch\nbrief: v2-to-v3.md\npatch_kind: drift\ncreated_at: 2026-01-03T00:00:00.000Z\napplied: false\n');
+      // Orphan, pending.
+      await write('patches', 'z-orphan.md', 'type: patch\nbrief: gone.md\npatch_kind: drift\ncreated_at: 2026-01-01T00:00:00.000Z\n');
+    });
+    afterEach(() => {
+      testApp.cleanup();
+    });
+
+    it('[ac:ac-c4s-list-patches-brief-brief-path-zwr] --brief <brief-path> returns the same set as list_patches with brief = <brief-path>', async () => {
+      await runListPatches(args('list-patches', '--brief', 'v1-to-v2.md'));
+      const expected = operation({ brief: 'v1-to-v2.md' });
+      // Non-trivial: the declared and the prefix-resolved patch, nothing of the other brief or the orphan.
+      expect([...expected].sort()).toEqual(['v1-to-v2-undated.md', 'x-early.md', 'x-late.md']);
+      expect(paths()).toEqual(expected);
+      expect(printed().total).toBe(expected.length);
+
+      // A brief that does not exist is an empty list, exactly as the operation answers it.
+      stdout = '';
+      await runListPatches(args('list-patches', '--brief', 'nope.md'));
+      expect(operation({ brief: 'nope.md' })).toEqual([]);
+      expect(printed()).toEqual({ items: [], total: 0, hasMore: false });
+    });
+
+    it('[ac:ac-c4s-list-patches-status-pending-zwrac] --status pending returns the same set as list_patches with applied: false', async () => {
+      await runListPatches(args('list-patches', '--status', 'pending'));
+      const expected = operation({ applied: false });
+      // A patch with no `applied` field is pending; the applied one is not in the set.
+      expect([...expected].sort()).toEqual(['v1-to-v2-undated.md', 'x-early.md', 'y-other.md', 'z-orphan.md']);
+      expect(paths()).toEqual(expected);
+      expect(printed().total).toBe(expected.length);
+      expect((printed().items as Array<{ frontmatter: { applied?: boolean } }>).every((i) => i.frontmatter.applied !== true)).toBe(true);
+    });
+
+    it('[ac:ac-sklejenie-stron-c4s-list-patches-offs] pages --offset 0 and --offset N at --limit N concatenate into the order of the full list', async () => {
+      const page = async (offset: number) => {
+        stdout = '';
+        await runListPatches(args('list-patches', '--limit', '3', '--offset', String(offset)));
+        expect(printed().total).toBe(5);
+        return paths();
+      };
+      const first = await page(0);
+      expect(printed().hasMore).toBe(true);
+      const second = await page(3);
+      expect(printed().hasMore).toBe(false);
+      const full = operation({});
+      // The operation's order: created_at ascending, ties by path, undated last.
+      expect(full).toEqual(['z-orphan.md', 'x-early.md', 'y-other.md', 'x-late.md', 'v1-to-v2-undated.md']);
+      expect([...first, ...second]).toEqual(full);
     });
   });
 

@@ -725,13 +725,13 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       expect(bogus.body.error.code).toBe('VALIDATION');
     });
 
-    it('[entity:list-patches] list_patches as its record declares it: project, direct, internal/rest direct, cli/mcp n/a with the record\'s reasons, no effects, idempotent, filters `brief` / `applied` + window, code VALIDATION, rendered by transagent-tools · list_patches (internal) — created_at ascending with ties by path and undated last, a brief that does not exist an empty list rather than a refusal, an invalid applied filter VALIDATION', async () => {
+    it('[entity:list-patches] list_patches as its record declares it: project, direct, internal/cli/rest direct (cli rendered by c4s list-patches), mcp n/a with the record\'s reason, no effects, idempotent, filters `brief` / `applied` + window, code VALIDATION, rendered by transagent-tools · list_patches (internal) — created_at ascending with ties by path and undated last, a brief that does not exist an empty list rather than a refusal, an invalid applied filter VALIDATION', async () => {
       const op = expectPatchOperationRecord({
         nazwa: 'list_patches',
         channels: {
           internal: { kind: 'direct' },
-          cli: { kind: 'na', reason: 'brak komendy `c4s`: jedynym realnym wołającym jest agent w wątku albo użytkownik w UI, nie człowiek w terminalu' },
-          mcp: { kind: 'na', reason: 'przegląd zbioru zgłoszeń należy do UI i REST; klient kanału `mcp` nie ma intencji, której obiektem byłby zbiór patchy' },
+          cli: { kind: 'direct' },
+          mcp: { kind: 'na', reason: 'przegląd zbioru zgłoszeń należy do UI, `c4s list-patches` i REST; klient kanału `mcp` nie ma intencji, której obiektem byłby zbiór patchy' },
           rest: { kind: 'direct' },
         },
         efekty: ['none'],

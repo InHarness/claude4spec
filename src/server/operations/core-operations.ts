@@ -858,7 +858,8 @@ export function registerCoreOperations(): void {
    * rendering is `transagent-tools · list_patches` (internal), mounted only on a
    * top-level `chat` thread — the orchestrator plans a patch series from it and
    * re-checks the flag after every banka. A `patch` thread, closed on one patch,
-   * never has it. `rest` is `GET /api/artifacts/patch` (`?brief`, `?applied`).
+   * never has it. `rest` is `GET /api/artifacts/patch` (`?brief`, `?applied`);
+   * 2.1.74 — `cli` is `c4s list-patches`, delegating to that route.
    *
    * The order is the domain's (`PatchService.listPatches`: `created_at`
    * ascending, ties by `path`, undated last by `path`); the window is M39's
@@ -892,9 +893,11 @@ export function registerCoreOperations(): void {
     idempotent: true,
     channels: {
       internal: direct(),
-      // The record's `powody`, verbatim.
-      cli: na('brak komendy `c4s`: jedynym realnym wołającym jest agent w wątku albo użytkownik w UI, nie człowiek w terminalu'),
-      mcp: na('przegląd zbioru zgłoszeń należy do UI i REST; klient kanału `mcp` nie ma intencji, której obiektem byłby zbiór patchy'),
+      // 2.1.74 — `cli` is direct, rendered by `c4s list-patches` (the record's
+      // `cliCommands`), over the same REST route and so the same
+      // `PatchService.listPatches`. The `mcp` reason is the record's, verbatim.
+      cli: direct(),
+      mcp: na('przegląd zbioru zgłoszeń należy do UI, `c4s list-patches` i REST; klient kanału `mcp` nie ma intencji, której obiektem byłby zbiór patchy'),
       rest: direct(),
     },
     renderings: { internal: ['transagent-tools.list_patches'] },

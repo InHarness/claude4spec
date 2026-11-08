@@ -40,6 +40,7 @@ import { createBriefCommand } from './c4s/commands/create-brief.js';
 import { listBriefsCommand } from './c4s/commands/list-briefs.js';
 import { getBriefCommand } from './c4s/commands/get-brief.js';
 import { createPatchCommand } from './c4s/commands/create-patch.js';
+import { listPatchesCommand } from './c4s/commands/list-patches.js';
 import { markBriefImplementedCommand } from './c4s/commands/mark-brief-implemented.js';
 import { createPlanCommand } from './c4s/commands/create-plan.js';
 import { listSkillsCommand } from './c4s/commands/list-skills.js';
@@ -98,6 +99,7 @@ const COMMANDS: CliCommandContribution[] = [
   listBriefsCommand,
   getBriefCommand,
   createPatchCommand,
+  listPatchesCommand,
   markBriefImplementedCommand,
   createPlanCommand,
   listSkillsCommand,
@@ -289,6 +291,10 @@ Brief/patch (M11 — server-delegating, like every read above):
   create-patch --brief <brief-path> --desc <s> [--kind drift|missing|incorrect|clarification]
              [--body-file <f>]      body from --body-file or stdin; the SERVER writes the
                                     file under the patches root and mints its slug
+  list-patches [--limit N] [--offset M] [--status applied|pending] [--brief <brief-path>]
+                                    the project's patches in list_patches order (created_at asc,
+                                    ties by path, undated last); --brief relative to the briefs
+                                    root. Prints { items, total, hasMore }
   mark-brief-implemented <brief-path> [--project <id>]
                                      wraps PATCH /api/artifacts/brief/:path/frontmatter
                                      ('implemented' is the only mutable frontmatter key)

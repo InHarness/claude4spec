@@ -1,5 +1,5 @@
 {
-  "iteration": 5,
+  "iteration": 10,
   "conventions": [
     {
       "label": "L3 (Spec Operations) — implementor M43",
@@ -243,15 +243,38 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "m23-list-patches/p1-l3-l14",
+          "layers": [
+            "L3",
+            "L14"
+          ],
+          "slugs": [
+            "list-patches",
+            "m23-requires-m11",
+            "ac-c4s-list-patches-brief-brief-path-zwr",
+            "ac-c4s-list-patches-status-pending-zwrac",
+            "ac-sklejenie-stron-c4s-list-patches-offs",
+            "ac-rodzina-brief-patch-list-briefs-read"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "42e68a00c618725521f9893dd2ebfc4017e1f63b",
+      "baseCommit": "42e68a00c618725521f9893dd2ebfc4017e1f63b",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "m23-patch-applied-agent",

@@ -82,6 +82,8 @@ export interface TestApp {
   plansSerializer: FileSerializer;
   pageVersions: FileVersionService;
   frontmatterIndexer: PagesFrontmatterIndexer;
+  /** 2.1.74: the M23 service behind `list_patches` in every channel, so a channel test can compare against it. */
+  patchService: PatchService;
   /** 0.2.13: the external MCP surface's deps, for tests that compose it directly. */
   mcpSurfaceDeps: (profile: ChatContextType) => ExternalSurfaceDeps;
   cleanup: () => void;
@@ -448,6 +450,7 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     plansSerializer,
     pageVersions,
     frontmatterIndexer,
+    patchService,
     mcpSurfaceDeps,
     cleanup: () => {
       db.close();
