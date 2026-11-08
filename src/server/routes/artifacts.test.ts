@@ -6,7 +6,7 @@ import matter from 'gray-matter';
 import Database from 'better-sqlite3';
 import express from 'express';
 import request from 'supertest';
-import { describe, it, expect, expectTypeOf, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, expectTypeOf, beforeEach, afterEach, vi } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
 import { MarkdownFileStore } from '../services/pages.js';
 import { FileWatchRuntime } from '../fs/watcher.js';
@@ -27,6 +27,8 @@ import type { WsEmitter } from '../ws/project-emitter.js';
 import type { ArtifactFrontmatterUpdateRequest } from '../../shared/entities.js';
 import { expectPatchOperationRecord } from '../../../tests/helpers/patch-tool-records.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
+import { runAgent, AgentError } from '../../core/agent/run-agent.js';
+import { createPatch } from '../services/patch-write.js';
 
 const fakeWs = { broadcast: () => {} } as unknown as WsEmitter;
 /** Release names in creation order (index = rank); tests that need ranks set it. */
@@ -1005,6 +1007,95 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       const contextTypes = Object.values(artifactRegistry).map((e) => e.binding.contextType);
       expect(contextTypes).not.toContain('ask');
       expect(contextTypes).not.toContain('chat');
+    });
+  });
+
+  /**
+   * 2.1.74 (M11) — `c4s agent "<msg>" --ct patch --patch <path>` end to end over
+   * the real attach route: `runAgent` (the library behind `c4s agent`) talks to
+   * this router through a fetch shim. Only the run-turn (`/threads/:id/ask`) is
+   * answered by the shim — the turn runtime is not under test here; the thread it
+   * is addressed to is.
+   */
+  describe('c4s agent --ct patch --patch over the attach route (2.1.74)', () => {
+    const BRIEF = 'v1-to-v2.md';
+    const PEER = { server: 'http://localhost:9999', project: 'peer' };
+    let asks: string[];
+
+    beforeEach(async () => {
+      asks = [];
+      await writeArtifact('brief', BRIEF, { type: 'brief', from_release: 'v1', to_release: 'v2', generated_at: '2026-01-01T00:00:00.000Z', implemented: false }, '# Brief\n');
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
+          const route = String(url).replace(/^http:\/\/localhost:9999\/api\/projects\/peer/, '/api');
+          const reply = (status: number, body: unknown) => ({ status, ok: status < 400, json: async () => body });
+          if (route === '/api/config') return reply(200, { name: 'peer', roots: [], entitiesDir: 'entities', writingStyle: null, onboarding: {} });
+          const ask = /^\/api\/threads\/([^/]+)\/ask$/.exec(route);
+          if (ask) {
+            asks.push(decodeURIComponent(ask[1]!));
+            return reply(200, { threadId: decodeURIComponent(ask[1]!), answer: 'done' });
+          }
+          const res = await request(app).post(route).send(init?.body ? JSON.parse(init.body) : {});
+          return reply(res.status, res.body);
+        }),
+      );
+    });
+    afterEach(() => vi.unstubAllGlobals());
+
+    type Row = { context_type: string; patch_path: string | null };
+    const row = (id: string): Row => db.prepare('SELECT context_type, patch_path FROM chat_thread WHERE id = ?').get(id) as Row;
+    const writePatch = (p: string, applied: boolean) =>
+      writeArtifact('patch', p, { type: 'patch', brief: BRIEF, patch_kind: 'drift', created_at: '2026-01-02T00:00:00.000Z', created_by: 'agent', applied }, '# Patch — drift\n');
+    const agentPatch = (patchPath: string) => runAgent({ ...PEER, message: 'Wdroz patch', contextType: 'patch', patchPath });
+
+    it('[ac:ac-c4s-agent-msg-ct-patch-patch-path-zwr] returns the threadId of a thread that appears on the patch\'s thread list', async () => {
+      await writePatch('v1-to-v2-drift.md', false);
+      const result = await agentPatch('v1-to-v2-drift.md');
+      expect(result.threadId).toEqual(expect.any(String));
+      const listed = await request(app).get('/api/artifacts/patch/v1-to-v2-drift.md/threads');
+      expect(listed.status).toBe(200);
+      expect((listed.body.data as Array<{ id: string }>).map((t) => t.id)).toContain(result.threadId);
+      expect(row(result.threadId)).toEqual({ context_type: 'patch', patch_path: 'v1-to-v2-drift.md' });
+      // and the turn ran in exactly that thread
+      expect(asks).toEqual([result.threadId]);
+    });
+
+    it('[ac:ac-patch-na-patchu-z-applied-true-zaklad] founds a thread on a patch with applied: true — no refusal', async () => {
+      await writePatch('done.md', true);
+      const result = await agentPatch('done.md');
+      expect(row(result.threadId)).toEqual({ context_type: 'patch', patch_path: 'done.md' });
+      expect(asks).toEqual([result.threadId]);
+    });
+
+    it('[ac:ac-patch-ze-sciezka-nieistniejacego-patc] a path naming no patch ends in NOT_FOUND, founds no thread and runs no turn', async () => {
+      const before = (db.prepare('SELECT COUNT(*) AS n FROM chat_thread').get() as { n: number }).n;
+      const err = await agentPatch('nope.md').catch((e) => e);
+      expect(err).toBeInstanceOf(AgentError);
+      expect((err as AgentError).code).toBe('NOT_FOUND');
+      expect((db.prepare('SELECT COUNT(*) AS n FROM chat_thread').get() as { n: number }).n).toBe(before);
+      expect(asks).toEqual([]);
+    });
+
+    it('[ac:ac-path-pozycji-z-c4s-list-patches-jest] the `path` of a list-patches row is taken by --patch untransformed', async () => {
+      await writePatch('nested/v1-to-v2-drift.md', false);
+      // `c4s list-patches` prints the route's rows untouched.
+      const list = await request(app).get('/api/artifacts/patch');
+      const item = (list.body.data as Array<{ path: string }>).find((r) => r.path.endsWith('v1-to-v2-drift.md'))!;
+      expect(item.path).toBe('nested/v1-to-v2-drift.md');
+      const result = await agentPatch(item.path);
+      expect(row(result.threadId).patch_path).toBe(item.path);
+    });
+
+    it('[ac:ac-path-zwrocony-przez-c4s-create-patch] the `path` create-patch returns is taken by --patch untransformed', async () => {
+      // The core behind `c4s create-patch` (POST /api/patches answers its `{ path }`).
+      const created = await createPatch(
+        { briefsDirAbs: path.join(cwd, briefsDir), patchesDirAbs: path.join(cwd, patchesDir) },
+        { brief: BRIEF, desc: 'endpoint drift', patchKind: 'drift', body: 'details\n' },
+        'rest',
+      );
+      const result = await agentPatch(created.path);
+      expect(row(result.threadId)).toEqual({ context_type: 'patch', patch_path: created.path });
     });
   });
 

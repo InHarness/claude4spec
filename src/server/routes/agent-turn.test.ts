@@ -782,6 +782,39 @@ describe('runAgentTurn — M37 per-context skill injection', () => {
     expect(String(hoisted.lastExecute?.systemPrompt)).toContain('<interaction_context type="patch">');
   });
 
+  it('[ac:ac-prompt-systemowy-pierwszej-tury-watku-2] the first turn of a thread founded by c4s agent --ct patch --patch <path> carries <current_patch> with that path', async () => {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    Object.assign(deps, fakeSkillDeps({}));
+    const PATCH_PATH = 'nested/v1-to-v2-drift.md';
+    // The thread exactly as the attach route founds it (PatchService.createThreadForPatch):
+    // context_type='patch', patch_path = the --patch path, no system prompt yet.
+    const real = new ChatService((() => { const d = new Database(':memory:'); runMigrations(d); return d; })());
+    const founded = real.createThread(`Patch: ${PATCH_PATH}`, { contextType: 'patch', patchPath: PATCH_PATH });
+    const read: string[] = [];
+    (deps as unknown as { patchService: unknown }).patchService = {
+      getPatch: async (p: string) => {
+        read.push(p);
+        return {
+          path: p,
+          title: 'drift',
+          frontmatter: { type: 'patch', patch_kind: 'drift', brief: 'v1-to-v2.md', applied: false },
+          body: 'b',
+          content: 'b',
+          hash: 'h',
+        };
+      },
+    };
+    const input = makeInput();
+    input.thread = { ...(input.thread as object), ...founded, hasSystemPrompt: false, lastSessionId: null } as unknown as AgentTurnInput['thread'];
+    expect(input.thread.patchPath).toBe(PATCH_PATH);
+
+    await runAgentTurn(deps, input);
+
+    expect(read).toEqual([PATCH_PATH]);
+    expect(String(hoisted.lastExecute?.systemPrompt)).toContain(`<current_patch path="${PATCH_PATH}"`);
+  });
+
   it('chat thread: writing-style-author is a listing row, NOT a <project_skill> block', async () => {
     hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
     const { deps } = makeDeps();

@@ -2,7 +2,7 @@ import { describe, expect, it, afterEach, beforeEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { runAgent, AgentError } from './run-agent.js';
+import { runAgent, AgentError, patchAttachRoute } from './run-agent.js';
 import { WorkspaceRegistry } from '../../server/workspace/registry.js';
 
 /**
@@ -598,5 +598,123 @@ describe('runAgent — plan attach (planPath)', () => {
     expect((err as AgentError).code).toBe('STREAM_IN_PROGRESS');
     expect((err as AgentError).details).toEqual({ threadId: 'T-plan' });
     expect((err as AgentError).hint).toContain('--thread T-plan');
+  });
+});
+
+/**
+ * 2.1.74 (M11) — `patchPath` attach: a NEW `patch` thread anchored in an
+ * existing patch via the generic artifact-attach route (`kind=patch`), then the
+ * run-turn on it. Replaces the old rule "a patch context only continues a thread".
+ */
+describe('runAgent — patch attach (patchPath)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  type Reply = { status: number; body: unknown };
+  function stubPatchFlow(opts: { attach?: Reply; ask?: Reply } = {}): { calls: Array<{ url: string; body: unknown }> } {
+    const calls: Array<{ url: string; body: unknown }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: { body?: string }) => {
+        calls.push({ url: String(url), body: init?.body ? JSON.parse(init.body) : undefined });
+        const reply = (r: Reply) => ({ status: r.status, ok: r.status < 400, json: async () => r.body });
+        if (String(url).endsWith('/config')) return reply({ status: 200, body: VALID_CONFIG });
+        if (String(url).endsWith('/threads')) {
+          return reply(opts.attach ?? { status: 200, body: { data: { threadId: 'T-patch' } } });
+        }
+        return reply(opts.ask ?? { status: 200, body: { threadId: 'T-patch', answer: 'done' } });
+      }),
+    );
+    return { calls };
+  }
+  const PATCH = { ...BASE, contextType: 'patch' as const };
+
+  it('[ac:ac-tura-uruchomiona-przez-c4s-agent-ct-p] runs the turn in the thread the attach created — never founds a second thread', async () => {
+    const { calls } = stubPatchFlow();
+    await runAgent({ ...PATCH, message: 'Wdroz patch', patchPath: 'v1-to-v2-drift.md' });
+    expect(calls.filter((c) => c.url.endsWith('/threads'))).toHaveLength(1);
+    const ask = calls.find((c) => c.url.endsWith('/ask'));
+    expect(ask?.url).toMatch(/\/threads\/T-patch\/ask$/);
+    expect((ask?.body as { message: string }).message).toBe('Wdroz patch');
+  });
+
+  it('[ac:ac-patch-z-przedrostkiem-claude4spec-pat] strips a leading .claude4spec/patches/ — both spellings attach the same patch', async () => {
+    const urls: string[] = [];
+    for (const patchPath of ['nested/v1-to-v2-drift.md', '.claude4spec/patches/nested/v1-to-v2-drift.md']) {
+      const { calls } = stubPatchFlow();
+      await runAgent({ ...PATCH, message: 'go', patchPath });
+      urls.push(calls.find((c) => c.url.endsWith('/threads'))!.url);
+      vi.unstubAllGlobals();
+    }
+    expect(urls[0]).toMatch(/\/artifacts\/patch\/nested\/v1-to-v2-drift\.md\/threads$/);
+    expect(urls[1]).toBe(urls[0]);
+  });
+
+  it.each([
+    ['ac-patch-razem-z-thread-konczy-sie-inval', { threadId: 'T-old' }],
+    ['ac-patch-razem-z-brief-konczy-sie-invali', { briefPath: 'b.md' }],
+    ['ac-patch-razem-z-plan-konczy-sie-invalid', { planPath: 'p.md' }],
+    ['ac-patch-bez-ct-patch-konczy-sie-invalid', { contextType: undefined }],
+    ['ac-patch-bez-ct-patch-konczy-sie-invalid', { contextType: 'chat' as const }],
+    ['ac-patch-bez-ct-patch-konczy-sie-invalid', { contextType: 'brief' as const }],
+  ])('[ac:%s] rejects patchPath with %o locally — INVALID_ARGS, no request', async (_slug, extra) => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const err = await runAgent({ ...PATCH, message: 'go', patchPath: 'x.md', ...extra }).catch((e) => e);
+    expect(err).toBeInstanceOf(AgentError);
+    expect((err as AgentError).code).toBe('INVALID_ARGS');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('[ac:ac-ct-patch-bez-thread-i-bez-patch-koncz] contextType patch with neither threadId nor patchPath → INVALID_ARGS, no request', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const err = await runAgent({ ...PATCH, message: 'go' }).catch((e) => e);
+    expect(err).toBeInstanceOf(AgentError);
+    expect((err as AgentError).code).toBe('INVALID_ARGS');
+    expect((err as AgentError).hint).toBe('pass --patch <path>');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('contextType patch with threadId still continues that thread (no attach call)', async () => {
+    const { calls } = stubPatchFlow({ ask: { status: 200, body: { threadId: 'T-old', answer: 'ok' } } });
+    const result = await runAgent({ ...PATCH, message: 'go', threadId: 'T-old' });
+    expect(result.threadId).toBe('T-old');
+    expect(calls.some((c) => c.url.endsWith('/threads'))).toBe(false);
+  });
+
+  it('refuses a traversing patchPath before any request', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const err = await runAgent({ ...PATCH, message: 'go', patchPath: '../outside.md' }).catch((e) => e);
+    expect((err as AgentError).code).toBe('INVALID_ARGS');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('a 404 PATCH_NOT_FOUND from the attach route surfaces as NOT_FOUND, no turn', async () => {
+    const { calls } = stubPatchFlow({
+      attach: { status: 404, body: { error: { code: 'PATCH_NOT_FOUND', message: "patch 'nope.md' not found" } } },
+    });
+    const err = await runAgent({ ...PATCH, message: 'go', patchPath: 'nope.md' }).catch((e) => e);
+    expect(err).toBeInstanceOf(AgentError);
+    expect((err as AgentError).code).toBe('NOT_FOUND');
+    expect((err as AgentError).message).toContain('nope.md');
+    expect(calls.some((c) => c.url.endsWith('/ask'))).toBe(false);
+  });
+
+  it('[ac:ac-blad-run-turn-po-zalozeniu-watku-prze] a run-turn failure after the attach carries the created threadId and a --thread resume hint', async () => {
+    stubPatchFlow({
+      ask: { status: 409, body: { error: { code: 'STREAM_IN_PROGRESS', message: 'a turn is already streaming' } } },
+    });
+    const err = await runAgent({ ...PATCH, message: 'go', patchPath: 'p.md' }).catch((e) => e);
+    expect(err).toBeInstanceOf(AgentError);
+    expect((err as AgentError).code).toBe('STREAM_IN_PROGRESS');
+    expect((err as AgentError).details).toEqual({ threadId: 'T-patch' });
+    expect((err as AgentError).hint).toContain('the patch thread was created');
+    expect((err as AgentError).hint).toContain('--thread T-patch');
+  });
+
+  it('patchAttachRoute: the path relative to the patches root goes in untransformed', () => {
+    expect(patchAttachRoute('0-1-0-to-0-2-0-m07-drift.md')).toBe('/artifacts/patch/0-1-0-to-0-2-0-m07-drift.md/threads');
+    expect(patchAttachRoute('.claude4spec/patches/a/b.md')).toBe('/artifacts/patch/a/b.md/threads');
   });
 });

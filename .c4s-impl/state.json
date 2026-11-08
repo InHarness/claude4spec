@@ -1,5 +1,5 @@
 {
-  "iteration": 15,
+  "iteration": 20,
   "conventions": [
     {
       "label": "L3 (Spec Operations) — implementor M43",
@@ -53,7 +53,7 @@
       "units": [
         "m11-agent-patch-thread"
       ],
-      "startCommit": null
+      "startCommit": "2a1c5826cb646f5a04bd51ce5e10f0df385e746a"
     }
   ],
   "units": [
@@ -549,15 +549,52 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "m11-agent-patch-thread/p1-l4-l16",
+          "layers": [
+            "L4",
+            "L14",
+            "L15",
+            "L16"
+          ],
+          "slugs": [
+            "agent",
+            "ask",
+            "m11-requires-m23",
+            "ac-c4s-agent-msg-ct-patch-patch-path-zwr",
+            "ac-tura-uruchomiona-przez-c4s-agent-ct-p",
+            "ac-prompt-systemowy-pierwszej-tury-watku-2",
+            "ac-blad-run-turn-po-zalozeniu-watku-prze",
+            "ac-c4s-ask-z-patch-konczy-sie-invalid-ar",
+            "ac-ct-patch-bez-thread-i-bez-patch-koncz",
+            "ac-patch-bez-ct-patch-konczy-sie-invalid",
+            "ac-patch-razem-z-thread-konczy-sie-inval",
+            "ac-patch-razem-z-brief-konczy-sie-invali",
+            "ac-patch-razem-z-plan-konczy-sie-invalid",
+            "ac-patch-na-patchu-z-applied-true-zaklad",
+            "ac-patch-z-przedrostkiem-claude4spec-pat",
+            "ac-patch-ze-sciezka-nieistniejacego-patc",
+            "ac-path-pozycji-z-c4s-list-patches-jest",
+            "ac-path-zwrocony-przez-c4s-create-patch"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "2a1c5826cb646f5a04bd51ce5e10f0df385e746a",
+      "baseCommit": "2a1c5826cb646f5a04bd51ce5e10f0df385e746a",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     }
   ],
   "errors": 0,

@@ -141,6 +141,10 @@ Agent:
                                               (<planPath> relative to the plans dir, a leading
                                               .claude4spec/plans/ is stripped; --ct not needed,
                                               no --thread/--brief; unknown plan is NOT_FOUND)
+  agent "<msg>" --ct patch --patch <path>     new patch thread on an existing patch, then turn on it
+                                              (<path> as create-patch / list-patches print it, a leading
+                                              .claude4spec/patches/ is stripped; no --thread/--brief/--plan;
+                                              unknown patch is NOT_FOUND)
   agent "<msg>" --ct brief [--from <r>] [--to <r>] [--roots <a,b>] [--suffix <s>]
                                               create the brief first, then turn on it
                                               (no window flag goes with --brief)

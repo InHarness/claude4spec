@@ -22,4 +22,23 @@ describe('c4s ask — context flags are refused locally', () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it('[ac:ac-c4s-ask-z-patch-konczy-sie-invalid-ar] `c4s ask … --patch` → INVALID_ARGS before any request', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      await expect(run(['ask', 'msg', '--patch', 'v1-to-v2-drift.md'])).rejects.toMatchObject({
+        code: 'INVALID_ARGS',
+        message: expect.stringMatching(/does not take --patch/),
+      });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('[entity:cli-command/ask] declares --patch only to refuse it', async () => {
+    const { askCommand } = await import('./ask.js');
+    expect(askCommand.flags).toContain('patch');
+  });
 });

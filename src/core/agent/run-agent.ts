@@ -41,6 +41,7 @@ export type { AgentErrorCode } from './http.js';
  *   await runAgent({ message: '...', contextType: 'brief', briefPath: '...' })   // attach-mode
  *   await runAgent({ message: '...', contextType: 'brief' })                     // create-mode
  *   await runAgent({ message: '...', planPath: 'auth-refactor.md' })             // attach planu
+ *   await runAgent({ message: '...', contextType: 'patch', patchPath: 'v1-to-v2-drift.md' }) // attach patcha
  *
  * Dla `contextType='brief'` tryb rozstrzyga `briefPath`: podany → attach, brak
  * → create. Plik briefu powstaje w kroku 3, PRZED tura: `runAgent` nie startuje
@@ -94,6 +95,14 @@ export interface AgentParams {
   planPath?: string; // attach planu (`--plan`): nowy watek chat na istniejacym planie;
                      // wyklucza threadId, briefPath i contextType inny niz 'chat';
                      // zamkniete dla narzedzia MCP c4s-tools.ask
+  /**
+   * 2.1.74 — attach patcha (`--patch`): nowy watek `patch` zakotwiczony w
+   * istniejacym patchu. Sciezka wzgledna w korzeniu `patches` — ta sama, ktora
+   * zwracaja `c4s create-patch` i `c4s list-patches`; przedrostek
+   * `.claude4spec/patches/` jest zdejmowany. Wymaga `contextType='patch'`;
+   * wyklucza `threadId`, `briefPath` i `planPath`.
+   */
+  patchPath?: string;
 
   /**
    * Create-payload — wylacznie dla `contextType='brief'`. W CALOSCI opcjonalny,
@@ -168,6 +177,37 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
   let briefAttach = false;
   /** Sciezka planu wzgledem `plansDir`, juz zakodowana pod segment URL. */
   let planEncoded: string | undefined;
+  /** Trasa dowiazania watku patcha (bez `apiBase`), policzona z gory. */
+  let patchAttachPath: string | undefined;
+  if (params.patchPath !== undefined) {
+    // Wykluczenia sprawdzane PRZED galezia planu i `threadId`, zeby kazda para
+    // z `--patch` dostala ten sam komunikat niezaleznie od kolejnosci galezi.
+    const others = [
+      params.threadId ? 'threadId' : null,
+      params.briefPath !== undefined ? 'briefPath' : null,
+      params.planPath !== undefined ? 'planPath' : null,
+    ].filter((x): x is string => x !== null);
+    if (others.length > 0) {
+      throw new AgentError(
+        'INVALID_ARGS',
+        `patchPath does not go with ${others.join('/')} (pass only one of patchPath, threadId, briefPath, planPath)`,
+      );
+    }
+    if (params.contextType !== 'patch') {
+      throw new AgentError(
+        'INVALID_ARGS',
+        `patchPath founds a patch thread; it requires contextType 'patch' (got '${params.contextType ?? 'chat'}')`,
+      );
+    }
+    const windowFlags = briefWindowFlagsPresent(params);
+    if (windowFlags.length > 0) {
+      throw new AgentError(
+        'INVALID_ARGS',
+        `patchPath does not go with the brief window arguments (${windowFlags.join('/')})`,
+      );
+    }
+    patchAttachPath = patchAttachRoute(params.patchPath);
+  }
   if (params.planPath !== undefined) {
     // Tryb planu ZAWSZE zaklada nowy watek `chat` — kontynuacja, brief ani inny
     // kontekst nie maja z nim sensu. Sprawdzane przed galezia `threadId`, bo ta
@@ -204,11 +244,12 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
         `contextType must be chat|brief|patch|ask (got '${ct}')`,
       );
     }
-    if (ct === 'patch') {
-      // Watki patch nie maja route create-thread — tylko kontynuacja.
+    if (ct === 'patch' && patchAttachPath === undefined) {
+      // 2.1.74: watek patcha zaklada sie wylacznie na istniejacym patchu.
       throw new AgentError(
         'INVALID_ARGS',
-        'cannot create a patch thread via agent; pass threadId to continue one',
+        'a patch thread is founded only on an existing patch: pass patchPath (or threadId to continue one)',
+        'pass --patch <path>',
       );
     }
     if (ct === 'brief') {
@@ -244,7 +285,8 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
   // --- create-thread (context-specific) — pomijany dla threadId ----------
   let threadId: string;
   let mintedBriefPath: string | undefined;
-  let planThreadCreated = false;
+  /** Rodzaj artefaktu, na ktorym ten przebieg zalozyl watek (`--plan`/`--patch`). */
+  let attachedKind: 'plan' | 'patch' | undefined;
   if (params.threadId) {
     threadId = params.threadId;
   } else if (briefCreateBody) {
@@ -275,7 +317,23 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
       throw err;
     }
     threadId = pickThreadId(created);
-    planThreadCreated = true;
+    attachedKind = 'plan';
+  } else if (patchAttachPath !== undefined) {
+    // Ta sama generyczna trasa dowiazania; dla `kind=patch` (binding anchor)
+    // serwer zaklada NOWY watek `patch` z `patch_path`. Patch `applied: true`
+    // nie jest odrzucany — trasa tego nie sprawdza i CLI tez nie.
+    let created: Record<string, unknown>;
+    try {
+      created = await postJson(`${apiBase}${patchAttachPath}`, {});
+    } catch (err) {
+      // 404 trasy dowiazania (serwer mowi `PATCH_NOT_FOUND`) → `NOT_FOUND`.
+      if (err instanceof AgentError && (err.code === 'PATCH_NOT_FOUND' || err.code === 'NOT_FOUND')) {
+        throw new AgentError('NOT_FOUND', err.message, err.hint);
+      }
+      throw err;
+    }
+    threadId = pickThreadId(created);
+    attachedKind = 'patch';
   } else {
     // 'chat' + 'ask' share the generic create-thread route; the server
     // validates `context_type` (only 'chat'/'ask' accepted on this path).
@@ -294,13 +352,13 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
       { dispatcher: runTurnDispatcher },
     );
   } catch (err) {
-    // Watek na planie juz istnieje — wznowienie to `--thread`, nie kolejne
-    // `--plan` (to dolozyloby nastepny watek na planie).
-    if (planThreadCreated && err instanceof AgentError) {
+    // Watek na planie/patchu juz istnieje — wznowienie to `--thread`, nie kolejne
+    // `--plan`/`--patch` (to dolozyloby nastepny watek na artefakcie).
+    if (attachedKind && err instanceof AgentError) {
       throw new AgentError(
         err.code,
         err.message,
-        `the plan thread was created; resume it with: c4s agent "<msg>" --thread ${threadId}`,
+        `the ${attachedKind} thread was created; resume it with: c4s agent "<msg>" --thread ${threadId}`,
         { threadId },
       );
     }
@@ -316,6 +374,21 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
     out.messages = Array.isArray(result.messages) ? (result.messages as AgentMessage[]) : [];
   }
   return out;
+}
+
+/**
+ * 2.1.74 — the attach route of a patch thread, relative to the project's API base:
+ * `/artifacts/patch/<path>/threads`. `patchPath` is the path relative to the
+ * `patches` root — exactly what `c4s create-patch` and `c4s list-patches` print —
+ * and goes in untransformed; only a leading `.claude4spec/patches/` is stripped.
+ * A traversing or empty path is `INVALID_ARGS` (via `encodeArtifactPath`).
+ */
+export function patchAttachRoute(patchPath: string): string {
+  const normalized = patchPath.replace(/^(\.\/)?\.claude4spec\/patches\//, '');
+  if (!normalized.trim()) {
+    throw new AgentError('INVALID_ARGS', 'patchPath is required (got an empty value)');
+  }
+  return `/artifacts/patch/${encodeArtifactPath(normalized)}/threads`;
 }
 
 /**

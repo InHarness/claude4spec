@@ -11,8 +11,8 @@ import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registr
  * Narrowed alias of `c4s agent`: hardcodes `contextType='ask'` and
  * `output: 'final'` (terse `{ threadId, answer }`). It is the canonical
  * peer-consult shorthand and the CLI twin of the MCP `ask` tool — the peer
- * answers read-only, never mutating its own spec. `--ct` / `--brief` / `--plan`
- * are rejected (use `c4s agent` for other contexts).
+ * answers read-only, never mutating its own spec. `--ct` / `--brief` / `--plan` /
+ * `--patch` are rejected (use `c4s agent` for other contexts).
  *
  *   c4s ask "<msg>"                 # consult the peer for the cwd's project
  *   c4s ask "<msg>" --project <p>   # consult a specific peer, by path or registered name
@@ -34,6 +34,9 @@ export async function runAsk_cli(args: ParsedArgs): Promise<void> {
   }
   if (args.flags.has('plan')) {
     throw new CliError('INVALID_ARGS', '`c4s ask` does not take --plan; use `c4s agent --plan <planPath>`');
+  }
+  if (args.flags.has('patch')) {
+    throw new CliError('INVALID_ARGS', '`c4s ask` does not take --patch; use `c4s agent --ct patch --patch <path>`');
   }
 
   const threadId = optionalString(args, 'thread');
@@ -88,7 +91,7 @@ export const askCommand: CliCommandContribution = {
   name: 'ask',
   operation: 'ask',
   executionMode: 'server-delegating',
-  flags: ['ct', 'brief', 'plan', 'thread', 'effort', 'model'],
+  flags: ['ct', 'brief', 'plan', 'patch', 'thread', 'effort', 'model'],
   errorCodes: [...SERVER_DELEGATING_CODES, 'INVALID_ARGS', 'RESUME_CONFIG_LOCKED'],
   handler: runAsk_cli,
 };

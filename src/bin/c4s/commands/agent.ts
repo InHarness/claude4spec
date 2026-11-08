@@ -20,6 +20,7 @@ import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registr
  *
  *   c4s agent "<msg>" --ct chat
  *   c4s agent "<msg>" --plan <planPath>        # new executor thread on an existing plan (—ct not needed)
+ *   c4s agent "<msg>" --ct patch --patch <path>  # new patch thread on an existing patch (2.1.74)
  *   c4s agent "<msg>" --ct ask                 # read-only peer consult
  *   c4s agent "<msg>" --ct brief --brief <path>       # attach-mode
  *   c4s agent "<msg>" --ct brief                      # create-mode, window open to the current state
@@ -50,6 +51,10 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
   if (args.flags.has('plan') && planPath === undefined) {
     throw new CliError('INVALID_ARGS', '--plan needs a path (got an empty value)');
   }
+  const patchPath = optionalString(args, 'patch');
+  if (args.flags.has('patch') && patchPath === undefined) {
+    throw new CliError('INVALID_ARGS', '--patch needs a path (got an empty value)', 'pass --patch <path>');
+  }
   const server = optionalString(args, 'server');
   const effort = optionalString(args, 'effort');
   const model = parseModelFlag(args);
@@ -64,7 +69,30 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
   const rootsFlag = optionalStringList(args, 'roots');
   const suffixFlag = optionalString(args, 'suffix');
 
-  if (planPath !== undefined) {
+  if (patchPath !== undefined) {
+    // 2.1.74 — `--patch` founds a NEW patch thread on an existing patch: it is
+    // one of four mutually exclusive ways to pick the thread, and needs
+    // `--ct patch` (the default `chat` does not do). `runAgent` re-checks.
+    const others = [
+      threadId ? '--thread' : null,
+      briefPath !== undefined ? '--brief' : null,
+      planPath !== undefined ? '--plan' : null,
+    ].filter((x): x is string => x !== null);
+    if (others.length > 0) {
+      throw new CliError(
+        'INVALID_ARGS',
+        `--patch does not go with ${others.join(', ')}`,
+        'pass only one of --patch, --thread, --brief, --plan',
+      );
+    }
+    if (ct !== 'patch') {
+      throw new CliError(
+        'INVALID_ARGS',
+        `--patch opens a patch thread; it needs --ct patch (got --ct ${ct ?? 'chat'})`,
+        'pass --ct patch',
+      );
+    }
+  } else if (planPath !== undefined) {
     // Plan mode always creates a NEW chat thread, so continuation, a brief or
     // another context make no sense with it. `runAgent` re-checks the same
     // (it is the shared library); here only for the CLI-worded messages.
@@ -94,7 +122,8 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
     if (ct === 'patch') {
       throw new CliError(
         'INVALID_ARGS',
-        'c4s agent cannot create a patch thread; pass --thread <id> to continue one',
+        '--ct patch needs --patch <path> (a patch thread is founded only on an existing patch) or --thread <id> to continue one',
+        'pass --patch <path>',
       );
     }
   }
@@ -110,6 +139,7 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
       threadId,
       briefPath,
       planPath,
+      patchPath,
       // Create-payload przekazywany plasko, dokladnie tak jak `effort`.
       fromReleaseName: fromFlag,
       toReleaseName: toFlag,
@@ -182,7 +212,7 @@ function extractText(content: string): string {
 export const agentCommand: CliCommandContribution = {
   name: 'agent',
   executionMode: 'server-delegating',
-  flags: ['ct', 'brief', 'plan', 'thread', 'effort', 'model', 'from', 'to', 'roots', 'suffix'],
+  flags: ['ct', 'brief', 'plan', 'patch', 'thread', 'effort', 'model', 'from', 'to', 'roots', 'suffix'],
   errorCodes: [
     ...SERVER_DELEGATING_CODES,
     // 2.1.26 (M11 `g24dkd8t`) — the turn family's 409 for a `--thread`
@@ -193,6 +223,8 @@ export const agentCommand: CliCommandContribution = {
     'BRIEF_NOT_FOUND',
     'BRIEF_SAME_RELEASE',
     'RELEASE_NOT_FOUND',
+    // 2.1.74 — `--plan` / `--patch` on an artifact that does not exist.
+    'NOT_FOUND',
   ],
   handler: runAgentCmd,
 };
