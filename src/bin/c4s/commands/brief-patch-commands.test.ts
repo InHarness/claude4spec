@@ -22,7 +22,13 @@ import { listBriefsCommand, runListBriefs } from './list-briefs.js';
 import { getBriefCommand, runGetBrief } from './get-brief.js';
 import { createPatchCommand, runCreatePatch } from './create-patch.js';
 import { createBriefCommand, runCreateBrief } from './create-brief.js';
-import { listPatchesCommand, runListPatches } from './list-patches.js';
+import {
+  LIST_PATCHES_DEFAULT_LIMIT,
+  LIST_PATCHES_MAX_LIMIT,
+  listPatchesCommand,
+  runListPatches,
+} from './list-patches.js';
+import { DEFAULT_LIMITS, MAX_LIMIT } from '../../../server/discovery/pagination.js';
 import { systemRootId } from '../../../shared/root-kinds.js';
 import { runCreatePlan } from './create-plan.js';
 import { createTestApp, type TestApp } from '../../../../tests/helpers/test-app.js';
@@ -385,6 +391,11 @@ describe('[ac:ac-rodzina-brief-patch-list-briefs-read] the brief/patch family de
       await runListPatches(args('list-patches', '--offset', '50'));
       expect((printed().items as Array<{ path: string }>).map((i) => i.path)).toEqual(many.slice(50).map((r) => r.path));
       expect(printed().hasMore).toBe(false);
+    });
+
+    it('[entity:cli-command/list-patches] its window constants are the discovery core\'s, copied as numbers (a bin command imports no value from the core)', () => {
+      expect(LIST_PATCHES_DEFAULT_LIMIT).toBe(DEFAULT_LIMITS.listPatches);
+      expect(LIST_PATCHES_MAX_LIMIT).toBe(MAX_LIMIT);
     });
 
     it('[entity:cli-command/list-patches] refuses a nonsense window locally, and an invalid --status locally with VALIDATION in the flag\'s terms', async () => {

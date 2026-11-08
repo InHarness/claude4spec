@@ -3,7 +3,6 @@ import { optionalInt, optionalString } from '../args.js';
 import { delegateGet } from '../delegate.js';
 import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
-import { DEFAULT_LIMITS, MAX_LIMIT } from '../../../server/discovery/pagination.js';
 import type { ArtifactListItem } from '../../../shared/entities.js';
 import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registry.js';
 
@@ -33,6 +32,17 @@ import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registr
  * order. Each row is the route's `ArtifactListItem` untouched (`path` relative
  * to the patches root, `applied` inside `frontmatter`).
  */
+/**
+ * The operation's window — `DEFAULT_LIMITS.listPatches` and `MAX_LIMIT` of the
+ * discovery core — duplicated as numbers, the way `delegate.ts` duplicates
+ * `SWEEP_PAGE_SIZE`: a bin command may import only TYPES from
+ * `server/discovery/` (M39 — executing a catalog operation belongs to the server
+ * process). `brief-patch-commands.test.ts` pins both copies to the live values,
+ * so a constant that moves fails there instead of drifting silently.
+ */
+export const LIST_PATCHES_DEFAULT_LIMIT = 50;
+export const LIST_PATCHES_MAX_LIMIT = 1000;
+
 export async function runListPatches(args: ParsedArgs): Promise<void> {
   const rawLimit = optionalInt(args, 'limit');
   if (rawLimit !== undefined && rawLimit <= 0) {
@@ -42,7 +52,7 @@ export async function runListPatches(args: ParsedArgs): Promise<void> {
   if (offset < 0) {
     throw new CliError('INVALID_ARGS', '--offset must be >= 0');
   }
-  const limit = Math.min(rawLimit ?? DEFAULT_LIMITS.listPatches, MAX_LIMIT);
+  const limit = Math.min(rawLimit ?? LIST_PATCHES_DEFAULT_LIMIT, LIST_PATCHES_MAX_LIMIT);
 
   const status = optionalString(args, 'status');
   if (status !== undefined && status !== 'applied' && status !== 'pending') {

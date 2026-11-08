@@ -1,5 +1,5 @@
 {
-  "iteration": 23,
+  "iteration": 24,
   "conventions": [
     {
       "label": "L3 (Spec Operations) — implementor M43",
@@ -243,7 +243,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "m23-list-patches/p1-l3-l14",
@@ -259,17 +259,11 @@
             "ac-sklejenie-stron-c4s-list-patches-offs",
             "ac-rodzina-brief-patch-list-briefs-read"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
-          "uncovered": [
-            "list-patches"
-          ],
-          "only": [
-            {
-              "slug": "list-patches"
-            }
-          ]
+          "uncovered": [],
+          "only": []
         }
       ],
       "startCommit": "64d0d24c5a46f78d643a3436bd30b211cfa3f9da",
