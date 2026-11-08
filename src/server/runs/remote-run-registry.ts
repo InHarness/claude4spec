@@ -98,12 +98,17 @@ export function remoteRunRegistry(db: () => Database.Database): RemoteRunRegistr
  * `run-record`: kind `plan` → `{ projectId, path }`, kind `prompt` →
  * `{ projectId? }`. An unknown kind gives neither; a missing or wrongly typed
  * field is NULL. Never throws, never substitutes a default project.
+ * 2.1.75: a plan path without a readable projectId does not point at a plan,
+ * so kind `plan` without a readable projectId gives an empty plan as well.
  */
 export function runInputLocator(input: unknown): { projectId: string | null; planPath: string | null } {
   if (input === null || typeof input !== 'object' || Array.isArray(input)) return { projectId: null, planPath: null };
   const { kind, projectId, path } = input as { kind?: unknown; projectId?: unknown; path?: unknown };
   const str = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
-  if (kind === 'plan') return { projectId: str(projectId), planPath: str(path) };
+  if (kind === 'plan') {
+    const project = str(projectId);
+    return { projectId: project, planPath: project !== null ? str(path) : null };
+  }
   if (kind === 'prompt') return { projectId: str(projectId), planPath: null };
   return { projectId: null, planPath: null };
 }

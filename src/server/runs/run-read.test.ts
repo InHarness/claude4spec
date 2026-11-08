@@ -548,8 +548,10 @@ describe('get_run / cancel_run (spec-operations get-run, cancel-run)', () => {
       expect(await restore({ input: { kind: 'plan', projectId: 7, path: '' } })).toMatchObject({ project_id: null, plan_path: null });
     });
 
-    it('a plan input without projectId keeps its plan path, the project stays NULL', async () => {
-      expect(await restore({ input: { kind: 'plan', path: 'p1.md' } })).toMatchObject({ project_id: null, plan_path: 'p1.md' });
+    it('2.1.75: a plan input with projectId but without a path keeps the project, the plan path IS NULL', async () => {
+      const row = (await restore({ input: { kind: 'plan', projectId: 'p1' } }))!;
+      expect(row.project_id).toBe('p1');
+      expect(row.plan_path).toBeNull();
     });
 
     it('a record without any input restores the row with both NULL', async () => {
@@ -565,6 +567,24 @@ describe('get_run / cancel_run (spec-operations get-run, cancel-run)', () => {
       it('[ac:ac-rekord-runu-z-nieznanym-rodzajem-wejs] a record with an unknown input kind restores the row without a project and without a plan', async () => {
         const row = await restore({ input: { kind: 'recipe', projectId: 'app', path: 'p1.md' } });
         expect(row).toMatchObject({ run_id: RUN, host_id: 'h_from_record', project_id: null, plan_path: null });
+      });
+
+      it('[ac:ac-rekord-runu-z-wejsciem-prompt-niosacy] a record with a `prompt` input carrying a `path` restores the row without a plan', async () => {
+        const row = (await restore({ input: { kind: 'prompt', projectId: 'p1', path: 'plans/x.md' } }))!;
+        expect(row.project_id).toBe('p1');
+        expect(row.plan_path).toBeNull();
+      });
+
+      it('[ac:ac-wiersz-rejestru-odtworzony-z-rekordu-5] a row restored from a record with a `plan` input without projectId carries no plan path', async () => {
+        const row = (await restore({ input: { kind: 'plan', path: 'plans/x.md' } }))!;
+        expect(row.project_id).toBeNull();
+        expect(row.plan_path).toBeNull();
+      });
+
+      it('[ac:ac-wiersz-rejestru-odtworzony-z-rekordu-5] an empty projectId (\'\') is not a readable projectId — the row carries neither project nor plan path', async () => {
+        const row = (await restore({ input: { kind: 'plan', projectId: '', path: 'plans/x.md' } }))!;
+        expect(row.project_id).toBeNull();
+        expect(row.plan_path).toBeNull();
       });
     });
   });
