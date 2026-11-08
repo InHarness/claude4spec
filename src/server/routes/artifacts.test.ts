@@ -975,6 +975,18 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       expectTypeOf<import('../../shared/entities.js').ArtifactThreadCreateRequest>().toEqualTypeOf<{ name?: string }>();
     });
 
+    it('[entity:artifact-thread-create-request] plan (attach): a given `name` titles the attached thread; absent, the plan\'s title applies', async () => {
+      const planPath = (await plans.create({ title: 'Named Plan', content: '## Step\n\nbody\n', changedBy: 'agent' })).planPath;
+
+      const named = await request(app).post(`/api/artifacts/plan/${planPath}/threads`).send({ name: 'plan thread' });
+      expect(named.status).toBe(200);
+      expect(row(named.body.data.threadId)).toMatchObject({ title: 'plan thread', plan_path: planPath });
+
+      const unnamed = await request(app).post(`/api/artifacts/plan/${planPath}/threads`).send({});
+      expect(unnamed.status).toBe(200);
+      expect(row(unnamed.body.data.threadId)).toMatchObject({ title: 'Named Plan', plan_path: planPath });
+    });
+
     it('[ac:ac-wpis-rejestru-deklaruje-binding-mode] the registry declares binding.mode — anchor (required, brief/patch) or attach (optional, plan) — N threads → 1 artifact in both; the per-kind columns coexist on one thread; ask is a context type with no kind', async () => {
       // The declaration.
       expect(artifactRegistry.briefs.binding).toEqual({ mode: 'anchor', contextType: 'brief', threadColumn: 'brief_path' });

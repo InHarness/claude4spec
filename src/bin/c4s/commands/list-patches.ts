@@ -22,8 +22,9 @@ import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registr
  * - `--brief <brief-path>` (relative to the briefs root, as in `create-patch`)
  *   → `?brief=`; a brief that does not exist is an empty list, not a refusal.
  * - `--status applied` → `?applied=true`, `--status pending` → `?applied=false`.
- *   Any other value is sent as written, so the server refuses it with the
- *   operation's `VALIDATION` — the bin adds no code of its own for it.
+ *   Any other value is refused here, before addressing the server, with the
+ *   same `VALIDATION` code the server would answer — but in the flag's terms
+ *   (`--status` and `applied|pending`), not the route's `?applied=true|false`.
  *
  * The window is the operation's (M39 implicit matrix: default `limit` 50,
  * ceiling 1000, `offset` 0). The route answers the whole filtered, sorted set,
@@ -44,7 +45,10 @@ export async function runListPatches(args: ParsedArgs): Promise<void> {
   const limit = Math.min(rawLimit ?? DEFAULT_LIMITS.listPatches, MAX_LIMIT);
 
   const status = optionalString(args, 'status');
-  const applied = status === undefined ? undefined : status === 'applied' ? 'true' : status === 'pending' ? 'false' : status;
+  if (status !== undefined && status !== 'applied' && status !== 'pending') {
+    throw new CliError('VALIDATION', `--status must be 'applied' or 'pending', got '${status}'`);
+  }
+  const applied = status === undefined ? undefined : status === 'applied' ? 'true' : 'false';
   const brief = optionalString(args, 'brief');
 
   const rows = (await delegateGet(args, '/artifacts/patch', {

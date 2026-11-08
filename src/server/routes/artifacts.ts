@@ -307,8 +307,8 @@ function buildPlanAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
     // Not the client's actual creation path (see file header) — delegates to
     // the same PlanService method the bespoke POST /api/plans/:slug/create-thread
     // route uses, so there's no behavior fork if a caller does reach this route.
-    createThread(path) {
-      return plans.attachThreadToPlan(path);
+    createThread(path, name) {
+      return plans.attachThreadToPlan(path, name ?? null);
     },
     // 2.1.13 — `list_plan_versions`' rest rendering. The order stays the REST
     // family's (newest first, what the version-history panel reads).

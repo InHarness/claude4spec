@@ -387,15 +387,15 @@ describe('[ac:ac-rodzina-brief-patch-list-briefs-read] the brief/patch family de
       expect(printed().hasMore).toBe(false);
     });
 
-    it('[entity:cli-command/list-patches] refuses a nonsense window locally, and leaves an invalid --status to the server\'s VALIDATION', async () => {
+    it('[entity:cli-command/list-patches] refuses a nonsense window locally, and an invalid --status locally with VALIDATION in the flag\'s terms', async () => {
       await expect(runListPatches(args('list-patches', '--limit', '0'))).rejects.toMatchObject({ code: 'INVALID_ARGS' });
       await expect(runListPatches(args('list-patches', '--offset', '-1'))).rejects.toMatchObject({ code: 'INVALID_ARGS' });
-      expect(seen).toEqual([]);
 
-      status = 400;
-      reply = { error: { code: 'VALIDATION', message: "?applied must be 'true' or 'false' (omit for all)" } };
-      await expect(runListPatches(args('list-patches', '--status', 'maybe'))).rejects.toMatchObject({ code: 'VALIDATION' });
-      expect(new URL(seen[0]!.url, 'http://x').searchParams.get('applied')).toBe('maybe');
+      const refused = runListPatches(args('list-patches', '--status', 'maybe'));
+      await expect(refused).rejects.toMatchObject({ code: 'VALIDATION' });
+      await expect(refused).rejects.toThrow(/--status must be 'applied' or 'pending'/);
+      await expect(refused).rejects.not.toThrow(/\?applied|true|false/);
+      expect(seen).toEqual([]);
     });
   });
 

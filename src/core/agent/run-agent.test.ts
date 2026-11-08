@@ -2,7 +2,7 @@ import { describe, expect, it, afterEach, beforeEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { runAgent, AgentError, patchAttachRoute } from './run-agent.js';
+import { runAgent, AgentError } from './run-agent.js';
 import { WorkspaceRegistry } from '../../server/workspace/registry.js';
 
 /**
@@ -713,8 +713,15 @@ describe('runAgent — patch attach (patchPath)', () => {
     expect((err as AgentError).hint).toContain('--thread T-patch');
   });
 
-  it('patchAttachRoute: the path relative to the patches root goes in untransformed', () => {
-    expect(patchAttachRoute('0-1-0-to-0-2-0-m07-drift.md')).toBe('/artifacts/patch/0-1-0-to-0-2-0-m07-drift.md/threads');
-    expect(patchAttachRoute('.claude4spec/patches/a/b.md')).toBe('/artifacts/patch/a/b.md/threads');
+  it('the attach route: the path relative to the patches root goes in untransformed', async () => {
+    for (const [patchPath, route] of [
+      ['0-1-0-to-0-2-0-m07-drift.md', '/artifacts/patch/0-1-0-to-0-2-0-m07-drift.md/threads'],
+      ['.claude4spec/patches/a/b.md', '/artifacts/patch/a/b.md/threads'],
+    ] as const) {
+      const { calls } = stubPatchFlow();
+      await runAgent({ ...PATCH, message: 'go', patchPath });
+      expect(calls.find((c) => c.url.endsWith('/threads'))!.url.endsWith(route), patchPath).toBe(true);
+      vi.unstubAllGlobals();
+    }
   });
 });

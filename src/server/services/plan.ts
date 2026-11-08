@@ -498,7 +498,7 @@ export class PlanService {
 
   // ─── Mutations ──────────────────────────────────────────────────────────
 
-  async attachThreadToPlan(planPath: string): Promise<{ threadId: string }> {
+  async attachThreadToPlan(planPath: string, name?: string | null): Promise<{ threadId: string }> {
     // Resolve existence via getByPath (a direct filesystem check), not the
     // in-memory frontmatter index — the index is populated asynchronously
     // (file watcher / boot-time indexAll()), so a plan written moments ago
@@ -507,7 +507,9 @@ export class PlanService {
     // 2.1.13 — `execute_plan`'s rest rendering: an unknown plan is PLAN_NOT_FOUND
     // (catalog row `katalog-operacji-m10#execute_plan`), not the generic NOT_FOUND.
     const plan = await this.getByAddress(planPath);
-    const title = typeof plan.frontmatter.title === 'string' ? plan.frontmatter.title : planPath;
+    // 2.1.74 — `ArtifactThreadCreateRequest.name`, when given, titles the
+    // thread; absent, the plan's own title (or its path) does.
+    const title = name ?? (typeof plan.frontmatter.title === 'string' ? plan.frontmatter.title : planPath);
     const newThread = this.deps.chatService.createThread(title);
     this.deps.chatService.attachPlanToThread(newThread.id, planPath);
     return { threadId: newThread.id };

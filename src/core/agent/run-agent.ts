@@ -175,8 +175,8 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
   /** Cialo `POST /api/briefs` policzone z gory — tu zyje walidacja okna. */
   let briefCreateBody: Record<string, unknown> | undefined;
   let briefAttach = false;
-  /** Sciezka planu wzgledem `plansDir`, juz zakodowana pod segment URL. */
-  let planEncoded: string | undefined;
+  /** Trasa dowiazania watku planu (bez `apiBase`), policzona z gory. */
+  let planAttachPath: string | undefined;
   /** Trasa dowiazania watku patcha (bez `apiBase`), policzona z gory. */
   let patchAttachPath: string | undefined;
   if (params.patchPath !== undefined) {
@@ -206,7 +206,7 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
         `patchPath does not go with the brief window arguments (${windowFlags.join('/')})`,
       );
     }
-    patchAttachPath = patchAttachRoute(params.patchPath);
+    patchAttachPath = attachRoute('patch', params.patchPath);
   }
   if (params.planPath !== undefined) {
     // Tryb planu ZAWSZE zaklada nowy watek `chat` — kontynuacja, brief ani inny
@@ -231,11 +231,7 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
         `planPath does not go with the brief window arguments (${windowFlags.join('/')})`,
       );
     }
-    const normalized = params.planPath.replace(/^(\.\/)?\.claude4spec\/plans\//, '');
-    if (!normalized.trim()) {
-      throw new AgentError('INVALID_ARGS', 'planPath is required (got an empty value)');
-    }
-    planEncoded = encodeArtifactPath(normalized);
+    planAttachPath = attachRoute('plan', params.planPath);
   }
   if (!params.threadId) {
     if (ct !== 'chat' && ct !== 'brief' && ct !== 'patch' && ct !== 'ask') {
@@ -301,38 +297,17 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
     const encoded = encodeArtifactPath(params.briefPath as string);
     const created = await postJson(`${apiBase}/artifacts/brief/${encoded}/threads`, {});
     threadId = pickThreadId(created);
-  } else if (planEncoded !== undefined) {
+  } else if (planAttachPath !== undefined) {
     // Ta sama generyczna trasa dowiazania co brief; dla `kind=plan` serwer
     // zaklada watek `chat` (plan_mode = 0) z `plan_path`. Plan `applied: true`
     // nie jest odrzucany.
-    let created: Record<string, unknown>;
-    try {
-      created = await postJson(`${apiBase}/artifacts/plan/${planEncoded}/threads`, {});
-    } catch (err) {
-      // 404 z trasy dowiazania (serwer mowi `PLAN_NOT_FOUND`) → `NOT_FOUND`,
-      // jedyny kod tej rodziny dla nieznanego adresu.
-      if (err instanceof AgentError && (err.code === 'PLAN_NOT_FOUND' || err.code === 'NOT_FOUND')) {
-        throw new AgentError('NOT_FOUND', err.message, err.hint);
-      }
-      throw err;
-    }
-    threadId = pickThreadId(created);
+    threadId = await postAttach('plan', `${apiBase}${planAttachPath}`);
     attachedKind = 'plan';
   } else if (patchAttachPath !== undefined) {
     // Ta sama generyczna trasa dowiazania; dla `kind=patch` (binding anchor)
     // serwer zaklada NOWY watek `patch` z `patch_path`. Patch `applied: true`
     // nie jest odrzucany — trasa tego nie sprawdza i CLI tez nie.
-    let created: Record<string, unknown>;
-    try {
-      created = await postJson(`${apiBase}${patchAttachPath}`, {});
-    } catch (err) {
-      // 404 trasy dowiazania (serwer mowi `PATCH_NOT_FOUND`) → `NOT_FOUND`.
-      if (err instanceof AgentError && (err.code === 'PATCH_NOT_FOUND' || err.code === 'NOT_FOUND')) {
-        throw new AgentError('NOT_FOUND', err.message, err.hint);
-      }
-      throw err;
-    }
-    threadId = pickThreadId(created);
+    threadId = await postAttach('patch', `${apiBase}${patchAttachPath}`);
     attachedKind = 'patch';
   } else {
     // 'chat' + 'ask' share the generic create-thread route; the server
@@ -376,19 +351,47 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
   return out;
 }
 
+/** The artifact kinds `c4s agent` attaches a new thread to by path. */
+type AttachKind = 'plan' | 'patch';
+
+/** Each kind's root prefix, stripped when given, and its not-found code. */
+const ATTACH_KINDS: Record<AttachKind, { prefix: RegExp; notFound: string }> = {
+  plan: { prefix: /^(\.\/)?\.claude4spec\/plans\//, notFound: 'PLAN_NOT_FOUND' },
+  patch: { prefix: /^(\.\/)?\.claude4spec\/patches\//, notFound: 'PATCH_NOT_FOUND' },
+};
+
 /**
- * 2.1.74 — the attach route of a patch thread, relative to the project's API base:
- * `/artifacts/patch/<path>/threads`. `patchPath` is the path relative to the
- * `patches` root — exactly what `c4s create-patch` and `c4s list-patches` print —
- * and goes in untransformed; only a leading `.claude4spec/patches/` is stripped.
- * A traversing or empty path is `INVALID_ARGS` (via `encodeArtifactPath`).
+ * 2.1.74 — the attach route of a plan or patch thread, relative to the project's
+ * API base: `/artifacts/<kind>/<path>/threads`. The path is relative to the
+ * kind's root — exactly what the CLI's list/create commands print — and goes in
+ * untransformed; only a leading `.claude4spec/plans/` (`.claude4spec/patches/`)
+ * is stripped. An empty path is `INVALID_ARGS`, a traversing one too (via
+ * `encodeArtifactPath`).
  */
-export function patchAttachRoute(patchPath: string): string {
-  const normalized = patchPath.replace(/^(\.\/)?\.claude4spec\/patches\//, '');
+function attachRoute(kind: AttachKind, artifactPath: string): string {
+  const normalized = artifactPath.replace(ATTACH_KINDS[kind].prefix, '');
   if (!normalized.trim()) {
-    throw new AgentError('INVALID_ARGS', 'patchPath is required (got an empty value)');
+    throw new AgentError('INVALID_ARGS', `${kind}Path is required (got an empty value)`);
   }
-  return `/artifacts/patch/${encodeArtifactPath(normalized)}/threads`;
+  return `/artifacts/${kind}/${encodeArtifactPath(normalized)}/threads`;
+}
+
+/**
+ * POSTs the attach route and answers the new thread's id. A 404 from the route
+ * (the server says `PLAN_NOT_FOUND` / `PATCH_NOT_FOUND`) becomes `NOT_FOUND`,
+ * the family's only code for an unknown address.
+ */
+async function postAttach(kind: AttachKind, url: string): Promise<string> {
+  let created: Record<string, unknown>;
+  try {
+    created = await postJson(url, {});
+  } catch (err) {
+    if (err instanceof AgentError && (err.code === ATTACH_KINDS[kind].notFound || err.code === 'NOT_FOUND')) {
+      throw new AgentError('NOT_FOUND', err.message, err.hint);
+    }
+    throw err;
+  }
+  return pickThreadId(created);
 }
 
 /**
