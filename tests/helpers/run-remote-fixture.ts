@@ -107,6 +107,17 @@ export function host(id: string, url: string, over: Partial<RunRemoteHost> = {})
   };
 }
 
+/** 2.1.73: a `remote_run` row with the thread and plan columns. */
+export interface RemoteRunFullRow {
+  run_id: string;
+  host_id: string;
+  parent_run_id: string | null;
+  thread_id: string | null;
+  thread_project_id: string | null;
+  project_id: string | null;
+  plan_path: string | null;
+}
+
 export interface RunRemoteFixture {
   tmp: string;
   bare: string;
@@ -158,6 +169,8 @@ export interface RunRemoteFixture {
   rows(): Array<{ run_id: string; host_id: string }>;
   /** 2.1.68: rows of `remote_run` with `parent_run_id`. */
   rowsWithParent(): Array<{ run_id: string; host_id: string; parent_run_id: string | null }>;
+  /** 2.1.73: the row of one runId with every column but `created_at`, `undefined` when none. */
+  fullRow(runId: string): RemoteRunFullRow | undefined;
   dispose(): void;
 }
 
@@ -305,6 +318,13 @@ export async function makeRunRemoteFixture(opts: { gitEnabled?: boolean } = {}):
       return openWorkspaceDb({ name: 'ws', home })
         .prepare('SELECT run_id, host_id, parent_run_id FROM remote_run ORDER BY created_at, run_id')
         .all() as Array<{ run_id: string; host_id: string; parent_run_id: string | null }>;
+    },
+    fullRow(runId) {
+      return openWorkspaceDb({ name: 'ws', home })
+        .prepare(
+          'SELECT run_id, host_id, parent_run_id, thread_id, thread_project_id, project_id, plan_path FROM remote_run WHERE run_id = ?',
+        )
+        .get(runId) as RemoteRunFullRow | undefined;
     },
     dispose() {
       closeWorkspaceDbs();

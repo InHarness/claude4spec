@@ -131,6 +131,41 @@ describe('run_remote (M55)', () => {
     expect(input.projectId).toBe('app');
   });
 
+  describe('2.1.73 — the registry row carries the ordering thread and the plan (database-table remote-run)', () => {
+    it('[ac:ac-wiersz-rejestru-runu-zleconego-run-re] the row of a Run ordered by run_remote from a thread points at that thread and its project', async () => {
+      const result = await runRemote(fx.deps(), { threadId: 't-caller' });
+      expect(fx.fullRow(result.runId)).toMatchObject({ thread_id: 't-caller', thread_project_id: 'app' });
+      // A prompt keeps the pair just the same.
+      const prompt = await runRemote(fx.deps(), { threadId: 't-other', prompt: 'Tidy.' });
+      expect(fx.fullRow(prompt.runId)).toMatchObject({ thread_id: 't-other', thread_project_id: 'app' });
+    });
+
+    it('[ac:ac-wiersz-rejestru-runu-zleconego-z-plan] the row of a Run ordered with a plan carries the Run\'s project (step 4) and the input\'s plan path — also when the project differs from the thread\'s', async () => {
+      const own = await run(fx.deps(), {});
+      expect(fx.fullRow(own.runId)).toEqual({
+        run_id: own.runId,
+        host_id: 'h_a',
+        parent_run_id: null,
+        thread_id: 't1',
+        thread_project_id: 'app',
+        project_id: 'app',
+        plan_path: 'p1.md',
+      });
+
+      fx.addProject('docs');
+      await fx.pushAll('add project docs');
+      const other = await run(fx.deps(), { planPath: 'p1.md', projectId: 'docs' });
+      expect(fx.fullRow(other.runId)).toMatchObject({ thread_id: 't1', thread_project_id: 'app', project_id: 'docs', plan_path: 'p1.md' });
+    });
+
+    it('[ac:ac-wiersz-rejestru-runu-zleconego-z-prom] the row of a Run ordered with a prompt carries no plan path', async () => {
+      const result = await run(fx.deps(), { prompt: 'Tidy the glossary.' });
+      const row = fx.fullRow(result.runId)!;
+      expect(row.plan_path).toBeNull();
+      expect(row.project_id).toBe('app');
+    });
+  });
+
   it('[ac:ac-run-remote-z-projectid-spoza-workspac] a projectId outside the workspace ends with RUN_PROJECT_NOT_FOUND — with a prompt and with a plan — and leaves no row and no PUT', async () => {
     for (const input of [{ prompt: 'x', projectId: 'ghost' }, { planPath: 'p1.md', projectId: 'ghost' }]) {
       const err = await refusal(run(fx.deps(), input));
@@ -725,7 +760,7 @@ describe('run_remote with fromRunId — the continuation (M55 fdu51xri)', () => 
 
   /** A parent ordered from this workspace (row on `h_a`) that left its result ref; returns its `resultSha`. */
   const parentWithResult = async (over: Record<string, unknown> = {}, id = PARENT): Promise<string> => {
-    fx.registry.insert(id, 'h_a');
+    fx.registry.insert({ runId: id, hostId: 'h_a' });
     return fx.pushRunRecord(id, parentRecord({ runId: id, resultRef: `refs/runs/${id}/work`, ...over }), {
       [`ws/app/pages/${id}.md`]: `# by Run ${id}\n`,
     });
@@ -822,6 +857,29 @@ describe('run_remote with fromRunId — the continuation (M55 fdu51xri)', () => 
     expect(fx.registry.get(child.runId)?.parentRunId).toBe(PARENT);
   });
 
+  it('[ac:ac-wiersz-rejestru-runu-kontynuacji-nies-2] the row of a continuation carries the project and plan path of the parent\'s record, and the thread calling the continuation — never the parent row\'s thread', async () => {
+    const docs = fx.addProject('docs');
+    write(docs.plansDir, 'q7.md', '---\ntype: plan\ntitle: Q7\n---\n# Q7\n');
+    await fx.pushAll('add project docs with plan q7.md');
+    // The parent's row was ordered by another thread of another project.
+    fx.registry.insert({ runId: PARENT, hostId: 'h_a', threadId: 't-parent', threadProjectId: 'docs', projectId: 'docs', planPath: 'q7.md' });
+    await fx.pushRunRecord(PARENT, parentRecord({ input: { kind: 'plan', projectId: 'docs', path: 'q7.md' } }), {
+      [`ws/app/pages/${PARENT}.md`]: '# by the parent\n',
+    });
+
+    // The calling thread belongs to `app` and pins `p1.md`.
+    const child = await runRemote(fx.deps({ pinned: 'p1.md' }), { threadId: 't-continuer', fromRunId: PARENT });
+    expect(fx.fullRow(child.runId)).toEqual({
+      run_id: child.runId,
+      host_id: 'h_a',
+      parent_run_id: PARENT,
+      thread_id: 't-continuer',
+      thread_project_id: 'app',
+      project_id: 'docs',
+      plan_path: 'q7.md',
+    });
+  });
+
   it('[ac:ac-run-remote-z-fromrunid-bez-parametru] run_remote with fromRunId and no host parameter orders the Run on the parent\'s host — also with several connected hosts', async () => {
     await parentWithResult();
     const other = new RunsApiStub();
@@ -850,7 +908,7 @@ describe('run_remote with fromRunId — the continuation (M55 fdu51xri)', () => 
   it('[entity:run-remote] the parent\'s host without a host record ends with RUN_HOST_NOT_FOUND, with no row and no PUT', async () => {
     await parentWithResult({ hostId: 'h_gone' });
     fx.registry.delete(PARENT);
-    fx.registry.insert(PARENT, 'h_gone');
+    fx.registry.insert({ runId: PARENT, hostId: 'h_gone' });
     const err = await refusal(run(fx.deps(), { fromRunId: PARENT }));
     expect(err.code).toBe('RUN_HOST_NOT_FOUND');
     expect(fx.rows()).toEqual([{ run_id: PARENT, host_id: 'h_gone' }]);
@@ -930,7 +988,7 @@ describe('run_remote with fromRunId — the continuation (M55 fdu51xri)', () => 
 
   it('[ac:ac-run-remote-z-fromrunid-runu-bez-refa] run_remote with fromRunId of a Run without a result ref ends with RUN_PARENT_WITHOUT_RESULT — also a parent still running', async () => {
     // Ordered from this workspace (row), still running: no ref on the remote yet.
-    fx.registry.insert(PARENT, 'h_a');
+    fx.registry.insert({ runId: PARENT, hostId: 'h_a' });
     const err = await refusal(run(fx.deps(), { fromRunId: PARENT }));
     expect(err.code).toBe('RUN_PARENT_WITHOUT_RESULT');
     expect(await fx.git.shadowTip(`${PARENT}/work`)).toBeNull();
@@ -954,7 +1012,7 @@ describe('run_remote with fromRunId — the continuation (M55 fdu51xri)', () => 
   it('[ac:ac-run-remote-z-fromrunid-runu-ktorego-c] run_remote with fromRunId of a Run whose shadow is superseded ends with RUN_PARENT_SUPERSEDED, naming the child', async () => {
     await parentWithResult();
     const CHILD = '01jchild0000000000000000ab';
-    fx.registry.insert(CHILD, 'h_a', PARENT);
+    fx.registry.insert({ runId: CHILD, hostId: 'h_a', parentRunId: PARENT });
     await fx.pushRunRecord(CHILD, parentRecord({ runId: CHILD, parentRunId: PARENT, resultRef: `refs/runs/${CHILD}/work` }), {}, { base: PARENT });
 
     const err = await refusal(run(fx.deps(), { fromRunId: PARENT }));
@@ -970,7 +1028,7 @@ describe('run_remote with fromRunId — the continuation (M55 fdu51xri)', () => 
   it('[ac:ac-odmowa-run-parent-nie-zostawia-wpisu] a RUN_PARENT_* refusal leaves no row in the registry', async () => {
     // Parents of every refusal, each already in the registry (or not, for NOT_FOUND).
     const running = '01jrunning0000000000000000';
-    fx.registry.insert(running, 'h_a');
+    fx.registry.insert({ runId: running, hostId: 'h_a' });
     const prompt = '01jprompt00000000000000000';
     await parentWithResult({ input: { kind: 'prompt', projectId: 'app' } }, prompt);
     const recipe = '01jrecipe00000000000000000';
@@ -1100,7 +1158,7 @@ describe('run_remote with fromRunId — the continuation (M55 fdu51xri)', () => 
 
   it('[entity:run-remote] the version check and the trust read the base sha of the continuation (the parent\'s result)', async () => {
     // The parent's result pins a c4s lower than the definition's minimum; the upstream does not.
-    fx.registry.insert(PARENT, 'h_a');
+    fx.registry.insert({ runId: PARENT, hostId: 'h_a' });
     await fx.pushRunRecord(PARENT, parentRecord(), {
       'ws/.c4s-runner/environment.json': JSON.stringify({ schemaVersion: 1, c4sVersion: '0.0.1' }),
     });

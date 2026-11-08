@@ -46,6 +46,22 @@ export const WORKSPACE_MIGRATIONS: readonly WorkspaceMigration[] = [
       ALTER TABLE remote_run ADD COLUMN parent_run_id TEXT;
     `,
   },
+  {
+    // 2.1.73 (M55 `gsw1z1h3`, database-table `remote-run`): the thread that
+    // ordered the Run (`thread_id` + `thread_project_id`, a pair — the thread id
+    // is unique only within its project's slot) and the plan it started with
+    // (`project_id` + `plan_path`, relative to that project's plans directory;
+    // NULL for a prompt input). Write-only in this release — nothing reads them.
+    // No FK (`chat_thread` lives in the slot DB), no index, no default. Rows from
+    // before this migration keep NULL in all four.
+    version: '003_remote_run_thread_plan',
+    sql: `
+      ALTER TABLE remote_run ADD COLUMN thread_id TEXT;
+      ALTER TABLE remote_run ADD COLUMN thread_project_id TEXT;
+      ALTER TABLE remote_run ADD COLUMN project_id TEXT;
+      ALTER TABLE remote_run ADD COLUMN plan_path TEXT;
+    `,
+  },
 ];
 
 /**

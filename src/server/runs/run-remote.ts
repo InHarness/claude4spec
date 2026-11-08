@@ -36,7 +36,9 @@ import { DEFAULT_RUN_AGENT_NAME, RUN_AGENT_DEFINITIONS, type RunAgentDefinition 
  *     `workspace.json` at the base sha; otherwise nothing about trust is sent
  *     and the answer carries `warnings`;
  *  7. the registry INSERT (runId → hostId, and `parent_run_id` — null for a
- *     fresh Run, the parent's runId for a continuation; the trust is not stored);
+ *     fresh Run, the parent's runId for a continuation; 2.1.73: the calling
+ *     thread with its project, the project of step 4 and the input's plan
+ *     path — null for a prompt; the trust is not stored);
  *  8. `PUT /runs/{runId}`, with the trust of step 6;
  *  9. `{ runId, host, warnings? }`.
  *
@@ -697,10 +699,22 @@ export async function runRemote(deps: RunRemoteDeps, input: RunRemoteInput): Pro
   };
 
   // Registry — runId → hostId (and the parent of a continuation); the trust stays out of it (`jlgucjnq`).
+  // 2.1.73 (`gsw1z1h3`): one INSERT also writes the calling thread with its project (never inherited
+  // from the parent's row), and the Run's project with the input's plan path — for a continuation
+  // both from the parent's record (steps 2 and 6); a prompt input has no plan path.
   const { host } = order;
   const runId = (deps.newRunId ?? newRunId)();
   const registry = deps.registry();
-  registry.insert(runId, host.hostId!, order.continuation?.parentRunId ?? null);
+  const threadId = input.threadId ?? null;
+  registry.insert({
+    runId,
+    hostId: host.hostId!,
+    parentRunId: order.continuation?.parentRunId ?? null,
+    threadId,
+    threadProjectId: threadId !== null ? deps.projectId : null,
+    projectId: order.runInput.projectId,
+    planPath: order.runInput.kind === 'plan' ? order.runInput.path : null,
+  });
   const result: RunRemoteResult = {
     runId,
     host: { id: host.id, name: host.name },

@@ -162,7 +162,7 @@ describe('run-tools · run_remote (mcp-tool run-tools-run-remote)', () => {
     const url = fx.hosts[0]!.url;
     fx.hosts.length = 0;
     fx.hosts.push(host('a', url, { capabilities: ['runs', 'run-continuation'] }));
-    fx.registry.insert(PARENT, 'h_a');
+    fx.registry.insert({ runId: PARENT, hostId: 'h_a' });
     const sha = await fx.pushRunRecord(PARENT, { runId: PARENT, hostId: 'h_a', outcome: 'partial', input: { kind: 'plan', projectId: 'app', path: 'p1.md' } }, {
       'ws/app/pages/run.md': '# by the parent\n',
     });
@@ -294,7 +294,7 @@ describe('run-tools · get_run and cancel_run (mcp-tools run-tools-get-run, run-
   });
 
   it('[entity:run-tools-get-run] get_run returns the Run with its source and shadow; a refusal comes back as its code', async () => {
-    fx.registry.insert(RUN, 'h_a');
+    fx.registry.insert({ runId: RUN, hostId: 'h_a' });
     stub.reply = () => ({ status: 200, body: { runId: RUN, hostId: 'h_a', state: 'queued', resultRef: `refs/runs/${RUN}/work`, logs: ['x'] } });
     const { client } = await connectTo(fx.deps(), fx.readDeps())();
     const ok = await call(client, { runId: RUN }, 'get_run');
@@ -307,7 +307,7 @@ describe('run-tools · get_run and cancel_run (mcp-tools run-tools-get-run, run-
 
   it('[entity:run-tools-get-run] get_run returns resultSha and parentRunId as the runner gives them (the record\'s `returns`), next to the shadow', async () => {
     const PARENT = '01jparent0000000000000000p';
-    fx.registry.insert(RUN, 'h_a', PARENT);
+    fx.registry.insert({ runId: RUN, hostId: 'h_a', parentRunId: PARENT });
     const sha = await fx.pushRunRecord(RUN, { runId: RUN, hostId: 'h_a', outcome: 'partial', parentRunId: PARENT, input: { kind: 'plan', projectId: 'app', path: 'p1.md' } }, {
       'ws/app/pages/run.md': '# by the Run\n',
     });
@@ -324,7 +324,7 @@ describe('run-tools · get_run and cancel_run (mcp-tools run-tools-get-run, run-
 
   /** A finished, failed Run whose runner answer carries `reason` (`c4s-runner` dto `run`). */
   async function getRunWithReason(reason: string) {
-    fx.registry.insert(RUN, 'h_a');
+    fx.registry.insert({ runId: RUN, hostId: 'h_a' });
     stub.reply = () => ({
       status: 200,
       body: { runId: RUN, hostId: 'h_a', state: 'finished', outcome: 'failed', reason, resultRef: `refs/runs/${RUN}/work` },
@@ -386,7 +386,7 @@ describe('run-tools · get_run and cancel_run (mcp-tools run-tools-get-run, run-
   });
 
   it('[entity:run-tools-cancel-run] cancel_run posts the cancel and returns the Run with its source; a finished Run comes back unchanged', async () => {
-    fx.registry.insert(RUN, 'h_a');
+    fx.registry.insert({ runId: RUN, hostId: 'h_a' });
     const finished = { runId: RUN, hostId: 'h_a', state: 'finished', outcome: 'cancelled', resultRef: `refs/runs/${RUN}/work` };
     stub.reply = () => ({ status: 200, body: finished });
     const { client } = await connectTo(fx.deps(), fx.readDeps())();

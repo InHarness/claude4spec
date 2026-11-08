@@ -105,7 +105,7 @@ describe('get_run / cancel_run (spec-operations get-run, cancel-run)', () => {
     fx.dispose();
   });
 
-  const register = () => fx.registry.insert(RUN, HOST_ID);
+  const register = () => fx.registry.insert({ runId: RUN, hostId: HOST_ID });
 
   describe('the host answers', () => {
     it('[ac:ac-get-run-nie-zwraca-logow] get_run carries state, outcome, reason, handoff and resultRef from the host — no logs and no other runner field', async () => {
@@ -453,7 +453,7 @@ describe('get_run / cancel_run (spec-operations get-run, cancel-run)', () => {
     });
 
     it('[ac:ac-get-run-runu-ktorego-cien-ma-dziecko] get_run of a Run whose shadow has a child gives supersededBy with the child\'s runId — and no plan hint', async () => {
-      fx.registry.insert(PARENT, HOST_ID);
+      fx.registry.insert({ runId: PARENT, hostId: HOST_ID });
       const parentSha = await fx.pushRunRecord(
         PARENT,
         record({ runId: PARENT, outcome: 'done', resultRef: `refs/runs/${PARENT}/work` }),
@@ -479,7 +479,7 @@ describe('get_run / cancel_run (spec-operations get-run, cancel-run)', () => {
       expect(result.hint).toBeNull();
 
       // The child — the end of the chain — is not superseded.
-      fx.registry.insert(CHILD, HOST_ID, PARENT);
+      fx.registry.insert({ runId: CHILD, hostId: HOST_ID, parentRunId: PARENT });
       stub.reply = () => ({ status: 200, body: runBody({ runId: CHILD, parentRunId: PARENT, resultSha: childSha, resultRef: `refs/runs/${CHILD}/work` }) });
       const child = await getRun(deps, { runId: CHILD });
       expect(child.parentRunId).toBe(PARENT);
@@ -509,6 +509,63 @@ describe('get_run / cancel_run (spec-operations get-run, cancel-run)', () => {
       }
       expect(RUN_REASON_HINTS['parent-mismatch']).toMatch(/new runId/);
       expect(RUN_REASON_HINTS['parent-recipe-modified']).toMatch(/new Run from the upstream/);
+    });
+  });
+
+  describe('2.1.73 — the row restored from the Run record: project and plan from its own input, no thread (database-table remote-run)', () => {
+    const PARENT = '01jparent0000000000000000p';
+
+    /** No registry row, the record on the remote: get_run restores the row. */
+    const restore = async (over: Record<string, unknown>) => {
+      await fx.pushRunRecord(RUN, record(over), { 'ws/app/pages/run.md': '# by the Run\n' });
+      const result = await getRun(deps, { runId: RUN });
+      expect(result.source).toBe('record');
+      return fx.fullRow(RUN);
+    };
+
+    it('[ac:ac-wiersz-rejestru-odtworzony-z-rekordu] the restored row carries the project from the input of the Run\'s own record — also for a continuation Run', async () => {
+      // The parent's record names another project; the continuation's own record wins.
+      await fx.pushRunRecord(PARENT, record({ runId: PARENT, input: { kind: 'plan', projectId: 'parent-proj', path: 'parent.md' }, resultRef: `refs/runs/${PARENT}/work` }));
+      const row = await restore({ parentRunId: PARENT, input: { kind: 'plan', projectId: 'docs', path: 'q7.md' } });
+      expect(row).toMatchObject({ host_id: 'h_from_record', parent_run_id: PARENT, project_id: 'docs' });
+    });
+
+    it('[ac:ac-wiersz-rejestru-odtworzony-z-rekordu-4] the restored row carries the plan path from the input of the Run\'s own record', async () => {
+      const row = await restore({ input: { kind: 'plan', projectId: 'app', path: 'sub/p2.md' } });
+      expect(row).toMatchObject({ project_id: 'app', plan_path: 'sub/p2.md' });
+    });
+
+    it('[ac:ac-wiersz-rejestru-odtworzony-z-rekordu-2] the restored row points at no thread', async () => {
+      const row = await restore({ input: { kind: 'plan', projectId: 'app', path: 'p1.md' } });
+      expect(row).toMatchObject({ thread_id: null, thread_project_id: null });
+    });
+
+    it('a prompt with projectId gives the project and no plan; a missing or wrongly typed field is NULL for that field alone', async () => {
+      expect(await restore({ input: { kind: 'prompt', projectId: 'app' } })).toMatchObject({ project_id: 'app', plan_path: null });
+    });
+
+    it('a plan input with wrongly typed fields restores the row with NULL in each unreadable field (never \'\')', async () => {
+      expect(await restore({ input: { kind: 'plan', projectId: 7, path: '' } })).toMatchObject({ project_id: null, plan_path: null });
+    });
+
+    it('a plan input without projectId keeps its plan path, the project stays NULL', async () => {
+      expect(await restore({ input: { kind: 'plan', path: 'p1.md' } })).toMatchObject({ project_id: null, plan_path: 'p1.md' });
+    });
+
+    it('a record without any input restores the row with both NULL', async () => {
+      expect(await restore({ input: undefined })).toMatchObject({ project_id: null, plan_path: null, thread_id: null });
+    });
+
+    describe('m55-edge', () => {
+      it('[ac:ac-wiersz-rejestru-odtworzony-z-rekordu-3] a restored row of a record with a `prompt` input without projectId has an empty project — no refusal', async () => {
+        const row = await restore({ input: { kind: 'prompt' } });
+        expect(row).toMatchObject({ project_id: null, plan_path: null, thread_id: null, thread_project_id: null });
+      });
+
+      it('[ac:ac-rekord-runu-z-nieznanym-rodzajem-wejs] a record with an unknown input kind restores the row without a project and without a plan', async () => {
+        const row = await restore({ input: { kind: 'recipe', projectId: 'app', path: 'p1.md' } });
+        expect(row).toMatchObject({ run_id: RUN, host_id: 'h_from_record', project_id: null, plan_path: null });
+      });
     });
   });
 });

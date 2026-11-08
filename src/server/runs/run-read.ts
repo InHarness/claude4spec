@@ -2,7 +2,7 @@ import path from 'node:path';
 import type { GitShadow } from '../../shared/git.js';
 import type { GitRepoRoot } from '../services/git.js';
 import { homeRunsDir } from '../workspace/home-workspace.js';
-import type { RemoteRunRegistry } from './remote-run-registry.js';
+import { runInputLocator, type RemoteRunRegistry } from './remote-run-registry.js';
 import type { RunRemoteHost } from './run-remote.js';
 import { RUN_ID_PATTERN } from './run-id.js';
 import {
@@ -274,7 +274,7 @@ interface RunRecord {
   reason?: string;
   handoff?: RunHandoff;
   resultRef?: string;
-  input?: { kind?: unknown };
+  input?: { kind?: unknown; projectId?: unknown; path?: unknown };
   parentRunId?: unknown;
 }
 
@@ -408,7 +408,18 @@ async function recordPath(deps: RunReadDeps, runId: string, trigger: RecordTrigg
   const registry = deps.registry();
   if (registry.hostOf(runId) === null) {
     // 2.1.68 (`gsw1z1h3`): a row restored from the record takes `parent_run_id` from its `parentRunId`.
-    registry.insert(runId, found.record.hostId, parentOf(found.record));
+    // 2.1.73: and `project_id` / `plan_path` from the input of the Run's OWN record (also for a
+    // continuation — never the parent's); the record knows no thread, so `thread_*` stay NULL.
+    const { projectId, planPath } = runInputLocator(found.record.input);
+    registry.insert({
+      runId,
+      hostId: found.record.hostId,
+      parentRunId: parentOf(found.record),
+      threadId: null,
+      threadProjectId: null,
+      projectId,
+      planPath,
+    });
   }
   return found;
 }

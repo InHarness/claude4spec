@@ -182,6 +182,11 @@ describe('M55 remote_run — the Run registry table (database-table remote-run)'
       { name: 'created_at', type: 'TEXT', notnull: 1, dflt: "datetime('now')", pk: 0 },
       // 2.1.68: added by `ALTER TABLE ... ADD COLUMN`, so it follows created_at physically; nullable, no default.
       { name: 'parent_run_id', type: 'TEXT', notnull: 0, dflt: null, pk: 0 },
+      // 2.1.73: the thread pair and the plan pair, nullable TEXT without a default, after parent_run_id.
+      { name: 'thread_id', type: 'TEXT', notnull: 0, dflt: null, pk: 0 },
+      { name: 'thread_project_id', type: 'TEXT', notnull: 0, dflt: null, pk: 0 },
+      { name: 'project_id', type: 'TEXT', notnull: 0, dflt: null, pk: 0 },
+      { name: 'plan_path', type: 'TEXT', notnull: 0, dflt: null, pk: 0 },
     ]);
   });
 
@@ -191,8 +196,8 @@ describe('M55 remote_run — the Run registry table (database-table remote-run)'
     try {
       runWorkspaceMigrations(db, WORKSPACE_MIGRATIONS.slice(0, 1));
       db.prepare('INSERT INTO remote_run (run_id, host_id) VALUES (?, ?)').run('01jold00000000000000000000', 'host-a');
-      expect(runWorkspaceMigrations(db)).toEqual(['002_remote_run_parent_run_id']);
-      expect(runWorkspaceMigrations(db)).toEqual([]);
+      expect(runWorkspaceMigrations(db, WORKSPACE_MIGRATIONS.slice(0, 2))).toEqual(['002_remote_run_parent_run_id']);
+      expect(runWorkspaceMigrations(db, WORKSPACE_MIGRATIONS.slice(0, 2))).toEqual([]);
       const row = db.prepare('SELECT run_id, host_id, parent_run_id FROM remote_run').get();
       expect(row).toEqual({ run_id: '01jold00000000000000000000', host_id: 'host-a', parent_run_id: null });
       const versions = (db.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as Array<{ version: string }>).map((r) => r.version);
@@ -202,11 +207,53 @@ describe('M55 remote_run — the Run registry table (database-table remote-run)'
     }
   });
 
+  it('[entity:remote-run] 2.1.73: a workspace DB from before (001–002) gets the four thread/plan columns from 003 — an existing row has NULL in all four, and the ledger records 003 once', () => {
+    const file = path.join(tmp, 'pre-273.sqlite');
+    const db = new Database(file);
+    try {
+      runWorkspaceMigrations(db, WORKSPACE_MIGRATIONS.slice(0, 2));
+      db.prepare('INSERT INTO remote_run (run_id, host_id, parent_run_id) VALUES (?, ?, ?)').run(
+        '01jold00000000000000000000',
+        'host-a',
+        '01jparent00000000000000000',
+      );
+      expect(runWorkspaceMigrations(db)).toEqual(['003_remote_run_thread_plan']);
+      expect(runWorkspaceMigrations(db)).toEqual([]);
+      expect(db.prepare('SELECT * FROM remote_run').get()).toMatchObject({
+        run_id: '01jold00000000000000000000',
+        host_id: 'host-a',
+        parent_run_id: '01jparent00000000000000000',
+        thread_id: null,
+        thread_project_id: null,
+        project_id: null,
+        plan_path: null,
+      });
+      const versions = (db.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as Array<{ version: string }>).map((r) => r.version);
+      expect(versions).toEqual(['001_remote_run', '002_remote_run_parent_run_id', '003_remote_run_thread_plan']);
+      // The shipped entries are unchanged: 003 is appended at the end of the chain.
+      expect(WORKSPACE_MIGRATIONS.map((m) => m.version)).toEqual(['001_remote_run', '002_remote_run_parent_run_id', '003_remote_run_thread_plan']);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('[entity:remote-run] 2.1.73: one INSERT writes the thread and plan columns; missing values and empty strings are NULL, and the thread pair is both-or-neither', () => {
+    const db = openWorkspaceDb({ name: 'team', home: tmp });
+    const registry = remoteRunRegistry(() => db);
+    registry.insert({ runId: '01jfull000000000000000000a', hostId: 'host-a', threadId: 't1', threadProjectId: 'app', projectId: 'docs', planPath: 'p1.md' });
+    registry.insert({ runId: '01jbare000000000000000000b', hostId: 'host-a', projectId: '', planPath: '' });
+    registry.insert({ runId: '01jhalf000000000000000000c', hostId: 'host-a', threadId: 't1', threadProjectId: null });
+    const sel = db.prepare('SELECT thread_id, thread_project_id, project_id, plan_path FROM remote_run WHERE run_id = ?');
+    expect(sel.get('01jfull000000000000000000a')).toEqual({ thread_id: 't1', thread_project_id: 'app', project_id: 'docs', plan_path: 'p1.md' });
+    expect(sel.get('01jbare000000000000000000b')).toEqual({ thread_id: null, thread_project_id: null, project_id: null, plan_path: null });
+    expect(sel.get('01jhalf000000000000000000c')).toEqual({ thread_id: null, thread_project_id: null, project_id: null, plan_path: null });
+  });
+
   it('[entity:remote-run] the registry writes and reads every column: run_id, host_id, parent_run_id (set for a continuation, NULL without a parent) and created_at by default', () => {
     const db = openWorkspaceDb({ name: 'team', home: tmp });
     const registry = remoteRunRegistry(() => db);
-    registry.insert('01jchild000000000000000000', 'host-a', '01jparent00000000000000000');
-    registry.insert('01jplain000000000000000000', 'host-b');
+    registry.insert({ runId: '01jchild000000000000000000', hostId: 'host-a', parentRunId: '01jparent00000000000000000' });
+    registry.insert({ runId: '01jplain000000000000000000', hostId: 'host-b' });
     const child = registry.get('01jchild000000000000000000')!;
     expect(child).toMatchObject({ runId: '01jchild000000000000000000', hostId: 'host-a', parentRunId: '01jparent00000000000000000' });
     expect(child.createdAt).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
