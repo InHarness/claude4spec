@@ -13,7 +13,12 @@
  * (M43 `l3media0`, point 1) —; it says an agent does not use or approve it
  * without a human.
  *
- * Not in the catalog: deleting a page or an entity — they come back through
+ * Not in the catalog: `mark_patch_applied` (2.1.74, M23 `m23pctx1`) — it
+ * declares the outcome of the patch thread's own work, the thread whose one task
+ * is folding that patch in, not someone else's work; the patch thread's agent
+ * sets it whether the thread was opened from the UI button, by a turn command
+ * in a terminal or by the bubble dispatcher, and the user still unsets it in
+ * the UI. Nor deleting a page or an entity — they come back through
  * versions and releases, and the plan ordering them is already a human's
  * decision.
  *
@@ -26,7 +31,7 @@
 export type HumanDecisionPremise =
   /** Freezes or replaces the state of the specification others see (a release, a release restore). */
   | 'freezes-or-replaces-shared-state'
-  /** Marks someone else's work as done or accepted (a plan, a brief, a patch; a shadow accept). */
+  /** Marks someone else's work as done or accepted (a plan, a brief; a shadow accept). */
   | 'marks-others-work'
   /** No catalog operation undoes its effect. */
   | 'irreversible';
@@ -39,6 +44,5 @@ export const HUMAN_DECISION_OPERATIONS: Readonly<Record<string, HumanDecisionPre
   accept_shadow: 'marks-others-work',
   mark_plan_applied: 'marks-others-work',
   mark_brief_implemented: 'marks-others-work',
-  mark_patch_applied: 'marks-others-work',
   delete_thread: 'irreversible',
 });

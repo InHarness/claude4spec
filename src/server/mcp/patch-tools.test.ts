@@ -218,6 +218,28 @@ describe('patch-tools (thread-bound)', () => {
     expect((await call('get_patch', {})).body.frontmatter.applied).toBe(true);
   });
 
+  /**
+   * 2.1.74 (M23 `m23pctx1`, M43 `rp99fpc1`) — marking the patch applied is not a
+   * human's decision: the patch thread's agent sets it after folding the patch
+   * in, whatever opened the thread (the UI button, a terminal turn command, the
+   * bubble dispatcher); only reverting it stays the user's, in the UI.
+   */
+  it('[section:m23pctx1] the patch thread sets applied itself, as a declaration of its own work and not a human decision, whatever opened the thread', async () => {
+    const rules = CONTEXT_TYPE_REGISTRY.patch.interactionRules ?? '';
+    expect(rules).toMatch(/call mark_patch_applied \(applied: true\) as your LAST step/);
+    expect(rules).toMatch(/Marking is NOT a human's decision: it declares the outcome of this thread's own work/);
+    expect(rules).toMatch(/opened from the UI button, by a turn command in a terminal, or by the bubble dispatcher/);
+    // The rules leave only the revert to the user.
+    expect(rules).toMatch(/reverting it is the user's, in the UI/);
+    // Out of the human-decision catalog, so nothing marks the call as one an agent waits on a human for.
+    registerCoreOperations();
+    expect(CATALOG.require('mark_patch_applied').tags ?? []).not.toContain('decyzja-czlowieka');
+
+    const res = await call('mark_patch_applied', { applied: true });
+    expect(res.isError).toBe(false);
+    expect((await service.getPatch('p.md')).frontmatter.applied).toBe(true);
+  });
+
   it('[ac:ac-mark-patch-applied-z-applied-false-je] mark_patch_applied with applied: false is refused, pointing at the UI', async () => {
     const res = await call('mark_patch_applied', { applied: false });
     expect(res.isError).toBe(true);

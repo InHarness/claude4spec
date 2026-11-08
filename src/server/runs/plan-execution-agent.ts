@@ -41,8 +41,9 @@ export const PLAN_EXECUTION_MIN_C4S_VERSION = '2.1.67';
 
 /**
  * M55 `nosqcr6z` — the operations of the human-decision catalog (M43
- * `rp99fpc1`, tag `decyzja-czlowieka`) as they stand at version `4` (the same
- * membership as version `3`), named in the definition's content one by one. A SNAPSHOT, not a
+ * `rp99fpc1`, tag `decyzja-czlowieka`) as they stand at version `5` (2.1.74:
+ * version `4`'s list without `mark_patch_applied`, which left the catalog),
+ * named in the definition's content one by one. A SNAPSHOT, not a
  * read of the catalog: the Run Agent and the turn in the container do not
  * read the master's specification, so they never see the tag. A change of the
  * catalog's membership raises `version`.
@@ -54,7 +55,6 @@ export const PLAN_EXECUTION_HUMAN_DECISION_OPERATIONS: readonly string[] = Objec
   'accept_shadow',
   'mark_plan_applied',
   'mark_brief_implemented',
-  'mark_patch_applied',
   'delete_thread',
 ]);
 
@@ -62,7 +62,8 @@ const FORBIDDEN = PLAN_EXECUTION_HUMAN_DECISION_OPERATIONS.join(', ');
 
 export const PLAN_EXECUTION_AGENT: RunAgentDefinition = Object.freeze({
   name: DEFAULT_RUN_AGENT_NAME,
-  version: '4',
+  // 2.1.74 (M55 `nosqcr6z`) — 4 → 5: the catalog lost `mark_patch_applied`.
+  version: '5',
   minC4sVersion: PLAN_EXECUTION_MIN_C4S_VERSION,
   content: [
     'You are the Run Agent: you execute a plan or a prompt over the specification of the whole workspace by running a c4s turn.',

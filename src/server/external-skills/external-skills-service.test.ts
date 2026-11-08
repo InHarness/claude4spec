@@ -77,6 +77,22 @@ describe('renderers', () => {
   });
 });
 
+/**
+ * 2.1.74 (M22 `m22dimpl`, step 5) — the skill does not touch the patch flag: a
+ * patch's `applied` is set by the patch thread's agent after folding it in, or
+ * by a human in the UI. So the skill neither sets it nor claims that only a
+ * human does.
+ */
+describe('c4s-brief-implementer and the patch flag (2.1.74)', () => {
+  it('[section:m22dimpl] marks the brief implemented, never the patch applied, and does not claim the patch flag is a human-only act', () => {
+    const body = renderBriefImplementerSkill(FIXTURE_CTX);
+    expect(body).toContain('c4s mark-brief-implemented <brief-path>');
+    expect(body).not.toMatch(/mark_patch_applied|mark-patch-applied|applied: true/);
+    expect(body).not.toMatch(/patch[^\n]*\bapplied\b[^\n]*(only|solely|exclusively)[^\n]*(human|user)/i);
+    expect(body).not.toMatch(/(only|solely|exclusively)[^\n]*(human|user)[^\n]*\bapplied\b/i);
+  });
+});
+
 describe('c4s-brief-implementer loop (0.2.96 verbs)', () => {
   it('[ac:ac-body-c4s-brief-implementer-skill-md-op] discovers with list-briefs, reads with get-brief, files feedback with create-patch', () => {
     const body = renderBriefImplementerSkill(FIXTURE_CTX);

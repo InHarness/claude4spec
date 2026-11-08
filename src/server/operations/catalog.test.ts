@@ -2287,7 +2287,6 @@ describe('the human-decision tag (M43 rp99fpc1)', () => {
     'accept-shadow': 'accept_shadow',
     'delete-thread': 'delete_thread',
     'mark-brief-implemented': 'mark_brief_implemented',
-    'mark-patch-applied': 'mark_patch_applied',
     'mark-plan-applied': 'mark_plan_applied',
     'release-create': 'release_create',
     'release-restore': 'release_restore',
@@ -2332,8 +2331,8 @@ describe('the human-decision tag (M43 rp99fpc1)', () => {
           expect(op.sideEffects, op.name).toContain('db');
           break;
         case 'marks-others-work':
-          // Marks a plan, a brief, a patch as done, or accepts a shadow.
-          expect(op.name, op.name).toMatch(/^(mark_(plan_applied|brief_implemented|patch_applied)|accept_shadow)$/);
+          // Marks a plan, a brief as done, or accepts a shadow (2.1.74: no longer a patch).
+          expect(op.name, op.name).toMatch(/^(mark_(plan_applied|brief_implemented)|accept_shadow)$/);
           break;
         case 'irreversible': {
           // No catalog operation undoes it: it is declared destructive and nothing restores what it removed.
@@ -2352,6 +2351,27 @@ describe('the human-decision tag (M43 rp99fpc1)', () => {
     for (const name of ['delete_page', 'delete_entities']) {
       expect(CATALOG.require(name).tags ?? [], name).not.toContain(HUMAN_DECISION_TAG);
     }
+  });
+
+  it('[entity:mark-patch-applied] the row mark_patch_applied carries no tag decyzja-czlowieka (2.1.74, M23 m23pctx1) and keeps its record\'s fields', () => {
+    registerCoreOperations();
+    const op = CATALOG.require('mark_patch_applied');
+    // Out of the human-decision catalog: the flag declares the patch thread's own work, not someone else's.
+    expect(op.tags ?? []).not.toContain(HUMAN_DECISION_TAG);
+    expect(op.tags).toBeUndefined();
+    expect(Object.hasOwn(HUMAN_DECISION_OPERATIONS, 'mark_patch_applied')).toBe(false);
+    expect(CATALOG.listTagged(HUMAN_DECISION_TAG).map((o) => o.name)).not.toContain('mark_patch_applied');
+    // The record's other fields stand: project scope, direct, internal-only agentic rendering, idempotent, three codes.
+    expect(op.scope).toBe('project');
+    expect(op.mediation).toBe('direct');
+    expect(op.channels.internal.kind).toBe('direct');
+    expect(op.channels.cli).toEqual(na('jedyny realny wołający kończy wdrożenie patcha w wątku, nie w terminalu'));
+    expect(op.channels.mcp).toEqual(na('deklarację wdrożenia składa wątek, który patch stosuje; kanał `mcp` nie ma wątku zakotwiczonego w patchu'));
+    expect(op.idempotent).toBe(true);
+    expect(op.sideEffects).toEqual(['file', 'db', 'ui-notify']);
+    expect(op.errorCodes).toEqual(['PATCH_NOT_FOUND', 'INVALID_ARGUMENT', 'PATCH_INVALID_FRONTMATTER']);
+    expect(op.rules?.map((r) => r.id)).toEqual(['echo-free', 'error-code-once', 'explicit-addressing', 'operation-only-write']);
+    expect(op.renderings?.internal).toEqual(['patch-tools.mark_patch_applied']);
   });
 
   it('is an axis apart from mediation: a tagged row may be direct with an agentic channel, and the tag takes no tool away', () => {

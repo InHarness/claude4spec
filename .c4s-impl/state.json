@@ -1,5 +1,5 @@
 {
-  "iteration": 10,
+  "iteration": 15,
   "conventions": [
     {
       "label": "L3 (Spec Operations) — implementor M43",
@@ -432,15 +432,34 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "m23-patch-applied-agent/p1-l2-l16",
+          "layers": [
+            "L2",
+            "L3",
+            "L16"
+          ],
+          "slugs": [
+            "mark-patch-applied"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "5ef1f28ee3b9dc61fb22955d35cb5323181dbf67",
+      "baseCommit": "5ef1f28ee3b9dc61fb22955d35cb5323181dbf67",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0,
+      "lastBlocking": 0
     },
     {
       "id": "m11-agent-patch-thread",

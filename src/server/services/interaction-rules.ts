@@ -103,7 +103,8 @@ Artifact invariant:
   - How the implementation sequence is structured for this specification is methodology, and lives in \`workflows/patch.md\` of the active writing style.
 
 The applied flag — you set it, the user unsets it:
-  - After the patch's findings are in the specification, call mark_patch_applied (applied: true) as your LAST step. From this thread the flag only ever goes to true; reverting it is the user's, in the UI.`;
+  - After the patch's findings are in the specification, call mark_patch_applied (applied: true) as your LAST step. From this thread the flag only ever goes to true; reverting it is the user's, in the UI.
+  - Marking is NOT a human's decision: it declares the outcome of this thread's own work — folding in this one patch — not someone else's work, so you set it yourself without asking. This holds the same whether this thread was opened from the UI button, by a turn command in a terminal, or by the bubble dispatcher.`;
 
 /**
  * M11 — peer consultation. The mechanisms that make `ask` read-only (forced plan
