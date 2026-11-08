@@ -1,5 +1,5 @@
 {
-  "iteration": 22,
+  "iteration": 23,
   "conventions": [
     {
       "label": "L3 (Spec Operations) — implementor M43",
@@ -243,7 +243,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "m23-list-patches/p1-l3-l14",
@@ -259,14 +259,20 @@
             "ac-sklejenie-stron-c4s-list-patches-offs",
             "ac-rodzina-brief-patch-list-briefs-read"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "list-patches"
+          ],
+          "only": [
+            {
+              "slug": "list-patches"
+            }
+          ]
         }
       ],
-      "startCommit": "42e68a00c618725521f9893dd2ebfc4017e1f63b",
+      "startCommit": "64d0d24c5a46f78d643a3436bd30b211cfa3f9da",
       "baseCommit": "42e68a00c618725521f9893dd2ebfc4017e1f63b",
       "rounds": {
         "review": 0,
@@ -549,7 +555,7 @@
         }
       ],
       "wave": 2,
-      "status": "verified",
+      "status": "in-progress",
       "portions": [
         {
           "name": "m11-agent-patch-thread/p1-l4-l16",
@@ -579,14 +585,20 @@
             "ac-path-pozycji-z-c4s-list-patches-jest",
             "ac-path-zwrocony-przez-c4s-create-patch"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 2,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "ac-path-pozycji-z-c4s-list-patches-jest"
+          ],
+          "only": [
+            {
+              "slug": "ac-path-pozycji-z-c4s-list-patches-jest"
+            }
+          ]
         }
       ],
-      "startCommit": "bbbfdf8a4ab840b0a5f910f91beabdab71a352d8",
+      "startCommit": "64d0d24c5a46f78d643a3436bd30b211cfa3f9da",
       "baseCommit": "2a1c5826cb646f5a04bd51ce5e10f0df385e746a",
       "rounds": {
         "review": 0,
