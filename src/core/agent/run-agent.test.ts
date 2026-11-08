@@ -342,6 +342,48 @@ describe('runAgent — brief create-mode', () => {
     expect(create?.url).toMatch(/\/artifacts\/brief\/existing-brief\.md\/threads$/);
   });
 
+  /**
+   * `c4s agent "<msg>" --ct brief --brief <path>` → runAgent({ contextType: 'brief', briefPath }).
+   * Dwa wywolania, w tej kolejnosci: dowiazanie watku na ISTNIEJACYM briefie przez
+   * generyczna rodzine M36, potem run-turn M05 na watku, ktory to dowiazanie zwrocilo.
+   */
+  it('[ac:ac-attach-mode-c4s-agent-msg-ct-bri] attaches a thread via POST /artifacts/brief/:path/threads, then runs the turn via POST /threads/<created id>/ask', async () => {
+    const calls: Array<{ url: string; method?: string; body: unknown }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
+        calls.push({ url, method: init?.method, body: init?.body ? JSON.parse(init.body) : undefined });
+        if (url.endsWith('/config')) return { status: 200, ok: true, json: async () => VALID_CONFIG };
+        if (url.endsWith('/threads')) {
+          return { status: 201, ok: true, json: async () => ({ data: { threadId: 'T-attached' } }) };
+        }
+        return { status: 200, ok: true, json: async () => ({ threadId: 'T-attached', answer: 'ok' }) };
+      }),
+    );
+
+    const result = await runAgent({
+      ...BASE,
+      message: 'follow up',
+      contextType: 'brief',
+      briefPath: 'nested/existing-brief.md',
+    });
+
+    const apiCalls = calls.filter((c) => !c.url.endsWith('/config') && !c.url.includes('/health'));
+    const attachIdx = apiCalls.findIndex((c) =>
+      /\/api\/projects\/[^/]+\/artifacts\/brief\/nested\/existing-brief\.md\/threads$/.test(c.url),
+    );
+    const askIdx = apiCalls.findIndex((c) => /\/api\/projects\/[^/]+\/threads\/T-attached\/ask$/.test(c.url));
+    expect(attachIdx).toBeGreaterThanOrEqual(0);
+    expect(apiCalls[attachIdx].method).toBe('POST');
+    // Run-turn: POST na watku utworzonym przez dowiazanie, z wiadomoscia uzytkownika.
+    expect(askIdx).toBeGreaterThan(attachIdx);
+    expect(apiCalls[askIdx].method).toBe('POST');
+    expect(apiCalls[askIdx].body).toMatchObject({ message: 'follow up' });
+    // Attach-mode nie mintuje briefu: zadnego POST /briefs.
+    expect(calls.some((c) => c.url.endsWith('/briefs'))).toBe(false);
+    expect(result).toMatchObject({ threadId: 'T-attached', answer: 'ok' });
+  });
+
   it('refuses a traversing briefPath before any thread call', async () => {
     stubBriefFlow();
     const err = await runAgent({
