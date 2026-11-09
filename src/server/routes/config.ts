@@ -101,11 +101,35 @@ function configResponse(
   const body = baseConfigResponse(c, cwd, skillRegistry);
   // 2.1.77 (M26 `ournm78e`): the read answers ACTIVE keys only — a key of a
   // capability the project lacks is not returned, even though it lies in the file.
-  for (const key of inactiveKeys) {
-    const decl = registry?.get(key);
-    deletePath(body as unknown as Record<string, unknown>, decl ? fieldPath(decl) : key);
-  }
+  stripInactiveKeys(body as unknown as Record<string, unknown>, inactiveKeys, registry);
   return body;
+}
+
+/**
+ * 2.1.77 (M26 `ournm78e`): the file keys whose place in the GET/PATCH /config
+ * RESPONSE differs from their place in `config.json`. Every other key is
+ * answered at its file path (`fieldPath`). A key added here must match
+ * `baseConfigResponse`; one missing here is stripped at the wrong place.
+ */
+export const RESPONSE_PATHS: Readonly<Record<string, readonly string[]>> = {
+  onboardingCompleted: ['onboarding', 'completed'],
+};
+
+/** Where a file key is answered in the response body. */
+export function responsePath(key: string, registry?: FieldRegistry): readonly string[] {
+  const mapped = RESPONSE_PATHS[key];
+  if (mapped) return mapped;
+  const decl = registry?.get(key);
+  return decl ? fieldPath(decl) : key.split('.');
+}
+
+/** Removes every inactive key from a response body, at its RESPONSE path. */
+export function stripInactiveKeys(
+  body: Record<string, unknown>,
+  inactiveKeys: readonly string[],
+  registry?: FieldRegistry,
+): void {
+  for (const key of inactiveKeys) deletePath(body, responsePath(key, registry));
 }
 
 function baseConfigResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRegistry) {

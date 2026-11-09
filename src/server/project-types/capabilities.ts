@@ -184,7 +184,5 @@ export function projectCapabilitySet(capabilities: readonly string[]): ProjectCa
   return Object.freeze(new Set(capabilities)) as ProjectCapabilities;
 }
 
-/** `true` when every name of `requires` is in the project's set. */
-export function satisfies(capabilities: ProjectCapabilities, requires: readonly string[] | undefined): boolean {
-  return (requires ?? []).every((c) => capabilities.has(c));
-}
+/** `true` when every name of `requires` is in the project's set — the shared active-row rule. */
+export { satisfies } from '../../shared/project-types.js';

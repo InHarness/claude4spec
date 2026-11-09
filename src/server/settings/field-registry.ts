@@ -1,6 +1,7 @@
 import type { NormalizedConfig } from '../config.js';
 import type { Root } from '../../shared/types.js';
 import type { SkillRegistry } from '../services/skill-registry.js';
+import { satisfies } from '../project-types/capabilities.js';
 
 /**
  * 0.2.113 — the settings module as INFRASTRUCTURE: the field registry.
@@ -218,7 +219,7 @@ export class FieldRegistry {
    */
   active(capabilities: ReadonlySet<string>): FieldRegistry {
     const out = new FieldRegistry();
-    const kept = this.list().filter((d) => (d.requires ?? []).every((c) => capabilities.has(c)));
+    const kept = this.list().filter((d) => satisfies(capabilities, d.requires));
     out.register(...kept);
     const activeKeys = new Set(kept.map((d) => d.key));
     for (const r of this.crossFieldRules()) {
@@ -230,7 +231,7 @@ export class FieldRegistry {
   /** Keys of rows NOT in {@link active} for that capability set. */
   inactiveKeys(capabilities: ReadonlySet<string>): string[] {
     return this.list()
-      .filter((d) => !(d.requires ?? []).every((c) => capabilities.has(c)))
+      .filter((d) => !satisfies(capabilities, d.requires))
       .map((d) => d.key);
   }
 

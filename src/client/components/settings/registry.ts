@@ -2,6 +2,7 @@ import type { ComponentType, ReactNode } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import type { AnyRouter } from '@tanstack/react-router';
 import type { ConfigResponse } from '../../lib/api.js';
+import { satisfies } from '../../../shared/project-types.js';
 
 /**
  * 0.2.113 — the settings module as INFRASTRUCTURE: the card registry.
@@ -200,8 +201,7 @@ export function assembleSettings(
    */
   capabilities?: ReadonlySet<string>,
 ): AssembledCard[] {
-  const meets = (requires: readonly string[] | undefined) =>
-    !capabilities || (requires ?? []).every((c) => capabilities.has(c));
+  const meets = (requires: readonly string[] | undefined) => !capabilities || satisfies(capabilities, requires);
   const declaredCards = contributions.flatMap((x) => x.cards ?? []);
   const allElements = contributions.flatMap((x) => x.elements ?? []);
   const cardRequires = new Map(declaredCards.map((c) => [c.anchor, c.requires] as const));

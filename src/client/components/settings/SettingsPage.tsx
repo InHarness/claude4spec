@@ -47,12 +47,24 @@ export function staticSettingsContributions(): SettingsContribution[] {
   ];
 }
 
-// Each page assembled once, on its first render (not at module load — see
-// `staticSettingsContributions`). A collision among the declarants is still a
-// registration error that fails loudly; `catalog.test.ts` assembles the same list.
-const assembled: Partial<Record<SettingsScope, AssembledCard[]>> = {};
-export function settingsCards(scope: SettingsScope): AssembledCard[] {
-  return (assembled[scope] ??= assembleSettings(staticSettingsContributions(), scope));
+// Each page assembled once per (scope, capability set), on its first render (not
+// at module load — see `staticSettingsContributions`). 2.1.77 (M26 `7f76eszm`):
+// the capability set is part of the key — two projects of different types get
+// different active cards, so a scope-only key would serve a stale card set. A
+// collision among the declarants is still a registration error that fails
+// loudly; `catalog.test.ts` assembles the same list.
+const assembled = new Map<string, AssembledCard[]>();
+export function settingsCardsCacheKey(scope: SettingsScope, capabilities?: ReadonlySet<string>): string {
+  return `${scope}|${capabilities ? [...capabilities].sort().join(',') : '*'}`;
+}
+export function settingsCards(scope: SettingsScope, capabilities?: ReadonlySet<string>): AssembledCard[] {
+  const key = settingsCardsCacheKey(scope, capabilities);
+  let cards = assembled.get(key);
+  if (!cards) {
+    cards = assembleSettings(staticSettingsContributions(), scope, capabilities);
+    assembled.set(key, cards);
+  }
+  return cards;
 }
 
 /**
