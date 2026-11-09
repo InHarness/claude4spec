@@ -7,6 +7,7 @@
  * Types are added by host code only — plugins contribute no entries (M57 `ngwtfpdd`).
  */
 import type { ProjectTypeEntry } from './registry.js';
+import { PROJECT_TYPE_ONBOARDING } from '../../shared/onboarding-steps.js';
 
 /** M58 `zs0xo5cw` — code-snippet `opis-typu-spec-do-promptu`, verbatim. */
 export const SPEC_PROMPT_DESCRIPTION =
@@ -41,6 +42,65 @@ Start by creating pages in the sidebar, or use the chat to generate content with
 4. Use **Chat** to get AI help writing your specification
 `;
 
+/**
+ * M59 `4dvcvsa7` — code-snippet `szablon-strony-wejscia-skilla` (`pages/index.md`),
+ * verbatim. Placeholders `{skill.name}`, `{skill.description}` (type keys).
+ */
+export const SKILL_ENTRY_TEMPLATE = `---
+title: "{skill.name}"
+order: 0
+---
+
+# {skill.name}
+
+{skill.description}
+
+This page is the entry of the skill: an agent that loads \`{skill.name}\` reads it first.
+
+## When to use
+
+Describe the situations in which an agent should load this skill.
+
+## Procedure
+
+1. Write the steps the agent follows.
+2. Point to subpages for longer parts — every other page of this project is a file of the skill package.
+
+## Files
+
+List the subpages the procedure points to.
+`;
+
+/**
+ * M60 `zw3gpb7p` — code-snippet `szablon-strony-wejscia-stylu` (`pages/index.md`),
+ * verbatim. Placeholders `{skill.name}`, `{skill.description}` (type keys).
+ */
+export const WRITING_STYLE_ENTRY_TEMPLATE = `---
+title: "{skill.name}"
+order: 0
+---
+
+# {skill.name}
+
+{skill.description}
+
+This page is the entry of the writing style: a project that selects \`{skill.name}\` binds its agent to it, and the agent reads this page before its first write.
+
+## Conventions
+
+State the rules every page written in this style follows.
+
+## Route
+
+| The task | Workflow |
+| --- | --- |
+| describe the kind of task | point to the subpage that carries its rules |
+
+## Files
+
+List the workflows, templates and checklists the route points to.
+`;
+
 /** M58 — Project Type: Specification. Also the type of every project that wrote none. */
 export const SPEC_PROJECT_TYPE: ProjectTypeEntry = {
   slug: 'spec',
@@ -50,7 +110,7 @@ export const SPEC_PROJECT_TYPE: ProjectTypeEntry = {
   promptDescription: SPEC_PROMPT_DESCRIPTION,
   capabilities: ['entities', 'briefs', 'multi-root'],
   // M58 `7yg36c76`: `— brak` — the onboarding is the common steps only.
-  onboarding: null,
+  onboarding: PROJECT_TYPE_ONBOARDING.spec ?? null,
   starterContent: {
     path: 'index.md',
     template: SPEC_WELCOME_TEMPLATE,
@@ -60,9 +120,9 @@ export const SPEC_PROJECT_TYPE: ProjectTypeEntry = {
 };
 
 /**
- * M59 — Project Type: Skill. Its onboarding (the skill-details step and its
- * keys) and its entry-page template are filled by the onboarding-wizard unit
- * (`szablon-strony-wejscia-skilla`); here the seams stay empty.
+ * M59 — Project Type: Skill. Onboarding (`wt5a7bbe`): the `Skill details` step
+ * after `Project name`, writing `skill.name` and `skill.description`. Starter
+ * content (`4dvcvsa7`): the skill's entry page; `skill.entry` points at it.
  */
 export const SKILL_PROJECT_TYPE: ProjectTypeEntry = {
   slug: 'skill',
@@ -70,13 +130,19 @@ export const SKILL_PROJECT_TYPE: ProjectTypeEntry = {
   description: 'Write one package of instructions for agents and expose it to the other projects of this workspace.',
   promptDescription: SKILL_PROMPT_DESCRIPTION,
   capabilities: ['skill-exposure'],
-  onboarding: null,
-  starterContent: null,
+  onboarding: PROJECT_TYPE_ONBOARDING.skill ?? null,
+  starterContent: {
+    path: 'index.md',
+    template: SKILL_ENTRY_TEMPLATE,
+    // "Klucze wskazujące na stronę startową: `skill.entry`."
+    entryKeys: ['skill.entry'],
+  },
 };
 
 /**
- * M60 — Project Type: Writing Style. Onboarding and entry-page template: as for
- * {@link SKILL_PROJECT_TYPE}, seams filled by the onboarding-wizard unit.
+ * M60 — Project Type: Writing Style. Onboarding (`usl75l6i`): the `Style details`
+ * step after `Project name`, writing `skill.name` and `skill.description`.
+ * Starter content (`zw3gpb7p`): the style's entry page; `skill.entry` points at it.
  */
 export const WRITING_STYLE_PROJECT_TYPE: ProjectTypeEntry = {
   slug: 'writing-style',
@@ -84,8 +150,13 @@ export const WRITING_STYLE_PROJECT_TYPE: ProjectTypeEntry = {
   description: 'Write a writing style that other projects of this workspace can select for their agent.',
   promptDescription: WRITING_STYLE_PROMPT_DESCRIPTION,
   capabilities: ['skill-exposure'],
-  onboarding: null,
-  starterContent: null,
+  onboarding: PROJECT_TYPE_ONBOARDING['writing-style'] ?? null,
+  starterContent: {
+    path: 'index.md',
+    template: WRITING_STYLE_ENTRY_TEMPLATE,
+    // "Klucze wskazujące na stronę startową: `skill.entry`."
+    entryKeys: ['skill.entry'],
+  },
 };
 
 /** The host's entries, in registration (= registry) order. */

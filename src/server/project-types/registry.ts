@@ -30,25 +30,22 @@ import { buildFieldRegistry } from '../settings/registry.js';
 import type { ProjectTypeCard } from '../../shared/project-types.js';
 import { ProjectTypeRegistryError, hostCapabilityRegistry, type CapabilityRegistry } from './capabilities.js';
 import { HOST_PROJECT_TYPE_ENTRIES } from './entries.js';
+import {
+  COMMON_ONBOARDING_STEPS,
+  type CommonOnboardingStep,
+  type ProjectTypeOnboarding,
+} from '../../shared/onboarding-steps.js';
 
-/** One row of a type's step table (L20 `Onboarding typu`). */
-export interface ProjectTypeStep {
-  /** `Krok` — the step's title, a literal English string. */
-  title: string;
-  /** `Pozycja względem kroków wspólnych` — `przed <krok>` / `po <krok>`. */
-  position: { relation: 'before' | 'after'; commonStep: string };
-  /** `Zapisywane klucze` — a subset of the type keys. */
-  writes: readonly string[];
-  /** `Podmienia krok wspólny` — the replaced common step, or `null` for `—`. */
-  replaces: string | null;
-}
-
-/** L20 `Onboarding typu`; `null` for `— brak` (the common steps only). */
-export interface ProjectTypeOnboarding {
-  /** Config keys the type's steps may write. */
-  typeKeys: readonly string[];
-  steps: readonly ProjectTypeStep[];
-}
+/**
+ * 2.1.77 (M16 `czn353hw`, L20 `Onboarding typu`): the wizard's common steps and
+ * the type-step model are shared with the wizard frame in the browser.
+ */
+export {
+  COMMON_ONBOARDING_STEPS,
+  type CommonOnboardingStep,
+  type ProjectTypeOnboarding,
+  type ProjectTypeStep,
+} from '../../shared/onboarding-steps.js';
 
 /** L20 `Zawartość startowa`. */
 export interface ProjectTypeStarterContent {
@@ -75,19 +72,6 @@ export interface ProjectTypeEntry {
   onboarding: ProjectTypeOnboarding | null;
   starterContent: ProjectTypeStarterContent | null;
 }
-
-/** A common step of the onboarding wizard: its name and the keys it writes. */
-export interface CommonOnboardingStep {
-  name: string;
-  writes: readonly string[];
-}
-
-/**
- * The wizard's common steps. Seam: the step-by-step wizard (and its four common
- * steps) is built by the onboarding unit; until then no type entry places or
- * replaces a common step, and no template placeholder names a common key.
- */
-export const COMMON_ONBOARDING_STEPS: readonly CommonOnboardingStep[] = [];
 
 export interface ProjectTypeRegistryDeps {
   capabilities: CapabilityRegistry;

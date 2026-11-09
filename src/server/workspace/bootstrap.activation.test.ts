@@ -97,8 +97,9 @@ describe('M01 project activation — starter-content step, no clone', () => {
   it('[ac:ac-swiezy-bootstrap-onboardingcompleted] the starter content comes from the type entry: closing onboarding of a type without starter content writes no page', async () => {
     const boot = bootstrapProject(registry, registry.selectOrCreate({ name: 'default' }), cwd, undefined, 'skill');
     expect(boot.config.onboardingCompleted).toBe(false);
-    expect(SKILL_PROJECT_TYPE.starterContent).toBeNull();
-    const res = await request(app(SKILL_PROJECT_TYPE)).patch('/config').send({ onboardingCompleted: true });
+    // 2.1.77: every host type now has starter content — a stand-in entry without it.
+    const noStarter = { ...SKILL_PROJECT_TYPE, starterContent: null };
+    const res = await request(app(noStarter)).patch('/config').send({ onboardingCompleted: true });
     expect(res.status).toBe(200);
     expect(fs.readdirSync(path.join(cwd, 'pages'))).toEqual([]);
   });

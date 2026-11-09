@@ -30,7 +30,7 @@ export function WritingStyleList({
           className="text-[12px] mb-3"
           style={{ color: 'var(--c-muted)' }}
         >
-          No writing styles available in this project. You can continue without one.
+          No writing styles available in this build.
         </div>
       )}
 

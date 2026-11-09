@@ -3032,13 +3032,71 @@
         }
       ],
       "wave": 4,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u10-kreator-onboardingu-wedlug-typu/p1-l5-l20",
+          "layers": [
+            "L5",
+            "L17",
+            "L19",
+            "L20"
+          ],
+          "slugs": [
+            "onboarding-page",
+            "szablon-strony-wejscia-skilla",
+            "szablon-strony-wejscia-stylu",
+            "ac-continue-z-waznym-formularzem-wysyla",
+            "ac-continue-ze-zmienionym-dir-builtin-ro",
+            "ac-klikniecie-karty-stylu-zaznacza-ja-ra",
+            "ac-krok-skill-details-nie-pozwala-przejs",
+            "ac-krok-style-details-nie-pozwala-przejs",
+            "ac-krok-typu-ktory-we-wpisie-typu-deklar",
+            "ac-naglowek-kreatora-onboardingu-pokazuj",
+            "ac-oba-dropdowny-jezykowe-renderuja-supp",
+            "ac-odmowa-koncowego-zapisu-wskazujaca-kl",
+            "ac-odmowa-koncowego-zapisu-wskazujaca-sk",
+            "ac-odmowa-przemianowania-na-continue-zos",
+            "ac-onboarding-projektu-typu-skill-pokazu",
+            "ac-onboarding-projektu-typu-specyfikacja",
+            "ac-onboarding-projektu-typu-writing-styl",
+            "ac-po-domknieciu-onboardingu-projektu-ty",
+            "ac-po-domknieciu-onboardingu-projektu-ty-2",
+            "ac-po-domknieciu-onboardingu-projektu-ty-3",
+            "ac-po-domknieciu-onboardingu-projektu-ty-4",
+            "ac-po-domknieciu-onboardingu-projektu-ty-5",
+            "ac-po-domknieciu-onboardingu-projektu-ty-6",
+            "ac-po-pominieciu-onboardingu-projektu-ty",
+            "ac-pominiecie-onboardingu-projektu-typu",
+            "ac-pominiecie-onboardingu-projektu-typu-2",
+            "ac-przejscie-back-na-wczesniejszy-krok-k",
+            "ac-stan-startowy-formularza-onboardingu",
+            "ac-w-projekcie-typu-skill-kreator-onboar",
+            "ac-w-projekcie-typu-spec-kreator-onboard",
+            "ac-w-projekcie-typu-writing-style-kreato",
+            "ac-w-sekcji-advanced-onboardingu-mozna-z",
+            "ac-wartosc-skill-entry-ustawiona-przed-d",
+            "ac-wartosci-skill-name-i-skill-descripti",
+            "ac-wskaznik-postepu-kreatora-onboardingu",
+            "ac-zwijana-sekcja-advanced-directory-ren",
+            "m16-requires-m57",
+            "m59-requires-m16",
+            "m59-requires-m52",
+            "m60-requires-m16",
+            "m60-requires-m52"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "c926f482fb33c909b7ca6bd44a7ed19aab11058f",
+      "baseCommit": "c926f482fb33c909b7ca6bd44a7ed19aab11058f",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     }

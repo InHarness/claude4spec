@@ -5,6 +5,8 @@ import { HOST_PROJECT_TYPE_ENTRIES } from './entries.js';
 import { FieldRegistry } from '../settings/field-registry.js';
 import { buildFieldRegistry } from '../settings/registry.js';
 import { DEFAULT_PROJECT_TYPE } from '../config.js';
+import { fillStarterPlaceholders } from '../workspace/bootstrap.js';
+import { COMMON_ONBOARDING_STEPS } from '../../shared/onboarding-steps.js';
 
 /** The code-snippets' `code`, verbatim at 2.1.77. */
 const SNIPPET = {
@@ -16,6 +18,10 @@ const SNIPPET = {
     "This project is a Writing Style: its pages are, as a whole, one writing style that other projects of the workspace can select as binding on everything their agent writes. The entry page is what an agent reads first when the style is active; every other page is a subfile of the style — a workflow, a template, a checklist — that the entry page routes to. Write each page as a rule an agent will follow in someone else's specification. The project has no entities and no briefs.",
   'welcome-template-index':
     '---\ntitle: "Welcome"\norder: 0\n---\n\n# Welcome to your specification\n\nStart by creating pages in the sidebar, or use the chat to generate content with AI assistance.\n\n## Quick start\n\n1. Create pages in **Pages** sidebar\n2. Define entities (Endpoints, DTOs) in **Entities** sidebar\n3. Reference entities in pages using slash commands (`/mention`, `/element`)\n4. Use **Chat** to get AI help writing your specification\n',
+  'szablon-strony-wejscia-skilla':
+    '---\ntitle: "{skill.name}"\norder: 0\n---\n\n# {skill.name}\n\n{skill.description}\n\nThis page is the entry of the skill: an agent that loads `{skill.name}` reads it first.\n\n## When to use\n\nDescribe the situations in which an agent should load this skill.\n\n## Procedure\n\n1. Write the steps the agent follows.\n2. Point to subpages for longer parts — every other page of this project is a file of the skill package.\n\n## Files\n\nList the subpages the procedure points to.\n',
+  'szablon-strony-wejscia-stylu':
+    '---\ntitle: "{skill.name}"\norder: 0\n---\n\n# {skill.name}\n\n{skill.description}\n\nThis page is the entry of the writing style: a project that selects `{skill.name}` binds its agent to it, and the agent reads this page before its first write.\n\n## Conventions\n\nState the rules every page written in this style follows.\n\n## Route\n\n| The task | Workflow |\n| --- | --- |\n| describe the kind of task | point to the subpage that carries its rules |\n\n## Files\n\nList the workflows, templates and checklists the route points to.\n',
 };
 
 const deps = () => ({ capabilities: hostCapabilityRegistry(), fields: buildFieldRegistry() });
@@ -92,6 +98,47 @@ describe('M57 L20 — the host project-type registry (2.1.77)', () => {
     expect(starter.template).not.toMatch(/\{[A-Za-z][\w.-]*\}/);
   });
 
+  it('[snippet:szablon-strony-wejscia-skilla] the Skill starter content is the entry-page template verbatim, at pages/index.md, its placeholders filled from skill.name/skill.description, skill.entry pointing at it', () => {
+    const starter = hostProjectTypeRegistry().get('skill')!.starterContent!;
+    expect(starter.template).toBe(SNIPPET['szablon-strony-wejscia-skilla']);
+    expect(starter.path).toBe('index.md');
+    expect(starter.entryKeys).toEqual(['skill.entry']);
+    const filled = fillStarterPlaceholders(starter.template, { skill: { name: 'my-skill', description: 'Does X.' } });
+    expect(filled).toBe(
+      SNIPPET['szablon-strony-wejscia-skilla'].replaceAll('{skill.name}', 'my-skill').replaceAll('{skill.description}', 'Does X.'),
+    );
+  });
+
+  it('[snippet:szablon-strony-wejscia-stylu] the Writing Style starter content is the entry-page template verbatim, at pages/index.md, its placeholders filled from skill.name/skill.description, skill.entry pointing at it', () => {
+    const starter = hostProjectTypeRegistry().get('writing-style')!.starterContent!;
+    expect(starter.template).toBe(SNIPPET['szablon-strony-wejscia-stylu']);
+    expect(starter.path).toBe('index.md');
+    expect(starter.entryKeys).toEqual(['skill.entry']);
+    const filled = fillStarterPlaceholders(starter.template, { skill: { name: 'terse', description: 'Short sentences.' } });
+    expect(filled).toBe(
+      SNIPPET['szablon-strony-wejscia-stylu'].replaceAll('{skill.name}', 'terse').replaceAll('{skill.description}', 'Short sentences.'),
+    );
+  });
+
+  it('the wizard has the four common steps of M16 in order, and the Skill / Writing Style entries carry their detail step after Project name with the skill.* type keys', () => {
+    expect(COMMON_ONBOARDING_STEPS.map((s) => s.name)).toEqual(['Project name', 'Writing style', 'Languages', 'Pages directory']);
+    const reg = hostProjectTypeRegistry();
+    for (const [slug, title] of [
+      ['skill', 'Skill details'],
+      ['writing-style', 'Style details'],
+    ] as const) {
+      const onboarding = reg.get(slug)!.onboarding!;
+      expect(onboarding.typeKeys).toEqual(['skill.name', 'skill.description']);
+      expect(onboarding.steps).toHaveLength(1);
+      expect(onboarding.steps[0]).toMatchObject({
+        title,
+        position: { relation: 'after', commonStep: 'Project name' },
+        writes: ['skill.name', 'skill.description'],
+        replaces: null,
+      });
+    }
+  });
+
   it('cards() carries only slug, name and user description', () => {
     for (const card of hostProjectTypeRegistry().cards()) {
       expect(Object.keys(card).sort()).toEqual(['description', 'name', 'slug']);
@@ -165,7 +212,7 @@ describe('M57 L20 — entry validation (2.1.77, `91ci7cqx`)', () => {
     const fields = new FieldRegistry().register(decl('a'), decl('b'), decl('name'));
     const common = [{ name: 'Project', writes: ['name'] }];
     const d = { capabilities: hostCapabilityRegistry(), fields, commonSteps: common };
-    const step = { title: 'S', position: { relation: 'after' as const, commonStep: 'Project' }, replaces: null };
+    const step = { title: 'S', component: 's', position: { relation: 'after' as const, commonStep: 'Project' }, replaces: null };
     refusal(() =>
       buildProjectTypeRegistry([entry({ onboarding: { typeKeys: ['a'], steps: [{ ...step, writes: ['b'] }] } })], d),
     );

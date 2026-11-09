@@ -1,4 +1,5 @@
 import type { ConfigPatch, ConfigResponse } from '../../lib/api.js';
+import { ApiError } from '../../lib/api-core.js';
 
 /**
  * M16 — the two submits of the onboarding form, as plain functions over injected
@@ -16,10 +17,16 @@ export interface OnboardingForm {
   writingStyle: string | null;
   language: string | null;
   conversationalLanguage: string | null;
-  /** The base root's directory as edited in "Advanced". */
+  /** The base root's directory as edited in the `Pages directory` step. */
   pagesDir: string;
-  /** The base root's identifier as edited in "Advanced". */
+  /** The base root's identifier as edited in the `Pages directory` step. */
   rootId: string;
+  /**
+   * 2.1.77 (M16 `czn353hw`): the values the TYPE steps collected, by dotted
+   * config key (`skill.name`). They ride the same final write as the common
+   * values. Absent/empty for a type without steps.
+   */
+  typeValues?: Readonly<Record<string, unknown>>;
 }
 
 export interface SubmitOnboardingDeps {
@@ -35,7 +42,24 @@ export type SubmitOnboardingResult =
   | { ok: true }
   /** The rename was refused: the message belongs under the Root ID field; nothing else was sent. */
   | { ok: false; rootIdError: string }
+  /**
+   * 2.1.77 (M16 `r2q6o6vi`): the final write was refused for a named key — the
+   * wizard moves to the step collecting it and shows the message under its field.
+   * Nothing was written (the write is atomic), so onboarding is not closed.
+   */
+  | { ok: false; fieldError: { key: string; message: string } }
   | { ok: false; aborted: true };
+
+/** Places a dotted key's value into the body as nested objects (`skill.name` → `{ skill: { name } }`). */
+function setDotted(body: Record<string, unknown>, key: string, value: unknown): void {
+  const segs = key.split('.');
+  let cur = body;
+  for (const seg of segs.slice(0, -1)) {
+    const next = cur[seg];
+    cur = cur[seg] = next && typeof next === 'object' && !Array.isArray(next) ? (next as Record<string, unknown>) : {};
+  }
+  cur[segs[segs.length - 1]!] = value;
+}
 
 /**
  * [Continue] is TWO steps since 0.2.101, and their ORDER IS THE CONTRACT:
@@ -53,7 +77,9 @@ export type SubmitOnboardingResult =
  *   `roots` is sent only when the base root's directory actually changed: the
  *   full array with nothing but the `builtin` entry's `dir` swapped.
  *
- * Errors of the PATCH itself propagate to the caller (a toast).
+ * 2.1.77: the type steps' values join the SAME body. A refusal that names a key
+ * (`error.details.field`) comes back as `fieldError`; any other error of the
+ * PATCH propagates to the caller (the standard mutation-error path).
  */
 export async function submitOnboarding(form: OnboardingForm, deps: SubmitOnboardingDeps): Promise<SubmitOnboardingResult> {
   let current = deps.config;
@@ -78,11 +104,23 @@ export async function submitOnboarding(form: OnboardingForm, deps: SubmitOnboard
     agent: { conversationalLanguage: form.conversationalLanguage }, // deep-merged server-side
     onboardingCompleted: true,
   };
+  for (const [key, value] of Object.entries(form.typeValues ?? {})) {
+    setDotted(body as Record<string, unknown>, key, typeof value === 'string' ? value.trim() : value);
+  }
   const nextDir = form.pagesDir.trim();
   if (baseAfter && nextDir !== baseAfter.dir) {
     body.roots = current.roots.map((r) => (r.builtin ? { ...r, dir: nextDir } : r));
   }
-  await deps.patchConfig(body);
+  try {
+    await deps.patchConfig(body);
+  } catch (e) {
+    const field = e instanceof ApiError ? e.details?.details : undefined;
+    const key = field && typeof field === 'object' ? (field as { field?: unknown }).field : undefined;
+    if (typeof key === 'string' && key.length > 0) {
+      return { ok: false, fieldError: { key, message: (e as Error).message } };
+    }
+    throw e;
+  }
   deps.navigate('/');
   return { ok: true };
 }

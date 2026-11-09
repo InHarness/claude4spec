@@ -304,6 +304,17 @@ export interface ConfigPatch {
   /** 0.1.58: local "elevator pitch" (0–200); null or empty clears it. */
   description?: string | null;
   onboardingCompleted?: boolean;
+  /**
+   * 2.1.77 (M52 L17): the `skill.*` keys — written by the Skill / Writing Style
+   * onboarding steps in the final write; skipped server-side without `skill-exposure`.
+   */
+  skill?: {
+    name?: string | null;
+    description?: string | null;
+    entry?: string | null;
+    contextTypes?: string[];
+    uses?: string[];
+  };
   entities?: string[];
   /**
    * 2.1.50 (M13): replaces the whole layout (last save wins); a broken rule is a

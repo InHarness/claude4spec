@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ConfigPatch, ConfigResponse } from '../../lib/api.js';
 import { needsOnboarding, skipOnboarding, submitOnboarding, type OnboardingForm } from './onboardingFlow.js';
+import { ApiError } from '../../lib/api-core.js';
 
 /**
  * M16 — the onboarding submits, driven through fakes of the effects they are
@@ -85,7 +86,7 @@ describe('onboarding [Continue] (M16)', () => {
     expect(changed.calls.patches[0]).toMatchObject({ onboardingCompleted: true, name: 'My spec', roots: expect.any(Array) });
   });
 
-  it('[ac:ac-continue-ze-zmienionym-dir-builtin-ro] a changed base-root dir sends the full roots[] with only the builtin entry swapped; an untouched section omits roots', async () => {
+  it('[ac:ac-continue-ze-zmienionym-dir-builtin-ro] a changed base-root dir sends the full roots[] with only the builtin entry swapped; untouched Pages directory fields omit roots', async () => {
     const changed = harness(config());
     await submitOnboarding(form({ pagesDir: ' spec ' }), changed.deps);
     expect(changed.calls.patches[0]!.roots).toEqual([{ ...base, dir: 'spec' }, adr]);
@@ -95,7 +96,36 @@ describe('onboarding [Continue] (M16)', () => {
     expect('roots' in untouched.calls.patches[0]!).toBe(false);
   });
 
-  it('[ac:ac-w-sekcji-advanced-onboardingu-mozna-z] "Advanced" can change only the base root id — a rename with the read token, and no roots in the PATCH, so the dir stays', async () => {
+  it('[ac:ac-wartosci-skill-name-i-skill-descripti] the type steps\' skill.name and skill.description join the same single PATCH body as the common values', async () => {
+    const { deps, calls } = harness(config());
+    await submitOnboarding(form({ typeValues: { 'skill.name': ' my-skill ', 'skill.description': 'Does X.' } }), deps);
+    expect(calls.patches).toHaveLength(1);
+    expect(calls.patches[0]).toEqual({
+      name: 'My spec',
+      writingStyle: 'concise',
+      language: 'English',
+      agent: { conversationalLanguage: 'Polski' },
+      skill: { name: 'my-skill', description: 'Does X.' },
+      onboardingCompleted: true,
+    });
+  });
+
+  it('a refusal of the final write naming a key comes back as fieldError (no redirect); one without a key propagates', async () => {
+    const refused = harness(config());
+    refused.deps.patchConfig = async () => {
+      throw new ApiError('VALIDATION', 'bad name', 400, { code: 'VALIDATION', message: 'bad name', details: { field: 'skill.name' } });
+    };
+    expect(await submitOnboarding(form(), refused.deps)).toEqual({ ok: false, fieldError: { key: 'skill.name', message: 'bad name' } });
+    expect(refused.calls.navigations).toEqual([]);
+
+    const generic = harness(config());
+    generic.deps.patchConfig = async () => {
+      throw new ApiError('INTERNAL', 'boom', 500, { code: 'INTERNAL', message: 'boom' });
+    };
+    await expect(submitOnboarding(form(), generic.deps)).rejects.toThrow('boom');
+  });
+
+  it('[ac:ac-w-sekcji-advanced-onboardingu-mozna-z] the Pages directory step can change only the base root id — a rename with the read token, and no roots in the PATCH, so the dir stays', async () => {
     const renamed = config({ roots: [{ ...base, id: 'docs' }, adr], configHash: 'hash-2' } as Partial<ConfigResponse>);
     const { deps, calls } = harness(config(), { afterRename: renamed });
     const result = await submitOnboarding(form({ rootId: 'docs' }), deps);
@@ -108,7 +138,7 @@ describe('onboarding [Continue] (M16)', () => {
     expect('roots' in calls.patches[0]!).toBe(false);
   });
 
-  it('[ac:ac-odmowa-przemianowania-na-continue-zos] a refused rename sends no onboardingCompleted and keeps the user on the form, the message under Root ID', async () => {
+  it('[ac:ac-odmowa-przemianowania-na-continue-zos] a refused rename sends no onboardingCompleted and hands the message back for the Root ID field', async () => {
     const { deps, calls } = harness(config(), { renameFails: "identifier 'adr' is already used by the root 'ADRs'" });
     const result = await submitOnboarding(form({ rootId: 'adr' }), deps);
 
