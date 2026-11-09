@@ -13,7 +13,7 @@ import { ProjectContextCache } from '../../../src/server/workspace/context-cache
 import { projectDispatchMiddleware } from '../../../src/server/workspace/middleware.js';
 import { buildProjectContext } from '../../../src/server/workspace/project-context.js';
 import { WorkspaceRegistry } from '../../../src/server/workspace/registry.js';
-import { bootstrapProject } from '../../../src/server/workspace/bootstrap.js';
+import { bootstrapFixture } from '../../helpers/bootstrap-fixture.js';
 import { pluginsRouter } from '../../../src/server/routes/plugins.js';
 import {
   basePackageLocator,
@@ -97,7 +97,7 @@ describe('plugin frontend serving per project — real contexts, no initial proj
 
   function register(name: string): { project: ProjectRecord; cwd: string } {
     const cwd = path.join(home, name);
-    return { project: bootstrapProject(registry, workspace, cwd).project, cwd };
+    return { project: bootstrapFixture(registry, workspace, cwd).project, cwd };
   }
 
   async function manifestOf(project: ProjectRecord): Promise<ManifestBody> {

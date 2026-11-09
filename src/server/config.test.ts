@@ -787,6 +787,9 @@ describe('config — the config.json envelope (2.1.8)', () => {
     'consistency',
     'onboardingCompleted',
     'remoteApiUrl',
+    // 2.1.77 (M01 `v878dqht`, M26 key table): the bootstrap set writes `projectType`
+    // even when it is the default; the snippet does not list it yet — ASSUMPTION:dev-0808.
+    'projectType',
   ];
 
   it('[entity:config-json-shape] a fresh file is version 4, uses only envelope keys, roots entries carry four fields, no system-root key exists and plugins is neither scaffolded nor reserved', () => {

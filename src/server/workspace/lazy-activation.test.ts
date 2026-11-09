@@ -156,7 +156,7 @@ describe('M01 lazy project activation (2.1.58)', () => {
           workspace: view(),
           cache,
           mode: 'prod',
-          activateProject: async (cwd) => bootstrapProject(registry, view(), cwd, activated).project,
+          activateProject: async (cwd, projectType) => bootstrapProject(registry, view(), cwd, activated, projectType).project,
         }),
       )
       .use('/api/projects/:id', projectDispatchMiddleware(registry, view(), cache))
@@ -496,11 +496,13 @@ describe('M01 lazy project activation (2.1.58)', () => {
     expect(activation.configCreated).toBe(true);
     const onDisk = JSON.parse(fs.readFileSync(configPath(cwd), 'utf8')) as Record<string, unknown>;
     expect(Object.keys(onDisk).sort()).toEqual(
-      ['$schemaVersion', 'language', 'name', 'onboardingCompleted', 'remoteApiUrl', 'roots', 'writingStyle'].sort(),
+      ['$schemaVersion', 'language', 'name', 'onboardingCompleted', 'projectType', 'remoteApiUrl', 'roots', 'writingStyle'].sort(),
     );
     expect(onDisk).toEqual({
       $schemaVersion: 4,
       name: 'fresh',
+      // 2.1.77 (M01 `v878dqht`): the type is written even when it is the default.
+      projectType: 'spec',
       roots: [BASE_ROOT],
       writingStyle: null,
       language: null,

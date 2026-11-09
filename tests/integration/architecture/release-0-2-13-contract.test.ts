@@ -507,7 +507,10 @@ describe('no skill claims a command that works without a server', () => {
    * copies have no build step, so those are read as written.
    */
   const skillTexts = async (): Promise<Array<{ file: string; text: string }>> => {
-    const ctx = { slug: 'demo', workspace: 'default' };
+    // 2.1.77 (M22 `8tvwx2ry`): the texts follow the project's capabilities — the
+    // full set (a Specification) renders every command any skill can claim.
+    const { SPEC_CAPABILITIES } = await import('../../../src/server/external-skills/external-skills-service.js');
+    const ctx = { id: 'demo', workspace: 'default', publicUrl: 'http://localhost:4500', capabilities: SPEC_CAPABILITIES };
     const { briefImplementerBody } = await import('../../../src/server/external-skills/brief-implementer-template.js');
     const { refactorBody } = await import('../../../src/server/external-skills/refactor-template.js');
     const { specReaderBody } = await import('../../../src/server/external-skills/spec-reader-template.js');

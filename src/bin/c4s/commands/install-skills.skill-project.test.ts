@@ -5,6 +5,7 @@ import path from 'node:path';
 import { parseArgs } from '../args.js';
 import { runInstallSkills } from './install-skills.js';
 import { WorkspaceRegistry } from '../../../server/workspace/registry.js';
+import { dirEntries } from '../../../../tests/helpers/dir-snapshot.js';
 
 /**
  * 2.1.77 (M22 `8tvwx2ry`): the `--skills` selection of `c4s install-skills`
@@ -55,7 +56,7 @@ describe('c4s install-skills in a `skill` project (2.1.77)', () => {
     // The skill's name as the criterion spells it, and its selection slug.
     await expect(run(skillId, 'c4s-brief-implementer')).rejects.toMatchObject({ code: 'INVALID_ARGS' });
     await expect(run(skillId, 'brief-implementer')).rejects.toMatchObject({ code: 'INVALID_ARGS' });
-    expect(fs.readdirSync(targetDir)).toEqual([]);
+    expect(dirEntries(targetDir)).toEqual([]);
 
     // The `--server` path reads the type from the server's project list.
     vi.stubGlobal(
@@ -68,11 +69,11 @@ describe('c4s install-skills in a `skill` project (2.1.77)', () => {
       ),
     ).rejects.toMatchObject({ code: 'INVALID_ARGS' });
     vi.unstubAllGlobals();
-    expect(fs.readdirSync(targetDir)).toEqual([]);
+    expect(dirEntries(targetDir)).toEqual([]);
 
     // The project's own skills still install: no brief implementer among them.
     await run(skillId, 'spec-reader,refactor');
-    expect(fs.readdirSync(targetDir).sort()).toEqual(['c4s-refactor', 'c4s-spec-reader']);
+    expect(dirEntries(targetDir).sort()).toEqual(['c4s-refactor', 'c4s-spec-reader']);
 
     // Control: a `spec` project accepts the slug.
     await run(specId, 'brief-implementer');

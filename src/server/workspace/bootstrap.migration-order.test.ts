@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { WorkspaceRegistry } from './registry.js';
-import { bootstrapProject } from './bootstrap.js';
+import { bootstrapFixture } from '../../../tests/helpers/bootstrap-fixture.js';
 import { configPath } from '../config.js';
 
 /**
@@ -31,7 +31,7 @@ describe('bootstrapProject — config migrations run before the validating load'
   const boot = () => {
     const registry = new WorkspaceRegistry(dir);
     const ws = registry.selectOrCreate({ name: 'default' });
-    return bootstrapProject(registry, ws, cwd);
+    return bootstrapFixture(registry, ws, cwd);
   };
 
   const writeConfigFile = (cfg: Record<string, unknown>) =>

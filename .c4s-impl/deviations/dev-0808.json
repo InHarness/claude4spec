@@ -1,0 +1,15 @@
+{
+  "id": "dev-0808",
+  "kind": "incorrect",
+  "blocking": false,
+  "address": "system/config-json-shape",
+  "slugs": [
+    "config-json-shape"
+  ],
+  "text": "The code-snippet `config-json-shape` (\"Szkielet koperty .claude4spec/config.json\") at 2.1.77 lists the envelope's top-level keys without `projectType`, while the same window's M01 `v878dqht` (Zestaw bootstrapowy) says a fresh file carries `projectType`, written explicitly even when it equals the default, and M26's key table declares the key. Built per M01: a fresh config.json carries `projectType`; the envelope test (src/server/config.test.ts, `[entity:config-json-shape]`) admits it. The snippet should list `\"projectType\": \"…\"`.",
+  "assumption": "ASSUMPTION:dev-0808 — the config.json envelope includes projectType",
+  "unit": "system",
+  "portion": "system-fix-1",
+  "sent": true,
+  "patchPath": "2-1-75-to-2-1-77-system-config-json-shape-the-code-snippet-config-json-shape-szkielet-koperty-cla.md"
+}

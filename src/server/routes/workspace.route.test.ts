@@ -89,7 +89,7 @@ describe('M31 workspace routes — workspace with a home and registry workspace 
           workspace: view,
           cache: contexts,
           mode: 'prod',
-          activateProject: async (cwd) => bootstrapProject(registry, view, cwd).project,
+          activateProject: async (cwd, projectType) => bootstrapProject(registry, view, cwd, undefined, projectType).project,
         }),
       )
       .use('/api', errorHandler);

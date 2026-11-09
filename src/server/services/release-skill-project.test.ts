@@ -95,7 +95,7 @@ describe('releases in a project of type `skill` — pages only (2.1.77, M17 `tut
     insertEntityVersion('e1', 1, 'unreleased', null);
     insertPageVersion('a.md', 1, 'page', null);
 
-    const rel = releases.createRelease({ name: 'v1', description: '' }, 'user');
+    const rel = releases.createRelease({ name: 'v1', description: 'First release.' }, 'user');
 
     expect(rel.countBreakdown.entities).toEqual({});
     // The page total is there; the total counts pages only.
@@ -107,8 +107,8 @@ describe('releases in a project of type `skill` — pages only (2.1.77, M17 `tut
   });
 
   it('[ac:ac-w-projekcie-typu-skill-delta-release] in a `skill` project the release_diff delta between two releases has no entity position', async () => {
-    const v1 = Number(db.prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES ('v1','v1','','user','2026-01-01T00:00:00.000Z')`).run().lastInsertRowid);
-    const v2 = Number(db.prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES ('v2','v2','','user','2026-01-02T00:00:00.000Z')`).run().lastInsertRowid);
+    const v1 = Number(db.prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES ('v1','v1','First release.','user','2026-01-01T00:00:00.000Z')`).run().lastInsertRowid);
+    const v2 = Number(db.prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES ('v2','v2','Second release.','user','2026-01-02T00:00:00.000Z')`).run().lastInsertRowid);
     insertEntityVersion('e1', 1, 'in v1', v1);
     insertEntityVersion('e1', 2, 'in v2', v2, 'update');
     insertEntityVersion('e2', 1, 'new in v2', v2);
@@ -129,7 +129,7 @@ describe('releases in a project of type `skill` — pages only (2.1.77, M17 `tut
   });
 
   it('[ac:ac-w-projekcie-typu-skill-licznik-niezre] in a `skill` project the unreleased counter equals the number of changed pages', async () => {
-    const v1 = Number(db.prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES ('v1','v1','','user','2026-01-01T00:00:00.000Z')`).run().lastInsertRowid);
+    const v1 = Number(db.prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES ('v1','v1','First release.','user','2026-01-01T00:00:00.000Z')`).run().lastInsertRowid);
     insertPageVersion('a.md', 1, 'released', v1);
     insertPageVersion('a.md', 2, 'edited', null, 'update');
     insertPageVersion('b.md', 1, 'new', null);
@@ -146,7 +146,7 @@ describe('releases in a project of type `skill` — pages only (2.1.77, M17 `tut
   });
 
   it('[ac:ac-w-projekcie-typu-skill-przywrocenie-c] in a `skill` project restoring the whole specification to a release adds only page versions to the history', async () => {
-    const v1 = Number(db.prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES ('v1','v1','','user','2026-01-01T00:00:00.000Z')`).run().lastInsertRowid);
+    const v1 = Number(db.prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES ('v1','v1','First release.','user','2026-01-01T00:00:00.000Z')`).run().lastInsertRowid);
     insertEntityVersion('e1', 1, 'in v1', v1);
     insertPageVersion('a.md', 1, 'in v1', v1);
     const restoreEntity = vi.spyOn(releases, 'restoreEntity');

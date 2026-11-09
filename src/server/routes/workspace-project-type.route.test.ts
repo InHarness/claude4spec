@@ -131,7 +131,9 @@ describe('[entity:post-api-workspace-projects] [entity:add-project-request] regi
   it('[ac:m31-existing-directory-without-type-registers-as-spec] a directory whose config.json has no `projectType`, added on the Add existing directory path, gets the type `spec` in its workspace record', async () => {
     const { app } = appFor('team');
     const cwd = dirOf(home, 'legacy');
-    writeConfigFile(cwd, {});
+    // A complete v4 file but for `projectType` — a file without `roots` would be
+    // rewritten by the roots repair, which is not what this criterion is about.
+    writeConfigFile(cwd, { roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }] });
     const before = fs.readFileSync(configPath(cwd), 'utf8');
     const res = await request(app).post('/api/workspace/projects').send({ cwd });
     expect(res.status).toBe(201);
@@ -291,11 +293,12 @@ describe('[entity:post-api-workspace-projects] [entity:add-project-request] regi
     const fresh = dirOf(tmp, 'not-onboarded');
     bootstrapProject(registry, view, fresh, undefined, 'spec');
     expect(fs.existsSync(path.join(fresh, 'pages', 'index.md'))).toBe(false);
-    // A `skill` project's entry has no starter content here: nothing written.
+    // A `skill` project's page comes from its own entry, never the Specification's template.
     const skill = dirOf(tmp, 'skill-onboarded');
     writeConfigFile(skill, { projectType: 'skill', roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }] });
     bootstrapProject(registry, view, skill);
-    expect(fs.readdirSync(path.join(skill, 'pages'))).toEqual([]);
+    expect(fs.readdirSync(path.join(skill, 'pages'))).toEqual(['index.md']);
+    expect(fs.readFileSync(path.join(skill, 'pages', 'index.md'), 'utf8')).not.toBe(SPEC_WELCOME_TEMPLATE);
   });
   it('[ac:ac-projekt-z-nieznana-wartoscia-projectt] rev-0002: a legacy directory (v2 file with port/mode) whose config.json carries an unknown type is refused with PROJECT_TYPE_UNKNOWN before the migrations rewrite config.json and before the registry gets the carried defaults', () => {
     const view = registry.openView('solo');

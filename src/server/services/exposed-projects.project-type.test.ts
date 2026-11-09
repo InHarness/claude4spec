@@ -163,7 +163,13 @@ describe('the provider\'s type decides its entry (M37 r8sajsmk, M52 8zu57gsf, 2.
     writeConfig(cwds.team, { skill: { description: null } });
     expect(registry.has('team-skill')).toBe(false);
     const rows = listExposedProjectRows('app', ['team-skill'], listExposedProjects(projects), ['team-skill']);
-    expect(rows).toEqual([{ name: 'team-skill', uses: true, status: 'unavailable', confirmed: true }]);
+    // The described Skill project's name is no `ok` row any more: only the attachment's `unavailable` row is left.
+    expect(rows.find((r) => r.name === 'team-skill')).toEqual({ name: 'team-skill', uses: true, status: 'unavailable', confirmed: true });
+    // The other provider (the Writing Style project, which has its description) keeps its row.
+    expect(rows.map((r) => [r.name, r.status])).toEqual([
+      ['house-style', 'ok'],
+      ['team-skill', 'unavailable'],
+    ]);
   });
 });
 

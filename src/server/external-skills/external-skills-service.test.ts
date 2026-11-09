@@ -179,9 +179,15 @@ describe('buildExternalSkillContext', () => {
     addedAt: '2026-01-01T00:00:00.000Z',
   };
 
-  it('carries { id, workspace, publicUrl } — no slug, no directory', () => {
+  it('carries { id, workspace, publicUrl, capabilities } — no slug, no directory', () => {
     const ctx = buildExternalSkillContext(project, { name: 'default', defaultPort: 4500 });
-    expect(ctx).toEqual({ id: 'my-spec-project', workspace: 'default', publicUrl: 'http://localhost:4500' });
+    // 2.1.77 (M22 `m22dserv`): the project's capability set rides along (absent = a Specification's).
+    expect(ctx).toEqual({
+      id: 'my-spec-project',
+      workspace: 'default',
+      publicUrl: 'http://localhost:4500',
+      capabilities: SPEC_CAPABILITIES,
+    });
     expect(JSON.stringify(ctx)).not.toContain('/abs/');
   });
 

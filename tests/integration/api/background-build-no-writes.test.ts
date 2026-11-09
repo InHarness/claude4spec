@@ -13,7 +13,8 @@ import { ProjectContextCache } from '../../../src/server/workspace/context-cache
 import { projectDispatchMiddleware } from '../../../src/server/workspace/middleware.js';
 import { buildProjectContext, type ProjectContext } from '../../../src/server/workspace/project-context.js';
 import { WorkspaceRegistry } from '../../../src/server/workspace/registry.js';
-import { backgroundBuild, bootstrapProject, type BackgroundBuildResult } from '../../../src/server/workspace/bootstrap.js';
+import { backgroundBuild, type BackgroundBuildResult } from '../../../src/server/workspace/bootstrap.js';
+import { bootstrapFixture } from '../../helpers/bootstrap-fixture.js';
 import { errorHandler } from '../../../src/server/routes/errors.js';
 import type { ProjectRecord } from '../../../src/server/workspace/types.js';
 
@@ -104,7 +105,7 @@ describe('M01 — the background context build writes nothing into the project',
 
   /** A project activated at registration, one entity created through REST, its context released. */
   async function projectWithEntity(name: string): Promise<{ project: ProjectRecord; slug: string }> {
-    const project = bootstrapProject(registry, registry.getWorkspace('default')!, path.join(home, name)).project;
+    const project = bootstrapFixture(registry, registry.getWorkspace('default')!, path.join(home, name)).project;
     const created = await request(app).post(`/api/projects/${project.id}/acs`).send({ title: `${name} holds` });
     expect(created.status).toBe(201);
     const slug = created.body.data.slug as string;

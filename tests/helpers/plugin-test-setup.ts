@@ -162,7 +162,7 @@ export async function createPluginTestApp(
     const registry = new WorkspaceRegistry(path.join(tmp, 'home'));
     let workspace = registry.selectOrCreate({ name: HARNESS_WORKSPACE });
     const cwd = path.join(tmp, 'project');
-    const { project } = bootstrapProject(registry, workspace, cwd, undefined, opts.projectType);
+    const { project } = bootstrapProject(registry, workspace, cwd, undefined, opts.projectType ?? 'spec');
     workspace = registry.getWorkspace(HARNESS_WORKSPACE) ?? workspace;
 
     // Captured broadcasts: the project's room (services, routes, the crud door)
