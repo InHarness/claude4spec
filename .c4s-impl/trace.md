@@ -129,3 +129,21 @@
 - u10-kreator-onboardingu-wedlug-typu/p1-l5-l20: ac-pominiecie-onboardingu-projektu-typu-2 → src/server/workspace/bootstrap.ts (writeStarterContent over the type entry's starter content); test src/server/workspace/starter-content.onboarding.test.ts
 - u10-kreator-onboardingu-wedlug-typu/p1-l5-l20: ac-wartosc-skill-entry-ustawiona-przed-d → src/server/workspace/bootstrap.ts (writeStarterContent over the type entry's starter content); test src/server/workspace/starter-content.onboarding.test.ts
 - u10-kreator-onboardingu-wedlug-typu/p1-l5-l20: m16-requires-m57, m59-requires-m16, m59-requires-m52, m60-requires-m16, m60-requires-m52 → context (read, not built)
+- ac-blok-project-type-w-projekcie-typu-sk → src/server/services/system-prompt/blocks/m57-project-types.ts (test src/server/services/system-prompt/blocks/m57-project-types.test.ts:84)
+- ac-blok-project-type-w-projekcie-typu-sp → src/server/services/system-prompt/blocks/m57-project-types.ts (test m57-project-types.test.ts:88)
+- ac-blok-project-type-w-projekcie-typu-wr → src/server/services/system-prompt/blocks/m57-project-types.ts (test m57-project-types.test.ts:92)
+- ac-dwa-projekty-tego-samego-typu-dostaja → src/server/services/system-prompt/blocks/m57-project-types.ts (test m57-project-types.test.ts:96)
+- ac-kazdy-projekt-niezaleznie-od-typu-dos → src/server/services/system-prompt/compositions/default.ts (test m57-project-types.test.ts:119; brief composition per ASSUMPTION:dev-0806)
+- m31-peer-carries-type-attribute → src/server/services/system-prompt/blocks/m31-workspace.ts, src/server/workspace/peer-config.ts (test src/server/services/system-prompt/blocks/m31-workspace.test.ts:62)
+- m31-peer-has-no-skill-attribute → src/server/services/system-prompt/blocks/m31-workspace.ts (test m31-workspace.test.ts:74)
+- m48-brief-project-carries-type-attribute → src/server/services/system-prompt/blocks/m48-own.ts (test m57-project-types.test.ts:148)
+- m48-entities-block-empty-whitelist → src/server/services/system-prompt/blocks/m13-entities.ts (test m57-project-types.test.ts:166)
+- m48-identity-without-entities → src/server/services/system-prompt/blocks/m48-own.ts buildIdentity (test m57-project-types.test.ts:176)
+- m48-no-entities-block-without-capability → src/server/services/system-prompt/blocks/m13-entities.ts (test m57-project-types.test.ts:158)
+- m48-project-carries-type-attribute → src/server/services/system-prompt/blocks/m48-own.ts (test m57-project-types.test.ts:141; ASSUMPTION:dev-0807)
+- m31-requires-m52 → context (module-dependency): src/server/services/exposed-projects.ts reads exposure through M52's declarations
+- m37-requires-m31 → context (module-dependency): src/server/services/exposed-projects.ts reads the provider's type copy from the workspace record
+- m37-requires-m57 → context (module-dependency): src/server/services/project-exposed-skills.ts resolves the provider type via the type registry
+- m52-requires-m57 → context (module-dependency): src/server/services/spec-skills-settings-fields.ts requires SKILL_EXPOSURE_CAPABILITY from src/server/project-types/capabilities.ts
+- m48-requires-m13 → context (module-dependency): src/server/services/system-prompt/blocks/m13-entities.ts gated on `entities`
+- m48-requires-m57 → context (module-dependency): src/server/services/system-prompt/blocks/m57-project-types.ts reads the type entry's prompt description
