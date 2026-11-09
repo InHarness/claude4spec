@@ -1,5 +1,7 @@
 import type { ComponentType } from 'react';
 import { FieldLabel, InlineError, TextInput } from '../../ui/Popover.js';
+import { SKILL_NAME_RE } from '../../../shared/skill-name.js';
+import { slugBase } from '../../../shared/slug.js';
 
 /**
  * 2.1.77 — the type steps' browser components (M59 / M60 UI: contribution to
@@ -28,17 +30,16 @@ export interface TypeStepDefinition {
   Component: ComponentType<TypeStepProps>;
 }
 
-/** The project name turned into kebab-case (the detail steps' name pre-fill). */
-export function toKebabCase(s: string): string {
-  return s
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+/**
+ * The project name turned into kebab-case (the detail steps' name pre-fill),
+ * by the shared slug rule (`Właściwości` → `wlasciwosci`). Empty when the name
+ * gives no usable slug — never slugify's `x-<hash>` fallback — so the live
+ * validation flags the field.
+ */
+export function namePrefill(projectName: string): string {
+  return slugBase(projectName);
 }
 
-const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const NAME_KEY = 'skill.name';
 const DESCRIPTION_KEY = 'skill.description';
 
@@ -53,7 +54,7 @@ interface DetailsTexts {
 function detailsStep(texts: DetailsTexts): TypeStepDefinition {
   const validate = (values: Readonly<Record<string, string>>) => {
     const errors: Record<string, string> = {};
-    if (!KEBAB.test((values[NAME_KEY] ?? '').trim())) errors[NAME_KEY] = 'Use lowercase letters, digits and hyphens.';
+    if (!SKILL_NAME_RE.test((values[NAME_KEY] ?? '').trim())) errors[NAME_KEY] = 'Use lowercase letters, digits and hyphens.';
     if ((values[DESCRIPTION_KEY] ?? '').trim() === '') errors[DESCRIPTION_KEY] = texts.emptyDescription;
     return errors;
   };
@@ -92,7 +93,7 @@ function detailsStep(texts: DetailsTexts): TypeStepDefinition {
     initial: ({ projectName, current }) => {
       const skill = (current.skill ?? {}) as { name?: unknown; description?: unknown };
       return {
-        [NAME_KEY]: typeof skill.name === 'string' && skill.name !== '' ? skill.name : toKebabCase(projectName),
+        [NAME_KEY]: typeof skill.name === 'string' && skill.name !== '' ? skill.name : namePrefill(projectName),
         [DESCRIPTION_KEY]: typeof skill.description === 'string' ? skill.description : '',
       };
     },

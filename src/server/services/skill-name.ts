@@ -1,10 +1,12 @@
 /**
- * The `skill.name` syntax (M52): kebab-case — lowercase letters, digits and
- * single hyphens. One definition for the settings field and for the names
- * `c4s confirm-skill-uses` confirms (M31, 2.1.67). Kept dependency-free so the
- * server-free CLI path does not load the settings registry.
+ * The `skill.name` syntax (M52) lives in src/shared/skill-name.ts — one rule for
+ * the settings field, for the names `c4s confirm-skill-uses` confirms (M31,
+ * 2.1.67) and for the onboarding type steps in the browser. Kept
+ * dependency-free so the server-free CLI path does not load the settings registry.
  */
-export const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+import { SKILL_NAME_RE } from '../../shared/skill-name.js';
+
+export { SKILL_NAME_RE };
 
 /**
  * 2.1.69 (M31 `naxqsfra`, M52 `wqvq1esb`): the names of a list that are not in
