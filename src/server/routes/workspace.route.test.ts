@@ -170,7 +170,8 @@ describe('M31 workspace routes — workspace with a home and registry workspace 
     expect(res.body).toEqual({ projectId: 'billing' });
     expect(readWorkspaceJson().projects).toEqual([
       { id: 'api', path: 'services/api' },
-      { id: 'billing', path: 'services/billing' },
+      // The new-project path keeps a copy of the type in the record (M31 m31-new-project-type-copy-in-workspace-record).
+      { id: 'billing', path: 'services/billing', projectType: 'spec' },
     ]);
     // Activated without any start flag: the project got its config file.
     expect(fs.existsSync(configPath(billing))).toBe(true);
