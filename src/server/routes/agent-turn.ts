@@ -35,7 +35,7 @@ import { buildC4sToolsServer } from '../mcp/c4s-tools.js';
 import { buildWorkspaceToolsServer } from '../mcp/workspace-tools.js';
 import { SPEC_SKILL_TOOLS_SERVER, type SpecSkillTools } from '../mcp/spec-skill-tools.js';
 import { RUN_TOOLS_SERVER, type RunToolsFactory } from '../mcp/run-tools.js';
-import { overlayServerNamesFor, pluginServerNamesFor, pluginToolClass } from '../operations/profile-gate.js';
+import { overlayServerNamesFor, pluginServerNamesFor } from '../operations/profile-gate.js';
 import { assembleTurnMcpServers, type TurnServerEntry } from '../services/turn-mcp-servers.js';
 import type { ListProjectsResult } from '../workspace/list-projects.js';
 import {
@@ -1213,15 +1213,13 @@ export async function runAgentTurn(
         // line between host and plugin servers, but the plan-mode list must,
         // since a catalog row only speaks for the surface it was declared on.
         plugin: pluginServerNames.has(name),
-        // 2.1.78 (M44) — a plugin server's tools of EFFECTIVE class `read`
-        // (declared by a base envelope), by the gate's own rule.
-        ...(pluginServerNames.has(name)
-          ? {
-              readTools: (server.tools ?? [])
-                .filter((t) => pluginToolClass(t, { overlay: overlayServerNames.has(name) }) === 'read')
-                .map((t) => t.name),
-            }
-          : {}),
+        // 2.1.79 (M44/M48) — the facts the gate classifies by, carried as they
+        // are: the server's layer and each tool's declared class. The plan-mode
+        // list hands them to the gate's own `effectiveToolClass`.
+        overlay: overlayServerNames.has(name),
+        operationClasses: Object.fromEntries(
+          (server.tools ?? []).flatMap((t) => (t.operationClass ? [[t.name, t.operationClass]] : [])),
+        ),
       }),
     );
 

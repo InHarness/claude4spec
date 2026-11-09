@@ -310,6 +310,11 @@ export interface MountContext {
    * prompt plus one per merged-dispatch drain (`routes/agent-turn.ts`), so
    * "per turn" — what this said before brief `0-2-23-to-next` — silently reused
    * instances and made every whitelisted server stop answering mid-turn.
+   *
+   * 2.1.79 (M44) — a server registered with this callback may carry a name
+   * other than `${type}-tools`; for the context-type profile gate it is a
+   * plugin server exactly like one from the `mcpServer?` slot (the host records
+   * its envelope's layer at `mountBackend`).
    */
   registerMcpServer(name: string, factory: () => McpServerFactory): void;
   /**

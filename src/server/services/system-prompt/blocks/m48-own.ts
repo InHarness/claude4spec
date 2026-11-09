@@ -6,8 +6,9 @@ import {
 } from '@inharness-ai/agent-adapters/claude-code';
 import type { Root } from '../../../../shared/types.js';
 import type { ProjectPluginHost } from '../../../core/plugin-host/types.js';
-import { CATALOG } from '../../../operations/catalog.js';
 import { registerCoreOperations } from '../../../operations/core-operations.js';
+// 2.1.79 (M44/M48) — the one classifier the profile gate uses; this block keeps none of its own.
+import { effectiveToolClass } from '../../../operations/profile-gate.js';
 import { DIRECT_FILESYSTEM_DENY_GROUPS } from '../../agent-tool-posture.js';
 import { attrs, selfClose } from '../glue.js';
 import type { McpInventoryEntry, PromptBlock } from '../types.js';
@@ -320,36 +321,26 @@ const PLAN_MODE_EXEMPT_CLASSES: ReadonlySet<string> = new Set(['read', 'plan']);
 function planModeMutatingTools(inventory: readonly McpInventoryEntry[]): string[] {
   const names = new Set<string>();
   for (const server of inventory) {
-    const reads = new Set(server.readTools ?? []);
     for (const tool of server.tools ?? []) {
       /**
-       * 2.1.78 (M44) — a PLUGIN tool is classified by the plugin's own
-       * declaration, exactly as the profile gate classifies it: `read` only
-       * when a base-layer envelope declared it so (`readTools`), `write`
-       * otherwise. The host catalog is not consulted for it — it is keyed by
-       * bare name, so a plugin tool called `update_plan` or `get_page` would
-       * otherwise inherit that host row's `plan`/`read` class and be exempted
-       * from this list while its own mutating handler runs. An undeclared
-       * plugin tool IS listed: the cost of guessing wrong runs that way. The
-       * price is a false prohibition on an undeclared plugin read — visible,
-       * and fixed by declaring it.
+       * 2.1.79 (M44/M48) — no classification of its own: the class is the
+       * profile gate's `effectiveToolClass`, fed the same facts the gate gets
+       * (plugin server or not, its layer, the tool's declared class). So a
+       * plugin server's tool without a declaration, or from an overlay, is
+       * listed as mutating, and the prompt cannot drift from what the gate
+       * admits.
+       *
+       * `undefined` — a HOST tool with no host row — is not listed. Over-listing
+       * is not caution here, it is a false prohibition, and a model that finds
+       * one "forbidden" tool working learns what the rest of the prohibitions
+       * are worth. (Until 0.2.99 `load_skill_file` was the host tool with no
+       * row; it now has a read-class row, so it stays exempt through the class.)
        */
-      if (server.plugin) {
-        if (!reads.has(tool)) names.add(tool);
-        continue;
-      }
-      const op = CATALOG.get(tool);
-      /**
-       * A HOST tool with no host row is not listed. Over-listing is not caution
-       * here, it is a false prohibition, and a model that finds one "forbidden"
-       * tool working learns what the rest of the prohibitions are worth. (Until
-       * 0.2.99 `load_skill_file` was the host tool with no row; it now has a
-       * read-class row, so it stays exempt through the class — listing it would
-       * contradict <project_writing_skill>, which instructs the agent to call it.)
-       */
-      const applies = op && op.contributedBy !== 'plugin';
-      if (!applies) continue;
-      if (PLAN_MODE_EXEMPT_CLASSES.has(op!.opClass)) continue;
+      const cls = effectiveToolClass(
+        { name: tool, operationClass: server.operationClasses?.[tool] },
+        { plugin: server.plugin === true, overlay: server.overlay === true },
+      );
+      if (cls === undefined || PLAN_MODE_EXEMPT_CLASSES.has(cls)) continue;
       names.add(tool);
     }
   }

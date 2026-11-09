@@ -145,6 +145,30 @@ function sectionFloorHint(page: MCPPageDelta, sectionOffset: number): string {
 }
 
 /**
+ * 2.1.79 (M17) — the one section of a `sectionLimit: 1` window was cut while
+ * the response also carried entity rows: the budget was shared, so the floor
+ * does not apply.
+ */
+function isSharedWithEntities(sectionLimit: number | undefined, windowed: MCPPageDelta, out: MCPReleaseDiff): boolean {
+  return sectionLimit === 1 && windowed.sections.length === 1 && (out.entities?.length ?? 0) > 0;
+}
+
+/**
+ * 2.1.79 (M17) — retry the SAME section with the pages dimension alone. Names
+ * the same `sectionOffset`, `sectionLimit` and `paths` plus `include: ['pages']`
+ * in one parameter span, so the CLI rewrites it into runnable flags. It replaces
+ * the ladder hint: the next `sectionOffset` would skip the rest of this section.
+ */
+function sectionRetryWithoutEntitiesHint(page: MCPPageDelta, sectionOffset: number): string {
+  return (
+    `the section at position ${sectionOffset} of page ${page.rootId}/${page.path} was cut as text (truncated: true) ` +
+    `because it shared the response budget with entity rows — read the same section again without them: ` +
+    `\`paths: ['${page.rootId}/${page.path}'], sectionOffset: ${sectionOffset}, sectionLimit: 1, include: ['pages']\` ` +
+    `(without \`roots\`, which \`paths\` replaces).`
+  );
+}
+
+/**
  * What the envelope around a section-budgeted page costs: `from`/`to`/`total`
  * and the two hints it may carry. Section-level budgeting is the one place that
  * fills the budget to the brim, so it is the one place that has to leave this out.
@@ -283,6 +307,13 @@ export function projectReleaseDiff(
           // nor any other call would bring the rest of THIS section.
           if (isSectionFloor(sectionLimit, windowed, out)) {
             hints.push(sectionFloorHint(fitted, sectionOffset));
+          } else if (isSharedWithEntities(sectionLimit, windowed, out)) {
+            // 2.1.79 (M17) — not the floor: the entity rows took part of the
+            // room, so the section does not exceed the budget on its own and
+            // a further call exists. The SAME section again, without the
+            // entity dimension — never the next offset, which would skip the
+            // rest of the cut section.
+            hints.push(sectionRetryWithoutEntitiesHint(fitted, sectionOffset));
           } else {
             hints.push(HEAVY_RETRY_HINT);
             if (cutAt < out.total!.sections!) hints.push(sectionWindowHint(fitted, cutAt, whole));

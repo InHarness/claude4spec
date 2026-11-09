@@ -872,22 +872,31 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       'the class of the tool\'s operation, which the context-type profile gate reads for a plugin server\'s ' +
       'tool: honoured for a base-layer envelope, ignored (`write`) for a project-local overlay, `write` when ' +
       'absent. `annotations` — `readOnlyHint` included — are never an input of the gate. Every existing ' +
-      'call stays valid: additive (rule (2)), no bump and no `migrations[]` descriptor; `HOST_API_VERSION` ' +
-      'stays `2.1.0`.',
+      'call stays valid: additive (rule (2)), no bump and no `migrations[]` descriptor. ' +
+      // 2.1.79 — the entry now also records the narrowing (the effect on plugin authors).
+      'Effect on plugin authors: the rule covers every server registered while an envelope mounts, not only ' +
+      'the `${type}-tools` server — a server registered under its own name through the `registerMcpServer` ' +
+      'escape hatch is a plugin server too, so without an `operationClass: \'read\'` declaration from a ' +
+      'base-layer envelope its tools are unavailable in read-only profiles. Nothing changes for the tools of ' +
+      'external plugins\' `${type}-tools` servers against the state before the entry. Narrowing availability ' +
+      'does not change the shape of the surface, and in the stabilisation phase there are no published ' +
+      'plugins it could break, so this part also fits the current baseline. `HOST_API_VERSION` stays `2.1.0`.',
   },
   {
     release: '2.1.78',
     slot: 'registerPlugin / contributes.entities: PLUGIN_TYPE_CONFLICT in the base',
     kind: 'behaviour-changed',
     summary:
-      '(`qgwtavuv`) A second base-layer package (built-in envelope, preinstalled or workspace) contributing ' +
-      'an entity `type` already registered in the base is refused with a hard `PLUGIN_TYPE_CONFLICT`, and ' +
-      'the type stays with the module registered first — the rule the project-local overlay already had, ' +
-      'in parity with `PLUGIN_TOOL_CONFLICT`. Before, the base resolved it by a silent last-wins, so an ' +
-      'external package could shadow a built-in envelope\'s type; only a project-local overlay may shadow a ' +
-      'base type now (a reported shadow, not an error). Formally a narrowing under rule (1), absorbed into ' +
-      'the current baseline under the `injection` precedent — no published plugin relies on overriding a ' +
-      'base type: no bump and no `migrations[]` descriptor; `HOST_API_VERSION` stays `2.1.0`.',
+      // 2.1.79 — the entry states the contract, not a departure from a former last-wins.
+      '(`qgwtavuv`) The Host API contract applies to the base the same type-collision rule that holds inside ' +
+      'the overlay: of two base packages contributing the same entity `type`, the second in load order is ' +
+      'refused with a hard `PLUGIN_TYPE_CONFLICT`, and the type stays with the module registered first. ' +
+      'Because built-in envelopes are discovered first, the refusal goes to an external package contributing ' +
+      'a built-in envelope\'s type; only a project-local overlay may shadow a base type. The refusal formally ' +
+      'narrows the set of valid base manifests and falls under rule (1); the qualification is settled by the ' +
+      'precedent of the `injection` retirement and by parity with the refusal of a duplicate tool ' +
+      '(`PLUGIN_TOOL_CONFLICT`), and the base of published external plugins is zero. The change fits the ' +
+      'current baseline: no bump and no `migrations[]` descriptor; `HOST_API_VERSION` stays `2.1.0`.',
   },
 ];
 

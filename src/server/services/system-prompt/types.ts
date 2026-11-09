@@ -54,12 +54,17 @@ export interface McpInventoryEntry {
    */
   plugin?: boolean;
   /**
-   * 2.1.78 (M44) — on a plugin server, the tools whose EFFECTIVE class is
-   * `read` (declared `operationClass: 'read'` by a base-layer envelope), by the
-   * profile gate's own rule. Every other tool of a plugin server is a write.
-   * Absent on host servers, which are classified by the host catalog.
+   * 2.1.79 (M44) — the plugin server came from a project-local overlay, whose
+   * declared classes are not trusted. Meaningful only with `plugin`.
    */
-  readTools?: readonly string[];
+  overlay?: boolean;
+  /**
+   * 2.1.79 (M44) — the `operationClass` each tool of this server declared in
+   * `mcpTool` (absent = undeclared). Carried, not interpreted: the plan-mode
+   * list hands it to the profile gate's own `effectiveToolClass`, so the prompt
+   * cannot classify a tool differently from the gate.
+   */
+  operationClasses?: Readonly<Record<string, 'read' | 'write'>>;
 }
 
 /**

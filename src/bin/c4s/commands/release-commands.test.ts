@@ -235,6 +235,34 @@ describe('c4s release commands (2.1.11)', () => {
       expect(out.truncationHint).toBe(floor);
       expect(out.truncationHint).not.toMatch(/--section-offset|--section-limit|--summary-only/);
     });
+
+    /**
+     * 2.1.79 (M17) — the CLI channel of the shared-budget retry: the operation's
+     * parameter span is rewritten into runnable flags, `include: ['pages']` as
+     * `--include pages`, with no object literal left in the hint.
+     */
+    it('[ac:ac-release-diff-z-include-obu-wymiarow-i] CLI release-diff: the shared-budget retry hint is printed in flag form — same --section-offset, --include pages', async () => {
+      reply = {
+        data: {
+          from: { id: 1, name: 'v1' },
+          to: { id: 2, name: 'v2' },
+          total: { entities: 1, pages: 1, sections: 2 },
+          entities: [{ type: 'endpoint', slug: 'e1', op: 'update' }],
+          pages: [{ rootId: 'pages', path: 'big.md', op: 'update', sections: [{ anchor: 's0', content: 'qqq', truncated: true }] }],
+          truncationHint:
+            'the section at position 0 of page pages/big.md was cut as text (truncated: true) because it shared the ' +
+            "response budget with entity rows — read the same section again without them: `paths: ['pages/big.md'], " +
+            "sectionOffset: 0, sectionLimit: 1, include: ['pages']` (without `roots`, which `paths` replaces).",
+        },
+      };
+      await runReleaseDiff(
+        args('release-diff', '--from', 'v1', '--to', 'v2', '--paths', 'pages/big.md', '--section-offset', '0', '--section-limit', '1'),
+      );
+      const out = JSON.parse(stdout);
+      expect(out.truncated).toBe(true);
+      expect(out.truncationHint).toContain('`--paths pages/big.md --section-offset 0 --section-limit 1 --include pages`');
+      expect(out.truncationHint).not.toMatch(/include: \[|sectionOffset:|\['pages'\]/);
+    });
   });
 });
 

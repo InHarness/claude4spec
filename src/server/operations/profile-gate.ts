@@ -60,9 +60,9 @@ import type { ChatContextType } from '../../shared/entities.js';
 import type { McpServerFactory, McpToolDeclaration, McpToolOperationClass } from '../../shared/plugin-host/mcp.js';
 import { createMcpServer } from '../plugin-runtime/create-mcp-server.js';
 import type { McpToolDefinition } from '@inharness-ai/agent-adapters';
-import { CATALOG } from './catalog.js';
+import { CATALOG, type OperationClass } from './catalog.js';
 import { registerCoreOperations } from './core-operations.js';
-import { PROFILES, profileAdmits } from './profiles.js';
+import { PROFILES } from './profiles.js';
 
 /**
  * The single seeding point of the process-wide catalog.
@@ -94,40 +94,60 @@ export function pluginToolClass(
 }
 
 /**
- * Does this profile admit the tool?
+ * 2.1.79 (M44) — the EFFECTIVE class of one mounted tool: the single classifier
+ * shared by the profile gate and by the prompt composition (the plan-mode "Do
+ * not call" list, M48). A second classification would let the prompt and the
+ * gate drift apart.
  *
- * `plugin` says the tool came off a plugin's own server, whose class comes from
- * the plugin's declaration rather than from the host catalog. `overlay` says that
- * server came from a project-local envelope, whose declaration is not trusted. A
- * bare tool NAME carries no declaration, so on a plugin server it is `write`.
+ * The SERVER that exposes the tool decides the source of the class — never the
+ * existence of an operation record:
+ * - (a) a plugin server (any server registered while an envelope mounted, under
+ *   any name): the `operationClass` it declared in `mcpTool`, honoured only for
+ *   a base-layer envelope — `write` for a project-local overlay;
+ * - (b) no declaration on a plugin server: `write` — even when the operation
+ *   has a `spec-operation` record (`link_dto`, `unlink_dto`): the record stays
+ *   in the catalog for channels and renderings, it is not an input here;
+ * - (c) a host server: the class of the host catalog row.
+ *
+ * `undefined` means a host tool with no catalog row — the gate passes it
+ * through and the plan-mode list does not name it (see the module comment).
+ * `annotations.readOnlyHint` is never an input.
+ */
+export function effectiveToolClass(
+  tool: string | Pick<McpToolDeclaration, 'name' | 'operationClass'>,
+  opts: { plugin?: boolean; overlay?: boolean } = {},
+): OperationClass | undefined {
+  const decl = typeof tool === 'string' ? { name: tool } : tool;
+  /**
+   * A plugin's tool: the class it declared (base only), else `write`. The host
+   * catalog is deliberately not consulted: a row for a HOST operation says
+   * nothing about a plugin's tool that happens to share its name (a plugin
+   * shipping `update_plan` would otherwise be classified `plan` and admitted to
+   * `ask`), and an undeclared plugin tool is treated as the write it may well
+   * be — `ask`'s only other restraint, forced plan mode, does not apply to MCP.
+   */
+  if (opts.plugin || opts.overlay) return pluginToolClass(decl, { overlay: opts.overlay });
+  const op = CATALOG.get(decl.name);
+  // A row kept for a plugin-rendered operation (`link_dto` / `unlink_dto`) speaks
+  // for the plugin's server, never for a host tool sharing its name.
+  if (op && op.contributedBy !== 'plugin') return op.opClass;
+  return undefined;
+}
+
+/**
+ * Does this profile admit the tool? The profile picks by the tool's effective
+ * class alone ({@link effectiveToolClass}); an undeclared host tool passes
+ * through.
  */
 export function toolAdmittedByProfile(
   profile: ChatContextType,
   tool: string | Pick<McpToolDeclaration, 'name' | 'operationClass'>,
   opts: { plugin?: boolean; overlay?: boolean } = {},
 ): boolean {
-  const decl = typeof tool === 'string' ? { name: tool } : tool;
-  if (opts.plugin || opts.overlay) {
-    /**
-     * A plugin's tool: the class it declared (base only), else `write`.
-     *
-     * The host catalog is deliberately not consulted. A row for a HOST
-     * operation says nothing about a plugin's tool that happens to share its
-     * name — the gate matches by name, so a plugin shipping `update_plan` would
-     * otherwise be classified `plan` and admitted to `ask`. And an undeclared
-     * plugin tool is treated as the write it may well be, so `spreadsheet-tools`'
-     * mutating operations stay out of `ask` and `brief`, whose only other
-     * restraint (forced plan mode) does not apply to MCP at all.
-     */
-    return PROFILES[profile].operationClasses.has(pluginToolClass(decl, { overlay: opts.overlay }));
-  }
-  const op = CATALOG.get(decl.name);
-  // A row kept for a plugin-rendered operation (`link_dto` / `unlink_dto`, which
-  // carry a spec-operation record) speaks for the plugin's server, never for a
-  // host tool sharing its name.
-  if (op && op.contributedBy !== 'plugin') return profileAdmits(profile, op);
+  const cls = effectiveToolClass(tool, opts);
   // Undeclared on a host-owned server: pass-through (see the module comment).
-  return true;
+  if (cls === undefined) return true;
+  return PROFILES[profile].operationClasses.has(cls);
 }
 
 /**

@@ -21,6 +21,7 @@ import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import type { TagsService } from '../services/tags.js';
 import type { PagesService } from '../services/pages.js';
 import { ReleaseFileStore } from '../services/release-store.js';
+import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 
 // 0.1.122: this route never has real entity/page rows to diff — it only
 // exercises the `:to === 'current'` dispatch ahead of the name lookup
@@ -189,6 +190,62 @@ describe('GET /api/releases/:from/diff/:to?view=operation — the floor of the s
     expect(data.pages[0]!.sections[0]!.content!.length).toBeLessThan(400_000);
     expect(data.truncationHint).toContain('cannot be read through release_diff');
     expect(data.truncationHint).not.toMatch(/sectionOffset:|sectionLimit|summaryOnly|continue with|retry/i);
+  });
+});
+
+/**
+ * 2.1.79 (M17) — over the REST channel: the one section of a `sectionLimit: 1`
+ * window, cut because entity rows shared the budget, gets the retry hint for
+ * the SAME section with `include: ['pages']`.
+ */
+describe('GET /api/releases/:from/diff/:to?view=operation — a section cut by a budget shared with entities (2.1.79)', () => {
+  it('[ac:ac-release-diff-z-include-obu-wymiarow-i] REST: both dimensions, sectionLimit 1 → the hint names the same sectionOffset and include: [\'pages\']', async () => {
+    const release = (id: number, name: string) => ({ id, name, description: '', createdBy: 'agent', createdAt: '2026-11-09T00:00:00.000Z' });
+    const snap = (id: number) => ({
+      release: release(id, `v${id}`),
+      serializer_versions: {},
+      entities: [{ type: 'endpoint', slug: 'e1', op: 'update', data: { name: `E${id}`, blob: 'z'.repeat(Math.floor(DEFAULT_BUDGET_CHARS / 4)) } }],
+      pages: [],
+    });
+    const stub = {
+      resolveReleaseId: (name: string) => name,
+      getReleaseSnapshot: (id: string) => snap(id === 'v1' ? 1 : 2),
+      getCurrentSnapshot: () => snap(0),
+      pageRootIds: () => ['pages'],
+      getReleaseDiff: async () => ({
+        from: { id: 1, name: 'v1' },
+        to: { id: 2, name: 'v2' },
+        entities: [{ type: 'endpoint', slug: 'e1', op: 'updated', changes: [] }],
+        pages: [
+          {
+            rootId: 'pages',
+            path: 'big.md',
+            op: 'modified',
+            added_sections: [
+              { kind: 'section', anchor: 's0000000', heading: 'S0', level: 2, parent: null, headingPath: [], content: 'q'.repeat(Math.floor(DEFAULT_BUDGET_CHARS * 0.7)) },
+              { kind: 'section', anchor: 's0000001', heading: 'S1', level: 2, parent: null, headingPath: [], content: 'small' },
+            ],
+            removed_sections: [],
+            modified_sections: [],
+            moved_sections: [],
+            frontmatter_diff: null,
+            xml_refs_diff: null,
+          },
+        ],
+      }),
+    } as unknown as ReleaseService;
+    const app = express().use(express.json()).use('/api/releases', releasesRouter(stub)).use(errorHandler);
+    const res = await request(app).get(
+      '/api/releases/v1/diff/v2?view=operation&paths=pages/big.md&sectionOffset=0&sectionLimit=1',
+    );
+    expect(res.status).toBe(200);
+    const { data } = res.body as {
+      data: { entities: unknown[]; pages: Array<{ sections: Array<{ truncated?: boolean }> }>; truncationHint?: string };
+    };
+    expect(data.entities.length).toBeGreaterThan(0);
+    expect(data.pages[0]!.sections[0]!.truncated).toBe(true);
+    expect(data.truncationHint).toContain("paths: ['pages/big.md'], sectionOffset: 0, sectionLimit: 1, include: ['pages']");
+    expect(data.truncationHint).not.toContain('cannot be read');
   });
 });
 

@@ -246,6 +246,14 @@ export interface MountContext {
   versionService: any;
   referencesService: any;
   entityStore: any;
+  /**
+   * Register a custom MCP server (escape hatch beside the `backend.mcpServer`
+   * slot). A server registered with this callback may carry a name other than
+   * `${type}-tools`; for the context-type profile gate it is a plugin server
+   * exactly like one from the `mcpServer?` slot (2.1.79): its tools are classed
+   * by their `mcpTool(..., operationClass)` declaration, honoured only for a
+   * base-layer package, and are `write` without one.
+   */
   registerMcpServer(name: string, factory: () => unknown): void;
   registerEntityService(type: string, service: unknown): void;
   /** 0.2.2 — `synthesizeMount` uses this to bind the listener generated from the type's `ref` flags. */

@@ -780,6 +780,47 @@ describe('release_diff — section window and sizes (2.1.5)', () => {
     expect(two.truncationHint).toContain("sectionOffset: 1, sectionLimit: 1");
   });
 
+  /**
+   * 2.1.79 (M17) — the floor only holds when the cut section is the response's
+   * only payload. Sharing the budget with entity rows, the section does not
+   * exceed it on its own: the hint names the SAME section again with
+   * `include: ['pages']`, never the next offset.
+   */
+  it('[ac:ac-release-diff-z-include-obu-wymiarow-i] projection: both dimensions, sectionLimit 1, the section cut because entity rows shared the budget → retry the same sectionOffset with include: [\'pages\']', () => {
+    const half = Math.floor(DEFAULT_BUDGET_CHARS / 2);
+    const toSnap: SpecSnapshot = {
+      ...snap(2, { a: 2 }),
+      entities: [{ type: 'endpoint', slug: 'e1', op: 'create', data: { name: 'E1', blob: 'z'.repeat(half) } }],
+    };
+    const page = bigPage(3, 'q'.repeat(Math.floor(DEFAULT_BUDGET_CHARS * 0.7)));
+    const out = projectReleaseDiff(
+      {
+        from: { id: 1, name: 'v1' },
+        to: { id: 2, name: 'v2' },
+        entities: [{ type: 'endpoint', slug: 'e1', op: 'created', changes: [] }],
+        pages: [page],
+      } as unknown as RawDelta,
+      snap(1, { a: 1 }),
+      toSnap,
+      { include: ['entities', 'pages'] },
+      { singlePath: true, sectionOffset: 1, sectionLimit: 1 },
+    );
+    expect((out.entities as MCPEntityDelta[]).length).toBe(1);
+    const [p] = out.pages as MCPPageDelta[];
+    expect(p!.sections).toHaveLength(1);
+    expect(p!.sections[0]!.truncated).toBe(true);
+    const hint = out.truncationHint!;
+    expect(hint).toContain("paths: ['pages/big.md'], sectionOffset: 1, sectionLimit: 1, include: ['pages']");
+    // Not the next offset, and not the floor's "cannot be read".
+    expect(hint).not.toContain('sectionOffset: 2');
+    expect(hint).not.toContain('cannot be read');
+
+    // Regression of the narrowed criterion: without entity rows the same cut is the floor.
+    const alone = run(bigPage(3, 'q'.repeat(DEFAULT_BUDGET_CHARS * 2)), { singlePath: true, sectionOffset: 1, sectionLimit: 1 });
+    expect(alone.truncationHint).toContain('cannot be read through release_diff');
+    expect(alone.truncationHint).not.toContain("include: ['pages']");
+  });
+
   it('sections that do not fit resume through the section window, named in the hint', () => {
     const out = run(bigPage(20, 'w'.repeat(Math.floor(DEFAULT_BUDGET_CHARS / 8))), { singlePath: true });
     const [p] = out.pages as MCPPageDelta[];

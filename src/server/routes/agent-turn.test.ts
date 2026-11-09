@@ -4536,7 +4536,12 @@ describe('runAgentTurn — plugin tool classes in an ask thread (2.1.78)', () =>
   const shape = { slug: z.string().optional() };
   type Tools = NonNullable<Parameters<typeof createMcpServer>[0]['tools']>;
 
-  async function askTurnWith(tools: Tools, layer: 'base' | 'overlay') {
+  async function askTurnWith(
+    tools: Tools,
+    layer: 'base' | 'overlay',
+    opts: { serverName?: string; contextType?: string; planMode?: boolean } = {},
+  ) {
+    const serverName = opts.serverName ?? 'sheet-tools';
     hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
     const { deps } = makeDeps();
     const host = deps.pluginHost as unknown as {
@@ -4545,23 +4550,84 @@ describe('runAgentTurn — plugin tool classes in an ask thread (2.1.78)', () =>
     };
     // The plugin server, built fresh per call like the real host's factory.
     host.buildMcpServers = (o) =>
-      [{ name: 'sheet-tools', server: createMcpServer({ name: 'sheet-tools', tools }) }].filter(
+      [{ name: serverName, server: createMcpServer({ name: serverName, tools }) }].filter(
         ({ name }) => !o?.include || o.include(name),
       );
-    // The layer the project host records at `mountBackend`.
-    host.pluginServerLayers = () => new Map([['sheet-tools', layer]]);
+    // The layer the project host records at `mountBackend` — for EVERY server an
+    // envelope registered while mounting, whatever its name. No active entity
+    // type names it: it is a plugin server by provenance, not by `${type}-tools`.
+    host.pluginServerLayers = () => new Map([[serverName, layer]]);
     (deps as unknown as { listWorkspaceProjects: () => unknown }).listWorkspaceProjects = () => ({ projects: [] });
     const input = makeInput();
-    (input.thread as unknown as { contextType: string }).contextType = 'ask';
+    (input.thread as unknown as { contextType: string }).contextType = opts.contextType ?? 'ask';
+    (input.thread as unknown as { planMode: boolean }).planMode = opts.planMode ?? false;
     await runAgentTurn(deps, input);
     const servers = (hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>;
     const prompt = String(hoisted.lastExecute?.systemPrompt);
-    const line = /<mcp name="sheet-tools">([^<]*)<\/mcp>/.exec(prompt);
+    const line = new RegExp(`<mcp name="${serverName}">([^<]*)</mcp>`).exec(prompt);
+    const doNotCall = /Do not call: ([^\n]*)/.exec(prompt)?.[1] ?? '';
     return {
       mounted: Object.keys(servers),
       tools: line ? line[1]!.split(',').map((t) => t.trim()) : [],
+      doNotCall: doNotCall.split(',').map((t) => t.trim()),
+      prompt,
     };
   }
+
+  it('[ac:ac-w-watku-context-type-ask-narzedzie-se-5] a tool of a plugin server registered under a name other than ${type}-tools, without operationClass, is not available to the agent (2.1.79)', async () => {
+    // `acme-insights` is no `${type}-tools`: an escape-hatch `registerMcpServer`.
+    const out = await askTurnWith(
+      [
+        mcpTool('peek_insights', 'Declared read.', shape, handler, undefined, 'read'),
+        mcpTool('poke_insights', 'Undeclared.', shape, handler),
+      ],
+      'base',
+      { serverName: 'acme-insights' },
+    );
+    expect(out.mounted).toContain('acme-insights');
+    expect(out.tools).toEqual(['peek_insights']);
+    const only = await askTurnWith([mcpTool('poke_insights', 'Undeclared.', shape, handler)], 'base', { serverName: 'acme-insights' });
+    expect(only.mounted).not.toContain('acme-insights');
+  });
+
+  it('[ac:ac-w-watku-context-type-ask-narzedzie-en] a plugin tool without operationClass whose operation has a spec-operation record with no write effects is not available to the agent (2.1.79)', async () => {
+    // `release_list` has a host `spec-operation` record (effects: none, class
+    // `read`). On a PLUGIN server the record is not an input: undeclared → write.
+    const out = await askTurnWith(
+      [
+        mcpTool('read_cells', 'Declared read.', shape, handler, undefined, 'read'),
+        mcpTool('release_list', 'Plugin tool under a recorded read name.', shape, handler),
+      ],
+      'base',
+      { serverName: 'acme-insights' },
+    );
+    expect(out.tools).toEqual(['read_cells']);
+  });
+
+  it('[ac:ac-w-turze-prowadzonej-w-trybie-planowan] in a plan-mode turn a plugin server tool without operationClass is on the "Do not call" list of <claude4spec_plan_mode> (2.1.79)', async () => {
+    const out = await askTurnWith(
+      [
+        mcpTool('read_cells', 'Declared read.', shape, handler, undefined, 'read'),
+        mcpTool('poke_cells', 'Undeclared.', shape, handler),
+        mcpTool('release_list', 'Plugin tool under a recorded read name.', shape, handler),
+      ],
+      'base',
+      { serverName: 'acme-insights', contextType: 'chat', planMode: true },
+    );
+    expect(out.prompt).toContain('<claude4spec_plan_mode>');
+    // Classified by the gate's own rule: undeclared plugin tools are mutating,
+    // the declared read is not — the same answer the gate gives.
+    expect(out.doNotCall).toContain('poke_cells');
+    expect(out.doNotCall).toContain('release_list');
+    expect(out.doNotCall).not.toContain('read_cells');
+    // An overlay's declaration does not count either.
+    const overlay = await askTurnWith(
+      [mcpTool('read_cells', 'Declared read.', shape, handler, undefined, 'read')],
+      'overlay',
+      { serverName: 'acme-insights', contextType: 'chat', planMode: true },
+    );
+    expect(overlay.doNotCall).toContain('read_cells');
+  });
 
   it('[ac:ac-w-watku-context-type-ask-narzedzie-se] a base-envelope plugin tool declared operationClass: read is available to the agent', async () => {
     const out = await askTurnWith([mcpTool('read_cells', 'Read cells.', shape, handler, undefined, 'read')], 'base');

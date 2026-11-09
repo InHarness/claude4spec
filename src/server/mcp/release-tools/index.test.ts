@@ -476,6 +476,57 @@ describe('release_diff — the floor of the section ladder (2.1.78)', () => {
   });
 });
 
+describe('release_diff — a section cut by a budget shared with entity rows (2.1.79)', () => {
+  it('[ac:ac-release-diff-z-include-obu-wymiarow-i] MCP release_diff (internal rendering): both dimensions, sectionLimit 1, cut by the shared budget → the hint names the tool parameters for the SAME sectionOffset and include: [\'pages\']', async () => {
+    const big: FileDiff = {
+      // `rootId` is `pages`; the path is relative to it.
+      ...emptyPage('big.md', 'modified'),
+      added_sections: [
+        { kind: 'section', anchor: 's0000000', heading: 'S0', level: 2, parent: null, headingPath: [], content: 'q'.repeat(Math.floor(DEFAULT_BUDGET_CHARS * 0.7)) },
+        { kind: 'section', anchor: 's0000001', heading: 'S1', level: 2, parent: null, headingPath: [], content: 'small' },
+      ] as unknown as FileDiff['added_sections'],
+    };
+    const withEntity = (name: string): SpecSnapshot => ({
+      ...V1_SNAPSHOT,
+      release: release(name === 'v1' ? 1 : 2, name),
+      entities: [{ type: 'endpoint', slug: 'e1', op: 'update', data: { name, blob: 'z'.repeat(Math.floor(DEFAULT_BUDGET_CHARS / 4)) } }],
+    });
+    const releaseService = {
+      getReleaseDiff: async () => ({
+        from: { id: 1, name: 'v1' },
+        to: { id: 2, name: 'v2' },
+        entities: [{ type: 'endpoint', slug: 'e1', op: 'updated', changes: [] }],
+        pages: [big],
+      }),
+      resolveReleaseId: (name: string) => name,
+      getReleaseSnapshot: (name: string) => withEntity(name),
+      getCurrentSnapshot: () => CURRENT_SNAPSHOT,
+    } as unknown as ReleaseService;
+    const server = createReleaseToolsServer({
+      releaseService,
+      gitService: {} as GitService,
+      ws: { broadcast: () => {} } as unknown as WsEmitter,
+      roots: () => ROOTS,
+    });
+    const tool = server.tools.find((t) => t.name === 'release_diff')!;
+    const res = (await tool.handler(
+      { fromReleaseName: 'v1', toReleaseName: 'v2', paths: ['pages/big.md'], sectionOffset: 0, sectionLimit: 1 },
+      {} as never,
+    )) as { isError?: boolean; content: Array<{ text: string }> };
+    expect(res.isError).toBeFalsy();
+    const body = JSON.parse(res.content[0]!.text) as {
+      entities: unknown[];
+      pages: Array<{ sections: Array<{ truncated?: boolean }> }>;
+      truncationHint?: string;
+    };
+    expect(body.entities.length).toBeGreaterThan(0);
+    expect(body.pages[0]!.sections[0]!.truncated).toBe(true);
+    expect(body.truncationHint).toContain("paths: ['pages/big.md'], sectionOffset: 0, sectionLimit: 1, include: ['pages']");
+    expect(body.truncationHint).not.toContain('sectionOffset: 1');
+    expect(body.truncationHint).not.toContain('cannot be read');
+  });
+});
+
 describe('release_diff — the section window (2.1.5)', () => {
   it.each([
     ['no paths', { sectionOffset: 0 }],
