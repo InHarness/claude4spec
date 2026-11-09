@@ -518,9 +518,11 @@ export const M48_PROMPT_BLOCKS: readonly PromptBlock[] = [
     },
   },
   { name: 'tooling', render: (c) => buildTooling(c.mcpInventory, c.agentFilesystemAccess?.enabled ?? false) },
-  { name: 'entity_embeds', render: (c) => buildEntityEmbeds(c.host) },
+  // 2.1.77 (M19 `wjjr1oc0`): not emitted without the capability `entities`.
+  { name: 'entity_embeds', render: (c) => (c.entities === false ? null : buildEntityEmbeds(c.host)) },
   { name: 'discovery_and_impact', render: () => buildDiscoveryAndImpact() },
-  { name: 'tags', render: () => buildTags() },
+  // 2.1.77 (M18 `rxlzqki1`): the `<tags>` block inherits M18's requirement `entities`.
+  { name: 'tags', render: (c) => (c.entities === false ? null : buildTags()) },
   { name: 'todo_markers', render: () => TODO_MARKERS },
   { name: 'sections_and_anchors', render: () => SECTIONS_AND_ANCHORS },
   { name: 'claude4spec_plan_mode', render: (c) => (c.planMode ? buildPlanMode(c.mcpInventory) : null) },

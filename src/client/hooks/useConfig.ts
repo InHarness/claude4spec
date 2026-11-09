@@ -5,6 +5,7 @@ import { PROJECT_ID } from '../lib/api-core.js';
 import type { Root } from '../../shared/types.js';
 import type { ElementsMenuEntry } from '../../shared/elements-menu.js';
 import { recordRootRename } from '../state/rootRenames.js';
+import { setEditorEntitiesCapability } from '../tiptap/contextSpec.js';
 
 /**
  * M31: fields that rebuild the project context server-side (the PATCH handler
@@ -23,7 +24,13 @@ const CONTEXT_DEFINING_FIELDS = [
 export function useConfig() {
   return useQuery({
     queryKey: ['config'],
-    queryFn: () => configApi.get(),
+    queryFn: async () => {
+      const config = await configApi.get();
+      // 2.1.77 (M20 `gv6us4lf`): the editor contexts follow the project's
+      // capability `entities` (absent list = an older server = present).
+      setEditorEntitiesCapability(!config.capabilities || config.capabilities.includes('entities'));
+      return config;
+    },
     // The project shell is the reader; a workspace document (PROJECT_ID='',
     // M50 `1bd92aq2`) mounts the workspace frame instead. The window hosts sit
     // beside BOTH frames, though, so a window reading the config there must not

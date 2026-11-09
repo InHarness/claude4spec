@@ -170,7 +170,7 @@ export function createDiscoveryCore(deps: DiscoveryDeps): DiscoveryCore {
     describeTypes: (input) => describeTypes(deps, input),
     listPages: (input) => listPages(deps.db, pages, roots, input),
     getPageOutline: (input) => getPageOutline(deps.db, pages, roots, input),
-    getSections: (input) => getSections(deps.db, pages, roots, deps.reader, input),
+    getSections: (input) => getSections(deps.db, pages, roots, deps.reader, input, { entities: deps.entities }),
     getPage: (input) => getPage(pages, roots, input),
     searchPages: (input) => searchPages(deps.db, pages, roots, input, deps.searchBudgetMs),
     searchEntities: (input) => searchEntities(deps, input),

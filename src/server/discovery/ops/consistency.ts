@@ -110,6 +110,21 @@ const RULES: Record<string, RuleDef> = {
   'unclosed-code-block': { id: 16, bucket: 'unclosedCodeBlocks' },
 };
 
+/**
+ * 2.1.77 (M19 `wjjr1oc0`) — the buckets of the rules that need the capability
+ * `entities` (1–6, 9–12, 14): references to entities, tags and criteria.
+ */
+const ENTITY_RULE_BUCKETS = [
+  'brokenReferences',
+  'orphanedEntityTags',
+  'unreferencedEntities',
+  'invalidTagReferences',
+  'brokenAcVerifies',
+  'entitiesWithoutAcCoverage',
+  'modulesWithoutAc',
+  'tagsWithoutConsumer',
+] as const;
+
 /** Buckets whose every row is an error, regardless of configuration. */
 const ERROR_BUCKETS = new Set([
   'brokenReferences',
@@ -602,6 +617,20 @@ export async function checkConsistency(
     tagsWithoutConsumer,
   };
 
+  /**
+   * 2.1.77 (M19 L19 `wjjr1oc0`): without the capability `entities` only the
+   * anchor, section and code-range rules run — 7, 8, 13, 15 and 16. The entity,
+   * tag and criteria rules (1–6, 9–12, 14) are skipped without an error and the
+   * report has no fields of theirs, as with an inactive criteria package.
+   */
+  const withEntities = deps.entities !== false;
+  if (!withEntities) {
+    for (const name of ENTITY_RULE_BUCKETS) {
+      buckets[name]!.length = 0;
+      delete buckets[name];
+    }
+  }
+
   // Counts are taken BEFORE any filter or cut, so `summary` describes the
   // project rather than the slice of it that survived the arguments.
   const acErrors =
@@ -652,6 +681,11 @@ export async function checkConsistency(
    * `rule` and `severity` are filters, not cuts, and deliberately do NOT set the
    * flag — a caller that asked for errors only got exactly what it asked for.
    */
+  if (!withEntities) {
+    delete report.brokenReferenceCounts;
+    delete report.brokenAcVerifyCounts;
+  }
+
   let truncated = false;
   for (const [name, rows] of Object.entries(buckets)) {
     const selecting = wanted?.filter((def) => def.bucket === name);

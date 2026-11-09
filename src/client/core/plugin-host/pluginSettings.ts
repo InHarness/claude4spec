@@ -31,6 +31,9 @@ export const PLUGIN_HOST_SETTINGS: SettingsContribution = {
       weight: 50,
       owner: 'entity-framework',
       scope: 'project',
+      // 2.1.77 (M13 `4ckqwi8t`): `Wymaga możliwości` = `entities` — the card with
+      // both its elements is gone in a project without the capability.
+      requires: ['entities'],
     },
     {
       anchor: 'plugin-pool',
@@ -53,6 +56,7 @@ export const PLUGIN_HOST_SETTINGS: SettingsContribution = {
       weight: 10,
       kind: 'multiselect',
       owner: 'entity-framework',
+      requires: ['entities'],
       configKey: ['entities'],
       label: 'Entity types',
       // No key in the file = every type active.
@@ -84,6 +88,7 @@ export const PLUGIN_HOST_SETTINGS: SettingsContribution = {
       weight: 20,
       kind: 'custom',
       owner: 'entity-framework',
+      requires: ['entities'],
       keys: [ELEMENTS_MENU_KEY],
       label: 'Sidebar menu',
       help: SIDEBAR_MENU_HELP,

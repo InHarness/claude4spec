@@ -29,7 +29,7 @@ import { usePages, usePagesSearch, useSidebarAccordions } from '../hooks/usePage
 import { accordionCollapseToken, subtreeOf } from '../lib/sidebar-accordions.js';
 import { useMovePage } from '../hooks/usePage.js';
 import { api } from '../lib/api.js';
-import { useElementsMenuLayout, useRoots } from '../hooks/useConfig.js';
+import { useConfig, useElementsMenuLayout, useRoots } from '../hooks/useConfig.js';
 import { useNewPageAction } from '../hooks/useNewPage.js';
 import { usePersistedState, projectKey } from '../state/persisted.js';
 import { UserSection } from './UserSection.js';
@@ -954,14 +954,23 @@ function PageRow({
  * Releases → TODOs → Tags → Links → Briefs. An item is active when the route is
  * its own (or below it).
  */
-const OTHERS_ITEMS: ReadonlyArray<{ to: string; icon: LucideIcon; label: string }> = [
+const OTHERS_ITEMS: ReadonlyArray<{ to: string; icon: LucideIcon; label: string; requires?: readonly string[] }> = [
   { to: '/plans', icon: ClipboardList, label: 'Plans' },
   { to: '/releases', icon: GitCommit, label: 'Releases' },
   { to: '/todos', icon: StickyNote, label: 'TODOs' },
-  { to: '/tags', icon: Tag, label: 'Tags' },
+  // 2.1.77 (M18 `rxlzqki1`): the "Tags" item inherits M18's requirement `entities`.
+  { to: '/tags', icon: Tag, label: 'Tags', requires: ['entities'] },
   { to: '/links', icon: Link2, label: 'Links' },
   { to: '/briefs', icon: FileText, label: 'Briefs' },
 ];
+
+/**
+ * 2.1.77 — the OTHERS items whose required capabilities the project has.
+ * `capabilities` absent (config not read yet, or an older server) = every item.
+ */
+export function othersItemsFor(capabilities: readonly string[] | undefined) {
+  return OTHERS_ITEMS.filter((item) => !capabilities || !item.requires || item.requires.every((c) => capabilities.includes(c)));
+}
 
 const isOnRoute = (pathname: string, to: string) => pathname === to || pathname.startsWith(`${to}/`);
 
@@ -980,6 +989,8 @@ function OthersMenu({
   linkIssueCount: number;
   brokenLinkCount: number;
 }) {
+  const { data: config } = useConfig();
+  const capabilities = config?.capabilities;
   const extras: Record<string, ReactNode> = {
     '/todos': todoCount > 0 ? <AmberBadge count={todoCount} /> : null,
     '/links': (
@@ -989,7 +1000,7 @@ function OthersMenu({
       </>
     ),
   };
-  const items = OTHERS_ITEMS.map((item) => ({
+  const items = othersItemsFor(capabilities).map((item) => ({
     ...item,
     active: isOnRoute(pathname, item.to),
     extra: extras[item.to],

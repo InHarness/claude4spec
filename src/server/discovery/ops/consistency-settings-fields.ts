@@ -8,6 +8,8 @@ import type { FieldDeclaration } from '../../settings/field-registry.js';
 const severity = (key: string): FieldDeclaration => ({
   key,
   owner: 'consistency',
+  // 2.1.77 (M19 `6tdzzl38`): `Wymaga możliwości` = `entities`.
+  requires: ['entities'],
   type: { enum: ['off', 'warn', 'error'] },
   default: 'off',
   effect: 'per-operation',

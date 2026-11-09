@@ -15,6 +15,8 @@ export function entitySettingsFields(knownEntityTypes?: () => string[]): FieldDe
     {
       key: 'entities',
       owner: 'entity-framework',
+      // 2.1.77 (M13 `o4ju2d7m`): `Wymaga możliwości` = `entities`.
+      requires: ['entities'],
       type: 'string[]',
       default: undefined,
       validate: (value) => {
@@ -37,6 +39,7 @@ export function entitySettingsFields(knownEntityTypes?: () => string[]): FieldDe
       // array only; `null` is how the card's [Save] removes the key.
       key: 'elementsMenu',
       owner: 'entity-framework',
+      requires: ['entities'],
       type: 'object',
       default: undefined,
       validate: (value) => {

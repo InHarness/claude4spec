@@ -548,8 +548,14 @@ async function buildInner(
   // skills only on the trusted path (see `fanPluginSkills`).
   fanPluginSkills(skillRegistry, deps.pluginRegistry, overlayResult);
 
+  // 2.1.77 (M13 L19 `pmm7cm4c`, M31 m31ctx001): without the capability
+  // `entities` the set of active types is EMPTY without reading the key — no
+  // type of the effective pool is active, whatever `config.entities` says.
+  // Non-entity envelope contributions (commands, subagents, skills, writing
+  // styles) are not part of a type and stay (`m13plset`).
+  const hasEntities = capabilities.has(ENTITIES);
   const pluginHost: ProjectPluginHost = deps.pluginRegistry.consolidate(
-    { entities: bootConfig.entities },
+    { entities: hasEntities ? bootConfig.entities : [] },
     overlay,
   );
   // 2.1.12 (M31 L10): the context's MCP servers live exactly as long as this
@@ -784,7 +790,8 @@ async function buildInner(
    * it (a failed recompute) or is driven by it (the manual rebuild button), and
    * the discovery core's read gate reads it on every gated call.
    */
-  const projectionStatus = new ProjectionStatusRegistry(ws);
+  // 2.1.77 (M26 `e6k3f793`): no entity projection row without `entities`.
+  const projectionStatus = new ProjectionStatusRegistry(ws, { entities: hasEntities });
   /**
    * 0.2.77 — the live half of the marking, from M40's report to the owner's decision.
    *
@@ -914,7 +921,7 @@ async function buildInner(
     ),
   );
 
-  const sectionIndexer = new SectionIndexerService(db.handle, sectionIndexedRoots, ws, pluginHost);
+  const sectionIndexer = new SectionIndexerService(db.handle, sectionIndexedRoots, ws, pluginHost, { entities: hasEntities });
   const todosIndexer = new TodosIndexerService(todosRoots, ws);
   // 2.1.8: the link index covers every root selecting `m14-link-indexer` (today
   // every `pages` root) and resolves `@path.md` across all of them — source root,
@@ -1131,6 +1138,7 @@ async function buildInner(
       discovery,
       ws,
       entityStore,
+      entities: hasEntities,
     }),
   );
 
@@ -1228,6 +1236,7 @@ async function buildInner(
     packageVersion: readPackageVersion(),
     projectionStatus,
     sections: sectionsService,
+    entities: hasEntities,
   });
   discoveryCore = discovery;
   /**
@@ -1258,9 +1267,12 @@ async function buildInner(
       // Re-pointing the base root does not narrow the fail-closed rule.
       projectionStatus,
       sections: sectionsService,
+      entities: hasEntities,
     });
   };
-  pluginHost.registerMcpServer('entity-tools', () =>
+  // M13 `pmm7cm4c`: without `entities` the generic `entity-tools` server is not
+  // registered, so the turn's factory pool has neither it nor `${type}-tools`.
+  if (hasEntities) pluginHost.registerMcpServer('entity-tools', () =>
     createEntityToolsServer({
       host: pluginHost,
       reader: rawReader,
@@ -1307,6 +1319,8 @@ async function buildInner(
   );
   // M29: release restore must persist restored entities' files.
   releaseService.setEntityStore(entityStore);
+  // 2.1.77 (M17 `tutwwt5x`, M56 `heqel0ut`): the entity axis of releases follows the capability.
+  releaseService.setEntitiesCapability(hasEntities);
   // 0.1.118: release create/update writes the on-disk identity file.
   releaseService.setReleaseStore(releaseFileStore);
   // M17 m17reldiff: the git-anchored diff's pathspecs = release-flag roots + `releases`.
@@ -1543,9 +1557,15 @@ async function buildInner(
   router.use('/static/:rootId', staticRouter(resolveStatic, () => [...rootById.keys()]));
   // 2.1.9 — the sidebar's accordion array of every root; no `:rootId` segment.
   router.use('/sidebar-accordions', sidebarAccordionsRouter(sidebarAccordions));
-  router.use('/tags', tagsRouter(tagsService, referencesService, discovery, ws));
-  router.use('/references', referencesRouter(pluginHost, referencesService, discovery, discoveryForRoots));
-  router.use('/entities', entitiesRouter(pluginHost, tagsService, versionService, entityStore, rawReader, discovery, ws));
+  // 2.1.77 (M13 `pmm7cm4c`, M18 `rxlzqki1`, M19 `wjjr1oc0`): the modules that
+  // require `entities` are not mounted without it — every route under
+  // `/entities` (counts and type introspection included), `/tags` and
+  // `/references` answers like a route that does not exist (404).
+  if (hasEntities) {
+    router.use('/tags', tagsRouter(tagsService, referencesService, discovery, ws));
+    router.use('/references', referencesRouter(pluginHost, referencesService, discovery, discoveryForRoots));
+    router.use('/entities', entitiesRouter(pluginHost, tagsService, versionService, entityStore, rawReader, discovery, ws));
+  }
 
   /**
    * Host API 2.0.0 (item 31) — `/api/{type}s` for every type that declares its
@@ -1706,6 +1726,7 @@ async function buildInner(
     skillRegistry,
     // 2.1.9 (M52): read per turn — the hit-translation line of `<available_skills>`.
     skillsRootHasFiles: () => projectRootedSkills?.hasAnyFile() ?? false,
+    hasEntities,
     ws,
     cwd,
     roots: effectiveRoots,

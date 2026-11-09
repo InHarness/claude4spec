@@ -51,7 +51,7 @@
         "u08-zakladanie-projektu-i-lista-workspace",
         "u09-powloka-wedlug-typu"
       ],
-      "startCommit": null
+      "startCommit": "0d0f32960a4f04ac14c2bf21f420e44266b4f835"
     },
     {
       "n": 4,
@@ -1406,13 +1406,44 @@
         }
       ],
       "wave": 3,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u03-bramkowanie-encji/p1-l5-l19",
+          "layers": [
+            "L5",
+            "L17",
+            "L19"
+          ],
+          "slugs": [
+            "ac-get-api-config-w-projekcie-bez-mozliw",
+            "ac-karta-index-status-w-projekcie-bez-mo",
+            "ac-klucz-config-json-nalezacy-do-mozliwo",
+            "ac-pas-awarii-w-projekcie-bez-mozliwosci",
+            "ac-patch-api-config-z-kluczem-mozliwosci",
+            "ac-strona-ustawien-projektu-nie-renderuj",
+            "ac-w-projekcie-typu-skill-delta-release",
+            "ac-w-projekcie-typu-skill-licznik-niezre",
+            "ac-w-projekcie-typu-skill-przywrocenie-c",
+            "ac-w-projekcie-typu-skill-zwrot-utworzen",
+            "m31-context-builds-only-satisfied-modules",
+            "m06-requires-m13",
+            "m17-requires-m13",
+            "m26-requires-m13",
+            "m56-requires-m13"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "0d0f32960a4f04ac14c2bf21f420e44266b4f835",
+      "baseCommit": "0d0f32960a4f04ac14c2bf21f420e44266b4f835",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },

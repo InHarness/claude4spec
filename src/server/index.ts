@@ -24,6 +24,7 @@ import { resolveSpaRoute, spaDocument, type SpaResolution } from './workspace/sp
 import { PluginRegistryImpl } from './core/plugin-host/registry.js';
 import { hostCapabilityRegistry } from './project-types/capabilities.js';
 import { hostProjectTypeRegistry } from './project-types/registry.js';
+import { installInactiveConfigKeys } from './settings/inactive-config-keys.js';
 import { logRefRegistrationWarnings, refRegistrationWarnings } from './core/plugin-host/ref-warnings.js';
 import { loadBuiltinEnvelopes, loadWorkspacePlugins } from './core/plugin-host/loader.js';
 import { reloadBasePackages } from './core/plugin-host/base-reload.js';
@@ -246,6 +247,9 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // entries of M58/M59/M60, each validated against the capability registry and
   // the settings layer. A faulty entry throws `PROJECT_TYPE_REGISTRY_INVALID`.
   const projectTypes = hostProjectTypeRegistry();
+  // 2.1.77 (M26 `hozcm4w5`): the type first, then the keys — config.json reads
+  // skip, and writes keep untouched, the keys of a capability the type lacks.
+  installInactiveConfigKeys();
   const liveWorkspace = () => {
     const ws = registry.getWorkspace(workspace.name) ?? workspace;
     // The port actually bound wins over the stored default (`port: 0` binds an ephemeral one).

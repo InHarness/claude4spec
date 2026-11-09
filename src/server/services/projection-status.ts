@@ -99,8 +99,20 @@ export class ProjectionStatusRegistry {
   /** Monotonic; every marking is stamped with it. Never reset. */
   private seq = 0;
 
-  constructor(private readonly ws?: WsEmitter) {
-    for (const def of DEFS) {
+  /**
+   * 2.1.77 (M26 L19 `e6k3f793`): the projections this project has. Without the
+   * capability `entities` the entity projection (entity tables & tag registry)
+   * does not exist — the card keeps only the rows of a project without
+   * entities, and the collective rebuild rebuilds only them.
+   */
+  private readonly defs: readonly ProjectionDef[];
+
+  constructor(
+    private readonly ws?: WsEmitter,
+    opts: { entities?: boolean } = {},
+  ) {
+    this.defs = opts.entities === false ? DEFS.filter((d) => d.id !== PROJECTION_IDS.entities) : DEFS;
+    for (const def of this.defs) {
       // `not_materialized` is the honest starting state: at construction time no
       // `indexAll()` has run yet. Boot flips each one to `fresh` as it succeeds.
       this.entries.set(def.id, {
@@ -277,7 +289,7 @@ export class ProjectionStatusRegistry {
 
   /** One row per projection — the diagnostic route's whole answer. */
   snapshot(): ProjectionStatusRow[] {
-    return DEFS.map((def) => {
+    return this.defs.map((def) => {
       const e = this.entries.get(def.id)!;
       const scope = this.scopeOf(e);
       return {
@@ -330,7 +342,7 @@ export class ProjectionStatusRegistry {
   /** Rebuild everything. Failures are collected, not swallowed — and not fatal to the rest. */
   async rebuildAll(): Promise<{ id: ProjectionId; error?: string }[]> {
     const out: { id: ProjectionId; error?: string }[] = [];
-    for (const def of DEFS) {
+    for (const def of this.defs) {
       if (!this.entries.get(def.id)?.rebuild) continue;
       try {
         await this.rebuild(def.id);
@@ -343,7 +355,7 @@ export class ProjectionStatusRegistry {
   }
 
   ids(): ProjectionId[] {
-    return DEFS.map((d) => d.id);
+    return this.defs.map((d) => d.id);
   }
 
   private scopeOf(e: Entry): ProjectionScope | undefined {

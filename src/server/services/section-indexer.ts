@@ -93,6 +93,13 @@ export class SectionIndexerService implements WatchSubscriber {
     private roots: Map<string, SectionIndexRoot>,
     private ws: WsEmitter,
     private host: ProjectPluginHost,
+    /**
+     * 2.1.77 (M06 L19 `7t2i8glz`): without the capability `entities` step 8
+     * writes no edge and `section_entity_link` stays empty — the entity tags
+     * are not registered and are plain text in the page. The section index,
+     * anchors and `section_ref` work unchanged. Absent ⇒ entities present.
+     */
+    private opts: { entities?: boolean } = {},
   ) {}
 
   private key(rootId: string, relPath: string): string {
@@ -514,8 +521,10 @@ export class SectionIndexerService implements WatchSubscriber {
         // non-content ranges the rest of the server sees for this file (a
         // fence or comment is never re-judged from inside a slice of it);
         // each tag then belongs to the section whose own-body lines hold it.
-        const pageTags = parseXmlTags(body);
-        for (const s of ownedSections) {
+        // 2.1.77 (M06 `7t2i8glz`): no auto-link without `entities` — the
+        // delete above still clears any edge a previous build left.
+        const pageTags = this.opts.entities === false ? [] : parseXmlTags(body);
+        for (const s of this.opts.entities === false ? [] : ownedSections) {
           const xmlTags = pageTags.filter((t) => t.line > s.heading.headingLine && t.line <= s.lineEnd);
           const seen = new Set<string>();
           const link = (type: string, slug: string) => {

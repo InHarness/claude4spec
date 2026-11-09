@@ -115,7 +115,12 @@ export interface PluginTestApp {
  */
 export async function createPluginTestApp(
   manifests: PluginManifest[],
-  opts: { fsEvents?: boolean } = {},
+  /**
+   * `projectType` — 2.1.77: the type of the harness project, given on the
+   * new-project path (absent = `spec`), so a suite can build the context of a
+   * type without some capability.
+   */
+  opts: { fsEvents?: boolean; projectType?: string } = {},
 ): Promise<PluginTestApp> {
   installPluginRuntimeResolver();
 
@@ -155,7 +160,7 @@ export async function createPluginTestApp(
     const registry = new WorkspaceRegistry(path.join(tmp, 'home'));
     let workspace = registry.selectOrCreate({ name: HARNESS_WORKSPACE });
     const cwd = path.join(tmp, 'project');
-    const { project } = bootstrapProject(registry, workspace, cwd);
+    const { project } = bootstrapProject(registry, workspace, cwd, undefined, opts.projectType);
     workspace = registry.getWorkspace(HARNESS_WORKSPACE) ?? workspace;
 
     // Captured broadcasts: the project's room (services, routes, the crud door)

@@ -1080,22 +1080,86 @@ export function readConfig(cwd: string): NormalizedConfig {
 }
 
 /**
+ * 2.1.77 (M26 `hozcm4w5`, L17 `Wymaga możliwości`) — the file paths of the keys
+ * whose required capability a project of the given type lacks. Installed at
+ * process start by the settings layer (`installInactiveConfigKeys`), because
+ * the declarants live there and import this module; until then (and for a type
+ * the registry does not know) no key is inactive.
+ */
+export type InactiveConfigPaths = (projectType: string) => readonly (readonly string[])[];
+let inactiveConfigPaths: InactiveConfigPaths = () => [];
+export function setInactiveConfigPaths(resolve: InactiveConfigPaths): void {
+  inactiveConfigPaths = resolve;
+}
+
+/** The type the file declares (no key = `spec`) — settled before any key is read. */
+function fileProjectType(parsed: unknown): string {
+  const t = (parsed as Record<string, unknown> | null)?.projectType;
+  return typeof t === 'string' ? t : DEFAULT_PROJECT_TYPE;
+}
+
+function inactivePathsOf(parsed: unknown): readonly (readonly string[])[] {
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return [];
+  return inactiveConfigPaths(fileProjectType(parsed));
+}
+
+function hasRawPath(obj: unknown, segs: readonly string[]): boolean {
+  let cur = obj;
+  for (const seg of segs) {
+    if (cur === null || typeof cur !== 'object' || Array.isArray(cur) || !(seg in (cur as object))) return false;
+    cur = (cur as Record<string, unknown>)[seg];
+  }
+  return true;
+}
+
+function getRawPath(obj: unknown, segs: readonly string[]): unknown {
+  let cur = obj;
+  for (const seg of segs) cur = (cur as Record<string, unknown>)[seg];
+  return cur;
+}
+
+/** A copy of the parsed file without its inactive keys (an emptied container goes too). */
+function withoutInactiveKeys(parsed: unknown): unknown {
+  const paths = inactivePathsOf(parsed).filter((segs) => hasRawPath(parsed, segs));
+  if (paths.length === 0) return parsed;
+  const copy = structuredClone(parsed) as Record<string, unknown>;
+  for (const segs of paths) {
+    const parents: Record<string, unknown>[] = [copy];
+    for (const seg of segs.slice(0, -1)) parents.push(parents[parents.length - 1]![seg] as Record<string, unknown>);
+    delete parents[parents.length - 1]![segs[segs.length - 1]!];
+    for (let i = parents.length - 1; i > 0; i--) {
+      if (Object.keys(parents[i]!).length > 0) break;
+      delete parents[i - 1]![segs[i - 1]!];
+    }
+  }
+  return copy;
+}
+
+/** The file as parsed JSON; `undefined` = no config.json. Throws on malformed JSON. */
+function readRawFile(cwd: string): unknown {
+  const file = configPath(cwd);
+  if (!fs.existsSync(file)) return undefined;
+  const text = fs.readFileSync(file, 'utf8');
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw new Error(`config.json: invalid JSON — ${(err as Error).message}`);
+  }
+}
+
+/**
  * Disk read + type validation + in-memory schema forward-compat, with NO
  * defaults applied. `null` = no config.json. Shared by `readConfig` (which
  * normalizes on top), `loadOrCreateConfig` and `writeConfig` (which merges a
  * patch into the file's own keys, so persisted configs stay minimal).
  */
 function readValidatedFile(cwd: string): Partial<Config> | null {
-  const file = configPath(cwd);
-  if (!fs.existsSync(file)) return null;
-  const text = fs.readFileSync(file, 'utf8');
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (err) {
-    throw new Error(`config.json: invalid JSON — ${(err as Error).message}`);
-  }
-  const loaded = validate(parsed);
+  const parsed = readRawFile(cwd);
+  if (parsed === undefined) return null;
+  // 2.1.77 (M26 `hozcm4w5`): the type first, then the keys — a key of a
+  // capability the project's type lacks is skipped by the normalizer (never
+  // validated, never in the normalized view); the file keeps it.
+  const loaded = validate(withoutInactiveKeys(parsed));
   warnLegacyDirKeys(cwd, parsed as Record<string, unknown>);
   // Auto-bump older schemas in memory (v1→v2: `entities` undefined = all
   // plugins active; v2→v3: stale port/mode ignored; v3→v4: legacy pagesDir →
@@ -1400,6 +1464,20 @@ export function writeConfig(cwd: string, partial: Partial<Config>, remove: reado
     merged.skill = { ...current.skill, ...validated.skill };
   }
   for (const key of remove) delete merged[key];
+  // 2.1.77 (M26 `hozcm4w5`): a key of a capability the project lacks stays in
+  // the file untouched — its value is copied back from the file as written,
+  // never through the normalizer (which skipped it) nor from the patch.
+  const raw = readRawFile(cwd);
+  for (const segs of inactivePathsOf(raw)) {
+    if (!hasRawPath(raw, segs)) continue;
+    let cur = merged as Record<string, unknown>;
+    for (const seg of segs.slice(0, -1)) {
+      const next = cur[seg];
+      cur[seg] = next !== null && typeof next === 'object' && !Array.isArray(next) ? { ...(next as object) } : {};
+      cur = cur[seg] as Record<string, unknown>;
+    }
+    cur[segs[segs.length - 1]!] = structuredClone(getRawPath(raw, segs));
+  }
   atomicWrite(file, JSON.stringify(merged, null, 2) + '\n');
   // Return the NORMALIZED view of what was just persisted — callers read
   // `updated.git.enabled` & co. directly (no `??` at the point of use).

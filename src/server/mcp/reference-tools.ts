@@ -53,6 +53,13 @@ export interface ReferenceToolsDeps {
   ws: WsEmitter;
   /** M29: persist an entity file after a tag_entity/untag_entity mutation. */
   entityStore: EntityStore;
+  /**
+   * 2.1.77 (M19 `wjjr1oc0`, M18 `rxlzqki1`): whether the project has the
+   * capability `entities`. `false` ⇒ `find_references` has no rendering here
+   * and the tag tools (M18) are absent — the server keeps the page reads and
+   * `check_consistency`. Absent ⇒ entities present.
+   */
+  entities?: boolean;
 }
 
 export function createReferenceToolsServer(deps: ReferenceToolsDeps): CapturedMcpServer {
@@ -480,13 +487,9 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): CapturedMc
   return createMcpServer({
     name: 'reference-tools',
     tools: [
-      createTag,
-      updateTag,
-      deleteTag,
-      listTags,
-      tagEntity,
-      untagEntity,
-      findReferences,
+      ...(deps.entities === false
+        ? []
+        : [createTag, updateTag, deleteTag, listTags, tagEntity, untagEntity, findReferences]),
       checkConsistency,
       getPageOutline,
       listPages,

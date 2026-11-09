@@ -112,6 +112,13 @@ export interface SystemPromptInput {
    * `<available_skills>`. Absent = no.
    */
   skillsRootHasFiles?: boolean;
+  /**
+   * 2.1.77 (M19 `wjjr1oc0`, M18 `rxlzqki1`): whether the project has the
+   * capability `entities`. `false` ⇒ the module contributions that require it
+   * (`<entity_embeds>`, `<tags>`) are not emitted. Absent = present (the
+   * hand-rolled rigs carry no capability set).
+   */
+  entities?: boolean;
   annotations?: Annotation[];
   planMode?: boolean;
   currentPlan?: Plan | null;

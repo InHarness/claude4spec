@@ -115,6 +115,8 @@ export interface AgentTurnDeps {
    * Absent (rigs without a skills root) = no.
    */
   skillsRootHasFiles?: () => boolean;
+  /** 2.1.77 (M19 `wjjr1oc0`, M18 `rxlzqki1`): the project has the capability `entities`. Absent = yes. */
+  hasEntities?: boolean;
   ws: WsEmitter;
   cwd: string;
   /** 0.1.96 multiroot: every configured page root (was the single `pagesDir` scalar).
@@ -1227,6 +1229,7 @@ export async function runAgentTurn(
       currentPageBody,
       currentSkill,
       skillsRootHasFiles: deps.skillsRootHasFiles?.() ?? false,
+      ...(deps.hasEntities === false ? { entities: false } : {}),
       annotations,
       planMode,
       currentPlan,
