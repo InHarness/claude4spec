@@ -16,3 +16,5 @@
 - u01/p2-l4-l20: opis-typu-writing-style-do-promptu → src/server/project-types/entries.ts (WRITING_STYLE_PROMPT_DESCRIPTION); test src/server/project-types/registry.test.ts
 - u01/p2-l4-l20: welcome-template-index → src/server/project-types/entries.ts (SPEC_WELCOME_TEMPLATE, SPEC_PROJECT_TYPE.starterContent); test src/server/project-types/registry.test.ts
 - u01/p2-l4-l20: m57-requires-m31, moduly-feature → context (read, not built)
+- u11/p1-m55-m55: remote-run (project_id 2.1.77: only from kind plan/prompt) → src/server/runs/remote-run-registry.ts (runInputLocator; DDL unchanged in src/server/db/workspace-migrations.ts 003); tests src/server/runs/run-read.test.ts ("2.1.77 — m55-runs#g9939pj0", [entity:remote-run]), src/server/db/workspace-db.test.ts
+- u11/p1-m55-m55: m55-runs#g9939pj0 → src/server/runs/run-read.ts (getRun restoration via runInputLocator); tests src/server/runs/run-read.test.ts ([section:m55-runs#g9939pj0])

@@ -100,6 +100,10 @@ export function remoteRunRegistry(db: () => Database.Database): RemoteRunRegistr
  * field is NULL. Never throws, never substitutes a default project.
  * 2.1.75: a plan path without a readable projectId does not point at a plan,
  * so kind `plan` without a readable projectId gives an empty plan as well.
+ * 2.1.77: the project comes from `input.projectId` ONLY for kind `plan` or
+ * `prompt` — an unknown kind (a missing or non-string `kind` included) or a
+ * missing `input` gives an empty project and an empty plan even when the input
+ * carries a readable `projectId`, and never refuses the restoration.
  */
 export function runInputLocator(input: unknown): { projectId: string | null; planPath: string | null } {
   if (input === null || typeof input !== 'object' || Array.isArray(input)) return { projectId: null, planPath: null };

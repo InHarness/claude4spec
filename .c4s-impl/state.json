@@ -534,13 +534,29 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u11-rekord-runu-z-gita/p1-m55-m55",
+          "layers": [
+            "M55"
+          ],
+          "slugs": [
+            "remote-run",
+            "m55-runs#g9939pj0"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "66ba30ce132e57d4a7d2f122f7c91f8fb19bc3bf",
+      "baseCommit": "66ba30ce132e57d4a7d2f122f7c91f8fb19bc3bf",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },
