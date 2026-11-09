@@ -111,11 +111,10 @@ describe('/settings card catalog (0.2.113 §1.6)', () => {
     expect(byAnchor.get('external-integrations')!.elements.map((e) => e.id)).toEqual(['agent-skills', 'mcp-connection']);
     // 2.1.9 (M52 `1osy2o5r`): the `#skills` card, "Fork writing style locally" (80) included.
     expect(byAnchor.get('skills')!.elements.map((e) => [e.id, e.kind, e.weight])).toEqual([
-      ['skill-exposed', 'toggle', 10],
+      // 2.1.77 (M52 `1osy2o5r`): no exposure toggle, no scope choice.
       ['skill-name', 'text', 20],
       ['skill-description', 'textarea', 30],
       ['skill-entry', 'text', 40],
-      ['skill-scope', 'select', 50],
       ['skill-context-types', 'multiselect', 60],
       // 2.1.67 (M52 `qtq9iusb`): the confirmation is per name, on the rows of the list.
       ['used-skill-projects', 'custom', 70],

@@ -1657,7 +1657,10 @@ async function buildInner(
    */
   const readExposedSkill = async (): Promise<ExposedSkillPackage> => {
     const own = readOwnSkillConfig();
-    if (!own.exposed || own.name === null) throw new Error(`project "${projectId}" is not exposed as a skill`);
+    // 2.1.77 (M52 `ybbal0vf`): a provider by the type's `skill-exposure`, no toggle.
+    if (!capabilities.has('skill-exposure') || own.name === null) {
+      throw new Error(`project "${projectId}" is not exposed as a skill`);
+    }
     return readExposedPackage(
       {
         listPages: () => pages.listMarkdownFilesReadonly(),

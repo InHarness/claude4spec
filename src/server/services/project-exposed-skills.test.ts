@@ -477,10 +477,10 @@ describe('attachments against real project configs (M52, 2.1.9)', () => {
   function workspace() {
     const providerCwd = tmp();
     const consumerCwd = tmp();
-    writeConfig(providerCwd, { name: 'Billing', skill: { exposed: true, name: 'billing-rules', description: 'How billing works.' } });
+    writeConfig(providerCwd, { name: 'Billing', projectType: 'skill', skill: { name: 'billing-rules', description: 'How billing works.' } });
     writeConfig(consumerCwd, { name: 'Shop', skill: { uses: ['billing-rules'] } });
     const projects = [
-      { id: 'billing', cwd: providerCwd },
+      { id: 'billing', cwd: providerCwd, projectType: 'skill' },
       { id: 'shop', cwd: consumerCwd, confirmedSkillUses: ['billing-rules'] },
     ];
     const registry = SkillRegistry.load([], { rescanTtlMs: 0 });
@@ -632,13 +632,13 @@ describe('attachments from the repository need their name confirmed on this mach
     const billingCwd = tmp();
     const legalCwd = tmp();
     const shopCwd = tmp();
-    writeConfig(billingCwd, { name: 'Billing', skill: { exposed: true, name: 'billing-rules', description: 'How billing works.' } });
-    writeConfig(legalCwd, { name: 'Legal', skill: { exposed: true, name: 'legal-terms', description: 'Terms.' } });
+    writeConfig(billingCwd, { name: 'Billing', projectType: 'skill', skill: { name: 'billing-rules', description: 'How billing works.' } });
+    writeConfig(legalCwd, { name: 'Legal', projectType: 'skill', skill: { name: 'legal-terms', description: 'Terms.' } });
     writeConfig(shopCwd, { name: 'Shop', skill: { uses: ['billing-rules'] } });
     // The registry record of this machine: `billing-rules` confirmed.
     const projects: ProjectRecord[] = [
-      { id: 'billing', cwd: billingCwd },
-      { id: 'legal', cwd: legalCwd },
+      { id: 'billing', cwd: billingCwd, projectType: 'skill' },
+      { id: 'legal', cwd: legalCwd, projectType: 'skill' },
       { id: 'shop', cwd: shopCwd, confirmedSkillUses: ['billing-rules'] },
     ];
     const registry = SkillRegistry.load([], { rescanTtlMs: 0 });
@@ -740,15 +740,15 @@ describe('attachments from the repository need their name confirmed on this mach
     const providerCwd = tmp();
     const otherCwd = tmp();
     const consumerCwd = tmp();
-    writeConfig(providerCwd, { name: 'Billing', skill: { exposed: true, name: 'billing-rules', description: 'How billing works.' } });
-    writeConfig(otherCwd, { name: 'Legal', skill: { exposed: true, name: 'legal-terms' } });
-    writeConfig(consumerCwd, { name: 'Shop', skill: { exposed: true, name: 'shop-skill', uses: ['billing-rules', 'shop-skill'] } });
+    writeConfig(providerCwd, { name: 'Billing', projectType: 'skill', skill: { name: 'billing-rules', description: 'How billing works.' } });
+    writeConfig(otherCwd, { name: 'Legal', projectType: 'skill', skill: { name: 'legal-terms', description: 'Terms.' } });
+    writeConfig(consumerCwd, { name: 'Shop', projectType: 'skill', skill: { name: 'shop-skill', description: 'The shop.', uses: ['billing-rules', 'shop-skill'] } });
     const record: { projects: ProjectRecord[] } = {
       projects: [
-        { id: 'billing', cwd: providerCwd },
-        { id: 'legal', cwd: otherCwd },
+        { id: 'billing', cwd: providerCwd, projectType: 'skill' },
+        { id: 'legal', cwd: otherCwd, projectType: 'skill' },
         // Confirming its own name changes nothing: attaching oneself is ignored.
-        { id: 'shop', cwd: consumerCwd, confirmedSkillUses: ['shop-skill'] },
+        { id: 'shop', cwd: consumerCwd, projectType: 'skill', confirmedSkillUses: ['shop-skill'] },
       ],
     };
     let registryReads = 0;
@@ -820,12 +820,13 @@ describe('a name confirmed by the CLI before the server starts (M52 uluzymnm, 2.
     const consumerDir = path.join(home, 'specs', 'app');
     writeConfig(providerDir, {
       name: 'Style',
-      skill: { exposed: true, name: 'house-style', description: 'The house writing style.', scope: 'writing-style' },
+      projectType: 'writing-style',
+      skill: { name: 'house-style', description: 'The house writing style.' },
     });
     writeConfig(consumerDir, { name: 'App', writingStyle: 'house-style', skill: { uses: ['house-style'] } });
     put(
       path.join(home, '.claude4spec', 'workspace.json'),
-      JSON.stringify({ projects: [{ id: 'style', path: 'specs/style' }, { id: 'app', path: 'specs/app' }], plugins: [] }, null, 2),
+      JSON.stringify({ projects: [{ id: 'style', path: 'specs/style', projectType: 'writing-style' }, { id: 'app', path: 'specs/app' }], plugins: [] }, null, 2),
     );
 
     // The CLI, server-free: register the home, then confirm the name.

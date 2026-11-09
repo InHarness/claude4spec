@@ -189,14 +189,14 @@ export interface ConfigResponse {
   writingStyle: string | null;
   /**
    * 2.1.9 (M52): `skill.*` as the file holds it (absent keys stay absent — the
-   * settings elements carry the defaults as their baselines).
+   * settings elements carry the defaults as their baselines). 2.1.77 (M52
+   * `wqvq1esb`): `name`, `description`, `entry` and `contextTypes` exist only in
+   * a project whose type has `skill-exposure` — elsewhere GET leaves them out.
    */
   skill?: {
-    exposed?: boolean;
     name?: string | null;
     description?: string | null;
     entry?: string | null;
-    scope?: 'writing-style' | 'contextual';
     contextTypes?: string[];
     uses?: string[];
   };

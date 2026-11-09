@@ -1,25 +1,33 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { builtinRoot, DEFAULT_SKILL_ENTRY } from '../config.js';
-import type { CrossFieldRule, FieldDeclaration } from '../settings/field-registry.js';
+import type { FieldDeclaration } from '../settings/field-registry.js';
 import { formatLegalContextTypes, isKnownContextType } from './chat-context.js';
 import { SKILL_NAME_RE } from './skill-name.js';
+import { SKILL_EXPOSURE_CAPABILITY } from '../project-types/capabilities.js';
 
 /**
  * 2.1.9 — the `skill.*` keys, declared by the spec-skills module (M52 L17
  * `wqvq1esb`): the project as a skill of its workspace, and its attachments.
  *
- * | key | effect | note |
- * |---|---|---|
- * | `skill.exposed` | `new-thread` | consumers see it from their next thread |
- * | `skill.name` | `new-thread` | kebab-case; required when exposed (cross-field) |
- * | `skill.description` | `new-thread` | non-empty when exposed (cross-field) |
- * | `skill.entry` | `per-operation` | an existing page of the base root; read per load |
- * | `skill.scope` | `new-thread` | `writing-style` \| `contextual` |
- * | `skill.contextTypes` | `new-thread` | a subset of the context-type enumeration |
- * | `skill.uses` | `new-thread` | names; a dangling or ambiguous one is NOT a validation error |
+ * | key | effect | requires | note |
+ * |---|---|---|---|
+ * | `skill.name` | `new-thread` | `skill-exposure` | kebab-case; absent is no error |
+ * | `skill.description` | `new-thread` | `skill-exposure` | non-empty; absent is no error |
+ * | `skill.entry` | `per-operation` | `skill-exposure` | an existing page of the base root; read per load |
+ * | `skill.contextTypes` | `new-thread` | `skill-exposure` | a subset of the context-type enumeration |
+ * | `skill.uses` | `new-thread` | — | names; a dangling or ambiguous one is NOT a validation error |
  *
  * None locks a resume, all are API-writable.
+ *
+ * 2.1.77 (M52 `0ay8qh6u`, `ybbal0vf`): a project is a provider by its type's
+ * capability `skill-exposure`, exposed from founding — the exposure toggle
+ * (`skill.exposed`) and the scope choice (`skill.scope`, the scope follows from
+ * the provider's type) are gone with their keys, and so is the cross-field rule
+ * that required a name and a description while exposed: a provider without
+ * them is simply no listing entry. Without `skill-exposure` the four exposure
+ * keys are inactive: GET does not return them, PATCH skips them, and the file
+ * keeps them untouched (M26 `hozcm4w5`).
  */
 
 const OWNER = 'spec-skills';
@@ -27,17 +35,9 @@ const KEBAB = SKILL_NAME_RE;
 
 export const SPEC_SKILLS_SETTINGS_FIELDS: FieldDeclaration[] = [
   {
-    key: 'skill.exposed',
-    owner: OWNER,
-    type: 'boolean',
-    default: false,
-    effect: 'new-thread',
-    resumeLock: false,
-    apiWritable: true,
-  },
-  {
     key: 'skill.name',
     owner: OWNER,
+    requires: [SKILL_EXPOSURE_CAPABILITY.name],
     type: 'string|null',
     default: null,
     validate: (value) => {
@@ -55,6 +55,7 @@ export const SPEC_SKILLS_SETTINGS_FIELDS: FieldDeclaration[] = [
   {
     key: 'skill.description',
     owner: OWNER,
+    requires: [SKILL_EXPOSURE_CAPABILITY.name],
     type: 'string|null',
     default: null,
     validate: (value) => {
@@ -69,6 +70,7 @@ export const SPEC_SKILLS_SETTINGS_FIELDS: FieldDeclaration[] = [
   {
     key: 'skill.entry',
     owner: OWNER,
+    requires: [SKILL_EXPOSURE_CAPABILITY.name],
     type: 'string|null',
     default: DEFAULT_SKILL_ENTRY,
     validate: (value, ctx) => {
@@ -94,17 +96,9 @@ export const SPEC_SKILLS_SETTINGS_FIELDS: FieldDeclaration[] = [
     apiWritable: true,
   },
   {
-    key: 'skill.scope',
-    owner: OWNER,
-    type: { enum: ['writing-style', 'contextual'] },
-    default: 'contextual',
-    effect: 'new-thread',
-    resumeLock: false,
-    apiWritable: true,
-  },
-  {
     key: 'skill.contextTypes',
     owner: OWNER,
+    requires: [SKILL_EXPOSURE_CAPABILITY.name],
     type: 'string[]',
     default: ['chat', 'brief', 'patch', 'ask'],
     validate: (value) => {
@@ -133,27 +127,3 @@ export const SPEC_SKILLS_SETTINGS_FIELDS: FieldDeclaration[] = [
     apiWritable: true,
   },
 ];
-
-/**
- * An exposed project needs an address and a reason to be opened: `skill.name`
- * and a non-empty `skill.description` are required while `skill.exposed` is on.
- * Checked on the EFFECTIVE post-write config, only when the request touches one
- * of the three.
- */
-export const SKILL_EXPOSURE_RULE: CrossFieldRule = {
-  owner: OWNER,
-  id: 'skill-exposure-required-fields',
-  touches: ['skill.exposed', 'skill.name', 'skill.description'],
-  check: (effective) => {
-    if (effective('skill.exposed') !== true) return { ok: true };
-    const name = effective('skill.name');
-    if (typeof name !== 'string' || name.trim() === '') {
-      return { ok: false, key: 'skill.name', error: 'skill.name is required while the project is exposed as a skill' };
-    }
-    const description = effective('skill.description');
-    if (typeof description !== 'string' || description.trim() === '') {
-      return { ok: false, key: 'skill.description', error: 'skill.description must not be empty while the project is exposed as a skill' };
-    }
-    return { ok: true };
-  },
-};

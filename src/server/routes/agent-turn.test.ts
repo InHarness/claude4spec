@@ -2856,7 +2856,9 @@ describe('runAgentTurn — writing-style-author scaffolds through update_skill_f
       await runtime.close();
       fs.rmSync(cwd, { recursive: true, force: true });
     };
-    return { fs, cwd, registry, builds, turn, write, styleMd, skill: writingStyleAuthorSkill, close };
+    const { rootDirAbs } = await import('../roots/registry.js');
+    const pagesDir = rootDirAbs(cwd, roots.list().find((root) => root.id === 'pages')!);
+    return { fs, cwd, pagesDir, registry, builds, turn, write, styleMd, skill: writingStyleAuthorSkill, close };
   }
 
   it('[ac:ac-scaffold-stylu-przy-aktywnym-agent-di] with agent.disableDirectFilesystemAccess on, the scaffold still ends with a SKILL.md package in the project\'s skills root', async () => {
@@ -2892,11 +2894,11 @@ describe('runAgentTurn — writing-style-author scaffolds through update_skill_f
       const matter = (await import('gray-matter')).default;
       // The skill: listed in chat only, and its instruction is this very write.
       expect(r.skill.contextTypes).toEqual(['chat']);
-      // 2.1.15: this is Route A — the style for this project — and it is the one
-      // that writes the package with update_skill_file.
-      const routeA = /\*\*Route A — a style for this project\.\*\*([^\n]*)/.exec(r.skill.content)?.[1] ?? '';
-      expect(routeA).toContain("package in this project's skills root");
-      expect(routeA).toContain('`update_skill_file`');
+      // 2.1.77: the one route — a local style, a package of this project's skills
+      // root written with update_skill_file.
+      const local = /\*\*A style for other projects of the workspace\.\*\*([^\n]*)/.exec(r.skill.content)?.[1] ?? '';
+      expect(local).toContain('What you write is always a local style');
+      expect(r.skill.content).toContain("## A local style — a package in the project's skills root");
       expect(r.skill.content).toContain('update_skill_file');
       expect(r.skill.content).toContain('.claude4spec/skills/<slug>/');
       expect(r.skill.content).toContain('scope: writing-style');
@@ -2918,7 +2920,48 @@ describe('runAgentTurn — writing-style-author scaffolds through update_skill_f
     }
   });
 
-  it('[ac:ac-skill-writing-style-author-otwarty-w] writing-style-author opened in an `ask` turn writes no style — neither a package nor pages: the turn has no update_skill_file, and the skill says to write nothing on either route there', async () => {
+  it('[ac:ac-po-scaffoldzie-stylu-przez-writing-st] after writing-style-author scaffolds a style, no page of the project has been created or changed', async () => {
+    const r = await scaffoldRig();
+    try {
+      /** Every file under the pages root, with its content. */
+      const snapshot = (dir: string, rel = ''): Record<string, string> => {
+        const out: Record<string, string> = {};
+        if (!r.fs.existsSync(dir)) return out;
+        for (const e of r.fs.readdirSync(dir, { withFileTypes: true })) {
+          const p = path.join(dir, e.name);
+          if (e.isDirectory()) Object.assign(out, snapshot(p, `${rel}${e.name}/`));
+          else out[`${rel}${e.name}`] = r.fs.readFileSync(p, 'utf-8');
+        }
+        return out;
+      };
+      // A project with pages already in it: an entry page and a nested one.
+      r.fs.mkdirSync(path.join(r.pagesDir, 'notes'), { recursive: true });
+      r.fs.writeFileSync(path.join(r.pagesDir, 'index.md'), '# Index\n\nThe project.\n');
+      r.fs.writeFileSync(path.join(r.pagesDir, 'notes/draft.md'), '# Draft\n');
+      const before = snapshot(r.pagesDir);
+      expect(Object.keys(before).sort()).toEqual(['index.md', 'notes/draft.md']);
+
+      // The skill's instruction: every write is a package file, never a page.
+      expect(r.skill.content).toContain('Never write a page of the project — no `create_page`, no `update_sections`, no other page tool');
+      expect(r.skill.content).toContain('At no step do you write a page of the project: the scaffold leaves every page as it was.');
+
+      // The whole scaffold, the way the skill instructs it, through the turn's own server.
+      const { mounted } = await r.turn('chat');
+      expect(mounted).toContain('spec-skill-tools');
+      const slug = 'terse-engineering';
+      expect((await r.write({ slug, content: r.styleMd('Terse Engineering'), expectedHash: '' })).isError).toBe(false);
+      expect((await r.write({ slug, file: 'workflows/brief.md', content: '# Brief\n', expectedHash: '' })).isError).toBe(false);
+      expect((await r.write({ slug, file: 'workflows/patch.md', content: '# Patch\n', expectedHash: '' })).isError).toBe(false);
+      expect(r.fs.existsSync(path.join(r.cwd, `.claude4spec/skills/${slug}/workflows/patch.md`))).toBe(true);
+
+      // No page was created, and none was changed.
+      expect(snapshot(r.pagesDir)).toEqual(before);
+    } finally {
+      await r.close();
+    }
+  });
+
+  it('[ac:ac-skill-writing-style-author-otwarty-w] writing-style-author opened in an `ask` turn writes no style package: the turn has no update_skill_file, and the skill says to write no package there', async () => {
     const r = await scaffoldRig();
     try {
       const { mounted, prompt } = await r.turn('ask');
@@ -2927,12 +2970,12 @@ describe('runAgentTurn — writing-style-author scaffolds through update_skill_f
       expect(prompt).not.toContain('update_skill_file');
       // The read channel stays: the skill can be opened, it just has nothing to write with.
       expect(mounted).toContain('skill-tools');
-      // The skill's own instruction for a brief/ask thread: no package AND no pages.
+      // The skill's own instruction for a brief/ask thread: no package, no other way.
       const where = /\*\*Where you can write\.\*\*([^\n]*)/.exec(r.skill.content)?.[1] ?? '';
       expect(where).toContain('In a `brief` or `ask` thread');
       expect(where).toContain('`update_skill_file` (server `spec-skill-tools`) not being among your tools');
-      expect(where).toContain('write no style on either route below: no package, no pages');
-      expect(where).toContain('no `create_page`, no `update_sections`');
+      expect(where).toContain('write no style package');
+      expect(where).toContain('no Write, no Bash, no `create_page`, no `update_sections`');
       expect(where).toContain('writing a style needs a `chat` or `patch` thread, and stop');
       expect(r.fs.existsSync(path.join(r.cwd, '.claude4spec/skills'))
         ? r.fs.readdirSync(path.join(r.cwd, '.claude4spec/skills')).filter((n) => !n.startsWith('.'))

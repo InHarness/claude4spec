@@ -10,20 +10,26 @@ import { EFFECT, type ElementContext, type SettingsContribution, type SettingsEl
 
 /**
  * 2.1.9 — what the spec-skills module (M52 L17 `1osy2o5r`) declares on
- * `/settings`: the `#skills` card in the Agent group — the project exposed as a
- * skill of its workspace (toggle + exposure fields) and the skill projects it
- * uses — and the element "Fork writing style locally" (weight 80, M52
- * `oqhvnhyf`), an action outside the card's shared save.
+ * `/settings`: the `#skills` card in the Agent group — the exposure fields of a
+ * project exposed as a skill of its workspace and the skill projects it uses —
+ * and the element "Fork writing style locally" (weight 80, M52 `oqhvnhyf`), an
+ * action outside the card's shared save.
+ *
+ * 2.1.77 (M52 `0ay8qh6u`, `ybbal0vf`, `1osy2o5r`): a project is a provider by
+ * its type's capability `skill-exposure`, exposed from founding — there is no
+ * exposure toggle and no scope choice any more (the scope follows from the
+ * provider's type). The four exposure elements require `skill-exposure`: a
+ * project whose type lacks it does not show them (`assembleSettings` drops
+ * them); "Used skill projects" and the fork element stay in every type.
  */
 
-const EXPOSED = ['skill', 'exposed'] as const;
 const USES = ['skill', 'uses'] as const;
+
+/** The capability the exposure elements require (M52 `0ay8qh6u`). */
+export const SKILL_EXPOSURE = 'skill-exposure';
 
 /** Effect message of the exposure fields: they act in the CONSUMERS. */
 const FOR_CONSUMERS = 'Applies from the next new conversation in projects that use it.';
-
-/** Every exposure field but the toggle is shown only while `skill.exposed` is on (in the draft). */
-const whenExposed = ({ draft }: ElementContext): boolean => draft.get(EXPOSED) === true;
 
 const CONTEXT_TYPES = ['chat', 'brief', 'patch', 'ask'] as const;
 
@@ -368,7 +374,6 @@ export const SPEC_SKILLS_SETTINGS: SettingsContribution = {
     {
       anchor: 'skills',
       title: 'Skills',
-      description: 'Projects that use this one read it live and read-only.',
       group: 'Agent',
       weight: 20,
       owner: 'spec-skills',
@@ -376,17 +381,6 @@ export const SPEC_SKILLS_SETTINGS: SettingsContribution = {
     },
   ],
   elements: [
-    {
-      id: 'skill-exposed',
-      card: 'skills',
-      weight: 10,
-      kind: 'toggle',
-      owner: 'spec-skills',
-      configKey: [...EXPOSED],
-      baseline: (config) => config.skill?.exposed ?? false,
-      label: 'Expose this project as a skill',
-      effectMessage: FOR_CONSUMERS,
-    },
     {
       id: 'skill-name',
       card: 'skills',
@@ -398,7 +392,7 @@ export const SPEC_SKILLS_SETTINGS: SettingsContribution = {
       tooltip: 'The address other projects in this workspace use to attach this project as a skill.',
       emptyAsNull: true,
       effectMessage: FOR_CONSUMERS,
-      visible: whenExposed,
+      requires: [SKILL_EXPOSURE],
     },
     {
       id: 'skill-description',
@@ -410,7 +404,7 @@ export const SPEC_SKILLS_SETTINGS: SettingsContribution = {
       label: 'Skill description',
       emptyAsNull: true,
       effectMessage: FOR_CONSUMERS,
-      visible: whenExposed,
+      requires: [SKILL_EXPOSURE],
     },
     {
       id: 'skill-entry',
@@ -422,24 +416,9 @@ export const SPEC_SKILLS_SETTINGS: SettingsContribution = {
       label: 'Entry page',
       placeholder: 'index.md',
       emptyAsNull: true,
+      help: 'Projects that use this one read it live and read-only.',
       effectMessage: 'Applies to the next read.',
-      visible: whenExposed,
-    },
-    {
-      id: 'skill-scope',
-      card: 'skills',
-      weight: 50,
-      kind: 'select',
-      owner: 'spec-skills',
-      configKey: ['skill', 'scope'],
-      baseline: (config) => config.skill?.scope ?? 'contextual',
-      label: 'Scope',
-      useOptions: () => [
-        { value: 'writing-style', label: 'writing-style' },
-        { value: 'contextual', label: 'contextual' },
-      ],
-      effectMessage: FOR_CONSUMERS,
-      visible: whenExposed,
+      requires: [SKILL_EXPOSURE],
     },
     {
       id: 'skill-context-types',
@@ -452,7 +431,7 @@ export const SPEC_SKILLS_SETTINGS: SettingsContribution = {
       label: 'Context types',
       useOptions: () => CONTEXT_TYPES.map((t) => ({ value: t, label: t })),
       effectMessage: FOR_CONSUMERS,
-      visible: whenExposed,
+      requires: [SKILL_EXPOSURE],
     },
     {
       id: 'used-skill-projects',

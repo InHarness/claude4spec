@@ -2027,13 +2027,71 @@
         }
       ],
       "wave": 3,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u07-wystawianie-skilli-i-style/p1-l11",
+          "layers": [
+            "L11"
+          ],
+          "slugs": [
+            "ac-po-scaffoldzie-stylu-przez-writing-st",
+            "ac-poproszony-o-skill-dla-innych-projekt",
+            "ac-skill-author-nie-zapisuje-stron-proje",
+            "ac-skill-writing-style-author-otwarty-w",
+            "ac-gdy-prosba-o-nowy-styl-nie-wskazuje-c",
+            "ac-na-drodze-stylu-wystawionego-tresc-st",
+            "ac-na-drodze-stylu-wystawionego-writing",
+            "ac-na-drodze-stylu-wystawionego-writing-2",
+            "ac-na-drodze-stylu-wystawionego-writing-3",
+            "ac-strona-wejscia-stylu-wystawionego-nap",
+            "ac-strona-wejscia-stylu-wystawionego-nap-2"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        },
+        {
+          "name": "u07-wystawianie-skilli-i-style/p2-l16-l19",
+          "layers": [
+            "L16",
+            "L17",
+            "L19"
+          ],
+          "slugs": [
+            "ac-blok-project-writing-skill-zawiera-zd",
+            "ac-element-writing-style-na-karcie-proje",
+            "ac-get-api-config-projektu-typu-specyfik",
+            "ac-karta-skills-projektu-typu-specyfikac-2",
+            "ac-karta-skills-projektu-typu-specyfikac",
+            "ac-podpiety-projekt-o-typie-nieznanym-bi",
+            "ac-podpiety-projekt-typu-skill-jest-pozy",
+            "ac-styl-podpietego-projektu-typu-writing",
+            "ac-w-projekcie-typu-writing-style-blok-p",
+            "ac-w-projekcie-typu-writing-style-patch",
+            "ac-wpis-podpietego-projektu-typu-skill-n",
+            "szablon-project-writing-skill",
+            "m31-requires-m52",
+            "m37-requires-m31",
+            "m37-requires-m57",
+            "m52-requires-m57"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [
+            "ac-element-writing-style-na-karcie-proje"
+          ],
+          "only": []
+        }
+      ],
+      "startCommit": "01bed54184da73d39309a50e616e04ff69f26496",
+      "baseCommit": "8bf4823ecce8f3699c451086a157871723be325c",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
       "jobs": []
     },
