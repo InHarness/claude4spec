@@ -11,6 +11,8 @@ import { readPackageVersion } from '../../bin/c4s/package-version.js';
 import { WorkspaceHomeNotProjectError } from './bootstrap.js';
 import { ProjectPathError } from './home-workspace.js';
 import type { WorkspaceResponse } from '../../shared/workspace-response.js';
+import type { ProjectTypeListResponse } from '../../shared/project-types.js';
+import type { ProjectTypeRegistry } from '../project-types/registry.js';
 
 const pexec = promisify(execFile);
 import type { ProjectContextCache } from './context-cache.js';
@@ -317,4 +319,21 @@ function unusableDirectoryReason(dir: string): string | null {
     return `no read/write permission for directory: ${dir}`;
   }
   return null;
+}
+
+/**
+ * 2.1.77 (M57 L4, endpoint `get-api-workspace-project-types`): the project-type
+ * registry for the create-project page — slug, name and user description of
+ * every type, in registry order (DTO `project-type-list-response`). Own router,
+ * mounted at `/api/workspace/project-types` OUTSIDE the project prefix: the
+ * create-project page has no project yet, and the type registry belongs to none
+ * (deviation from `Prefiks projektu`, precedent M31). Takes no parameters.
+ */
+export function projectTypesRouter(deps: { types: ProjectTypeRegistry }): Router {
+  const router = Router();
+  router.get('/', (_req, res) => {
+    const body: ProjectTypeListResponse = { types: deps.types.cards() };
+    res.status(200).json(body);
+  });
+  return router;
 }

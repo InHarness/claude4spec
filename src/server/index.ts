@@ -18,10 +18,12 @@ import { effectiveBindHost, localServerUrl } from '../core/workspace/network.js'
 import { buildProjectContext } from './workspace/project-context.js';
 import { ProjectContextCache } from './workspace/context-cache.js';
 import { projectDispatchMiddleware } from './workspace/middleware.js';
-import { workspaceRouter } from './workspace/routes.js';
+import { projectTypesRouter, workspaceRouter } from './workspace/routes.js';
 import type { ProjectRecord, WorkspaceRecord } from './workspace/types.js';
 import { resolveSpaRoute, spaDocument, type SpaResolution } from './workspace/spa-route.js';
 import { PluginRegistryImpl } from './core/plugin-host/registry.js';
+import { hostCapabilityRegistry } from './project-types/capabilities.js';
+import { hostProjectTypeRegistry } from './project-types/registry.js';
 import { logRefRegistrationWarnings, refRegistrationWarnings } from './core/plugin-host/ref-warnings.js';
 import { loadBuiltinEnvelopes, loadWorkspacePlugins } from './core/plugin-host/loader.js';
 import { reloadBasePackages } from './core/plugin-host/base-reload.js';
@@ -235,6 +237,15 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // migrated the registry, selected the workspace and opened its view before
   // calling here — nothing of it is read again.
   const { registry, workspace } = opts;
+  // 2.1.77 (M57 `wd9engvy`, `rgkqgr2b`): the capability registry is built and
+  // validated at process start, BEFORE the project-type registry and before
+  // anything listens. A faulty declaration (duplicate, undeclared dependency,
+  // cycle) throws `PROJECT_TYPE_REGISTRY_INVALID` and the server does not start.
+  hostCapabilityRegistry();
+  // 2.1.77 (M57 `5j5aunoy`, `91ci7cqx`): then the project-type registry — the
+  // entries of M58/M59/M60, each validated against the capability registry and
+  // the settings layer. A faulty entry throws `PROJECT_TYPE_REGISTRY_INVALID`.
+  const projectTypes = hostProjectTypeRegistry();
   const liveWorkspace = () => {
     const ws = registry.getWorkspace(workspace.name) ?? workspace;
     // The port actually bound wins over the stored default (`port: 0` binds an ephemeral one).
@@ -513,6 +524,8 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   };
 
   app.use('/api', workspaceRouter({ registry, workspace, cache, mode, activateProject }));
+  // M57 L4 (2.1.77): the project-type list — no project prefix, no open project.
+  app.use('/api/workspace/project-types', projectTypesRouter({ types: projectTypes }));
   // M54 L4 `pyxt16pa` (2.1.62): the workspace's runner hosts — no project prefix.
   app.use('/api/workspace/runner-hosts', runnerHostsRouter({ supervisor: runnerHosts }));
   // M33: process-level plugin endpoints (runtime shims, BASE-tier frontend

@@ -33,7 +33,7 @@
         "u01-rejestr-typow-i-mozliwosci",
         "u11-rekord-runu-z-gita"
       ],
-      "startCommit": null
+      "startCommit": "44fd5931ef63daa035dbb989f0a5d58840f6c253"
     },
     {
       "n": 2,
@@ -429,13 +429,60 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u01-rejestr-typow-i-mozliwosci/p1-l17-l19",
+          "layers": [
+            "L17",
+            "L19"
+          ],
+          "slugs": [
+            "ac-patch-api-config-z-wartoscia-projectt",
+            "ac-patch-api-config-z-wartoscia-projectt-2",
+            "ac-deklaracje-mozliwosci-tworzace-cykl-z",
+            "m57-requires-m26",
+            "warstwy"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        },
+        {
+          "name": "u01-rejestr-typow-i-mozliwosci/p2-l4-l20",
+          "layers": [
+            "L4",
+            "L20"
+          ],
+          "slugs": [
+            "ac-dwa-wpisy-typu-projektu-o-tym-samym-s",
+            "ac-wpis-typu-projektu-nazywajacy-niezade",
+            "ac-wpis-typu-projektu-z-kluczem-onboardi",
+            "ac-wpis-typu-projektu-z-kluczem-onboardi-2",
+            "ac-get-api-workspace-project-types-zwrac",
+            "get-api-workspace-project-types",
+            "project-type-list-response",
+            "opis-typu-spec-do-promptu",
+            "opis-typu-skill-do-promptu",
+            "opis-typu-writing-style-do-promptu",
+            "welcome-template-index",
+            "m57-requires-m31",
+            "moduly-feature"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "44fd5931ef63daa035dbb989f0a5d58840f6c253",
+      "baseCommit": "44fd5931ef63daa035dbb989f0a5d58840f6c253",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },

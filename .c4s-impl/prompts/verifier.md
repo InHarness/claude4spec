@@ -151,6 +151,7 @@ Split mode **returns** `split.json` and writes nothing else: the orchestrator re
 - State dir: `.c4s-impl/`
 - Never run tests locally (not even filtered vitest) — the user's standing rule; the only local check is `npm run typecheck`.
 - Out of scope by the brief author's decision (never counted as missing): purely formatting changes of the specification — sections `Project Type Capabilities (L19) — n/d`, empty `Wymaga możliwości` columns, indexes in `pages/SKILL.md` and `plugins/index.md`, and the retirement of layer L9 in the plugin index.
+- Empty `verifies` on an active `ac` is **not** a read problem (the user's standing rule): such a criterion's title is its contract, checked against the module section that embeds it; never turn it into a blocking deviation.
 - Deprecated criteria: an `ac` with `status = deprecated` (seven of them in u07) describes behaviour being removed — never build it; confirm its absence (code, config keys and UI controls gone).
 
 ### Conventions

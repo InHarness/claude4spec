@@ -30,8 +30,10 @@ import type { SkillRegistry } from '../services/skill-registry.js';
  *  - `new-thread`      — the first turn of a NEW thread only;
  *  - `context-rebuild` — the next request, after the `ProjectContext` is invalidated
  *                        (services, watchers, `indexAll()`), with no process restart.
+ *  - `none`            — 2.1.77 (L17 class `—`): a `fixed` field never changes after
+ *                        the project is founded, so there is no reaction to a change.
  */
-export type EffectClass = 'per-operation' | 'per-turn' | 'new-thread' | 'context-rebuild';
+export type EffectClass = 'per-operation' | 'per-turn' | 'new-thread' | 'context-rebuild' | 'none';
 
 /**
  * Stage 1 of validation — the wire type. Deliberately a closed set: a field whose
@@ -99,8 +101,24 @@ export interface FieldDeclaration {
    * the field always goes through — the lock is enforced on resume, not on write.
    */
   resumeLock: boolean;
-  /** `false` = hand-editable only; PATCH drops the key silently. */
-  apiWritable: boolean;
+  /**
+   * `false` = hand-editable only; PATCH drops the key silently.
+   * `'fixed'` (2.1.77, L17 `Zapis przez API: stały`, M26 `ournm78e`): set once,
+   * when the project is founded. A PATCH carrying the stored value changes
+   * nothing and is no error; another value refuses the WHOLE save with
+   * {@link fixedErrorCode}, pinned to the key, and nothing reaches the file.
+   */
+  apiWritable: boolean | 'fixed';
+  /** `'fixed'` fields: the refusal code the declarant names (M57: `PROJECT_TYPE_IMMUTABLE`). */
+  fixedErrorCode?: string;
+  /**
+   * 2.1.77 (L17 `Wymaga możliwości`, M26 `vm9rajvn`): the capabilities the row
+   * needs — its own cell plus every capability its declaring module requires.
+   * Absent / empty ⇒ the row exists in every project type. A project whose
+   * capability set misses one of them does not HAVE the key: GET does not
+   * return it and PATCH skips it.
+   */
+  requires?: readonly string[];
   /**
    * `true`: a top-level field whose ABSENCE is a state of its own (its default),
    * so a PATCH carrying `null` for it removes the key from the file instead of
@@ -191,6 +209,31 @@ export class FieldRegistry {
     return this.list().filter((d) => d.resumeLock).map((d) => d.key);
   }
 
+  /**
+   * 2.1.77 (M26 `vm9rajvn`): the project's ACTIVE registry — the rows whose
+   * `requires` the project's capability set satisfies. Default, validation,
+   * effect class and the writable list hold for active keys only. A cross-field
+   * rule survives when every key it touches is active (a rule names only keys
+   * inside its row's capability).
+   */
+  active(capabilities: ReadonlySet<string>): FieldRegistry {
+    const out = new FieldRegistry();
+    const kept = this.list().filter((d) => (d.requires ?? []).every((c) => capabilities.has(c)));
+    out.register(...kept);
+    const activeKeys = new Set(kept.map((d) => d.key));
+    for (const r of this.crossFieldRules()) {
+      if (r.touches.every((k) => activeKeys.has(k))) out.registerCrossFieldRule(r);
+    }
+    return out;
+  }
+
+  /** Keys of rows NOT in {@link active} for that capability set. */
+  inactiveKeys(capabilities: ReadonlySet<string>): string[] {
+    return this.list()
+      .filter((d) => !(d.requires ?? []).every((c) => capabilities.has(c)))
+      .map((d) => d.key);
+  }
+
   /** Keys whose save invalidates the `ProjectContext`. */
   contextRebuildKeys(): string[] {
     return this.list().filter((d) => d.effect === 'context-rebuild').map((d) => d.key);
@@ -237,6 +280,19 @@ export function setPath(obj: Record<string, unknown>, key: FieldPath, value: unk
     cur = cur[seg] as Record<string, unknown>;
   }
   cur[segs[segs.length - 1]!] = value;
+}
+
+/** Removes the path's leaf from `obj` (no-op when absent). */
+export function deletePath(obj: Record<string, unknown>, key: FieldPath): void {
+  const segs = segmentsOf(key);
+  let cur: unknown = obj;
+  for (const seg of segs.slice(0, -1)) {
+    if (cur === null || typeof cur !== 'object' || Array.isArray(cur)) return;
+    cur = (cur as Record<string, unknown>)[seg];
+  }
+  if (cur !== null && typeof cur === 'object' && !Array.isArray(cur)) {
+    delete (cur as Record<string, unknown>)[segs[segs.length - 1]!];
+  }
 }
 
 function describeType(t: FieldType): string {

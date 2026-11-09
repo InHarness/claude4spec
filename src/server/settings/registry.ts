@@ -7,6 +7,7 @@ import { GIT_COMMIT_TARGET_RULE, GIT_SETTINGS_FIELDS } from '../services/git-set
 import { REMOTE_SETTINGS_FIELDS } from '../services/remote-settings-fields.js';
 import { CONSISTENCY_SETTINGS_FIELDS } from '../discovery/ops/consistency-settings-fields.js';
 import { entitySettingsFields } from '../core/plugin-host/entity-settings-fields.js';
+import { PROJECT_TYPE_SETTINGS_FIELDS } from '../project-types/project-type-settings-fields.js';
 
 export interface BuildFieldRegistryInput {
   /** Entity types the host knows, for the `entities` unknown-slug warning. */
@@ -23,6 +24,7 @@ export function buildFieldRegistry(input: BuildFieldRegistryInput = {}): FieldRe
   return new FieldRegistry()
     .register(
       ...PROJECT_SETTINGS_FIELDS,
+      ...PROJECT_TYPE_SETTINGS_FIELDS,
       ...WRITING_STYLE_SETTINGS_FIELDS,
       ...SPEC_SKILLS_SETTINGS_FIELDS,
       ...AGENT_SETTINGS_FIELDS,

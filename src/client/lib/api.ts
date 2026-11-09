@@ -166,6 +166,8 @@ function encodePath(p: string): string {
 export interface ConfigResponse {
   /** M01: display name — default the project directory's name (written at first activation; no start flag sets it). */
   name: string;
+  /** 2.1.77 (M57 `y47yl4xt`): the project's fixed type slug — `spec` when the file has none. No settings control. */
+  projectType: string;
   /**
    * 0.1.96 multiroot: replaces the single `pagesDir`.
    *

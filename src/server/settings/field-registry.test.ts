@@ -194,3 +194,42 @@ describe('PATCH /config on the field registry (0.2.113)', () => {
     expect(onDisk()).not.toHaveProperty('plugins');
   });
 });
+
+// 2.1.77 — M26 `vm9rajvn`: the project's ACTIVE registry. A row whose `requires`
+// the project's capability set does not meet is not a key of the project.
+describe('FieldRegistry.active — the active keys of a project (2.1.77)', () => {
+  const row = (key: string, requires?: string[]): FieldDeclaration => ({
+    key,
+    owner: 'test',
+    type: 'string',
+    default: '',
+    effect: 'per-operation',
+    resumeLock: false,
+    apiWritable: true,
+    ...(requires ? { requires } : {}),
+  });
+  const reg = () =>
+    new FieldRegistry()
+      .register(row('always'), row('gated.a', ['entities']), row('gated.b', ['entities', 'briefs']))
+      .registerCrossFieldRule({ owner: 'test', id: 'pair', touches: ['always', 'gated.a'], check: () => ({ ok: true }) })
+      .registerCrossFieldRule({ owner: 'test', id: 'solo', touches: ['always'], check: () => ({ ok: true }) });
+
+  it('keeps only rows whose requirements the capability set meets — every listed capability is needed', () => {
+    const r = reg();
+    expect(r.active(new Set(['entities', 'briefs'])).list().map((d) => d.key)).toEqual(['always', 'gated.a', 'gated.b']);
+    expect(r.active(new Set(['entities'])).list().map((d) => d.key)).toEqual(['always', 'gated.a']);
+    expect(r.active(new Set()).list().map((d) => d.key)).toEqual(['always']);
+    expect(r.inactiveKeys(new Set(['entities']))).toEqual(['gated.b']);
+    expect(r.inactiveKeys(new Set(['entities', 'briefs']))).toEqual([]);
+  });
+
+  it('drops a cross-field rule that names an inactive key', () => {
+    expect(reg().active(new Set()).crossFieldRules().map((x) => x.id)).toEqual(['solo']);
+    expect(reg().active(new Set(['entities'])).crossFieldRules().map((x) => x.id)).toEqual(['pair', 'solo']);
+  });
+
+  it('every host field exists in a project with every declared capability', () => {
+    const all = new Set(['entities', 'briefs', 'multi-root', 'skill-exposure']);
+    expect(STATIC_FIELD_REGISTRY.inactiveKeys(all)).toEqual([]);
+  });
+});

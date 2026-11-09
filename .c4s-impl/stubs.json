@@ -1,1 +1,21 @@
-{"stubs": []}
+{
+ "stubs": [
+  {
+   "dependent": "u01-rejestr-typow-i-mozliwosci",
+   "provider": "u02-aktywacja-i-rejestracja-z-typem",
+   "pretends": "absent project capability set ⇒ every host-declared capability is active (no key/card/element filtered); the context factory does not yet pass the project's set derived from its type — where: src/server/routes/config.ts (ConfigRouterDeps.capabilities), src/client/components/settings/registry.ts (assembleSettings capabilities param)",
+   "closesInWave": 2,
+   "closed": false,
+   "openedBy": "u01-rejestr-typow-i-mozliwosci/p1-l17-l19"
+  },
+  {
+   "dependent": "u01-rejestr-typow-i-mozliwosci",
+   "provider": "u10-kreator-onboardingu-wedlug-typu",
+   "pretends": "the onboarding wizard has no common steps (COMMON_ONBOARDING_STEPS = []), so type-entry validation knows no common step to place/replace and no common onboarding key for starter-content placeholders; the Skill and Writing Style entries carry onboarding: null and starterContent: null — where: src/server/project-types/registry.ts (COMMON_ONBOARDING_STEPS), src/server/project-types/entries.ts (SKILL_PROJECT_TYPE, WRITING_STYLE_PROJECT_TYPE)",
+   "why": "the four common steps, the skill/style detail steps, their type keys and the entry-page templates (szablon-strony-wejscia-*) are built by the onboarding-wizard unit; M59/M60 Onboarding typu and Zawartość startowa sections are not in u01's reads",
+   "closesInWave": 4,
+   "closed": false,
+   "openedBy": "u01-rejestr-typow-i-mozliwosci/p2-l4-l20"
+  }
+ ]
+}

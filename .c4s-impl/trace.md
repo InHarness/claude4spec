@@ -1,0 +1,18 @@
+- u01/p1-l17-l19: ac-deklaracje-mozliwosci-tworzace-cykl-z → src/server/project-types/capabilities.ts (buildCapabilityRegistry, hostCapabilityRegistry; called first in startServer, src/server/index.ts); tests src/server/project-types/capabilities.test.ts, src/server/project-types/start-refusal.test.ts
+- u01/p1-l17-l19: ac-patch-api-config-z-wartoscia-projectt → src/server/project-types/project-type-settings-fields.ts + src/server/routes/config.ts (`fixed` write mode, PROJECT_TYPE_IMMUTABLE); test src/server/routes/config-project-type.route.test.ts
+- u01/p1-l17-l19: ac-patch-api-config-z-wartoscia-projectt-2 → src/server/routes/config.ts (stored value ⇒ no write); test src/server/routes/config-project-type.route.test.ts
+- u01/p1-l17-l19: L17 active registry (M26 vm9rajvn/7f76eszm) → src/server/settings/field-registry.ts (`requires`, `active`, `inactiveKeys`, `apiWritable: 'fixed'`, effect `none`), src/client/components/settings/registry.ts (`requires`, assembleSettings capabilities); projectType key → src/server/config.ts (Config.projectType, DEFAULT_PROJECT_TYPE)
+- u01/p1-l17-l19: m57-requires-m26, warstwy → context (read, not built)
+- u01/p2-l4-l20: L20 type registry (M57 5j5aunoy, 91ci7cqx, y7od19e7) → src/server/project-types/registry.ts (ProjectTypeEntry, buildProjectTypeRegistry, hostProjectTypeRegistry; called in startServer right after hostCapabilityRegistry, src/server/index.ts); entries M58/M59/M60 → src/server/project-types/entries.ts; test src/server/project-types/registry.test.ts
+- u01/p2-l4-l20: ac-dwa-wpisy-typu-projektu-o-tym-samym-s → src/server/project-types/registry.ts (buildProjectTypeRegistry duplicate slug); test src/server/project-types/start-refusal-types.test.ts
+- u01/p2-l4-l20: ac-wpis-typu-projektu-nazywajacy-niezade → src/server/project-types/registry.ts (validateEntry → CapabilityRegistry.assertTypeCapabilities); test src/server/project-types/start-refusal-types.test.ts
+- u01/p2-l4-l20: ac-wpis-typu-projektu-z-kluczem-onboardi → src/server/project-types/registry.ts (validateEntry, type key declared in settings layer); test src/server/project-types/start-refusal-types.test.ts
+- u01/p2-l4-l20: ac-wpis-typu-projektu-z-kluczem-onboardi-2 → src/server/project-types/registry.ts (validateEntry, type key `requires` ⊆ type set); test src/server/project-types/start-refusal-types.test.ts
+- u01/p2-l4-l20: get-api-workspace-project-types → src/server/workspace/routes.ts (projectTypesRouter), mounted at /api/workspace/project-types in src/server/index.ts; test src/server/routes/project-types.route.test.ts
+- u01/p2-l4-l20: ac-get-api-workspace-project-types-zwrac → src/server/workspace/routes.ts (projectTypesRouter); test src/server/routes/project-types.route.test.ts
+- u01/p2-l4-l20: project-type-list-response → src/shared/project-types.ts (ProjectTypeListResponse, ProjectTypeCard); test src/server/routes/project-types.route.test.ts
+- u01/p2-l4-l20: opis-typu-spec-do-promptu → src/server/project-types/entries.ts (SPEC_PROMPT_DESCRIPTION); test src/server/project-types/registry.test.ts
+- u01/p2-l4-l20: opis-typu-skill-do-promptu → src/server/project-types/entries.ts (SKILL_PROMPT_DESCRIPTION); test src/server/project-types/registry.test.ts
+- u01/p2-l4-l20: opis-typu-writing-style-do-promptu → src/server/project-types/entries.ts (WRITING_STYLE_PROMPT_DESCRIPTION); test src/server/project-types/registry.test.ts
+- u01/p2-l4-l20: welcome-template-index → src/server/project-types/entries.ts (SPEC_WELCOME_TEMPLATE, SPEC_PROJECT_TYPE.starterContent); test src/server/project-types/registry.test.ts
+- u01/p2-l4-l20: m57-requires-m31, moduly-feature → context (read, not built)

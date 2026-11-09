@@ -12,15 +12,28 @@
     },
     "app": "none",
     "appDown": "keep",
-    "isolation": { "kind": "worktree", "path": ".worktrees/2-1-75-to-2-1-77" },
-    "budget": { "packetKB": 150, "implementer": 60, "verifier": 40, "reviewer": 30 },
-    "gates": ["wave"],
+    "isolation": {
+      "kind": "worktree",
+      "path": ".worktrees/2-1-75-to-2-1-77"
+    },
+    "budget": {
+      "packetKB": 150,
+      "implementer": 60,
+      "verifier": 40,
+      "reviewer": 30
+    },
+    "gates": [],
     "review": "per-unit",
     "reviewer": "same-harness",
     "verifierTools": [],
     "startMode": "resume",
-    "waiting": { "recipient": "the user in this Claude Code session", "channel": "stdout" },
-    "retries": { "error": 2 },
+    "waiting": {
+      "recipient": "the user in this Claude Code session",
+      "channel": "stdout"
+    },
+    "retries": {
+      "error": 2
+    },
     "stuckRounds": 3
   }
 }

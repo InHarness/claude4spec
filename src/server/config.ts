@@ -23,6 +23,12 @@ export interface Config {
    * `plansDir`/`briefsDir`/`patchesDir`/`entitiesDir`/`releasesDir` are gone.
    */
   roots: Root[];
+  /**
+   * 2.1.77 (M57 `y47yl4xt`, `zy42cyj7`): the project's type — a slug of the
+   * project-type registry, set once at registration and never changed. Absent ⇒
+   * `spec` (every project from before types). API write mode `fixed`.
+   */
+  projectType?: string;
   writingStyle: string | null;
   /**
    * 0.1.58: one-line "elevator pitch" (0–200 chars) describing this specification.
@@ -298,6 +304,7 @@ export interface NormalizedAgentConfig {
  * `NormalizedConfig` and drop their `??`.
  */
 export type NormalizedConfig = Config & {
+  projectType: string;
   agent: NormalizedAgentConfig;
   git: NormalizedGitSyncConfig;
   consistency: NormalizedConsistencyConfig;
@@ -311,6 +318,9 @@ export type NormalizedConfig = Config & {
  * roots). Migrated by `migrateConfigToV4` at project activation.
  */
 export const CURRENT_SCHEMA_VERSION = 4;
+
+/** 2.1.77 (M57 `y47yl4xt`): the `projectType` default — the Specification entry's slug (M58). */
+export const DEFAULT_PROJECT_TYPE = 'spec';
 
 export function configPath(cwd: string): string {
   return path.join(cwd, '.claude4spec', 'config.json');
@@ -374,6 +384,8 @@ export function builtinPagesRoot(dir: string = 'pages'): Root {
 export function defaults(cwd: string): NormalizedConfig {
   return {
     ...bootstrapDefaults(cwd),
+    // 2.1.77 (M57 `y47yl4xt`): no type key = Specification (M58).
+    projectType: DEFAULT_PROJECT_TYPE,
     // 0.1.58: no elevator pitch.
     description: null,
     // M26/0.1.51/0.1.90: agent flags. 0.2.112: `claudeUsePreset` default false —
@@ -755,6 +767,12 @@ function validate(raw: unknown): Partial<Config> {
     // Read path: an id written under an older release warns, it does not brick
     // the project. `PATCH /api/config` still refuses — see RESERVED_ROOT_IDS.
     out.roots = parseRootsArray(r.roots, { reservedIds: 'warn', idShape: 'warn' });
+  }
+  // 2.1.77 (M57 `y47yl4xt`): type only here; an unknown slug is the activation's
+  // refusal (`PROJECT_TYPE_UNKNOWN`), not a load error.
+  if ('projectType' in r) {
+    if (typeof r.projectType !== 'string') throw typeError('projectType', 'string', r.projectType);
+    out.projectType = r.projectType;
   }
   if ('writingStyle' in r) {
     if (r.writingStyle !== null && typeof r.writingStyle !== 'string') {

@@ -122,6 +122,12 @@ export interface SettingsElementDecl {
   afterSave?: (env: AfterSaveEnv) => Promise<void> | void;
   visible?: (ctx: ElementContext) => boolean;
   component?: ComponentType<ElementContext & { decl: SettingsElementDecl }>;
+  /**
+   * 2.1.77 (L17 `Wymaga możliwości`, M26 `7f76eszm`): capabilities the element
+   * needs — its own cell plus its declaring module's requirements. It also
+   * inherits its card's. Unmet ⇒ the element does not exist on the page.
+   */
+  requires?: readonly string[];
 }
 
 export interface AfterSaveEnv {
@@ -142,6 +148,12 @@ export interface SettingsCardDecl {
   scope?: SettingsScope;
   /** Project cards only: a workspace page has no project config to judge by. */
   visible?: (config: ConfigResponse) => boolean;
+  /**
+   * 2.1.77 (L17 `Wymaga możliwości`, M26 `7f76eszm`): capabilities the card
+   * needs — its own cell plus its declaring module's. Unmet ⇒ the registry skips
+   * the row: neither the card nor its URL anchor renders. Workspace cards carry none.
+   */
+  requires?: readonly string[];
 }
 
 /** The page a card stands on — an undeclared scope is `project`. */
@@ -178,12 +190,28 @@ const ANCHOR_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
  * on a workspace card that would need the project config (a visibility
  * predicate, or an element that is generated or writes a file key).
  */
-export function assembleSettings(contributions: SettingsContribution[], scope: SettingsScope): AssembledCard[] {
-  const allCards = contributions.flatMap((x) => x.cards ?? []);
+export function assembleSettings(
+  contributions: SettingsContribution[],
+  scope: SettingsScope,
+  /**
+   * 2.1.77 (M26 `7f76eszm`): the project's capability set — the ACTIVE registry
+   * keeps only the cards and elements whose requirements it meets. Workspace
+   * cards never read it. Absent ⇒ nothing is filtered.
+   */
+  capabilities?: ReadonlySet<string>,
+): AssembledCard[] {
+  const meets = (requires: readonly string[] | undefined) =>
+    !capabilities || (requires ?? []).every((c) => capabilities.has(c));
+  const declaredCards = contributions.flatMap((x) => x.cards ?? []);
   const allElements = contributions.flatMap((x) => x.elements ?? []);
-  checkWorkspaceCards(allCards, allElements);
+  const cardRequires = new Map(declaredCards.map((c) => [c.anchor, c.requires] as const));
+  const isActive = (c: SettingsCardDecl) => cardScope(c) === 'workspace' || meets(c.requires);
+  const activeElements = allElements.filter((e) => meets(e.requires) && meets(cardRequires.get(e.card)));
+  // Registration errors are judged on EVERY declaration — an inactive row is
+  // skipped at assembly, never exempt from the anchor-uniqueness rule.
+  checkWorkspaceCards(declaredCards, allElements);
   const cards = new Map<string, SettingsCardDecl>();
-  for (const c of allCards) {
+  for (const c of declaredCards) {
     if (!ANCHOR_RE.test(c.anchor)) {
       throw new SettingsRegistrationError(`settings card anchor "#${c.anchor}" (${c.owner}) is not kebab-case`);
     }
@@ -196,7 +224,7 @@ export function assembleSettings(contributions: SettingsContribution[], scope: S
     cards.set(c.anchor, c);
   }
   const byCard = new Map<string, SettingsElementDecl[]>();
-  for (const e of allElements) {
+  for (const e of activeElements) {
     const list = byCard.get(e.card) ?? [];
     if (list.some((o) => o.id === e.id)) {
       throw new SettingsRegistrationError(`settings element "${e.id}" is declared twice on card "#${e.card}"`);
@@ -206,7 +234,7 @@ export function assembleSettings(contributions: SettingsContribution[], scope: S
   }
   const groupIndex = (g: SettingsGroup) => SETTINGS_GROUPS.indexOf(g);
   return [...cards.values()]
-    .filter((c) => cardScope(c) === scope)
+    .filter((c) => cardScope(c) === scope && isActive(c))
     .sort(
       (a, b) =>
         groupIndex(a.group) - groupIndex(b.group) || a.weight - b.weight || a.title.localeCompare(b.title),
