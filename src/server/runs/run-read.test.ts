@@ -13,6 +13,7 @@ import {
   RunReadError,
   type RunReadDeps,
 } from './run-read.js';
+import { runInputLocator } from './remote-run-registry.js';
 import {
   deadUrl,
   host,
@@ -556,6 +557,39 @@ describe('get_run / cancel_run (spec-operations get-run, cancel-run)', () => {
 
     it('a record without any input restores the row with both NULL', async () => {
       expect(await restore({ input: undefined })).toMatchObject({ project_id: null, plan_path: null, thread_id: null });
+    });
+
+    describe('2.1.77 — m55-runs#g9939pj0: the project only from a `plan` or `prompt` input', () => {
+      it('[section:m55-runs#g9939pj0] an input without `kind` carrying a readable projectId and path restores the row with an empty project and an empty plan — no refusal', async () => {
+        const row = (await restore({ input: { projectId: 'app', path: 'p1.md' } }))!;
+        expect(row).toMatchObject({ run_id: RUN, host_id: 'h_from_record', project_id: null, plan_path: null });
+      });
+
+      it('[section:m55-runs#g9939pj0] an input whose `kind` is not a string (`{ kind: 1, projectId }`) restores the row with an empty project and an empty plan', async () => {
+        const row = (await restore({ input: { kind: 1, projectId: 'app' } }))!;
+        expect(row).toMatchObject({ run_id: RUN, project_id: null, plan_path: null });
+      });
+
+      it('[section:m55-runs#g9939pj0] an unknown kind with a readable projectId and no path restores the row with an empty project — the projectId is not taken', async () => {
+        const row = (await restore({ input: { kind: 'recipe', projectId: 'app' } }))!;
+        expect(row.project_id).toBeNull();
+        expect(row.plan_path).toBeNull();
+      });
+
+      it('[section:m55-runs#g9939pj0] a `plan` and a `prompt` input still give the project from input.projectId', async () => {
+        expect(await restore({ input: { kind: 'plan', projectId: 'app', path: 'p1.md' } })).toMatchObject({ project_id: 'app', plan_path: 'p1.md' });
+      });
+
+      it('[entity:remote-run] runInputLocator: project only for kind plan/prompt; unknown kind, missing kind or missing input gives NULL project and NULL plan', () => {
+        expect(runInputLocator({ kind: 'plan', projectId: 'app', path: 'p.md' })).toEqual({ projectId: 'app', planPath: 'p.md' });
+        expect(runInputLocator({ kind: 'prompt', projectId: 'app', path: 'p.md' })).toEqual({ projectId: 'app', planPath: null });
+        expect(runInputLocator({ kind: 'recipe', projectId: 'app', path: 'p.md' })).toEqual({ projectId: null, planPath: null });
+        expect(runInputLocator({ projectId: 'app' })).toEqual({ projectId: null, planPath: null });
+        expect(runInputLocator({ kind: 'PLAN', projectId: 'app', path: 'p.md' })).toEqual({ projectId: null, planPath: null });
+        expect(runInputLocator(undefined)).toEqual({ projectId: null, planPath: null });
+        expect(runInputLocator(null)).toEqual({ projectId: null, planPath: null });
+        expect(runInputLocator(['plan'])).toEqual({ projectId: null, planPath: null });
+      });
     });
 
     describe('m55-edge', () => {

@@ -80,6 +80,8 @@ export interface PluginTestApp {
   crud: CrudFacade;
   /** The project's plugin host facade (activation, entity modules, services). */
   host: ProjectPluginHost;
+  /** 2.1.77 (M44 `1j39ajh8`): the context-type registry of the project (`ProjectContext.contextTypes`). */
+  contextTypes: readonly string[];
   /** The temporary project's working directory. */
   cwd: string;
   /** The project database — for test assertions only; never on a plugin's `MountContext`. */
@@ -115,7 +117,12 @@ export interface PluginTestApp {
  */
 export async function createPluginTestApp(
   manifests: PluginManifest[],
-  opts: { fsEvents?: boolean } = {},
+  /**
+   * `projectType` — 2.1.77: the type of the harness project, given on the
+   * new-project path (absent = `spec`), so a suite can build the context of a
+   * type without some capability.
+   */
+  opts: { fsEvents?: boolean; projectType?: string } = {},
 ): Promise<PluginTestApp> {
   installPluginRuntimeResolver();
 
@@ -155,7 +162,7 @@ export async function createPluginTestApp(
     const registry = new WorkspaceRegistry(path.join(tmp, 'home'));
     let workspace = registry.selectOrCreate({ name: HARNESS_WORKSPACE });
     const cwd = path.join(tmp, 'project');
-    const { project } = bootstrapProject(registry, workspace, cwd);
+    const { project } = bootstrapProject(registry, workspace, cwd, undefined, opts.projectType ?? 'spec');
     workspace = registry.getWorkspace(HARNESS_WORKSPACE) ?? workspace;
 
     // Captured broadcasts: the project's room (services, routes, the crud door)
@@ -216,6 +223,7 @@ export async function createPluginTestApp(
       baseUrl,
       crud: ctx.crud,
       host: ctx.pluginHost,
+      contextTypes: ctx.contextTypes,
       cwd: project.cwd,
       db: ctx.db.handle,
       broadcasts,

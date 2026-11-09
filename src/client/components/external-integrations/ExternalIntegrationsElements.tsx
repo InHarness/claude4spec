@@ -119,7 +119,10 @@ function SkillsBlock() {
     <div data-testid="external-integrations-skills">
       <BlockHeading
         title="Skills"
-        description="Skills for AI coding agents working in a separate code repo (spec-reader, brief-implementer, refactor)."
+        // 2.1.77 (M22 `8tvwx2ry`): the project's skills, as the server lists them.
+        description={`Skills for AI coding agents working in a separate code repo${
+          data ? ` (${data.skills.map((s) => s.slug).join(', ')})` : ''
+        }.`}
       />
       <div className="flex flex-col gap-2">
         {!data ? (

@@ -7,6 +7,7 @@ import { CliError, codeToExit } from '../errors.js';
 import { runTrustPlugins, trustPluginsCommand } from './trust-plugins.js';
 import { runRegisterHome } from './register-home.js';
 import { WorkspaceRegistry } from '../../../server/workspace/registry.js';
+import { activateProject } from '../../../server/workspace/bootstrap.js';
 import { dirEntries, snapshotDir } from '../../../../tests/helpers/dir-snapshot.js';
 
 /**
@@ -326,5 +327,36 @@ describe('c4s trust-plugins', () => {
     const created = allEntries().find((w) => w.defaultPort === 4612)!;
     expect(created).not.toHaveProperty('lastOpened');
     expect(created).not.toHaveProperty('lastOpenedProject');
+  });
+  it('[section:t97gncju] rev-0001: trust-plugins registering a new directory stores the copy of the type its config.json holds, so the next activation finds no PROJECT_TYPE_MISMATCH; a directory without config.json gets no copy', async () => {
+    const skill = path.join(tmp, 'my-skill');
+    fs.mkdirSync(path.join(skill, '.claude4spec'), { recursive: true });
+    fs.writeFileSync(
+      path.join(skill, '.claude4spec', 'config.json'),
+      JSON.stringify({ $schemaVersion: 4, name: 'my-skill', projectType: 'skill', roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }] }),
+    );
+    await runTrustPlugins(parseArgs(['trust-plugins', '--cwd', skill, '--port', '4613', 'true']));
+    const reg = new WorkspaceRegistry(registryHome);
+    const ws = reg.findByPort(4613)!;
+    const record = ws.projects.find((p) => p.id === JSON.parse(stdout).projectId)!;
+    expect(record.projectType).toBe('skill');
+    // The copy matches the file: the activation settles `skill` instead of refusing.
+    expect(activateProject(reg, ws, record).type.entry.slug).toBe('skill');
+
+    // A file without the key is a Specification: the copy says `spec`.
+    const spec = path.join(tmp, 'plain-spec');
+    fs.mkdirSync(path.join(spec, '.claude4spec'), { recursive: true });
+    fs.writeFileSync(path.join(spec, '.claude4spec', 'config.json'), '{}');
+    stdout = '';
+    await runTrustPlugins(parseArgs(['trust-plugins', '--cwd', spec, '--port', '4613', 'true']));
+    const specRecord = new WorkspaceRegistry(registryHome).findByPort(4613)!.projects.find((p) => p.id === JSON.parse(stdout).projectId)!;
+    expect(specRecord.projectType).toBe('spec');
+
+    // No config.json: nothing to copy, the field stays absent (read as `spec`).
+    const bare = path.join(tmp, 'bare-dir');
+    stdout = '';
+    await runTrustPlugins(parseArgs(['trust-plugins', '--cwd', bare, '--port', '4613', 'true']));
+    const bareRecord = new WorkspaceRegistry(registryHome).findByPort(4613)!.projects.find((p) => p.id === JSON.parse(stdout).projectId)!;
+    expect(bareRecord).not.toHaveProperty('projectType');
   });
 });

@@ -303,7 +303,6 @@ export type ModalMap = {
     };
     result: { name: string; description: string };
   };
-  'project-create': { props: NoProps; result: { id: string } };
   /**
    * 2.1.62 (M54 L5 `wzku2ck1`) — the runner-host windows of the `#runner-hosts`
    * card. Each sends its own request (payload `create-runner-host-request` /

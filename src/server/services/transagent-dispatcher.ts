@@ -48,6 +48,9 @@ import type {
 import { DomainError } from './tags.js';
 import { checkResumeConfigLock, isSessionInFlight, type ResumeConfigLockError } from '../routes/resume-lock.js';
 
+/** The `contextType` values `runTransagent` knows (mcp-tool `transagent-tools-runtransagent`). */
+export const TRANSAGENT_CONTEXT_TYPES = ['brief', 'chat', 'patch'] as const;
+
 /**
  * `RESUME_CONFIG_LOCKED` for a banka continuation. `violations` rides along
  * structured — the same `[{ path, reason }]` the two HTTP entry points put in
@@ -215,6 +218,18 @@ export class TransagentDispatcher {
     // The parent's tool_use id (race-free via the agent-turn loop). Used as the
     // child's spawned_by_tool_use_id and echoed on the bracketing events.
     const toolUseId = await this.opts.takeToolUseId();
+
+    // 2.1.77 (M46 `qq84x14h`): the `contextType` set is the PROJECT's — without
+    // the capability `briefs` it is `chat` alone. A `brief`/`patch` call is then
+    // refused (`VALIDATION` → `INVALID_ARGS`) before anything is founded — no
+    // brief file, no child row — like any other value outside the set.
+    const registered = this.deps.contextTypes;
+    if (registered && !registered.includes(contextType)) {
+      throw new DomainError(
+        'VALIDATION',
+        `contextType '${contextType}' is not available in this project; expected one of ${TRANSAGENT_CONTEXT_TYPES.filter((t) => registered.includes(t)).join(', ')}`,
+      );
+    }
 
     // 1. Found the child thread. 0.2.111 (M46): EVERY call founds a new row as a
     //    child of the calling thread — a continuation too — so each tool_use owns

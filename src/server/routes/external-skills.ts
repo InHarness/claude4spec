@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import archiver from 'archiver';
 import {
-  ALL_SKILL_SLUGS,
   buildExternalSkillContext,
   buildExternalSkillsBundle,
   externalSkillsMetadata,
-  isSkillSlug,
+  skillSlugsFor,
+  SPEC_CAPABILITIES,
   type SkillSlug,
 } from '../external-skills/external-skills-service.js';
 import type { ExternalSkillsListResponse } from '../external-skills/types.js';
@@ -17,7 +17,13 @@ export interface ExternalSkillsRouterDeps {
   registry: WorkspaceRegistry;
   workspace: WorkspaceRecord;
   projectId: string;
+  /**
+   * 2.1.77 (M22 `8tvwx2ry`): the project's capability set — the list and the
+   * selection carry `brief-implementer` only with `briefs`. Absent (rigs) = `spec`'s.
+   */
+  capabilities?: ReadonlySet<string>;
 }
+
 
 /**
  * Parses `?skills=a,b,c` into a validated `SkillSlug[]`; empty/absent → [] (all).
@@ -26,7 +32,7 @@ export interface ExternalSkillsRouterDeps {
  * value (and every comma-split token within it) is still validated, so an
  * invalid slug can't slip through via that shape.
  */
-function parseSelection(raw: unknown): SkillSlug[] | { error: string } {
+function parseSelection(raw: unknown, available: readonly SkillSlug[]): SkillSlug[] | { error: string } {
   if (raw === undefined) return [];
   const values = Array.isArray(raw) ? raw : [raw];
   const tokens: string[] = [];
@@ -37,8 +43,8 @@ function parseSelection(raw: unknown): SkillSlug[] | { error: string } {
     tokens.push(...value.split(',').map((s) => s.trim()).filter(Boolean));
   }
   for (const t of tokens) {
-    if (!isSkillSlug(t)) {
-      return { error: `unknown skill '${t}' in ?skills= — expected one of ${ALL_SKILL_SLUGS.join(', ')}` };
+    if (!(available as readonly string[]).includes(t)) {
+      return { error: `unknown skill '${t}' in ?skills= — expected one of ${available.join(', ')}` };
     }
   }
   return tokens as SkillSlug[];
@@ -52,11 +58,12 @@ function parseSelection(raw: unknown): SkillSlug[] | { error: string } {
  */
 export function externalSkillsRouter(deps: ExternalSkillsRouterDeps): Router {
   const router = Router();
+  const capabilities = deps.capabilities ?? SPEC_CAPABILITIES;
 
   router.get('/', (_req, res) => {
     const project = deps.registry.getProject(deps.workspace, deps.projectId);
     const body: ExternalSkillsListResponse = {
-      skills: externalSkillsMetadata(),
+      skills: externalSkillsMetadata(capabilities),
       projectId: project ? project.id : null,
     };
     res.json(body);
@@ -64,7 +71,7 @@ export function externalSkillsRouter(deps: ExternalSkillsRouterDeps): Router {
 
   router.get('/bundle', (req, res, next) => {
     try {
-      const selection = parseSelection(req.query.skills);
+      const selection = parseSelection(req.query.skills, skillSlugsFor(capabilities));
       if (!Array.isArray(selection)) {
         return res.status(400).json({ error: { code: 'VALIDATION', message: selection.error } });
       }
@@ -77,7 +84,12 @@ export function externalSkillsRouter(deps: ExternalSkillsRouterDeps): Router {
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'project not registered' } });
       }
       // Live workspace record: `publicUrl` may have changed since server start.
-      const ctx = buildExternalSkillContext(project, deps.registry.getWorkspace(deps.workspace.name) ?? deps.workspace);
+      const ctx = buildExternalSkillContext(
+        project,
+        deps.registry.getWorkspace(deps.workspace.name) ?? deps.workspace,
+        undefined,
+        capabilities,
+      );
       const files = buildExternalSkillsBundle(ctx, selection.length > 0 ? selection : undefined);
 
       res.setHeader('Content-Type', 'application/zip');

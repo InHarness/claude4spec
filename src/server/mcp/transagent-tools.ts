@@ -48,7 +48,7 @@ import { toIso } from '../services/artifact-content.js';
 import type { BriefService } from '../services/brief.js';
 import type { PatchService } from '../services/patch.js';
 import type { PlanService } from '../services/plan.js';
-import { ResumeConfigLockedError, type TransagentDispatcher } from '../services/transagent-dispatcher.js';
+import { ResumeConfigLockedError, TRANSAGENT_CONTEXT_TYPES, type TransagentDispatcher } from '../services/transagent-dispatcher.js';
 import { DomainError } from '../services/tags.js';
 import { AgentTurnError } from '../../shared/agent-turn.js';
 
@@ -76,6 +76,13 @@ export interface TransagentToolsContext {
   plans?: Pick<PlanService, 'listPlans'>;
   /** The project `list_patches` / `list_briefs` / `list_plans` answer for — the response-size ring's key. */
   projectId?: string | null;
+  /**
+   * 2.1.77 (M46 `qq84x14h`) — the project has the capability `briefs`. Without it
+   * the server carries `runTransagent` and `list_plans` only: `list_patches` and
+   * `list_briefs` belong to M23/M21, modules such a project does not have — even
+   * when a rig hands the services in. Absent = yes.
+   */
+  hasBriefs?: boolean;
 }
 
 /** Tool names this server can carry, in registration order. */
@@ -143,7 +150,7 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
     ].join('\n'),
     {
       contextType: z
-        .enum(['brief', 'chat', 'patch'])
+        .enum(TRANSAGENT_CONTEXT_TYPES)
         .describe("For a continuation it must equal the referenced banka's context type."),
       message: z.string(),
       payload: z
@@ -196,8 +203,9 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
   );
 
   const tools: McpToolDefinition[] = [runTransagent];
-  if (ctx.patches) tools.push(buildListPatchesTool(ctx.patches, ctx.projectId ?? null));
-  if (ctx.briefs) tools.push(buildListBriefsTool(ctx.briefs, ctx.projectId ?? null));
+  const hasBriefs = ctx.hasBriefs !== false;
+  if (hasBriefs && ctx.patches) tools.push(buildListPatchesTool(ctx.patches, ctx.projectId ?? null));
+  if (hasBriefs && ctx.briefs) tools.push(buildListBriefsTool(ctx.briefs, ctx.projectId ?? null));
   if (ctx.plans) tools.push(buildListPlansTool(ctx.plans, ctx.projectId ?? null));
 
   return createMcpServer({

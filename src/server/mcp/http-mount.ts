@@ -497,6 +497,19 @@ function mcpRequestHandlerUnguarded(opts: McpMountOptions) {
       return;
     }
 
+    // 2.1.77 (M12 `ikg2bklu`): a profile of the closed table that THIS project's
+    // registry does not hold (`brief`/`patch` without `briefs`) is refused at
+    // set-up like an unknown value — before any session or catalog exists.
+    if (surface.profiles && !(surface.profiles as readonly string[]).includes(chosen.profile)) {
+      jsonRpcError(
+        res,
+        400,
+        'VALIDATION',
+        `unknown profile '${chosen.profile}' for this project; expected one of ${surface.profiles.join(', ')}`,
+      );
+      return;
+    }
+
     const session = openSession(opts.packageVersion, chosen.profile, opts.binding(req));
 
     // Registered BEFORE connect, so the initial set is the handshake's answer

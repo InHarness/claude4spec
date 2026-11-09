@@ -2,8 +2,8 @@
 /**
  * 2.1.12 (M31 ui-view `welcome-page`, `/welcome`). The workspace registry
  * screen: the workspace's projects listed neutrally, a click loads the
- * project's route, "Add project to workspace" opens the `project-create`
- * window; state `empty` (e.g. after purging the last project) — an empty list
+ * project's route, "Add project to workspace" navigates to `/create-project`
+ * (2.1.77; the `project-create` window is gone); state `empty` (e.g. after purging the last project) — an empty list
  * and only the add action. 2.1.58: a workspace route — its kind, its frame and
  * its document are pinned in src/client/App.workspace-frame.render.test.ts.
  */
@@ -75,14 +75,14 @@ afterEach(() => {
 });
 
 describe('welcome-page (/welcome)', () => {
-  it('[entity:welcome-page] default state: lists the workspace projects neutrally; a click loads /p/<id>/; "Add project to workspace" opens project-create', async () => {
+  it('[entity:welcome-page] default state: lists the workspace projects neutrally; a click loads /p/<id>/; "Add project to workspace" navigates to /create-project', async () => {
     workspace = {
       name: 'default',
       kind: 'registry',
       lastOpenedProject: null,
       projects: [
-        { id: 'alpha', name: 'Alpha', cwd: '/work/alpha', live: true },
-        { id: 'beta', name: 'Beta', cwd: '/work/beta', live: false },
+        { id: 'alpha', name: 'Alpha', cwd: '/work/alpha', live: true, projectType: 'spec', projectTypeName: 'Specification' },
+        { id: 'beta', name: 'Beta', cwd: '/work/beta', live: false, projectType: 'spec', projectTypeName: 'Specification' },
       ],
     };
     await render();
@@ -91,7 +91,7 @@ describe('welcome-page (/welcome)', () => {
     expect(host.textContent).toContain('Welcome to claude4spec');
     expect(host.textContent).toContain('default');
     const projectButtons = buttons().filter((b) => b.textContent?.includes('/work/'));
-    expect(projectButtons.map((b) => b.textContent)).toEqual(['Alpha/work/alpha', 'Beta/work/beta']);
+    expect(projectButtons.map((b) => b.textContent)).toEqual(['Alpha/work/alphaSpecification', 'Beta/work/betaSpecification']);
     // Neutral: no project is marked (no check mark, no accent difference by cwd).
     expect(projectButtons[0]!.outerHTML.replace(/alpha|Alpha/g, 'x')).toBe(
       projectButtons[1]!.outerHTML.replace(/beta|Beta/g, 'x'),
@@ -106,7 +106,8 @@ describe('welcome-page (/welcome)', () => {
     await act(async () => {
       button('Add project to workspace')!.click();
     });
-    expect(modals.map((m) => m.kind)).toEqual(['project-create']);
+    expect(nav.hrefs).toEqual(['/p/beta/', '/create-project']);
+    expect(modals).toEqual([]);
   });
 
   it('[entity:welcome-page] state `empty`: the workspace registry has no project — an empty list and only the add-project action', async () => {
@@ -119,8 +120,8 @@ describe('welcome-page (/welcome)', () => {
     await act(async () => {
       button('Add project to workspace')!.click();
     });
-    expect(modals.map((m) => m.kind)).toEqual(['project-create']);
-    expect(nav.hrefs).toEqual([]);
+    expect(modals).toEqual([]);
+    expect(nav.hrefs).toEqual(['/create-project']);
   });
 
   it('[ac:ac-lista-projektow-na-welcome-nie-wyrozn] the project list on /welcome marks no project — not the one in the directory the server was started in, not the last opened one', async () => {
@@ -131,8 +132,8 @@ describe('welcome-page (/welcome)', () => {
       kind: 'home',
       lastOpenedProject: 'alpha',
       projects: [
-        { id: 'alpha', name: 'Alpha', cwd: '/work/alpha', live: true },
-        { id: 'beta', name: 'Beta', cwd: '/work/beta', live: false },
+        { id: 'alpha', name: 'Alpha', cwd: '/work/alpha', live: true, projectType: 'spec', projectTypeName: 'Specification' },
+        { id: 'beta', name: 'Beta', cwd: '/work/beta', live: false, projectType: 'spec', projectTypeName: 'Specification' },
       ],
     };
     await render();
@@ -147,6 +148,73 @@ describe('welcome-page (/welcome)', () => {
       expect(row.getAttribute('aria-selected')).toBeNull();
     }
     // In list order, as the registry answers — the start directory's project is not moved up.
-    expect(rows.map((b) => b.textContent)).toEqual(['Alpha/work/alpha', 'Beta/work/beta']);
+    expect(rows.map((b) => b.textContent)).toEqual(['Alpha/work/alphaSpecification', 'Beta/work/betaSpecification']);
+  });
+
+  it('[ac:ac-przycisk-add-project-to-workspace-na] the "Add project to workspace" button on /welcome navigates to /create-project', async () => {
+    workspace = {
+      name: 'default',
+      kind: 'registry',
+      lastOpenedProject: null,
+      projects: [{ id: 'alpha', name: 'Alpha', cwd: '/work/alpha', live: true, projectType: 'spec', projectTypeName: 'Specification' }],
+    };
+    await render();
+    await act(async () => {
+      button('Add project to workspace')!.click();
+    });
+    expect(nav.hrefs).toEqual(['/create-project']);
+    // No window opens: the old add-project modal is gone.
+    expect(modals).toEqual([]);
+  });
+
+  it('[ac:m31-welcome-row-shows-type-name] a project row on /welcome shows the name of that project\'s type', async () => {
+    workspace = {
+      name: 'default',
+      kind: 'registry',
+      lastOpenedProject: null,
+      projects: [
+        { id: 'app', name: 'App', cwd: '/work/app', live: true, projectType: 'spec', projectTypeName: 'Specification' },
+        { id: 'review', name: 'Review', cwd: '/work/review', live: true, projectType: 'skill', projectTypeName: 'Skill' },
+      ],
+    };
+    await render();
+    const types = Array.from(host.querySelectorAll('[data-testid="project-type"]')).map((e) => e.textContent);
+    expect(types).toEqual(['Specification', 'Skill']);
+    const review = buttons().find((b) => b.textContent?.includes('Review'))!;
+    expect(review.textContent).toContain('Skill');
+    expect(review.textContent).not.toContain('skill');
+    expect(review.disabled).toBe(false);
+    await act(async () => {
+      review.click();
+    });
+    expect(nav.hrefs).toEqual(['/p/review/']);
+  });
+
+  it('[ac:m31-welcome-unknown-type-row-unavailable] [ac:ac-projekt-z-nieznana-wartoscia-projectt-2] a project whose type the current version does not know is an unavailable row on /welcome, its type slug written out as is, and a click on it does not navigate', async () => {
+    workspace = {
+      name: 'default',
+      kind: 'registry',
+      lastOpenedProject: null,
+      projects: [
+        { id: 'app', name: 'App', cwd: '/work/app', live: true, projectType: 'spec', projectTypeName: 'Specification' },
+        { id: 'future', name: 'Future', cwd: '/work/future', live: false, projectType: 'novel-kind', projectTypeName: null },
+      ],
+    };
+    await render();
+    const row = buttons().find((b) => b.textContent?.includes('Future'))!;
+    // Still on the list…
+    expect(row).toBeDefined();
+    // …as an unavailable row…
+    expect(row.disabled).toBe(true);
+    expect(row.getAttribute('aria-disabled')).toBe('true');
+    // …with the type slug written out literally.
+    expect(row.querySelector('[data-testid="project-type"]')!.textContent).toBe('novel-kind');
+    await act(async () => {
+      row.click();
+      row.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(nav.hrefs).toEqual([]);
+    // The known row next to it stays available.
+    expect(buttons().find((b) => b.textContent?.includes('App'))!.disabled).toBe(false);
   });
 });

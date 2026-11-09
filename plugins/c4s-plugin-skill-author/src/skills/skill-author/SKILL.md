@@ -1,6 +1,6 @@
 ---
 title: Skill Author
-description: "Writes the project's own skills — procedures, checklists and conventions for the agent — as packages in the project's skills root. Open it via load_skill_file('skill-author') when the user asks to create, define or change a project skill (instructions for the agent, not a writing style). Writes only with update_skill_file, so it works with direct file access blocked."
+description: "Writes the project's local skills — procedures, checklists and conventions for the agent — as packages in the project's skills root, in a project of any type. Open it via load_skill_file('skill-author') when the user asks to create, define or change a project skill (instructions for the agent, not a writing style). Writes only with update_skill_file, so it works with direct file access blocked, and never writes project pages. A skill for the other projects of the workspace is a separate project of type Skill, which the author creates and attaches in the #skills settings tab by hand."
 version: 1
 language: en
 scope: contextual
@@ -9,7 +9,7 @@ contextTypes: [chat, patch]
 
 # Skill Author
 
-You are helping the user write a **project skill**: instructions for an agent — a procedure, a checklist, a set of conventions — kept in this project and offered to the agent in later turns. A skill is not a page of the specification and not a writing style. The specification describes the product; a skill tells an agent how to do a piece of work.
+You are helping the user write a **local skill** of this project: instructions for an agent — a procedure, a checklist, a set of conventions — kept as a package in this project's `skills` root and offered to the agent in later turns of this project only. A skill is not a page of the specification and not a writing style. The specification describes the product; a skill tells an agent how to do a piece of work.
 
 You were not told to use this skill. Open it only when the user actually asks to create, define or change a project skill, not when they merely ask what skills exist.
 
@@ -24,7 +24,15 @@ Write every file of a skill package with **`update_skill_file`** (server `spec-s
 
 Because the write goes through an MCP tool and not through the file system, it works the same with direct file access blocked (`agent.disableDirectFilesystemAccess`). If `update_skill_file` is not available in this turn, say so and stop — do not fall back to another way of writing.
 
+**Never write a page of the project.** No `create_page`, no `update_sections`, no other page tool, in a project of any type — including a project of type Skill, whose pages are the skill it exposes to other projects. Everything you write is a file of a package in the `skills` root. This works the same in every kind of project: do not read the project's type or its capabilities to decide anything here.
+
 Read with **`load_skill_file(slug, file?)`**. Its answer carries the file's `hash`; that hash is what the next write passes as `expectedHash`.
+
+---
+
+## A skill for the other projects of the workspace
+
+What you write is always a **local skill** — it works in this project only. If the user wants a skill that other projects of the workspace can use, tell them that instead of a local skill they can **create a separate project of type Skill** and attach it in the projects that should use it. They register that project and attach it **themselves**, in the **`#skills` tab of the project settings**. You do not create that project, do not attach it and do not write its pages. If they still want a skill here, write the local skill as below.
 
 ---
 
@@ -76,7 +84,7 @@ Do **not** refer to sections or pages of the specification by anchor or by path:
 
 ## Procedure
 
-1. **Agree on the skill.** Ask what work it covers, in which kinds of turn it should be offered (`contextTypes`), and its language. Propose a slug.
+1. **Agree on the skill.** If it is meant for the other projects of the workspace, say what "A skill for the other projects of the workspace" above says first. Ask what work it covers, in which kinds of turn it should be offered (`contextTypes`), and its language. Propose a slug.
 2. **Check the slug.** Look at `<available_skills>` and call `load_skill_file(<slug>)`. If a skill with that slug exists, either edit it (with the user's consent) or choose another slug. A skill that comes from an exposed project is read-only here — propose the change to its owner instead.
 3. **Create `SKILL.md`.** `update_skill_file({ slug, file: "SKILL.md", content, expectedHash: "" })`. `""` means "this file must not exist yet".
 4. **Add subfiles**, one call each, also with `expectedHash: ""`.
@@ -88,7 +96,7 @@ Do **not** refer to sections or pages of the specification by anchor or by path:
 
 ## Checklist before you finish
 
-1. Every file was written with `update_skill_file`, none with a file or page tool.
+1. Every file was written with `update_skill_file`, none with a file or page tool — no page of the project was created or changed.
 2. `SKILL.md` has `title`, a non-empty `description` that says when to open it, `version: 1`, `language`, and `scope: contextual`.
 3. `contextTypes` is either deliberately set or deliberately left out — and you told the user which.
 4. Every subfile the entry instruction mentions exists, at the package-relative path it names.

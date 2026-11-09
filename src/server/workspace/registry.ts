@@ -710,9 +710,9 @@ export class WorkspaceRegistry {
    *
    * The kind is taken from the view passed in (`ws.home`) — no registry read.
    */
-  registerProject(ws: WorkspaceRecord, cwd: string): ProjectRecord {
+  registerProject(ws: WorkspaceRecord, cwd: string, projectType?: string): ProjectRecord {
     const absCwd = path.resolve(cwd);
-    if (ws.home !== undefined) return this.registerHomeProject(ws, absCwd);
+    if (ws.home !== undefined) return this.registerHomeProject(ws, absCwd, projectType);
     const wsDir = path.join(this.baseDir, ws.name);
     const project = this.withLock((data) => {
       const target = data.workspaces.find((w) => isStoredEntryOf(w, ws));
@@ -730,7 +730,8 @@ export class WorkspaceRegistry {
                 name && name.trim() !== '' ? name : path.basename(absCwd),
                 new Set([...live, ...listSlotIds(wsDir)]),
               );
-        p = { cwd: absCwd, id, addedAt: nowIso() };
+        // 2.1.77 (M31 `t97gncju`): a new record carries the copy of the type.
+        p = { cwd: absCwd, id, addedAt: nowIso(), ...(projectType !== undefined ? { projectType } : {}) };
         projects.push(p);
       }
       return p;
@@ -739,7 +740,7 @@ export class WorkspaceRegistry {
     return project;
   }
 
-  private registerHomeProject(ws: WorkspaceRecord, absCwd: string): ProjectRecord {
+  private registerHomeProject(ws: WorkspaceRecord, absCwd: string, projectType?: string): ProjectRecord {
     const home = ws.home!;
     // Both refusals (PROJECT_PATH_IS_HOME / PROJECT_PATH_OUTSIDE_HOME) before any write.
     const rel = toProjectPath(home, absCwd);
@@ -767,7 +768,8 @@ export class WorkspaceRegistry {
           name && name.trim() !== '' ? name : path.basename(absCwd),
           new Set(data.projects.map((p) => p.id)),
         );
-        return { next: { ...data, projects: [...data.projects, { id: minted, path: rel }] }, result: minted };
+        const entry = { id: minted, path: rel, ...(projectType !== undefined ? { projectType } : {}) };
+        return { next: { ...data, projects: [...data.projects, entry] }, result: minted };
       });
       this.homeFiles.set(home, file);
       return result;
@@ -775,7 +777,13 @@ export class WorkspaceRegistry {
     this.prepareSlot(ws, id, absCwd);
     // The caller's view already folds in the machine-local trust of a project
     // it lists under this path; a newly minted project has none yet.
-    return ws.projects.find((p) => p.id === id && path.resolve(p.cwd) === absCwd) ?? { id, cwd: absCwd };
+    return (
+      ws.projects.find((p) => p.id === id && path.resolve(p.cwd) === absCwd) ?? {
+        id,
+        cwd: absCwd,
+        ...(projectType !== undefined ? { projectType } : {}),
+      }
+    );
   }
 
   /**
@@ -1135,6 +1143,7 @@ export class WorkspaceRegistry {
       plugins: [...file.plugins],
       projects: file.projects.map((p) => {
         const record: ProjectRecord = { id: p.id, cwd: path.resolve(home, p.path) };
+        if (p.projectType !== undefined) record.projectType = p.projectType;
         const trust = projectTrust?.[p.id];
         if (trust && sameProjectPath(trust.path, p.path)) {
           if (trust.trustProjectPlugins !== undefined) record.trustProjectPlugins = trust.trustProjectPlugins;

@@ -29,7 +29,8 @@ import { usePages, usePagesSearch, useSidebarAccordions } from '../hooks/usePage
 import { accordionCollapseToken, subtreeOf } from '../lib/sidebar-accordions.js';
 import { useMovePage } from '../hooks/usePage.js';
 import { api } from '../lib/api.js';
-import { useElementsMenuLayout, useRoots } from '../hooks/useConfig.js';
+import { useConfig, useElementsMenuLayout, useHasEntities, useRoots } from '../hooks/useConfig.js';
+import { projectTypeNameFor, useProjectTypes } from '../hooks/useProjectTypes.js';
 import { useNewPageAction } from '../hooks/useNewPage.js';
 import { usePersistedState, projectKey } from '../state/persisted.js';
 import { UserSection } from './UserSection.js';
@@ -85,6 +86,10 @@ export function Sidebar({
   const navigate = useNavigate();
   const roots = useRoots();
   const elementsMenu = useElementsMenuLayout();
+  // 2.1.77 (M50 `0p15a2js`): the ELEMENTS section exists only with the
+  // capability `entities` — the composition is read from capabilities, never
+  // from the project type.
+  const hasEntities = useHasEntities();
   // 2.1.9 (M02): the page-tree slot is fed by `GET /api/sidebar-accordions` —
   // one accordion per element, in the route's order, whatever the root's kind.
   const { data: accordions = [], isSuccess: accordionsLoaded } = useSidebarAccordions();
@@ -127,6 +132,7 @@ export function Sidebar({
         style={{ borderBottom: '1px solid var(--c-hair)' }}
       >
         <AppBranding />
+        <ProjectTypeLabel />
         <ProjectSwitcher projectName={projectName} cwdPath={cwdPath} loading={headerLoading} />
         <button
           onClick={() => navigate({ to: '/settings' })}
@@ -222,12 +228,14 @@ export function Sidebar({
           )}
         </div>
 
-        <SidebarElements
-          entityCounts={entityCounts}
-          pathname={pathname}
-          elementsMenu={elementsMenu.layout}
-          layoutPending={!elementsMenu.ready}
-        />
+        {hasEntities && (
+          <SidebarElements
+            entityCounts={entityCounts}
+            pathname={pathname}
+            elementsMenu={elementsMenu.layout}
+            layoutPending={!elementsMenu.ready}
+          />
+        )}
       </div>
 
       <OthersMenu
@@ -237,6 +245,32 @@ export function Sidebar({
         brokenLinkCount={brokenLinkCount}
       />
     </aside>
+  );
+}
+
+/**
+ * 2.1.77 (M50 `8h2a734u` Branding, `76e8kkze`) — the label with the name of the
+ * current project's type, a shell element of the Branding strip. The slug is
+ * the config's `projectType` (M57 `y47yl4xt`, the project's config file); the
+ * name is the entry with that slug on `GET /api/workspace/project-types`. One
+ * path for every type — a lookup, no branch on the slug; nothing until both
+ * reads are in (an unknown type never activates, so its sidebar never renders).
+ */
+export function ProjectTypeLabel() {
+  const { data: config } = useConfig();
+  const slug = config?.projectType;
+  const { data: types } = useProjectTypes({ enabled: !!slug });
+  const name = projectTypeNameFor(types, slug);
+  if (!name) return null;
+  return (
+    <span
+      data-project-type-label=""
+      className="text-[10px] uppercase tracking-wider font-mono font-semibold rounded px-1.5 py-0.5 truncate"
+      style={{ color: 'var(--c-muted)', border: '1px solid var(--c-hair)', flexShrink: 0, maxWidth: 110 }}
+      title={`Project type: ${name}`}
+    >
+      {name}
+    </span>
   );
 }
 
@@ -954,14 +988,27 @@ function PageRow({
  * Releases → TODOs → Tags → Links → Briefs. An item is active when the route is
  * its own (or below it).
  */
-const OTHERS_ITEMS: ReadonlyArray<{ to: string; icon: LucideIcon; label: string }> = [
+const OTHERS_ITEMS: ReadonlyArray<{ to: string; icon: LucideIcon; label: string; requires?: readonly string[] }> = [
   { to: '/plans', icon: ClipboardList, label: 'Plans' },
   { to: '/releases', icon: GitCommit, label: 'Releases' },
   { to: '/todos', icon: StickyNote, label: 'TODOs' },
-  { to: '/tags', icon: Tag, label: 'Tags' },
+  // 2.1.77 (M18 `rxlzqki1`): the "Tags" item inherits M18's requirement `entities`.
+  { to: '/tags', icon: Tag, label: 'Tags', requires: ['entities'] },
   { to: '/links', icon: Link2, label: 'Links' },
-  { to: '/briefs', icon: FileText, label: 'Briefs' },
+  // 2.1.77 (M21 `dcagtfpe`): "Briefs" in OTHERS exists only with the capability `briefs`.
+  { to: '/briefs', icon: FileText, label: 'Briefs', requires: ['briefs'] },
 ];
+
+/**
+ * 2.1.77 (M50 `0p15a2js`) — the OTHERS items whose required capabilities the
+ * project has; an item the project lacks drops out, the others keep their order
+ * (the route list of OTHERS items is this same list). Read from capabilities,
+ * never from the project type. `capabilities` absent (config not read yet, or
+ * an older server) = every item.
+ */
+export function othersItemsFor(capabilities: readonly string[] | undefined) {
+  return OTHERS_ITEMS.filter((item) => !capabilities || !item.requires || item.requires.every((c) => capabilities.includes(c)));
+}
 
 const isOnRoute = (pathname: string, to: string) => pathname === to || pathname.startsWith(`${to}/`);
 
@@ -980,6 +1027,8 @@ function OthersMenu({
   linkIssueCount: number;
   brokenLinkCount: number;
 }) {
+  const { data: config } = useConfig();
+  const capabilities = config?.capabilities;
   const extras: Record<string, ReactNode> = {
     '/todos': todoCount > 0 ? <AmberBadge count={todoCount} /> : null,
     '/links': (
@@ -989,7 +1038,7 @@ function OthersMenu({
       </>
     ),
   };
-  const items = OTHERS_ITEMS.map((item) => ({
+  const items = othersItemsFor(capabilities).map((item) => ({
     ...item,
     active: isOnRoute(pathname, item.to),
     extra: extras[item.to],

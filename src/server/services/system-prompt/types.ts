@@ -26,12 +26,12 @@ export interface PeerProject {
   name?: string;
   description?: string;
   /**
-   * 2.1.9 (M31 `qtqqqwfp`): the peer is exposed as a skill — taken from the M52
-   * list of exposed projects, never from reading the peer's `config.json` here.
-   * Renders `skill="exposed"`; it addresses nothing (the skill's address is its
-   * name, the project's is `id`).
+   * 2.1.77 (M31 `qtqqqwfp`, `gofah0an`): the peer's project-type slug, from the
+   * copy of the type in the peer's registry record (never from reading its
+   * `config.json` here) — written verbatim, known slug or not. Renders `type="…"`;
+   * it addresses nothing. Replaces the 2.1.9 `skill="exposed"` marker.
    */
-  skillExposed?: boolean;
+  type?: string;
 }
 
 /**
@@ -124,6 +124,20 @@ export interface SystemPromptInput {
    * `<available_skills>`. Absent = no.
    */
   skillsRootHasFiles?: boolean;
+  /**
+   * 2.1.77 (M19 `wjjr1oc0`, M18 `rxlzqki1`): whether the project has the
+   * capability `entities`. `false` ⇒ the module contributions that require it
+   * (`<entity_embeds>`, `<tags>`) are not emitted. Absent = present (the
+   * hand-rolled rigs carry no capability set).
+   */
+  entities?: boolean;
+  /**
+   * 2.1.77 (M48 `7yqp77g8`, M57 `7ngvgv5z`): the current project's type slug —
+   * the `type="…"` attribute of `<project>` (both variants) and the key of the
+   * type entry whose prompt description `<project_type>` carries. Absent = `spec`
+   * (the hand-rolled rigs carry no type).
+   */
+  projectType?: string;
   annotations?: Annotation[];
   planMode?: boolean;
   currentPlan?: Plan | null;

@@ -4,7 +4,8 @@ import { PROJECT_ID } from '../lib/api-core.js';
 
 import { Skeleton } from '../ui/Skeleton.js';
 import { useWorkspace } from '../hooks/useWorkspace.js';
-import { openModal, toast } from '../ui/events.js';
+import { toast } from '../ui/events.js';
+import { navigateDocument } from '../lib/document-nav.js';
 
 /**
  * M31: workspace project switcher — the `Nagłówek` slot entry of the PROJECT
@@ -14,7 +15,10 @@ import { openModal, toast } from '../ui/events.js';
  * (workspace scope, NOT the project-prefixed apiFetch), fetched when the
  * popover opens and refreshed on every open; picking one does a
  * full reload to `/p/<id>/`, required because PROJECT_ID / API_BASE /
- * PROJECT_SCOPE / router basepath are module-load constants.
+ * PROJECT_SCOPE / router basepath are module-load constants. 2.1.77 (M31
+ * `m31l5001` Sloty): the action "Add project to workspace" navigates to the
+ * workspace route `/create-project` with a document reload, the same way as a
+ * project switch.
  */
 export function ProjectSwitcher({
   projectName,
@@ -120,7 +124,7 @@ export function ProjectSwitcher({
           style={{
             background: 'var(--c-card)',
             border: '1px solid var(--c-hair-strong)',
-            // Bounded so every project and "Add project…" stay reachable in large workspaces.
+            // Bounded so every project and "Add project to workspace" stay reachable in large workspaces.
             maxHeight: 'min(420px, calc(100vh - 80px))',
           }}
         >
@@ -188,13 +192,14 @@ export function ProjectSwitcher({
             type="button"
             onClick={() => {
               setOpen(false);
-              void openModal('project-create', {});
+              // Workspace route, outside the project prefix — a document reload.
+              navigateDocument('/create-project');
             }}
             className="shrink-0 w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12.5px]"
             style={{ color: 'var(--c-muted)' }}
           >
             <Plus size={12} style={{ flexShrink: 0 }} />
-            Add project…
+            Add project to workspace
           </button>
         </div>
       ) : null}

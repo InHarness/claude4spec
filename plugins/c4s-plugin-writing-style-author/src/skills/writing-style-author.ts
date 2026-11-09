@@ -46,13 +46,16 @@ function body(raw: string): string {
  * access blocked; it does not write in `brief`/`ask` (no `spec-skill-tools` there),
  * and a request for a non-style package is sent to `skill-author`.
  *
- * 2.1.15 (M15 `1fjp0yb7`, `cb70i2o5`, `m15edg001`): two routes, settled before the
- * first write and asked about when the conversation does not settle them. Route A —
- * a style for THIS project — is the package above. Route B — the project exposed as
- * a style for the workspace — is the project's own base-root pages (entry =
- * `skill.entry`), written with `create_page` / `update_sections`, never
- * `update_skill_file`; the skill changes no config and ends by pointing at the
- * `#skills` settings tab. In `brief`/`ask` it writes nothing on either route.
+ * 2.1.77 (M15 `m15wsauth`, `e5635uwn`, `lyygimdd`, `m15edg001`; pkg `vt1nmnwx`,
+ * `l71kgcft`): one route only. The style is always a LOCAL style — the package
+ * above, written with `update_skill_file` — in a project of any type; the skill
+ * reads neither the project's type nor its capabilities, and never writes a page
+ * of the project with any page tool (also not in a Writing Style project, whose
+ * pages are its exposed style). A style for the other projects of the workspace is
+ * a separate Writing Style project the author registers and attaches on the
+ * `#skills` tab by hand; the skill only mentions it. The exposed-style route of
+ * 2.1.15 (route choice, base-root pages, the `#skills` pointer to expose the
+ * project) is gone.
  *
  * No `files`: this skill has always been a single `SKILL.md`. The instruction it
  * carries tells the AGENT to write a `workflows/` directory into the style it
@@ -64,7 +67,7 @@ export const writingStyleAuthorSkill: PluginSkillContribution = {
   slug: 'writing-style-author',
   title: 'Writing Style Author',
   description:
-    "Authors a new writing style from a chat request — e.g. 'create a writing style for our team that writes terse, code-first briefs'. Open it via load_skill_file('writing-style-author') when the user asks to create/define/author a new writing style. Two routes, settled with the user (or asked) before the first write: a style for this project is a package in the project's skills root (.claude4spec/skills/<slug>/ — SKILL.md plus a workflows/ directory) written with update_skill_file, selectable from the very next query; a style for the other projects of the workspace is this project's own pages, written with the page tools and exposed by the author in the #skills settings tab. Writing styles only: any other kind of skill package belongs to the skill-author skill.",
+    "Authors a new writing style from a chat request — e.g. 'create a writing style for our team that writes terse, code-first briefs'. Open it via load_skill_file('writing-style-author') when the user asks to create/define/author a new writing style. The style is always a local style: a package in the project's skills root (.claude4spec/skills/<slug>/ — SKILL.md plus a workflows/ directory) written with update_skill_file, selectable from the very next query; it never writes project pages. A style for the other projects of the workspace is a separate project of type Writing Style, which the author creates and attaches in the #skills settings tab by hand. Writing styles only: any other kind of skill package belongs to the skill-author skill.",
   version: 1,
   language: 'en',
   scope: 'contextual',

@@ -6,8 +6,13 @@
  * "this name already resolves to an existing tag" without re-implementing
  * (and risking drift from) the server's normalization rules.
  */
-export function slugify(input: string): string {
-  const base = input
+/**
+ * The kebab-case transliteration of {@link slugify} without its fallback:
+ * `''` when the input holds nothing it can keep (callers that must show an
+ * empty field rather than a generated `x-<hash>` use this).
+ */
+export function slugBase(input: string): string {
+  return input
     .toLowerCase()
     // ł nie ma dekompozycji NFD — mapujemy jawnie przed normalizacją.
     .replace(/ł/g, 'l')
@@ -17,6 +22,10 @@ export function slugify(input: string): string {
     .replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+}
+
+export function slugify(input: string): string {
+  const base = slugBase(input);
   if (base) return base;
   // Input outside the Latin-diacritic set this transliterates (CJK,
   // Cyrillic, Arabic, …) or pure punctuation collapses to '' above. Callers

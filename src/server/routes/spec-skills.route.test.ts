@@ -28,22 +28,28 @@ afterEach(() => {
   for (const d of tmpDirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
 });
 
-function project(name: string, skill: SkillConfig): string {
+/**
+ * A project directory; 2.1.77 (M52 `ybbal0vf`): a provider is a project of a
+ * type with `skill-exposure` (here `skill`), the type in the file and in its
+ * workspace record — there is no exposure toggle.
+ */
+function project(name: string, skill: SkillConfig, projectType?: string): string {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-spec-skills-route-'));
   tmpDirs.push(cwd);
-  writeConfig(cwd, { name, skill });
+  writeConfig(cwd, { name, ...(projectType ? { projectType } : {}), skill });
   return cwd;
 }
 
 /** A workspace: `shop` (current) attaches `billing-rules`, `ghost` (dangling) and `docs` (ambiguous). */
 function workspace() {
   const projects = [
-    { id: 'shop', cwd: project('Shop', { exposed: true, name: 'shop-skill', description: 'The shop.', uses: ['billing-rules', 'ghost', 'docs', 'shop-skill'] }) },
-    { id: 'billing', cwd: project('Billing', { exposed: true, name: 'billing-rules', description: 'How billing works.' }) },
-    { id: 'docs-a', cwd: project('Docs A', { exposed: true, name: 'docs', description: 'Docs A.' }) },
-    { id: 'docs-b', cwd: project('Docs B', { exposed: true, name: 'docs', description: 'Docs B.' }) },
-    { id: 'legal', cwd: project('Legal', { exposed: true, name: 'legal-terms', description: 'Terms.' }) },
-    { id: 'hidden', cwd: project('Hidden', { exposed: false, name: 'hidden-skill', description: 'Not exposed.' }) },
+    { id: 'shop', projectType: 'skill', cwd: project('Shop', { name: 'shop-skill', description: 'The shop.', uses: ['billing-rules', 'ghost', 'docs', 'shop-skill'] }, 'skill') },
+    { id: 'billing', projectType: 'skill', cwd: project('Billing', { name: 'billing-rules', description: 'How billing works.' }, 'skill') },
+    { id: 'docs-a', projectType: 'skill', cwd: project('Docs A', { name: 'docs', description: 'Docs A.' }, 'skill') },
+    { id: 'docs-b', projectType: 'skill', cwd: project('Docs B', { name: 'docs', description: 'Docs B.' }, 'skill') },
+    { id: 'legal', projectType: 'skill', cwd: project('Legal', { name: 'legal-terms', description: 'Terms.' }, 'skill') },
+    // A Specification (no record type = `spec`) with exposure keys in its file: no provider.
+    { id: 'hidden', cwd: project('Hidden', { name: 'hidden-skill', description: 'Not exposed.' }) },
   ];
   const shop = projects[0]!.cwd;
   const app = express().use(
@@ -116,8 +122,8 @@ describe('GET /api/spec-skills/exposed-projects (M52 L4, 2.1.9)', () => {
     const { app, projects } = workspace();
     const ghost = (await request(app).get('/api/spec-skills/exposed-projects')).body.data.find((r: { name: string }) => r.name === 'ghost');
     expect(ghost).toEqual({ name: 'ghost', uses: true, status: 'unavailable', confirmed: true });
-    // The provider of `billing-rules` stops exposing itself: that attachment is dangling now, too.
-    writeConfig(projects[1]!.cwd, { skill: { exposed: false } });
+    // The provider of `billing-rules` clears its `skill.name`: that attachment is dangling now, too.
+    writeConfig(projects[1]!.cwd, { skill: { name: null } });
     const billing = (await request(app).get('/api/spec-skills/exposed-projects')).body.data.find(
       (r: { name: string }) => r.name === 'billing-rules',
     );
@@ -492,11 +498,11 @@ describe('PUT /api/spec-skills/uses-confirmation (M52 uluzymnm, 2.1.67)', () => 
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-uses-confirmation-home-'));
     tmpDirs.push(home);
     const shop = project('Shop', { uses: ['billing-rules', 'legal-terms'] });
-    const billing = project('Billing', { exposed: true, name: 'billing-rules', description: 'How billing works.' });
+    const billing = project('Billing', { name: 'billing-rules', description: 'How billing works.' }, 'skill');
     const registry = new WorkspaceRegistry(home);
     const ws = registry.selectOrCreate({ name: 'default' });
     const rec = registry.registerProject(ws, shop);
-    registry.registerProject(ws, billing);
+    registry.registerProject(ws, billing, 'skill');
     const projects = () => registry.getWorkspace(ws.name)?.projects ?? [];
     const app = express().use(
       '/api/spec-skills',

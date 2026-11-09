@@ -18,6 +18,7 @@ export function NameField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onBlur={onBlur}
+        name="name"
         autoFocus
         maxLength={120}
         placeholder="My specification"

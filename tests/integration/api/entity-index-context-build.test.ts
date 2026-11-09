@@ -13,7 +13,7 @@ import { ProjectContextCache } from '../../../src/server/workspace/context-cache
 import { projectDispatchMiddleware } from '../../../src/server/workspace/middleware.js';
 import { buildProjectContext } from '../../../src/server/workspace/project-context.js';
 import { WorkspaceRegistry } from '../../../src/server/workspace/registry.js';
-import { bootstrapProject } from '../../../src/server/workspace/bootstrap.js';
+import { bootstrapFixture } from '../../helpers/bootstrap-fixture.js';
 import { errorHandler } from '../../../src/server/routes/errors.js';
 import type { ProjectRecord, WorkspaceRecord } from '../../../src/server/workspace/types.js';
 
@@ -43,7 +43,7 @@ describe('M29 — the entity index is rebuilt by every context build', () => {
     process.env.C4S_HOME = path.join(home, 'registry');
     registry = new WorkspaceRegistry(process.env.C4S_HOME);
     workspace = registry.selectOrCreate({ name: 'default' });
-    source = bootstrapProject(registry, workspace, path.join(home, 'source-project')).project;
+    source = bootstrapFixture(registry, workspace, path.join(home, 'source-project')).project;
     workspace = registry.getWorkspace('default')!;
 
     const pluginRegistry = new PluginRegistryImpl();
@@ -83,7 +83,7 @@ describe('M29 — the entity index is rebuilt by every context build', () => {
   /** A project whose committed entity files are a copy of `source`'s, and whose index was never built. */
   function cloneOfSource(name: string): ProjectRecord {
     const cwd = path.join(home, name);
-    const project = bootstrapProject(registry, registry.getWorkspace('default')!, cwd).project;
+    const project = bootstrapFixture(registry, registry.getWorkspace('default')!, cwd).project;
     fs.cpSync(path.join(source.cwd, ENTITIES), path.join(cwd, ENTITIES), { recursive: true });
     return project;
   }

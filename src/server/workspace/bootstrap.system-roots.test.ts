@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { WorkspaceRegistry } from './registry.js';
-import { bootstrapProject } from './bootstrap.js';
+import { bootstrapFixture } from '../../../tests/helpers/bootstrap-fixture.js';
 import { RootRegistry } from '../roots/registry.js';
 import { KIND_DECLARATIONS, SYSTEM_ROOTS, type RootKind } from '../../shared/root-kinds.js';
 
@@ -25,7 +25,7 @@ describe('bootstrapProject — system roots', () => {
   const boot = () => {
     const registry = new WorkspaceRegistry(dir);
     const ws = registry.selectOrCreate({ name: 'default' });
-    return bootstrapProject(registry, ws, cwd);
+    return bootstrapFixture(registry, ws, cwd);
   };
 
   it('[ac:ac-swiezy-bootstrap-tworzy-katalogi-wszy] a fresh bootstrap creates `.claude4spec/<kind>` for every root of a kind with source `code` in the root registry', () => {

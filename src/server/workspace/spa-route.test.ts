@@ -81,13 +81,23 @@ describe('resolveSpaRoute — root always lands on /welcome', () => {
     const project = registry.registerProject(ws, path.join(dir, 'repo-a'));
     const fresh = registry.getWorkspace('default')!;
 
-    expect(WORKSPACE_ROUTE_PATHS).toEqual(['/welcome', '/workspace/settings']);
+    expect(WORKSPACE_ROUTE_PATHS).toEqual(['/welcome', '/workspace/settings', '/create-project']);
     expect(resolveSpaRoute(registry, fresh, '/workspace/settings')).toEqual({ kind: 'workspace' });
     // The document of a workspace route carries no project global.
     expect(spaDocument('<html><head></head></html>', null)).not.toContain('__C4S_PROJECT__');
     // Under a project prefix the path is the project's document (whose client
     // mounts no workspace route), never a project-less one.
     expect(resolveSpaRoute(registry, fresh, `/p/${project.id}/workspace/settings`)).toEqual({ kind: 'project', project });
+  });
+
+  it('[entity:create-project-page] serves the create-project page /create-project as a workspace route — no project identity, outside the prefix', () => {
+    const registry = new WorkspaceRegistry(dir);
+    const ws = registry.selectOrCreate({ name: 'default' });
+    const project = registry.registerProject(ws, path.join(dir, 'repo-a'));
+    const fresh = registry.getWorkspace('default')!;
+
+    expect(resolveSpaRoute(registry, fresh, '/create-project')).toEqual({ kind: 'workspace' });
+    expect(resolveSpaRoute(registry, fresh, `/p/${project.id}/create-project`)).toEqual({ kind: 'project', project });
   });
 
   it('[ac:ac-po-migracji-rejestru-stara-zakladka-p] after the registry migration an old /p/<hash id>/ bookmark ends on /welcome', () => {

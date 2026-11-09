@@ -12,6 +12,13 @@ export interface WorkspaceProject {
   name: string;
   cwd: string;
   live: boolean;
+  /**
+   * 2.1.77 (M31 `gofah0an`): the type from the copy in the project record
+   * (absent there = `spec`), and its name from the type registry — `null` when
+   * the current version does not know the slug (ASSUMPTION:dev-0803).
+   */
+  projectType: string;
+  projectTypeName: string | null;
 }
 
 /**

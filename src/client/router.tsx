@@ -34,10 +34,11 @@ import { PatchDetail } from './components/PatchDetail.js';
 import { OnboardingPage } from './components/onboarding/OnboardingPage.js';
 import { needsOnboarding } from './components/onboarding/onboardingFlow.js';
 import { WelcomePage } from './components/onboarding/WelcomePage.js';
+import { CreateProjectPage } from './components/CreateProjectPage.js';
 import { SettingsPage } from './components/settings/SettingsPage.js';
 import { WorkspaceSettingsPage } from './components/settings/WorkspaceSettingsPage.js';
 import { usePages } from './hooks/usePages.js';
-import { useBaseRootId, useConfig, useRoots } from './hooks/useConfig.js';
+import { useBaseRootId, useConfig, useHasBriefs, useRoots } from './hooks/useConfig.js';
 import { EditorBridgeProvider } from './tiptap/EditorContext.js';
 import { usePageViewStore } from './state/pageView.js';
 import { useLastPage } from './hooks/useLastPage.js';
@@ -189,6 +190,16 @@ const welcomeRoute = createRoute({
   staticData: { routeKind: 'workspace' },
 });
 
+// M31 ui-view `create-project-page` (2.1.77): a WORKSPACE route — the page
+// that creates a project or adds an existing directory, outside the project
+// prefix, in the workspace route frame; not fullscreen.
+const createProjectRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/create-project',
+  component: CreateProjectPage,
+  staticData: { routeKind: 'workspace' },
+});
+
 // M26 ui-view `workspace-settings-page` (2.1.58): a WORKSPACE route — the
 // settings page of the workspace, opened without a project; only the cards of
 // scope `workspace` (M26 `m26route`).
@@ -257,6 +268,7 @@ export const BASE_ROUTE_CHILDREN = Object.freeze([
   planDetailRoute,
   onboardingRoute,
   welcomeRoute,
+  createProjectRoute,
   workspaceSettingsRoute,
   settingsRoute,
   releasesIndexRoute,
@@ -606,7 +618,14 @@ function PlansIndexRoute() {
   );
 }
 
+/**
+ * 2.1.77 (M21 `dcagtfpe`, M23 `iifnvhtu`) — the brief list, brief detail and
+ * patch detail views exist only in a project with the capability `briefs`;
+ * without it their URLs are the ordinary not-found (`useHasBriefs`).
+ */
+
 function BriefsIndexRoute() {
+  if (!useHasBriefs()) return <RouteNotFound />;
   return (
     <RoutePane>
       <BriefsList />
@@ -615,7 +634,9 @@ function BriefsIndexRoute() {
 }
 
 function BriefDetailRoute() {
+  const hasBriefs = useHasBriefs();
   const { path } = useParams({ from: '/briefs/$path' });
+  if (!hasBriefs) return <RouteNotFound />;
   // path comes URL-encoded (encodeBriefPath splits on '/'); decode each segment.
   const decoded = path.split('/').map(decodeURIComponent).join('/');
   return (
@@ -626,7 +647,9 @@ function BriefDetailRoute() {
 }
 
 function PatchDetailRoute() {
+  const hasBriefs = useHasBriefs();
   const { path } = useParams({ from: '/patches/$path' });
+  if (!hasBriefs) return <RouteNotFound />;
   // path comes URL-encoded (encodePatchPath splits on '/'); decode each segment.
   const decoded = path.split('/').map(decodeURIComponent).join('/');
   return (

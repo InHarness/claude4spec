@@ -6,6 +6,7 @@ import {
 } from '@inharness-ai/agent-adapters/claude-code';
 import type { Root } from '../../../../shared/types.js';
 import type { ProjectPluginHost } from '../../../core/plugin-host/types.js';
+import { DEFAULT_PROJECT_TYPE } from '../../../config.js';
 import { registerCoreOperations } from '../../../operations/core-operations.js';
 // 2.1.79 (M44/M48) — the one classifier the profile gate uses; this block keeps none of its own.
 import { effectiveToolClass } from '../../../operations/profile-gate.js';
@@ -81,7 +82,17 @@ function buildEntityEmbedTypeUnion(pluginHost: ProjectPluginHost): string {
  * and the order is a value you can read rather than a history you have to
  * reconstruct. `identity` keeps the four sentences that are actually identity.
  */
-function buildIdentity(projectName: string): string {
+/*
+ * 2.1.77 (M48 `j9sxaiqy`, template `szablon-claude4spec-identity`): the body
+ * reads the capability `entities` — without it the artefact is markdown pages
+ * on disk, and no sentence about entities stands in the block.
+ */
+function buildIdentity(projectName: string, entities: boolean): string {
+  if (!entities) {
+    return `<claude4spec_identity>
+You are a specification writing assistant for project "${projectName}". The user is editing a specification that consists of markdown pages on disk. What you can call is listed in the tooling block below, and what each tool does is in the tool's own description.
+</claude4spec_identity>`;
+  }
   return `<claude4spec_identity>
 You are a specification writing assistant for project "${projectName}". The user is editing a specification that consists of markdown pages and structured entities. The pages are markdown on disk; the entities are structured records reached only through MCP tools. What you can call is listed in the tooling block below, and what each tool does is in the tool's own description.
 </claude4spec_identity>`;
@@ -466,7 +477,7 @@ function buildTooling(inventory: readonly McpInventoryEntry[], builtinsEnabled: 
 }
 
 export const M48_PROMPT_BLOCKS: readonly PromptBlock[] = [
-  { name: 'claude4spec_identity', render: (c) => buildIdentity(c.projectName) },
+  { name: 'claude4spec_identity', render: (c) => buildIdentity(c.projectName, c.entities !== false) },
   {
     name: 'project',
     /**
@@ -500,15 +511,21 @@ export const M48_PROMPT_BLOCKS: readonly PromptBlock[] = [
       const projectAttrs: Record<string, string | number> = {
         name: c.projectName,
         cwd: c.cwd,
+        // 2.1.77 (M48 `7yqp77g8`): the project-type slug, verbatim, in both
+        // variants (the brief composition's too). Only the slug — the type's
+        // prompt description is `<project_type>`'s body, never this block's.
+        type: c.projectType ?? DEFAULT_PROJECT_TYPE,
         ...(options?.roots === false ? {} : { roots: buildRootsAttr(c.roots) }),
       };
       return selfClose('project', attrs(projectAttrs));
     },
   },
   { name: 'tooling', render: (c) => buildTooling(c.mcpInventory, c.agentFilesystemAccess?.enabled ?? false) },
-  { name: 'entity_embeds', render: (c) => buildEntityEmbeds(c.host) },
+  // 2.1.77 (M19 `wjjr1oc0`): not emitted without the capability `entities`.
+  { name: 'entity_embeds', render: (c) => (c.entities === false ? null : buildEntityEmbeds(c.host)) },
   { name: 'discovery_and_impact', render: () => buildDiscoveryAndImpact() },
-  { name: 'tags', render: () => buildTags() },
+  // 2.1.77 (M18 `rxlzqki1`): the `<tags>` block inherits M18's requirement `entities`.
+  { name: 'tags', render: (c) => (c.entities === false ? null : buildTags()) },
   { name: 'todo_markers', render: () => TODO_MARKERS },
   { name: 'sections_and_anchors', render: () => SECTIONS_AND_ANCHORS },
   { name: 'claude4spec_plan_mode', render: (c) => (c.planMode ? buildPlanMode(c.mcpInventory) : null) },

@@ -166,6 +166,14 @@ function encodePath(p: string): string {
 export interface ConfigResponse {
   /** M01: display name — default the project directory's name (written at first activation; no start flag sets it). */
   name: string;
+  /** 2.1.77 (M57 `y47yl4xt`): the project's fixed type slug — `spec` when the file has none. No settings control. */
+  projectType: string;
+  /**
+   * 2.1.77 (M57 `rdztxzb8`, M26 `7f76eszm`): the project's capability set, derived
+   * from its type by the context factory. The settings page assembles only the
+   * cards and elements whose requirements it meets. Absent ⇒ nothing is filtered.
+   */
+  capabilities?: string[];
   /**
    * 0.1.96 multiroot: replaces the single `pagesDir`.
    *
@@ -181,14 +189,14 @@ export interface ConfigResponse {
   writingStyle: string | null;
   /**
    * 2.1.9 (M52): `skill.*` as the file holds it (absent keys stay absent — the
-   * settings elements carry the defaults as their baselines).
+   * settings elements carry the defaults as their baselines). 2.1.77 (M52
+   * `wqvq1esb`): `name`, `description`, `entry` and `contextTypes` exist only in
+   * a project whose type has `skill-exposure` — elsewhere GET leaves them out.
    */
   skill?: {
-    exposed?: boolean;
     name?: string | null;
     description?: string | null;
     entry?: string | null;
-    scope?: 'writing-style' | 'contextual';
     contextTypes?: string[];
     uses?: string[];
   };
@@ -296,6 +304,17 @@ export interface ConfigPatch {
   /** 0.1.58: local "elevator pitch" (0–200); null or empty clears it. */
   description?: string | null;
   onboardingCompleted?: boolean;
+  /**
+   * 2.1.77 (M52 L17): the `skill.*` keys — written by the Skill / Writing Style
+   * onboarding steps in the final write; skipped server-side without `skill-exposure`.
+   */
+  skill?: {
+    name?: string | null;
+    description?: string | null;
+    entry?: string | null;
+    contextTypes?: string[];
+    uses?: string[];
+  };
   entities?: string[];
   /**
    * 2.1.50 (M13): replaces the whole layout (last save wins); a broken rule is a

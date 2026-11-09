@@ -8,9 +8,12 @@ import { readPeerConfigSummary } from './peer-config.js';
 import { forgetDbSlot } from '../db/index.js';
 import { workspaceMcpRouter } from '../routes/mcp.js';
 import { readPackageVersion } from '../../bin/c4s/package-version.js';
-import { WorkspaceHomeNotProjectError } from './bootstrap.js';
+import { ProjectPathModeError, WorkspaceHomeNotProjectError } from './bootstrap.js';
+import { ProjectTypeError } from '../project-types/resolve.js';
 import { ProjectPathError } from './home-workspace.js';
 import type { WorkspaceResponse } from '../../shared/workspace-response.js';
+import type { AddProjectResponse, ProjectTypeListResponse } from '../../shared/project-types.js';
+import { hostProjectTypeRegistry, type ProjectTypeRegistry } from '../project-types/registry.js';
 
 const pexec = promisify(execFile);
 import type { ProjectContextCache } from './context-cache.js';
@@ -29,7 +32,13 @@ export interface WorkspaceRoutesDeps {
    * a workspace home); the projects of the workspace are built in the
    * background after listen.
    */
-  activateProject: (cwd: string) => Promise<ProjectRecord>;
+  /** 2.1.77: `projectType` — the type from the new-project path; absent = the existing-directory path. */
+  activateProject: (cwd: string, projectType?: string) => Promise<ProjectRecord>;
+  /**
+   * 2.1.77 (M31 `gofah0an`): the project-type registry the UI listing reads the
+   * type's name from. Absent = the host registry.
+   */
+  types?: ProjectTypeRegistry;
 }
 
 /**
@@ -39,6 +48,7 @@ export interface WorkspaceRoutesDeps {
  */
 export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
   const { registry, workspace, cache, mode } = deps;
+  const types = deps.types ?? hostProjectTypeRegistry();
   const router = Router();
 
   /**
@@ -64,13 +74,22 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
   // alone; a project whose failed build is past its window goes back to the
   // end of the queue (`readStates`). ASSUMPTION:dev-0004 — this listing (GET
   // /api/workspace, and the DELETE answer) is that read; `list_projects` is not.
+  // 2.1.77 (M31 L4 todo, `gofah0an`): each row carries the type from the copy
+  // in the project record (absent = `spec`) and the type's name from the type
+  // registry — `null` for a slug the current version does not know, which the
+  // Welcome screen shows as an unavailable row (ASSUMPTION:dev-0803).
   const serializeProjects = (ws: WorkspaceRecord) => {
     const states = cache.readStates();
-    return ws.projects.map((p) => ({
-      ...p,
-      name: readPeerConfigSummary(p.cwd).name ?? p.id,
-      live: states.get(p.id) === 'ready',
-    }));
+    return ws.projects.map((p) => {
+      const projectType = p.projectType ?? 'spec';
+      return {
+        ...p,
+        name: readPeerConfigSummary(p.cwd).name ?? p.id,
+        live: states.get(p.id) === 'ready',
+        projectType,
+        projectTypeName: types.get(projectType)?.name ?? null,
+      };
+    });
   };
 
   router.get('/health', (_req, res) => {
@@ -115,13 +134,13 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
     });
   });
 
-  // Decision #11 (0.1.57): server-side directory browser for the add-project
-  // modal. Lists ONLY subdirectories (files skipped) under `path`; absent
+  // Decision #11 (0.1.57): server-side directory browser (2.1.77: the
+  // `DirectoryList` of the create-project page and of `DirectoryPickerModal`). Lists ONLY subdirectories (files skipped) under `path`; absent
   // `path` starts at the workspace's home directory when it has one (2.1.58),
   // otherwise at the process CWD; a leading `~` expands to the user's home.
   // Operates on the host filesystem, hence workspace scope (outside any project
-  // prefix). ENOENT/EACCES (or any read error) → 400 consumed inline by the
-  // modal — the server never crashes on a bad path.
+  // prefix). ENOENT/EACCES (or any read error) → 400 shown inline under the
+  // list — the server never crashes on a bad path.
   router.get('/workspace/fs', (req, res) => {
     const raw = typeof req.query.path === 'string' ? req.query.path.trim() : '';
     const expanded =
@@ -162,18 +181,31 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
         error: { code: 'VALIDATION', message: 'cwd must be an absolute path' },
       });
     }
+    // 2.1.77 (`add-project-request`): `projectType` present = the new-project
+    // path, absent = the existing-directory path. A non-string is a typo.
+    const projectType: unknown = req.body?.projectType;
+    if (projectType !== undefined && (typeof projectType !== 'string' || projectType.trim() === '')) {
+      return res.status(400).json({
+        error: { code: 'VALIDATION', message: 'projectType must be a project-type slug' },
+      });
+    }
     const target = path.resolve(cwd);
     const unusable = unusableDirectoryReason(target);
     if (unusable) {
       return res.status(400).json({ error: { code: 'VALIDATION', message: unusable } });
     }
     try {
-      const project = await deps.activateProject(target);
+      const project = await deps.activateProject(target, projectType as string | undefined);
       // 2.1.60 (M31 `m31boot01`): the registered project joins the background
       // build queue — it builds without waiting for a request.
       cache.enqueue(project);
-      res.status(201).json({ projectId: project.id });
+      const body: AddProjectResponse = { projectId: project.id };
+      res.status(201).json(body);
     } catch (err) {
+      // 2.1.77: every refusal falls before the registry is written.
+      if (err instanceof ProjectPathModeError || err instanceof ProjectTypeError) {
+        return res.status(400).json({ error: { code: err.code, message: err.message } });
+      }
       if (err instanceof ProjectPathError) {
         return res.status(400).json({ error: { code: err.code, message: err.message } });
       }
@@ -317,4 +349,21 @@ function unusableDirectoryReason(dir: string): string | null {
     return `no read/write permission for directory: ${dir}`;
   }
   return null;
+}
+
+/**
+ * 2.1.77 (M57 L4, endpoint `get-api-workspace-project-types`): the project-type
+ * registry for the create-project page — slug, name and user description of
+ * every type, in registry order (DTO `project-type-list-response`). Own router,
+ * mounted at `/api/workspace/project-types` OUTSIDE the project prefix: the
+ * create-project page has no project yet, and the type registry belongs to none
+ * (deviation from `Prefiks projektu`, precedent M31). Takes no parameters.
+ */
+export function projectTypesRouter(deps: { types: ProjectTypeRegistry }): Router {
+  const router = Router();
+  router.get('/', (_req, res) => {
+    const body: ProjectTypeListResponse = { types: deps.types.cards() };
+    res.status(200).json(body);
+  });
+  return router;
 }

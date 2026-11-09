@@ -1,150 +1,22 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { CornerLeftUp, Folder } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { apiFetch } from '../lib/api-core.js';
 import { Dialog } from '../host-ui-kit/overlay/Dialog.js';
+import { DirectoryList, normPath } from './DirectoryList.js';
 
 /**
  * HOST-INTERNAL COMPONENT (2.1.20, Host UI Kit slice of M31, owner M31): one
  * implementation, unpublished to plugins, duplicating no catalog anatomy — the
- * window shell is the catalog's `Dialog`. Consumers in the host: the
- * `directory-browse` window (M26) and the `project-create` window (M31). It is
- * not a catalog entry, so it lives outside `host-ui-kit/`.
+ * window shell is the catalog's `Dialog`, its body the host-internal
+ * `DirectoryList`. 2.1.77: its one host consumer is the `directory-browse`
+ * window (M26) of the settings dir fields. It is not a catalog entry, so it
+ * lives outside `host-ui-kit/`.
  *
- * 0.1.97: the server-side directory browser, extracted from `AddProjectDialog`
- * so every dir input can reuse it. `GET /api/workspace/fs` lists ONLY
- * subdirectories under `path` (files skipped); absent `path` starts at the
- * process CWD; a leading `~` expands to home. It deals in ABSOLUTE host paths.
- *
- * Two consumers with different path semantics:
- * - `AddProjectDialog` embeds `DirectoryBrowser` directly and posts an absolute
- *   `cwd` → `mode: 'absolute'` picker semantics.
- * - Settings dir fields (root `dir`, briefs/patches/entities) need a
- *   project-cwd-RELATIVE, path-safe string → `mode: 'relative'`, which converts
- *   the chosen absolute path against the project cwd (`GET /api/meta`) and
- *   rejects a selection outside the project.
+ * Settings dir fields (root `dir`, briefs/patches/entities) need a
+ * project-cwd-RELATIVE, path-safe string → `mode: 'relative'`, which converts
+ * the chosen absolute path against the project cwd (`GET /api/meta`) and
+ * rejects a selection outside the project; `mode: 'absolute'` returns the raw
+ * absolute path.
  */
-
-interface FsEntry {
-  name: string;
-  path: string;
-}
-
-interface FsResponse {
-  path: string;
-  parent: string | null;
-  entries: FsEntry[];
-}
-
-/**
- * Presentational directory list backed by `GET /api/workspace/fs`. Owns its own
- * listing + browse-error state; reports the current absolute path via
- * `onCwdChange` on every successful navigation (initial load included).
- *
- * `initialPath` seeds the first listing (undefined → server CWD, as before).
- * `boundaryPath`, when set, clamps upward navigation: the `..` button is hidden
- * once the current folder equals the boundary, so the tree cannot be walked above
- * it (used in relative mode to pin the browser inside the project cwd).
- */
-export function DirectoryBrowser({
-  onCwdChange,
-  initialPath,
-  boundaryPath,
-}: {
-  onCwdChange?: (absPath: string) => void;
-  initialPath?: string;
-  boundaryPath?: string;
-}) {
-  const [listing, setListing] = useState<FsResponse | null>(null);
-  const [browseError, setBrowseError] = useState<string | null>(null);
-  // Ref so `browse` stays referentially stable regardless of an inline callback.
-  const onCwdChangeRef = useRef(onCwdChange);
-  onCwdChangeRef.current = onCwdChange;
-
-  // Browse a directory; `undefined` path → server CWD (initial load).
-  const browse = useCallback((path?: string) => {
-    setBrowseError(null);
-    const qs = path != null ? `?path=${encodeURIComponent(path)}` : '';
-    fetch(`/api/workspace/fs${qs}`)
-      .then(async (r) => {
-        const body = (await r.json().catch(() => null)) as
-          | (FsResponse & { error?: { message?: string } })
-          | null;
-        if (!r.ok || !body || !('path' in body)) {
-          setBrowseError(body?.error?.message ?? `HTTP ${r.status}`);
-          return;
-        }
-        setListing(body);
-        onCwdChangeRef.current?.(body.path);
-      })
-      .catch(() => setBrowseError('Request failed — is the server still running?'));
-  }, []);
-
-  useEffect(() => {
-    browse(initialPath);
-  }, [browse, initialPath]);
-
-  // At the boundary the `..` button is suppressed, so the tree can't go above it.
-  const atBoundary =
-    boundaryPath != null && listing != null && normPath(listing.path) === normPath(boundaryPath);
-
-  return (
-    <div className="rounded-md overflow-hidden" style={{ border: '1px solid var(--c-hair)' }}>
-      <div
-        className="px-2.5 py-1.5 text-[11px] font-mono truncate"
-        style={{
-          background: 'var(--c-panel)',
-          color: 'var(--c-subtle)',
-          borderBottom: '1px solid var(--c-hair)',
-          direction: 'rtl',
-          textAlign: 'left',
-        }}
-        title={listing?.path ?? 'loading…'}
-      >
-        {listing?.path ?? 'loading…'}
-      </div>
-      <div className="max-h-52 overflow-y-auto">
-        {listing?.parent != null && !atBoundary ? (
-          <button
-            type="button"
-            onClick={() => browse(listing.parent!)}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-[12px]"
-            style={{ color: 'var(--c-muted)' }}
-          >
-            <CornerLeftUp size={12} style={{ flexShrink: 0 }} />
-            ..
-          </button>
-        ) : null}
-        {(listing?.entries ?? []).map((e) => (
-          <button
-            key={e.path}
-            type="button"
-            onClick={() => browse(e.path)}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-[12px]"
-            style={{ color: 'var(--c-ink)' }}
-          >
-            <Folder size={12} style={{ color: 'var(--c-accent)', flexShrink: 0 }} />
-            <span className="truncate">{e.name}</span>
-          </button>
-        ))}
-        {listing && listing.entries.length === 0 ? (
-          <div className="px-2.5 py-2 text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>
-            No subdirectories here.
-          </div>
-        ) : null}
-        {browseError ? (
-          <div className="px-2.5 py-2 text-[11.5px]" style={{ color: '#dc2626' }}>
-            {browseError}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-/** Normalize a host path for prefix comparison: `/`-sep, no trailing slash. */
-function normPath(p: string): string {
-  return p.replace(/\\/g, '/').replace(/\/+$/, '');
-}
 
 /**
  * Convert a chosen absolute path to a project-cwd-relative string, or `null` if
@@ -174,8 +46,7 @@ export interface DirectoryPickerModalProps {
 
 /**
  * Modal directory picker built on the `Dialog` shell. The selection is the
- * currently-browsed folder (navigate into it, then confirm) — mirroring
- * `AddProjectDialog`, where the chosen `cwd` is the folder you drill into.
+ * currently-browsed folder (navigate into it, then confirm).
  */
 export function DirectoryPickerModal({
   open,
@@ -261,7 +132,7 @@ export function DirectoryPickerModal({
             Loading project directory…
           </div>
         ) : (
-          <DirectoryBrowser
+          <DirectoryList
             onCwdChange={(p) => {
               setCwd(p);
               setError(null);

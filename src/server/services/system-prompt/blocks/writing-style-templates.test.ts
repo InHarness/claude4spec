@@ -38,7 +38,7 @@ const PROJECT_WRITING_SKILL_TEMPLATE = (slug: string, title: string): string =>
   [
     `<project_writing_skill slug="${slug}" title="${title}">`,
     'This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.',
-    'Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.',
+    "Skill packages in this project's skills root are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style. The project's pages are always bound, even when the project is itself exposed as a skill or a writing style.",
     '',
     'You do not know its conventions yet, and this block does not summarise them.',
     `  1. Before your first tool call in this thread, call load_skill_file("${slug}") and read it.`,
@@ -72,14 +72,31 @@ describe('<project_writing_skill> — template (M15 L16, 2.1.9)', () => {
     expect(block(out, 'project_writing_skill')).toBe(PROJECT_WRITING_SKILL_TEMPLATE('house-style', 'House Style'));
   });
 
-  it('[ac:ac-blok-project-writing-skill-zawiera-zd] the block carries the sentence excluding skill packages from the binding convention, pointing at skill-author and, for a writing-style package, at writing-style-author — in every context type', () => {
+  it('[ac:ac-blok-project-writing-skill-zawiera-zd] the block carries the sentence excluding from the binding convention the packages in THIS project\'s skills root, pointing at skill-author and, for a writing-style package, at writing-style-author — in every context type', () => {
     for (const contextType of ['chat', 'brief', 'patch', 'ask'] as const) {
       const out = build({ contextType, brief: null, writingStyleSkill: { slug: 'house-style', title: 'House Style' } });
       const b = block(out, 'project_writing_skill');
-      expect(b, contextType).toContain('Skill packages are outside this binding');
+      // 2.1.77: the exclusion names the packages of this project's `skills` root, not "skill packages" at large.
+      expect(b, contextType).toContain("Skill packages in this project's skills root are outside this binding");
       expect(b, contextType).toContain('follow the skill-author skill instead');
       expect(b, contextType).toContain('or writing-style-author when the package is a writing style');
     }
+  });
+
+  it('[ac:ac-w-projekcie-typu-writing-style-blok-p] in a Writing Style project the block does not exclude the project\'s pages from the binding convention — they are bound, also when the project is itself exposed as a writing style', () => {
+    // The block's input carries no project type (the boundary runs by the kind
+    // of root, M15 `u7b1qhr1`), so a Writing Style project renders exactly this.
+    const b = block(
+      build({ contextType: 'chat', writingStyleSkill: { slug: 'house-style', title: 'House Style' } }),
+      'project_writing_skill',
+    );
+    const lines = b.split('\n');
+    const exclusion = lines.find((l) => l.includes('outside this binding')) ?? '';
+    // The only exclusion is the skills-root packages; pages are named as bound.
+    expect(exclusion).toMatch(/^Skill packages in this project's skills root are outside this binding/);
+    expect(exclusion).not.toMatch(/pages[^.]*outside this binding/);
+    expect(b).toContain("The project's pages are always bound, even when the project is itself exposed as a skill or a writing style.");
+    expect(lines[1]).toContain('BINDING on everything you produce: pages,');
   });
 });
 

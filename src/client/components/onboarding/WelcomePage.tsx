@@ -1,5 +1,4 @@
 import { FolderPlus, Folder } from 'lucide-react';
-import { openModal } from '../../ui/events.js';
 import { Skeleton } from '../../ui/Skeleton.js';
 import { useWorkspace } from '../../hooks/useWorkspace.js';
 import { navigateDocument } from '../../lib/document-nav.js';
@@ -14,7 +13,13 @@ import { navigateDocument } from '../../lib/document-nav.js';
  * Lists the workspace projects neutrally (no highlight for the directory the
  * process was started in); picking one does a full load of `/p/<id>/`, because
  * PROJECT_ID / API_BASE / the router basepath are module-load constants. "Add
- * project to workspace" opens the `project-create` window.
+ * project to workspace" navigates to the create-project page (`/create-project`,
+ * ui-view `create-project-page`).
+ *
+ * 2.1.77 (M31 `gofah0an`, Odczyt typu projektu — the one place the module reads
+ * the project type): each row shows the name of its type from the type
+ * registry; a type the current version does not know makes the row unavailable,
+ * its slug written out as is, and a click on it does not navigate.
  */
 export function WelcomePage() {
   const { data: workspace } = useWorkspace();
@@ -77,36 +82,54 @@ export function WelcomePage() {
             </div>
           ) : null}
 
-          {projects.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => {
-                // Full reload — module-load constants must re-initialize.
-                navigateDocument(`/p/${p.id}/`);
-              }}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-left transition-colors"
-              style={{ border: '1px solid var(--c-hair)', color: 'var(--c-ink)' }}
-            >
-              <Folder size={15} style={{ color: 'var(--c-accent)', flexShrink: 0 }} />
-              <span className="flex-1 min-w-0">
-                <span className="block text-[13px] font-medium truncate">{p.name}</span>
-                <span
-                  className="block text-[10.5px] font-mono truncate"
-                  style={{ color: 'var(--c-subtle)', direction: 'rtl', textAlign: 'left' }}
-                  title={p.cwd}
-                >
-                  {p.cwd}
+          {projects.map((p) => {
+            const known = p.projectTypeName != null;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                disabled={!known}
+                aria-disabled={!known}
+                data-project-type={p.projectType}
+                onClick={() => {
+                  if (!known) return;
+                  // Full reload — module-load constants must re-initialize.
+                  navigateDocument(`/p/${p.id}/`);
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-left transition-colors disabled:cursor-not-allowed"
+                style={{
+                  border: '1px solid var(--c-hair)',
+                  color: known ? 'var(--c-ink)' : 'var(--c-subtle)',
+                }}
+                title={known ? undefined : `Unknown project type: ${p.projectType}`}
+              >
+                <Folder size={15} style={{ color: known ? 'var(--c-accent)' : 'var(--c-subtle)', flexShrink: 0 }} />
+                <span className="flex-1 min-w-0">
+                  <span className="block text-[13px] font-medium truncate">{p.name}</span>
+                  <span
+                    className="block text-[10.5px] font-mono truncate"
+                    style={{ color: 'var(--c-subtle)', direction: 'rtl', textAlign: 'left' }}
+                    title={p.cwd}
+                  >
+                    {p.cwd}
+                  </span>
                 </span>
-              </span>
-            </button>
-          ))}
+                <span
+                  data-testid="project-type"
+                  className={`shrink-0 text-[11px] px-1.5 py-0.5 rounded${known ? '' : ' font-mono'}`}
+                  style={{ background: 'var(--c-panel)', color: 'var(--c-muted)' }}
+                >
+                  {known ? p.projectTypeName : p.projectType}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         <div className="mt-6">
           <button
             type="button"
-            onClick={() => void openModal('project-create', {})}
+            onClick={() => navigateDocument('/create-project')}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-[13px] font-medium"
             style={{ background: 'var(--c-accent)', color: '#fff' }}
           >

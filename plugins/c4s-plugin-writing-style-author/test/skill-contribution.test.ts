@@ -109,124 +109,91 @@ describe('c4s-plugin-writing-style-author — what the scaffold may write (2.1.9
 });
 
 /**
- * 2.1.15 (M15 `1fjp0yb7`, `cb70i2o5`, `lyygimdd`, `m15edg001`; pkg `vt1nmnwx`) — two
- * routes. Route A is the package in this project's skills root (above); Route B is
- * the project itself, exposed as a style for the other projects of the workspace,
- * written as its own base-root pages. What the agent does on each route is what the
+ * 2.1.77 (M15 `m15wsauth`, `e5635uwn`, `lyygimdd`, `m15edg001`; pkg `vt1nmnwx`,
+ * `l71kgcft`) — one route: the style is always a local style, a package of this
+ * project's skills root written with `update_skill_file`. The skill never writes a
+ * page of the project, works the same in a project of any type, and only MENTIONS
+ * that a style for the other projects of the workspace is a separate Writing Style
+ * project the author creates and attaches by hand. What the agent does is what the
  * skill text instructs, so that text is the observable asserted here.
  */
-describe('c4s-plugin-writing-style-author — two routes (2.1.15)', () => {
+describe('c4s-plugin-writing-style-author — a local style only (2.1.77)', () => {
   const c = skill.content;
-  /** The Route B description section, up to the workflow. */
-  const routeB = c.slice(c.indexOf('## Route B — this project exposed as a style'), c.indexOf('## Workflow'));
-  /** The Route B workflow steps, to the end of the skill. */
-  const stepsB = c.slice(c.indexOf('### Route B'));
-  /** The single step whose label is given (`B2.`, …), to the next blank line. */
-  const step = (label: string) => {
-    const at = stepsB.indexOf(`${label} `);
-    expect(at, `step ${label} exists`).toBeGreaterThan(-1);
-    const end = stepsB.indexOf('\n\n', at);
-    return stepsB.slice(at, end > -1 ? end : undefined);
+  /** One top-level bold paragraph of the skill, by its lead-in. */
+  const para = (lead: string) => {
+    const at = c.indexOf(`**${lead}**`);
+    expect(at, `paragraph ${lead} exists`).toBeGreaterThan(-1);
+    const end = c.indexOf('\n\n', at);
+    return c.slice(at, end > -1 ? end : undefined);
   };
 
-  it('has both routes, the second one after the first', () => {
-    expect(routeB.length).toBeGreaterThan(200);
-    expect(stepsB.length).toBeGreaterThan(200);
-    expect(c.indexOf('## Route A — a style for this project')).toBeGreaterThan(-1);
-    expect(c.indexOf('## Route A — a style for this project')).toBeLessThan(c.indexOf('## Route B'));
+  it('the exposed-style route is gone: no route choice, no base-root pages, no exposing the project', () => {
+    expect(c).not.toMatch(/Route [AB]/);
+    expect(c).not.toContain('which route');
+    expect(c).not.toContain('skill.entry');
+    expect(c).not.toContain('Expose this project as a skill');
+    expect(c).not.toContain('set **Scope** to `writing-style`');
+    expect(c).not.toContain('as pages of the base root');
+    expect(c).not.toMatch(/load_skill_file\("<skill\.name>"/);
+    expect(skill.description).not.toContain("this project's own pages");
+    expect(skill.description).not.toContain('settled with the user (or asked) before the first write');
   });
 
-  it('[ac:ac-gdy-prosba-o-nowy-styl-nie-wskazuje-c] when the request does not say whether the style is for this project or for the other projects of the workspace, the skill asks before the first write', () => {
-    const first = c.slice(c.indexOf('## First: which route'), c.indexOf('## Route A'));
-    expect(first).toContain('settle the route **before the first write**');
-    expect(first).toMatch(
-      /If the conversation does not settle which project the style is for — this one, or the other projects of the workspace — \*\*ask before you write anything\*\*; do not guess\./,
-    );
-    // The workflow puts that question ahead of every write step.
-    const ask = c.indexOf('2. Settle the route');
-    expect(ask).toBeGreaterThan(-1);
-    expect(c.slice(ask, c.indexOf('\n', ask))).toContain('ask now — before the first write');
-    expect(ask).toBeLessThan(c.indexOf('A2. Write `SKILL.md`'));
-    expect(ask).toBeLessThan(c.indexOf('B2. Write the entry page'));
-    // And the listing blurb says the route is settled (or asked) before writing.
-    expect(skill.description).toContain('settled with the user (or asked) before the first write');
-  });
-
-  it('[ac:ac-na-drodze-stylu-wystawionego-tresc-st] on the exposed-style route the style is written as pages of the project base root', () => {
-    expect(routeB).toContain("**the style is this project's pages**: the pages of the project's base root");
-    expect(routeB).toContain("the page named by the project's `skill.entry`");
-    expect(routeB).toContain('Subfiles** are the other pages of the base root, each addressed by its path in that root');
-    expect(routeB).toContain('Write them with the page tools**: `create_page`');
-    expect(routeB).toContain('`update_sections`');
-    expect(routeB).toContain('Nothing is written to the `skills` root');
-    expect(step('B2.')).toContain('`create_page`');
-    expect(step('B3.')).toContain('as pages of the base root, one `create_page` each');
-  });
-
-  it('[ac:ac-na-drodze-stylu-wystawionego-writing] on the exposed-style route writing-style-author does not call update_skill_file', () => {
-    expect(routeB).toContain('`update_skill_file` is never called');
-    expect(routeB).toContain('Never `update_skill_file`.');
-    expect(step('B3.')).toContain('Never `update_skill_file` on this route.');
-    // No Route B step instructs an update_skill_file call (only B3 names it, to forbid it).
-    for (const label of ['B1.', 'B2.', 'B4.']) {
-      expect({ label, calls: step(label).includes('update_skill_file') }).toEqual({ label, calls: false });
-    }
-  });
-
-  it('[ac:ac-na-drodze-stylu-wystawionego-writing-2] on the exposed-style route writing-style-author does not change the project configuration', () => {
-    expect(routeB).toContain("Do not change the project's configuration on this route — no config endpoints, no toggling exposure yourself.");
-    expect(step('B4.')).toMatch(/^B4\. Change no configuration\./);
-  });
-
-  it('[ac:ac-na-drodze-stylu-wystawionego-writing-3] on the exposed-style route writing-style-author ends by pointing at the #skills tab of the project settings', () => {
-    expect(routeB).toContain('Finish by pointing the author to the **`#skills` tab of the project settings**');
-    expect(routeB).toContain('set **Scope** to `writing-style`');
-    // B4 is the last step of the route, and it is the pointer.
-    const b4 = step('B4.');
-    expect(b4).toContain('End by pointing the author to the `#skills` tab of the project settings');
-    expect(stepsB.trimEnd().endsWith(b4.trimEnd())).toBe(true);
-  });
-
-  it('[ac:ac-strona-wejscia-stylu-wystawionego-nap] the entry page of an exposed style refers to subfiles by a load_skill_file address carrying the project skill.name', () => {
-    expect(routeB).toContain(
-      'The entry page sends the reader to a subfile with `load_skill_file("<skill.name>", "workflows/brief.md")`, where `<skill.name>` is this project\'s `skill.name`',
-    );
-    // Section refs / embeds are not pointers: they reach the consumer as text.
-    expect(routeB).toContain('Do not use section references or entity embeds as pointers');
-    expect(step('B2.')).toContain('a `load_skill_file("<skill.name>", "workflows/…")` address for each subfile');
-  });
-
-  it('[ac:ac-strona-wejscia-stylu-wystawionego-nap-2] the entry page of an exposed style carries the form clause — the entity form listed before the fenced one', () => {
-    expect(routeB).toContain('**The entry page carries the form clause**');
-    expect(step('B2.')).toContain('the form clause from step A3 verbatim');
-    // The clause B2 refers to: entity form before the fence, in the verbatim block.
+  it('the generated SKILL.md is the one place the scaffold writes the form clause', () => {
+    const at = c.indexOf('**Always include the form clause in the body you write.**');
+    expect(at).toBeGreaterThan(-1);
+    expect(c.slice(at, c.indexOf('```', at))).toContain('the generated style must enumerate the entity form');
+    // The clause names the entity form before the fenced one.
     const start = c.indexOf('**Form clause.**');
     const clause = c.slice(start, c.indexOf('```', start));
-    const entity = clause.indexOf('an embed of project entities');
-    const fence = clause.indexOf('a fenced block');
-    expect(entity).toBeGreaterThan(-1);
-    expect(fence).toBeGreaterThan(-1);
-    expect(entity).toBeLessThan(fence);
+    expect(clause.indexOf('an embed of project entities')).toBeGreaterThan(-1);
+    expect(clause.indexOf('an embed of project entities')).toBeLessThan(clause.indexOf('a fenced block'));
   });
 
-  it('warns on Route A in an exposed project that the package will not reach consumers', () => {
-    expect(c).toContain('a style written on Route A will not reach any project that attaches this one');
+  it('never writes a project page — update_skill_file only, no page tool in any step (the turn-level check is in agent-turn.test.ts)', () => {
+    const pages = para('Project pages are out of scope.');
+    expect(pages).toContain('Never write a page of the project — no `create_page`, no `update_sections`, no other page tool');
+    expect(pages).toContain('also in a project of type Writing Style');
+    expect(pages).toContain("Everything this skill writes is a file of a package in the project's `skills` root, written with `update_skill_file`");
+    // Every write step of the workflow is an update_skill_file call; none names a page tool to call.
+    const workflow = c.slice(c.indexOf('## Workflow'));
+    expect(workflow).toContain('update_skill_file({ slug, file: "SKILL.md", content, expectedHash: "" })');
+    expect(workflow).not.toContain('create_page');
+    expect(workflow).not.toContain('update_sections');
+    expect(workflow).toContain('At no step do you write a page of the project: the scaffold leaves every page as it was.');
+    expect(skill.description).toContain('it never writes project pages');
+  });
+
+  it('works the same in a project of any type and reads neither the type nor the capabilities', () => {
+    expect(para('Project pages are out of scope.')).toContain(
+      "This works the same in a project of any type: do not read the project's type or its capabilities to decide anything here.",
+    );
+  });
+
+  it('asked for a style for the other projects of the workspace, it mentions a separate Writing Style project the author creates and attaches on #skills by hand — and does neither itself', () => {
+    const other = para('A style for other projects of the workspace.');
+    expect(other).toContain('What you write is always a local style');
+    expect(other).toContain('create a separate project of type Writing Style and attach it');
+    expect(other).toContain('they register that project and attach it themselves, in the **`#skills` tab of the project settings**');
+    expect(other).toContain('You do not create that project, do not attach it and do not write its pages');
+    expect(other).toContain('If they still want a style here, write the local style.');
+    expect(c).toMatch(/2\. If the author wants the style for the other projects of the workspace/);
+    expect(skill.description).toContain('a separate project of type Writing Style, which the author creates and attaches in the #skills settings tab by hand');
   });
 });
 
 /**
- * 2.1.15 (M15 `n0fj7m42`) — a user does not wait for another envelope: they make
- * their own style through `writing-style-author`, as a package of this project or
- * as a project exposed to the other projects of the workspace. The skill's listing
- * description is where that availability is told, so it names both routes.
+ * M15 `n0fj7m42` (2.1.77 wording) — a user does not wait for another envelope: they
+ * make their own style through `writing-style-author` as a package in this
+ * project's skills root, or set up a separate Writing Style project and attach it.
+ * The skill's listing description is where that availability is told.
  */
-describe('c4s-plugin-writing-style-author — availability names both routes (2.1.15)', () => {
-  it("[section:n0fj7m42] the description of how a user makes their own style names both routes — this project's package, and a project exposed to the workspace", () => {
+describe('c4s-plugin-writing-style-author — availability (2.1.77)', () => {
+  it("[section:n0fj7m42] the description of how a user makes their own style names this project's package and the separate Writing Style project to attach", () => {
     const d = skill.description;
-    expect(d).toContain("a style for this project is a package in the project's skills root");
-    expect(d).toContain("a style for the other projects of the workspace is this project's own pages");
-    expect(d).toContain('exposed by the author in the #skills settings tab');
-    // The two routes are told as alternatives, not as one root.
-    expect(d.indexOf('a style for this project')).toBeLessThan(d.indexOf('a style for the other projects of the workspace'));
+    expect(d).toContain("a package in the project's skills root");
+    expect(d).toContain('A style for the other projects of the workspace is a separate project of type Writing Style');
+    expect(d).toContain('attaches in the #skills settings tab by hand');
+    expect(d.indexOf("a package in the project's skills root")).toBeLessThan(d.indexOf('a separate project of type Writing Style'));
   });
 });

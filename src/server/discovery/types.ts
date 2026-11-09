@@ -84,6 +84,15 @@ export interface DiscoveryDeps {
    * Absent ⇒ none.
    */
   referenceRoots?: ReadonlyArray<{ root: Root; kind: RootKind }>;
+  /**
+   * 2.1.77 (M06 `7t2i8glz`, M19 `wjjr1oc0`) — whether the project has the
+   * capability `entities`. `false` ⇒ `get_sections` edges carry an empty
+   * `entityEmbeds` and `check_consistency` runs only rules 7, 8, 13, 15, 16.
+   * Read only by `getSections` and `checkConsistency`; `find_references` is not
+   * gated here (it is withheld by the tool/route registration, not by the core).
+   * Absent ⇒ entities present.
+   */
+  entities?: boolean;
 }
 
 // ── Meta ────────────────────────────────────────────────────────────────────

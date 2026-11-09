@@ -99,11 +99,14 @@ describe('buildSystemPrompt — <project> carries no per-type counters (0.2.50)'
    * them — it was honest about two attributes and misleading about the prompt
    * around them.
    */
-  it('carries identity only — name, cwd, roots, and no scale counters', () => {
+  it('carries identity only — name, cwd, type, roots, and no scale counters', () => {
     const out = build({});
     const projectTag = /<project\s([^>]*)\/>/.exec(out)?.[1] ?? '';
     const keys = [...projectTag.matchAll(/([^\s=]+)="/g)].map(([, k]) => k);
-    expect(keys).toEqual(['name', 'cwd', 'roots']);
+    // ASSUMPTION:dev-0807 — the no-counters rule reads name, cwd, type, roots.
+    expect(keys).toEqual(['name', 'cwd', 'type', 'roots']);
+    // 2.1.77 (M48 `7yqp77g8`): a rig with no type is a `spec`.
+    expect(projectTag).toContain('type="spec"');
     expect(projectTag).toContain('name="My Spec"');
     expect(projectTag).toContain('cwd="/tmp/my-spec"');
     expect(projectTag).toContain('roots="pages=pages"');
@@ -480,7 +483,7 @@ describe('buildSystemPrompt — <interaction_context> (0.2.19)', () => {
 
   it('brief frame: still names the project and cwd, which were never genre rules', () => {
     const out = build({ contextType: 'brief', brief: null });
-    expect(out).toContain('<project name="My Spec" cwd="/tmp/my-spec"/>');
+    expect(out).toContain('<project name="My Spec" cwd="/tmp/my-spec" type="spec"/>');
   });
 });
 

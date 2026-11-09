@@ -15,16 +15,60 @@
  * sanctioned peer-config read (`workspace/peer-config.ts`) — this module never
  * opens a `config.json` itself. Attachments are not transitive: only the current
  * project's own `skill.uses` is read.
+ *
+ * 2.1.77 (M52 `ybbal0vf`, `8zu57gsf`, `0ay8qh6u`; M37 `prwobscq`, `r8sajsmk`):
+ * a provider is a project whose TYPE has the capability `skill-exposure` —
+ * exposed from founding, no toggle. The type is read from the copy in the
+ * workspace record (`ProjectRecord.projectType`, absent = `spec`), never by
+ * opening the provider: a type without `skill-exposure` exposes nothing, and a
+ * type the current version does not know is a provider that does not activate
+ * — its name stays unresolved (a dangling attachment). The scope of the entry
+ * follows from the type, not from a config key (see {@link exposedScopeOf}).
+ * A provider without `skill.name` or `skill.description` (onboarding skipped)
+ * is no listing entry and no row of the list.
  */
 
 import type { ExposedProjectRow } from '../../shared/spec-skills.js';
-import type { NormalizedSkillConfig } from '../config.js';
+import { DEFAULT_PROJECT_TYPE, type NormalizedSkillConfig } from '../config.js';
+import { SKILL_EXPOSURE_CAPABILITY } from '../project-types/capabilities.js';
+import { hostProjectTypeRegistry } from '../project-types/registry.js';
 import { readPeerSkillConfig } from '../workspace/peer-config.js';
 
 /** A project of the workspace as the M31 registry lists it (no other field is needed). */
 export interface WorkspaceProjectRef {
   id: string;
   cwd: string;
+  /** 2.1.77 (M31): the copy of the project's type in the workspace record; absent = `spec`. */
+  projectType?: string;
+}
+
+
+/** What the provider read needs from the project-type registry. */
+export interface ProjectTypeLookup {
+  get(slug: string): { capabilities: readonly string[] } | undefined;
+}
+
+/**
+ * 2.1.77 — the scope of a provider's global-skill entry, from its type (the
+ * one place this module reads a type: M52 `8zu57gsf`, M37 `r8sajsmk`):
+ *
+ *  - a type the registry does not know → `null`: the provider does not
+ *    activate, so it brings no entry (the source reports the name as known,
+ *    unresolved — provider unreachable);
+ *  - a type without `skill-exposure` → `null`: the project is no provider
+ *    (whether it is one is read from the capability, never from the type);
+ *  - `writing-style` → `writing-style`: a selectable writing style;
+ *  - any other providing type (`skill`) → `contextual`: a listing entry, never
+ *    a position of `listSelectable()`.
+ */
+export function exposedScopeOf(
+  projectType: string | undefined,
+  types: ProjectTypeLookup = hostProjectTypeRegistry(),
+): 'writing-style' | 'contextual' | null {
+  const slug = projectType ?? DEFAULT_PROJECT_TYPE;
+  const entry = types.get(slug);
+  if (!entry || !entry.capabilities.includes(SKILL_EXPOSURE_CAPABILITY.name)) return null;
+  return slug === 'writing-style' ? 'writing-style' : 'contextual';
 }
 
 /** A project of the workspace that exposes itself as a skill, with a usable name. */
@@ -34,37 +78,50 @@ export interface ExposedProject {
   name: string;
   description: string | null;
   entry: string;
+  /** 2.1.77: from the provider's type (`writing-style` → `writing-style`, `skill` → `contextual`). */
   scope: 'writing-style' | 'contextual';
   /** `undefined` ⇒ all four context types. */
   contextTypes: string[] | undefined;
 }
 
-/** The exposure of a skill config, or `null` when the project is not exposed (or has no name to be addressed by). */
-export function exposureOf(projectId: string, skill: NormalizedSkillConfig | null): ExposedProject | null {
-  if (!skill || !skill.exposed || skill.name === null) return null;
+/**
+ * The exposure of a project, or `null` when it is no provider: its type does
+ * not provide (see {@link exposedScopeOf}), or it has no `skill.name` to be
+ * addressed by or no `skill.description`.
+ */
+export function exposureOf(
+  projectId: string,
+  skill: NormalizedSkillConfig | null,
+  scope: 'writing-style' | 'contextual' | null,
+): ExposedProject | null {
+  if (!skill || scope === null || skill.name === null || skill.description === null) return null;
   return {
     projectId,
     name: skill.name,
     description: skill.description,
     entry: skill.entry,
-    scope: skill.scope,
+    scope,
     contextTypes: skill.contextTypes,
   };
 }
 
 /**
- * Every project of the workspace exposed as a skill — `skill.exposed` on and a
- * `skill.name` set — in the registry's order. An unreadable config exposes
- * nothing. Read live: a provider switching its exposure off, or renaming, is seen
- * by the next call.
+ * Every project of the workspace exposed as a skill — a type with
+ * `skill-exposure` (from the record's type copy), a `skill.name` and a
+ * `skill.description` — in the registry's order. A project whose type does not
+ * provide is not read at all; an unreadable config exposes nothing. Read live:
+ * a provider renaming or clearing its name is seen by the next call.
  */
 export function listExposedProjects(
   projects: readonly WorkspaceProjectRef[],
   readSkill: (cwd: string) => NormalizedSkillConfig | null = readPeerSkillConfig,
+  types?: ProjectTypeLookup,
 ): ExposedProject[] {
   const out: ExposedProject[] = [];
   for (const p of projects) {
-    const exposed = exposureOf(p.id, readSkill(p.cwd));
+    const scope = exposedScopeOf(p.projectType, types);
+    if (scope === null) continue;
+    const exposed = exposureOf(p.id, readSkill(p.cwd), scope);
     if (exposed) out.push(exposed);
   }
   return out;

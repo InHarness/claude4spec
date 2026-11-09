@@ -13,7 +13,8 @@ import { ProjectContextCache, type ProjectBuildStateChange } from '../../../src/
 import { projectDispatchMiddleware } from '../../../src/server/workspace/middleware.js';
 import { buildProjectContext, type ProjectContext } from '../../../src/server/workspace/project-context.js';
 import { WorkspaceRegistry } from '../../../src/server/workspace/registry.js';
-import { activatingBuild, backgroundBuild, bootstrapProject } from '../../../src/server/workspace/bootstrap.js';
+import { activatingBuild, backgroundBuild } from '../../../src/server/workspace/bootstrap.js';
+import { bootstrapFixture } from '../../helpers/bootstrap-fixture.js';
 import { configPath } from '../../../src/server/config.js';
 import { PROD_REMOTE_URL } from '../../../src/server/services/remote-http-client.js';
 import type { ProjectRecord, WorkspaceRecord } from '../../../src/server/workspace/types.js';
@@ -62,7 +63,7 @@ describe('--remote-url and config.remoteApiUrl on a real project build (M24)', (
 
   function addProject(name: string, remoteApiUrl: string | null): ProjectRecord {
     const cwd = path.join(home, name);
-    const project = bootstrapProject(registry, workspace, cwd).project;
+    const project = bootstrapFixture(registry, workspace, cwd).project;
     const file = configPath(cwd);
     const cfg = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
     fs.writeFileSync(file, JSON.stringify({ ...cfg, remoteApiUrl }, null, 2));

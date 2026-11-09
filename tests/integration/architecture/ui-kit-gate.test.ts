@@ -248,21 +248,32 @@ describe('[section:q856s1vm] M21 Host UI Kit slice — three DŁUG entries', () 
   });
 });
 
-describe('[section:j6b1z37u] M31 Host UI Kit slice — ProjectCreate (DŁUG) and DirectoryPickerModal (host-internal)', () => {
-  it('[section:j6b1z37u] the check reads two entries for M31: ProjectCreate as DŁUG replaced by Dialog, DirectoryPickerModal as a host-internal component', () => {
+describe('[section:j6b1z37u] M31 Host UI Kit slice — DirectoryList and DirectoryPickerModal (host-internal); ProjectCreate removed', () => {
+  it('[section:j6b1z37u] the check reads two entries for M31: DirectoryList and DirectoryPickerModal as host-internal components — no ProjectCreate debt', () => {
     expect(entries('j6b1z37u')).toEqual([
-      debt(['ProjectCreate'], ['Dialog']),
+      { kind: 'host-internal', components: ['DirectoryList'], replacedBy: [] },
       { kind: 'host-internal', components: ['DirectoryPickerModal'], replacedBy: [] },
     ]);
+    // The project-create window and its own scrim are gone.
+    expect(hostFiles()).not.toContain('src/client/ui/modals/ProjectCreate.tsx');
+    expect(hostFiles().filter((f) => /\bProjectCreate\b/.test(readSource(f)))).toEqual([]);
   });
 
-  it('[section:j6b1z37u] the project-create window is a scrim twin the M31 entry alone excuses', () => {
-    const file = 'src/client/ui/modals/ProjectCreate.tsx';
-    expect(violationsWithout('j6b1z37u', file)).toEqual([{ file, detector: 'anatomy:Dialog' }]);
-    expect(readSource(file).match(DEBT_MARKER)?.[0]).toContain('M31');
+  it('[section:j6b1z37u] DirectoryList: one implementation outside the catalog folder, not a catalog entry, unpublished, no catalog anatomy, used by the create-project page and DirectoryPickerModal', () => {
+    const file = 'src/client/components/DirectoryList.tsx';
+    expect(declarationsOf('j6b1z37u')[0]!.files).toEqual([file]);
+    expect(file.startsWith(CATALOG_DIR)).toBe(false);
+    expect(readSource('src/client/host-ui-kit/registry.ts')).not.toMatch(/DirectoryList/);
+    expect(readSource('src/client/host-ui-kit/index.ts')).not.toMatch(/DirectoryList/);
+    expect(readSource('src/server/plugin-runtime/ui.ts')).not.toMatch(/DirectoryList/);
+    expect(scanFindings().filter((f) => f.file === file)).toEqual([]);
+    expect(readSource(file)).toMatch(/HOST-INTERNAL COMPONENT \(2\.1\.77, Host UI Kit slice of M31/);
+    const users = hostFiles().filter((f) => f !== file && /DirectoryList\.js'/.test(readSource(f)));
+    expect(users.sort()).toEqual(['src/client/components/CreateProjectPage.tsx', 'src/client/components/DirectoryPickerModal.tsx']);
+    expect(hostFiles().filter((f) => /export function DirectoryList\b/.test(readSource(f)))).toEqual([file]);
   });
 
-  it('[section:j6b1z37u] DirectoryPickerModal: one implementation outside the catalog folder, not a catalog entry, unpublished, no catalog anatomy of its own, used by directory-browse and project-create', () => {
+  it('[section:j6b1z37u] DirectoryPickerModal: one implementation outside the catalog folder, not a catalog entry, unpublished, no catalog anatomy of its own, DirectoryList in its body, used by directory-browse', () => {
     const file = 'src/client/components/DirectoryPickerModal.tsx';
     expect(declarationsOf('j6b1z37u')[1]!.files).toEqual([file]);
     expect(file.startsWith(CATALOG_DIR)).toBe(false);
@@ -273,11 +284,10 @@ describe('[section:j6b1z37u] M31 Host UI Kit slice — ProjectCreate (DŁUG) and
     // Its window shell is the catalog's Dialog — the check finds nothing in it.
     expect(scanFindings().filter((f) => f.file === file)).toEqual([]);
     expect(readSource(file)).toMatch(/HOST-INTERNAL COMPONENT \(2\.1\.20, Host UI Kit slice of M31/);
-    // One implementation, two host consumers.
+    expect(readSource(file)).toMatch(/<DirectoryList\b/);
+    // One implementation, one host consumer: the directory-browse window of the settings dir fields.
     const users = hostFiles().filter((f) => f !== file && /DirectoryPickerModal\.js'/.test(readSource(f)));
-    // project-create embeds the browser; the directory-browse window of the settings dir fields opens the modal.
-    expect(users).toContain('src/client/ui/modals/ProjectCreate.tsx');
-    expect(users).toContain('src/client/components/settings/controls.tsx');
+    expect(users).toEqual(['src/client/components/settings/controls.tsx']);
     expect(hostFiles().filter((f) => /export function DirectoryPickerModal\b/.test(readSource(f)))).toEqual([file]);
   });
 });

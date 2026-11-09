@@ -29,6 +29,8 @@ export interface WorkspaceFileProject {
    * tolerated trailing `/`.
    */
   path: string;
+  /** 2.1.77 (M31 `t97gncju`): the copy of the project's type; absent = `spec`. */
+  projectType?: string;
 }
 
 export interface WorkspaceFile {
@@ -231,11 +233,14 @@ export function readWorkspaceFile(home: string): WorkspaceFile {
         `projects[${i}].path must be a canonical path relative to the workspace home: segments separated by "/", no empty, "." or ".." segment, no leading "/" (one trailing "/" is tolerated)`,
       );
     }
+    if (e.projectType !== undefined && typeof e.projectType !== 'string') {
+      throw invalid(`projects[${i}].projectType must be a project-type slug`);
+    }
     if (e.id !== undefined && e.id !== '' && (typeof e.id !== 'string' || !PROJECT_ID_RE.test(e.id))) {
       throw invalid(`projects[${i}].id must be a project id ([a-z0-9-], at most 48 characters)`);
     }
   });
-  const entries = raw.projects as Array<{ id?: string; path: string }>;
+  const entries = raw.projects as Array<{ id?: string; path: string; projectType?: string }>;
   entries.forEach((e, i) => {
     if (e.id === undefined || e.id === '') {
       throw new WorkspaceFileError(
@@ -260,7 +265,7 @@ export function readWorkspaceFile(home: string): WorkspaceFile {
     seen.set(e.id!, e.path);
   }
   return {
-    projects: entries.map((e) => ({ id: e.id!, path: e.path })),
+    projects: entries.map((e) => ({ id: e.id!, path: e.path, ...(e.projectType !== undefined ? { projectType: e.projectType } : {}) })),
     plugins: [...(raw.plugins as string[])],
   };
 }
@@ -268,7 +273,11 @@ export function readWorkspaceFile(home: string): WorkspaceFile {
 /** Composition only — never a machine-local attribute (M31 `t97gncju`). */
 function serialize(data: WorkspaceFile): WorkspaceFile {
   return {
-    projects: data.projects.map((p) => ({ id: p.id, path: p.path })),
+    projects: data.projects.map((p) => ({
+      id: p.id,
+      path: p.path,
+      ...(p.projectType !== undefined ? { projectType: p.projectType } : {}),
+    })),
     plugins: [...data.plugins],
   };
 }

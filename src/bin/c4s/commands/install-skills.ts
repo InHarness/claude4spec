@@ -6,10 +6,10 @@ import { CliError, type CliErrorCode } from '../errors.js';
 import { AgentError, confirmRemoteProject } from '../../../core/agent/http.js';
 import { writeOutput } from '../output.js';
 import {
-  ALL_SKILL_SLUGS,
   buildExternalSkillContext,
   buildExternalSkillsBundle,
-  isSkillSlug,
+  capabilitiesOfProjectType,
+  skillSlugsFor,
   writeFileSet,
   type SkillSlug,
 } from '../../../server/external-skills/external-skills-service.js';
@@ -46,14 +46,22 @@ export async function runInstallSkills(args: ParsedArgs): Promise<void> {
       throw err;
     }
     // `defaultPort` is irrelevant: the `--server` address overrides publicUrl.
-    ctx = buildExternalSkillContext({ id: args.project }, { name: remote.workspace, defaultPort: 0 }, server);
+    ctx = buildExternalSkillContext(
+      { id: args.project },
+      { name: remote.workspace, defaultPort: 0 },
+      server,
+      typeCapabilities(remote.projectType),
+    );
   } else {
     const { project, workspace } = resolveWorkspaceProjectOrThrow({
       project: args.project,
       workspace: args.workspace,
     });
-    ctx = buildExternalSkillContext(project, workspace);
+    ctx = buildExternalSkillContext(project, workspace, undefined, typeCapabilities(project.projectType));
   }
+  // 2.1.77 (M22 `8tvwx2ry`): the selectable slugs are the project's skills — without
+  // `briefs`, `brief-implementer` is an unknown slug.
+  const available = skillSlugsFor(ctx.capabilities);
 
   const skillsRaw = optionalStringList(args, 'skills');
   let selection: SkillSlug[] | undefined;
@@ -67,10 +75,10 @@ export async function runInstallSkills(args: ParsedArgs): Promise<void> {
       throw new CliError('INVALID_ARGS', '--skills was given but contained no valid slug');
     }
     for (const s of skillsRaw) {
-      if (!isSkillSlug(s)) {
+      if (!(available as string[]).includes(s)) {
         throw new CliError(
           'INVALID_ARGS',
-          `--skills: unknown slug '${s}' — expected one of ${ALL_SKILL_SLUGS.join(', ')}`,
+          `--skills: unknown slug '${s}' — expected one of ${available.join(', ')}`,
         );
       }
     }
@@ -86,6 +94,19 @@ export async function runInstallSkills(args: ParsedArgs): Promise<void> {
   } catch (err) {
     throw new CliError('SKILLS_WRITE_FAILED', `failed to write skills to ${targetDir}: ${(err as Error).message}`);
   }
+}
+
+/**
+ * 2.1.77 (M22 `8tvwx2ry`): the capabilities of the project's type — the copy in
+ * the workspace record (absent = `spec`), or the `projectType` the server lists.
+ * A type this version does not know cannot be rendered for.
+ */
+function typeCapabilities(projectType: string | undefined): ReadonlySet<string> {
+  const caps = capabilitiesOfProjectType(projectType);
+  if (!caps) {
+    throw new CliError('INVALID_ARGS', `unknown project type '${String(projectType)}' — not in this version's project-type registry`);
+  }
+  return caps;
 }
 
 export const installSkillsCommand: CliCommandContribution = {

@@ -43,7 +43,7 @@ import {
   compositionCarries,
   subagentsFor,
   CONTEXT_TYPE_REGISTRY,
-  assertKnownContextType,
+  assertRegisteredContextType,
   type PeerProject,
 } from '../services/chat-context.js';
 import { readConfig } from '../config.js';
@@ -71,7 +71,7 @@ import type { FileVersionService } from '../services/file-version.js';
 import type { SkillResolver, SkillRegistry } from '../services/skill-registry.js';
 import { SKILLS_ROOT_KIND, currentSkillOf } from '../services/project-rooted-skills.js';
 import { PAGES_KIND } from '../../shared/root-kinds.js';
-import type { Annotation, Brief, ChatMessage, ChatThread, Plan } from '../../shared/entities.js';
+import type { Annotation, Brief, ChatContextType, ChatMessage, ChatThread, Plan } from '../../shared/entities.js';
 import type { Root } from '../../shared/types.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { Db } from '../db/index.js';
@@ -115,6 +115,24 @@ export interface AgentTurnDeps {
    * Absent (rigs without a skills root) = no.
    */
   skillsRootHasFiles?: () => boolean;
+  /** 2.1.77 (M19 `wjjr1oc0`, M18 `rxlzqki1`): the project has the capability `entities`. Absent = yes. */
+  hasEntities?: boolean;
+  /**
+   * 2.1.77 (M46 `qq84x14h`): the project has the capability `briefs`. Without it
+   * `transagent-tools` carries `runTransagent` and `list_plans` only. Absent = yes.
+   */
+  hasBriefs?: boolean;
+  /**
+   * 2.1.77 (M48 `7yqp77g8`, M57 `7ngvgv5z`): the project's type slug — the
+   * `type` attribute of `<project>` and the entry `<project_type>` reads its
+   * prompt description from. Absent (rigs) = `spec`.
+   */
+  projectType?: string;
+  /**
+   * 2.1.77 (M44 `1j39ajh8`): the context types this project registers
+   * (`contextTypesFor(capabilities)`). Absent (rigs) = every row of the code map.
+   */
+  contextTypes?: readonly ChatContextType[];
   ws: WsEmitter;
   cwd: string;
   /** 0.1.96 multiroot: every configured page root (was the single `pagesDir` scalar).
@@ -555,7 +573,9 @@ export async function runAgentTurn(
   // M05 m05ctxreg: the context-type registry is the single source of truth for this
   // thread's five dispatch dimensions (skill / MCP set / chrome / subagent / posture).
   // 0.2.87: backstop for call-sites that bypass the routes (transagent continuation).
-  assertKnownContextType(thread);
+  // 2.1.77 (M44 `1j39ajh8`): and against THIS project's registry — without
+  // `briefs` a `brief`/`patch` row assembles no server set, subagent or prompt.
+  assertRegisteredContextType(thread, deps.contextTypes);
   const ctx = CONTEXT_TYPE_REGISTRY[thread.contextType];
   // Builtin posture (dim 5): `force-plan` pins plan-mode EVERY turn regardless of the
   // thread's stored plan_mode flag. "Read-only" is the wrong word for what that buys:
@@ -1241,6 +1261,8 @@ export async function runAgentTurn(
       currentPageBody,
       currentSkill,
       skillsRootHasFiles: deps.skillsRootHasFiles?.() ?? false,
+      ...(deps.hasEntities === false ? { entities: false } : {}),
+      ...(deps.projectType ? { projectType: deps.projectType } : {}),
       annotations,
       planMode,
       currentPlan,
@@ -1620,6 +1642,8 @@ export async function runAgentTurn(
             patches: deps.patchService,
             // 2.1.18 (M21/M44) — M21's `list_briefs`, on the release axis; never on a `brief` thread.
             briefs: deps.briefService,
+            // 2.1.77 (M46 `qq84x14h`): without `briefs` the server leaves both lists out.
+            hasBriefs: deps.hasBriefs !== false,
             // 2.1.18 (M10/M44) — and M10's `list_plans`, the plan set a banka's `planPath` comes from.
             plans: deps.planService,
             projectId: deps.projectId ?? null,
@@ -1823,6 +1847,11 @@ export async function runAgentTurn(
         !directFilesystemDenied,
         (slug) => deps.skillRegistry.has(slug),
         new Set(mcpInventory.map((entry) => entry.name)),
+        // 2.1.77 (M45 `37ogwcgx`): the project's capabilities shape the built-ins.
+        {
+          has: (name: string) =>
+            name === 'entities' ? deps.hasEntities !== false : name === 'briefs' ? deps.hasBriefs !== false : true,
+        },
       ),
       architectureConfig: architectureConfigForExecute,
       planMode,

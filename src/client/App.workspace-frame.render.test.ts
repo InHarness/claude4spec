@@ -135,14 +135,15 @@ describe('workspace routes are mounted outside the project prefix (M31 eb95ery1)
   });
 
   it('[section:eb95ery1] a document without a project mounts the workspace routes at the root and no project route; a project document mounts the project routes and no workspace route', () => {
-    expect(routesForDocument(BASE_ROUTE_CHILDREN, '').map(pathOf)).toEqual(['/welcome', '/workspace/settings']);
+    expect(routesForDocument(BASE_ROUTE_CHILDREN, '').map(pathOf)).toEqual(['/welcome', '/create-project', '/workspace/settings']);
 
     const projectPaths = routesForDocument(BASE_ROUTE_CHILDREN, 'alpha').map(pathOf);
     expect(projectPaths).not.toContain('/welcome');
     expect(projectPaths).not.toContain('/workspace/settings');
+    expect(projectPaths).not.toContain('/create-project');
     expect(projectPaths).toEqual(expect.arrayContaining(['/', '/space/$rootId/$', '/settings', '/onboarding']));
     // Every base route is mounted by exactly one of the two documents.
-    expect(projectPaths.length + 2).toBe(BASE_ROUTE_CHILDREN.length);
+    expect(projectPaths.length + 3).toBe(BASE_ROUTE_CHILDREN.length);
   });
 });
 

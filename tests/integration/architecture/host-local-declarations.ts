@@ -168,10 +168,10 @@ export const HOST_LOCAL_DECLARATIONS: readonly HostLocalDeclaration[] = [
   {
     section: 'j6b1z37u',
     consumer: 'M31',
-    kind: 'debt',
-    components: ['ProjectCreate'],
-    replacedBy: ['Dialog'],
-    files: ['src/client/ui/modals/ProjectCreate.tsx'],
+    kind: 'host-internal',
+    components: ['DirectoryList'],
+    replacedBy: [],
+    files: ['src/client/components/DirectoryList.tsx'],
   },
   {
     section: 'j6b1z37u',

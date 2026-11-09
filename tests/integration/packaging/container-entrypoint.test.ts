@@ -371,7 +371,8 @@ describe('container entrypoint — project registration (M01 uxlvmu4n, 3zqke46q)
     });
 
     const registered = await waitFor(() => readRecords().find((r) => r.status === 201), 'a successful registration');
-    expect(registered.body).toEqual({ cwd: projectDir });
+    // 2.1.77: a directory without config.json goes the new-project path, `spec` without PROJECT_TYPE.
+    expect(registered.body).toEqual({ cwd: projectDir, projectType: 'spec' });
     const requests = readRecords().filter((r) => r.request !== undefined);
     expect(requests.map((r) => r.status)).toEqual([503, 201]);
     expect(fs.statSync(projectDir).isDirectory()).toBe(true);
@@ -383,6 +384,46 @@ describe('container entrypoint — project registration (M01 uxlvmu4n, 3zqke46q)
     // A stop is forwarded to the server, which shuts down cleanly.
     child!.kill('SIGTERM');
     expect(await exited).toBe(0);
+  });
+
+  it('[ac:ac-kontener-uruchomiony-z-pustym-project] an empty PROJECT_TYPE over a directory without config.json registers it as a `spec` project', async () => {
+    for (const env of [{}, { PROJECT_TYPE: '' }] as Record<string, string>[]) {
+      const port = await freePort();
+      const projectDir = path.join(scratch, `fresh-${Object.keys(env).length}`);
+      startContainer({ ...env, PORT: String(port), PROJECT_DIR: projectDir });
+      const registered = await waitFor(() => readRecords().find((r) => r.status === 201 && r.body?.cwd === projectDir), 'a registration');
+      // The new-project path with the type `spec` — the server writes it to config.json and the record's copy.
+      expect(registered.body, JSON.stringify(env)).toEqual({ cwd: projectDir, projectType: 'spec' });
+      child?.kill('SIGTERM');
+      await exited;
+    }
+  });
+
+  it('[ac:ac-ponowny-start-kontenera-z-tym-samym-p] a restart with the same PROJECT_TYPE over a project of that type registers successfully and leaves config.json unchanged', async () => {
+    const port = await freePort();
+    const projectDir = path.join(scratch, 'provisioned');
+    fs.mkdirSync(path.join(projectDir, '.claude4spec'), { recursive: true });
+    const configFile = path.join(projectDir, '.claude4spec', 'config.json');
+    const config = JSON.stringify({ $schemaVersion: 4, name: 'provisioned', projectType: 'skill' }, null, 2) + '\n';
+    fs.writeFileSync(configFile, config);
+    startContainer({ PORT: String(port), PROJECT_DIR: projectDir, PROJECT_TYPE: 'skill' });
+    const registered = await waitFor(() => readRecords().find((r) => r.status === 201), 'a registration');
+    // The existing-directory path: no type sent, the project keeps the one in its file.
+    expect(registered.body).toEqual({ cwd: projectDir });
+    expect(fs.readFileSync(configFile, 'utf8')).toBe(config);
+  });
+
+  it('[section:mcdkzcb6] a PROJECT_TYPE that differs from the type in config.json is refused (PROJECT_TYPE_CONFLICT) and ends the container, nothing registered', async () => {
+    const port = await freePort();
+    const projectDir = path.join(scratch, 'other-type');
+    fs.mkdirSync(path.join(projectDir, '.claude4spec'), { recursive: true });
+    const configFile = path.join(projectDir, '.claude4spec', 'config.json');
+    const config = JSON.stringify({ $schemaVersion: 4, name: 'other-type' }) + '\n';
+    fs.writeFileSync(configFile, config);
+    startContainer({ PORT: String(port), PROJECT_DIR: projectDir, PROJECT_TYPE: 'skill' });
+    expect(await exited).toBe(1);
+    expect(readRecords().filter((r) => r.request !== undefined)).toHaveLength(0);
+    expect(fs.readFileSync(configFile, 'utf8')).toBe(config);
   });
 
   // 2.1.78 (M01) — the 4xx semantics are the spec's now (dev-0002 closed): a 4xx

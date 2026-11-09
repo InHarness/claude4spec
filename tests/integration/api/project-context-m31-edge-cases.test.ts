@@ -13,7 +13,7 @@ import { ProjectContextCache } from '../../../src/server/workspace/context-cache
 import { projectDispatchMiddleware } from '../../../src/server/workspace/middleware.js';
 import { buildProjectContext } from '../../../src/server/workspace/project-context.js';
 import { WorkspaceRegistry } from '../../../src/server/workspace/registry.js';
-import { bootstrapProject } from '../../../src/server/workspace/bootstrap.js';
+import { bootstrapFixture } from '../../helpers/bootstrap-fixture.js';
 import { pluginsRouter } from '../../../src/server/routes/plugins.js';
 import { errorHandler } from '../../../src/server/routes/errors.js';
 import type { ProjectRecord, WorkspaceRecord } from '../../../src/server/workspace/types.js';
@@ -70,11 +70,11 @@ describe('ProjectContext — M31 edge cases on a real build', () => {
     workspace = registry.selectOrCreate({ name: 'default' });
 
     untrustedCwd = path.join(home, 'untrusted-project');
-    untrusted = bootstrapProject(registry, workspace, untrustedCwd).project;
+    untrusted = bootstrapFixture(registry, workspace, untrustedCwd).project;
     sentinel = commitLocalPlugin(untrustedCwd);
 
     const refusedCwd = path.join(home, 'refused-project');
-    refused = bootstrapProject(registry, workspace, refusedCwd).project;
+    refused = bootstrapFixture(registry, workspace, refusedCwd).project;
     commitLocalPlugin(refusedCwd);
     registry.setProjectTrust(workspace, refused.id, false);
     workspace = registry.getWorkspace('default')!;

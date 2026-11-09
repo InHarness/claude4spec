@@ -278,6 +278,7 @@ export async function getSections(
   roots: RootSet,
   reader: RawEntityReader,
   input: GetSectionsInput,
+  opts: { entities?: boolean } = {},
 ): Promise<GetSectionsResult> {
   const requested = Array.isArray(input.anchors) ? input.anchors : [];
   if (requested.length === 0 || requested.length > MAX_ANCHORS_PER_CALL) {
@@ -339,7 +340,7 @@ export async function getSections(
       items.push({ anchor, ...itemError(page) });
       continue;
     }
-    const fetched = fetchOne(db, page, section);
+    const fetched = fetchOne(db, page, section, opts);
     items.push(fetched.item);
     edgesByAnchor.set(anchor, fetched.edges);
     if (fetched.hint) textHints.push(fetched.hint);
@@ -522,8 +523,9 @@ function fetchOne(
   db: Database,
   page: PageLines,
   section: RawSection,
+  opts: { entities?: boolean } = {},
 ): { item: SectionResultItem; edges: SectionEdges; hint?: string } {
-  const hydrated = hydrateSectionFrom(db, page, section);
+  const hydrated = hydrateSectionFrom(db, page, section, opts);
   // The section serializer IS the source for this operation — the core does not
   // hand-roll a second section shape beside it. What it does own is the WIRE
   // naming: the operation's contract is snake_case, while the serializer's

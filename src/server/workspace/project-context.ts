@@ -62,7 +62,7 @@ import { rootRenameRouter } from '../routes/config-rename.js';
 import { mcpConfigRouter } from '../routes/mcp-config.js';
 import { PROJECTION_IDS, ProjectionStatusRegistry, type ProjectionId } from '../services/projection-status.js';
 import { listProjects } from './list-projects.js';
-import { readPeerConfigSummary } from './peer-config.js';
+import { readPeerConfigSummary, workspacePeers } from './peer-config.js';
 import { PatchService } from '../services/patch.js';
 import { artifactsRouter } from '../routes/artifacts.js';
 import { RemoteAuthService } from '../services/remote-auth.js';
@@ -161,7 +161,7 @@ import { pageLinksRouter } from '../routes/page-links.js';
 import { errorHandler } from '../routes/errors.js';
 import { configRouter } from '../routes/config.js';
 import { externalSkillsRouter } from '../routes/external-skills.js';
-import type { PeerProject } from '../services/chat-context.js';
+import { contextTypesFor, type PeerProject } from '../services/chat-context.js';
 import type { PluginRegistry, ProjectPluginHost, ProjectPluginOverlay } from '../core/plugin-host/types.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import { pluginHostRouter } from '../core/plugin-host/cross-cutting.js';
@@ -174,7 +174,9 @@ import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import type { ActiveAdapter, PendingInput } from '../routes/agent-turn.js';
 import { abortAllTurns } from '../routes/agent-turn.js';
 import { ProjectWsEmitter } from '../ws/project-emitter.js';
-import { ensureWelcomePage, ProjectNeedsActivationError } from './bootstrap.js';
+import { writeStarterContent, ProjectNeedsActivationError, settleProjectType } from './bootstrap.js';
+import { BRIEFS, ENTITIES, multiRootViolation } from '../project-types/resolve.js';
+import type { ProjectCapabilities } from '../project-types/capabilities.js';
 import type { WorkspaceRegistry } from './registry.js';
 import type { WorkspaceRecord } from './types.js';
 
@@ -303,6 +305,19 @@ export interface ProjectContext {
   projectId: string;
   cwd: string;
   workspace: WorkspaceRecord;
+  /**
+   * 2.1.77 (M31 `ssn335r8`, `m31ctx001`; M57 `rdztxzb8`): the project's type
+   * slug and its capability set — read from `config.json` and the type registry
+   * at build time, fixed for the life of the context, never a reason to invalidate.
+   */
+  projectType: string;
+  capabilities: ProjectCapabilities;
+  /**
+   * 2.1.77 (M44 `1j39ajh8`): the context-type registry of this project —
+   * `chat`, `brief`, `patch`, `ask` with the capability `briefs`, `chat` and
+   * `ask` without it (`contextTypesFor(capabilities)`).
+   */
+  contextTypes: readonly ChatContextType[];
   /** Per-context Express Router — dispatch middleware mounts it under /api/projects/:id. */
   router: Router;
   db: Db;
@@ -446,6 +461,22 @@ async function buildInner(
     migrateConfigToV4(cwd);
   }
   const bootConfig = readConfig(cwd);
+  // 2.1.77 (M31 `m31ctx001`, «Zestaw serwisów według typu»): the type from
+  // `config.json`, checked against the registry and the copy in the project's
+  // record — an unknown type or a mismatch fails the build with that cause
+  // (`PROJECT_TYPE_UNKNOWN` / `PROJECT_TYPE_MISMATCH`). The capability set is
+  // fixed for this context's life.
+  const projectRecord = registry.getProject(workspace, projectId);
+  const projectTypeResolved = settleProjectType(
+    cwd,
+    undefined,
+    projectRecord ? (projectRecord.projectType ?? null) : undefined,
+  );
+  const capabilities = projectTypeResolved.capabilities;
+  {
+    const violation = multiRootViolation(bootConfig.roots, capabilities);
+    if (violation) throw new Error(violation);
+  }
   // 0.1.96: page roots come from config.roots[] — the file and the defaults
   // alone (2.1.58: no start flag names a root's directory).
   const effectiveRoots: Root[] = bootConfig.roots;
@@ -523,8 +554,21 @@ async function buildInner(
   // skills only on the trusted path (see `fanPluginSkills`).
   fanPluginSkills(skillRegistry, deps.pluginRegistry, overlayResult);
 
+  // 2.1.77 (M13 L19 `pmm7cm4c`, M31 m31ctx001): without the capability
+  // `entities` the set of active types is EMPTY without reading the key — no
+  // type of the effective pool is active, whatever `config.entities` says.
+  // Non-entity envelope contributions (commands, subagents, skills, writing
+  // styles) are not part of a type and stay (`m13plset`).
+  const hasEntities = capabilities.has(ENTITIES);
+  // 2.1.77 (M21 `msujcqhu`, M23 `iifnvhtu`): M21 and M23 exist only with the
+  // capability `briefs`. Without it neither module is reachable from the context:
+  // no `/briefs` or `/patches` route, no `brief`/`patch` artifact kind in the
+  // generic family (M36 `ff7ootuy`), no `brief`/`patch` context type (M44
+  // `1j39ajh8`) and no patch/brief lists on `transagent-tools` (M46 `qq84x14h`).
+  const hasBriefs = capabilities.has(BRIEFS);
+  const contextTypes = contextTypesFor(capabilities);
   const pluginHost: ProjectPluginHost = deps.pluginRegistry.consolidate(
-    { entities: bootConfig.entities },
+    { entities: hasEntities ? bootConfig.entities : [] },
     overlay,
   );
   // 2.1.12 (M31 L10): the context's MCP servers live exactly as long as this
@@ -728,9 +772,11 @@ async function buildInner(
   const pendingTextMigrations = (counts: ReturnType<typeof readEntityBootCounts> | undefined): string[] => {
     const pending: string[] = [];
     const { fileEntityCount = 0, hasTagsFile = false, dbEntityCount = 0 } = counts ?? {};
-    if (fileEntityCount === 0 && !hasTagsFile && dbEntityCount > 0) pending.push(MIGRATION_DB_ONLY_ENTITIES);
+    if (capabilities.has(ENTITIES) && fileEntityCount === 0 && !hasTagsFile && dbEntityCount > 0) {
+      pending.push(MIGRATION_DB_ONLY_ENTITIES);
+    }
     if (releasesWithoutSlugPending()) pending.push(MIGRATION_RELEASES_WITHOUT_SLUG);
-    if (entityTimestampsPending(entityStore)) pending.push(MIGRATION_UNSTAMPED_ENTITIES);
+    if (capabilities.has(ENTITIES) && entityTimestampsPending(entityStore)) pending.push(MIGRATION_UNSTAMPED_ENTITIES);
     return pending;
   };
   let entityBootCounts: ReturnType<typeof readEntityBootCounts> | undefined;
@@ -757,7 +803,8 @@ async function buildInner(
    * it (a failed recompute) or is driven by it (the manual rebuild button), and
    * the discovery core's read gate reads it on every gated call.
    */
-  const projectionStatus = new ProjectionStatusRegistry(ws);
+  // 2.1.77 (M26 `e6k3f793`): no entity projection row without `entities`.
+  const projectionStatus = new ProjectionStatusRegistry(ws, { entities: hasEntities });
   /**
    * 0.2.77 — the live half of the marking, from M40's report to the owner's decision.
    *
@@ -887,7 +934,7 @@ async function buildInner(
     ),
   );
 
-  const sectionIndexer = new SectionIndexerService(db.handle, sectionIndexedRoots, ws, pluginHost);
+  const sectionIndexer = new SectionIndexerService(db.handle, sectionIndexedRoots, ws, pluginHost, { entities: hasEntities });
   const todosIndexer = new TodosIndexerService(todosRoots, ws);
   // 2.1.8: the link index covers every root selecting `m14-link-indexer` (today
   // every `pages` root) and resolves `@path.md` across all of them — source root,
@@ -1104,6 +1151,7 @@ async function buildInner(
       discovery,
       ws,
       entityStore,
+      entities: hasEntities,
     }),
   );
 
@@ -1201,6 +1249,7 @@ async function buildInner(
     packageVersion: readPackageVersion(),
     projectionStatus,
     sections: sectionsService,
+    entities: hasEntities,
   });
   discoveryCore = discovery;
   /**
@@ -1231,9 +1280,12 @@ async function buildInner(
       // Re-pointing the base root does not narrow the fail-closed rule.
       projectionStatus,
       sections: sectionsService,
+      entities: hasEntities,
     });
   };
-  pluginHost.registerMcpServer('entity-tools', () =>
+  // M13 `pmm7cm4c`: without `entities` the generic `entity-tools` server is not
+  // registered, so the turn's factory pool has neither it nor `${type}-tools`.
+  if (hasEntities) pluginHost.registerMcpServer('entity-tools', () =>
     createEntityToolsServer({
       host: pluginHost,
       reader: rawReader,
@@ -1280,6 +1332,8 @@ async function buildInner(
   );
   // M29: release restore must persist restored entities' files.
   releaseService.setEntityStore(entityStore);
+  // 2.1.77 (M17 `tutwwt5x`, M56 `heqel0ut`): the entity axis of releases follows the capability.
+  releaseService.setEntitiesCapability(hasEntities);
   // 0.1.118: release create/update writes the on-disk identity file.
   releaseService.setReleaseStore(releaseFileStore);
   // M17 m17reldiff: the git-anchored diff's pathspecs = release-flag roots + `releases`.
@@ -1400,7 +1454,10 @@ async function buildInner(
       // Validate overlaps against the roots THIS context runs on, so the route
       // cannot accept a dir the next build would reject.
       effectiveRoots,
-      onOnboardingCompleted: (effectivePagesDir) => ensureWelcomePage(cwd, effectivePagesDir),
+      onOnboardingCompleted: (effectivePagesDir) =>
+        writeStarterContent(cwd, effectivePagesDir, projectTypeResolved.entry),
+      // 2.1.77 (M57 `rdztxzb8`): the project's set — the active keys of /config.
+      capabilities,
       /**
        * 0.2.77 (M26) + 0.2.113: `/_meta/index-status` is the settings module's, and
        * rides with its router — mounted here, at a LONGER path than `metaRouter`
@@ -1498,7 +1555,7 @@ async function buildInner(
         }
       : {}),
   };
-  router.use('/patches', patchesRouter(patchWriteDeps));
+  if (hasBriefs) router.use('/patches', patchesRouter(patchWriteDeps));
   /**
    * 0.2.13 (tier C) — `search_pages` is project-scoped (`rootId` only NARROWS
    * it), so it mounts at `/pages` with no root segment. **Order is the
@@ -1513,9 +1570,15 @@ async function buildInner(
   router.use('/static/:rootId', staticRouter(resolveStatic, () => [...rootById.keys()]));
   // 2.1.9 — the sidebar's accordion array of every root; no `:rootId` segment.
   router.use('/sidebar-accordions', sidebarAccordionsRouter(sidebarAccordions));
-  router.use('/tags', tagsRouter(tagsService, referencesService, discovery, ws));
-  router.use('/references', referencesRouter(pluginHost, referencesService, discovery, discoveryForRoots));
-  router.use('/entities', entitiesRouter(pluginHost, tagsService, versionService, entityStore, rawReader, discovery, ws));
+  // 2.1.77 (M13 `pmm7cm4c`, M18 `rxlzqki1`, M19 `wjjr1oc0`): the modules that
+  // require `entities` are not mounted without it — every route under
+  // `/entities` (counts and type introspection included), `/tags` and
+  // `/references` answers like a route that does not exist (404).
+  if (hasEntities) {
+    router.use('/tags', tagsRouter(tagsService, referencesService, discovery, ws));
+    router.use('/references', referencesRouter(pluginHost, referencesService, discovery, discoveryForRoots));
+    router.use('/entities', entitiesRouter(pluginHost, tagsService, versionService, entityStore, rawReader, discovery, ws));
+  }
 
   /**
    * Host API 2.0.0 (item 31) — `/api/{type}s` for every type that declares its
@@ -1534,7 +1597,7 @@ async function buildInner(
     if (!module.data?.schema) continue;
     router.use(module.pathPrefix, generatedCrudRouter(genericCrudDeps, module));
   }
-  router.use('/external-skills', externalSkillsRouter({ registry, workspace, projectId }));
+  router.use('/external-skills', externalSkillsRouter({ registry, workspace, projectId, capabilities }));
   // 0.1.58: peer-discovery for the `<workspace_projects>` prompt block. For each
   // workspace project except this one, build a PeerProject. Re-read per turn so
   // peer-config edits surface on the next thread's first turn.
@@ -1545,21 +1608,7 @@ async function buildInner(
   const listWorkspacePeers = (): PeerProject[] => {
     const ws = registry.getWorkspace(workspace.name);
     if (!ws) return [];
-    // 2.1.9 (M31 `qtqqqwfp`): `skill="exposed"` comes from the M52 list of
-    // exposed projects (edge m31-requires-m52), not from reading `skill.*` here.
-    const exposedIds = new Set(listExposedProjects(ws.projects).map((e) => e.projectId));
-    return ws.projects
-      .filter((p) => p.id !== projectId)
-      .map((p) => {
-        const peer: PeerProject = { id: p.id };
-        // The one sanctioned peer-config read; unreadable → no display name,
-        // not an error. See `peer-config.ts` for why this bypass exists.
-        const { name, description } = readPeerConfigSummary(p.cwd);
-        if (name) peer.name = name;
-        if (description) peer.description = description;
-        if (exposedIds.has(p.id)) peer.skillExposed = true;
-        return peer;
-      });
+    return workspacePeers(ws.projects, projectId, readPeerConfigSummary);
   };
 
   /**
@@ -1594,7 +1643,10 @@ async function buildInner(
    */
   const readExposedSkill = async (): Promise<ExposedSkillPackage> => {
     const own = readOwnSkillConfig();
-    if (!own.exposed || own.name === null) throw new Error(`project "${projectId}" is not exposed as a skill`);
+    // 2.1.77 (M52 `ybbal0vf`): a provider by the type's `skill-exposure`, no toggle.
+    if (!capabilities.has('skill-exposure') || own.name === null) {
+      throw new Error(`project "${projectId}" is not exposed as a skill`);
+    }
     return readExposedPackage(
       {
         listPages: () => pages.listMarkdownFilesReadonly(),
@@ -1676,6 +1728,11 @@ async function buildInner(
     skillRegistry,
     // 2.1.9 (M52): read per turn — the hit-translation line of `<available_skills>`.
     skillsRootHasFiles: () => projectRootedSkills?.hasAnyFile() ?? false,
+    hasEntities,
+    hasBriefs,
+    // 2.1.77 (M48 `7yqp77g8`, M57 `7ngvgv5z`): `<project type>` and `<project_type>`.
+    projectType: projectTypeResolved.entry.slug,
+    contextTypes,
     ws,
     cwd,
     roots: effectiveRoots,
@@ -1708,6 +1765,8 @@ async function buildInner(
    */
   const mcpSurfaceDeps = (profile: ChatContextType): ExternalSurfaceDeps => ({
     profile,
+    // 2.1.77 (M12 `ikg2bklu`): profiles and entity operations follow the type.
+    capabilities,
     reader: {
       reader: rawReader,
       discovery,
@@ -1787,12 +1846,13 @@ async function buildInner(
   // 2.1.10 (M31 ic35jwy6): the same reload after a sync that moved HEAD
   // (`fast-forwarded`/`merged`); the rebuild re-reads config.json from disk.
   router.use('/git', gitRouter(gitService, { onHeadChanged: onContextConfigChanged }));
-  router.use('/briefs', briefsRouter(briefService, chatService));
+  if (hasBriefs) router.use('/briefs', briefsRouter(briefService, chatService));
   router.use(
     '/artifacts',
     artifactsRouter({
-      brief: briefService,
-      patch: patchService,
+      // 2.1.77 (M36 `ff7ootuy`): without `briefs` the `:kind` set is `plan` alone —
+      // `brief`/`patch` answer `404 UNKNOWN_ARTIFACT_KIND` like any unregistered kind.
+      ...(hasBriefs ? { brief: briefService, patch: patchService } : {}),
       plan: planService,
       pageVersions,
       chat: chatService,
@@ -2058,7 +2118,9 @@ async function buildInner(
     const { fileEntityCount, hasTagsFile, dbEntityCount } = entityBootCounts ?? readEntityBootCounts();
     const filesPresent = fileEntityCount > 0 || hasTagsFile;
 
-    if (!filesPresent && dbEntityCount > 0) {
+    // 2.1.77 (M01 `hbib9dy0`): a project without `entities` has no step 8 —
+    // no entity store is bootstrapped and nothing is exported.
+    if (!filesPresent && dbEntityCount > 0 && capabilities.has(ENTITIES)) {
       // Pre-M29 project: entities live only in SQLite → export to text once.
       console.log(`[m29] exporting ${dbEntityCount} entities DB→text into ${entitiesRootDir} ...`);
       exportingToText = true;
@@ -2101,7 +2163,7 @@ async function buildInner(
      */
     // 2.1.60: skipped by the background build — it was refused above when a
     // file lacked its timestamps, so there is nothing to stamp.
-    if (!noProjectWrites) {
+    if (!noProjectWrites && capabilities.has(ENTITIES)) {
       try {
         const { unwritten } = backfillEntityTimestamps(db.handle, entityStore, cwd, entitiesRootDir);
         if (unwritten > 0) incompleteMigrations.push(MIGRATION_UNSTAMPED_ENTITIES);
@@ -2209,7 +2271,7 @@ async function buildInner(
     if (releasesWithoutSlugPending()) incompleteMigrations.push(MIGRATION_RELEASES_WITHOUT_SLUG);
     // The timestamp backfill never ran (the entity boot broke off before it):
     // only then is its outcome unknown and the store walked to learn it.
-    if (!timestampBackfillRan && entityTimestampsPending(entityStore)) {
+    if (!timestampBackfillRan && capabilities.has(ENTITIES) && entityTimestampsPending(entityStore)) {
       incompleteMigrations.push(MIGRATION_UNSTAMPED_ENTITIES);
     }
     if (incompleteMigrations.length > 0) {
@@ -2267,6 +2329,9 @@ async function buildInner(
 
   return {
     projectId,
+    projectType: projectTypeResolved.entry.slug,
+    capabilities,
+    contextTypes,
     cwd,
     workspace,
     router,

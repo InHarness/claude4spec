@@ -10,6 +10,7 @@ import {
   buildExternalSkillsBundle,
   writeFileSet,
   externalSkillsMetadata,
+  SPEC_CAPABILITIES,
   isSkillSlug,
   ALL_SKILL_SLUGS,
 } from './external-skills-service.js';
@@ -28,6 +29,7 @@ const FIXTURE_CTX: ExternalSkillContext = {
   id: 'my-spec-project',
   workspace: 'default',
   publicUrl: 'https://c4s.example.dev',
+  capabilities: SPEC_CAPABILITIES,
 };
 const IDENTITY = `--server '${FIXTURE_CTX.publicUrl}' --project '${FIXTURE_CTX.id}'`;
 
@@ -177,9 +179,15 @@ describe('buildExternalSkillContext', () => {
     addedAt: '2026-01-01T00:00:00.000Z',
   };
 
-  it('carries { id, workspace, publicUrl } — no slug, no directory', () => {
+  it('carries { id, workspace, publicUrl, capabilities } — no slug, no directory', () => {
     const ctx = buildExternalSkillContext(project, { name: 'default', defaultPort: 4500 });
-    expect(ctx).toEqual({ id: 'my-spec-project', workspace: 'default', publicUrl: 'http://localhost:4500' });
+    // 2.1.77 (M22 `m22dserv`): the project's capability set rides along (absent = a Specification's).
+    expect(ctx).toEqual({
+      id: 'my-spec-project',
+      workspace: 'default',
+      publicUrl: 'http://localhost:4500',
+      capabilities: SPEC_CAPABILITIES,
+    });
     expect(JSON.stringify(ctx)).not.toContain('/abs/');
   });
 
@@ -208,7 +216,7 @@ describe('isSkillSlug / ALL_SKILL_SLUGS', () => {
 
 describe('externalSkillsMetadata', () => {
   it('returns exactly three entries with no SKILL.md content', () => {
-    const meta = externalSkillsMetadata();
+    const meta = externalSkillsMetadata(SPEC_CAPABILITIES);
     expect(meta).toHaveLength(3);
     expect(meta.map((m) => m.slug).sort()).toEqual(['brief-implementer', 'refactor', 'spec-reader']);
     for (const m of meta) {
@@ -322,6 +330,7 @@ const LEAK_CTX: ExternalSkillContext = {
   id: 'proj-q7x2',
   workspace: 'ws-zz9-unique',
   publicUrl: 'https://spec.example.test:4999',
+  capabilities: SPEC_CAPABILITIES,
 };
 
 const squash = (t: string): string => t.replace(/\s+/g, ' ').trim();

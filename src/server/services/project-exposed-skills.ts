@@ -3,18 +3,23 @@
  * `gx7f584v`, `1v62dbhb`; registry contract M37 `zscui1qz`, carrier M37
  * `fgehgc8h`, read form M37 `7pj9yx9k`).
  *
- * A provider — a project of the workspace with `skill.exposed` on — is ONE skill
+ * A provider — a project of the workspace whose type has `skill-exposure`
+ * (2.1.77, read from the type copy in the workspace record) — is ONE skill
  * of the consumers that attach it by its `skill.name` (`skill.uses`). The slug is
  * that name (the source gives it, not a directory). Its entry content is the page
  * named by `skill.entry`, its subfiles are the pages of the provider's base root
  * addressed by their path in that root; the provider's other roots — its own
- * `skills` root included — are not part of the package in v1. `description`,
- * scope and context types come from the provider's exposure fields.
+ * `skills` root included — are not part of the package in v1. `description`
+ * and context types come from the provider's exposure fields, the scope from
+ * its type (2.1.77, M52 `8zu57gsf`, M37 `r8sajsmk`: `writing-style` → a
+ * selectable style, `skill` → `contextual`; an unknown type does not activate,
+ * so its name is known, unresolved — `provider-unreachable`).
  *
  * The declaration (the registry only names this source, the values are M52's):
  *  - name and `source` value: `project-exposed`;
- *  - admitted scopes: `writing-style` and `contextual` (the author declares the
- *    reach in `skill.scope` / `skill.contextTypes`; the module adds no filter);
+ *  - admitted scopes: `writing-style` and `contextual` (the author chose the
+ *    reach with the provider's type at founding, and declares the context
+ *    types in `skill.contextTypes`; the module adds no filter);
  *  - rank: the `project-exposed` rung of both chains;
  *  - writable: NO — a consumer has no right to write someone else's project;
  *    `update_skill_file` refuses such a slug with `SKILL_READ_ONLY`;
@@ -56,7 +61,6 @@ import { DomainError } from './tags.js';
 import { isKnownContextType } from './chat-context.js';
 import type { NormalizedSkillConfig } from '../config.js';
 import {
-  exposureOf,
   listExposedProjects,
   resolveAttachments,
   type ExposedProject,
@@ -115,7 +119,9 @@ export interface ExposedWorkspaceRead {
 export interface ExposedSkillAccess {
   /**
    * The consumer's own config, read per query: its `skill.uses` and its own
-   * exposed `skill.name` (the "attaching oneself" rule), `null` when it is not exposed.
+   * `skill.name` (the "attaching oneself" rule), `null` when it has none — a
+   * project whose type lacks `skill-exposure` has no such key (the config read
+   * leaves inactive keys out).
    */
   own(): { uses: string[]; name: string | null };
   /** One registry read per query — the trust and the peer listing come from it together. */
@@ -149,7 +155,7 @@ export function workspaceExposedSkillAccess(opts: {
   return {
     own: () => {
       const skill = opts.readOwnSkill();
-      return { uses: skill.uses, name: exposureOf(consumerId, skill)?.name ?? null };
+      return { uses: skill.uses, name: skill.name };
     },
     workspace: () => {
       const projects = opts.readWorkspaceProjects();

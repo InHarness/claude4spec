@@ -32,6 +32,11 @@ export const DEFAULT_COMPOSITION: readonly CompositionEntry[] = [
 
   // ── B — this project ────────────────────────────────────────────────────
   { layer: 'B', block: 'project' },
+  // 2.1.77 (M57 `7ngvgv5z`): what kind of project this is — band B ("this
+  // project"); no adjacency rule binds it, so it rides beside the identity it
+  // describes. ASSUMPTION:dev-0806 — M48 names no position for it; the brief
+  // composition keeps its ten positions without it.
+  { layer: 'B', block: 'project_type' },
   { layer: 'B', block: 'entities' },
   /**
    * `<available_skills>` IMMEDIATELY BEFORE `<project_writing_skill>`, and the

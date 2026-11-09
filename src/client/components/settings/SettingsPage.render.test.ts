@@ -92,9 +92,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function render(): Promise<string[]> {
+async function render(config: ConfigResponse = CONFIG): Promise<string[]> {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  qc.setQueryData(['config'], CONFIG);
+  qc.setQueryData(['config'], config);
   await act(async () => {
     root.render(createElement(QueryClientProvider, { client: qc }, createElement(SettingsPage)));
   });
@@ -185,5 +185,37 @@ describe('SettingsPage — entry from the sidebar avatar (M24 → M26)', () => {
       HTMLElement.prototype.scrollIntoView = original;
       window.location.hash = '';
     }
+  });
+});
+
+describe('SettingsPage — the active registry of the project type (2.1.77, M01 m26psec)', () => {
+  it('[ac:ac-projekt-typu-skill-nie-ma-na-stronie] a `skill` project has no `#directories` card on the settings page', async () => {
+    const skill = await render({ ...CONFIG, projectType: 'skill', capabilities: ['skill-exposure'] } as ConfigResponse);
+    expect(skill).toContain('project');
+    expect(skill).not.toContain('directories');
+    expect(host.querySelector('#directories')).toBeNull();
+    // A Specification project (with `multi-root`) has it — the card set follows the capability set.
+    act(() => root.unmount());
+    root = createRoot(host);
+    const spec = await render({ ...CONFIG, projectType: 'spec', capabilities: ['briefs', 'entities', 'multi-root'] } as ConfigResponse);
+    expect(spec).toContain('directories');
+  });
+
+  it('[ac:ac-strona-ustawien-projektu-nie-renderuj] the project settings page does not render a card whose required capability the project lacks — `#entities` (requires `entities`) in a `skill` project', async () => {
+    // The card declares the requirement (M13 `4ckqwi8t`), and so do both its elements.
+    const entitiesCard = staticSettingsContributions().flatMap((c) => c.cards ?? []).find((c) => c.anchor === 'entities');
+    expect(entitiesCard?.requires).toEqual(['entities']);
+    const elements = staticSettingsContributions().flatMap((c) => c.elements ?? []).filter((e) => e.card === 'entities');
+    expect(elements.map((e) => e.id).sort()).toEqual(['entity-types', 'sidebar-menu']);
+    for (const e of elements) expect(e.requires, e.id).toEqual(['entities']);
+
+    const skill = await render({ ...CONFIG, projectType: 'skill', capabilities: ['skill-exposure'] } as ConfigResponse);
+    expect(skill).not.toContain('entities');
+    expect(host.querySelector('#entities')).toBeNull();
+    // A project with the capability renders it.
+    act(() => root.unmount());
+    root = createRoot(host);
+    const spec = await render({ ...CONFIG, projectType: 'spec', capabilities: ['briefs', 'entities', 'multi-root'] } as ConfigResponse);
+    expect(spec).toContain('entities');
   });
 });

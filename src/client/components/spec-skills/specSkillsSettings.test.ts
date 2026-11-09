@@ -4,8 +4,7 @@ import { EXPOSED_PROJECTS_QUERY_KEY } from '../../lib/spec-skills-api.js';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ExposedProjectRow } from '../../../shared/spec-skills.js';
-import { assembleSettings, type CardDraft, type ConfigKeyPath, type ElementContext } from '../settings/registry.js';
-import type { ConfigResponse } from '../../lib/api.js';
+import { assembleSettings } from '../settings/registry.js';
 import {
   FORK_CONFLICT_MESSAGE,
   FORK_DONE_MESSAGE,
@@ -35,18 +34,6 @@ const ROWS: ExposedProjectRow[] = [
   { name: 'docs', uses: false, status: 'ambiguous', confirmed: false },
   { name: 'ghost', uses: true, status: 'unavailable', confirmed: true },
 ];
-
-function draftOver(values: Record<string, unknown>): CardDraft {
-  return {
-    get: (key: ConfigKeyPath) => values[key.join('.')],
-    set: () => {},
-    error: () => null,
-    setLiveError: () => {},
-    isDirty: () => false,
-    saving: false,
-    setBusy: () => {},
-  };
-}
 
 describe('#skills — Used skill projects (M52 L17, 2.1.9)', () => {
   it('[ac:m52-dangling-attachment-marked-unavailable] a dangling attachment is marked Unavailable on the #skills card (an ambiguous one Ambiguous), and the marker does not block the card', () => {
@@ -81,32 +68,35 @@ describe('#skills — Used skill projects (M52 L17, 2.1.9)', () => {
     expect(checkbox('docs')).not.toContain('checked');
   });
 
-  it('the card: anchor #skills in the Agent group (weight 20) with its note; exposure fields only while exposed; the tooltip of Skill name', () => {
+  it('the card: anchor #skills in the Agent group (weight 20), no card note; the exposure elements require skill-exposure (no toggle, no scope); the tooltip of Skill name, the helper of Entry page', () => {
     const [card] = assembleSettings([SPEC_SKILLS_SETTINGS], 'project');
-    expect(card!.decl).toMatchObject({
-      anchor: 'skills',
-      title: 'Skills',
-      group: 'Agent',
-      weight: 20,
-      description: 'Projects that use this one read it live and read-only.',
-    });
+    expect(card!.decl).toMatchObject({ anchor: 'skills', title: 'Skills', group: 'Agent', weight: 20 });
+    // 2.1.77 (M52 `1osy2o5r`): the card note became the Entry page helper.
+    expect(card!.decl.description).toBeUndefined();
     const el = (id: string) => card!.elements.find((e) => e.id === id)!;
-    expect(el('skill-exposed').configKey).toEqual(['skill', 'exposed']);
+    expect(card!.elements.map((e) => e.id)).toEqual([
+      'skill-name',
+      'skill-description',
+      'skill-entry',
+      'skill-context-types',
+      'used-skill-projects',
+      'fork-writing-style',
+    ]);
     expect(el('used-skill-projects').keys).toEqual([['skill', 'uses']]);
     expect(el('skill-name').tooltip).toBe('The address other projects in this workspace use to attach this project as a skill.');
+    expect(el('skill-entry').help).toBe('Projects that use this one read it live and read-only.');
     expect(el('skill-entry').effectMessage).toBe('Applies to the next read.');
     expect(el('used-skill-projects').effectMessage).toBe('Applies from the next new conversation.');
-    expect(el('skill-scope').useOptions!()!.map((o) => o.value)).toEqual(['writing-style', 'contextual']);
-    const config = {} as ConfigResponse;
-    const ctx = (exposed: boolean | undefined): ElementContext => ({ config, draft: draftOver({ 'skill.exposed': exposed }) });
-    for (const id of ['skill-name', 'skill-description', 'skill-entry', 'skill-scope', 'skill-context-types']) {
-      expect(el(id).visible!(ctx(true)), id).toBe(true);
-      expect(el(id).visible!(ctx(false)), id).toBe(false);
-      expect(el(id).visible!(ctx(undefined)), id).toBe(false);
+    // No visibility condition any more: the capability decides.
+    for (const id of ['skill-name', 'skill-description', 'skill-entry', 'skill-context-types']) {
+      expect(el(id).requires, id).toEqual(['skill-exposure']);
+      expect(el(id).visible, id).toBeUndefined();
     }
-    // The toggle and the list are always there.
-    expect(el('skill-exposed').visible).toBeUndefined();
-    expect(el('used-skill-projects').visible).toBeUndefined();
+    expect(el('used-skill-projects').requires).toBeUndefined();
+    expect(el('fork-writing-style').requires).toBeUndefined();
+    // A project without the capability keeps only the two elements of every type.
+    const [spec] = assembleSettings([SPEC_SKILLS_SETTINGS], 'project', new Set(['briefs', 'entities', 'multi-root']));
+    expect(spec!.elements.map((e) => e.id)).toEqual(['used-skill-projects', 'fork-writing-style']);
   });
 });
 

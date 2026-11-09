@@ -23,6 +23,12 @@ export interface Config {
    * `plansDir`/`briefsDir`/`patchesDir`/`entitiesDir`/`releasesDir` are gone.
    */
   roots: Root[];
+  /**
+   * 2.1.77 (M57 `y47yl4xt`, `zy42cyj7`): the project's type — a slug of the
+   * project-type registry, set once at registration and never changed. Absent ⇒
+   * `spec` (every project from before types). API write mode `fixed`.
+   */
+  projectType?: string;
   writingStyle: string | null;
   /**
    * 0.1.58: one-line "elevator pitch" (0–200 chars) describing this specification.
@@ -76,9 +82,9 @@ export interface Config {
   git?: GitSyncConfig;
   /**
    * 2.1.9 (M52 `wqvq1esb`): the project as a skill of its workspace — the
-   * exposure fields (`exposed`, `name`, `description`, `entry`, `scope`,
-   * `contextTypes`) and the attachments of other projects' skills (`uses`).
-   * Additive — no `$schemaVersion` bump; absent ⇒ not exposed, no attachments.
+   * exposure fields (`name`, `description`, `entry`, `contextTypes`; 2.1.77:
+   * active only with the type's `skill-exposure`) and the attachments of other
+   * projects' skills (`uses`). Additive — no `$schemaVersion` bump.
    * Read through {@link normalizeSkillConfig}, never field by field with `??`.
    */
   skill?: SkillConfig;
@@ -86,13 +92,11 @@ export interface Config {
 
 /** 2.1.9 (M52) — `skill.*` as the file holds it; every key optional. */
 export interface SkillConfig {
-  exposed?: boolean;
-  /** The skill's address in the workspace (kebab-case); required when `exposed`. */
+  /** The skill's address in the workspace (kebab-case); absent ⇒ no listing entry. */
   name?: string | null;
   description?: string | null;
   /** Path of a page of the base root; absent ⇒ {@link DEFAULT_SKILL_ENTRY}. */
   entry?: string | null;
-  scope?: 'writing-style' | 'contextual';
   /** Absent ⇒ all four context types. */
   contextTypes?: string[];
   /** Names (`skill.name`) of exposed projects this project attaches. */
@@ -101,11 +105,9 @@ export interface SkillConfig {
 
 /** 2.1.9 (M52) — `skill.*` with every default applied. */
 export interface NormalizedSkillConfig {
-  exposed: boolean;
   name: string | null;
   description: string | null;
   entry: string;
-  scope: 'writing-style' | 'contextual';
   /** `undefined` ⇒ all four context types (the same convention as `SkillMetadata.contextTypes`). */
   contextTypes: string[] | undefined;
   uses: string[];
@@ -115,20 +117,19 @@ export interface NormalizedSkillConfig {
 export const DEFAULT_SKILL_ENTRY = 'index.md';
 
 /**
- * The single place the `skill.*` defaults are applied (`exposed: false`, no
- * name/description, entry = the base root's index page, scope `contextual`, all
- * four context types, no attachments). Kept out of {@link defaults} so the
+ * The single place the `skill.*` defaults are applied (no name/description,
+ * entry = the base root's index page, all four context types, no attachments).
+ * 2.1.77 (M52 `ybbal0vf`): no `exposed`, no `scope` — exposure is the type's
+ * capability `skill-exposure`, the scope follows from the type. Kept out of {@link defaults} so the
  * normalized config's existing shape — and every reader of it — stays as it was.
  */
 export function normalizeSkillConfig(c: Pick<Config, 'skill'>): NormalizedSkillConfig {
   const s = c.skill ?? {};
   const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v.trim() : null);
   return {
-    exposed: s.exposed === true,
     name: str(s.name),
     description: str(s.description),
     entry: str(s.entry) ?? DEFAULT_SKILL_ENTRY,
-    scope: s.scope === 'writing-style' ? 'writing-style' : 'contextual',
     contextTypes: Array.isArray(s.contextTypes) ? [...s.contextTypes] : undefined,
     uses: Array.isArray(s.uses) ? s.uses.filter((u): u is string => typeof u === 'string' && u.trim() !== '').map((u) => u.trim()) : [],
   };
@@ -298,6 +299,7 @@ export interface NormalizedAgentConfig {
  * `NormalizedConfig` and drop their `??`.
  */
 export type NormalizedConfig = Config & {
+  projectType: string;
   agent: NormalizedAgentConfig;
   git: NormalizedGitSyncConfig;
   consistency: NormalizedConsistencyConfig;
@@ -311,6 +313,9 @@ export type NormalizedConfig = Config & {
  * roots). Migrated by `migrateConfigToV4` at project activation.
  */
 export const CURRENT_SCHEMA_VERSION = 4;
+
+/** 2.1.77 (M57 `y47yl4xt`): the `projectType` default — the Specification entry's slug (M58). */
+export const DEFAULT_PROJECT_TYPE = 'spec';
 
 export function configPath(cwd: string): string {
   return path.join(cwd, '.claude4spec', 'config.json');
@@ -374,6 +379,8 @@ export function builtinPagesRoot(dir: string = 'pages'): Root {
 export function defaults(cwd: string): NormalizedConfig {
   return {
     ...bootstrapDefaults(cwd),
+    // 2.1.77 (M57 `y47yl4xt`): no type key = Specification (M58).
+    projectType: DEFAULT_PROJECT_TYPE,
     // 0.1.58: no elevator pitch.
     description: null,
     // M26/0.1.51/0.1.90: agent flags. 0.2.112: `claudeUsePreset` default false —
@@ -756,6 +763,12 @@ function validate(raw: unknown): Partial<Config> {
     // the project. `PATCH /api/config` still refuses — see RESERVED_ROOT_IDS.
     out.roots = parseRootsArray(r.roots, { reservedIds: 'warn', idShape: 'warn' });
   }
+  // 2.1.77 (M57 `y47yl4xt`): type only here; an unknown slug is the activation's
+  // refusal (`PROJECT_TYPE_UNKNOWN`), not a load error.
+  if ('projectType' in r) {
+    if (typeof r.projectType !== 'string') throw typeError('projectType', 'string', r.projectType);
+    out.projectType = r.projectType;
+  }
   if ('writingStyle' in r) {
     if (r.writingStyle !== null && typeof r.writingStyle !== 'string') {
       throw typeError('writingStyle', 'string | null', r.writingStyle);
@@ -948,7 +961,7 @@ function validate(raw: unknown): Partial<Config> {
   // have no reserved settings namespace. A legacy `plugins` key is an unknown key
   // now: neither validated nor copied (forward compat — ignored, not an error).
   // 2.1.9 (M52): `skill.*` — shape only here (this also runs on every boot);
-  // the semantic rules (kebab-case name, required-when-exposed, an existing entry
+  // the semantic rules (kebab-case name, a non-empty description, an existing entry
   // page, the context-type enumeration) belong to the field declarations, which
   // the PATCH route applies. A dangling `uses` entry is never a validation error.
   if ('skill' in r) {
@@ -956,21 +969,13 @@ function validate(raw: unknown): Partial<Config> {
     if (k === null || typeof k !== 'object' || Array.isArray(k)) throw typeError('skill', 'object', k);
     const kr = k as Record<string, unknown>;
     const skill: SkillConfig = {};
-    if ('exposed' in kr) {
-      if (typeof kr.exposed !== 'boolean') throw typeError('skill.exposed', 'boolean', kr.exposed);
-      skill.exposed = kr.exposed;
-    }
+    // 2.1.77 (M52 `wqvq1esb`): `skill.exposed` and `skill.scope` are no keys of
+    // the file any more — a legacy one is an unknown key: neither validated nor copied.
     for (const field of ['name', 'description', 'entry'] as const) {
       if (field in kr) {
         if (kr[field] !== null && typeof kr[field] !== 'string') throw typeError(`skill.${field}`, 'string | null', kr[field]);
         skill[field] = kr[field] as string | null;
       }
-    }
-    if ('scope' in kr) {
-      if (kr.scope !== 'writing-style' && kr.scope !== 'contextual') {
-        throw typeError('skill.scope', "'writing-style' | 'contextual'", kr.scope);
-      }
-      skill.scope = kr.scope;
     }
     for (const field of ['contextTypes', 'uses'] as const) {
       if (field in kr) {
@@ -1062,22 +1067,86 @@ export function readConfig(cwd: string): NormalizedConfig {
 }
 
 /**
+ * 2.1.77 (M26 `hozcm4w5`, L17 `Wymaga możliwości`) — the file paths of the keys
+ * whose required capability a project of the given type lacks. Installed at
+ * process start by the settings layer (`installInactiveConfigKeys`), because
+ * the declarants live there and import this module; until then (and for a type
+ * the registry does not know) no key is inactive.
+ */
+export type InactiveConfigPaths = (projectType: string) => readonly (readonly string[])[];
+let inactiveConfigPaths: InactiveConfigPaths = () => [];
+export function setInactiveConfigPaths(resolve: InactiveConfigPaths): void {
+  inactiveConfigPaths = resolve;
+}
+
+/** The type the file declares (no key = `spec`) — settled before any key is read. */
+function fileProjectType(parsed: unknown): string {
+  const t = (parsed as Record<string, unknown> | null)?.projectType;
+  return typeof t === 'string' ? t : DEFAULT_PROJECT_TYPE;
+}
+
+function inactivePathsOf(parsed: unknown): readonly (readonly string[])[] {
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return [];
+  return inactiveConfigPaths(fileProjectType(parsed));
+}
+
+function hasRawPath(obj: unknown, segs: readonly string[]): boolean {
+  let cur = obj;
+  for (const seg of segs) {
+    if (cur === null || typeof cur !== 'object' || Array.isArray(cur) || !(seg in (cur as object))) return false;
+    cur = (cur as Record<string, unknown>)[seg];
+  }
+  return true;
+}
+
+function getRawPath(obj: unknown, segs: readonly string[]): unknown {
+  let cur = obj;
+  for (const seg of segs) cur = (cur as Record<string, unknown>)[seg];
+  return cur;
+}
+
+/** A copy of the parsed file without its inactive keys (an emptied container goes too). */
+function withoutInactiveKeys(parsed: unknown): unknown {
+  const paths = inactivePathsOf(parsed).filter((segs) => hasRawPath(parsed, segs));
+  if (paths.length === 0) return parsed;
+  const copy = structuredClone(parsed) as Record<string, unknown>;
+  for (const segs of paths) {
+    const parents: Record<string, unknown>[] = [copy];
+    for (const seg of segs.slice(0, -1)) parents.push(parents[parents.length - 1]![seg] as Record<string, unknown>);
+    delete parents[parents.length - 1]![segs[segs.length - 1]!];
+    for (let i = parents.length - 1; i > 0; i--) {
+      if (Object.keys(parents[i]!).length > 0) break;
+      delete parents[i - 1]![segs[i - 1]!];
+    }
+  }
+  return copy;
+}
+
+/** The file as parsed JSON; `undefined` = no config.json. Throws on malformed JSON. */
+function readRawFile(cwd: string): unknown {
+  const file = configPath(cwd);
+  if (!fs.existsSync(file)) return undefined;
+  const text = fs.readFileSync(file, 'utf8');
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw new Error(`config.json: invalid JSON — ${(err as Error).message}`);
+  }
+}
+
+/**
  * Disk read + type validation + in-memory schema forward-compat, with NO
  * defaults applied. `null` = no config.json. Shared by `readConfig` (which
  * normalizes on top), `loadOrCreateConfig` and `writeConfig` (which merges a
  * patch into the file's own keys, so persisted configs stay minimal).
  */
 function readValidatedFile(cwd: string): Partial<Config> | null {
-  const file = configPath(cwd);
-  if (!fs.existsSync(file)) return null;
-  const text = fs.readFileSync(file, 'utf8');
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (err) {
-    throw new Error(`config.json: invalid JSON — ${(err as Error).message}`);
-  }
-  const loaded = validate(parsed);
+  const parsed = readRawFile(cwd);
+  if (parsed === undefined) return null;
+  // 2.1.77 (M26 `hozcm4w5`): the type first, then the keys — a key of a
+  // capability the project's type lacks is skipped by the normalizer (never
+  // validated, never in the normalized view); the file keeps it.
+  const loaded = validate(withoutInactiveKeys(parsed));
   warnLegacyDirKeys(cwd, parsed as Record<string, unknown>);
   // Auto-bump older schemas in memory (v1→v2: `entities` undefined = all
   // plugins active; v2→v3: stale port/mode ignored; v3→v4: legacy pagesDir →
@@ -1102,7 +1171,7 @@ function readValidatedFile(cwd: string): Partial<Config> | null {
  * position from `JSON.parse`) and on a type mismatch (with the field name) —
  * never continues with an empty config.
  */
-export function loadOrCreateConfig(cwd: string): LoadResult {
+export function loadOrCreateConfig(cwd: string, projectType: string = DEFAULT_PROJECT_TYPE): LoadResult {
   const dir = path.join(cwd, '.claude4spec');
   fs.mkdirSync(dir, { recursive: true });
   const file = configPath(cwd);
@@ -1113,7 +1182,10 @@ export function loadOrCreateConfig(cwd: string): LoadResult {
     // pokazal /onboarding (M16). Defaults() ma true (forward compat dla projektow
     // sprzed M16); nadpisanie tylko w tym miejscu. Only the bootstrap key set is
     // serialized — the nested branches come from `defaults()` on every read.
-    const seed: Config = { ...bootstrapDefaults(cwd), onboardingCompleted: false };
+    // 2.1.77 (M01 `v878dqht`): `projectType` — the type settled in step 3 —
+    // is written explicitly, also when it equals the default, so the file and
+    // the copy in the workspace record carry the same value from the start.
+    const seed: Config = { ...bootstrapDefaults(cwd), projectType, onboardingCompleted: false };
     atomicWrite(file, JSON.stringify(seed, null, 2) + '\n');
     return {
       config: normalizeConfig(seed, defaults(cwd)),
@@ -1379,6 +1451,20 @@ export function writeConfig(cwd: string, partial: Partial<Config>, remove: reado
     merged.skill = { ...current.skill, ...validated.skill };
   }
   for (const key of remove) delete merged[key];
+  // 2.1.77 (M26 `hozcm4w5`): a key of a capability the project lacks stays in
+  // the file untouched — its value is copied back from the file as written,
+  // never through the normalizer (which skipped it) nor from the patch.
+  const raw = readRawFile(cwd);
+  for (const segs of inactivePathsOf(raw)) {
+    if (!hasRawPath(raw, segs)) continue;
+    let cur = merged as Record<string, unknown>;
+    for (const seg of segs.slice(0, -1)) {
+      const next = cur[seg];
+      cur[seg] = next !== null && typeof next === 'object' && !Array.isArray(next) ? { ...(next as object) } : {};
+      cur = cur[seg] as Record<string, unknown>;
+    }
+    cur[segs[segs.length - 1]!] = structuredClone(getRawPath(raw, segs));
+  }
   atomicWrite(file, JSON.stringify(merged, null, 2) + '\n');
   // Return the NORMALIZED view of what was just persisted — callers read
   // `updated.git.enabled` & co. directly (no `??` at the point of use).

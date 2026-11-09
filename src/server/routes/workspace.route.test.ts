@@ -89,7 +89,7 @@ describe('M31 workspace routes — workspace with a home and registry workspace 
           workspace: view,
           cache: contexts,
           mode: 'prod',
-          activateProject: async (cwd) => bootstrapProject(registry, view, cwd).project,
+          activateProject: async (cwd, projectType) => bootstrapProject(registry, view, cwd, undefined, projectType).project,
         }),
       )
       .use('/api', errorHandler);
@@ -164,13 +164,14 @@ describe('M31 workspace routes — workspace with a home and registry workspace 
     const { app } = appFor('team');
     const billing = dirOf(home, 'services', 'billing');
 
-    const res = await request(app).post('/api/workspace/projects').send({ cwd: billing });
+    const res = await request(app).post('/api/workspace/projects').send({ cwd: billing, projectType: 'spec' });
 
     expect(res.status).toBe(201);
     expect(res.body).toEqual({ projectId: 'billing' });
     expect(readWorkspaceJson().projects).toEqual([
       { id: 'api', path: 'services/api' },
-      { id: 'billing', path: 'services/billing' },
+      // The new-project path keeps a copy of the type in the record (M31 m31-new-project-type-copy-in-workspace-record).
+      { id: 'billing', path: 'services/billing', projectType: 'spec' },
     ]);
     // Activated without any start flag: the project got its config file.
     expect(fs.existsSync(configPath(billing))).toBe(true);

@@ -39,7 +39,7 @@ import { ProjectContextCache } from '../../../src/server/workspace/context-cache
 import { projectDispatchMiddleware } from '../../../src/server/workspace/middleware.js';
 import { buildProjectContext } from '../../../src/server/workspace/project-context.js';
 import { WorkspaceRegistry } from '../../../src/server/workspace/registry.js';
-import { bootstrapProject } from '../../../src/server/workspace/bootstrap.js';
+import { bootstrapFixture } from '../../helpers/bootstrap-fixture.js';
 import { pluginsRouter } from '../../../src/server/routes/plugins.js';
 import { errorHandler } from '../../../src/server/routes/errors.js';
 import type { ProjectRecord, WorkspaceRecord } from '../../../src/server/workspace/types.js';
@@ -232,7 +232,7 @@ describe('[ac:ac-koperta-prebuilt-laduje-sie-w-projekc] the prebuilt envelope lo
     // A cloned repo bringing a project-local plugin, and NO consent given: the
     // trust gate is engaged for this project, and stays closed.
     const cwd = path.join(home, 'project');
-    project = bootstrapProject(registry, workspace, cwd).project;
+    project = bootstrapFixture(registry, workspace, cwd).project;
     const local = path.join(cwd, '.claude4spec', 'plugins', 'local-untrusted');
     fs.mkdirSync(path.join(local, 'dist'), { recursive: true });
     fs.writeFileSync(path.join(local, 'package.json'), JSON.stringify({ name: 'local-untrusted', version: '0.1.0', main: 'index.js' }));

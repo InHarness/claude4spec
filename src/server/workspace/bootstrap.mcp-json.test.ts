@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { WorkspaceRegistry } from './registry.js';
-import { bootstrapProject } from './bootstrap.js';
+import { bootstrapFixture } from '../../../tests/helpers/bootstrap-fixture.js';
 
 /**
  * 0.2.93 — activation writes no integration artifact for external agents.
@@ -28,7 +28,7 @@ describe('bootstrapProject does not write mcp.json', () => {
   const boot = () => {
     const registry = new WorkspaceRegistry(dir);
     const ws = registry.selectOrCreate({ name: 'default' });
-    return { result: bootstrapProject(registry, ws, cwd), ws };
+    return { result: bootstrapFixture(registry, ws, cwd), ws };
   };
 
   it('leaves no mcp.json behind', () => {

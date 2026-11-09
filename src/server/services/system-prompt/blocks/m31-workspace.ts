@@ -16,10 +16,12 @@ import type { PeerProject, PromptBlock } from '../types.js';
  * the path-based disambiguation of peers sharing a name are gone: ids cannot
  * collide inside a workspace, and a directory must never reach the agent.
  *
- * 2.1.9 (template `szablon-workspace-projects`): a peer exposed as a skill
- * carries `skill="exposed"` (from the M52 list of exposed projects), and one
- * line says it can be attached in project settings by its skill name, which is
- * not its id.
+ * 2.1.77 (template `szablon-workspace-projects`, M31 `gofah0an`): every peer
+ * carries `type="…"` — the slug of its project type from the copy in its
+ * registry record, written verbatim (an unknown slug too: the peer stays, since
+ * consultation serves every type). The 2.1.9 `skill="exposed"` marker is gone;
+ * one line says a peer of type skill or writing-style can be attached in project
+ * settings by its skill name, which is not its id.
  */
 function buildWorkspaceProjects(workspaceName: string, peers: PeerProject[]): string {
   const lines = [`<workspace_projects ${attrs({ workspace: workspaceName })}>`];
@@ -27,13 +29,12 @@ function buildWorkspaceProjects(workspaceName: string, peers: PeerProject[]): st
     lines.push(
       `  ${selfClose(
         'peer',
-        attrs({ id: p.id, name: p.name, description: p.description, skill: p.skillExposed ? 'exposed' : undefined }),
+        attrs({ id: p.id, name: p.name, description: p.description, type: p.type }),
       )}`,
     );
   }
   lines.push(
-    `  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.`,
-    `  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.`,
+    `  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address. A peer of type skill or writing-style can also be connected as a skill in project settings; its skill name is not its id.`,
     `</workspace_projects>`,
   );
   return lines.join('\n');

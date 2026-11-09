@@ -11,7 +11,7 @@ import { WsGateway } from '../../../src/server/ws/gateway.js';
 import { ProjectContextCache } from '../../../src/server/workspace/context-cache.js';
 import { buildProjectContext } from '../../../src/server/workspace/project-context.js';
 import { WorkspaceRegistry } from '../../../src/server/workspace/registry.js';
-import { bootstrapProject } from '../../../src/server/workspace/bootstrap.js';
+import { bootstrapFixture } from '../../helpers/bootstrap-fixture.js';
 import type { PluginLoadRecord } from '../../../src/server/core/plugin-host/loader.js';
 import type { ProjectRecord } from '../../../src/server/workspace/types.js';
 
@@ -39,7 +39,7 @@ describe('M31 — the shutdown during a context build', () => {
     process.env.C4S_HOME = path.join(home, 'registry');
     registry = new WorkspaceRegistry(process.env.C4S_HOME);
     const workspace = registry.selectOrCreate({ name: 'default' });
-    project = bootstrapProject(registry, workspace, path.join(home, 'project')).project;
+    project = bootstrapFixture(registry, workspace, path.join(home, 'project')).project;
     pluginRegistry = new PluginRegistryImpl();
     pluginRecords = (await loadBuiltinEnvelopes(pluginRegistry)).records;
     httpServer = http.createServer();

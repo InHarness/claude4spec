@@ -46,7 +46,11 @@ function buildProjectWritingSkill(ws: { slug: string; title: string }): string {
     // skill-author methodology, so the block excludes them outright.
     // 2.1.15 (M15 `fviol01i`): a package that is itself a writing style is
     // authored by writing-style-author; every other genre stays with skill-author.
-    `Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style.`,
+    // 2.1.77 (M15 `u7b1qhr1`, `fviol01i`, M52 `9j9cxrsr`): the exclusion is the
+    // packages of THIS project's `skills` root only — the boundary runs by the
+    // kind of root, not by the project type: the project's pages are always
+    // bound, also in a Skill or Writing Style project.
+    `Skill packages in this project's skills root are outside this binding: when you write or edit one, follow the skill-author skill instead — or writing-style-author when the package is a writing style. The project's pages are always bound, even when the project is itself exposed as a skill or a writing style.`,
     ``,
     `You do not know its conventions yet, and this block does not summarise them.`,
     `  1. Before your first tool call in this thread, call load_skill_file("${ws.slug}") and read it.`,

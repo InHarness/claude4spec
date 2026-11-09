@@ -188,6 +188,23 @@ const SLASH_COMMAND_GATES: Record<string, keyof RootEditorProps | null> = {
   todo: null,
 };
 
+/**
+ * 2.1.77 (M20 L19 `gv6us4lf`) — whether the open project has the capability
+ * `entities`. Without it the `page` and `plan` contexts mount only the
+ * non-entity tags and extensions: no five M19 entity tags, none of `/mention`,
+ * `/element`, `/list`, `/tagged`, `/tagged-mixed`, no broken-reference
+ * decoration — an entity tag in the content stays text (passthrough) like any
+ * unregistered tag. `/section`, `/todo` and plugin slashes stay. Set from the
+ * project config (`capabilities`) when it is read; default = present.
+ */
+let entitiesCapability = true;
+export function setEditorEntitiesCapability(has: boolean): void {
+  entitiesCapability = has;
+}
+
+/** Slash commands that insert an entity tag — gated by the capability `entities`. */
+const ENTITY_SLASH_COMMANDS = new Set(['mention', 'element', 'list', 'tagged', 'tagged-mixed']);
+
 /** The two raw-JSX nodes — mounted in EVERY context (rule 6: passthrough verbatim). */
 const RAW_NODES = ['raw_jsx_block', 'raw_jsx_inline'];
 
@@ -284,18 +301,29 @@ export function resolveContextSpec(
     // every `kind: pages` root.
     return { ...resolveContextSpec('page', ARTIFACT_LAYERS, registry), id: 'artifact' };
   }
+  if (contextId === 'plan' && !entitiesCapability) {
+    const plan = STATIC_SPECS.plan;
+    return {
+      ...plan,
+      extensions: plan.extensions.filter((name) => !M19_NODES.includes(name)),
+      decorations: plan.decorations.filter((d) => d !== 'broken_refs'),
+    };
+  }
   if (contextId !== 'page') return STATIC_SPECS[contextId];
+  const withEntities = entitiesCapability;
   return {
     id: 'page',
     extensions: registry.extensionNames().filter((name) => {
+      if (!withEntities && M19_NODES.includes(name)) return false;
       const gate = ROOT_PROP_GATES[name];
       return gate ? rootProps[gate] : true;
     }),
     slashCommands: registry.slashCommandIds().filter((id) => {
+      if (!withEntities && ENTITY_SLASH_COMMANDS.has(id)) return false;
       const gate = id in SLASH_COMMAND_GATES ? SLASH_COMMAND_GATES[id] : 'referenceValidated';
       return gate ? rootProps[gate] : true;
     }),
-    decorations: rootProps.referenceValidated ? ['annotations', 'broken_refs'] : ['annotations'],
+    decorations: withEntities && rootProps.referenceValidated ? ['annotations', 'broken_refs'] : ['annotations'],
     // Scope = every `pages` root (M14, 2.1.8); the editor's root rides along
     // as the precedence's first step (`MentionExtension` option `rootId`).
     // 2.1.9: no `@` at all on a root whose kind is not `pages`.

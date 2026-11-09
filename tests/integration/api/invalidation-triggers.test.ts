@@ -13,7 +13,7 @@ import { ProjectContextCache, type ProjectBuildStateChange } from '../../../src/
 import { projectDispatchMiddleware } from '../../../src/server/workspace/middleware.js';
 import { buildProjectContext, type ProjectContext } from '../../../src/server/workspace/project-context.js';
 import { WorkspaceRegistry } from '../../../src/server/workspace/registry.js';
-import { bootstrapProject } from '../../../src/server/workspace/bootstrap.js';
+import { bootstrapFixture } from '../../helpers/bootstrap-fixture.js';
 import { builtinRoot, configPath, readConfig } from '../../../src/server/config.js';
 import type { ActiveAdapter } from '../../../src/server/routes/agent-turn.js';
 import type { PluginManifest } from '../../../src/shared/plugin-host/manifest.js';
@@ -89,7 +89,7 @@ describe('M13/M33 — invalidation triggers rebuild the context at once', () => 
     fs.mkdirSync(cwd, { recursive: true });
     prepare?.(cwd);
     workspace = registry.getWorkspace('default')!;
-    const project = bootstrapProject(registry, workspace, cwd).project;
+    const project = bootstrapFixture(registry, workspace, cwd).project;
     workspace = registry.getWorkspace('default')!;
     const c: ProjectContextCache = new ProjectContextCache((p, signal) =>
       buildProjectContext({

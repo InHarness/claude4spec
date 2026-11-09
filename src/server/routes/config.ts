@@ -12,7 +12,9 @@ import {
 import { buildFieldRegistry } from '../settings/registry.js';
 import {
   checkFieldType,
+  deletePath,
   fieldPath,
+  type FieldRegistry,
   getPath,
   hasPath,
   setPath,
@@ -34,6 +36,8 @@ import {
 } from '@inharness-ai/agent-adapters';
 import { DIRECT_FILESYSTEM_DENY_GROUPS } from '../services/agent-tool-posture.js';
 import { ensureGitignore } from '../../bin/gitignore.js';
+import { hostCapabilityRegistry, projectCapabilitySet, type ProjectCapabilities } from '../project-types/capabilities.js';
+import { multiRootViolation } from '../project-types/resolve.js';
 
 export interface ConfigRouterDeps {
   cwd: string;
@@ -73,6 +77,13 @@ export interface ConfigRouterDeps {
    * module mounts that route together with `/config`. Absent ⇒ not mounted.
    */
   projectionStatus?: ProjectionStatusRegistry;
+  /**
+   * 2.1.77 (M57 `rdztxzb8`, M26 `vm9rajvn`): the project's capability set — fixed
+   * for the context's life, given by the context factory. It decides the ACTIVE
+   * keys: GET returns only them, PATCH writes only them. Absent ⇒ every capability
+   * the host declares (no row is filtered out).
+   */
+  capabilities?: ProjectCapabilities;
 }
 
 
@@ -81,7 +92,52 @@ export interface ConfigRouterDeps {
  * inline in startServer before the M31 carve). M31 drops port/mode (workspace
  * settings now) and serverStartedAt (nothing requires a restart anymore).
  */
-function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRegistry) {
+function configResponse(
+  c: NormalizedConfig,
+  cwd: string,
+  skillRegistry: SkillRegistry,
+  inactiveKeys: readonly string[] = [],
+  registry?: FieldRegistry,
+  capabilities?: ProjectCapabilities,
+) {
+  const body = baseConfigResponse(c, cwd, skillRegistry);
+  // 2.1.77 (M26 `ournm78e`): the read answers ACTIVE keys only — a key of a
+  // capability the project lacks is not returned, even though it lies in the file.
+  stripInactiveKeys(body as unknown as Record<string, unknown>, inactiveKeys, registry);
+  // 2.1.77 (M57 `rdztxzb8`, M26 `7f76eszm`): the project's capability set, as the
+  // context factory gave it — the client assembles the ACTIVE settings cards and
+  // elements from it. Derived, never a file key.
+  return capabilities ? { ...body, capabilities: [...capabilities].sort() } : body;
+}
+
+/**
+ * 2.1.77 (M26 `ournm78e`): the file keys whose place in the GET/PATCH /config
+ * RESPONSE differs from their place in `config.json`. Every other key is
+ * answered at its file path (`fieldPath`). A key added here must match
+ * `baseConfigResponse`; one missing here is stripped at the wrong place.
+ */
+export const RESPONSE_PATHS: Readonly<Record<string, readonly string[]>> = {
+  onboardingCompleted: ['onboarding', 'completed'],
+};
+
+/** Where a file key is answered in the response body. */
+export function responsePath(key: string, registry?: FieldRegistry): readonly string[] {
+  const mapped = RESPONSE_PATHS[key];
+  if (mapped) return mapped;
+  const decl = registry?.get(key);
+  return decl ? fieldPath(decl) : key.split('.');
+}
+
+/** Removes every inactive key from a response body, at its RESPONSE path. */
+export function stripInactiveKeys(
+  body: Record<string, unknown>,
+  inactiveKeys: readonly string[],
+  registry?: FieldRegistry,
+): void {
+  for (const key of inactiveKeys) deletePath(body, responsePath(key, registry));
+}
+
+function baseConfigResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRegistry) {
   // 0.2.8 (C23): `readConfig` normalizes every branch below — no `??` here.
   const agentAllowedPaths = c.agent.allowedPaths;
   const agentDisallowedPaths = c.agent.disallowedPaths;
@@ -133,6 +189,8 @@ function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRe
 
   return {
     name: c.name,
+    // 2.1.77 (M57 `y47yl4xt`): the project's fixed type; absent in the file ⇒ `spec`.
+    projectType: c.projectType,
     roots: c.roots,
     writingStyle: c.writingStyle,
     // Non-fatal degraded-state signal: the configured style was skipped this
@@ -197,6 +255,11 @@ function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRe
   };
 }
 
+/** Structural equality of two JSON values (a `fixed` field's sent vs stored value). */
+function sameJson(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 /**
  * Per-context config/meta/writing-styles routes (carved out of startServer,
  * M31). Mounted relative — the project router lives under /api/projects/:id.
@@ -208,6 +271,10 @@ function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRe
 export function configRouter(deps: ConfigRouterDeps): Router {
   const { cwd, skillRegistry } = deps;
   const router = Router();
+  const capabilities: ProjectCapabilities =
+    deps.capabilities ?? projectCapabilitySet(hostCapabilityRegistry().names());
+  const fullRegistry = () =>
+    buildFieldRegistry(deps.knownEntityTypes ? { knownEntityTypes: deps.knownEntityTypes } : {});
 
   // 0.2.113: the settings module's own diagnostics route, mounted beside
   // `/config`. (The root rename under `/config/roots` belongs to the project
@@ -224,7 +291,8 @@ export function configRouter(deps: ConfigRouterDeps): Router {
     // readConfig per-request: PATCH /config musi byc widoczny w GET bez restartu.
     // Spojne z istniejacym wzorcem SkillResolver (per-query disk read).
     const c = readConfig(cwd);
-    res.json(configResponse(c, cwd, skillRegistry));
+    const all = fullRegistry();
+    res.json(configResponse(c, cwd, skillRegistry, all.inactiveKeys(capabilities), all, capabilities));
   });
 
   router.patch('/config', async (req, res, next) => {
@@ -232,9 +300,13 @@ export function configRouter(deps: ConfigRouterDeps): Router {
       const body = (req.body ?? {}) as Record<string, unknown>;
       const currentConfig = readConfig(cwd);
       // 2.1.21 (M26 `vm9rajvn`): the layer's field tables only — no plugin fields.
-      const registry = buildFieldRegistry(deps.knownEntityTypes ? { knownEntityTypes: deps.knownEntityTypes } : {});
-      const reject = (key: string, message: string) =>
-        res.status(400).json({ error: { code: 'VALIDATION', message, details: { field: key } } });
+      // 2.1.77: narrowed to the project's ACTIVE keys — a key of a capability the
+      // project lacks is skipped without an error, its value in the file untouched.
+      const all = fullRegistry();
+      const inactive = all.inactiveKeys(capabilities);
+      const registry = all.active(capabilities);
+      const reject = (key: string, message: string, code = 'VALIDATION') =>
+        res.status(400).json({ error: { code, message, details: { field: key } } });
 
       /**
        * 0.2.113: the whitelist IS the registry — the handler reads only the keys a
@@ -243,7 +315,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
        * keys now). A container the body carries in the wrong shape (`agent: 42`) is
        * still a type error, pinned to the container.
        */
-      const writable = registry.list().filter((d) => d.apiWritable);
+      const writable = registry.list().filter((d) => d.apiWritable !== false);
       // Kept as SEGMENTS, not a dotted string, so a segment is never re-split.
       const containers = new Map<string, readonly string[]>();
       for (const d of writable) {
@@ -255,7 +327,25 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         const v = getPath(body, segs);
         if (v === null || typeof v !== 'object' || Array.isArray(v)) return reject(c, `${c} must be an object`);
       }
-      const present = writable.filter((d) => hasPath(body, fieldPath(d)));
+      const carried = writable.filter((d) => hasPath(body, fieldPath(d)));
+      // Stage 1 for `fixed` fields, then their rule (M26 `ournm78e`, L17 `stały`):
+      // the stored value changes nothing and is no error — the key leaves the
+      // request; another value refuses the WHOLE save with the declarant's code,
+      // pinned to the key, before anything is written.
+      for (const d of carried) {
+        if (d.apiWritable !== 'fixed') continue;
+        const sent = getPath(body, fieldPath(d));
+        const typeError = checkFieldType(d.key, d.type, sent);
+        if (typeError) return reject(d.key, typeError);
+        if (!sameJson(sent, getPath(currentConfig, fieldPath(d)))) {
+          return reject(
+            d.key,
+            `${d.key} is fixed when the project is founded and cannot be changed`,
+            d.fixedErrorCode ?? 'VALIDATION',
+          );
+        }
+      }
+      const present = carried.filter((d) => d.apiWritable !== 'fixed');
       const touched = new Set(present.map((d) => d.key));
       // A `null` for a field whose absence is its default removes the key (no type, no rule).
       const removed = present.filter((d) => d.nullRemovesKey && getPath(body, fieldPath(d)) === null);
@@ -288,6 +378,15 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         }
         values.set(d.key, value);
       }
+      // 2.1.77 (M01 `kt5gesnm`): without `multi-root`, `roots[]` carries only the
+      // base root's entry — any other entry is a validation error.
+      if (values.has('roots')) {
+        const violation = multiRootViolation(
+          (values.get('roots') ?? []) as { id: string; builtin: boolean }[],
+          capabilities,
+        );
+        if (violation) return reject('roots', violation);
+      }
 
       // Stage 3 — rules across fields, evaluated on the EFFECTIVE post-write config and
       // only when the request touches one of the rule's fields.
@@ -306,11 +405,13 @@ export function configRouter(deps: ConfigRouterDeps): Router {
       const patch: Record<string, unknown> = {};
       for (const d of written) setPath(patch, fieldPath(d), values.get(d.key));
 
-      const updated = writeConfig(
-        cwd,
-        patch as Partial<Config>,
-        removed.map((d) => d.key as keyof Config),
-      );
+      // 2.1.77: a save whose only carried fields are `fixed` ones at their stored
+      // value does not touch the file at all — not even a re-serialization.
+      const onlyFixed = carried.length > 0 && present.length === 0;
+      const updated =
+        onlyFixed
+          ? currentConfig
+          : writeConfig(cwd, patch as Partial<Config>, removed.map((d) => d.key as keyof Config));
       // 0.1.118: re-sync .gitignore when the `git` branch changes — the only
       // field the managed block depends on (2.1.8: a `roots[]` save never
       // changes it). Best-effort (never fail the PATCH over a gitignore hiccup).
@@ -347,7 +448,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         deps.onContextConfigChanged?.(activationOnly ? { reason: 'activation-changed' } : undefined);
       }
       res.json({
-        ...configResponse(updated, cwd, skillRegistry),
+        ...configResponse(updated, cwd, skillRegistry, inactive, all, capabilities),
         ...(warnings.length > 0 ? { warnings } : {}),
       });
     } catch (err) {

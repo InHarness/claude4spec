@@ -377,6 +377,22 @@ export class ReleaseService {
    * Wired post-construction (the store is built later in boot).
    */
   private entityStore: import('./entity-store.js').EntityStore | null = null;
+
+  /**
+   * 2.1.77 (M17 L19 `tutwwt5x`, M56 L19 `heqel0ut`) — does the project have the
+   * capability `entities`? Wired by the project context from its capability
+   * set; `true` by default (every positional construction keeps the entity
+   * axis). Without it the release axis carries pages only: a release assigns
+   * itself `file_version` rows alone (the entity breakdown is empty), a delta,
+   * map and snapshot have no entity position (so the unreleased counter is the
+   * number of changed pages), a whole-spec restore runs the `restorePage` loop
+   * alone, and a shadow acceptance writes no `entity_version` row.
+   */
+  private hasEntities = true;
+  setEntitiesCapability(has: boolean): void {
+    this.hasEntities = has;
+  }
+
   setEntityStore(store: import('./entity-store.js').EntityStore): void {
     this.entityStore = store;
   }
@@ -597,7 +613,8 @@ export class ReleaseService {
 
   /** Steps 2–3 of the algorithm: every unreleased entity version and page version (pages roots) → `releaseId`. */
   private assignUnreleasedTo(releaseId: number): void {
-    this.db.prepare(`UPDATE entity_version SET release_id = ? WHERE release_id IS NULL`).run(releaseId);
+    // M17 `tutwwt5x`: without `entities` the release assigns itself `file_version` rows only.
+    if (this.hasEntities) this.db.prepare(`UPDATE entity_version SET release_id = ? WHERE release_id IS NULL`).run(releaseId);
     this.pageVersions.assignToRelease(releaseId, this.pagesKindRootIds);
   }
 
@@ -646,7 +663,8 @@ export class ReleaseService {
       releaseRow = this.db.transaction(() => {
         const row = this.db.prepare(`SELECT * FROM spec_release WHERE slug = ?`).get(slug) as ReleaseRow | undefined;
         if (!row) throw new Error(`the release '${name}' is missing from the cache`);
-        for (const v of shadowEntityVersions) {
+        // M56 `heqel0ut`: without `entities` only the page capture (the reaction chains) remains.
+        for (const v of this.hasEntities ? shadowEntityVersions : []) {
           this.versions.createVersion(v.type, v.slug, v.data, 'agent', 'Accepted from a shadow', v.op, v.serializerVersion);
         }
         this.assignUnreleasedTo(row.id);
@@ -1308,6 +1326,23 @@ export class ReleaseService {
     toId: number,
     opts?: PageScopeOpts,
   ): Promise<RawDelta> {
+    return this.pagesOnlyUnlessEntities(await this.computeReleaseDiff(fromId, toId, opts));
+  }
+
+  /**
+   * 2.1.77 (M17 `tutwwt5x`): without `entities` a delta carries pages only —
+   * the entity dimension has no position whatever the carrier (SQLite version
+   * tables or git) holds. The page dimension is untouched.
+   */
+  private pagesOnlyUnlessEntities(delta: RawDelta): RawDelta {
+    return this.hasEntities ? delta : { ...delta, entities: [] };
+  }
+
+  private async computeReleaseDiff(
+    fromId: number | null,
+    toId: number,
+    opts?: PageScopeOpts,
+  ): Promise<RawDelta> {
     const toRow = this.findReleaseRowById(toId);
     if (!toRow) throw new DomainError('RELEASE_NOT_FOUND', `release #${toId} not found`);
 
@@ -1350,6 +1385,13 @@ export class ReleaseService {
    * the SQL path (no release to resolve a reign boundary from).
    */
   async getUnreleasedDiff(
+    fromId: number | null,
+    opts?: PageScopeOpts,
+  ): Promise<RawDelta> {
+    return this.pagesOnlyUnlessEntities(await this.computeUnreleasedDiff(fromId, opts));
+  }
+
+  private async computeUnreleasedDiff(
     fromId: number | null,
     opts?: PageScopeOpts,
   ): Promise<RawDelta> {
@@ -1789,12 +1831,14 @@ export class ReleaseService {
     // Declared topological order over the ACTIVE modules. "DTO before Endpoint"
     // still holds — it is now the consequence of `endpoint` declaring
     // `dependsOn: ['dto']`, not of the host knowing that pair.
-    const order = topoSortModules(this.host.listEntities(), (remaining) =>
+    // M17 `tutwwt5x`: without `entities` the topological sort and the
+    // `restoreEntity` loop do not exist — the `restorePage` loop alone.
+    const order = (this.hasEntities ? topoSortModules(this.host.listEntities(), (remaining) =>
       console.warn(
         `[release] dependsOn cycle among [${remaining.join(', ')}] — ` +
           `restoring those types in type order instead`,
       ),
-    ).map((m) => m.type as RawEntityType);
+    ) : []).map((m) => m.type as RawEntityType);
 
     for (const type of order) {
       // Slugs in target release
@@ -1919,11 +1963,14 @@ export class ReleaseService {
   private computeCountBreakdown(releaseId: number): ReleaseCountBreakdown {
     const entityCounts: Record<string, number> = {};
     let entityTotal = 0;
-    const rows = this.db
-      .prepare(
-        `SELECT entity_type, COUNT(*) AS n FROM entity_version WHERE release_id = ? GROUP BY entity_type`,
-      )
-      .all(releaseId) as Array<{ entity_type: string; n: number }>;
+    // M17 `tutwwt5x`: without `entities` the per-type breakdown is empty.
+    const rows = !this.hasEntities
+      ? []
+      : (this.db
+          .prepare(
+            `SELECT entity_type, COUNT(*) AS n FROM entity_version WHERE release_id = ? GROUP BY entity_type`,
+          )
+          .all(releaseId) as Array<{ entity_type: string; n: number }>);
     for (const r of rows) {
       entityCounts[r.entity_type] = r.n;
       entityTotal += r.n;

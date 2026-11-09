@@ -73,13 +73,29 @@ export class PageLines {
  * Hydration over a page the caller already holds. Since 0.2.102 the item
  * carries no line coordinates, so only the body and its edges are derived here.
  */
-export function hydrateSectionFrom(db: Database, page: PageLines, section: RawSection): HydratedSection {
+export function hydrateSectionFrom(
+  db: Database,
+  page: PageLines,
+  section: RawSection,
+  opts: { entities?: boolean } = {},
+): HydratedSection {
   const body = page.body(section);
-  return { ...section, body, edges: parseEdges(db, section, body) };
+  return { ...section, body, edges: parseEdges(db, section, body, opts) };
 }
 
-export function parseEdges(db: Database, section: RawSection, body: string): SectionEdges {
+/**
+ * 2.1.77 (M06 L19 `7t2i8glz`): without the capability `entities`
+ * (`opts.entities === false`) the `entityEmbeds` list is empty — entity tags
+ * are not registered and stay text; `sectionRefs` and `pageLinks` unchanged.
+ */
+export function parseEdges(
+  db: Database,
+  section: RawSection,
+  body: string,
+  opts: { entities?: boolean } = {},
+): SectionEdges {
   const edges: SectionEdges = { sectionRefs: [], entityEmbeds: [], pageLinks: [] };
+  const withEntities = opts.entities !== false;
 
   // 0.2.16 — identifiers only. An edge says what to fetch next; it does not
   // reproduce the markdown it was parsed from, and it does not carry a line
@@ -92,6 +108,7 @@ export function parseEdges(db: Database, section: RawSection, body: string): Sec
       continue;
     }
     if (tag.kind === 'todo') continue;
+    if (!withEntities) continue;
 
     const slugs = extractSlugs(tag);
     const tags = extractTags(tag);
@@ -132,7 +149,7 @@ export function parseEdges(db: Database, section: RawSection, body: string): Sec
   const linked = db
     .prepare('SELECT entity_type AS type, entity_slug AS slug FROM section_entity_link WHERE anchor = ?')
     .all(section.anchor) as Array<{ type: string; slug: string }>;
-  for (const row of linked) {
+  for (const row of withEntities ? linked : []) {
     const already = edges.entityEmbeds.some((e) => e.type === row.type && (e.slug === row.slug || e.slugs?.includes(row.slug)));
     if (already) continue;
     edges.entityEmbeds.push({ tagType: 'section_entity_link', type: row.type, slug: row.slug });
