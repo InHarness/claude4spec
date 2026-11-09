@@ -3,14 +3,22 @@ import { buildSystemPrompt, type SystemPromptInput } from '../../chat-context.js
 import type { ProjectPluginHost } from '../../../core/plugin-host/types.js';
 
 /**
- * 2.1.9 — `<workspace_projects>` (template `szablon-workspace-projects`, M31
- * `qtqqqwfp`): a peer exposed as a skill carries `skill="exposed"`, and the block
- * says such a peer can be attached in project settings by its skill name, which
- * is not its id. The flag comes from the M52 list of exposed projects (the
- * project context sets `PeerProject.skillExposed`), never from a config read here.
+ * 2.1.77 — `<workspace_projects>` (template `szablon-workspace-projects`, M31
+ * `qtqqqwfp`, `gofah0an`): every peer carries `type="…"`, the slug of its project
+ * type from the copy in its registry record (the project context sets
+ * `PeerProject.type`), written verbatim — an unknown slug too. The 2.1.9
+ * `skill="exposed"` marker is gone; the closing line names the peer types that
+ * can be connected as a skill.
  */
 
 const host = { listEntities: () => [] } as unknown as ProjectPluginHost;
+
+const TEMPLATE = [
+  '<workspace_projects workspace="{nazwa workspace\'u}">',
+  '  <peer id="{project-id}" name="{własna etykieta sąsiada}" description="{opis projektu}" type="{slug typu projektu}"/>',
+  "  Pass a peer's `id` as the `project` argument of `ask` — it is the only address of a project. `name` is the peer's own label for itself and is NOT an address. A peer of type skill or writing-style can also be connected as a skill in project settings; its skill name is not its id.",
+  '</workspace_projects>',
+];
 
 function block(overrides: Partial<SystemPromptInput>): string {
   const out = buildSystemPrompt({
@@ -28,23 +36,46 @@ function block(overrides: Partial<SystemPromptInput>): string {
   return /<workspace_projects[\s\S]*?<\/workspace_projects>/.exec(out)?.[0] ?? '';
 }
 
-describe('<workspace_projects> — skill="exposed" (M31, 2.1.9)', () => {
-  it('[entity:szablon-workspace-projects] renders <peer id name description skill="exposed"/> per peer (skill only on an exposed one, empty attributes dropped), the address rule, and the line on exposed peers', () => {
-    const out = block({
-      workspaceProjects: [
-        { id: 'billing', name: 'Billing API', description: 'Money in, money out.', skillExposed: true },
-        { id: 'auth', name: 'Auth' },
-      ],
-    });
+const PEERS = [
+  { id: 'billing', name: 'Billing API', description: 'Money in, money out.', type: 'spec' },
+  { id: 'house-style', name: 'House style', type: 'writing-style' },
+  { id: 'onboarding', type: 'skill' },
+  { id: 'future', name: 'Future', type: 'notebook' },
+];
+
+describe('<workspace_projects> — the peer type (M31, 2.1.77)', () => {
+  it('[entity:szablon-workspace-projects] renders <peer id name description type/> per peer (the parenthetical note is not rendered) and the address rule with the skill-connection sentence, verbatim', () => {
+    const out = block({ workspaceProjects: PEERS.slice(0, 1) });
+    const [open, peer, rule, close] = TEMPLATE;
     expect(out.split('\n')).toEqual([
-      '<workspace_projects workspace="acme">',
-      '  <peer id="billing" name="Billing API" description="Money in, money out." skill="exposed"/>',
-      '  <peer id="auth" name="Auth"/>',
-      "  Pass a peer's `id` as the `project` argument of `ask` — it is the only address of a project. `name` is the peer's own label for itself and is NOT an address.",
-      '  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.',
-      '</workspace_projects>',
+      open!.replace("{nazwa workspace'u}", 'acme'),
+      peer!
+        .replace('{project-id}', 'billing')
+        .replace('{własna etykieta sąsiada}', 'Billing API')
+        .replace('{opis projektu}', 'Money in, money out.')
+        .replace('{slug typu projektu}', 'spec'),
+      rule,
+      close,
     ]);
-    // The attribute addresses nothing and never carries a path or the skill name.
-    expect(out).not.toMatch(/skill="(?!exposed")/);
+  });
+
+  it('[ac:m31-peer-carries-type-attribute] every <peer> carries `type` with that peer\'s type slug — known types and an unknown slug alike, verbatim', () => {
+    const out = block({ workspaceProjects: PEERS });
+    const peers = out.split('\n').filter((l) => l.startsWith('  <peer '));
+    expect(peers).toEqual([
+      '  <peer id="billing" name="Billing API" description="Money in, money out." type="spec"/>',
+      '  <peer id="house-style" name="House style" type="writing-style"/>',
+      '  <peer id="onboarding" type="skill"/>',
+      '  <peer id="future" name="Future" type="notebook"/>',
+    ]);
+    for (const [i, p] of PEERS.entries()) expect(peers[i]).toContain(` type="${p.type}"`);
+  });
+
+  it('[ac:m31-peer-has-no-skill-attribute] no <peer> carries a `skill` attribute, not even a skill or writing-style peer', () => {
+    const out = block({ workspaceProjects: PEERS });
+    const peers = out.split('\n').filter((l) => l.startsWith('  <peer '));
+    expect(peers).toHaveLength(4);
+    for (const line of peers) expect(line).not.toMatch(/\sskill="/);
+    expect(out).not.toContain('skill="exposed"');
   });
 });

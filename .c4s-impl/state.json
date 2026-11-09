@@ -2755,13 +2755,46 @@
         }
       ],
       "wave": 4,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u06-prompt-typu-projektu/p1-domain-l20",
+          "layers": [
+            "Domain",
+            "L16",
+            "L19",
+            "L20"
+          ],
+          "slugs": [
+            "szablon-project-type",
+            "szablon-project",
+            "szablon-claude4spec-identity",
+            "szablon-workspace-projects",
+            "ac-blok-project-type-w-projekcie-typu-sk",
+            "ac-blok-project-type-w-projekcie-typu-sp",
+            "ac-blok-project-type-w-projekcie-typu-wr",
+            "ac-dwa-projekty-tego-samego-typu-dostaja",
+            "ac-kazdy-projekt-niezaleznie-od-typu-dos",
+            "m31-peer-carries-type-attribute",
+            "m31-peer-has-no-skill-attribute",
+            "m48-brief-project-carries-type-attribute",
+            "m48-entities-block-empty-whitelist",
+            "m48-identity-without-entities",
+            "m48-no-entities-block-without-capability",
+            "m48-project-carries-type-attribute"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "6347f66db29486a37949b4b12cebc074856a8810",
+      "baseCommit": "6347f66db29486a37949b4b12cebc074856a8810",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },

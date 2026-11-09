@@ -62,7 +62,7 @@ import { rootRenameRouter } from '../routes/config-rename.js';
 import { mcpConfigRouter } from '../routes/mcp-config.js';
 import { PROJECTION_IDS, ProjectionStatusRegistry, type ProjectionId } from '../services/projection-status.js';
 import { listProjects } from './list-projects.js';
-import { readPeerConfigSummary } from './peer-config.js';
+import { readPeerConfigSummary, workspacePeers } from './peer-config.js';
 import { PatchService } from '../services/patch.js';
 import { artifactsRouter } from '../routes/artifacts.js';
 import { RemoteAuthService } from '../services/remote-auth.js';
@@ -1608,21 +1608,7 @@ async function buildInner(
   const listWorkspacePeers = (): PeerProject[] => {
     const ws = registry.getWorkspace(workspace.name);
     if (!ws) return [];
-    // 2.1.9 (M31 `qtqqqwfp`): `skill="exposed"` comes from the M52 list of
-    // exposed projects (edge m31-requires-m52), not from reading `skill.*` here.
-    const exposedIds = new Set(listExposedProjects(ws.projects).map((e) => e.projectId));
-    return ws.projects
-      .filter((p) => p.id !== projectId)
-      .map((p) => {
-        const peer: PeerProject = { id: p.id };
-        // The one sanctioned peer-config read; unreadable → no display name,
-        // not an error. See `peer-config.ts` for why this bypass exists.
-        const { name, description } = readPeerConfigSummary(p.cwd);
-        if (name) peer.name = name;
-        if (description) peer.description = description;
-        if (exposedIds.has(p.id)) peer.skillExposed = true;
-        return peer;
-      });
+    return workspacePeers(ws.projects, projectId, readPeerConfigSummary);
   };
 
   /**
@@ -1744,6 +1730,8 @@ async function buildInner(
     skillsRootHasFiles: () => projectRootedSkills?.hasAnyFile() ?? false,
     hasEntities,
     hasBriefs,
+    // 2.1.77 (M48 `7yqp77g8`, M57 `7ngvgv5z`): `<project type>` and `<project_type>`.
+    projectType: projectTypeResolved.entry.slug,
     contextTypes,
     ws,
     cwd,

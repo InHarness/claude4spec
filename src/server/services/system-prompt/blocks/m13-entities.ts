@@ -38,7 +38,13 @@ function buildEntitiesBlock(pluginHost: ProjectPluginHost): string {
 }
 
 export const M13_PROMPT_BLOCKS: readonly PromptBlock[] = [
-  { name: 'entities', render: (c) => buildEntitiesBlock(c.host) },
+  /**
+   * 2.1.77 (M48 `j9sxaiqy`): with the capability `entities` the frame always
+   * renders (rows, or an empty body when no type is active — `config.entities = []`);
+   * without it there is no block in any composition: the project has no notion
+   * of an entity type, so an empty frame would talk about a dimension it lacks.
+   */
+  { name: 'entities', render: (c) => (c.entities === false ? null : buildEntitiesBlock(c.host)) },
   /**
    * Blocks contributed by the ACTIVE entity types, in `listEntities()` order.
    * The host composes no type's block of its own: a block exists only while the

@@ -19,7 +19,9 @@
  * a context, nor writes the config back.
  */
 
-import { normalizeSkillConfig, readConfig, type NormalizedSkillConfig } from '../config.js';
+import { DEFAULT_PROJECT_TYPE, normalizeSkillConfig, readConfig, type NormalizedSkillConfig } from '../config.js';
+import type { PeerProject } from '../services/system-prompt/types.js';
+import type { ProjectRecord } from './types.js';
 
 export interface PeerConfigSummary {
   /** Display name from the peer's `config.json`. Absent when it cannot be read. */
@@ -65,4 +67,31 @@ export function readPeerSkillConfig(cwd: string): NormalizedSkillConfig | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * 0.1.58 / 2.1.77 — the peers of `<workspace_projects>`: every workspace project
+ * except the current one, addressed by its registry `id` alone. `name` and
+ * `description` come from the peer's own `config.json` through `readSummary`
+ * (the sanctioned read above; unreadable → no label, not an error). `type`
+ * (M31 `qtqqqwfp`, `gofah0an`) comes from the copy of the type in the peer's
+ * REGISTRY RECORD — never from its `config.json` — written verbatim, known slug
+ * or not; a record without a copy is a `spec`. No directory: a path is not an
+ * address and never reaches the agent.
+ */
+export function workspacePeers(
+  projects: readonly Pick<ProjectRecord, 'id' | 'cwd' | 'projectType'>[],
+  currentProjectId: string,
+  readSummary: (cwd: string) => PeerConfigSummary,
+): PeerProject[] {
+  return projects
+    .filter((p) => p.id !== currentProjectId)
+    .map((p) => {
+      const peer: PeerProject = { id: p.id };
+      const { name, description } = readSummary(p.cwd);
+      if (name) peer.name = name;
+      if (description) peer.description = description;
+      peer.type = p.projectType ?? DEFAULT_PROJECT_TYPE;
+      return peer;
+    });
 }

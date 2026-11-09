@@ -64,6 +64,11 @@ const T = {
     "<claude4spec_identity>",
     "You are a specification writing assistant for project \"{projectName}\". The user is editing a specification that consists of markdown pages and structured entities. The pages are markdown on disk; the entities are structured records reached only through MCP tools. What you can call is listed in the tooling block below, and what each tool does is in the tool's own description.",
     "</claude4spec_identity>",
+    "",
+    "<!-- projekt bez możliwości entities: bez zdań o encjach -->",
+    "<claude4spec_identity>",
+    "You are a specification writing assistant for project \"{projectName}\". The user is editing a specification that consists of markdown pages on disk. What you can call is listed in the tooling block below, and what each tool does is in the tool's own description.",
+    "</claude4spec_identity>",
   ].join('\n'),
   /** `szablon-claude4spec-plan-mode` */
   CLAUDE4SPEC_PLAN_MODE: [
@@ -187,10 +192,10 @@ const T = {
   ].join('\n'),
   /** `szablon-project` */
   PROJECT: [
-    "<project name=\"{projectName}\" cwd=\"{cwd}\" roots=\"pages={dir}[;{rootId}={dir}…]\"/>",
+    "<project name=\"{projectName}\" cwd=\"{cwd}\" type=\"{projectTypeSlug}\" roots=\"pages={dir}[;{rootId}={dir}…]\"/>",
     "",
     "<!-- kompozycja briefu: ten sam blok bez atrybutu roots -->",
-    "<project name=\"{projectName}\" cwd=\"{cwd}\"/>",
+    "<project name=\"{projectName}\" cwd=\"{cwd}\" type=\"{projectTypeSlug}\"/>",
   ].join('\n'),
   /** `szablon-sections-and-anchors` */
   SECTIONS_AND_ANCHORS: [
@@ -381,23 +386,29 @@ describe('M01 — the two language directives', () => {
 });
 
 describe('M48 — the frame blocks', () => {
-  it('[entity:szablon-claude4spec-identity] renders the template verbatim with the project name', () => {
-    expect(block(build({}), 'claude4spec_identity')).toBe(fill(T.CLAUDE4SPEC_IDENTITY, [['{projectName}', 'My Spec']]));
+  it('[entity:szablon-claude4spec-identity] renders both variants verbatim with the project name: with the entity sentences when the project has `entities`, without them when it does not', () => {
+    const [withEntities, withoutEntities] = dropNotes(T.CLAUDE4SPEC_IDENTITY).split(/\n\n+/);
+    expect(block(build({}), 'claude4spec_identity')).toBe(fill(withEntities!, [['{projectName}', 'My Spec']]));
+    expect(block(build({ entities: false, projectType: 'skill' }), 'claude4spec_identity')).toBe(
+      fill(withoutEntities!, [['{projectName}', 'My Spec']]),
+    );
   });
 
-  it('[entity:szablon-project] renders both variants verbatim: with `roots` in the default composition, without it in the brief one', () => {
+  it('[entity:szablon-project] renders both variants verbatim, the type slug in each: with `roots` in the default composition, without it in the brief one', () => {
     const [withRoots, withoutRoots] = dropNotes(T.PROJECT).split(/\n+/);
-    expect(block(build({}), 'project')).toBe(
+    expect(block(build({ projectType: 'writing-style' }), 'project')).toBe(
       fill(withRoots!, [
         ['{projectName}', 'My Spec'],
         ['{cwd}', '/tmp/my-spec'],
+        ['{projectTypeSlug}', 'writing-style'],
         ['pages={dir}[;{rootId}={dir}…]', 'pages=pages;adr=/outside/adr'],
       ]),
     );
-    expect(block(build({ contextType: 'brief', brief: null }), 'project')).toBe(
+    expect(block(build({ contextType: 'brief', brief: null, projectType: 'writing-style' }), 'project')).toBe(
       fill(withoutRoots!, [
         ['{projectName}', 'My Spec'],
         ['{cwd}', '/tmp/my-spec'],
+        ['{projectTypeSlug}', 'writing-style'],
       ]),
     );
   });

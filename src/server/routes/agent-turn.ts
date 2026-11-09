@@ -123,6 +123,12 @@ export interface AgentTurnDeps {
    */
   hasBriefs?: boolean;
   /**
+   * 2.1.77 (M48 `7yqp77g8`, M57 `7ngvgv5z`): the project's type slug — the
+   * `type` attribute of `<project>` and the entry `<project_type>` reads its
+   * prompt description from. Absent (rigs) = `spec`.
+   */
+  projectType?: string;
+  /**
    * 2.1.77 (M44 `1j39ajh8`): the context types this project registers
    * (`contextTypesFor(capabilities)`). Absent (rigs) = every row of the code map.
    */
@@ -1242,6 +1248,7 @@ export async function runAgentTurn(
       currentSkill,
       skillsRootHasFiles: deps.skillsRootHasFiles?.() ?? false,
       ...(deps.hasEntities === false ? { entities: false } : {}),
+      ...(deps.projectType ? { projectType: deps.projectType } : {}),
       annotations,
       planMode,
       currentPlan,

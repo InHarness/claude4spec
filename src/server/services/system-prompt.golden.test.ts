@@ -78,14 +78,14 @@ const PATCH_INVENTORY = [
 ];
 
 const PEERS_UNIQUE: PeerProject[] = [
-  { id: 'billing', name: 'Billing API', description: 'Money "in" & out.' },
-  { id: 'auth', name: 'Auth' },
+  { id: 'billing', name: 'Billing API', description: 'Money "in" & out.', type: 'spec' },
+  { id: 'auth', name: 'Auth', type: 'skill' },
 ];
 // 2.1.0: names may collide, ids cannot — the block renders ids only, no paths.
 const PEERS_COLLIDING: PeerProject[] = [
-  { id: 'spec', name: 'Spec' },
-  { id: 'spec-2', name: 'Spec' },
-  { id: 'broken' },
+  { id: 'spec', name: 'Spec', type: 'spec' },
+  { id: 'spec-2', name: 'Spec', type: 'writing-style' },
+  { id: 'broken', type: 'spec' },
 ];
 
 const ANNOTATIONS: Annotation[] = [
