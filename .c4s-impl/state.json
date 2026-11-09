@@ -1683,13 +1683,36 @@
         }
       ],
       "wave": 3,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u04-bramkowanie-briefow/p1-l19-l19",
+          "layers": [
+            "L19"
+          ],
+          "slugs": [
+            "ac-w-projekcie-typu-skill-rejestr-typow",
+            "ac-w-projekcie-typu-skill-serwer-transag",
+            "ac-w-projekcie-typu-skill-wywolanie-runt",
+            "ac-w-projekcie-typu-skill-zadanie-get-ap",
+            "ac-w-projekcie-typu-skill-zadanie-post-a",
+            "m23-requires-m21",
+            "m36-requires-m21",
+            "m44-requires-m21",
+            "m46-requires-m21"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "21b2cfa198559b4aa4bb1d880577574f9c916085",
+      "baseCommit": "21b2cfa198559b4aa4bb1d880577574f9c916085",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },

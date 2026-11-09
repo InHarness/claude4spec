@@ -17,4 +17,9 @@ describe('OTHERS items by capability (2.1.77)', () => {
     expect(labels(['entities', 'briefs'])).toEqual(['Plans', 'Releases', 'TODOs', 'Tags', 'Links', 'Briefs']);
     expect(labels(undefined)).toEqual(['Plans', 'Releases', 'TODOs', 'Tags', 'Links', 'Briefs']);
   });
+
+  it('M21 `dcagtfpe`: without `briefs` there is no "Briefs" item (a Skill has neither Tags nor Briefs)', () => {
+    expect(labels(['entities'])).toEqual(['Plans', 'Releases', 'TODOs', 'Tags', 'Links']);
+    expect(labels(['skill-exposure'])).toEqual(['Plans', 'Releases', 'TODOs', 'Links']);
+  });
 });

@@ -80,6 +80,8 @@ export interface PluginTestApp {
   crud: CrudFacade;
   /** The project's plugin host facade (activation, entity modules, services). */
   host: ProjectPluginHost;
+  /** 2.1.77 (M44 `1j39ajh8`): the context-type registry of the project (`ProjectContext.contextTypes`). */
+  contextTypes: readonly string[];
   /** The temporary project's working directory. */
   cwd: string;
   /** The project database — for test assertions only; never on a plugin's `MountContext`. */
@@ -221,6 +223,7 @@ export async function createPluginTestApp(
       baseUrl,
       crud: ctx.crud,
       host: ctx.pluginHost,
+      contextTypes: ctx.contextTypes,
       cwd: project.cwd,
       db: ctx.db.handle,
       broadcasts,

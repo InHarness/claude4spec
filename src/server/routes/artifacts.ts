@@ -69,8 +69,13 @@ interface ArtifactKindAdapter {
 }
 
 export interface ArtifactsRouterDeps {
-  brief: BriefService;
-  patch: PatchService;
+  /**
+   * 2.1.77 (M36 `ff7ootuy`): `brief` and `patch` are registered only in a project
+   * with the capability `briefs` — absent, the kind is outside the registry and
+   * every route of the family answers `404 UNKNOWN_ARTIFACT_KIND` for it.
+   */
+  brief?: BriefService;
+  patch?: PatchService;
   plan: PlanService;
   pageVersions: FileVersionService;
   chat: ChatService;
@@ -89,7 +94,7 @@ function parseAppliedFilter(raw: unknown): boolean | undefined {
   throw new DomainError('VALIDATION', `?applied must be 'true' or 'false' (omit for all)`);
 }
 
-function buildBriefAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
+function buildBriefAdapter(deps: ArtifactsRouterDeps & { brief: BriefService }): ArtifactKindAdapter {
   const { brief: briefs } = deps;
   return {
     list(query) {
@@ -173,7 +178,7 @@ function buildBriefAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
   };
 }
 
-function buildPatchAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
+function buildPatchAdapter(deps: ArtifactsRouterDeps & { patch: PatchService }): ArtifactKindAdapter {
   const { patch: patches } = deps;
   return {
     list(query) {
@@ -439,11 +444,13 @@ function parsePaging(query: Record<string, unknown>): { limit: number; offset: n
 }
 
 export function artifactsRouter(deps: ArtifactsRouterDeps): Router {
-  const adapters: Record<ArtifactKind, ArtifactKindAdapter> = {
-    brief: buildBriefAdapter(deps),
-    patch: buildPatchAdapter(deps),
+  // The `:kind` param guard below admits only the kinds present here, so every
+  // handler reads an adapter that exists.
+  const adapters = {
+    ...(deps.brief ? { brief: buildBriefAdapter({ ...deps, brief: deps.brief }) } : {}),
+    ...(deps.patch ? { patch: buildPatchAdapter({ ...deps, patch: deps.patch }) } : {}),
     plan: buildPlanAdapter(deps),
-  };
+  } as Record<ArtifactKind, ArtifactKindAdapter>;
 
   const router = Router();
 

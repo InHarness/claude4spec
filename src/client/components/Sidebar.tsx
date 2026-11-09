@@ -961,7 +961,8 @@ const OTHERS_ITEMS: ReadonlyArray<{ to: string; icon: LucideIcon; label: string;
   // 2.1.77 (M18 `rxlzqki1`): the "Tags" item inherits M18's requirement `entities`.
   { to: '/tags', icon: Tag, label: 'Tags', requires: ['entities'] },
   { to: '/links', icon: Link2, label: 'Links' },
-  { to: '/briefs', icon: FileText, label: 'Briefs' },
+  // 2.1.77 (M21 `dcagtfpe`): "Briefs" in OTHERS exists only with the capability `briefs`.
+  { to: '/briefs', icon: FileText, label: 'Briefs', requires: ['briefs'] },
 ];
 
 /**

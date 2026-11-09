@@ -161,7 +161,7 @@ import { pageLinksRouter } from '../routes/page-links.js';
 import { errorHandler } from '../routes/errors.js';
 import { configRouter } from '../routes/config.js';
 import { externalSkillsRouter } from '../routes/external-skills.js';
-import type { PeerProject } from '../services/chat-context.js';
+import { contextTypesFor, type PeerProject } from '../services/chat-context.js';
 import type { PluginRegistry, ProjectPluginHost, ProjectPluginOverlay } from '../core/plugin-host/types.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import { pluginHostRouter } from '../core/plugin-host/cross-cutting.js';
@@ -175,7 +175,7 @@ import type { ActiveAdapter, PendingInput } from '../routes/agent-turn.js';
 import { abortAllTurns } from '../routes/agent-turn.js';
 import { ProjectWsEmitter } from '../ws/project-emitter.js';
 import { writeStarterContent, ProjectNeedsActivationError, settleProjectType } from './bootstrap.js';
-import { ENTITIES, multiRootViolation } from '../project-types/resolve.js';
+import { BRIEFS, ENTITIES, multiRootViolation } from '../project-types/resolve.js';
 import type { ProjectCapabilities } from '../project-types/capabilities.js';
 import type { WorkspaceRegistry } from './registry.js';
 import type { WorkspaceRecord } from './types.js';
@@ -312,6 +312,12 @@ export interface ProjectContext {
    */
   projectType: string;
   capabilities: ProjectCapabilities;
+  /**
+   * 2.1.77 (M44 `1j39ajh8`): the context-type registry of this project —
+   * `chat`, `brief`, `patch`, `ask` with the capability `briefs`, `chat` and
+   * `ask` without it (`contextTypesFor(capabilities)`).
+   */
+  contextTypes: readonly ChatContextType[];
   /** Per-context Express Router — dispatch middleware mounts it under /api/projects/:id. */
   router: Router;
   db: Db;
@@ -554,6 +560,13 @@ async function buildInner(
   // Non-entity envelope contributions (commands, subagents, skills, writing
   // styles) are not part of a type and stay (`m13plset`).
   const hasEntities = capabilities.has(ENTITIES);
+  // 2.1.77 (M21 `msujcqhu`, M23 `iifnvhtu`): M21 and M23 exist only with the
+  // capability `briefs`. Without it neither module is reachable from the context:
+  // no `/briefs` or `/patches` route, no `brief`/`patch` artifact kind in the
+  // generic family (M36 `ff7ootuy`), no `brief`/`patch` context type (M44
+  // `1j39ajh8`) and no patch/brief lists on `transagent-tools` (M46 `qq84x14h`).
+  const hasBriefs = capabilities.has(BRIEFS);
+  const contextTypes = contextTypesFor(capabilities);
   const pluginHost: ProjectPluginHost = deps.pluginRegistry.consolidate(
     { entities: hasEntities ? bootConfig.entities : [] },
     overlay,
@@ -1542,7 +1555,7 @@ async function buildInner(
         }
       : {}),
   };
-  router.use('/patches', patchesRouter(patchWriteDeps));
+  if (hasBriefs) router.use('/patches', patchesRouter(patchWriteDeps));
   /**
    * 0.2.13 (tier C) — `search_pages` is project-scoped (`rootId` only NARROWS
    * it), so it mounts at `/pages` with no root segment. **Order is the
@@ -1727,6 +1740,8 @@ async function buildInner(
     // 2.1.9 (M52): read per turn — the hit-translation line of `<available_skills>`.
     skillsRootHasFiles: () => projectRootedSkills?.hasAnyFile() ?? false,
     hasEntities,
+    hasBriefs,
+    contextTypes,
     ws,
     cwd,
     roots: effectiveRoots,
@@ -1838,12 +1853,13 @@ async function buildInner(
   // 2.1.10 (M31 ic35jwy6): the same reload after a sync that moved HEAD
   // (`fast-forwarded`/`merged`); the rebuild re-reads config.json from disk.
   router.use('/git', gitRouter(gitService, { onHeadChanged: onContextConfigChanged }));
-  router.use('/briefs', briefsRouter(briefService, chatService));
+  if (hasBriefs) router.use('/briefs', briefsRouter(briefService, chatService));
   router.use(
     '/artifacts',
     artifactsRouter({
-      brief: briefService,
-      patch: patchService,
+      // 2.1.77 (M36 `ff7ootuy`): without `briefs` the `:kind` set is `plan` alone —
+      // `brief`/`patch` answer `404 UNKNOWN_ARTIFACT_KIND` like any unregistered kind.
+      ...(hasBriefs ? { brief: briefService, patch: patchService } : {}),
       plan: planService,
       pageVersions,
       chat: chatService,
@@ -2322,6 +2338,7 @@ async function buildInner(
     projectId,
     projectType: projectTypeResolved.entry.slug,
     capabilities,
+    contextTypes,
     cwd,
     workspace,
     router,

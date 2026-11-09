@@ -1,0 +1,4 @@
+# u04 — non-blocking findings (round 1)
+
+- **rev-0001** `src/server/services/transagent-dispatcher.ts:56` — The new `TRANSAGENT_CONTEXT_TYPES` const went in between `ResumeConfigLockedError`'s JSDoc block (lines 51-55) and the class. The class loses its doc comment, and the const now has two stacked JSDoc blocks. Move the const above that comment or below the class. The same `['brief','chat','patch']` list is also still a separate `z.enum` literal in transagent-tools.ts, so the two can drift apart. Consider building the enum from this const.
+- **rev-0002** `src/client/components/ReleaseDetail.tsx:36` — The `briefs` capability check (`!capabilities || capabilities.includes('briefs')`) is written out three times: inline here, in router.tsx `useHasBriefs`, and in contextLinkBar.ts. ReleaseDetail could use the `useHasBriefs` hook if it were exported from a shared module (for example hooks/useConfig.ts), so the 'absent = present' fallback is defined in one place.

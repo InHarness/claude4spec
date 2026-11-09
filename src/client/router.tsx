@@ -606,7 +606,19 @@ function PlansIndexRoute() {
   );
 }
 
+/**
+ * 2.1.77 (M21 `dcagtfpe`, M23 `iifnvhtu`) — the brief list, brief detail and
+ * patch detail views exist only in a project with the capability `briefs`;
+ * without it their URLs are the ordinary not-found. `capabilities` absent
+ * (config not read yet, or an older server) = present.
+ */
+function useHasBriefs(): boolean {
+  const { data: config } = useConfig();
+  return !config?.capabilities || config.capabilities.includes('briefs');
+}
+
 function BriefsIndexRoute() {
+  if (!useHasBriefs()) return <RouteNotFound />;
   return (
     <RoutePane>
       <BriefsList />
@@ -615,7 +627,9 @@ function BriefsIndexRoute() {
 }
 
 function BriefDetailRoute() {
+  const hasBriefs = useHasBriefs();
   const { path } = useParams({ from: '/briefs/$path' });
+  if (!hasBriefs) return <RouteNotFound />;
   // path comes URL-encoded (encodeBriefPath splits on '/'); decode each segment.
   const decoded = path.split('/').map(decodeURIComponent).join('/');
   return (
@@ -626,7 +640,9 @@ function BriefDetailRoute() {
 }
 
 function PatchDetailRoute() {
+  const hasBriefs = useHasBriefs();
   const { path } = useParams({ from: '/patches/$path' });
+  if (!hasBriefs) return <RouteNotFound />;
   // path comes URL-encoded (encodePatchPath splits on '/'); decode each segment.
   const decoded = path.split('/').map(decodeURIComponent).join('/');
   return (

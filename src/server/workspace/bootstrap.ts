@@ -17,6 +17,7 @@ import {
 import { toProjectPath, workspaceFilePath } from './home-workspace.js';
 import { ensureGitignore } from '../../bin/gitignore.js';
 import {
+  BRIEFS,
   ENTITIES,
   multiRootViolation,
   readFileProjectType,
@@ -245,6 +246,8 @@ export function backgroundActivationSteps(
   if (multiRoot) throw new Error(multiRoot);
   for (const root of new RootRegistry(config.roots).list()) {
     if (root.kind === 'entities' && !type.capabilities.has(ENTITIES)) continue;
+    // 2.1.77 (M21 `dcagtfpe`, M23 `iifnvhtu`): without `briefs` no brief or patch root.
+    if ((root.kind === 'briefs' || root.kind === 'patches') && !type.capabilities.has(BRIEFS)) continue;
     const abs = path.resolve(cwd, root.dir);
     if (!fs.existsSync(abs)) fs.mkdirSync(abs, { recursive: true });
   }
@@ -359,6 +362,8 @@ export function activateProjectDir(
     if (root.kind === PAGES_KIND && root.builtin) baseDir = root.dir;
     // 2.1.77 (M01 `hbib9dy0`, step 8): a project without `entities` gets no entity store.
     if (root.kind === 'entities' && !type.capabilities.has(ENTITIES)) continue;
+    // 2.1.77 (M21 `dcagtfpe`, M23 `iifnvhtu`): without `briefs` no brief or patch root.
+    if ((root.kind === 'briefs' || root.kind === 'patches') && !type.capabilities.has(BRIEFS)) continue;
     fs.mkdirSync(path.resolve(cwd, root.dir), { recursive: true });
   }
   // M01 activation, step 6: the type entry's starter content, only once

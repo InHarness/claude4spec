@@ -186,6 +186,61 @@ export function assertKnownContextType(thread: { id: string; contextType: string
   }
 }
 
+/**
+ * 2.1.77 (M44 `1j39ajh8`, M21 `msujcqhu`, M23 `iifnvhtu`) — the capability each
+ * registry row requires. `brief` belongs to M21 and `patch` to M23, and both
+ * modules exist only in a project with the capability `briefs`; `chat` and `ask`
+ * exist in every project type. The code map above stays the one source of the
+ * rows (M44 `k3gkrn09`); this table only says which of them a project registers.
+ */
+export const CONTEXT_TYPE_REQUIRES: Readonly<Record<ChatContextType, readonly string[]>> = {
+  chat: [],
+  brief: ['briefs'],
+  patch: ['briefs'],
+  ask: [],
+};
+
+/**
+ * 2.1.77 (M44 `1j39ajh8`) — the context-type registry of ONE project: the rows of
+ * {@link CONTEXT_TYPE_REGISTRY} whose required capabilities the project has. With
+ * `briefs` it holds four entries (`chat`, `brief`, `patch`, `ask`); without it two
+ * (`chat`, `ask`) — no thread of such a project gets `brief` or `patch`, and no
+ * turn assembles their server set, subagent or prompt composition.
+ */
+export function contextTypeRegistryFor(capabilities: {
+  has(name: string): boolean;
+}): Readonly<Partial<Record<ChatContextType, ContextTypeEntry>>> {
+  const out: Partial<Record<ChatContextType, ContextTypeEntry>> = {};
+  for (const type of KNOWN_CONTEXT_TYPES) {
+    if (CONTEXT_TYPE_REQUIRES[type].every((c) => capabilities.has(c))) out[type] = CONTEXT_TYPE_REGISTRY[type];
+  }
+  return out;
+}
+
+/** The context types one project registers, in registry order (see {@link contextTypeRegistryFor}). */
+export function contextTypesFor(capabilities: { has(name: string): boolean }): ChatContextType[] {
+  return Object.keys(contextTypeRegistryFor(capabilities)) as ChatContextType[];
+}
+
+/**
+ * 2.1.77 (M44 `1j39ajh8`) — the per-project backstop of a turn: a thread whose
+ * context type the project's registry does not hold is refused like an unknown
+ * value. `registered` absent (rigs) = every row of the code map.
+ */
+export function assertRegisteredContextType(
+  thread: { id: string; contextType: string },
+  registered: readonly ChatContextType[] | undefined,
+): void {
+  assertKnownContextType(thread);
+  if (registered && !registered.includes(thread.contextType as ChatContextType)) {
+    throw new DomainError(
+      'INTERNAL',
+      `thread ${thread.id} has context_type '${thread.contextType}', which this project does not register; expected one of ${registered.join(', ')}`,
+    );
+  }
+}
+
+
 /* ─────────────────────────── 0.1.67 m05ctxreg: wbudowane subagenty ───────────────────────────
  * Czwarty wymiar rejestru `context_type`: który read-only subagent jest wstrzykiwany do
  * `adapter.execute({ subagents })`. Subagent przejmuje „bulk" eksploracji w swoim kontekście i

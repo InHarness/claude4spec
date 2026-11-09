@@ -26,6 +26,8 @@ export class ProjectTypeError extends Error {
 export const MULTI_ROOT = 'multi-root';
 /** The `entities` capability (M01 `hbib9dy0`). */
 export const ENTITIES = 'entities';
+/** The `briefs` capability (M21 `dcagtfpe`). */
+export const BRIEFS = 'briefs';
 
 /**
  * The `projectType` a project directory's `config.json` carries, read raw:

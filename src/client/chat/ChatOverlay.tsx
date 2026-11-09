@@ -20,6 +20,8 @@ import { SystemPromptView } from './SystemPromptView.js';
 import { confirmDestructive } from '../ui/events.js';
 import { CHAT_PREFILL_EVENT, type ChatPrefillDetail } from './chatPrefill.js';
 import { usePlan } from '../hooks/usePlan.js';
+import { useConfig } from '../hooks/useConfig.js';
+import { contextLinkKinds } from './contextLinkBar.js';
 import { useBrief } from '../hooks/useBriefs.js';
 import { usePatch } from '../hooks/usePatches.js';
 import { encodeBriefPath } from '../lib/briefs-api.js';
@@ -218,6 +220,10 @@ export function ChatOverlay() {
   // 0.2.104 — a plan file moved or deleted outside the app leaves the thread's
   // `plan_path` dangling; say so in the context bar instead of a bare "Plan".
   const activePlanMissing = activePlanError instanceof ApiError && activePlanError.status === 404;
+  // 2.1.77 (M44 `1j39ajh8`): the artifact links of the composer bar follow the
+  // project's capability `briefs` — without it only `Plan: …`.
+  const { data: projectConfig } = useConfig();
+  const linkKinds = contextLinkKinds(activeThread, projectConfig?.capabilities);
   const { data: activeBrief } = useBrief(
     activeThread?.contextType === 'brief' ? activeThread.briefPath : null,
   );
@@ -768,7 +774,7 @@ export function ChatOverlay() {
         <div className="p-2.5 relative" style={{ borderTop: '1px solid var(--c-hair)' }}>
           {/* 0.2.87: the context-link bar never renders in an `ask` thread — that type has no
               artifact, even when the peer left a plan behind (plan-tools are mounted there). */}
-          {activeThread?.planPath != null && activeThread.contextType !== 'ask' && (
+          {activeThread && linkKinds.includes('plan') && (
             <ContextLinkBar
               icon={<ClipboardList size={11} style={{ color: 'var(--c-accent)', flexShrink: 0 }} />}
               label={
@@ -787,7 +793,7 @@ export function ChatOverlay() {
               }
             />
           )}
-          {activeThread?.contextType === 'brief' && activeThread.briefPath && (
+          {activeThread?.briefPath && linkKinds.includes('brief') && (
             <ContextLinkBar
               icon={<FileText size={11} style={{ color: 'var(--c-accent)', flexShrink: 0 }} />}
               label={`Brief: ${
@@ -803,7 +809,7 @@ export function ChatOverlay() {
               }
             />
           )}
-          {activeThread?.contextType === 'patch' && activeThread.patchPath && (
+          {activeThread?.patchPath && linkKinds.includes('patch') && (
             <ContextLinkBar
               icon={<FileWarning size={11} style={{ color: 'var(--c-accent)', flexShrink: 0 }} />}
               label={`Patch: ${activePatch?.title || activeThread.patchPath.replace(/\.md$/, '')}`}
