@@ -71,6 +71,8 @@ export function createSpreadsheetMcpServer(ctx: MountContext): McpServerFactory 
         return failErr(err);
       }
     },
+    undefined,
+    'read',
   );
 
   const getRange = mcpTool(
@@ -115,6 +117,8 @@ export function createSpreadsheetMcpServer(ctx: MountContext): McpServerFactory 
         return failErr(err);
       }
     },
+    undefined,
+    'read',
   );
 
   const setCell = mcpTool(
@@ -146,6 +150,8 @@ export function createSpreadsheetMcpServer(ctx: MountContext): McpServerFactory 
         return failErr(err);
       }
     },
+    undefined,
+    'write',
   );
 
   const setRange = mcpTool(
@@ -185,6 +191,8 @@ export function createSpreadsheetMcpServer(ctx: MountContext): McpServerFactory 
         return failErr(err);
       }
     },
+    undefined,
+    'write',
   );
 
   /**
@@ -217,6 +225,8 @@ export function createSpreadsheetMcpServer(ctx: MountContext): McpServerFactory 
           return failErr(err);
         }
       },
+      undefined,
+      'write',
     );
 
   return createMcpServer({

@@ -28,15 +28,64 @@
 
 import {
   createMcpServer as vendorCreateMcpServer,
+  mcpTool as vendorMcpTool,
   type McpServerInstance,
   type McpToolDefinition,
 } from '@inharness-ai/agent-adapters';
-import type { McpToolDeclaration } from '../../shared/plugin-host/mcp.js';
+import type {
+  McpToolAnnotations,
+  McpToolDeclaration,
+  McpToolOperationClass,
+} from '../../shared/plugin-host/mcp.js';
+
+/**
+ * 2.1.78 (M13 `sxzegart`, M44) — one tool as the facade builds it: the vendor
+ * descriptor plus the C4S-owned operation class, when the plugin declared one.
+ */
+export type FacadeMcpToolDefinition = McpToolDefinition & {
+  readonly operationClass?: McpToolOperationClass;
+};
+
+/**
+ * The facade's `mcpTool` — the vendor builder plus a sixth, optional,
+ * C4S-owned parameter: the tool's operation class.
+ *
+ * `operationClass` is what the context-type profile gate reads for a plugin
+ * server's tool (honoured only for a base-layer envelope; see
+ * `operations/profile-gate.ts`). `annotations` — `readOnlyHint` included — are
+ * never an input of the gate: they are a hint published to foreign clients in
+ * `tools/list`, which the host does not vouch for. So the class is NOT derived
+ * from `readOnlyHint` here, and a tool without a declaration stays without one.
+ *
+ * Additive (`hostApiVersion` stays `2.1.0`): every five-argument call keeps
+ * compiling and behaving as before.
+ */
+export function mcpTool(
+  name: string,
+  description: string,
+  inputSchema: Record<string, unknown>,
+  handler: McpToolDefinition['handler'],
+  annotations?: McpToolAnnotations,
+  operationClass?: McpToolOperationClass,
+): FacadeMcpToolDefinition {
+  const tool = vendorMcpTool(
+    name,
+    description,
+    inputSchema,
+    handler,
+    annotations as Parameters<typeof vendorMcpTool>[4],
+  );
+  if (operationClass === undefined) return tool;
+  if (operationClass !== 'read' && operationClass !== 'write') {
+    throw new TypeError(`mcpTool "${name}": operationClass must be 'read' or 'write', got ${JSON.stringify(operationClass)}`);
+  }
+  return Object.assign(tool, { operationClass });
+}
 
 export interface CreateMcpServerOptions {
   name: string;
   version?: string;
-  tools?: McpToolDefinition[];
+  tools?: FacadeMcpToolDefinition[];
 }
 
 /**
@@ -108,6 +157,9 @@ export function createMcpServer(options: CreateMcpServerOptions): CapturedMcpSer
       inputSchema: t.inputSchema,
       handler: t.handler,
       ...(t.annotations ? { annotations: t.annotations } : {}),
+      // 2.1.78 — carried so the profile gate can read the declared class off
+      // the handle, exactly as the plugin registered it.
+      ...(t.operationClass ? { operationClass: t.operationClass } : {}),
     })),
   );
   return Object.assign(instance, { tools });

@@ -56,6 +56,9 @@ export function createEndpointToolsServer(deps: EndpointToolsDeps): McpServerFac
         return fail(err);
       }
     },
+    undefined,
+    // 2.1.78 (M44) — a write: withheld from read-only profiles.
+    'write',
   );
 
   const unlinkDtoTool = mcpTool(
@@ -82,6 +85,9 @@ export function createEndpointToolsServer(deps: EndpointToolsDeps): McpServerFac
         return fail(err);
       }
     },
+    undefined,
+    // 2.1.78 (M44) — a write: withheld from read-only profiles.
+    'write',
   );
 
   return createMcpServer({

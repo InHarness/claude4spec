@@ -4523,3 +4523,84 @@ describe('runAgentTurn — <remote_execution> (M55, 2.1.70)', () => {
     }
   });
 });
+
+/**
+ * 2.1.78 (M44, M13 `sxzegart`) — in an `ask` thread a plugin server's tool is
+ * available only when a BASE-layer envelope declared it `operationClass: 'read'`.
+ * The class comes from the plugin's `mcpTool` registration, never from the host
+ * catalog and never from `readOnlyHint`; a project-local overlay's declaration
+ * is ignored. Each case runs a real `ask` turn and reads what the adapter got.
+ */
+describe('runAgentTurn — plugin tool classes in an ask thread (2.1.78)', () => {
+  const handler = async () => ({ content: [{ type: 'text' as const, text: 'ok' }] });
+  const shape = { slug: z.string().optional() };
+  type Tools = NonNullable<Parameters<typeof createMcpServer>[0]['tools']>;
+
+  async function askTurnWith(tools: Tools, layer: 'base' | 'overlay') {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    const host = deps.pluginHost as unknown as {
+      buildMcpServers: (o?: HostBuildOpts) => unknown;
+      pluginServerLayers: () => ReadonlyMap<string, 'base' | 'overlay'>;
+    };
+    // The plugin server, built fresh per call like the real host's factory.
+    host.buildMcpServers = (o) =>
+      [{ name: 'sheet-tools', server: createMcpServer({ name: 'sheet-tools', tools }) }].filter(
+        ({ name }) => !o?.include || o.include(name),
+      );
+    // The layer the project host records at `mountBackend`.
+    host.pluginServerLayers = () => new Map([['sheet-tools', layer]]);
+    (deps as unknown as { listWorkspaceProjects: () => unknown }).listWorkspaceProjects = () => ({ projects: [] });
+    const input = makeInput();
+    (input.thread as unknown as { contextType: string }).contextType = 'ask';
+    await runAgentTurn(deps, input);
+    const servers = (hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>;
+    const prompt = String(hoisted.lastExecute?.systemPrompt);
+    const line = /<mcp name="sheet-tools">([^<]*)<\/mcp>/.exec(prompt);
+    return {
+      mounted: Object.keys(servers),
+      tools: line ? line[1]!.split(',').map((t) => t.trim()) : [],
+    };
+  }
+
+  it('[ac:ac-w-watku-context-type-ask-narzedzie-se] a base-envelope plugin tool declared operationClass: read is available to the agent', async () => {
+    const out = await askTurnWith([mcpTool('read_cells', 'Read cells.', shape, handler, undefined, 'read')], 'base');
+    expect(out.mounted).toContain('sheet-tools');
+    expect(out.tools).toEqual(['read_cells']);
+  });
+
+  it('[ac:ac-w-watku-context-type-ask-narzedzie-se-2] a plugin tool with no operationClass declaration is not available to the agent', async () => {
+    const out = await askTurnWith(
+      [
+        mcpTool('read_cells', 'Read cells.', shape, handler, undefined, 'read'),
+        mcpTool('poke_cells', 'Undeclared.', shape, handler),
+      ],
+      'base',
+    );
+    expect(out.tools).toEqual(['read_cells']);
+    // A server left with nothing but undeclared tools is not mounted at all.
+    const only = await askTurnWith([mcpTool('poke_cells', 'Undeclared.', shape, handler)], 'base');
+    expect(only.mounted).not.toContain('sheet-tools');
+  });
+
+  it('[ac:ac-w-watku-context-type-ask-narzedzie-se-3] a project-local overlay plugin tool declared operationClass: read is not available to the agent', async () => {
+    const out = await askTurnWith([mcpTool('read_cells', 'Read cells.', shape, handler, undefined, 'read')], 'overlay');
+    expect(out.mounted).not.toContain('sheet-tools');
+    expect(out.tools).toEqual([]);
+    // The same declaration on a base envelope is honoured.
+    const base = await askTurnWith([mcpTool('read_cells', 'Read cells.', shape, handler, undefined, 'read')], 'base');
+    expect(base.tools).toEqual(['read_cells']);
+  });
+
+  it('[ac:ac-w-watku-context-type-ask-narzedzie-se-4] a plugin tool annotated readOnlyHint: true with no operationClass is not available to the agent', async () => {
+    const out = await askTurnWith(
+      [
+        mcpTool('read_cells', 'Read cells.', shape, handler, undefined, 'read'),
+        mcpTool('hinted_read', 'Hinted only.', shape, handler, { readOnlyHint: true }),
+      ],
+      'base',
+    );
+    expect(out.tools).toEqual(['read_cells']);
+    expect(out.tools).not.toContain('hinted_read');
+  });
+});

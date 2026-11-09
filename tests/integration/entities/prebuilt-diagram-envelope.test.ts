@@ -314,8 +314,9 @@ describe('[ac:ac-koperta-prebuilt-laduje-sie-w-projekc] the prebuilt envelope lo
 describe('the host carries no diagram tooling of its own', () => {
   it('no host source registers `validate_diagram`, and the host operation catalog declares no row for it — `diagram-tools` is the envelope\'s', () => {
     registerCoreOperations();
-    // Seeded, plugin rows included — so the absence below is a real answer.
-    expect(CATALOG.get('analyze_ac_against_entities')?.contributedBy).toBe('plugin');
+    // Seeded, plugin rows included (2.1.78: only the ones with a spec-operation
+    // record remain) — so the absence below is a real answer.
+    expect(CATALOG.get('link_dto')?.contributedBy).toBe('plugin');
     expect(CATALOG.get('validate_diagram')).toBeUndefined();
     // A registration names the tool or the server as a string literal.
     for (const file of [...sourcesUnder('src/server'), ...sourcesUnder('src/shared')]) {

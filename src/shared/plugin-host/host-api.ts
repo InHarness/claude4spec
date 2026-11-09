@@ -857,6 +857,38 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       'was optional and stays optional — only what the host does with its absence. Within the current ' +
       'baseline, no bump; `HOST_API_VERSION` stays `2.1.0`.',
   },
+  /*
+   * 2.1.78 (M33 changelog) — the two entries new in content: `sxzegart` (the
+   * operation class of a plugin tool, M44's profile gate) and `qgwtavuv` (the
+   * refusal of a duplicate type in the base). Both fit the current baseline.
+   */
+  {
+    release: '2.1.78',
+    slot: 'mcpTool(…, annotations?, operationClass?) / McpToolOperationClass',
+    kind: 'slot-added',
+    summary:
+      '(`sxzegart`) The facade builder `mcpTool` gains a sixth, optional, C4S-owned parameter ' +
+      '`operationClass?: McpToolOperationClass` (`\'read\' | \'write\'`) after `annotations?`. It declares ' +
+      'the class of the tool\'s operation, which the context-type profile gate reads for a plugin server\'s ' +
+      'tool: honoured for a base-layer envelope, ignored (`write`) for a project-local overlay, `write` when ' +
+      'absent. `annotations` — `readOnlyHint` included — are never an input of the gate. Every existing ' +
+      'call stays valid: additive (rule (2)), no bump and no `migrations[]` descriptor; `HOST_API_VERSION` ' +
+      'stays `2.1.0`.',
+  },
+  {
+    release: '2.1.78',
+    slot: 'registerPlugin / contributes.entities: PLUGIN_TYPE_CONFLICT in the base',
+    kind: 'behaviour-changed',
+    summary:
+      '(`qgwtavuv`) A second base-layer package (built-in envelope, preinstalled or workspace) contributing ' +
+      'an entity `type` already registered in the base is refused with a hard `PLUGIN_TYPE_CONFLICT`, and ' +
+      'the type stays with the module registered first — the rule the project-local overlay already had, ' +
+      'in parity with `PLUGIN_TOOL_CONFLICT`. Before, the base resolved it by a silent last-wins, so an ' +
+      'external package could shadow a built-in envelope\'s type; only a project-local overlay may shadow a ' +
+      'base type now (a reported shadow, not an error). Formally a narrowing under rule (1), absorbed into ' +
+      'the current baseline under the `injection` precedent — no published plugin relies on overriding a ' +
+      'base type: no bump and no `migrations[]` descriptor; `HOST_API_VERSION` stays `2.1.0`.',
+  },
 ];
 
 /**

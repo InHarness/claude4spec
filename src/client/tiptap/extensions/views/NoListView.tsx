@@ -7,7 +7,9 @@
  *
  * The block does not pretend to be an empty list: an empty list looks exactly
  * like a list without hits, and the page author has to see they picked the
- * wrong tag. `check_consistency` reports the same tag (rule 17).
+ * wrong tag. This block is the ONLY signal: `check_consistency` reports nothing
+ * for such a tag (2.1.78 — the server never loads the plugin's browser entry
+ * that declares `renderRow`, so it has no source to judge it by).
  *
  * `count` is `null` while the matching entities are still being counted.
  */

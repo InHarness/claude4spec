@@ -49,6 +49,9 @@ export function createUiKitComponentToolsServer(ops: ReadOps): McpServerFactory 
       }
     },
     { readOnlyHint: true, idempotentHint: true },
+    // 2.1.78 (M44) — the class the profile gate reads; `readOnlyHint` above is
+    // only a hint for foreign clients and is not an input of the gate.
+    'read',
   );
 
   return createMcpServer({ name: UI_KIT_TOOLS_SERVER, tools: [audit] });

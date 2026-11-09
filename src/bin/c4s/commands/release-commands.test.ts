@@ -206,6 +206,35 @@ describe('c4s release commands (2.1.11)', () => {
       expect(out.truncationHint).toContain('`--paths pages/a.md --section-offset 4 --section-limit 2`');
       expect(out.truncationHint).toContain('`--roots`');
     });
+
+    /**
+     * 2.1.78 (M17) — the CLI channel of the floor: the operation's hint names
+     * no parameter, so the flag rewrite leaves it as it is — no next
+     * `--section-offset`, no further call — and the answer is still `truncated`.
+     */
+    it('[ac:ac-release-diff-z-sectionlimit-1-ktorego] CLI release-diff: the floor hint of a sectionLimit 1 window passes through with truncated: true and names no next offset or call', async () => {
+      const floor =
+        'the section at position 0 of page pages/big.md exceeds the response budget on its own and was cut as text ' +
+        '(truncated: true). The rest of its content cannot be read through release_diff — the operation does not split a section.';
+      reply = {
+        data: {
+          from: { id: 1, name: 'v1' },
+          to: { id: 2, name: 'v2' },
+          total: { pages: 1, sections: 2 },
+          pages: [{ rootId: 'pages', path: 'big.md', op: 'update', sections: [{ anchor: 's0', content: 'qqq', truncated: true }] }],
+          truncationHint: floor,
+        },
+      };
+      await runReleaseDiff(
+        args('release-diff', '--from', 'v1', '--to', 'v2', '--paths', 'pages/big.md', '--section-offset', '0', '--section-limit', '1'),
+      );
+      expect(query(seen[0]!).get('sectionLimit')).toBe('1');
+      const out = JSON.parse(stdout);
+      expect(out.truncated).toBe(true);
+      expect(out.pages[0].sections[0].truncated).toBe(true);
+      expect(out.truncationHint).toBe(floor);
+      expect(out.truncationHint).not.toMatch(/--section-offset|--section-limit|--summary-only/);
+    });
   });
 });
 

@@ -58,7 +58,7 @@ import type { McpToolDeclaration } from '../../shared/plugin-host/mcp.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { createMcpServer, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import type { McpToolDefinition } from '@inharness-ai/agent-adapters';
-import { gateServer, pluginServerNamesFor } from '../operations/profile-gate.js';
+import { gateServer, overlayServerNamesFor, pluginServerNamesFor } from '../operations/profile-gate.js';
 import { CATALOG, type OperationScope } from '../operations/catalog.js';
 import { toolError } from '../operations/envelope.js';
 import { mcpRenderingProfile, mcpServerSetForProfile } from '../operations/profiles.js';
@@ -378,19 +378,26 @@ export function __invalidateSurfaceCache(host: ProjectPluginHost): void {
 }
 
 function composeUncached(deps: ExternalSurfaceDeps): ExternalSurface {
-  const pluginServers = pluginServerNamesFor(deps.pluginHost.listEntities().map((m) => m.type));
+  const layers = deps.pluginHost.pluginServerLayers?.();
+  const pluginServers = pluginServerNamesFor(
+    deps.pluginHost.listEntities().map((m) => m.type),
+    layers,
+  );
+  // 2.1.78 (M44) — a project-local overlay's declared classes are not trusted.
+  const overlayServers = overlayServerNamesFor(layers);
   // 2.1.26 (M12 `ecawzsbr`): the channel's closed profile table decides which
   // registry profile's set is rendered — `patch` degenerates to `chat`, and a
   // value outside the table throws here (the mount refuses it before this).
   const rendered = mcpRenderingProfile(deps.profile);
 
-  return mergeServers(rendered, sourceServers(deps), pluginServers);
+  return mergeServers(rendered, sourceServers(deps), pluginServers, overlayServers);
 }
 
 function mergeServers(
   rendered: ChatContextType,
   servers: Array<{ name: string; server: CapturedMcpServer }>,
   pluginServers: ReadonlySet<string>,
+  overlayServers: ReadonlySet<string> = new Set(),
 ): ExternalSurface {
   const tools: McpToolDeclaration[] = [];
   const byName = new Map<string, McpToolDeclaration>();
@@ -400,7 +407,7 @@ function mergeServers(
     // fail-closed rule for a plugin's own server, which must hold on this
     // channel too: an external `ask` connection reaching `spreadsheet-tools`'
     // six mutating operations is the exact hole the gate was built to close.
-    const gated = gateServer(rendered, name, server, pluginServers);
+    const gated = gateServer(rendered, name, server, pluginServers, overlayServers);
     if (!gated?.tools) continue;
     for (const tool of gated.tools) {
       if (byName.has(tool.name)) continue;

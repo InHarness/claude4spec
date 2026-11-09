@@ -35,7 +35,7 @@ import { buildC4sToolsServer } from '../mcp/c4s-tools.js';
 import { buildWorkspaceToolsServer } from '../mcp/workspace-tools.js';
 import { SPEC_SKILL_TOOLS_SERVER, type SpecSkillTools } from '../mcp/spec-skill-tools.js';
 import { RUN_TOOLS_SERVER, type RunToolsFactory } from '../mcp/run-tools.js';
-import { pluginServerNamesFor } from '../operations/profile-gate.js';
+import { overlayServerNamesFor, pluginServerNamesFor, pluginToolClass } from '../operations/profile-gate.js';
 import { assembleTurnMcpServers, type TurnServerEntry } from '../services/turn-mcp-servers.js';
 import type { ListProjectsResult } from '../workspace/list-projects.js';
 import {
@@ -1176,7 +1176,14 @@ export async function runAgentTurn(
      * activation cannot change mid-turn (a config change builds a whole new
      * `ProjectPluginHost`), so this is computed once and handed to every execute.
      */
-    const pluginServerNames = pluginServerNamesFor(deps.pluginHost.listEntities().map((m) => m.type));
+    const pluginServerLayers = deps.pluginHost.pluginServerLayers?.();
+    const pluginServerNames = pluginServerNamesFor(
+      deps.pluginHost.listEntities().map((m) => m.type),
+      pluginServerLayers,
+    );
+    // 2.1.78 (M44) — the subset from a project-local overlay, whose declared
+    // `operationClass` the gate ignores.
+    const overlayServerNames = overlayServerNamesFor(pluginServerLayers);
 
     /**
      * 0.2.50 — the `<tooling>` block's contents, DERIVED rather than described.
@@ -1206,6 +1213,15 @@ export async function runAgentTurn(
         // line between host and plugin servers, but the plan-mode list must,
         // since a catalog row only speaks for the surface it was declared on.
         plugin: pluginServerNames.has(name),
+        // 2.1.78 (M44) — a plugin server's tools of EFFECTIVE class `read`
+        // (declared by a base envelope), by the gate's own rule.
+        ...(pluginServerNames.has(name)
+          ? {
+              readTools: (server.tools ?? [])
+                .filter((t) => pluginToolClass(t, { overlay: overlayServerNames.has(name) }) === 'read')
+                .map((t) => t.name),
+            }
+          : {}),
       }),
     );
 
@@ -1669,6 +1685,7 @@ export async function runAgentTurn(
         buildPool: (include) => deps.pluginHost.buildMcpServers({ strict: true, include }),
         handlerEntries,
         pluginServerNames,
+        overlayServerNames,
       });
     }
 

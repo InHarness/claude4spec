@@ -367,12 +367,24 @@ export interface McpToolAnnotations {
   openWorldHint?: boolean;
   title?: string;
 }
+/**
+ * The class of a tool's operation (2.1.78), read by the host's context-type
+ * profile gate. `read` — the operation writes nothing (its effects leave the
+ * specification's content unchanged); `write` — every other case. A C4S-owned
+ * field, separate from `annotations`: `readOnlyHint` is only a hint published to
+ * foreign clients and is never an input of the gate. A tool without a declaration
+ * counts as `write`, and the host honours the declaration only for a base-layer
+ * package (workspace, npm/preinstalled, built-in envelope) — never for a
+ * project-local overlay.
+ */
+export type McpToolOperationClass = 'read' | 'write';
 export declare function mcpTool(
   name: string,
   description: string,
   zodShape: ZodRawShape,
   handler: (input: unknown) => unknown,
   annotations?: McpToolAnnotations,
+  operationClass?: McpToolOperationClass,
 ): McpTool;
 
 /**

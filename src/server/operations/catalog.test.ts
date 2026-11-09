@@ -613,9 +613,10 @@ describe('the profile gate', () => {
   });
 
   it('[ac:ac-operacja-spoza-profilu-polaczenia-nie] withholds a PLUGIN\'s declared write tools from `ask`', () => {
-    // The real spreadsheet-tools surface. Six of these eight mutate a
-    // specification, and before they were catalogued the gate waved all eight
-    // through to a consulted peer.
+    // The real spreadsheet-tools surface, with the classes its envelope
+    // declares (2.1.78: the plugin's `mcpTool(..., operationClass)`, not a host
+    // catalog row). Six of these eight mutate a specification.
+    const reads = new Set(['get_overview', 'get_range']);
     const spreadsheet = [
       'get_overview',
       'get_range',
@@ -625,7 +626,13 @@ describe('the profile gate', () => {
       'insert_column',
       'delete_row',
       'delete_column',
-    ].map((name) => ({ name, description: '', inputSchema: {}, handler: async () => ({}) }));
+    ].map((name) => ({
+      name,
+      description: '',
+      inputSchema: {},
+      handler: async () => ({}),
+      operationClass: (reads.has(name) ? 'read' : 'write') as 'read' | 'write',
+    }));
 
     expect(withheldTools('ask', spreadsheet, { plugin: true }).sort()).toEqual([
       'delete_column',
@@ -635,10 +642,12 @@ describe('the profile gate', () => {
       'set_cell',
       'set_range',
     ]);
-    // The reads survive — cataloguing them is what keeps the fail-closed rule
-    // from swallowing the whole plugin surface.
-    expect(toolAdmittedByProfile('ask', 'get_overview', { plugin: true })).toBe(true);
-    expect(toolAdmittedByProfile('ask', 'get_range', { plugin: true })).toBe(true);
+    // The declared reads survive on a base envelope; a bare NAME carries no
+    // declaration, so on a plugin server it is a write.
+    expect(toolAdmittedByProfile('ask', spreadsheet[0]!, { plugin: true })).toBe(true);
+    expect(toolAdmittedByProfile('ask', 'get_overview', { plugin: true })).toBe(false);
+    // A project-local overlay's declaration is not trusted.
+    expect(withheldTools('ask', spreadsheet, { plugin: true, overlay: true })).toHaveLength(8);
     // `chat` admits writes, so it loses nothing.
     expect(withheldTools('chat', spreadsheet, { plugin: true })).toEqual([]);
   });
@@ -1777,18 +1786,10 @@ describe("the catalogue against the window's 80 records", () => {
   const IDEMPOTENCE: Record<string, boolean | 'conditional'> = { tak: true, nie: false, warunkowa: 'conditional' };
   const CONTENT_INPUT: Record<string, ContentInputMode> = { dosłowny: 'literal', różnicowy: 'diff', obydwa: 'literal+diff' };
   /** The rows the window carries no record for: plugin-contributed, declared for the profile gate. */
-  const PLUGIN_ROWS_WITHOUT_RECORD = [
-    'analyze_ac_against_entities',
-    'audit_ui_kit_components',
-    'delete_column',
-    'delete_row',
-    'get_overview',
-    'get_range',
-    'insert_column',
-    'insert_row',
-    'set_cell',
-    'set_range',
-  ];
+  // 2.1.78 (M44) — none left: a plugin tool's class comes from its own
+  // `mcpTool(..., operationClass)` declaration, so the rows that existed only
+  // to classify plugin tools for the gate are gone.
+  const PLUGIN_ROWS_WITHOUT_RECORD: string[] = [];
   /** The identifiers of M43's domain section (`ke1jxhqh`), as the page declares them. */
   const M43_RULE_IDS = [
     'echo-free',

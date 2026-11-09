@@ -65,6 +65,23 @@ function stubDeps(overrides: Partial<ExternalSurfaceDeps> = {}): ExternalSurface
  * Like the real host, `include` is applied by NAME before a factory runs; the
  * names of the factories that did run are recorded in `built`.
  */
+/**
+ * 2.1.78 (M44) — the classes the in-repo base envelopes declare through
+ * `mcpTool(..., operationClass)`; the stub declares them the same way, so a
+ * `${type}-tools` fixture carrying one of these names behaves like the real
+ * envelope. Any other name is undeclared (a plugin written tomorrow).
+ */
+const ENVELOPE_CLASSES: Record<string, 'read' | 'write'> = {
+  get_overview: 'read',
+  get_range: 'read',
+  set_cell: 'write',
+  set_range: 'write',
+  link_dto: 'write',
+  unlink_dto: 'write',
+  analyze_ac_against_entities: 'read',
+  audit_ui_kit_components: 'read',
+};
+
 function pluginHostWith(entries: Array<{ name: string; tools: string[] }>, types: string[], built: string[] = []) {
   return {
     buildMcpServers: (o?: { include?: (name: string) => boolean }) =>
@@ -77,7 +94,7 @@ function pluginHostWith(entries: Array<{ name: string; tools: string[] }>, types
             server: createMcpServer({
               name,
               tools: tools.map((t) =>
-                mcpTool(t, `${t} description`, { x: z.string().optional() }, async () => ({ content: [] })),
+                mcpTool(t, `${t} description`, { x: z.string().optional() }, async () => ({ content: [] }), undefined, ENVELOPE_CLASSES[t]),
               ),
             }) as unknown as McpServerFactory,
           };
@@ -241,19 +258,19 @@ describe('composeExternalSurface', () => {
         stubDeps({
           profile,
           pluginHost: pluginHostWith(
-            // `get_overview`/`set_cell` are catalogued; `undeclared_op` is what a
-            // plugin written tomorrow contributes.
+            // `get_overview`/`set_cell` are declared by the envelope (read /
+            // write); `undeclared_op` is what a plugin written tomorrow contributes.
             [{ name: 'spreadsheet-tools', tools: ['get_overview', 'set_cell', 'undeclared_op'] }],
             ['spreadsheet'],
           ),
         }),
       ).toolNames;
 
-    it('admits a catalogued plugin READ to `ask`', () => {
+    it('admits a declared plugin READ to `ask`', () => {
       expect(withPlugin('ask')).toContain('get_overview');
     });
 
-    it('withholds a catalogued plugin WRITE from `ask`', () => {
+    it('withholds a declared plugin WRITE from `ask`', () => {
       expect(withPlugin('ask')).not.toContain('set_cell');
     });
 
@@ -475,9 +492,9 @@ describe('plugin tools cannot shadow host operations', () => {
     expect(surface.toolNames.filter((n) => n === 'update_plan')).toHaveLength(1);
   });
 
-  it('a catalogued PLUGIN read still reaches `ask`', () => {
+  it('a declared PLUGIN read still reaches `ask`', () => {
     // The narrowing must not cost the type-specific reads their reachability —
-    // that is what `contributedBy: 'plugin'` on those declarations is for.
+    // 2.1.78: that is what the envelope's `operationClass: 'read'` is for.
     const names = composeExternalSurface(stubDeps({ profile: 'ask', pluginHost: hostileHost() })).toolNames;
     expect(names).toContain('get_overview');
   });
@@ -495,10 +512,12 @@ describe('plugin tools cannot shadow host operations', () => {
      */
     expect(toolAdmittedByProfile('ask', 'update_plan', { plugin: false })).toBe(true);
     expect(toolAdmittedByProfile('ask', 'update_plan', { plugin: true })).toBe(false);
-    // Symmetrically, a plugin-contributed declaration is honoured for a plugin
-    // server — the narrowing must not cost the type-specific reads their reach.
-    expect(toolAdmittedByProfile('ask', 'get_overview', { plugin: true })).toBe(true);
-    // …and does not vouch for a HOST server's tool of that name either.
+    // 2.1.78 — a plugin tool is classified by ITS OWN declaration, never by a
+    // catalog row: declared `read` on a base envelope it is admitted, a bare
+    // name (no declaration) is a write.
+    expect(toolAdmittedByProfile('ask', { name: 'get_overview', operationClass: 'read' }, { plugin: true })).toBe(true);
+    expect(toolAdmittedByProfile('ask', 'get_overview', { plugin: true })).toBe(false);
+    // …and a plugin's declaration says nothing about a HOST server's tool of that name.
     expect(toolAdmittedByProfile('ask', 'get_overview', { plugin: false })).toBe(true);
   });
 });

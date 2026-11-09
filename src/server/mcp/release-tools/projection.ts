@@ -120,6 +120,31 @@ function sectionWindowHint(page: MCPPageDelta, sectionOffset: number, fitted: nu
 }
 
 /**
+ * 2.1.78 (M17) — is this cut the floor of the ladder? The window is
+ * `sectionLimit: 1`, it holds exactly one section, and nothing else in the
+ * response competes for the room (no entity rows) — so that one section exceeds
+ * the response budget on its own.
+ */
+function isSectionFloor(sectionLimit: number | undefined, windowed: MCPPageDelta, out: MCPReleaseDiff): boolean {
+  return sectionLimit === 1 && windowed.sections.length === 1 && (out.entities?.length ?? 0) === 0;
+}
+
+/**
+ * 2.1.78 (M17) — the hint of the floor: the one section of the window was cut
+ * as text, and the rest of it is out of this operation's reach. It names no
+ * next `sectionOffset` and no further call; its size is visible up front in the
+ * map (`summaryOnly: true` with this one path → `sectionMap[].size`), and the
+ * missing content is not filled in by guesswork.
+ */
+function sectionFloorHint(page: MCPPageDelta, sectionOffset: number): string {
+  return (
+    `the section at position ${sectionOffset} of page ${page.rootId}/${page.path} exceeds the response budget ` +
+    `on its own and was cut as text (truncated: true). The rest of its content cannot be read through ` +
+    `release_diff — the operation does not split a section.`
+  );
+}
+
+/**
  * What the envelope around a section-budgeted page costs: `from`/`to`/`total`
  * and the two hints it may carry. Section-level budgeting is the one place that
  * fills the budget to the brim, so it is the one place that has to leave this out.
@@ -251,8 +276,17 @@ export function projectReleaseDiff(
           true,
         );
         if (cutAt !== undefined) {
-          hints.push(HEAVY_RETRY_HINT);
-          if (cutAt < out.total!.sections!) hints.push(sectionWindowHint(fitted, cutAt, whole));
+          // 2.1.78 (M17) — the bottom of the ladder: the ONLY section of a
+          // `sectionLimit: 1` window came back cut. No smaller window exists
+          // (the window counts positions, not characters), so the hint says so
+          // and points at nothing further — neither the next `sectionOffset`
+          // nor any other call would bring the rest of THIS section.
+          if (isSectionFloor(sectionLimit, windowed, out)) {
+            hints.push(sectionFloorHint(fitted, sectionOffset));
+          } else {
+            hints.push(HEAVY_RETRY_HINT);
+            if (cutAt < out.total!.sections!) hints.push(sectionWindowHint(fitted, cutAt, whole));
+          }
         }
         return fitted;
       });

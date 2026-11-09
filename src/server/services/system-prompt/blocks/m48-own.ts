@@ -320,38 +320,35 @@ const PLAN_MODE_EXEMPT_CLASSES: ReadonlySet<string> = new Set(['read', 'plan']);
 function planModeMutatingTools(inventory: readonly McpInventoryEntry[]): string[] {
   const names = new Set<string>();
   for (const server of inventory) {
+    const reads = new Set(server.readTools ?? []);
     for (const tool of server.tools ?? []) {
+      /**
+       * 2.1.78 (M44) — a PLUGIN tool is classified by the plugin's own
+       * declaration, exactly as the profile gate classifies it: `read` only
+       * when a base-layer envelope declared it so (`readTools`), `write`
+       * otherwise. The host catalog is not consulted for it — it is keyed by
+       * bare name, so a plugin tool called `update_plan` or `get_page` would
+       * otherwise inherit that host row's `plan`/`read` class and be exempted
+       * from this list while its own mutating handler runs. An undeclared
+       * plugin tool IS listed: the cost of guessing wrong runs that way. The
+       * price is a false prohibition on an undeclared plugin read — visible,
+       * and fixed by declaring it.
+       */
+      if (server.plugin) {
+        if (!reads.has(tool)) names.add(tool);
+        continue;
+      }
       const op = CATALOG.get(tool);
       /**
-       * A row counts only if it describes the surface the tool arrived on —
-       * the same test `toolAdmittedByProfile` applies, for the same reason.
-       * `CATALOG` is keyed by bare name, so a plugin shipping a tool called
-       * `update_plan` or `get_page` would otherwise inherit that host row's
-       * `plan`/`read` class and be exempted from this list, while the `chat`
-       * profile mounts it and its own mutating handler runs.
-       */
-      const applies = op && (server.plugin ? op.contributedBy === 'plugin' : op.contributedBy !== 'plugin');
-      /**
-       * With no applicable row, the surface decides — and the two surfaces get
-       * opposite defaults, which is the same asymmetry the gate settles on.
-       *
-       * A HOST tool with no row is not listed. Over-listing is not caution here,
-       * it is a false prohibition, and a model that finds one "forbidden" tool
-       * working learns what the rest of the prohibitions are worth. (Until
+       * A HOST tool with no host row is not listed. Over-listing is not caution
+       * here, it is a false prohibition, and a model that finds one "forbidden"
+       * tool working learns what the rest of the prohibitions are worth. (Until
        * 0.2.99 `load_skill_file` was the host tool with no row; it now has a
        * read-class row, so it stays exempt through the class — listing it would
        * contradict <project_writing_skill>, which instructs the agent to call it.)
-       *
-       * A PLUGIN tool with no applicable row IS listed. The host has never seen
-       * that surface, `chat` admits writes so the gate passed it through, and
-       * the cost of guessing wrong runs the other way: a plugin write nobody
-       * asked the agent to hold off on. The price is a false prohibition on an
-       * undeclared plugin read — visible, and fixed by declaring it.
        */
-      if (!applies) {
-        if (server.plugin) names.add(tool);
-        continue;
-      }
+      const applies = op && op.contributedBy !== 'plugin';
+      if (!applies) continue;
       if (PLAN_MODE_EXEMPT_CLASSES.has(op!.opClass)) continue;
       names.add(tool);
     }

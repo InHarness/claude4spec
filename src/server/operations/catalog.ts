@@ -243,16 +243,16 @@ export interface OperationDeclaration {
    * Who contributes the implementation behind this name.
    *
    * `'host'` (the default) — this repo owns the operation. `'plugin'` — the name
-   * belongs to an entity plugin's `${type}-tools` server, declared here so the
-   * profile gate can classify it.
+   * belongs to an entity plugin's `${type}-tools` server and is declared here
+   * because the window carries a `spec-operation` record for it.
    *
-   * The distinction is a SECURITY boundary, not bookkeeping. The gate looks a
-   * tool up by NAME, so without it a plugin that ships a tool called
-   * `update_plan` is found in the catalog, read as class `plan`, and admitted to
-   * the read-only `ask` profile — its own mutating handler running on a
-   * connection that is supposed to be unable to mutate. A catalog row describes
-   * the operation the HOST implements; it may not vouch for someone else's code
-   * that happens to share its name.
+   * 2.1.78 (M44) — the profile gate no longer classifies a plugin's tool from a
+   * row: it reads the plugin's own `operationClass` declaration (base layer
+   * only). The marker still matters the other way round: a `'plugin'` row may
+   * not classify a HOST tool that happens to share its name, and a host row may
+   * not vouch for someone else's code — the gate never consults the catalog for
+   * a plugin server's tool, so a plugin shipping `update_plan` is not read as
+   * class `plan`.
    */
   readonly contributedBy?: 'host' | 'plugin';
   /**

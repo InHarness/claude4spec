@@ -232,10 +232,9 @@ describe('loadBuiltinEnvelopes', () => {
   });
 
   // 2.1.63 (M13 `m13pool0`): no silent last-wins inside the base any more — the
-  // envelope is just another base registration under the same rule.
-  // ASSUMPTION:dev-0005 — `ac-koperta-wbudowana-z-plugins-src-wno` still states the
-  // retired last-wins; the changed section wins, the AC is skiplisted.
-  it('[section:m13pool0] an envelope type already in the base is PLUGIN_TYPE_CONFLICT; envelopes are discovered FIRST, so an external package contributing their type is the one refused', async () => {
+  // envelope is just another base registration under the same rule. 2.1.78 —
+  // the criterion was rewritten to the same rule (dev-0005 closed).
+  it('[ac:ac-koperta-wbudowana-z-plugins-src-wno] [section:m13pool0] an envelope type already in the base is PLUGIN_TYPE_CONFLICT; envelopes are discovered FIRST, so an external package contributing their type is the one refused', async () => {
     writeEnvelope('c4s-plugin-api-contracts', { entry: '' });
     const registry = new PluginRegistryImpl();
     // A module of the same type already in the base, registered before

@@ -10,6 +10,7 @@ import {
   loadProjectOverlay,
 } from './overlay-loader.js';
 import { PluginRegistryImpl } from './registry.js';
+import { loadWorkspacePlugins } from './loader.js';
 import { loadOverlayLayer } from '../../workspace/project-skills.js';
 import type { PluginManifest, EntityContribution } from '../../../shared/plugin-host/manifest.js';
 
@@ -164,6 +165,51 @@ describe('overlay-loader', () => {
     });
     // The overlay stays unambiguous — only the first 'glossary' survives.
     expect(res.overlay?.listLocal().map((m) => m.type)).toEqual(['glossary']);
+  });
+
+  /**
+   * 2.1.78 (M33 `qgwtavuv`) — the whole collision matrix by layer, in one place:
+   * project-local × project-local and base × base are both PLUGIN_TYPE_CONFLICT
+   * for the second in load order; only project-local × base is a shadow, not an
+   * error. The base × base branch no longer tolerates a silent last-wins.
+   */
+  it('[ac:ac-kolizja-typu-wg-warstwy-dwa-project-loc] type collision by layer: overlay×overlay and base×base refuse the second (PLUGIN_TYPE_CONFLICT); overlay×base shadows', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      // base × base — the second base package is refused, the first keeps the type.
+      const registry = new PluginRegistryImpl();
+      const base = await loadWorkspacePlugins(registry, ['pkg-a', 'pkg-b'], async (spec: string) => ({
+        manifest: manifest({
+          name: spec,
+          contributes: { entities: [{ ...entity('glossary'), label: `glossary from ${spec}` }] },
+        }),
+      }));
+      expect(base.records.map((r) => [r.package, r.status, r.code])).toEqual([
+        ['pkg-a', 'loaded', undefined],
+        ['pkg-b', 'failed', 'PLUGIN_TYPE_CONFLICT'],
+      ]);
+      expect(registry.getAvailable('glossary')?.label).toBe('glossary from pkg-a');
+
+      // project-local × project-local — the second overlay package is refused.
+      const urlA = makePkg('a-pkg');
+      const urlB = makePkg('b-pkg');
+      const res = await loadProjectOverlay(
+        cwd,
+        fakeImporter({
+          [urlA]: { manifest: manifest({ name: 'a', contributes: { entities: [{ ...entity('glossary'), label: 'overlay a' }] } }) },
+          [urlB]: { manifest: manifest({ name: 'b', contributes: { entities: [{ ...entity('glossary'), label: 'overlay b' }] } }) },
+        }),
+      );
+      expect(res.records.find((r) => r.package === 'b-pkg')).toMatchObject({ status: 'failed', code: 'PLUGIN_TYPE_CONFLICT' });
+
+      // project-local × base — the overlay wins as a reported shadow, not an error.
+      const host = registry.consolidate({}, res.overlay);
+      expect(host.getAvailable('glossary')?.label).toBe('overlay a');
+      expect(host.shadowReport().map((s) => s.type)).toEqual(['glossary']);
+      expect(res.records.find((r) => r.package === 'a-pkg')?.status).toBe('loaded');
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('reports an incompatible-major hostApiVersion as `incompatible` with a migration descriptor', async () => {

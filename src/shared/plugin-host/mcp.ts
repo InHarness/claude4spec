@@ -51,7 +51,22 @@ export interface McpToolDeclaration {
    * interface; carried so the external HTTP mount can advertise them in `tools/list`.
    */
   readonly annotations?: McpToolAnnotations;
+  /**
+   * 2.1.78 (M13 `sxzegart`) — the operation class the plugin declared in
+   * `mcpTool()`'s sixth argument, absent when it declared none. Read by the
+   * context-type profile gate for a plugin server's tool; honoured only for a
+   * base-layer envelope (a project-local overlay's declaration is ignored, and
+   * no declaration means `write`). Never derived from `annotations`.
+   */
+  readonly operationClass?: McpToolOperationClass;
 }
+
+/**
+ * 2.1.78 (M13 `sxzegart`) — the class of a plugin tool's operation, for the
+ * profile gate. `read`: the operation writes nothing — its effects leave the
+ * specification's content unchanged. `write`: every other case.
+ */
+export type McpToolOperationClass = 'read' | 'write';
 
 /** The subset of the MCP `ToolAnnotations` hints the host sets. */
 export interface McpToolAnnotations {

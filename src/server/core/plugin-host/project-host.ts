@@ -88,6 +88,13 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
   // Project-local modules of THIS context, keyed by type. Empty when
   // `overlay === undefined` (parity with the base-only case).
   private readonly overlayModules = new Map<string, BackendModule>();
+  // 2.1.78 (M44) — the layer of every MCP server a plugin registered while
+  // mounting (see `pluginServerLayers`). Host-owned servers are not recorded.
+  private readonly serverLayers = new Map<string, 'base' | 'overlay'>();
+
+  pluginServerLayers(): ReadonlyMap<string, 'base' | 'overlay'> {
+    return this.serverLayers;
+  }
 
   constructor(
     private readonly registry: PluginRegistry,
@@ -210,6 +217,13 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
     for (const m of this.listEntities()) {
       const known = new Set(this.mcpServerFactories.keys());
       m.backend?.mount?.(ctx);
+      // 2.1.78 (M44) — every server this module registered belongs to its
+      // layer: the profile gate trusts a tool's declared `operationClass` only
+      // on a base-layer server, never on a project-local overlay's.
+      const layer = this.overlayModules.get(m.type) === m ? 'overlay' : 'base';
+      for (const name of this.mcpServerFactories.keys()) {
+        if (!known.has(name)) this.serverLayers.set(name, layer);
+      }
       // 2.1.57 (M13 `z7l89jhf`, M33 `m33load01` (d)) — a tool server a plugin
       // registered while mounting is built once here, at plugin load, so a tool
       // name it declares twice is refused now with `PLUGIN_TOOL_CONFLICT` rather

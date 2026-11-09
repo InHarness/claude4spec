@@ -213,10 +213,10 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
     // A consulted peer reads and may leave a plan. It cannot mutate the spec, and
     // it cannot consult onward (`peer`) or delegate (`turn`) — the recursion
     // guard is a property of the profile, so no channel can route around it.
-    // ASSUMPTION:dev-2613 — in the `mcp` channel `read` here also admits the
-    // catalogued type-specific reads of plugin servers (`get_range`), so a
-    // skeleton record and its windowed content stay on one connection (M12
-    // `4cli19xs`); the M12 `ask` row names only the common reads.
+    // 2.1.78 (M44) — `read` here also admits the tools of base-layer plugin
+    // servers DECLARED `operationClass: 'read'` (`get_range`, `get_overview`,
+    // `analyze_ac_against_entities`, `audit_ui_kit_components`), in every
+    // channel; undeclared and project-local plugin tools are `write`.
     operationClasses: new Set<OperationClass>(['read', 'plan']),
     pluginServers: 'all',
     requiresExplicitBriefTarget: false,

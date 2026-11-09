@@ -395,6 +395,24 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
     expect(JSON.stringify(migrationsBetween(0, Number.MAX_SAFE_INTEGER))).not.toMatch(/lineDiffHunks|getEntityService|maxTurns/);
   });
 
+  it('[section:m33load01] 2.1.78: the operation class of mcpTool (sxzegart) and the base PLUGIN_TYPE_CONFLICT (qgwtavuv) are unversioned records after the 2.1.65 entries, with no bump', () => {
+    const added = HOST_API_UNVERSIONED_CHANGES.filter((c) => c.release === '2.1.78');
+    expect(added.map((c) => c.kind)).toEqual(['slot-added', 'behaviour-changed']);
+    const [operationClass, typeConflict] = added;
+    expect(operationClass!.slot).toContain('operationClass?');
+    expect(operationClass!.summary).toContain('sxzegart');
+    expect(typeConflict!.slot).toContain('PLUGIN_TYPE_CONFLICT');
+    expect(typeConflict!.summary).toContain('qgwtavuv');
+    for (const c of added) {
+      expect(c.summary).toMatch(/no bump/);
+      expect(c.uiKitStable).toBeUndefined();
+    }
+    const releases = HOST_API_UNVERSIONED_CHANGES.map((c) => c.release);
+    expect(releases.indexOf('2.1.78')).toBe(releases.lastIndexOf('2.1.65') + 1);
+    expect(HOST_API_VERSION).toBe('2.1.0');
+    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0']);
+  });
+
   it('[section:m33load01] the composition of UI_KIT_STABLE_COMPONENTS is exactly what the registries record', () => {
     expect(sorted(recordedUiKitStableComponents())).toEqual(sorted(UI_KIT_STABLE_COMPONENTS));
   });

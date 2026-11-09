@@ -753,6 +753,33 @@ describe('release_diff — section window and sizes (2.1.5)', () => {
     expect(out.truncationHint).toContain('summaryOnly');
   });
 
+  /**
+   * 2.1.78 (M17) — the floor of the ladder. The window counts positions, not
+   * characters, so `sectionLimit: 1` is the smallest read: when its only
+   * section outgrows the budget on its own, the hint says the rest cannot be
+   * read through this operation and points at nothing further.
+   */
+  it('[ac:ac-release-diff-z-sectionlimit-1-ktorego] projection: sectionLimit 1 whose only section exceeds the budget → cut as text, truncated, and a hint that names no next offset and no further call', () => {
+    const out = run(bigPage(3, 'q'.repeat(DEFAULT_BUDGET_CHARS * 2)), { singlePath: true, sectionOffset: 1, sectionLimit: 1 });
+    const [p] = out.pages as MCPPageDelta[];
+    expect(p!.sections).toHaveLength(1);
+    expect(p!.sections[0]!.anchor).toBe('s0000001');
+    expect(p!.sections[0]!.truncated).toBe(true);
+    expect(p!.sections[0]!.content!.length).toBeGreaterThan(0);
+    expect(p!.sections[0]!.content!.length).toBeLessThan(DEFAULT_BUDGET_CHARS);
+    const hint = out.truncationHint!;
+    expect(hint).toContain('section at position 1 of page pages/big.md');
+    expect(hint).toContain('cannot be read through release_diff');
+    // No next window, no ladder rung, no other call.
+    expect(hint).not.toMatch(/sectionOffset:/);
+    expect(hint).not.toContain('sectionLimit');
+    expect(hint).not.toContain('summaryOnly');
+    expect(hint).not.toMatch(/continue with|retry/i);
+    // The rest of the ladder is unchanged for a window of two.
+    const two = run(bigPage(3, 'q'.repeat(DEFAULT_BUDGET_CHARS * 2)), { singlePath: true, sectionLimit: 2 });
+    expect(two.truncationHint).toContain("sectionOffset: 1, sectionLimit: 1");
+  });
+
   it('sections that do not fit resume through the section window, named in the hint', () => {
     const out = run(bigPage(20, 'w'.repeat(Math.floor(DEFAULT_BUDGET_CHARS / 8))), { singlePath: true });
     const [p] = out.pages as MCPPageDelta[];

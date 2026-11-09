@@ -140,6 +140,59 @@ describe('GET /api/releases/:from/diff/:to — `roots` refusal (2.1.8, M17 m17er
 });
 
 /**
+ * 2.1.78 (M17) — the floor of the section ladder over the REST channel
+ * (`view=operation`, the same core operation as the MCP tool). A stub service
+ * stands in for L2: the delta is what is under test's control, not its source.
+ */
+describe('GET /api/releases/:from/diff/:to?view=operation — the floor of the section ladder (2.1.78)', () => {
+  it('[ac:ac-release-diff-z-sectionlimit-1-ktorego] REST: sectionLimit 1 whose only section exceeds the budget → cut as text, truncated, and a hint naming no next offset and no further call', async () => {
+    const release = (id: number, name: string) => ({ id, name, description: '', createdBy: 'agent', createdAt: '2026-11-09T00:00:00.000Z' });
+    const snap = (id: number) => ({ release: release(id, `v${id}`), serializer_versions: {}, entities: [], pages: [] });
+    const stub = {
+      resolveReleaseId: (name: string) => name,
+      getReleaseSnapshot: (id: string) => snap(id === 'v1' ? 1 : 2),
+      getCurrentSnapshot: () => snap(0),
+      pageRootIds: () => ['pages'],
+      getReleaseDiff: async () => ({
+        from: { id: 1, name: 'v1' },
+        to: { id: 2, name: 'v2' },
+        entities: [],
+        pages: [
+          {
+            rootId: 'pages',
+            path: 'big.md',
+            op: 'modified',
+            added_sections: [
+              { kind: 'section', anchor: 's0000000', heading: 'S0', level: 2, parent: null, headingPath: [], content: 'q'.repeat(400_000) },
+              { kind: 'section', anchor: 's0000001', heading: 'S1', level: 2, parent: null, headingPath: [], content: 'small' },
+            ],
+            removed_sections: [],
+            modified_sections: [],
+            moved_sections: [],
+            frontmatter_diff: null,
+            xml_refs_diff: null,
+          },
+        ],
+      }),
+    } as unknown as ReleaseService;
+    const app = express().use(express.json()).use('/api/releases', releasesRouter(stub)).use(errorHandler);
+    const res = await request(app).get(
+      '/api/releases/v1/diff/v2?view=operation&include=pages&paths=pages/big.md&sectionOffset=0&sectionLimit=1',
+    );
+    expect(res.status).toBe(200);
+    const { data } = res.body as {
+      data: { pages: Array<{ sections: Array<{ content?: string; truncated?: boolean }> }>; truncationHint?: string };
+    };
+    expect(data.pages[0]!.sections).toHaveLength(1);
+    expect(data.pages[0]!.sections[0]!.truncated).toBe(true);
+    expect(data.pages[0]!.sections[0]!.content!.length).toBeGreaterThan(0);
+    expect(data.pages[0]!.sections[0]!.content!.length).toBeLessThan(400_000);
+    expect(data.truncationHint).toContain('cannot be read through release_diff');
+    expect(data.truncationHint).not.toMatch(/sectionOffset:|sectionLimit|summaryOnly|continue with|retry/i);
+  });
+});
+
+/**
  * 2.1.8 (M28 aqys9dje): with `git.enabled === true` and a detected repo, creating
  * a release commits — best-effort — the dir of every registry root + config.json,
  * with the message composed from the release's name and description. `enabled`

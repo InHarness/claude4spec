@@ -65,6 +65,10 @@ export function createAcToolsServer(deps: AcToolsDeps): McpServerFactory {
         return fail(err);
       }
     },
+    undefined,
+    // 2.1.78 (M44) — a read: the audit writes nothing, so read-only profiles
+    // (and the `ac-audit` subagent) keep it.
+    'read',
   );
 
   return createMcpServer({

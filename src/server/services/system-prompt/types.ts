@@ -53,6 +53,13 @@ export interface McpInventoryEntry {
    * distinction for the same reason.
    */
   plugin?: boolean;
+  /**
+   * 2.1.78 (M44) — on a plugin server, the tools whose EFFECTIVE class is
+   * `read` (declared `operationClass: 'read'` by a base-layer envelope), by the
+   * profile gate's own rule. Every other tool of a plugin server is a write.
+   * Absent on host servers, which are classified by the host catalog.
+   */
+  readTools?: readonly string[];
 }
 
 /**

@@ -68,11 +68,13 @@ export function assembleTurnMcpServers(args: {
   buildPool: (include: PoolSelector) => readonly TurnServerEntry[];
   handlerEntries: readonly TurnServerEntry[];
   pluginServerNames?: ReadonlySet<string>;
+  /** 2.1.78 — the plugin servers of a project-local overlay: their declared classes are ignored (`write`). */
+  overlayServerNames?: ReadonlySet<string>;
 }): TurnServerEntry[] {
   const handlerNames = new Set(args.handlerEntries.map(({ name }) => name));
   const merged = [
     ...args.buildPool(poolSelector(args.pluginServers, handlerNames)),
     ...args.handlerEntries,
   ];
-  return gateServers(args.contextType, merged, args.pluginServerNames);
+  return gateServers(args.contextType, merged, args.pluginServerNames, args.overlayServerNames);
 }

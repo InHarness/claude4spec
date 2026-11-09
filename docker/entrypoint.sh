@@ -20,8 +20,10 @@ set -euo pipefail
 # the production address). The flags' semantics and validation belong to
 # M31 / M24, not to this script. `--mode` is internal and gets no variable.
 #
-# ASSUMPTION:dev-0002 — extra container arguments (`$@`) are not forwarded to
-# the server, and a registration refused with a 4xx ends the container.
+# 2.1.78 (M01) — extra container arguments (`$@`) are NOT forwarded to the
+# server: the environment contract is the only input of the start. A
+# registration refused with a 4xx is final: logged, not retried, the server is
+# stopped and the container exits with code 1.
 
 PROJECT_DIR="${PROJECT_DIR:-/workspace/project}"
 PORT="${PORT:-3000}"

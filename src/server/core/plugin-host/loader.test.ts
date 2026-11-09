@@ -161,7 +161,7 @@ describe('loadWorkspacePlugins', () => {
     }
   });
 
-  it('[section:m13pool0] two base packages contributing the same entity type — the second is PLUGIN_TYPE_CONFLICT, the first keeps the type, the start goes on', async () => {
+  it('[ac:ac-dwa-pakiety-bazy-workspace-npm-wnoszac] [section:m13pool0] two base packages contributing the same entity type — the second is PLUGIN_TYPE_CONFLICT, the first keeps the type, the start goes on', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       const registry = new PluginRegistryImpl();

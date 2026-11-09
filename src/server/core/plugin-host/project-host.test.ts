@@ -70,6 +70,41 @@ describe('consolidate — overlay', () => {
     ]);
   });
 
+  /**
+   * 2.1.78 (M44) — the gate trusts a tool's declared `operationClass` only on a
+   * base-layer server, so the host records, at `mountBackend`, which layer
+   * registered each plugin server. A host-owned server registered afterwards
+   * is not a plugin server and is not recorded.
+   */
+  it('records the layer of every MCP server a plugin registers while mounting (base vs overlay)', () => {
+    const withServer = (type: string): BackendModule => ({
+      ...mod(type),
+      backend: {
+        mount: (ctx: MountContext) =>
+          ctx.registerMcpServer(`${type}-tools`, () =>
+            createMcpServer({
+              name: `${type}-tools`,
+              tools: [mcpTool('peek', 'peek', { x: z.string().optional() }, async () => ({ content: [] }), undefined, 'read')],
+            }),
+          ),
+      },
+    });
+    const registry = new PluginRegistryImpl();
+    registerFixtureEnvelope(registry, withServer('endpoint'));
+    const host = registry.consolidate({}, overlayOf([withServer('glossary')]));
+    const ctx = { registerMcpServer: (n: string, f: () => never) => host.registerMcpServer(n, f) } as unknown as MountContext;
+    host.mountBackend(ctx);
+    host.registerMcpServer('reference-tools', () => createMcpServer({ name: 'reference-tools', tools: [] }));
+
+    expect([...host.pluginServerLayers!()].sort()).toEqual([
+      ['endpoint-tools', 'base'],
+      ['glossary-tools', 'overlay'],
+    ]);
+    // The declared class rides the built handle, where the gate reads it.
+    const built = host.buildMcpServers().find((s) => s.name === 'endpoint-tools')!;
+    expect(built.server.tools?.[0]?.operationClass).toBe('read');
+  });
+
   it('an overlay-only type carries no shadow entry', () => {
     const host = baseRegistry('endpoint').consolidate({}, overlayOf([mod('glossary')]));
     expect(host.shadowReport()).toEqual([]);

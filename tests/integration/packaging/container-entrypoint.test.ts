@@ -131,8 +131,9 @@ async function freePort(): Promise<number> {
 }
 
 /** Runs the entrypoint as the container would, with exactly `env` (plus PATH/HOME and the stub's knobs). */
-function startContainer(env: Record<string, string>, extraPath?: string): void {
-  child = spawn('bash', [ENTRYPOINT], {
+function startContainer(env: Record<string, string>, extraPath?: string, containerArgs: string[] = []): void {
+  // `containerArgs` are what `docker run <image> <args…>` appends after the entrypoint.
+  child = spawn('bash', [ENTRYPOINT, ...containerArgs], {
     cwd: appDir,
     env: {
       PATH: extraPath ? `${extraPath}${path.delimiter}${process.env.PATH ?? ''}` : (process.env.PATH ?? ''),
@@ -384,10 +385,57 @@ describe('container entrypoint — project registration (M01 uxlvmu4n, 3zqke46q)
     expect(await exited).toBe(0);
   });
 
-  it('a registration the server refuses with a 4xx ends the container (ASSUMPTION:dev-0002)', async () => {
+  // 2.1.78 (M01) — the 4xx semantics are the spec's now (dev-0002 closed): a 4xx
+  // is a final refusal, logged, never retried; the server is stopped and the
+  // container ends with exit code 1.
+  it('[ac:ac-po-odpowiedzi-4xx-na-rejestracje-proj] after a 4xx answer to the PROJECT_DIR registration the entrypoint does not retry it', async () => {
+    for (const refuse of ['400', '409', '422']) {
+      const port = await freePort();
+      startContainer({ PORT: String(port), PROJECT_DIR: path.join(scratch, 'project'), STUB_REFUSE: refuse });
+      await exited;
+      // Give a (wrong) retry loop time to send another request before counting.
+      await new Promise((r) => setTimeout(r, 1_200));
+      const requests = readRecords().filter((r) => r.request !== undefined);
+      expect(requests, refuse).toHaveLength(1);
+      expect(requests[0]!.status, refuse).toBe(Number(refuse));
+      fs.rmSync(recordPath, { force: true });
+    }
+  });
+
+  it('[ac:ac-kontener-ktorego-rejestracja-project] a container whose PROJECT_DIR registration ends with a 4xx exits with code 1, its server stopped', async () => {
     const port = await freePort();
     startContainer({ PORT: String(port), PROJECT_DIR: path.join(scratch, 'project'), STUB_REFUSE: '400' });
     expect(await exited).toBe(1);
-    expect(readRecords().filter((r) => r.request !== undefined)).toHaveLength(1);
+    // The server process the entrypoint started does not outlive the container.
+    const pid = readRecords().find((r) => r.pid)!.pid!;
+    const alive = (() => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+    expect(alive).toBe(false);
+  });
+});
+
+describe('container entrypoint — extra container arguments (M01, 2.1.78)', () => {
+  it('[ac:ac-dodatkowe-argumenty-przekazane-konten] extra arguments passed to the container do not change the flags the server starts with', async () => {
+    const env = (port: number) => ({ PORT: String(port), PROJECT_DIR: path.join(scratch, 'project') });
+    const baselinePort = await freePort();
+    const baseline = await startArgv(env(baselinePort));
+    child!.kill('SIGTERM');
+    await exited;
+    fs.rmSync(recordPath, { force: true });
+
+    const port = await freePort();
+    startContainer(env(port), undefined, ['--mode', 'dev', '--port', '1', '--cwd', '/elsewhere', '--workspace', 'other', '--open', 'serve']);
+    const argv = await waitFor(() => readRecords().find((r) => r.argv)?.argv, 'the server start');
+    // Exactly the flags the environment contract yields — only the port differs, by PORT.
+    expect(argv).toEqual(baseline.map((a) => (a === String(baselinePort) ? String(port) : a)));
+    expect(argv).not.toContain('serve');
+    expect(argv).not.toContain('--cwd');
+    expect(flagValue(argv, '--mode')).toBe('prod');
   });
 });

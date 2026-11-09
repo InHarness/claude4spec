@@ -682,6 +682,17 @@ export interface ProjectPluginHost {
   registerMcpServer(name: string, factory: () => McpServerFactory): void;
 
   /**
+   * 2.1.78 (M44, M13 `sxzegart`) — the layer of each MCP server a PLUGIN
+   * registered while `mountBackend` ran it: `'base'` for a workspace,
+   * npm/preinstalled or built-in envelope, `'overlay'` for a project-local one.
+   * Host-owned servers (`entity-tools`, `reference-tools`, …) are absent. The
+   * profile gate reads it: a tool's declared `operationClass` is trusted only on
+   * a base-layer server. Optional so a hand-rolled test double still type-checks;
+   * absent means "no plugin server recorded".
+   */
+  pluginServerLayers?(): ReadonlyMap<string, 'base' | 'overlay'>;
+
+  /**
    * 0.2.2 — rename listeners contributed by modules at mount time. The host
    * collects them; `ReferencesService` fans a rename out to all of them so no
    * host code has to know which types embed which other type's slug.

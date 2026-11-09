@@ -2301,14 +2301,15 @@ export function registerCoreOperations(): void {
 
   // ── M13 type-specific operations (per §7 of the release) ──────────────────
   //
-  // The operations entity plugins declare in their `backend.mcpServer` slot.
-  // Declared here for the same reason as the entity writes above: the profile
-  // gate can only withhold what the catalog can classify, and `spreadsheet`'s
-  // eight operations include six that mutate a specification.
+  // The operations entity plugins declare in their `backend.mcpServer` slot
+  // that the window carries a `spec-operation` record for (`link_dto`,
+  // `unlink_dto`): the row answers for the record's channels and renderings.
   //
-  // These live on `${type}-tools` servers, which for a restrictive profile are
-  // additionally FAIL-CLOSED in `profile-gate.ts` — this list makes the reads
-  // reachable again rather than being swept up with the writes.
+  // 2.1.78 (M44) — a row here is NOT what classifies a plugin tool for the
+  // profile gate any more. A plugin server's tool takes its class from the
+  // plugin's own `mcpTool(..., operationClass)` declaration (base layer only;
+  // `write` when undeclared or project-local), so plugin operations with no
+  // record have no row at all.
 
   const typeOp = (
     name: string,
@@ -2324,10 +2325,10 @@ export function registerCoreOperations(): void {
       scope: 'project',
       mediation: 'direct',
       opClass,
-      // These names belong to plugin `${type}-tools` servers, so the gate may
-      // honour them ONLY for a tool arriving from such a server. Without the
-      // marker, a plugin shipping a tool named after a host operation would
-      // inherit that operation's class — see `contributedBy` in `catalog.ts`.
+      // These names belong to plugin `${type}-tools` servers: the marker keeps
+      // the row from classifying a HOST tool that shares the name — see
+      // `contributedBy` in `catalog.ts`. (The gate classifies the plugin's own
+      // tool by its declaration, not by this row.)
       contributedBy: 'plugin',
       inputSchema,
       errorCodes: opClass === 'write' ? ['NOT_FOUND', 'VALIDATION'] : ['NOT_FOUND'],
@@ -2360,17 +2361,15 @@ export function registerCoreOperations(): void {
    * (plugin ↔ core boundary), so the row stays silent about which one.
    */
 
-  // spreadsheet — sheet by slug, cells 1-based inclusive (r1,c1)-(r2,c2).
-  typeOp('get_overview', 'Shape of a spreadsheet: sheets, dimensions, populated ranges.', 'read', true);
-  typeOp('get_range', 'Read a rectangular window of cells.', 'read', true);
-  typeOp('set_cell', 'Write one cell. Idempotent; an empty string removes it from the index.', 'write', true);
-  typeOp('set_range', 'Write a rectangle of cells. Idempotent.', 'write', true);
-  // Not idempotent: these shift every index past the insertion/removal point, so
-  // cell coordinates are not stable across them.
-  typeOp('insert_row', 'Insert a row, reindexing every row past it.', 'write', false);
-  typeOp('insert_column', 'Insert a column, reindexing every column past it.', 'write', false);
-  typeOp('delete_row', 'Delete a row, reindexing every row past it.', 'write', false);
-  typeOp('delete_column', 'Delete a column, reindexing every column past it.', 'write', false);
+  /**
+   * 2.1.78 (M44, M13 `sxzegart`) — no rows for `spreadsheet`'s eight operations,
+   * `ac`'s `analyze_ac_against_entities` or `ui-kit-component`'s
+   * `audit_ui_kit_components`. Their class comes from the plugin's own
+   * declaration (`mcpTool(..., operationClass)`), which the profile gate reads
+   * off the mounted server — not from this catalog. The rows existed only to
+   * classify those tools for the gate; the window carries no `spec-operation`
+   * record for any of them.
+   */
 
   /**
    * endpoint — 2.1.26, the M13 records `link-dto` / `unlink-dto`. Both idempotent
@@ -2401,37 +2400,6 @@ export function registerCoreOperations(): void {
   });
   typeOp('link_dto', 'Bind a DTO to an endpoint in one relation role. Idempotent — an identical binding already present is a no-op.', 'write', true, DTO_LINK_SHAPE, dtoLinkOverrides('link_dto'));
   typeOp('unlink_dto', 'Remove a DTO binding from an endpoint; without statusCode every binding of the pair in that relation. Idempotent — nothing to remove is a no-op.', 'write', true, DTO_LINK_SHAPE, dtoLinkOverrides('unlink_dto'));
-
-  // ac — read-only analysis. `analyze_ac_against_entities` is idempotent in
-  // STATE but not in content: its answer comes from an LLM.
-  // 2.1.63 — no `validate_diagram` row: `diagram-tools` ships in the prebuilt
-  // `diagrams` envelope, whose contract is the `diagrams` project's, not this
-  // catalog's. Undeclared, it follows the fail-closed rule for plugin tools.
-  typeOp('analyze_ac_against_entities', 'Analyse acceptance criteria against the entity graph. Unanalysable input lands in `skipped_reasons[]`, not in an error.', 'read', true);
-
-  /**
-   * 2.1.28 (c4s-plugin-host-ui-kit-components `6o1rfh21`) — the one operation of
-   * `ui-kit-component`. Read-only and idempotent: it reports violations of the
-   * cross-field and cross-record rules and writes nothing. `cli` is n/a — a
-   * type-specific surface with no sense in the command surface; `rest` reaches
-   * it through the generic host proxy.
-   */
-  typeOp(
-    'audit_ui_kit_components',
-    'Check ui-kit-component records against the cross-field and cross-record rules the schema cannot express. Reports, never fixes.',
-    'read',
-    true,
-    { slugs: z.array(z.string()).optional(), rules: z.array(z.string()).optional() },
-    {
-      contentInput: 'n/a',
-      channels: {
-        internal: direct(),
-        cli: na('powierzchnia typo-specyficzna, brak sensu w powierzchni komendowej'),
-        mcp: direct(),
-        rest: via('call_type_tool', 'generic host proxy — the plugin contributes no router'),
-      },
-    },
-  );
 
   // ── M05 Agent turn ────────────────────────────────────────────────────────
 

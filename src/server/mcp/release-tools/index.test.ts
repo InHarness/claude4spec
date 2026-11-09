@@ -23,6 +23,7 @@ import type { PagesService } from '../../services/pages.js';
 import { RELEASE_TOOL_RECORDS } from '../../../../tests/helpers/release-tool-records.js';
 import { expectToolMatchesToolRecord } from '../../../../tests/helpers/write-tool-records.js';
 import { expectOperationMatchesRecord } from '../../../../tests/helpers/operation-records.js';
+import { DEFAULT_BUDGET_CHARS } from '../../discovery/budget.js';
 
 /**
  * `release_diff`'s SECOND ENGINE — `toReleaseName: "current"`.
@@ -421,6 +422,57 @@ describe('release_diff — `paths` / `roots` validation', () => {
     );
     expect(tool.description).toContain('{ rootId, path, op, sections, size }');
     expect(paths?.description).toContain('Exactly one element enables the section window and, in light mode, the section map.');
+  });
+});
+
+/**
+ * 2.1.78 (M17) — the floor of the section ladder, through the MCP channel
+ * (`release-tools` / `release_diff`): the one section of a `sectionLimit: 1`
+ * window outgrows the response budget on its own.
+ */
+describe('release_diff — the floor of the section ladder (2.1.78)', () => {
+  it('[ac:ac-release-diff-z-sectionlimit-1-ktorego] MCP release_diff: the only section of a sectionLimit 1 window, over the budget on its own, comes back cut with truncated: true and a hint naming no next offset and no further call', async () => {
+    const big: FileDiff = {
+      ...emptyPage('pages/big.md', 'modified'),
+      added_sections: [
+        { kind: 'section', anchor: 's0000000', heading: 'S0', level: 2, parent: null, headingPath: [], content: 'q'.repeat(DEFAULT_BUDGET_CHARS * 2) },
+        { kind: 'section', anchor: 's0000001', heading: 'S1', level: 2, parent: null, headingPath: [], content: 'small' },
+      ] as unknown as FileDiff['added_sections'],
+    };
+    const releaseService = {
+      getReleaseDiff: async () => ({ from: { id: 1, name: 'v1' }, to: { id: 2, name: 'v2' }, entities: [], pages: [big] }),
+      resolveReleaseId: (name: string) => name,
+      getReleaseSnapshot: () => V1_SNAPSHOT,
+      getCurrentSnapshot: () => CURRENT_SNAPSHOT,
+    } as unknown as ReleaseService;
+    const server = createReleaseToolsServer({
+      releaseService,
+      gitService: {} as GitService,
+      ws: { broadcast: () => {} } as unknown as WsEmitter,
+      roots: () => ROOTS,
+    });
+    const tool = server.tools.find((t) => t.name === 'release_diff')!;
+    const res = (await tool.handler(
+      { fromReleaseName: 'v1', toReleaseName: 'v2', include: ['pages'], paths: ['pages/big.md'], sectionOffset: 0, sectionLimit: 1 },
+      {} as never,
+    )) as { isError?: boolean; content: Array<{ text: string }> };
+    expect(res.isError).toBeFalsy();
+    const body = JSON.parse(res.content[0]!.text) as {
+      pages: Array<{ sections: Array<{ anchor: string; content?: string; truncated?: boolean }> }>;
+      truncationHint?: string;
+    };
+    const [section] = body.pages[0]!.sections;
+    expect(body.pages[0]!.sections).toHaveLength(1);
+    expect(section!.anchor).toBe('s0000000');
+    expect(section!.truncated).toBe(true);
+    expect(section!.content!.length).toBeGreaterThan(0);
+    expect(section!.content!.length).toBeLessThan(DEFAULT_BUDGET_CHARS * 2);
+    const hint = body.truncationHint!;
+    expect(hint).toContain('cannot be read through release_diff');
+    expect(hint).not.toMatch(/sectionOffset:/);
+    expect(hint).not.toContain('sectionLimit');
+    expect(hint).not.toContain('summaryOnly');
+    expect(hint).not.toMatch(/continue with|retry/i);
   });
 });
 

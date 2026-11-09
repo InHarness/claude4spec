@@ -61,8 +61,11 @@ export { HOST_API_VERSION } from '../../shared/plugin-host/manifest.js';
  * host recognises is to throw this exact class.
  */
 export { DomainError } from '../services/tags.js';
-// MCP builder facade (0.1.133) — VALUES re-exported from the internal vendor.
-export { mcpTool } from '@inharness-ai/agent-adapters';
+// MCP builder facade (0.1.133). 2.1.78 (M13 `sxzegart`) — `mcpTool` is the
+// facade's OWN wrapper now, not a bare vendor re-export: it takes the sixth,
+// C4S-owned `operationClass?` parameter the profile gate reads.
+export { mcpTool, type FacadeMcpToolDefinition } from './create-mcp-server.js';
+export type { McpToolOperationClass, McpToolAnnotations } from '../../shared/plugin-host/mcp.js';
 /**
  * 0.2.13 — `createMcpServer` is now the facade's OWN wrapper rather than a bare
  * vendor re-export: it keeps the declared tool list on the handle so the host can
