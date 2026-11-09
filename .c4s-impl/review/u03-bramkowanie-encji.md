@@ -1,5 +1,0 @@
-# u03 — non-blocking findings (round 1)
-
-- **rev-0001** `src/server/services/release.ts:396` — `entitiesCapability()` is dead code: nothing in src/ or tests/ calls it. Its doc comment says the shadow acceptance reads it, but the acceptance path (line ~671) reads the private `this.hasEntities` field directly. Either delete the getter or have the acceptance call it, so the comment stays true.
-- **rev-0002** `src/client/tiptap/contextSpec.ts:204` — `editorEntitiesCapability()` is exported but nothing uses it, not even the new contextSpec test. `resolveContextSpec` reads the module variable directly. This is unused API surface and can be removed.
-- **rev-0003** `src/server/discovery/types.ts:91` — The doc on `DiscoveryDeps.entities` says `find_references` is refused as not found when the flag is false. The discovery core never reads `deps.entities` for findReferences; only getSections and checkConsistency read it. find_references disappears only because `reference-tools` drops the tool and `/references` is not mounted. The comment describes behaviour this dependency does not have.
