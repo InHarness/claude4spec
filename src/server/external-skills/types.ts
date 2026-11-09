@@ -27,6 +27,13 @@ export interface ExternalSkillContext {
    * without `/` renders the same skill.
    */
   publicUrl: string;
+  /**
+   * 2.1.77 (M22 `m22dserv`, `8tvwx2ry`): the project's capability set. Decides the
+   * skill set (`c4s-brief-implementer` only with `briefs`) and the sections of the
+   * texts that depend on briefs (Path 2 of `c4s-refactor`) or on entities (the
+   * entity reads of `c4s-spec-reader` and `c4s-refactor`). Never reaches the text.
+   */
+  capabilities: ReadonlySet<string>;
 }
 
 /** 0.1.104 M22 — the three skills renderable via `buildExternalSkillsBundle`. */

@@ -308,6 +308,27 @@ export type McpChannelProfile = keyof typeof MCP_CHANNEL_PROFILES;
 /** The accepted names, in the table's order. */
 export const MCP_CHANNEL_PROFILE_NAMES = Object.keys(MCP_CHANNEL_PROFILES) as readonly McpChannelProfile[];
 
+/**
+ * 2.1.77 (M12 `ikg2bklu`) — the capability each row of the `mcp` table requires.
+ * `brief` and `patch` render the turns of M21/M23, which exist only with `briefs`.
+ */
+const MCP_CHANNEL_PROFILE_REQUIRES: Readonly<Record<McpChannelProfile, readonly string[]>> = {
+  chat: [],
+  ask: [],
+  brief: ['briefs'],
+  patch: ['briefs'],
+};
+
+/**
+ * 2.1.77 (M12 `ikg2bklu`) — the `mcp` table of ONE project: with `briefs` four
+ * profiles (`chat`, `ask`, `brief`, `patch`), without it two (`chat`, `ask`). A
+ * connection naming a profile outside this list is refused at set-up, before any
+ * catalog is exposed — the project's registry does not know the value.
+ */
+export function mcpChannelProfilesFor(capabilities: { has(name: string): boolean }): readonly McpChannelProfile[] {
+  return MCP_CHANNEL_PROFILE_NAMES.filter((p) => MCP_CHANNEL_PROFILE_REQUIRES[p].every((c) => capabilities.has(c)));
+}
+
 /** Is `value` a row of the closed `mcp` table? Registry membership alone is not enough. */
 export function isMcpChannelProfile(value: string): value is McpChannelProfile {
   return Object.prototype.hasOwnProperty.call(MCP_CHANNEL_PROFILES, value);

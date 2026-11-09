@@ -252,22 +252,22 @@ export function assertRegisteredContextType(
  * (Agent/Task) są wymuszone konstrukcją `tools` — zero narzędzi mutujących. */
 
 /** English per "English UI/API messages": agent-facing instruction, same register as system prompt. */
-const specExplorePrompt = (builtinsEnabled: boolean): string => `You are a read-only explorer of the CURRENT specification (pages + entities + sections).
+const specExplorePrompt = (builtinsEnabled: boolean, entities = true): string => `You are a read-only explorer of the CURRENT specification (${entities ? 'pages + entities + sections' : 'pages + sections'}).
 
 Your job: explore on the parent's behalf and report CONCISE findings — file paths, section anchors, and entity slugs — never the full bulk you read. You exist to keep the parent's context small.
 
-Tools: read-only spec operations on \`reference-tools\` — \`list_pages\` (which pages exist), \`search_pages\` (phrase or regex over the prose; modes are a cost ladder count -> map -> hits, and the DEFAULT is \`map\` — identity rows with no prose, so pass \`mode: \"hits\"\` explicitly when you need the text. A hit is a SECTION carrying \`matchCount\`; feed its \`anchor\` to \`get_sections\`. Narrow the scan with \`pathInclude\`/\`pathExclude\` before it opens files, or \`anchors\` to name sections outright), \`get_page_outline\` + \`get_sections\` (a page's headings as a tree, then the body of EVERY anchor you need in one call), \`get_page\` (a whole page as sections keyed by anchor, frontmatter and preamble as fields) — plus the read-only entity graph (get_*/list_*, find_references, check_consistency).${builtinsEnabled ? ' Read/Grep/Glob are also available for the rest of the repository.' : ' There are no built-in file tools here — every intent they would serve is covered above: list_pages for Glob, search_pages for Grep, get_page / get_sections for Read.'}
+Tools: read-only spec operations on \`reference-tools\` — \`list_pages\` (which pages exist), \`search_pages\` (phrase or regex over the prose; modes are a cost ladder count -> map -> hits, and the DEFAULT is \`map\` — identity rows with no prose, so pass \`mode: \"hits\"\` explicitly when you need the text. A hit is a SECTION carrying \`matchCount\`; feed its \`anchor\` to \`get_sections\`. Narrow the scan with \`pathInclude\`/\`pathExclude\` before it opens files, or \`anchors\` to name sections outright), \`get_page_outline\` + \`get_sections\` (a page's headings as a tree, then the body of EVERY anchor you need in one call), \`get_page\` (a whole page as sections keyed by anchor, frontmatter and preamble as fields) ${entities ? '— plus the read-only entity graph (get_*/list_*, find_references, check_consistency).' : '— plus check_consistency. This project has no entities, so there is no entity graph to read.'}${builtinsEnabled ? ' Read/Grep/Glob are also available for the rest of the repository.' : ' There are no built-in file tools here — every intent they would serve is covered above: list_pages for Glob, search_pages for Grep, get_page / get_sections for Read.'}
 
 Shape of \`get_sections\`: ONE ITEM PER SECTION. A section's \`body\` is its OWN prose, ending before its first child heading — never its children's. With \`includeSubtree: true\` every section beneath an anchor comes back as its own item, directly behind it in document order; read the tree from \`heading_level\` and position. Without the flag, a parent's children are simply not in the response — to list them, call \`get_page_outline\`.
 
 Two different cuts, two different remedies (you are the one who calls this in bulk, so you are the one who hits them; the envelope's \`message\` names which applied):
 - ITEM CEILING: the subtree expansion produced more items than one response carries. Every anchor you asked for is still there; the expansion is cut to a prefix and the rest are ABSENT — no item, no marker. Do NOT retry with fewer anchors (you cannot see what is missing): call \`get_page_outline\` for the page, pick the anchors you need, and call \`get_sections\` with exactly those.
-- RESPONSE BUDGET: items past it keep their coordinates, lose \`body\`, and carry \`truncated: true\` with \`edges\` — the outgoing references of that section's OWN body: \`sectionRefs\` (anchors), \`entityEmbeds\` (type + slug), \`pageLinks\` (rootId + path). One case keeps a partial body — a single section too large for the whole budget comes back clipped, with the prose it did fit; keep that prefix, re-fetching returns the same bytes. Do NOT repeat the same batch (it is cut at the same place, deterministically): pick the few anchors from those \`edges\` that lead to what the parent asked about and call \`get_sections\` again with just those. Follow an embedded entity with \`get_entities\` using the \`slug\` from \`entityEmbeds\`.
+- RESPONSE BUDGET: items past it keep their coordinates, lose \`body\`, and carry \`truncated: true\` with \`edges\` — the outgoing references of that section's OWN body: \`sectionRefs\` (anchors), \`entityEmbeds\` (type + slug), \`pageLinks\` (rootId + path). One case keeps a partial body — a single section too large for the whole budget comes back clipped, with the prose it did fit; keep that prefix, re-fetching returns the same bytes. Do NOT repeat the same batch (it is cut at the same place, deterministically): pick the few anchors from those \`edges\` that lead to what the parent asked about and call \`get_sections\` again with just those.${entities ? ' Follow an embedded entity with \`get_entities\` using the \`slug\` from \`entityEmbeds\`.' : ''}
 - An item with no \`edges\` and no \`truncated\` carried its whole own body; its references are in the prose you already have. Child sections are never inside a parent's \`edges\` — they are items of their own, or listed by \`get_page_outline\`.
 
 Hard rules:
 - NEVER mutate anything (no create/update/delete; you have no such tools).
-- Report pointers (paths / anchors / slugs), not dumps. The parent decides; you locate.`;
+- Report pointers (${entities ? 'paths / anchors / slugs' : 'paths / anchors'}), not dumps. The parent decides; you locate.`;
 
 const diffExplorePrompt = (): string => `You are a read-only explorer of ONE SLICE of a HISTORICAL release diff, working for a parent that is authoring a release brief.
 
@@ -310,29 +310,45 @@ function entityReadMcpTools(pluginHost: ProjectPluginHost): string[] {
 
 /** `spec-explore`: read-only exploration of the current spec (entity graph). Built per-turn
  *  because the entity-graph toolset depends on which entity plugins are mounted. */
-function buildSpecExploreSubagent(pluginHost: ProjectPluginHost, builtinsEnabled: boolean): SubagentDefinition {
+function buildSpecExploreSubagent(
+  pluginHost: ProjectPluginHost,
+  builtinsEnabled: boolean,
+  entities = true,
+): SubagentDefinition {
+  /**
+   * 2.1.77 (M45 `37ogwcgx`): the entity-graph half of the MCP allow-list exists only
+   * with the capability `entities`. Without it the enumeration has no entity server
+   * to walk, so the list keeps the `reference-tools` rows of the definition table
+   * (and the skill channel) only — no `entity-tools` name, no per-type read tool.
+   */
+  const entityGraph = entities
+    ? [
+        // M13: CRUD (incl. reads) moved to the generic entity-tools server, composed
+        // by the host — no longer discoverable by scanning per-type mcpToolsLine
+        // (entityReadMcpTools below now only catches a future custom server that
+        // happens to expose a get_/list_ tool, which none currently do).
+        'mcp__entity-tools__get_entities',
+        'mcp__entity-tools__list_entities',
+        'mcp__entity-tools__search_entities',
+        'mcp__entity-tools__describe_entity_type',
+        'mcp__entity-tools__resolve_identity',
+        ...entityReadMcpTools(pluginHost),
+        // `find_references` is rendered by `reference-tools` only with `entities` (M19 `wjjr1oc0`).
+        'mcp__reference-tools__find_references',
+      ]
+    : [];
   return {
     name: 'spec-explore',
     description:
       'Read-only explorer of the CURRENT spec (pages, entities, sections). Delegate to it to LOCATE things — paths, section anchors, entity slugs — without pulling bulk into your own context. Returns concise pointers, not full dumps. Use PROACTIVELY when discovery spans more than one channel or more than ~2 read calls.',
-    prompt: specExplorePrompt(builtinsEnabled),
+    prompt: specExplorePrompt(builtinsEnabled, entities),
     tools: [
       'Read',
       'Grep',
       'Glob',
-      // M13: CRUD (incl. reads) moved to the generic entity-tools server, composed
-      // by the host — no longer discoverable by scanning per-type mcpToolsLine
-      // (entityReadMcpTools below now only catches a future custom server that
-      // happens to expose a get_/list_ tool, which none currently do).
-      'mcp__entity-tools__get_entities',
-      'mcp__entity-tools__list_entities',
-      'mcp__entity-tools__search_entities',
-      'mcp__entity-tools__describe_entity_type',
-      'mcp__entity-tools__resolve_identity',
-      ...entityReadMcpTools(pluginHost),
+      ...entityGraph,
       // reference-tools is cross-cutting (not an entity), so its read tools are listed explicitly
       // — `<tooling>` derives them from the mount, but this allow-list has no mount to read.
-      'mcp__reference-tools__find_references',
       'mcp__reference-tools__check_consistency',
       'mcp__reference-tools__get_page_outline',
       // 0.2.3 item 14 stage 1: the domain replacements for Glob / Grep / Read
@@ -404,6 +420,14 @@ export function subagentsFor(
   /** 0.2.87 (M45): names of the MCP servers mounted for this turn — plugin contributions
    *  are intersected with them. Omitted = no intersection. */
   mountedMcpServers?: ReadonlySet<string>,
+  /**
+   * 2.1.77 (M45 `37ogwcgx`): the project's capability set. Without `entities` the
+   * `spec-explore` allow-list carries no entity-server tool; without `briefs` the
+   * built-in `diff-explore` is never built — no turn of such a project has it in
+   * its `subagents` array (its only row, `brief`, is not registered either, M44
+   * `1j39ajh8`). Absent (rigs) = every capability.
+   */
+  capabilities?: { has(name: string): boolean },
 ): SubagentDefinition[] {
   /**
    * 0.2.53 mounted NO subagent at all while the built-ins were denied, and the reason was
@@ -424,6 +448,8 @@ export function subagentsFor(
    * PROMPT, which must stop promising file tools it will not have.
    */
   const { subagent } = CONTEXT_TYPE_REGISTRY[contextType];
+  const entities = capabilities ? capabilities.has('entities') : true;
+  const briefs = capabilities ? capabilities.has('briefs') : true;
   /**
    * The two built-ins declare no `maxTurns` of their own and never pass through
    * `hostFrame()`, so `withTurnBudget` is what gives them the host default and states the
@@ -431,26 +457,28 @@ export function subagentsFor(
    * does not actually carry would be the host lying to the model, which is the one thing
    * the frame exists not to do.
    */
-  const builtin = withTurnBudget(
-    sanitizeSubagentDefinition(
-      subagent === 'diff-explore'
+  const definition: SubagentDefinition | null =
+    subagent === 'diff-explore'
+      ? briefs
         ? buildDiffExploreSubagent()
-        : buildSpecExploreSubagent(pluginHost, builtinsEnabled),
-    ),
-    DEFAULT_SUBAGENT_TURNS,
-  );
+        : null
+      : buildSpecExploreSubagent(pluginHost, builtinsEnabled, entities);
+  const builtin = definition
+    ? withTurnBudget(sanitizeSubagentDefinition(definition), DEFAULT_SUBAGENT_TURNS)
+    : null;
   // Optional call: several fixtures reach this function through an
   // `as unknown as ProjectPluginHost` cast that predates the method.
   const contributed = resolvePluginSubagents({
     contextType,
     contributions: pluginHost.listSubagents?.() ?? [],
     hasSkillSlug,
-    taken: new Set([builtin.name]),
+    // Both built-in names stay reserved even when a definition is not built here.
+    taken: new Set(builtin ? [builtin.name] : ['diff-explore']),
     ...(mountedMcpServers
       ? { surface: { mcpServers: mountedMcpServers, builtins: new Set(CLAUDE_CODE_ALL_BUILTINS) } }
       : {}),
   });
-  return [builtin, ...contributed];
+  return builtin ? [builtin, ...contributed] : contributed;
 }
 
 /* ─────────────────────────── M48: the system prompt ───────────────────────────

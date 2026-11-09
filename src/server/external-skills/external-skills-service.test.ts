@@ -10,6 +10,7 @@ import {
   buildExternalSkillsBundle,
   writeFileSet,
   externalSkillsMetadata,
+  SPEC_CAPABILITIES,
   isSkillSlug,
   ALL_SKILL_SLUGS,
 } from './external-skills-service.js';
@@ -28,6 +29,7 @@ const FIXTURE_CTX: ExternalSkillContext = {
   id: 'my-spec-project',
   workspace: 'default',
   publicUrl: 'https://c4s.example.dev',
+  capabilities: SPEC_CAPABILITIES,
 };
 const IDENTITY = `--server '${FIXTURE_CTX.publicUrl}' --project '${FIXTURE_CTX.id}'`;
 
@@ -208,7 +210,7 @@ describe('isSkillSlug / ALL_SKILL_SLUGS', () => {
 
 describe('externalSkillsMetadata', () => {
   it('returns exactly three entries with no SKILL.md content', () => {
-    const meta = externalSkillsMetadata();
+    const meta = externalSkillsMetadata(SPEC_CAPABILITIES);
     expect(meta).toHaveLength(3);
     expect(meta.map((m) => m.slug).sort()).toEqual(['brief-implementer', 'refactor', 'spec-reader']);
     for (const m of meta) {
@@ -322,6 +324,7 @@ const LEAK_CTX: ExternalSkillContext = {
   id: 'proj-q7x2',
   workspace: 'ws-zz9-unique',
   publicUrl: 'https://spec.example.test:4999',
+  capabilities: SPEC_CAPABILITIES,
 };
 
 const squash = (t: string): string => t.replace(/\s+/g, ' ').trim();

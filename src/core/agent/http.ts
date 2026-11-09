@@ -216,7 +216,10 @@ export async function resolveServer(params: {
  * write (`fs-scoped` commands such as `c4s install-skills`): confirms `id` is
  * one of the server's projects and returns the name of the workspace it serves.
  */
-export async function confirmRemoteProject(server: string, projectId: string): Promise<{ workspace: string }> {
+export async function confirmRemoteProject(
+  server: string,
+  projectId: string,
+): Promise<{ workspace: string; projectType?: string }> {
   const baseUrl = server.replace(/\/+$/, '');
   let res: Response;
   try {
@@ -230,7 +233,7 @@ export async function confirmRemoteProject(server: string, projectId: string): P
   } catch {
     body = null;
   }
-  const ws = body as { name?: unknown; projects?: Array<{ id?: unknown }> } | null;
+  const ws = body as { name?: unknown; projects?: Array<{ id?: unknown; projectType?: unknown }> } | null;
   if (!res.ok || !ws || typeof ws.name !== 'string' || !Array.isArray(ws.projects)) {
     throw new AgentError('SERVER_NOT_RECOGNIZED', `process at ${baseUrl} is not a claude4spec server`);
   }
@@ -241,7 +244,9 @@ export async function confirmRemoteProject(server: string, projectId: string): P
       `the server at ${baseUrl} does not serve project '${projectId}'; available ids: ${ids.join(', ') || '(none)'}`,
     );
   }
-  return { workspace: ws.name };
+  // 2.1.77 (M22 `8tvwx2ry`): the type the server lists for the project (absent = `spec`).
+  const listed = ws.projects.find((p) => p.id === projectId)?.projectType;
+  return { workspace: ws.name, ...(typeof listed === 'string' ? { projectType: listed } : {}) };
 }
 
 /**

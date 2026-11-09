@@ -1597,7 +1597,7 @@ async function buildInner(
     if (!module.data?.schema) continue;
     router.use(module.pathPrefix, generatedCrudRouter(genericCrudDeps, module));
   }
-  router.use('/external-skills', externalSkillsRouter({ registry, workspace, projectId }));
+  router.use('/external-skills', externalSkillsRouter({ registry, workspace, projectId, capabilities }));
   // 0.1.58: peer-discovery for the `<workspace_projects>` prompt block. For each
   // workspace project except this one, build a PeerProject. Re-read per turn so
   // peer-config edits surface on the next thread's first turn.
@@ -1777,6 +1777,8 @@ async function buildInner(
    */
   const mcpSurfaceDeps = (profile: ChatContextType): ExternalSurfaceDeps => ({
     profile,
+    // 2.1.77 (M12 `ikg2bklu`): profiles and entity operations follow the type.
+    capabilities,
     reader: {
       reader: rawReader,
       discovery,

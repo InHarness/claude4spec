@@ -1825,6 +1825,11 @@ export async function runAgentTurn(
         !directFilesystemDenied,
         (slug) => deps.skillRegistry.has(slug),
         new Set(mcpInventory.map((entry) => entry.name)),
+        // 2.1.77 (M45 `37ogwcgx`): the project's capabilities shape the built-ins.
+        {
+          has: (name: string) =>
+            name === 'entities' ? deps.hasEntities !== false : name === 'briefs' ? deps.hasBriefs !== false : true,
+        },
       ),
       architectureConfig: architectureConfigForExecute,
       planMode,

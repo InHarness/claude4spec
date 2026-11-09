@@ -1,6 +1,16 @@
 import type { ExternalSkillContext } from './types.js';
 import { SERVER_REQUIRED_BLOCK, skillIdentity, staleAddressBlock } from './server-required.js';
 
+/**
+ * 2.1.77 (M22 `8tvwx2ry`): the frontmatter of a project without `entities` — the
+ * same skill without the entity vocabulary (no XML entity tags, no entity reads).
+ */
+export const SPEC_READER_FRONTMATTER_NO_ENTITIES = `---
+name: c4s-spec-reader
+description: Read a claude4spec specification — its pages and sections — through the c4s CLI from any repository. Use when the work needs what the specification says, or when the repository's .claude4spec/ directory exists. Navigates pages and sections and runs the specification's own diagnostics via the c4s CLI.
+---
+`;
+
 export const SPEC_READER_FRONTMATTER = `---
 name: c4s-spec-reader
 description: Read claude4spec specification entities (endpoints, DTOs, tables, AC, UI views) referenced from markdown pages through XML tags like <inline_mention/>, <single_element/>, <tagged_list/>. Use when working in a repository whose pages/ contain these tags or whose .claude4spec/ directory exists. Resolves entity slugs to full data via the c4s CLI.
@@ -25,6 +35,10 @@ description: Read claude4spec specification entities (endpoints, DTOs, tables, A
 export function specReaderBody(ctx: ExternalSkillContext): string {
   // `--server '<publicUrl>' --project '<id>'` in every command (m22dserv).
   const identity = skillIdentity(ctx);
+  // 2.1.77 (M22 `8tvwx2ry`): without `entities` the text has no "Resolving a tag"
+  // section and no entity read command; discovery stays with `catalog`, page and
+  // section navigation and `check-consistency`.
+  if (!ctx.capabilities.has('entities')) return specReaderBodyNoEntities(ctx, identity);
   return `# c4s-spec-reader
 
 This skill is bound to one claude4spec specification project — every \`c4s\`
@@ -150,6 +164,140 @@ None of these commands mutates the project: they render read operations of the s
 ## Asking the spec agent
 
 When a question goes beyond resolving entities or pages, \`c4s ask\` runs a
+synchronous agent turn against the specification:
+
+\`\`\`sh
+c4s ask "<question>" ${identity}
+\`\`\`
+
+It needs the same running server every other command here needs — see "Server
+required" above. What is different about it is the cost, not the requirement:
+it runs a full agent turn rather than answering from the index, so it can also
+come back \`AGENT_UNAVAILABLE\` or \`TIMEOUT\`.
+
+## Errors
+
+If \`c4s\` reports \`PROJECT_NOT_IN_WORKSPACE\` or \`PROJECT_ID_NOT_FOUND\`, this
+skill's baked-in address (\`${identity}\`) is stale — stop and ask the user to
+regenerate the skill (see "Stale address" above). If \`c4s ask\` reports the server isn't recognized
+as a claude4spec server, or that the project failed to build
+(\`PROJECT_BUILD_FAILED\`), that's a problem on the spec repo/server side —
+report it to the user; don't try to fix the spec repo from here.
+
+If \`c4s\` reports \`WORKSPACE_NOT_REGISTERED\`, the project lives in a workspace
+home directory that is not registered on this machine. Do not start the server
+yourself: tell the user to start it once with \`--cwd <home>\` (the directory
+holding \`.claude4spec/workspace.json\`), then retry.
+`;
+}
+
+/**
+ * 2.1.77 (M22 `8tvwx2ry`, row "Odczyt encji w treści `c4s-spec-reader`", no
+ * `entities`): the body of the full text with the entity half taken out — no
+ * "Resolving a tag", no `describe` / `list-tags` / `list-entities` /
+ * `get-entities` / `get-field-content` / `search-entities` / `resolve-identity`
+ * (nor the tag-name aliases or `find-references`), and the command → operation
+ * table without entity rows. The rest is the full text's wording.
+ */
+function specReaderBodyNoEntities(ctx: ExternalSkillContext, identity: string): string {
+  return `# c4s-spec-reader
+
+This skill is bound to one claude4spec specification project — every \`c4s\`
+command below carries its identity (\`${identity}\`), so it works from any cwd,
+including a foreign code repo. Do NOT \`cd\` into the spec repo; the identity is
+baked in, not derived from cwd.
+
+**CLI-only — no filesystem fallback.** Every command below goes through
+\`c4s\`. If \`c4s\` isn't installed, STOP and ask the user to install it —
+never read the spec repo's pages directly.
+
+${SERVER_REQUIRED_BLOCK}
+
+${staleAddressBlock(ctx)}
+
+## Expanding a whole page
+
+\`\`\`sh
+c4s resolve some-page.md ${identity}                # writes markdown with tags expanded inline
+c4s resolve some-page.md --format json ${identity}   # writes { format, text, resolved: [...] } — the original text plus what each tag resolved to
+\`\`\`
+
+This is a RENDER convenience, and the only surface that still offers it. It takes a path to a markdown file **you already have** — a page in the repo you are working in, for instance. It is not how you read the specification's own pages: to read a spec page, ask for it with \`get-page\` or pull its sections with \`get-sections\`.
+
+## Navigating pages and sections
+
+A whole page is often more than you need. Pages are addressed by the full key
+\`(rootId, path)\` — the same relative path can exist in several roots, so
+\`--root-id\` is required and there is no silent fallback. Sections are addressed
+by \`anchor\` alone (globally unique), so section commands take no root.
+
+The normal path from "I have a phrase" to "I have the text" is TWO commands,
+not three — a search hit already carries the anchor, so there is nothing to look
+up in between:
+
+\`\`\`sh
+c4s search-pages --query "<phrase>" ${identity}   # hits carry an anchor
+c4s get-sections --anchors a,b,c ${identity}      # bodies of several sections in ONE call
+\`\`\`
+
+Fetch sections in **batches** — \`get-sections\` takes a comma-separated list and
+returns \`{ results: [...] }\` in input order. An unknown anchor comes back as an
+error **inside its own item**, so one bad anchor does not lose the other
+sections. Asking anchor-by-anchor costs one command per section for no benefit.
+
+To see what a page contains before pulling any of it, ask for its outline. It
+comes back as a tree in document order — a table of contents — and every node
+carries the section's anchor, its heading, its level and the size of its own
+body, so you can pick exactly the anchors worth fetching:
+
+\`\`\`sh
+c4s get-page-outline --root-id pages --path some/page.md ${identity}
+c4s list-pages --root-id pages [--prefix modules/] ${identity}
+\`\`\`
+
+Whole page, when you really want all of it:
+
+\`\`\`sh
+c4s get-page --root-id pages --path some/page.md ${identity}
+\`\`\`
+
+The page comes back as **structure**, not as one text: \`{ rootId, path, hash, frontmatter?, preamble?, results[] }\`. Each item of \`results\` is one section — \`anchor\`, \`heading_text\`, \`heading_level\`, \`body\` — in document order. The anchor is a field, so you pass it straight to \`get-sections\`; \`body\` holds neither the anchor line nor the heading line. \`frontmatter.raw\` is the frontmatter verbatim and \`frontmatter.fields\` its parsed keys (absent when the YAML does not parse); \`preamble\` is the text above the first heading. \`hash\` is what a write expects. Add \`--format text\` to get the page assembled back into markdown for reading.
+
+On a page over the response budget, some items come back with \`truncated: true\` and no \`body\`, and \`message\` names their anchors — fetch those with \`get-sections\`. There is no line window on \`get-page\`: to continue a cut read, go through \`get-page-outline\` and \`get-sections\`.
+
+## Discovery
+
+- \`c4s catalog ${identity}\` — the ENTRY POINT: page roots (\`id\`, \`name\`, \`dir\`, \`builtin\`, \`pageCount\`). Start here; it is cheap and it tells you what else is worth asking.
+- \`c4s check-consistency [--severity <s>] [--rule <r>] ${identity}\` — the spec's own diagnostics (unanchored headings, broken section refs, duplicate anchors, drift between disk and index).
+
+Every list command accepts \`--limit\` / \`--offset\` and reports \`total\` +
+\`hasMore\` — measure before you fetch.
+
+Every command above is one of the seven read-only **discovery operations**
+under a CLI name. The operation owns the behaviour — pagination, response
+budget, sort order, and what an error suggests you do next; the command is a
+transport over it. The mapping, when you need to read the operation's contract:
+
+| CLI command | Operation |
+|-------------|-----------|
+| \`c4s catalog\` | \`overview\` |
+| \`c4s list-pages\` / \`c4s get-page\` | \`list_pages\` / \`get_page\` |
+| \`c4s get-page-outline\` / \`c4s get-sections\` | \`get_page_outline\` / \`get_sections\` |
+| \`c4s search-pages\` | \`search_pages\` |
+| \`c4s check-consistency\` | \`check_consistency\` |
+
+All output is JSON (pretty) by default. Use \`--compact\` for pipelines and
+\`--format text\` for terminal-friendly output. Errors go to stderr as JSON with
+an exit code > 0, and an error is navigable rather than merely a refusal: a
+\`*_NOT_FOUND\` names the alternatives it knows about, and an
+\`INVALID_ARGUMENT\` names the call that would have worked. Read the \`hint\`
+before guessing again.
+
+None of these commands mutates the project: they render read operations of the specification, and \`c4s\` opens no database of its own.
+
+## Asking the spec agent
+
+When a question goes beyond reading pages and sections, \`c4s ask\` runs a
 synchronous agent turn against the specification:
 
 \`\`\`sh

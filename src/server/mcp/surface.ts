@@ -61,7 +61,12 @@ import type { McpToolDefinition } from '@inharness-ai/agent-adapters';
 import { gateServer, pluginServerNamesFor } from '../operations/profile-gate.js';
 import { CATALOG, type OperationScope } from '../operations/catalog.js';
 import { toolError } from '../operations/envelope.js';
-import { mcpRenderingProfile, mcpServerSetForProfile } from '../operations/profiles.js';
+import {
+  mcpChannelProfilesFor,
+  mcpRenderingProfile,
+  mcpServerSetForProfile,
+  type McpChannelProfile,
+} from '../operations/profiles.js';
 import { poolSelector } from '../services/turn-mcp-servers.js';
 import { createC4sReaderServer, type C4sReaderDeps } from './c4s-reader.js';
 import { buildPlanToolsServer } from './plan-tools.js';
@@ -97,7 +102,30 @@ export interface ExternalSurfaceDeps {
    * the process-level measurement ring is keyed rather than ambient.
    */
   projectId: string;
+  /**
+   * 2.1.77 (M12 `ikg2bklu`): the project's capability set. Without `briefs` the
+   * channel table has two profiles (`chat`, `ask`) and a `brief`/`patch` surface is
+   * empty and refused at set-up; without `entities` no entity operation enters
+   * the catalog. Absent (rigs) = every capability.
+   */
+  capabilities?: { has(name: string): boolean };
 }
+
+/**
+ * 2.1.77 (M12 `ikg2bklu`): the `c4s-reader` operations that read the entity graph
+ * — rendered only in a project with `entities`. Without it the reader keeps the
+ * overview, the page and section reads and `check_consistency`.
+ */
+export const C4S_READER_ENTITY_TOOL_NAMES: ReadonlySet<string> = new Set([
+  'describe_types',
+  'search_entities',
+  'list_entities',
+  'get_entities',
+  'get_field_content',
+  'list_tags',
+  'find_references',
+  'resolve_identity',
+]);
 
 /** The composed server's name — see the header note before changing it. */
 export const EXTERNAL_MCP_SERVER_NAME = 'c4s-reader';
@@ -176,8 +204,19 @@ function sourceServers(deps: ExternalSurfaceDeps): Array<{ name: string; server:
   // different servers for the same profile. Read for the profile this channel
   // RENDERS (`patch` → `chat`, M12 `ecawzsbr`).
   const set = mcpServerSetForProfile(mcpRenderingProfile(deps.profile));
+  const reader = createC4sReaderServer(deps.reader);
   const servers: Array<{ name: string; server: CapturedMcpServer }> = [
-    { name: EXTERNAL_MCP_SERVER_NAME, server: createC4sReaderServer(deps.reader) },
+    {
+      name: EXTERNAL_MCP_SERVER_NAME,
+      server:
+        deps.capabilities && !deps.capabilities.has('entities')
+          ? createMcpServer({
+              name: EXTERNAL_MCP_SERVER_NAME,
+              // The same declarations `mcpTool()` produced, minus the entity reads.
+              tools: reader.tools.filter((t) => !C4S_READER_ENTITY_TOOL_NAMES.has(t.name)) as unknown as McpToolDefinition[],
+            })
+          : reader,
+    },
   ];
 
   /**
@@ -300,6 +339,12 @@ export interface ExternalSurface {
    * workspace-bound mount reads it to know which tools take `project` per call.
    */
   scopeByName: ReadonlyMap<string, OperationScope>;
+  /**
+   * 2.1.77 (M12 `ikg2bklu`): the profiles of the project's `mcp` table — set by
+   * a project's surface. The mount refuses a handshake naming a profile outside
+   * it, before exposing any catalog. Absent = the full closed table.
+   */
+  profiles?: readonly McpChannelProfile[];
 }
 
 /**
@@ -378,13 +423,20 @@ export function __invalidateSurfaceCache(host: ProjectPluginHost): void {
 }
 
 function composeUncached(deps: ExternalSurfaceDeps): ExternalSurface {
+  const profiles = deps.capabilities ? mcpChannelProfilesFor(deps.capabilities) : undefined;
+  if (profiles && !(profiles as readonly string[]).includes(deps.profile)) {
+    // A profile this project's registry does not know: nothing is composed, and
+    // the mount refuses the connection on `profiles` (M12 `ikg2bklu`).
+    return { tools: [], byName: new Map(), toolNames: [], scopeByName: new Map(), profiles };
+  }
   const pluginServers = pluginServerNamesFor(deps.pluginHost.listEntities().map((m) => m.type));
   // 2.1.26 (M12 `ecawzsbr`): the channel's closed profile table decides which
   // registry profile's set is rendered — `patch` degenerates to `chat`, and a
   // value outside the table throws here (the mount refuses it before this).
   const rendered = mcpRenderingProfile(deps.profile);
 
-  return mergeServers(rendered, sourceServers(deps), pluginServers);
+  const merged = mergeServers(rendered, sourceServers(deps), pluginServers);
+  return profiles ? { ...merged, profiles } : merged;
 }
 
 function mergeServers(

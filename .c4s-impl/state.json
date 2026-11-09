@@ -60,7 +60,7 @@
         "u06-prompt-typu-projektu",
         "u10-kreator-onboardingu-wedlug-typu"
       ],
-      "startCommit": "2e8b0ab928739f74a6abbcd84faa6b218ae557c9"
+      "startCommit": "a8e0cccfe953745575bbc4d7bb506e2592f7b6a3"
     }
   ],
   "units": [
@@ -2534,7 +2534,7 @@
         }
       ],
       "wave": 4,
-      "status": "in-progress",
+      "status": "verified",
       "portions": [
         {
           "name": "u05-powierzchnie-agentow-zewnetrznych/p1-l17-l19",
@@ -2558,18 +2558,18 @@
             "m45-requires-m13",
             "m45-requires-m21"
           ],
-          "status": "pending",
-          "rounds": 0,
+          "status": "implemented",
+          "rounds": 1,
           "partial": 0,
           "uncovered": [],
           "only": []
         }
       ],
-      "startCommit": "2e8b0ab928739f74a6abbcd84faa6b218ae557c9",
-      "baseCommit": "2e8b0ab928739f74a6abbcd84faa6b218ae557c9",
+      "startCommit": "a8e0cccfe953745575bbc4d7bb506e2592f7b6a3",
+      "baseCommit": "a8e0cccfe953745575bbc4d7bb506e2592f7b6a3",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },
