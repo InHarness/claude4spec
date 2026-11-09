@@ -1,0 +1,2801 @@
+{
+  "iteration": 0,
+  "conventions": [
+    {
+      "label": "L17 (Project Settings) — implementor M26",
+      "key": "pages/layers/L17-project-settings.md",
+      "offset": 2,
+      "anchor": "ata1r5sz"
+    },
+    {
+      "label": "L19 (Project Type Capabilities) — implementor M57",
+      "key": "pages/layers/L19-project-type-capabilities.md",
+      "offset": 2,
+      "anchor": "5r0h4h6i"
+    },
+    {
+      "label": "L20 (Project Type) — implementor M57",
+      "key": "pages/layers/L20-project-type.md",
+      "offset": 2,
+      "anchor": "0ws3sjd4"
+    },
+    {
+      "label": "User jobs table, for the system verifier",
+      "key": "pages/SKILL.md",
+      "offset": 13,
+      "anchor": "oq23nb0j"
+    }
+  ],
+  "waves": [
+    {
+      "n": 1,
+      "units": [
+        "u01-rejestr-typow-i-mozliwosci",
+        "u11-rekord-runu-z-gita"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 2,
+      "units": [
+        "u02-aktywacja-i-rejestracja-z-typem"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 3,
+      "units": [
+        "u03-bramkowanie-encji",
+        "u04-bramkowanie-briefow",
+        "u07-wystawianie-skilli-i-style",
+        "u08-zakladanie-projektu-i-lista-workspace",
+        "u09-powloka-wedlug-typu"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 4,
+      "units": [
+        "u05-powierzchnie-agentow-zewnetrznych",
+        "u06-prompt-typu-projektu",
+        "u10-kreator-onboardingu-wedlug-typu"
+      ],
+      "startCommit": null
+    }
+  ],
+  "units": [
+    {
+      "id": "u01-rejestr-typow-i-mozliwosci",
+      "goal": "Przy starcie serwer składa dwa rejestry: możliwości (z deklaracji właścicieli `entities`, `briefs`, `multi-root` i `skill-exposure`) oraz typów projektu (wpisy `spec`, `skill` i `writing-style` z tożsamością, opisem do promptu i zbiorem możliwości). Oba rejestry są walidowane, a błąd zatrzymuje start. Każdy projekt ma niezmienny typ w konfiguracji, domyślnie Specyfikacja, i wyliczony z niego stały zbiór możliwości. Warstwa ustawień uznaje za aktywne tylko klucze, karty i elementy o spełnionych wymaganiach i odrzuca zmianę wartości pola stałego. Lista typów jest dostępna bez otwartego projektu.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m57-project-types.md",
+            "change": {
+              "offset": 0,
+              "limit": 10,
+              "anchors": [
+                "3i597aog",
+                "eha441w3",
+                "iasbaxgz",
+                "d4bmhhx5",
+                "gd3ct7xo",
+                "zy42cyj7",
+                "366wogto",
+                "ngwtfpdd",
+                "65syve3p",
+                "5yerev0d"
+              ]
+            },
+            "deferred": [
+              {
+                "what": "odmowa aktywacji, gdy typ w konfiguracji projektu różni się od kopii typu w rekordzie workspace'u",
+                "to": "u02-aktywacja-i-rejestracja-z-typem",
+                "why": "kopię zapisuje rejestracja, a porównuje aktywacja; obie powstają w u02"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m57-project-types.md",
+            "change": {
+              "offset": 12,
+              "limit": 13,
+              "anchors": [
+                "5agrxl9p",
+                "y47yl4xt",
+                "kn2ip5cs",
+                "wd9engvy",
+                "rgkqgr2b",
+                "rdztxzb8",
+                "4cvc2ecm",
+                "f5efkaxi",
+                "5j5aunoy",
+                "91ci7cqx",
+                "y7od19e7",
+                "l39yq3n3",
+                "c71k31ze"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m57-project-types.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "eha441w3",
+                "iasbaxgz"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m26-project-settings.md",
+            "change": {
+              "offset": 3,
+              "limit": 5,
+              "anchors": [
+                "vm9rajvn",
+                "hozcm4w5",
+                "ournm78e",
+                "7f76eszm",
+                "m26edg01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m26-project-settings.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m26cel01",
+                "m26dep01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m26-project-settings.md",
+            "context": {
+              "offset": 15,
+              "limit": 7,
+              "anchors": [
+                "b3ny18qh",
+                "vm9rajvn",
+                "hozcm4w5",
+                "ournm78e",
+                "kkrparjf",
+                "7f76eszm",
+                "oqp0up79"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework.md",
+            "change": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "btrsmaos"
+              ]
+            },
+            "deferred": [
+              {
+                "what": "usunięcie wszystkiego, co znika bez `entities`",
+                "to": "u03-bramkowanie-encji",
+                "why": "tu powstaje tylko deklaracja nazwy i zależności w rejestrze możliwości"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m13-entity-framework.md",
+            "context": {
+              "offset": 150,
+              "limit": 3,
+              "anchors": [
+                "qkv5khcv",
+                "btrsmaos",
+                "pmm7cm4c"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m21-briefs.md",
+            "change": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "dcagtfpe"
+              ]
+            },
+            "deferred": [
+              {
+                "what": "usunięcie wszystkiego, co znika bez `briefs`",
+                "to": "u04-bramkowanie-briefow",
+                "why": "tu tylko deklaracja w rejestrze możliwości"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m21-briefs.md",
+            "context": {
+              "offset": 35,
+              "limit": 3,
+              "anchors": [
+                "hn4x8tao",
+                "dcagtfpe",
+                "msujcqhu"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "change": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "9t587fj1"
+              ]
+            },
+            "deferred": [
+              {
+                "what": "zawężenie przestrzeni stron do jednej i zniknięcie karty katalogów bez `multi-root`",
+                "to": "u02-aktywacja-i-rejestracja-z-typem",
+                "why": "tu tylko deklaracja w rejestrze możliwości"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "context": {
+              "offset": 36,
+              "limit": 4,
+              "anchors": [
+                "qn6oge0s",
+                "9t587fj1",
+                "hbib9dy0",
+                "u6mmds6k"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "change": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "0ay8qh6u"
+              ]
+            },
+            "deferred": [
+              {
+                "what": "zniknięcie kluczy i elementów wystawienia oraz roli dostawcy bez `skill-exposure`",
+                "to": "u07-wystawianie-skilli-i-style",
+                "why": "tu tylko deklaracja w rejestrze możliwości"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "context": {
+              "offset": 27,
+              "limit": 3,
+              "anchors": [
+                "5n1ez9pq",
+                "0ay8qh6u",
+                "8zu57gsf"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m58-project-type-spec.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m58-project-type-spec.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "ylzq57ks",
+                "g7eqhahb"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m59-project-type-skill.md",
+            "change": {
+              "offset": 0,
+              "limit": 3,
+              "anchors": [
+                "u3s2erku",
+                "kb1uaezn",
+                "cfpp69hw"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m59-project-type-skill.md",
+            "change": {
+              "offset": 4,
+              "limit": 5,
+              "anchors": [
+                "w2ek4wac",
+                "3dqpgdlm",
+                "2zam82j1",
+                "2qss50k7",
+                "fewej42u"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m59-project-type-skill.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "kb1uaezn",
+                "cfpp69hw"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m60-project-type-writing-style.md",
+            "change": {
+              "offset": 0,
+              "limit": 3,
+              "anchors": [
+                "f96xokjh",
+                "4quqam4w",
+                "xq79w3vi"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m60-project-type-writing-style.md",
+            "change": {
+              "offset": 4,
+              "limit": 5,
+              "anchors": [
+                "b81q2dei",
+                "v5i6w7q1",
+                "ycxv72ar",
+                "yroe6cwl",
+                "wygqnjx3"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m60-project-type-writing-style.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "4quqam4w",
+                "xq79w3vi"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-deklaracje-mozliwosci-tworzace-cykl-z",
+              "ac-dwa-wpisy-typu-projektu-o-tym-samym-s",
+              "ac-get-api-workspace-project-types-zwrac",
+              "ac-patch-api-config-z-wartoscia-projectt",
+              "ac-patch-api-config-z-wartoscia-projectt-2",
+              "ac-wpis-typu-projektu-nazywajacy-niezade",
+              "ac-wpis-typu-projektu-z-kluczem-onboardi",
+              "ac-wpis-typu-projektu-z-kluczem-onboardi-2"
+            ]
+          },
+          {
+            "type": "endpoint",
+            "slugs": [
+              "get-api-workspace-project-types"
+            ]
+          },
+          {
+            "type": "dto",
+            "slugs": [
+              "project-type-list-response"
+            ]
+          },
+          {
+            "type": "code-snippet",
+            "slugs": [
+              "opis-typu-spec-do-promptu",
+              "opis-typu-skill-do-promptu",
+              "opis-typu-writing-style-do-promptu",
+              "welcome-template-index"
+            ]
+          },
+          {
+            "type": "spreadsheet",
+            "slugs": [
+              "moduly-feature",
+              "warstwy"
+            ]
+          },
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m57-requires-m26",
+              "m57-requires-m31"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u11-rekord-runu-z-gita",
+      "goal": "Przy odtwarzaniu wiersza rejestru Runów z rekordu w gicie projekt jest brany z wejścia Runu tylko dla rodzaju `plan` albo `prompt`. Nieznany rodzaj albo brak wejścia daje pusty projekt i pusty plan, bez odmowy odtworzenia.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m55-runs.md",
+            "change": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "g9939pj0"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m55-runs.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "ewqj6w60",
+                "tq1frs04"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m55-runs.md",
+            "context": {
+              "offset": 21,
+              "limit": 1,
+              "anchors": [
+                "g9939pj0"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "database-table",
+            "slugs": [
+              "remote-run"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u02-aktywacja-i-rejestracja-z-typem",
+      "goal": "Rejestracja projektu przyjmuje opcjonalny typ i po jego obecności odróżnia ścieżkę nowego projektu od dodania istniejącego katalogu. Niezgodny katalog albo nieznany typ jest odrzucany, zanim cokolwiek zostanie zapisane. Typ trafia do konfiguracji projektu i jako kopia do rekordu w opisie workspace'u. Aktywacja rozwiązuje typ, także ze zmiennej kontenera, i odmawia, gdy typ jest nieznany, sprzeczny z typem przekazanym przy rejestracji albo rozbieżny z kopią. Zawartość startową bierze z wpisu typu, uzupełnia wstawki i ustawia klucze wskazujące na stronę startową. Bez `entities` pomija magazyn encji, a bez `multi-root` dopuszcza tylko korzeń podstawowy. Fabryka kontekstu buduje wyłącznie moduły, których wymagania typ spełnia. Znika strona powitalna zaszyta w module projektu.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m01-project.md",
+            "change": {
+              "offset": 0,
+              "limit": 15,
+              "anchors": [
+                "qn6oge0s",
+                "9t587fj1",
+                "hbib9dy0",
+                "u6mmds6k",
+                "cri3lyli",
+                "cjx6s5bd",
+                "v878dqht",
+                "dsh8ezbz",
+                "qi8w2tmj",
+                "uxlvmu4n",
+                "mcdkzcb6",
+                "kt5gesnm",
+                "m26psec",
+                "jjietfz2",
+                "m01l13rt"
+              ]
+            },
+            "completes": [
+              {
+                "what": "to, co znika bez `multi-root`",
+                "from": "u01-rejestr-typow-i-mozliwosci"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "85hp4f2v",
+                "cri3lyli"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "context": {
+              "offset": 6,
+              "limit": 4,
+              "anchors": [
+                "c0nf1g4a",
+                "3ebblo1q",
+                "nai0sy86",
+                "v878dqht"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "context": {
+              "offset": 14,
+              "limit": 5,
+              "anchors": [
+                "dsh8ezbz",
+                "qi8w2tmj",
+                "r7ozfsa9",
+                "uxlvmu4n",
+                "mcdkzcb6"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "context": {
+              "offset": 24,
+              "limit": 4,
+              "anchors": [
+                "vh16uzm6",
+                "kt5gesnm",
+                "m26psec",
+                "m26stsec"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m01-project.md",
+            "context": {
+              "offset": 36,
+              "limit": 4,
+              "anchors": [
+                "qn6oge0s",
+                "9t587fj1",
+                "hbib9dy0",
+                "u6mmds6k"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 2,
+              "limit": 2,
+              "anchors": [
+                "whxy8m3r",
+                "t97gncju"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 5,
+              "limit": 2,
+              "anchors": [
+                "bzgfftsf",
+                "m31boot01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 10,
+              "limit": 2,
+              "anchors": [
+                "ssn335r8",
+                "m31ctx001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m31purp01",
+                "m31deps01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 4,
+              "limit": 2,
+              "anchors": [
+                "fjsgq19h",
+                "whxy8m3r"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 8,
+              "limit": 2,
+              "anchors": [
+                "vaa83o17",
+                "t97gncju"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 20,
+              "limit": 2,
+              "anchors": [
+                "zovs1ohc",
+                "bzgfftsf"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 33,
+              "limit": 1,
+              "anchors": [
+                "m31boot01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 38,
+              "limit": 2,
+              "anchors": [
+                "ssn335r8",
+                "m31ctx001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m57-project-types.md",
+            "change": {
+              "offset": 5,
+              "limit": 2,
+              "anchors": [
+                "zy42cyj7",
+                "366wogto"
+              ]
+            },
+            "completes": [
+              {
+                "what": "odmowa aktywacji przy rozbieżności typu z kopią w rekordzie workspace'u",
+                "from": "u01-rejestr-typow-i-mozliwosci"
+              }
+            ]
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-aktywacja-projektu-ktorego-config-jso",
+              "ac-aktywacja-projektu-typu-skill-nie-two",
+              "ac-katalog-z-istniejacym-claude4spec-con",
+              "ac-kontener-uruchomiony-z-pustym-project",
+              "ac-ponowny-start-kontenera-z-tym-samym-p",
+              "ac-projekt-ktorego-config-json-nie-ma-kl",
+              "ac-projekt-ktorego-typ-w-config-json-roz",
+              "ac-projekt-typu-skill-nie-ma-na-stronie",
+              "ac-projekt-typu-specyfikacja-po-domkniec",
+              "ac-projekt-z-nieznana-wartoscia-projectt",
+              "ac-rejestracja-swiezego-projektu-start-z",
+              "ac-swiezy-config-json-projektu-zarejestr",
+              "ac-zapis-roots-z-drugim-wpisem-w-projekc",
+              "m31-existing-directory-without-type-registers-as-spec",
+              "m31-existing-path-refuses-uninitialized-directory",
+              "m31-new-project-path-refuses-initialized-directory",
+              "m31-new-project-type-copy-in-workspace-record",
+              "m31-new-project-type-in-config-json",
+              "m31-register-with-conflicting-type-refused",
+              "m31-unknown-project-type-refused-at-registration"
+            ]
+          },
+          {
+            "type": "endpoint",
+            "slugs": [
+              "post-api-workspace-projects"
+            ]
+          },
+          {
+            "type": "dto",
+            "slugs": [
+              "add-project-request"
+            ]
+          },
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m01-requires-m13",
+              "m01-requires-m57",
+              "m31-requires-m57"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u01-rejestr-typow-i-mozliwosci",
+          "why": "rejestr typów, zbiór możliwości projektu i pole stałe typu w konfiguracji"
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u03-bramkowanie-encji",
+      "goal": "W projekcie bez `entities` nie ma niczego encyjnego. Host nie aktywuje typów encji ani ich serwerów, tras i wkładów do UI i promptu, więc żądanie do trasy encji kończy się jak żądanie do nieistniejącej trasy. Nie istnieją etykiety, magazyn encji ani oś payloadu. Znika encyjna połowa referencji i kontroli spójności, auto-linki sekcji do encji, znaczniki encyjne w edytorze oraz encyjna oś wydań i przyjmowania cieni. Karta stanu indeksów i pas awarii nie wspominają list encji. Klucze, karta i elementy ustawień encji wymagają `entities`, a wpisy pluginów niezwiązane z typami encji działają w każdym typie projektu.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m13-entity-framework.md",
+            "change": {
+              "offset": 0,
+              "limit": 7,
+              "anchors": [
+                "qkv5khcv",
+                "btrsmaos",
+                "pmm7cm4c",
+                "m13actv0",
+                "m13plset",
+                "o4ju2d7m",
+                "4ckqwi8t"
+              ]
+            },
+            "completes": [
+              {
+                "what": "to, co znika bez `entities`",
+                "from": "u01-rejestr-typow-i-mozliwosci"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m13-entity-framework.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m13cel00",
+                "m13dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework.md",
+            "context": {
+              "offset": 18,
+              "limit": 3,
+              "anchors": [
+                "m13actv0",
+                "h1rio2i1",
+                "m13plset"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework.md",
+            "context": {
+              "offset": 108,
+              "limit": 2,
+              "anchors": [
+                "yhb005so",
+                "7usv5daw"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework.md",
+            "context": {
+              "offset": 124,
+              "limit": 1,
+              "anchors": [
+                "ca2v2bzw"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m13-entity-framework.md",
+            "context": {
+              "offset": 144,
+              "limit": 9,
+              "anchors": [
+                "0dsek8zc",
+                "79sw3wsb",
+                "o4ju2d7m",
+                "4ckqwi8t",
+                "lbqrd6xh",
+                "447dderv",
+                "qkv5khcv",
+                "btrsmaos",
+                "pmm7cm4c"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m18-tags.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m18-tags.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m18cel00",
+                "m18dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m18-tags.md",
+            "context": {
+              "offset": 23,
+              "limit": 2,
+              "anchors": [
+                "rexh3mvu",
+                "rxlzqki1"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m29-entity-store.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m29-entity-store.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m29cel001",
+                "m29dep001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m29-entity-store.md",
+            "context": {
+              "offset": 20,
+              "limit": 2,
+              "anchors": [
+                "2k6jkayb",
+                "gngzre20"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m47-payload-timeline.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m47-payload-timeline.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "f2k75mdn",
+                "tp9wojip"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m47-payload-timeline.md",
+            "context": {
+              "offset": 12,
+              "limit": 2,
+              "anchors": [
+                "g9fmnvpd",
+                "693q8khl"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m06-sections.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m06-sections.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "1aq60bj4",
+                "ko9x8zqw"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m06-sections.md",
+            "context": {
+              "offset": 32,
+              "limit": 1,
+              "anchors": [
+                "vw6tefc6"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m06-sections.md",
+            "context": {
+              "offset": 42,
+              "limit": 1,
+              "anchors": [
+                "5mfo140n"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m06-sections.md",
+            "context": {
+              "offset": 44,
+              "limit": 1,
+              "anchors": [
+                "rr5ru2kv"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m06-sections.md",
+            "context": {
+              "offset": 65,
+              "limit": 2,
+              "anchors": [
+                "y1dploqw",
+                "7t2i8glz"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m19-references.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m19-references.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m19cel00",
+                "m19dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m19-references.md",
+            "context": {
+              "offset": 8,
+              "limit": 1,
+              "anchors": [
+                "m19valid"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m19-references.md",
+            "context": {
+              "offset": 13,
+              "limit": 1,
+              "anchors": [
+                "q91m4kgl"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m19-references.md",
+            "context": {
+              "offset": 42,
+              "limit": 1,
+              "anchors": [
+                "m2sj2zmp"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m19-references.md",
+            "context": {
+              "offset": 44,
+              "limit": 1,
+              "anchors": [
+                "6tdzzl38"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m19-references.md",
+            "context": {
+              "offset": 46,
+              "limit": 2,
+              "anchors": [
+                "cg7vt276",
+                "wjjr1oc0"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m20-editor-tiptap.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m20-editor-tiptap.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m20cel00",
+                "m20dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m20-editor-tiptap.md",
+            "context": {
+              "offset": 25,
+              "limit": 2,
+              "anchors": [
+                "ctx4prof",
+                "ctxregst"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m20-editor-tiptap.md",
+            "context": {
+              "offset": 41,
+              "limit": 2,
+              "anchors": [
+                "e83mwts9",
+                "gv6us4lf"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "xkpt256d",
+                "m17zal001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+            "context": {
+              "offset": 34,
+              "limit": 1,
+              "anchors": [
+                "zbc9jdnr"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+            "context": {
+              "offset": 46,
+              "limit": 1,
+              "anchors": [
+                "tl7cqrzg"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+            "context": {
+              "offset": 58,
+              "limit": 1,
+              "anchors": [
+                "5rk7pkbt"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+            "context": {
+              "offset": 109,
+              "limit": 2,
+              "anchors": [
+                "rjqzyx8l",
+                "tutwwt5x"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m56-shadows.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m56-shadows.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "ezvnh8pi",
+                "vfk355sm"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m56-shadows.md",
+            "context": {
+              "offset": 12,
+              "limit": 1,
+              "anchors": [
+                "0xvhubti"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m56-shadows.md",
+            "context": {
+              "offset": 22,
+              "limit": 1,
+              "anchors": [
+                "mghvzn0w"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m56-shadows.md",
+            "context": {
+              "offset": 32,
+              "limit": 2,
+              "anchors": [
+                "8p7bq127",
+                "heqel0ut"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m26-project-settings.md",
+            "change": {
+              "offset": 0,
+              "limit": 3,
+              "anchors": [
+                "4x7rsohi",
+                "e6k3f793",
+                "m26ui01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m26-project-settings.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m26cel01",
+                "m26dep01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m26-project-settings.md",
+            "context": {
+              "offset": 9,
+              "limit": 1,
+              "anchors": [
+                "m26ui01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m26-project-settings.md",
+            "context": {
+              "offset": 12,
+              "limit": 2,
+              "anchors": [
+                "5xmly3dx",
+                "9irk3txv"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m26-project-settings.md",
+            "context": {
+              "offset": 24,
+              "limit": 2,
+              "anchors": [
+                "4x7rsohi",
+                "e6k3f793"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-get-api-config-w-projekcie-bez-mozliw",
+              "ac-karta-index-status-w-projekcie-bez-mo",
+              "ac-klucz-config-json-nalezacy-do-mozliwo",
+              "ac-pas-awarii-w-projekcie-bez-mozliwosci",
+              "ac-patch-api-config-z-kluczem-mozliwosci",
+              "ac-strona-ustawien-projektu-nie-renderuj",
+              "ac-w-projekcie-typu-skill-delta-release",
+              "ac-w-projekcie-typu-skill-licznik-niezre",
+              "ac-w-projekcie-typu-skill-przywrocenie-c",
+              "ac-w-projekcie-typu-skill-zwrot-utworzen",
+              "m31-context-builds-only-satisfied-modules"
+            ]
+          },
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m06-requires-m13",
+              "m17-requires-m13",
+              "m26-requires-m13",
+              "m56-requires-m13"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u01-rejestr-typow-i-mozliwosci",
+          "why": "deklaracja `entities` i filtr aktywnych kluczy, kart i elementów"
+        },
+        {
+          "unit": "u02-aktywacja-i-rejestracja-z-typem",
+          "why": "fabryka kontekstu budująca tylko moduły o spełnionych wymaganiach oraz rejestracja projektu typu Skill"
+        }
+      ],
+      "wave": 3,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u04-bramkowanie-briefow",
+      "goal": "W projekcie bez `briefs` nie ma briefów ani patchy. Moduły briefów i patchy nie istnieją w kontekście. Rejestr typów kontekstu zna tylko `chat` i `ask`, a rejestr artefaktów tylko plany, więc inne rodzaje artefaktu kończą się odmową nieznanego rodzaju. Transagent nie przyjmuje kontekstów `brief` ani `patch` i nie wystawia list briefów ani patchy. Pasek artefaktu nad polem wiadomości zna tylko plan.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m21-briefs.md",
+            "change": {
+              "offset": 0,
+              "limit": 3,
+              "anchors": [
+                "hn4x8tao",
+                "dcagtfpe",
+                "msujcqhu"
+              ]
+            },
+            "completes": [
+              {
+                "what": "to, co znika bez `briefs`",
+                "from": "u01-rejestr-typow-i-mozliwosci"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m21-briefs.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m21cel001",
+                "m21zal001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m21-briefs.md",
+            "context": {
+              "offset": 22,
+              "limit": 1,
+              "anchors": [
+                "m21ctxreg"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m21-briefs.md",
+            "context": {
+              "offset": 31,
+              "limit": 1,
+              "anchors": [
+                "bcpvtk7p"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m21-briefs.md",
+            "context": {
+              "offset": 35,
+              "limit": 3,
+              "anchors": [
+                "hn4x8tao",
+                "dcagtfpe",
+                "msujcqhu"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m23-patches.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m23-patches.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m23cel01",
+                "m23dep01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m23-patches.md",
+            "context": {
+              "offset": 29,
+              "limit": 2,
+              "anchors": [
+                "279jv0d4",
+                "iifnvhtu"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m36-chat-artifacts/m36-chat-artifacts.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m36-chat-artifacts/m36-chat-artifacts.md",
+            "context": {
+              "offset": 1,
+              "limit": 4,
+              "anchors": [
+                "m36cel01",
+                "m36dep01",
+                "m36reg01",
+                "m36bind01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m36-chat-artifacts/m36-chat-artifacts.md",
+            "context": {
+              "offset": 10,
+              "limit": 1,
+              "anchors": [
+                "9p8nltkf"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m36-chat-artifacts/m36-chat-artifacts.md",
+            "context": {
+              "offset": 20,
+              "limit": 2,
+              "anchors": [
+                "z89ez33c",
+                "ff7ootuy"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m44-context-types.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m44-context-types.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "x91ni6uh",
+                "uovohiu4"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m44-context-types.md",
+            "context": {
+              "offset": 5,
+              "limit": 1,
+              "anchors": [
+                "k3gkrn09"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m44-context-types.md",
+            "context": {
+              "offset": 13,
+              "limit": 2,
+              "anchors": [
+                "og41155p",
+                "1j39ajh8"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m46-transagent.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m46-transagent.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "ix1l2e4g",
+                "t2nhwhwy"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m46-transagent.md",
+            "context": {
+              "offset": 15,
+              "limit": 1,
+              "anchors": [
+                "tr4ndisp"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m46-transagent.md",
+            "context": {
+              "offset": 18,
+              "limit": 2,
+              "anchors": [
+                "zg8zyqm5",
+                "qq84x14h"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-w-projekcie-typu-skill-rejestr-typow",
+              "ac-w-projekcie-typu-skill-serwer-transag",
+              "ac-w-projekcie-typu-skill-wywolanie-runt",
+              "ac-w-projekcie-typu-skill-zadanie-get-ap",
+              "ac-w-projekcie-typu-skill-zadanie-post-a"
+            ]
+          },
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m23-requires-m21",
+              "m36-requires-m21",
+              "m44-requires-m21",
+              "m46-requires-m21"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u01-rejestr-typow-i-mozliwosci",
+          "why": "deklaracja `briefs`"
+        },
+        {
+          "unit": "u02-aktywacja-i-rejestracja-z-typem",
+          "why": "fabryka kontekstu pomijająca moduły o niespełnionych wymaganiach"
+        }
+      ],
+      "wave": 3,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u07-wystawianie-skilli-i-style",
+      "goal": "O wystawieniu skilla decyduje typ projektu. Projekt typu z `skill-exposure` jest dostawcą skilla globalnego od założenia, a jego zakres wynika z typu. Rejestr skilli rozstrzyga, czy wystawiony styl jest wybieralny, po typie podpiętego projektu odczytanym z kopii w rekordzie. Projekt w stylu pisania nie wybierze stylu, który sam wystawia. Bez `skill-exposure` znikają klucze i elementy wystawienia na karcie skilli. Styl pisania zawsze wiąże strony projektu, a `skill-author` i `writing-style-author` piszą wyłącznie pakiety lokalne w korzeniu `skills`, bez stron projektu. Usunięte zostają przełącznik wystawienia i wybór zakresu wraz z ich kluczami konfiguracji oraz droga stylu wystawionego pisanego stronami w skilu autora stylów. Siedem kryteriów tej jednostki ma status `deprecated` i opisuje to usuwane zachowanie: nie wolno go budować, a jego brak trzeba potwierdzić.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "change": {
+              "offset": 0,
+              "limit": 13,
+              "anchors": [
+                "5n1ez9pq",
+                "0ay8qh6u",
+                "8zu57gsf",
+                "q7uurue4",
+                "dun7u18f",
+                "q6jr8zoj",
+                "ybbal0vf",
+                "9j9cxrsr",
+                "gx7f584v",
+                "3nbgrss4",
+                "wqvq1esb",
+                "1osy2o5r",
+                "rkbsi6ky"
+              ]
+            },
+            "completes": [
+              {
+                "what": "to, co znika bez `skill-exposure`",
+                "from": "u01-rejestr-typow-i-mozliwosci"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "q7uurue4",
+                "cppnlv9z"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "context": {
+              "offset": 4,
+              "limit": 6,
+              "anchors": [
+                "q6jr8zoj",
+                "ybbal0vf",
+                "uluzymnm",
+                "9j9cxrsr",
+                "gx7f584v",
+                "3nbgrss4"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "context": {
+              "offset": 21,
+              "limit": 4,
+              "anchors": [
+                "vixysa1w",
+                "wqvq1esb",
+                "1osy2o5r",
+                "qtq9iusb"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "context": {
+              "offset": 27,
+              "limit": 4,
+              "anchors": [
+                "5n1ez9pq",
+                "0ay8qh6u",
+                "8zu57gsf",
+                "rkbsi6ky"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m15-writing-styles.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m15-writing-styles.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "17wo7eba",
+                "7j0i6cqq"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m15-writing-styles.md",
+            "context": {
+              "offset": 4,
+              "limit": 1,
+              "anchors": [
+                "iki28xmv"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m15-writing-styles.md",
+            "context": {
+              "offset": 6,
+              "limit": 1,
+              "anchors": [
+                "u7b1qhr1"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m15-writing-styles.md",
+            "context": {
+              "offset": 10,
+              "limit": 4,
+              "anchors": [
+                "m15wsauth",
+                "1pp97t4d",
+                "e5635uwn",
+                "lyygimdd"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m15-writing-styles.md",
+            "context": {
+              "offset": 21,
+              "limit": 1,
+              "anchors": [
+                "fviol01i"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m15-writing-styles.md",
+            "context": {
+              "offset": 26,
+              "limit": 3,
+              "anchors": [
+                "1elo68kq",
+                "2oha8chk",
+                "m15edg001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m37-internal-skills-registry.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m37-internal-skills-registry.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m37cel01",
+                "m37dep01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m37-internal-skills-registry.md",
+            "context": {
+              "offset": 9,
+              "limit": 1,
+              "anchors": [
+                "prwobscq"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m37-internal-skills-registry.md",
+            "context": {
+              "offset": 20,
+              "limit": 2,
+              "anchors": [
+                "vsa4f54s",
+                "m37attach"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m37-internal-skills-registry.md",
+            "context": {
+              "offset": 34,
+              "limit": 1,
+              "anchors": [
+                "uo5ybjxr"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m37-internal-skills-registry.md",
+            "context": {
+              "offset": 46,
+              "limit": 2,
+              "anchors": [
+                "c8bq4ck1",
+                "r8sajsmk"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-writing-style-author.md",
+            "change": "all"
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-writing-style-author.md",
+            "context": {
+              "offset": 2,
+              "limit": 3,
+              "anchors": [
+                "vt1nmnwx",
+                "0t0qt1hj",
+                "l71kgcft"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-skill-author.md",
+            "change": "all"
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-skill-author.md",
+            "context": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "twgy6hnk"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-skill-author.md",
+            "context": {
+              "offset": 2,
+              "limit": 3,
+              "anchors": [
+                "0n9pjl9k",
+                "18g09snf",
+                "97365qir"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-blok-project-writing-skill-zawiera-zd",
+              "ac-element-writing-style-na-karcie-proje",
+              "ac-gdy-prosba-o-nowy-styl-nie-wskazuje-c",
+              "ac-get-api-config-projektu-typu-specyfik",
+              "ac-karta-skills-projektu-typu-specyfikac",
+              "ac-karta-skills-projektu-typu-specyfikac-2",
+              "ac-na-drodze-stylu-wystawionego-tresc-st",
+              "ac-na-drodze-stylu-wystawionego-writing",
+              "ac-na-drodze-stylu-wystawionego-writing-2",
+              "ac-na-drodze-stylu-wystawionego-writing-3",
+              "ac-po-scaffoldzie-stylu-przez-writing-st",
+              "ac-podpiety-projekt-o-typie-nieznanym-bi",
+              "ac-podpiety-projekt-typu-skill-jest-pozy",
+              "ac-poproszony-o-skill-dla-innych-projekt",
+              "ac-skill-author-nie-zapisuje-stron-proje",
+              "ac-skill-writing-style-author-otwarty-w",
+              "ac-strona-wejscia-stylu-wystawionego-nap",
+              "ac-strona-wejscia-stylu-wystawionego-nap-2",
+              "ac-styl-podpietego-projektu-typu-writing",
+              "ac-w-projekcie-typu-writing-style-blok-p",
+              "ac-w-projekcie-typu-writing-style-patch",
+              "ac-wpis-podpietego-projektu-typu-skill-n"
+            ]
+          },
+          {
+            "type": "code-snippet",
+            "slugs": [
+              "szablon-project-writing-skill"
+            ]
+          },
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m31-requires-m52",
+              "m37-requires-m31",
+              "m37-requires-m57",
+              "m52-requires-m57"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u01-rejestr-typow-i-mozliwosci",
+          "why": "deklaracja `skill-exposure` i filtr kluczy oraz elementów po możliwościach"
+        },
+        {
+          "unit": "u02-aktywacja-i-rejestracja-z-typem",
+          "why": "kopia typu w rekordzie projektu, z której rejestr skilli czyta typ dostawcy"
+        }
+      ],
+      "wave": 3,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u08-zakladanie-projektu-i-lista-workspace",
+      "goal": "Projekt zakłada się na osobnej stronie trasy workspace'u, która ma dwie ścieżki. Pierwsza to nowy projekt z obowiązkowym wyborem karty typu, karty idą w kolejności rejestru. Druga to dodanie istniejącego katalogu, które działa także wtedy, gdy listy typów nie da się pobrać. Błędy katalogu pokazują się pod listą katalogów, a po odmowie niezgodnej ścieżki strona proponuje przełączenie na drugą, zachowując wybrany katalog. Na liście projektów workspace'u każdy wiersz ma nazwę typu, a projekt o nieznanym typie jest wierszem niedostępnym. Usunięte zostaje okno modalne zakładania projektu i jego komponent: przycisk na ekranie powitalnym i akcja przełącznika projektu prowadzą teraz na nową stronę.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 0,
+              "limit": 2,
+              "anchors": [
+                "ycw2nmaz",
+                "gofah0an"
+              ]
+            },
+            "deferred": [
+              {
+                "what": "wiersz tabeli odczytu typu o atrybucie typu wpisu sąsiada w bloku projektów workspace'u",
+                "to": "u06-prompt-typu-projektu",
+                "why": "powstaje razem z tym blokiem promptu"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 7,
+              "limit": 3,
+              "anchors": [
+                "m31l4001",
+                "m31l5001",
+                "j6b1z37u"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 13,
+              "limit": 1,
+              "anchors": [
+                "nvqp58hv"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m31purp01",
+                "m31deps01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 29,
+              "limit": 1,
+              "anchors": [
+                "eb95ery1"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 35,
+              "limit": 3,
+              "anchors": [
+                "m31l4001",
+                "m31l5001",
+                "j6b1z37u"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 55,
+              "limit": 2,
+              "anchors": [
+                "ycw2nmaz",
+                "gofah0an"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ui-view",
+            "slugs": [
+              "create-project-page",
+              "welcome-page"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-dodanie-z-modala-sciezki-nieistniejac",
+              "ac-dodanie-z-modala-sciezki-nieistniejac-2",
+              "ac-katalog-wskazany-w-modalu-welcome-i-z",
+              "ac-po-udanym-dodaniu-projektu-z-modala-w",
+              "ac-projekt-z-nieznana-wartoscia-projectt-2",
+              "ac-przycisk-add-project-to-workspace-na",
+              "ac-swiezy-katalog-dodany-z-modala-welcom",
+              "m31-create-project-requires-type-choice",
+              "m31-create-project-type-cards-registry-order",
+              "m31-switcher-add-project-navigates-to-create-project",
+              "m31-types-error-keeps-existing-path",
+              "m31-welcome-row-shows-type-name",
+              "m31-welcome-unknown-type-row-unavailable",
+              "m31-wrong-path-offers-switch-keeping-directory"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u01-rejestr-typow-i-mozliwosci",
+          "why": "lista typów projektu"
+        },
+        {
+          "unit": "u02-aktywacja-i-rejestracja-z-typem",
+          "why": "rejestracja z typem, rozróżnienie ścieżek i ich odmowy"
+        }
+      ],
+      "wave": 3,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u09-powloka-wedlug-typu",
+      "goal": "Panel boczny wynika z możliwości projektu. Bez `entities` nie ma sekcji ELEMENTS ani pozycji Tags, a bez `briefs` nie ma pozycji Briefs, przy czym pozostałe pozycje zachowują kolejność. Pasek nagłówka pokazuje nazwę typu bieżącego projektu z rejestru typów, a powłoka nigdy nie rozgałęzia się po samym slugu typu.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m50-app-shell.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m50-app-shell.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "2gxohenh",
+                "bdmt5qsw"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m50-app-shell.md",
+            "context": {
+              "offset": 5,
+              "limit": 1,
+              "anchors": [
+                "8h2a734u"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m50-app-shell.md",
+            "context": {
+              "offset": 30,
+              "limit": 3,
+              "anchors": [
+                "t11w5n3i",
+                "0p15a2js",
+                "76e8kkze"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-projekt-typu-skill-nie-ma-karty-entit",
+              "ac-projekt-typu-writing-style-nie-ma-kar",
+              "ac-projekt-zarejestrowany-jako-specyfika",
+              "ac-w-projekcie-typu-skill-sekcja-others",
+              "m50-no-elements-without-entities",
+              "m50-no-tags-in-others-without-entities",
+              "m50-others-order-in-skill-project"
+            ]
+          },
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m50-requires-m21",
+              "m50-requires-m57"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u01-rejestr-typow-i-mozliwosci",
+          "why": "nazwy typów z listy typów"
+        },
+        {
+          "unit": "u02-aktywacja-i-rejestracja-z-typem",
+          "why": "typ i zbiór możliwości bieżącego projektu"
+        }
+      ],
+      "wave": 3,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u05-powierzchnie-agentow-zewnetrznych",
+      "goal": "Subagenci, zewnętrzne połączenie MCP i paczka skilli dla obcych agentów dopasowują się do możliwości projektu. Bez `briefs` nie ma subagenta eksploracji diffu, profili połączenia `brief` i `patch` (połączenie z nimi jest odrzucane przy zestawianiu) ani skilla implementacji briefu, a ze skilla refaktoru znika ścieżka 2. Bez `entities` w allow-liście eksploratora specyfikacji, w katalogu narzędzi profili i w treści wyrenderowanych skilli nie ma operacji encyjnych. Kontekst renderowania skilli zyskuje zbiór możliwości projektu.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m45-subagents.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m45-subagents.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "hjpxu35p",
+                "z5re96yp"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m45-subagents.md",
+            "context": {
+              "offset": 5,
+              "limit": 1,
+              "anchors": [
+                "iqiwak31"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m45-subagents.md",
+            "context": {
+              "offset": 23,
+              "limit": 2,
+              "anchors": [
+                "kdxd7mlc",
+                "37ogwcgx"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m12-external-mcp.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m12-external-mcp.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m12cel00",
+                "m12dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m12-external-mcp.md",
+            "context": {
+              "offset": 16,
+              "limit": 1,
+              "anchors": [
+                "727yc48e"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m12-external-mcp.md",
+            "context": {
+              "offset": 28,
+              "limit": 2,
+              "anchors": [
+                "97e1skhg",
+                "ikg2bklu"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m22-external-skills/m22-external-skills.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m22-external-skills/m22-external-skills.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m22cel00",
+                "m22dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m22-external-skills/m22-external-skills.md",
+            "context": {
+              "offset": 4,
+              "limit": 4,
+              "anchors": [
+                "m22dserv",
+                "m22dread",
+                "m22dimpl",
+                "2a8tgd5w"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m22-external-skills/m22-external-skills.md",
+            "context": {
+              "offset": 20,
+              "limit": 2,
+              "anchors": [
+                "ibm48pll",
+                "8tvwx2ry"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-w-projekcie-typu-skill-allow-lista-de",
+              "ac-w-projekcie-typu-skill-c4s-install-sk",
+              "ac-w-projekcie-typu-skill-odpowiedz-get",
+              "ac-w-projekcie-typu-skill-tablica-subage",
+              "ac-w-projekcie-typu-skill-wyrenderowany",
+              "ac-w-projekcie-typu-skill-wyrenderowany-2",
+              "ac-w-projekcie-typu-skill-wyrenderowany-3",
+              "m12-brief-profile-refused-without-briefs",
+              "m12-chat-profile-without-entity-tools"
+            ]
+          },
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m12-requires-m21",
+              "m22-requires-m13",
+              "m22-requires-m21",
+              "m45-requires-m13",
+              "m45-requires-m21"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u03-bramkowanie-encji",
+          "why": "bez `entities` nie są montowane serwery encyjne, z których liczą się allow-lista i katalog narzędzi"
+        },
+        {
+          "unit": "u04-bramkowanie-briefow",
+          "why": "bez `briefs` nie istnieją tury `brief` ani `patch`"
+        }
+      ],
+      "wave": 4,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u06-prompt-typu-projektu",
+      "goal": "Prompt agenta w każdym projekcie niesie blok opisu typu, czyli dosłowny opis z wpisu typu, identyczny dla projektów tego samego typu. Blok projektu niesie slug typu zarówno w kompozycji domyślnej, jak i w kompozycji briefu. Blok tożsamości i katalog encji zależą od `entities`: bez nich prompt mówi tylko o stronach i nie ma bloku encji. Każdy sąsiad w bloku projektów workspace'u niesie typ z kopii w rekordzie projektu. Usunięty zostaje znacznik wystawienia sąsiada jako skill.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m48-system-prompt-composition.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m48-system-prompt-composition.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "xdnw931t",
+                "603o6bq9"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m48-system-prompt-composition.md",
+            "context": {
+              "offset": 4,
+              "limit": 4,
+              "anchors": [
+                "kxlokl31",
+                "mkz6sj9t",
+                "ctuh3exj",
+                "0ou18tpq"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m48-system-prompt-composition.md",
+            "context": {
+              "offset": 15,
+              "limit": 1,
+              "anchors": [
+                "dkw9n1cn"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m48-system-prompt-composition.md",
+            "context": {
+              "offset": 28,
+              "limit": 3,
+              "anchors": [
+                "zderfw1k",
+                "j9sxaiqy",
+                "7yqp77g8"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m57-project-types.md",
+            "change": {
+              "offset": 10,
+              "limit": 2,
+              "anchors": [
+                "jw89colg",
+                "7ngvgv5z"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m57-project-types.md",
+            "context": {
+              "offset": 22,
+              "limit": 1,
+              "anchors": [
+                "y7od19e7"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "gofah0an"
+              ]
+            },
+            "completes": [
+              {
+                "what": "wiersz tabeli odczytu typu o atrybucie typu wpisu sąsiada w bloku projektów workspace'u",
+                "from": "u08-zakladanie-projektu-i-lista-workspace"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 4,
+              "limit": 1,
+              "anchors": [
+                "2eyrx9es"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": {
+              "offset": 12,
+              "limit": 1,
+              "anchors": [
+                "qtqqqwfp"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 49,
+              "limit": 2,
+              "anchors": [
+                "y4g5htam",
+                "qtqqqwfp"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "context": {
+              "offset": 55,
+              "limit": 2,
+              "anchors": [
+                "ycw2nmaz",
+                "gofah0an"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-blok-project-type-w-projekcie-typu-sk",
+              "ac-blok-project-type-w-projekcie-typu-sp",
+              "ac-blok-project-type-w-projekcie-typu-wr",
+              "ac-dwa-projekty-tego-samego-typu-dostaja",
+              "ac-kazdy-projekt-niezaleznie-od-typu-dos",
+              "m31-peer-carries-type-attribute",
+              "m31-peer-has-no-skill-attribute",
+              "m48-brief-project-carries-type-attribute",
+              "m48-entities-block-empty-whitelist",
+              "m48-identity-without-entities",
+              "m48-no-entities-block-without-capability",
+              "m48-project-carries-type-attribute"
+            ]
+          },
+          {
+            "type": "code-snippet",
+            "slugs": [
+              "szablon-project-type",
+              "szablon-project",
+              "szablon-claude4spec-identity",
+              "szablon-workspace-projects"
+            ]
+          },
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m48-requires-m13",
+              "m48-requires-m57"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u02-aktywacja-i-rejestracja-z-typem",
+          "why": "typ i zbiór możliwości projektu w kontekście oraz kopia typu w rekordzie projektu"
+        },
+        {
+          "unit": "u08-zakladanie-projektu-i-lista-workspace",
+          "why": "dzielona sekcja odczytu typu w module workspace'u, którą ta jednostka domyka"
+        }
+      ],
+      "wave": 4,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "u10-kreator-onboardingu-wedlug-typu",
+      "goal": "Onboarding staje się kreatorem krok po kroku ze wskaźnikiem postępu, powrotem bez utraty wartości i pominięciem dostępnym na każdym kroku. Nagłówek kreatora pokazuje nazwę typu. Są cztery kroki wspólne, do których dochodzą kroki typu wstawiane według wpisu typu, także w miejsce kroku wspólnego: projekt typu Skill dostaje krok szczegółów skilla, a Writing Style krok szczegółów stylu. Kreator wysyła jeden atomowy zapis końcowy razem z kluczami kroków typu, a odmowa wskazująca klucz wraca do kroku z tym polem. Po domknięciu onboardingu strona startowa typu dostaje wpisaną nazwę i opis, a klucz wejścia wskazuje na nią. Usunięty zostaje jednoekranowy formularz z sekcją zaawansowaną.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m16-onboarding.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m16-onboarding.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "x5c6lzgo",
+                "0jo31abd"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m16-onboarding.md",
+            "context": {
+              "offset": 4,
+              "limit": 6,
+              "anchors": [
+                "za9e9492",
+                "czn353hw",
+                "r2q6o6vi",
+                "gipdzz10",
+                "swmsue1q",
+                "os387tmx"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m16-onboarding.md",
+            "context": {
+              "offset": 12,
+              "limit": 1,
+              "anchors": [
+                "m16ui001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m16-onboarding.md",
+            "context": {
+              "offset": 14,
+              "limit": 1,
+              "anchors": [
+                "rqaflbly"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m16-onboarding.md",
+            "context": {
+              "offset": 20,
+              "limit": 2,
+              "anchors": [
+                "p4isbv5e",
+                "j9qszhqk"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m59-project-type-skill.md",
+            "change": {
+              "offset": 3,
+              "limit": 1,
+              "anchors": [
+                "axq8papz"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m59-project-type-skill.md",
+            "change": {
+              "offset": 9,
+              "limit": 4,
+              "anchors": [
+                "wt5a7bbe",
+                "4dvcvsa7",
+                "oriijwke",
+                "b3cjubn1"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m59-project-type-skill.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "kb1uaezn",
+                "cfpp69hw"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m59-project-type-skill.md",
+            "context": {
+              "offset": 6,
+              "limit": 3,
+              "anchors": [
+                "2zam82j1",
+                "2qss50k7",
+                "fewej42u"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m60-project-type-writing-style.md",
+            "change": {
+              "offset": 3,
+              "limit": 1,
+              "anchors": [
+                "gvo96xhp"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m60-project-type-writing-style.md",
+            "change": {
+              "offset": 9,
+              "limit": 4,
+              "anchors": [
+                "usl75l6i",
+                "zw3gpb7p",
+                "eip1l78y",
+                "l0yfsvt6"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m60-project-type-writing-style.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "4quqam4w",
+                "xq79w3vi"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m60-project-type-writing-style.md",
+            "context": {
+              "offset": 6,
+              "limit": 3,
+              "anchors": [
+                "ycxv72ar",
+                "yroe6cwl",
+                "wygqnjx3"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ui-view",
+            "slugs": [
+              "onboarding-page"
+            ]
+          },
+          {
+            "type": "code-snippet",
+            "slugs": [
+              "szablon-strony-wejscia-skilla",
+              "szablon-strony-wejscia-stylu"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-continue-z-waznym-formularzem-wysyla",
+              "ac-continue-ze-zmienionym-dir-builtin-ro",
+              "ac-klikniecie-karty-stylu-zaznacza-ja-ra",
+              "ac-krok-skill-details-nie-pozwala-przejs",
+              "ac-krok-style-details-nie-pozwala-przejs",
+              "ac-krok-typu-ktory-we-wpisie-typu-deklar",
+              "ac-naglowek-kreatora-onboardingu-pokazuj",
+              "ac-oba-dropdowny-jezykowe-renderuja-supp",
+              "ac-odmowa-koncowego-zapisu-wskazujaca-kl",
+              "ac-odmowa-koncowego-zapisu-wskazujaca-sk",
+              "ac-odmowa-przemianowania-na-continue-zos",
+              "ac-onboarding-projektu-typu-skill-pokazu",
+              "ac-onboarding-projektu-typu-specyfikacja",
+              "ac-onboarding-projektu-typu-writing-styl",
+              "ac-po-domknieciu-onboardingu-projektu-ty",
+              "ac-po-domknieciu-onboardingu-projektu-ty-2",
+              "ac-po-domknieciu-onboardingu-projektu-ty-3",
+              "ac-po-domknieciu-onboardingu-projektu-ty-4",
+              "ac-po-domknieciu-onboardingu-projektu-ty-5",
+              "ac-po-domknieciu-onboardingu-projektu-ty-6",
+              "ac-po-pominieciu-onboardingu-projektu-ty",
+              "ac-pominiecie-onboardingu-projektu-typu",
+              "ac-pominiecie-onboardingu-projektu-typu-2",
+              "ac-przejscie-back-na-wczesniejszy-krok-k",
+              "ac-stan-startowy-formularza-onboardingu",
+              "ac-w-projekcie-typu-skill-kreator-onboar",
+              "ac-w-projekcie-typu-spec-kreator-onboard",
+              "ac-w-projekcie-typu-writing-style-kreato",
+              "ac-w-sekcji-advanced-onboardingu-mozna-z",
+              "ac-wartosc-skill-entry-ustawiona-przed-d",
+              "ac-wartosci-skill-name-i-skill-descripti",
+              "ac-wskaznik-postepu-kreatora-onboardingu",
+              "ac-zwijana-sekcja-advanced-directory-ren"
+            ]
+          },
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m16-requires-m57",
+              "m59-requires-m16",
+              "m59-requires-m52",
+              "m60-requires-m16",
+              "m60-requires-m52"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u02-aktywacja-i-rejestracja-z-typem",
+          "why": "wstawki zawartości startowej i klucze strony startowej przy aktywacji"
+        },
+        {
+          "unit": "u07-wystawianie-skilli-i-style",
+          "why": "deklaracje kluczy wystawienia, które zapisują kroki typu"
+        }
+      ],
+      "wave": 4,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    }
+  ],
+  "entityTypes": [
+    {
+      "type": "ac",
+      "role": "criteria",
+      "checks": "verifies",
+      "observedIn": "per-criterion",
+      "links": [
+        "verifies"
+      ],
+      "inactive": "status = deprecated",
+      "version": 3
+    },
+    {
+      "type": "endpoint",
+      "role": "built",
+      "inCode": "an Express route handler (src/server/routes/ for project-scoped routes, src/server/workspace/routes.ts for /api/workspace/*) with the endpoint's method, path, status codes and linked request/response/error DTOs",
+      "verify": "a supertest test (src/server/routes/<name>.route.test.ts or the workspace routes test) hitting method+path and asserting the status codes and response shape named by the endpoint",
+      "links": [
+        "linkedDtos"
+      ],
+      "version": 3
+    },
+    {
+      "type": "dto",
+      "role": "built",
+      "inCode": "a TypeScript type in src/shared/ (request/response shape shared by server and client) plus the route's input validation for request DTOs",
+      "verify": "the route supertest asserts the response body has exactly the DTO's fields (required ones present) and that a request violating a request DTO's field rules is rejected",
+      "links": [],
+      "version": 2
+    },
+    {
+      "type": "code-snippet",
+      "role": "built",
+      "inCode": "the snippet's text verbatim in code: system-prompt block templates in src/server/services/system-prompt/blocks/ (szablon-*, opis-typu-*-do-promptu as the project-type entry's prompt description), starter-page templates in the project-type registry entries (welcome-template-index, szablon-strony-wejscia-*)",
+      "verify": "a unit test next to the block/registry asserting the rendered block or starter file equals the snippet's `code` (placeholders filled)",
+      "links": [],
+      "version": 1
+    },
+    {
+      "type": "database-table",
+      "role": "built",
+      "inCode": "the table's DDL as a migration in src/server/db/workspace-migrations.ts (workspace DB) plus its row mapping/accessors in the owning registry (for remote-run: src/server/runs/remote-run-registry.ts)",
+      "verify": "a migration/registry test (src/server/db/workspace-db.test.ts or the registry's own test) asserting the table's columns and that the registry writes/reads every column",
+      "links": [],
+      "version": 3
+    },
+    {
+      "type": "ui-view",
+      "role": "built",
+      "inCode": "a React screen component under src/client/components/ (create-project-page, welcome-page, onboarding-page) rendering the view's url params, elements and alternative states",
+      "verify": "a render test src/client/components/<View>.*.render.test.ts asserting the view's elements and each of its `states`",
+      "links": [],
+      "version": 4
+    },
+    {
+      "type": "module-dependency",
+      "role": "context",
+      "links": [],
+      "version": 1
+    },
+    {
+      "type": "spreadsheet",
+      "role": "per-entity",
+      "links": [],
+      "version": 3
+    }
+  ],
+  "entityParts": [
+    {
+      "slug": "moduly-feature",
+      "type": "spreadsheet",
+      "why": "Indeks modułów specyfikacji (nr, nazwa, złożoność, warstwy, zakres, plik) — opis zakresu, bez odpowiednika w kodzie i bez obserwowalnego oczekiwania.",
+      "parts": [
+        {
+          "role": "context",
+          "items": "all rows",
+          "key": "column `#` (module number)"
+        }
+      ]
+    },
+    {
+      "slug": "warstwy",
+      "type": "spreadsheet",
+      "why": "Indeks warstw specyfikacji (warstwa, plik, co opisuje) — opis struktury specyfikacji, bez odpowiednika w kodzie i bez obserwowalnego oczekiwania.",
+      "parts": [
+        {
+          "role": "context",
+          "items": "all rows",
+          "key": "column `Warstwa`"
+        }
+      ]
+    }
+  ]
+}
