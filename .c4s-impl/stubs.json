@@ -22,7 +22,7 @@
    "provider": "u08-zakladanie-projektu-i-lista-workspace",
    "pretends": "the add-project modal (src/client/ui/modals/ProjectCreate.tsx) still posts { cwd } only — the existing-directory path; a fresh directory added from it is refused with PROJECT_PATH_NOT_INITIALIZED until the create-project page sends projectType on the New project path",
    "closesInWave": 3,
-   "closed": false,
+   "closed": true,
    "openedBy": "u02-aktywacja-i-rejestracja-z-typem/p1-l5-l19"
   }
  ]

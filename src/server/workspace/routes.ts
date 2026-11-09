@@ -13,7 +13,7 @@ import { ProjectTypeError } from '../project-types/resolve.js';
 import { ProjectPathError } from './home-workspace.js';
 import type { WorkspaceResponse } from '../../shared/workspace-response.js';
 import type { AddProjectResponse, ProjectTypeListResponse } from '../../shared/project-types.js';
-import type { ProjectTypeRegistry } from '../project-types/registry.js';
+import { hostProjectTypeRegistry, type ProjectTypeRegistry } from '../project-types/registry.js';
 
 const pexec = promisify(execFile);
 import type { ProjectContextCache } from './context-cache.js';
@@ -34,6 +34,11 @@ export interface WorkspaceRoutesDeps {
    */
   /** 2.1.77: `projectType` — the type from the new-project path; absent = the existing-directory path. */
   activateProject: (cwd: string, projectType?: string) => Promise<ProjectRecord>;
+  /**
+   * 2.1.77 (M31 `gofah0an`): the project-type registry the UI listing reads the
+   * type's name from. Absent = the host registry.
+   */
+  types?: ProjectTypeRegistry;
 }
 
 /**
@@ -43,6 +48,7 @@ export interface WorkspaceRoutesDeps {
  */
 export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
   const { registry, workspace, cache, mode } = deps;
+  const types = deps.types ?? hostProjectTypeRegistry();
   const router = Router();
 
   /**
@@ -68,13 +74,22 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
   // alone; a project whose failed build is past its window goes back to the
   // end of the queue (`readStates`). ASSUMPTION:dev-0004 — this listing (GET
   // /api/workspace, and the DELETE answer) is that read; `list_projects` is not.
+  // 2.1.77 (M31 L4 todo, `gofah0an`): each row carries the type from the copy
+  // in the project record (absent = `spec`) and the type's name from the type
+  // registry — `null` for a slug the current version does not know, which the
+  // Welcome screen shows as an unavailable row (ASSUMPTION:dev-0803).
   const serializeProjects = (ws: WorkspaceRecord) => {
     const states = cache.readStates();
-    return ws.projects.map((p) => ({
-      ...p,
-      name: readPeerConfigSummary(p.cwd).name ?? p.id,
-      live: states.get(p.id) === 'ready',
-    }));
+    return ws.projects.map((p) => {
+      const projectType = p.projectType ?? 'spec';
+      return {
+        ...p,
+        name: readPeerConfigSummary(p.cwd).name ?? p.id,
+        live: states.get(p.id) === 'ready',
+        projectType,
+        projectTypeName: types.get(projectType)?.name ?? null,
+      };
+    });
   };
 
   router.get('/health', (_req, res) => {
@@ -119,13 +134,13 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
     });
   });
 
-  // Decision #11 (0.1.57): server-side directory browser for the add-project
-  // modal. Lists ONLY subdirectories (files skipped) under `path`; absent
+  // Decision #11 (0.1.57): server-side directory browser (2.1.77: the
+  // `DirectoryList` of the create-project page and of `DirectoryPickerModal`). Lists ONLY subdirectories (files skipped) under `path`; absent
   // `path` starts at the workspace's home directory when it has one (2.1.58),
   // otherwise at the process CWD; a leading `~` expands to the user's home.
   // Operates on the host filesystem, hence workspace scope (outside any project
-  // prefix). ENOENT/EACCES (or any read error) → 400 consumed inline by the
-  // modal — the server never crashes on a bad path.
+  // prefix). ENOENT/EACCES (or any read error) → 400 shown inline under the
+  // list — the server never crashes on a bad path.
   router.get('/workspace/fs', (req, res) => {
     const raw = typeof req.query.path === 'string' ? req.query.path.trim() : '';
     const expanded =

@@ -527,7 +527,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     return bootstrapProject(registry, workspace, projectCwd, activated, projectType).project;
   };
 
-  app.use('/api', workspaceRouter({ registry, workspace, cache, mode, activateProject }));
+  app.use('/api', workspaceRouter({ registry, workspace, cache, mode, activateProject, types: projectTypes }));
   // M57 L4 (2.1.77): the project-type list — no project prefix, no open project.
   app.use('/api/workspace/project-types', projectTypesRouter({ types: projectTypes }));
   // M54 L4 `pyxt16pa` (2.1.62): the workspace's runner hosts — no project prefix.

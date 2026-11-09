@@ -6,7 +6,6 @@ import { GitSyncRecover } from './GitSyncRecover.js';
 import { ShadowAccept } from './ShadowAccept.js';
 import { PageChanged } from './PageChanged.js';
 import { ChoiceModal } from './ChoiceModal.js';
-import { ProjectCreate } from './ProjectCreate.js';
 import { TrustPluginsModal } from '../../components/TrustPluginsModal.js';
 import { RunnerHostCreateDialog, RunnerHostEditDialog } from '../../components/runner-hosts/RunnerHostDialog.js';
 
@@ -27,7 +26,6 @@ export const MODAL_RENDERERS: RendererMap = {
   'page-resolve': PageChanged,
   'page-reload': PageChanged,
   'onboarding-skip': ChoiceModal,
-  'project-create': ProjectCreate,
   'project-plugins-trust': TrustPluginsModal,
   'runner-host-create': RunnerHostCreateDialog,
   'runner-host-edit': RunnerHostEditDialog,

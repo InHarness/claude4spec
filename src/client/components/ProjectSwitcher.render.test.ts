@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 /**
  * M31 workspace switcher — a large workspace must not push projects (or the
- * "Add project…" action) past the bottom of the viewport. The popover is
- * height-bounded; only the project list scrolls, the header and "Add project…"
+ * "Add project to workspace" action) past the bottom of the viewport. The popover is
+ * height-bounded; only the project list scrolls, the header and "Add project to workspace"
  * stay pinned outside it, and the current project is scrolled into view.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,6 +12,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 vi.mock('../lib/api-core.js', () => ({ PROJECT_ID: 'p-25' }));
 vi.mock('../ui/events.js', () => ({ openModal: vi.fn(), toast: { error: vi.fn() } }));
+const nav = vi.hoisted(() => ({ hrefs: [] as string[] }));
+vi.mock('../lib/document-nav.js', () => ({
+  navigateDocument: (href: string) => {
+    nav.hrefs.push(href);
+  },
+}));
 
 import { ProjectSwitcher } from './ProjectSwitcher.js';
 
@@ -30,6 +36,7 @@ let scrolled: Element[];
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
+  nav.hrefs = [];
   scrolled = [];
   fetchMock = vi.fn(async () => new Response(JSON.stringify({ name: 'default', projects }), { status: 200 }));
   vi.stubGlobal('fetch', fetchMock);
@@ -93,7 +100,7 @@ describe('ProjectSwitcher — large workspace', () => {
     expect(list.querySelectorAll('[role="option"]')).toHaveLength(30);
   });
 
-  it('keeps "Add project…" outside the scrolling list', async () => {
+  it('keeps "Add project to workspace" outside the scrolling list', async () => {
     await openSwitcher();
 
     const list = host.querySelector<HTMLElement>('[data-testid="project-switcher-list"]')!;
@@ -124,5 +131,24 @@ describe('ProjectSwitcher — large workspace', () => {
     await clickToggle(); // reopen → the stale shared entry is refetched
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(host.querySelectorAll('[role="option"]')).toHaveLength(30);
+  });
+});
+
+describe('ProjectSwitcher — Add project to workspace (M31 `m31l5001` Sloty)', () => {
+  it('[ac:m31-switcher-add-project-navigates-to-create-project] the switcher action "Add project to workspace" navigates from the project route to /create-project with a document reload', async () => {
+    const events = await import('../ui/events.js');
+    await openSwitcher();
+    const add = Array.from(host.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Add project to workspace',
+    );
+    expect(add).toBeDefined();
+    await act(async () => {
+      add!.click();
+    });
+    // A document load of the workspace route (outside /p/<id>/), not a window.
+    expect(nav.hrefs).toEqual(['/create-project']);
+    expect(events.openModal).not.toHaveBeenCalled();
+    // The popover closes behind the navigation.
+    expect(host.querySelector('[role="listbox"]')).toBeNull();
   });
 });

@@ -313,4 +313,45 @@ describe('[entity:post-api-workspace-projects] [entity:add-project-request] regi
     expect(fs.readdirSync(cwd)).toEqual(['.claude4spec']);
     expect(fs.readdirSync(path.join(cwd, '.claude4spec'))).toEqual(['config.json']);
   });
+
+  it('[ac:m31-welcome-row-shows-type-name] [entity:get-api-workspace] the UI listing of GET /api/workspace carries each project\'s type from its record copy (absent = `spec`) and the type\'s name from the type registry', async () => {
+    const { app } = appFor('team');
+    const skill = await request(app).post('/api/workspace/projects').send({ cwd: dirOf(home, 'skills', 'review'), projectType: 'skill' });
+    expect(skill.status).toBe(201);
+    const plain = dirOf(home, 'plain');
+    writeConfigFile(plain, {});
+    const spec = await request(app).post('/api/workspace/projects').send({ cwd: plain });
+    expect(spec.status).toBe(201);
+
+    const res = await request(appFor('team').app).get('/api/workspace');
+    expect(res.status).toBe(200);
+    const rows = res.body.projects as Array<{ id: string; projectType: string; projectTypeName: string | null }>;
+    expect(rows.find((r) => r.id === skill.body.projectId)).toMatchObject({ projectType: 'skill', projectTypeName: 'Skill' });
+    expect(rows.find((r) => r.id === spec.body.projectId)).toMatchObject({ projectType: 'spec', projectTypeName: 'Specification' });
+  });
+
+  it('[ac:ac-projekt-z-nieznana-wartoscia-projectt-2] a project whose record carries a `projectType` the current version does not know stays on the workspace listing, its slug as is and no type name', async () => {
+    dirOf(home, 'future');
+    fs.writeFileSync(
+      workspaceFilePath(home),
+      JSON.stringify({ projects: [{ id: 'future', path: 'future', projectType: 'novel' }], plugins: [] }, null, 2),
+    );
+    const res = await request(appFor('team').app).get('/api/workspace');
+    expect(res.status).toBe(200);
+    expect(res.body.projects).toHaveLength(1);
+    expect(res.body.projects[0]).toMatchObject({ id: 'future', projectType: 'novel', projectTypeName: null });
+  });
+
+  it('[ac:ac-katalog-wskazany-w-modalu-welcome-i-z] a directory confirmed through POST /api/workspace/projects (as the /create-project page sends it) becomes a project of the workspace listing', async () => {
+    const { app } = appFor('solo');
+    const cwd = dirOf(tmp, 'picked');
+    const before = (await request(app).get('/api/workspace')).body.projects as unknown[];
+    expect(before).toEqual([]);
+    const res = await request(app).post('/api/workspace/projects').send({ cwd, projectType: 'spec' });
+    expect(res.status).toBe(201);
+    const after = (await request(appFor('solo').app).get('/api/workspace')).body.projects as Array<{ id: string; cwd: string }>;
+    expect(after).toHaveLength(1);
+    expect(after[0]!.id).toBe(res.body.projectId);
+    expect(fs.realpathSync(after[0]!.cwd)).toBe(fs.realpathSync(cwd));
+  });
 });

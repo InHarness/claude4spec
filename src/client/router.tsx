@@ -34,6 +34,7 @@ import { PatchDetail } from './components/PatchDetail.js';
 import { OnboardingPage } from './components/onboarding/OnboardingPage.js';
 import { needsOnboarding } from './components/onboarding/onboardingFlow.js';
 import { WelcomePage } from './components/onboarding/WelcomePage.js';
+import { CreateProjectPage } from './components/CreateProjectPage.js';
 import { SettingsPage } from './components/settings/SettingsPage.js';
 import { WorkspaceSettingsPage } from './components/settings/WorkspaceSettingsPage.js';
 import { usePages } from './hooks/usePages.js';
@@ -189,6 +190,16 @@ const welcomeRoute = createRoute({
   staticData: { routeKind: 'workspace' },
 });
 
+// M31 ui-view `create-project-page` (2.1.77): a WORKSPACE route — the page
+// that creates a project or adds an existing directory, outside the project
+// prefix, in the workspace route frame; not fullscreen.
+const createProjectRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/create-project',
+  component: CreateProjectPage,
+  staticData: { routeKind: 'workspace' },
+});
+
 // M26 ui-view `workspace-settings-page` (2.1.58): a WORKSPACE route — the
 // settings page of the workspace, opened without a project; only the cards of
 // scope `workspace` (M26 `m26route`).
@@ -257,6 +268,7 @@ export const BASE_ROUTE_CHILDREN = Object.freeze([
   planDetailRoute,
   onboardingRoute,
   welcomeRoute,
+  createProjectRoute,
   workspaceSettingsRoute,
   settingsRoute,
   releasesIndexRoute,
