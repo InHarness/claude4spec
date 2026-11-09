@@ -1,0 +1,15 @@
+{
+  "id": "dev-0805",
+  "kind": "clarification",
+  "blocking": false,
+  "address": "u05-powierzchnie-agentow-zewnetrznych/ikg2bklu",
+  "slugs": [
+    "m12-brief-profile-refused-without-briefs"
+  ],
+  "text": "M12 `ikg2bklu` (Odczyt możliwości) says that in a project without `briefs` the `mcp` channel has two profiles (`chat`, `ask`) and a `brief`/`patch` connection is refused at set-up. M12 also says both mount points carry the same protocol and catalog and differ only in the default of `project`. It does not say how the gate applies to the workspace-bound mount `/api/workspace/mcp`, where one session addresses projects of different types per call. Assumed: the workspace-bound mount refuses `brief`/`patch` at set-up only when no project of the workspace has `briefs`, and otherwise accepts, advertising the catalog of the compat-default project if it holds the profile, else of the first project in workspace order that does. A call that targets a project without `briefs` answers NOT_FOUND, the same as any tool that project's catalog lacks. The spec should say how the profile gate applies on the workspace-bound mount.",
+  "assumption": "ASSUMPTION:dev-0805 — workspace-bound mount: brief/patch refused at set-up only when no project of the workspace has briefs; otherwise accepted, and a per-call target without briefs answers NOT_FOUND",
+  "unit": "u05-powierzchnie-agentow-zewnetrznych",
+  "portion": "u05-powierzchnie-agentow-zewnetrznych/p1-l17-l19",
+  "sent": true,
+  "patchPath": "2-1-75-to-2-1-77-u05-powierzchnie-agentow-zewnetrznych-ikg2bklu-m12-ikg2bklu-odczyt-mozliwosci-sa.md"
+}

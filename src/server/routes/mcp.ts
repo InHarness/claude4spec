@@ -46,6 +46,7 @@ import {
   type ExternalSurfaceDeps,
   type ProjectCallTarget,
 } from '../mcp/surface.js';
+import { MCP_CHANNEL_PROFILE_NAMES } from '../operations/profiles.js';
 import { listProjects } from '../workspace/list-projects.js';
 import { ProjectRemovedError, type ProjectContextCache } from '../workspace/context-cache.js';
 import type { WorkspaceRegistry } from '../workspace/registry.js';
@@ -191,20 +192,43 @@ export function workspaceMcpRouter(deps: WorkspaceMcpDeps): Router {
        * another project is not advertised, and a call naming a project that
        * lacks an advertised tool answers NOT_FOUND.
        *
+       * ASSUMPTION:dev-0805 — the profile gate (M12 `ikg2bklu`) is decided for
+       * the WORKSPACE, not for whichever project happens to be the template: a
+       * template whose registry does not hold the session's profile (`brief`/
+       * `patch` in a project without `briefs`) is passed over for the next
+       * project, in workspace order, that does. When no project of the
+       * workspace holds it, the surface carries the union of the projects'
+       * profiles, so the mount refuses the handshake at set-up. A call that
+       * targets a project without `briefs` then answers NOT_FOUND, the same as
+       * any tool that project's catalog lacks.
+       *
        * A template that fails to build does not break the session: an
        * established one keeps what it advertises (its handlers resolve per call
        * and report PROJECT_BUILD_FAILED there, where it belongs); a handshake
        * degrades to the workspace-scoped tools.
        */
-      const template = findProject(deps, fallback) ?? freshWorkspace(deps).projects[0] ?? null;
-      if (template) {
+      const fresh = freshWorkspace(deps);
+      const preferred = findProject(deps, fallback);
+      const candidates = preferred ? [preferred, ...fresh.projects.filter((p) => p !== preferred)] : fresh.projects;
+      const known = new Set<string>();
+      let built = false;
+      for (const project of candidates) {
+        let surface: ExternalSurface;
         try {
-          const ctx = await deps.cache.get(template);
-          return bind(composeExternalSurface(ctx.mcpSurfaceDeps(profile)));
+          const ctx = await deps.cache.get(project);
+          surface = composeExternalSurface(ctx.mcpSurfaceDeps(profile));
         } catch {
-          if (previous && previous.tools.length > 0) return previous;
+          continue;
         }
+        built = true;
+        if (!surface.profiles || (surface.profiles as readonly string[]).includes(profile)) return bind(surface);
+        for (const p of surface.profiles) known.add(p);
       }
+      if (built) {
+        // No project of the workspace holds this profile: refused at set-up.
+        return { ...workspaceScoped, profiles: MCP_CHANNEL_PROFILE_NAMES.filter((p) => known.has(p)) };
+      }
+      if (candidates.length > 0 && previous && previous.tools.length > 0) return previous;
       return workspaceScoped;
     },
     /**

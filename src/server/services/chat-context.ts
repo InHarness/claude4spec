@@ -472,7 +472,9 @@ export function subagentsFor(
     contextType,
     contributions: pluginHost.listSubagents?.() ?? [],
     hasSkillSlug,
-    // Both built-in names stay reserved even when a definition is not built here.
+    // The context's own built-in name is reserved: the built one's name, or
+    // `diff-explore` when this context's built-in is not built (no `briefs`), so
+    // a plugin cannot take that name. The other built-in's name is not reserved.
     taken: new Set(builtin ? [builtin.name] : ['diff-explore']),
     ...(mountedMcpServers
       ? { surface: { mcpServers: mountedMcpServers, builtins: new Set(CLAUDE_CODE_ALL_BUILTINS) } }
