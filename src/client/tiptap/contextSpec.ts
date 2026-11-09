@@ -201,9 +201,6 @@ let entitiesCapability = true;
 export function setEditorEntitiesCapability(has: boolean): void {
   entitiesCapability = has;
 }
-export function editorEntitiesCapability(): boolean {
-  return entitiesCapability;
-}
 
 /** Slash commands that insert an entity tag — gated by the capability `entities`. */
 const ENTITY_SLASH_COMMANDS = new Set(['mention', 'element', 'list', 'tagged', 'tagged-mixed']);

@@ -392,10 +392,6 @@ export class ReleaseService {
   setEntitiesCapability(has: boolean): void {
     this.hasEntities = has;
   }
-  /** Read by the shadow acceptance (M56 `heqel0ut`): whether to capture entity versions at all. */
-  entitiesCapability(): boolean {
-    return this.hasEntities;
-  }
 
   setEntityStore(store: import('./entity-store.js').EntityStore): void {
     this.entityStore = store;
