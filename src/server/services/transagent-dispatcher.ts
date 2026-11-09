@@ -48,14 +48,14 @@ import type {
 import { DomainError } from './tags.js';
 import { checkResumeConfigLock, isSessionInFlight, type ResumeConfigLockError } from '../routes/resume-lock.js';
 
+/** The `contextType` values `runTransagent` knows (mcp-tool `transagent-tools-runtransagent`). */
+export const TRANSAGENT_CONTEXT_TYPES = ['brief', 'chat', 'patch'] as const;
+
 /**
  * `RESUME_CONFIG_LOCKED` for a banka continuation. `violations` rides along
  * structured — the same `[{ path, reason }]` the two HTTP entry points put in
  * their 409 body (`ResumeConfigLockError`).
  */
-/** The `contextType` values `runTransagent` knows (mcp-tool `transagent-tools-runtransagent`). */
-export const TRANSAGENT_CONTEXT_TYPES = ['brief', 'chat', 'patch'] as const;
-
 export class ResumeConfigLockedError extends DomainError {
   constructor(
     message: string,

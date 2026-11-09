@@ -6,6 +6,7 @@ import type { Root } from '../../shared/types.js';
 import type { ElementsMenuEntry } from '../../shared/elements-menu.js';
 import { recordRootRename } from '../state/rootRenames.js';
 import { setEditorEntitiesCapability } from '../tiptap/contextSpec.js';
+import { hasBriefsCapability } from '../lib/capabilities.js';
 
 /**
  * M31: fields that rebuild the project context server-side (the PATCH handler
@@ -37,6 +38,16 @@ export function useConfig() {
     // fire a request with no `/api/projects/<id>` prefix to build.
     enabled: !!PROJECT_ID,
   });
+}
+
+/**
+ * 2.1.77 (M21 `dcagtfpe`, M23 `iifnvhtu`) — the project has the capability
+ * `briefs` (brief list/detail, patch detail, "Generate brief from this
+ * release"). `capabilities` absent = present (`hasBriefsCapability`).
+ */
+export function useHasBriefs(): boolean {
+  const { data: config } = useConfig();
+  return hasBriefsCapability(config?.capabilities);
 }
 
 /**

@@ -1,3 +1,5 @@
+import { hasBriefsCapability } from '../lib/capabilities.js';
+
 /**
  * 2.1.77 (M44 `1j39ajh8`) — which artifact links the bar above the composer
  * shows for a thread. With the capability `briefs`: `Plan: …`, `Brief: …` or
@@ -22,7 +24,7 @@ export function contextLinkKinds(
   capabilities: readonly string[] | undefined,
 ): ContextLinkKind[] {
   if (!thread) return [];
-  const hasBriefs = !capabilities || capabilities.includes('briefs');
+  const hasBriefs = hasBriefsCapability(capabilities);
   const out: ContextLinkKind[] = [];
   // 0.2.87: never in an `ask` thread — that type has no artifact.
   if (thread.planPath != null && thread.contextType !== 'ask') out.push('plan');

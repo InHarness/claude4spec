@@ -37,7 +37,7 @@ import { WelcomePage } from './components/onboarding/WelcomePage.js';
 import { SettingsPage } from './components/settings/SettingsPage.js';
 import { WorkspaceSettingsPage } from './components/settings/WorkspaceSettingsPage.js';
 import { usePages } from './hooks/usePages.js';
-import { useBaseRootId, useConfig, useRoots } from './hooks/useConfig.js';
+import { useBaseRootId, useConfig, useHasBriefs, useRoots } from './hooks/useConfig.js';
 import { EditorBridgeProvider } from './tiptap/EditorContext.js';
 import { usePageViewStore } from './state/pageView.js';
 import { useLastPage } from './hooks/useLastPage.js';
@@ -609,13 +609,8 @@ function PlansIndexRoute() {
 /**
  * 2.1.77 (M21 `dcagtfpe`, M23 `iifnvhtu`) — the brief list, brief detail and
  * patch detail views exist only in a project with the capability `briefs`;
- * without it their URLs are the ordinary not-found. `capabilities` absent
- * (config not read yet, or an older server) = present.
+ * without it their URLs are the ordinary not-found (`useHasBriefs`).
  */
-function useHasBriefs(): boolean {
-  const { data: config } = useConfig();
-  return !config?.capabilities || config.capabilities.includes('briefs');
-}
 
 function BriefsIndexRoute() {
   if (!useHasBriefs()) return <RouteNotFound />;

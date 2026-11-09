@@ -48,7 +48,7 @@ import { toIso } from '../services/artifact-content.js';
 import type { BriefService } from '../services/brief.js';
 import type { PatchService } from '../services/patch.js';
 import type { PlanService } from '../services/plan.js';
-import { ResumeConfigLockedError, type TransagentDispatcher } from '../services/transagent-dispatcher.js';
+import { ResumeConfigLockedError, TRANSAGENT_CONTEXT_TYPES, type TransagentDispatcher } from '../services/transagent-dispatcher.js';
 import { DomainError } from '../services/tags.js';
 import { AgentTurnError } from '../../shared/agent-turn.js';
 
@@ -150,7 +150,7 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
     ].join('\n'),
     {
       contextType: z
-        .enum(['brief', 'chat', 'patch'])
+        .enum(TRANSAGENT_CONTEXT_TYPES)
         .describe("For a continuation it must equal the referenced banka's context type."),
       message: z.string(),
       payload: z

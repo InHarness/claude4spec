@@ -15,7 +15,7 @@ import { DeltaSection } from './release/DeltaSection.js';
 import { ReleaseSelect } from './release/ReleaseSelect.js';
 import { AcceptedShadowLine } from './release/AcceptedShadowLine.js';
 import { CreateBriefDialog } from './CreateBriefDialog.js';
-import { useConfig } from '../hooks/useConfig.js';
+import { useHasBriefs } from '../hooks/useConfig.js';
 import { confirmDestructive, surfaceGitSync, toast } from '../ui/events.js';
 import { MAX_RELEASE_DESCRIPTION_LENGTH, releaseDescriptionLength } from '../../shared/entities.js';
 
@@ -32,8 +32,7 @@ export function ReleaseDetail({ name }: Props) {
   const restoreSpec = useRestoreSpec();
   // 2.1.77 (M21 `dcagtfpe`): "Generate brief from this release" and its
   // `brief-generate` window exist only with the capability `briefs`.
-  const { data: projectConfig } = useConfig();
-  const hasBriefs = !projectConfig?.capabilities || projectConfig.capabilities.includes('briefs');
+  const hasBriefs = useHasBriefs();
 
   // 0.2.110 M17: the `release-restore` window through the shell's facade.
   async function restoreWholeSpec() {
