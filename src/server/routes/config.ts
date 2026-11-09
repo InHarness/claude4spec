@@ -37,6 +37,7 @@ import {
 import { DIRECT_FILESYSTEM_DENY_GROUPS } from '../services/agent-tool-posture.js';
 import { ensureGitignore } from '../../bin/gitignore.js';
 import { hostCapabilityRegistry, projectCapabilitySet, type ProjectCapabilities } from '../project-types/capabilities.js';
+import { multiRootViolation } from '../project-types/resolve.js';
 
 export interface ConfigRouterDeps {
   cwd: string;
@@ -97,12 +98,16 @@ function configResponse(
   skillRegistry: SkillRegistry,
   inactiveKeys: readonly string[] = [],
   registry?: FieldRegistry,
+  capabilities?: ProjectCapabilities,
 ) {
   const body = baseConfigResponse(c, cwd, skillRegistry);
   // 2.1.77 (M26 `ournm78e`): the read answers ACTIVE keys only — a key of a
   // capability the project lacks is not returned, even though it lies in the file.
   stripInactiveKeys(body as unknown as Record<string, unknown>, inactiveKeys, registry);
-  return body;
+  // 2.1.77 (M57 `rdztxzb8`, M26 `7f76eszm`): the project's capability set, as the
+  // context factory gave it — the client assembles the ACTIVE settings cards and
+  // elements from it. Derived, never a file key.
+  return capabilities ? { ...body, capabilities: [...capabilities].sort() } : body;
 }
 
 /**
@@ -287,7 +292,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
     // Spojne z istniejacym wzorcem SkillResolver (per-query disk read).
     const c = readConfig(cwd);
     const all = fullRegistry();
-    res.json(configResponse(c, cwd, skillRegistry, all.inactiveKeys(capabilities), all));
+    res.json(configResponse(c, cwd, skillRegistry, all.inactiveKeys(capabilities), all, capabilities));
   });
 
   router.patch('/config', async (req, res, next) => {
@@ -373,6 +378,15 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         }
         values.set(d.key, value);
       }
+      // 2.1.77 (M01 `kt5gesnm`): without `multi-root`, `roots[]` carries only the
+      // base root's entry — any other entry is a validation error.
+      if (values.has('roots')) {
+        const violation = multiRootViolation(
+          (values.get('roots') ?? []) as { id: string; builtin: boolean }[],
+          capabilities,
+        );
+        if (violation) return reject('roots', violation);
+      }
 
       // Stage 3 — rules across fields, evaluated on the EFFECTIVE post-write config and
       // only when the request touches one of the rule's fields.
@@ -434,7 +448,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         deps.onContextConfigChanged?.(activationOnly ? { reason: 'activation-changed' } : undefined);
       }
       res.json({
-        ...configResponse(updated, cwd, skillRegistry, inactive, all),
+        ...configResponse(updated, cwd, skillRegistry, inactive, all, capabilities),
         ...(warnings.length > 0 ? { warnings } : {}),
       });
     } catch (err) {

@@ -29,6 +29,9 @@ export const PROJECT_SETTINGS: SettingsContribution = {
       weight: 40,
       owner: 'project',
       scope: 'project',
+      // 2.1.77 (M01 `m26psec`, `9t587fj1`): the card with its Roots element goes
+      // away in a project without `multi-root`.
+      requires: ['multi-root'],
     },
   ],
   elements: [

@@ -174,7 +174,9 @@ import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import type { ActiveAdapter, PendingInput } from '../routes/agent-turn.js';
 import { abortAllTurns } from '../routes/agent-turn.js';
 import { ProjectWsEmitter } from '../ws/project-emitter.js';
-import { ensureWelcomePage, ProjectNeedsActivationError } from './bootstrap.js';
+import { writeStarterContent, ProjectNeedsActivationError, settleProjectType } from './bootstrap.js';
+import { ENTITIES, multiRootViolation } from '../project-types/resolve.js';
+import type { ProjectCapabilities } from '../project-types/capabilities.js';
 import type { WorkspaceRegistry } from './registry.js';
 import type { WorkspaceRecord } from './types.js';
 
@@ -303,6 +305,13 @@ export interface ProjectContext {
   projectId: string;
   cwd: string;
   workspace: WorkspaceRecord;
+  /**
+   * 2.1.77 (M31 `ssn335r8`, `m31ctx001`; M57 `rdztxzb8`): the project's type
+   * slug and its capability set — read from `config.json` and the type registry
+   * at build time, fixed for the life of the context, never a reason to invalidate.
+   */
+  projectType: string;
+  capabilities: ProjectCapabilities;
   /** Per-context Express Router — dispatch middleware mounts it under /api/projects/:id. */
   router: Router;
   db: Db;
@@ -446,6 +455,22 @@ async function buildInner(
     migrateConfigToV4(cwd);
   }
   const bootConfig = readConfig(cwd);
+  // 2.1.77 (M31 `m31ctx001`, «Zestaw serwisów według typu»): the type from
+  // `config.json`, checked against the registry and the copy in the project's
+  // record — an unknown type or a mismatch fails the build with that cause
+  // (`PROJECT_TYPE_UNKNOWN` / `PROJECT_TYPE_MISMATCH`). The capability set is
+  // fixed for this context's life.
+  const projectRecord = registry.getProject(workspace, projectId);
+  const projectTypeResolved = settleProjectType(
+    cwd,
+    undefined,
+    projectRecord ? (projectRecord.projectType ?? null) : undefined,
+  );
+  const capabilities = projectTypeResolved.capabilities;
+  {
+    const violation = multiRootViolation(bootConfig.roots, capabilities);
+    if (violation) throw new Error(violation);
+  }
   // 0.1.96: page roots come from config.roots[] — the file and the defaults
   // alone (2.1.58: no start flag names a root's directory).
   const effectiveRoots: Root[] = bootConfig.roots;
@@ -728,9 +753,11 @@ async function buildInner(
   const pendingTextMigrations = (counts: ReturnType<typeof readEntityBootCounts> | undefined): string[] => {
     const pending: string[] = [];
     const { fileEntityCount = 0, hasTagsFile = false, dbEntityCount = 0 } = counts ?? {};
-    if (fileEntityCount === 0 && !hasTagsFile && dbEntityCount > 0) pending.push(MIGRATION_DB_ONLY_ENTITIES);
+    if (capabilities.has(ENTITIES) && fileEntityCount === 0 && !hasTagsFile && dbEntityCount > 0) {
+      pending.push(MIGRATION_DB_ONLY_ENTITIES);
+    }
     if (releasesWithoutSlugPending()) pending.push(MIGRATION_RELEASES_WITHOUT_SLUG);
-    if (entityTimestampsPending(entityStore)) pending.push(MIGRATION_UNSTAMPED_ENTITIES);
+    if (capabilities.has(ENTITIES) && entityTimestampsPending(entityStore)) pending.push(MIGRATION_UNSTAMPED_ENTITIES);
     return pending;
   };
   let entityBootCounts: ReturnType<typeof readEntityBootCounts> | undefined;
@@ -1400,7 +1427,10 @@ async function buildInner(
       // Validate overlaps against the roots THIS context runs on, so the route
       // cannot accept a dir the next build would reject.
       effectiveRoots,
-      onOnboardingCompleted: (effectivePagesDir) => ensureWelcomePage(cwd, effectivePagesDir),
+      onOnboardingCompleted: (effectivePagesDir) =>
+        writeStarterContent(cwd, effectivePagesDir, projectTypeResolved.entry),
+      // 2.1.77 (M57 `rdztxzb8`): the project's set — the active keys of /config.
+      capabilities,
       /**
        * 0.2.77 (M26) + 0.2.113: `/_meta/index-status` is the settings module's, and
        * rides with its router — mounted here, at a LONGER path than `metaRouter`
@@ -2058,7 +2088,9 @@ async function buildInner(
     const { fileEntityCount, hasTagsFile, dbEntityCount } = entityBootCounts ?? readEntityBootCounts();
     const filesPresent = fileEntityCount > 0 || hasTagsFile;
 
-    if (!filesPresent && dbEntityCount > 0) {
+    // 2.1.77 (M01 `hbib9dy0`): a project without `entities` has no step 8 —
+    // no entity store is bootstrapped and nothing is exported.
+    if (!filesPresent && dbEntityCount > 0 && capabilities.has(ENTITIES)) {
       // Pre-M29 project: entities live only in SQLite → export to text once.
       console.log(`[m29] exporting ${dbEntityCount} entities DB→text into ${entitiesRootDir} ...`);
       exportingToText = true;
@@ -2101,7 +2133,7 @@ async function buildInner(
      */
     // 2.1.60: skipped by the background build — it was refused above when a
     // file lacked its timestamps, so there is nothing to stamp.
-    if (!noProjectWrites) {
+    if (!noProjectWrites && capabilities.has(ENTITIES)) {
       try {
         const { unwritten } = backfillEntityTimestamps(db.handle, entityStore, cwd, entitiesRootDir);
         if (unwritten > 0) incompleteMigrations.push(MIGRATION_UNSTAMPED_ENTITIES);
@@ -2209,7 +2241,7 @@ async function buildInner(
     if (releasesWithoutSlugPending()) incompleteMigrations.push(MIGRATION_RELEASES_WITHOUT_SLUG);
     // The timestamp backfill never ran (the entity boot broke off before it):
     // only then is its outcome unknown and the store walked to learn it.
-    if (!timestampBackfillRan && entityTimestampsPending(entityStore)) {
+    if (!timestampBackfillRan && capabilities.has(ENTITIES) && entityTimestampsPending(entityStore)) {
       incompleteMigrations.push(MIGRATION_UNSTAMPED_ENTITIES);
     }
     if (incompleteMigrations.length > 0) {
@@ -2267,6 +2299,8 @@ async function buildInner(
 
   return {
     projectId,
+    projectType: projectTypeResolved.entry.slug,
+    capabilities,
     cwd,
     workspace,
     router,

@@ -8,10 +8,11 @@ import { readPeerConfigSummary } from './peer-config.js';
 import { forgetDbSlot } from '../db/index.js';
 import { workspaceMcpRouter } from '../routes/mcp.js';
 import { readPackageVersion } from '../../bin/c4s/package-version.js';
-import { WorkspaceHomeNotProjectError } from './bootstrap.js';
+import { ProjectPathModeError, WorkspaceHomeNotProjectError } from './bootstrap.js';
+import { ProjectTypeError } from '../project-types/resolve.js';
 import { ProjectPathError } from './home-workspace.js';
 import type { WorkspaceResponse } from '../../shared/workspace-response.js';
-import type { ProjectTypeListResponse } from '../../shared/project-types.js';
+import type { AddProjectResponse, ProjectTypeListResponse } from '../../shared/project-types.js';
 import type { ProjectTypeRegistry } from '../project-types/registry.js';
 
 const pexec = promisify(execFile);
@@ -31,7 +32,8 @@ export interface WorkspaceRoutesDeps {
    * a workspace home); the projects of the workspace are built in the
    * background after listen.
    */
-  activateProject: (cwd: string) => Promise<ProjectRecord>;
+  /** 2.1.77: `projectType` — the type from the new-project path; absent = the existing-directory path. */
+  activateProject: (cwd: string, projectType?: string) => Promise<ProjectRecord>;
 }
 
 /**
@@ -164,18 +166,31 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
         error: { code: 'VALIDATION', message: 'cwd must be an absolute path' },
       });
     }
+    // 2.1.77 (`add-project-request`): `projectType` present = the new-project
+    // path, absent = the existing-directory path. A non-string is a typo.
+    const projectType: unknown = req.body?.projectType;
+    if (projectType !== undefined && (typeof projectType !== 'string' || projectType.trim() === '')) {
+      return res.status(400).json({
+        error: { code: 'VALIDATION', message: 'projectType must be a project-type slug' },
+      });
+    }
     const target = path.resolve(cwd);
     const unusable = unusableDirectoryReason(target);
     if (unusable) {
       return res.status(400).json({ error: { code: 'VALIDATION', message: unusable } });
     }
     try {
-      const project = await deps.activateProject(target);
+      const project = await deps.activateProject(target, projectType as string | undefined);
       // 2.1.60 (M31 `m31boot01`): the registered project joins the background
       // build queue — it builds without waiting for a request.
       cache.enqueue(project);
-      res.status(201).json({ projectId: project.id });
+      const body: AddProjectResponse = { projectId: project.id };
+      res.status(201).json(body);
     } catch (err) {
+      // 2.1.77: every refusal falls before the registry is written.
+      if (err instanceof ProjectPathModeError || err instanceof ProjectTypeError) {
+        return res.status(400).json({ error: { code: err.code, message: err.message } });
+      }
       if (err instanceof ProjectPathError) {
         return res.status(400).json({ error: { code: err.code, message: err.message } });
       }

@@ -519,8 +519,8 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // project to the background build queue, like every other project.
   // 0.2.93: no integration artifact is written here — the MCP config is served
   // on demand by `GET /api/projects/:id/_meta/mcp-config`.
-  const activateProject = async (projectCwd: string) => {
-    return bootstrapProject(registry, workspace, projectCwd, activated).project;
+  const activateProject = async (projectCwd: string, projectType?: string) => {
+    return bootstrapProject(registry, workspace, projectCwd, activated, projectType).project;
   };
 
   app.use('/api', workspaceRouter({ registry, workspace, cache, mode, activateProject }));

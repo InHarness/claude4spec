@@ -14,6 +14,7 @@ import { configPath } from '../config.js';
 import { configRouter } from './config.js';
 import type { SkillRegistry } from '../services/skill-registry.js';
 import { STATIC_FIELD_REGISTRY } from '../settings/registry.js';
+import { projectCapabilitySet } from '../project-types/capabilities.js';
 
 describe('PATCH /config — projectType is fixed (2.1.77, M57)', () => {
   let dir: string;
@@ -108,5 +109,47 @@ describe('PATCH /config — projectType is fixed (2.1.77, M57)', () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toMatchObject({ code: 'VALIDATION', details: { field: 'projectType' } });
     expect(fs.readFileSync(file, 'utf8')).toBe(before);
+  });
+});
+
+describe('PATCH /config — roots[] without multi-root (2.1.77, M01 kt5gesnm)', () => {
+  let dir: string;
+  const base = { id: 'pages', name: 'Pages', dir: 'pages', builtin: true };
+  const appWith = (capabilities: string[]) =>
+    express()
+      .use(express.json())
+      .use(
+        configRouter({
+          cwd: dir,
+          skillRegistry: {} as unknown as SkillRegistry,
+          capabilities: projectCapabilitySet(capabilities),
+        }),
+      );
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-cfg-multiroot-'));
+    fs.mkdirSync(path.dirname(configPath(dir)), { recursive: true });
+    fs.writeFileSync(configPath(dir), JSON.stringify({ $schemaVersion: 4, name: 'X', projectType: 'skill', roots: [base] }, null, 2) + '\n');
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('[ac:ac-zapis-roots-z-drugim-wpisem-w-projekc] a roots[] write with a second entry in a `skill` project ends in a validation error, the file unchanged', async () => {
+    const before = fs.readFileSync(configPath(dir), 'utf8');
+    const res = await request(appWith(['skill-exposure']))
+      .patch('/config')
+      .send({ roots: [base, { id: 'notes', name: 'Notes', dir: 'notes', builtin: false }] });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+    expect(res.body.error.details).toEqual({ field: 'roots' });
+    expect(fs.readFileSync(configPath(dir), 'utf8')).toBe(before);
+    // The base root alone is still a valid write.
+    const ok = await request(appWith(['skill-exposure'])).patch('/config').send({ roots: [base] });
+    expect(ok.status).toBe(200);
+  });
+
+  it('GET /config answers the capability set the context factory passed', async () => {
+    const res = await request(appWith(['skill-exposure'])).get('/config');
+    expect(res.body.capabilities).toEqual(['skill-exposure']);
   });
 });

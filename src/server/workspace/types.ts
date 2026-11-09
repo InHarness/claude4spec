@@ -28,6 +28,13 @@ export interface ProjectRecord {
   /** ISO timestamp of the last SPA open / activation. */
   lastOpened?: string;
   /**
+   * 2.1.77 (M31 `t97gncju`, M57 `366wogto`): the copy of the project's type,
+   * written at registration together with the type in `config.json` (the
+   * source of truth). Absent = `spec`. A copy that disagrees with the file
+   * refuses the activation (`PROJECT_TYPE_MISMATCH`).
+   */
+  projectType?: string;
+  /**
    * M33 phase 2: machine-local trust decision for this project's committed
    * `.claude4spec/plugins/` overlay, per `(workspace × project)`. Deliberately
    * lives ONLY in `~/.claude4spec/`, NEVER in the repo — a cloned repo cannot

@@ -1120,7 +1120,7 @@ function readValidatedFile(cwd: string): Partial<Config> | null {
  * position from `JSON.parse`) and on a type mismatch (with the field name) —
  * never continues with an empty config.
  */
-export function loadOrCreateConfig(cwd: string): LoadResult {
+export function loadOrCreateConfig(cwd: string, projectType: string = DEFAULT_PROJECT_TYPE): LoadResult {
   const dir = path.join(cwd, '.claude4spec');
   fs.mkdirSync(dir, { recursive: true });
   const file = configPath(cwd);
@@ -1131,7 +1131,10 @@ export function loadOrCreateConfig(cwd: string): LoadResult {
     // pokazal /onboarding (M16). Defaults() ma true (forward compat dla projektow
     // sprzed M16); nadpisanie tylko w tym miejscu. Only the bootstrap key set is
     // serialized — the nested branches come from `defaults()` on every read.
-    const seed: Config = { ...bootstrapDefaults(cwd), onboardingCompleted: false };
+    // 2.1.77 (M01 `v878dqht`): `projectType` — the type settled in step 3 —
+    // is written explicitly, also when it equals the default, so the file and
+    // the copy in the workspace record carry the same value from the start.
+    const seed: Config = { ...bootstrapDefaults(cwd), projectType, onboardingCompleted: false };
     atomicWrite(file, JSON.stringify(seed, null, 2) + '\n');
     return {
       config: normalizeConfig(seed, defaults(cwd)),

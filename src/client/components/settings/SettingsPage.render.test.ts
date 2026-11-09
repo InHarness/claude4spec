@@ -92,9 +92,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function render(): Promise<string[]> {
+async function render(config: ConfigResponse = CONFIG): Promise<string[]> {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  qc.setQueryData(['config'], CONFIG);
+  qc.setQueryData(['config'], config);
   await act(async () => {
     root.render(createElement(QueryClientProvider, { client: qc }, createElement(SettingsPage)));
   });
@@ -185,5 +185,19 @@ describe('SettingsPage — entry from the sidebar avatar (M24 → M26)', () => {
       HTMLElement.prototype.scrollIntoView = original;
       window.location.hash = '';
     }
+  });
+});
+
+describe('SettingsPage — the active registry of the project type (2.1.77, M01 m26psec)', () => {
+  it('[ac:ac-projekt-typu-skill-nie-ma-na-stronie] a `skill` project has no `#directories` card on the settings page', async () => {
+    const skill = await render({ ...CONFIG, projectType: 'skill', capabilities: ['skill-exposure'] } as ConfigResponse);
+    expect(skill).toContain('project');
+    expect(skill).not.toContain('directories');
+    expect(host.querySelector('#directories')).toBeNull();
+    // A Specification project (with `multi-root`) has it — the card set follows the capability set.
+    act(() => root.unmount());
+    root = createRoot(host);
+    const spec = await render({ ...CONFIG, projectType: 'spec', capabilities: ['briefs', 'entities', 'multi-root'] } as ConfigResponse);
+    expect(spec).toContain('directories');
   });
 });

@@ -36,6 +36,7 @@ JSON per `verdict.json`. The loop reopens the unit owning each failed slug (`job
 - Never run tests locally (not even filtered vitest) — the user's standing rule; the only local check is `npm run typecheck`.
 - Out of scope by the brief author's decision (never counted as missing): purely formatting changes of the specification — sections `Project Type Capabilities (L19) — n/d`, empty `Wymaga możliwości` columns, indexes in `pages/SKILL.md` and `plugins/index.md`, and the retirement of layer L9 in the plugin index.
 - Empty `verifies` on an active `ac` is **not** a read problem (the user's standing rule): such a criterion's title is its contract, checked against the module section that embeds it; never turn it into a blocking deviation.
+- Test files are not covered by `npm run typecheck`. Also run `npm run typecheck:test` (it is not a test run). It has ~440 pre-existing errors, so read it as a diff: it is red for this build when an `error TS` line names a file changed on this branch (`git diff --name-only 44fd5931..HEAD`, plus your uncommitted changes), or when a TS2305/TS2724 (missing export) error names a file under `src/` or `tests/`. Either one is a broken test — fix it (implementer) or report it as `test-fails` (verifier).
 - Deprecated criteria: an `ac` with `status = deprecated` (seven of them in u07) describes behaviour being removed — never build it; confirm its absence (code, config keys and UI controls gone).
 
 ### Conventions

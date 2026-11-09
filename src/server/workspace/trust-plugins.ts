@@ -9,6 +9,7 @@ import {
   type SkillUsesConfirmationResult,
 } from './registry.js';
 import type { WorkspaceRecord } from './types.js';
+import { readFileProjectType } from '../project-types/resolve.js';
 
 /**
  * M31 core of `c4s trust-plugins` (record `trust-plugins`, mode
@@ -107,7 +108,11 @@ export function resolveProjectForDirectory(
   // workspace — neither `lastOpened` nor `lastOpenedProject` is stamped, so an
   // idempotent repeat changes nothing in the registry.
   const ws = registry.selectOrCreate({ port, open: false, ...(opts.mode !== undefined ? { mode: opts.mode } : {}) });
-  const project = registry.registerProject(ws, cwd);
+  // 2.1.77 (M31 `t97gncju`, rev-0001): the new record carries the copy of the
+  // type its config.json holds — a missing copy reads as `spec`, so a `skill`
+  // directory registered without it would fail every later activation with
+  // PROJECT_TYPE_MISMATCH. No config.json → no copy (activation writes `spec`).
+  const project = registry.registerProject(ws, cwd, readFileProjectType(cwd));
   return { ws, projectId: project.id, cwd };
 }
 

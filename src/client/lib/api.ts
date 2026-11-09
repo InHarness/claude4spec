@@ -169,6 +169,12 @@ export interface ConfigResponse {
   /** 2.1.77 (M57 `y47yl4xt`): the project's fixed type slug — `spec` when the file has none. No settings control. */
   projectType: string;
   /**
+   * 2.1.77 (M57 `rdztxzb8`, M26 `7f76eszm`): the project's capability set, derived
+   * from its type by the context factory. The settings page assembles only the
+   * cards and elements whose requirements it meets. Absent ⇒ nothing is filtered.
+   */
+  capabilities?: string[];
+  /**
    * 0.1.96 multiroot: replaces the single `pagesDir`.
    *
    * 0.2.101: exactly one entry carries `builtin: true` and THAT is the base page

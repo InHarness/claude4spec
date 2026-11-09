@@ -164,7 +164,7 @@ describe('M31 workspace routes — workspace with a home and registry workspace 
     const { app } = appFor('team');
     const billing = dirOf(home, 'services', 'billing');
 
-    const res = await request(app).post('/api/workspace/projects').send({ cwd: billing });
+    const res = await request(app).post('/api/workspace/projects').send({ cwd: billing, projectType: 'spec' });
 
     expect(res.status).toBe(201);
     expect(res.body).toEqual({ projectId: 'billing' });

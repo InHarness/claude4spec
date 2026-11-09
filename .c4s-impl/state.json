@@ -40,7 +40,7 @@
       "units": [
         "u02-aktywacja-i-rejestracja-z-typem"
       ],
-      "startCommit": null
+      "startCommit": "425b1544425022e06c5294796bad9ebdfd70868b"
     },
     {
       "n": 3,
@@ -830,13 +830,56 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u02-aktywacja-i-rejestracja-z-typem/p1-l5-l19",
+          "layers": [
+            "Domain",
+            "L5",
+            "L10",
+            "L13",
+            "L17",
+            "L19"
+          ],
+          "slugs": [
+            "ac-aktywacja-projektu-ktorego-config-jso",
+            "ac-aktywacja-projektu-typu-skill-nie-two",
+            "ac-katalog-z-istniejacym-claude4spec-con",
+            "ac-kontener-uruchomiony-z-pustym-project",
+            "ac-ponowny-start-kontenera-z-tym-samym-p",
+            "ac-projekt-ktorego-config-json-nie-ma-kl",
+            "ac-projekt-ktorego-typ-w-config-json-roz",
+            "ac-projekt-typu-skill-nie-ma-na-stronie",
+            "ac-projekt-typu-specyfikacja-po-domkniec",
+            "ac-projekt-z-nieznana-wartoscia-projectt",
+            "ac-rejestracja-swiezego-projektu-start-z",
+            "ac-swiezy-config-json-projektu-zarejestr",
+            "ac-zapis-roots-z-drugim-wpisem-w-projekc",
+            "m31-existing-directory-without-type-registers-as-spec",
+            "m31-existing-path-refuses-uninitialized-directory",
+            "m31-new-project-path-refuses-initialized-directory",
+            "m31-new-project-type-copy-in-workspace-record",
+            "m31-new-project-type-in-config-json",
+            "m31-register-with-conflicting-type-refused",
+            "m31-unknown-project-type-refused-at-registration",
+            "post-api-workspace-projects",
+            "add-project-request"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [
+            "ac-swiezy-bootstrap-onboardingcompleted"
+          ],
+          "only": []
+        }
+      ],
+      "startCommit": "fec2de71e174a57c6ac2b30f6001d8fabd55b0f2",
+      "baseCommit": "425b1544425022e06c5294796bad9ebdfd70868b",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 2
       },
       "jobs": []
     },

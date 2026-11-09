@@ -95,7 +95,13 @@ export function useScrollToCardHash(ready: unknown): void {
 export function SettingsPage() {
   const { data: config } = useConfig();
 
-  const visibleCards = config ? settingsCards('project').filter((c) => !c.decl.visible || c.decl.visible(config)) : [];
+  // 2.1.77 (M26 `7f76eszm`): the ACTIVE registry — assembled for this project's
+  // capability set (the cache keys on it, so projects of different types never
+  // share a card set).
+  const capabilities = config?.capabilities ? new Set(config.capabilities) : undefined;
+  const visibleCards = config
+    ? settingsCards('project', capabilities).filter((c) => !c.decl.visible || c.decl.visible(config))
+    : [];
 
   useScrollToCardHash(visibleCards.length);
 

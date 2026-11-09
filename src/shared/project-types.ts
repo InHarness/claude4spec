@@ -27,3 +27,21 @@ export interface ProjectTypeListResponse {
 export function satisfies(capabilities: ReadonlySet<string>, requires: readonly string[] | undefined): boolean {
   return (requires ?? []).every((c) => capabilities.has(c));
 }
+
+/**
+ * 2.1.77 (dto `add-project-request`): the body of `POST /api/workspace/projects`.
+ * `projectType` present = the new-project path (the directory must have no
+ * `config.json`; the type goes to the activation's bootstrap set and to the
+ * record's copy); absent = the existing-directory path (the directory must have
+ * `config.json`; the type comes from it, no key = Specification). A slug
+ * outside the type registry → `PROJECT_TYPE_UNKNOWN`.
+ */
+export interface AddProjectRequest {
+  cwd: string;
+  projectType?: string;
+}
+
+/** dto `add-project-response`: the stored id the UI navigates to (`/p/<projectId>/`). */
+export interface AddProjectResponse {
+  projectId: string;
+}

@@ -252,7 +252,7 @@ describe('M01 lazy project activation (2.1.58)', () => {
     const built: string[] = [];
     const { app } = serveWithRegistration(built);
 
-    const added = await request(app).post('/api/workspace/projects').send({ cwd });
+    const added = await request(app).post('/api/workspace/projects').send({ cwd, projectType: 'spec' });
     expect(added.status).toBe(201);
     const projectId = added.body.projectId as string;
     expect(view().projects.map((p) => p.id)).toEqual([projectId]);
@@ -630,7 +630,7 @@ describe('M01 lazy project activation (2.1.58)', () => {
     cache.start(view().projects);
     await outcomes.until(existing.id);
 
-    const added = await request(app).post('/api/workspace/projects').send({ cwd: dirOf('late') });
+    const added = await request(app).post('/api/workspace/projects').send({ cwd: dirOf('late'), projectType: 'spec' });
     expect(added.status).toBe(201);
     const lateId = added.body.projectId as string;
     // No request to the project: the registration queued it, and it builds.

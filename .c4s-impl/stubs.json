@@ -5,7 +5,7 @@
    "provider": "u02-aktywacja-i-rejestracja-z-typem",
    "pretends": "absent project capability set ⇒ every host-declared capability is active (no key/card/element filtered); the context factory does not yet pass the project's set derived from its type — where: src/server/routes/config.ts (ConfigRouterDeps.capabilities), src/client/components/settings/registry.ts (assembleSettings capabilities param)",
    "closesInWave": 2,
-   "closed": false,
+   "closed": true,
    "openedBy": "u01-rejestr-typow-i-mozliwosci/p1-l17-l19"
   },
   {
@@ -16,6 +16,14 @@
    "closesInWave": 4,
    "closed": false,
    "openedBy": "u01-rejestr-typow-i-mozliwosci/p2-l4-l20"
+  },
+  {
+   "dependent": "u02-aktywacja-i-rejestracja-z-typem",
+   "provider": "u08-zakladanie-projektu-i-lista-workspace",
+   "pretends": "the add-project modal (src/client/ui/modals/ProjectCreate.tsx) still posts { cwd } only — the existing-directory path; a fresh directory added from it is refused with PROJECT_PATH_NOT_INITIALIZED until the create-project page sends projectType on the New project path",
+   "closesInWave": 3,
+   "closed": false,
+   "openedBy": "u02-aktywacja-i-rejestracja-z-typem/p1-l5-l19"
   }
  ]
 }
