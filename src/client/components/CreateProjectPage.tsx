@@ -1,16 +1,11 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
 import { navigateDocument } from '../lib/document-nav.js';
 import { SegmentedControlTabs } from '../host-ui-kit/detail/SegmentedControlTabs.js';
 import { LoadingState } from '../host-ui-kit/actions/LoadingState.js';
 import { DirectoryList } from './DirectoryList.js';
-import type {
-  AddProjectRequest,
-  AddProjectResponse,
-  ProjectTypeCard,
-  ProjectTypeListResponse,
-} from '../../shared/project-types.js';
+import type { AddProjectRequest, AddProjectResponse } from '../../shared/project-types.js';
+import { useProjectTypes } from '../hooks/useProjectTypes.js';
 
 /**
  * M31 ui-view `create-project-page` (`/create-project`, 2.1.77) — a WORKSPACE
@@ -41,13 +36,7 @@ import type {
 
 export type CreateProjectPath = 'new' | 'existing';
 
-export const PROJECT_TYPES_QUERY_KEY = ['project-types'] as const;
-
-async function fetchProjectTypes(): Promise<ProjectTypeCard[]> {
-  const res = await fetch('/api/workspace/project-types');
-  if (!res.ok) throw new Error(`GET /api/workspace/project-types failed (HTTP ${res.status})`);
-  return ((await res.json()) as ProjectTypeListResponse).types;
-}
+export { PROJECT_TYPES_QUERY_KEY } from '../hooks/useProjectTypes.js';
 
 const PATH_TABS = [
   { id: 'new', label: 'New project' },
@@ -76,7 +65,7 @@ export function CreateProjectPage() {
   const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [wrongPath, setWrongPath] = useState<string | null>(null);
 
-  const types = useQuery({ queryKey: PROJECT_TYPES_QUERY_KEY, queryFn: fetchProjectTypes });
+  const types = useProjectTypes();
 
   const isNew = path === 'new';
   const canSubmit = !submitting && cwd.trim() !== '' && (!isNew || projectType != null);

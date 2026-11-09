@@ -8,3 +8,12 @@
 export function hasBriefsCapability(capabilities: readonly string[] | null | undefined): boolean {
   return !capabilities || capabilities.includes('briefs');
 }
+
+/**
+ * 2.1.77 (M13 `pmm7cm4c`, M20 `gv6us4lf`, M50 `0p15a2js`) — whether the
+ * project has the capability `entities`. Same fallback as
+ * `hasBriefsCapability`: `capabilities` absent = present.
+ */
+export function hasEntitiesCapability(capabilities: readonly string[] | null | undefined): boolean {
+  return !capabilities || capabilities.includes('entities');
+}

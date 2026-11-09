@@ -2345,13 +2345,37 @@
         }
       ],
       "wave": 3,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u09-powloka-wedlug-typu/p1-l19-l20",
+          "layers": [
+            "L19",
+            "L20"
+          ],
+          "slugs": [
+            "ac-projekt-typu-skill-nie-ma-karty-entit",
+            "ac-projekt-typu-writing-style-nie-ma-kar",
+            "ac-projekt-zarejestrowany-jako-specyfika",
+            "ac-w-projekcie-typu-skill-sekcja-others",
+            "m50-no-elements-without-entities",
+            "m50-no-tags-in-others-without-entities",
+            "m50-others-order-in-skill-project",
+            "m50-requires-m21",
+            "m50-requires-m57"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "fc7a0140c2b549862c713264936e3a8b1ab96452",
+      "baseCommit": "fc7a0140c2b549862c713264936e3a8b1ab96452",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },

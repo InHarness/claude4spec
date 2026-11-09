@@ -44,6 +44,10 @@ vi.mock('../hooks/useConfig.js', () => ({
   useRoots: () => h.roots,
   useBaseRootId: () => h.roots.find((r) => r.builtin)?.id ?? null,
   useElementsMenuLayout: () => ({ ready: true, layout: undefined }),
+  // The OTHERS menu and the type label read the config; the ELEMENTS section
+  // follows the capability `entities` (2.1.77, M50 `0p15a2js`).
+  useConfig: () => ({ data: undefined }),
+  useHasEntities: () => true,
 }));
 
 vi.mock('../hooks/usePages.js', () => ({

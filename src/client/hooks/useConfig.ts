@@ -6,7 +6,7 @@ import type { Root } from '../../shared/types.js';
 import type { ElementsMenuEntry } from '../../shared/elements-menu.js';
 import { recordRootRename } from '../state/rootRenames.js';
 import { setEditorEntitiesCapability } from '../tiptap/contextSpec.js';
-import { hasBriefsCapability } from '../lib/capabilities.js';
+import { hasBriefsCapability, hasEntitiesCapability } from '../lib/capabilities.js';
 
 /**
  * M31: fields that rebuild the project context server-side (the PATCH handler
@@ -29,7 +29,7 @@ export function useConfig() {
       const config = await configApi.get();
       // 2.1.77 (M20 `gv6us4lf`): the editor contexts follow the project's
       // capability `entities` (absent list = an older server = present).
-      setEditorEntitiesCapability(!config.capabilities || config.capabilities.includes('entities'));
+      setEditorEntitiesCapability(hasEntitiesCapability(config.capabilities));
       return config;
     },
     // The project shell is the reader; a workspace document (PROJECT_ID='',
@@ -48,6 +48,16 @@ export function useConfig() {
 export function useHasBriefs(): boolean {
   const { data: config } = useConfig();
   return hasBriefsCapability(config?.capabilities);
+}
+
+/**
+ * 2.1.77 (M50 `0p15a2js`) — the project has the capability `entities` (the
+ * sidebar's ELEMENTS section). `capabilities` absent = present
+ * (`hasEntitiesCapability`).
+ */
+export function useHasEntities(): boolean {
+  const { data: config } = useConfig();
+  return hasEntitiesCapability(config?.capabilities);
 }
 
 /**
