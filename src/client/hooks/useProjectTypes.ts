@@ -10,7 +10,7 @@ import type { ProjectTypeCard, ProjectTypeListResponse } from '../../shared/proj
  */
 export const PROJECT_TYPES_QUERY_KEY = ['project-types'] as const;
 
-export async function fetchProjectTypes(): Promise<ProjectTypeCard[]> {
+async function fetchProjectTypes(): Promise<ProjectTypeCard[]> {
   const res = await fetch('/api/workspace/project-types');
   if (!res.ok) throw new Error(`GET /api/workspace/project-types failed (HTTP ${res.status})`);
   return ((await res.json()) as ProjectTypeListResponse).types;

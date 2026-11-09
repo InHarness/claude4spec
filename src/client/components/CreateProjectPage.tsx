@@ -36,8 +36,6 @@ import { useProjectTypes } from '../hooks/useProjectTypes.js';
 
 export type CreateProjectPath = 'new' | 'existing';
 
-export { PROJECT_TYPES_QUERY_KEY } from '../hooks/useProjectTypes.js';
-
 const PATH_TABS = [
   { id: 'new', label: 'New project' },
   { id: 'existing', label: 'Add existing directory' },
