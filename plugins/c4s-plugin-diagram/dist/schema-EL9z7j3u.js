@@ -9,7 +9,8 @@ const DIAGRAM_TITLE_MAX_LENGTH = 200;
 const DIAGRAM_TOOLS_SERVER = "diagram-tools";
 const VALIDATE_DIAGRAM_TOOL = "validate_diagram";
 const DIAGRAM_SLUG_MAX_LENGTH = 60;
-const DIAGRAM_COMMAND_TRIGGER = "diagram";
+const DIAGRAM_COMMAND_ID = "diagram-slash";
+const DIAGRAM_COMMAND_LABEL = "/diagram";
 const DIAGRAM_POPOVER_KIND = "diagram-create";
 const diagramData = {
   schema: {
@@ -32,15 +33,16 @@ const diagramData = {
       description: "Diagram language: 'mermaid' (default, rendered) or 'd2' (stored, not rendered)."
     },
     /**
-     * The DSL body, verbatim. `contentBearing`: a plain read returns
-     * `hasSource` / `sourceBytes` instead of the text. A source that does not
-     * parse is still stored — nothing here checks the DSL.
+     * The DSL body, verbatim. Deliberately NOT `contentBearing` (the host's
+     * built-in field was): the card draws the diagram from this field, so a
+     * plain record read carries the text and search scans it with the record.
+     * Stored data is unchanged, so `payloadVersion` stays 2. A source that does
+     * not parse is still stored — nothing here checks the DSL.
      */
     source: {
       type: "string",
       required: true,
-      contentBearing: true,
-      description: "DSL body of the diagram, verbatim. Content-bearing: read it with get_field_content, not through get_entities."
+      description: "DSL body of the diagram, verbatim. Returned with the record by get_entities."
     },
     createdAt: { type: "string", column: "created_at", systemManaged: true, computedDefault: "now" },
     updatedAt: { type: "string", column: "updated_at", systemManaged: true, computedDefault: "now" }
@@ -53,16 +55,17 @@ const diagramSlugPattern = [
 export {
   DIAGRAM_POPOVER_KIND as D,
   VALIDATE_DIAGRAM_TOOL as V,
-  DIAGRAM_COMMAND_TRIGGER as a,
-  DIAGRAM_FORMATS as b,
-  DIAGRAM_DEFAULT_FORMAT as c,
-  DIAGRAM_TOOLS_SERVER as d,
-  DIAGRAM_PAYLOAD_VERSION as e,
-  diagramSlugPattern as f,
-  diagramData as g,
-  DIAGRAM_PATH_PREFIX as h,
-  DIAGRAM_LABEL_PLURAL as i,
-  DIAGRAM_LABEL as j,
-  DIAGRAM_TYPE as k
+  DIAGRAM_COMMAND_LABEL as a,
+  DIAGRAM_COMMAND_ID as b,
+  DIAGRAM_FORMATS as c,
+  DIAGRAM_DEFAULT_FORMAT as d,
+  DIAGRAM_TOOLS_SERVER as e,
+  DIAGRAM_PAYLOAD_VERSION as f,
+  diagramSlugPattern as g,
+  diagramData as h,
+  DIAGRAM_PATH_PREFIX as i,
+  DIAGRAM_LABEL_PLURAL as j,
+  DIAGRAM_LABEL as k,
+  DIAGRAM_TYPE as l
 };
-//# sourceMappingURL=schema-R4aIrSYQ.js.map
+//# sourceMappingURL=schema-EL9z7j3u.js.map

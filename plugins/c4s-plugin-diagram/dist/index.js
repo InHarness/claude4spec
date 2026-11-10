@@ -1,15 +1,16 @@
-import { D as DIAGRAM_POPOVER_KIND, a as DIAGRAM_COMMAND_TRIGGER, V as VALIDATE_DIAGRAM_TOOL, b as DIAGRAM_FORMATS, c as DIAGRAM_DEFAULT_FORMAT, d as DIAGRAM_TOOLS_SERVER, e as DIAGRAM_PAYLOAD_VERSION, f as diagramSlugPattern, g as diagramData, h as DIAGRAM_PATH_PREFIX, i as DIAGRAM_LABEL_PLURAL, j as DIAGRAM_LABEL, k as DIAGRAM_TYPE } from "./schema-R4aIrSYQ.js";
-import { mcpTool, z, createMcpServer } from "@c4s/plugin-runtime";
+import { D as DIAGRAM_POPOVER_KIND, a as DIAGRAM_COMMAND_LABEL, b as DIAGRAM_COMMAND_ID, V as VALIDATE_DIAGRAM_TOOL, c as DIAGRAM_FORMATS, d as DIAGRAM_DEFAULT_FORMAT, e as DIAGRAM_TOOLS_SERVER, f as DIAGRAM_PAYLOAD_VERSION, g as diagramSlugPattern, h as diagramData, i as DIAGRAM_PATH_PREFIX, j as DIAGRAM_LABEL_PLURAL, k as DIAGRAM_LABEL, l as DIAGRAM_TYPE } from "./schema-EL9z7j3u.js";
+import { mcpTool as mcpTool$1, z, createMcpServer } from "@c4s/plugin-runtime";
 const diagramCommands = [
   {
-    name: `${DIAGRAM_COMMAND_TRIGGER}-slash`,
-    trigger: DIAGRAM_COMMAND_TRIGGER,
-    label: `/${DIAGRAM_COMMAND_TRIGGER}`,
+    name: DIAGRAM_COMMAND_ID,
+    trigger: DIAGRAM_COMMAND_LABEL.slice(1),
+    label: DIAGRAM_COMMAND_LABEL,
     description: "Insert a Mermaid diagram",
     hint: "mermaid DSL",
     popoverKind: DIAGRAM_POPOVER_KIND
   }
 ];
+const mcpTool = mcpTool$1;
 const DOM_GLOBALS = [
   "window",
   "document",
@@ -105,7 +106,9 @@ function createDiagramToolsServer() {
       } catch {
         return ok({ ok: true, warnings: [] });
       }
-    }
+    },
+    void 0,
+    "read"
   );
   return createMcpServer({ name: DIAGRAM_TOOLS_SERVER, tools: [validate] });
 }
@@ -113,9 +116,9 @@ const DIAGRAM_REFERENCES_BLOCK_NAME = "diagram_references";
 const DIAGRAM_REFERENCES_BLOCK = `<diagram_references>
   <single_element type="diagram" slug="..." caption="..."/>
   <inline_mention type="diagram" slug="..."/>
-A \`diagram\` is embedded with the GENERIC reference tags, like every other entity type. The Mermaid DSL \`source\` is the entity's truth (stored in \`.claude4spec/entities/diagram/<slug>.json\`), NOT inline in the page. The page tag carries \`type\`, \`slug\` (which diagram) and an optional \`caption\` — caption is per-reference prose, so the same diagram can show different captions in different places. Tiptap fetches the source by slug and renders it live, with a fallback \`<pre>\` on parse error. Create and edit diagrams through the generic \`entity-tools\` CRUD; \`diagram-tools\` keeps only \`validate_diagram\` (DSL pre-flight). Insertable via slash command \`/diagram\` (authors the source, creates the entity, inserts the reference) in page and plan editors.
+A \`diagram\` is embedded with the GENERIC reference tags, like every other entity type. The Mermaid DSL \`source\` is the entity's truth (stored in \`.claude4spec/entities/diagram/<slug>.json\`), NOT inline in the page. The page tag carries \`type\`, \`slug\` (which diagram) and an optional \`caption\` — caption is per-reference prose, so the same diagram can show different captions in different places. Tiptap fetches the source by slug and renders it live, with a fallback \`<pre>\` on parse error. Create and edit diagrams through the generic \`entity-tools\` CRUD; \`diagram-tools\` keeps only \`validate_diagram\` (DSL pre-flight). Insertable via slash command \`/diagram\` (authors the source, creates the entity, inserts the reference) in the page editor.
 
-\`diagram\` is a HIDDEN type: it has no sidebar tab and no detail page, so \`<element_list type="diagram" .../>\` and \`<tagged_list type="diagram" .../>\` are NOT supported — embed diagrams one at a time.
+\`diagram\` is a HIDDEN type: it has no sidebar tab and no detail page, so \`<element_list type="diagram" .../>\` and \`<tagged_list type="diagram" .../>\` show only a host information block instead of rows — embed diagrams one at a time.
 
 Example:
   <single_element type="diagram" slug="auth-flow" caption="Auth flow"/>
@@ -155,7 +158,7 @@ const diagramEntity = {
 };
 const manifest = {
   name: "c4s-plugin-diagram",
-  version: "0.1.0",
+  version: "0.2.0",
   hostApiVersion: "^2.1.0",
   engines: { node: ">=20" },
   contributes: {

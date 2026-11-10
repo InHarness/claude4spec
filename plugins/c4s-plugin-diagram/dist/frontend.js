@@ -1,5 +1,5 @@
 import { registerFrontendModule } from "@c4s/plugin-runtime";
-import { h as DIAGRAM_PATH_PREFIX, k as DIAGRAM_TYPE, c as DIAGRAM_DEFAULT_FORMAT, i as DIAGRAM_LABEL_PLURAL, j as DIAGRAM_LABEL, e as DIAGRAM_PAYLOAD_VERSION, f as diagramSlugPattern, g as diagramData, D as DIAGRAM_POPOVER_KIND } from "./schema-R4aIrSYQ.js";
+import { i as DIAGRAM_PATH_PREFIX, l as DIAGRAM_TYPE, d as DIAGRAM_DEFAULT_FORMAT, j as DIAGRAM_LABEL_PLURAL, k as DIAGRAM_LABEL, f as DIAGRAM_PAYLOAD_VERSION, g as diagramSlugPattern, h as diagramData, D as DIAGRAM_POPOVER_KIND } from "./schema-EL9z7j3u.js";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { jsx, jsxs, Fragment } from "react/jsx-runtime";
 import { useSyncExternalStore, useId, useMemo, useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
@@ -42,11 +42,6 @@ const diagramsApi = {
   async get(slug) {
     return unwrap(await apiFetch(one(slug)));
   },
-  /** The DSL body, through the host's content route — the same read an agent makes. */
-  async source(slug) {
-    const res = await apiFetch(`/api/entities/${DIAGRAM_TYPE}/${encodeURIComponent(slug)}/content/source`);
-    return (await handle(res)).content;
-  },
   /** The host's create route; the slug comes from `title` (`slugPattern`). */
   async create(input) {
     return unwrap(await apiFetch(many, json("POST", input)));
@@ -58,8 +53,7 @@ const diagramsApi = {
 const DIAGRAM_LIST_KEY = DIAGRAM_PATH_PREFIX.split("/").filter(Boolean).pop();
 const diagramKeys = {
   all: [DIAGRAM_LIST_KEY],
-  detail: (slug) => [DIAGRAM_TYPE, slug],
-  source: (slug) => [DIAGRAM_TYPE, slug, "source"]
+  detail: (slug) => [DIAGRAM_TYPE, slug]
 };
 function useDiagram(slug) {
   return useQuery({
@@ -72,13 +66,6 @@ function useDiagram(slug) {
         throw err;
       }
     },
-    enabled: slug !== null
-  });
-}
-function useDiagramSource(slug) {
-  return useQuery({
-    queryKey: slug ? diagramKeys.source(slug) : [DIAGRAM_TYPE, null, "source"],
-    queryFn: () => diagramsApi.source(slug),
     enabled: slug !== null
   });
 }
@@ -478,12 +465,12 @@ function DiagramFigure({
   caption,
   onCaptionChange
 }) {
-  const sourceQuery = useDiagramSource(diagram.slug);
+  const source = diagram.source ?? "";
   const format = diagram.format ?? "mermaid";
   const pencilRef = useRef(null);
   const [editAt, setEditAt] = useState(null);
   return /* @__PURE__ */ jsxs("figure", { className: "diagrams-card", children: [
-    sourceQuery.data !== void 0 && /* @__PURE__ */ jsx("span", { ref: pencilRef, className: "diagrams-card__edit", children: /* @__PURE__ */ jsx(
+    /* @__PURE__ */ jsx("span", { ref: pencilRef, className: "diagrams-card__edit", children: /* @__PURE__ */ jsx(
       ActionButton,
       {
         label: "",
@@ -496,12 +483,12 @@ function DiagramFigure({
         }
       }
     ) }),
-    editAt && sourceQuery.data !== void 0 && createPortal(
+    editAt && createPortal(
       /* @__PURE__ */ jsx(
         DiagramEditForm,
         {
           diagram,
-          source: sourceQuery.data,
+          source,
           caption,
           onCaptionChange,
           at: editAt,
@@ -510,10 +497,7 @@ function DiagramFigure({
       ),
       document.body
     ),
-    sourceQuery.data === void 0 ? sourceQuery.isError ? /* @__PURE__ */ jsx("div", { className: "diagrams-render diagrams-render--error", role: "alert", children: /* @__PURE__ */ jsxs("div", { className: "diagrams-render__banner", children: [
-      /* @__PURE__ */ jsx("strong", { children: "Diagram error" }),
-      ": could not load the source"
-    ] }) }) : /* @__PURE__ */ jsx(LoadingState, { height: 120 }) : /* @__PURE__ */ jsx(DiagramRender, { format, source: sourceQuery.data, idScope: `card-${diagram.slug}` }),
+    /* @__PURE__ */ jsx(DiagramRender, { format, source, idScope: `card-${diagram.slug}` }),
     caption && /* @__PURE__ */ jsx("figcaption", { className: "diagrams-card__caption", children: onCaptionChange ? /* @__PURE__ */ jsx(
       InlineEditField,
       {
@@ -594,15 +578,14 @@ function DiagramFullscreen({ slug, caption, onClose }) {
 }
 function DiagramWindowBody({ slug, onClose }) {
   const record = useDiagram(slug);
-  const source = useDiagramSource(slug);
   if (record.data === null) {
     return /* @__PURE__ */ jsxs(Fragment, { children: [
       /* @__PURE__ */ jsx(Toolbar, { onClose }),
       /* @__PURE__ */ jsx(EmptyState, { title: "Diagram not found", hint: slug })
     ] });
   }
-  if (record.data === void 0 || source.data === void 0) {
-    const failed = record.isError || source.isError;
+  if (record.data === void 0) {
+    const failed = record.isError;
     return /* @__PURE__ */ jsxs(Fragment, { children: [
       /* @__PURE__ */ jsx(Toolbar, { onClose }),
       failed ? /* @__PURE__ */ jsx("div", { className: "diagrams-render diagrams-render--error", role: "alert", children: /* @__PURE__ */ jsxs("div", { className: "diagrams-render__banner", children: [
@@ -611,7 +594,7 @@ function DiagramWindowBody({ slug, onClose }) {
       ] }) }) : /* @__PURE__ */ jsx(LoadingState, { height: 120 })
     ] });
   }
-  return /* @__PURE__ */ jsx(DiagramStage, { slug, format: record.data.format ?? "mermaid", source: source.data, onClose });
+  return /* @__PURE__ */ jsx(DiagramStage, { slug, format: record.data.format ?? "mermaid", source: record.data.source ?? "", onClose });
 }
 function DiagramStage({
   slug,
