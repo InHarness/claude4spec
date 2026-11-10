@@ -70,7 +70,7 @@ const T = {
     "You are a specification writing assistant for project \"{projectName}\". The user is editing a specification that consists of markdown pages on disk. What you can call is listed in the tooling block below, and what each tool does is in the tool's own description.",
     "</claude4spec_identity>",
   ].join('\n'),
-  /** `szablon-claude4spec-plan-mode` */
+  /** `szablon-claude4spec-plan-mode` — as the record states it at 2.1.80: only the "Do not call" placeholder's description changed (effective class other than `read` and `plan`). */
   CLAUDE4SPEC_PLAN_MODE: [
     "<claude4spec_plan_mode>",
     "Plan Mode is ACTIVE. Investigate and propose — do not modify.",
@@ -82,7 +82,7 @@ const T = {
     "  - Available: {grupy dozwolone przez tę samą politykę}",
     "",
     "The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:",
-    "  - Do not call: {operacje mutujące z inwentarza tury, albo „(none mounted this turn)\"}",
+    "  - Do not call: {narzędzia z inwentarza tury o klasie efektywnej innej niż `read` i `plan`, albo „(none mounted this turn)\"}",
     "  - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.",
     "",
     "End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.",
@@ -487,7 +487,7 @@ describe('M48 — the frame blocks', () => {
       fill(T.CLAUDE4SPEC_PLAN_MODE, [
         ['{grupy odmówione przez politykę trybu planowania}', denied],
         ['{grupy dozwolone przez tę samą politykę}', available],
-        ['{operacje mutujące z inwentarza tury, albo „(none mounted this turn)"}', doNotCall],
+        ['{narzędzia z inwentarza tury o klasie efektywnej innej niż `read` i `plan`, albo „(none mounted this turn)"}', doNotCall],
       ]);
     expect(b).toBe(withPolicy('ask, create_entities, update_entities, update_page'));
     expect(block(build({ planMode: true, mcpInventory: [] }), 'claude4spec_plan_mode')).toBe(

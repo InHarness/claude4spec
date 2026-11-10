@@ -821,6 +821,31 @@ describe('release_diff — section window and sizes (2.1.5)', () => {
     expect(alone.truncationHint).not.toContain("include: ['pages']");
   });
 
+  /**
+   * 2.1.80 (M17) — a window wider than one section (`sectionLimit` > 1, or none)
+   * keeps the LADDER hint: the page's path and the next section offset. Neither
+   * the floor nor the `include: ['pages']` retry, which belong to `sectionLimit: 1`.
+   */
+  it('[ac:ac-release-diff-z-jedna-sciezka-w-paths] one path, a window wider than one section whose sections overflow the budget → the ladder hint with the page path and the next sectionOffset, not the floor nor include: [\'pages\']', () => {
+    // Five sections of 0.6 budget each: any two of them overflow the budget.
+    const page = bigPage(5, 'w'.repeat(Math.floor(DEFAULT_BUDGET_CHARS * 0.6)));
+    for (const window of [{ sectionLimit: 2 }, { sectionLimit: 4 }, {}] as const) {
+      const out = run(page, { singlePath: true, sectionOffset: 0, ...window });
+      const [p] = out.pages as MCPPageDelta[];
+      const at = p!.sections.findIndex((sec) => sec.truncated);
+      expect(at, JSON.stringify(window)).toBeGreaterThanOrEqual(0);
+      expect(p!.sections[at]!.truncated).toBe(true);
+      const hint = out.truncationHint!;
+      // The ladder: the page's path and the position where the next window starts.
+      expect(hint).toContain(`page \`pages/big.md\` did not fit from section ${at} on`);
+      expect(hint).toContain(`paths: ['pages/big.md'], sectionOffset: ${at}`);
+      // Not the floor, not the retry of the same section without entity rows.
+      expect(hint).not.toContain('cannot be read through release_diff');
+      expect(hint).not.toContain('exceeds the response budget on its own');
+      expect(hint).not.toContain("include: ['pages']");
+    }
+  });
+
   it('sections that do not fit resume through the section window, named in the hint', () => {
     const out = run(bigPage(20, 'w'.repeat(Math.floor(DEFAULT_BUDGET_CHARS / 8))), { singlePath: true });
     const [p] = out.pages as MCPPageDelta[];
