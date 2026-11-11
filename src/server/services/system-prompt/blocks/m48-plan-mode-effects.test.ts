@@ -15,6 +15,7 @@ import { buildRunToolsServer } from '../../../mcp/run-tools.js';
 import { buildTransagentToolsServer } from '../../../mcp/transagent-tools.js';
 import { CATALOG } from '../../../operations/catalog.js';
 import { effectiveToolClass } from '../../../operations/profile-gate.js';
+import { resolveHostToolRecord } from '../../../operations/host-tool-record.js';
 
 /*
  * 2.1.82 (M48) — the "Do not call" line of `<claude4spec_plan_mode>` names only
@@ -51,12 +52,28 @@ function build(contextType: SystemPromptInput['contextType'], mcpInventory: Inve
     planMode: true,
     mcpInventory,
   };
-  // The brief context type's own composition carries no `<claude4spec_plan_mode>`
-  // position, so the block builder is rendered on its own there — with the brief
-  // thread's real mount as the turn's inventory.
-  return contextType === 'brief'
-    ? composeSystemPrompt([{ block: 'claude4spec_plan_mode' }], input)
-    : buildSystemPrompt(input);
+  return buildSystemPrompt(input);
+}
+
+/**
+ * 2.1.83 (M48) — the `<claude4spec_plan_mode>` block builder alone, handed the
+ * turn's inventory directly. The `get_brief` / `update_brief` criteria live at
+ * this level: the brief composition carries no plan-mode block (a brief turn has
+ * no plan operation the block tells it to end with), so a brief-turn test would
+ * have nothing to check.
+ */
+function buildBlock(mcpInventory: Inventory): string {
+  return composeSystemPrompt([{ block: 'claude4spec_plan_mode' }], {
+    host: emptyHost,
+    projectName: 'My Spec',
+    cwd: '/tmp/my-spec',
+    roots: [{ id: 'pages', name: 'pages', dir: 'pages', builtin: true }],
+    currentPagePath: null,
+    currentPageBody: null,
+    contextType: 'chat',
+    planMode: true,
+    mcpInventory,
+  });
 }
 
 /** The tool names of the "Do not call:" line (empty for `(none mounted this turn)`). */
@@ -111,18 +128,22 @@ describe('M48 — <claude4spec_plan_mode> "Do not call" by class and effects (2.
     expect(doNotCall(build('chat', [mounted('c4s-tools', C4S_TOOLS)]))).not.toContain('ask');
   });
 
-  it('[ac:ac-m48-do-not-call-get-brief-poza-lista] brief thread: `get_brief` (class `brief`, effects `none`) is not on the list', () => {
+  it('[ac:ac-m48-do-not-call-get-brief-poza-lista] the block builder, handed an inventory with `get_brief` (class `brief`, effects `none`), does not list it', () => {
     expect(BRIEF_TOOLS.tools.map((t) => t.name)).toContain('get_brief');
     expect(row('get_brief').opClass).toBe('brief');
     expect(row('get_brief').sideEffects).toEqual(['none']);
-    expect(doNotCall(build('brief', BRIEF_INVENTORY))).not.toContain('get_brief');
+    const prompt = buildBlock(BRIEF_INVENTORY);
+    expect(prompt).toContain('<claude4spec_plan_mode>');
+    expect(doNotCall(prompt)).not.toContain('get_brief');
   });
 
-  it('[ac:ac-m48-do-not-call-update-brief-na-liscie] brief thread: `update_brief` (class `brief`, effects other than `none`) is on the list', () => {
+  it('[ac:ac-m48-do-not-call-update-brief-na-liscie] the block builder, handed an inventory with `update_brief` (class `brief`, effects other than `none`), lists it', () => {
     expect(BRIEF_TOOLS.tools.map((t) => t.name)).toContain('update_brief');
     expect(row('update_brief').opClass).toBe('brief');
     expect(row('update_brief').sideEffects).not.toContain('none');
-    expect(doNotCall(build('brief', BRIEF_INVENTORY))).toContain('update_brief');
+    const prompt = buildBlock(BRIEF_INVENTORY);
+    expect(prompt).toContain('<claude4spec_plan_mode>');
+    expect(doNotCall(prompt)).toContain('update_brief');
   });
 
   it('[ac:ac-m48-do-not-call-get-run-poza-lista] top-level chat thread: `get_run` (class `turn`, effects `none`) is not on the list', () => {
@@ -145,8 +166,14 @@ describe('M48 — <claude4spec_plan_mode> "Do not call" by class and effects (2.
     expect(doNotCall(build('chat', TOP_CHAT_INVENTORY))).toContain('run_remote');
   });
 
-  it('[ac:ac-m48-do-not-call-runtransagent-na-liscie] top-level chat thread: `runTransagent` (class `turn`, effects other than `none`) is on the list', () => {
+  it('[ac:ac-m48-do-not-call-runtransagent-na-liscie] top-level chat thread: `runTransagent` is on the list from the `spawn_child_turn` record its declared renderings point at (class `turn`, effects `file`·`db`·`ui-notify`)', () => {
     expect(TRANSAGENT_TOOLS.tools.map((t) => t.name)).toContain('runTransagent');
+    // 2.1.83 — the record comes from the ONE definition the gate uses too.
+    const record = resolveHostToolRecord('runTransagent', { server: 'transagent-tools', channel: 'internal' });
+    expect(record?.name).toBe('spawn_child_turn');
+    expect(record?.opClass).toBe('turn');
+    expect(record?.sideEffects).toEqual(['file', 'db', 'ui-notify']);
+    expect(effectiveToolClass('runTransagent', { server: 'transagent-tools' })).toBe('turn');
     // `runTransagent` has no row of its own name: it is the declared `internal`
     // rendering of `spawn_child_turn`, and that row carries its class and effects.
     expect(CATALOG.has('runTransagent')).toBe(false);

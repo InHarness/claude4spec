@@ -1,0 +1,89 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`runAgentTurn — profile tool inventory (2.1.83 snapshot) > the ask inventory is unchanged 1`] = `
+[
+  "entity-tools: describe_entity_type, get_entities, get_field_content, list_entities, resolve_identity, search_entities",
+  "plan-tools: create_plan, get_plan, get_plan_version, list_plan_versions, mark_plan_applied, update_plan",
+  "reference-tools: check_consistency, find_references, get_page, get_page_outline, get_sections, list_pages, list_tags, search_pages",
+  "release-tools: release_diff, release_list, release_show",
+  "skill-tools: load_skill_file",
+  "workspace-tools: list_projects",
+]
+`;
+
+exports[`runAgentTurn — profile tool inventory (2.1.83 snapshot) > the brief (plan mode) inventory is unchanged 1`] = `
+[
+  "brief-tools: get_brief, get_brief_version, list_brief_versions, update_brief",
+  "release-tools: release_diff, release_list, release_show",
+  "skill-tools: load_skill_file",
+  "workspace-tools: list_projects",
+]
+`;
+
+exports[`runAgentTurn — profile tool inventory (2.1.83 snapshot) > the brief inventory is unchanged 1`] = `
+[
+  "brief-tools: get_brief, get_brief_version, list_brief_versions, update_brief",
+  "release-tools: release_diff, release_list, release_show",
+  "skill-tools: load_skill_file",
+  "workspace-tools: list_projects",
+]
+`;
+
+exports[`runAgentTurn — profile tool inventory (2.1.83 snapshot) > the chat (child thread) inventory is unchanged 1`] = `
+[
+  "c4s-tools: ask",
+  "entity-tools: create_entities, delete_entities, describe_entity_type, get_entities, get_field_content, list_entities, resolve_identity, search_entities, update_entities",
+  "page-tools: create_page, delete_page, move_page, update_page, update_sections",
+  "plan-tools: create_plan, get_plan, get_plan_version, list_plan_versions, mark_plan_applied, update_plan",
+  "reference-tools: check_consistency, create_tag, delete_tag, find_references, get_page, get_page_outline, get_sections, list_pages, list_tags, search_pages, tag_entity, untag_entity, update_tag",
+  "release-tools: release_create, release_diff, release_list, release_show, release_update",
+  "skill-tools: load_skill_file",
+  "spec-skill-tools: update_skill_file",
+  "workspace-tools: list_projects",
+]
+`;
+
+exports[`runAgentTurn — profile tool inventory (2.1.83 snapshot) > the chat (top level) inventory is unchanged 1`] = `
+[
+  "c4s-tools: ask",
+  "entity-tools: create_entities, delete_entities, describe_entity_type, get_entities, get_field_content, list_entities, resolve_identity, search_entities, update_entities",
+  "page-tools: create_page, delete_page, move_page, update_page, update_sections",
+  "plan-tools: create_plan, get_plan, get_plan_version, list_plan_versions, mark_plan_applied, update_plan",
+  "reference-tools: check_consistency, create_tag, delete_tag, find_references, get_page, get_page_outline, get_sections, list_pages, list_tags, search_pages, tag_entity, untag_entity, update_tag",
+  "release-tools: release_create, release_diff, release_list, release_show, release_update",
+  "skill-tools: load_skill_file",
+  "spec-skill-tools: update_skill_file",
+  "transagent-tools: list_briefs, list_patches, list_plans, runTransagent",
+  "workspace-tools: list_projects",
+]
+`;
+
+exports[`runAgentTurn — profile tool inventory (2.1.83 snapshot) > the chat (top level, plan mode) inventory is unchanged 1`] = `
+[
+  "c4s-tools: ask",
+  "entity-tools: create_entities, delete_entities, describe_entity_type, get_entities, get_field_content, list_entities, resolve_identity, search_entities, update_entities",
+  "page-tools: create_page, delete_page, move_page, update_page, update_sections",
+  "plan-tools: create_plan, get_plan, get_plan_version, list_plan_versions, mark_plan_applied, update_plan",
+  "reference-tools: check_consistency, create_tag, delete_tag, find_references, get_page, get_page_outline, get_sections, list_pages, list_tags, search_pages, tag_entity, untag_entity, update_tag",
+  "release-tools: release_create, release_diff, release_list, release_show, release_update",
+  "skill-tools: load_skill_file",
+  "spec-skill-tools: update_skill_file",
+  "transagent-tools: list_briefs, list_patches, list_plans, runTransagent",
+  "workspace-tools: list_projects",
+]
+`;
+
+exports[`runAgentTurn — profile tool inventory (2.1.83 snapshot) > the patch inventory is unchanged 1`] = `
+[
+  "c4s-tools: ask",
+  "entity-tools: create_entities, delete_entities, describe_entity_type, get_entities, get_field_content, list_entities, resolve_identity, search_entities, update_entities",
+  "page-tools: create_page, delete_page, move_page, update_page, update_sections",
+  "patch-tools: get_patch, mark_patch_applied",
+  "plan-tools: create_plan, get_plan, get_plan_version, list_plan_versions, mark_plan_applied, update_plan",
+  "reference-tools: check_consistency, create_tag, delete_tag, find_references, get_page, get_page_outline, get_sections, list_pages, list_tags, search_pages, tag_entity, untag_entity, update_tag",
+  "release-tools: release_create, release_diff, release_list, release_show, release_update",
+  "skill-tools: load_skill_file",
+  "spec-skill-tools: update_skill_file",
+  "workspace-tools: list_projects",
+]
+`;

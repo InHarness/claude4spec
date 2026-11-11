@@ -4713,3 +4713,78 @@ describe('runAgentTurn — plugin tool classes in an ask thread (2.1.78)', () =>
     expect(out.tools).not.toContain('hinted_read');
   });
 });
+
+/**
+ * 2.1.83 (M44) — the profiles' tool inventory, pinned. The brief that unified
+ * the host-tool record lookup (gate and plan-mode list find a host tool's record
+ * by name, then by declared rendering) gave `runTransagent` (`turn`) and
+ * `entity-tools.describe_entity_type` (`read`) a class in the gate where they
+ * had none. That must not change any profile's SET of tools: this snapshot was
+ * recorded on the code before the change and must hold after it. A diff here is
+ * a deviation from the specification (file a patch), never a snapshot to update.
+ *
+ * The pool carries the real host servers (`entity-tools`, `reference-tools`,
+ * `page-tools`, `release-tools`) — their declarations, not their handlers, are
+ * what the gate reads — and honours `include` like the real host.
+ */
+describe('runAgentTurn — profile tool inventory (2.1.83 snapshot)', () => {
+  async function inventoryFor(
+    contextType: string,
+    opts: { parentThreadId?: string | null; planMode?: boolean } = {},
+  ): Promise<string[]> {
+    const { createEntityToolsServer } = await import('../mcp/entity-tools.js');
+    const { createReferenceToolsServer } = await import('../mcp/reference-tools.js');
+    const { createPageToolsServer } = await import('../mcp/page-tools.js');
+    const { createReleaseToolsServer } = await import('../mcp/release-tools/index.js');
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    (deps as unknown as { listWorkspaceProjects: () => unknown }).listWorkspaceProjects = () => ({ projects: [] });
+    (deps as unknown as { specSkillTools: SpecSkillTools }).specSkillTools = new SpecSkillTools(
+      { skillsRoot: () => undefined },
+      'p1',
+    );
+    const any = {} as never;
+    const pool = [
+      { name: 'entity-tools', server: createEntityToolsServer(any) },
+      { name: 'reference-tools', server: createReferenceToolsServer(any) },
+      { name: 'page-tools', server: createPageToolsServer(any) },
+      { name: 'release-tools', server: createReleaseToolsServer(any) },
+    ];
+    (deps.pluginHost as unknown as { buildMcpServers: (o?: HostBuildOpts) => unknown }).buildMcpServers = (o) =>
+      pool.filter(({ name }) => !o?.include || o.include(name));
+    const input = makeInput();
+    const thread = input.thread as unknown as {
+      contextType: string;
+      patchPath: string | null;
+      briefPath: string | null;
+      parentThreadId: string | null;
+      planMode: boolean;
+    };
+    thread.contextType = contextType;
+    thread.patchPath = contextType === 'patch' ? 'p.md' : null;
+    thread.briefPath = contextType === 'brief' ? 'b.md' : null;
+    thread.parentThreadId = opts.parentThreadId ?? null;
+    thread.planMode = opts.planMode ?? false;
+    await runAgentTurn(deps, input);
+    const prompt = String(hoisted.lastExecute?.systemPrompt);
+    return [...prompt.matchAll(/<mcp name="([^"]+)">([^<]*)<\/mcp>/g)]
+      .map(([, server, tools]) => `${server}: ${tools!.split(/,\s*/).sort().join(', ')}`)
+      .sort();
+  }
+
+  const CASES: Array<[string, string, { parentThreadId?: string | null; planMode?: boolean }]> = [
+    ['chat (top level)', 'chat', {}],
+    ['chat (top level, plan mode)', 'chat', { planMode: true }],
+    ['chat (child thread)', 'chat', { parentThreadId: 'parent-1' }],
+    ['patch', 'patch', {}],
+    ['brief', 'brief', {}],
+    ['brief (plan mode)', 'brief', { planMode: true }],
+    ['ask', 'ask', {}],
+  ];
+
+  for (const [label, contextType, opts] of CASES) {
+    it(`the ${label} inventory is unchanged`, async () => {
+      expect(await inventoryFor(contextType, opts)).toMatchSnapshot();
+    });
+  }
+});

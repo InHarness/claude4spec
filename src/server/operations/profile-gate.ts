@@ -60,8 +60,9 @@ import type { ChatContextType } from '../../shared/entities.js';
 import type { McpServerFactory, McpToolDeclaration, McpToolOperationClass } from '../../shared/plugin-host/mcp.js';
 import { createMcpServer } from '../plugin-runtime/create-mcp-server.js';
 import type { McpToolDefinition } from '@inharness-ai/agent-adapters';
-import { CATALOG, type OperationClass } from './catalog.js';
+import type { OperationClass } from './catalog.js';
 import { registerCoreOperations } from './core-operations.js';
+import { resolveHostToolRecord, type HostToolChannel } from './host-tool-record.js';
 import { PROFILES } from './profiles.js';
 
 /**
@@ -107,15 +108,21 @@ export function pluginToolClass(
  * - (b) no declaration on a plugin server: `write` — even when the operation
  *   has a `spec-operation` record (`link_dto`, `unlink_dto`): the record stays
  *   in the catalog for channels and renderings, it is not an input here;
- * - (c) a host server: the class of the host catalog row.
+ * - (c) a host server: the class of the tool's host record — 2.1.83, found by
+ *   {@link resolveHostToolRecord}, the one definition the plan-mode list uses
+ *   too: the row named after the tool, else the row whose declared renderings
+ *   name `<server>.<tool>` in its channel (`runTransagent` → `spawn_child_turn`,
+ *   `turn`; `entity-tools.describe_entity_type` → `describe_types`, `read`).
+ *   The rendering step needs `opts.server`; without it only the name applies.
  *
- * `undefined` means a host tool with no catalog row — the gate passes it
- * through and the plan-mode list does not name it (see the module comment).
+ * `undefined` means a host tool with no record (neither by name nor by a
+ * declared rendering) — the gate passes it through, never as `write`, and the
+ * plan-mode list does not name it (see the module comment).
  * `annotations.readOnlyHint` is never an input.
  */
 export function effectiveToolClass(
   tool: string | Pick<McpToolDeclaration, 'name' | 'operationClass'>,
-  opts: { plugin?: boolean; overlay?: boolean } = {},
+  opts: { plugin?: boolean; overlay?: boolean; server?: string; channel?: HostToolChannel } = {},
 ): OperationClass | undefined {
   const decl = typeof tool === 'string' ? { name: tool } : tool;
   /**
@@ -127,11 +134,9 @@ export function effectiveToolClass(
    * be — `ask`'s only other restraint, forced plan mode, does not apply to MCP.
    */
   if (opts.plugin || opts.overlay) return pluginToolClass(decl, { overlay: opts.overlay });
-  const op = CATALOG.get(decl.name);
   // A row kept for a plugin-rendered operation (`link_dto` / `unlink_dto`) speaks
-  // for the plugin's server, never for a host tool sharing its name.
-  if (op && op.contributedBy !== 'plugin') return op.opClass;
-  return undefined;
+  // for the plugin's server, never for a host tool — the resolver skips it.
+  return resolveHostToolRecord(decl, { server: opts.server, channel: opts.channel })?.opClass;
 }
 
 /**
@@ -142,7 +147,7 @@ export function effectiveToolClass(
 export function toolAdmittedByProfile(
   profile: ChatContextType,
   tool: string | Pick<McpToolDeclaration, 'name' | 'operationClass'>,
-  opts: { plugin?: boolean; overlay?: boolean } = {},
+  opts: { plugin?: boolean; overlay?: boolean; server?: string; channel?: HostToolChannel } = {},
 ): boolean {
   const cls = effectiveToolClass(tool, opts);
   // Undeclared on a host-owned server: pass-through (see the module comment).
@@ -158,7 +163,9 @@ export function toolAdmittedByProfile(
  * i.e. the ones whose contents the host did not write; `overlayServerNames` the
  * subset of them that came from a project-local overlay. Omitting them keeps the
  * host-server rule for every server, which is only correct when the caller knows
- * none of them are plugin-contributed.
+ * none of them are plugin-contributed. `channel` is where the server is mounted
+ * — `internal` for a turn, `mcp` for the external surface — and picks which
+ * declared renderings resolve a host tool's record.
  */
 export function gateServer(
   profile: ChatContextType,
@@ -166,6 +173,7 @@ export function gateServer(
   server: McpServerFactory,
   pluginServerNames?: ReadonlySet<string>,
   overlayServerNames?: ReadonlySet<string>,
+  channel: HostToolChannel = 'internal',
 ): McpServerFactory | null {
   const declared = server.tools;
   // No captured declarations (a hand-rolled or pre-0.2.13 handle) — nothing to
@@ -174,7 +182,7 @@ export function gateServer(
 
   const overlay = overlayServerNames?.has(name) === true;
   const plugin = overlay || pluginServerNames?.has(name) === true;
-  const kept = declared.filter((t) => toolAdmittedByProfile(profile, t, { plugin, overlay }));
+  const kept = declared.filter((t) => toolAdmittedByProfile(profile, t, { plugin, overlay, server: name, channel }));
   if (kept.length === declared.length) return server;
   if (kept.length === 0) return null;
 
@@ -232,7 +240,7 @@ export function overlayServerNamesFor(layers?: ReadonlyMap<string, PluginServerL
 export function withheldTools(
   profile: ChatContextType,
   declared: readonly McpToolDeclaration[],
-  opts: { plugin?: boolean; overlay?: boolean } = {},
+  opts: { plugin?: boolean; overlay?: boolean; server?: string; channel?: HostToolChannel } = {},
 ): string[] {
   return declared.filter((t) => !toolAdmittedByProfile(profile, t, opts)).map((t) => t.name);
 }

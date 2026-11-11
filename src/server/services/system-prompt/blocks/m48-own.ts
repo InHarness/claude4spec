@@ -7,10 +7,10 @@ import {
 import type { Root } from '../../../../shared/types.js';
 import type { ProjectPluginHost } from '../../../core/plugin-host/types.js';
 import { DEFAULT_PROJECT_TYPE } from '../../../config.js';
-import { CATALOG, type OperationDeclaration } from '../../../operations/catalog.js';
 import { registerCoreOperations } from '../../../operations/core-operations.js';
 // 2.1.79 (M44/M48) — the one classifier the profile gate uses; this block keeps none of its own.
 import { effectiveToolClass } from '../../../operations/profile-gate.js';
+import { resolveHostToolRecord } from '../../../operations/host-tool-record.js';
 import { DIRECT_FILESYSTEM_DENY_GROUPS } from '../../agent-tool-posture.js';
 import { attrs, selfClose } from '../glue.js';
 import type { McpInventoryEntry, PromptBlock } from '../types.js';
@@ -355,25 +355,6 @@ const PLAN_MODE_TOOL_POLICY = PLAN_MODE_TOOL_POLICY_OR_NULL;
  */
 const PLAN_MODE_EXEMPT_HOST_CLASSES: ReadonlySet<string> = new Set(['read', 'plan', 'peer']);
 
-/**
- * The host catalog record a host-server tool is the rendering of. By name first
- * — the row the gate's `effectiveToolClass` read its class from (so `cls` is
- * that row's `opClass`). Failing that, the row whose declared `renderings` name
- * this `<server>.<tool>`: `transagent-tools.runTransagent` renders
- * `spawn_child_turn` and has no row of its own name, yet it hands work to a
- * child thread and must stay on the list. A row a plugin contributed never
- * speaks for a host tool (the gate's rule).
- */
-function hostRecord(server: string, tool: string, cls: string | undefined): OperationDeclaration | undefined {
-  if (cls !== undefined) return CATALOG.get(tool);
-  const rendered = `${server}.${tool}`;
-  return CATALOG.list().find(
-    (op) =>
-      op.contributedBy !== 'plugin' &&
-      Object.values(op.renderings ?? {}).some((list) => list?.includes(rendered) === true),
-  );
-}
-
 function planModeMutatingTools(inventory: readonly McpInventoryEntry[]): string[] {
   const names = new Set<string>();
   for (const server of inventory) {
@@ -383,22 +364,33 @@ function planModeMutatingTools(inventory: readonly McpInventoryEntry[]): string[
       /**
        * The class is the profile gate's `effectiveToolClass`, fed the same facts
        * the gate gets (plugin server or not, its layer, the tool's declared
-       * class), so the prompt cannot drift from what the gate admits.
+       * class, and — 2.1.83 — the server it is on and its channel), so the
+       * prompt cannot drift from what the gate admits.
        */
-      const cls = effectiveToolClass({ name: tool, operationClass: server.operationClasses?.[tool] }, { plugin, overlay });
+      const cls = effectiveToolClass(
+        { name: tool, operationClass: server.operationClasses?.[tool] },
+        { plugin, overlay, server: server.name, channel: 'internal' },
+      );
       if (plugin || overlay) {
         // A plugin's `spec-operation` record changes nothing here, as in the gate.
         if (cls !== 'read') names.add(tool);
         continue;
       }
-      const record = hostRecord(server.name, tool, cls);
       /**
        * No record — a HOST tool the catalog knows neither by name nor by
-       * rendering — is not listed. Over-listing is not caution here, it is a
-       * false prohibition, and a model that finds one "forbidden" tool working
-       * learns what the rest of the prohibitions are worth.
+       * rendering — has no class and is not listed. Over-listing is not caution
+       * here, it is a false prohibition, and a model that finds one "forbidden"
+       * tool working learns what the rest of the prohibitions are worth.
        */
-      if (!record || PLAN_MODE_EXEMPT_HOST_CLASSES.has(record.opClass)) continue;
+      if (cls === undefined || PLAN_MODE_EXEMPT_HOST_CLASSES.has(cls)) continue;
+      /**
+       * 2.1.83 (M44) — the effects come from the record found by the ONE
+       * definition the gate classified by (`resolveHostToolRecord`: by name,
+       * else by a declared `internal` rendering): `transagent-tools.runTransagent`,
+       * with no row of its own name, is listed from `spawn_child_turn` (`turn`,
+       * effects `file`·`db`·`ui-notify`).
+       */
+      const record = resolveHostToolRecord(tool, { server: server.name, channel: 'internal' })!;
       const effects = record.sideEffects;
       if (effects.length === 1 && effects[0] === 'none') continue;
       names.add(tool);

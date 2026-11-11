@@ -500,11 +500,19 @@ describe('the profile gate', () => {
     // grants it — so an undeclared name on a surface this repo ships stays
     // governed by the coarse server gate.
     //
-    // `runTransagent` is the TOOL name, and stays undeclared on purpose: the
-    // OPERATION it renders is `spawn_child_turn` (2.1.26 — its `renderings`),
-    // rather than renaming either side to match the other.
+    // "Undeclared" means no record at all — neither a row of the tool's name nor
+    // a row whose declared renderings name it (2.1.83, M44): a fixture name.
+    expect(CATALOG.has('zz_fixture_host_probe')).toBe(false);
+    expect(toolAdmittedByProfile('brief', 'zz_fixture_host_probe', { server: 'transagent-tools' })).toBe(true);
+
+    // `runTransagent` is the TOOL name, and stays without a row of its own name on
+    // purpose: the OPERATION it renders is `spawn_child_turn` (2.1.26 — its
+    // `renderings`). Since 2.1.83 that rendering IS its record in the gate, so it
+    // is no longer an undeclared pass-through: `turn`, which `brief` withholds
+    // (and `brief` never mounts `transagent-tools` anyway).
     expect(CATALOG.has('runTransagent')).toBe(false);
-    expect(toolAdmittedByProfile('brief', 'runTransagent')).toBe(true);
+    expect(toolAdmittedByProfile('brief', 'runTransagent', { server: 'transagent-tools' })).toBe(false);
+    expect(toolAdmittedByProfile('chat', 'runTransagent', { server: 'transagent-tools' })).toBe(true);
   });
 
   it('declares run_turn, reached internally via spawn_child_turn, whose rendering is the differently-named runTransagent', () => {

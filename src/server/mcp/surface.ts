@@ -459,7 +459,7 @@ function mergeServers(
     // fail-closed rule for a plugin's own server, which must hold on this
     // channel too: an external `ask` connection reaching `spreadsheet-tools`'
     // six mutating operations is the exact hole the gate was built to close.
-    const gated = gateServer(rendered, name, server, pluginServers, overlayServers);
+    const gated = gateServer(rendered, name, server, pluginServers, overlayServers, 'mcp');
     if (!gated?.tools) continue;
     for (const tool of gated.tools) {
       if (byName.has(tool.name)) continue;

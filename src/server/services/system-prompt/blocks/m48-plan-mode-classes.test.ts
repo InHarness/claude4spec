@@ -97,10 +97,15 @@ describe('M48 — <claude4spec_plan_mode> "Do not call" by effective class (2.1.
     expect(list).toContain('frobnicate_grid');
     // One classifier for the gate and the list: the block builder asks the
     // gate's `effectiveToolClass`, with the facts the gate gets.
-    expect(spy).toHaveBeenCalledWith({ name: hostTool, operationClass: undefined }, { plugin: false, overlay: false });
+    // 2.1.83 — with the server and channel too: the gate resolves a host tool's
+    // record by name, else by a declared `<server>.<tool>` rendering.
+    expect(spy).toHaveBeenCalledWith(
+      { name: hostTool, operationClass: undefined },
+      { plugin: false, overlay: false, server: 'scratch-tools', channel: 'internal' },
+    );
     expect(spy).toHaveBeenCalledWith(
       { name: 'frobnicate_grid', operationClass: undefined },
-      { plugin: true, overlay: false },
+      { plugin: true, overlay: false, server: 'sheet-tools', channel: 'internal' },
     );
 
     // With only the unrecorded host tool mounted, the line falls back to the literal.
