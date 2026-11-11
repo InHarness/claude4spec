@@ -1,5 +1,5 @@
 import { D as DIAGRAM_POPOVER_KIND, a as DIAGRAM_COMMAND_LABEL, b as DIAGRAM_COMMAND_ID, V as VALIDATE_DIAGRAM_TOOL, c as DIAGRAM_FORMATS, d as DIAGRAM_DEFAULT_FORMAT, e as DIAGRAM_TOOLS_SERVER, f as DIAGRAM_PAYLOAD_VERSION, g as diagramSlugPattern, h as diagramData, i as DIAGRAM_PATH_PREFIX, j as DIAGRAM_LABEL_PLURAL, k as DIAGRAM_LABEL, l as DIAGRAM_TYPE } from "./schema-EL9z7j3u.js";
-import { mcpTool as mcpTool$1, z, createMcpServer } from "@c4s/plugin-runtime";
+import { mcpTool, z, createMcpServer } from "@c4s/plugin-runtime";
 const diagramCommands = [
   {
     name: DIAGRAM_COMMAND_ID,
@@ -10,7 +10,6 @@ const diagramCommands = [
     popoverKind: DIAGRAM_POPOVER_KIND
   }
 ];
-const mcpTool = mcpTool$1;
 const DOM_GLOBALS = [
   "window",
   "document",
@@ -158,7 +157,7 @@ const diagramEntity = {
 };
 const manifest = {
   name: "c4s-plugin-diagram",
-  version: "0.2.0",
+  version: "0.2.1",
   hostApiVersion: "^2.1.0",
   engines: { node: ">=20" },
   contributes: {

@@ -38,7 +38,27 @@ const json = (method, body) => ({
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify(body)
 });
+const LIST_PAGE = 1e3;
 const diagramsApi = {
+  /**
+   * Every diagram carrying the tags (`and`: all of them, `or`: any), from the
+   * host's list route. The route pages its answer, so this follows `total`
+   * until it has every match: the `tagged_list` block counts the result.
+   */
+  async list(params) {
+    const out = [];
+    for (; ; ) {
+      const qs = new URLSearchParams({
+        tags: params.tags.join(","),
+        tagFilter: params.tagFilter,
+        limit: String(LIST_PAGE),
+        offset: String(out.length)
+      });
+      const page = await handle(await apiFetch(`${many}?${qs}`));
+      out.push(...page.data);
+      if (page.data.length === 0 || out.length >= (page.total ?? out.length)) return out;
+    }
+  },
   async get(slug) {
     return unwrap(await apiFetch(one(slug)));
   },
@@ -560,7 +580,7 @@ const diagramEmbedSlots = {
   renderChip: DiagramChip,
   renderCard: DiagramCard,
   useGetBySlug: (slug) => useDiagram(slug),
-  listByTags: (async () => [])
+  listByTags: ({ tags, filter }) => diagramsApi.list({ tags, tagFilter: filter })
 };
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 12;
