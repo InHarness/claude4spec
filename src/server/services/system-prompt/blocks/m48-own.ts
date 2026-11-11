@@ -7,6 +7,7 @@ import {
 import type { Root } from '../../../../shared/types.js';
 import type { ProjectPluginHost } from '../../../core/plugin-host/types.js';
 import { DEFAULT_PROJECT_TYPE } from '../../../config.js';
+import { CATALOG, type OperationDeclaration } from '../../../operations/catalog.js';
 import { registerCoreOperations } from '../../../operations/core-operations.js';
 // 2.1.79 (M44/M48) — the one classifier the profile gate uses; this block keeps none of its own.
 import { effectiveToolClass } from '../../../operations/profile-gate.js';
@@ -326,32 +327,80 @@ const PLAN_MODE_TOOL_POLICY = PLAN_MODE_TOOL_POLICY_OR_NULL;
  * Deriving it from the mounted set and each tool's catalog `opClass` means it
  * cannot go stale or be partial. `plan`-class tools stay exempt by construction:
  * persisting the plan is the point of the mode.
+ *
+ * 2.1.82 (M48) — the list names only the tools whose CALL would change
+ * something plan mode does not allow. The profile gate asks a different
+ * question (is the tool in the turn at all) and picks by class; the `brief` and
+ * `turn` classes group writing operations with reading ones (`get_brief`,
+ * `get_run`, `list_threads`), so the class alone over-lists. Both questions are
+ * answered from one source — the host catalog record (`opClass` +
+ * `sideEffects`), and for a plugin its `operationClass` declaration; no list of
+ * tool names lives here.
+ *
+ * - host tool with a record: listed when its class is not `read`, `plan` or
+ *   `peer` AND its effects are not `['none']`;
+ * - host tool with no record (neither by name nor by a declared rendering):
+ *   never listed;
+ * - plugin tool: listed when its effective class is not `read` (the gate's
+ *   `effectiveToolClass`: no declaration and an overlay envelope give `write`).
+ *
+ * Why the exemptions: `plan` is the result plan mode exists to produce; `peer`
+ * (`ask` on `c4s-tools`) consults another specification and leaves this one
+ * untouched — its trace is the peer thread, and M44 admits the consultation in
+ * plan mode; a plugin tool is decided by its class alone, because the host
+ * catalog does not know the effects of a plugin's operations. An operation that
+ * hands work to another executor (a turn, a child thread, a Run, a peer)
+ * declares that trace in its effects and is never `['none']`, which is what
+ * keeps `runTransagent` / `run_remote` on the list despite their `turn` class.
  */
-const PLAN_MODE_EXEMPT_CLASSES: ReadonlySet<string> = new Set(['read', 'plan']);
+const PLAN_MODE_EXEMPT_HOST_CLASSES: ReadonlySet<string> = new Set(['read', 'plan', 'peer']);
+
+/**
+ * The host catalog record a host-server tool is the rendering of. By name first
+ * — the row the gate's `effectiveToolClass` read its class from (so `cls` is
+ * that row's `opClass`). Failing that, the row whose declared `renderings` name
+ * this `<server>.<tool>`: `transagent-tools.runTransagent` renders
+ * `spawn_child_turn` and has no row of its own name, yet it hands work to a
+ * child thread and must stay on the list. A row a plugin contributed never
+ * speaks for a host tool (the gate's rule).
+ */
+function hostRecord(server: string, tool: string, cls: string | undefined): OperationDeclaration | undefined {
+  if (cls !== undefined) return CATALOG.get(tool);
+  const rendered = `${server}.${tool}`;
+  return CATALOG.list().find(
+    (op) =>
+      op.contributedBy !== 'plugin' &&
+      Object.values(op.renderings ?? {}).some((list) => list?.includes(rendered) === true),
+  );
+}
 
 function planModeMutatingTools(inventory: readonly McpInventoryEntry[]): string[] {
   const names = new Set<string>();
   for (const server of inventory) {
+    const plugin = server.plugin === true;
+    const overlay = server.overlay === true;
     for (const tool of server.tools ?? []) {
       /**
-       * 2.1.79 (M44/M48) — no classification of its own: the class is the
-       * profile gate's `effectiveToolClass`, fed the same facts the gate gets
-       * (plugin server or not, its layer, the tool's declared class). So a
-       * plugin server's tool without a declaration, or from an overlay, is
-       * listed as mutating, and the prompt cannot drift from what the gate
-       * admits.
-       *
-       * `undefined` — a HOST tool with no host row — is not listed. Over-listing
-       * is not caution here, it is a false prohibition, and a model that finds
-       * one "forbidden" tool working learns what the rest of the prohibitions
-       * are worth. (Until 0.2.99 `load_skill_file` was the host tool with no
-       * row; it now has a read-class row, so it stays exempt through the class.)
+       * The class is the profile gate's `effectiveToolClass`, fed the same facts
+       * the gate gets (plugin server or not, its layer, the tool's declared
+       * class), so the prompt cannot drift from what the gate admits.
        */
-      const cls = effectiveToolClass(
-        { name: tool, operationClass: server.operationClasses?.[tool] },
-        { plugin: server.plugin === true, overlay: server.overlay === true },
-      );
-      if (cls === undefined || PLAN_MODE_EXEMPT_CLASSES.has(cls)) continue;
+      const cls = effectiveToolClass({ name: tool, operationClass: server.operationClasses?.[tool] }, { plugin, overlay });
+      if (plugin || overlay) {
+        // A plugin's `spec-operation` record changes nothing here, as in the gate.
+        if (cls !== 'read') names.add(tool);
+        continue;
+      }
+      const record = hostRecord(server.name, tool, cls);
+      /**
+       * No record — a HOST tool the catalog knows neither by name nor by
+       * rendering — is not listed. Over-listing is not caution here, it is a
+       * false prohibition, and a model that finds one "forbidden" tool working
+       * learns what the rest of the prohibitions are worth.
+       */
+      if (!record || PLAN_MODE_EXEMPT_HOST_CLASSES.has(record.opClass)) continue;
+      const effects = record.sideEffects;
+      if (effects.length === 1 && effects[0] === 'none') continue;
       names.add(tool);
     }
   }

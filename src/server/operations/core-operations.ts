@@ -2982,9 +2982,12 @@ export function registerCoreOperations(): void {
    * asynchronous pattern `run_remote` opens — the Run's concise state (never
    * logs) and where its shadow `<runId>/work` stands per project. Owning core:
    * `getRun` (`src/server/runs/run-read.ts`), rendered only in `internal` by
-   * `run-tools.get_run`. Workspace scope, direct mediation, effect `db` (the
-   * one write: the registry row restored from the Run record), idempotent. The
+   * `run-tools.get_run`. Workspace scope, direct mediation, idempotent. The
    * `n/a` reasons are the record's `powody`, verbatim.
+   *
+   * 2.1.82 — effect `none` (was `db`): restoring the registry row from the Run
+   * record in git rebuilds a derived index; it changes neither the Run's state,
+   * nor a thread, nor the specification. Class stays `turn`.
    */
   registerRow({
     name: 'get_run',
@@ -2994,7 +2997,7 @@ export function registerCoreOperations(): void {
     opClass: 'turn',
     inputSchema: RUN_ID_INPUT_SCHEMA,
     errorCodes: [...RUN_READ_ERROR_CODES],
-    sideEffects: ['db'],
+    sideEffects: ['none'],
     idempotent: true,
     channels: {
       internal: direct(),

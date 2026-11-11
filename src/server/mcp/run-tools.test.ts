@@ -409,7 +409,8 @@ const READ_ROW = (nazwa: 'get_run' | 'cancel_run', tool: string, rest: string): 
     mcp: { kind: 'na', reason: 'operacje Runu mają wyłącznie kanał agenta wątku czatu najwyższego poziomu, który Run zlecił' },
     rest: { kind: 'na', reason: rest },
   },
-  efekty: ['db'],
+  // 2.1.82 — get_run declares `none` (`brak`) (rebuilding the derived registry row is no state change); cancel_run keeps `db`.
+  efekty: nazwa === 'get_run' ? ['none'] : ['db'],
   idempotencja: true,
   opisTresci: undefined,
   kodyBledow: [
@@ -426,7 +427,7 @@ const READ_ROW = (nazwa: 'get_run' | 'cancel_run', tool: string, rest: string): 
 });
 
 describe('the catalog rows get_run and cancel_run (spec-operations get-run, cancel-run)', () => {
-  it('[entity:get-run] get_run: workspace, direct, internal direct rendered by run-tools.get_run, cli/mcp/rest n/a with the record\'s reasons, effect db, idempotent, the record\'s 8 codes, rules error-code-once/echo-free/explicit-addressing', () => {
+  it('[entity:get-run] get_run: workspace, direct, internal direct rendered by run-tools.get_run, cli/mcp/rest n/a with the record\'s reasons, effect none (2.1.82), idempotent, the record\'s 8 codes, rules error-code-once/echo-free/explicit-addressing', () => {
     const op = expectOperationMatchesRecord(
       READ_ROW('get_run', 'run-tools-get-run', 'moduł nie wnosi ekranu; stan Runu podaje agent na prośbę użytkownika'),
       RUN_TOOL_RECORDS,

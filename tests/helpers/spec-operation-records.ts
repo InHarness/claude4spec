@@ -1465,7 +1465,7 @@ export const SPEC_OPERATION_RECORDS: readonly SpecOperationRecord[] = [
       cli: 'operacje Runu mają wyłącznie kanał agenta wątku czatu najwyższego poziomu, który Run zlecił',
       rest: 'moduł nie wnosi ekranu; stan Runu podaje agent na prośbę użytkownika',
     },
-    efekty: ['db'],
+    efekty: ['brak'], // 2.1.82 — was ['db']: restoring the registry row rebuilds a derived index
     idempotencja: 'tak',
     opisTresci: 'n/d',
     reguly: [{ id: 'error-code-once' }, { id: 'echo-free' }, { id: 'explicit-addressing' }],

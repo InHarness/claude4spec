@@ -201,7 +201,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -1660,7 +1660,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -1856,7 +1856,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -2058,7 +2058,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -2255,7 +2255,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -2454,7 +2454,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -2649,7 +2649,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -2850,7 +2850,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -3148,7 +3148,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -3343,7 +3343,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -3544,7 +3544,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -3743,7 +3743,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_tag, delete_entities, link_dto, tag_entity, unlink_dto, update_entities
+  - Do not call: create_entities, create_tag, delete_entities, link_dto, tag_entity, unlink_dto, update_entities
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -3935,7 +3935,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -4130,7 +4130,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -4320,7 +4320,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -4521,7 +4521,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -4722,7 +4722,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -4923,7 +4923,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -5124,7 +5124,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -5325,7 +5325,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -5526,7 +5526,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -5727,7 +5727,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -6122,7 +6122,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -6323,7 +6323,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -6705,7 +6705,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -6906,7 +6906,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -7261,7 +7261,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, mark_patch_applied, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, mark_patch_applied, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -7594,7 +7594,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, mark_patch_applied, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, mark_patch_applied, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -7823,7 +7823,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, mark_patch_applied, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, mark_patch_applied, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -8033,7 +8033,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, mark_patch_applied, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, mark_patch_applied, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
