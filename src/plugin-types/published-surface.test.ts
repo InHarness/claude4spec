@@ -119,7 +119,7 @@ const PUBLISHED_PLUGIN_RUNTIME_UI_NAMES = [
 
 describe('published Host API type surface', () => {
   it('does NOT bump hostApiVersion — type distribution is additive DX (AC3)', () => {
-    expect(HOST_API_VERSION).toBe('2.1.0');
+    expect(HOST_API_VERSION).toBe('2.2.0');
   });
 
   it('covers exactly the @c4s/plugin-runtime runtime value surface (no drift)', () => {
@@ -265,7 +265,7 @@ describe('plugin test harness subpath — outside hostApiVersion', () => {
     // …and the Host API version is the baseline the published runtime surface pins
     // (the first assertion of this file): neither withdrawing the subpath nor
     // adding it back is a bump.
-    expect(HOST_API_VERSION).toBe('2.1.0');
+    expect(HOST_API_VERSION).toBe('2.2.0');
     // No record of the versioned surface — major migrations, minor releases,
     // in-baseline changes — carries the harness: its addition was not a Host API change.
     expect(versionedRecords).not.toMatch(/plugin-testing|createPluginTestApp/);

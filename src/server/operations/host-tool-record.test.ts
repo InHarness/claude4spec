@@ -87,4 +87,33 @@ describe('M44 — the profile gate classifies host tools by the shared record (2
       );
     }
   });
+
+  /*
+   * 2.1.84 (M44, M12) — the tool's channel is the channel the gate is mounted
+   * in: `mcp` for the external surface. A row whose renderings name the tool
+   * only in ANOTHER channel is not that tool's record there.
+   */
+  it('[ac:ac-m44-bramka-zewnetrzna-describe-entity-type-kanal-mcp] on the external MCP surface the gate gives describe_entity_type of entity-tools the `read` class from the describe-types record, whose declared mcp renderings name the tool', () => {
+    const server = createEntityToolsServer({} as never);
+    const decl = server.tools.find((t) => t.name === 'describe_entity_type');
+    expect(decl).toBeDefined();
+    const record = resolveHostToolRecord(decl!, { server: 'entity-tools', channel: 'mcp' });
+    expect(record?.name).toBe('describe_types');
+    expect(record?.renderings?.mcp).toContain('entity-tools.describe_entity_type');
+    expect(effectiveToolClass(decl!, { server: 'entity-tools', channel: 'mcp' })).toBe('read');
+    // Mounted with the external channel, every profile keeps it.
+    for (const profile of Object.keys(PROFILES) as Array<keyof typeof PROFILES>) {
+      const gated = gateServer(profile, 'entity-tools', server, new Set(), new Set(), 'mcp');
+      expect(gated?.tools?.map((t) => t.name), profile).toContain('describe_entity_type');
+    }
+  });
+
+  it('a row whose renderings name the tool only in another channel is not its record on the mounted channel', () => {
+    // `spawn_child_turn` renders `transagent-tools.runTransagent` in `internal` only.
+    const op = CATALOG.get('spawn_child_turn');
+    expect(op?.renderings?.internal).toContain('transagent-tools.runTransagent');
+    expect(op?.renderings?.mcp ?? []).not.toContain('transagent-tools.runTransagent');
+    expect(effectiveToolClass('runTransagent', { server: 'transagent-tools', channel: 'mcp' })).toBeUndefined();
+    expect(effectiveToolClass('runTransagent', { server: 'transagent-tools', channel: 'internal' })).toBe('turn');
+  });
 });

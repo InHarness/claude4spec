@@ -960,6 +960,35 @@ export const HOST_API_MINOR_RELEASES: readonly HostApiMinorRelease[] = [
       },
     ],
   },
+  /*
+   * 2.1.84 (M33) — the end of the stabilisation phase. The bump makes REQUIRABLE
+   * what was added inside the baseline after 2.1.0: hosts before it report
+   * `2.1.0` whether or not they carry these members, so a plugin needing one
+   * declares `^2.2.0` and is skipped there — a false refusal accepted as safe,
+   * since released versions cannot be fixed. Every in-baseline entry of
+   * {@link HOST_API_UNVERSIONED_CHANGES} logged after 2.1.0 is guaranteed by
+   * this release; the two below are the members it names.
+   */
+  {
+    version: '2.2.0',
+    title: 'End of the stabilisation phase — post-2.1.0 surface members become requirable',
+    changes: [
+      {
+        slot: 'EntityRowProps.refLookup / EntityCardProps.refLookup + @c4s/plugin-runtime: useRefLookup, RefLookupEntry',
+        kind: 'slot-added',
+        summary:
+          'Shipped in 2.1.41 inside the baseline (see the unversioned entry); guaranteed from 2.2.0, so a ' +
+          'plugin reading `refLookup` or calling `useRefLookup` declares `^2.2.0`.',
+      },
+      {
+        slot: 'mcpTool(…, annotations?, operationClass?) / McpToolOperationClass',
+        kind: 'slot-added',
+        summary:
+          'Shipped in 2.1.78 inside the baseline (see the unversioned entry); guaranteed from 2.2.0, so a ' +
+          'plugin whose read tools rely on `operationClass: \'read\'` to pass the profile gate declares `^2.2.0`.',
+      },
+    ],
+  },
 ];
 
 /**

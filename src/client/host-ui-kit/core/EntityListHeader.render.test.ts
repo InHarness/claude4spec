@@ -376,7 +376,7 @@ describe('LucideIcon in the stable props (L12/L11, 2.1.28)', () => {
     expect(UI_KIT_STABLE_COMPONENTS as readonly string[]).toContain('EntityListHeader');
     expect(VERSIONED_UI_KIT_COMPONENTS as readonly string[]).toContain('EntityListHeader');
     // …added within the current baseline, without a bump.
-    expect(HOST_API_VERSION).toBe('2.1.0');
+    expect(HOST_API_VERSION).toBe('2.2.0');
   });
 });
 

@@ -6,6 +6,7 @@ import { editorBridge } from '../../../runtime/editor-bridge.js';
 import { useListTagLookup } from '../../../entities/useListTagLookup.js';
 import { useListRefLookup } from '../../../entities/useRefLookup.js';
 import type { TagRenderProps } from '../../renders.js';
+import { NoListView } from '../../../tiptap/extensions/views/NoListView.js';
 import { attr, csv, TaggedPill } from './shared.js';
 
 type Entity = { slug: string };
@@ -15,6 +16,8 @@ type Grouped = Record<string, Entity[]>;
  * `<tagged_list_mixed tags filter?/>` — `renderRow` grouped by type, over the
  * ACTIVE types only: a type whose package goes inactive drops out of the
  * groups without any edit to the page. Inline: a pill.
+ * 2.1.84: an active type without `renderRow` is a group too — the "has no list
+ * view" block in place of rows, its `listByTags` count inside the header total.
  * 2.1.40: every row of every group gets the same `tagLookup`, from one
  * `['tags']` query for the whole list.
  */
@@ -40,9 +43,13 @@ export function TaggedListMixedRender({ attrs, variant }: TagRenderProps) {
     enabled: variant === 'block' && tags.length > 0,
   });
 
-  // 2.1.41 — one refLookup for every row of every group, like tagLookup.
+  // 2.1.41 — one refLookup for every row of every group, like tagLookup. A
+  // no-list-view group draws no rows, so its entities need no lookup.
+  const rowTypes = new Set(activeModules.filter((m) => m.renderRow).map((m) => m.type));
   const refLookup = useListRefLookup(
-    Object.entries(grouped ?? {}).flatMap(([type, list]) => list.map((e) => ({ type, slug: e.slug }))),
+    Object.entries(grouped ?? {})
+      .filter(([type]) => rowTypes.has(type))
+      .flatMap(([type, list]) => list.map((e) => ({ type, slug: e.slug }))),
   );
 
   if (variant === 'inline') return <TaggedPill tags={attr(attrs, 'tags')} filter={filter} typeLabel="mixed" />;
@@ -77,18 +84,33 @@ export function TaggedListMixedRender({ attrs, variant }: TagRenderProps) {
         {activeModules.map((mod) => {
           const list = safe[mod.type] ?? [];
           if (list.length === 0) return null;
-          // An embed-only type has no row: a per-group skip here, since the
-          // other groups are perfectly listable.
+          const groupHeader = (
+            <div
+              className="px-3 py-1 text-[10.5px] uppercase tracking-wider font-mono"
+              style={{ color: 'var(--c-subtle)', background: 'var(--c-panel)' }}
+            >
+              {mod.labelPlural}
+            </div>
+          );
+          // 2.1.84 (M19, M13 `renderRow?`) — a type without a row slot has no
+          // list view, but its matches are still part of what this list shows:
+          // it gets its OWN group in its place in the type order, with the
+          // "has no list view" information block instead of rows. The count is
+          // the type's `listByTags` answer — the same one the header total sums.
           const RowComp = mod.renderRow;
-          if (!RowComp) return null;
-          return (
-            <div key={mod.type}>
-              <div
-                className="px-3 py-1 text-[10.5px] uppercase tracking-wider font-mono"
-                style={{ color: 'var(--c-subtle)', background: 'var(--c-panel)' }}
-              >
-                {mod.labelPlural}
+          if (!RowComp) {
+            return (
+              <div key={mod.type} data-tagged-list-mixed-group={mod.type}>
+                {groupHeader}
+                <div className="p-1">
+                  <NoListView type={mod.type} count={list.length} variant="block" />
+                </div>
               </div>
+            );
+          }
+          return (
+            <div key={mod.type} data-tagged-list-mixed-group={mod.type}>
+              {groupHeader}
               <ul className="p-1">
                 {list.map((entity) => (
                   <li key={entity.slug}>

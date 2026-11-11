@@ -88,7 +88,7 @@ describe('Host UI Kit catalog registry (M34/L12)', () => {
     expect(block?.stability).toBe('experimental');
     // Adding it to the catalog must NOT pull it into `hostApiVersion`.
     expect(BROWSER_STABLE).not.toContain('EntityVersionHistoryView');
-    expect(HOST_API_VERSION).toBe('2.1.0');
+    expect(HOST_API_VERSION).toBe('2.2.0');
   });
 
   it('[section:m34l12sc] the browser /ui leg derives UI_KIT_STABLE_COMPONENTS from the registry, equal to the backend /ui leg constant of the same name', () => {

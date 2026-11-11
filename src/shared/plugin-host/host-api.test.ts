@@ -41,7 +41,7 @@ describe('M34/L12 — the version gate counts contribution, not consumption', ()
     // reverted that under the stabilisation rule. Either way the claim this
     // case makes is unchanged — consuming an experimental component moved
     // nothing.
-    expect(HOST_API_VERSION).toBe('2.1.0');
+    expect(HOST_API_VERSION).toBe('2.2.0');
     expect(migrationsBetween(1, 1)).toEqual([]);
   });
 
@@ -74,7 +74,9 @@ describe('M34/L12 — the version gate counts contribution, not consumption', ()
       // This file is the one place that may name a wrong version: the rule has
       // to quote what it is banning to explain itself.
       .filter((line) => !line.startsWith('src/shared/plugin-host/host-api.test.ts:'))
-      .filter((line) => !/Host API 2\.0\.0/.test(line));
+      .filter((line) => !/Host API 2\.0\.0/.test(line))
+      // 2.1.84 — naming the running constant itself is what the rule allows.
+      .filter((line) => !line.includes(`Host API ${HOST_API_VERSION}`));
     expect(offenders).toEqual([]);
   });
 });
@@ -163,14 +165,48 @@ describe('2.1.0 — the Host API changelog records the minor bump', () => {
    * tag registration shape left it, because that shape is an internal host
    * contract outside the versioned surface.
    */
-  it('[section:m33load01] the newest minor release is the running HOST_API_VERSION, and its one item removes registerExtensionReferenceType', () => {
+  it('[section:m33load01] the 2.1.0 minor release has one item, the removal of registerExtensionReferenceType', () => {
+    const minor = HOST_API_MINOR_RELEASES.find((r) => r.version === '2.1.0')!;
+    expect(minor).toBeDefined();
+    expect(minor.changes).toHaveLength(1);
+    expect(minor.changes[0]!.kind).toBe('slot-removed');
+    expect(minor.changes[0]!.slot).toContain('registerExtensionReferenceType');
+    expect(JSON.stringify(minor)).not.toMatch(/XmlTagDefinition|\.form\b/);
+  });
+});
+
+/**
+ * 2.1.84 (M33) — Host API 2.2.0, the end of the stabilisation phase: the minor
+ * makes the surface members added inside the baseline after 2.1.0 requirable.
+ */
+describe('2.2.0 — the end of the stabilisation phase', () => {
+  it('[ac:ac-host-zglasza-host-api-version-rowne-2] the host reports HOST_API_VERSION equal to 2.2.0', () => {
+    expect(HOST_API_VERSION).toBe('2.2.0');
+  });
+
+  it('[section:m33load01] the newest minor release is the running HOST_API_VERSION, next to the 2.1.0 entry, and names refLookup / useRefLookup and operationClass', () => {
     const latest = HOST_API_MINOR_RELEASES[HOST_API_MINOR_RELEASES.length - 1]!;
-    expect(HOST_API_VERSION).toBe('2.1.0');
     expect(latest.version).toBe(HOST_API_VERSION);
-    expect(latest.changes).toHaveLength(1);
-    expect(latest.changes[0]!.kind).toBe('slot-removed');
-    expect(latest.changes[0]!.slot).toContain('registerExtensionReferenceType');
-    expect(JSON.stringify(latest)).not.toMatch(/XmlTagDefinition|\.form\b/);
+    expect(HOST_API_MINOR_RELEASES.map((r) => r.version)).toEqual(['2.1.0', '2.2.0']);
+    const slots = latest.changes.map((c) => c.slot).join('\n');
+    for (const name of ['refLookup', 'useRefLookup', 'operationClass']) expect(slots).toContain(name);
+    // A minor never cuts a package off: no migrations[] on a minor.
+    const release = HOST_API_RELEASES.find((r) => r.version === '2.2.0')!;
+    expect(release.kind).toBe('minor');
+    expect(release.migrations).toBeUndefined();
+  });
+
+  it('[section:m33load01] every member 2.2.0 guarantees has an in-baseline record logged after the 2.1.0 entry', () => {
+    const latest = HOST_API_MINOR_RELEASES.find((r) => r.version === '2.2.0')!;
+    for (const change of latest.changes) {
+      // The release's slot is the in-baseline record's slot (or its leading part).
+      const record = HOST_API_UNVERSIONED_CHANGES.find((c) => c.slot.startsWith(change.slot));
+      expect(record, change.slot).toBeDefined();
+      expect(record!.kind).toBe('slot-added');
+      // Logged after the 2.1.0 entry: an app release of the 2.1 line.
+      expect(record!.release).toMatch(/^2\.1\.\d+$/);
+      expect(record!.release).not.toBe('2.1.0');
+    }
   });
 });
 
@@ -190,7 +226,7 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
   };
 
   it('[section:m33load01] the release registry holds each versioned changelog entry, oldest first, ending at HOST_API_VERSION', () => {
-    expect(HOST_API_RELEASES.map((r) => `${r.version}:${r.kind}`)).toEqual(['2.0.0:major', '2.1.0:minor']);
+    expect(HOST_API_RELEASES.map((r) => `${r.version}:${r.kind}`)).toEqual(['2.0.0:major', '2.1.0:minor', '2.2.0:minor']);
     for (let i = 1; i < HOST_API_RELEASES.length; i++) {
       expect(compare(HOST_API_RELEASES[i - 1]!.version, HOST_API_RELEASES[i]!.version)).toBeLessThan(0);
     }
@@ -244,8 +280,8 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
       expect(retired?.slot).toContain(name);
     }
     // No bump: the version is still the 2.1.0 baseline and no release carries the retirement.
-    expect(HOST_API_VERSION).toBe('2.1.0');
-    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0']);
+    expect(HOST_API_VERSION).toBe('2.2.0');
+    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0', '2.2.0']);
     for (const release of HOST_API_RELEASES) {
       expect(JSON.stringify(release)).not.toMatch(/contributes\.settings|PluginSetting/);
     }
@@ -261,8 +297,8 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
     expect(added?.uiKitStable).toBeUndefined();
     expect(removed?.uiKitStable).toBeUndefined();
     // …so no release records it, and the version stays the baseline.
-    expect(HOST_API_VERSION).toBe('2.1.0');
-    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0']);
+    expect(HOST_API_VERSION).toBe('2.2.0');
+    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0', '2.2.0']);
     for (const release of HOST_API_RELEASES) {
       expect(JSON.stringify(release)).not.toMatch(/STABLE_UI_KIT_COMPONENTS/);
     }
@@ -280,8 +316,8 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
     expect(retired[0]!.uiKitStable).toBeUndefined();
     // No bump: the version is still the 2.1.0 baseline, no release and no
     // major-crossing descriptor carries the retirement.
-    expect(HOST_API_VERSION).toBe('2.1.0');
-    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0']);
+    expect(HOST_API_VERSION).toBe('2.2.0');
+    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0', '2.2.0']);
     for (const release of HOST_API_RELEASES) {
       expect(JSON.stringify(release)).not.toMatch(/displayOrder/);
     }
@@ -296,8 +332,8 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
       expect(added[0]!.slot).toContain(name);
     }
     expect(added[0]!.uiKitStable).toBeUndefined();
-    expect(HOST_API_VERSION).toBe('2.1.0');
-    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0']);
+    expect(HOST_API_VERSION).toBe('2.2.0');
+    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0', '2.2.0']);
   });
 
   it('[section:m33load01] 2.1.40: tagLookup in RowProps and the runtime Tag type are an unversioned addition, with no bump', () => {
@@ -309,8 +345,8 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
     }
     expect(added[0]!.summary).toMatch(/additive/i);
     expect(added[0]!.uiKitStable).toBeUndefined();
-    expect(HOST_API_VERSION).toBe('2.1.0');
-    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0']);
+    expect(HOST_API_VERSION).toBe('2.2.0');
+    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0', '2.2.0']);
   });
 
   it('[section:m33load01] 2.1.41: refLookup in RowProps/CardProps, useRefLookup and the ref placement rule are an unversioned addition placed after the tagLookup entry, with no bump and no stable-list delta', () => {
@@ -324,7 +360,7 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
     expect(added[0]!.uiKitStable).toBeUndefined();
     const releases = HOST_API_UNVERSIONED_CHANGES.map((c) => c.release);
     expect(releases.indexOf('2.1.41')).toBe(releases.indexOf('2.1.40') + 1);
-    expect(HOST_API_VERSION).toBe('2.1.0');
+    expect(HOST_API_VERSION).toBe('2.2.0');
     expect(UI_KIT_STABLE_COMPONENTS).not.toContain('EntityRefValue');
   });
 
@@ -346,8 +382,8 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
     const releases = HOST_API_UNVERSIONED_CHANGES.map((c) => c.release);
     expect(releases.indexOf('2.1.57')).toBe(releases.lastIndexOf('2.1.41') + 1);
     // No bump, no release and no major-crossing descriptor carries either.
-    expect(HOST_API_VERSION).toBe('2.1.0');
-    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0']);
+    expect(HOST_API_VERSION).toBe('2.2.0');
+    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0', '2.2.0']);
     for (const release of HOST_API_RELEASES) {
       expect(JSON.stringify(release)).not.toMatch(/slugCollision|PLUGIN_TOOL_CONFLICT/);
     }
@@ -366,8 +402,8 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
     expect(added[0]!.uiKitStable).toBeUndefined();
     const releases = HOST_API_UNVERSIONED_CHANGES.map((c) => c.release);
     expect(releases.indexOf('2.1.63')).toBe(releases.lastIndexOf('2.1.57') + 1);
-    expect(HOST_API_VERSION).toBe('2.1.0');
-    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0']);
+    expect(HOST_API_VERSION).toBe('2.2.0');
+    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0', '2.2.0']);
     expect(JSON.stringify(migrationsBetween(0, Number.MAX_SAFE_INTEGER))).not.toMatch(/onCaptionChange|EntityOverlayProps/);
   });
 
@@ -390,8 +426,8 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
     // Recorded after the 2.1.63 entry; no release was cut and no migration descriptor names them.
     const releases = HOST_API_UNVERSIONED_CHANGES.map((c) => c.release);
     expect(releases.indexOf('2.1.65')).toBe(releases.lastIndexOf('2.1.63') + 1);
-    expect(HOST_API_VERSION).toBe('2.1.0');
-    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0']);
+    expect(HOST_API_VERSION).toBe('2.2.0');
+    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0', '2.2.0']);
     expect(JSON.stringify(migrationsBetween(0, Number.MAX_SAFE_INTEGER))).not.toMatch(/lineDiffHunks|getEntityService|maxTurns/);
   });
 
@@ -409,8 +445,8 @@ describe('[section:m33load01] the Host API changelog and its two registries in c
     }
     const releases = HOST_API_UNVERSIONED_CHANGES.map((c) => c.release);
     expect(releases.indexOf('2.1.78')).toBe(releases.lastIndexOf('2.1.65') + 1);
-    expect(HOST_API_VERSION).toBe('2.1.0');
-    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0']);
+    expect(HOST_API_VERSION).toBe('2.2.0');
+    expect(HOST_API_RELEASES.map((r) => r.version)).toEqual(['2.0.0', '2.1.0', '2.2.0']);
   });
 
   it('[section:m33load01] the composition of UI_KIT_STABLE_COMPONENTS is exactly what the registries record', () => {

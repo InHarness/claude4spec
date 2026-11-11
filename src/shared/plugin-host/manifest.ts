@@ -176,8 +176,18 @@ import type { EntityModuleManifest, SystemPromptContribution } from './types.js'
  * is an internal host contract, only host modules register, and no plugin sees
  * the shape, so changing it never moves `HOST_API_VERSION`. Render assignment
  * is not part of the surface either.
+ *
+ * 2.2.0 (brief 2.1.83 → 2.1.84, M33) — the end of the stabilisation phase. The
+ * minor guarantees every surface member logged "within the current baseline"
+ * after the 2.1.0 entry — in particular `refLookup` / `useRefLookup` and
+ * `operationClass` — so a plugin needing one can declare `^2.2.0` instead of
+ * only guarding against breakage. From here on every additive extension bumps
+ * the minor (rule 2); "within the baseline, no bump" is kept only for changes
+ * that do not alter what a plugin may require. The load gate is unchanged: a
+ * caret range `^2.0.0` / `^2.1.0` still loads, a tilde/exact `2.1.x` range is
+ * skipped with `PLUGIN_HOST_API_MISMATCH`.
  */
-export const HOST_API_VERSION = '2.1.0';
+export const HOST_API_VERSION = '2.2.0';
 
 /** Node/host engine constraints — checked by the loader before registration. */
 export interface PluginEngines {

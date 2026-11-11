@@ -117,7 +117,7 @@ describe('L11 names of the consumer modules, per leg', () => {
     // lineDiffHunks speaks the one hunk vocabulary of DiffView.
     expect(published).toMatch(/export declare function lineDiffHunks\([\s\S]*?\): \{ op: 'add' \| 'del' \| 'ctx'; line: string \}\[\];/);
     // Recorded inside the current baseline: no version bump.
-    expect(HOST_API_VERSION).toBe('2.1.0');
+    expect(HOST_API_VERSION).toBe('2.2.0');
   });
 
   it('[section:m05l11sc] M05 carries startSeededThread, on the browser leg only', async () => {
@@ -201,6 +201,6 @@ describe('L11 names of the consumer modules, per leg', () => {
     // The `c4s:*` window events are not plugin surface: nothing published names them.
     expect(published).not.toMatch(/'c4s:(?:popover-open|modal-open|confirm-open|toast)'/);
     // Additive within the current baseline: no version bump.
-    expect(HOST_API_VERSION).toBe('2.1.0');
+    expect(HOST_API_VERSION).toBe('2.2.0');
   });
 });

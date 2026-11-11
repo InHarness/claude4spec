@@ -209,6 +209,6 @@ describe('get_field_content — one generic operation, the sixth on the plugin r
     expect(recorded).toEqual([...READ_OPS]);
     // No release of the Host API was cut for it: the version is still the last recorded release.
     expect(HOST_API_RELEASES[HOST_API_RELEASES.length - 1]!.version).toBe(HOST_API_VERSION);
-    expect(HOST_API_VERSION).toBe('2.1.0');
+    expect(HOST_API_VERSION).toBe('2.2.0');
   });
 });
