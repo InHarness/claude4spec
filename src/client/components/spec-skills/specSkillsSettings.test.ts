@@ -30,7 +30,7 @@ import type { WritingStyleSummary } from '../../../shared/writing-styles.js';
  */
 
 const ROWS: ExposedProjectRow[] = [
-  { name: 'billing-rules', description: 'How billing works.', projectId: 'billing', uses: true, status: 'ok', confirmed: true },
+  { name: 'billing-rules', description: 'How billing works.', projectId: 'billing', projectType: 'skill', uses: true, status: 'ok', confirmed: true },
   { name: 'docs', uses: false, status: 'ambiguous', confirmed: false },
   { name: 'ghost', uses: true, status: 'unavailable', confirmed: true },
 ];

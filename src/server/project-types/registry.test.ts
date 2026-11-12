@@ -30,6 +30,7 @@ const entry = (over: Partial<ProjectTypeEntry> = {}): ProjectTypeEntry => ({
   slug: 'x-type',
   name: 'X',
   description: 'd',
+  position: 10,
   promptDescription: 'p',
   capabilities: [],
   onboarding: null,
@@ -49,7 +50,7 @@ function refusal(fn: () => unknown): ProjectTypeRegistryError {
 }
 
 describe('M57 L20 — the host project-type registry (2.1.77)', () => {
-  it('holds the entries of M58, M59, M60 in registration order with their identity and capability sets', () => {
+  it('holds the entries of M58, M60, M59 ascending by position with their identity and capability sets (2.1.86)', () => {
     const reg = hostProjectTypeRegistry();
     expect(reg.list().map((e) => [e.slug, e.name, e.description, e.capabilities])).toEqual([
       [
@@ -59,18 +60,19 @@ describe('M57 L20 — the host project-type registry (2.1.77)', () => {
         ['entities', 'briefs', 'multi-root'],
       ],
       [
-        'skill',
-        'Skill',
-        'Write one package of instructions for agents and expose it to the other projects of this workspace.',
-        ['skill-exposure'],
-      ],
-      [
         'writing-style',
         'Writing Style',
         'Write a writing style that other projects of this workspace can select for their agent.',
         ['skill-exposure'],
       ],
+      [
+        'skill',
+        'Skill',
+        'Write one package of instructions for agents and expose it to the other projects of this workspace.',
+        ['skill-exposure'],
+      ],
     ]);
+    expect(reg.list().map((e) => e.position)).toEqual([10, 20, 30]);
     // The config default names a registered type.
     expect(reg.has(DEFAULT_PROJECT_TYPE)).toBe(true);
     expect(reg.get('spec')!.onboarding).toBeNull();
@@ -139,6 +141,18 @@ describe('M57 L20 — the host project-type registry (2.1.77)', () => {
     }
   });
 
+  it('the order is ascending by position, whatever the registration order (2.1.86)', () => {
+    const forward = buildProjectTypeRegistry(HOST_PROJECT_TYPE_ENTRIES, deps());
+    const reversed = buildProjectTypeRegistry([...HOST_PROJECT_TYPE_ENTRIES].reverse(), deps());
+    expect(reversed.cards()).toEqual(forward.cards());
+    expect(forward.cards().map((c) => c.slug)).toEqual(['spec', 'writing-style', 'skill']);
+    const custom = buildProjectTypeRegistry(
+      [entry({ slug: 'c', position: 30 }), entry({ slug: 'a', position: 10 }), entry({ slug: 'b', position: 15 })],
+      deps(),
+    );
+    expect(custom.list().map((e) => e.slug)).toEqual(['a', 'b', 'c']);
+  });
+
   it('cards() carries only slug, name and user description', () => {
     for (const card of hostProjectTypeRegistry().cards()) {
       expect(Object.keys(card).sort()).toEqual(['description', 'name', 'slug']);
@@ -160,6 +174,25 @@ describe('M57 L20 — entry validation (2.1.77, `91ci7cqx`)', () => {
   it('refuses a duplicate slug, naming it', () => {
     const err = refusal(() => buildProjectTypeRegistry([entry(), entry({ name: 'Y' })], deps()));
     expect(err.declaration).toBe('x-type');
+  });
+
+  it('refuses a missing, zero, negative or non-integer position, naming the entry (2.1.86)', () => {
+    const missing = { ...entry() } as Partial<ProjectTypeEntry>;
+    delete missing.position;
+    expect(refusal(() => buildProjectTypeRegistry([missing as ProjectTypeEntry], deps())).declaration).toBe('x-type');
+    for (const position of [0, -10, 1.5, Number.NaN]) {
+      expect(refusal(() => buildProjectTypeRegistry([entry({ position })], deps())).declaration).toBe('x-type');
+    }
+  });
+
+  it('refuses two entries with the same position, naming the second (2.1.86)', () => {
+    const err = refusal(() =>
+      buildProjectTypeRegistry([entry({ slug: 'a-type' }), entry({ slug: 'b-type', position: 10 })], deps()),
+    );
+    expect(err.declaration).toBe('b-type');
+    expect(() =>
+      buildProjectTypeRegistry([entry({ slug: 'a-type' }), entry({ slug: 'b-type', position: 20 })], deps()),
+    ).not.toThrow();
   });
 
   it('refuses an undeclared capability and a set not closed under dependencies', () => {

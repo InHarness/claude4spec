@@ -28,7 +28,16 @@ const projects = Array.from({ length: 30 }, (_, i) => ({
   name: `Project ${i}`,
   cwd: `/work/project-${i}`,
   live: true,
+  projectType: 'spec',
+  projectTypeName: 'Specification' as string | null,
 }));
+/** `GET /api/workspace/project-types` — the registry in its order (2.1.86: by position). */
+const TYPES = [
+  { slug: 'spec', name: 'Specification', description: 'd' },
+  { slug: 'writing-style', name: 'Writing Style', description: 'd' },
+  { slug: 'skill', name: 'Skill', description: 'd' },
+];
+let workspaceProjects: typeof projects;
 
 let host: HTMLDivElement;
 let root: Root;
@@ -38,7 +47,12 @@ let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   nav.hrefs = [];
   scrolled = [];
-  fetchMock = vi.fn(async () => new Response(JSON.stringify({ name: 'default', projects }), { status: 200 }));
+  workspaceProjects = projects;
+  fetchMock = vi.fn(async (url: string) =>
+    String(url) === '/api/workspace/project-types'
+      ? new Response(JSON.stringify({ types: TYPES }), { status: 200 })
+      : new Response(JSON.stringify({ name: 'default', projects: workspaceProjects }), { status: 200 }),
+  );
   vi.stubGlobal('fetch', fetchMock);
   Element.prototype.scrollIntoView = function (this: Element) {
     scrolled.push(this);
@@ -123,13 +137,15 @@ describe('ProjectSwitcher — large workspace', () => {
     // Closed: no workspace read on mount.
     expect(fetchMock).not.toHaveBeenCalled();
 
+    const workspaceReads = () => fetchMock.mock.calls.filter(([url]) => url === '/api/workspace').length;
     await clickToggle();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0]![0]).toBe('/api/workspace');
+    expect(workspaceReads()).toBe(1);
+    // 2.1.86: the type list, for the groups, is read with it.
+    expect(fetchMock.mock.calls.map(([url]) => url).sort()).toEqual(['/api/workspace', '/api/workspace/project-types']);
 
     await clickToggle(); // close
     await clickToggle(); // reopen → the stale shared entry is refetched
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(workspaceReads()).toBe(2);
     expect(host.querySelectorAll('[role="option"]')).toHaveLength(30);
   });
 });
@@ -150,5 +166,68 @@ describe('ProjectSwitcher — Add project to workspace (M31 `m31l5001` Sloty)', 
     expect(events.openModal).not.toHaveBeenCalled();
     // The popover closes behind the navigation.
     expect(host.querySelector('[role="listbox"]')).toBeNull();
+  });
+});
+
+describe('ProjectSwitcher — grouped by project type (M31, 2.1.86)', () => {
+  const project = (id: string, projectType: string, projectTypeName: string | null) => ({
+    id,
+    name: id.toUpperCase(),
+    cwd: `/work/${id}`,
+    live: true,
+    projectType,
+    projectTypeName,
+  });
+  const groups = () =>
+    Array.from(host.querySelectorAll<HTMLElement>('[role="listbox"] [data-project-type-group]')).map((g) => [
+      g.querySelector('[data-testid="project-type-group-header"]')?.textContent ?? null,
+      Array.from(g.querySelectorAll('[role="option"]')).map((o) => o.querySelector('.font-medium')?.textContent),
+    ]);
+
+  it('[ac:ac-lista-rozwijana-przelacznika-projektu] the dropdown is split into type groups in the order of GET /api/workspace/project-types, each headed by the type name', async () => {
+    workspaceProjects = [
+      project('s1', 'skill', 'Skill'),
+      project('p-25', 'spec', 'Specification'),
+      project('w1', 'writing-style', 'Writing Style'),
+      project('a2', 'spec', 'Specification'),
+    ];
+    await openSwitcher();
+    expect(groups()).toEqual([
+      ['Specification', ['P-25', 'A2']],
+      ['Writing Style', ['W1']],
+      ['Skill', ['S1']],
+    ]);
+  });
+
+  it('[ac:ac-typ-ktory-nie-ma-zadnego-projektu-w-w-2] a type with no project in the workspace has no group in the dropdown', async () => {
+    workspaceProjects = [project('p-25', 'spec', 'Specification'), project('s1', 'skill', 'Skill')];
+    await openSwitcher();
+    expect(groups().map(([header]) => header)).toEqual(['Specification', 'Skill']);
+    expect(host.querySelector('[role="listbox"]')!.textContent).not.toContain('Writing Style');
+  });
+
+  it('[ac:ac-projekt-o-typie-nieznanym-biezacej-we-2] a project of an unknown type stands in a group after the known ones, headed by its slug, and cannot be picked; several unknown slugs give several groups, alphabetically', async () => {
+    workspaceProjects = [
+      project('z1', 'zeta-kind', null),
+      project('p-25', 'spec', 'Specification'),
+      project('n1', 'novel-kind', null),
+    ];
+    await openSwitcher();
+    expect(groups()).toEqual([
+      ['Specification', ['P-25']],
+      ['novel-kind', ['N1']],
+      ['zeta-kind', ['Z1']],
+    ]);
+    const unknown = host.querySelector<HTMLButtonElement>('[data-project-type-group="novel-kind"] [role="option"]')!;
+    expect(unknown.disabled).toBe(true);
+    expect(unknown.getAttribute('aria-disabled')).toBe('true');
+    expect(unknown.textContent).toContain('novel-kind');
+    const before = window.location.href;
+    await act(async () => {
+      unknown.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(window.location.href).toBe(before);
+    // The popover stays open — nothing was picked.
+    expect(host.querySelector('[role="listbox"]')).not.toBeNull();
   });
 });

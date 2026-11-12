@@ -29,6 +29,12 @@ let root: Root;
 let workspace: unknown;
 let requests: string[];
 let modals: Array<{ kind: string }>;
+/** `GET /api/workspace/project-types` — the registry in its order (2.1.86: by position). */
+const TYPES = [
+  { slug: 'spec', name: 'Specification', description: 'd' },
+  { slug: 'writing-style', name: 'Writing Style', description: 'd' },
+  { slug: 'skill', name: 'Skill', description: 'd' },
+];
 const onModal = (e: Event) => modals.push((e as CustomEvent).detail);
 
 async function flush() {
@@ -58,6 +64,9 @@ beforeEach(() => {
     'fetch',
     vi.fn(async (url: string) => {
       requests.push(String(url));
+      if (String(url) === '/api/workspace/project-types') {
+        return new Response(JSON.stringify({ types: TYPES }), { status: 200 });
+      }
       return new Response(JSON.stringify(workspace), { status: 200 });
     }),
   );
@@ -87,7 +96,8 @@ describe('welcome-page (/welcome)', () => {
     };
     await render();
 
-    expect(requests).toEqual(['/api/workspace']);
+    // 2.1.86: the type list orders and names the groups.
+    expect([...requests].sort()).toEqual(['/api/workspace', '/api/workspace/project-types']);
     expect(host.textContent).toContain('Welcome to claude4spec');
     expect(host.textContent).toContain('default');
     const projectButtons = buttons().filter((b) => b.textContent?.includes('/work/'));
@@ -216,5 +226,74 @@ describe('welcome-page (/welcome)', () => {
     expect(nav.hrefs).toEqual([]);
     // The known row next to it stays available.
     expect(buttons().find((b) => b.textContent?.includes('App'))!.disabled).toBe(false);
+  });
+
+  const project = (id: string, projectType: string, projectTypeName: string | null) => ({
+    id,
+    name: id.toUpperCase(),
+    cwd: `/work/${id}`,
+    live: true,
+    projectType,
+    projectTypeName,
+  });
+  const groups = () =>
+    Array.from(host.querySelectorAll<HTMLElement>('[data-project-type-group]')).map((g) => [
+      g.querySelector('[data-testid="project-type-group-header"]')?.textContent ?? null,
+      Array.from(g.querySelectorAll('button')).map((b) => b.querySelector('.font-medium')?.textContent),
+    ]);
+
+  it('[ac:ac-lista-projektow-na-welcome-jest-podzi] the list is split into type groups in the order of GET /api/workspace/project-types, each headed by the type name', async () => {
+    workspace = {
+      name: 'default',
+      kind: 'registry',
+      lastOpenedProject: null,
+      projects: [
+        project('s1', 'skill', 'Skill'),
+        project('a1', 'spec', 'Specification'),
+        project('w1', 'writing-style', 'Writing Style'),
+        project('a2', 'spec', 'Specification'),
+      ],
+    };
+    await render();
+    expect(groups()).toEqual([
+      ['Specification', ['A1', 'A2']],
+      ['Writing Style', ['W1']],
+      ['Skill', ['S1']],
+    ]);
+  });
+
+  it('[ac:ac-typ-ktory-nie-ma-zadnego-projektu-w-w] a type with no project in the workspace has no group on /welcome', async () => {
+    workspace = {
+      name: 'default',
+      kind: 'registry',
+      lastOpenedProject: null,
+      projects: [project('a1', 'spec', 'Specification'), project('s1', 'skill', 'Skill')],
+    };
+    await render();
+    expect(groups().map(([header]) => header)).toEqual(['Specification', 'Skill']);
+    expect(host.textContent).not.toContain('Writing Style');
+  });
+
+  it('[ac:ac-projekt-o-typie-nieznanym-biezacej-we] a project of a type the current version does not know stands in a group after the known ones, headed by its slug; several unknown slugs give several groups, alphabetically', async () => {
+    workspace = {
+      name: 'default',
+      kind: 'registry',
+      lastOpenedProject: null,
+      projects: [
+        project('z1', 'zeta-kind', null),
+        project('a1', 'spec', 'Specification'),
+        project('n1', 'novel-kind', null),
+        project('s1', 'skill', 'Skill'),
+      ],
+    };
+    await render();
+    expect(groups()).toEqual([
+      ['Specification', ['A1']],
+      ['Skill', ['S1']],
+      ['novel-kind', ['N1']],
+      ['zeta-kind', ['Z1']],
+    ]);
+    const unknownRow = host.querySelector<HTMLButtonElement>('[data-project-type-group="novel-kind"] button')!;
+    expect(unknownRow.disabled).toBe(true);
   });
 });

@@ -92,22 +92,33 @@ describe('GET /api/spec-skills/exposed-projects (M52 L4, 2.1.9)', () => {
     expect((await request(app).post('/api/spec-skills/exposed-projects').send({})).status).toBe(404);
   });
 
+  it('[ac:ac-get-api-spec-skills-exposed-projects] a provider row with status ok carries the slug of its project type from the record copy; unavailable and ambiguous rows carry none (2.1.86)', async () => {
+    const { app } = workspace();
+    const rows = (await request(app).get('/api/spec-skills/exposed-projects')).body.data as Array<Record<string, unknown>>;
+    for (const row of rows) {
+      if (row.status === 'ok') expect(row.projectType).toBe('skill');
+      else expect(row).not.toHaveProperty('projectType');
+    }
+    expect(rows.some((r) => r.status === 'ok')).toBe(true);
+    expect(rows.some((r) => r.status !== 'ok')).toBe(true);
+  });
+
   it('[entity:exposed-project-row] each row carries name, description?, projectId?, uses, status (ok | unavailable | ambiguous) and confirmed (whether the name is confirmed on this machine, attached or not); a confirmed name outside `skill.uses` and the exposed set is `unavailable`, `uses: false`, `confirmed: true`', async () => {
     const { app } = workspace();
     const res = await request(app).get('/api/spec-skills/exposed-projects');
     expect(res.body.data).toEqual([
-      { name: 'billing-rules', description: 'How billing works.', projectId: 'billing', uses: true, status: 'ok', confirmed: true },
+      { name: 'billing-rules', description: 'How billing works.', projectId: 'billing', projectType: 'skill', uses: true, status: 'ok', confirmed: true },
       // Ambiguous: two projects expose `docs` — no projectId, no description. Attached, not confirmed.
       { name: 'docs', uses: true, status: 'ambiguous', confirmed: false },
       // Dangling: nobody exposes `ghost` — the name written in skill.uses, no description, no projectId.
       { name: 'ghost', uses: true, status: 'unavailable', confirmed: true },
       // Not attached, but its name is confirmed on this machine.
-      { name: 'legal-terms', description: 'Terms.', projectId: 'legal', uses: false, status: 'ok', confirmed: true },
+      { name: 'legal-terms', description: 'Terms.', projectId: 'legal', projectType: 'skill', uses: false, status: 'ok', confirmed: true },
       // Confirmed, neither attached nor exposed: an unattached row.
       { name: 'retired-skill', uses: false, status: 'unavailable', confirmed: true },
     ]);
     for (const row of res.body.data as Array<Record<string, unknown>>) {
-      expect(Object.keys(row).every((k) => ['name', 'description', 'projectId', 'uses', 'status', 'confirmed'].includes(k))).toBe(true);
+      expect(Object.keys(row).every((k) => ['name', 'description', 'projectId', 'projectType', 'uses', 'status', 'confirmed'].includes(k))).toBe(true);
       expect(typeof row.name).toBe('string');
       expect(typeof row.uses).toBe('boolean');
       expect(typeof row.confirmed).toBe('boolean');
@@ -595,7 +606,7 @@ describe('PUT /api/spec-skills/uses-confirmation (M52 uluzymnm, 2.1.67)', () => 
     writeConfig(r.shop, { skill: { uses: [] } });
     const rows = (await request(r.app).get('/api/spec-skills/exposed-projects')).body.data;
     expect(rows).toEqual([
-      { name: 'billing-rules', description: 'How billing works.', projectId: expect.any(String), uses: false, status: 'ok', confirmed: true },
+      { name: 'billing-rules', description: 'How billing works.', projectId: expect.any(String), projectType: 'skill', uses: false, status: 'ok', confirmed: true },
       { name: 'legal-terms', uses: false, status: 'unavailable', confirmed: true },
     ]);
     expect(r.stored()).toEqual(['billing-rules', 'legal-terms']);

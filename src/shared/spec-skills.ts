@@ -22,6 +22,12 @@ export interface ExposedProjectRow {
   description?: string;
   /** The provider's project id; absent on a dangling or ambiguous attachment. */
   projectId?: string;
+  /**
+   * 2.1.86: the slug of the provider's project type, from the type copy in the
+   * workspace record — what the UI groups the row by. Present exactly when
+   * `status` is `ok`, like `projectId`.
+   */
+  projectType?: string;
   /** Whether the current project has this name in `skill.uses`. */
   uses: boolean;
   status: ExposedProjectStatus;

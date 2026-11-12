@@ -1,8 +1,9 @@
 /**
  * 2.1.77 — the `Project Type (L20)` entries of the type modules, registered
- * statically in host code (M57 `5j5aunoy`). The order of
- * {@link HOST_PROJECT_TYPE_ENTRIES} is the registry order and the order of the
- * type cards on the create-project page.
+ * statically in host code (M57 `5j5aunoy`). 2.1.86: the registry order — and
+ * the order of the type cards and of the type groups on project lists — is
+ * each entry's `position`; the order of {@link HOST_PROJECT_TYPE_ENTRIES} does
+ * not matter.
  *
  * Types are added by host code only — plugins contribute no entries (M57 `ngwtfpdd`).
  */
@@ -107,6 +108,7 @@ export const SPEC_PROJECT_TYPE: ProjectTypeEntry = {
   name: 'Specification',
   description:
     'Describe a system in pages and structured entities, release changes and hand them over to implementation as briefs.',
+  position: 10,
   promptDescription: SPEC_PROMPT_DESCRIPTION,
   capabilities: ['entities', 'briefs', 'multi-root'],
   // M58 `7yg36c76`: `— brak` — the onboarding is the common steps only.
@@ -128,6 +130,7 @@ export const SKILL_PROJECT_TYPE: ProjectTypeEntry = {
   slug: 'skill',
   name: 'Skill',
   description: 'Write one package of instructions for agents and expose it to the other projects of this workspace.',
+  position: 30,
   promptDescription: SKILL_PROMPT_DESCRIPTION,
   capabilities: ['skill-exposure'],
   onboarding: PROJECT_TYPE_ONBOARDING.skill ?? null,
@@ -148,6 +151,7 @@ export const WRITING_STYLE_PROJECT_TYPE: ProjectTypeEntry = {
   slug: 'writing-style',
   name: 'Writing Style',
   description: 'Write a writing style that other projects of this workspace can select for their agent.',
+  position: 20,
   promptDescription: WRITING_STYLE_PROMPT_DESCRIPTION,
   capabilities: ['skill-exposure'],
   onboarding: PROJECT_TYPE_ONBOARDING['writing-style'] ?? null,
@@ -159,7 +163,7 @@ export const WRITING_STYLE_PROJECT_TYPE: ProjectTypeEntry = {
   },
 };
 
-/** The host's entries, in registration (= registry) order. */
+/** The host's entries; the registry orders them by `position`, not by this list. */
 export const HOST_PROJECT_TYPE_ENTRIES: readonly ProjectTypeEntry[] = [
   SPEC_PROJECT_TYPE,
   SKILL_PROJECT_TYPE,

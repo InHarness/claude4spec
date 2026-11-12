@@ -2,11 +2,12 @@
  * 2.1.77 — M57 `Project Type (L20)`, the layer's runtime (how-mode).
  *
  * The project-type registry is the SUM of the type modules' entries, registered
- * statically in host code (M57 `5j5aunoy`); its order is the registration order.
- * It is built at process start, AFTER the capability registry, and every entry
+ * statically in host code (M57 `5j5aunoy`). 2.1.86: its order is ascending by
+ * each entry's `position`, never the registration order. It is built at process start, AFTER the capability registry, and every entry
  * is validated there (M57 `91ci7cqx`):
  *
  *  - the slug is unique and kebab-case;
+ *  - 2.1.86: the position is a positive integer, unique in the registry;
  *  - every capability of the set is declared in the capability registry (and the
  *    set is closed under dependencies — L19 `rgkqgr2b`);
  *  - every type key is declared in the project settings layer, and the
@@ -61,10 +62,16 @@ export interface ProjectTypeStarterContent {
 export interface ProjectTypeEntry {
   /** Kebab-case, immutable after the first release; the `projectType` value. */
   slug: string;
-  /** Literal English name, shown on the type card and in labels. */
+  /** Literal English name, shown on the type card and as the type's group header on project lists. */
   name: string;
   /** Literal English description for the user (the type card). */
   description: string;
+  /**
+   * 2.1.86: the registry orders types ascending by it. A positive integer,
+   * unique in the registry; set with gaps (10, 20, 30…) so a new type can sit
+   * between existing ones without renumbering.
+   */
+  position: number;
   /** The text the `<project_type>` prompt block gives the agent verbatim. */
   promptDescription: string;
   /** Capability names; an empty list is valid. */
@@ -89,7 +96,7 @@ export class ProjectTypeRegistry {
   private readonly bySlug: ReadonlyMap<string, ProjectTypeEntry>;
 
   constructor(entries: readonly ProjectTypeEntry[]) {
-    this.entries = Object.freeze([...entries]);
+    this.entries = Object.freeze([...entries].sort((a, b) => a.position - b.position));
     this.bySlug = new Map(entries.map((e) => [e.slug, e]));
   }
 
@@ -101,12 +108,16 @@ export class ProjectTypeRegistry {
     return this.bySlug.get(slug);
   }
 
-  /** Every entry, in registry order. */
+  /** Every entry, in registry order (ascending by position). */
   list(): ProjectTypeEntry[] {
     return [...this.entries];
   }
 
-  /** The type list for the create-project page: slug, name, user description. */
+  /**
+   * The type list (slug, name, user description) in registry order — for the
+   * type cards and the type-grouped project lists. The position stays inside:
+   * the array order is its only carrier.
+   */
   cards(): ProjectTypeCard[] {
     return this.entries.map((e) => ({ slug: e.slug, name: e.name, description: e.description }));
   }
@@ -120,6 +131,9 @@ function validateEntry(
     throw new ProjectTypeRegistryError(entry.slug, message);
   };
   if (!KEBAB.test(entry.slug)) fail('project-type slug is not kebab-case');
+  if (!Number.isInteger(entry.position) || entry.position <= 0) {
+    fail('project-type position is not a positive integer');
+  }
 
   // Capabilities: declared and closed under dependencies (L19).
   deps.capabilities.assertTypeCapabilities(entry.slug, entry.capabilities);
@@ -177,12 +191,18 @@ export function buildProjectTypeRegistry(
 ): ProjectTypeRegistry {
   const full: Required<ProjectTypeRegistryDeps> = { commonSteps: COMMON_ONBOARDING_STEPS, ...deps };
   const seen = new Set<string>();
+  const positions = new Map<number, string>();
   for (const entry of entries) {
     if (seen.has(entry.slug)) {
       throw new ProjectTypeRegistryError(entry.slug, 'two project-type entries carry this slug');
     }
     seen.add(entry.slug);
     validateEntry(entry, full);
+    const other = positions.get(entry.position);
+    if (other !== undefined) {
+      throw new ProjectTypeRegistryError(entry.slug, `position ${entry.position} is already carried by "${other}"`);
+    }
+    positions.set(entry.position, entry.slug);
   }
   return new ProjectTypeRegistry(entries);
 }

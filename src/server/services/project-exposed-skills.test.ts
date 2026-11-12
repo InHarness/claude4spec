@@ -504,14 +504,14 @@ describe('attachments against real project configs (M52, 2.1.9)', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const ws = workspace();
     expect(ws.rows()).toEqual([
-      { name: 'billing-rules', description: 'How billing works.', projectId: 'billing', uses: true, status: 'ok', confirmed: true },
+      { name: 'billing-rules', description: 'How billing works.', projectId: 'billing', projectType: 'skill', uses: true, status: 'ok', confirmed: true },
     ]);
     expect(ws.registry.has('billing-rules')).toBe(true);
 
     writeConfig(ws.providerCwd, { skill: { name: 'billing-v2' } });
     expect(ws.rows()).toEqual([
       { name: 'billing-rules', uses: true, status: 'unavailable', confirmed: true },
-      { name: 'billing-v2', description: 'How billing works.', projectId: 'billing', uses: false, status: 'ok', confirmed: false },
+      { name: 'billing-v2', description: 'How billing works.', projectId: 'billing', projectType: 'skill', uses: false, status: 'ok', confirmed: false },
     ]);
     // No redirect: the old name is dangling for the registry too.
     expect(ws.registry.has('billing-rules')).toBe(false);
@@ -670,8 +670,8 @@ describe('attachments from the repository need their name confirmed on this mach
     expect(registry.has('legal-terms')).toBe(false);
     expect(source.unresolved()).toEqual([{ slug: 'legal-terms', reason: 'provider-unreachable', detail: UNCONFIRMED_DETAIL }]);
     expect(rows()).toEqual([
-      { name: 'billing-rules', description: 'How billing works.', projectId: 'billing', uses: true, status: 'ok', confirmed: true },
-      { name: 'legal-terms', description: 'Terms.', projectId: 'legal', uses: true, status: 'ok', confirmed: false },
+      { name: 'billing-rules', description: 'How billing works.', projectId: 'billing', projectType: 'skill', uses: true, status: 'ok', confirmed: true },
+      { name: 'legal-terms', description: 'Terms.', projectId: 'legal', projectType: 'skill', uses: true, status: 'ok', confirmed: false },
     ]);
   });
 

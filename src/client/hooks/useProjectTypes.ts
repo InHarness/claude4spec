@@ -3,10 +3,12 @@ import type { ProjectTypeCard, ProjectTypeListResponse } from '../../shared/proj
 
 /**
  * 2.1.77 (M57, endpoint `get-api-workspace-project-types`) — the project-type
- * registry as the client reads it: one query per page, shared by the
- * create-project page (type cards) and the project shell (the type label of the
- * sidebar's Branding strip, M50 `76e8kkze`). The route lives outside the project
- * prefix, so it is read the same way on a workspace and on a project route.
+ * registry as the client reads it, ascending by position: one query per page,
+ * shared by the create-project page (type cards) and — 2.1.86 — the lists
+ * grouped by type: `/welcome`, the project switcher and `Used skill projects`
+ * (group names and order; the client never re-sorts it). The project shell
+ * reads no type (M50, 2.1.86). The route lives outside the project prefix, so
+ * it is read the same way on a workspace and on a project route.
  */
 export const PROJECT_TYPES_QUERY_KEY = ['project-types'] as const;
 
@@ -22,7 +24,7 @@ export function useProjectTypes(opts: { enabled?: boolean } = {}) {
 
 /**
  * The name of the registry entry whose slug is `slug` — a lookup in the list,
- * never a branch on the slug: every type shares one path (M50 `76e8kkze`).
+ * never a branch on the slug: every type shares one path.
  * `null` while the list or the slug is unknown, or when no entry carries it.
  */
 export function projectTypeNameFor(types: readonly ProjectTypeCard[] | undefined, slug: string | undefined): string | null {

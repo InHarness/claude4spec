@@ -1,20 +1,23 @@
 /**
  * 2.1.77 (M57 L4, DTO `project-type-list-response`): the answer of
  * `GET /api/workspace/project-types` — the project-type registry in registry
- * order, for the type cards of the create-project page. It carries descriptive
- * data only: neither the prompt description nor the capability set.
+ * order (2.1.86: ascending by each entry's position), for the type cards of the
+ * create-project page and the type groups of the project lists (their headers
+ * and their order). It carries descriptive data only: neither the prompt
+ * description, nor the capability set, nor the position — the array order is
+ * the only carrier of the order, and the client keeps it as it comes.
  */
 export interface ProjectTypeCard {
   /** The type's slug, kebab-case; the `projectType` value at registration. */
   slug: string;
-  /** The type's name, in English. */
+  /** The type's name, in English; the type card and the type's group header. */
   name: string;
   /** The description for the user, in English. */
   description: string;
 }
 
 export interface ProjectTypeListResponse {
-  /** The registry's entries, one per type, in registry order. */
+  /** The registry's entries, one per type, ascending by position. */
   types: ProjectTypeCard[];
 }
 

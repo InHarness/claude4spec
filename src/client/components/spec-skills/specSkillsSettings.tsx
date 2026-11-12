@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { ExposedProjectRow } from '../../../shared/spec-skills.js';
+import type { ProjectTypeCard } from '../../../shared/project-types.js';
 import type { WritingStylesResponse } from '../../../shared/writing-styles.js';
 import { ApiError } from '../../lib/api-core.js';
 import { EXPOSED_PROJECTS_QUERY_KEY, specSkillsApi } from '../../lib/spec-skills-api.js';
 import { useWritingStyles } from '../../hooks/useWritingStyles.js';
+import { useProjectTypes } from '../../hooks/useProjectTypes.js';
+import { groupByType } from '../../lib/group-by-type.js';
 import { ElementField } from '../settings/controls.js';
 import { EFFECT, type ElementContext, type SettingsContribution, type SettingsElementDecl } from '../settings/registry.js';
 
@@ -116,9 +119,16 @@ export function toggleUse(uses: readonly string[], name: string, on: boolean): s
  * The list itself, presentational: one row per name from
  * `GET /api/spec-skills/exposed-projects`, ticked when the DRAFT's `skill.uses`
  * holds it. The current project never has a row (the route leaves it out).
+ *
+ * 2.1.86 (M52): the rows are grouped by the provider's project type
+ * ({@link groupByType} on `row.projectType`) — the order and the headers from
+ * `types` (`GET /api/workspace/project-types`), no empty group; the rows with
+ * no type (dangling or ambiguous) come last, after every group, with no header.
+ * Without `types` the list is flat.
  */
 export function UsedSkillProjectsList({
   rows,
+  types,
   uses,
   disabled,
   onToggle,
@@ -126,6 +136,8 @@ export function UsedSkillProjectsList({
   confirming,
 }: {
   rows: readonly ExposedProjectRow[];
+  /** The type registry list, in its order; absent → no grouping. */
+  types?: readonly ProjectTypeCard[];
   uses: readonly string[];
   disabled?: boolean;
   onToggle: (name: string, on: boolean) => void;
@@ -145,72 +157,100 @@ export function UsedSkillProjectsList({
       </span>
     );
   }
+  const renderRow = (row: ExposedProjectRow) => {
+    const marker = attachmentMarker(row);
+    const unconfirmed = confirmationMarker(row);
+    return (
+      <label
+        key={row.name}
+        className="flex items-start gap-3 rounded-md px-3 py-2"
+        style={{ background: 'var(--c-bg)', border: '1px solid var(--c-hair)' }}
+        data-skill-name={row.name}
+      >
+        <input
+          type="checkbox"
+          checked={uses.includes(row.name)}
+          disabled={disabled}
+          onChange={(e) => onToggle(row.name, e.target.checked)}
+          className="mt-0.5 h-4 w-4"
+        />
+        <span className="flex-1">
+          <span className="flex items-center gap-2 text-[13px] font-medium" style={{ color: 'var(--c-ink)' }}>
+            {row.name}
+            {marker ? (
+              <span
+                className="rounded px-1.5 py-0.5 text-[10.5px] font-medium uppercase tracking-wide"
+                style={{ border: '1px solid var(--c-hair)', color: '#a86a1a' }}
+                data-marker={marker}
+              >
+                {marker}
+              </span>
+            ) : null}
+            {unconfirmed ? (
+              <span
+                className="rounded px-1.5 py-0.5 text-[10.5px] font-medium uppercase tracking-wide"
+                style={{ border: '1px solid var(--c-hair)', color: '#a86a1a' }}
+                data-marker={unconfirmed}
+              >
+                {unconfirmed}
+              </span>
+            ) : null}
+          </span>
+          {row.description ? (
+            <span className="block text-[11.5px] mt-0.5" style={{ color: 'var(--c-subtle)' }}>
+              {row.description}
+            </span>
+          ) : null}
+        </span>
+        {unconfirmed && onConfirm ? (
+          <button
+            type="button"
+            className="rounded-md px-2 py-1 text-[11.5px] font-medium"
+            style={{ border: '1px solid var(--c-hair)', color: 'var(--c-ink)', background: 'var(--c-bg)' }}
+            disabled={disabled || (confirming ?? null) !== null}
+            data-confirm-skill-use={row.name}
+            onClick={(e) => {
+              // Inside the row's <label>: the click confirms, it never (un)ticks the row.
+              e.preventDefault();
+              onConfirm(row.name);
+            }}
+          >
+            Confirm
+          </button>
+        ) : null}
+      </label>
+    );
+  };
+  if (!types) {
+    return (
+      <div className="flex flex-col gap-1.5" data-testid="used-skill-projects">
+        {rows.map(renderRow)}
+      </div>
+    );
+  }
+  // A row of a type the registry does not know cannot be `ok` (such a provider
+  // never activates); should one come, it stays with the untyped rows.
+  const g = groupByType(rows, (r) => r.projectType, types);
+  const tail = [...g.unknown.flatMap((u) => u.items), ...g.untyped];
   return (
     <div className="flex flex-col gap-1.5" data-testid="used-skill-projects">
-      {rows.map((row) => {
-        const marker = attachmentMarker(row);
-        const unconfirmed = confirmationMarker(row);
-        return (
-          <label
-            key={row.name}
-            className="flex items-start gap-3 rounded-md px-3 py-2"
-            style={{ background: 'var(--c-bg)', border: '1px solid var(--c-hair)' }}
-            data-skill-name={row.name}
+      {g.known.map((group) => (
+        <div key={group.slug} className="flex flex-col gap-1.5" data-project-type-group={group.slug}>
+          <div
+            data-testid="project-type-group-header"
+            className="pt-1 text-[10.5px] font-medium uppercase tracking-wide"
+            style={{ color: 'var(--c-subtle)' }}
           >
-            <input
-              type="checkbox"
-              checked={uses.includes(row.name)}
-              disabled={disabled}
-              onChange={(e) => onToggle(row.name, e.target.checked)}
-              className="mt-0.5 h-4 w-4"
-            />
-            <span className="flex-1">
-              <span className="flex items-center gap-2 text-[13px] font-medium" style={{ color: 'var(--c-ink)' }}>
-                {row.name}
-                {marker ? (
-                  <span
-                    className="rounded px-1.5 py-0.5 text-[10.5px] font-medium uppercase tracking-wide"
-                    style={{ border: '1px solid var(--c-hair)', color: '#a86a1a' }}
-                    data-marker={marker}
-                  >
-                    {marker}
-                  </span>
-                ) : null}
-                {unconfirmed ? (
-                  <span
-                    className="rounded px-1.5 py-0.5 text-[10.5px] font-medium uppercase tracking-wide"
-                    style={{ border: '1px solid var(--c-hair)', color: '#a86a1a' }}
-                    data-marker={unconfirmed}
-                  >
-                    {unconfirmed}
-                  </span>
-                ) : null}
-              </span>
-              {row.description ? (
-                <span className="block text-[11.5px] mt-0.5" style={{ color: 'var(--c-subtle)' }}>
-                  {row.description}
-                </span>
-              ) : null}
-            </span>
-            {unconfirmed && onConfirm ? (
-              <button
-                type="button"
-                className="rounded-md px-2 py-1 text-[11.5px] font-medium"
-                style={{ border: '1px solid var(--c-hair)', color: 'var(--c-ink)', background: 'var(--c-bg)' }}
-                disabled={disabled || (confirming ?? null) !== null}
-                data-confirm-skill-use={row.name}
-                onClick={(e) => {
-                  // Inside the row's <label>: the click confirms, it never (un)ticks the row.
-                  e.preventDefault();
-                  onConfirm(row.name);
-                }}
-              >
-                Confirm
-              </button>
-            ) : null}
-          </label>
-        );
-      })}
+            {group.name}
+          </div>
+          {group.items.map(renderRow)}
+        </div>
+      ))}
+      {tail.length > 0 ? (
+        <div className="flex flex-col gap-1.5" data-untyped-rows="">
+          {tail.map(renderRow)}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -224,6 +264,8 @@ export function UsedSkillProjectsList({
 function UsedSkillProjectsElement({ draft, decl }: ElementContext & { decl: SettingsElementDecl }) {
   const queryClient = useQueryClient();
   const { data: rows } = useQuery({ queryKey: EXPOSED_PROJECTS_QUERY_KEY, queryFn: () => specSkillsApi.exposedProjects() });
+  // 2.1.86: the type list orders and names the groups; unreadable → a flat list.
+  const { data: types, isError: typesFailed } = useProjectTypes();
   const raw = draft.get(USES);
   const uses = Array.isArray(raw) ? (raw as string[]) : [];
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -259,13 +301,14 @@ function UsedSkillProjectsElement({ draft, decl }: ElementContext & { decl: Sett
   };
   return (
     <ElementField label={decl.label} help={decl.help} error={draft.error(USES) ?? confirmError} asLabel={false}>
-      {rows === undefined ? (
+      {rows === undefined || (types === undefined && !typesFailed) ? (
         <span className="text-[12px]" style={{ color: 'var(--c-subtle)' }}>
           Loading…
         </span>
       ) : (
         <UsedSkillProjectsList
           rows={rows}
+          types={types}
           uses={uses}
           disabled={draft.saving}
           onToggle={(name, on) => draft.set(USES, toggleUse(uses, name, on))}

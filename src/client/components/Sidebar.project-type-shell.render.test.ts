@@ -8,9 +8,9 @@
  *    straight to the OTHERS link;
  *  - the OTHERS items Tags (`entities`) and Briefs (`briefs`) drop out of the
  *    list without the capability, the rest keep their order;
- *  - the Branding strip carries the name of the current project's type, taken
- *    from the entry with the config's `projectType` slug on
- *    `GET /api/workspace/project-types` — one path for every type.
+ *  - 2.1.86: the Branding strip carries no type — the shell reads neither the
+ *    `projectType` key nor `GET /api/workspace/project-types`; the capability
+ *    set is its only dependency on the type registry.
  *
  * The capability set and the type list are the host registry's own entries
  * (`HOST_PROJECT_TYPE_ENTRIES`), as `GET /api/config` (`capabilities`, derived
@@ -164,10 +164,6 @@ async function othersItems(): Promise<Array<{ label: string; href: string }>> {
   }));
 }
 
-function typeLabel(): HTMLElement | null {
-  return host.querySelector<HTMLElement>('aside [data-project-type-label]');
-}
-
 describe('M50 shell by project type — sidebar composition from capabilities', () => {
   it('[ac:m50-no-elements-without-entities] in a `skill` project the sidebar has no section headed `ELEMENTS` — no heading, no list, no "no types configured" message', async () => {
     h.config = projectOfType('skill');
@@ -239,43 +235,23 @@ describe('M50 shell by project type — sidebar composition from capabilities', 
   });
 });
 
-describe('M50 shell by project type — the type label of the Branding strip', () => {
-  it('[section:76e8kkze] the Branding strip shows the name of the current project\'s type from the type list, between the app branding and the Nagłówek entry', async () => {
-    h.config = projectOfType('skill');
-    await renderSidebar();
-    const label = typeLabel();
-    expect(label).not.toBeNull();
-    expect(label!.textContent).toBe('Skill');
-    expect(h.typeListCalls).toBe(1);
-    const strip = host.querySelector('aside')!.firstElementChild as HTMLElement;
-    const kids = Array.from(strip.children);
-    const branding = strip.querySelector('a[href="https://claude4spec.inharness.ai"]')!;
-    const switcher = strip.querySelector('[data-testid="project-switcher"]')!;
-    expect(kids.indexOf(branding as Element)).toBeLessThan(kids.indexOf(label!));
-    expect(kids.indexOf(label!)).toBeLessThan(kids.indexOf(switcher as Element));
-  });
-
-  it('[section:76e8kkze] every type shares one path: the label is the list entry\'s name for any slug (also one the shell has never heard of), nothing when the list has no such entry', async () => {
-    h.config = projectOfType('spec');
-    await renderSidebar();
-    expect(typeLabel()?.textContent).toBe('Specification');
-    act(() => root.unmount());
-
-    // A type the shell has no code for: its name comes from the list alone.
-    h.typeCards = [...HOST_CARDS, { slug: 'research-notes', name: 'Research Notes', description: 'x' }];
-    h.config = { projectType: 'research-notes', capabilities: [] };
-    root = createRoot(host);
-    await renderSidebar();
-    expect(typeLabel()?.textContent).toBe('Research Notes');
-    // ...and its composition follows the (empty) capability set, not the type.
-    expect(elementsSection().heading).toBeNull();
-    act(() => root.unmount());
-
-    h.typeCards = HOST_CARDS;
-    h.config = { projectType: 'not-in-the-list', capabilities: ['entities', 'briefs'] };
-    root = createRoot(host);
-    await renderSidebar();
-    expect(typeLabel()).toBeNull();
-    expect(elementsSection().heading).not.toBeNull();
+describe('M50 shell by project type — the Branding strip carries no type (2.1.86)', () => {
+  it('[ac:ac-naglowek-sidebara-na-trasie-projektu] the sidebar header on a project route shows no name of the current project\'s type, and the shell does not read the type list', async () => {
+    for (const slug of ['spec', 'writing-style', 'skill']) {
+      h.config = projectOfType(slug);
+      h.typeListCalls = 0;
+      await renderSidebar();
+      const strip = host.querySelector('aside')!.firstElementChild as HTMLElement;
+      // Branding, the Nagłówek entry and the settings cog — nothing else.
+      expect(strip.querySelector('a[href="https://claude4spec.inharness.ai"]')).not.toBeNull();
+      expect(strip.querySelector('[data-testid="project-switcher"]')).not.toBeNull();
+      expect(strip.querySelector('button[aria-label="Open settings"]')).not.toBeNull();
+      expect(host.querySelector('[data-project-type-label]')).toBeNull();
+      const name = HOST_CARDS.find((c) => c.slug === slug)!.name;
+      expect(strip.textContent).not.toContain(name);
+      expect(h.typeListCalls).toBe(0);
+      act(() => root.unmount());
+      root = createRoot(host);
+    }
   });
 });

@@ -21,6 +21,7 @@ const base: ProjectTypeEntry = {
   slug: 'skill',
   name: 'Skill',
   description: 'd',
+  position: 10,
   promptDescription: 'p',
   capabilities: ['skill-exposure'],
   onboarding: null,
@@ -60,6 +61,18 @@ describe('M57 L20 — a faulty type entry stops the server start (2.1.77)', () =
       ...refusal,
       declaration: 'skill',
     });
+  });
+
+  it('[ac:ac-dwa-wpisy-typu-projektu-o-tej-samej-p] two entries with the same position make startServer reject with PROJECT_TYPE_REGISTRY_INVALID (2.1.86)', async () => {
+    await expect(
+      startWith([base, { ...base, slug: 'other-skill', name: 'Other Skill' }]),
+    ).rejects.toMatchObject({ ...refusal, declaration: 'other-skill' });
+  });
+
+  it('a zero, negative or non-integer position makes startServer reject with PROJECT_TYPE_REGISTRY_INVALID (2.1.86)', async () => {
+    for (const position of [0, -1, 2.5]) {
+      await expect(startWith([{ ...base, position }])).rejects.toMatchObject({ ...refusal, declaration: 'skill' });
+    }
   });
 
   it('[ac:ac-wpis-typu-projektu-nazywajacy-niezade] an entry naming an undeclared capability makes startServer reject with PROJECT_TYPE_REGISTRY_INVALID naming the entry', async () => {

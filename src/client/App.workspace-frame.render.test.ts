@@ -202,8 +202,10 @@ describe('the workspace route frame (M50 1bd92aq2)', () => {
     expect(spies.fileWatcher).not.toHaveBeenCalled();
     expect(sockets).toBe(0);
     // The header entry and the Welcome screen share ONE `GET /api/workspace`;
-    // no project-scoped call (`/api/config`, `/api/_meta/…`) is made.
-    expect(requests).toEqual(['/api/workspace']);
+    // next to it only the type list for the Welcome groups (2.1.86), also
+    // outside the project prefix; no project-scoped call (`/api/config`,
+    // `/api/_meta/…`) is made.
+    expect([...requests].sort()).toEqual(['/api/workspace', '/api/workspace/project-types']);
   });
 });
 
@@ -220,6 +222,6 @@ describe('the document of a workspace route has no project (M50 k4fhsrkz, l5stlo
     expect(host.textContent).not.toContain('Could not load this project');
     // The last opened project comes from the workspace registry read, not from local storage.
     expect(host.querySelector('[data-testid="workspace-header-entry"] a')?.getAttribute('href')).toBe('/p/alpha/');
-    expect(requests).toEqual(['/api/workspace']);
+    expect([...requests].sort()).toEqual(['/api/workspace', '/api/workspace/project-types']);
   });
 });

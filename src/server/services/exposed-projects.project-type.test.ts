@@ -268,3 +268,18 @@ describe('without skill-exposure the exposure keys are gone (M52 0ay8qh6u, wqvq1
     expect(normalized).not.toHaveProperty('scope');
   });
 });
+
+describe('a row carries its provider\'s type (M52, 2.1.86)', () => {
+  it('[ac:ac-get-api-spec-skills-exposed-projects] an ok row carries the type slug from the record copy; a provider of an unknown type is a dangling row with none', () => {
+    const { projects } = workspace();
+    const uses = ['house-style', 'team-skill', 'odd-skill', 'spec-skill'];
+    const rows = listExposedProjectRows('app', uses, listExposedProjects(projects), uses);
+    expect(rows.map((r) => [r.name, r.status, r.projectType])).toEqual([
+      ['house-style', 'ok', 'writing-style'],
+      ['odd-skill', 'unavailable', undefined],
+      ['spec-skill', 'unavailable', undefined],
+      ['team-skill', 'ok', 'skill'],
+    ]);
+    for (const row of rows.filter((r) => r.status !== 'ok')) expect(row).not.toHaveProperty('projectType');
+  });
+});

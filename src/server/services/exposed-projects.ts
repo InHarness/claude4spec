@@ -78,6 +78,8 @@ export interface ExposedProject {
   name: string;
   description: string | null;
   entry: string;
+  /** 2.1.86: the provider's type slug, from the record's type copy (absent there = `spec`). */
+  projectType: string;
   /** 2.1.77: from the provider's type (`writing-style` → `writing-style`, `skill` → `contextual`). */
   scope: 'writing-style' | 'contextual';
   /** `undefined` ⇒ all four context types. */
@@ -93,6 +95,7 @@ export function exposureOf(
   projectId: string,
   skill: NormalizedSkillConfig | null,
   scope: 'writing-style' | 'contextual' | null,
+  projectType: string = DEFAULT_PROJECT_TYPE,
 ): ExposedProject | null {
   if (!skill || scope === null || skill.name === null || skill.description === null) return null;
   return {
@@ -100,6 +103,7 @@ export function exposureOf(
     name: skill.name,
     description: skill.description,
     entry: skill.entry,
+    projectType,
     scope,
     contextTypes: skill.contextTypes,
   };
@@ -121,7 +125,7 @@ export function listExposedProjects(
   for (const p of projects) {
     const scope = exposedScopeOf(p.projectType, types);
     if (scope === null) continue;
-    const exposed = exposureOf(p.id, readSkill(p.cwd), scope);
+    const exposed = exposureOf(p.id, readSkill(p.cwd), scope, p.projectType ?? DEFAULT_PROJECT_TYPE);
     if (exposed) out.push(exposed);
   }
   return out;
@@ -181,8 +185,8 @@ export function resolveAttachments(
  * exposed projects of the workspace with the status of the current project's
  * attachments. One row per name:
  *
- *  - every name exposed by another project — `ok` with its provider's id and
- *    description, or `ambiguous` (no id, no description) when several share it;
+ *  - every name exposed by another project — `ok` with its provider's id,
+ *    description and (2.1.86) type slug, or `ambiguous` (no id, no description) when several share it;
  *  - every `skill.uses` entry no project exposes — `unavailable`, `uses: true`.
  *
  * The current project has no row (attaching oneself is not offered), and neither
@@ -222,6 +226,7 @@ export function listExposedProjectRows(
         name,
         ...(p.description !== null ? { description: p.description } : {}),
         projectId: p.projectId,
+        projectType: p.projectType,
         uses: used.has(name),
         status: 'ok',
         confirmed: confirmed(name),

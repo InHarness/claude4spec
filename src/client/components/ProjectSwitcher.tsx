@@ -4,8 +4,11 @@ import { PROJECT_ID } from '../lib/api-core.js';
 
 import { Skeleton } from '../ui/Skeleton.js';
 import { useWorkspace } from '../hooks/useWorkspace.js';
+import { useProjectTypes } from '../hooks/useProjectTypes.js';
 import { toast } from '../ui/events.js';
 import { navigateDocument } from '../lib/document-nav.js';
+import { groupByType } from '../lib/group-by-type.js';
+import type { WorkspaceProject } from '../lib/workspace.js';
 
 /**
  * M31: workspace project switcher — the `Nagłówek` slot entry of the PROJECT
@@ -19,6 +22,13 @@ import { navigateDocument } from '../lib/document-nav.js';
  * `m31l5001` Sloty): the action "Add project to workspace" navigates to the
  * workspace route `/create-project` with a document reload, the same way as a
  * project switch.
+ *
+ * 2.1.86 (M31): the list is split into type groups, as on `/welcome`
+ * ({@link groupByType}): the group from the type copy in the project record, the
+ * order and the headers from `GET /api/workspace/project-types`, no empty group.
+ * A project of a type the current version does not know is an unavailable
+ * option, its slug written out as is, in a group of its own after the known
+ * ones, headed by the slug — it cannot be picked.
  */
 export function ProjectSwitcher({
   projectName,
@@ -32,6 +42,7 @@ export function ProjectSwitcher({
   const [open, setOpen] = useState(false);
   // Fetched only while open; each open refetches the (stale) shared entry.
   const { data: workspace } = useWorkspace({ enabled: open });
+  const { data: types, isError: typesFailed } = useProjectTypes({ enabled: open });
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -58,6 +69,72 @@ export function ProjectSwitcher({
       window.removeEventListener('keydown', onKey);
     };
   }, [open]);
+
+  const ready = !!workspace && (!!types || typesFailed);
+  // Until the type list is in, the skeleton; if it cannot be read, the options stay ungrouped.
+  const groups: Array<{ key: string; header: string | null; projects: WorkspaceProject[] }> = !types
+    ? [{ key: 'all', header: null, projects: workspace?.projects ?? [] }]
+    : (() => {
+        const g = groupByType(workspace?.projects ?? [], (p) => p.projectType, types);
+        return [
+          ...g.known.map((k) => ({ key: k.slug, header: k.name, projects: k.items })),
+          ...g.unknown.map((u) => ({ key: u.slug, header: u.slug, projects: u.items })),
+          ...(g.untyped.length > 0 ? [{ key: 'untyped', header: null, projects: g.untyped }] : []),
+        ];
+      })();
+
+  const renderOption = (p: WorkspaceProject) => {
+    const current = p.id === PROJECT_ID;
+    // An unknown type never activates — the option cannot be picked.
+    const known = p.projectTypeName != null;
+    return (
+      <button
+        key={p.id}
+        type="button"
+        role="option"
+        aria-selected={current}
+        disabled={!known}
+        aria-disabled={!known}
+        data-project-type={p.projectType}
+        title={known ? undefined : `Unknown project type: ${p.projectType}`}
+        onClick={() => {
+          if (!known) return;
+          if (current) {
+            setOpen(false);
+            return;
+          }
+          // Full reload — module-load constants must re-initialize.
+          window.location.href = `/p/${p.id}/`;
+        }}
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-left disabled:cursor-not-allowed"
+        style={{
+          color: known ? 'var(--c-ink)' : 'var(--c-subtle)',
+          background: current ? 'var(--c-hair)' : 'transparent',
+        }}
+      >
+        <span className="flex-1 min-w-0">
+          <span className="block text-[12.5px] font-medium truncate">{p.name}</span>
+          <span
+            className="block text-[10.5px] font-mono truncate"
+            style={{ color: 'var(--c-subtle)', direction: 'rtl', textAlign: 'left' }}
+            title={p.cwd}
+          >
+            {p.cwd}
+          </span>
+        </span>
+        {known ? null : (
+          <span
+            data-testid="project-type"
+            className="shrink-0 text-[10.5px] font-mono px-1 rounded"
+            style={{ background: 'var(--c-panel)', color: 'var(--c-muted)' }}
+          >
+            {p.projectType}
+          </span>
+        )}
+        {current ? <Check size={12} style={{ color: 'var(--c-accent)', flexShrink: 0 }} /> : null}
+      </button>
+    );
+  };
 
   const displayName = projectName ?? (cwdPath.split('/').filter(Boolean).pop() ?? cwdPath);
   const toggle = () => setOpen((v) => !v);
@@ -135,7 +212,7 @@ export function ProjectSwitcher({
             {workspace ? `Workspace · ${workspace.name}` : 'Workspace'}
           </div>
           <div ref={listRef} data-testid="project-switcher-list" className="flex-1 min-h-0 overflow-y-auto">
-            {!workspace
+            {!ready
               ? [0, 1, 2].map((i) => (
                   <div key={`sk-${i}`} className="flex items-center gap-2 px-3 py-1.5">
                     <span className="flex-1 min-w-0">
@@ -145,43 +222,29 @@ export function ProjectSwitcher({
                   </div>
                 ))
               : null}
-            {(workspace?.projects ?? []).map((p) => {
-              const current = p.id === PROJECT_ID;
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  role="option"
-                  aria-selected={current}
-                  onClick={() => {
-                    if (current) {
-                      setOpen(false);
-                      return;
-                    }
-                    // Full reload — module-load constants must re-initialize.
-                    window.location.href = `/p/${p.id}/`;
-                  }}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 text-left"
-                  style={{
-                    color: 'var(--c-ink)',
-                    background: current ? 'var(--c-hair)' : 'transparent',
-                  }}
-                >
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-[12.5px] font-medium truncate">{p.name}</span>
-                    <span
-                      className="block text-[10.5px] font-mono truncate"
-                      style={{ color: 'var(--c-subtle)', direction: 'rtl', textAlign: 'left' }}
-                      title={p.cwd}
-                    >
-                      {p.cwd}
-                    </span>
-                  </span>
-                  {current ? <Check size={12} style={{ color: 'var(--c-accent)', flexShrink: 0 }} /> : null}
-                </button>
-              );
-            })}
-            {workspace && workspace.projects.length === 0 ? (
+            {ready
+              ? groups.map((group) => (
+                  <div
+                    key={group.key}
+                    role="group"
+                    aria-label={group.header ?? undefined}
+                    data-project-type-group={group.key}
+                  >
+                    {group.header !== null ? (
+                      <div
+                        role="presentation"
+                        data-testid="project-type-group-header"
+                        className="px-3 pt-1.5 pb-0.5 text-[10px] font-medium uppercase tracking-wide"
+                        style={{ color: 'var(--c-subtle)' }}
+                      >
+                        {group.header}
+                      </div>
+                    ) : null}
+                    {group.projects.map(renderOption)}
+                  </div>
+                ))
+              : null}
+            {ready && workspace.projects.length === 0 ? (
               <div className="px-3 py-1.5 text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>
                 No projects registered.
               </div>

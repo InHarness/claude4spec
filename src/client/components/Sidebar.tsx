@@ -30,7 +30,6 @@ import { accordionCollapseToken, subtreeOf } from '../lib/sidebar-accordions.js'
 import { useMovePage } from '../hooks/usePage.js';
 import { api } from '../lib/api.js';
 import { useConfig, useElementsMenuLayout, useHasEntities, useRoots } from '../hooks/useConfig.js';
-import { projectTypeNameFor, useProjectTypes } from '../hooks/useProjectTypes.js';
 import { useNewPageAction } from '../hooks/useNewPage.js';
 import { usePersistedState, projectKey } from '../state/persisted.js';
 import { UserSection } from './UserSection.js';
@@ -132,7 +131,6 @@ export function Sidebar({
         style={{ borderBottom: '1px solid var(--c-hair)' }}
       >
         <AppBranding />
-        <ProjectTypeLabel />
         <ProjectSwitcher projectName={projectName} cwdPath={cwdPath} loading={headerLoading} />
         <button
           onClick={() => navigate({ to: '/settings' })}
@@ -245,32 +243,6 @@ export function Sidebar({
         brokenLinkCount={brokenLinkCount}
       />
     </aside>
-  );
-}
-
-/**
- * 2.1.77 (M50 `8h2a734u` Branding, `76e8kkze`) — the label with the name of the
- * current project's type, a shell element of the Branding strip. The slug is
- * the config's `projectType` (M57 `y47yl4xt`, the project's config file); the
- * name is the entry with that slug on `GET /api/workspace/project-types`. One
- * path for every type — a lookup, no branch on the slug; nothing until both
- * reads are in (an unknown type never activates, so its sidebar never renders).
- */
-export function ProjectTypeLabel() {
-  const { data: config } = useConfig();
-  const slug = config?.projectType;
-  const { data: types } = useProjectTypes({ enabled: !!slug });
-  const name = projectTypeNameFor(types, slug);
-  if (!name) return null;
-  return (
-    <span
-      data-project-type-label=""
-      className="text-[10px] uppercase tracking-wider font-mono font-semibold rounded px-1.5 py-0.5 truncate"
-      style={{ color: 'var(--c-muted)', border: '1px solid var(--c-hair)', flexShrink: 0, maxWidth: 110 }}
-      title={`Project type: ${name}`}
-    >
-      {name}
-    </span>
   );
 }
 
