@@ -5,6 +5,7 @@ import { clientPluginHost } from '../core/plugin-host/host.js';
 import { useListTagLookup } from '../entities/useListTagLookup.js';
 import { useRefLookup } from '../entities/useRefLookup.js';
 import { HostCard } from '../entities/HostCard.js';
+import { parseResultBlocks } from './ToolResultContent.js';
 
 export interface ToolRenderer {
   summary(input: unknown, result?: unknown): string;
@@ -65,6 +66,17 @@ export function parseToolResult(raw: string): unknown {
   } catch {
     return raw;
   }
+}
+
+/**
+ * M53 (2.1.87) — the result as the `tool-json-view` window shows it: raw. A
+ * result holding an image keeps its whole content array, full base64 included
+ * — `parseToolResult` would keep only the leading text block and drop the
+ * image after it.
+ */
+export function rawToolResult(raw: string): unknown {
+  if (parseResultBlocks(raw)) return JSON.parse(raw);
+  return parseToolResult(raw);
 }
 
 interface RendererContext {

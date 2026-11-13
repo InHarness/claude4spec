@@ -16,6 +16,7 @@ import { isMainModelEvent } from '../../shared/agent-turn.js';
 import { parseServerTime } from './elapsed.js';
 import { thinkingToConfig, type ChatModel, type ChatThinking } from '../state/chat.js';
 import { toast } from '../ui/events.js';
+import { EMPTY_TOOL_RESULT_REPLAY, type ToolResultReplayState } from './ToolResultContent.js';
 
 /**
  * claude4spec's own annotation on a replayed `user_input_request`, added by the
@@ -508,6 +509,31 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
   // loads messages below). The header/model-lock controls read it from here instead
   // of the paginated thread list, so they stay correct for threads beyond page 1.
   const [activeThreadMeta, setActiveThreadMeta] = useState<ChatThread | null>(null);
+  /**
+   * 2.1.87 M53: `tool_result`s the replay buffer degraded (`truncated: true`,
+   * empty `summary` — the reducer keeps neither the flag nor any content). The
+   * card shows the truncation marker for them until `done`; then the full rows
+   * are fetched from thread history into `overrides`. The ref mirrors
+   * `degraded` so the `done` branch reads it without a stale closure.
+   */
+  const [toolResultReplay, setToolResultReplay] = useState<ToolResultReplayState>(EMPTY_TOOL_RESULT_REPLAY);
+  const degradedResultIdsRef = useRef<Set<string>>(new Set());
+
+  const loadDegradedResults = useCallback(async () => {
+    const tid = currentThreadIdRef.current;
+    const ids = degradedResultIdsRef.current;
+    if (!tid || ids.size === 0) return;
+    try {
+      const res = await apiFetch(`${serverUrl}/api/threads/${tid}`);
+      if (!res.ok || currentThreadIdRef.current !== tid) return;
+      const payload = (await res.json()) as { data: ChatThreadDetail };
+      const found = degradedOverridesFromRows(payload.data.messages, ids);
+      if (found.size === 0) return;
+      setToolResultReplay((prev) => ({ degraded: prev.degraded, overrides: new Map([...prev.overrides, ...found]) }));
+    } catch {
+      // Best effort: the marker stays, and a reload reads the same rows.
+    }
+  }, [serverUrl]);
 
   const onEvent = useCallback(
     (event: WireEvent) => {
@@ -519,6 +545,12 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
         setSubagentStartedAt((prev) => (prev.has(taskId) ? prev : new Map(prev).set(taskId, Date.now())));
       }
       const ext = event as WireEventExtended;
+      if (ext.type === 'tool_result' && (ext as { truncated?: unknown }).truncated === true) {
+        const id = ext.toolUseId;
+        degradedResultIdsRef.current = new Set(degradedResultIdsRef.current).add(id);
+        setToolResultReplay((prev) => ({ degraded: degradedResultIdsRef.current, overrides: prev.overrides }));
+      }
+      if (ext.type === 'done' && degradedResultIdsRef.current.size > 0) void loadDegradedResults();
       if (ext.type === 'transagent_started') {
         const { toolUseId, childThreadId, contextType } = ext;
         setTransagents((prev) =>
@@ -737,7 +769,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
       }
       handleWireEvent(event);
     },
-    [handleWireEvent, endHold],
+    [handleWireEvent, endHold, loadDegradedResults],
   );
   const onError = useCallback(
     (error: Error) => {
@@ -945,6 +977,8 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     // "already placed" memory has to go with it — otherwise re-entering a thread
     // would suppress every block it placed the first time.
     seenBackgroundTaskIdsRef.current = new Set();
+    degradedResultIdsRef.current = new Set();
+    setToolResultReplay(EMPTY_TOOL_RESULT_REPLAY);
     setActiveThreadMeta(null);
 
     currentThreadIdRef.current = threadId;
@@ -1104,6 +1138,8 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
 
   return {
     messages: state.messages,
+    /** 2.1.87: degraded replay results and their post-turn content, for `ToolResultReplayContext`. */
+    toolResultReplay,
     isStreaming: state.isStreaming,
     isResuming,
     error: state.error,
@@ -1293,6 +1329,27 @@ function parseRaw(raw: string): unknown {
   } catch {
     return raw;
   }
+}
+
+/**
+ * 2.1.87 M53: the persisted content (`summary`) of the given degraded tool
+ * results, by `toolUseId` — the same string the live stream would have carried.
+ */
+export function degradedOverridesFromRows(
+  rows: ReadonlyArray<ChatMessageRow>,
+  ids: ReadonlySet<string>,
+): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const row of rows) {
+    if (row.role !== 'tool_result' || !row.toolId || !ids.has(row.toolId)) continue;
+    try {
+      const parsed = JSON.parse(row.content) as { summary?: unknown };
+      if (typeof parsed.summary === 'string' && parsed.summary) out.set(row.toolId, parsed.summary);
+    } catch {
+      // A malformed row stays degraded.
+    }
+  }
+  return out;
 }
 
 export function rowsToChatMessages(

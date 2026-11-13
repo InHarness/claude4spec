@@ -15,7 +15,13 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { categoryLabel, toolCategory } from '@inharness-ai/agent-chat';
-import { getRenderer, parseToolResult, prettyToolName } from './toolRenderers.js';
+import { getRenderer, parseToolResult, prettyToolName, rawToolResult } from './toolRenderers.js';
+import {
+  parseResultBlocks,
+  ToolResultContent,
+  TruncatedResultMarker,
+  useToolResultReplay,
+} from './ToolResultContent.js';
 import { openModal } from '../ui/events.js';
 import { localToolCategory, type LocalToolCategory } from './toolCategoryLocal.js';
 
@@ -106,7 +112,7 @@ export function ToolCard({ items }: Props) {
                 items: items.map((i) => ({
                   toolName: i.toolName,
                   input: i.input,
-                  result: i.result ? parseToolResult(i.result.content) : null,
+                  result: i.result ? rawToolResult(i.result.content) : null,
                   isError: i.result?.isError ?? false,
                 })),
               });
@@ -151,6 +157,25 @@ function ToolItemBody({ item, showSeparator }: ToolItemBodyProps) {
   const parsed = item.result ? parseToolResult(item.result.content) : null;
   const hasCustomInput = typeof renderer?.renderInput === 'function';
   const summaryText = renderer?.summary(item.input, parsed) ?? prettyToolName(item.toolName);
+  // 2.1.87: the result's images, for every card — registry entry or not. A
+  // result degraded in the replay buffer has no content until the turn ends
+  // and its full row is fetched from history (`overrides`).
+  const replay = useToolResultReplay();
+  const truncated = replay.degraded.has(item.toolUseId) && !replay.overrides.has(item.toolUseId);
+  const resultContent = replay.overrides.get(item.toolUseId) ?? item.result?.content;
+  const blocks = truncated ? null : parseResultBlocks(resultContent);
+  const openRawJson = () =>
+    void openModal('tool-json-view', {
+      title: item.toolName,
+      items: [
+        {
+          toolName: item.toolName,
+          input: item.input,
+          result: resultContent ? rawToolResult(resultContent) : null,
+          isError: item.result?.isError ?? false,
+        },
+      ],
+    });
 
   return (
     <div
@@ -171,6 +196,8 @@ function ToolItemBody({ item, showSeparator }: ToolItemBodyProps) {
           <span className="break-words">{summaryText}</span>
         </div>
       )}
+      {truncated && item.result ? <TruncatedResultMarker /> : null}
+      {blocks ? <ToolResultContent blocks={blocks} onOpenRawJson={openRawJson} /> : null}
     </div>
   );
 }

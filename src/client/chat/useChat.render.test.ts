@@ -245,6 +245,31 @@ describe('the shell over the turn hook', () => {
 });
 
 describe('thread load (F5 / switch)', () => {
+  it('[ac:ac-po-zakonczeniu-tury-karta-wyniku-zdeg] a tool_result degraded in the replay buffer is marked until `done`, then its content is fetched from thread history', async () => {
+    const join = sse();
+    const userRow = { id: 1, threadId: 't1', role: 'user', content: JSON.stringify({ text: 'hello' }), toolName: null, toolId: null, subagentTaskId: null, planMode: false, status: 'complete', usage: null, contextSize: null, createdAt: '2026-11-13T10:00:00.000Z' };
+    const full = JSON.stringify([{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } }]);
+    const resultRow = { ...userRow, id: 3, role: 'tool_result', toolId: 's1', content: JSON.stringify({ summary: full, isError: false }) };
+    let reads = 0;
+    routes['/api/threads/t1'] = () => {
+      reads += 1;
+      return json({ data: detail({ isLive: reads === 1, messages: (reads === 1 ? [userRow] : [userRow, resultRow]) as never }) });
+    };
+    routes[CHAT_ENDPOINTS.streamByThread('t1')] = () => stream(join);
+    await mount(baseOpts({ threadId: 't1' }));
+    await emit(join, 'connected', { requestId: 'r1', threadId: 't1', replayTruncated: true });
+    await emit(join, 'turn_start', turnStart);
+    await emit(join, 'tool_use', { toolUseId: 's1', toolName: 'mcp__playwright__browser_take_screenshot', input: {}, isSubagent: false });
+    await emit(join, 'tool_result', { toolUseId: 's1', summary: '', truncated: true, isSubagent: false });
+    expect([...hook.toolResultReplay.degraded]).toEqual(['s1']);
+    expect(hook.toolResultReplay.overrides.size).toBe(0);
+    expect(reads).toBe(1);
+
+    await emit(join, 'done', {});
+    expect(reads).toBe(2);
+    expect(hook.toolResultReplay.overrides.get('s1')).toBe(full);
+  });
+
   it('[section:impolq96] a client joined to the thread gets the cleared texts from the `queue_cleared` event, and its chips go', async () => {
     const join = sse();
     routes['/api/threads/t1'] = () =>

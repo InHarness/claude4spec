@@ -10,6 +10,7 @@ import { ResizeHandle } from '../components/ResizeHandle.js';
 import { useChat, holdEndingLabel } from './useChat.js';
 import { useThreadListContext } from './ThreadListContext.js';
 import { BlockRenderer, QueuedMessageBubble } from './BlockRenderer.js';
+import { ToolResultReplayContext } from './ToolResultContent.js';
 import { ChatEditorBridgeProvider } from './ChatEditorBridge.js';
 import { AnnotationPanel } from './AnnotationPanel.js';
 import { CurrentTodoList } from './CurrentTodoList.js';
@@ -173,6 +174,7 @@ export function ChatOverlay() {
     cancelQueued,
     clearQueue,
     transagents,
+    toolResultReplay,
     backgroundTasks,
     heldBackgroundTaskCount,
     holdEnding,
@@ -673,6 +675,7 @@ export function ChatOverlay() {
                   {Math.min(hiddenOlder, HISTORY_WINDOW) === 1 ? '' : 's'}
                 </button>
               )}
+              <ToolResultReplayContext.Provider value={toolResultReplay}>
               {(() => {
                 let userIdx = firstUserIdx;
                 return displayMessages.map((msg) => {
@@ -701,6 +704,7 @@ export function ChatOverlay() {
                   );
                 });
               })()}
+              </ToolResultReplayContext.Provider>
               {/* 0.2.50: background-task panels moved INTO the turn (a carrier
                   block placed by useChat, rendered by <BlockRenderer />), so they
                   sit where the task actually started instead of in a flat list

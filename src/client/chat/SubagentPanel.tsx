@@ -4,7 +4,7 @@ import type { UIContentBlock, ChatMessageType } from '@inharness-ai/agent-chat';
 import { BlockRenderer } from './BlockRenderer.js';
 import { ChatMarkdown } from './ChatMarkdown.js';
 import { openModal } from '../ui/events.js';
-import { parseToolResult } from './toolRenderers.js';
+import { parseToolResult, rawToolResult } from './toolRenderers.js';
 import { ElapsedClock } from './ElapsedClock.js';
 
 interface Props {
@@ -144,7 +144,7 @@ export function SubagentPanel({ block, agentName, prompt, invocation, result, tu
                 {
                   toolName: agentName ?? 'Agent',
                   input: invocation ?? { description: taskDescription, prompt },
-                  result: result ? parseToolResult(result.content) : null,
+                  result: result ? rawToolResult(result.content) : null,
                   isError: result?.isError ?? false,
                 },
               ],
