@@ -21,7 +21,7 @@
  * holds — only a change to the facade shape itself qualifies as a major.
  */
 
-import { HOST_API_VERSION, parseMajor } from './manifest.js';
+import { HOST_API_VERSION, parseMajor, type ContextType } from './manifest.js';
 import { UI_KIT_STABLE_COMPONENTS } from './ui-kit-surface.js';
 
 /**
@@ -926,6 +926,14 @@ export interface HostApiRelease {
   uiKitStable?: readonly string[];
   /** Minor only — a change to the `stable` UI-kit composition this bump carried. */
   uiKitStableDelta?: UiKitStableDelta;
+  /**
+   * 2.1.88 (M13 `irsmg4jn`) — the `ContextType` value set THIS version
+   * announces. A plugin's contribution scope (`contextTypes` of its skills and
+   * subagents) is a subset of the set of the version it declared, and a skill
+   * that omits the field gets that set, frozen there: a value a later release
+   * adds is not in it. Not the list of a project's context-type registry rows.
+   */
+  contextTypes: readonly string[];
 }
 
 /** One MINOR bump of `HOST_API_VERSION` — additive or harmless within the major. */
@@ -934,7 +942,19 @@ export interface HostApiMinorRelease {
   version: string;
   title: string;
   changes: ReadonlyArray<{ slot: string; kind: 'slot-added' | 'slot-removed'; summary: string }>;
+  /**
+   * The `ContextType` set this bump announces, when it changes it; omitted, the
+   * bump announces the same set as the release before it.
+   */
+  contextTypes?: readonly ContextType[];
 }
+
+/**
+ * The `ContextType` set announced at 2.0.0, the first real major — the four
+ * turn kinds the host has had since the field was introduced (0.2.66). No
+ * release since has changed it.
+ */
+const CONTEXT_TYPES_AT_2_0_0: readonly ContextType[] = ['chat', 'brief', 'patch', 'ask'];
 
 /**
  * Minor bumps of the Host API, newest last. A minor never cuts a package off:
@@ -1005,11 +1025,31 @@ export const HOST_API_RELEASES: readonly HostApiRelease[] = [
     title: 'The envelope declares its data structure — the first real major',
     migrations: HOST_API_CHANGELOG.filter((m) => m.toMajor === 2),
     uiKitStable: UI_KIT_STABLE_AT_2_0_0,
+    contextTypes: CONTEXT_TYPES_AT_2_0_0,
   },
-  ...HOST_API_MINOR_RELEASES.map(
-    (r): HostApiRelease => ({ version: r.version, kind: 'minor', title: r.title, changes: r.changes }),
-  ),
+  ...withInheritedContextTypes(HOST_API_MINOR_RELEASES, CONTEXT_TYPES_AT_2_0_0),
 ];
+
+/** Lower the minor bumps to releases, each inheriting the `ContextType` set of the one before unless it announces its own. */
+function withInheritedContextTypes(
+  minors: readonly HostApiMinorRelease[],
+  base: readonly ContextType[],
+): HostApiRelease[] {
+  let current: readonly string[] = base;
+  return minors.map((r): HostApiRelease => {
+    current = r.contextTypes ?? current;
+    return { version: r.version, kind: 'minor', title: r.title, changes: r.changes, contextTypes: current };
+  });
+}
+
+/**
+ * The `ContextType` set the running {@link HOST_API_VERSION} announces, as the
+ * release registry records it. A test holds it equal to
+ * `HOST_API_CONTEXT_TYPES` (`manifest.ts`), so the value union and the registry cannot drift.
+ */
+export function recordedRunningContextTypes(): readonly string[] {
+  return HOST_API_RELEASES[HOST_API_RELEASES.length - 1]!.contextTypes;
+}
 
 /**
  * The `stable` UI-kit composition the two registries record: the composition at

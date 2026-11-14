@@ -294,16 +294,28 @@ export interface EntityContribution extends EntityModuleManifest {
 }
 
 /**
- * The four interaction types a turn can have — the plugin-author-facing spelling
- * of the host's `ChatContextType`.
+ * 2.1.88 (M13 `irsmg4jn`) — the set of context-type values the RUNNING Host API
+ * version ({@link HOST_API_VERSION}) announces. A Host API value set, not the
+ * list of a project's context-type registry rows: a project may have fewer rows
+ * (its capabilities decide), and a later Host API version may announce more
+ * values. Every Host API release records its own set (`HOST_API_RELEASES[].
+ * contextTypes` in `host-api.ts`); a plugin's contribution scope is checked
+ * against the set of the version IT declared, frozen there — never against this
+ * one when it declared an older version.
+ */
+export const HOST_API_CONTEXT_TYPES = ['chat', 'brief', 'patch', 'ask'] as const;
+
+/**
+ * One value of the context-type set the running Host API version announces
+ * ({@link HOST_API_CONTEXT_TYPES}) — the plugin-author-facing spelling of the
+ * host's turn discriminator.
  *
  * Spelled out here rather than imported from `shared/entities.ts`: this module is
  * the contract a plugin author compiles against and must not drag in the host's
- * deps. It used to be written inline at each use site, which made it invisible as
- * a concept; two slots now select on it (`PluginSubagentContribution.contextTypes`
- * and `PluginSkillContribution.contextTypes`), so it is worth a name.
+ * deps. Two slots select on it (`PluginSubagentContribution.contextTypes` and
+ * `PluginSkillContribution.contextTypes`).
  */
-export type ContextType = 'chat' | 'brief' | 'patch' | 'ask';
+export type ContextType = (typeof HOST_API_CONTEXT_TYPES)[number];
 
 /**
  * 0.2.19 (M37) — authoring shape for one contributed SKILL, the generalisation of
@@ -321,7 +333,8 @@ export type ContextType = 'chat' | 'brief' | 'patch' | 'ask';
  *   - `'contextual'` — listed in `<available_skills>` with no selector entry and
  *     no config opt-in. WHICH turns it is listed in is the package's own call
  *     since 0.2.66, declared through {@link PluginSkillContribution.contextTypes};
- *     omitting the field still means all four. The other brake is the
+ *     omitting the field means the whole context-type set of the declared Host
+ *     API version (2.1.88). The other brake is the
  *     `trustProjectPlugins` gate. A slug collision with an entry of another
  *     source is decided by the registry's precedence chain (M37 `aw9kcadc`):
  *     in `contextual` the plugin rung is first, in `writing-style` last, and a
@@ -347,9 +360,13 @@ export interface PluginSkillContribution {
   scope: 'writing-style' | 'contextual';
   /**
    * 0.2.66 — which context types this skill appears in on the `<available_skills>`
-   * listing. OMISSION MEANS ALL FOUR, which is the opposite default to
-   * {@link PluginSubagentContribution.contextTypes}; the asymmetry is priced by
-   * the cost of guessing wrong, one listing line against a whole delegated turn.
+   * listing: a subset of the context-type set of the Host API version this
+   * package declares in `hostApiVersion`. 2.1.88 (M13 `irsmg4jn`): OMISSION
+   * MEANS THAT WHOLE SET, FROZEN AT THE DECLARED VERSION — a value a later Host
+   * API version adds reaches this skill only when the package names it. That is
+   * the opposite default to {@link PluginSubagentContribution.contextTypes}
+   * (`['chat']`); the asymmetry is priced by the cost of guessing wrong, one
+   * listing line against a whole delegated turn.
    *
    * The field NARROWS DISCOVERY, NOT ACCESS. A skill absent from this turn's
    * listing stays openable by `load_skill_file(slug)` — the filter runs when the
@@ -361,9 +378,11 @@ export interface PluginSkillContribution {
    * the envelope says where it wants to appear, instead of the host holding a map
    * of where to pin it.
    *
-   * An element outside the enum costs the ENTRY, not the envelope: the loader
-   * warns and skips this contribution, and the package's other contributions
-   * register normally.
+   * An element outside the declared Host API version's set costs the ENTRY, not
+   * the envelope: the loader warns and skips this contribution, and the
+   * package's other contributions register normally. A value of that set the
+   * PROJECT has no row for is not an error: the skill is simply never listed
+   * there (the M37 resolver narrows, not the loader).
    */
   contextTypes?: ContextType[];
   /** The skill body markdown (the SKILL.md content without frontmatter). */
@@ -477,7 +496,7 @@ export interface PluginSubagentContribution {
    * pollute brief composition with no opt-out available to the user.
    *
    * Contrast {@link PluginSkillContribution.contextTypes}, whose omission means
-   * ALL FOUR. The two defaults differ by the cost of the mistake: a subagent
+   * the whole context-type set of the declared Host API version. The two defaults differ by the cost of the mistake: a subagent
    * reached by auto-delegation spends a whole turn and a model, a skill spends
    * one line of a listing.
    */

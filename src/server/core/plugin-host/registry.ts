@@ -38,6 +38,7 @@ import {
   assertSerializationContribution,
   applyReservedTitleDefault,
 } from './manifest-adapter.js';
+import { hostApiContextTypesFor } from './contribution-scope.js';
 import { attachComposition } from './composition-validation.js';
 
 /** Internal record: the public one plus the skills + the registered module
@@ -185,12 +186,18 @@ export class PluginRegistryImpl implements PluginRegistry {
     // downstream, and the primary slot reasonably wins its own manifest.
     //
     // 0.2.66 — `admitSkillContextTypes` runs FIRST on the primary slot, and it
-    // warns-and-skips where the validators throw. A `contextTypes` naming a turn
-    // that does not exist is the one skill defect that must not abort its
+    // warns-and-skips where the validators throw. A `contextTypes` value outside
+    // the context-type set of the Host API version this manifest declares
+    // (2.1.88, M33 `9734yj2e`) is the one skill defect that must not abort its
     // envelope: it is a selector over turns, not part of the skill's identity.
     const rejectedSkills: string[] = [];
     const skills: PluginSkillContribution[] = [
-      ...admitSkillContextTypes(manifest.name, manifest.contributes.skills ?? [], rejectedSkills).map(
+      ...admitSkillContextTypes(
+        manifest.name,
+        manifest.contributes.skills ?? [],
+        rejectedSkills,
+        hostApiContextTypesFor(manifest.hostApiVersion),
+      ).map(
         validateSkillContribution,
       ),
       ...(manifest.contributes.writingStyles ?? []).map(validateWritingStyle),
@@ -271,7 +278,7 @@ export class PluginRegistryImpl implements PluginRegistry {
       r.rejectedSkills.map((slug) => ({
         slug,
         plugin: r.name,
-        detail: `entry "${slug}" of package "${r.name}" was rejected by the loader (contextTypes outside the enum)`,
+        detail: `entry "${slug}" of package "${r.name}" was rejected by the loader (contextTypes outside the declared Host API version's context types)`,
       })),
     );
     return [...Array.from(this.gateSkippedSkills.values()).flat(), ...rejected];

@@ -16,6 +16,7 @@ import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import type { PluginRegistry, UnloadedSkillSlug } from '../core/plugin-host/types.js';
 import type { PluginSkillContribution } from '../../shared/plugin-host/manifest.js';
 import type { SkillRegistry } from '../services/skill-registry.js';
+import { declaredContextTypesOf } from '../core/plugin-host/contribution-scope.js';
 
 export interface OverlayLayer {
   localPluginsPresent: boolean;
@@ -86,7 +87,7 @@ export function fanPluginSkills(
       );
       continue;
     }
-    skillRegistry.addPluginSkill(skill);
+    skillRegistry.addPluginSkill(skill, declaredContextTypesOf(skill));
   }
   const unloaded: UnloadedSkillSlug[] = [...base.listUnloadedSkills(), ...(overlay?.unloadedSkills ?? [])];
   for (const u of unloaded) skillRegistry.addUnloadedPluginSkill(u.slug, u.detail);

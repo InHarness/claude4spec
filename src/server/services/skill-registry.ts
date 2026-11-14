@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import matter from 'gray-matter';
 import type { PluginSkillContribution, WritingStyleContribution } from '../../shared/plugin-host/manifest.js';
+import { HOST_API_CONTEXT_TYPES } from '../../shared/plugin-host/manifest.js';
 import type { ChatContextType } from '../../shared/entities.js';
 import type { SkillSource } from '../../shared/writing-styles.js';
 import { readConfig } from '../config.js';
@@ -79,8 +80,10 @@ export interface SkillMetadata {
   /** The `source` value of the registration the entry came from. */
   source: SkillSource;
   /**
-   * Reach of a `scope: 'contextual'` entry in context types; `undefined` means all
-   * four. Its carrier depends on the source: the envelope declaration (`plugin`),
+   * Reach of a `scope: 'contextual'` entry in context types; `undefined` means
+   * every type. The `plugin` source never leaves it `undefined` (2.1.88): an
+   * omitted declaration is the declared Host API version's set. Its carrier
+   * depends on the source: the envelope declaration (`plugin`),
    * the package frontmatter (`project-rooted`) or the exposure fields
    * (`project-exposed`). The `.claude/skills` roots never deliver it — they do not
    * admit `contextual` at all. Meaningless for a writing style.
@@ -479,8 +482,17 @@ export class SkillRegistry {
    * plugins collided. Loading is the caller's trust decision — untrusted
    * project-local plugins are never pushed here.
    */
-  addPluginSkill(c: PluginSkillContribution): void {
-    if (this.plugin.push(c)) this.lastScanAt = 0;
+  addPluginSkill(
+    c: PluginSkillContribution,
+    /**
+     * 2.1.88 — the `ContextType` set of the Host API version the contributing
+     * package declared (the loader records it: `declaredContextTypesOf`); the
+     * scope of an entry that omits `contextTypes`. A push with none (no package
+     * behind it) is held to the running Host API version's set.
+     */
+    declaredContextTypes: readonly string[] = HOST_API_CONTEXT_TYPES,
+  ): void {
+    if (this.plugin.push(c, declaredContextTypes)) this.lastScanAt = 0;
   }
 
   /** M15 sugar: a `WritingStyleContribution` is a `PluginSkillContribution` with `scope: 'writing-style'`. */
@@ -702,7 +714,7 @@ class PluginSkillSource implements SkillSourceRegistration {
    * `project-rooted`). A contribution arrives with its package, whose compatibility
    * with the host the loader's `hostApiVersion` gate already decided.
    */
-  push(c: PluginSkillContribution): boolean {
+  push(c: PluginSkillContribution, declaredContextTypes: readonly string[]): boolean {
     if (this.meta.has(c.slug)) return false;
     this.meta.set(c.slug, {
       slug: c.slug,
@@ -712,8 +724,11 @@ class PluginSkillSource implements SkillSourceRegistration {
       language: c.language,
       scope: c.scope,
       source: 'plugin',
-      // Carried verbatim, `undefined` included — absence means "all four".
-      contextTypes: c.contextTypes,
+      // 2.1.88 (M13 `irsmg4jn`) — an omitted `contextTypes` is the context-type
+      // set of the Host API version the package declared, frozen there; a value
+      // of it the project has no turn for simply never matches in the resolver.
+      // There is no "absent = every type" reading for this source.
+      contextTypes: (c.contextTypes ?? [...declaredContextTypes]) as ChatContextType[],
       path: '',
     });
     // A contributed file is text by construction: it is a string in a JS module.
@@ -786,8 +801,9 @@ export class SkillResolver {
    *
    *   1. Fan-out of `contextual` skills — the listing. From `list()` take the
    *      `scope: 'contextual'` entries (only sources admitting `contextual` can
-   *      hold one), keep those whose `contextTypes` covers this type (omitted =
-   *      all four), reduce to unique slugs, and give each slug ONE row taken from
+   *      hold one), keep those whose `contextTypes` covers this type (a
+   *      `plugin` entry always carries one — 2.1.88; omitted on another source =
+   *      every type), reduce to unique slugs, and give each slug ONE row taken from
    *      the winner of the `contextual` chain — `origin` included.
    *   2. Writing style — the forced slot, outside the listing.
    *

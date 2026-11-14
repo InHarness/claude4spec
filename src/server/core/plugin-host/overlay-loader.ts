@@ -36,6 +36,7 @@ import {
   validateSkillContribution,
   validateWritingStyle,
 } from './manifest-adapter.js';
+import { hostApiContextTypesFor } from './contribution-scope.js';
 import { attachComposition } from './composition-validation.js';
 import { installPluginRuntimeResolver } from './plugin-runtime-resolver.js';
 import type { BackendModule, ProjectPluginOverlay, UnloadedSkillSlug } from './types.js';
@@ -253,7 +254,12 @@ export async function loadProjectOverlay(
       // a hand-written manifest, so the layer that must not abort on a typo is
       // this one above all.
       pkgSkills = [
-        ...admitSkillContextTypes(manifest.name, manifest.contributes?.skills ?? [], rejectedSkills).map(
+        ...admitSkillContextTypes(
+          manifest.name,
+          manifest.contributes?.skills ?? [],
+          rejectedSkills,
+          hostApiContextTypesFor(manifest.hostApiVersion),
+        ).map(
           validateSkillContribution,
         ),
         ...(manifest.contributes?.writingStyles ?? []).map(validateWritingStyle),
@@ -292,7 +298,7 @@ export async function loadProjectOverlay(
       unloadedSkills.push({
         slug,
         plugin: manifest.name,
-        detail: `entry "${slug}" of project-local package "${manifest.name}" was rejected by the loader (contextTypes outside the enum)`,
+        detail: `entry "${slug}" of project-local package "${manifest.name}" was rejected by the loader (contextTypes outside the declared Host API version's context types)`,
       });
     }
     // M33: capture non-entity capabilities + teardown of this trusted plugin.
