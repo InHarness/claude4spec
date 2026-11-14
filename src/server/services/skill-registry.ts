@@ -486,9 +486,10 @@ export class SkillRegistry {
     c: PluginSkillContribution,
     /**
      * 2.1.88 — the `ContextType` set of the Host API version the contributing
-     * package declared (the loader records it: `declaredContextTypesOf`); the
-     * scope of an entry that omits `contextTypes`. A push with none (no package
-     * behind it) is held to the running Host API version's set.
+     * package declared, carried explicitly from loader admission by
+     * `fanPluginSkills` (`ScopedPluginSkill`); the scope of an entry that omits
+     * `contextTypes`. Only a push with no package behind it (a direct push, the
+     * `addPluginStyle` sugar) omits it and is held to the running version's set.
      */
     declaredContextTypes: readonly string[] = HOST_API_CONTEXT_TYPES,
   ): void {

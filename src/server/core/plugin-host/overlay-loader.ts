@@ -36,7 +36,7 @@ import {
   validateSkillContribution,
   validateWritingStyle,
 } from './manifest-adapter.js';
-import { hostApiContextTypesFor } from './contribution-scope.js';
+import { admitSubagentContextTypes, hostApiContextTypesFor, scopeSkills, type ScopedPluginSkill } from './contribution-scope.js';
 import { attachComposition } from './composition-validation.js';
 import { installPluginRuntimeResolver } from './plugin-runtime-resolver.js';
 import type { BackendModule, ProjectPluginOverlay, UnloadedSkillSlug } from './types.js';
@@ -58,6 +58,12 @@ export interface ProjectOverlayResult {
   /** M15/M37: trusted project-local skills (both manifest slots, lowered to one
    *  shape), pushed into SkillRegistry. */
   skills: PluginSkillContribution[];
+  /**
+   * 2.1.88 (rev-0001): `skills`, each carried with the `ContextType` set of its
+   * package's declared Host API version — what the fan-out into the SkillRegistry
+   * reads, so the declared set never has to be looked up by object identity.
+   */
+  scopedSkills: ScopedPluginSkill[];
   /**
    * 2.1.9: skill slugs of trusted project-local packages that did not load — gate
    * skipped after the manifest was read, or a single entry rejected by the
@@ -158,6 +164,7 @@ export async function loadProjectOverlay(
   const modules = new Map<string, BackendModule>();
   const originByType = new Map<string, string>();
   const skills: PluginSkillContribution[] = [];
+  const scopedSkills: ScopedPluginSkill[] = [];
   const unloadedSkills: UnloadedSkillSlug[] = [];
   // M33: non-entity capabilities of trusted project-local plugins. An
   // entity-less plugin (commands/subagents only) still produces these.
@@ -226,6 +233,7 @@ export async function loadProjectOverlay(
     let lowered: BackendModule[];
     let pkgSkills: PluginSkillContribution[];
     const rejectedSkills: string[] = [];
+    const declaredSet = hostApiContextTypesFor(manifest.hostApiVersion);
     try {
       // M13: synthesizeMount is the same choke point registry.ts's
       // `validateAndLower` (and its commit-time slot) uses for base-layer
@@ -258,7 +266,7 @@ export async function loadProjectOverlay(
           manifest.name,
           manifest.contributes?.skills ?? [],
           rejectedSkills,
-          hostApiContextTypesFor(manifest.hostApiVersion),
+          declaredSet,
         ).map(
           validateSkillContribution,
         ),
@@ -294,6 +302,7 @@ export async function loadProjectOverlay(
       originByType.set(m.type, origin);
     }
     skills.push(...pkgSkills);
+    scopedSkills.push(...scopeSkills(pkgSkills, declaredSet.contextTypes));
     for (const slug of rejectedSkills) {
       unloadedSkills.push({
         slug,
@@ -303,7 +312,9 @@ export async function loadProjectOverlay(
     }
     // M33: capture non-entity capabilities + teardown of this trusted plugin.
     commands.push(...(manifest.contributes?.commands ?? []));
-    subagents.push(...(manifest.contributes?.subagents ?? []));
+    // 2.1.88 (rev-0002): an explicit subagent `contextTypes` outside the declared
+    // Host API version's set drops that entry with a warning, as in `registry.ts`.
+    subagents.push(...admitSubagentContextTypes(manifest.name, manifest.contributes?.subagents ?? [], declaredSet));
     // 0.2.29 — the slot is OPTIONAL and its absence is the normal case, so no
     // warning: a declarative overlay package holds no resource of its own. When
     // it IS declared it goes into `teardowns`, which is the legitimate
@@ -349,7 +360,7 @@ export async function loadProjectOverlay(
     commands.length === 0 &&
     subagents.length === 0
   ) {
-    return { overlay: undefined, records, skills, unloadedSkills, dispose };
+    return { overlay: undefined, records, skills, scopedSkills, unloadedSkills, dispose };
   }
 
   const overlay: ProjectPluginOverlay = {
@@ -359,5 +370,5 @@ export async function loadProjectOverlay(
     listSubagents: () => subagents,
   };
 
-  return { overlay, records, skills, unloadedSkills, dispose };
+  return { overlay, records, skills, scopedSkills, unloadedSkills, dispose };
 }

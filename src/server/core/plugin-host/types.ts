@@ -16,6 +16,7 @@ import type {
   SystemPromptContribution,
 } from '../../../shared/plugin-host/types.js';
 import type { ChangedBy } from '../../../shared/entities.js';
+import type { ScopedPluginSkill } from './contribution-scope.js';
 import type { Root } from '../../../shared/types.js';
 import type {
   DescribeTypesInput,
@@ -583,6 +584,13 @@ export interface PluginRegistry {
    * overlay skills are pushed separately, behind the trust gate).
    */
   listSkills(): PluginSkillContribution[];
+
+  /**
+   * 2.1.88 (rev-0001) — `listSkills`, each entry carried with the `ContextType`
+   * set of its manifest's declared Host API version: the scope of an entry that
+   * omits `contextTypes`. The fan-out into the SkillRegistry reads this.
+   */
+  listScopedSkills(): ScopedPluginSkill[];
 
   /**
    * 2.1.9 — record the skill slugs of a base-layer package the loader's gate

@@ -38,7 +38,7 @@ import {
   assertSerializationContribution,
   applyReservedTitleDefault,
 } from './manifest-adapter.js';
-import { hostApiContextTypesFor } from './contribution-scope.js';
+import { admitSubagentContextTypes, hostApiContextTypesFor, scopeSkills, type ScopedPluginSkill } from './contribution-scope.js';
 import { attachComposition } from './composition-validation.js';
 
 /** Internal record: the public one plus the skills + the registered module
@@ -46,6 +46,8 @@ import { attachComposition } from './composition-validation.js';
  *  plugin still owns (identity check). */
 interface InternalPluginRecord extends RegisteredPluginRecord {
   skills: PluginSkillContribution[];
+  /** The `ContextType` set of this manifest's declared Host API version (2.1.88), carried with its skills. */
+  declaredContextTypes: readonly string[];
   /** Slugs of `contributes.skills` entries the `contextTypes` check rejected (2.1.9). */
   rejectedSkills: string[];
   entityModules: BackendModule[];
@@ -191,12 +193,13 @@ export class PluginRegistryImpl implements PluginRegistry {
     // (2.1.88, M33 `9734yj2e`) is the one skill defect that must not abort its
     // envelope: it is a selector over turns, not part of the skill's identity.
     const rejectedSkills: string[] = [];
+    const declaredSet = hostApiContextTypesFor(manifest.hostApiVersion);
     const skills: PluginSkillContribution[] = [
       ...admitSkillContextTypes(
         manifest.name,
         manifest.contributes.skills ?? [],
         rejectedSkills,
-        hostApiContextTypesFor(manifest.hostApiVersion),
+        declaredSet,
       ).map(
         validateSkillContribution,
       ),
@@ -218,7 +221,15 @@ export class PluginRegistryImpl implements PluginRegistry {
     // resolver (services/plugin-subagents.ts) rather than here, because the
     // reserved-name and first-wins rules span BOTH layers (base pool + overlay)
     // and this class only ever sees the base one.
-    const subagents: PluginSubagentContribution[] = manifest.contributes.subagents ?? [];
+    //
+    // 2.1.88 (rev-0002) — the one check that IS made here: an explicit
+    // `contextTypes` outside the declared Host API version's set drops that entry
+    // with a warning (the package still loads).
+    const subagents: PluginSubagentContribution[] = admitSubagentContextTypes(
+      manifest.name,
+      manifest.contributes.subagents ?? [],
+      declaredSet,
+    );
     return {
       record: {
         name: manifest.name,
@@ -227,6 +238,7 @@ export class PluginRegistryImpl implements PluginRegistry {
         commands,
         subagents,
         skills,
+        declaredContextTypes: declaredSet.contextTypes,
         rejectedSkills,
         entityModules,
         onUnregister,
@@ -328,6 +340,12 @@ export class PluginRegistryImpl implements PluginRegistry {
 
   listSkills(): PluginSkillContribution[] {
     return Array.from(this.plugins.values()).flatMap((r) => r.skills);
+  }
+
+  listScopedSkills(): ScopedPluginSkill[] {
+    return Array.from(this.plugins.values()).flatMap((r) =>
+      scopeSkills(r.skills, r.declaredContextTypes),
+    );
   }
 
   listAvailable(): BackendModule[] {

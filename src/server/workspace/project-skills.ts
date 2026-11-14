@@ -14,9 +14,8 @@ import {
 } from '../core/plugin-host/overlay-loader.js';
 import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import type { PluginRegistry, UnloadedSkillSlug } from '../core/plugin-host/types.js';
-import type { PluginSkillContribution } from '../../shared/plugin-host/manifest.js';
 import type { SkillRegistry } from '../services/skill-registry.js';
-import { declaredContextTypesOf } from '../core/plugin-host/contribution-scope.js';
+import type { ScopedPluginSkill } from '../core/plugin-host/contribution-scope.js';
 
 export interface OverlayLayer {
   localPluginsPresent: boolean;
@@ -76,18 +75,20 @@ export async function loadOverlayLayer(
  */
 export function fanPluginSkills(
   skillRegistry: SkillRegistry,
-  base: Pick<PluginRegistry, 'listSkills' | 'listUnloadedSkills'>,
-  overlay?: Pick<ProjectOverlayResult, 'skills' | 'unloadedSkills'>,
+  base: Pick<PluginRegistry, 'listScopedSkills' | 'listUnloadedSkills'>,
+  overlay?: Pick<ProjectOverlayResult, 'scopedSkills' | 'unloadedSkills'>,
 ): void {
-  const skills: PluginSkillContribution[] = [...base.listSkills(), ...(overlay?.skills ?? [])];
-  for (const skill of skills) {
+  // 2.1.88 (rev-0001): each loader-admitted entry arrives WITH the declared Host
+  // API version's set it is scoped by — no lookup, so no silent fallback.
+  const scoped: ScopedPluginSkill[] = [...base.listScopedSkills(), ...(overlay?.scopedSkills ?? [])];
+  for (const { skill, declaredContextTypes } of scoped) {
     if (skillRegistry.hasPluginSkill(skill.slug)) {
       console.warn(
         `[skill] plugin skill slug "${skill.slug}" is contributed more than once; keeping the first by discovery order and skipping this one`,
       );
       continue;
     }
-    skillRegistry.addPluginSkill(skill, declaredContextTypesOf(skill));
+    skillRegistry.addPluginSkill(skill, declaredContextTypes);
   }
   const unloaded: UnloadedSkillSlug[] = [...base.listUnloadedSkills(), ...(overlay?.unloadedSkills ?? [])];
   for (const u of unloaded) skillRegistry.addUnloadedPluginSkill(u.slug, u.detail);

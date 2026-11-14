@@ -13,12 +13,13 @@
  *   - The loader checks a skill's `contextTypes` against that set only. Whether
  *     the PROJECT has a context-type registry row for a value is not the loader's
  *     question — the M37 resolver narrows to the turns that exist.
- *   - A skill that omits `contextTypes` enters unchanged; it is the set this
- *     module records for it that the plugin skill source reads as its scope. There
+ *   - A skill that omits `contextTypes` enters unchanged; the declared set is
+ *     carried beside it (`ScopedPluginSkill`) and the plugin skill source reads
+ *     it as its scope. There
  *     is no "omitted = a fixed list of types" rule anywhere else.
  */
 import semver from 'semver';
-import type { PluginSkillContribution } from '../../../shared/plugin-host/manifest.js';
+import type { PluginSkillContribution, PluginSubagentContribution } from '../../../shared/plugin-host/manifest.js';
 import { HOST_API_RELEASES, type HostApiRelease } from '../../../shared/plugin-host/host-api.js';
 
 /** The context-type set of one Host API version, with the version that announced it. */
@@ -58,22 +59,64 @@ export function hostApiContextTypesFor(
 }
 
 /**
- * The set a loaded skill contribution is scoped by, recorded by the loader (base
- * and overlay layers) when it admits the entry. Kept beside the contribution, not
- * written into it: the entry itself enters unchanged (M33 `emco4ju2`).
+ * A skill contribution the loader admitted, CARRIED with the declared Host API
+ * version's set it is scoped by (rev-0001). The set travels explicitly from
+ * admission (`registry.ts` / `overlay-loader.ts`) to the fan-out into the
+ * SkillRegistry (`fanPluginSkills`), so no copy of the entry between the two can
+ * lose it and silently widen it to the running version's set. The entry itself
+ * enters unchanged (M33 `emco4ju2`): the set is beside it, not written into it.
  */
-const declaredSets = new WeakMap<PluginSkillContribution, readonly string[]>();
+export interface ScopedPluginSkill {
+  skill: PluginSkillContribution;
+  /** The `ContextType` set of the plugin's declared Host API version. */
+  declaredContextTypes: readonly string[];
+}
 
-/** Record the declared Host API version's set for an admitted skill contribution. */
-export function recordDeclaredContextTypes(skill: PluginSkillContribution, set: HostApiContextTypeSet): void {
-  declaredSets.set(skill, set.contextTypes);
+/** Pair every admitted entry of one manifest with that manifest's declared set. */
+export function scopeSkills(
+  skills: readonly PluginSkillContribution[],
+  declaredContextTypes: readonly string[],
+): ScopedPluginSkill[] {
+  return skills.map((skill) => ({ skill, declaredContextTypes }));
 }
 
 /**
- * The declared set recorded for `skill`, or `undefined` for a contribution no
- * loader admitted (a direct push in a test) — the plugin skill source then holds
- * it to the running Host API version's set.
+ * Why a subagent contribution's explicit `contextTypes` is outside the declared
+ * Host API version's set, or `null` when it is inside it (or omitted, or not an
+ * array — the per-turn resolver in `services/plugin-subagents.ts` owns those:
+ * omission is `['chat']`, a non-array is rejected there).
  */
-export function declaredContextTypesOf(skill: PluginSkillContribution): readonly string[] | undefined {
-  return declaredSets.get(skill);
+export function subagentContextTypesReason(
+  c: PluginSubagentContribution,
+  set: HostApiContextTypeSet,
+): string | null {
+  if (!c || typeof c !== 'object' || !Array.isArray(c.contextTypes)) return null;
+  const bad = (c.contextTypes as unknown[]).filter((t) => !set.contextTypes.includes(t as string));
+  if (bad.length === 0) return null;
+  const shown = bad.map((b) => JSON.stringify(b) ?? String(b)).join(', ');
+  const allowed = set.contextTypes.map((t) => `'${t}'`).join(' | ');
+  return `contextTypes contains ${shown}, outside the context types of the declared Host API ${set.version} (${allowed})`;
+}
+
+/**
+ * 2.1.88 (rev-0002, M13 `irsmg4jn`, M33 `9734yj2e`) — a subagent's contribution
+ * scope counts against the declared Host API version's set too. An entry naming a
+ * value outside that set is dropped with a warning; the rest of the package
+ * still loads. Everything else about a subagent stays raw for the per-turn
+ * resolver.
+ */
+export function admitSubagentContextTypes(
+  pluginName: string,
+  list: readonly PluginSubagentContribution[],
+  set: HostApiContextTypeSet,
+): PluginSubagentContribution[] {
+  return list.filter((c) => {
+    const reason = subagentContextTypesReason(c, set);
+    if (reason === null) return true;
+    const label = typeof c.name === 'string' && c.name.length > 0 ? c.name : '(no name)';
+    console.warn(
+      `[plugin] ${pluginName}: subagent "${label}" — ${reason}; skipping this contribution (the rest of the package still loads)`,
+    );
+    return false;
+  });
 }

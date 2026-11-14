@@ -31,7 +31,7 @@ import type { BackendModule, MountContext, PluginMountFn, ProjectPluginHost } fr
 import type { EntityStore } from '../../services/entity-store.js';
 import { declaresRefs, rewriteRefsForRename } from '../../db/ref-rewrite.js';
 import { HOST_API_VERSION } from '../../../shared/plugin-host/manifest.js';
-import { hostApiContextTypesFor, recordDeclaredContextTypes, type HostApiContextTypeSet } from './contribution-scope.js';
+import { hostApiContextTypesFor, type HostApiContextTypeSet } from './contribution-scope.js';
 import { RESERVED_TITLE_FIELD, TITLE_MAX_LENGTH } from '../../../shared/plugin-host/data-schema.js';
 
 
@@ -74,10 +74,9 @@ export class PluginTypeConflictError extends Error {
  * Deliberately NOT part of {@link validateSkillContribution}, which throws and so
  * takes the WHOLE envelope down with the entry. A bad `contextTypes` costs its own
  * contribution and nothing else, because the field is a SELECTOR over turns rather
- * than part of the skill's identity. The subagent resolver prices its own
- * `contextTypes` differently (`services/plugin-subagents.ts`): there only a
- * NON-ARRAY is rejected, and an unknown element is left to be silently
- * non-matching.
+ * than part of the skill's identity. A subagent's explicit `contextTypes` is held
+ * to the same declared set by `admitSubagentContextTypes` (contribution-scope.ts);
+ * a NON-ARRAY there is left to the per-turn resolver (`services/plugin-subagents.ts`).
  *
  * Omission is legal and is not resolved here: the entry enters unchanged, and the
  * declared version's set is its scope (M13 `irsmg4jn`). An EMPTY array is not an
@@ -103,9 +102,9 @@ export function skillContextTypesReason(
 
 /**
  * Drop the CONTEXTUAL entries whose `contextTypes` is unusable, warning once per
- * drop, and record the declared Host API version's set beside every entry that
- * stays (`recordDeclaredContextTypes`) — the scope of an entry that omits the
- * field.
+ * drop. The declared Host API version's set — the scope of an entry that omits
+ * the field — is carried beside the admitted entries by the caller
+ * (`scopeSkills`, `ScopedPluginSkill`).
  *
  * Runs BEFORE `validateSkillContribution` so the skip beats the throw: an entry
  * that is bad in both ways is skipped rather than aborting its envelope, which is
@@ -133,10 +132,7 @@ export function admitSkillContextTypes(
 ): PluginSkillContribution[] {
   return list.filter((c) => {
     const reason = c && typeof c === 'object' ? skillContextTypesReason(c, scope) : null;
-    if (reason === null) {
-      if (c && typeof c === 'object') recordDeclaredContextTypes(c, scope);
-      return true;
-    }
+    if (reason === null) return true;
     // `slug` is not validated yet — it may be missing or not a string, and the
     // warning has to stay readable when it is.
     const label = typeof c.slug === 'string' && c.slug.length > 0 ? c.slug : '(no slug)';
