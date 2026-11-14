@@ -113,6 +113,7 @@ import { buildC4sToolsServer } from '../mcp/c4s-tools.js';
 import { createMcpServer, mcpTool } from '../plugin-runtime/index.js';
 import { z } from 'zod';
 import { CONTEXT_TYPE_REGISTRY } from '../services/chat-context.js';
+import { consultationContextType } from '../services/context-types/registry.js';
 import { ChatService } from '../services/chat.js';
 import { runMigrations } from '../db/migrate.js';
 import {
@@ -205,6 +206,8 @@ function makeDeps() {
     // M05 queue: the after-turn merged-dispatch loop drains the queue; an empty
     // queue means no extra turns.
     popAllQueued: () => [],
+    // 2.1.88: the thread's origin — a consultation thread makes every turn a peer turn.
+    isConsultationThread: (_id: string) => false,
   };
 
   const deps = {
@@ -546,6 +549,55 @@ describe('runAgentTurn — disallowedToolGroups posture', () => {
       expect(arch.claude_disallowBackgroundBash === true).toBe(disallowed);
     });
   }
+
+  /**
+   * 2.1.88 (M05 `057mv7pz`): beyond the row, the switch covers a PEER turn — any
+   * turn of a thread founded as a consultation thread — whatever the value. The
+   * origin decides: the same value in a thread a user opened keeps its row's
+   * policy. The consultation row (`ask`) itself declares background tasks off and
+   * pins plan mode (which denies the shell), so for the duration of the test the
+   * row is made one that ALLOWS them — `Zadania w tle: dozwolone` and the default
+   * row's posture — to show which of the two decides.
+   */
+  describe('background tasks follow the thread\'s origin (2.1.88)', () => {
+    const consultationValue = consultationContextType()!;
+    const row = CONTEXT_TYPE_REGISTRY[consultationValue] as { backgroundTasks: string; posture: unknown };
+    let declared: { backgroundTasks: string; posture: unknown };
+    beforeEach(() => {
+      declared = { backgroundTasks: row.backgroundTasks, posture: row.posture };
+      row.backgroundTasks = 'allowed';
+      row.posture = CONTEXT_TYPE_REGISTRY.chat.posture;
+    });
+    afterEach(() => {
+      Object.assign(row, declared);
+    });
+
+    const turn = async (contextType: string, consultation: boolean) => {
+      settle();
+      hoisted.agent = { disableDirectFilesystemAccess: false };
+      const { deps } = makeDeps();
+      (deps.chatService as unknown as { isConsultationThread: (id: string) => boolean }).isConsultationThread = () =>
+        consultation;
+      const input = makeInput();
+      (input.thread as unknown as { contextType: string }).contextType = contextType;
+      await runAgentTurn(deps, input);
+      return hoisted.lastExecute?.architectureConfig as Record<string, unknown>;
+    };
+
+    it('[ac:ac-tura-peera-nie-moze-powolac-zadania-w] a peer turn cannot start a background task — whatever its row declares', async () => {
+      for (const contextType of [consultationValue, 'chat']) {
+        const arch = await turn(contextType, true);
+        expect(arch.claude_disallowBackgroundBash, contextType).toBe(true);
+      }
+    });
+
+    it('[ac:ac-watek-wartosci-z-wejscie-konsultacja] a thread of the `Wejście: konsultacja` value founded without `entry` is not a consultation thread: its turn may start a background task when the row allows it', async () => {
+      const arch = await turn(consultationValue, false);
+      expect(arch.claude_disallowBackgroundBash).toBeUndefined();
+      // The same thread founded through the entry: the switch is on.
+      expect((await turn(consultationValue, true)).claude_disallowBackgroundBash).toBe(true);
+    });
+  });
 
   /**
    * The snapshot records the FIELD, never the computed union — the resume guard
@@ -4053,7 +4105,7 @@ describe('runAgentTurn — the turn argument: host pool, handler servers, profil
     );
   });
 
-  it('[ac:ac-mcp-ask-peer-w-posture-plan-mode-c] an ask turn runs with planMode=true whatever the thread flag says, strips c4s-tools and transagent-tools, keeps plan-tools, and mutates no spec (write tools withheld)', async () => {
+  it('an ask turn runs with planMode=true whatever the thread flag says (the row\'s pinned posture), strips c4s-tools and transagent-tools, keeps plan-tools, and mutates no spec (write tools withheld)', async () => {
     const { mounted, toolsOf } = await turnFor('ask', { planMode: false });
     expect(hoisted.lastExecute?.planMode).toBe(true);
     expect(mounted).not.toContain('c4s-tools');
@@ -4063,11 +4115,12 @@ describe('runAgentTurn — the turn argument: host pool, handler servers, profil
     expect(toolsOf('reference-tools')).not.toContain('create_tag');
   });
 
-  it('[ac:ac-mcp-server-c4s-tools-jest-whitelistowa] c4s-tools is mounted in chat and patch, and absent from brief and ask', async () => {
+  it('[ac:ac-mcp-server-c4s-tools-jest-whitelistowa] c4s-tools is not mounted in a thread of the `Wejście: konsultacja` value', async () => {
+    const consultationValue = consultationContextType();
+    expect(consultationValue).not.toBeNull();
+    expect((await turnFor(consultationValue!)).mounted).not.toContain('c4s-tools');
+    // The server itself exists: a value that names it (the default one) mounts it.
     expect((await turnFor('chat')).mounted).toContain('c4s-tools');
-    expect((await turnFor('patch', { patchPath: 'p.md' })).mounted).toContain('c4s-tools');
-    expect((await turnFor('brief', { briefPath: 'b.md' })).mounted).not.toContain('c4s-tools');
-    expect((await turnFor('ask')).mounted).not.toContain('c4s-tools');
   });
 
   it('[ac:ac-prompt-nie-niesie-osobnego-bloku-inst] the prompt carries no separate consultation-instruction block: c4s-tools appears as an inventory line, and the call contract only in the tool description', async () => {

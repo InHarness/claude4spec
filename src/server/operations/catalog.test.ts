@@ -1525,7 +1525,7 @@ describe('the turn and thread rows as their 2.1.26 records declare them', () => 
   const optional = (name: string, key: string): boolean =>
     (CATALOG.require(name).inputSchema[key] as unknown as { isOptional(): boolean }).isOptional();
 
-  it('[entity:ask] ask: workspace, agent-mediated, all four channels direct, file/db, not idempotent, no content input, the seventeen codes with RESUME_CONFIG_LOCKED, WORKSPACE_NOT_REGISTERED and WORKSPACE_FILE_INVALID, rendered by c4s-tools-ask in internal and mcp, effort a closed choice', () => {
+  it('[entity:ask] ask: workspace, agent-mediated, all four channels direct, file/db, not idempotent, no content input, the eighteen codes with RESUME_CONFIG_LOCKED, WORKSPACE_NOT_REGISTERED, WORKSPACE_FILE_INVALID and PROJECT_WITHOUT_CONSULTATION, rendered by c4s-tools-ask in internal and mcp, effort a closed choice', () => {
     const op = expectOperationMatchesRecord(
       {
         nazwa: 'ask',
@@ -1543,6 +1543,7 @@ describe('the turn and thread rows as their 2.1.26 records declare them', () => 
           'WORKSPACE_NOT_REGISTERED',
           'WORKSPACE_FILE_INVALID',
           'PROJECT_NOT_IN_WORKSPACE',
+          'PROJECT_WITHOUT_CONSULTATION',
           'SERVER_NOT_RUNNING',
           'SERVER_NOT_RECOGNIZED',
           'INVALID_ARGS',
@@ -1558,7 +1559,7 @@ describe('the turn and thread rows as their 2.1.26 records declare them', () => 
       },
       TOOLS,
     );
-    expect(op.errorCodes).toHaveLength(17);
+    expect(op.errorCodes).toHaveLength(18);
     expect(op.opClass).toBe('peer');
     // The peer's context is fixed, not a parameter: no contextType / brief input.
     expect(Object.keys(op.inputSchema).sort()).toEqual(

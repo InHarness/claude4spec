@@ -132,6 +132,7 @@ describe('M05 — the turn authenticates from the server process env when no key
       chatService: {
         getThreadMeta: (id: string) => (id === thread.id ? thread : null),
         getInitialArchitectureConfig: () => null,
+        isConsultationThread: () => false,
       },
       agentCredentialService: { getDecrypted: () => (savedKey ? { apiKey: savedKey } : null) },
       activeAdapters: new Map(),

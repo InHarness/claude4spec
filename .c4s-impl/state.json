@@ -1,5 +1,5 @@
 {
-  "iteration": 11,
+  "iteration": 16,
   "conventions": [
     {
       "label": "L15 (Context Types) — implementor M44",
@@ -52,7 +52,7 @@
         "chat-shell-by-row",
         "prompt-composition"
       ],
-      "startCommit": null
+      "startCommit": "b0839b655c6613ac934b29d30a871b1bfdcdfb4e"
     }
   ],
   "systemVerified": false,
@@ -585,13 +585,52 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "consultation-entry/p1-l1-l19",
+          "layers": [
+            "L1",
+            "L3",
+            "L15",
+            "L19"
+          ],
+          "slugs": [
+            "chat-thread",
+            "create-thread-request",
+            "post-api-threads",
+            "agent",
+            "ask",
+            "c4s-tools-ask",
+            "ac-c4s-ask-msg-jest-aliasem-c4s-agen",
+            "ac-c4s-ask-msg-zwraca-wylacznie-ostatnia",
+            "ac-c4s-ask-z-flaga-kontekstu-ct-albo-bri",
+            "ac-konsultacja-projektu-bez-wartosci-z-w",
+            "ac-mcp-ask-peer-w-posture-plan-mode-c",
+            "ac-mcp-server-c4s-tools-jest-whitelistowa",
+            "ac-mcp-tool-ask-propaguje-wszystkie-strin",
+            "ac-mcp-tool-c4s-tools-ask-z-minimalnym-ws",
+            "ac-post-api-threads-bez-pola-context-typ",
+            "ac-post-api-threads-id-ask-dziala-dla-wa",
+            "ac-post-api-threads-z-context-type-brief",
+            "ac-post-api-threads-z-entry-consultation",
+            "ac-post-api-threads-z-entry-i-context-ty",
+            "ac-predykat-trybu-create-dla-ct-brief-cr",
+            "ac-tura-peera-nie-moze-powolac-zadania-w",
+            "ac-watek-wartosci-z-wejscie-konsultacja"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "b0839b655c6613ac934b29d30a871b1bfdcdfb4e",
+      "baseCommit": "b0839b655c6613ac934b29d30a871b1bfdcdfb4e",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },

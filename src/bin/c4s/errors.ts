@@ -18,6 +18,9 @@ export type CliErrorCode =
   // `--thread` continuation whose model, reasoning level or file scope differs
   // from the thread's first turn. The fifteenth code of the turn family.
   | 'RESUME_CONFIG_LOCKED'
+  // 2.1.88 (M11 `m11dcore`) — HTTP 422 from the peer's create-thread route: the
+  // peer's registry has no value with `Wejście: konsultacja` (`c4s ask`).
+  | 'PROJECT_WITHOUT_CONSULTATION'
   | 'AGENT_UNAVAILABLE'
   | 'AGENT_ERROR'
   | 'TIMEOUT'

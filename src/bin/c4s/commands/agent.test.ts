@@ -192,3 +192,84 @@ describe('c4s agent --ct patch --patch — the command surface', () => {
     expect(JSON.parse(out)).toMatchObject({ threadId: 'T-patch', answer: 'done' });
   });
 });
+
+/**
+ * 2.1.88 (M11 `m11dcore`) — `--ct` takes any value of the project's registry:
+ * the command holds no closed enumeration, the server's create-thread route
+ * decides, and a refused value comes back as INVALID_ARGS. A value with
+ * `Wejście: —` needs its artifact route: `--ct brief` without `--brief` creates a
+ * brief, `--ct patch` needs `--patch`.
+ */
+describe('c4s agent --ct — any value of the project registry (2.1.88)', () => {
+  const run = (argv: string[]) => runAgentCmd(parseArgs(argv));
+  const SERVER = ['--server', 'http://localhost:9999', '--project', 'peer'];
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  /** A peer whose create-thread route admits `admitted` (any other value → 400 VALIDATION). */
+  function stubPeer(admitted: readonly string[]) {
+    const calls: Array<{ url: string; body: Record<string, unknown> | undefined }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: { body?: string }) => {
+        const body = init?.body ? (JSON.parse(init.body) as Record<string, unknown>) : undefined;
+        calls.push({ url: String(url), body });
+        const reply = (status: number, b: unknown) => ({ status, ok: status < 300, json: async () => b });
+        if (String(url).endsWith('/config')) return reply(200, { name: 'peer', roots: [], writingStyle: null, onboarding: {} });
+        if (String(url).endsWith('/briefs')) {
+          return reply(201, { data: { path: 'current-brief.md', threads: [{ id: 'T-brief' }] } });
+        }
+        if (String(url).endsWith('/threads')) {
+          const ct = body?.context_type;
+          if (ct !== undefined && !admitted.includes(String(ct))) {
+            return reply(400, { error: { code: 'VALIDATION', message: `context_type '${String(ct)}' is not a value of this project's context-type registry` } });
+          }
+          return reply(201, { data: { id: 'T-new', contextType: ct ?? 'chat' } });
+        }
+        return reply(200, { threadId: url.includes('T-brief') ? 'T-brief' : 'T-new', answer: 'done', messages: [] });
+      }),
+    );
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    return calls;
+  }
+
+  it('[ac:ac-predykat-trybu-create-dla-ct-brief-cr] `c4s agent "<msg>" --ct brief` with neither --brief nor a window flag creates a new brief against the current state', async () => {
+    const calls = stubPeer(['chat', 'ask']);
+    await run(['agent', 'msg', '--ct', 'brief', ...SERVER]);
+    const create = calls.find((c) => c.url.endsWith('/briefs'));
+    // Current state = the window open at its end (`to = null`), no start given.
+    expect(create?.body).toEqual({ toReleaseName: null });
+    // The turn runs in the new brief's thread; no attach, no generic thread.
+    expect(calls.some((c) => c.url.endsWith('/threads/T-brief/ask'))).toBe(true);
+    expect(calls.some((c) => c.url.endsWith('/threads'))).toBe(false);
+  });
+
+  it('[entity:cli-command/agent] `--ct <value>` reaches the create-thread route with that value — no closed list in the command', async () => {
+    const calls = stubPeer(['chat', 'ask', 'review']);
+    await run(['agent', 'msg', '--ct', 'review', ...SERVER]);
+    expect(calls.find((c) => c.url.endsWith('/threads'))?.body).toEqual({ context_type: 'review' });
+    // `--ct ask` opens an `ask` thread directly — not through the consultation entry.
+    await run(['agent', 'msg', '--ct', 'ask', ...SERVER]);
+    expect(calls.filter((c) => c.url.endsWith('/threads')).at(-1)?.body).toEqual({ context_type: 'ask' });
+  });
+
+  it('[entity:cli-command/agent] without --ct the project picks its `Wejście: domyślny` value', async () => {
+    const calls = stubPeer(['chat']);
+    await run(['agent', 'msg', ...SERVER]);
+    expect(calls.find((c) => c.url.endsWith('/threads'))?.body).toEqual({});
+  });
+
+  it('[entity:cli-command/agent] `--ct` outside the project registry → INVALID_ARGS, and no turn runs', async () => {
+    const calls = stubPeer(['chat', 'ask']);
+    await expect(run(['agent', 'msg', '--ct', 'bogus', ...SERVER])).rejects.toMatchObject({ code: 'INVALID_ARGS' });
+    expect(calls.some((c) => c.url.endsWith('/ask'))).toBe(false);
+  });
+
+  it('[entity:cli-command/agent] an empty `--ct` → INVALID_ARGS before any request', async () => {
+    const calls = stubPeer(['chat']);
+    await expect(run(['agent', 'msg', '--ct', '', ...SERVER])).rejects.toMatchObject({ code: 'INVALID_ARGS' });
+    expect(calls).toHaveLength(0);
+  });
+});

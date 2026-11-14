@@ -191,18 +191,24 @@ describe('chat_thread.context_type without default + consultation (2.1.88)', () 
     expect(db.prepare(`SELECT COUNT(*) AS n FROM chat_thread`).get()).toEqual({ n: 3 });
   });
 
-  it('[entity:chat-thread] the store writes context_type on every created thread and reads consultation (false on every row it founds)', () => {
+  it('[entity:chat-thread] the store writes context_type on every created thread, and consultation once at creation: 1 only for a thread founded as a consultation thread', () => {
     const db = new Database(':memory:');
     runMigrations(db);
     const chat = new ChatService(db);
     const plain = chat.createThread('plain');
     const brief = chat.createThread('brief', { contextType: 'brief', briefPath: 'v1.md' });
-    expect(db.prepare(`SELECT context_type FROM chat_thread WHERE id = ?`).get(plain.id)).toEqual({ context_type: 'chat' });
-    expect(db.prepare(`SELECT context_type FROM chat_thread WHERE id = ?`).get(brief.id)).toEqual({ context_type: 'brief' });
+    const askDirect = chat.createThread(null, { contextType: 'ask' });
+    const consult = chat.createThread(null, { contextType: 'ask', consultation: true });
+    const col = (id: string) => db.prepare(`SELECT context_type, consultation FROM chat_thread WHERE id = ?`).get(id);
+    expect(col(plain.id)).toEqual({ context_type: 'chat', consultation: 0 });
+    expect(col(brief.id)).toEqual({ context_type: 'brief', consultation: 0 });
+    // The same value opened directly is NOT a consultation thread — origin, not value.
+    expect(col(askDirect.id)).toEqual({ context_type: 'ask', consultation: 0 });
+    expect(col(consult.id)).toEqual({ context_type: 'ask', consultation: 1 });
     expect(plain.contextType).toBe('chat');
     expect(chat.isConsultationThread(plain.id)).toBe(false);
-    db.prepare(`UPDATE chat_thread SET consultation = 1 WHERE id = ?`).run(brief.id);
-    expect(chat.isConsultationThread(brief.id)).toBe(true);
+    expect(chat.isConsultationThread(askDirect.id)).toBe(false);
+    expect(chat.isConsultationThread(consult.id)).toBe(true);
     expect(chat.isConsultationThread('missing')).toBe(false);
   });
 });

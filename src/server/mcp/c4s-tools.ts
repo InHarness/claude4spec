@@ -30,10 +30,12 @@ import { DEFAULT_MODEL } from '../../core/agent/models.js';
  * Pozostale parametry (peer, threadId, model, effort) celuja w innego peera i
  * przychodza jako input; default `effort` ('medium') rozwiazywany w `runAgent`.
  *
- * 0.1.79: tool zablokowany do READ-ONLY. `contextType='ask'` jest zahardkodowany
- * wewnatrz (caller nie moze wybrac mutujacego kontekstu), a `output: 'final'`
- * zwraca terse `{ threadId, answer }`. Parametry `contextType` i `brief` usuniete
- * z wejscia.
+ * 0.1.79: tool zablokowany do READ-ONLY, a `output: 'final'` zwraca terse
+ * `{ threadId, answer }`. Parametry `contextType` i `brief` usuniete z wejscia.
+ * 2.1.88 (M11 `m11dcore`): narzedzie nie wpisuje wartosci typu kontekstu —
+ * `runAgent({ consultation: true })` zaklada u peera watek konsultacji
+ * (`entry: "consultation"`), a wartosc z `Wejscie: konsultacja` wybiera peer.
+ * Peer bez takiej wartosci odmawia kodem `PROJECT_WITHOUT_CONSULTATION`.
  */
 /**
  * 2.1.9 — the `description` of the `c4s-tools-ask` entity, verbatim: the
@@ -112,8 +114,8 @@ export function buildC4sToolsServer(callerWorkspace?: string): CapturedMcpServer
           // wiec zawezamy dla TS (effort wymaga cast do unii).
           model: typeof input.model === 'string' ? input.model : undefined,
           effort: typeof input.effort === 'string' ? (input.effort as 'low' | 'medium' | 'high') : undefined,
-          // Locked: a consulted peer always runs read-only, terse output.
-          contextType: 'ask',
+          // The consultation entry: the peer picks the value; terse output.
+          consultation: true,
           output: 'final',
         });
         return {

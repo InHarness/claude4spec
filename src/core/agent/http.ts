@@ -42,6 +42,9 @@ export type AgentErrorCode =
   | 'WORKSPACE_NOT_REGISTERED'
   | 'WORKSPACE_FILE_INVALID'
   | 'PROJECT_NOT_IN_WORKSPACE'
+  // 2.1.88 (M11 `m11dcore`) — HTTP 422 from the peer's create-thread route: its
+  // registry has no value with `Wejście: konsultacja`.
+  | 'PROJECT_WITHOUT_CONSULTATION'
   | 'SERVER_NOT_RUNNING'
   | 'SERVER_NOT_RECOGNIZED'
   | 'PROJECT_BUILD_FAILED'

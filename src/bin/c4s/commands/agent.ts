@@ -21,15 +21,16 @@ import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registr
  *   c4s agent "<msg>" --ct chat
  *   c4s agent "<msg>" --plan <planPath>        # new executor thread on an existing plan (—ct not needed)
  *   c4s agent "<msg>" --ct patch --patch <path>  # new patch thread on an existing patch (2.1.74)
- *   c4s agent "<msg>" --ct ask                 # read-only peer consult
+ *   c4s agent "<msg>" --ct ask                 # an `ask` thread opened directly (not a consultation)
+ *   c4s agent "<msg>" --ct <value>             # any value of the project's context-type registry
  *   c4s agent "<msg>" --ct brief --brief <path>       # attach-mode
  *   c4s agent "<msg>" --ct brief                      # create-mode, window open to the current state
  *   c4s agent "<msg>" --ct brief --from <r> --to <r>  # create-mode, closed window
  *   c4s agent "<msg>" --ct brief --to <r>             # create-mode, window open at the start
  *   c4s agent "<msg>" --thread <id>            # continue (—ct not needed)
  *
- * The terse peer-consult shorthand lives in `ask.ts` (hardcodes --ct=ask,
- * output: 'final').
+ * The terse peer-consult shorthand lives in `ask.ts` (no `--ct`: the peer picks
+ * its consultation value; output: 'final').
  */
 export async function runAgentCmd(args: ParsedArgs): Promise<void> {
   const message = args.positional[0];
@@ -39,6 +40,9 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
 
   const threadId = optionalString(args, 'thread');
   const ct = optionalString(args, 'ct');
+  if (args.flags.has('ct') && ct === undefined) {
+    throw new CliError('INVALID_ARGS', '--ct needs a value of the project registry (got an empty value)');
+  }
   const briefPath = optionalString(args, 'brief');
   // The mode predicate is now a single condition (`--brief` present → attach),
   // so an EMPTY `--brief` would silently fall through to create-mode and mint a
@@ -113,12 +117,10 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
     // Predykat trybu (attach vs create) ORAZ mapowanie flag okna na cialo
     // requestu naleza do `runAgent` — wspolnej biblioteki obu transportow —
     // wiec CLI ich nie duplikuje.
-    if (ct !== 'chat' && ct !== 'brief' && ct !== 'patch' && ct !== 'ask') {
-      throw new CliError(
-        'INVALID_ARGS',
-        '--ct must be chat|brief|patch|ask (or pass --thread <id> to continue a thread)',
-      );
-    }
+    // 2.1.88 (M11 `m11dcore`): `--ct` takes any value of the project's
+    // registry, which lives on the server — no closed enumeration here; a value
+    // outside it is refused there and comes back as INVALID_ARGS. Omitted =
+    // the project's `Wejście: domyślny` value.
     if (ct === 'patch') {
       throw new CliError(
         'INVALID_ARGS',

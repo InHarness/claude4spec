@@ -166,7 +166,8 @@ describe('buildC4sToolsServer — ask addressing (2.1.0)', () => {
       arguments: { message: 'ping', project: 'app-spec', server: 'https://c4s.firma.dev' },
     });
     expect(res.isError).toBeFalsy();
-    expect(hoisted.calls[0]).toMatchObject({ project: 'app-spec', server: 'https://c4s.firma.dev', contextType: 'ask' });
+    expect(hoisted.calls[0]).toMatchObject({ project: 'app-spec', server: 'https://c4s.firma.dev', consultation: true });
+    expect(hoisted.calls[0]).not.toHaveProperty('contextType');
   });
 
   it('[ac:ac-wywolanie-narzedzia-mcp-ask-bez-proje] refuses LOCALLY, before any peer call: missing project, empty project, empty message', async () => {
@@ -269,10 +270,12 @@ describe('c4s-tools · ask — contract (2.1.9)', () => {
     const hints = (ask.annotations ?? {}) as Record<string, unknown>;
     for (const h of ['readOnlyHint', 'destructiveHint', 'idempotentHint', 'openWorldHint']) expect(hints[h], h).toBeUndefined();
 
-    // Without `workspace` the caller's is taken; the call is a locked `ask` turn.
+    // Without `workspace` the caller's is taken; the call is a consultation —
+    // no context-type value is written, the peer picks it (2.1.88).
     hoisted.calls.length = 0;
     await client.callTool({ name: 'ask', arguments: { message: 'ping', project: 'app-spec' } });
-    expect(hoisted.calls[0]).toMatchObject({ workspace: 'ws-caller', channel: 'mcp', contextType: 'ask', output: 'final' });
+    expect(hoisted.calls[0]).toMatchObject({ workspace: 'ws-caller', channel: 'mcp', consultation: true, output: 'final' });
+    expect(hoisted.calls[0]).not.toHaveProperty('contextType');
 
     // An agent error comes back with its own code and hint.
     vi.mocked(runAgent).mockImplementationOnce(async () => {
@@ -315,8 +318,8 @@ describe('c4s-tools · ask — contract (2.1.9)', () => {
     expect(Object.keys(body).sort()).toEqual(['answer', 'threadId']);
     expect(body).toEqual({ threadId: 'peer-thread', answer: peerAnswer });
     expect(body.answer.split('\n').at(-1)).toBe('Plan: `.claude4spec/plans/rename-the-endpoint.md`');
-    // Locked context: the peer turn is an `ask` turn with the final-only output.
-    expect(hoisted.calls[0]).toMatchObject({ contextType: 'ask', output: 'final' });
+    // A consultation (the peer picks the value) with the final-only output.
+    expect(hoisted.calls[0]).toMatchObject({ consultation: true, output: 'final' });
   });
 
   /**
@@ -335,5 +338,46 @@ describe('c4s-tools · ask — contract (2.1.9)', () => {
     }
     expect(INTERACTION_RULES.ask).toContain('A request to CHANGE this specification ends with a plan, never with an edit');
     expect(ASK_TOOL_DESCRIPTION).toContain('the peer leaves a plan on its side');
+  });
+});
+
+/**
+ * 2.1.88 — every code of the `ask` operation's catalog that the `mcp` channel can
+ * meet (the catalog minus the `cli`-only resolver codes, M11 `m11dcore`) comes
+ * back as the tool's error result: `isError`, with the code, the message and the
+ * hint when there is one. `PROJECT_WITHOUT_CONSULTATION` is the release's new one.
+ */
+describe('c4s-tools · ask — error codes of the mcp channel (2.1.88)', () => {
+  const CLI_ONLY = new Set([
+    'PROJECT_NOT_FOUND',
+    'AMBIGUOUS_WORKSPACE',
+    'AMBIGUOUS_PROJECT',
+    'WORKSPACE_NOT_REGISTERED',
+    'WORKSPACE_FILE_INVALID',
+  ]);
+
+  it('[ac:ac-mcp-tool-ask-propaguje-wszystkie-strin] returns each mcp-channel code of the ask catalog as the error result {code, message, hint?}', async () => {
+    const { CATALOG } = await import('../operations/catalog.js');
+    const { registerCoreOperations } = await import('../operations/core-operations.js');
+    registerCoreOperations();
+    const codes = CATALOG.require('ask').errorCodes.filter((c) => !CLI_ONLY.has(c));
+    expect(codes).toContain('PROJECT_WITHOUT_CONSULTATION');
+    expect(codes).toHaveLength(13);
+
+    const client = await connectClient('ws-caller');
+    for (const [i, code] of codes.entries()) {
+      // INVALID_ARGS also comes from the local checks; here it is runAgent's.
+      const hint = i % 2 === 0 ? `fix for ${code}` : undefined;
+      vi.mocked(runAgent).mockImplementationOnce(async () => {
+        throw new AgentError(code, `peer said ${code}`, hint);
+      });
+      const res = await client.callTool({ name: 'ask', arguments: { message: 'ping', project: 'app-spec' } });
+      expect(res.isError, code).toBe(true);
+      const body = JSON.parse((res.content as Array<{ text: string }>)[0].text) as Record<string, unknown>;
+      expect(body.code, code).toBe(code);
+      expect(body.error, code).toBe(`peer said ${code}`);
+      if (hint) expect(body.hint, code).toBe(hint);
+      else expect(body, code).not.toHaveProperty('hint');
+    }
   });
 });

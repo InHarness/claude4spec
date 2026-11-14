@@ -170,6 +170,13 @@ export class ChatService {
        * {@link attachPlanToThread}).
        */
       planPath?: string | null;
+      /**
+       * 2.1.88 (M05 `6vum1iqz`, `chat_thread.consultation`): found a consultation
+       * thread — another project's request through `POST /api/threads` with
+       * `entry: "consultation"`. Written once, here, and never changed: every turn
+       * of the row is a peer turn. Absent ⇒ false.
+       */
+      consultation?: boolean;
     } = {},
   ): ChatThread {
     const id = nanoid(12);
@@ -182,6 +189,7 @@ export class ChatService {
     const spawnedByToolUseId = opts.spawnedByToolUseId ?? null;
     const planMode = opts.planMode ?? false;
     const planPath = opts.planPath ?? null;
+    const consultation = opts.consultation === true;
     // 0.2.87 (M46) column invariant: a child row has BOTH parent_thread_id and
     // spawned_by_tool_use_id, or neither — a tool-use id without a parent is a
     // render link to nowhere, and a parent without one cannot be reconstructed on F5.
@@ -201,10 +209,21 @@ export class ChatService {
     }
     this.db
       .prepare(
-        `INSERT INTO chat_thread (id, title, context_type, brief_path, patch_path, parent_thread_id, spawned_by_tool_use_id, plan_mode, plan_path)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO chat_thread (id, title, context_type, brief_path, patch_path, parent_thread_id, spawned_by_tool_use_id, plan_mode, plan_path, consultation)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, title, contextType, briefPath, patchPath, parentThreadId, spawnedByToolUseId, planMode ? 1 : 0, planPath);
+      .run(
+        id,
+        title,
+        contextType,
+        briefPath,
+        patchPath,
+        parentThreadId,
+        spawnedByToolUseId,
+        planMode ? 1 : 0,
+        planPath,
+        consultation ? 1 : 0,
+      );
     return this.getThreadRow(id);
   }
 
@@ -366,8 +385,10 @@ export class ChatService {
   /**
    * 2.1.88 (`chat_thread.consultation`): the thread's origin — `true` for a
    * consultation thread, founded on another project's request. The column is
-   * set once at creation and never changes; nothing on this store writes it
-   * yet (every row reads `false`) — the consultation entry founds such rows.
+   * set once at creation (`createThread({ consultation: true })`, reached only
+   * by `POST /api/threads` with `entry: "consultation"`) and never changes.
+   * A turn of such a thread is a peer turn: no background tasks, and the
+   * consultation answer processing (M05 `za3t91al`, `057mv7pz`).
    * Unknown thread → `false`.
    */
   isConsultationThread(threadId: string): boolean {

@@ -94,6 +94,7 @@ function makeDeps() {
     updateCurrentTodoItems: () => {},
     finalizeStreamingRows: () => {},
     popAllQueued: () => [],
+    isConsultationThread: () => false,
   };
   const deps = {
     pluginHost: { listEntities: () => [], buildMcpServers: () => [] },

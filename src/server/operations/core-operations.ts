@@ -2261,7 +2261,7 @@ export function registerCoreOperations(): void {
       model: z.string().optional(),
       effort: z.enum(['low', 'medium', 'high']).optional(),
     },
-    // The record's seventeen codes (M11 `m11dcore`), in three groups by the
+    // The record's eighteen codes (M11 `m11dcore`; 2.1.88 adds PROJECT_WITHOUT_CONSULTATION), in three groups by the
     // moment the error arises: local validation, the peer endpoint's HTTP status
     // (2.1.26 adds RESUME_CONFIG_LOCKED, its 409), and the turn body. 2.1.58
     // adds the two `cli`-only resolver codes of a workspace with a home:
@@ -2277,6 +2277,9 @@ export function registerCoreOperations(): void {
       'SERVER_NOT_RECOGNIZED',
       'INVALID_ARGS',
       'PROJECT_NOT_IN_WORKSPACE',
+      // 2.1.88 (M11 `m11dcore`) — 422 of the peer's create-thread route: its
+      // registry has no value with `Wejście: konsultacja`.
+      'PROJECT_WITHOUT_CONSULTATION',
       'NOT_FOUND',
       'STREAM_IN_PROGRESS',
       'AGENT_UNAVAILABLE',

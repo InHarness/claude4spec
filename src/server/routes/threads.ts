@@ -11,6 +11,12 @@ import {
 import { checkResumeConfigLock, isSessionInFlight } from './resume-lock.js';
 import { checkSelectableModel, isAdaptiveAlias } from './models.js';
 import { assertKnownContextType } from '../services/chat-context.js';
+import {
+  consultationRowOf,
+  defaultRowOf,
+  newThreadRowOf,
+  rowsOfRegistry,
+} from '../services/context-types/registry.js';
 import { ASK_TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
 import { DEFAULT_MODEL } from '../../core/agent/run-agent.js';
 import { finalizeAskAnswer, plansLeftByTurn, snapshotPlans } from '../services/ask-answer.js';
@@ -41,25 +47,67 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
   router.post('/', (req, res, next) => {
     try {
       const title = typeof req.body?.title === 'string' ? req.body.title : null;
-      // 0.1.79: optional context_type. Only 'chat' (default) and 'ask' are
-      // accepted on THIS generic path. 2.1.74 (create_thread): a 'brief'/'patch'
-      // thread needs an existing artifact file, so the kind's owner
-      // (POST /api/artifacts/:kind/:path/threads) or the bubble (transagent)
-      // dispatcher founds it, never this route.
-      const rawCt = req.body?.context_type;
-      let contextType: 'chat' | 'ask' = 'chat';
+      // 2.1.88 (M05 `6vum1iqz`, `create-thread-request`): the value comes from
+      // THIS project's context-type registry. `context_type` takes only a value
+      // whose row has `Wejście: nowy wątek` (`domyślny` contains it) — a value
+      // without it (a brief/patch thread, founded on an existing artifact file)
+      // has its own founders. `entry: "consultation"` founds a consultation
+      // thread: the server picks the `Wejście: konsultacja` value itself and
+      // records the origin once, on the row. The two exclude each other.
+      const rows = rowsOfRegistry(deps.contextTypes);
+      const rawCt: unknown = req.body?.context_type;
+      const rawEntry: unknown = req.body?.entry;
+      if (rawEntry !== undefined && rawCt !== undefined) {
+        return res
+          .status(400)
+          .json(
+            restError(
+              'VALIDATION',
+              '`entry` and `context_type` exclude each other: a consultation thread gets its value from the project registry',
+              'send either `entry: "consultation"` or `context_type`',
+            ),
+          );
+      }
+      if (rawEntry !== undefined) {
+        if (rawEntry !== 'consultation') {
+          return res
+            .status(400)
+            .json(restError('VALIDATION', `entry '${String(rawEntry)}' is not known; the only value is 'consultation'`));
+        }
+        const row = consultationRowOf(rows);
+        if (!row) {
+          return res
+            .status(httpStatusForCode('PROJECT_WITHOUT_CONSULTATION'))
+            .json(
+              restError(
+                'PROJECT_WITHOUT_CONSULTATION',
+                'this project does not take consultations: its context-type registry has no value with entry "consultation"',
+              ),
+            );
+        }
+        return res
+          .status(201)
+          .json({ data: chat.createThread(title, { contextType: row.value, consultation: true }) });
+      }
       if (rawCt !== undefined) {
-        if (rawCt !== 'chat' && rawCt !== 'ask') {
+        const row = typeof rawCt === 'string' ? newThreadRowOf(rows, rawCt) : null;
+        if (!row) {
+          const known = typeof rawCt === 'string' && rows.some((r) => r.value === rawCt);
+          const opens = rows
+            .filter((r) => r.entry.includes('new-thread') || r.entry.includes('default'))
+            .map((r) => r.value);
           return res.status(400).json({
             error: {
               code: 'VALIDATION',
-              message: `context_type '${rawCt}' requires an existing artifact file — its thread is founded by the artifact kind's owner (POST /api/artifacts/:kind/:path/threads) or the bubble dispatcher, not here`,
+              message: known
+                ? `context_type '${rawCt}' requires an existing artifact file — its thread is founded by the artifact kind's owner (POST /api/artifacts/:kind/:path/threads) or the bubble dispatcher, not here`
+                : `context_type '${String(rawCt)}' is not a value of this project's context-type registry; a new thread opens with one of ${opens.join(', ')}`,
             },
           });
         }
-        contextType = rawCt;
+        return res.status(201).json({ data: chat.createThread(title, { contextType: row.value }) });
       }
-      res.status(201).json({ data: chat.createThread(title, { contextType }) });
+      res.status(201).json({ data: chat.createThread(title, { contextType: defaultRowOf(rows).value }) });
     } catch (err) {
       next(err);
     }
@@ -233,11 +281,14 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
           );
       }
 
-      // 2.1.9 (M11 `m11askrul`): an `ask` turn reports the plan it left by its
-      // project-relative path and never leaks the project directory — see
+      // 2.1.9 (M11 `m11askrul`): a consultation turn reports the plan it left by
+      // its project-relative path and never leaks the project directory — see
       // `ask-answer.ts`. The snapshot is taken before the turn starts writing.
-      const isAsk = thread.contextType === 'ask';
-      const plansBefore = isAsk ? snapshotPlans(deps.planService) : undefined;
+      // 2.1.88 (M05 `za3t91al`): "consultation turn" = a turn of a consultation
+      // THREAD (`chat_thread.consultation`), not of a value — the same value
+      // opened by a user gets its answer unchanged.
+      const isConsultation = chat.isConsultationThread(thread.id);
+      const plansBefore = isConsultation ? snapshotPlans(deps.planService) : undefined;
 
       const result = await runAgentTurn(deps, {
         thread,
@@ -261,7 +312,7 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
         timeoutMs: ASK_TURN_TIMEOUT_MS,
       });
 
-      if (isAsk && plansBefore) {
+      if (isConsultation && plansBefore) {
         const plansAfter = snapshotPlans(deps.planService);
         result.answer = finalizeAskAnswer({
           answer: result.answer,

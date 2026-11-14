@@ -56,6 +56,39 @@ export function consultationContextType(capabilities: CapabilitySet = EVERY_CAPA
   return projectContextTypeRows(capabilities).find((r) => r.entry.includes('consultation'))?.value ?? null;
 }
 
+/**
+ * The rows of a project registry given by its values (`AgentTurnDeps.contextTypes`,
+ * i.e. `contextTypesFor(capabilities)`), in registry order. Absent (rigs) = every row.
+ */
+export function rowsOfRegistry(values: readonly string[] | undefined): ContextTypeRow[] {
+  return values ? CONTEXT_TYPE_ROWS.filter((row) => values.includes(row.value)) : [...CONTEXT_TYPE_ROWS];
+}
+
+/**
+ * M05 `6vum1iqz` / `POST /api/threads` — how the generic create-thread route
+ * resolves the value of a new thread in ONE project registry:
+ *   - `entry: "consultation"` → the row with `Wejście: konsultacja` (null when the
+ *     registry has none — `PROJECT_WITHOUT_CONSULTATION`);
+ *   - `context_type` → that value, only when its row has `nowy wątek` (or
+ *     `domyślny`, which contains it); otherwise null — `VALIDATION`;
+ *   - neither → the value with `Wejście: domyślny`.
+ */
+export function consultationRowOf(rows: readonly ContextTypeRow[]): ContextTypeRow | null {
+  return rows.find((r) => r.entry.includes('consultation')) ?? null;
+}
+
+export function newThreadRowOf(rows: readonly ContextTypeRow[], value: string): ContextTypeRow | null {
+  const row = rows.find((r) => r.value === value);
+  if (!row) return null;
+  return row.entry.includes('new-thread') || row.entry.includes('default') ? row : null;
+}
+
+export function defaultRowOf(rows: readonly ContextTypeRow[]): ContextTypeRow {
+  const row = rows.find((r) => r.entry.includes('default'));
+  if (!row) throw new Error('context-type registry has no value with entry "default"');
+  return row;
+}
+
 /** `Klasy operacji` as the set the profile gate admits. */
 export function rowOperationClasses(row: ContextTypeRow): ReadonlySet<OperationClass> {
   return new Set(row.operationClasses === 'all' ? ALL_OPERATION_CLASSES : row.operationClasses);

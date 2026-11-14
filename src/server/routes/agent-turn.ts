@@ -1697,8 +1697,15 @@ export async function runAgentTurn(
      * earlier turn runs to completion, because a capability gate applies to what
      * the model may reach for, not to work already handed to the OS.
      */
+    /**
+     * 2.1.88 (M05 `057mv7pz`): beyond the row's `Zadania w tle`, the switch also
+     * covers a PEER turn — any turn of a thread founded as a consultation thread
+     * (`chat_thread.consultation`), whatever its value. It follows the turn's
+     * origin, so the same value in a thread a user opened keeps its row's policy.
+     */
+    const peerTurn = deps.chatService.isConsultationThread(thread.id);
     const backgroundTasksDisallowed =
-      ctx.backgroundTasks === 'disabled' || thread.parentThreadId != null || shellDenied;
+      ctx.backgroundTasks === 'disabled' || thread.parentThreadId != null || peerTurn || shellDenied;
 
     const clientEnv = input.architectureConfig.custom_env;
     const architectureConfigForExecute = {

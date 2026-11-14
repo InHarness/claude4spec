@@ -190,6 +190,12 @@ export const STATUS_FOR_CODE: Record<string, number> = {
    * absent from the single table that is supposed to define it.
    */
   STREAM_IN_PROGRESS: 409,
+  /**
+   * 2.1.88 (M05 `6vum1iqz`) — `POST /api/threads` with `entry: "consultation"`
+   * on a project whose context-type registry has no value with `Wejście:
+   * konsultacja`: the project refuses the consultation and no thread is founded.
+   */
+  PROJECT_WITHOUT_CONSULTATION: 422,
   // M24 Remote Account
   NO_ACTIVE_FLOW: 400,
   REMOTE_UNAUTHORIZED: 401,

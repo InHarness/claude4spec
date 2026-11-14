@@ -11,6 +11,7 @@ import { ASK_TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
 import Database from 'better-sqlite3';
 import { runMigrations } from '../db/migrate.js';
 import { ChatService } from '../services/chat.js';
+import { CONTEXT_TYPE_ROWS, defaultContextType } from '../services/context-types/registry.js';
 
 // 0.1.107: threads.ts's `POST /:id/ask` now branches on model adaptivity (mirrors
 // the client's `thinkingToConfig`) instead of only setting `claude_effort`.
@@ -74,6 +75,7 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
       chatService: {
         getThreadMeta: (id: string) => (id === thread.id ? thread : null),
         getInitialArchitectureConfig: () => initialArchitectureConfigSnapshot,
+        isConsultationThread: () => false,
       },
       agentCredentialService: { getDecrypted: () => null },
       activeAdapters: new Map(),
@@ -371,6 +373,7 @@ describe('POST /:id/ask — headless-only turn timeout (0-1-110-to-next)', () =>
       chatService: {
         getThreadMeta: (id: string) => (id === thread.id ? thread : null),
         getInitialArchitectureConfig: () => null,
+        isConsultationThread: () => false,
       },
       agentCredentialService: { getDecrypted: () => null },
       activeAdapters: new Map(),
@@ -628,14 +631,22 @@ describe('unknown context_type is an application error (0.2.87)', () => {
  * `c4s-tools.ask`). `runAgentTurn` is mocked; the plans root is a stub whose
  * listing changes "during" the turn, exactly as a `create_plan` call would.
  */
+/**
+ * 2.1.88 (M05 `za3t91al`): the processing belongs to a CONSULTATION TURN — a turn
+ * of a thread founded as a consultation thread (`chat_thread.consultation`) —
+ * not to a value. The fixture thread is one; a turn outside consultation gets
+ * its answer unchanged, whatever its value.
+ */
 describe('POST /:id/ask — the answer names the plan by its project-relative path (2.1.9)', () => {
   let dir: string;
   let thread: ChatThreadMeta;
+  let consultation: boolean;
   let plans: Array<{ path: string; hash: string }>;
 
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-threads-ask-answer-'));
     thread = makeThread({ contextType: 'ask' });
+    consultation = true;
     plans = [{ path: 'older-plan.md', hash: 'h-old' }];
     runAgentTurnMock.mockClear();
   });
@@ -648,6 +659,7 @@ describe('POST /:id/ask — the answer names the plan by its project-relative pa
       chatService: {
         getThreadMeta: (id: string) => (id === thread.id ? thread : null),
         getInitialArchitectureConfig: () => null,
+        isConsultationThread: (id: string) => id === thread.id && consultation,
       },
       agentCredentialService: { getDecrypted: () => null },
       activeAdapters: new Map(),
@@ -799,15 +811,28 @@ describe('POST /:id/ask — the answer names the plan by its project-relative pa
     expect(res.body.answer).toBe(`Compare ${outside.join(', ')} with pages/a.md.`);
   });
 
-  it('a thread of another context_type gets its answer unchanged — no scrub, no plan line', async () => {
+  it('a turn outside consultation gets its answer unchanged — no scrub, no plan line — whatever its value', async () => {
+    consultation = false;
+    for (const contextType of ['chat', 'ask'] as const) {
+      // `ask` here is the consultation VALUE opened directly, not a consultation thread.
+      thread = makeThread({ contextType });
+      const answer = `The page is ${path.join(dir, 'pages', 'api.md')}.`;
+      turnLeavesPlan(answer);
+
+      const res = await request(app()).post(`/threads/${thread.id}/ask`).send({ message: 'Please rename the endpoint.' });
+
+      expect(res.status, contextType).toBe(200);
+      expect(res.body.answer, contextType).toBe(answer);
+    }
+  });
+
+  it('a consultation thread of another value gets the processing too — the origin decides, not the value', async () => {
     thread = makeThread({ contextType: 'chat' });
-    const answer = `The page is ${path.join(dir, 'pages', 'api.md')}.`;
-    turnLeavesPlan(answer);
+    turnLeavesPlan(`See ${path.join(dir, 'pages', 'api.md')}.`);
 
     const res = await request(app()).post(`/threads/${thread.id}/ask`).send({ message: 'Please rename the endpoint.' });
 
-    expect(res.status).toBe(200);
-    expect(res.body.answer).toBe(answer);
+    expect(res.body.answer).toBe('See pages/api.md.\n\nPlan: `.claude4spec/plans/rename-the-endpoint.md`');
   });
 });
 
@@ -956,5 +981,159 @@ describe('POST /threads — create_thread refuses brief / patch contexts (2.1.74
     expect(ask.status).toBe(201);
     const types = (db.prepare('SELECT context_type FROM chat_thread ORDER BY context_type').all() as Array<{ context_type: string }>).map((r) => r.context_type);
     expect(types).toEqual(['ask', 'chat']);
+  });
+});
+
+/**
+ * 2.1.88 (M05 `6vum1iqz`, `post-api-threads`, `create-thread-request`) — the
+ * generic create-thread route reads THIS project's context-type registry:
+ * `context_type` takes a value with `Wejście: nowy wątek` (`domyślny` contains
+ * it), none gives the `domyślny` value, and `entry: "consultation"` founds a
+ * consultation thread in the `konsultacja` value, the origin recorded on the row.
+ */
+describe('POST /threads — values of the project registry and the consultation entry (2.1.88)', () => {
+  let db: Database.Database;
+  let chat: ChatService;
+  let dir: string;
+
+  const app = (contextTypes?: readonly string[]) => {
+    const deps = {
+      chatService: chat,
+      agentCredentialService: { getDecrypted: () => null },
+      activeAdapters: new Map(),
+      cwd: dir,
+      roots: [],
+      ...(contextTypes ? { contextTypes } : {}),
+    } as unknown as AgentTurnDeps;
+    return express().use(express.json()).use('/threads', threadsRouter(deps));
+  };
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-threads-entry-'));
+    db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    runMigrations(db);
+    chat = new ChatService(db);
+    runAgentTurnMock.mockClear();
+  });
+  afterEach(() => {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const rows = () =>
+    db.prepare('SELECT id, context_type, consultation FROM chat_thread ORDER BY created_at, rowid').all() as Array<{
+      id: string;
+      context_type: string;
+      consultation: number;
+    }>;
+  /** The registry rows by entry, read from the code map — not spelled out here. */
+  const withoutNewThread = CONTEXT_TYPE_ROWS.filter((r) => !r.entry.includes('new-thread') && !r.entry.includes('default')).map(
+    (r) => r.value,
+  );
+  const opensNewThread = CONTEXT_TYPE_ROWS.filter((r) => r.entry.includes('new-thread') || r.entry.includes('default')).map(
+    (r) => r.value,
+  );
+
+  /** The `chat-thread-meta` response DTO: its required fields, `messageCount` included. */
+  const expectThreadMeta = (data: Record<string, unknown>) => {
+    for (const field of ['id', 'title', 'lastSessionId', 'initialArchitectureConfig', 'createdAt', 'updatedAt']) {
+      expect(data, field).toHaveProperty(field);
+    }
+    expect(typeof data.id).toBe('string');
+    expect(typeof data.createdAt).toBe('string');
+    expect(typeof data.updatedAt).toBe('string');
+  };
+
+  it('[ac:ac-post-api-threads-bez-pola-context-typ] without context_type the thread gets the value with `Wejście: domyślny`', async () => {
+    const res = await request(app()).post('/threads').send({ title: 'plain' });
+    expect(res.status).toBe(201);
+    const defaultValue = CONTEXT_TYPE_ROWS.find((r) => r.entry.includes('default'))!.value;
+    expect(defaultValue).toBe(defaultContextType());
+    expect(res.body.data.contextType).toBe(defaultValue);
+    expect(rows()).toEqual([{ id: res.body.data.id, context_type: defaultValue, consultation: 0 }]);
+  });
+
+  it('[ac:ac-post-api-threads-z-context-type-brief] a value without `Wejście: nowy wątek` is 400 VALIDATION, and no row is founded', async () => {
+    expect(withoutNewThread.length).toBeGreaterThan(0);
+    for (const value of withoutNewThread) {
+      const res = await request(app()).post('/threads').send({ context_type: value });
+      expect(res.status, value).toBe(400);
+      expect(res.body.error.code, value).toBe('VALIDATION');
+    }
+    // A value outside the project's registry is refused the same way.
+    const outside = await request(app(['chat', 'brief', 'patch'])).post('/threads').send({ context_type: 'ask' });
+    expect(outside.status).toBe(400);
+    expect(outside.body.error.code).toBe('VALIDATION');
+    const bogus = await request(app()).post('/threads').send({ context_type: 'bogus' });
+    expect(bogus.status).toBe(400);
+    expect(rows()).toHaveLength(0);
+  });
+
+  it('[entity:post-api-threads] every value with `nowy wątek` is founded with 201 and a chat-thread-meta body; nothing else is', async () => {
+    for (const value of opensNewThread) {
+      const res = await request(app()).post('/threads').send({ context_type: value, title: `t-${value}` });
+      expect(res.status, value).toBe(201);
+      expectThreadMeta(res.body.data);
+      expect(res.body.data.contextType, value).toBe(value);
+      expect(res.body.data.title, value).toBe(`t-${value}`);
+    }
+    expect(rows().map((r) => [r.context_type, r.consultation])).toEqual(opensNewThread.map((v) => [v, 0]));
+  });
+
+  it('[ac:ac-post-api-threads-z-entry-consultation] `entry: "consultation"` founds the thread in the registry\'s `Wejście: konsultacja` value, recorded as a consultation thread', async () => {
+    const res = await request(app()).post('/threads').send({ entry: 'consultation' });
+    expect(res.status).toBe(201);
+    const value = CONTEXT_TYPE_ROWS.find((r) => r.entry.includes('consultation'))!.value;
+    expect(res.body.data.contextType).toBe(value);
+    expectThreadMeta(res.body.data);
+    expect(rows()).toEqual([{ id: res.body.data.id, context_type: value, consultation: 1 }]);
+    expect(chat.isConsultationThread(res.body.data.id)).toBe(true);
+  });
+
+  it('[ac:ac-post-api-threads-z-entry-i-context-ty] `entry` and `context_type` together are 400 VALIDATION, and no row is founded', async () => {
+    for (const ct of ['chat', 'ask']) {
+      const res = await request(app()).post('/threads').send({ entry: 'consultation', context_type: ct });
+      expect(res.status, ct).toBe(400);
+      expect(res.body.error.code, ct).toBe('VALIDATION');
+    }
+    expect(rows()).toHaveLength(0);
+  });
+
+  it('[entity:create-thread-request] `entry` takes only "consultation"; a non-string context_type is refused', async () => {
+    const other = await request(app()).post('/threads').send({ entry: 'peer' });
+    expect(other.status).toBe(400);
+    expect(other.body.error.code).toBe('VALIDATION');
+    const notString = await request(app()).post('/threads').send({ context_type: 7 });
+    expect(notString.status).toBe(400);
+    expect(notString.body.error.code).toBe('VALIDATION');
+    expect(rows()).toHaveLength(0);
+    // The three fields, all optional: an empty body is valid.
+    expect((await request(app()).post('/threads').send({})).status).toBe(201);
+  });
+
+  it('[ac:ac-konsultacja-projektu-bez-wartosci-z-w] a registry without a `Wejście: konsultacja` value answers 422 PROJECT_WITHOUT_CONSULTATION, and no thread is founded', async () => {
+    const res = await request(app(['chat', 'brief', 'patch'])).post('/threads').send({ entry: 'consultation' });
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe('PROJECT_WITHOUT_CONSULTATION');
+    expect(rows()).toHaveLength(0);
+  });
+
+  it('[ac:ac-post-api-threads-id-ask-dziala-dla-wa] POST /:id/ask runs a turn in a thread of every value of the registry', async () => {
+    const threads = CONTEXT_TYPE_ROWS.map((r) =>
+      chat.createThread(null, {
+        contextType: r.value,
+        ...(r.value === 'brief' ? { briefPath: 'v1.md' } : {}),
+        ...(r.value === 'patch' ? { patchPath: 'p.md' } : {}),
+      }),
+    );
+    for (const t of threads) {
+      const res = await request(app()).post(`/threads/${t.id}/ask`).send({ message: 'hi' });
+      expect(res.status, t.contextType).toBe(200);
+      expect(res.body.threadId, t.contextType).toBe(t.id);
+    }
+    expect(runAgentTurnMock.mock.calls.map((c) => (c[1] as unknown as { thread: { contextType: string } }).thread.contextType)).toEqual(
+      CONTEXT_TYPE_ROWS.map((r) => r.value),
+    );
   });
 });

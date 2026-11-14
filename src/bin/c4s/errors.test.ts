@@ -133,8 +133,8 @@ describe('the CLI error catalogue (2.1.26)', () => {
  * for both transports, in three groups: local, HTTP-derived (with
  * RESUME_CONFIG_LOCKED, the 409 for a changed session config), and from the
  * turn body. 2.1.58 (record `ask`) adds the two `cli`-only local resolver codes
- * WORKSPACE_NOT_REGISTERED and WORKSPACE_FILE_INVALID: seventeen, 9 + 6 + 2.
- * `c4s ask` declares exactly those seventeen.
+ * WORKSPACE_NOT_REGISTERED and WORKSPACE_FILE_INVALID; 2.1.88 the HTTP-derived
+ * PROJECT_WITHOUT_CONSULTATION: eighteen, 9 + 7 + 2. `c4s ask` declares exactly them.
  */
 describe('the agent-turn code catalogue (2.1.26, 2.1.58)', () => {
   const LOCAL = [
@@ -150,6 +150,8 @@ describe('the agent-turn code catalogue (2.1.26, 2.1.58)', () => {
   ] as const satisfies readonly AgentErrorCode[];
   const HTTP = [
     'PROJECT_NOT_IN_WORKSPACE',
+    // 2.1.88 — the peer's create-thread route refuses a consultation (422).
+    'PROJECT_WITHOUT_CONSULTATION',
     'NOT_FOUND',
     'STREAM_IN_PROGRESS',
     'RESUME_CONFIG_LOCKED',
@@ -158,10 +160,10 @@ describe('the agent-turn code catalogue (2.1.26, 2.1.58)', () => {
   ] as const satisfies readonly AgentErrorCode[];
   const LIFECYCLE = ['TIMEOUT', 'ABORTED'] as const satisfies readonly AgentErrorCode[];
 
-  it('[section:m11dcore] seventeen codes in three groups (9 + 6 + 2), and `c4s ask` declares exactly them', () => {
+  it('[section:m11dcore] eighteen codes in three groups (9 + 7 + 2), and `c4s ask` declares exactly them', () => {
     const all = [...LOCAL, ...HTTP, ...LIFECYCLE];
-    expect([LOCAL.length, HTTP.length, LIFECYCLE.length]).toEqual([9, 6, 2]);
-    expect(new Set(all).size).toBe(17);
+    expect([LOCAL.length, HTTP.length, LIFECYCLE.length]).toEqual([9, 7, 2]);
+    expect(new Set(all).size).toBe(18);
     const declared = new Set([...SHARED_RESOLVER_CODES, ...askCommand.errorCodes]);
     expect([...declared].sort()).toEqual([...all].sort());
   });

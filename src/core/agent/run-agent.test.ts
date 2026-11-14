@@ -235,7 +235,7 @@ function stubBriefFlow(opts: { threads?: Array<{ id: string }>; briefPath?: stri
 describe('runAgent — brief mode predicate', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('[ac:ac-predykat-trybu-create-dla-ct-brief-cr] enters create-mode with no create argument at all — the common call', async () => {
+  it('enters create-mode with no create argument at all — the common call', async () => {
     const { calls } = stubBriefFlow();
     await runAgent({ ...BASE, message: 'hi', contextType: 'brief' });
 
@@ -765,5 +765,56 @@ describe('runAgent — patch attach (patchPath)', () => {
       expect(calls.find((c) => c.url.endsWith('/threads'))!.url.endsWith(route), patchPath).toBe(true);
       vi.unstubAllGlobals();
     }
+  });
+});
+
+/**
+ * 2.1.88 (spec-operation `ask`, `zachowanie`) — the value of the peer's turn is
+ * the peer's to decide: without a thread the operation founds the peer's thread
+ * with `entry: "consultation"` and names no value; the caller cannot name one.
+ */
+describe('runAgent — the consultation entry (2.1.88)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('[entity:ask] founds the peer thread with `entry: "consultation"` and no context_type, then runs the turn there', async () => {
+    const { calls } = stubFullFlow({ threadId: 'T1', answer: 'pong' });
+    const out = await runAgent({ ...BASE, message: 'hi', consultation: true });
+    const create = calls.find((c) => c.url.endsWith('/threads'));
+    expect(create?.body).toEqual({ entry: 'consultation' });
+    expect(calls.at(-1)?.url).toMatch(/\/threads\/T1\/ask$/);
+    expect(out).toEqual({ threadId: 'T1', answer: 'pong' });
+  });
+
+  it('[entity:ask] a continuation founds nothing: the thread keeps the origin it was founded with', async () => {
+    const { calls } = stubFullFlow({ threadId: 'T9', answer: 'pong' });
+    await runAgent({ ...BASE, message: 'hi', consultation: true, threadId: 'T9' });
+    expect(calls.some((c) => c.url.endsWith('/threads'))).toBe(false);
+  });
+
+  it('[entity:ask] the caller names no value — a context next to the consultation is INVALID_ARGS before any request', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    for (const extra of [{ contextType: 'ask' }, { briefPath: 'a.md' }, { planPath: 'p.md' }, { patchPath: 'x.md' }]) {
+      const err = await runAgent({ ...BASE, message: 'hi', consultation: true, ...extra }).catch((e) => e);
+      expect((err as AgentError).code, JSON.stringify(extra)).toBe('INVALID_ARGS');
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('[entity:ask] a peer without a consultation value refuses with PROJECT_WITHOUT_CONSULTATION', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.endsWith('/config')) return { status: 200, ok: true, json: async () => VALID_CONFIG };
+        return {
+          status: 422,
+          ok: false,
+          json: async () => ({ error: { code: 'PROJECT_WITHOUT_CONSULTATION', message: 'no consultation value' } }),
+        };
+      }),
+    );
+    const err = await runAgent({ ...BASE, message: 'hi', consultation: true }).catch((e) => e);
+    expect(err).toBeInstanceOf(AgentError);
+    expect((err as AgentError).code).toBe('PROJECT_WITHOUT_CONSULTATION');
   });
 });

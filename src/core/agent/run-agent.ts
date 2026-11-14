@@ -36,7 +36,8 @@ export type { AgentErrorCode } from './http.js';
  * serwera → create-thread (context-specific) → run-turn.
  *
  *   await runAgent({ message: '...', contextType: 'chat' })
- *   await runAgent({ message: '...', contextType: 'ask' })          // read-only peer consult
+ *   await runAgent({ message: '...', consultation: true })          // peer consult — the peer picks the value
+ *   await runAgent({ message: '...', contextType: 'ask' })          // an `ask` thread opened directly, not a consultation
  *   await runAgent({ message: '...', server: 'http://other:4501', threadId: '...' })
  *   await runAgent({ message: '...', contextType: 'brief', briefPath: '...' })   // attach-mode
  *   await runAgent({ message: '...', contextType: 'brief' })                     // create-mode
@@ -48,7 +49,14 @@ export type { AgentErrorCode } from './http.js';
  * tury na nieistniejacym artefakcie i zaden tool wewnatrz tury go nie zaklada.
  */
 
-export type AgentContextType = 'chat' | 'brief' | 'patch' | 'ask';
+/**
+ * 2.1.88 (M11 `m11dcore`): any value of the target project's context-type
+ * registry. The registry lives on the server, so this side does not enumerate
+ * it: a value outside it, or one without `Wejście: nowy wątek` that has no
+ * artifact route here, is refused by `POST /api/threads` and surfaces as
+ * `INVALID_ARGS`.
+ */
+export type AgentContextType = string;
 
 /**
  * Default model resolved here so every transport shares one source of truth.
@@ -83,8 +91,18 @@ export interface AgentParams {
   channel?: 'cli' | 'mcp' | 'internal';
   /** Nadpisuje ADRES serwera peera (nie projekt); wymaga `project` (inaczej INVALID_ARGS). */
   server?: string;
-  /** Default `'chat'`. Ignorowany gdy podano `threadId`. */
+  /**
+   * Wartosc rejestru typow kontekstu projektu. Pominieta → wartosc z `Wejscie:
+   * domyslny`, rozstrzygana przez serwer. Ignorowana gdy podano `threadId`.
+   */
   contextType?: AgentContextType;
+  /**
+   * 2.1.88 (M11 `m11dcore`) — konsultacja peera (`c4s ask`, `c4s-tools.ask`):
+   * bez `threadId` zaklada u peera watek konsultacji (`POST /api/threads` z
+   * `entry: "consultation"`), a wartosc wybiera peer z `Wejscie: konsultacja`
+   * swojego rejestru. Wyklucza `contextType`, `briefPath`, `planPath`, `patchPath`.
+   */
+  consultation?: boolean;
   /** Kontynuacja istniejacego watku u peera; pomija create-thread. */
   threadId?: string;
   /**
@@ -171,7 +189,23 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
   // `resolveServer`, `--ct brief --brief <p> --from <r>` konczyl sie
   // `SERVER_NOT_RUNNING` przy zgaszonym serwerze — diagnoza nie tego problemu.
   // Cala ta czesc jest offline, wiec idzie przed odkryciem serwera.
-  const ct: AgentContextType = params.contextType ?? 'chat';
+  const ct: AgentContextType | undefined = params.contextType;
+  if (params.consultation) {
+    // The consultation value is the PEER's to decide (M11 `m11dcore`): the caller
+    // names no value and no artifact route.
+    const named = [
+      params.contextType !== undefined ? 'contextType' : null,
+      params.briefPath !== undefined ? 'briefPath' : null,
+      params.planPath !== undefined ? 'planPath' : null,
+      params.patchPath !== undefined ? 'patchPath' : null,
+    ].filter((x): x is string => x !== null);
+    if (named.length > 0) {
+      throw new AgentError(
+        'INVALID_ARGS',
+        `a consultation takes no context (${named.join('/')}): the peer picks the value of its turn`,
+      );
+    }
+  }
   /** Cialo `POST /api/briefs` policzone z gory — tu zyje walidacja okna. */
   let briefCreateBody: Record<string, unknown> | undefined;
   let briefAttach = false;
@@ -234,11 +268,10 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
     planAttachPath = attachRoute('plan', params.planPath);
   }
   if (!params.threadId) {
-    if (ct !== 'chat' && ct !== 'brief' && ct !== 'patch' && ct !== 'ask') {
-      throw new AgentError(
-        'INVALID_ARGS',
-        `contextType must be chat|brief|patch|ask (got '${ct}')`,
-      );
+    // 2.1.88: no closed enumeration here — the project's registry is the
+    // server's; an empty value is the only thing refused offline.
+    if (ct !== undefined && !ct.trim()) {
+      throw new AgentError('INVALID_ARGS', 'contextType must not be empty');
     }
     if (ct === 'patch' && patchAttachPath === undefined) {
       // 2.1.74: watek patcha zaklada sie wylacznie na istniejacym patchu.
@@ -309,10 +342,26 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
     // nie jest odrzucany — trasa tego nie sprawdza i CLI tez nie.
     threadId = await postAttach('patch', `${apiBase}${patchAttachPath}`);
     attachedKind = 'patch';
+  } else if (params.consultation) {
+    // 2.1.88 (M05 `6vum1iqz`): the consultation entry — the peer picks the value
+    // with `Wejście: konsultacja` and records the thread's origin. A peer without
+    // one answers 422 PROJECT_WITHOUT_CONSULTATION, propagated as is.
+    const created = await postJson(`${apiBase}/threads`, { entry: 'consultation' });
+    threadId = pickThreadId(created);
   } else {
-    // 'chat' + 'ask' share the generic create-thread route; the server
-    // validates `context_type` (only 'chat'/'ask' accepted on this path).
-    const created = await postJson(`${apiBase}/threads`, { context_type: ct });
+    // The generic create-thread route takes every value with `Wejście: nowy
+    // wątek`; no value → the project's `Wejście: domyślny`. A refused value
+    // (outside the registry, or one founded only on an artifact) is the
+    // caller's argument error.
+    let created: Record<string, unknown>;
+    try {
+      created = await postJson(`${apiBase}/threads`, ct !== undefined ? { context_type: ct } : {});
+    } catch (err) {
+      if (err instanceof AgentError && err.code === 'VALIDATION') {
+        throw new AgentError('INVALID_ARGS', err.message, err.hint ?? 'pass a value of the project registry');
+      }
+      throw err;
+    }
     threadId = pickThreadId(created);
   }
 
