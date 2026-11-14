@@ -4,10 +4,11 @@
  *
  * The registry is no longer a closed list written in one place: each value's row
  * is contributed by the module that brings the value (`chat` M05, `brief` M21,
- * `patch` M23, `ask` M11 — see `rows/`), and `chat-context.ts` only collects them
+ * `patch` M23, `ask` M11 — see `rows/`), and `registry.ts` only collects them
  * into the code map (M44 `k3gkrn09`). What a row does NOT hold — the mount
  * condition proper to one server (e.g. "top-level thread only") — stays with the
- * server's owner (`server-mount-conditions.ts`).
+ * server's owner (`mcp/transagent-tools.ts`, `mcp/run-tools.ts`), collected in
+ * `SERVER_MOUNT_CONDITIONS` in `services/turn-mcp-servers.ts`.
  */
 
 import type { ToolGroup } from '@inharness-ai/agent-adapters';

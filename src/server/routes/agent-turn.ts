@@ -36,7 +36,7 @@ import { buildWorkspaceToolsServer } from '../mcp/workspace-tools.js';
 import { SPEC_SKILL_TOOLS_SERVER, type SpecSkillTools } from '../mcp/spec-skill-tools.js';
 import { RUN_TOOLS_SERVER, type RunToolsFactory } from '../mcp/run-tools.js';
 import { overlayServerNamesFor, pluginServerNamesFor } from '../operations/profile-gate.js';
-import { assembleTurnMcpServers, type TurnServerEntry } from '../services/turn-mcp-servers.js';
+import { assembleTurnMcpServers, turnServerNames, type TurnServerEntry } from '../services/turn-mcp-servers.js';
 import type { McpServerFactory } from '../../shared/plugin-host/mcp.js';
 import type { ListProjectsResult } from '../workspace/list-projects.js';
 import {
@@ -71,7 +71,6 @@ import {
   buildTransagentToolsServer,
   TRANSAGENT_TOOL_FULL_NAME,
   TRANSAGENT_TOOLS_SERVER,
-  transagentToolsMountCondition,
 } from '../mcp/transagent-tools.js';
 import { effectivePlanMode, rowBuiltinGroups } from '../services/context-types/registry.js';
 import { rowNamesServer } from '../services/context-types/row.js';
@@ -1188,11 +1187,11 @@ export async function runAgentTurn(
     // `takeTransagentToolUse` above — belongs to the turn, and capturing
     // `input.model`/`input.architectureConfig` once keeps the child-turn posture
     // identical across every execute of this turn.
-    // 0.2.50: hoisted above the system prompt, because `buildMcpEntries` reads it and
-    // the prompt's `<tooling>` block is now derived from what that returns.
-    const isChildBanka = thread.parentThreadId != null;
-    // 2.1.88: the row names the server and its owner's condition (top-level only, M46 `exchr4q9`) holds.
-    const transagentDispatcher = rowNamesServer(ctx, TRANSAGENT_TOOLS_SERVER) && transagentToolsMountCondition(thread)
+    // 2.1.88: built only when the turn mounts the server — the same decision
+    // `assembleTurnMcpServers` makes (row names it, owner's condition holds, M46 `exchr4q9`).
+    const transagentDispatcher = turnServerNames(ctx, { parentThreadId: thread.parentThreadId ?? null }).has(
+      TRANSAGENT_TOOLS_SERVER,
+    )
       ? new TransagentDispatcher(deps, {
           model: input.model,
           architectureConfig: input.architectureConfig,

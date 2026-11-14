@@ -173,8 +173,6 @@ export class ChatService {
     } = {},
   ): ChatThread {
     const id = nanoid(12);
-    // 2.1.88: `context_type` has no column default — the value is always
-    // written here; a thread opened without a type gets the default value.
     // 2.1.88 (M44 `zvy49ysg`, M21 `gll5xhtr`): the column has no default — a thread
     // opened without a type gets the registry's `Wejście: domyślny` value.
     const contextType: ChatContextType = opts.contextType ?? defaultContextType();

@@ -1,5 +1,4 @@
 // M51 — host modules register their XML tags at process start.
-import { validateContextTypeRegistry } from './services/context-types/registry.js';
 import '../shared/xml-markup/host-tags.js';
 import express, { type Express } from 'express';
 import { createServer as createHttpServer, type Server as HttpServer } from 'node:http';
@@ -25,6 +24,7 @@ import { resolveSpaRoute, spaDocument, type SpaResolution } from './workspace/sp
 import { PluginRegistryImpl } from './core/plugin-host/registry.js';
 import { hostCapabilityRegistry } from './project-types/capabilities.js';
 import { hostProjectTypeRegistry } from './project-types/registry.js';
+import { validateContextTypeRegistry } from './services/context-types/registry.js';
 import { installInactiveConfigKeys } from './settings/inactive-config-keys.js';
 import { logRefRegistrationWarnings, refRegistrationWarnings } from './core/plugin-host/ref-warnings.js';
 import { loadBuiltinEnvelopes, loadWorkspacePlugins } from './core/plugin-host/loader.js';

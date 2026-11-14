@@ -13,3 +13,4 @@
 - implementer context-registry/p2-l15-l19: `Grupy wbudowane: wszystkie` = `TOOL_GROUPS` of the agent library (shell, file-read, file-write, web, delegation). Before 2.1.88 the brief row denied only file-read/file-write/shell.
 - implementer context-registry/p2-l15-l19: the `ChatContextType` union (shared/entities.ts) is kept. The goal removes the closed enumeration in the THREAD TABLE (done in p1). The union types the code map, and dropping it would touch the client and shared DTOs outside this unit.
 - context-registry verifier, round 1: full suite 8407/8409. Two 15 s timeouts under load (`chat.live-join.test.ts`, `runner-hosts.route.test.ts`) pass when run alone, so they are flaky, like agent-env-auth.
+- context-registry review: the 5 non-blocking findings (rev-0001..0005) were fixed in a separate commit after the unit commit, per the standing preference: no history rewrite, no re-review.
