@@ -15,6 +15,7 @@ import {
   consultationRowOf,
   defaultRowOf,
   newThreadRowOf,
+  opensNewThread,
   rowsOfRegistry,
 } from '../services/context-types/registry.js';
 import { ASK_TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
@@ -94,7 +95,7 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
         if (!row) {
           const known = typeof rawCt === 'string' && rows.some((r) => r.value === rawCt);
           const opens = rows
-            .filter((r) => r.entry.includes('new-thread') || r.entry.includes('default'))
+            .filter(opensNewThread)
             .map((r) => r.value);
           return res.status(400).json({
             error: {

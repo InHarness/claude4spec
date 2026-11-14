@@ -77,10 +77,14 @@ export function consultationRowOf(rows: readonly ContextTypeRow[]): ContextTypeR
   return rows.find((r) => r.entry.includes('consultation')) ?? null;
 }
 
+/** A row whose value may open a new thread: `nowy wątek`, or `domyślny`, which contains it. */
+export function opensNewThread(row: ContextTypeRow): boolean {
+  return row.entry.includes('new-thread') || row.entry.includes('default');
+}
+
 export function newThreadRowOf(rows: readonly ContextTypeRow[], value: string): ContextTypeRow | null {
   const row = rows.find((r) => r.value === value);
-  if (!row) return null;
-  return row.entry.includes('new-thread') || row.entry.includes('default') ? row : null;
+  return row && opensNewThread(row) ? row : null;
 }
 
 export function defaultRowOf(rows: readonly ContextTypeRow[]): ContextTypeRow {
