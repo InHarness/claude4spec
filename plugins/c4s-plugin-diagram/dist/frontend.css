@@ -218,13 +218,6 @@
   user-select: none;
   pointer-events: none;
 }
-.diagrams-fullscreen__caption {
-  padding-top: 8px;
-  color: var(--c-muted);
-  font-style: italic;
-  font-size: var(--text-sm);
-  text-align: center;
-}
 .diagrams-fullscreen__hint {
   padding-top: 6px;
   border-top: 1px solid var(--c-hair);

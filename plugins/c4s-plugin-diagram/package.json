@@ -1,6 +1,6 @@
 {
   "name": "@inharness-ai/c4s-plugin-diagram",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "claude4spec plugin contributing the `diagram` entity type — a Mermaid diagram kept as a record and embedded in specification pages.",
   "private": true,
   "type": "module",

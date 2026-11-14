@@ -157,8 +157,8 @@ const diagramEntity = {
 };
 const manifest = {
   name: "c4s-plugin-diagram",
-  version: "0.2.1",
-  hostApiVersion: "^2.1.0",
+  version: "0.2.2",
+  hostApiVersion: "^2.2.0",
   engines: { node: ">=20" },
   contributes: {
     entities: [diagramEntity],

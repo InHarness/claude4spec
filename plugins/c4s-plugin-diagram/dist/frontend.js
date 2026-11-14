@@ -588,11 +588,10 @@ const ZOOM_STEP = 1.2;
 const WHEEL_STEP = 1.15;
 const FIT_PADDING = 40;
 const FIT_MAX = 4;
-function DiagramFullscreen({ slug, caption, onClose }) {
+function DiagramFullscreen({ slug, onClose }) {
   const width = useViewportWidth();
-  return /* @__PURE__ */ jsx(Dialog, { open: true, onClose, ariaLabel: "Diagram", width, children: /* @__PURE__ */ jsxs("figure", { className: "diagrams-fullscreen", children: [
+  return /* @__PURE__ */ jsx(Dialog, { open: true, onClose, ariaLabel: "Diagram", width, children: /* @__PURE__ */ jsxs("div", { className: "diagrams-fullscreen", children: [
     /* @__PURE__ */ jsx(DiagramWindowBody, { slug, onClose }),
-    caption && /* @__PURE__ */ jsx("figcaption", { className: "diagrams-fullscreen__caption", children: caption }),
     /* @__PURE__ */ jsx("div", { className: "diagrams-fullscreen__hint", children: "Scroll = zoom · drag = pan · F = fit · 0 = 100% · Esc = close" })
   ] }) });
 }
