@@ -1,0 +1,1249 @@
+{
+  "iteration": 0,
+  "conventions": [
+    {
+      "label": "L15 (Context Types) — implementor M44",
+      "key": "pages/layers/L15-context-types.md",
+      "offset": 2,
+      "anchor": "6jkqb2h4"
+    },
+    {
+      "label": "L16 (System Prompt Contribution) — implementor M48",
+      "key": "pages/layers/L16-system-prompt-contribution.md",
+      "offset": 2,
+      "anchor": "6g3aicw4"
+    },
+    {
+      "label": "L3 (Spec Operations) — implementor M43",
+      "key": "pages/layers/L3-spec-operations.md",
+      "offset": 2,
+      "anchor": "l3slice0"
+    },
+    {
+      "label": "L19 (Project Type Capabilities) — implementor M57",
+      "key": "pages/layers/L19-project-type-capabilities.md",
+      "offset": 2,
+      "anchor": "5r0h4h6i"
+    },
+    {
+      "label": "User jobs table, for the system verifier (embeds the module catalog sheet moduly-feature; no job rows)",
+      "key": "pages/SKILL.md",
+      "offset": 13,
+      "anchor": "oq23nb0j"
+    }
+  ],
+  "waves": [
+    {
+      "n": 1,
+      "units": [
+        "context-registry",
+        "contribution-scope"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 2,
+      "units": [
+        "consultation-entry",
+        "skill-scope",
+        "subagents-by-row",
+        "brief-patch-threads",
+        "transagent-dispatch",
+        "chat-shell-by-row",
+        "prompt-composition"
+      ],
+      "startCommit": null
+    }
+  ],
+  "systemVerified": false,
+  "errors": 0,
+  "units": [
+    {
+      "id": "context-registry",
+      "goal": "Rejestr typów kontekstu przestaje być zamkniętą listą czterech typów. Staje się kodową mapą wierszy, które wnoszą moduły-właściciele (rozmowa, brief, patch, konsultacja). Projekt widzi tylko wiersze, których wymagane możliwości posiada. Start hosta waliduje inwarianty wejść, kompozycji i wartości konsultacyjnej. Serwery tury handler składa z zestawu bazowego (odczyt skilli i workspace) i serwerów wymienionych w wierszu, a warunki montażu stoją przy właścicielach serwerów (orkiestracja, Runy, zapis skilli, konsultacja). Bramka profilu filtruje narzędzia po klasach operacji wiersza. Odebrane grupy narzędzi wbudowanych to suma ustawienia projektu, wiersza i presetu planu. Wiersz może przypiąć posturę planu i zabronić zadań w tle; wątek-dziecko nigdy ich nie powołuje. Usunięte zostają: zamknięta enumeracja i wartość domyślna typu kontekstu w tabeli wątków (wątek bez typu dostaje wartość domyślną z rejestru), bramki montażu w samym rejestrze, tabela odczytu możliwości briefów oraz zależności rejestru od modułów briefów i skilli projektu.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m44-context-types.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m44-context-types.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "x91ni6uh",
+                "uovohiu4"
+              ]
+            }
+          },
+          {
+            "key": "pages/layers/L15-context-types.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/layers/L19-project-type-capabilities.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m43-spec-operations-core.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m43-spec-operations-core.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "zpvxirvp",
+                "gkugsry5"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m05-agent-runtime.md",
+            "change": {
+              "offset": 2,
+              "limit": 4,
+              "anchors": [
+                "057mv7pz",
+                "iki42i1e",
+                "iatop5pj",
+                "9nf8klq0"
+              ]
+            },
+            "deferred": [
+              {
+                "what": "wyłącznik zadań w tle dla tury peera (rozpoznawanej po pochodzeniu wątku konsultacji)",
+                "to": "consultation-entry",
+                "why": "pochodzenie wątku ustawia dopiero wejście konsultacyjne"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m05-agent-runtime.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "iv1lmc33",
+                "t3fsdybv"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m11-c4s/m11-c4s.md",
+            "change": {
+              "offset": 3,
+              "limit": 1,
+              "anchors": [
+                "6exnmup9"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m11-c4s/m11-c4s.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m11cel00",
+                "m11dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m21-briefs.md",
+            "change": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "gll5xhtr"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m21-briefs.md",
+            "change": {
+              "offset": 2,
+              "limit": 1,
+              "anchors": [
+                "m21ctxreg"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m21-briefs.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m21cel001",
+                "m21zal001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m23-patches.md",
+            "change": {
+              "offset": 3,
+              "limit": 1,
+              "anchors": [
+                "jbcb06l2"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m23-patches.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m23cel01",
+                "m23dep01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m46-transagent.md",
+            "change": {
+              "offset": 2,
+              "limit": 2,
+              "anchors": [
+                "mt47zj15",
+                "exchr4q9"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m46-transagent.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "ix1l2e4g",
+                "t2nhwhwy"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m55-runs.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m55-runs.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "ewqj6w60",
+                "tq1frs04"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "change": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "hdkx97wq"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "q7uurue4",
+                "cppnlv9z"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "database-table",
+            "slugs": [
+              "chat-thread"
+            ],
+            "deferred": [
+              {
+                "what": "ustawianie pochodzenia konsultacji przy zakładaniu wątku i jego skutki dla tury",
+                "to": "consultation-entry",
+                "why": "należy do wejścia konsultacyjnego"
+              }
+            ]
+          },
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m44-requires-m21",
+              "m44-requires-m52"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-grupa-narzedzi-wbudowanych-odebrana-u",
+              "ac-grupa-z-grupy-wbudowane-wiersza-jest",
+              "ac-narzedzie-klasy-spoza-klasy-operacji",
+              "ac-przy-odznaczonej-fladze-agent-disable",
+              "ac-serwer-skill-tools-jest-zamontowany-w",
+              "ac-serwer-spec-skill-tools-jest-zamontow",
+              "ac-serwer-spoza-zestawu-bazowego-ktorego",
+              "ac-w-watku-context-type-ask-narzedzie-se-2",
+              "ac-w-watku-context-type-ask-narzedzie-se-5",
+              "ac-w-watku-o-context-type-ask-oraz-w-kaz",
+              "ac-wartosc-wymagajaca-mozliwosci-nieobec",
+              "ac-watek-context-type-ask-wykonuje-kazda",
+              "ac-watek-context-type-brief-ma-zamontowa",
+              "ac-watek-context-type-brief-montuje-wyla",
+              "ac-watek-context-type-brief-nie-ma-zamon",
+              "ac-watki-context-type-chat-brief-ask-nie",
+              "ac-wywolanie-w-profilu-ask-narzedzia-mut"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "contribution-scope",
+      "goal": "Zasięg kontekstowy wkładu pluginu (skille i subagenci) liczy się względem zbioru typów kontekstu, który ogłasza zadeklarowana przez plugin wersja Host API. Zbiór jest zamrożony na tej wersji. Loader waliduje wkład skillowy względem tego zbioru: wpis spoza zbioru pomija z ostrzeżeniem, nie przerywając ładowania. Zawężenie do rejestru projektu nie jest zadaniem loadera. Usunięta zostaje reguła, że brak zasięgu oznacza cztery stałe typy.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m13-entity-framework.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m13-entity-framework.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m13cel00",
+                "m13dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m33-plugin-loader/m33-plugin-loader.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m33purp01",
+                "m33deps01"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m33-requires-m13"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "consultation-entry",
+      "goal": "Inny projekt prowadzi konsultację przez osobne wejście przy zakładaniu wątku. Serwer sam wybiera wartość konsultacyjną z rejestru projektu i raz na zawsze utrwala pochodzenie wątku. Gdy rejestr nie ma wartości konsultacyjnej, serwer odmawia, a jednoczesne podanie wejścia i typu odrzuca. Tura takiego wątku nie powołuje zadań w tle i dostaje obróbkę odpowiedzi tury konsultacji. Komenda konsultacji CLI i narzędzie MCP konsultacji przestają wpisywać typ kontekstu, a komenda tury agenta przyjmuje dowolną wartość rejestru projektu. Zakładanie wątku przyjmuje tylko wartości dopuszczone do otwarcia nowego wątku. Usunięte zostają: konsultacja jako alias komendy tury agenta z typem `ask` oraz kryterium wymuszonej postury dla typu `ask`.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m05-agent-runtime.md",
+            "change": {
+              "offset": 0,
+              "limit": 3,
+              "anchors": [
+                "6vum1iqz",
+                "za3t91al",
+                "057mv7pz"
+              ]
+            },
+            "completes": [
+              {
+                "what": "wyłącznik zadań w tle dla tury peera",
+                "from": "context-registry"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m05-agent-runtime.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "iv1lmc33",
+                "t3fsdybv"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m11-c4s/m11-c4s.md",
+            "change": {
+              "offset": 0,
+              "limit": 3,
+              "anchors": [
+                "m11dcore",
+                "bt2ma9hn",
+                "3ka5h2zq"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m11-c4s/m11-c4s.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m11cel00",
+                "m11dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m11-c4s/m11-c4s.md",
+            "context": {
+              "offset": 37,
+              "limit": 1,
+              "anchors": [
+                "6exnmup9"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "database-table",
+            "slugs": [
+              "chat-thread"
+            ],
+            "completes": [
+              {
+                "what": "ustawianie pochodzenia konsultacji przy zakładaniu wątku i jego skutki dla tury",
+                "from": "context-registry"
+              }
+            ]
+          },
+          {
+            "type": "dto",
+            "slugs": [
+              "create-thread-request"
+            ]
+          },
+          {
+            "type": "endpoint",
+            "slugs": [
+              "post-api-threads"
+            ]
+          },
+          {
+            "type": "cli-command",
+            "slugs": [
+              "agent",
+              "ask"
+            ]
+          },
+          {
+            "type": "mcp-tool",
+            "slugs": [
+              "c4s-tools-ask"
+            ]
+          },
+          {
+            "type": "spec-operation",
+            "slugs": [
+              "ask"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-c4s-ask-msg-jest-aliasem-c4s-agen",
+              "ac-c4s-ask-msg-zwraca-wylacznie-ostatnia",
+              "ac-c4s-ask-z-flaga-kontekstu-ct-albo-bri",
+              "ac-konsultacja-projektu-bez-wartosci-z-w",
+              "ac-mcp-ask-peer-w-posture-plan-mode-c",
+              "ac-mcp-server-c4s-tools-jest-whitelistowa",
+              "ac-mcp-tool-ask-propaguje-wszystkie-strin",
+              "ac-mcp-tool-c4s-tools-ask-z-minimalnym-ws",
+              "ac-post-api-threads-bez-pola-context-typ",
+              "ac-post-api-threads-id-ask-dziala-dla-wa",
+              "ac-post-api-threads-z-context-type-brief",
+              "ac-post-api-threads-z-entry-consultation",
+              "ac-post-api-threads-z-entry-i-context-ty",
+              "ac-predykat-trybu-create-dla-ct-brief-cr",
+              "ac-tura-peera-nie-moze-powolac-zadania-w",
+              "ac-watek-wartosci-z-wejscie-konsultacja"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "context-registry",
+          "why": "wartość z wejściem konsultacyjnym, rejestr projektu, wartość domyślna i kolumna pochodzenia w tabeli wątków"
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "skill-scope",
+      "goal": "Listing skilli i forsowany slot stylu pisania działają w każdej wartości rejestru projektu. Skill projektu bez zasięgu trafia do wszystkich wartości bieżącego rejestru. Skill pluginu bez zasięgu trafia do części wspólnej zbioru swojej wersji Host API i rejestru projektu. Wartość deklaracji nieobecna w rejestrze nie daje pozycji listingu i nie jest błędem. Operacja listingu (CLI, REST, MCP) odrzuca tylko wartości spoza rejestru projektu. Klucz zasięgu skilla w konfiguracji ma domyślnie wszystkie wartości rejestru i jest walidowany względem rejestru, a pole wyboru w ustawieniach bierze opcje z rejestru. Autor stylów pisania i przegląd specyfikacji zostają tylko w rozmowie. Usunięte zostają: założenie czterech stałych typów i kryterium o skillach kontekstowych w katalogu domowym.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m37-internal-skills-registry.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m37-internal-skills-registry.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m37cel01",
+                "m37dep01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "change": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "xrpcvap9"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "change": {
+              "offset": 2,
+              "limit": 2,
+              "anchors": [
+                "wqvq1esb",
+                "1osy2o5r"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "q7uurue4",
+                "cppnlv9z"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m52-spec-skills.md",
+            "context": {
+              "offset": 11,
+              "limit": 1,
+              "anchors": [
+                "hdkx97wq"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m15-writing-styles.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m15-writing-styles.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "17wo7eba",
+                "7j0i6cqq"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-writing-style-author.md",
+            "change": "all"
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-writing-style-author.md",
+            "context": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "y7rjk3gh"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-writing-style-author.md",
+            "context": {
+              "offset": 3,
+              "limit": 1,
+              "anchors": [
+                "0t0qt1hj"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "code-snippet",
+            "slugs": [
+              "kontrakt-skillregistry-skillmetadata-resolvedskill"
+            ]
+          },
+          {
+            "type": "endpoint",
+            "slugs": [
+              "get-api-skills"
+            ]
+          },
+          {
+            "type": "mcp-tool",
+            "slugs": [
+              "c4s-reader-list-skills"
+            ]
+          },
+          {
+            "type": "spec-operation",
+            "slugs": [
+              "list-skills"
+            ]
+          },
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m13-requires-m44",
+              "m15-requires-m44",
+              "m52-requires-m44"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-aktywny-writing-style-config-writingsty",
+              "ac-blok-available-skills-jest-emitowany-2",
+              "ac-blok-available-skills-jest-emitowany",
+              "ac-blok-available-skills-niesie-instrukc",
+              "ac-plugin-wnoszacy-contributes-skills-ze",
+              "ac-plugin-wnoszacy-trzy-pozycje-ze-scope-2",
+              "ac-projekt-bez-pluginow-listing-availabl",
+              "ac-przy-config-writingstyle-null-blok-pr",
+              "ac-skill-projektu-bez-contexttypes-jest",
+              "ac-skill-ui-view-mockup-generator-nigdy",
+              "ac-skill-ui-view-mockup-generator-trafia",
+              "ac-skill-w-claude-skills-ze-scope-contex",
+              "ac-skill-writing-style-author-jest-wlasnosc",
+              "ac-skill-writing-style-author-nie-jest-p",
+              "ac-spec-review-jest-rozwiazywany-w-turze",
+              "ac-spec-review-nie-jest-rozwiazywany-w-t",
+              "ac-system-prompt-zawiera-co-najwyzej-jed",
+              "ac-wiersz-wiszacy-albo-niejednoznaczny-s",
+              "ac-wklad-contributes-skills-z-contexttyp"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "context-registry",
+          "why": "rejestr projektu jako źródło wartości legalnych i zestaw bazowy z serwerem odczytu skilli"
+        },
+        {
+          "unit": "contribution-scope",
+          "why": "zbiór wersji Host API dla wkładu pluginu bez zasięgu"
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "subagents-by-row",
+      "goal": "Wbudowany subagent wątku wynika z kolumny subagenta w wierszu jego wartości, a turę dostaje on w sumie z wkładem pluginów filtrowanym po zasięgu. Wiersz bez subagenta albo wskazujący nieznaną definicję nie dostaje wbudowanego subagenta. W wątku briefu eksplorator różnicy wydań nigdy nie ma wbudowanych narzędzi plikowych, niezależnie od ustawienia dostępu do plików, więc znika zapasowa ścieżka przez zrzut i odczyt pliku. Usunięte zostają: stała mapa typ→subagent oraz stała whitelisty serwerów MCP rodzica briefu.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m45-subagents.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m45-subagents.md",
+            "context": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "hjpxu35p"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m45-subagents.md",
+            "context": {
+              "offset": 3,
+              "limit": 1,
+              "anchors": [
+                "c2k9wrzp"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-subagentsfor-chat-zwraca-ac-audit-tur",
+              "ac-subagentsfor-dla-wartosci-innej-niz-c",
+              "ac-watek-o-context-type-chat-patch-ask-d",
+              "ac-watek-wartosci-nieobecnej-w-mapie-sub",
+              "ac-wklad-pluginowy-bez-pola-contexttypes"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "context-registry",
+          "why": "kolumna subagenta i grupy wbudowane wiersza briefu"
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "brief-patch-threads",
+      "goal": "Reguły domenowe wątków briefu i patcha wywodzą ich powierzchnię z wierszy rejestru. Brief ma tylko serwery wymienione w swoim wierszu i żadnych narzędzi wbudowanych; odporność na wyjście poza ścieżkę opiera się na braku serwera plików, a różnicę wydań osiąga wyłącznie przez serwer wydań z puli. Patch ma szeroki, jawnie wymieniony zestaw serwerów, a jego serwer artefaktu jest montowany tylko tam, gdzie wymienia go wiersz patcha. Reguły domenowe obu wątków są ciałem bloku kontekstu interakcji, a metodykę agent czyta z podplików aktywnego stylu pisania. Liczba encji narzędzi serwerów briefu i patcha równa się liczbie narzędzi zamontowanych w ich wątkach.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m21-briefs.md",
+            "change": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "m21bauth"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m21-briefs.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m21cel001",
+                "m21zal001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m21-briefs.md",
+            "context": {
+              "offset": 22,
+              "limit": 1,
+              "anchors": [
+                "m21ctxreg"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m23-patches.md",
+            "change": {
+              "offset": 0,
+              "limit": 3,
+              "anchors": [
+                "m23art36",
+                "m23pctx1",
+                "m23mcp01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m23-patches.md",
+            "change": {
+              "offset": 4,
+              "limit": 1,
+              "anchors": [
+                "m23akc01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m23-patches.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m23cel01",
+                "m23dep01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m23-patches.md",
+            "context": {
+              "offset": 22,
+              "limit": 1,
+              "anchors": [
+                "jbcb06l2"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "xkpt256d",
+                "m17zal001"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-agent-watku-brief-czyta-metodologie-b",
+              "ac-agent-watku-patch-czyta-metodologie-p",
+              "ac-kazda-operacja-briefu-renderowana-w-k",
+              "ac-kazda-operacja-patcha-z-wartoscia-dir",
+              "ac-liczba-encji-mcp-tool-serwera-brief-t",
+              "ac-liczba-encji-mcp-tool-serwera-patch-t",
+              "ac-reguly-domenowe-watku-brief-sa-cialem",
+              "ac-reguly-domenowe-watku-patch-sa-cialem",
+              "ac-watek-context-type-brief-nie-dokleja",
+              "ac-watek-context-type-patch-nie-dokleja",
+              "ac-wpis-rejestru-kontekstow-dla-brief-ni"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "context-registry",
+          "why": "wiersze briefu i patcha (serwery, grupy wbudowane)"
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "transagent-dispatch",
+      "goal": "Dyspozytor wątków-dzieci odbiera bańce grupy narzędzi będące sumą grup projektu, grup z wiersza i presetu planu. Wartość z zamkniętego zbioru gałęzi, nieobecną w rejestrze projektu, odrzuca jako błędny argument, zanim cokolwiek założy. Lista briefów traci własny kanał MCP i agentowo jest dostępna tylko przez serwer orkiestracji. Usunięty zostaje wiersz odczytu możliwości o zbiorze wartości dyskryminatora.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m46-transagent.md",
+            "change": {
+              "offset": 0,
+              "limit": 2,
+              "anchors": [
+                "tr4ndisp",
+                "us5ee75x"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m46-transagent.md",
+            "change": {
+              "offset": 4,
+              "limit": 1,
+              "anchors": [
+                "qq84x14h"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m46-transagent.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "ix1l2e4g",
+                "t2nhwhwy"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m46-transagent.md",
+            "context": {
+              "offset": 15,
+              "limit": 1,
+              "anchors": [
+                "exchr4q9"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "mcp-tool",
+            "slugs": [
+              "transagent-tools-runtransagent"
+            ]
+          },
+          {
+            "type": "spec-operation",
+            "slugs": [
+              "list-briefs",
+              "spawn-child-turn"
+            ]
+          },
+          {
+            "type": "module-dependency",
+            "slugs": [
+              "m46-requires-m21",
+              "m46-requires-m44"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-dispatcher-runtransagent-ustawia-plan",
+              "ac-plan-mode-jest-kolumna-chat-thread-ws",
+              "ac-planmode-jest-polem-top-level-inputu",
+              "ac-w-projekcie-typu-skill-wywolanie-runt"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "context-registry",
+          "why": "rejestr projektu, grupy wbudowane wiersza i warunek montażu serwera orkiestracji"
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "chat-shell-by-row",
+      "goal": "Powłoka rozmowy rozgałęzia się po wierszu wartości wątku. Belka artefaktu nad composerem pojawia się tylko wtedy, gdy wiersz wskazuje artefakt, a wątek go ma; etykieta wynika z rodzaju artefaktu, nie z zakodowanych napisów. Wątki zakładane przez UI (zasiany promptem, analiza spójności kryteriów) dostają domyślną wartość rejestru. Panel wątków pokazuje surową wartość, gdy UI nie ma dla niej etykiety. Jeden wątek może mieć jednocześnie artefakt zakotwiczony i dołączony plan, a wiele wątków może wskazywać ten sam artefakt. Usunięte zostają zakodowane etykiety belki dla poszczególnych typów.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m53-agent-chat-shell.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m53-agent-chat-shell.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "xahm7clt",
+                "wyy261s4"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m36-chat-artifacts/m36-chat-artifacts.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m36-chat-artifacts/m36-chat-artifacts.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m36cel01",
+                "m36dep01"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ui-view",
+            "slugs": [
+              "ac-list",
+              "plan-page"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-belka-context-link-nad-composerem-pok",
+              "ac-belka-context-link-nie-renderuje-sie",
+              "ac-jeden-watek-moze-miec-jednoczesnie-ar",
+              "ac-w-obu-trybach-wiazania-wiele-watkow-m",
+              "ac-wpis-rejestru-deklaruje-binding-mode"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "context-registry",
+          "why": "kolumny wątku i powłoki oraz wartość domyślna rejestru"
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    },
+    {
+      "id": "prompt-composition",
+      "goal": "Złożenie promptu systemowego rozgałęzia się po kolumnie kompozycji wiersza. Kompozycja domyślna daje bloki, których warunki emisji są spełnione, w ustalonej kolejności. Kompozycja własna daje przepis wskazany w wierszu (dziś tylko przepis briefu); wiersz bez poprawnego przepisu nie dociera do składania, bo zatrzymuje go walidacja startowa. Ramka bloku kontekstu interakcji niesie wartość rejestru. Bloki dostępu do plików i zakresu ścieżek są emitowane w każdej wartości z kompozycją domyślną, a w briefie nie występują.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m48-system-prompt-composition.md",
+            "change": "all"
+          },
+          {
+            "key": "pages/modules/m48-system-prompt-composition.md",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "xdnw931t",
+                "603o6bq9"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "code-snippet",
+            "slugs": [
+              "szablon-interaction-context-rama"
+            ]
+          },
+          {
+            "type": "spreadsheet",
+            "slugs": [
+              "moduly-feature"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-agent-czyta-metodologie-briefowania-z",
+              "ac-blok-agent-filesystem-access-jest-emi",
+              "ac-blok-agent-path-scope-jest-pomijany-gd",
+              "ac-blok-interaction-context-type-jest-pi",
+              "ac-kazdy-system-prompt-zawiera-dokladnie",
+              "ac-system-prompt-nie-zawiera-bloku-writi",
+              "ac-system-prompt-watku-brief-nie-zawiera-2",
+              "ac-system-prompt-watku-brief-nie-zawiera",
+              "ac-watek-wartosci-z-kompozycja-domyslna"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "context-registry",
+          "why": "kolumna kompozycji i walidacja przepisu przy starcie hosta"
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "baseCommit": null,
+      "rounds": {
+        "review": 0,
+        "unit": 0
+      },
+      "jobs": []
+    }
+  ],
+  "entityTypes": [
+    {
+      "type": "ac",
+      "role": "criteria",
+      "checks": "verifies",
+      "observedIn": "per-criterion",
+      "links": [
+        "verifies"
+      ],
+      "inactive": "status = deprecated",
+      "version": 3
+    },
+    {
+      "type": "endpoint",
+      "role": "built",
+      "inCode": "an Express route handler (src/server/routes/ for project-scoped routes) with the endpoint's method, path, status codes and linked request/response/error DTOs",
+      "verify": "a supertest test (src/server/routes/<name>.route.test.ts or tests/integration/api/) hitting method+path and asserting the status codes and response shape named by the endpoint",
+      "links": [
+        "linkedDtos"
+      ],
+      "version": 3
+    },
+    {
+      "type": "dto",
+      "role": "built",
+      "inCode": "a TypeScript type in src/shared/ (request/response shape shared by server and client) plus the route's input validation for request DTOs",
+      "verify": "the route supertest asserts the response body has exactly the DTO's fields (required ones present) and that a request violating a request DTO's field rules is rejected",
+      "links": [],
+      "version": 2
+    },
+    {
+      "type": "database-table",
+      "role": "built",
+      "inCode": "the table's DDL as a migration (src/server/db/ migrations of the DB that owns the table) plus its row mapping/accessors in the owning store",
+      "verify": "a migration/store test asserting the table's columns and that the store writes/reads every column",
+      "links": [],
+      "version": 3
+    },
+    {
+      "type": "code-snippet",
+      "role": "built",
+      "inCode": "the snippet's text verbatim in code: system-prompt block templates in src/server/services/system-prompt/ (szablon-*), TypeScript contracts (kontrakt-*) as the exported types/interfaces of the owning module",
+      "verify": "a unit test next to the block/contract asserting the rendered block equals the snippet's `code` (placeholders filled), or a type-level test asserting the contract's members",
+      "links": [],
+      "version": 1
+    },
+    {
+      "type": "ui-view",
+      "role": "built",
+      "inCode": "a React screen component under src/client/ rendering the view's url params, elements and alternative states",
+      "verify": "a render test src/client/**/<View>.*.render.test.ts(x) asserting the view's elements and each of its `states`",
+      "links": [],
+      "version": 4
+    },
+    {
+      "type": "cli-command",
+      "role": "built",
+      "inCode": "a leaf command of the c4s binary: src/bin/c4s/commands/<name>.ts registered in src/bin/c4s/registry.ts, with the record's name, mode, args, flags, input, aliasOf, returns and errorCodes",
+      "verify": "src/bin/c4s/commands/<name>.test.ts (or registry.test.ts) asserting flag/arg parsing, aliasing, rejected flags and the delegated request",
+      "links": [],
+      "version": 1
+    },
+    {
+      "type": "mcp-tool",
+      "role": "built",
+      "inCode": "a tool definition in the owning MCP server src/server/mcp/<server>.ts: name, description, params schema, returns and the read-only/destructive/idempotent/open-world hints, verbatim from the record",
+      "verify": "the server's src/server/mcp/<server>.test.ts asserting the tool's name, params (required/default) and hints, and its logic",
+      "links": [],
+      "version": 1
+    },
+    {
+      "type": "spec-operation",
+      "role": "built",
+      "inCode": "the operation record in src/server/operations/core-operations.ts (name, scope, mediation, internal/cli/mcp/rest channels, effects, idempotency, rules, error codes) and its behaviour in the handler it renders",
+      "verify": "an `[entity:<slug>]` test in src/server/operations/catalog.test.ts asserting the record's fields, plus a behaviour test of the handler",
+      "links": [],
+      "version": 2
+    },
+    {
+      "type": "module-dependency",
+      "role": "context",
+      "links": [],
+      "version": 1
+    },
+    {
+      "type": "spreadsheet",
+      "role": "per-entity",
+      "links": [],
+      "version": 3
+    }
+  ],
+  "entityParts": [
+    {
+      "slug": "moduly-feature",
+      "type": "spreadsheet",
+      "why": "Indeks modułów specyfikacji (nr, nazwa, złożoność, warstwy, zakres, plik); zmiana okna dopisuje tylko warstwy L15/L16/L19 i zakres M44 — opis zakresu, bez odpowiednika w kodzie i bez obserwowalnego oczekiwania.",
+      "parts": [
+        {
+          "role": "context",
+          "items": "all rows",
+          "key": "column `#` (module number)"
+        }
+      ]
+    }
+  ]
+}
