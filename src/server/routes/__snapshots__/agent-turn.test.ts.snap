@@ -14,7 +14,7 @@ exports[`runAgentTurn — profile tool inventory (2.1.83 snapshot) > the ask inv
 exports[`runAgentTurn — profile tool inventory (2.1.83 snapshot) > the brief (plan mode) inventory is unchanged 1`] = `
 [
   "brief-tools: get_brief, get_brief_version, list_brief_versions, update_brief",
-  "release-tools: release_diff, release_list, release_show",
+  "release-tools: release_create, release_diff, release_list, release_show, release_update",
   "skill-tools: load_skill_file",
   "workspace-tools: list_projects",
 ]
@@ -23,7 +23,7 @@ exports[`runAgentTurn — profile tool inventory (2.1.83 snapshot) > the brief (
 exports[`runAgentTurn — profile tool inventory (2.1.83 snapshot) > the brief inventory is unchanged 1`] = `
 [
   "brief-tools: get_brief, get_brief_version, list_brief_versions, update_brief",
-  "release-tools: release_diff, release_list, release_show",
+  "release-tools: release_create, release_diff, release_list, release_show, release_update",
   "skill-tools: load_skill_file",
   "workspace-tools: list_projects",
 ]

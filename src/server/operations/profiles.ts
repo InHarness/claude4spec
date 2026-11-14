@@ -125,24 +125,6 @@ export interface ProfileDefinition {
    * part of the operation contract.
    */
   readonly requiresExplicitBriefTarget: boolean;
-  /** `'force-plan'` pins plan mode on regardless of the thread flag (read-only peer). */
-  readonly builtinPosture: 'follow-thread' | 'force-plan';
-  /**
-   * 0.2.87 (M44): which built-in tools the turn may hold at all, independent of
-   * plan mode. `'project-setting'` follows `agent.disableDirectFilesystemAccess`;
-   * `'none'` denies `file-read` / `file-write` / `shell` whatever that flag says.
-   * `brief` is `'none'`: its content arrives through `get_brief`, so there is no
-   * path-traversal surface to hand it — `Read` included.
-   */
-  readonly builtinTools: 'project-setting' | 'none';
-  /**
-   * 0.2.87 (M44): background-task policy, declared per value rather than inferred
-   * from another column. `ask` is `'disabled'` — its consumer is headless and holds
-   * the request for the whole turn, so a hold would block it for minutes with no
-   * visible signal. Per-THREAD reasons (a transagent child, a denied shell) are
-   * applied on top by the turn builder; they cannot re-enable what this denies.
-   */
-  readonly backgroundTasks: 'allowed' | 'disabled';
   /**
    * 2.1.9 (M44 `3f5ej79s`) — whether the turn mounts `spec-skill-tools`. An
    * explicit column rather than a derivation from the admitted classes: the
@@ -180,9 +162,6 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
     operationClasses: new Set(CHAT_CLASSES),
     pluginServers: 'all',
     requiresExplicitBriefTarget: false,
-    builtinPosture: 'follow-thread',
-    builtinTools: 'project-setting',
-    backgroundTasks: 'allowed',
     specSkillTools: true,
     transagentTools: true,
     runTools: true,
@@ -191,9 +170,6 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
     operationClasses: new Set<OperationClass>(['read', 'brief']),
     pluginServers: 'release-only',
     requiresExplicitBriefTarget: true,
-    builtinPosture: 'follow-thread',
-    builtinTools: 'none',
-    backgroundTasks: 'allowed',
     specSkillTools: false,
     transagentTools: false,
     runTools: false,
@@ -202,9 +178,6 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
     operationClasses: new Set(CHAT_CLASSES),
     pluginServers: 'all',
     requiresExplicitBriefTarget: false,
-    builtinPosture: 'follow-thread',
-    builtinTools: 'project-setting',
-    backgroundTasks: 'allowed',
     specSkillTools: true,
     transagentTools: false,
     runTools: false,
@@ -220,9 +193,6 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
     operationClasses: new Set<OperationClass>(['read', 'plan']),
     pluginServers: 'all',
     requiresExplicitBriefTarget: false,
-    builtinPosture: 'force-plan',
-    builtinTools: 'project-setting',
-    backgroundTasks: 'disabled',
     specSkillTools: false,
     transagentTools: false,
     runTools: false,
@@ -345,4 +315,15 @@ export function mcpRenderingProfile(profile: ChatContextType): ChatContextType {
     throw new Error(`profile '${profile}' has no rendering in the mcp channel`);
   }
   return MCP_CHANNEL_PROFILES[profile];
+}
+
+/**
+ * The `mcp` channel's pool narrowing, as a predicate over the factory NAME:
+ * `'release-only'` (`brief`) takes only {@link BRIEF_ALLOWED_PLUGIN_MCP}, `'all'`
+ * every name. 2.1.88: the turn no longer selects by this — it reads its row's
+ * `Serwery` column (`services/turn-mcp-servers.ts`); this is the external
+ * surface's own rule.
+ */
+export function mcpChannelPoolSelector(pluginServers: McpServerSet['pluginServers']): (name: string) => boolean {
+  return pluginServers === 'release-only' ? (name) => BRIEF_ALLOWED_PLUGIN_MCP.has(name) : () => true;
 }

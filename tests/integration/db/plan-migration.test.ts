@@ -39,7 +39,7 @@ describe('backfillPlansToFilesystem', () => {
   });
 
   it('backfills chat_thread.plan_path WITH the .md extension, matching the file actually written to disk', async () => {
-    h.db.prepare(`INSERT INTO chat_thread (id) VALUES ('t1')`).run();
+    h.db.prepare(`INSERT INTO chat_thread (id, context_type) VALUES ('t1', 'chat')`).run();
     const planId = h.db
       .prepare(
         `INSERT INTO plan (title, content, created_at) VALUES ('My Legacy Plan', '# My Legacy Plan\n\nbody', datetime('now'))`,
@@ -66,7 +66,7 @@ describe('backfillPlansToFilesystem', () => {
   });
 
   it('drops the legacy plan/plan_version tables and plan_id/last_seen_plan_version columns after migrating', async () => {
-    h.db.prepare(`INSERT INTO chat_thread (id) VALUES ('t1')`).run();
+    h.db.prepare(`INSERT INTO chat_thread (id, context_type) VALUES ('t1', 'chat')`).run();
     const planId = h.db
       .prepare(`INSERT INTO plan (title, content, created_at) VALUES ('P', 'body', datetime('now'))`)
       .run().lastInsertRowid as number;
@@ -102,7 +102,7 @@ describe('backfillPlansToFilesystem', () => {
     // written to disk (writes aren't rolled back on crash) but the `plan`
     // table is still fully intact (the destructive DB transaction never
     // committed) — exactly the state a mid-migration crash leaves behind.
-    h.db.prepare(`INSERT INTO chat_thread (id) VALUES ('t1')`).run();
+    h.db.prepare(`INSERT INTO chat_thread (id, context_type) VALUES ('t1', 'chat')`).run();
     const planId = h.db
       .prepare(
         `INSERT INTO plan (title, content, created_at) VALUES ('Crash Retry Plan', '# body from first attempt', datetime('now'))`,
@@ -132,8 +132,8 @@ describe('backfillPlansToFilesystem', () => {
     // Guards against the idempotency fix above over-matching: two rows with
     // the same title but genuinely different content must NOT be treated as
     // the same prior write.
-    h.db.prepare(`INSERT INTO chat_thread (id) VALUES ('t1')`).run();
-    h.db.prepare(`INSERT INTO chat_thread (id) VALUES ('t2')`).run();
+    h.db.prepare(`INSERT INTO chat_thread (id, context_type) VALUES ('t1', 'chat')`).run();
+    h.db.prepare(`INSERT INTO chat_thread (id, context_type) VALUES ('t2', 'chat')`).run();
     const id1 = h.db
       .prepare(`INSERT INTO plan (title, content, created_at) VALUES ('Same Title', 'first plan body', datetime('now'))`)
       .run().lastInsertRowid as number;

@@ -468,3 +468,16 @@ function transagentErrorCode(err: unknown): { code: string; hint?: string; viola
   // failed is not this server faulting.
   return { code: 'AGENT_ERROR' };
 }
+
+/** The server name `transagent-tools` mounts under. */
+export const TRANSAGENT_TOOLS_SERVER = 'transagent-tools';
+
+/**
+ * 2.1.88 (M46 `exchr4q9`) — the mount condition of `transagent-tools`, held by its
+ * owner: a value whose row names the server gets it, and only in a top-level
+ * thread (`parent_thread_id IS NULL`). This is the depth guard (`mt47zj15`)
+ * enforced at turn assembly; a child thread never gets it, whatever its row says.
+ */
+export function transagentToolsMountCondition(turn: { parentThreadId: string | null }): boolean {
+  return turn.parentThreadId == null;
+}

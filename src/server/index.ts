@@ -1,4 +1,5 @@
 // M51 — host modules register their XML tags at process start.
+import { validateContextTypeRegistry } from './services/context-types/registry.js';
 import '../shared/xml-markup/host-tags.js';
 import express, { type Express } from 'express';
 import { createServer as createHttpServer, type Server as HttpServer } from 'node:http';
@@ -247,6 +248,12 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // entries of M58/M59/M60, each validated against the capability registry and
   // the settings layer. A faulty entry throws `PROJECT_TYPE_REGISTRY_INVALID`.
   const projectTypes = hostProjectTypeRegistry();
+  // 2.1.88 (M44 `8rnqx0vu`): then the context-type registry, against the capability
+  // set of every project type — exactly one `default` value, at most one
+  // `consultation` value (read/plan only, no consultation server, pinned or
+  // unavailable posture), every own composition naming a recipe. A violation
+  // throws `CONTEXT_TYPE_REGISTRY_INVALID` and the server does not start.
+  validateContextTypeRegistry(projectTypes.list());
   // 2.1.77 (M26 `hozcm4w5`): the type first, then the keys — config.json reads
   // skip, and writes keep untouched, the keys of a capability the type lacks.
   installInactiveConfigKeys();

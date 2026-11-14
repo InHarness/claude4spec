@@ -1,0 +1,259 @@
+{
+  "role": "implementer",
+  "stateDir": "/Users/michael/Code/ctowiec/claude4spec-private/codebase/apps/claude4spec-app/.worktrees/2-1-87-to-2-1-88/codebase/apps/claude4spec-app/.c4s-impl",
+  "repo": "/Users/michael/Code/ctowiec/claude4spec-private/codebase/apps/claude4spec-app/.worktrees/2-1-87-to-2-1-88/codebase/apps/claude4spec-app",
+  "unit": {
+    "id": "context-registry",
+    "goal": "Rejestr typów kontekstu przestaje być zamkniętą listą czterech typów. Staje się kodową mapą wierszy, które wnoszą moduły-właściciele (rozmowa, brief, patch, konsultacja). Projekt widzi tylko wiersze, których wymagane możliwości posiada. Start hosta waliduje inwarianty wejść, kompozycji i wartości konsultacyjnej. Serwery tury handler składa z zestawu bazowego (odczyt skilli i workspace) i serwerów wymienionych w wierszu, a warunki montażu stoją przy właścicielach serwerów (orkiestracja, Runy, zapis skilli, konsultacja). Bramka profilu filtruje narzędzia po klasach operacji wiersza. Odebrane grupy narzędzi wbudowanych to suma ustawienia projektu, wiersza i presetu planu. Wiersz może przypiąć posturę planu i zabronić zadań w tle; wątek-dziecko nigdy ich nie powołuje. Usunięte zostają: zamknięta enumeracja i wartość domyślna typu kontekstu w tabeli wątków (wątek bez typu dostaje wartość domyślną z rejestru), bramki montażu w samym rejestrze, tabela odczytu możliwości briefów oraz zależności rejestru od modułów briefów i skilli projektu.",
+    "recipe": {
+      "pages": [
+        {
+          "key": "pages/modules/m44-context-types.md",
+          "change": "all"
+        },
+        {
+          "key": "pages/modules/m44-context-types.md",
+          "context": {
+            "offset": 1,
+            "limit": 2,
+            "anchors": [
+              "x91ni6uh",
+              "uovohiu4"
+            ]
+          }
+        },
+        {
+          "key": "pages/layers/L15-context-types.md",
+          "change": "all"
+        },
+        {
+          "key": "pages/layers/L19-project-type-capabilities.md",
+          "change": "all"
+        },
+        {
+          "key": "pages/modules/m43-spec-operations-core.md",
+          "change": "all"
+        },
+        {
+          "key": "pages/modules/m43-spec-operations-core.md",
+          "context": {
+            "offset": 1,
+            "limit": 2,
+            "anchors": [
+              "zpvxirvp",
+              "gkugsry5"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m05-agent-runtime.md",
+          "change": {
+            "offset": 2,
+            "limit": 4,
+            "anchors": [
+              "057mv7pz",
+              "iki42i1e",
+              "iatop5pj",
+              "9nf8klq0"
+            ]
+          },
+          "deferred": [
+            {
+              "what": "wyłącznik zadań w tle dla tury peera (rozpoznawanej po pochodzeniu wątku konsultacji)",
+              "to": "consultation-entry",
+              "why": "pochodzenie wątku ustawia dopiero wejście konsultacyjne"
+            }
+          ]
+        },
+        {
+          "key": "pages/modules/m05-agent-runtime.md",
+          "context": {
+            "offset": 1,
+            "limit": 2,
+            "anchors": [
+              "iv1lmc33",
+              "t3fsdybv"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m11-c4s/m11-c4s.md",
+          "change": {
+            "offset": 3,
+            "limit": 1,
+            "anchors": [
+              "6exnmup9"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m11-c4s/m11-c4s.md",
+          "context": {
+            "offset": 1,
+            "limit": 2,
+            "anchors": [
+              "m11cel00",
+              "m11dep00"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m21-briefs.md",
+          "change": {
+            "offset": 0,
+            "limit": 1,
+            "anchors": [
+              "gll5xhtr"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m21-briefs.md",
+          "change": {
+            "offset": 2,
+            "limit": 1,
+            "anchors": [
+              "m21ctxreg"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m21-briefs.md",
+          "context": {
+            "offset": 1,
+            "limit": 2,
+            "anchors": [
+              "m21cel001",
+              "m21zal001"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m23-patches.md",
+          "change": {
+            "offset": 3,
+            "limit": 1,
+            "anchors": [
+              "jbcb06l2"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m23-patches.md",
+          "context": {
+            "offset": 1,
+            "limit": 2,
+            "anchors": [
+              "m23cel01",
+              "m23dep01"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m46-transagent.md",
+          "change": {
+            "offset": 2,
+            "limit": 2,
+            "anchors": [
+              "mt47zj15",
+              "exchr4q9"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m46-transagent.md",
+          "context": {
+            "offset": 1,
+            "limit": 2,
+            "anchors": [
+              "ix1l2e4g",
+              "t2nhwhwy"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m55-runs.md",
+          "change": "all"
+        },
+        {
+          "key": "pages/modules/m55-runs.md",
+          "context": {
+            "offset": 1,
+            "limit": 2,
+            "anchors": [
+              "ewqj6w60",
+              "tq1frs04"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m52-spec-skills.md",
+          "change": {
+            "offset": 1,
+            "limit": 1,
+            "anchors": [
+              "hdkx97wq"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m52-spec-skills.md",
+          "context": {
+            "offset": 1,
+            "limit": 2,
+            "anchors": [
+              "q7uurue4",
+              "cppnlv9z"
+            ]
+          }
+        }
+      ],
+      "entities": [
+        {
+          "type": "database-table",
+          "slugs": [
+            "chat-thread"
+          ],
+          "deferred": [
+            {
+              "what": "ustawianie pochodzenia konsultacji przy zakładaniu wątku i jego skutki dla tury",
+              "to": "consultation-entry",
+              "why": "należy do wejścia konsultacyjnego"
+            }
+          ]
+        },
+        {
+          "type": "module-dependency",
+          "slugs": [
+            "m44-requires-m21",
+            "m44-requires-m52"
+          ]
+        },
+        {
+          "type": "ac",
+          "slugs": [
+            "ac-grupa-narzedzi-wbudowanych-odebrana-u",
+            "ac-grupa-z-grupy-wbudowane-wiersza-jest",
+            "ac-narzedzie-klasy-spoza-klasy-operacji",
+            "ac-przy-odznaczonej-fladze-agent-disable",
+            "ac-serwer-skill-tools-jest-zamontowany-w",
+            "ac-serwer-spec-skill-tools-jest-zamontow",
+            "ac-serwer-spoza-zestawu-bazowego-ktorego",
+            "ac-w-watku-context-type-ask-narzedzie-se-2",
+            "ac-w-watku-context-type-ask-narzedzie-se-5",
+            "ac-w-watku-o-context-type-ask-oraz-w-kaz",
+            "ac-wartosc-wymagajaca-mozliwosci-nieobec",
+            "ac-watek-context-type-ask-wykonuje-kazda",
+            "ac-watek-context-type-brief-ma-zamontowa",
+            "ac-watek-context-type-brief-montuje-wyla",
+            "ac-watek-context-type-brief-nie-ma-zamon",
+            "ac-watki-context-type-chat-brief-ask-nie",
+            "ac-wywolanie-w-profilu-ask-narzedzia-mut"
+          ]
+        }
+      ]
+    },
+    "jobs": []
+  },
+  "mode": "split"
+}

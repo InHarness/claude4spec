@@ -145,14 +145,26 @@ export function effectiveToolClass(
  * through.
  */
 export function toolAdmittedByProfile(
-  profile: ChatContextType,
+  profile: GateProfile,
   tool: string | Pick<McpToolDeclaration, 'name' | 'operationClass'>,
   opts: { plugin?: boolean; overlay?: boolean; server?: string; channel?: HostToolChannel } = {},
 ): boolean {
   const cls = effectiveToolClass(tool, opts);
   // Undeclared on a host-owned server: pass-through (see the module comment).
   if (cls === undefined) return true;
-  return PROFILES[profile].operationClasses.has(cls);
+  return profileClasses(profile).has(cls);
+}
+
+/**
+ * 2.1.88 (M43 `l3route0`, M44 `3f5ej79s`) — what the gate filters by: a profile
+ * name of the `mcp` channel's table ({@link PROFILES}), or the admitted classes
+ * themselves — the turn passes its row's `Klasy operacji` column, since profile
+ * membership is a column of the context-type registry.
+ */
+export type GateProfile = ChatContextType | ReadonlySet<OperationClass>;
+
+function profileClasses(profile: GateProfile): ReadonlySet<OperationClass> {
+  return typeof profile === 'string' ? PROFILES[profile].operationClasses : profile;
 }
 
 /**
@@ -168,7 +180,7 @@ export function toolAdmittedByProfile(
  * declared renderings resolve a host tool's record.
  */
 export function gateServer(
-  profile: ChatContextType,
+  profile: GateProfile,
   name: string,
   server: McpServerFactory,
   pluginServerNames?: ReadonlySet<string>,
@@ -197,7 +209,7 @@ export function gateServer(
 
 /** Apply the gate across a whole server map. */
 export function gateServers(
-  profile: ChatContextType,
+  profile: GateProfile,
   servers: Array<{ name: string; server: McpServerFactory }>,
   pluginServerNames?: ReadonlySet<string>,
   overlayServerNames?: ReadonlySet<string>,

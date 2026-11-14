@@ -1,3 +1,4 @@
+import { TOOL_GROUPS } from '@inharness-ai/agent-adapters';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { TOOL_RESULT_CEILING_TOKENS } from '../discovery/budget.js';
@@ -474,7 +475,7 @@ describe('runAgentTurn — disallowedToolGroups posture', () => {
    * 0.2.87 (M44): a brief thread holds no built-ins whatever the project flag says —
    * its content arrives through `get_brief`, so there is no path-traversal surface.
    */
-  it('brief thread denies file-read, file-write and shell even with direct FS access allowed', async () => {
+  it('[ac:ac-grupa-z-grupy-wbudowane-wiersza-jest] a group in the row\'s Grupy wbudowane is denied also with the project setting unchecked — brief denies every group', async () => {
     settle();
     hoisted.agent = { disableDirectFilesystemAccess: false };
     const { deps } = makeDeps();
@@ -484,13 +485,41 @@ describe('runAgentTurn — disallowedToolGroups posture', () => {
 
     await runAgentTurn(deps, input);
 
-    expect([...(hoisted.lastExecute?.disallowedToolGroups as string[])].sort()).toEqual([
-      'file-read',
-      'file-write',
-      'shell',
-    ]);
+    expect([...(hoisted.lastExecute?.disallowedToolGroups as string[])].sort()).toEqual([...TOOL_GROUPS].sort());
     // Plan mode still follows the thread flag — the built-in axis is separate.
     expect(hoisted.lastExecute?.planMode).toBe(false);
+  });
+
+  it('[ac:ac-grupa-narzedzi-wbudowanych-odebrana-u] a built-in group denied by the project setting is denied in every value of the registry', async () => {
+    for (const ct of ['chat', 'brief', 'patch', 'ask'] as const) {
+      settle();
+      hoisted.agent = { disableDirectFilesystemAccess: true };
+      const { deps } = makeDeps();
+      const input = makeInput();
+      const t = input.thread as unknown as { contextType: string; briefPath: string | null; patchPath: string | null };
+      t.contextType = ct;
+      if (ct === 'brief') t.briefPath = 'b.md';
+      if (ct === 'patch') t.patchPath = 'p.md';
+      await runAgentTurn(deps, input);
+      expect(hoisted.lastExecute?.disallowedToolGroups as string[], ct).toEqual(
+        expect.arrayContaining(['file-read', 'file-write', 'shell']),
+      );
+    }
+  });
+
+  it('[ac:ac-przy-odznaczonej-fladze-agent-disable] with the flag unchecked and outside plan mode, the main agent of a value with no Grupy wbudowane has the full toolset', async () => {
+    for (const ct of ['chat', 'patch'] as const) {
+      settle();
+      hoisted.agent = { disableDirectFilesystemAccess: false };
+      const { deps } = makeDeps();
+      const input = makeInput();
+      const t = input.thread as unknown as { contextType: string; patchPath: string | null; planMode: boolean };
+      t.contextType = ct;
+      t.planMode = false;
+      if (ct === 'patch') t.patchPath = 'p.md';
+      await runAgentTurn(deps, input);
+      expect(hoisted.lastExecute?.disallowedToolGroups ?? [], ct).toEqual([]);
+    }
   });
 
   /**
@@ -2667,10 +2696,10 @@ describe('runAgentTurn — spec-skill-tools mounting (M52, 2.1.9)', () => {
   });
 
   it('the gate is a declared registry column, not inherited: chat and patch name it, brief and ask do not', () => {
-    expect(CONTEXT_TYPE_REGISTRY.chat.mcp.specSkillTools).toBe(true);
-    expect(CONTEXT_TYPE_REGISTRY.patch.mcp.specSkillTools).toBe(true);
-    expect(CONTEXT_TYPE_REGISTRY.brief.mcp.specSkillTools).toBe(false);
-    expect(CONTEXT_TYPE_REGISTRY.ask.mcp.specSkillTools).toBe(false);
+    expect(CONTEXT_TYPE_REGISTRY.chat.servers).toContain('spec-skill-tools');
+    expect(CONTEXT_TYPE_REGISTRY.patch.servers).toContain('spec-skill-tools');
+    expect(CONTEXT_TYPE_REGISTRY.brief.servers).not.toContain('spec-skill-tools');
+    expect(CONTEXT_TYPE_REGISTRY.ask.servers).not.toContain('spec-skill-tools');
   });
 
   it('M52 L10: once the context disposed its element, a turn mounts no spec-skill-tools', async () => {
@@ -4085,10 +4114,10 @@ describe('runAgentTurn — the turn argument: host pool, handler servers, profil
     expect(new Set(chat.built)).toEqual(new Set(['entity-tools', 'reference-tools', 'release-tools']));
   });
 
-  it('[section:3f5ej79s] the pool narrowing is driven by the registry row (ctx.mcp.pluginServers), not by a second table', async () => {
-    const row = CONTEXT_TYPE_REGISTRY.chat.mcp;
-    const original = row.pluginServers;
-    row.pluginServers = 'release-only';
+  it('[section:3f5ej79s] the pool narrowing is driven by the registry row (its Serwery column), not by a second table', async () => {
+    const row = CONTEXT_TYPE_REGISTRY.chat as { servers: readonly string[] };
+    const original = row.servers;
+    row.servers = ['release-tools'];
     try {
       const { built, mounted } = await turnFor('chat');
       expect(new Set(built)).toEqual(new Set(['release-tools']));
@@ -4096,15 +4125,8 @@ describe('runAgentTurn — the turn argument: host pool, handler servers, profil
       expect(mounted).not.toContain('reference-tools');
       expect(mounted).toContain('release-tools');
     } finally {
-      row.pluginServers = original;
+      row.servers = original;
     }
-  });
-
-  it('[ac:ac-watek-context-type-brief-nie-ma-zamon] a brief thread has neither c4s-tools nor transagent-tools mounted', async () => {
-    const { mounted, prompt } = await turnFor('brief', { briefPath: 'b.md' });
-    expect(mounted).not.toContain('c4s-tools');
-    expect(mounted).not.toContain('transagent-tools');
-    expect(prompt).not.toMatch(/<mcp name="(c4s|transagent)-tools"/);
   });
 
   it('[ac:ac-watek-context-type-brief-niesie-posta] a brief thread carries its tool posture (cwd, no filesystem writes, no plan/entity tools) inside <interaction_context type="brief">', async () => {
@@ -4124,25 +4146,13 @@ describe('runAgentTurn — the turn argument: host pool, handler servers, profil
 
   it('[ac:ac-watek-dziecko-w-typie-ktorego-wiersz] a child thread of a type whose row names the orchestrator (chat) has transagent-tools stripped — the thread flag wins over the row', async () => {
     // The row: chat names transagent-tools.
-    expect(CONTEXT_TYPE_REGISTRY.chat.mcp.transagentTools).toBe(true);
+    expect(CONTEXT_TYPE_REGISTRY.chat.servers).toContain('transagent-tools');
     const top = await turnFor('chat', { parentThreadId: null });
     expect(top.mounted).toContain('transagent-tools');
     // The thread: a child of the same type does not get it.
     const child = await turnFor('chat', { parentThreadId: 'parent-1' });
     expect(child.mounted).not.toContain('transagent-tools');
     expect(child.prompt).not.toMatch(/<mcp name="transagent-tools"/);
-  });
-
-  it('[ac:ac-watki-context-type-chat-brief-ask-nie] chat, brief and ask threads have no patch-tools mounted — even with a patch path on the row', async () => {
-    for (const [contextType, opts] of [
-      ['chat', { patchPath: 'p.md' }],
-      ['brief', { briefPath: 'b.md', patchPath: 'p.md' }],
-      ['ask', { patchPath: 'p.md' }],
-    ] as const) {
-      const { mounted, prompt } = await turnFor(contextType, opts);
-      expect(mounted, contextType).not.toContain('patch-tools');
-      expect(prompt, contextType).not.toMatch(/<mcp name="patch-tools"/);
-    }
   });
 
   it('[ac:ac-wywolanie-narzedzia-spoza-whitelisty] a call to a tool outside the type\'s whitelist: its server is not registered in the runtime, and the runtime\'s answer reaches the model as a tool_result error', async () => {
@@ -4503,8 +4513,8 @@ describe('runAgentTurn — run-tools only on a top-level chat thread (2.1.64)', 
   });
 
   it('[section:3f5ej79s] the run-tools gate is the registry column plus the per-thread rule: only the chat row declares it', () => {
-    expect(CONTEXT_TYPE_REGISTRY.chat.mcp.runTools).toBe(true);
-    for (const t of ['patch', 'ask', 'brief'] as const) expect(CONTEXT_TYPE_REGISTRY[t].mcp.runTools).toBe(false);
+    expect(CONTEXT_TYPE_REGISTRY.chat.servers).toContain('run-tools');
+    for (const t of ['patch', 'ask', 'brief'] as const) expect(CONTEXT_TYPE_REGISTRY[t].servers).not.toContain('run-tools');
   });
 });
 

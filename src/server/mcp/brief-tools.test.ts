@@ -17,6 +17,7 @@ import { BRIEF_ALLOWED_PLUGIN_MCP, mcpServerSetForProfile } from '../operations/
 import { toolAdmittedByProfile } from '../operations/profile-gate.js';
 import { artifactAddressingShape } from '../operations/addressing.js';
 import { CONTEXT_TYPE_REGISTRY, subagentsFor } from '../services/chat-context.js';
+import { rowBuiltinGroups } from '../services/context-types/registry.js';
 import { ChatService } from '../services/chat.js';
 import { MarkdownFileStore } from '../services/pages.js';
 import { FileSerializer } from '../services/file-serializer.js';
@@ -768,7 +769,7 @@ describe('brief-tools — one tool per internal brief operation', () => {
     const internalBriefOps = internalDirectBriefOps.filter((n) => !DECLARED_NOT_RENDERED_INTERNALLY.includes(n));
 
     // What a `context_type='brief'` thread mounts: brief-tools in thread mode.
-    expect(CONTEXT_TYPE_REGISTRY.brief.mcp.briefTools).toBe(true);
+    expect(CONTEXT_TYPE_REGISTRY.brief.servers).toContain('brief-tools');
     expect(mcpServerSetForProfile('brief').briefTools).toBe(true);
     const { server } = buildBriefToolsServer({
       threadId: 't1',
@@ -788,11 +789,11 @@ describe('brief-tools — one tool per internal brief operation', () => {
     expect(BRIEF_TOOL_ENTITIES.map((slug) => slug.replace(/^brief-tools-/, '').replace(/-/g, '_')).sort()).toEqual(mounted);
     // The other context types do not mount it.
     for (const ct of ['chat', 'patch', 'ask'] as const) {
-      expect(CONTEXT_TYPE_REGISTRY[ct].mcp.briefTools, ct).toBe(false);
+      expect(CONTEXT_TYPE_REGISTRY[ct].servers, ct).not.toContain('brief-tools');
     }
     // 2.1.18 (M21 `m21ctxreg`): a brief thread has no transagent-tools, so no second
     // surface renders a brief operation there.
-    expect(CONTEXT_TYPE_REGISTRY.brief.mcp.transagentTools).toBe(false);
+    expect(CONTEXT_TYPE_REGISTRY.brief.servers).not.toContain('transagent-tools');
   });
 });
 
@@ -1321,7 +1322,7 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
 
     // MCPReleaseDiff: a brief thread mounts release-tools (the release-only plugin
     // pool) and its profile admits release_diff; the diff-explore subagent reads it.
-    expect(CONTEXT_TYPE_REGISTRY.brief.mcp.pluginServers).toBe('release-only');
+    expect(CONTEXT_TYPE_REGISTRY.brief.servers).toEqual(['release-tools', 'brief-tools']);
     expect(BRIEF_ALLOWED_PLUGIN_MCP.has('release-tools')).toBe(true);
     expect(toolAdmittedByProfile('brief', 'release_diff')).toBe(true);
     expect(CATALOG.require('release_diff').opClass).toBe('read');
@@ -1422,7 +1423,7 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     // The registry row declares no deny groups of its own: only the built-in axis.
     const row = CONTEXT_TYPE_REGISTRY.brief as unknown as Record<string, unknown>;
     expect(Object.keys(row).some((k) => /deny|disallow/i.test(k))).toBe(false);
-    expect(CONTEXT_TYPE_REGISTRY.brief.builtinTools).toBe('none');
+    expect(CONTEXT_TYPE_REGISTRY.brief.builtinGroups).toBe('all');
 
     // The denial is the turn's tool-group gating: the full direct-filesystem set,
     // whether the project's "Block direct file access" flag is on or off.
@@ -1435,11 +1436,11 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
         path.join(cwd, '.claude4spec', 'config.json'),
         JSON.stringify({ agent: { disableDirectFilesystemAccess: flag } }),
       );
-      const groups = resolveAgentToolGroups({ cwd, planMode: false, builtinTools: CONTEXT_TYPE_REGISTRY.brief.builtinTools });
+      const groups = resolveAgentToolGroups({ cwd, planMode: false, rowGroups: rowBuiltinGroups(CONTEXT_TYPE_REGISTRY.brief) });
       for (const g of DIRECT_FILESYSTEM_DENY_GROUPS) expect(groups, `flag=${flag}`).toContain(g);
     }
     // A chat thread with the flag off keeps them — the brief's denial is not the project's.
-    expect(resolveAgentToolGroups({ cwd, planMode: false, builtinTools: CONTEXT_TYPE_REGISTRY.chat.builtinTools })).toEqual([]);
+    expect(resolveAgentToolGroups({ cwd, planMode: false, rowGroups: rowBuiltinGroups(CONTEXT_TYPE_REGISTRY.chat) })).toEqual([]);
 
     // diff-explore, the brief's subagent, names no built-in at all.
     const [diffExplore] = subagentsFor('brief', { listEntities: () => [] } as unknown as ProjectPluginHost, true);

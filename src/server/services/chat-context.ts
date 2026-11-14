@@ -3,10 +3,8 @@ import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import type { SubagentDefinition } from '@inharness-ai/agent-adapters';
 import { composeSystemPrompt } from './system-prompt/compose.js';
 import { CLAUDE_CODE_ALL_BUILTINS } from './system-prompt/blocks/m48-own.js';
-import { BRIEF_COMPOSITION } from './system-prompt/compositions/brief.js';
 import { DEFAULT_COMPOSITION } from './system-prompt/compositions/default.js';
 import type { CompositionEntry, PromptCompositionDecl, SystemPromptInput } from './system-prompt/types.js';
-import { PROFILES, mcpServerSetForProfile, type McpServerSet } from '../operations/profiles.js';
 import { registerCoreOperations } from '../operations/core-operations.js';
 
 /**
@@ -17,7 +15,6 @@ import { registerCoreOperations } from '../operations/core-operations.js';
  * importing it from both places is safe.
  */
 registerCoreOperations();
-import { INTERACTION_RULES } from './interaction-rules.js';
 import { DomainError } from './tags.js';
 import {
   DEFAULT_SUBAGENT_TURNS,
@@ -26,134 +23,31 @@ import {
   withTurnBudget,
 } from './plugin-subagents.js';
 
-/* ─────────────────────────── M05 m05ctxreg: context-type registry ───────────────────────────
- * Single code-level constant map (spec `m05ctxreg`), keyed by `context_type`, deciding the five
- * per-thread dimensions. This is the ONE source of truth: `buildSystemPrompt`/`subagentsFor`
- * (here), the dispatcher (`routes/agent-turn.ts`), and the enum validator (`services/chat.ts`)
- * only CONSUME it. Adding a context_type = one row here + extending the `ChatContextType` union
- * in `shared/entities.ts` — no edits to dispatch logic. NOT a SQLite table: the values are code
- * artifacts (MCP servers, React chrome, SubagentDefinition, prompt text). Skills are no longer
- * among them — 0.2.66 took the `attachInternalSkills` dimension out, and the count above is what
- * is left. */
+/* ─────────────────────────── M44: context-type registry ───────────────────────────
+ * 2.1.88 — a code map of the rows the owner modules contribute (`context-types/rows/`),
+ * keyed by `context_type`. `buildSystemPrompt`/`subagentsFor` (here) and the turn
+ * handler (`routes/agent-turn.ts`) only CONSUME it. A new value = one full row at the
+ * module that brings it + its entry in the map + the index row (M44 `3f5ej79s`).
+ * NOT a SQLite table: the values are code artifacts (MCP servers, chrome, subagents). */
 
 /**
- * 0.2.13 — `McpServerSet` moved to `operations/profiles.ts` and is now DERIVED
- * from the context profile's admitted operation classes rather than written out
- * per row. Re-exported here because this module's consumers have always named it
- * from this path.
- *
- * The direction of the dependency is the point: a profile declares which classes
- * of catalog operations it admits, and the mounted server set falls out of that.
- * Written side by side, the two drifted — the registry could say `planTools:
- * true` for a profile whose operation set had no plan entries, and nothing
- * disagreed.
+ * 0.2.13 — `McpServerSet` lives in `operations/profiles.ts`; it is the server set
+ * of the external `mcp` channel only (2.1.88: the turn assembles its servers from
+ * the row's `Serwery` column, see `turn-mcp-servers.ts`).
  */
 export type { McpServerSet } from '../operations/profiles.js';
 /** 0.2.97 — moved to `system-prompt/types.ts` with the blocks; re-exported from their old address. */
 export type { McpInventoryEntry, PeerProject, SystemPromptInput } from './system-prompt/types.js';
 
 /**
- * One registry row — the five dimensions spec `m05ctxreg` dispatches per thread.
- *
- * 0.2.66 removed a sixth, `attachInternalSkills` — the host's map of which contextual
- * skills to pin to which context type. It had been shrinking for two releases (0.2.19
- * emptied `brief` and `patch`, leaving one entry in the whole catalogue) and the
- * remaining entry moved to the package that owns the skill, which now declares its own
- * reach through `PluginSkillContribution.contextTypes`. The row is no longer where a
- * skill gets attached; `<available_skills>` is entirely the plugin fan-out's product.
- *
- * Nothing about the DATA layer changed with it: `chat_thread.context_type` (no CHECK —
- * dropped by migration 042; validation lives in this map), its default and its invariants are untouched, and there is no migration. This is a
- * registry-and-prompt-builder change only.
+ * 2.1.88 (M44 `k3gkrn09`, L15 `6jkqb2h4`) — the registry is the code map of the
+ * rows the owner modules contribute (`context-types/rows/`). One row = the L15
+ * columns; `ContextTypeEntry` is kept as the old name of the row type.
  */
-export interface ContextTypeEntry {
-  /** Dim 1 — which MCP servers mount in `adapter.execute({ mcpServers })`. */
-  mcp: McpServerSet;
-  /** Dim 2 — chat-overlay chrome. Declarative marker only: the frontend `ChatOverlay.tsx`
-   *  switches on `contextType` directly; this records the dimension, no backend consumer.
-   *  (Until 0.2.97 the prompt builder read it to pick the brief frame; that choice is
-   *  `promptComposition` now.) */
-  uiChrome: 'overlay' | 'brief-detail';
-  /** Dim 3 — read-only `SubagentDefinition` injected into `adapter.execute({ subagents })`. */
-  subagent: 'spec-explore' | 'diff-explore';
-  /** Dim 4 — builtin posture. `'force-plan'` pins `planMode=true` regardless of the thread's
-   *  `plan_mode` flag (read-only peer); `'follow-thread'` tracks the flag. */
-  builtinPosture: 'follow-thread' | 'force-plan';
-  /** Dim 4b (0.2.87) — `'none'` strips every built-in (file-read / file-write / shell)
-   *  regardless of `agent.disableDirectFilesystemAccess`; `'project-setting'` follows it. */
-  builtinTools: 'project-setting' | 'none';
-  /** Dim 6 (0.2.87) — background-task admissibility, declared explicitly per value. */
-  backgroundTasks: 'allowed' | 'disabled';
-  /** Dim 5 (0.2.19) — the body of `<interaction_context type="…">`: the domain rules of
-   *  this interaction type. The TEXT is owned by the module that owns the genre (M21
-   *  brief / M23 patch / M11 ask) and lives in `interaction-rules.ts`; M05 only renders
-   *  it. `chat` carries none, and an empty body is a legitimate value — the block is
-   *  emitted regardless, self-closing, because a missing block would be indistinguishable
-   *  from "this concept does not exist". */
-  interactionRules: string;
-  /** Dim 7 (0.2.97, M44 × M48) — the prompt composition this type declares: `'default'` —
-   *  the composer's own, in which every block's presence follows from its emission
-   *  condition alone — or `{ own }`, a composition the type brings, stating what it
-   *  deliberately lacks (see `system-prompt/compositions/`). */
-  promptComposition: PromptCompositionDecl;
-}
-
-/**
- * The registry. Rows reproduce the spec `m05ctxreg` table 1:1; this refactor is
- * behavior-preserving, so each row dispatches exactly what the prior scattered
- * `isBrief`/`isPatch`/`isAsk` conditionals did.
- */
-export const CONTEXT_TYPE_REGISTRY: Record<ChatContextType, ContextTypeEntry> = {
-  chat: {
-    mcp: mcpServerSetForProfile('chat'),
-    uiChrome: 'overlay',
-    subagent: 'spec-explore',
-    builtinPosture: PROFILES.chat.builtinPosture,
-    builtinTools: PROFILES.chat.builtinTools,
-    backgroundTasks: PROFILES.chat.backgroundTasks,
-    interactionRules: INTERACTION_RULES.chat,
-    promptComposition: 'default',
-  },
-  brief: {
-    mcp: mcpServerSetForProfile('brief'),
-    uiChrome: 'brief-detail',
-    subagent: 'diff-explore',
-    builtinPosture: PROFILES.brief.builtinPosture,
-    builtinTools: PROFILES.brief.builtinTools,
-    backgroundTasks: PROFILES.brief.backgroundTasks,
-    interactionRules: INTERACTION_RULES.brief,
-    promptComposition: { own: BRIEF_COMPOSITION },
-  },
-  patch: {
-    mcp: mcpServerSetForProfile('patch'),
-    uiChrome: 'overlay',
-    subagent: 'spec-explore',
-    builtinPosture: PROFILES.patch.builtinPosture,
-    builtinTools: PROFILES.patch.builtinTools,
-    backgroundTasks: PROFILES.patch.backgroundTasks,
-    interactionRules: INTERACTION_RULES.patch,
-    promptComposition: 'default',
-  },
-  ask: {
-    // Full `chat` toolset MINUS c4s-tools MINUS transagent-tools (recursion guard: a consulted
-    // peer cannot consult/delegate to another peer) MINUS run-tools (2.1.64, M44 `3f5ej79s`:
-    // a Run is ordered only from a top-level `chat` thread). Read-only enforced via forced plan-mode.
-    //
-    // 0.2.13 sharpens that from a posture into a gate: the `ask` profile admits
-    // only the `read` and `plan` operation classes, so the WRITE tools of the
-    // mounted plugin servers are filtered out of `tools/list` rather than merely
-    // being discouraged by forced plan mode. A peer may leave a plan; it cannot
-    // mutate the spec it was consulted about.
-    mcp: mcpServerSetForProfile('ask'),
-    uiChrome: 'overlay',
-    subagent: 'spec-explore',
-    builtinPosture: PROFILES.ask.builtinPosture,
-    builtinTools: PROFILES.ask.builtinTools,
-    backgroundTasks: PROFILES.ask.backgroundTasks,
-    interactionRules: INTERACTION_RULES.ask,
-    promptComposition: 'default',
-  },
-};
+export type { ContextTypeRow as ContextTypeEntry } from './context-types/row.js';
+export { CONTEXT_TYPE_REGISTRY, defaultContextType } from './context-types/registry.js';
+import { CONTEXT_TYPE_REGISTRY, projectContextTypeRows } from './context-types/registry.js';
+import type { ContextTypeRow } from './context-types/row.js';
 
 /**
  * 0.2.87 (M44): `chat_thread.context_type` has no CHECK, so the database accepts any
@@ -187,34 +81,14 @@ export function assertKnownContextType(thread: { id: string; contextType: string
 }
 
 /**
- * 2.1.77 (M44 `1j39ajh8`, M21 `msujcqhu`, M23 `iifnvhtu`) — the capability each
- * registry row requires. `brief` belongs to M21 and `patch` to M23, and both
- * modules exist only in a project with the capability `briefs`; `chat` and `ask`
- * exist in every project type. The code map above stays the one source of the
- * rows (M44 `k3gkrn09`); this table only says which of them a project registers.
- */
-export const CONTEXT_TYPE_REQUIRES: Readonly<Record<ChatContextType, readonly string[]>> = {
-  chat: [],
-  brief: ['briefs'],
-  patch: ['briefs'],
-  ask: [],
-};
-
-/**
- * 2.1.77 (M44 `1j39ajh8`) — the context-type registry of ONE project: the rows of
- * {@link CONTEXT_TYPE_REGISTRY} whose required capabilities the project has. With
- * `briefs` it holds four entries (`chat`, `brief`, `patch`, `ask`); without it two
- * (`chat`, `ask`) — no thread of such a project gets `brief` or `patch`, and no
- * turn assembles their server set, subagent or prompt composition.
+ * 2.1.88 (M44 `tug9fzdn`) — the context-type registry of ONE project: the rows
+ * whose `Wymaga możliwości` together with the contributing module's requirements
+ * fit the project's capability set. A value outside it does not exist there.
  */
 export function contextTypeRegistryFor(capabilities: {
   has(name: string): boolean;
-}): Readonly<Partial<Record<ChatContextType, ContextTypeEntry>>> {
-  const out: Partial<Record<ChatContextType, ContextTypeEntry>> = {};
-  for (const type of KNOWN_CONTEXT_TYPES) {
-    if (CONTEXT_TYPE_REQUIRES[type].every((c) => capabilities.has(c))) out[type] = CONTEXT_TYPE_REGISTRY[type];
-  }
-  return out;
+}): Readonly<Partial<Record<ChatContextType, ContextTypeRow>>> {
+  return Object.fromEntries(projectContextTypeRows(capabilities).map((row) => [row.value, row]));
 }
 
 /** The context types one project registers, in registry order (see {@link contextTypeRegistryFor}). */

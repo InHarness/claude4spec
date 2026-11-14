@@ -143,7 +143,7 @@ describe('patch-tools (thread-bound)', () => {
     expect(PATCH_TOOL_ENTITIES.map((slug) => slug.replace(/^patch-tools-/, '').replace(/-/g, '_')).sort()).toEqual(mounted);
 
     // The patch thread has no second surface rendering patch operations: no transagent-tools.
-    expect(CONTEXT_TYPE_REGISTRY.patch.mcp.transagentTools).toBe(false);
+    expect(CONTEXT_TYPE_REGISTRY.patch.servers).not.toContain('transagent-tools');
   });
 
   it('get_patch without path returns the thread\'s patch: path, frontmatter, content, hash', async () => {

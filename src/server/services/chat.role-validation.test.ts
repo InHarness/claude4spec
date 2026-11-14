@@ -14,7 +14,7 @@ describe('ChatService.addMessage — role validated in the application', () => {
   const setup = () => {
     const db = new Database(':memory:');
     runMigrations(db);
-    db.prepare("INSERT INTO chat_thread (id) VALUES ('t1')").run();
+    db.prepare("INSERT INTO chat_thread (id, context_type) VALUES ('t1', 'chat')").run();
     return { db, chat: new ChatService(db) };
   };
 

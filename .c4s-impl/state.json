@@ -1,5 +1,5 @@
 {
-  "iteration": 0,
+  "iteration": 6,
   "conventions": [
     {
       "label": "L15 (Context Types) — implementor M44",
@@ -39,7 +39,7 @@
         "context-registry",
         "contribution-scope"
       ],
-      "startCommit": null
+      "startCommit": "6fde363b4d325092c92498b827da40149079b3ad"
     },
     {
       "n": 2,
@@ -311,13 +311,62 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "context-registry/p1-l1-l3",
+          "layers": [
+            "L1",
+            "L3"
+          ],
+          "slugs": [
+            "chat-thread"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        },
+        {
+          "name": "context-registry/p2-l15-l19",
+          "layers": [
+            "L15",
+            "L19"
+          ],
+          "slugs": [
+            "m44-requires-m21",
+            "m44-requires-m52",
+            "ac-grupa-narzedzi-wbudowanych-odebrana-u",
+            "ac-grupa-z-grupy-wbudowane-wiersza-jest",
+            "ac-narzedzie-klasy-spoza-klasy-operacji",
+            "ac-przy-odznaczonej-fladze-agent-disable",
+            "ac-serwer-skill-tools-jest-zamontowany-w",
+            "ac-serwer-spec-skill-tools-jest-zamontow",
+            "ac-serwer-spoza-zestawu-bazowego-ktorego",
+            "ac-w-watku-context-type-ask-narzedzie-se-2",
+            "ac-w-watku-context-type-ask-narzedzie-se-5",
+            "ac-w-watku-o-context-type-ask-oraz-w-kaz",
+            "ac-wartosc-wymagajaca-mozliwosci-nieobec",
+            "ac-watek-context-type-ask-wykonuje-kazda",
+            "ac-watek-context-type-brief-ma-zamontowa",
+            "ac-watek-context-type-brief-montuje-wyla",
+            "ac-watek-context-type-brief-nie-ma-zamon",
+            "ac-watki-context-type-chat-brief-ask-nie",
+            "ac-wywolanie-w-profilu-ask-narzedzia-mut"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "6fde363b4d325092c92498b827da40149079b3ad",
+      "baseCommit": "6fde363b4d325092c92498b827da40149079b3ad",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },

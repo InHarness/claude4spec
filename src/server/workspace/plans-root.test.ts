@@ -204,7 +204,7 @@ async function planServiceOnBoundPlansRoot() {
   tmpDirs.push(cwd);
   const db = createTestDb();
   dbs.push(db);
-  db.prepare(`INSERT INTO chat_thread (id) VALUES (?)`).run('t1');
+  db.prepare(`INSERT INTO chat_thread (id, context_type) VALUES (?, 'chat')`).run('t1');
   const runtime = new FileWatchRuntime({ fsEvents: false });
   runtimes.push(runtime);
   const w = runtime.scoped('context:p1#1');

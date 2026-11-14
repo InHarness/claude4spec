@@ -34,19 +34,26 @@ export interface ResolveAgentToolGroupsInput {
   /** The turn's effective plan-mode flag (thread flag, or forced by the context type). */
   planMode: boolean;
   /**
-   * 0.2.87 (M44): the context type's built-in axis. `'none'` denies the full
-   * direct-filesystem set whatever the project flag says (brief). Omitted =
-   * `'project-setting'`, so call-sites without a thread (AC audit) are unchanged.
+   * 2.1.88 (M44 `3f5ej79s`, L15 `Grupy wbudowane`): the groups the thread's
+   * registry row ADDITIONALLY denies (`rowBuiltinGroups`). Added to the sum, never
+   * subtracted: a row cannot restore a group the project setting or plan mode
+   * took. Omitted = none, so call-sites without a thread (AC audit) are unchanged.
    */
-  builtinTools?: 'project-setting' | 'none';
+  rowGroups?: readonly ToolGroup[];
 }
 
+/**
+ * The turn's groups = the project setting's ∪ the row's `Grupy wbudowane` ∪ the
+ * plan preset when plan mode is effective. Deny-only, so union is the only
+ * composition that can be correct.
+ */
 export function resolveAgentToolGroups(input: ResolveAgentToolGroupsInput): ToolGroup[] {
   const cfg = readConfig(input.cwd);
   const groups = new Set<ToolGroup>();
-  if (cfg.agent.disableDirectFilesystemAccess || input.builtinTools === 'none') {
+  if (cfg.agent.disableDirectFilesystemAccess) {
     for (const g of DIRECT_FILESYSTEM_DENY_GROUPS) groups.add(g);
   }
+  for (const g of input.rowGroups ?? []) groups.add(g);
   if (input.planMode) {
     for (const g of PLAN_MODE_DENY_GROUPS) groups.add(g);
   }

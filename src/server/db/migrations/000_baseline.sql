@@ -100,13 +100,14 @@ CREATE TABLE chat_thread (
   plan_id                          INTEGER REFERENCES plan(id) ON DELETE SET NULL,
   last_seen_plan_version           INTEGER,
   last_context_size                INTEGER,
-  context_type                     TEXT NOT NULL DEFAULT 'chat',
+  context_type                     TEXT NOT NULL,              -- 064: no default; the app writes the registry value
   brief_path                       TEXT,
   patch_path                       TEXT,
   initial_architecture_config_json TEXT,
   parent_thread_id                 TEXT REFERENCES chat_thread(id) ON DELETE CASCADE,
   spawned_by_tool_use_id           TEXT,
-  plan_path                        TEXT
+  plan_path                        TEXT,
+  consultation                     INTEGER NOT NULL DEFAULT 0  -- 064: 1 = consultation thread (origin, set once)
 );
 CREATE TABLE entity_tag (
   entity_type TEXT NOT NULL,

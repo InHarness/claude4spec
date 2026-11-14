@@ -272,9 +272,9 @@ describe('transagent-tools · runTransagent — contract (2.1.18)', () => {
 
     // Logic: "tool only in a top-level 'chat' thread" — the registry mounts the
     // server for `chat` alone; `patch` lost it in 2.1.18, `brief`/`ask` never had it.
-    expect(CONTEXT_TYPE_REGISTRY.chat.mcp.transagentTools).toBe(true);
+    expect(CONTEXT_TYPE_REGISTRY.chat.servers).toContain('transagent-tools');
     for (const ct of ['patch', 'brief', 'ask'] as const) {
-      expect(CONTEXT_TYPE_REGISTRY[ct].mcp.transagentTools, ct).toBe(false);
+      expect(CONTEXT_TYPE_REGISTRY[ct].servers, ct).not.toContain('transagent-tools');
     }
     // Declared, not derived: `patch` admits the `turn` class and still does not mount it.
     expect(PROFILES.patch.operationClasses.has('turn')).toBe(true);

@@ -32,8 +32,8 @@ async function seedPlan(
 function seedThread(t: TestApp, id: string, opts: { planPath?: string; parentThreadId?: string } = {}): void {
   t.db
     .prepare(
-      `INSERT INTO chat_thread (id, title, plan_path, parent_thread_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
+      `INSERT INTO chat_thread (id, title, context_type, plan_path, parent_thread_id, created_at, updated_at)
+       VALUES (?, ?, 'chat', ?, ?, datetime('now'), datetime('now'))`,
     )
     .run(id, id, opts.planPath ?? null, opts.parentThreadId ?? null);
 }
@@ -322,10 +322,10 @@ describe('GET /api/artifacts/plan/:path/threads', () => {
     const planPath = await seedPlan(t, 'p2-plan', 'P2 plan', 'body');
     t.db
       .prepare(
-        `INSERT INTO chat_thread (id, title, plan_path, parent_thread_id, created_at, updated_at)
-         VALUES ('th-old',   'old',   ?, NULL,      datetime('now','-2 hour'), datetime('now','-2 hour')),
-                ('th-new',   'new',   ?, NULL,      datetime('now'),           datetime('now')),
-                ('th-child', 'child', ?, 'th-new',  datetime('now'),           datetime('now'))`,
+        `INSERT INTO chat_thread (id, title, context_type, plan_path, parent_thread_id, created_at, updated_at)
+         VALUES ('th-old',   'old',   'chat', ?, NULL,      datetime('now','-2 hour'), datetime('now','-2 hour')),
+                ('th-new',   'new',   'chat', ?, NULL,      datetime('now'),           datetime('now')),
+                ('th-child', 'child', 'chat', ?, 'th-new',  datetime('now'),           datetime('now'))`,
       )
       .run(planPath, planPath, planPath);
 

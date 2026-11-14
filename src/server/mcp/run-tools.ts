@@ -95,3 +95,13 @@ export function buildRunToolsServer(opts: RunToolsOptions): CapturedMcpServer {
 
   return createMcpServer({ name: RUN_TOOLS_SERVER, tools: [runRemoteTool, getRunTool, cancelRunTool] });
 }
+
+/**
+ * 2.1.88 (M55 `7bo43wak`) — the mount condition of `run-tools`, held by its owner:
+ * a value whose row names the server gets it, and only in a top-level thread. A
+ * Run orders work on another machine and pushes the plan file, so only a thread
+ * the user drives orders one. Plan mode does not enter it.
+ */
+export function runToolsMountCondition(turn: { parentThreadId: string | null }): boolean {
+  return turn.parentThreadId == null;
+}

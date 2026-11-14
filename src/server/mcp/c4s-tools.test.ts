@@ -329,7 +329,7 @@ describe('c4s-tools · ask — contract (2.1.9)', () => {
   it('[ac:ac-tura-ask-z-prosba-o-zmiane-specyfikac] a change request to the peer ends in a plan on its side, never an edit', () => {
     expect(toolAdmittedByProfile('ask', 'create_plan')).toBe(true);
     expect(toolAdmittedByProfile('ask', 'update_plan')).toBe(true);
-    expect(CONTEXT_TYPE_REGISTRY.ask.mcp.planTools).toBe(true);
+    expect(CONTEXT_TYPE_REGISTRY.ask.servers).toContain('plan-tools');
     for (const write of ['create_page', 'update_page', 'create_tag', 'tag_entity']) {
       expect(toolAdmittedByProfile('ask', write), write).toBe(false);
     }

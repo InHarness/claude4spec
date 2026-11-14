@@ -159,7 +159,8 @@ export async function backfillPlansToFilesystem(params: {
 
       // Full column set as of migration 042 + 047's additive `plan_path`,
       // minus `plan_id`/`last_seen_plan_version` — see migration 042 for the
-      // precedent this mirrors.
+      // precedent this mirrors. 2.1.88 (064): `context_type` has no default
+      // and `consultation` is carried over — the SQL chain has already run.
       db.exec(`
         CREATE TABLE chat_thread_new (
           id                               TEXT PRIMARY KEY NOT NULL,
@@ -172,26 +173,29 @@ export async function backfillPlansToFilesystem(params: {
           initial_system_prompt            TEXT,
           last_usage_json                  TEXT,
           last_context_size                INTEGER,
-          context_type                     TEXT NOT NULL DEFAULT 'chat',
+          context_type                     TEXT NOT NULL,
           brief_path                       TEXT,
           patch_path                       TEXT,
           plan_path                        TEXT,
           initial_architecture_config_json TEXT,
           parent_thread_id                 TEXT REFERENCES chat_thread(id) ON DELETE CASCADE,
-          spawned_by_tool_use_id           TEXT
+          spawned_by_tool_use_id           TEXT,
+          consultation                     INTEGER NOT NULL DEFAULT 0
         );
 
         INSERT INTO chat_thread_new (
           id, title, last_session_id, created_at, updated_at, current_todo_items,
           plan_mode, initial_system_prompt, last_usage_json, last_context_size,
           context_type, brief_path, patch_path, plan_path,
-          initial_architecture_config_json, parent_thread_id, spawned_by_tool_use_id
+          initial_architecture_config_json, parent_thread_id, spawned_by_tool_use_id,
+          consultation
         )
         SELECT
           id, title, last_session_id, created_at, updated_at, current_todo_items,
           plan_mode, initial_system_prompt, last_usage_json, last_context_size,
           context_type, brief_path, patch_path, plan_path,
-          initial_architecture_config_json, parent_thread_id, spawned_by_tool_use_id
+          initial_architecture_config_json, parent_thread_id, spawned_by_tool_use_id,
+          consultation
         FROM chat_thread;
 
         DROP TABLE chat_thread;

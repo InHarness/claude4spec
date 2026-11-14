@@ -30,6 +30,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runMigrations } from '../../../src/server/db/migrate.js';
+import { CODE_MIGRATIONS } from '../../../src/server/db/code-migrations.js';
 import { PluginRegistryImpl } from '../../../src/server/core/plugin-host/registry.js';
 import { applyProjection } from '../../../src/server/db/projection.js';
 import { loadBuiltinEnvelopes } from '../../../src/server/core/plugin-host/loader.js';
@@ -107,7 +108,9 @@ function snapshotSchema(db: Database.Database): Record<string, TableShape> {
   return out;
 }
 
-/** A legacy database: the historical chain, applied file by file. */
+/** A legacy database: the historical chain, applied file by file — each file
+ *  followed by its code step, as `runMigrations` does (2.1.88: 064 rebuilds
+ *  `chat_thread` in its code step). */
 function legacyDb(): Database.Database {
   const db = new Database(':memory:');
   db.pragma('foreign_keys = OFF');
@@ -116,6 +119,7 @@ function legacyDb(): Database.Database {
     .filter((f) => f.endsWith('.sql') && f !== '000_baseline.sql')
     .sort()) {
     db.exec(fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf-8'));
+    CODE_MIGRATIONS[file.replace(/\.sql$/, '')]?.(db);
   }
   return db;
 }

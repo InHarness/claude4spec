@@ -75,7 +75,7 @@ describe('runMigrations', () => {
   it('keeps child rows across a cascade-parent rebuild and re-enables foreign keys', () => {
     const db = new Database(':memory:');
     runMigrations(db);
-    db.prepare("INSERT INTO chat_thread (id) VALUES ('t1')").run();
+    db.prepare("INSERT INTO chat_thread (id, context_type) VALUES ('t1', 'chat')").run();
     db.prepare("INSERT INTO chat_message (thread_id, role, content) VALUES ('t1', 'user', '{}')").run();
     db.prepare("DELETE FROM schema_migrations WHERE version = '042_chat_thread_drop_context_type_check'").run();
     db.pragma('foreign_keys = ON');

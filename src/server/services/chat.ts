@@ -19,6 +19,7 @@ import type {
   UsageStats,
 } from '../../shared/entities.js';
 import { DomainError } from './tags.js';
+import { defaultContextType } from './context-types/registry.js';
 
 interface ChatThreadRow {
   id: string;
@@ -172,7 +173,11 @@ export class ChatService {
     } = {},
   ): ChatThread {
     const id = nanoid(12);
-    const contextType: ChatContextType = opts.contextType ?? 'chat';
+    // 2.1.88: `context_type` has no column default — the value is always
+    // written here; a thread opened without a type gets the default value.
+    // 2.1.88 (M44 `zvy49ysg`, M21 `gll5xhtr`): the column has no default — a thread
+    // opened without a type gets the registry's `Wejście: domyślny` value.
+    const contextType: ChatContextType = opts.contextType ?? defaultContextType();
     const briefPath = opts.briefPath ?? null;
     const patchPath = opts.patchPath ?? null;
     const parentThreadId = opts.parentThreadId ?? null;
@@ -358,6 +363,20 @@ export class ChatService {
       )
       .get(planPath) as { id: string } | undefined;
     return row?.id ?? null;
+  }
+
+  /**
+   * 2.1.88 (`chat_thread.consultation`): the thread's origin — `true` for a
+   * consultation thread, founded on another project's request. The column is
+   * set once at creation and never changes; nothing on this store writes it
+   * yet (every row reads `false`) — the consultation entry founds such rows.
+   * Unknown thread → `false`.
+   */
+  isConsultationThread(threadId: string): boolean {
+    const row = this.db
+      .prepare(`SELECT consultation FROM chat_thread WHERE id = ?`)
+      .get(threadId) as { consultation: number } | undefined;
+    return row?.consultation === 1;
   }
 
   getThreadPlanPath(threadId: string): string | null {

@@ -64,7 +64,7 @@ describe('plan-tools — update_plan', () => {
       frontmatterIndexer: new PagesFrontmatterIndexer(new Map([[systemRootId('plans'), plansPages]]), noopWs),
       ws: noopWs,
     });
-    db.prepare(`INSERT INTO chat_thread (id) VALUES (?)`).run('t-1');
+    db.prepare(`INSERT INTO chat_thread (id, context_type) VALUES (?, 'chat')`).run('t-1');
 
     const { server } = buildPlanToolsServer({ threadId: 't-1', planService: service, pageVersions });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -329,8 +329,8 @@ describe('plan-tools — M10 thread isolation, the plan tools and the plan opera
       frontmatterIndexer: indexer,
       ws,
     });
-    db.prepare(`INSERT INTO chat_thread (id) VALUES (?)`).run('t-1');
-    db.prepare(`INSERT INTO chat_thread (id) VALUES (?)`).run('t-2');
+    db.prepare(`INSERT INTO chat_thread (id, context_type) VALUES (?, 'chat')`).run('t-1');
+    db.prepare(`INSERT INTO chat_thread (id, context_type) VALUES (?, 'chat')`).run('t-2');
 
     connect = async (target?: 'explicit', threadId = 't-1'): Promise<Client> => {
       const { server } = buildPlanToolsServer({

@@ -22,7 +22,7 @@ const ANCHOR_RE = new RegExp(ANCHOR_PATTERN_SOURCE);
 const HEADING_RE = /^(#{2,4})\s+(.+?)\s*$/;
 
 function seedThread(db: Database.Database, id: string): void {
-  db.prepare(`INSERT INTO chat_thread (id) VALUES (?)`).run(id);
+  db.prepare(`INSERT INTO chat_thread (id, context_type) VALUES (?, 'chat')`).run(id);
 }
 
 interface Harness {
@@ -425,8 +425,8 @@ describe('PlanService.listPlans', () => {
     const freshPlan = (await h.service.getByThread('thread-1'))!;
     h.db
       .prepare(
-        `INSERT INTO chat_thread (id, title, plan_path, created_at, updated_at)
-         VALUES ('thread-2', 't2', ?, datetime('now'), datetime('now'))`,
+        `INSERT INTO chat_thread (id, title, context_type, plan_path, created_at, updated_at)
+         VALUES ('thread-2', 't2', 'chat', ?, datetime('now'), datetime('now'))`,
       )
       .run(freshPlan.path);
     h.db.prepare(`UPDATE chat_thread SET updated_at = datetime('now', '-1 hour') WHERE id = 'thread-1'`).run();

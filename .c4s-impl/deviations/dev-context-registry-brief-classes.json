@@ -1,0 +1,15 @@
+{
+  "id": "dev-context-registry-brief-classes",
+  "kind": "clarification",
+  "blocking": false,
+  "address": "pages/modules/m21-briefs.md#m21ctxreg",
+  "slugs": [
+    "ac-narzedzie-klasy-spoza-klasy-operacji"
+  ],
+  "text": "The `brief` row (M21 m21ctxreg, 2.1.88) declares `Klasy operacji: wszystkie`. Until 2.1.87 the brief profile admitted only `read` and `brief`. Built as written, a brief thread's turn now also gets the write tools of `release-tools` (`release_create`, `release_update`), which a brief thread did not have before. The external `mcp` channel's `brief` profile (M12 ecawzsbr) still renders only the common reads and the brief tools: it is not in this unit and was left unchanged. Please confirm the brief row should be `wszystkie` rather than `read`, `brief`.",
+  "assumption": "ASSUMPTION:dev-context-registry-brief-classes: built as the spec says (`all` classes for the brief row in the turn); the mcp-channel brief profile is unchanged.",
+  "unit": "context-registry",
+  "portion": "context-registry/p2-l15-l19",
+  "sent": true,
+  "patchPath": "2-1-87-to-2-1-88-context-registry-m21ctxreg-brief-row-operation-classes-wszystkie.md"
+}

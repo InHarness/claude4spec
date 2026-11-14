@@ -37,6 +37,7 @@ import { SPEC_SKILL_TOOLS_SERVER, type SpecSkillTools } from '../mcp/spec-skill-
 import { RUN_TOOLS_SERVER, type RunToolsFactory } from '../mcp/run-tools.js';
 import { overlayServerNamesFor, pluginServerNamesFor } from '../operations/profile-gate.js';
 import { assembleTurnMcpServers, type TurnServerEntry } from '../services/turn-mcp-servers.js';
+import type { McpServerFactory } from '../../shared/plugin-host/mcp.js';
 import type { ListProjectsResult } from '../workspace/list-projects.js';
 import {
   buildSystemPrompt,
@@ -66,7 +67,14 @@ import type { BriefService } from '../services/brief.js';
 import type { PatchService, PatchDetail } from '../services/patch.js';
 import type { ReleaseService } from '../services/release.js';
 import { TransagentDispatcher } from '../services/transagent-dispatcher.js';
-import { buildTransagentToolsServer, TRANSAGENT_TOOL_FULL_NAME } from '../mcp/transagent-tools.js';
+import {
+  buildTransagentToolsServer,
+  TRANSAGENT_TOOL_FULL_NAME,
+  TRANSAGENT_TOOLS_SERVER,
+  transagentToolsMountCondition,
+} from '../mcp/transagent-tools.js';
+import { effectivePlanMode, rowBuiltinGroups } from '../services/context-types/registry.js';
+import { rowNamesServer } from '../services/context-types/row.js';
 import type { FileVersionService } from '../services/file-version.js';
 import type { SkillResolver, SkillRegistry } from '../services/skill-registry.js';
 import { SKILLS_ROOT_KIND, currentSkillOf } from '../services/project-rooted-skills.js';
@@ -577,13 +585,14 @@ export async function runAgentTurn(
   // `briefs` a `brief`/`patch` row assembles no server set, subagent or prompt.
   assertRegisteredContextType(thread, deps.contextTypes);
   const ctx = CONTEXT_TYPE_REGISTRY[thread.contextType];
-  // Builtin posture (dim 5): `force-plan` pins plan-mode EVERY turn regardless of the
+  // Builtin posture: a PINNED posture forces its plan-mode value EVERY turn regardless of the
   // thread's stored plan_mode flag. "Read-only" is the wrong word for what that buys:
   // plan mode desugars to `disallowedToolGroups: ['file-write','shell']`, which touches
   // BUILT-INS ONLY — the MCP surface is narrowed by the context profile instead (see
   // `assembleTurnMcpServers` below). One site, so it covers both POST /api/threads/:id/ask and
   // POST /api/chat. (Today only `ask` forces; the rest follow the thread flag.)
-  const planMode = ctx.builtinPosture === 'force-plan' ? true : thread.planMode;
+  // 2.1.88 (M44 `3f5ej79s`): the row's `Postura` — pinned forces its value, unavailable is off.
+  const planMode = effectivePlanMode(ctx, thread.planMode);
 
   const adapter = createAdapter('claude-code');
   const emitter = new EventEmitter();
@@ -1033,7 +1042,7 @@ export async function runAgentTurn(
     // i wkladamy do system promptu.
     // Gated on the registry's brief-tools dimension (brief is the only briefTools row).
     let briefSnapshot: Brief | null = null;
-    if (ctx.mcp.briefTools && thread.briefPath) {
+    if (rowNamesServer(ctx, 'brief-tools') && thread.briefPath) {
       try {
         briefSnapshot = await deps.briefService.getBrief(thread.briefPath);
       } catch (err) {
@@ -1161,7 +1170,7 @@ export async function runAgentTurn(
      * well: the library unions the preset with what we pass, and passing both is
      * how plan mode keeps working on a project that left the flag off.
      */
-    const disallowedToolGroups = resolveAgentToolGroups({ cwd: deps.cwd, planMode, builtinTools: ctx.builtinTools });
+    const disallowedToolGroups = resolveAgentToolGroups({ cwd: deps.cwd, planMode, rowGroups: rowBuiltinGroups(ctx) });
     const shellDenied = disallowedToolGroups.includes('shell');
     /**
      * The PROJECT-CONSTANT half, isolated: `file-read` is the one group only
@@ -1182,7 +1191,8 @@ export async function runAgentTurn(
     // 0.2.50: hoisted above the system prompt, because `buildMcpEntries` reads it and
     // the prompt's `<tooling>` block is now derived from what that returns.
     const isChildBanka = thread.parentThreadId != null;
-    const transagentDispatcher = ctx.mcp.transagentTools && !isChildBanka
+    // 2.1.88: the row names the server and its owner's condition (top-level only, M46 `exchr4q9`) holds.
+    const transagentDispatcher = rowNamesServer(ctx, TRANSAGENT_TOOLS_SERVER) && transagentToolsMountCondition(thread)
       ? new TransagentDispatcher(deps, {
           model: input.model,
           architectureConfig: input.architectureConfig,
@@ -1273,7 +1283,7 @@ export async function runAgentTurn(
       mcpInventory,
       // 0.1.58: peer-discovery block. Gated on the same c4s-tools dimension; skip the
       // disk reads when c4s-tools is absent (the block would be gated out anyway).
-      workspaceProjects: ctx.mcp.c4sTools ? (deps.listWorkspacePeers?.() ?? []) : [],
+      workspaceProjects: rowNamesServer(ctx, 'c4s-tools') ? (deps.listWorkspacePeers?.() ?? []) : [],
       workspaceName: deps.workspaceName,
       // 2.1.70 (M55): `<remote_execution>` needs ≥ 1 runner-host record AND `run-tools`
       // mounted; the records are counted only when the server is in this turn's mount.
@@ -1566,146 +1576,83 @@ export async function runAgentTurn(
      * declared `tools` and discarded.
      */
     function buildMcpEntries(): TurnServerEntry[] {
-      // M05 m05ctxreg dim 2: per-thread MCP servers are dispatched from the registry's
-      // `mcp` descriptor — each server mounts iff its registry flag is set.
-      const planTools = ctx.mcp.planTools
-        ? buildPlanToolsServer({
+      /**
+       * 2.1.88 (M44 `3f5ej79s`, `7q3ny9bb`) — the handler's own servers, BY NAME.
+       * Which of them a turn mounts is not decided here: `assembleTurnMcpServers`
+       * invokes a builder only for a name in the base set or the row's `Serwery`
+       * column whose owner condition holds. A builder returning `null` mounts
+       * nothing — the artifact servers close over the thread's anchor and exist
+       * only when it is set (`brief_path` / `patch_path`).
+       */
+      const handlerServers: Record<string, () => McpServerFactory | null> = {
+        'plan-tools': () =>
+          buildPlanToolsServer({
             threadId: thread.id,
             planService: deps.planService,
             pageVersions: deps.pageVersions,
-          }, deps.projectId ?? null)
-        : null;
-      const briefTools = ctx.mcp.briefTools && thread.briefPath
-        ? buildBriefToolsServer({
-            threadId: thread.id,
-            briefPath: thread.briefPath,
-            briefService: deps.briefService,
-          }, deps.projectId ?? null)
-        : null;
-      /**
-       * M23 `patch-tools` (2.1.4): `get_patch` + `mark_patch_applied`, mounted ONLY
-       * for `context_type='patch'`. The patch profile admits the same operation
-       * classes as `chat`, so the class gate cannot tell them apart — the thread's
-       * anchor can: `patch_path` is set iff context_type='patch' (chat.ts
-       * invariant), and the server closes over it. `create_patch` is no longer
-       * mounted anywhere in a turn: a patch is filed from the terminal (`cli`) or
-       * REST, never from a conversation.
-       */
-      const patchTools = thread.contextType === 'patch' && thread.patchPath
-        ? buildPatchToolsServer({
-            threadId: thread.id,
-            patchPath: thread.patchPath,
-            patchService: deps.patchService,
-          }, deps.projectId ?? null)
-        : null;
-      // M24 c4s-tools: cross-cutting MCP exposing the peer-consult flow. Fresh factory
-      // per request; closes over `deps.workspaceName` so `ask` defaults to the caller's
-      // workspace (fixes AMBIGUOUS_WORKSPACE when the project lives in N>1 workspaces).
-      // Registry-gated: chat + patch only (brief is intentionally narrow; `ask` is
-      // excluded — a consulted peer cannot consult another).
-      const c4sTools = ctx.mcp.c4sTools ? buildC4sToolsServer(deps.workspaceName) : null;
+          }, deps.projectId ?? null),
+        'brief-tools': () =>
+          thread.briefPath
+            ? buildBriefToolsServer({
+                threadId: thread.id,
+                briefPath: thread.briefPath,
+                briefService: deps.briefService,
+              }, deps.projectId ?? null)
+            : null,
+        // M23 `patch-tools`: `get_patch` + `mark_patch_applied`, closed over the thread's `patch_path`.
+        'patch-tools': () =>
+          thread.patchPath
+            ? buildPatchToolsServer({
+                threadId: thread.id,
+                patchPath: thread.patchPath,
+                patchService: deps.patchService,
+              }, deps.projectId ?? null)
+            : null,
+        // M11 `c4s-tools`: the consultation server; closes over `deps.workspaceName`
+        // so `ask` defaults to the caller's workspace.
+        'c4s-tools': () => buildC4sToolsServer(deps.workspaceName),
+        /**
+         * 0.1.69 transagent-tools. The dispatcher is turn-scoped and null when the
+         * row does not name the server or its owner's condition (top-level only)
+         * fails; only the SERVER is rebuilt here.
+         */
+        [TRANSAGENT_TOOLS_SERVER]: () =>
+          transagentDispatcher
+            ? buildTransagentToolsServer({
+                parentThreadId: thread.id,
+                dispatcher: transagentDispatcher,
+                // 2.1.18 (M23/M44) — the orchestrator's `list_patches` rides this server.
+                patches: deps.patchService,
+                // 2.1.18 (M21/M44) — M21's `list_briefs`, on the release axis.
+                briefs: deps.briefService,
+                // 2.1.77 (M46 `qq84x14h`): without `briefs` the server leaves both lists out.
+                hasBriefs: deps.hasBriefs !== false,
+                // 2.1.18 (M10/M44) — and M10's `list_plans`, the plan set a banka's `planPath` comes from.
+                plans: deps.planService,
+                projectId: deps.projectId ?? null,
+              })
+            : null,
+        // 2.1.9 (M52 `hdkx97wq`) spec-skill-tools: `update_skill_file`, for a value whose row names it.
+        [SPEC_SKILL_TOOLS_SERVER]: () => (deps.specSkillTools ? deps.specSkillTools.build() : null),
+        // 2.1.64 (M55 `7bo43wak`) run-tools: top-level only (its owner's condition), not plan mode.
+        [RUN_TOOLS_SERVER]: () => (deps.runTools ? deps.runTools.build(thread.id) : null),
+        // 0.2.13 workspace-tools — base set. Absent only in hand-rolled rigs without a workspace.
+        'workspace-tools': () =>
+          deps.listWorkspaceProjects ? buildWorkspaceToolsServer(deps.listWorkspaceProjects) : null,
+        // 0.2.36 skill-tools — base set: the only channel to a skill's content, so every value has it.
+        'skill-tools': () => buildSkillToolsServer(deps.skillRegistry, deps.projectId ?? null),
+      };
 
       /**
-       * 0.2.36 skill-tools: `load_skill_file`, the only channel to a skill's content.
-       *
-       * UNCONDITIONAL, and no `ctx.mcp.*` dimension gates it — deliberately the same
-       * treatment `workspace-tools` gets, for a stronger version of the same reason.
-       * The writing style attaches to EVERY context type, so the operation that reads
-       * its body cannot be gated by any of them; `brief` above all, since that is the
-       * frame whose FS built-ins are off and which therefore has no fallback at all.
-       *
-       * 0.2.99 — it now has an L3 catalog row (read-class, admitted under the
-       * instruction exception), and read-class is what every profile admits, so it
-       * still reaches all four. Built WITHOUT a resolver: `list_skills` is `n/a` in
-       * this channel — the turn gets the listing as `<available_skills>`, and
-       * mounting is per-server, so a listing tool here would reach every context
-       * type at once.
-       */
-      const skillTools = buildSkillToolsServer(deps.skillRegistry, deps.projectId ?? null);
-
-      // 0.2.13 workspace-tools: M31's `list_projects`. No registry dimension gates
-      // it — see the note at its mount below. Absent only when the deps were built
-      // without a workspace (the hand-rolled test rigs).
-      const workspaceTools = deps.listWorkspaceProjects
-        ? buildWorkspaceToolsServer(deps.listWorkspaceProjects)
-        : null;
-
-      // 0.1.69 transagent-tools: delegate work to a hidden child banka. Both guards
-      // (registry dimension `transagentTools`, and recursion depth 1 — never inside a
-      // child banka) are folded into `transagentDispatcher` above, which is null when
-      // either says no. Only the SERVER is rebuilt here; the dispatcher is turn-scoped.
-      const transagentTools = transagentDispatcher
-        ? buildTransagentToolsServer({
-            parentThreadId: thread.id,
-            dispatcher: transagentDispatcher,
-            // 2.1.18 (M23/M44) — the orchestrator's `list_patches` rides this server.
-            patches: deps.patchService,
-            // 2.1.18 (M21/M44) — M21's `list_briefs`, on the release axis; never on a `brief` thread.
-            briefs: deps.briefService,
-            // 2.1.77 (M46 `qq84x14h`): without `briefs` the server leaves both lists out.
-            hasBriefs: deps.hasBriefs !== false,
-            // 2.1.18 (M10/M44) — and M10's `list_plans`, the plan set a banka's `planPath` comes from.
-            plans: deps.planService,
-            projectId: deps.projectId ?? null,
-          })
-        : null;
-
-      /**
-       * 2.1.9 (M52 `hdkx97wq`, M44 `3f5ej79s`) spec-skill-tools: `update_skill_file`.
-       * Behind the registry's DECLARED `specSkillTools` column — `chat` and `patch`
-       * only; `brief` and `ask` never (a new context type does not inherit it). A
-       * fresh server per call from the context-scoped element, which builds
-       * nothing once the context disposed it.
-       */
-      const specSkillTools =
-        ctx.mcp.specSkillTools && deps.specSkillTools ? deps.specSkillTools.build() : null;
-
-      /**
-       * 2.1.64 (M55 `7bo43wak`, M44 `3f5ej79s`) run-tools: ordering, reading and
-       * cancelling a Run on a runner host. The same gate as `transagent-tools` —
-       * the registry's DECLARED `runTools` column (`chat` only; `patch`, `ask`,
-       * `brief` and a new context type never) and `parent_thread_id IS NULL` —
-       * and NOT plan mode: plan mode gates built-ins, never MCP, so a top-level
-       * `chat` thread in plan mode keeps these tools.
-       */
-      const runTools = ctx.mcp.runTools && !isChildBanka && deps.runTools ? deps.runTools.build(thread.id) : null;
-
-      /**
-       * Step 2 — the handler's own servers, each already behind its registry
-       * gate above. On a name collision with a pool entry the handler's entry
-       * wins. `workspace-tools` and `skill-tools` are unconditional: both are
-       * read-class, which every profile admits.
-       */
-      const handlerEntries: TurnServerEntry[] = [];
-      if (planTools) handlerEntries.push({ name: 'plan-tools', server: planTools });
-      if (briefTools) handlerEntries.push({ name: 'brief-tools', server: briefTools });
-      if (patchTools) handlerEntries.push({ name: 'patch-tools', server: patchTools });
-      if (c4sTools) handlerEntries.push({ name: 'c4s-tools', server: c4sTools });
-      if (transagentTools)
-        handlerEntries.push({ name: 'transagent-tools', server: transagentTools });
-      if (workspaceTools) handlerEntries.push({ name: 'workspace-tools', server: workspaceTools });
-      if (specSkillTools) handlerEntries.push({ name: SPEC_SKILL_TOOLS_SERVER, server: specSkillTools });
-      if (runTools) handlerEntries.push({ name: RUN_TOOLS_SERVER, server: runTools });
-      handlerEntries.push({ name: 'skill-tools', server: skillTools });
-
-      /**
-       * Step 1 (M44 `3f5ej79s`) — the host pool: every server registered in the
-       * plugin host, `reference-tools` and `release-tools` among them (the host
-       * registers both in the pool like a plugin's server). The pool knows no
-       * context type: it is narrowed by this row's `ctx.mcp.pluginServers`
-       * (`brief` takes only `release-tools`) and by the handler names above,
-       * both as a name predicate the host applies BEFORE invoking a factory —
-       * a server this turn does not mount is never built. `strict`: this is
-       * the mount, where a repeat instance is fatal.
-       *
-       * Step 3 — the profile gate, inside the same call: tools filtered by the
-       * profile's operation classes, servers left with none dropped.
+       * The pool (`buildMcpServers`, `strict`: this is the mount, where a repeat
+       * instance is fatal) is narrowed by the row before any factory runs; the
+       * profile gate filters by the row's `Klasy operacji` inside the same call.
        */
       return assembleTurnMcpServers({
-        contextType: thread.contextType,
-        pluginServers: ctx.mcp.pluginServers,
+        row: ctx,
+        turn: { parentThreadId: thread.parentThreadId ?? null },
         buildPool: (include) => deps.pluginHost.buildMcpServers({ strict: true, include }),
-        handlerEntries,
+        handlerServers,
         pluginServerNames,
         overlayServerNames,
       });
