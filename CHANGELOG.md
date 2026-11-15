@@ -585,3 +585,4 @@ Initial public release.
 [2.1.11]: https://github.com/InHarness/claude4spec/compare/v2.1.0...v2.1.11
 [2.1.64]: https://github.com/InHarness/claude4spec/compare/v2.1.11...v2.1.64
 [2.1.68]: https://github.com/InHarness/claude4spec/compare/v2.1.64...v2.1.68
+[2.1.88]: https://github.com/InHarness/claude4spec/compare/v2.1.68...v2.1.88
