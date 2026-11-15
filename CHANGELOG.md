@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.88] - 2026-11-15
+
+Covers 2.1.69–2.1.88: the intermediate versions were never published to npm.
+
+### Added
+
+- **Host API 2.2.0 (M33).** Ends the stabilisation phase: API additions now bump the minor version. Plugins that declare `^2.2.0` load from this version on.
+- **Project types and capabilities (M57–M60).** Projects register with a type; the type registry (`GET /api/workspace/project-types`) gives capabilities, and without `entities` or `briefs` nothing entity- or brief-related exists. Project creation page with type cards, an onboarding wizard per type, and project lists grouped by type in registry order (M31, M52).
+- **Context-type registry, stage 1.** Chat shell, subagents, system prompt composition and child-thread dispatch follow the project's registry row; a separate consultation entry when opening a thread (`entry=consultation`).
+- **Patch threads from the terminal (M11, M23).** `c4s agent --ct patch --patch <path>` and `c4s list-patches`; `mark_patch_applied` outside the human-decision catalog; `plan-execution` v5.
+- **`<remote_execution>` system prompt block (M55)**, and the Run registry records the ordering thread and the Run's project and plan.
+- **Images from tool results** in the chat tool card (M53).
+
+### Changed
+
+- **Plugin tool classes (M44, M48).** A plugin server's operation class comes from the base layer of the envelope; the plan-mode "Do not call" list follows effective class and effects; one host-tool record shared by the profile gate and the plan-mode list.
+- `release_diff`: floor and retry without entities for single-section windows, wide-window hint.
+- Shadow supersession, ancestor record release, canonical project paths in the registry, and separate stdout/stderr streams for `c4s` commands (patches from 2.1.67–2.1.68).
+
 ## [2.1.68] - 2026-11-04
 
 Covers 2.1.65–2.1.68: the intermediate versions were never published to npm.
