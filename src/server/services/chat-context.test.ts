@@ -14,7 +14,7 @@ import {
 } from './chat-context.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { validateSubagents } from '@inharness-ai/agent-adapters';
-import { DEFAULT_SUBAGENT_TURNS } from './plugin-subagents.js';
+import { DEFAULT_SUBAGENT_TURNS, RESERVED_SUBAGENT_NAMES } from './plugin-subagents.js';
 import type { PluginSubagentContribution } from '../../shared/plugin-host/manifest.js';
 import { acFixtureSystemPrompt as acSystemPrompt } from '../../../tests/helpers/ac-fixture.js';
 import type { Root } from '../../shared/types.js';
@@ -862,6 +862,12 @@ describe('subagentsFor (0.1.67)', () => {
 /* ── 2.1.88 (M45 `uomqh1pu`): the built-in follows the row's `Subagent` column ── */
 describe('subagentsFor — the built-in comes from the row (2.1.88)', () => {
   const builtinNames = new Set(Object.keys(BUILTIN_SUBAGENTS));
+
+  it('every built-in definition name is reserved against plugin contributions', () => {
+    // The resolver keeps its own name set (an import cycle blocks deriving it from
+    // BUILTIN_SUBAGENTS); this keeps the two from drifting.
+    expect([...RESERVED_SUBAGENT_NAMES].sort()).toEqual([...builtinNames].sort());
+  });
 
   it('[ac:ac-watek-o-context-type-chat-patch-ask-d] a thread gets the subagent its row names in the Subagent column', () => {
     // Every row of the registry, not a list of values: the built-in is the one the
