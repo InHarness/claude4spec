@@ -667,7 +667,7 @@ export const SPEC_OPERATION_RECORDS: readonly SpecOperationRecord[] = [
     cli: 'direct',
     mcp: 'n/a',
     rest: 'direct',
-    powody: { mcp: 'serwer zewnętrzny nie niesie narzędzia: lista briefów jest powierzchnią użytkownika (UI, `c4s list-briefs`, trasa REST), a agentowo renderuje ją wyłącznie `transagent-tools` orkiestratora wątku `chat`' },
+    powody: { mcp: 'serwer zewnętrzny nie niesie narzędzia: lista briefów jest powierzchnią użytkownika (UI, `c4s list-briefs`, trasa REST), a agentowo renderuje ją wyłącznie `transagent-tools` w wątku wartości z serwerem orkiestracji' },
     efekty: ['brak'],
     idempotencja: 'tak',
     opisTresci: 'n/d',

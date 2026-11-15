@@ -14,10 +14,11 @@
  * `run_series` tool.
  *
  * Per-request instance (like `plan-tools` / `brief-tools`): `parentThreadId` and
- * the `dispatcher` are captured from the parent turn. Mounted ONLY for a
- * `context_type='chat'` thread with `parent_thread_id IS NULL` (2.1.18: `patch`
- * lost it — the registry's declared `transagentTools` column) and never inside a
- * child banka (recursion depth 1) — both guards live in agent-turn.ts.
+ * the `dispatcher` are captured from the parent turn. Mounted ONLY for a value
+ * whose registry row names `transagent-tools` in its `Serwery` (today `chat`)
+ * and only with `parent_thread_id IS NULL` — never inside a child banka
+ * (recursion depth 1). 2.1.88 (M46 `exchr4q9`): that second condition stands at
+ * this server (`transagentToolsMountCondition` below), not in the row.
  *
  * 2.1.18 (M44 `3f5ej79s`, M23 `m23mcp01`) — the same server also carries the
  * orchestrator's list of the patch set, `list_patches` (owned by M23, grouped
@@ -48,7 +49,7 @@ import { toIso } from '../services/artifact-content.js';
 import type { BriefService } from '../services/brief.js';
 import type { PatchService } from '../services/patch.js';
 import type { PlanService } from '../services/plan.js';
-import { ResumeConfigLockedError, TRANSAGENT_CONTEXT_TYPES, type TransagentDispatcher } from '../services/transagent-dispatcher.js';
+import { ResumeConfigLockedError, TRANSAGENT_CONTEXT_TYPES, type TransagentContextType, type TransagentDispatcher } from '../services/transagent-dispatcher.js';
 import { DomainError } from '../services/tags.js';
 import { AgentTurnError } from '../../shared/agent-turn.js';
 
@@ -77,7 +78,8 @@ export interface TransagentToolsContext {
   /** The project `list_patches` / `list_briefs` / `list_plans` answer for — the response-size ring's key. */
   projectId?: string | null;
   /**
-   * 2.1.77 (M46 `qq84x14h`) — the project has the capability `briefs`. Without it
+   * 2.1.77 (M46 `qq84x14h`, the one capability read left there in 2.1.88: the
+   * server's composition) — the project has the capability `briefs`. Without it
    * the server carries `runTransagent` and `list_plans` only: `list_patches` and
    * `list_briefs` belong to M23/M21, modules such a project does not have — even
    * when a rig hands the services in. Absent = yes.
@@ -139,7 +141,9 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
       '  - INVALID_ARGS — the arguments do not describe a runnable child: contextType=\'patch\'',
       "    without payload.patchPath (when spawning), a contextType='chat' payload.planPath that names",
       '    no existing plan (or is not a string), a `threadId` of a top-level thread (not a banka), or',
-      "    a contextType that differs from the banka's.",
+      "    a contextType that differs from the banka's, or a contextType this project's context type",
+      '    registry does not have (e.g. brief / patch in a project without briefs) — refused before',
+      '    anything is created.',
       '  - STREAM_IN_PROGRESS — a turn is already resuming that banka\'s session; the call is not',
       '    queued. Retry once it has finished.',
       '  - RESUME_CONFIG_LOCKED — the model, reasoning or filesystem scope differs from the banka\'s',
@@ -177,7 +181,7 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
       try {
         const result = await ctx.dispatcher.run({
           parentThreadId: ctx.parentThreadId,
-          contextType: input.contextType as 'brief' | 'chat' | 'patch',
+          contextType: input.contextType as TransagentContextType,
           message: String(input.message ?? ''),
           payload:
             input.payload && typeof input.payload === 'object'

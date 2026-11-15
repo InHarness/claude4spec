@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { buildTransagentToolsServer } from './transagent-tools.js';
+import { buildTransagentToolsServer, transagentToolsMountCondition } from './transagent-tools.js';
 import { ResumeConfigLockedError, TransagentDispatcher } from '../services/transagent-dispatcher.js';
 import type { AgentTurnDeps, AgentTurnInput } from '../routes/agent-turn.js';
 import { runMigrations } from '../db/migrate.js';
@@ -276,6 +276,12 @@ describe('transagent-tools · runTransagent — contract (2.1.18)', () => {
     for (const ct of ['patch', 'brief', 'ask'] as const) {
       expect(CONTEXT_TYPE_REGISTRY[ct].servers, ct).not.toContain('transagent-tools');
     }
+    // 2.1.88 logic: "only top-level, in a value whose row names transagent-tools;
+    // never in a child thread" — the second half is the server's own condition.
+    expect(transagentToolsMountCondition({ parentThreadId: null })).toBe(true);
+    expect(transagentToolsMountCondition({ parentThreadId: 'parent_1' })).toBe(false);
+    // Refusal: a contextType outside the set is stopped by the input schema.
+    expect(() => (t!.inputSchema as Record<string, { parse(v: unknown): unknown }>).contextType!.parse('ask')).toThrow();
     // Declared, not derived: `patch` admits the `turn` class and still does not mount it.
     expect(PROFILES.patch.operationClasses.has('turn')).toBe(true);
     expect(PROFILES.patch.transagentTools).toBe(false);

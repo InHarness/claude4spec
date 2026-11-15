@@ -1,5 +1,5 @@
 {
-  "iteration": 31,
+  "iteration": 36,
   "conventions": [
     {
       "label": "L15 (Context Types) — implementor M44",
@@ -1183,13 +1183,38 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "transagent-dispatch/p1-l3-l19",
+          "layers": [
+            "L3",
+            "L15",
+            "L19"
+          ],
+          "slugs": [
+            "transagent-tools-runtransagent",
+            "list-briefs",
+            "spawn-child-turn",
+            "m46-requires-m21",
+            "m46-requires-m44",
+            "ac-dispatcher-runtransagent-ustawia-plan",
+            "ac-plan-mode-jest-kolumna-chat-thread-ws",
+            "ac-planmode-jest-polem-top-level-inputu",
+            "ac-w-projekcie-typu-skill-wywolanie-runt"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "84c9dd3fdc49976c216c5564a422b3e7611cd129",
+      "baseCommit": "84c9dd3fdc49976c216c5564a422b3e7611cd129",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },

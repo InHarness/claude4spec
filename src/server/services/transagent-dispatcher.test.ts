@@ -5,7 +5,9 @@ import Database from 'better-sqlite3';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
 import { ChatService } from './chat.js';
-import { TransagentDispatcher, type TransagentRunInput } from './transagent-dispatcher.js';
+import { TRANSAGENT_CONTEXT_TYPES, TransagentDispatcher, type TransagentRunInput } from './transagent-dispatcher.js';
+import { buildTransagentToolsServer } from '../mcp/transagent-tools.js';
+import { CONTEXT_TYPE_ROWS } from './context-types/registry.js';
 import type { AgentTurnDeps, AgentTurnInput } from '../routes/agent-turn.js';
 import { DomainError } from './tags.js';
 import { AgentTurnError } from '../../shared/agent-turn.js';
@@ -128,12 +130,32 @@ describe('TransagentDispatcher — planMode (0.2.30)', () => {
     });
 
     expect(planModeOf(threadId)).toBe(0);
+
+    // …and the tool's input declares it at the top level, beside `payload`, with
+    // default false — the field the model fills is not a payload key.
+    const server = buildTransagentToolsServer({
+      parentThreadId,
+      dispatcher: { run: async () => ({ threadId: 'c', summary: 's' }) } as unknown as TransagentDispatcher,
+    });
+    const shape = server.tools.find((t) => t.name === 'runTransagent')!.inputSchema as Record<
+      string,
+      { isOptional(): boolean; parse(v: unknown): unknown }
+    >;
+    expect(Object.keys(shape)).toEqual(expect.arrayContaining(['planMode', 'payload']));
+    expect(shape.planMode!.parse(undefined)).toBe(false);
+    expect(shape.planMode!.parse(true)).toBe(true);
+    // A top-level `planMode: true` IS the posture.
+    const top = await run({ parentThreadId, planMode: true });
+    expect(planModeOf(top.threadId)).toBe(1);
   });
 
-  it('[ac:ac-dispatcher-runtransagent-ustawia-plan] applies planMode identically for brief, chat and patch — one generic step, not three branch rules', async () => {
+  it('[ac:ac-dispatcher-runtransagent-ustawia-plan] sets the child\'s plan_mode from the input in the step shared by every contextType value, before the per-context preparation', async () => {
     const parentThreadId = seedParent(false);
 
-    for (const contextType of ['brief', 'chat', 'patch'] as const) {
+    // Every value the dispatcher branches on — its closed set, not a list
+    // restated here.
+    expect([...TRANSAGENT_CONTEXT_TYPES]).toEqual(['brief', 'chat', 'patch']);
+    for (const contextType of TRANSAGENT_CONTEXT_TYPES) {
       const { threadId } = await run({
         parentThreadId,
         contextType,
@@ -157,6 +179,38 @@ describe('TransagentDispatcher — planMode (0.2.30)', () => {
         spawned_by_tool_use_id: 'tu_1',
         plan_mode: 1,
       });
+    }
+  });
+
+  it('[ac:ac-plan-mode-jest-kolumna-chat-thread-ws] plan_mode is a chat_thread column shared by threads of every registry value', async () => {
+    // One column of the one table, INTEGER NOT NULL DEFAULT 0 — not a field of
+    // any binding.
+    const cols = db.prepare(`PRAGMA table_info(chat_thread)`).all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+      dflt_value: string | null;
+    }>;
+    expect(cols.filter((c) => c.name === 'plan_mode')).toEqual([
+      expect.objectContaining({ name: 'plan_mode', type: 'INTEGER', notnull: 1, dflt_value: '0' }),
+    ]);
+
+    // Every row of the registry writes and reads it the same way.
+    for (const row of CONTEXT_TYPE_ROWS) {
+      const t = chat.createThread(`t-${row.value}`, {
+        contextType: row.value,
+        planMode: true,
+        ...(row.value === 'brief' ? { briefPath: 'b.md' } : {}),
+        ...(row.value === 'patch' ? { patchPath: 'p.md' } : {}),
+      });
+      expect(planModeOf(t.id), row.value).toBe(1);
+      expect(chat.getThreadMeta(t.id)?.planMode, row.value).toBe(true);
+      const off = chat.createThread(`off-${row.value}`, {
+        contextType: row.value,
+        ...(row.value === 'brief' ? { briefPath: 'b.md' } : {}),
+        ...(row.value === 'patch' ? { patchPath: 'p.md' } : {}),
+      });
+      expect(planModeOf(off.id), row.value).toBe(0);
     }
   });
 

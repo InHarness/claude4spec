@@ -493,6 +493,47 @@ describe('runAgentTurn — disallowedToolGroups posture', () => {
     expect(hoisted.lastExecute?.planMode).toBe(false);
   });
 
+  /**
+   * 2.1.88 (M46 `tr4ndisp`) — a banka's turn runs the same builder: its
+   * `disallowedToolGroups` is the project's groups ∪ the row's `Grupy wbudowane`
+   * ∪ the banka's plan-mode preset. The dispatcher has no branch of its own and
+   * cannot weaken the posture.
+   */
+  it('[section:tr4ndisp] a banka turn denies the project groups ∪ its row\'s built-in groups ∪ its plan-mode preset', async () => {
+    const banka = (ct: 'chat' | 'brief', planMode: boolean) => {
+      const input = makeInput();
+      const t = input.thread as unknown as {
+        id: string;
+        contextType: string;
+        briefPath: string | null;
+        planMode: boolean;
+        parentThreadId: string | null;
+      };
+      t.id = `child-${ct}`;
+      t.contextType = ct;
+      t.planMode = planMode;
+      t.parentThreadId = 'parent-1';
+      if (ct === 'brief') t.briefPath = 'b.md';
+      return input;
+    };
+    const groupsOf = async (flag: boolean, input: AgentTurnInput) => {
+      settle();
+      hoisted.agent = { disableDirectFilesystemAccess: flag };
+      const { deps } = makeDeps();
+      await runAgentTurn(deps, input);
+      return [...((hoisted.lastExecute?.disallowedToolGroups ?? []) as string[])].sort();
+    };
+
+    // Plan preset alone (flag off, chat row adds nothing).
+    expect(await groupsOf(false, banka('chat', true))).toEqual(['file-write', 'shell']);
+    // Project groups alone.
+    expect(await groupsOf(true, banka('chat', false))).toEqual(['file-read', 'file-write', 'shell']);
+    // Project ∪ plan preset — a set, no duplicates.
+    expect(await groupsOf(true, banka('chat', true))).toEqual(['file-read', 'file-write', 'shell']);
+    // The row's `Grupy wbudowane: wszystkie` (brief) with the flag off.
+    expect(await groupsOf(false, banka('brief', false))).toEqual([...TOOL_GROUPS].sort());
+  });
+
   it('[ac:ac-grupa-narzedzi-wbudowanych-odebrana-u] a built-in group denied by the project setting is denied in every value of the registry', async () => {
     for (const ct of ['chat', 'brief', 'patch', 'ask'] as const) {
       settle();

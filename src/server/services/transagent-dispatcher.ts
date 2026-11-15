@@ -51,6 +51,21 @@ import { checkResumeConfigLock, isSessionInFlight, type ResumeConfigLockError } 
 /** The `contextType` values `runTransagent` knows (mcp-tool `transagent-tools-runtransagent`). */
 export const TRANSAGENT_CONTEXT_TYPES = ['brief', 'chat', 'patch'] as const;
 
+export type TransagentContextType = (typeof TRANSAGENT_CONTEXT_TYPES)[number];
+
+/**
+ * 2.1.88 (M46 `exchr4q9`) — the values the dispatcher accepts in ONE project:
+ * its own closed branch set (`brief`, `chat`, `patch` — not a mirror of the
+ * registry; the consultation value is left out on purpose) intersected with the
+ * project's context type registry. `registry` absent (rigs) = every row, so the
+ * whole closed set.
+ */
+export function admittedTransagentContextTypes(
+  registry: readonly string[] | undefined,
+): TransagentContextType[] {
+  return TRANSAGENT_CONTEXT_TYPES.filter((t) => !registry || registry.includes(t));
+}
+
 /**
  * `RESUME_CONFIG_LOCKED` for a banka continuation. `violations` rides along
  * structured — the same `[{ path, reason }]` the two HTTP entry points put in
@@ -69,7 +84,7 @@ export class ResumeConfigLockedError extends DomainError {
 
 export interface TransagentRunInput {
   parentThreadId: string;
-  contextType: 'brief' | 'chat' | 'patch';
+  contextType: TransagentContextType;
   message: string;
   /** Per-contextType binding hints (e.g. `{ fromReleaseName, patchPath, suffix, planPath }`). */
   payload?: Record<string, unknown>;
@@ -219,15 +234,20 @@ export class TransagentDispatcher {
     // child's spawned_by_tool_use_id and echoed on the bracketing events.
     const toolUseId = await this.opts.takeToolUseId();
 
-    // 2.1.77 (M46 `qq84x14h`): the `contextType` set is the PROJECT's — without
-    // the capability `briefs` it is `chat` alone. A `brief`/`patch` call is then
-    // refused (`VALIDATION` → `INVALID_ARGS`) before anything is founded — no
-    // brief file, no child row — like any other value outside the set.
-    const registered = this.deps.contextTypes;
-    if (registered && !registered.includes(contextType)) {
+    // 2.1.88 (M46 `exchr4q9`): the dispatcher admits only the intersection of
+    // its own closed branch set and the PROJECT's context type registry. A value
+    // outside the closed set — any future registry value included — and a value
+    // of the set whose row the project registry lacks (its row requires a
+    // capability the project has not) are refused in ONE validation step
+    // (`VALIDATION` → `INVALID_ARGS`) before anything is founded: no brief file,
+    // no child row, no child turn, and never a silent fall into a default branch.
+    // The dispatcher reads no capability itself — only the registry
+    // (`AgentTurnDeps.contextTypes`; absent in rigs = every row).
+    const admitted = admittedTransagentContextTypes(this.deps.contextTypes);
+    if (!(admitted as readonly string[]).includes(contextType)) {
       throw new DomainError(
         'VALIDATION',
-        `contextType '${contextType}' is not available in this project; expected one of ${TRANSAGENT_CONTEXT_TYPES.filter((t) => registered.includes(t)).join(', ')}`,
+        `contextType '${String(contextType)}' is not available in this project; expected one of ${admitted.join(', ')}`,
       );
     }
 
@@ -379,7 +399,7 @@ export class TransagentDispatcher {
    */
   private async validateContinuation(
     threadId: string,
-    contextType: 'brief' | 'chat' | 'patch',
+    contextType: TransagentContextType,
   ): Promise<ChatThread> {
     const banka = this.deps.chatService.getThreadMeta(threadId);
     if (!banka) throw new DomainError('NOT_FOUND', `banka thread '${threadId}' not found`);
@@ -477,7 +497,7 @@ export class TransagentDispatcher {
    * decided by the caller, once, for all three.
    */
   private async createChild(
-    contextType: 'brief' | 'chat' | 'patch',
+    contextType: TransagentContextType,
     message: string,
     payload: Record<string, unknown>,
     generic: GenericThreadColumns,

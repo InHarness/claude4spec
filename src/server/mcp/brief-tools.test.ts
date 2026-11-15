@@ -1547,7 +1547,7 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
         mcp: {
           kind: 'na',
           reason:
-            'serwer zewnętrzny nie niesie narzędzia: lista briefów jest powierzchnią użytkownika (UI, `c4s list-briefs`, trasa REST), a agentowo renderuje ją wyłącznie `transagent-tools` orkiestratora wątku `chat`',
+            'serwer zewnętrzny nie niesie narzędzia: lista briefów jest powierzchnią użytkownika (UI, `c4s list-briefs`, trasa REST), a agentowo renderuje ją wyłącznie `transagent-tools` w wątku wartości z serwerem orkiestracji',
         },
         rest: D,
       },

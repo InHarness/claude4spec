@@ -2008,8 +2008,14 @@ export function registerCoreOperations(): void {
    * — `sideEffects: ['none']` — which is what `read` means.
    *
    * 2.1.26 — the `list-briefs` record names its one rendering
-   * (`transagent-tools-list-briefs`, internal); `mcp` stays `direct` with none,
-   * as the record declares it (an open item of M21 `01ytpznn`).
+   * (`transagent-tools-list-briefs`, internal).
+   *
+   * 2.1.88 — the record drops its own `mcp` channel: `mcp` is `n/a` with the
+   * record's reason (the external server carries no tool; the list is a user
+   * surface — UI, `c4s list-briefs`, `GET /api/artifacts/brief` — and agentically
+   * only `transagent-tools` renders it, in a thread of a value whose row names
+   * the orchestration server). The row has no `mcp` rendering, and the external
+   * profile gate therefore never exposes it.
    */
   registerRow({
     name: 'list_briefs',
@@ -2031,7 +2037,7 @@ export function registerCoreOperations(): void {
       internal: direct(),
       cli: direct(),
       mcp: na(
-        'serwer zewnętrzny nie niesie narzędzia: lista briefów jest powierzchnią użytkownika (UI, `c4s list-briefs`, trasa REST), a agentowo renderuje ją wyłącznie `transagent-tools` orkiestratora wątku `chat`',
+        'serwer zewnętrzny nie niesie narzędzia: lista briefów jest powierzchnią użytkownika (UI, `c4s list-briefs`, trasa REST), a agentowo renderuje ją wyłącznie `transagent-tools` w wątku wartości z serwerem orkiestracji',
       ),
       rest: direct(),
     },
@@ -2511,11 +2517,17 @@ export function registerCoreOperations(): void {
    * `summary` returns), error-code-once (a child failure surfaces once, as the parent's
    * `tool_result.isError`), explicit-addressing (a continuation names its `threadId`,
    * never "the last child") — have no catalog field; they are upheld by the dispatcher.
+   *
+   * 2.1.88 (M46 `exchr4q9`) — the record's `zachowanie` adds the value-set rule: a
+   * `contextType` outside the closed branch set, or of the set but absent from the
+   * PROJECT's context type registry, is `INVALID_ARGS` before anything is founded
+   * (`admittedTransagentContextTypes`, one validation step in the dispatcher). The
+   * project's capability is not read for it: the registry already reflects it.
    */
   registerRow({
     name: 'spawn_child_turn',
     summary:
-      'Found a new hidden child thread of this specification on every call and run one turn in it: sets parent_thread_id and spawned_by_tool_use_id; a spawn binds the per-contextType artifact addressed by payload (patchPath required for patch, planPath optional for chat, a new brief for brief) and plan_mode, a continuation (threadId) copies the referenced banka\'s binding, plan_mode, config snapshot and session and resumes it. At most one child in flight at a time; sequential calls in one parent turn are allowed. Returns only { threadId } of the new row and a summary.',
+      'Found a new hidden child thread of this specification on every call and run one turn in it: sets parent_thread_id and spawned_by_tool_use_id; a spawn binds the per-contextType artifact addressed by payload (patchPath required for patch, planPath optional for chat, a new brief for brief) and plan_mode, a continuation (threadId) copies the referenced banka\'s binding, plan_mode, config snapshot and session and resumes it. A contextType outside the closed branch set (brief, chat, patch), or of that set but absent from the project\'s context type registry, is INVALID_ARGS before anything is founded. At most one child in flight at a time; sequential calls in one parent turn are allowed. Returns only { threadId } of the new row and a summary.',
     scope: 'project',
     mediation: 'agent-mediated',
     opClass: 'turn',
