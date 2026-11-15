@@ -1,3 +1,0 @@
-# Review — subagents-by-row (non-blocking)
-
-- **rev-0001** `src/server/services/chat-context.ts:283`: BUILTIN_SUBAGENTS is now the map of built-in definitions keyed by name, but the set of reserved built-in names is still written out by hand in plugin-subagents.ts:28 (RESERVED_SUBAGENT_NAMES = ['spec-explore','diff-explore']). If a third built-in is added to BUILTIN_SUBAGENTS without updating RESERVED_SUBAGENT_NAMES, a plugin can take that name on every row except the one that names it. Add a test asserting Object.keys(BUILTIN_SUBAGENTS) equals RESERVED_SUBAGENT_NAMES, or move the name list into a shared module.
