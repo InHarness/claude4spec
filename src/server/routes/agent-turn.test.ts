@@ -4251,8 +4251,8 @@ describe('runAgentTurn — the turn argument: host pool, handler servers, profil
     };
   }
 
-  /** Calls one tool on a server the turn mounted (its sdk instance), through a linked in-memory pair. */
-  async function callMounted(servers: Record<string, unknown>, server: string, name: string, args: Record<string, unknown>) {
+  /** Connects a client to a server the turn mounted (its sdk instance), through a linked in-memory pair. */
+  async function connectMounted(servers: Record<string, unknown>, server: string) {
     const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
     const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
     const instance = (servers[server] as { instance: { connect: (t: unknown) => Promise<void> } }).instance;
@@ -4260,6 +4260,22 @@ describe('runAgentTurn — the turn argument: host pool, handler servers, profil
     const client = new Client({ name: 'methodology-test', version: '0.0.0' });
     await instance.connect(serverTransport);
     await client.connect(clientTransport);
+    return client;
+  }
+
+  /** The tool names a server the turn mounted really exposes — `listTools()` on its instance. */
+  async function listMounted(servers: Record<string, unknown>, server: string): Promise<string[]> {
+    const client = await connectMounted(servers, server);
+    try {
+      return (await client.listTools()).tools.map((t) => t.name);
+    } finally {
+      await client.close();
+    }
+  }
+
+  /** Calls one tool on a server the turn mounted (its sdk instance). */
+  async function callMounted(servers: Record<string, unknown>, server: string, name: string, args: Record<string, unknown>) {
+    const client = await connectMounted(servers, server);
     try {
       const res = await client.callTool({ name, arguments: args });
       return { isError: Boolean(res.isError), body: JSON.parse((res.content as Array<{ text: string }>)[0]!.text) as Record<string, unknown> };
@@ -4367,18 +4383,20 @@ describe('runAgentTurn — the turn argument: host pool, handler servers, profil
   it('[ac:ac-liczba-encji-mcp-tool-serwera-brief-t] the number of brief-tools mcp-tool entities equals the number of tools mounted in a brief thread', async () => {
     /** The `mcp-tool` entities whose server is `brief-tools` (M21). */
     const BRIEF_TOOL_ENTITIES = ['brief-tools-get-brief', 'brief-tools-get-brief-version', 'brief-tools-list-brief-versions', 'brief-tools-update-brief'];
-    const { mounted, toolsOf } = await turnFor('brief', { briefPath: 'b.md' });
+    const { mounted, servers } = await turnFor('brief', { briefPath: 'b.md' });
     expect(mounted).toContain('brief-tools');
-    const tools = toolsOf('brief-tools')!;
+    // The surface the turn really mounted: listTools() on the brief-tools instance, not the <tooling> line.
+    const tools = await listMounted(servers, 'brief-tools');
     expect(tools).toHaveLength(BRIEF_TOOL_ENTITIES.length);
     expect(BRIEF_TOOL_ENTITIES.map((slug) => slug.replace(/^brief-tools-/, '').replace(/-/g, '_')).sort()).toEqual([...tools].sort());
   });
 
   it('[ac:ac-liczba-encji-mcp-tool-serwera-patch-t] the number of patch-tools mcp-tool entities equals the number of tools mounted in a patch thread — patch-tools only where a row names it', async () => {
     const PATCH_TOOL_ENTITIES = ['patch-tools-get-patch', 'patch-tools-mark-patch-applied'];
-    const { mounted, toolsOf } = await turnFor('patch', { patchPath: 'p.md' });
+    const { mounted, servers } = await turnFor('patch', { patchPath: 'p.md' });
     expect(mounted).toContain('patch-tools');
-    const tools = toolsOf('patch-tools')!;
+    // The surface the turn really mounted: listTools() on the patch-tools instance, not the <tooling> line.
+    const tools = await listMounted(servers, 'patch-tools');
     expect(tools).toHaveLength(PATCH_TOOL_ENTITIES.length);
     expect(PATCH_TOOL_ENTITIES.map((slug) => slug.replace(/^patch-tools-/, '').replace(/-/g, '_')).sort()).toEqual([...tools].sort());
     // The server is mounted exactly where the row names it — the patch row, and no other.
