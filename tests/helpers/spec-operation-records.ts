@@ -820,7 +820,7 @@ export const SPEC_OPERATION_RECORDS: readonly SpecOperationRecord[] = [
     cli: 'direct',
     mcp: 'direct',
     rest: 'direct',
-    powody: { internal: 'tura dostaje listing jako blok `<available_skills>` promptu systemowego; montowanie MCP jest per serwer, więc narzędzie w tym kanale trafiłoby naraz do wszystkich czterech typów kontekstu' },
+    powody: { internal: 'tura dostaje listing jako blok `<available_skills>` promptu systemowego; montowanie MCP jest per serwer, więc narzędzie w tym kanale trafiłoby naraz do każdej wartości rejestru typów kontekstu' },
     efekty: ['brak'],
     idempotencja: 'tak',
     opisTresci: 'n/d',

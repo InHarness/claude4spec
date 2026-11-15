@@ -110,8 +110,12 @@ describe('M37 skills registry after 0.2.99', () => {
   });
 
   it('the context-type enumeration is cited from its owner, not re-spelled by M37', () => {
+    // 2.1.88: the legal values are the PROJECT registry, handed to the resolver by
+    // the context factory (`contextTypesFor`) — still cited, never re-spelled.
     const ops = read('src/server/services/skill-operations.ts');
-    expect(ops).toMatch(/from '\.\/chat-context\.js'/);
-    expect(ops).not.toMatch(/'chat'\s*\|\s*'brief'/);
+    expect(ops).toMatch(/resolver\.contextTypes/);
+    expect(ops).not.toMatch(/'chat'\s*[|,]\s*'brief'/);
+    expect(read('src/server/services/skill-registry.ts')).toMatch(/from '\.\/context-types\/registry\.js'/);
+    expect(read('src/server/workspace/project-context.ts')).toMatch(/new SkillResolver\(skillRegistry, cwd, contextTypes\)/);
   });
 });

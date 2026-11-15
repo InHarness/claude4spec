@@ -609,7 +609,7 @@ async function buildInner(
       `config.json: agent.conversationalLanguage "${initialConvLang}" not supported. Available: ${SUPPORTED_LANGUAGES.join(', ')}`,
     );
   }
-  const skillResolver = new SkillResolver(skillRegistry, cwd);
+  const skillResolver = new SkillResolver(skillRegistry, cwd, contextTypes);
 
   // 2.1.58 (M31 `vzkw903j`, M41 `yffftxih`): M31 names the slot — in THIS
   // registry's slots directory (the plugin test harness builds contexts over a

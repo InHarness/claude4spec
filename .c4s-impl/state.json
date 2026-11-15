@@ -1,5 +1,5 @@
 {
-  "iteration": 16,
+  "iteration": 21,
   "conventions": [
     {
       "label": "L15 (Context Types) — implementor M44",
@@ -806,13 +806,55 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "skill-scope/p1-l3-l17",
+          "layers": [
+            "L3",
+            "L15",
+            "L17"
+          ],
+          "slugs": [
+            "kontrakt-skillregistry-skillmetadata-resolvedskill",
+            "get-api-skills",
+            "c4s-reader-list-skills",
+            "list-skills",
+            "m13-requires-m44",
+            "m15-requires-m44",
+            "m52-requires-m44",
+            "ac-aktywny-writing-style-config-writingsty",
+            "ac-blok-available-skills-jest-emitowany-2",
+            "ac-blok-available-skills-jest-emitowany",
+            "ac-blok-available-skills-niesie-instrukc",
+            "ac-plugin-wnoszacy-contributes-skills-ze",
+            "ac-plugin-wnoszacy-trzy-pozycje-ze-scope-2",
+            "ac-projekt-bez-pluginow-listing-availabl",
+            "ac-przy-config-writingstyle-null-blok-pr",
+            "ac-skill-projektu-bez-contexttypes-jest",
+            "ac-skill-ui-view-mockup-generator-nigdy",
+            "ac-skill-ui-view-mockup-generator-trafia",
+            "ac-skill-w-claude-skills-ze-scope-contex",
+            "ac-skill-writing-style-author-jest-wlasnosc",
+            "ac-skill-writing-style-author-nie-jest-p",
+            "ac-spec-review-jest-rozwiazywany-w-turze",
+            "ac-spec-review-nie-jest-rozwiazywany-w-t",
+            "ac-system-prompt-zawiera-co-najwyzej-jed",
+            "ac-wiersz-wiszacy-albo-niejednoznaczny-s",
+            "ac-wklad-contributes-skills-z-contexttyp"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "cd150c9f4874c8c52f88cd153aaed2cb045cec88",
+      "baseCommit": "cd150c9f4874c8c52f88cd153aaed2cb045cec88",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },

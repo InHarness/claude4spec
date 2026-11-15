@@ -96,6 +96,37 @@ describe('skillsRouter', () => {
       expect(res.body.error.code).toBe('INVALID_ARGUMENT');
       expect(res.body.error.message).toContain('chat, brief, patch, ask');
     });
+
+    /**
+     * 2.1.88 — the endpoint record: `contextType` optional (given narrows, omitted is
+     * the whole registry); a value outside the PROJECT's context-type registry is
+     * `400 INVALID_ARGUMENT` naming the legal values; 200 is `SkillListingResponse`.
+     */
+    it('[entity:get-api-skills] GET /api/skills: 200 SkillListingResponse with or without contextType; 400 INVALID_ARGUMENT for a value outside the project context type registry, the message naming its values', async () => {
+      // A project without `briefs`: its registry is chat + ask.
+      const narrow = express();
+      narrow.use(
+        '/api/skills',
+        skillsRouter({ skillRegistry: registry, skillResolver: new SkillResolver(registry, tmp, ['chat', 'ask']) }),
+      );
+      for (const url of ['/api/skills', '/api/skills?contextType=chat', '/api/skills?contextType=ask']) {
+        const res = await request(narrow).get(url);
+        expect(res.status, url).toBe(200);
+        expect(Object.keys(res.body).sort(), url).toEqual(['listing', 'writingStyle']);
+        expect(res.body.writingStyle, url).toEqual({ slug: 'house-style', title: 'house-style title' });
+      }
+      expect((await request(narrow).get('/api/skills')).body.listing.map((r: { slug: string }) => r.slug)).toEqual(['mockups']);
+      expect((await request(narrow).get('/api/skills?contextType=chat')).body.listing.map((r: { slug: string }) => r.slug)).toEqual(['mockups']);
+      expect((await request(narrow).get('/api/skills?contextType=ask')).body.listing).toEqual([]);
+
+      // `brief` is a Host API value, but not one of THIS project's registry.
+      const res = await request(narrow).get('/api/skills?contextType=brief');
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('INVALID_ARGUMENT');
+      expect(res.body.error.message).toContain('expected one of chat, ask');
+      // In a project that registers it, the same value is legal.
+      expect((await request(app).get('/api/skills?contextType=brief')).status).toBe(200);
+    });
   });
 
   describe('GET /api/skills/:slug', () => {

@@ -283,3 +283,36 @@ describe('a row carries its provider\'s type (M52, 2.1.86)', () => {
     for (const row of rows.filter((r) => r.status !== 'ok')) expect(row).not.toHaveProperty('projectType');
   });
 });
+
+describe('skill.contextTypes against the project registry (M52 wqvq1esb, 1osy2o5r, 2.1.88)', () => {
+  it('defaults to every value of the project registry, accepts a subset of it, refuses a value outside it, and GET /config hands the registry values to the multiselect', async () => {
+    const cwd = dir();
+    writeConfig(cwd, { name: 'Team skill', skill: { name: 'team-skill', description: 'Team procedures.', uses: [] } });
+    const registry = SkillRegistry.load([], { rescanTtlMs: 0 });
+    // A Skill project (`skill-exposure`, no `briefs`): its registry is chat + ask.
+    const app = express().use(express.json()).use(configRouter({ cwd, skillRegistry: registry, capabilities: PROVIDER_CAPS }));
+
+    const got = await request(app).get('/config');
+    expect(got.status).toBe(200);
+    expect(got.body.contextTypes).toEqual(['chat', 'ask']);
+    // The default is no literal list: the key stays absent, i.e. every value of the registry.
+    expect(got.body.skill.contextTypes).toBeUndefined();
+    expect(STATIC_FIELD_REGISTRY.get('skill.contextTypes')?.default).toBe('all values of the project context type registry');
+
+    // `brief` is a Host API value, but not one of this project's registry.
+    const outside = await request(app).patch('/config').send({ skill: { contextTypes: ['chat', 'brief'] } });
+    expect(outside.status).toBe(400);
+    expect(JSON.stringify(outside.body)).toContain('expected one of chat, ask');
+    expect(normalizeSkillConfig(readConfig(cwd)).contextTypes).toBeUndefined();
+
+    const subset = await request(app).patch('/config').send({ skill: { contextTypes: ['ask'] } });
+    expect(subset.status).toBe(200);
+    expect(normalizeSkillConfig(readConfig(cwd)).contextTypes).toEqual(['ask']);
+
+    // A Specification project registers brief: the same value is legal there, and its options carry it.
+    const specCwd = dir();
+    writeConfig(specCwd, { name: 'Spec' });
+    const spec = express().use(express.json()).use(configRouter({ cwd: specCwd, skillRegistry: registry, capabilities: SPEC_CAPS }));
+    expect((await request(spec).get('/config')).body.contextTypes).toEqual(['chat', 'brief', 'patch', 'ask']);
+  });
+});

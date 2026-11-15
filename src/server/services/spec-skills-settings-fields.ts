@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { builtinRoot, DEFAULT_SKILL_ENTRY } from '../config.js';
 import type { FieldDeclaration } from '../settings/field-registry.js';
-import { formatLegalContextTypes, isKnownContextType } from './chat-context.js';
+import { KNOWN_CONTEXT_TYPES } from './chat-context.js';
 import { SKILL_NAME_RE } from './skill-name.js';
 import { SKILL_EXPOSURE_CAPABILITY } from '../project-types/capabilities.js';
 
@@ -15,7 +15,7 @@ import { SKILL_EXPOSURE_CAPABILITY } from '../project-types/capabilities.js';
  * | `skill.name` | `new-thread` | `skill-exposure` | kebab-case; absent is no error |
  * | `skill.description` | `new-thread` | `skill-exposure` | non-empty; absent is no error |
  * | `skill.entry` | `per-operation` | `skill-exposure` | an existing page of the base root; read per load |
- * | `skill.contextTypes` | `new-thread` | `skill-exposure` | a subset of the context-type enumeration |
+ * | `skill.contextTypes` | `new-thread` | `skill-exposure` | a subset of the project registry's context types; default all of them |
  * | `skill.uses` | `new-thread` | — | names; a dangling or ambiguous one is NOT a validation error |
  *
  * None locks a resume, all are API-writable.
@@ -31,6 +31,12 @@ import { SKILL_EXPOSURE_CAPABILITY } from '../project-types/capabilities.js';
  */
 
 const OWNER = 'spec-skills';
+
+/**
+ * The documentary default of `skill.contextTypes`: every value of the project's
+ * context-type registry (M52 `wqvq1esb`). The file keeps the key absent.
+ */
+export const ALL_REGISTRY_VALUES = 'all values of the project context type registry';
 const KEBAB = SKILL_NAME_RE;
 
 export const SPEC_SKILLS_SETTINGS_FIELDS: FieldDeclaration[] = [
@@ -100,11 +106,22 @@ export const SPEC_SKILLS_SETTINGS_FIELDS: FieldDeclaration[] = [
     owner: OWNER,
     requires: [SKILL_EXPOSURE_CAPABILITY.name],
     type: 'string[]',
-    default: ['chat', 'brief', 'patch', 'ask'],
-    validate: (value) => {
-      const bad = (value as string[]).filter((t) => !isKnownContextType(t));
+    /**
+     * 2.1.88 (M52 `wqvq1esb`) — every value of the project's context-type
+     * registry. Not a literal list: an absent key is the default, and the reader
+     * (`project-exposed-skills.ts`) takes it as "every value of the registry the
+     * skill is listed in", judged against the current registry.
+     */
+    default: ALL_REGISTRY_VALUES,
+    validate: (value, ctx) => {
+      // A subset of the project registry's values — a Host API value the project lacks is unknown here.
+      const legal = ctx.contextTypes ?? KNOWN_CONTEXT_TYPES;
+      const bad = (value as string[]).filter((t) => !legal.includes(t));
       return bad.length > 0
-        ? { ok: false, error: `skill.contextTypes: unknown context type ${bad.map((b) => `"${b}"`).join(', ')}; ${formatLegalContextTypes()}` }
+        ? {
+            ok: false,
+            error: `skill.contextTypes: unknown context type ${bad.map((b) => `"${b}"`).join(', ')}; expected one of ${legal.join(', ')} (this project's context type registry)`,
+          }
         : { ok: true, value: [...new Set(value as string[])] };
     },
     effect: 'new-thread',

@@ -7,6 +7,7 @@ import { ApiError } from '../../lib/api-core.js';
 import { EXPOSED_PROJECTS_QUERY_KEY, specSkillsApi } from '../../lib/spec-skills-api.js';
 import { useWritingStyles } from '../../hooks/useWritingStyles.js';
 import { useProjectTypes } from '../../hooks/useProjectTypes.js';
+import { useConfig } from '../../hooks/useConfig.js';
 import { groupByType } from '../../lib/group-by-type.js';
 import { ElementField } from '../settings/controls.js';
 import { EFFECT, type ElementContext, type SettingsContribution, type SettingsElementDecl } from '../settings/registry.js';
@@ -34,7 +35,15 @@ export const SKILL_EXPOSURE = 'skill-exposure';
 /** Effect message of the exposure fields: they act in the CONSUMERS. */
 const FOR_CONSUMERS = 'Applies from the next new conversation in projects that use it.';
 
-const CONTEXT_TYPES = ['chat', 'brief', 'patch', 'ask'] as const;
+/**
+ * 2.1.88 (M52 `1osy2o5r`): the options of `Context types` are the values of the
+ * project's context-type registry, as `GET /api/config` derives them — not a
+ * closed list. With the key absent every option is ticked (`allWhenAbsent`),
+ * which is the key's default: all values of the registry.
+ */
+export function useContextTypeOptions(): Array<{ value: string; label: string }> | undefined {
+  return useConfig().data?.contextTypes?.map((t) => ({ value: t, label: t }));
+}
 
 /** The marker a row of "Used skill projects" carries — never blocking a save. */
 export function attachmentMarker(row: Pick<ExposedProjectRow, 'status'>): 'Unavailable' | 'Ambiguous' | null {
@@ -472,7 +481,7 @@ export const SPEC_SKILLS_SETTINGS: SettingsContribution = {
       configKey: ['skill', 'contextTypes'],
       allWhenAbsent: true,
       label: 'Context types',
-      useOptions: () => CONTEXT_TYPES.map((t) => ({ value: t, label: t })),
+      useOptions: useContextTypeOptions,
       effectMessage: FOR_CONSUMERS,
       requires: [SKILL_EXPOSURE],
     },

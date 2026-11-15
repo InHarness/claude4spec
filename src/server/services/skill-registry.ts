@@ -7,6 +7,7 @@ import { HOST_API_CONTEXT_TYPES } from '../../shared/plugin-host/manifest.js';
 import type { ChatContextType } from '../../shared/entities.js';
 import type { SkillSource } from '../../shared/writing-styles.js';
 import { readConfig } from '../config.js';
+import { CONTEXT_TYPE_ROWS } from './context-types/registry.js';
 
 export type SkillScope = 'writing-style' | 'contextual';
 
@@ -80,9 +81,13 @@ export interface SkillMetadata {
   /** The `source` value of the registration the entry came from. */
   source: SkillSource;
   /**
-   * Reach of a `scope: 'contextual'` entry in context types; `undefined` means
-   * every type. The `plugin` source never leaves it `undefined` (2.1.88): an
-   * omitted declaration is the declared Host API version's set. Its carrier
+   * Reach of a `scope: 'contextual'` entry in context types. Omitted is never
+   * the empty set (2.1.88, M37 `fs6xai8n`): in the envelope it is the whole
+   * `ContextType` set of the declared Host API version — the `plugin` source
+   * stores that set, so it never leaves the field `undefined` — and in a project
+   * skill it is every value of the project registry, judged against the current
+   * registry (`undefined` here: it matches whatever value a turn of the project
+   * has). A value the project registry lacks yields no row there. Its carrier
    * depends on the source: the envelope declaration (`plugin`),
    * the package frontmatter (`project-rooted`) or the exposure fields
    * (`project-exposed`). The `.claude/skills` roots never deliver it — they do not
@@ -771,10 +776,21 @@ export interface ContextSkills {
 }
 
 export class SkillResolver {
+  /** The values of the project's context-type registry, in registry order. */
+  readonly contextTypes: readonly ChatContextType[];
+
   constructor(
     private readonly registry: SkillRegistry,
     private readonly cwd: string,
-  ) {}
+    /**
+     * 2.1.88 (M37 `d015saim`) — the project registry (`contextTypesFor(capabilities)`):
+     * the only legal values of `list_skills(contextType)`. Absent (rigs) = every row
+     * of the code map.
+     */
+    contextTypes?: readonly ChatContextType[],
+  ) {
+    this.contextTypes = contextTypes ? [...contextTypes] : CONTEXT_TYPE_ROWS.map((row) => row.value);
+  }
 
   /**
    * The active writing style's METADATA, or `null`. Resolved per query —
@@ -816,7 +832,10 @@ export class SkillResolver {
     return this.resolveListing(contextType, opts.writingStyle);
   }
 
-  /** The same resolution with NO context type: the union of the fan-out over all four. */
+  /**
+   * The same resolution with NO context type: the whole registry — every
+   * `contextual` entry, whatever its reach, because access is not gated by context.
+   */
   resolveAll(): ContextSkills {
     return this.resolveListing(undefined);
   }

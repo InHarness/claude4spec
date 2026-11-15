@@ -124,7 +124,7 @@ describe('<available_skills> — M37 frame (2.1.9)', () => {
       }
     });
 
-    it('[ac:ac-blok-available-skills-jest-emitowany] <available_skills> is emitted in every one of the four context types, with the description of each skill attached to that type and the channel rule forbidding Skill() and Read', () => {
+    it('<available_skills> is emitted in every row of the code map, with the description of each skill attached to that type and the channel rule (the per-project registry: skill-scope.test.ts)', () => {
       const registry = SkillRegistry.load([], { rescanTtlMs: 0 });
       // One skill for every type, one narrowed to `brief` — the attached set differs per type.
       registry.addPluginSkill({
@@ -167,7 +167,7 @@ describe('<available_skills> — M37 frame (2.1.9)', () => {
       }
     });
 
-    it('[ac:ac-skill-w-claude-skills-ze-scope-contex] a scope: contextual skill in ~/.claude/skills is no <available_skills> row in any context type', () => {
+    it('a scope: contextual skill in ~/.claude/skills is ignored by the registry (M37 m37edge01) — no <available_skills> row', () => {
       writeSkill(globalRoot, 'dropped-global', 'contextual');
       const registry = SkillRegistry.load(
         [

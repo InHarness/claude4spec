@@ -15,7 +15,7 @@
 
 import { DomainError } from './tags.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
-import { formatLegalContextTypes, isKnownContextType } from './chat-context.js';
+import type { ChatContextType } from '../../shared/entities.js';
 import type {
   ContextSkills,
   InvalidSkillRead,
@@ -79,25 +79,27 @@ export interface SkillPackageResponse {
 /**
  * `list_skills(contextType?)`.
  *
- * Given → the resolver's set for that context type. Omitted → the whole registry
- * (the union over all four types), because access to a skill is not gated by
- * context. A value outside the M44 enumeration is refused with the legal values
- * spelled out: an empty listing is a TRUE answer for a legal value, so it cannot
- * also be the answer to a typo.
+ * Given → the resolver's set for that context type. Omitted → the whole registry,
+ * because access to a skill is not gated by context. 2.1.88 (M37 `d015saim`): the
+ * legal values are the rows of THIS project's context-type registry and only
+ * those — a value of the Host API set the project registry lacks is unknown here.
+ * It is refused with the registry's rows spelled out: an empty listing is a TRUE
+ * answer for a legal value, so it cannot also be the answer to a typo.
  *
  * Ordering and slug de-duplication belong to the resolver; channels pass the
  * result through untouched.
  */
 export function listSkills(resolver: SkillResolver, contextType?: string): SkillListingResponse {
   if (contextType === undefined) return resolver.resolveAll();
-  if (!isKnownContextType(contextType)) {
+  const registered = resolver.contextTypes;
+  if (!(registered as readonly string[]).includes(contextType)) {
     throw new DomainError(
       'INVALID_ARGUMENT',
-      `unknown contextType '${contextType}'; ${formatLegalContextTypes()}`,
+      `unknown contextType '${contextType}'; expected one of ${registered.join(', ')} (this project's context type registry)`,
       'omit contextType to list the whole registry',
     );
   }
-  return resolver.resolveForContext(contextType);
+  return resolver.resolveForContext(contextType as ChatContextType);
 }
 
 /**

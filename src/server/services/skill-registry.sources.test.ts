@@ -151,6 +151,13 @@ describe('M37 — skill sources, precedence and unresolved slugs (2.1.9)', () =>
     });
     expect(all.find((m) => m.slug === 'house-style')!.path).toBe(path.join(projectRoot, 'house-style'));
 
+    // 2.1.88 — `contextTypes` omitted is never the empty set. In the envelope it is
+    // the whole ContextType set of the declared Host API version: the plugin entry
+    // stores it. (In a project skill it stays absent = every value of the project
+    // registry; `skill-scope.test.ts` observes that through the listing.)
+    registry.addPluginSkill(contextual('omitted'), ['chat', 'ask']);
+    expect(registry.list().find((m) => m.slug === 'omitted')!.contextTypes).toEqual(['chat', 'ask']);
+
     // listSelectable — writing styles only, one per slug, the winner.
     expect(registry.listSelectable().map((m) => [m.slug, m.title])).toEqual([['house-style', 'Project House']]);
     expect(registry.has('house-style')).toBe(true);

@@ -68,10 +68,10 @@ afterEach(() => {
 });
 
 /** Renders the `#skills` card of a project with that capability set; returns the card's text. */
-async function renderSkillsCard(capabilities: string[], projectType: string): Promise<string> {
+async function renderSkillsCard(capabilities: string[], projectType: string, contextTypes?: string[]): Promise<string> {
   const card = settingsCards('project', new Set(capabilities)).find((c) => c.decl.anchor === 'skills');
   expect(card, 'the #skills card exists in every type').toBeDefined();
-  const config = { ...CONFIG, projectType, capabilities } as ConfigResponse;
+  const config = { ...CONFIG, projectType, capabilities, ...(contextTypes ? { contextTypes } : {}) } as ConfigResponse;
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   qc.setQueryData(['config'], config);
   await act(async () => {
@@ -104,6 +104,18 @@ describe('#skills card by the project type (M52, 2.1.77)', () => {
     expect(text).toContain('Used skill projects');
     // The list itself is rendered (rows from GET /api/spec-skills/exposed-projects — none here).
     expect(text).toContain('No project of this workspace is exposed as a skill.');
+  });
+
+  it('the `Context types` multiselect takes its options from the project context type registry (M52 1osy2o5r, 2.1.88), every one ticked while the key is absent', async () => {
+    await renderSkillsCard(SKILL, 'skill', ['chat', 'ask']);
+    const boxes = Array.from(host.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[];
+    const options = boxes.map((b) => b.closest('label')?.textContent?.trim());
+    expect(options).toEqual(expect.arrayContaining(['chat', 'ask']));
+    expect(options).not.toContain('brief');
+    expect(options).not.toContain('patch');
+    for (const b of boxes.filter((x) => ['chat', 'ask'].includes(x.closest('label')?.textContent?.trim() ?? ''))) {
+      expect(b.checked).toBe(true);
+    }
   });
 
   it('the removed exposure toggle and scope choice are on no type\'s card; the card carries no note, the Entry page its helper', async () => {

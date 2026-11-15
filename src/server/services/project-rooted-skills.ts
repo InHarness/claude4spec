@@ -201,7 +201,7 @@ export class ProjectRootedSkillSource implements SkillSourceRegistration {
   }
 }
 
-/** `contextTypes` from the header: omitted = all four types; otherwise a list inside the enumeration. */
+/** `contextTypes` from the header: omitted = every value of the project registry (2.1.88, M52 `xrpcvap9`); otherwise a list of the header contract's values. */
 function parseContextTypes(raw: unknown): ChatContextType[] | undefined {
   if (raw === undefined || raw === null) return undefined;
   if (!Array.isArray(raw) || raw.some((v) => typeof v !== 'string' || !isKnownContextType(v))) {

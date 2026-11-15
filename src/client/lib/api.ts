@@ -175,6 +175,11 @@ export interface ConfigResponse {
    */
   capabilities?: string[];
   /**
+   * 2.1.88 (M52 `1osy2o5r`): the values of the project's context-type registry, in
+   * registry order — the options of the `Context types` multiselect. Derived.
+   */
+  contextTypes?: string[];
+  /**
    * 0.1.96 multiroot: replaces the single `pagesDir`.
    *
    * 0.2.101: exactly one entry carries `builtin: true` and THAT is the base page

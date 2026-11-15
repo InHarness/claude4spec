@@ -1,0 +1,201 @@
+{
+  "role": "verifier",
+  "stateDir": "/Users/michael/Code/ctowiec/claude4spec-private/codebase/apps/claude4spec-app/.worktrees/2-1-87-to-2-1-88/codebase/apps/claude4spec-app/.c4s-impl",
+  "repo": "/Users/michael/Code/ctowiec/claude4spec-private/codebase/apps/claude4spec-app/.worktrees/2-1-87-to-2-1-88/codebase/apps/claude4spec-app",
+  "unit": {
+    "id": "skill-scope",
+    "goal": "Listing skilli i forsowany slot stylu pisania działają w każdej wartości rejestru projektu. Skill projektu bez zasięgu trafia do wszystkich wartości bieżącego rejestru. Skill pluginu bez zasięgu trafia do części wspólnej zbioru swojej wersji Host API i rejestru projektu. Wartość deklaracji nieobecna w rejestrze nie daje pozycji listingu i nie jest błędem. Operacja listingu (CLI, REST, MCP) odrzuca tylko wartości spoza rejestru projektu. Klucz zasięgu skilla w konfiguracji ma domyślnie wszystkie wartości rejestru i jest walidowany względem rejestru, a pole wyboru w ustawieniach bierze opcje z rejestru. Autor stylów pisania i przegląd specyfikacji zostają tylko w rozmowie. Usunięte zostają: założenie czterech stałych typów i kryterium o skillach kontekstowych w katalogu domowym.",
+    "recipe": {
+      "pages": [
+        {
+          "key": "pages/modules/m37-internal-skills-registry.md",
+          "change": "all"
+        },
+        {
+          "key": "pages/modules/m37-internal-skills-registry.md",
+          "context": {
+            "offset": 1,
+            "limit": 2,
+            "anchors": [
+              "m37cel01",
+              "m37dep01"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m52-spec-skills.md",
+          "change": {
+            "offset": 0,
+            "limit": 1,
+            "anchors": [
+              "xrpcvap9"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m52-spec-skills.md",
+          "change": {
+            "offset": 2,
+            "limit": 2,
+            "anchors": [
+              "wqvq1esb",
+              "1osy2o5r"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m52-spec-skills.md",
+          "context": {
+            "offset": 1,
+            "limit": 2,
+            "anchors": [
+              "q7uurue4",
+              "cppnlv9z"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m52-spec-skills.md",
+          "context": {
+            "offset": 11,
+            "limit": 1,
+            "anchors": [
+              "hdkx97wq"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m15-writing-styles.md",
+          "change": "all"
+        },
+        {
+          "key": "pages/modules/m15-writing-styles.md",
+          "context": {
+            "offset": 1,
+            "limit": 2,
+            "anchors": [
+              "17wo7eba",
+              "7j0i6cqq"
+            ]
+          }
+        },
+        {
+          "key": "plugins/modules/c4s-plugin-writing-style-author.md",
+          "change": "all"
+        },
+        {
+          "key": "plugins/modules/c4s-plugin-writing-style-author.md",
+          "context": {
+            "offset": 0,
+            "limit": 1,
+            "anchors": [
+              "y7rjk3gh"
+            ]
+          }
+        },
+        {
+          "key": "plugins/modules/c4s-plugin-writing-style-author.md",
+          "context": {
+            "offset": 3,
+            "limit": 1,
+            "anchors": [
+              "0t0qt1hj"
+            ]
+          }
+        }
+      ],
+      "entities": [
+        {
+          "type": "code-snippet",
+          "slugs": [
+            "kontrakt-skillregistry-skillmetadata-resolvedskill"
+          ]
+        },
+        {
+          "type": "endpoint",
+          "slugs": [
+            "get-api-skills"
+          ]
+        },
+        {
+          "type": "mcp-tool",
+          "slugs": [
+            "c4s-reader-list-skills"
+          ]
+        },
+        {
+          "type": "spec-operation",
+          "slugs": [
+            "list-skills"
+          ]
+        },
+        {
+          "type": "module-dependency",
+          "slugs": [
+            "m13-requires-m44",
+            "m15-requires-m44",
+            "m52-requires-m44"
+          ]
+        },
+        {
+          "type": "ac",
+          "slugs": [
+            "ac-aktywny-writing-style-config-writingsty",
+            "ac-blok-available-skills-jest-emitowany-2",
+            "ac-blok-available-skills-jest-emitowany",
+            "ac-blok-available-skills-niesie-instrukc",
+            "ac-plugin-wnoszacy-contributes-skills-ze",
+            "ac-plugin-wnoszacy-trzy-pozycje-ze-scope-2",
+            "ac-projekt-bez-pluginow-listing-availabl",
+            "ac-przy-config-writingstyle-null-blok-pr",
+            "ac-skill-projektu-bez-contexttypes-jest",
+            "ac-skill-ui-view-mockup-generator-nigdy",
+            "ac-skill-ui-view-mockup-generator-trafia",
+            "ac-skill-w-claude-skills-ze-scope-contex",
+            "ac-skill-writing-style-author-jest-wlasnosc",
+            "ac-skill-writing-style-author-nie-jest-p",
+            "ac-spec-review-jest-rozwiazywany-w-turze",
+            "ac-spec-review-nie-jest-rozwiazywany-w-t",
+            "ac-system-prompt-zawiera-co-najwyzej-jed",
+            "ac-wiersz-wiszacy-albo-niejednoznaczny-s",
+            "ac-wklad-contributes-skills-z-contexttyp"
+          ]
+        }
+      ]
+    },
+    "jobs": [],
+    "portions": [
+      {
+        "name": "skill-scope/p1-l3-l17",
+        "slugs": [
+          "kontrakt-skillregistry-skillmetadata-resolvedskill",
+          "get-api-skills",
+          "c4s-reader-list-skills",
+          "list-skills",
+          "m13-requires-m44",
+          "m15-requires-m44",
+          "m52-requires-m44",
+          "ac-aktywny-writing-style-config-writingsty",
+          "ac-blok-available-skills-jest-emitowany-2",
+          "ac-blok-available-skills-jest-emitowany",
+          "ac-blok-available-skills-niesie-instrukc",
+          "ac-plugin-wnoszacy-contributes-skills-ze",
+          "ac-plugin-wnoszacy-trzy-pozycje-ze-scope-2",
+          "ac-projekt-bez-pluginow-listing-availabl",
+          "ac-przy-config-writingstyle-null-blok-pr",
+          "ac-skill-projektu-bez-contexttypes-jest",
+          "ac-skill-ui-view-mockup-generator-nigdy",
+          "ac-skill-ui-view-mockup-generator-trafia",
+          "ac-skill-w-claude-skills-ze-scope-contex",
+          "ac-skill-writing-style-author-jest-wlasnosc",
+          "ac-skill-writing-style-author-nie-jest-p",
+          "ac-spec-review-jest-rozwiazywany-w-turze",
+          "ac-spec-review-nie-jest-rozwiazywany-w-t",
+          "ac-system-prompt-zawiera-co-najwyzej-jed",
+          "ac-wiersz-wiszacy-albo-niejednoznaczny-s",
+          "ac-wklad-contributes-skills-z-contexttyp"
+        ]
+      }
+    ]
+  }
+}

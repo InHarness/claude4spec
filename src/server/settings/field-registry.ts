@@ -62,6 +62,11 @@ export interface FieldValidationContext {
   effectiveRoots: Root[];
   /** Keys (dotted) the request actually carries, after the whitelist. */
   touched: ReadonlySet<string>;
+  /**
+   * 2.1.88 (M44 `tug9fzdn`) — the values of the project's context-type registry
+   * (`contextTypesFor(capabilities)`). Absent (rigs) = every row of the code map.
+   */
+  contextTypes?: readonly string[];
 }
 
 /**

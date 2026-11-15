@@ -37,6 +37,7 @@ import {
 import { DIRECT_FILESYSTEM_DENY_GROUPS } from '../services/agent-tool-posture.js';
 import { ensureGitignore } from '../../bin/gitignore.js';
 import { hostCapabilityRegistry, projectCapabilitySet, type ProjectCapabilities } from '../project-types/capabilities.js';
+import { contextTypesFor } from '../services/chat-context.js';
 import { multiRootViolation } from '../project-types/resolve.js';
 
 export interface ConfigRouterDeps {
@@ -107,7 +108,10 @@ function configResponse(
   // 2.1.77 (M57 `rdztxzb8`, M26 `7f76eszm`): the project's capability set, as the
   // context factory gave it — the client assembles the ACTIVE settings cards and
   // elements from it. Derived, never a file key.
-  return capabilities ? { ...body, capabilities: [...capabilities].sort() } : body;
+  if (!capabilities) return body;
+  // 2.1.88 (M52 `1osy2o5r`): the values of the project's context-type registry, in
+  // registry order — the options of the `Context types` multiselect. Derived, never a file key.
+  return { ...body, capabilities: [...capabilities].sort(), contextTypes: contextTypesFor(capabilities) };
 }
 
 /**
@@ -355,6 +359,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         skillRegistry,
         effectiveRoots: deps.effectiveRoots ?? currentConfig.roots,
         touched,
+        contextTypes: contextTypesFor(capabilities),
       };
 
       // Stage 1 — the wire type of every present key.

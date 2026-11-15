@@ -564,24 +564,27 @@ export function registerCoreOperations(): void {
       contextType: z
         .string()
         .optional()
-        .describe('One of chat, brief, patch, ask (owned by the context type registry). Omit for the whole registry.'),
+        .describe("One of the values of this project's context type registry. Omit for the whole registry."),
     },
     errorCodes: ['INVALID_ARGUMENT'],
     sideEffects: ['none'],
     idempotent: true,
     channels: {
       // Mounting is per-server: a `list_skills` tool on the turn's `skill-tools`
-      // would appear in all four context types at once, and the turn already has
+      // would appear in every value of the context-type registry at once, and the turn already has
       // the listing as the `<available_skills>` block before its first tool call.
       // 2.1.26 — the reason is the record's `powody.internal`, verbatim.
       internal: na(
-        'tura dostaje listing jako blok `<available_skills>` promptu systemowego; montowanie MCP jest per serwer, więc narzędzie w tym kanale trafiłoby naraz do wszystkich czterech typów kontekstu',
+        'tura dostaje listing jako blok `<available_skills>` promptu systemowego; montowanie MCP jest per serwer, więc narzędzie w tym kanale trafiłoby naraz do każdej wartości rejestru typów kontekstu',
       ),
       cli: direct(),
       mcp: direct(),
       rest: direct(),
     },
     // 2.1.26 — the record's `narzedzia`: the external reader's `list_skills` only.
+    // 2.1.88 — the record names its renderings per channel: cli `list-skills`
+    // (src/bin/c4s/commands/list-skills.ts), mcp `c4s-reader-list-skills`, rest
+    // `get-api-skills` (routes/skills.ts). The catalog row carries MCP renderings only.
     renderings: { mcp: ['c4s-reader.list_skills'] },
   });
 

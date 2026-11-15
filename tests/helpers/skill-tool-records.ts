@@ -73,7 +73,7 @@ export const SKILL_TOOL_RECORDS: Record<string, WriteToolRecord> = {
         type: 'string',
         required: false,
         description:
-          "Context type whose skill set to list — one of `chat`, `brief`, `patch`, `ask`. Omit to list the whole registry instead of one context's set.",
+          "Context type whose skill set to list — one of the values of this project's context type registry. Omit to list the whole registry instead of one context's set.",
       },
     ],
     hints: READ_ONLY_IDEMPOTENT,

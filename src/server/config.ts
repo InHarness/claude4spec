@@ -108,7 +108,7 @@ export interface NormalizedSkillConfig {
   name: string | null;
   description: string | null;
   entry: string;
-  /** `undefined` ⇒ all four context types (the same convention as `SkillMetadata.contextTypes`). */
+  /** `undefined` ⇒ every value of the project context-type registry (2.1.88, M52 `wqvq1esb`; the same convention as `SkillMetadata.contextTypes`). */
   contextTypes: string[] | undefined;
   uses: string[];
 }

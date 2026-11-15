@@ -6,6 +6,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { buildSkillToolsServer, SKILL_TOOL_TEXT } from './skill-tools.js';
 import { SkillRegistry, SkillResolver, type SkillRoot } from '../services/skill-registry.js';
+import { contextTypesFor } from '../services/chat-context.js';
+import type { ChatContextType } from '../../shared/entities.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 import { SKILL_TOOL_RECORDS } from '../../../tests/helpers/skill-tool-records.js';
 import { expectToolMatchesToolRecord } from '../../../tests/helpers/write-tool-records.js';
@@ -35,11 +37,11 @@ describe('skill-tools — load_skill_file', () => {
     return { dir: root, source: 'user' };
   }
 
-  async function mount(registry: SkillRegistry, opts: { external?: boolean } = {}) {
+  async function mount(registry: SkillRegistry, opts: { external?: boolean; contextTypes?: ChatContextType[] } = {}) {
     const { server } = buildSkillToolsServer(
       registry,
       opts.external ? 'p' : null,
-      opts.external ? { resolver: new SkillResolver(registry, tmp) } : {},
+      opts.external ? { resolver: new SkillResolver(registry, tmp, opts.contextTypes) } : {},
     );
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     client = new Client({ name: 'test-client', version: '0.0.0' });
@@ -433,6 +435,17 @@ describe('skill-tools — load_skill_file', () => {
     const refusal = JSON.parse((refused.content as Array<{ text: string }>)[0]!.text);
     expect(refusal.code).toBe('INVALID_ARGUMENT');
     for (const legal of ['chat', 'brief', 'patch', 'ask']) expect(refusal.error).toContain(legal);
+
+    // 2.1.88 — "spoza rejestru typów kontekstu projektu": in a project whose registry
+    // is chat + ask, `brief` (a Host API value) is refused naming that registry, `ask` answers.
+    await mount(registry, { external: true, contextTypes: ['chat', 'ask'] });
+    const outside = await client.callTool({ name: 'list_skills', arguments: { contextType: 'brief' } });
+    expect(outside.isError).toBe(true);
+    const outsideBody = JSON.parse((outside.content as Array<{ text: string }>)[0]!.text);
+    expect(outsideBody.code).toBe('INVALID_ARGUMENT');
+    expect(outsideBody.error).toContain('expected one of chat, ask');
+    const inside = await client.callTool({ name: 'list_skills', arguments: { contextType: 'ask' } });
+    expect(inside.isError).toBeFalsy();
   });
 
   /**
@@ -449,7 +462,7 @@ describe('skill-tools — load_skill_file', () => {
           internal: {
             kind: 'na',
             reason:
-              'tura dostaje listing jako blok `<available_skills>` promptu systemowego; montowanie MCP jest per serwer, więc narzędzie w tym kanale trafiłoby naraz do wszystkich czterech typów kontekstu',
+              'tura dostaje listing jako blok `<available_skills>` promptu systemowego; montowanie MCP jest per serwer, więc narzędzie w tym kanale trafiłoby naraz do każdej wartości rejestru typów kontekstu',
           },
           cli: { kind: 'direct' },
           mcp: { kind: 'direct' },
@@ -480,14 +493,38 @@ describe('skill-tools — load_skill_file', () => {
     });
     const resolver = new SkillResolver(registry, tmp);
     expect(listSkills(resolver).listing.map((r) => r.slug)).toEqual(['ui-view-mockup-generator']);
-    let refusal: { code?: string; message?: string } | undefined;
-    try {
-      listSkills(resolver, 'breif');
-    } catch (err) {
-      refusal = err as { code?: string; message?: string };
-    }
+    const refusalOf = (r: SkillResolver, value: string): { code?: string; message?: string } | undefined => {
+      try {
+        listSkills(r, value);
+      } catch (err) {
+        return err as { code?: string; message?: string };
+      }
+      return undefined;
+    };
+    const refusal = refusalOf(resolver, 'breif');
     expect(refusal?.code).toBe('INVALID_ARGUMENT');
     for (const legal of ['chat', 'brief', 'patch', 'ask']) expect(refusal?.message).toContain(legal);
+
+    // 2.1.88: the legal values are the rows of THIS project's context-type
+    // registry. A project without `briefs` registers chat and ask only, so a
+    // Host API value it lacks (`brief`) is unknown there — refused, the message
+    // naming the registry's rows — while each of its own values answers.
+    const narrow = new SkillResolver(registry, tmp, contextTypesFor({ has: (c) => c !== 'briefs' }));
+    expect(narrow.contextTypes).toEqual(['chat', 'ask']);
+    const outside = refusalOf(narrow, 'brief');
+    expect(outside?.code).toBe('INVALID_ARGUMENT');
+    expect(outside?.message).toContain('expected one of chat, ask');
+    for (const value of narrow.contextTypes) {
+      expect(listSkills(narrow, value).listing.map((r) => r.slug), value).toEqual(['ui-view-mockup-generator']);
+    }
+    // Omitted: the whole registry, in that project too.
+    expect(listSkills(narrow).listing.map((r) => r.slug)).toEqual(['ui-view-mockup-generator']);
+
+    // The record's renderings per channel: cli `list-skills`, mcp `c4s-reader-list-skills`
+    // (above), rest `get-api-skills` (GET /api/skills, `routes/skills.ts`).
+    const { listSkillsCommand } = await import('../../bin/c4s/commands/list-skills.js');
+    expect(listSkillsCommand.name).toBe('list-skills');
+    expect(listSkillsCommand.operation).toBe('list_skills');
   });
 
   it('[entity:load-skill-file] load_skill_file: project, direct, all four channels direct, no effects, idempotent, codes SKILL_NOT_FOUND, SKILL_FILE_NOT_FOUND, NOT_TEXT, INVALID_ARGUMENT, rendered by skill-tools · load_skill_file (internal) and c4s-reader · load_skill_file (mcp), addressed by (slug, file) with file defaulting to SKILL.md', async () => {
