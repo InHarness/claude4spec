@@ -1,5 +1,5 @@
 {
-  "iteration": 46,
+  "iteration": 47,
   "conventions": [
     {
       "label": "L15 (Context Types) — implementor M44",
@@ -55,7 +55,7 @@
       "startCommit": "b0839b655c6613ac934b29d30a871b1bfdcdfb4e"
     }
   ],
-  "systemVerified": false,
+  "systemVerified": true,
   "errors": 0,
   "units": [
     {
