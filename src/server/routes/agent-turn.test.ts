@@ -4404,6 +4404,22 @@ describe('runAgentTurn — the turn argument: host pool, handler servers, profil
     expect(interactionBody(bare.prompt, 'patch')).toBeDefined();
   });
 
+  it('[ac:ac-agent-czyta-metodologie-briefowania-z] the agent reads the briefing methodology from the subfile of the active writing style through the skill read operation — the prompt carries none of it', async () => {
+    const { prompt, servers, toolsOf } = await turnFor('brief', { briefPath: 'b.md', setup: await styleRig({ styleActive: true }) });
+    // The prompt does not carry the methodology: no workflow block, no subfile text.
+    expect(prompt).not.toContain('<writing_style_brief_workflow');
+    expect(prompt).not.toContain('BRIEF METHODOLOGY');
+    // It names the active style, whose subfile holds the methodology…
+    expect(prompt).toContain('<project_writing_skill slug="house-style" title="House Style">');
+    expect(prompt).toContain('load_skill_file');
+    // …and the skill read operation is the road to it: no built-in can read files in this thread.
+    expect((hoisted.lastExecute?.disallowedToolGroups ?? []) as string[]).toEqual(expect.arrayContaining(['file-read', 'shell']));
+    expect(toolsOf('skill-tools')).toEqual(['load_skill_file']);
+    const read = await callMounted(servers, 'skill-tools', 'load_skill_file', { slug: 'house-style', file: 'workflows/brief.md' });
+    expect(read.isError).toBe(false);
+    expect(JSON.stringify(read.body)).toContain('BRIEF METHODOLOGY — partition the diff by module, then narrate.');
+  });
+
   it('[ac:ac-wpis-rejestru-kontekstow-dla-brief-ni] a brief thread has no built-in tools whatever agent.disableDirectFilesystemAccess says', async () => {
     for (const flag of [true, false]) {
       hoisted.agent = { disableDirectFilesystemAccess: flag };

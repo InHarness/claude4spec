@@ -1,5 +1,5 @@
 {
-  "iteration": 41,
+  "iteration": 46,
   "conventions": [
     {
       "label": "L15 (Context Types) — implementor M44",
@@ -1369,13 +1369,39 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "prompt-composition/p1-l15-l16",
+          "layers": [
+            "L15",
+            "L16"
+          ],
+          "slugs": [
+            "szablon-interaction-context-rama",
+            "moduly-feature",
+            "ac-agent-czyta-metodologie-briefowania-z",
+            "ac-blok-agent-filesystem-access-jest-emi",
+            "ac-blok-agent-path-scope-jest-pomijany-gd",
+            "ac-blok-interaction-context-type-jest-pi",
+            "ac-kazdy-system-prompt-zawiera-dokladnie",
+            "ac-system-prompt-nie-zawiera-bloku-writi",
+            "ac-system-prompt-watku-brief-nie-zawiera-2",
+            "ac-system-prompt-watku-brief-nie-zawiera",
+            "ac-watek-wartosci-z-kompozycja-domyslna"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "7311698a6d18eb8f29a849c19e8b531948f54510",
+      "baseCommit": "7311698a6d18eb8f29a849c19e8b531948f54510",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     }

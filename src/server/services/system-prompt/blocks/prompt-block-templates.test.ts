@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildSystemPrompt, type SystemPromptInput } from '../../chat-context.js';
 import { INTERACTION_RULES } from '../../interaction-rules.js';
+import { CONTEXT_TYPE_ROWS } from '../../context-types/registry.js';
 import { SKETCH_SYSTEM_PROMPT } from '../../../../../tests/helpers/fixture-module.js';
 import type { ProjectPluginHost } from '../../../core/plugin-host/types.js';
 import type { PatchDetail, PatchService } from '../../patch.js';
@@ -183,7 +184,7 @@ const T = {
   ].join('\n'),
   /** `szablon-interaction-context-rama` */
   INTERACTION_CONTEXT_RAMA: [
-    "<interaction_context type=\"chat|brief|patch|ask\">",
+    "<interaction_context type=\"{wartość rejestru typów kontekstu projektu}\">",
     "…reguły domenowe tego typu interakcji (treść z modułu-właściciela gatunku)…",
     "</interaction_context>",
     "",
@@ -531,15 +532,39 @@ describe('M13 — the entity catalogue', () => {
 });
 
 describe('M44 / M36 — the carriers', () => {
-  it('[entity:szablon-interaction-context-rama] renders both variants verbatim: the type with the genre\'s rules as body, self-closing when the genre brings none', () => {
-    const [withBody, bare] = dropNotes(T.INTERACTION_CONTEXT_RAMA).split(/\n\n+/);
-    const ask = block(build({ contextType: 'ask', interactionRules: INTERACTION_RULES.ask }), 'interaction_context');
-    expect(ask).toBe(
-      fill(withBody!, [
-        ['chat|brief|patch|ask', 'ask'],
-        ['…reguły domenowe tego typu interakcji (treść z modułu-właściciela gatunku)…', INTERACTION_RULES.ask],
-      ]),
+  it('[entity:szablon-interaction-context-rama] renders both variants verbatim for every value of the registry: the row\'s value as type, the genre\'s rules as body, self-closing when the genre brings none', () => {
+    // The record's code, verbatim (2.1.88): `type` is a registry value, not a closed list.
+    expect(T.INTERACTION_CONTEXT_RAMA).toBe(
+      '<interaction_context type="{wartość rejestru typów kontekstu projektu}">\n' +
+        '…reguły domenowe tego typu interakcji (treść z modułu-właściciela gatunku)…\n' +
+        '</interaction_context>\n\n' +
+        '<!-- wariant bez ciała — gdy moduł-właściciel gatunku nie wnosi żadnej reguły: -->\n' +
+        '<interaction_context type="chat"/>',
     );
+    const [withBody, bare] = dropNotes(T.INTERACTION_CONTEXT_RAMA).split(/\n\n+/);
+    let bodied = 0;
+    let bareSeen = 0;
+    for (const row of CONTEXT_TYPE_ROWS) {
+      const rendered = block(
+        build({ contextType: row.value, interactionRules: row.interactionRules, brief: null, patch: null }),
+        'interaction_context',
+      );
+      if (row.interactionRules.trim() === '') {
+        bareSeen++;
+        expect(rendered, row.value).toBe(bare!.replace('type="chat"', `type="${row.value}"`));
+      } else {
+        bodied++;
+        expect(rendered, row.value).toBe(
+          fill(withBody!, [
+            ['{wartość rejestru typów kontekstu projektu}', row.value],
+            ['…reguły domenowe tego typu interakcji (treść z modułu-właściciela gatunku)…', row.interactionRules.trim()],
+          ]),
+        );
+      }
+    }
+    // Both variants are exercised by the real rows: `chat` brings no rules.
+    expect(bodied).toBeGreaterThan(0);
+    expect(bareSeen).toBeGreaterThan(0);
     expect(block(build({ contextType: 'chat', interactionRules: INTERACTION_RULES.chat }), 'interaction_context')).toBe(bare);
   });
 

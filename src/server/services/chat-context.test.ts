@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildSystemPrompt,
   compositionCarries,
+  compositionOfRow,
   mainPromptBlockNames,
   promptCompositionFor,
   subagentsFor,
@@ -21,6 +22,11 @@ import type { Root } from '../../shared/types.js';
 import { PROMPT_BLOCKS } from './system-prompt/registry.js';
 import { DEFAULT_COMPOSITION } from './system-prompt/compositions/default.js';
 import { BRIEF_COMPOSITION } from './system-prompt/compositions/brief.js';
+import { CONTEXT_TYPE_ROWS, validateContextTypeRegistry } from './context-types/registry.js';
+import { composeSystemPrompt } from './system-prompt/compose.js';
+
+/** The rows of the registry whose `Kompozycja` is `domyślna` — read off the rows, never listed by value. */
+const DEFAULT_COMPOSITION_ROWS = CONTEXT_TYPE_ROWS.filter((r) => r.promptComposition === 'default');
 
 /** Minimal Root at `dir` for prompt tests. */
 function rootAt(dir: string, id = 'pages'): Root {
@@ -954,7 +960,7 @@ describe('buildSystemPrompt — ask context (0.1.79)', () => {
  */
 describe('buildSystemPrompt — <agent_filesystem_access> (0.2.53)', () => {
   for (const contextType of ['chat', 'patch', 'ask'] as const) {
-    it(`[ac:ac-blok-agent-filesystem-access-jest-emi] emits the disabled block in the ${contextType} frame`, () => {
+    it(`emits the disabled block in the ${contextType} frame`, () => {
       const out = build({ contextType, agentFilesystemAccess: { enabled: false } });
       expect(out).toContain('<agent_filesystem_access enabled="false">');
     });
@@ -965,15 +971,29 @@ describe('buildSystemPrompt — <agent_filesystem_access> (0.2.53)', () => {
     });
   }
 
+  /** 2.1.88 — the set is the registry's rows with `Kompozycja: domyślna`, read off the rows. */
+  it('[ac:ac-blok-agent-filesystem-access-jest-emi] is emitted in both states of the flag in every registry value with Kompozycja: domyślna', () => {
+    expect(DEFAULT_COMPOSITION_ROWS.length).toBeGreaterThan(0);
+    for (const row of DEFAULT_COMPOSITION_ROWS) {
+      const on = build({ contextType: row.value, agentFilesystemAccess: { enabled: true } });
+      const off = build({ contextType: row.value, agentFilesystemAccess: { enabled: false } });
+      expect(on.match(/<agent_filesystem_access /g)?.length, `${row.value} enabled`).toBe(1);
+      expect(on, row.value).toContain('<agent_filesystem_access enabled="true">');
+      expect(off.match(/<agent_filesystem_access /g)?.length, `${row.value} disabled`).toBe(1);
+      expect(off, row.value).toContain('<agent_filesystem_access enabled="false">');
+    }
+  });
+
   /** Absent input describes the DEFAULT posture, not the permissive one. */
   it('defaults to enabled="false" when the caller omits the field', () => {
     expect(build({ contextType: 'chat' })).toContain('<agent_filesystem_access enabled="false">');
   });
 
   /** The brief frame states its posture in its own interaction-rules body. */
-  it('is absent from the brief frame in both states', () => {
+  it('[ac:ac-system-prompt-watku-brief-nie-zawiera] the system prompt of a brief thread carries no <agent_filesystem_access>, in both states of the flag', () => {
     for (const enabled of [true, false]) {
-      const out = build({ contextType: 'brief', agentFilesystemAccess: { enabled } });
+      const out = build({ contextType: 'brief', brief: null, agentFilesystemAccess: { enabled } });
+      expect(out.startsWith('<interaction_context type="brief"')).toBe(true);
       expect(out).not.toContain('<agent_filesystem_access');
     }
   });
@@ -1183,7 +1203,22 @@ describe('buildSystemPrompt — <agent_path_scope> (0.1.90 / 0.1.130)', () => {
    * conditional on `agentPathScope` everywhere it belongs, so absence has to be
    * asserted WITH a scope supplied — an unset one would pass for the wrong reason.
    */
-  it('[ac:ac-blok-agent-path-scope-jest-pomijany-gd] is absent from the brief frame, whatever the scope', () => {
+  it('[ac:ac-blok-agent-path-scope-jest-pomijany-gd] is emitted in every registry value with Kompozycja: domyślna, also when the allowed and disallowed lists are empty', () => {
+    expect(DEFAULT_COMPOSITION_ROWS.length).toBeGreaterThan(0);
+    for (const row of DEFAULT_COMPOSITION_ROWS) {
+      for (const agentPathScope of [emptyUserScope, scope]) {
+        const out = build({ contextType: row.value, agentPathScope });
+        expect(out.match(/<agent_path_scope>/g)?.length, row.value).toBe(1);
+        expect(out, row.value).toContain('ALWAYS DISALLOWED — C4S artifact dirs');
+      }
+      // Empty user lists: the block still stands, carrying the implicit base and no DISALLOWED line.
+      const bare = build({ contextType: row.value, agentPathScope: emptyUserScope });
+      expect(bare, row.value).toContain('ALLOWED (you may read/write here): /tmp/my-spec');
+      expect(bare, row.value).not.toContain('DISALLOWED (never read/write here');
+    }
+  });
+
+  it('[ac:ac-system-prompt-watku-brief-nie-zawiera-2] the system prompt of a brief thread carries no <agent_path_scope>, whatever the scope', () => {
     expect(build({ contextType: 'brief', brief: null })).not.toContain('<agent_path_scope');
     const out = build({ contextType: 'brief', brief: null, agentPathScope: scope });
     expect(out).not.toContain('<agent_path_scope');
@@ -1954,6 +1989,87 @@ describe('prompt composition is declared by the context type (0.2.97)', () => {
     expect(compositionCarries('chat', 'current_plan')).toBe(true);
     expect(compositionCarries('brief', 'current_page')).toBe(false);
     expect(compositionCarries('brief', 'current_plan')).toBe(false);
+  });
+});
+
+/**
+ * 2.1.88 (M48 `5ogljw5f`) — the composer branches on the row's `Kompozycja`
+ * column. "Every value" is every row of the registry, never a list of literals.
+ */
+describe('M48 — composition by the row of the registry (2.1.88)', () => {
+  /** A prompt for a registry row, with a writing style active so a style-driven block would have a reason to appear. */
+  const promptOf = (value: string, extra: Partial<SystemPromptInput> = {}) =>
+    build({
+      contextType: value as SystemPromptInput['contextType'],
+      brief: null,
+      patch: null,
+      interactionRules: CONTEXT_TYPE_REGISTRY[value as keyof typeof CONTEXT_TYPE_REGISTRY].interactionRules,
+      writingStyleSkill: { slug: 'house-style', title: 'House Style' },
+      agentFilesystemAccess: { enabled: false },
+      mcpInventory: CHAT_INVENTORY,
+      ...extra,
+    });
+
+  it('[ac:ac-watek-wartosci-z-kompozycja-domyslna] a thread of a value with Kompozycja: domyślna gets the default composition', () => {
+    expect(DEFAULT_COMPOSITION_ROWS.length).toBeGreaterThan(0);
+    for (const row of DEFAULT_COMPOSITION_ROWS) {
+      expect(promptCompositionFor(row.value), row.value).toBe(DEFAULT_COMPOSITION);
+      const input: SystemPromptInput = {
+        host,
+        projectName: 'My Spec',
+        cwd: '/tmp/my-spec',
+        roots: [rootAt('pages')],
+        currentPagePath: null,
+        currentPageBody: null,
+        contextType: row.value,
+        interactionRules: row.interactionRules,
+        mcpInventory: CHAT_INVENTORY,
+      };
+      // The turn's prompt IS the default composition rendered for that thread.
+      expect(buildSystemPrompt(input), row.value).toBe(composeSystemPrompt(DEFAULT_COMPOSITION, input));
+      // …and it carries the default composition's blocks, which the brief recipe lacks.
+      expect(buildSystemPrompt(input), row.value).toContain('<claude4spec_identity>');
+    }
+    // The branch is the column, not the value: a hypothetical new row with `domyślna`
+    // gets the default composition, and one with its own recipe gets that recipe.
+    expect(compositionOfRow({ promptComposition: 'default' })).toBe(DEFAULT_COMPOSITION);
+    expect(compositionOfRow({ promptComposition: { own: BRIEF_COMPOSITION } })).toBe(BRIEF_COMPOSITION);
+    // A row with `własna` and no recipe never reaches the composer: the start-up check stops it.
+    const broken = { ...CONTEXT_TYPE_REGISTRY.chat, promptComposition: { own: [] } };
+    expect(() =>
+      validateContextTypeRegistry([{ slug: 'spec', capabilities: [] }], [broken]),
+    ).toThrow(/own composition with no recipe/);
+  });
+
+  it('[ac:ac-blok-interaction-context-type-jest-pi] <interaction_context> is the first block of the system prompt in every registry value', () => {
+    expect(CONTEXT_TYPE_ROWS.length).toBeGreaterThan(0);
+    for (const row of CONTEXT_TYPE_ROWS) {
+      expect(compositionOfRow(row)[0]?.block, row.value).toBe('interaction_context');
+      const out = promptOf(row.value);
+      expect(out.startsWith(`<interaction_context type="${row.value}"`), row.value).toBe(true);
+    }
+  });
+
+  it('[ac:ac-kazdy-system-prompt-zawiera-dokladnie] every system prompt carries exactly one <interaction_context>, whose type equals the thread\'s context_type', () => {
+    for (const row of CONTEXT_TYPE_ROWS) {
+      for (const planMode of [false, true]) {
+        const out = promptOf(row.value, { planMode });
+        const types = [...out.matchAll(/<interaction_context type="([^"]*)"/g)].map((m) => m[1]);
+        expect(types, `${row.value} planMode=${planMode}`).toEqual([row.value]);
+        expect(out.split('<interaction_context').length - 1, row.value).toBe(1);
+      }
+    }
+  });
+
+  it('[ac:ac-system-prompt-nie-zawiera-bloku-writi] the system prompt carries no <writing_style_brief_workflow> in any registry value', () => {
+    // No module declares the block, so no composition can name it…
+    expect(PROMPT_BLOCKS.has('writing_style_brief_workflow')).toBe(false);
+    for (const row of CONTEXT_TYPE_ROWS) {
+      expect(compositionOfRow(row).some((e) => e.block === 'writing_style_brief_workflow'), row.value).toBe(false);
+      // …and no prompt carries it, with a writing style active or not.
+      expect(promptOf(row.value), row.value).not.toContain('writing_style_brief_workflow');
+      expect(promptOf(row.value, { writingStyleSkill: null }), row.value).not.toContain('writing_style_brief_workflow');
+    }
   });
 });
 

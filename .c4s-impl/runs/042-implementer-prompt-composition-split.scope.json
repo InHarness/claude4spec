@@ -1,0 +1,58 @@
+{
+  "role": "implementer",
+  "stateDir": "/Users/michael/Code/ctowiec/claude4spec-private/codebase/apps/claude4spec-app/.worktrees/2-1-87-to-2-1-88/codebase/apps/claude4spec-app/.c4s-impl",
+  "repo": "/Users/michael/Code/ctowiec/claude4spec-private/codebase/apps/claude4spec-app/.worktrees/2-1-87-to-2-1-88/codebase/apps/claude4spec-app",
+  "unit": {
+    "id": "prompt-composition",
+    "goal": "Złożenie promptu systemowego rozgałęzia się po kolumnie kompozycji wiersza. Kompozycja domyślna daje bloki, których warunki emisji są spełnione, w ustalonej kolejności. Kompozycja własna daje przepis wskazany w wierszu (dziś tylko przepis briefu); wiersz bez poprawnego przepisu nie dociera do składania, bo zatrzymuje go walidacja startowa. Ramka bloku kontekstu interakcji niesie wartość rejestru. Bloki dostępu do plików i zakresu ścieżek są emitowane w każdej wartości z kompozycją domyślną, a w briefie nie występują.",
+    "recipe": {
+      "pages": [
+        {
+          "key": "pages/modules/m48-system-prompt-composition.md",
+          "change": "all"
+        },
+        {
+          "key": "pages/modules/m48-system-prompt-composition.md",
+          "context": {
+            "offset": 1,
+            "limit": 2,
+            "anchors": [
+              "xdnw931t",
+              "603o6bq9"
+            ]
+          }
+        }
+      ],
+      "entities": [
+        {
+          "type": "code-snippet",
+          "slugs": [
+            "szablon-interaction-context-rama"
+          ]
+        },
+        {
+          "type": "spreadsheet",
+          "slugs": [
+            "moduly-feature"
+          ]
+        },
+        {
+          "type": "ac",
+          "slugs": [
+            "ac-agent-czyta-metodologie-briefowania-z",
+            "ac-blok-agent-filesystem-access-jest-emi",
+            "ac-blok-agent-path-scope-jest-pomijany-gd",
+            "ac-blok-interaction-context-type-jest-pi",
+            "ac-kazdy-system-prompt-zawiera-dokladnie",
+            "ac-system-prompt-nie-zawiera-bloku-writi",
+            "ac-system-prompt-watku-brief-nie-zawiera-2",
+            "ac-system-prompt-watku-brief-nie-zawiera",
+            "ac-watek-wartosci-z-kompozycja-domyslna"
+          ]
+        }
+      ]
+    },
+    "jobs": []
+  },
+  "mode": "split"
+}

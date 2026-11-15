@@ -1,9 +1,10 @@
 import type { CompositionEntry } from '../types.js';
 
 /**
- * M48 — the DEFAULT composition: the prompt of every context type that declares
- * `promptComposition: 'default'` (today `chat`, `patch`, `ask`). In it, whether a
- * block is present is decided by that block's own emission condition alone.
+ * M48 — the DEFAULT composition: the prompt of every registry row whose
+ * `Kompozycja` column is `domyślna` (`promptComposition: 'default'`). In it,
+ * whether a block is present is decided by that block's own emission condition
+ * alone.
  *
  * THE ORDER, as data. 0.2.50 replaced seventeen `parts.push(…)` calls, whose
  * sequence recorded when each block was added, with a list that can be read in

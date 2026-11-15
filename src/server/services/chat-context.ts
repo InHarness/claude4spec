@@ -423,10 +423,22 @@ export function mainPromptBlockNames(): string[] {
   return DEFAULT_COMPOSITION.map((e) => e.block);
 }
 
+/**
+ * M48 `5ogljw5f` (2.1.88) — the composer branches on the row's `Kompozycja`
+ * column, never on the value: `domyślna` → the default composition (every block
+ * whose emission condition holds, in its fixed order); `własna` → the recipe the
+ * row names (today only the brief's). An unknown value, or `własna` without a
+ * recipe, never reaches here: the start-up check (`validateContextTypeRegistry`,
+ * M44 `8rnqx0vu`) stops the host on such a row.
+ */
+export function compositionOfRow(row: Pick<ContextTypeRow, 'promptComposition'>): readonly CompositionEntry[] {
+  const decl = row.promptComposition;
+  return decl === 'default' ? DEFAULT_COMPOSITION : decl.own;
+}
+
 /** The composition a context type declared — the composer's default, or its own. */
 export function promptCompositionFor(contextType: ChatContextType): readonly CompositionEntry[] {
-  const decl = CONTEXT_TYPE_REGISTRY[contextType].promptComposition;
-  return decl === 'default' ? DEFAULT_COMPOSITION : decl.own;
+  return compositionOfRow(CONTEXT_TYPE_REGISTRY[contextType]);
 }
 
 /**
