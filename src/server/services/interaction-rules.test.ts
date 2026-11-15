@@ -72,6 +72,19 @@ describe('INTERACTION_RULES', () => {
     expect(rules).toContain('write-denied at the sandbox level');
   });
 
+  /**
+   * 2.1.88 (M21 `m21bauth`, M23 `m23pctx1`) — the posture is described from the
+   * rows: brief takes release-tools as its one pool server and has no file server,
+   * so no path leads out of the brief; patch takes no built-in group away.
+   */
+  it('[section:m21bauth] [section:m23pctx1] brief names release-tools as its one pool server and no file server; patch leaves built-ins to the project setting', () => {
+    expect(INTERACTION_RULES.brief).toContain("Of the pool's MCP servers, only `release-tools` is mounted");
+    expect(INTERACTION_RULES.brief).toContain('No server of this thread reads or writes files');
+    expect(INTERACTION_RULES.patch).toContain("Your built-in tools are whatever the project's file-access setting leaves you");
+    expect(INTERACTION_RULES.patch).toContain('spec-skill-tools');
+    expect(INTERACTION_RULES.patch).not.toContain('FULL chat toolset');
+  });
+
   it('patch: says explicitly that it is NOT read-only, unlike brief', () => {
     const rules = INTERACTION_RULES.patch;
     expect(rules).toContain('NOT read-only');

@@ -1,0 +1,3 @@
+# Review — brief-patch-threads (non-blocking)
+
+- **rev-0001** `src/server/routes/agent-turn.test.ts:4367`: The two count criteria (brief-tools and patch-tools entities equal the tools mounted in the thread) read tool names from the `<mcp name=…>` line of the `<tooling>` prompt (`toolsOf`). They do not read the server instance the turn actually mounted. If the prompt inventory and the real mount ever diverged, these tests would still pass. The same file already has `callMounted`, which connects to `servers[name].instance`. A `listTools()` on that instance would assert the mounted surface directly.

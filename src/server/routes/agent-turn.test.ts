@@ -4001,6 +4001,8 @@ describe('runAgentTurn — the turn argument: host pool, handler servers, profil
       parentThreadId?: string | null;
       planMode?: boolean;
       events?: Array<Record<string, unknown>>;
+      /** Last word on the rig before the turn runs (skill registry, resolver, …). */
+      setup?: (deps: AgentTurnDeps) => void;
     } = {},
   ) {
     hoisted.events = opts.events ?? [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
@@ -4026,6 +4028,7 @@ describe('runAgentTurn — the turn argument: host pool, handler servers, profil
     thread.briefPath = opts.briefPath ?? null;
     thread.parentThreadId = opts.parentThreadId ?? null;
     thread.planMode = opts.planMode ?? false;
+    opts.setup?.(deps);
     await runAgentTurn(deps, input);
     const servers = (hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>;
     const prompt = String(hoisted.lastExecute?.systemPrompt);
@@ -4195,6 +4198,196 @@ describe('runAgentTurn — the turn argument: host pool, handler servers, profil
     const { mounted, toolsOf } = await turnFor('patch', { patchPath: 'p.md' });
     expect(mounted).toContain('patch-tools');
     expect(toolsOf('patch-tools')).toEqual(['get_patch', 'mark_patch_applied']);
+  });
+
+  // ── 2.1.88 (M21 `m21bauth` / `m21ctxreg`, M23 `m23pctx1` / `jbcb06l2`) — the brief
+  // and patch threads derive their surface from their rows; their domain rules are
+  // the body of `<interaction_context>`, and their methodology is a subfile of the
+  // active writing style, read through skill-tools.
+
+  /** The body of `<interaction_context type="…">` in a prompt, or `undefined`. */
+  const interactionBody = (prompt: string, type: string): string | undefined =>
+    new RegExp(`<interaction_context type="${type}">\\n([\\s\\S]*?)\\n</interaction_context>`).exec(prompt)?.[1];
+
+  /** A real skill registry holding one writing style whose package carries both workflow subfiles. */
+  async function styleRig(opts: { styleActive: boolean; extraContextual?: { slug: string; content: string } }) {
+    const { SkillRegistry } = await import('../services/skill-registry.js');
+    const registry = SkillRegistry.load([], { rescanTtlMs: 0 });
+    registry.addPluginStyle({
+      slug: 'house-style',
+      title: 'House Style',
+      description: 'The house writing style.',
+      version: 1,
+      language: 'en',
+      content: '# House Style\n\nRead workflows/brief.md or workflows/patch.md for the genre you write.\n',
+      files: {
+        'workflows/brief.md': 'BRIEF METHODOLOGY — partition the diff by module, then narrate.\n',
+        'workflows/patch.md': 'PATCH METHODOLOGY — verify the spec state before every write.\n',
+      },
+    });
+    if (opts.extraContextual) {
+      registry.addPluginSkill({
+        slug: opts.extraContextual.slug,
+        title: opts.extraContextual.slug,
+        description: `The ${opts.extraContextual.slug} skill.`,
+        version: 1,
+        language: 'en',
+        scope: 'contextual',
+        content: opts.extraContextual.content,
+      });
+    }
+    const skillResolver = {
+      resolveWritingStyle: () => null,
+      resolveForContext: () => ({
+        listing: opts.extraContextual
+          ? [{ slug: opts.extraContextual.slug, description: `The ${opts.extraContextual.slug} skill.`, origin: 'plugin' as const }]
+          : [],
+        writingStyle: opts.styleActive ? { slug: 'house-style', title: 'House Style' } : null,
+      }),
+    };
+    return (deps: AgentTurnDeps) => {
+      (deps as unknown as { skillRegistry: unknown }).skillRegistry = registry;
+      (deps as unknown as { skillResolver: unknown }).skillResolver = skillResolver;
+    };
+  }
+
+  /** Calls one tool on a server the turn mounted (its sdk instance), through a linked in-memory pair. */
+  async function callMounted(servers: Record<string, unknown>, server: string, name: string, args: Record<string, unknown>) {
+    const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+    const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
+    const instance = (servers[server] as { instance: { connect: (t: unknown) => Promise<void> } }).instance;
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'methodology-test', version: '0.0.0' });
+    await instance.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const res = await client.callTool({ name, arguments: args });
+      return { isError: Boolean(res.isError), body: JSON.parse((res.content as Array<{ text: string }>)[0]!.text) as Record<string, unknown> };
+    } finally {
+      await client.close();
+    }
+  }
+
+  it('[ac:ac-reguly-domenowe-watku-brief-sa-cialem] the domain rules of a brief thread are the body of <interaction_context type="brief"> — with or without a writing style', async () => {
+    const { INTERACTION_RULES } = await import('../services/interaction-rules.js');
+    expect(CONTEXT_TYPE_REGISTRY.brief.interactionRules).toBe(INTERACTION_RULES.brief);
+    for (const styleActive of [true, false]) {
+      const { prompt } = await turnFor('brief', { briefPath: 'b.md', setup: await styleRig({ styleActive }) });
+      // The whole body, verbatim — the composition renders the M21 rules, it does not rewrite them.
+      expect(interactionBody(prompt, 'brief'), `style=${styleActive}`).toBe(INTERACTION_RULES.brief.trim());
+      // It opens the brief composition, and the rules do not appear a second time elsewhere.
+      expect(prompt.indexOf('<interaction_context type="brief">')).toBe(0);
+      expect(prompt.split('THE SELF-CONTAINMENT INVARIANT').length - 1).toBe(1);
+    }
+  });
+
+  it('[ac:ac-reguly-domenowe-watku-patch-sa-cialem] the domain rules of a patch thread are the body of <interaction_context type="patch"> — with or without a writing style', async () => {
+    const { INTERACTION_RULES } = await import('../services/interaction-rules.js');
+    expect(CONTEXT_TYPE_REGISTRY.patch.interactionRules).toBe(INTERACTION_RULES.patch);
+    for (const styleActive of [true, false]) {
+      const { prompt } = await turnFor('patch', { patchPath: 'p.md', setup: await styleRig({ styleActive }) });
+      expect(interactionBody(prompt, 'patch'), `style=${styleActive}`).toBe(INTERACTION_RULES.patch.trim());
+      expect(prompt.indexOf('<interaction_context type="patch">')).toBe(0);
+      expect(prompt.split('You are operating in PATCH mode').length - 1).toBe(1);
+    }
+  });
+
+  it('[ac:ac-watek-context-type-brief-nie-dokleja] a brief thread attaches no brief skill — no skill body in the prompt, no skills handed to the adapter', async () => {
+    const { prompt } = await turnFor('brief', {
+      briefPath: 'b.md',
+      setup: await styleRig({ styleActive: true, extraContextual: { slug: 'brief-author', content: 'BRIEF-AUTHOR SKILL BODY' } }),
+    });
+    expect(hoisted.lastExecute).not.toHaveProperty('skills');
+    expect(prompt).not.toContain('<project_skill');
+    expect(prompt).not.toContain('BRIEF-AUTHOR SKILL BODY');
+    // Neither the style's package nor its brief workflow is pasted in: the agent opens them itself.
+    expect(prompt).not.toContain('BRIEF METHODOLOGY');
+    // The row carries no skill to attach — only its rules.
+    expect(Object.keys(CONTEXT_TYPE_REGISTRY.brief).some((k) => /skill/i.test(k))).toBe(false);
+  });
+
+  it('[ac:ac-watek-context-type-patch-nie-dokleja] a patch thread attaches no patch skill — no skill body in the prompt, no skills handed to the adapter', async () => {
+    const { prompt } = await turnFor('patch', {
+      patchPath: 'p.md',
+      setup: await styleRig({ styleActive: true, extraContextual: { slug: 'patch-implementer', content: 'PATCH-IMPLEMENTER SKILL BODY' } }),
+    });
+    expect(hoisted.lastExecute).not.toHaveProperty('skills');
+    expect(prompt).not.toContain('<project_skill');
+    expect(prompt).not.toContain('PATCH-IMPLEMENTER SKILL BODY');
+    expect(prompt).not.toContain('PATCH METHODOLOGY');
+    expect(Object.keys(CONTEXT_TYPE_REGISTRY.patch).some((k) => /skill/i.test(k))).toBe(false);
+  });
+
+  it('[ac:ac-agent-watku-brief-czyta-metodologie-b] the brief agent reads the brief methodology from workflows/brief.md of the active writing style, through the mounted skill-tools', async () => {
+    const { prompt, servers, toolsOf } = await turnFor('brief', { briefPath: 'b.md', setup: await styleRig({ styleActive: true }) });
+    // The prompt names the active style and routes to its brief subfile — the rules hold no methodology.
+    expect(prompt).toContain('<project_writing_skill slug="house-style" title="House Style">');
+    expect(interactionBody(prompt, 'brief')).toContain('`workflows/brief.md` of the active writing style');
+    // The one road to it is skill-tools (the thread has no built-ins), and it serves the subfile.
+    expect(toolsOf('skill-tools')).toEqual(['load_skill_file']);
+    const read = await callMounted(servers, 'skill-tools', 'load_skill_file', { slug: 'house-style', file: 'workflows/brief.md' });
+    expect(read.isError).toBe(false);
+    expect(JSON.stringify(read.body)).toContain('BRIEF METHODOLOGY — partition the diff by module, then narrate.');
+    // No active style: the thread runs on its domain rules alone, without error.
+    const bare = await turnFor('brief', { briefPath: 'b.md', setup: await styleRig({ styleActive: false }) });
+    expect(bare.prompt).not.toContain('<project_writing_skill');
+    expect(interactionBody(bare.prompt, 'brief')).toBeDefined();
+  });
+
+  it('[ac:ac-agent-watku-patch-czyta-metodologie-p] the patch agent reads the patch methodology from workflows/patch.md of the active writing style, through the mounted skill-tools', async () => {
+    const { prompt, servers, toolsOf } = await turnFor('patch', { patchPath: 'p.md', setup: await styleRig({ styleActive: true }) });
+    expect(prompt).toContain('<project_writing_skill slug="house-style" title="House Style">');
+    expect(interactionBody(prompt, 'patch')).toContain('`workflows/patch.md` of the active writing style');
+    expect(toolsOf('skill-tools')).toEqual(['load_skill_file']);
+    const read = await callMounted(servers, 'skill-tools', 'load_skill_file', { slug: 'house-style', file: 'workflows/patch.md' });
+    expect(read.isError).toBe(false);
+    expect(JSON.stringify(read.body)).toContain('PATCH METHODOLOGY — verify the spec state before every write.');
+    const bare = await turnFor('patch', { patchPath: 'p.md', setup: await styleRig({ styleActive: false }) });
+    expect(bare.prompt).not.toContain('<project_writing_skill');
+    expect(interactionBody(bare.prompt, 'patch')).toBeDefined();
+  });
+
+  it('[ac:ac-wpis-rejestru-kontekstow-dla-brief-ni] a brief thread has no built-in tools whatever agent.disableDirectFilesystemAccess says', async () => {
+    for (const flag of [true, false]) {
+      hoisted.agent = { disableDirectFilesystemAccess: flag };
+      await turnFor('brief', { briefPath: 'b.md' });
+      const denied = (hoisted.lastExecute?.disallowedToolGroups ?? []) as string[];
+      // Every group of the agent library is taken away — not just the file-system ones.
+      expect([...denied].sort(), `flag=${flag}`).toEqual([...TOOL_GROUPS].sort());
+    }
+    // The denial is the row's, not the project's: a chat thread with the flag off keeps them.
+    hoisted.agent = { disableDirectFilesystemAccess: false };
+    await turnFor('chat');
+    expect((hoisted.lastExecute?.disallowedToolGroups ?? []) as string[]).toEqual([]);
+    // The brief's content still arrives through brief-tools' get_brief.
+    const { toolsOf } = await turnFor('brief', { briefPath: 'b.md' });
+    expect(toolsOf('brief-tools')).toContain('get_brief');
+  });
+
+  it('[ac:ac-liczba-encji-mcp-tool-serwera-brief-t] the number of brief-tools mcp-tool entities equals the number of tools mounted in a brief thread', async () => {
+    /** The `mcp-tool` entities whose server is `brief-tools` (M21). */
+    const BRIEF_TOOL_ENTITIES = ['brief-tools-get-brief', 'brief-tools-get-brief-version', 'brief-tools-list-brief-versions', 'brief-tools-update-brief'];
+    const { mounted, toolsOf } = await turnFor('brief', { briefPath: 'b.md' });
+    expect(mounted).toContain('brief-tools');
+    const tools = toolsOf('brief-tools')!;
+    expect(tools).toHaveLength(BRIEF_TOOL_ENTITIES.length);
+    expect(BRIEF_TOOL_ENTITIES.map((slug) => slug.replace(/^brief-tools-/, '').replace(/-/g, '_')).sort()).toEqual([...tools].sort());
+  });
+
+  it('[ac:ac-liczba-encji-mcp-tool-serwera-patch-t] the number of patch-tools mcp-tool entities equals the number of tools mounted in a patch thread — patch-tools only where a row names it', async () => {
+    const PATCH_TOOL_ENTITIES = ['patch-tools-get-patch', 'patch-tools-mark-patch-applied'];
+    const { mounted, toolsOf } = await turnFor('patch', { patchPath: 'p.md' });
+    expect(mounted).toContain('patch-tools');
+    const tools = toolsOf('patch-tools')!;
+    expect(tools).toHaveLength(PATCH_TOOL_ENTITIES.length);
+    expect(PATCH_TOOL_ENTITIES.map((slug) => slug.replace(/^patch-tools-/, '').replace(/-/g, '_')).sort()).toEqual([...tools].sort());
+    // The server is mounted exactly where the row names it — the patch row, and no other.
+    for (const ct of ['chat', 'brief', 'patch', 'ask'] as const) {
+      const names = CONTEXT_TYPE_REGISTRY[ct].servers.includes('patch-tools');
+      expect(names, ct).toBe(ct === 'patch');
+      const turn = await turnFor(ct, { patchPath: 'p.md', briefPath: ct === 'brief' ? 'b.md' : null });
+      expect(turn.mounted.includes('patch-tools'), ct).toBe(names);
+    }
   });
 
   it('[ac:ac-watek-dziecko-w-typie-ktorego-wiersz] a child thread of a type whose row names the orchestrator (chat) has transagent-tools stripped — the thread flag wins over the row', async () => {

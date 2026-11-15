@@ -1,5 +1,5 @@
 {
-  "iteration": 26,
+  "iteration": 31,
   "conventions": [
     {
       "label": "L15 (Context Types) — implementor M44",
@@ -1058,13 +1058,41 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "brief-patch-threads/p1-l2-l16",
+          "layers": [
+            "L2",
+            "L3",
+            "L15",
+            "L16"
+          ],
+          "slugs": [
+            "ac-agent-watku-brief-czyta-metodologie-b",
+            "ac-agent-watku-patch-czyta-metodologie-p",
+            "ac-kazda-operacja-briefu-renderowana-w-k",
+            "ac-kazda-operacja-patcha-z-wartoscia-dir",
+            "ac-liczba-encji-mcp-tool-serwera-brief-t",
+            "ac-liczba-encji-mcp-tool-serwera-patch-t",
+            "ac-reguly-domenowe-watku-brief-sa-cialem",
+            "ac-reguly-domenowe-watku-patch-sa-cialem",
+            "ac-watek-context-type-brief-nie-dokleja",
+            "ac-watek-context-type-patch-nie-dokleja",
+            "ac-wpis-rejestru-kontekstow-dla-brief-ni"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "6cf4e4992afb75530c6d50e774d2c3177dff6131",
+      "baseCommit": "6cf4e4992afb75530c6d50e774d2c3177dff6131",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },

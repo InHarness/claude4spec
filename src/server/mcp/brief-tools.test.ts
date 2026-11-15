@@ -13,7 +13,6 @@ import { BriefService, ConflictError, type BriefServiceDeps } from '../services/
 import { DomainError } from '../services/tags.js';
 import { CATALOG } from '../operations/catalog.js';
 import { registerCoreOperations } from '../operations/core-operations.js';
-import { mcpServerSetForProfile } from '../operations/profiles.js';
 import { toolAdmittedByProfile } from '../operations/profile-gate.js';
 import { artifactAddressingShape } from '../operations/addressing.js';
 import { CONTEXT_TYPE_REGISTRY, subagentsFor } from '../services/chat-context.js';
@@ -755,22 +754,35 @@ describe('brief-tools — one tool per internal brief operation', () => {
    */
   const DECLARED_NOT_RENDERED_INTERNALLY = ['list_briefs'];
 
-  it('[ac:ac-kazda-operacja-briefu-renderowana-w-k] every brief operation rendered in `internal` in a brief thread is a brief-tools tool, and their count equals the tools mounted on a brief thread', async () => {
+  /**
+   * 2.1.88 — the criterion is now about operations and entities only: every brief
+   * operation whose `internal` cell is `direct` has an `mcp-tool` entity on
+   * `brief-tools`. The count against the tools a brief thread mounts is its own
+   * criterion (`ac-liczba-encji-mcp-tool-serwera-brief-t`, agent-turn.test.ts).
+   *
+   * ASSUMPTION:dev-brief-patch-threads-set-operations — `list_briefs` is
+   * `internal: direct` and its record names `transagent-tools-list-briefs`, not a
+   * brief-tools entity: it is read as an operation of the brief SET, rendered by
+   * the orchestrator, outside "operations of a brief".
+   */
+  it('[ac:ac-kazda-operacja-briefu-renderowana-w-k] every brief operation with `direct` in `internal` has an mcp-tool entity with server brief-tools', async () => {
     registerCoreOperations();
     const internalDirectBriefOps = CATALOG.listForChannel('internal')
       .filter((op) => op.name.includes('brief'))
+      .filter((op) => op.channels.internal.kind === 'direct')
       .map((op) => op.name)
       .sort();
-    // The two cells not rendered in a brief thread are exactly the recorded ones…
+    // The set operation rendered by the orchestrator is the recorded exception…
     for (const name of DECLARED_NOT_RENDERED_INTERNALLY) expect(internalDirectBriefOps, name).toContain(name);
     // …and `create_brief` / `mark_brief_implemented` are not internal at all (n/a, with their reasons).
     expect(internalDirectBriefOps).not.toContain('create_brief');
     expect(internalDirectBriefOps).not.toContain('mark_brief_implemented');
-    const internalBriefOps = internalDirectBriefOps.filter((n) => !DECLARED_NOT_RENDERED_INTERNALLY.includes(n));
+    const briefOps = internalDirectBriefOps.filter((n) => !DECLARED_NOT_RENDERED_INTERNALLY.includes(n));
+    expect(briefOps).toEqual(['get_brief', 'get_brief_version', 'list_brief_versions', 'update_brief']);
 
-    // What a `context_type='brief'` thread mounts: brief-tools in thread mode.
-    expect(CONTEXT_TYPE_REGISTRY.brief.servers).toContain('brief-tools');
-    expect(mcpServerSetForProfile('brief').briefTools).toBe(true);
+    // Each of them has its entity — slug `brief-tools-<tool name>` — and that tool is on brief-tools.
+    const entityTools = BRIEF_TOOL_ENTITIES.map((slug) => slug.replace(/^brief-tools-/, '').replace(/-/g, '_')).sort();
+    expect(entityTools).toEqual(briefOps);
     const { server } = buildBriefToolsServer({
       threadId: 't1',
       briefPath: 'b.md',
@@ -780,20 +792,13 @@ describe('brief-tools — one tool per internal brief operation', () => {
     const client = new Client({ name: 'test-client', version: '0.0.0' });
     await server.connect(serverTransport);
     await client.connect(clientTransport);
-    const mounted = (await client.listTools()).tools.map((t) => t.name).sort();
-
-    expect(mounted).toEqual(internalBriefOps);
-    expect(mounted).toEqual(['get_brief', 'get_brief_version', 'list_brief_versions', 'update_brief']);
-    // One entity per mounted tool — slug `brief-tools-<tool name>`.
-    expect(BRIEF_TOOL_ENTITIES.length).toBe(mounted.length);
-    expect(BRIEF_TOOL_ENTITIES.map((slug) => slug.replace(/^brief-tools-/, '').replace(/-/g, '_')).sort()).toEqual(mounted);
-    // The other context types do not mount it.
+    const onServer = (await client.listTools()).tools.map((t) => t.name).sort();
+    for (const op of briefOps) expect(onServer, op).toContain(op);
+    // The other context types do not name it; the brief row does.
+    expect(CONTEXT_TYPE_REGISTRY.brief.servers).toContain('brief-tools');
     for (const ct of ['chat', 'patch', 'ask'] as const) {
       expect(CONTEXT_TYPE_REGISTRY[ct].servers, ct).not.toContain('brief-tools');
     }
-    // 2.1.18 (M21 `m21ctxreg`): a brief thread has no transagent-tools, so no second
-    // surface renders a brief operation there.
-    expect(CONTEXT_TYPE_REGISTRY.brief.servers).not.toContain('transagent-tools');
   });
 });
 
@@ -1418,17 +1423,11 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     expect((await call(a, 'list_brief_versions', {})).body.total).toBe(versionsBefore + 3);
   });
 
-  it('[ac:ac-wpis-rejestru-kontekstow-dla-brief-ni] a brief thread has no filesystem built-ins — denied as tool groups of the turn, which the context registry does not declare — and the brief content arrives through get_brief, in the tool result', async () => {
-    // The registry row declares no deny groups of its own: only the built-in axis.
-    const row = CONTEXT_TYPE_REGISTRY.brief as unknown as Record<string, unknown>;
-    expect(Object.keys(row).some((k) => /deny|disallow/i.test(k))).toBe(false);
+  it('[section:m21bauth] a brief thread\'s built-ins are denied by its row (`Grupy wbudowane: wszystkie`), whatever the project flag, its subagent names none, and the brief content arrives through get_brief, in the tool result', async () => {
+    // 2.1.88 (M21 `m21ctxreg`): the row's `Grupy wbudowane` column takes every group away.
     expect(CONTEXT_TYPE_REGISTRY.brief.builtinGroups).toBe('all');
 
-    // The denial is the turn's tool-group gating: the full direct-filesystem set,
-    // whether the project's "Block direct file access" flag is on or off.
-    // ASSUMPTION:dev-0005 — the criterion says the mechanism is the flag alone and
-    // that diff-explore has Read with the flag unchecked; M21 m21ctxreg (2.1.13)
-    // strips every built-in from a brief thread, Read included.
+    // The denial holds whether the project's "Block direct file access" flag is on or off.
     for (const flag of [true, false]) {
       await fs.mkdir(path.join(cwd, '.claude4spec'), { recursive: true });
       await fs.writeFile(

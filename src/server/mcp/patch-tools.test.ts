@@ -120,13 +120,16 @@ describe('patch-tools (thread-bound)', () => {
   });
 
   /**
-   * 2.1.18 (M23 `jbcb06l2`, M44 `3f5ej79s`) — the criterion counts the patch
-   * operations RENDERED in a `patch` thread: `internal: direct` rows whose
-   * rendering is this server. A patch thread mounts patch-tools and no other
-   * patch-operation surface (2.1.18 took `transagent-tools` off it), so the two
-   * `mcp-tool` entities with `server: patch-tools` are the whole set.
+   * 2.1.88 — the criterion is about operations and entities only: every patch
+   * operation whose `internal` cell is `direct` has an `mcp-tool` entity on
+   * `patch-tools`. The count against the tools a patch thread mounts is its own
+   * criterion (`ac-liczba-encji-mcp-tool-serwera-patch-t`, agent-turn.test.ts).
+   *
+   * ASSUMPTION:dev-brief-patch-threads-set-operations — `list_patches` is
+   * `internal: direct` on `transagent-tools`: an operation of the patch SET,
+   * outside "operations of a patch" (the `_patch` name filter leaves it out).
    */
-  it('[ac:ac-kazda-operacja-patcha-z-wartoscia-dir] every patch operation with internal = direct rendered in a patch thread has an mcp-tool entity on patch-tools, and their count equals the tools mounted on a patch thread', async () => {
+  it('[ac:ac-kazda-operacja-patcha-z-wartoscia-dir] every patch operation with `direct` in `internal` has an mcp-tool entity with server patch-tools', async () => {
     registerCoreOperations();
     const PATCH_TOOL_ENTITIES = ['patch-tools-get-patch', 'patch-tools-mark-patch-applied'];
     const internalDirect = CATALOG.list()
@@ -134,16 +137,16 @@ describe('patch-tools (thread-bound)', () => {
       .filter((op) => op.channels.internal.kind === 'direct')
       .map((op) => op.name)
       .sort();
-
-    // What the patch thread actually mounts on its patch-tools server.
-    const mounted = (await client.listTools()).tools.map((t) => t.name).sort();
-    expect(mounted).toEqual(internalDirect);
-    // One entity per mounted tool — slug `patch-tools-<tool name>`.
-    expect(PATCH_TOOL_ENTITIES.length).toBe(mounted.length);
-    expect(PATCH_TOOL_ENTITIES.map((slug) => slug.replace(/^patch-tools-/, '').replace(/-/g, '_')).sort()).toEqual(mounted);
-
-    // The patch thread has no second surface rendering patch operations: no transagent-tools.
-    expect(CONTEXT_TYPE_REGISTRY.patch.servers).not.toContain('transagent-tools');
+    expect(internalDirect).toEqual(['get_patch', 'mark_patch_applied']);
+    // One entity per operation — slug `patch-tools-<tool name>` — and the tool is on patch-tools.
+    expect(PATCH_TOOL_ENTITIES.map((slug) => slug.replace(/^patch-tools-/, '').replace(/-/g, '_')).sort()).toEqual(internalDirect);
+    const onServer = (await client.listTools()).tools.map((t) => t.name);
+    for (const op of internalDirect) expect(onServer, op).toContain(op);
+    // Only the patch row names the server.
+    for (const ct of ['chat', 'brief', 'ask'] as const) {
+      expect(CONTEXT_TYPE_REGISTRY[ct].servers, ct).not.toContain('patch-tools');
+    }
+    expect(CONTEXT_TYPE_REGISTRY.patch.servers).toContain('patch-tools');
   });
 
   it('get_patch without path returns the thread\'s patch: path, frontmatter, content, hash', async () => {
