@@ -13,7 +13,7 @@ import { BriefService, ConflictError, type BriefServiceDeps } from '../services/
 import { DomainError } from '../services/tags.js';
 import { CATALOG } from '../operations/catalog.js';
 import { registerCoreOperations } from '../operations/core-operations.js';
-import { BRIEF_ALLOWED_PLUGIN_MCP, mcpServerSetForProfile } from '../operations/profiles.js';
+import { mcpServerSetForProfile } from '../operations/profiles.js';
 import { toolAdmittedByProfile } from '../operations/profile-gate.js';
 import { artifactAddressingShape } from '../operations/addressing.js';
 import { CONTEXT_TYPE_REGISTRY, subagentsFor } from '../services/chat-context.js';
@@ -1320,10 +1320,9 @@ describe('brief-tools — the get_brief window and the brief catalog rows (2.1.1
     const v1 = await call(editorial, 'get_brief_version', { version: 1 });
     expect(JSON.stringify(v1.body)).not.toContain('first thread wrote this');
 
-    // MCPReleaseDiff: a brief thread mounts release-tools (the release-only plugin
-    // pool) and its profile admits release_diff; the diff-explore subagent reads it.
+    // MCPReleaseDiff: a brief thread mounts release-tools (named by its row's
+    // `Serwery` column) and its profile admits release_diff; the diff-explore subagent reads it.
     expect(CONTEXT_TYPE_REGISTRY.brief.servers).toEqual(['release-tools', 'brief-tools']);
-    expect(BRIEF_ALLOWED_PLUGIN_MCP.has('release-tools')).toBe(true);
     expect(toolAdmittedByProfile('brief', 'release_diff')).toBe(true);
     expect(CATALOG.require('release_diff').opClass).toBe('read');
 

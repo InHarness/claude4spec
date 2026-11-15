@@ -413,7 +413,6 @@ describe('context profiles', () => {
     // 2.1.9: `specSkillTools` is DECLARED per profile rather than derived
     // (M44 `3f5ej79s`); 2.1.18: so is `transagentTools`.
     expect(mcpServerSetForProfile('chat')).toEqual({
-      pluginServers: 'all',
       planTools: true,
       briefTools: false,
       c4sTools: true,
@@ -422,7 +421,6 @@ describe('context profiles', () => {
       specSkillTools: true,
     });
     expect(mcpServerSetForProfile('brief')).toEqual({
-      pluginServers: 'release-only',
       planTools: false,
       briefTools: true,
       c4sTools: false,
@@ -439,7 +437,6 @@ describe('context profiles', () => {
       runTools: false,
     });
     expect(mcpServerSetForProfile('ask')).toEqual({
-      pluginServers: 'all',
       planTools: true,
       briefTools: false,
       c4sTools: false,
@@ -553,8 +550,8 @@ describe('the profile gate', () => {
   it('withholds the release WRITES from every read-only profile', () => {
     /**
      * `release-tools` is host-owned, so the pass-through above applied to it —
-     * and it mounts on `ask` (`pluginServers: 'all'`) and on `brief`
-     * (`BRIEF_ALLOWED_PLUGIN_MCP`), the two profiles built to be unable to
+     * and it mounts on `ask` (row `Serwery: pula`) and on `brief`
+     * (row `Serwery` names it), the two profiles built to be unable to
      * mutate the specification. `release_create` stamps every unreleased
      * version row and makes a git commit; `release_update` renames the latest
      * release and can sweep the queue into it. Both were reachable from a

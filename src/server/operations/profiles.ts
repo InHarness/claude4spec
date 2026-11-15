@@ -51,35 +51,20 @@ import type { OperationClass, OperationDeclaration } from './catalog.js';
 /**
  * Which built-in MCP servers a profile mounts.
  *
- * Three of the six members are DERIVED from `operationClasses` below — they are
+ * Three of the members are DERIVED from `operationClasses` below — they are
  * the coarse, server-level shadow of the real per-operation gate, kept because
- * the turn dispatcher still assembles servers rather than tools. `pluginServers`
- * is declared rather than derived: it selects between the full entity/reference
- * pool and the narrow read-only release whitelist, which is a statement about
- * server composition, not about an operation class. `specSkillTools` (2.1.9) is
- * declared for the same kind of reason: whether a type may write the project's
- * skill packages is a row of the context-type registry, not a consequence of it
- * admitting writes. `transagentTools` (2.1.18) is declared for the same reason:
- * `patch` admits the `turn` class and still does not mount it.
- */
-/**
- * What `pluginServers: 'release-only'` actually names.
+ * the turn dispatcher still assembles servers rather than tools.
+ * `specSkillTools` (2.1.9) is declared rather than derived: whether a type may
+ * write the project's skill packages is a row of the context-type registry, not
+ * a consequence of it admitting writes. `transagentTools` (2.1.18) is declared
+ * for the same reason: `patch` admits the `turn` class and still does not mount it.
  *
- * M21 m05ctxreg: a brief profile gets brief-tools (addressed per the channel)
- * plus read-only release-tools, and nothing else from the plugin pool — not the
- * generic `entity-tools`, not a per-type custom server, not `reference-tools`.
- *
- * 0.2.13 moved it here from `routes/agent-turn.ts`, where it was private to the
- * turn dispatcher. It is the definition of a value declared in this file, and
- * the external MCP surface has to select servers by exactly the same rule — a
- * second copy over there would have been one of the two-sources-for-one-fact
- * pairs this release exists to remove.
+ * 2.1.88 (M45 `iqiwak31`, M21 `m21ctxreg`): which servers of the plugin pool a
+ * profile takes is NOT a member here any more. There is no fixed whitelist of
+ * the brief parent's MCP servers: both channels read the row's `Serwery` column
+ * (`services/turn-mcp-servers.ts` → `poolSelector`).
  */
-export const BRIEF_ALLOWED_PLUGIN_MCP: ReadonlySet<string> = new Set(['release-tools']);
-
 export interface McpServerSet {
-  /** `'all'` = full entity-plugin servers + tag/reference; `'release-only'` = `BRIEF_ALLOWED_PLUGIN_MCP`. */
-  pluginServers: 'all' | 'release-only';
   planTools: boolean;
   briefTools: boolean;
   c4sTools: boolean;
@@ -116,7 +101,6 @@ export interface McpServerSet {
 export interface ProfileDefinition {
   /** The operation classes this profile admits. Everything else is unreachable. */
   readonly operationClasses: ReadonlySet<OperationClass>;
-  readonly pluginServers: 'all' | 'release-only';
   /**
    * `brief` only. A brief operation invoked from an external connection without
    * a brief-addressing parameter must fail VALIDATION naming the missing field —
@@ -160,7 +144,6 @@ const CHAT_CLASSES: readonly OperationClass[] = ['read', 'write', 'plan', 'turn'
 export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
   chat: {
     operationClasses: new Set(CHAT_CLASSES),
-    pluginServers: 'all',
     requiresExplicitBriefTarget: false,
     specSkillTools: true,
     transagentTools: true,
@@ -168,7 +151,6 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
   },
   brief: {
     operationClasses: new Set<OperationClass>(['read', 'brief']),
-    pluginServers: 'release-only',
     requiresExplicitBriefTarget: true,
     specSkillTools: false,
     transagentTools: false,
@@ -176,7 +158,6 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
   },
   patch: {
     operationClasses: new Set(CHAT_CLASSES),
-    pluginServers: 'all',
     requiresExplicitBriefTarget: false,
     specSkillTools: true,
     transagentTools: false,
@@ -191,7 +172,6 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
     // `analyze_ac_against_entities`, `audit_ui_kit_components`), in every
     // channel; undeclared and project-local plugin tools are `write`.
     operationClasses: new Set<OperationClass>(['read', 'plan']),
-    pluginServers: 'all',
     requiresExplicitBriefTarget: false,
     specSkillTools: false,
     transagentTools: false,
@@ -211,13 +191,12 @@ export function profileAdmits(profile: ChatContextType, op: OperationDeclaration
  * The coarse server-level shadow of the gate, for the turn dispatcher.
  *
  * Derived so the two cannot drift: widening a profile's classes widens the
- * mounted servers in the same edit. `pluginServers` passes through from the
- * declaration — see the note on {@link McpServerSet}.
+ * mounted servers in the same edit. The declared members pass through — see
+ * the note on {@link McpServerSet}.
  */
 export function mcpServerSetForProfile(profile: ChatContextType): McpServerSet {
-  const { operationClasses, pluginServers } = PROFILES[profile];
+  const { operationClasses } = PROFILES[profile];
   return {
-    pluginServers,
     planTools: operationClasses.has('plan'),
     briefTools: operationClasses.has('brief'),
     c4sTools: operationClasses.has('peer'),
@@ -315,15 +294,4 @@ export function mcpRenderingProfile(profile: ChatContextType): ChatContextType {
     throw new Error(`profile '${profile}' has no rendering in the mcp channel`);
   }
   return MCP_CHANNEL_PROFILES[profile];
-}
-
-/**
- * The `mcp` channel's pool narrowing, as a predicate over the factory NAME:
- * `'release-only'` (`brief`) takes only {@link BRIEF_ALLOWED_PLUGIN_MCP}, `'all'`
- * every name. 2.1.88: the turn no longer selects by this — it reads its row's
- * `Serwery` column (`services/turn-mcp-servers.ts`); this is the external
- * surface's own rule.
- */
-export function mcpChannelPoolSelector(pluginServers: McpServerSet['pluginServers']): (name: string) => boolean {
-  return pluginServers === 'release-only' ? (name) => BRIEF_ALLOWED_PLUGIN_MCP.has(name) : () => true;
 }

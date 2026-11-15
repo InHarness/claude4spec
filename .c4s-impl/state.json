@@ -1,5 +1,5 @@
 {
-  "iteration": 21,
+  "iteration": 26,
   "conventions": [
     {
       "label": "L15 (Context Types) — implementor M44",
@@ -908,13 +908,32 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "subagents-by-row/p1-l15-l15",
+          "layers": [
+            "L15"
+          ],
+          "slugs": [
+            "ac-subagentsfor-chat-zwraca-ac-audit-tur",
+            "ac-subagentsfor-dla-wartosci-innej-niz-c",
+            "ac-watek-o-context-type-chat-patch-ask-d",
+            "ac-watek-wartosci-nieobecnej-w-mapie-sub",
+            "ac-wklad-pluginowy-bez-pola-contexttypes"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "f4b85ba918a82a26ba9632b31ba47c851b32b84c",
+      "baseCommit": "f4b85ba918a82a26ba9632b31ba47c851b32b84c",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },

@@ -679,7 +679,7 @@ describe('runAgentTurn — entity-tools mcpServers wiring (M13, 0-1-112-to-0-1-1
     expect(mcpKeys).toContain('endpoint-tools');
   });
 
-  it('brief thread (pluginServers: release-only): entity-tools is excluded, same as every other per-type plugin server', async () => {
+  it('brief thread (row Serwery names release-tools only): entity-tools is excluded, same as every other per-type plugin server', async () => {
     hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
     const { deps } = makeDeps();
     // Honours `include` like the real host: the name predicate runs before a factory.

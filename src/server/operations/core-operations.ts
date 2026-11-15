@@ -2671,8 +2671,8 @@ export function registerCoreOperations(): void {
    * it is exactly why the row has to be written: until it is, the omission is
    * indistinguishable from a decision.
    *
-   * What it cost: `release-tools` mounts on `ask` (`pluginServers: 'all'`) AND
-   * on `brief` (`BRIEF_ALLOWED_PLUGIN_MCP`), the two profiles built to be unable
+   * What it cost: `release-tools` mounts on `ask` (row `Serwery: pula`) AND
+   * on `brief` (row `Serwery` names it), the two profiles built to be unable
    * to mutate the specification. `release_create` writes a release row, stamps
    * every unreleased `entity_version`/`file_version` with its id, broadcasts,
    * and makes a git commit; `release_update` renames the latest release and can

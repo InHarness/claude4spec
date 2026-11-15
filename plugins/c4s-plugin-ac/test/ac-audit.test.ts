@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ProjectPluginHost } from '../../../src/server/core/plugin-host/types.js';
-import { subagentsFor } from '../../../src/server/services/chat-context.js';
+import { KNOWN_CONTEXT_TYPES, subagentsFor } from '../../../src/server/services/chat-context.js';
 import {
   DEFAULT_SUBAGENT_TURNS,
   NON_DELEGABLE_TOOLS,
@@ -39,12 +39,17 @@ describe('c4s-plugin-ac — the ac-audit subagent it contributes', () => {
     expect(acPlugin.contributes.entities?.map((e) => e.type)).toEqual(['ac']);
   });
 
-  it('[ac:ac-subagentsfor-chat-zwraca-ac-audit-tur] is offered in chat turns and in no other', () => {
+  it('[ac:ac-subagentsfor-chat-zwraca-ac-audit-tur] subagentsFor(chat) returns ac-audit', () => {
     expect(subagentsFor('chat', hostWith([sub])).map((s) => s.name)).toContain('ac-audit');
-    // brief composes a release diff and patch/ask work a different entry point; an
-    // auditor there costs a whole delegated turn to answer a question nobody asked.
-    for (const ct of ['brief', 'patch', 'ask'] as const) {
-      expect(subagentsFor(ct, hostWith([sub])).map((s) => s.name)).not.toContain('ac-audit');
+  });
+
+  it('[ac:ac-subagentsfor-dla-wartosci-innej-niz-c] subagentsFor for a value other than chat does not return ac-audit', () => {
+    // Every row of the registry but `chat` — not a hand-written list of values. An
+    // auditor elsewhere costs a whole delegated turn to answer a question nobody asked.
+    const others = KNOWN_CONTEXT_TYPES.filter((ct) => ct !== 'chat');
+    expect(others.length).toBeGreaterThan(0);
+    for (const ct of others) {
+      expect(subagentsFor(ct, hostWith([sub])).map((s) => s.name), ct).not.toContain('ac-audit');
     }
   });
 

@@ -5,7 +5,10 @@ import {
   mainPromptBlockNames,
   promptCompositionFor,
   subagentsFor,
+  subagentsForRow,
+  BUILTIN_SUBAGENTS,
   CONTEXT_TYPE_REGISTRY,
+  KNOWN_CONTEXT_TYPES,
   type SystemPromptInput,
   type PeerProject,
 } from './chat-context.js';
@@ -856,6 +859,64 @@ describe('subagentsFor (0.1.67)', () => {
     }
   });
 });
+/* ── 2.1.88 (M45 `uomqh1pu`): the built-in follows the row's `Subagent` column ── */
+describe('subagentsFor — the built-in comes from the row (2.1.88)', () => {
+  const builtinNames = new Set(Object.keys(BUILTIN_SUBAGENTS));
+
+  it('[ac:ac-watek-o-context-type-chat-patch-ask-d] a thread gets the subagent its row names in the Subagent column', () => {
+    // Every row of the registry, not a list of values: the built-in is the one the
+    // row's column names, whatever the value is.
+    for (const ct of KNOWN_CONTEXT_TYPES) {
+      const row = CONTEXT_TYPE_REGISTRY[ct];
+      const builtins = subagentsFor(ct, entityHost, true)
+        .map((s) => s.name)
+        .filter((n) => builtinNames.has(n));
+      expect(builtins, ct).toEqual(row.subagent ? [row.subagent] : []);
+    }
+    // And the column — not the value — decides: the same value with the other
+    // definition in its column gets that other definition.
+    expect(subagentsForRow({ ...CONTEXT_TYPE_REGISTRY.chat, subagent: 'diff-explore' }, entityHost, true).map((s) => s.name)).toEqual([
+      'diff-explore',
+    ]);
+    expect(subagentsForRow({ ...CONTEXT_TYPE_REGISTRY.brief, subagent: 'spec-explore' }, entityHost, true).map((s) => s.name)).toEqual([
+      'spec-explore',
+    ]);
+  });
+
+  it('[ac:ac-watek-wartosci-nieobecnej-w-mapie-sub] a thread of a value absent from the subagent map has no subagent', () => {
+    // `Subagent: —` and a name the map of built-ins does not hold behave alike.
+    for (const subagent of [null, 'no-such-definition', 'toString']) {
+      const row = { ...CONTEXT_TYPE_REGISTRY.chat, subagent };
+      expect(subagentsForRow(row, entityHost, true), String(subagent)).toEqual([]);
+    }
+    // The plugin half decides for itself, by its `contextTypes` field.
+    const scoped: PluginSubagentContribution = {
+      name: 'scoped-explore',
+      description: 'Scoped.',
+      promptBody: 'Body.',
+      contextTypes: ['patch'],
+      tools: ['mcp__reference-tools__get_page'],
+    };
+    const row = { ...CONTEXT_TYPE_REGISTRY.patch, subagent: null };
+    expect(subagentsForRow(row, hostWith([scoped]), true).map((s) => s.name)).toEqual(['scoped-explore']);
+  });
+
+  it('[ac:ac-wklad-pluginowy-bez-pola-contexttypes] a plugin subagent contribution without contextTypes is available in chat threads only', () => {
+    const unscoped: PluginSubagentContribution = {
+      name: 'unscoped-explore',
+      description: 'Declares no contextTypes.',
+      promptBody: 'Body.',
+      tools: ['mcp__reference-tools__get_page'],
+    };
+    expect(subagentsFor('chat', hostWith([unscoped]), true).map((s) => s.name)).toContain('unscoped-explore');
+    const others = KNOWN_CONTEXT_TYPES.filter((ct) => ct !== 'chat');
+    expect(others.length).toBeGreaterThan(0);
+    for (const ct of others) {
+      expect(subagentsFor(ct, hostWith([unscoped]), true).map((s) => s.name), ct).not.toContain('unscoped-explore');
+    }
+  });
+});
+
 // 0.1.79: ask peer-consult prompt frame.
 describe('buildSystemPrompt — ask context (0.1.79)', () => {
   it('emits the chat-frame with <spec_language> + PLAN MODE and NO <current_*> block', () => {

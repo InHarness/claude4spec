@@ -115,9 +115,9 @@ export function assertRegisteredContextType(
 }
 
 
-/* ─────────────────────────── 0.1.67 m05ctxreg: wbudowane subagenty ───────────────────────────
- * Czwarty wymiar rejestru `context_type`: który read-only subagent jest wstrzykiwany do
- * `adapter.execute({ subagents })`. Subagent przejmuje „bulk" eksploracji w swoim kontekście i
+/* ─────────────────────────── M45: wbudowane subagenty ───────────────────────────
+ * Definicje wbudowane, które ten moduł dostarcza; który read-only subagent jest wstrzykiwany do
+ * `adapter.execute({ subagents })`, rozstrzyga kolumna `Subagent` wiersza (2.1.88). Subagent przejmuje „bulk" eksploracji w swoim kontekście i
  * oddaje rodzicowi zwięzłe findings (ścieżki / anchory / slugi), zamiast całego zrzutu.
  *
  * Uwaga implementacyjna (drift vs brief): adapter NIE ma pola `mcp` per-subagent — dostęp do MCP
@@ -263,14 +263,58 @@ function buildDiffExploreSubagent(): SubagentDefinition {
   };
 }
 
+/** What a built-in definition's builder reads of the turn. */
+export interface BuiltinSubagentContext {
+  pluginHost: ProjectPluginHost;
+  /** Shapes `spec-explore`'s PROMPT only (see {@link subagentsFor}). */
+  builtinsEnabled: boolean;
+  /** Absent (rigs) = every capability. */
+  capabilities?: { has(name: string): boolean };
+}
+
 /**
- * Dimension four of the `context_type` registry, as of 0.2.54 no longer a constant: the
- * `SubagentDefinition`s injected into `adapter.execute({ subagents })`.
+ * 2.1.88 (M45 `uomqh1pu`) — the map of built-in definitions, keyed by the name a
+ * row's `Subagent` column carries. This module PROVIDES the definitions; which
+ * one a turn gets is the row's column, not a type→subagent table here. A builder
+ * returning `null` means the definition does not exist in this project
+ * (2.1.77 M45 `37ogwcgx`: no `diff-explore` without `briefs`).
+ */
+export const BUILTIN_SUBAGENTS: Readonly<Record<string, (ctx: BuiltinSubagentContext) => SubagentDefinition | null>> = {
+  'spec-explore': ({ pluginHost, builtinsEnabled, capabilities }) =>
+    buildSpecExploreSubagent(pluginHost, builtinsEnabled, capabilities ? capabilities.has('entities') : true),
+  'diff-explore': ({ capabilities }) => (!capabilities || capabilities.has('briefs') ? buildDiffExploreSubagent() : null),
+};
+
+/**
+ * The built-in definition of one row: the one its `Subagent` column names, or
+ * `null` when the column is `—` or names a definition absent from
+ * {@link BUILTIN_SUBAGENTS}. Budgeted and sanitized like every definition.
  *
- * The return value is a UNION resolved per turn — the built-in of this context type's row,
- * plus the `contributes.subagents` fan-out of the effective plugin pool filtered by each
- * contribution's `contextTypes[]`. What changed is the TYPE OF THE COLUMN'S VALUE, not the
- * number of rows: the registry stays a code constant of four rows and a plugin adds none.
+ * The two built-ins declare no `maxTurns` of their own and never pass through
+ * `hostFrame()`, so `withTurnBudget` is what gives them the host default and states the
+ * number in their prompt. Both halves matter: a prompt naming a budget the definition
+ * does not actually carry would be the host lying to the model, which is the one thing
+ * the frame exists not to do.
+ */
+export function builtinSubagentForRow(
+  row: Pick<ContextTypeRow, 'subagent'>,
+  ctx: BuiltinSubagentContext,
+): SubagentDefinition | null {
+  const name = row.subagent;
+  const build =
+    name !== null && Object.prototype.hasOwnProperty.call(BUILTIN_SUBAGENTS, name) ? BUILTIN_SUBAGENTS[name] : undefined;
+  const definition = build ? build(ctx) : null;
+  return definition ? withTurnBudget(sanitizeSubagentDefinition(definition), DEFAULT_SUBAGENT_TURNS) : null;
+}
+
+/**
+ * Dimension of the turn above the row (M44 `zvy49ysg`): the `SubagentDefinition`s
+ * injected into `adapter.execute({ subagents })`, resolved for ONE row.
+ *
+ * The return value is a UNION resolved per turn (M45 `sqtt3hox`) — the built-in the
+ * row's `Subagent` column names ({@link builtinSubagentForRow}), plus the
+ * `contributes.subagents` fan-out of the effective plugin pool filtered by each
+ * contribution's `contextTypes[]` (omitted = `['chat']`) against the row's value.
  *
  * Read by PULL, and that is what makes the capability teardown-free: this function consults
  * the plugin host when a turn is built and keeps no copy, and `subagents` is a per-turn
@@ -278,13 +322,44 @@ function buildDiffExploreSubagent(): SubagentDefinition {
  * takes effect FROM THE NEXT TURN — no session restart, no `ProjectContext` invalidation,
  * and nothing for `unregisterPlugin` to unwire beyond dropping its record.
  *
- * `chat`/`patch`/`ask` get `spec-explore` (current entity graph); `brief` gets
- * `diff-explore` (release-scoped, no entity graph, because the graph returns HEAD).
- *
- * `hasSkillSlug` is injected rather than imported: `skill-registry.ts` imports
- * `CONTEXT_TYPE_REGISTRY` from this module, so reaching back for the registry would close a
- * cycle. It defaults to accept-all so the two-argument call sites and test fixtures that
- * predate this parameter keep compiling.
+ * Deny-group propagation (agent-adapters 0.9.9): a denied BUILT-IN drops from every
+ * definition by intersection while `mcp__*` entries pass, so `spec-explore` keeps naming
+ * Read/Grep/Glob and simply loses them in a gated posture. `builtinsEnabled` therefore
+ * does not gate the LIST; it shapes `spec-explore`'s PROMPT, which must stop promising
+ * file tools it will not have. `diff-explore` names no built-in at all, and the `brief`
+ * row denies every built-in group whatever the file-access setting.
+ */
+export function subagentsForRow(
+  row: Pick<ContextTypeRow, 'value' | 'subagent'>,
+  pluginHost: ProjectPluginHost,
+  builtinsEnabled = false,
+  hasSkillSlug: (slug: string) => boolean = () => true,
+  mountedMcpServers?: ReadonlySet<string>,
+  capabilities?: { has(name: string): boolean },
+): SubagentDefinition[] {
+  const builtin = builtinSubagentForRow(row, { pluginHost, builtinsEnabled, capabilities });
+  // Optional call: several fixtures reach this function through an
+  // `as unknown as ProjectPluginHost` cast that predates the method.
+  const contributed = resolvePluginSubagents({
+    contextType: row.value,
+    contributions: pluginHost.listSubagents?.() ?? [],
+    hasSkillSlug,
+    // The row's own built-in name is reserved whether or not it was built here (a
+    // project without `briefs` builds no `diff-explore`); every built-in name is
+    // also reserved by `RESERVED_SUBAGENT_NAMES` in the resolver.
+    taken: new Set(builtin ? [builtin.name] : row.subagent ? [row.subagent] : []),
+    ...(mountedMcpServers
+      ? { surface: { mcpServers: mountedMcpServers, builtins: new Set(CLAUDE_CODE_ALL_BUILTINS) } }
+      : {}),
+  });
+  return builtin ? [builtin, ...contributed] : contributed;
+}
+
+/**
+ * {@link subagentsForRow} for a thread's context type, read from the registry's
+ * code map. `hasSkillSlug` is injected rather than imported: `skill-registry.ts`
+ * imports `CONTEXT_TYPE_REGISTRY` from this module, so reaching back for the
+ * registry would close a cycle. It defaults to accept-all.
  */
 export function subagentsFor(
   contextType: ChatContextType,
@@ -297,64 +372,18 @@ export function subagentsFor(
   /**
    * 2.1.77 (M45 `37ogwcgx`): the project's capability set. Without `entities` the
    * `spec-explore` allow-list carries no entity-server tool; without `briefs` the
-   * built-in `diff-explore` is never built — no turn of such a project has it in
-   * its `subagents` array (its only row, `brief`, is not registered either, M44
-   * `1j39ajh8`). Absent (rigs) = every capability.
+   * built-in `diff-explore` is never built. Absent (rigs) = every capability.
    */
   capabilities?: { has(name: string): boolean },
 ): SubagentDefinition[] {
-  /**
-   * 0.2.53 mounted NO subagent at all while the built-ins were denied, and the reason was
-   * the library rather than this posture: `subagentToolPolicy` intersected a definition's
-   * whole `tools` list with an allow-list of BUILT-IN names, so every `mcp__*` entry fell
-   * out and both explorers came back with `tools: []` — which the SDK reads as "no tools",
-   * not "inherit". That branch carried its own deletion trigger: "when the library passes
-   * `mcp__*` through, delete this branch and the explorers come back on their own."
-   *
-   * agent-adapters 0.9.9 does exactly that (the predicate is now
-   * `t.startsWith('mcp__') || allowed.has(t)`), so the branch is gone. Deny-group
-   * propagation is unchanged — a denied BUILT-IN still drops from every definition — which
-   * is why `spec-explore` keeps naming Read/Grep/Glob and simply loses them in a gated
-   * posture, while its MCP channel, the one it actually works through, survives whole.
-   * (2.1.5: `diff-explore` names no built-in at all — see its builder.)
-   *
-   * `builtinsEnabled` therefore no longer gates the LIST; it still shapes `spec-explore`'s
-   * PROMPT, which must stop promising file tools it will not have.
-   */
-  const { subagent } = CONTEXT_TYPE_REGISTRY[contextType];
-  const entities = capabilities ? capabilities.has('entities') : true;
-  const briefs = capabilities ? capabilities.has('briefs') : true;
-  /**
-   * The two built-ins declare no `maxTurns` of their own and never pass through
-   * `hostFrame()`, so `withTurnBudget` is what gives them the host default and states the
-   * number in their prompt. Both halves matter: a prompt naming a budget the definition
-   * does not actually carry would be the host lying to the model, which is the one thing
-   * the frame exists not to do.
-   */
-  const definition: SubagentDefinition | null =
-    subagent === 'diff-explore'
-      ? briefs
-        ? buildDiffExploreSubagent()
-        : null
-      : buildSpecExploreSubagent(pluginHost, builtinsEnabled, entities);
-  const builtin = definition
-    ? withTurnBudget(sanitizeSubagentDefinition(definition), DEFAULT_SUBAGENT_TURNS)
-    : null;
-  // Optional call: several fixtures reach this function through an
-  // `as unknown as ProjectPluginHost` cast that predates the method.
-  const contributed = resolvePluginSubagents({
-    contextType,
-    contributions: pluginHost.listSubagents?.() ?? [],
+  return subagentsForRow(
+    CONTEXT_TYPE_REGISTRY[contextType],
+    pluginHost,
+    builtinsEnabled,
     hasSkillSlug,
-    // The context's own built-in name is reserved: the built one's name, or
-    // `diff-explore` when this context's built-in is not built (no `briefs`), so
-    // a plugin cannot take that name. The other built-in's name is not reserved.
-    taken: new Set(builtin ? [builtin.name] : ['diff-explore']),
-    ...(mountedMcpServers
-      ? { surface: { mcpServers: mountedMcpServers, builtins: new Set(CLAUDE_CODE_ALL_BUILTINS) } }
-      : {}),
-  });
-  return builtin ? [builtin, ...contributed] : contributed;
+    mountedMcpServers,
+    capabilities,
+  );
 }
 
 /* ─────────────────────────── M48: the system prompt ───────────────────────────

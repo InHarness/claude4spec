@@ -71,8 +71,13 @@ export interface ContextTypeRow {
   builtinGroups: 'none' | 'all' | readonly ToolGroup[];
   /** `Klasy operacji` — the classes the turn's profile gate admits. */
   operationClasses: 'all' | readonly OperationClass[];
-  /** `Subagent` — the built-in definition injected into turns of this value. */
-  subagent: 'spec-explore' | 'diff-explore';
+  /**
+   * `Subagent` — the NAME of the built-in definition injected into turns of this
+   * value, or `null` (`—`) when the value brings none. A name absent from the map
+   * of built-in definitions (M45, `BUILTIN_SUBAGENTS`) yields no built-in either:
+   * the turn branches on this column, never on the value (M45 `uomqh1pu`).
+   */
+  subagent: string | null;
   /** `Zadania w tle` — whether the row admits background tasks (a turn may still refuse them by origin). */
   backgroundTasks: 'allowed' | 'disabled';
   /** `Reguły domenowe` — the body rendered into `<interaction_context>` (owned by the contributor). */

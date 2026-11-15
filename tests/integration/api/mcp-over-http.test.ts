@@ -156,7 +156,7 @@ describe('MCP over HTTP', () => {
       expect(names).toContain('load_skill_file');
     });
 
-    it('narrows `brief` to release-tools plus reads, per BRIEF_ALLOWED_PLUGIN_MCP', async () => {
+    it('narrows `brief` to release-tools plus reads, per the Serwery column of the brief row', async () => {
       const client = await connect('?profile=brief');
       const names = (await client.listTools()).tools.map((t) => t.name);
       expect(names).toContain('get_brief');
