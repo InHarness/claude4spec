@@ -10,6 +10,7 @@ import type {
   TodoHit,
 } from '../../shared/types.js';
 import type { PluginActivationState } from '../../shared/plugin-host/types.js';
+import type { ContextTypeShellRow } from '../../shared/context-type-shell.js';
 import type { ElementsMenuEntry } from '../../shared/elements-menu.js';
 import type { PluginMigrationInfo } from '../../shared/plugin-host/host-api.js';
 import type { FrontendManifestResponse } from '../../shared/plugin-host/frontend-manifest.js';
@@ -179,6 +180,11 @@ export interface ConfigResponse {
    * registry order — the options of the `Context types` multiselect. Derived.
    */
   contextTypes?: string[];
+  /**
+   * 2.1.88 (M53 `64xb1u7b`): the same rows in the two columns the chat shell
+   * branches on — `Wątek` (thread column + artifact kind, or `null`) and `Powłoka`.
+   */
+  contextTypeRows?: ContextTypeShellRow[];
   /**
    * 0.1.96 multiroot: replaces the single `pagesDir`.
    *

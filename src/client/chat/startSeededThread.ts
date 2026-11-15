@@ -10,9 +10,9 @@ export interface StartSeededThreadOptions {
  * thread and seeds it with `prompt`. Pure client orchestration over the
  * existing `post-api-chat` endpoint — no new endpoint, no new `context_type`:
  *
- * 1. `setChatThreadId(null)` — start a new `context_type='chat'` thread; the
- *    server creates it server-side on the first message and returns its id in
- *    the SSE `connected` event.
+ * 1. `setChatThreadId(null)` — start a new thread; the server creates it on the
+ *    first message with the project registry's `Wejście: domyślny` value (2.1.88,
+ *    M53 `m05seedthr`) and returns its id in the SSE `connected` event.
  * 2. `setChatOpen(true)` — open `<ChatOverlay />`.
  * 3. `requestChatPrefill({ prompt, autoSend })` — ChatOverlay fills the editor
  *    and, when `autoSubmit` is set and the thread is empty, `sendMessage`s the

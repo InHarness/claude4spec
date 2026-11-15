@@ -92,11 +92,15 @@ vi.mock('./BlockRenderer.js', async (importOriginal) => {
 const threads = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock('./ThreadListContext.js', () => ({ useThreadListContext: () => threads.value }));
 
-const cfg = vi.hoisted(() => ({ chatConfig: undefined as unknown }));
+const cfg = vi.hoisted(() => ({ chatConfig: undefined as unknown, projectConfig: undefined as unknown }));
 vi.mock('@tanstack/react-query', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-query')>()),
   useQuery: ({ queryKey }: { queryKey: unknown[] }) =>
-    queryKey[0] === 'chat-config' ? { data: cfg.chatConfig } : { data: undefined },
+    queryKey[0] === 'chat-config'
+      ? { data: cfg.chatConfig }
+      : queryKey[0] === 'config' && queryKey.length === 1
+        ? { data: cfg.projectConfig }
+        : { data: undefined },
 }));
 
 const route = vi.hoisted(() => ({ matches: [] as unknown[] }));
@@ -120,9 +124,26 @@ vi.mock('../lib/api-core.js', async (importOriginal) => ({
 vi.mock('./ChatEditorBridge.js', () => ({
   ChatEditorBridgeProvider: ({ children }: { children: unknown }) => children,
 }));
-vi.mock('../hooks/usePlan.js', () => ({ usePlan: () => ({ data: undefined, error: null }) }));
-vi.mock('../hooks/useBriefs.js', () => ({ useBrief: () => ({ data: undefined }) }));
-vi.mock('../hooks/usePatches.js', () => ({ usePatch: () => ({ data: undefined }) }));
+// The artifact detail reads behind the bar's label: a title per kind, asked only for the path the bar names.
+const artifacts = vi.hoisted(() => ({ asked: [] as string[] }));
+vi.mock('../hooks/usePlan.js', () => ({
+  usePlan: (p: string | null) => {
+    if (p) artifacts.asked.push(`plan:${p}`);
+    return { data: p ? { frontmatter: { title: 'Cleanup auth' } } : undefined, error: null };
+  },
+}));
+vi.mock('../hooks/useBriefs.js', () => ({
+  useBrief: (p: string | null) => {
+    if (p) artifacts.asked.push(`brief:${p}`);
+    return { data: p ? { frontmatter: { title: 'Release notes' } } : undefined };
+  },
+}));
+vi.mock('../hooks/usePatches.js', () => ({
+  usePatch: (p: string | null) => {
+    if (p) artifacts.asked.push(`patch:${p}`);
+    return { data: p ? { title: 'Drift fix' } : undefined };
+  },
+}));
 vi.mock('../ui/events.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../ui/events.js')>()),
   confirmDestructive: () => Promise.resolve(true),
@@ -132,6 +153,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ChatOverlay, HISTORY_WINDOW } from './ChatOverlay.js';
 import { CHAT_ENDPOINTS } from './useChat.js';
 import { useChatStore } from '../state/chat.js';
+import { contextTypeShellRowsFor } from '../../server/services/chat-context.js';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -245,6 +267,8 @@ beforeEach(() => {
   rendered.blocks = [];
   threads.value = threadList([thread()]);
   cfg.chatConfig = CONFIG;
+  cfg.projectConfig = undefined;
+  artifacts.asked = [];
   route.matches = [];
   api.calls = [];
   useChatStore.setState({
@@ -734,5 +758,65 @@ describe('message list — turn state (M53 Stan tury w UI)', () => {
     line = host.querySelector('[data-hold-ending]');
     expect(line?.getAttribute('data-hold-ending')).toBe('user-abort');
     expect(line?.textContent).toBe('stopped by you — 1 background task abandoned');
+  });
+});
+
+/**
+ * 2.1.88 (M53 `64xb1u7b`) — the bar above the composer follows the thread
+ * value's row of the project registry, as `GET /api/config` → `contextTypeRows`
+ * hands it (here: the rows the server derives from the real registry).
+ */
+describe('ChatOverlay — the artifact bar above the composer, by registry row (2.1.88)', () => {
+  const ROWS = contextTypeShellRowsFor({ has: () => true });
+  const bars = () => Array.from(host.querySelectorAll('[data-testid="context-link-bar"]')).map((b) => b.textContent?.trim());
+  const show = (over: Partial<ChatThreadMeta>, rows: unknown = ROWS) => {
+    cfg.projectConfig = { contextTypeRows: rows };
+    threads.value = threadList([thread(over)]);
+    render();
+  };
+
+  it('[ac:ac-belka-context-link-nad-composerem-pok] the bar links the artifact the row\'s `Wątek` column names, labelled by its kind', () => {
+    show({ contextType: 'chat', planPath: 'cleanup.md' });
+    expect(bars()).toEqual(['Plan: Cleanup auth']);
+    act(() => root.unmount());
+    root = createRoot(host);
+
+    show({ contextType: 'brief', briefPath: 'v1-to-v2.md' });
+    expect(bars()).toEqual(['Brief: Release notes']);
+    act(() => root.unmount());
+    root = createRoot(host);
+
+    // A patch thread that also carries a plan: one bar, the patch its row names.
+    artifacts.asked = [];
+    show({ contextType: 'patch', patchPath: 'drift.md', planPath: 'cleanup.md' });
+    expect(bars()).toEqual(['Patch: Drift fix']);
+    expect(artifacts.asked).toContain('patch:drift.md');
+    expect(artifacts.asked).not.toContain('plan:cleanup.md');
+    act(() => root.unmount());
+    root = createRoot(host);
+
+    // A value no code names: the bar comes from its row and the label from the column's kind.
+    show({ contextType: 'review' as ChatThreadMeta['contextType'], briefPath: 'v1-to-v2.md' }, [
+      ...ROWS,
+      { value: 'review', thread: { column: 'brief_path', artifactKind: 'brief' }, shell: 'overlay' },
+    ]);
+    expect(bars()).toEqual(['Brief: Release notes']);
+    expect(host.querySelector('aside')?.getAttribute('data-shell')).toBe('overlay');
+  });
+
+  it('[ac:ac-belka-context-link-nie-renderuje-sie] no bar in a thread whose value has `Wątek: —` (ask), even when the thread carries a plan; none for a value with no row', () => {
+    expect(ROWS.find((r) => r.value === 'ask')?.thread).toBeNull();
+    show({ contextType: 'ask', planPath: 'cleanup.md' });
+    expect(bars()).toEqual([]);
+    act(() => root.unmount());
+    root = createRoot(host);
+
+    show({ contextType: 'unknown' as ChatThreadMeta['contextType'], planPath: 'cleanup.md', briefPath: 'v1-to-v2.md' });
+    expect(bars()).toEqual([]);
+    act(() => root.unmount());
+    root = createRoot(host);
+
+    show({ contextType: 'chat', planPath: null });
+    expect(bars()).toEqual([]);
   });
 });

@@ -39,6 +39,8 @@ const state = vi.hoisted(() => ({
   emptyStates: [] as Array<{ title: string; hint?: unknown; action?: unknown }>,
   loadingStates: 0,
   confirms: [] as Array<{ kind: string; title: string; body: string }>,
+  /** Calls of the host's `startSeededThread` (M53 `m05seedthr`). */
+  seeded: [] as unknown[][],
 }));
 
 vi.mock('@tanstack/react-router', () => ({
@@ -70,7 +72,9 @@ vi.mock('@c4s/plugin-runtime', async () => {
     },
     useTags: () => ({ data: [] }),
     useReferences: () => ({ data: [] }),
-    startSeededThread: () => undefined,
+    startSeededThread: (...args: unknown[]) => {
+      state.seeded.push(args);
+    },
     EditorBridgeProvider: ({ children }: { children: ReactNode }) => children,
     queryClient: null,
   };
@@ -274,6 +278,7 @@ beforeEach(() => {
   state.ac = sampleAc();
   state.acs = [];
   state.acsLoading = false;
+  state.seeded = [];
   state.params = { slug: 'ac-sample' };
   state.search = {};
   state.navigate = [];
@@ -625,6 +630,30 @@ describe('[entity:ac-list] /acs', () => {
     const labels = kitTagChipLabels(container);
     for (const t of tags) expect(labels).toContain(t);
     expect(container.textContent).not.toMatch(/\+\d+ more/);
+  });
+
+  it('[entity:ac-list] Analyze consistency opens a seeded thread through the host action with no context type of its own — the server founds it with the registry\'s `Wejście: domyślny` value — and auto-sends the prompt that calls analyze_ac_against_entities with no arguments', async () => {
+    state.acs = [sampleAc({ slug: 'ac-one', title: 'Active one.', kind: 'requirement', tags: ['m07'] })];
+    await render(
+      createElement(AcsList, {
+        search: '',
+        tagFilter: [],
+        onSearchChange: () => undefined,
+        onTagToggle: () => undefined,
+        onSelect: () => undefined,
+      }),
+    );
+    const btn = buttonByText('Analyze consistency', container)!;
+    expect(btn.disabled).toBe(false);
+    await act(async () => {
+      btn.click();
+    });
+    expect(state.seeded).toHaveLength(1);
+    const [prompt, opts] = state.seeded[0] as [string, Record<string, unknown>];
+    expect(prompt).toContain('`analyze_ac_against_entities` tool with no arguments');
+    expect(prompt).not.toContain('scope_tag');
+    // Only `autoSubmit`: no context type, no thread — the thread value is the registry default.
+    expect(opts).toEqual({ autoSubmit: true });
   });
 
   it('[entity:ac-list] with no active AC the Analyze consistency action is disabled with the "No active AC to analyze" tooltip', async () => {

@@ -19,7 +19,7 @@ import { BriefService } from '../services/brief.js';
 import { PatchService } from '../services/patch.js';
 import { PlanService } from '../services/plan.js';
 import { artifactsRouter } from './artifacts.js';
-import { artifactRegistry } from '../services/artifact-registry.js';
+import { artifactEntry, artifactRegistry } from '../services/artifact-registry.js';
 import { errorHandler } from './errors.js';
 import { systemRootId } from '../../shared/root-kinds.js';
 import type { ReleaseService } from '../services/release.js';
@@ -987,35 +987,44 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       expect(row(unnamed.body.data.threadId)).toMatchObject({ title: 'Named Plan', plan_path: planPath });
     });
 
-    it('[ac:ac-wpis-rejestru-deklaruje-binding-mode] the registry declares binding.mode — anchor (required, brief/patch) or attach (optional, plan) — N threads → 1 artifact in both; the per-kind columns coexist on one thread; ask is a context type with no kind', async () => {
-      // The declaration.
+    it('[ac:ac-wpis-rejestru-deklaruje-binding-mode] every entry of the artifact registry declares `binding.mode`, and its value is `anchor` or `attach`', () => {
+      const modes = Object.values(artifactRegistry).map((e) => e.binding.mode);
+      expect(modes).toHaveLength(3);
+      for (const mode of modes) expect(['anchor', 'attach']).toContain(mode);
       expect(artifactRegistry.briefs.binding).toEqual({ mode: 'anchor', contextType: 'brief', threadColumn: 'brief_path' });
       expect(artifactRegistry.patches.binding).toEqual({ mode: 'anchor', contextType: 'patch', threadColumn: 'patch_path' });
       expect(artifactRegistry.plans.binding).toEqual({ mode: 'attach', threadColumn: 'plan_path' });
+    });
 
-      // N threads → 1 artifact, in both modes.
-      const planPath = (await plans.create({ title: 'Coexist', content: '## Step\n\nx\n', changedBy: 'agent' })).planPath;
-      for (const [kind, p] of [['brief', BRIEF], ['patch', PATCH], ['plan', planPath]] as const) {
-        const before = ((await request(app).get(`/api/artifacts/${kind}/${p}/threads`)).body.data as unknown[]).length;
-        await request(app).post(`/api/artifacts/${kind}/${p}/threads`).send({});
-        await request(app).post(`/api/artifacts/${kind}/${p}/threads`).send({});
-        const after = ((await request(app).get(`/api/artifacts/${kind}/${p}/threads`)).body.data as unknown[]).length;
-        expect(after, kind).toBe(before + 2);
+    it('[ac:ac-w-obu-trybach-wiazania-wiele-watkow-m] in both binding modes many threads point at the same artifact: two foundings on one brief, one patch (anchor) and one plan (attach) each add a thread, and the artifact lists all of them', async () => {
+      const planPath = (await plans.create({ title: 'Many', content: '## Step\n\nx\n', changedBy: 'agent' })).planPath;
+      for (const [kind, p, column] of [['brief', BRIEF, 'brief_path'], ['patch', PATCH, 'patch_path'], ['plan', planPath, 'plan_path']] as const) {
+        expect(artifactEntry(kind).binding.mode, kind).toBe(kind === 'plan' ? 'attach' : 'anchor');
+        const before = ((await request(app).get(`/api/artifacts/${kind}/${p}/threads`)).body.data as Array<{ id: string }>).map((t) => t.id);
+        const a = (await request(app).post(`/api/artifacts/${kind}/${p}/threads`).send({})).body.data.threadId as string;
+        const b = (await request(app).post(`/api/artifacts/${kind}/${p}/threads`).send({})).body.data.threadId as string;
+        expect(a, kind).not.toBe(b);
+        expect(row(a)[column], kind).toBe(p);
+        expect(row(b)[column], kind).toBe(p);
+        const after = ((await request(app).get(`/api/artifacts/${kind}/${p}/threads`)).body.data as Array<{ id: string }>).map((t) => t.id);
+        expect(after.sort(), kind).toEqual([...before, a, b].sort());
       }
+    });
 
-      // Anchor is required: an anchored thread is founded with its column set.
+    it('[ac:ac-jeden-watek-moze-miec-jednoczesnie-ar] one chat_thread row carries an anchored artifact (brief_path) and an attached plan (plan_path) at once, and both artifacts list that thread', async () => {
+      const planPath = (await plans.create({ title: 'Coexist', content: '## Step\n\nx\n', changedBy: 'agent' })).planPath;
       const anchored = (await request(app).post(`/api/artifacts/brief/${BRIEF}/threads`).send({})).body.data.threadId as string;
-      expect(row(anchored).brief_path).toBe(BRIEF);
-      expect(row(anchored).plan_path).toBeNull();
-      // Attach is optional and coexists with the anchor on the same thread.
+      expect(row(anchored)).toMatchObject({ brief_path: BRIEF, plan_path: null, context_type: 'brief' });
       new ChatService(db).attachPlanToThread(anchored, planPath);
+      // Both per-kind columns on the same row — the attach left the anchor alone.
       expect(row(anchored)).toMatchObject({ brief_path: BRIEF, plan_path: planPath, context_type: 'brief' });
       const briefIds = ((await request(app).get(`/api/artifacts/brief/${BRIEF}/threads`)).body.data as Array<{ id: string }>).map((t) => t.id);
       const planIds = ((await request(app).get(`/api/artifacts/plan/${planPath}/threads`)).body.data as Array<{ id: string }>).map((t) => t.id);
       expect(briefIds).toContain(anchored);
       expect(planIds).toContain(anchored);
+    });
 
-      // ask has no kind: no registry entry binds it.
+    it('[section:m36bind01] `ask` is kind none: no registry entry binds it (nor `chat`)', () => {
       const contextTypes = Object.values(artifactRegistry).map((e) => e.binding.contextType);
       expect(contextTypes).not.toContain('ask');
       expect(contextTypes).not.toContain('chat');

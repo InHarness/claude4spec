@@ -1,5 +1,5 @@
 {
-  "iteration": 36,
+  "iteration": 41,
   "conventions": [
     {
       "label": "L15 (Context Types) — implementor M44",
@@ -1281,13 +1281,34 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "chat-shell-by-row/p1-l15-l15",
+          "layers": [
+            "L15"
+          ],
+          "slugs": [
+            "ac-list",
+            "plan-page",
+            "ac-belka-context-link-nad-composerem-pok",
+            "ac-belka-context-link-nie-renderuje-sie",
+            "ac-jeden-watek-moze-miec-jednoczesnie-ar",
+            "ac-w-obu-trybach-wiazania-wiele-watkow-m",
+            "ac-wpis-rejestru-deklaruje-binding-mode"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "f7a6b3ca22104900a58751991fd5bf5ae9455888",
+      "baseCommit": "f7a6b3ca22104900a58751991fd5bf5ae9455888",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
       "jobs": []
     },

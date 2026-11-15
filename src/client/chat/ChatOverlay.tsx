@@ -22,7 +22,7 @@ import { confirmDestructive } from '../ui/events.js';
 import { CHAT_PREFILL_EVENT, type ChatPrefillDetail } from './chatPrefill.js';
 import { usePlan } from '../hooks/usePlan.js';
 import { useConfig } from '../hooks/useConfig.js';
-import { contextLinkKinds } from './contextLinkBar.js';
+import { contextLinkLabel, contextLinkOf, rowOfThread } from './contextLinkBar.js';
 import { useBrief } from '../hooks/useBriefs.js';
 import { usePatch } from '../hooks/usePatches.js';
 import { encodeBriefPath } from '../lib/briefs-api.js';
@@ -218,20 +218,40 @@ export function ChatOverlay() {
   const activeTitle = activeThread?.contextType === 'brief' && activeThread.briefPath
     ? `Brief: ${activeThread.briefPath.replace(/\.md$/, '')}`
     : activeThread?.title ?? 'New conversation';
-  const { data: activePlan, error: activePlanError } = usePlan(activeThread?.planPath ?? null);
-  // 0.2.104 — a plan file moved or deleted outside the app leaves the thread's
-  // `plan_path` dangling; say so in the context bar instead of a bare "Plan".
-  const activePlanMissing = activePlanError instanceof ApiError && activePlanError.status === 404;
-  // 2.1.77 (M44 `1j39ajh8`): the artifact links of the composer bar follow the
-  // project's capability `briefs` — without it only `Plan: …`.
+  // 2.1.88 (M53 `64xb1u7b`): the shell branches on the thread value's ROW of the
+  // project registry (`GET /api/config` → `contextTypeRows`): the bar above the
+  // composer shows the artifact the row's `Wątek` column names, when the thread
+  // carries it, labelled by that artifact's kind; the panel takes the row's
+  // `Powłoka`. A value with no row (or `Wątek: —`) gets no bar.
   const { data: projectConfig } = useConfig();
-  const linkKinds = contextLinkKinds(activeThread, projectConfig?.capabilities);
-  const { data: activeBrief } = useBrief(
-    activeThread?.contextType === 'brief' ? activeThread.briefPath : null,
-  );
-  const { data: activePatch } = usePatch(
-    activeThread?.contextType === 'patch' ? activeThread.patchPath : null,
-  );
+  const activeRow = rowOfThread(activeThread, projectConfig?.contextTypeRows);
+  const contextLink = contextLinkOf(activeThread, projectConfig?.contextTypeRows);
+  // The artifact's title for the label — read through its kind's detail route.
+  const { data: activePlan, error: activePlanError } = usePlan(contextLink?.kind === 'plan' ? contextLink.path : null);
+  const { data: activeBrief, error: activeBriefError } = useBrief(contextLink?.kind === 'brief' ? contextLink.path : null);
+  const { data: activePatch, error: activePatchError } = usePatch(contextLink?.kind === 'patch' ? contextLink.path : null);
+  const contextLinkError =
+    contextLink?.kind === 'plan' ? activePlanError : contextLink?.kind === 'brief' ? activeBriefError : activePatchError;
+  // 0.2.104 — an artifact file moved or deleted outside the app leaves the thread's
+  // reference dangling; say so in the bar instead of a bare kind name.
+  const contextLinkMissing = !!contextLink && contextLinkError instanceof ApiError && contextLinkError.status === 404;
+  const contextLinkTitle = (() => {
+    const t =
+      contextLink?.kind === 'plan'
+        ? activePlan?.frontmatter.title
+        : contextLink?.kind === 'brief'
+          ? activeBrief?.frontmatter.title
+          : contextLink?.kind === 'patch'
+            ? activePatch?.title
+            : null;
+    return typeof t === 'string' ? t : null;
+  })();
+  const openContextLink = () => {
+    if (!contextLink) return;
+    if (contextLink.kind === 'plan') navigate({ to: '/plans/$planPath', params: { planPath: contextLink.path } });
+    else if (contextLink.kind === 'brief') navigate({ to: '/briefs/$path', params: { path: encodeBriefPath(contextLink.path) } });
+    else if (contextLink.kind === 'patch') navigate({ to: '/patches/$path', params: { path: encodePatchPath(contextLink.path) } });
+  };
 
   useEffect(() => {
     setPlanMode(activeThread?.planMode ?? false);
@@ -567,6 +587,9 @@ export function ChatOverlay() {
     >
       <ResizeHandle onDrag={onResizeDrag} />
       <aside
+        // 2.1.88 (M53 `64xb1u7b`): the panel's chrome variant is the row's `Powłoka`;
+        // `overlay` (M53 `9fg6yjcp`) for a value the shell does not know.
+        data-shell={activeRow?.shell ?? 'overlay'}
         className="flex-1 flex flex-col min-w-0 min-h-0 relative"
         style={{ background: 'var(--c-bg)' }}
       >
@@ -776,54 +799,15 @@ export function ChatOverlay() {
             sending from it closes the preview and returns to the stream. */}
         {pendingUserInputs.length === 0 && (
         <div className="p-2.5 relative" style={{ borderTop: '1px solid var(--c-hair)' }}>
-          {/* 0.2.87: the context-link bar never renders in an `ask` thread — that type has no
-              artifact, even when the peer left a plan behind (plan-tools are mounted there). */}
-          {activeThread && linkKinds.includes('plan') && (
+          {/* 2.1.88 (M53 `64xb1u7b`): one bar, from the row's `Wątek` column — none for
+              `Wątek: —` (e.g. `ask`), for a value the shell does not know, or a thread
+              without the artifact. */}
+          {contextLink && (
             <ContextLinkBar
-              icon={<ClipboardList size={11} style={{ color: 'var(--c-accent)', flexShrink: 0 }} />}
-              label={
-                activePlanMissing
-                  ? 'Plan not found (moved or deleted)'
-                  : activePlan?.frontmatter.title
-                    ? `Plan: ${activePlan.frontmatter.title}`
-                    : 'Plan'
-              }
-              title={activePlan?.frontmatter.title ?? 'Open plan'}
-              onClick={() =>
-                navigate({
-                  to: '/plans/$planPath',
-                  params: { planPath: activeThread.planPath! },
-                })
-              }
-            />
-          )}
-          {activeThread?.briefPath && linkKinds.includes('brief') && (
-            <ContextLinkBar
-              icon={<FileText size={11} style={{ color: 'var(--c-accent)', flexShrink: 0 }} />}
-              label={`Brief: ${
-                (typeof activeBrief?.frontmatter.title === 'string' && activeBrief.frontmatter.title) ||
-                activeThread.briefPath.replace(/\.md$/, '')
-              }`}
-              title="Open brief"
-              onClick={() =>
-                navigate({
-                  to: '/briefs/$path',
-                  params: { path: encodeBriefPath(activeThread.briefPath as string) },
-                })
-              }
-            />
-          )}
-          {activeThread?.patchPath && linkKinds.includes('patch') && (
-            <ContextLinkBar
-              icon={<FileWarning size={11} style={{ color: 'var(--c-accent)', flexShrink: 0 }} />}
-              label={`Patch: ${activePatch?.title || activeThread.patchPath.replace(/\.md$/, '')}`}
-              title="Open patch"
-              onClick={() =>
-                navigate({
-                  to: '/patches/$path',
-                  params: { path: encodePatchPath(activeThread.patchPath as string) },
-                })
-              }
+              icon={<ContextLinkIcon kind={contextLink.kind} />}
+              label={contextLinkLabel(contextLink, contextLinkTitle, contextLinkMissing)}
+              title={contextLinkTitle ?? `Open ${contextLink.kind}`}
+              onClick={openContextLink}
             />
           )}
           <div
@@ -1418,6 +1402,14 @@ function relative(isoDate: string): string {
   return new Date(isoDate).toLocaleDateString();
 }
 
+/** The bar's icon, by artifact kind (a kind with no icon of its own gets the plain file one). */
+function ContextLinkIcon({ kind }: { kind: string }) {
+  const style = { color: 'var(--c-accent)', flexShrink: 0 } as const;
+  if (kind === 'plan') return <ClipboardList size={11} style={style} />;
+  if (kind === 'patch') return <FileWarning size={11} style={style} />;
+  return <FileText size={11} style={style} />;
+}
+
 function ContextLinkBar({
   icon,
   label,
@@ -1434,6 +1426,7 @@ function ContextLinkBar({
   return (
     <button
       onClick={onClick}
+      data-testid="context-link-bar"
       className="mb-2 w-full inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-mono btn-ghost min-w-0 transition-colors"
       style={{ border: '1px solid var(--c-hair)' }}
       title={title}

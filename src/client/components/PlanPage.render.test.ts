@@ -43,6 +43,10 @@ interface FakeEditor {
 
 const h = vi.hoisted(() => ({
   actionBars: [] as ActionBarProps[],
+  /** The plan's thread rows (`useArtifactThreads`). */
+  threads: [] as unknown[],
+  /** Render the real shared threads panel instead of its marker. */
+  realPanel: false,
   editor: null as FakeEditor | null,
   makeEditor(): FakeEditor {
     const listeners = new Set<() => void>();
@@ -118,7 +122,7 @@ vi.mock('../hooks/useScrollToAnchor.js', () => ({ useScrollToAnchor: () => {} })
 vi.mock('../hooks/useArtifactThreads.js', () => ({
   artifactThreadsKey: (kind: string, path: string) => ['artifact-threads', kind, path],
   useArtifactThreads: () => ({
-    threads: [],
+    threads: h.threads,
     isPending: false,
     hasNextPage: false,
     isFetchingNextPage: false,
@@ -136,9 +140,15 @@ vi.mock('../state/outline.js', () => {
 vi.mock('../chat/chatPrefill.js', () => ({ requestChatPrefill: () => {} }));
 vi.mock('../tiptap/unsavedEdits.js', () => ({ useUnsavedEditsSource: () => {} }));
 vi.mock('./OutlineButton.js', () => ({ OutlineButton: () => null }));
-vi.mock('./ArtifactThreadsPanel.js', () => ({
-  ArtifactThreadsPanel: () => createElement('div', { 'data-testid': 'artifact-threads-panel' }),
-}));
+vi.mock('./ArtifactThreadsPanel.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./ArtifactThreadsPanel.js')>();
+  return {
+    ArtifactThreadsPanel: (props: Parameters<typeof real.ArtifactThreadsPanel>[0]) =>
+      h.realPanel && props
+        ? createElement('div', { 'data-testid': 'artifact-threads-panel' }, createElement(real.ArtifactThreadsPanel, props))
+        : createElement('div', { 'data-testid': 'artifact-threads-panel' }),
+  };
+});
 vi.mock('./FileVersionHistory.js', () => ({
   FileVersionHistory: (props: { kind?: string; path?: string }) =>
     createElement('div', { 'data-testid': 'file-version-history', 'data-kind': props?.kind }, props?.path),
@@ -273,6 +283,8 @@ beforeEach(() => {
   server.calls = [];
   h.actionBars = [];
   h.editor = null;
+  h.threads = [];
+  h.realPanel = false;
   vi.stubGlobal('fetch', vi.fn(fakeFetch));
   qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   host = document.createElement('div');
@@ -560,5 +572,37 @@ describe('PlanPage (/plans/$slug) — the whole plan file, Save and the 409 bann
     expect(button('Override')).toBeNull();
     expect(server.file).toBe(foreign);
     expect(server.versions).toBe(versionsBefore + 1);
+  });
+});
+
+describe('PlanPage (/plans/$slug) — the threads panel badge (2.1.88)', () => {
+  const row = (id: string, contextType: string) => ({
+    id,
+    title: `Thread ${id}`,
+    contextType,
+    planMode: false,
+    messageCount: 1,
+    updatedAt: '2026-11-14T10:00:00.000Z',
+    hasSystemPrompt: true,
+    isLast: false,
+  });
+
+  it('[entity:plan-page] the threads panel shows the context-type badge of each thread, and a value the UI has no label for shows its raw value', async () => {
+    h.realPanel = true;
+    // A heterogeneous set: the plan's own `chat` thread, a `patch` thread, and a value no UI code names.
+    h.threads = [row('a', 'chat'), row('b', 'patch'), row('c', 'review_board')];
+    await render();
+    await click(button('Threads'));
+    const panel = host.querySelector('[data-testid="artifact-threads-panel"]')!;
+    const rowOf = (title: string) =>
+      Array.from(panel.querySelectorAll('button, li, div')).find((el) => el.textContent?.startsWith(title) && el.textContent.length < 80) ?? null;
+    for (const [id, value] of [['a', 'chat'], ['b', 'patch'], ['c', 'review_board']] as const) {
+      const r = rowOf(`Thread ${id}`);
+      expect(r, id).not.toBeNull();
+      expect(r!.textContent, id).toContain(value);
+    }
+    // Raw, not a label: the badge's own text is exactly the stored value.
+    const badges = Array.from(panel.querySelectorAll('span')).map((s) => s.textContent);
+    expect(badges).toContain('review_board');
   });
 });

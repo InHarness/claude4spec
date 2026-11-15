@@ -37,7 +37,7 @@ import {
 import { DIRECT_FILESYSTEM_DENY_GROUPS } from '../services/agent-tool-posture.js';
 import { ensureGitignore } from '../../bin/gitignore.js';
 import { hostCapabilityRegistry, projectCapabilitySet, type ProjectCapabilities } from '../project-types/capabilities.js';
-import { contextTypesFor } from '../services/chat-context.js';
+import { contextTypesFor, contextTypeShellRowsFor } from '../services/chat-context.js';
 import { multiRootViolation } from '../project-types/resolve.js';
 
 export interface ConfigRouterDeps {
@@ -111,7 +111,14 @@ function configResponse(
   if (!capabilities) return body;
   // 2.1.88 (M52 `1osy2o5r`): the values of the project's context-type registry, in
   // registry order — the options of the `Context types` multiselect. Derived, never a file key.
-  return { ...body, capabilities: [...capabilities].sort(), contextTypes: contextTypesFor(capabilities) };
+  // 2.1.88 (M53 `64xb1u7b`): the same rows, in the two columns the chat shell
+  // branches on (`Wątek`, `Powłoka`) — the client keeps no per-value table.
+  return {
+    ...body,
+    capabilities: [...capabilities].sort(),
+    contextTypes: contextTypesFor(capabilities),
+    contextTypeRows: contextTypeShellRowsFor(capabilities),
+  };
 }
 
 /**

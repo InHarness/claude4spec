@@ -3,6 +3,7 @@ import { restError } from '../operations/envelope.js';
 import { httpStatusForCode, STATUS_FOR_TURN_ERROR } from '../operations/error-codes.js';
 import { AgentTurnError } from '../../shared/agent-turn.js';
 import { assertKnownContextType } from '../services/chat-context.js';
+import { defaultRowOf, rowsOfRegistry } from '../services/context-types/registry.js';
 import { nanoid } from 'nanoid';
 import {
   architectureCapabilities,
@@ -205,7 +206,12 @@ export function chatRouter(deps: AgentTurnDeps): Router {
       });
       if (notSelectable) return res.status(400).json(notSelectable);
 
-      let thread = existingThread ?? deps.chatService.createThread();
+      // 2.1.88 (M53 `m05seedthr`, M44 `zvy49ysg`): a thread the UI opens without a
+      // type — a plain new conversation, a seeded thread (`startSeededThread`) — is
+      // founded with the PROJECT registry's `Wejście: domyślny` value.
+      let thread =
+        existingThread ??
+        deps.chatService.createThread(null, { contextType: defaultRowOf(rowsOfRegistry(deps.contextTypes)).value });
       // 0.2.87 (M44): an unknown discriminator is an application error, before anything runs.
       assertKnownContextType(thread);
 

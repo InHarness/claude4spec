@@ -316,3 +316,23 @@ describe('skill.contextTypes against the project registry (M52 wqvq1esb, 1osy2o5
     expect((await request(spec).get('/config')).body.contextTypes).toEqual(['chat', 'brief', 'patch', 'ask']);
   });
 });
+
+describe('GET /config hands the chat shell its registry rows (M53 64xb1u7b, 2.1.88)', () => {
+  it('[section:64xb1u7b] `contextTypeRows` is the project registry in the two columns the shell branches on: `Wątek` (thread column + artifact kind, or null) and `Powłoka`', async () => {
+    const registry = SkillRegistry.load([], { rescanTtlMs: 0 });
+    const specCwd = dir();
+    writeConfig(specCwd, { name: 'Spec' });
+    const spec = express().use(express.json()).use(configRouter({ cwd: specCwd, skillRegistry: registry, capabilities: SPEC_CAPS }));
+    expect((await request(spec).get('/config')).body.contextTypeRows).toEqual([
+      { value: 'chat', thread: { column: 'plan_path', artifactKind: 'plan' }, shell: 'overlay' },
+      { value: 'brief', thread: { column: 'brief_path', artifactKind: 'brief' }, shell: 'brief-detail' },
+      { value: 'patch', thread: { column: 'patch_path', artifactKind: 'patch' }, shell: 'overlay' },
+      { value: 'ask', thread: null, shell: 'overlay' },
+    ]);
+    // A project without `briefs` has no brief/patch rows — the shell knows no such value there.
+    const cwd = dir();
+    writeConfig(cwd, { name: 'Team skill', skill: { name: 'team-skill', description: 'Team procedures.', uses: [] } });
+    const skill = express().use(express.json()).use(configRouter({ cwd, skillRegistry: registry, capabilities: PROVIDER_CAPS }));
+    expect((await request(skill).get('/config')).body.contextTypeRows.map((r: { value: string }) => r.value)).toEqual(['chat', 'ask']);
+  });
+});

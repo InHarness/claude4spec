@@ -16,6 +16,8 @@ import { registerCoreOperations } from '../operations/core-operations.js';
  */
 registerCoreOperations();
 import { DomainError } from './tags.js';
+import { artifactRegistry, ARTIFACT_KIND_OF_ROOT_KIND, type ArtifactRootKind } from './artifact-registry.js';
+import type { ContextTypeShellRow } from '../../shared/context-type-shell.js';
 import {
   DEFAULT_SUBAGENT_TURNS,
   resolvePluginSubagents,
@@ -94,6 +96,28 @@ export function contextTypeRegistryFor(capabilities: {
 /** The context types one project registers, in registry order (see {@link contextTypeRegistryFor}). */
 export function contextTypesFor(capabilities: { has(name: string): boolean }): ChatContextType[] {
   return Object.keys(contextTypeRegistryFor(capabilities)) as ChatContextType[];
+}
+
+/**
+ * 2.1.88 (M53 `64xb1u7b`) — the project's registry rows in the two columns the
+ * chat shell branches on: `Wątek` (with the artifact kind whose binding names
+ * that thread column, M36 `m36reg01`) and `Powłoka`. Registry order.
+ */
+export function contextTypeShellRowsFor(capabilities: { has(name: string): boolean }): ContextTypeShellRow[] {
+  return Object.values(contextTypeRegistryFor(capabilities)).map((row) => ({
+    value: row!.value,
+    thread: row!.threadArtifact ? { column: row!.threadArtifact, artifactKind: artifactKindOfColumn(row!.threadArtifact) } : null,
+    shell: row!.uiChrome,
+  }));
+}
+
+/** The artifact kind whose `binding.threadColumn` is this `chat_thread` column. */
+export function artifactKindOfColumn(column: string): string {
+  const rootKind = (Object.keys(artifactRegistry) as ArtifactRootKind[]).find(
+    (k) => artifactRegistry[k].binding.threadColumn === column,
+  );
+  if (!rootKind) throw new Error(`no artifact kind binds the chat_thread column '${column}'`);
+  return ARTIFACT_KIND_OF_ROOT_KIND[rootKind];
 }
 
 /**

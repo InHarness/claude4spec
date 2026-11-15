@@ -159,6 +159,7 @@ export function ArtifactThreadsPanel({
                       className="font-mono text-[10px] px-1.5 py-0.5 rounded"
                       style={{ background: 'var(--c-hair)', color: 'var(--c-muted)' }}
                     >
+                      {/* 2.1.88 (plan-page): the stored value, raw — the UI keeps no per-value labels. */}
                       {t.contextType}
                     </span>
                   )}
